@@ -1539,9 +1539,6 @@ class Assembler : public AssemblerBase {
   Label* ConstantPoolPosition() { return constant_pool_builder_.Position(); }
 
 #endif
-  static void RelocateInternalReference(RelocInfo* rinfo,
-      ICacheFlushMode icache_flush_mode = SKIP_ICACHE_FLUSH);
-
   void EmitRelocations();
 
  protected:

@@ -903,13 +903,13 @@ void Deserializer::ReadObject(int space_number, Object** write_back) {
     // Turn internal references encoded as offsets back to absolute addresses.
     Code* code = Code::cast(obj);
     Address entry = code->entry();
-    int mode_mask = RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE);
+    int mode_mask = RelocInfo::kInternalReferenceMask;
     for (RelocIterator it(code, mode_mask); !it.done(); it.next()) {
       RelocInfo* rinfo = it.rinfo();
       intptr_t offset =
           reinterpret_cast<intptr_t>(rinfo->target_internal_reference());
       DCHECK(0 <= offset && offset <= code->instruction_size());
-      rinfo->set_target_internal_reference(entry + offset);
+      rinfo->set_target_internal_reference(entry + offset, SKIP_ICACHE_FLUSH);
     }
   }
 }
@@ -2050,18 +2050,20 @@ Address Serializer::ObjectSerializer::PrepareCode() {
   code->MakeYoung(serializer_->isolate());
   Address entry = original->entry();
   int mode_mask = RelocInfo::kCodeTargetMask |
+                  RelocInfo::kInternalReferenceMask |
                   RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT) |
                   RelocInfo::ModeMask(RelocInfo::EXTERNAL_REFERENCE) |
-                  RelocInfo::ModeMask(RelocInfo::RUNTIME_ENTRY) |
-                  RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE);
+                  RelocInfo::ModeMask(RelocInfo::RUNTIME_ENTRY);
   for (RelocIterator it(code, mode_mask); !it.done(); it.next()) {
     RelocInfo* rinfo = it.rinfo();
-    if (RelocInfo::IsInternalReference(rinfo->rmode())) {
+    if (RelocInfo::ModeMask(rinfo->rmode()) &
+        RelocInfo::kInternalReferenceMask) {
       // Convert internal references to relative offsets.
       Address target = rinfo->target_internal_reference();
       intptr_t offset = target - entry;
       DCHECK(0 <= offset && offset <= original->instruction_size());
-      rinfo->set_target_internal_reference(reinterpret_cast<Address>(offset));
+      rinfo->set_target_internal_reference(reinterpret_cast<Address>(offset),
+                                           SKIP_ICACHE_FLUSH);
     } else if (!(FLAG_enable_ool_constant_pool && rinfo->IsInConstantPool())) {
       rinfo->WipeOut();
     }

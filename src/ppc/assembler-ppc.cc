@@ -147,9 +147,10 @@ const char* DoubleRegister::AllocationIndexToString(int index) {
 // -----------------------------------------------------------------------------
 // Implementation of RelocInfo
 
-const int RelocInfo::kApplyMask = 1 << RelocInfo::INTERNAL_REFERENCE_ENTRY |
-                                  1 << RelocInfo::INTERNAL_REFERENCE_ENCODED;
-const int RelocInfo::kDeserializeMask = RelocInfo::kApplyMask;
+const int RelocInfo::kInternalReferenceMask =
+  1 << RelocInfo::INTERNAL_REFERENCE |
+  1 << RelocInfo::INTERNAL_REFERENCE_ENCODED;
+const int RelocInfo::kApplyMask = RelocInfo::kInternalReferenceMask;
 
 
 bool RelocInfo::IsCodedSpecially() {
@@ -1539,23 +1540,6 @@ void Assembler::function_descriptor() {
 }
 
 
-void Assembler::RelocateInternalReference(RelocInfo *rinfo,
-                                          ICacheFlushMode icache_flush_mode) {
-  Code *code = rinfo->host();
-  Address new_value = code->instruction_start() + rinfo->data();
-
-  if (RelocInfo::IsInternalReferenceEntry(rinfo->rmode())) {
-    // Jump table entry
-    Address* entry_address = reinterpret_cast<Address*>(rinfo->pc());
-    *entry_address = new_value;
-  } else {
-    // mov sequence
-    DCHECK(RelocInfo::IsInternalReferenceEncoded(rinfo->rmode()));
-    set_target_address_at(rinfo->pc(), code, new_value, icache_flush_mode);
-  }
-}
-
-
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
 int Assembler::instructions_required_for_mov(const Operand& x) const {
   bool canOptimize =
@@ -1819,7 +1803,7 @@ void Assembler::mov_label_addr(Register dst, Label* label) {
 
 void Assembler::emit_label_addr(Label *label) {
   CheckBuffer();
-  RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE_ENTRY);
+  RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE);
   int position = link(label);
   if (label->is_bound()) {
     // Keep internal references relative until EmitRelocations.
@@ -2416,23 +2400,17 @@ void Assembler::EmitRelocations() {
 
   for (std::vector<DeferredRelocInfo>::iterator it = relocations_.begin();
        it != relocations_.end(); it++) {
-    Address pc = it->position() + buffer_;
     RelocInfo::Mode rmode = it->rmode();
-    Code *code = NULL;
-    intptr_t data = 0;
+    RelocInfo rinfo(buffer_ + it->position(), rmode, it->data(), NULL);
 
     // Fix up internal references now that they are guaranteed to be bound.
-    if (RelocInfo::IsInternalReferenceEntry(rmode)) {
-      intptr_t* entry_address = reinterpret_cast<intptr_t*>(pc);
-      data = *entry_address;
-      *entry_address = reinterpret_cast<intptr_t>(buffer_ + data);
-    } else if (RelocInfo::IsInternalReferenceEncoded(rmode)) {
-      data = reinterpret_cast<intptr_t>(target_address_at(pc, code));
-      set_target_address_at(pc, code, buffer_ + data);
-    } else {
-      data = it->data();
+    if (RelocInfo::IsInternalReference(rmode) ||
+        RelocInfo::IsInternalReferenceEncoded(rmode)) {
+      intptr_t pos =
+          reinterpret_cast<intptr_t>(rinfo.target_internal_reference());
+      rinfo.set_target_internal_reference(buffer_ + pos, SKIP_ICACHE_FLUSH);
     }
-    RelocInfo rinfo(pc, it->rmode(), data, NULL);
+
     reloc_info_writer.Write(&rinfo);
   }
 

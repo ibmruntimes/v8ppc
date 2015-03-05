@@ -82,9 +82,11 @@ void Displacement::init(Label* L, Type type) {
 // Implementation of RelocInfo
 
 
+const int RelocInfo::kInternalReferenceMask =
+  1 << RelocInfo::INTERNAL_REFERENCE;
 const int RelocInfo::kApplyMask =
-  RelocInfo::kCodeTargetMask | 1 << RelocInfo::RUNTIME_ENTRY |
-    1 << RelocInfo::JS_RETURN | 1 << RelocInfo::INTERNAL_REFERENCE |
+  RelocInfo::kCodeTargetMask | RelocInfo::kInternalReferenceMask |
+    1 << RelocInfo::RUNTIME_ENTRY | 1 << RelocInfo::JS_RETURN |
     1 << RelocInfo::DEBUG_BREAK_SLOT | 1 << RelocInfo::CODE_AGE_SEQUENCE;
 
 

@@ -425,14 +425,9 @@ class RelocInfo {
     // Marks constant and veneer pools. Only used on ARM and ARM64.
     CONST_POOL = ARCH1,
     VENEER_POOL = ARCH2,
-#elif V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64
-    // Encoded internal reference, used only on MIPS and MIPS64.
+#elif V8_TARGET_ARCH_PPC || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64
+    // Encoded internal reference, used only on PPC, MIPS and MIPS64.
     INTERNAL_REFERENCE_ENCODED = ARCH1,
-#elif V8_TARGET_ARCH_PPC
-    // Internal references, used only on PPC.
-    // Data encodes offset relative to instruction start.
-    INTERNAL_REFERENCE_ENCODED = ARCH1,
-    INTERNAL_REFERENCE_ENTRY = ARCH2,
 #endif
 
     FIRST_REAL_RELOC_MODE = CODE_TARGET,
@@ -522,13 +517,6 @@ class RelocInfo {
     return false;
 #endif
   }
-  static inline bool IsInternalReferenceEntry(Mode mode) {
-#if V8_TARGET_ARCH_PPC
-    return mode == INTERNAL_REFERENCE_ENTRY;
-#else
-    return false;
-#endif
-  }
   static inline bool IsDebugBreakSlot(Mode mode) {
     return mode == DEBUG_BREAK_SLOT;
   }
@@ -566,8 +554,6 @@ class RelocInfo {
   INLINE(void apply(intptr_t delta,
                     ICacheFlushMode icache_flush_mode =
                         FLUSH_ICACHE_IF_NEEDED));
-  // Apply a relocation upon deserialization
-  INLINE(void deserialize());
 
   // Is the pointer this relocation info refers to coded like a plain pointer
   // or is it strange in some way (e.g. relative or patched into a series of
@@ -641,9 +627,11 @@ class RelocInfo {
   INLINE(Address target_external_reference());
 
   // Read/modify the reference in the instruction this relocation
-  // applies to; can only be called if rmode_ is INTERNAL_REFERENCE.
+  // applies to; can only be called if rmode_ is in kInternalReferenceMask.
   INLINE(Address target_internal_reference());
-  INLINE(void set_target_internal_reference(Address target));
+  INLINE(void set_target_internal_reference(Address target,
+                                            ICacheFlushMode icache_flush_mode =
+                                                FLUSH_ICACHE_IF_NEEDED));
 
   // Read/modify the address of a call instruction. This is used to relocate
   // the break points where straight-line code is patched with a call
@@ -691,9 +679,8 @@ class RelocInfo {
   static const int kPositionMask = 1 << POSITION | 1 << STATEMENT_POSITION;
   static const int kDataMask =
       (1 << CODE_TARGET_WITH_ID) | kPositionMask | (1 << COMMENT);
-  // Modes affected by apply / deserialize. Depends on arch.
-  static const int kApplyMask;
-  static const int kDeserializeMask;
+  static const int kApplyMask;  // Modes affected by apply. Depends on arch.
+  static const int kInternalReferenceMask;
 
  private:
   // On ARM, note that pc_ is the address of the constant pool entry

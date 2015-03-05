@@ -843,17 +843,12 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "constant pool";
     case RelocInfo::VENEER_POOL:
       return "veneer pool";
-#elif V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64
+#elif V8_TARGET_ARCH_PPC || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64
     case RelocInfo::INTERNAL_REFERENCE_ENCODED:
       return "internal reference (encoded)";
     case RelocInfo::ARCH2:
       UNREACHABLE();
       return "arch2";
-#elif V8_TARGET_ARCH_PPC
-    case RelocInfo::INTERNAL_REFERENCE_ENCODED:
-      return "internal reference (encoded)";
-    case RelocInfo::INTERNAL_REFERENCE_ENTRY:
-      return "internal reference (entry)";
 #else
     case RelocInfo::ARCH1:
       UNREACHABLE();
