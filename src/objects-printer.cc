@@ -502,12 +502,8 @@ void ConstantPoolArray::ConstantPoolArrayPrint(std::ostream& os) {  // NOLINT
   HeapObject::PrintHeader(os, "ConstantPoolArray");
   os << " - length: " << length();
   for (int i = 0; i <= last_index(INT32, SMALL_SECTION); i++) {
-    if (i <= last_index(INT64, SMALL_SECTION)) {
-#if V8_TARGET_ARCH_64_BIT
-      os << "\n  [" << i << "]: int64: " << get_int64_entry(i);
-#else
+    if (i < last_index(INT64, SMALL_SECTION)) {
       os << "\n  [" << i << "]: double: " << get_int64_entry_as_double(i);
-#endif
     } else if (i <= last_index(CODE_PTR, SMALL_SECTION)) {
       os << "\n  [" << i << "]: code target pointer: "
          << reinterpret_cast<void*>(get_code_ptr_entry(i));
@@ -522,12 +518,8 @@ void ConstantPoolArray::ConstantPoolArrayPrint(std::ostream& os) {  // NOLINT
     os << "\n  Extended section:";
     for (int i = first_extended_section_index();
          i <= last_index(INT32, EXTENDED_SECTION); i++) {
-      if (i <= last_index(INT64, EXTENDED_SECTION)) {
-#if V8_TARGET_ARCH_64_BIT
-        os << "\n  [" << i << "]: int64: " << get_int64_entry(i);
-#else
+      if (i < last_index(INT64, EXTENDED_SECTION)) {
         os << "\n  [" << i << "]: double: " << get_int64_entry_as_double(i);
-#endif
       } else if (i <= last_index(CODE_PTR, EXTENDED_SECTION)) {
         os << "\n  [" << i << "]: code target pointer: "
            << reinterpret_cast<void*>(get_code_ptr_entry(i));
