@@ -2320,10 +2320,8 @@ HValue* HGraphBuilder::BuildUncheckedStringAdd(
     {
       // Fallback to the runtime to add the two strings.
       Add<HPushArguments>(left, right);
-      Push(Add<HCallRuntime>(
-            isolate()->factory()->empty_string(),
-            Runtime::FunctionForId(Runtime::kStringAdd),
-            2));
+      Push(Add<HCallRuntime>(isolate()->factory()->empty_string(),
+                             Runtime::FunctionForId(Runtime::kStringAddRT), 2));
     }
     if_sameencodingandsequential.End();
   }
@@ -9916,8 +9914,7 @@ void HOptimizedGraphBuilder::VisitCallRuntime(CallRuntime* expr) {
   const Runtime::Function* function = expr->function();
   DCHECK(function != NULL);
 
-  if (function->intrinsic_type == Runtime::INLINE ||
-      function->intrinsic_type == Runtime::INLINE_OPTIMIZED) {
+  if (function->intrinsic_type == Runtime::INLINE) {
     DCHECK(expr->name()->length() > 0);
     DCHECK(expr->name()->Get(0) == '_');
     // Call to an inline function.

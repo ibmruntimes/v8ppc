@@ -932,6 +932,7 @@ int Heap::NotifyContextDisposed(bool dependant_context) {
     isolate()->optimizing_compiler_thread()->Flush();
   }
   AgeInlineCaches();
+  set_retained_maps(ArrayList::cast(empty_fixed_array()));
   tracer()->AddContextDisposalTime(base::OS::TimeCurrentMillis());
   return ++contexts_disposed_;
 }
@@ -2211,11 +2212,7 @@ class ScavengingVisitor : public StaticVisitorBase {
                                                   object_size)) {
       return;
     }
-
-    // If promotion failed, we try to copy the object to the other semi-space
-    if (SemiSpaceCopyObject<alignment>(map, slot, object, object_size)) return;
-
-    UNREACHABLE();
+    V8::FatalProcessOutOfMemory("Scavenge promotion failed");
   }
 
 
@@ -2484,7 +2481,7 @@ AllocationResult Heap::AllocateMap(InstanceType instance_type,
   map->set_dependent_code(DependentCode::cast(empty_fixed_array()),
                           SKIP_WRITE_BARRIER);
   map->set_weak_cell_cache(Smi::FromInt(0));
-  map->init_transitions(undefined_value());
+  map->set_raw_transitions(Smi::FromInt(0));
   map->set_unused_property_fields(0);
   map->set_instance_descriptors(empty_descriptor_array());
   if (FLAG_unbox_double_fields) {
@@ -2618,7 +2615,7 @@ bool Heap::CreateInitialMaps() {
   // Fix the instance_descriptors for the existing maps.
   meta_map()->set_code_cache(empty_fixed_array());
   meta_map()->set_dependent_code(DependentCode::cast(empty_fixed_array()));
-  meta_map()->init_transitions(undefined_value());
+  meta_map()->set_raw_transitions(Smi::FromInt(0));
   meta_map()->set_instance_descriptors(empty_descriptor_array());
   if (FLAG_unbox_double_fields) {
     meta_map()->set_layout_descriptor(LayoutDescriptor::FastPointerLayout());
@@ -2627,7 +2624,7 @@ bool Heap::CreateInitialMaps() {
   fixed_array_map()->set_code_cache(empty_fixed_array());
   fixed_array_map()->set_dependent_code(
       DependentCode::cast(empty_fixed_array()));
-  fixed_array_map()->init_transitions(undefined_value());
+  fixed_array_map()->set_raw_transitions(Smi::FromInt(0));
   fixed_array_map()->set_instance_descriptors(empty_descriptor_array());
   if (FLAG_unbox_double_fields) {
     fixed_array_map()->set_layout_descriptor(
@@ -2636,7 +2633,7 @@ bool Heap::CreateInitialMaps() {
 
   undefined_map()->set_code_cache(empty_fixed_array());
   undefined_map()->set_dependent_code(DependentCode::cast(empty_fixed_array()));
-  undefined_map()->init_transitions(undefined_value());
+  undefined_map()->set_raw_transitions(Smi::FromInt(0));
   undefined_map()->set_instance_descriptors(empty_descriptor_array());
   if (FLAG_unbox_double_fields) {
     undefined_map()->set_layout_descriptor(
@@ -2645,7 +2642,7 @@ bool Heap::CreateInitialMaps() {
 
   null_map()->set_code_cache(empty_fixed_array());
   null_map()->set_dependent_code(DependentCode::cast(empty_fixed_array()));
-  null_map()->init_transitions(undefined_value());
+  null_map()->set_raw_transitions(Smi::FromInt(0));
   null_map()->set_instance_descriptors(empty_descriptor_array());
   if (FLAG_unbox_double_fields) {
     null_map()->set_layout_descriptor(LayoutDescriptor::FastPointerLayout());
@@ -2654,7 +2651,7 @@ bool Heap::CreateInitialMaps() {
   constant_pool_array_map()->set_code_cache(empty_fixed_array());
   constant_pool_array_map()->set_dependent_code(
       DependentCode::cast(empty_fixed_array()));
-  constant_pool_array_map()->init_transitions(undefined_value());
+  constant_pool_array_map()->set_raw_transitions(Smi::FromInt(0));
   constant_pool_array_map()->set_instance_descriptors(empty_descriptor_array());
   if (FLAG_unbox_double_fields) {
     constant_pool_array_map()->set_layout_descriptor(
@@ -3118,6 +3115,7 @@ void Heap::CreateInitialObjects() {
   }
 
   set_detached_contexts(empty_fixed_array());
+  set_retained_maps(ArrayList::cast(empty_fixed_array()));
 
   set_weak_object_to_code_table(
       *WeakHashTable::New(isolate(), 16, USE_DEFAULT_MINIMUM_CAPACITY,
@@ -3152,30 +3150,34 @@ void Heap::CreateInitialObjects() {
 
 
 bool Heap::RootCanBeWrittenAfterInitialization(Heap::RootListIndex root_index) {
-  RootListIndex writable_roots[] = {
-      kStoreBufferTopRootIndex,
-      kStackLimitRootIndex,
-      kNumberStringCacheRootIndex,
-      kInstanceofCacheFunctionRootIndex,
-      kInstanceofCacheMapRootIndex,
-      kInstanceofCacheAnswerRootIndex,
-      kCodeStubsRootIndex,
-      kNonMonomorphicCacheRootIndex,
-      kPolymorphicCodeCacheRootIndex,
-      kLastScriptIdRootIndex,
-      kEmptyScriptRootIndex,
-      kRealStackLimitRootIndex,
-      kArgumentsAdaptorDeoptPCOffsetRootIndex,
-      kConstructStubDeoptPCOffsetRootIndex,
-      kGetterStubDeoptPCOffsetRootIndex,
-      kSetterStubDeoptPCOffsetRootIndex,
-      kStringTableRootIndex,
-  };
+  switch (root_index) {
+    case kStoreBufferTopRootIndex:
+    case kNumberStringCacheRootIndex:
+    case kInstanceofCacheFunctionRootIndex:
+    case kInstanceofCacheMapRootIndex:
+    case kInstanceofCacheAnswerRootIndex:
+    case kCodeStubsRootIndex:
+    case kNonMonomorphicCacheRootIndex:
+    case kPolymorphicCodeCacheRootIndex:
+    case kEmptyScriptRootIndex:
+    case kSymbolRegistryRootIndex:
+    case kMaterializedObjectsRootIndex:
+    case kAllocationSitesScratchpadRootIndex:
+    case kMicrotaskQueueRootIndex:
+    case kDetachedContextsRootIndex:
+    case kWeakObjectToCodeTableRootIndex:
+    case kRetainedMapsRootIndex:
+// Smi values
+#define SMI_ENTRY(type, name, Name) case k##Name##RootIndex:
+      SMI_ROOT_LIST(SMI_ENTRY)
+#undef SMI_ENTRY
+    // String table
+    case kStringTableRootIndex:
+      return true;
 
-  for (unsigned int i = 0; i < arraysize(writable_roots); i++) {
-    if (root_index == writable_roots[i]) return true;
+    default:
+      return false;
   }
-  return false;
 }
 
 
@@ -5828,6 +5830,18 @@ DependentCode* Heap::LookupWeakObjectToCodeDependency(Handle<HeapObject> obj) {
   Object* dep = weak_object_to_code_table()->Lookup(obj);
   if (dep->IsDependentCode()) return DependentCode::cast(dep);
   return DependentCode::cast(empty_fixed_array());
+}
+
+
+void Heap::AddRetainedMap(Handle<Map> map) {
+  if (FLAG_retain_maps_for_n_gc == 0) return;
+  Handle<WeakCell> cell = Map::WeakCellForMap(map);
+  Handle<ArrayList> array(retained_maps(), isolate());
+  array = ArrayList::Add(
+      array, cell, handle(Smi::FromInt(FLAG_retain_maps_for_n_gc), isolate()));
+  if (*array != retained_maps()) {
+    set_retained_maps(*array);
+  }
 }
 
 

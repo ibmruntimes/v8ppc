@@ -89,6 +89,7 @@ void MacroAssembler::LoadRoot(Register destination,
 
 void MacroAssembler::StoreRoot(Register source,
                                Heap::RootListIndex index) {
+  DCHECK(Heap::RootCanBeWrittenAfterInitialization(index));
   sd(source, MemOperand(s6, index << kPointerSizeLog2));
 }
 
@@ -97,6 +98,7 @@ void MacroAssembler::StoreRoot(Register source,
                                Heap::RootListIndex index,
                                Condition cond,
                                Register src1, const Operand& src2) {
+  DCHECK(Heap::RootCanBeWrittenAfterInitialization(index));
   Branch(2, NegateCondition(cond), src1, src2);
   sd(source, MemOperand(s6, index << kPointerSizeLog2));
 }
@@ -1714,6 +1716,14 @@ void MacroAssembler::BranchF(Label* target,
   if (bd == PROTECT) {
     nop();
   }
+}
+
+
+void MacroAssembler::FmoveLow(FPURegister dst, Register src_low) {
+  DCHECK(!src_low.is(at));
+  mfhc1(at, dst);
+  mtc1(src_low, dst);
+  mthc1(at, dst);
 }
 
 

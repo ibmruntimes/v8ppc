@@ -1467,6 +1467,7 @@ TEST(TestInternalWeakLists) {
   // Some flags turn Scavenge collections into Mark-sweep collections
   // and hence are incompatible with this test case.
   if (FLAG_gc_global || FLAG_stress_compaction) return;
+  FLAG_retain_maps_for_n_gc = 0;
 
   static const int kNumTestContexts = 10;
 
@@ -2141,6 +2142,12 @@ TEST(InstanceOfStubWriteBarrier) {
 }
 
 
+static int NumberOfProtoTransitions(Map* map) {
+  return TransitionArray::NumberOfPrototypeTransitions(
+      TransitionArray::GetPrototypeTransitions(map));
+}
+
+
 TEST(PrototypeTransitionClearing) {
   if (FLAG_never_compact) return;
   CcTest::InitializeVM();
@@ -2153,7 +2160,7 @@ TEST(PrototypeTransitionClearing) {
       v8::Utils::OpenHandle(
           *v8::Handle<v8::Object>::Cast(
               CcTest::global()->Get(v8_str("base"))));
-  int initialTransitions = baseObject->map()->NumberOfProtoTransitions();
+  int initialTransitions = NumberOfProtoTransitions(baseObject->map());
 
   CompileRun(
       "var live = [];"
@@ -2166,16 +2173,17 @@ TEST(PrototypeTransitionClearing) {
 
   // Verify that only dead prototype transitions are cleared.
   CHECK_EQ(initialTransitions + 10,
-      baseObject->map()->NumberOfProtoTransitions());
+           NumberOfProtoTransitions(baseObject->map()));
   CcTest::heap()->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask);
   const int transitions = 10 - 3;
   CHECK_EQ(initialTransitions + transitions,
-      baseObject->map()->NumberOfProtoTransitions());
+           NumberOfProtoTransitions(baseObject->map()));
 
   // Verify that prototype transitions array was compacted.
-  FixedArray* trans = baseObject->map()->GetPrototypeTransitions();
+  FixedArray* trans =
+      TransitionArray::GetPrototypeTransitions(baseObject->map());
   for (int i = initialTransitions; i < initialTransitions + transitions; i++) {
-    int j = Map::kProtoTransitionHeaderSize + i;
+    int j = TransitionArray::kProtoTransitionHeaderSize + i;
     CHECK(trans->get(j)->IsMap());
   }
 
@@ -2193,7 +2201,7 @@ TEST(PrototypeTransitionClearing) {
   i::FLAG_always_compact = true;
   Handle<Map> map(baseObject->map());
   CHECK(!space->LastPage()->Contains(
-      map->GetPrototypeTransitions()->address()));
+      TransitionArray::GetPrototypeTransitions(*map)->address()));
   CHECK(space->LastPage()->Contains(prototype->address()));
 }
 
@@ -2876,7 +2884,7 @@ TEST(OptimizedAllocationArrayLiterals) {
 
 
 static int CountMapTransitions(Map* map) {
-  return map->transitions()->number_of_transitions();
+  return TransitionArray::NumberOfTransitions(map->raw_transitions());
 }
 
 
@@ -2886,6 +2894,7 @@ TEST(Regress1465) {
   i::FLAG_stress_compaction = false;
   i::FLAG_allow_natives_syntax = true;
   i::FLAG_trace_incremental_marking = true;
+  i::FLAG_retain_maps_for_n_gc = 0;
   CcTest::InitializeVM();
   v8::HandleScope scope(CcTest::isolate());
   static const int transitions_count = 256;
@@ -2948,6 +2957,7 @@ static void AddPropertyTo(
   Handle<Smi> twenty_three(Smi::FromInt(23), isolate);
   i::FLAG_gc_interval = gc_count;
   i::FLAG_gc_global = true;
+  i::FLAG_retain_maps_for_n_gc = 0;
   CcTest::heap()->set_allocation_timeout(gc_count);
   JSReceiver::SetProperty(object, prop_name, twenty_three, SLOPPY).Check();
 }
@@ -3055,7 +3065,7 @@ TEST(TransitionArraySimpleToFull) {
   CompileRun("o = new F;"
              "root = new F");
   root = GetByName("root");
-  DCHECK(root->map()->transitions()->IsSimpleTransition());
+  DCHECK(TransitionArray::IsSimpleTransition(root->map()->raw_transitions()));
   AddPropertyTo(2, root, "happy");
 
   // Count number of live transitions after marking.  Note that one transition
@@ -4146,7 +4156,7 @@ TEST(EnsureAllocationSiteDependentCodesProcessed) {
   // Now make sure that a gc should get rid of the function, even though we
   // still have the allocation site alive.
   for (int i = 0; i < 4; i++) {
-    heap->CollectAllGarbage(Heap::kNoGCFlags);
+    heap->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask);
   }
 
   // The site still exists because of our global handle, but the code is no
@@ -4248,6 +4258,7 @@ TEST(NoWeakHashTableLeakWithIncrementalMarking) {
   i::FLAG_weak_embedded_objects_in_optimized_code = true;
   i::FLAG_allow_natives_syntax = true;
   i::FLAG_compilation_cache = false;
+  i::FLAG_retain_maps_for_n_gc = 0;
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
   v8::internal::Heap* heap = CcTest::heap();
@@ -5082,6 +5093,37 @@ TEST(Regress3877) {
 }
 
 
+void CheckMapRetainingFor(int n) {
+  FLAG_retain_maps_for_n_gc = n;
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  Handle<WeakCell> weak_cell;
+  {
+    HandleScope inner_scope(isolate);
+    Handle<Map> map = Map::Create(isolate, 1);
+    heap->AddRetainedMap(map);
+    weak_cell = inner_scope.CloseAndEscape(Map::WeakCellForMap(map));
+  }
+  CHECK(!weak_cell->cleared());
+  for (int i = 0; i < n; i++) {
+    heap->CollectGarbage(OLD_POINTER_SPACE);
+  }
+  CHECK(!weak_cell->cleared());
+  heap->CollectGarbage(OLD_POINTER_SPACE);
+  CHECK(weak_cell->cleared());
+}
+
+
+TEST(MapRetaining) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  CheckMapRetainingFor(FLAG_retain_maps_for_n_gc);
+  CheckMapRetainingFor(0);
+  CheckMapRetainingFor(1);
+  CheckMapRetainingFor(7);
+}
+
+
 #ifdef DEBUG
 TEST(PathTracer) {
   CcTest::InitializeVM();
@@ -5092,3 +5134,14 @@ TEST(PathTracer) {
   CcTest::i_isolate()->heap()->TracePathToObject(*o);
 }
 #endif  // DEBUG
+
+
+TEST(WritableVsImmortalRoots) {
+  for (int i = 0; i < Heap::kStrongRootListLength; ++i) {
+    Heap::RootListIndex root_index = static_cast<Heap::RootListIndex>(i);
+    bool writable = Heap::RootCanBeWrittenAfterInitialization(root_index);
+    bool immortal = Heap::RootIsImmortalImmovable(root_index);
+    // A root value can be writable, immortal, or neither, but not both.
+    CHECK(!immortal || !writable);
+  }
+}
