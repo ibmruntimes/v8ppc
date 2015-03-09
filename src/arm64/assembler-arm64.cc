@@ -171,8 +171,6 @@ CPURegList CPURegList::GetSafepointSavedRegisters() {
 // -----------------------------------------------------------------------------
 // Implementation of RelocInfo
 
-const int RelocInfo::kInternalReferenceMask =
-  1 << RelocInfo::INTERNAL_REFERENCE;
 const int RelocInfo::kApplyMask = 0;
 
 

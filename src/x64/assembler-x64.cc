@@ -3475,11 +3475,9 @@ void Assembler::PopulateConstantPool(ConstantPoolArray* constant_pool) {
 }
 
 
-const int RelocInfo::kInternalReferenceMask =
-    1 << RelocInfo::INTERNAL_REFERENCE;
 const int RelocInfo::kApplyMask = RelocInfo::kCodeTargetMask |
-    RelocInfo::kInternalReferenceMask |
     1 << RelocInfo::RUNTIME_ENTRY |
+    1 << RelocInfo::INTERNAL_REFERENCE |
     1 << RelocInfo::CODE_AGE_SEQUENCE;
 
 

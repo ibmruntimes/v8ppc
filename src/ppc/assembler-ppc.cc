@@ -147,10 +147,8 @@ const char* DoubleRegister::AllocationIndexToString(int index) {
 // -----------------------------------------------------------------------------
 // Implementation of RelocInfo
 
-const int RelocInfo::kInternalReferenceMask =
-  1 << RelocInfo::INTERNAL_REFERENCE |
-  1 << RelocInfo::INTERNAL_REFERENCE_ENCODED;
-const int RelocInfo::kApplyMask = RelocInfo::kInternalReferenceMask;
+const int RelocInfo::kApplyMask = 1 << RelocInfo::INTERNAL_REFERENCE |
+                                  1 << RelocInfo::INTERNAL_REFERENCE_ENCODED;
 
 
 bool RelocInfo::IsCodedSpecially() {
@@ -2408,7 +2406,7 @@ void Assembler::EmitRelocations() {
         RelocInfo::IsInternalReferenceEncoded(rmode)) {
       intptr_t pos =
           reinterpret_cast<intptr_t>(rinfo.target_internal_reference());
-      rinfo.set_target_internal_reference(buffer_ + pos, SKIP_ICACHE_FLUSH);
+      rinfo.set_target_internal_reference(buffer_ + pos);
     }
 
     reloc_info_writer.Write(&rinfo);

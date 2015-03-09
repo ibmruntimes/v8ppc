@@ -51,11 +51,18 @@ bool CpuFeatures::SupportsCrankshaft() { return true; }
 
 
 void RelocInfo::apply(intptr_t delta, ICacheFlushMode icache_flush_mode) {
-  DCHECK(IsInternalReference(rmode_) ||
-         IsInternalReferenceEncoded(rmode_));
   // absolute code pointer inside code object moves with the code object.
-  set_target_internal_reference(target_internal_reference() + delta,
-                                icache_flush_mode);
+  if (IsInternalReference(rmode_)) {
+    // Jump table entry
+    Address target = Memory::Address_at(pc_);
+    Memory::Address_at(pc_) = target + delta;
+  } else {
+    // mov sequence
+    DCHECK(IsInternalReferenceEncoded(rmode_));
+    Address target = Assembler::target_address_at(pc_, host_);
+    Assembler::set_target_address_at(pc_, host_, target + delta,
+                                     icache_flush_mode);
+  }
 }
 
 
@@ -71,15 +78,14 @@ Address RelocInfo::target_internal_reference() {
 }
 
 
-void RelocInfo::set_target_internal_reference(
-    Address target, ICacheFlushMode icache_flush_mode) {
+void RelocInfo::set_target_internal_reference(Address target) {
   if (IsInternalReference(rmode_)) {
     // Jump table entry
     Memory::Address_at(pc_) = target;
   } else {
     // mov sequence
     DCHECK(IsInternalReferenceEncoded(rmode_));
-    Assembler::set_target_address_at(pc_, host_, target, icache_flush_mode);
+    Assembler::set_target_address_at(pc_, host_, target, SKIP_ICACHE_FLUSH);
   }
 }
 

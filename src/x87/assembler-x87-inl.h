@@ -167,8 +167,7 @@ Address RelocInfo::target_internal_reference() {
 }
 
 
-void RelocInfo::set_target_internal_reference(
-    Address target, ICacheFlushMode icache_flush_mode) {
+void RelocInfo::set_target_internal_reference(Address target) {
   DCHECK(rmode_ == INTERNAL_REFERENCE);
   Memory::Address_at(pc_) = target;
 }
