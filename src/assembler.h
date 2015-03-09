@@ -405,7 +405,7 @@ class RelocInfo {
     DEBUG_BREAK_SLOT,    // Additional code inserted for debug break slot.
     EXTERNAL_REFERENCE,  // The address of an external C++ function.
     INTERNAL_REFERENCE,  // An address inside the same function.
-#if V8_PPC_INTERNAL_REFERENCE_OPT
+#if defined(V8_PPC_INTERNAL_REFERENCE_OPT)
     INTERNAL_REFERENCE_ENCODED,  // Encoded internal reference.
 #endif
 
@@ -424,7 +424,7 @@ class RelocInfo {
     CODE_AGE_SEQUENCE,  // Not stored in RelocInfo array, used explictly by
                         // code aging.
 
-#if !V8_PPC_INTERNAL_REFERENCE_OPT
+#if !defined(V8_PPC_INTERNAL_REFERENCE_OPT)
     // Encoded internal reference, used only on MIPS and MIPS64.
     // Re-uses previous ARM-only encoding, to fit in RealRelocMode space.
     INTERNAL_REFERENCE_ENCODED = CONST_POOL,
@@ -438,7 +438,7 @@ class RelocInfo {
     LAST_GCED_ENUM = CELL,
     // Modes <= LAST_COMPACT_ENUM are guaranteed to have compact encoding.
     LAST_COMPACT_ENUM = CODE_TARGET_WITH_ID,
-#if V8_PPC_INTERNAL_REFERENCE_OPT
+#if defined(V8_PPC_INTERNAL_REFERENCE_OPT)
     LAST_STANDARD_NONCOMPACT_ENUM = INTERNAL_REFERENCE_ENCODED
 #else
     LAST_STANDARD_NONCOMPACT_ENUM = INTERNAL_REFERENCE

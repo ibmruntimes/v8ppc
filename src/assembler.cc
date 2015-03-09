@@ -515,7 +515,7 @@ void RelocInfoWriter::Write(const RelocInfo* rinfo) {
                                                              : kVeneerPoolTag);
   } else {
     DCHECK(rmode > RelocInfo::LAST_COMPACT_ENUM);
-#if V8_PPC_INTERNAL_REFERENCE_OPT
+#if defined(V8_PPC_INTERNAL_REFERENCE_OPT)
     int saved_mode = rmode - RelocInfo::LAST_COMPACT_ENUM - 1;
 #else
     int saved_mode = rmode - RelocInfo::LAST_COMPACT_ENUM;
@@ -729,7 +729,7 @@ void RelocIterator::next() {
         Advance(kIntSize);
       } else {
         AdvanceReadPC();
-#if V8_PPC_INTERNAL_REFERENCE_OPT
+#if defined(V8_PPC_INTERNAL_REFERENCE_OPT)
         int rmode = extra_tag + RelocInfo::LAST_COMPACT_ENUM + 1;
 #else
         int rmode = extra_tag + RelocInfo::LAST_COMPACT_ENUM;
@@ -844,7 +844,7 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "external reference";
     case RelocInfo::INTERNAL_REFERENCE:
       return "internal reference";
-#if V8_PPC_INTERNAL_REFERENCE_OPT
+#if defined(V8_PPC_INTERNAL_REFERENCE_OPT)
     case RelocInfo::INTERNAL_REFERENCE_ENCODED:
       return "internal reference encoded";
 #endif
@@ -935,7 +935,7 @@ void RelocInfo::Verify(Isolate* isolate) {
     case STATEMENT_POSITION:
     case EXTERNAL_REFERENCE:
     case INTERNAL_REFERENCE:
-#if V8_PPC_INTERNAL_REFERENCE_OPT
+#if defined(V8_PPC_INTERNAL_REFERENCE_OPT)
     case INTERNAL_REFERENCE_ENCODED:
 #endif
     case DEOPT_REASON:

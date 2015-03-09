@@ -1136,7 +1136,7 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   // know where the return address is. The CEntryStub is unmovable, so
   // we can store the address on the stack to be able to find it again and
   // we never have to restore it, because it will not change.
-#if V8_PPC_INTERNAL_REFERENCE_OPT
+#if defined(V8_PPC_INTERNAL_REFERENCE_OPT)
   Label after_call;
   __ mov_label_addr(r0, &after_call);
   __ StoreP(r0, MemOperand(sp, kStackFrameExtraParamSlot * kPointerSize));
