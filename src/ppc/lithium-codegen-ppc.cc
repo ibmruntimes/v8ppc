@@ -50,8 +50,20 @@ bool LCodeGen::GenerateCode() {
   // the frame (that is done in GeneratePrologue).
   FrameScope frame_scope(masm_, StackFrame::NONE);
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  bool rc = GeneratePrologue() && GenerateBody() && GenerateDeferredCode() &&
+            GenerateJumpTable() && GenerateSafepointTable();
+#ifdef DEBUG
+  if (!rc) {
+    // Avoid DCHECK(!is_linked()) failure in ~Label()
+    masm()->EmitConstantPool();
+  }
+#endif
+  return rc;
+#else
   return GeneratePrologue() && GenerateBody() && GenerateDeferredCode() &&
          GenerateJumpTable() && GenerateSafepointTable();
+#endif
 }
 
 
