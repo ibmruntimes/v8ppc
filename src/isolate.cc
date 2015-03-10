@@ -990,8 +990,6 @@ Object* Isolate::Throw(Object* exception, MessageLocation* location) {
 
       thread_local_top()->pending_message_obj_ = *message_obj;
       thread_local_top()->pending_message_script_ = *location->script();
-      thread_local_top()->pending_message_start_pos_ = location->start_pos();
-      thread_local_top()->pending_message_end_pos_ = location->end_pos();
 
       // If the abort-on-uncaught-exception flag is specified, abort on any
       // exception not caught by JavaScript, even when an external handler is
@@ -1076,7 +1074,7 @@ Object* Isolate::FindHandler() {
       thread_local_top()->handler_ = handler->next()->address();
 
       // Gather information from the handler.
-      code = handler->code();
+      code = frame->LookupCode();
       handler_sp = handler->address() + StackHandlerConstants::kSize;
       offset = Smi::cast(code->handler_table()->get(0))->value();
       break;
@@ -1091,11 +1089,11 @@ Object* Isolate::FindHandler() {
       thread_local_top()->handler_ = handler->next()->address();
 
       // Gather information from the handler.
-      code = handler->code();
+      code = frame->LookupCode();
       context = handler->context();
       offset = Smi::cast(code->handler_table()->get(handler->index()))->value();
       handler_sp = handler->address() + StackHandlerConstants::kSize;
-      handler_fp = handler->frame_pointer();
+      handler_fp = frame->fp();
       break;
     }
 
@@ -1168,8 +1166,6 @@ void Isolate::RestorePendingMessageFromTryCatch(v8::TryCatch* handler) {
   DCHECK(script->IsScript() || script->IsTheHole());
   thread_local_top()->pending_message_obj_ = message;
   thread_local_top()->pending_message_script_ = script;
-  thread_local_top()->pending_message_start_pos_ = handler->message_start_pos_;
-  thread_local_top()->pending_message_end_pos_ = handler->message_end_pos_;
 }
 
 
@@ -1448,13 +1444,13 @@ void Isolate::ReportPendingMessages() {
       thread_local_top_.has_pending_message_ = false;
       if (!thread_local_top_.pending_message_obj_->IsTheHole()) {
         HandleScope scope(this);
-        Handle<Object> message_obj(thread_local_top_.pending_message_obj_,
-                                   this);
+        Handle<JSMessageObject> message_obj(
+            JSMessageObject::cast(thread_local_top_.pending_message_obj_));
         if (!thread_local_top_.pending_message_script_->IsTheHole()) {
           Handle<Script> script(
               Script::cast(thread_local_top_.pending_message_script_));
-          int start_pos = thread_local_top_.pending_message_start_pos_;
-          int end_pos = thread_local_top_.pending_message_end_pos_;
+          int start_pos = message_obj->start_position();
+          int end_pos = message_obj->end_position();
           MessageLocation location(script, start_pos, end_pos);
           MessageHandler::ReportMessage(this, &location, message_obj);
         } else {
@@ -1473,10 +1469,12 @@ MessageLocation Isolate::GetMessageLocation() {
   if (thread_local_top_.pending_exception_ != heap()->termination_exception() &&
       thread_local_top_.has_pending_message_ &&
       !thread_local_top_.pending_message_obj_->IsTheHole()) {
+    Handle<JSMessageObject> message_obj(
+        JSMessageObject::cast(thread_local_top_.pending_message_obj_));
     Handle<Script> script(
         Script::cast(thread_local_top_.pending_message_script_));
-    int start_pos = thread_local_top_.pending_message_start_pos_;
-    int end_pos = thread_local_top_.pending_message_end_pos_;
+    int start_pos = message_obj->start_position();
+    int end_pos = message_obj->end_position();
     return MessageLocation(script, start_pos, end_pos);
   }
 
@@ -1555,14 +1553,9 @@ Handle<Object> Isolate::GetPromiseOnStackOnThrow() {
   StackHandler* promise_try = tltop->promise_on_stack_->handler();
   // Find the top-most try-catch handler.
   StackHandler* handler = StackHandler::FromAddress(Isolate::handler(tltop));
-  do {
-    if (handler == promise_try) {
-      return tltop->promise_on_stack_->promise();
-    }
-    handler = handler->next();
-    // Throwing inside a Promise can be intercepted by an inner try-catch, so
-    // we stop at the first try-catch handler.
-  } while (handler != NULL && !handler->is_catch());
+  // Throwing inside a Promise only leads to a reject if not caught by an inner
+  // try-catch or try-finally.
+  if (handler == promise_try) return tltop->promise_on_stack_->promise();
   return undefined;
 }
 
@@ -2005,8 +1998,6 @@ bool Isolate::PropagatePendingExceptionToExternalTryCatch() {
 
     handler->message_obj_ = thread_local_top_.pending_message_obj_;
     handler->message_script_ = thread_local_top_.pending_message_script_;
-    handler->message_start_pos_ = thread_local_top_.pending_message_start_pos_;
-    handler->message_end_pos_ = thread_local_top_.pending_message_end_pos_;
   }
   return true;
 }

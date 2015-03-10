@@ -9,7 +9,6 @@
 #include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"
 #include "src/code-stubs.h"
-#include "src/compiler.h"
 #include "src/cpu-profiler.h"
 #include "src/deoptimizer.h"
 #include "src/execution.h"
@@ -18,6 +17,7 @@
 #include "src/ic/stub-cache.h"
 #include "src/natives.h"
 #include "src/objects.h"
+#include "src/parser.h"
 #include "src/runtime/runtime.h"
 #include "src/serialize.h"
 #include "src/snapshot.h"
@@ -223,7 +223,7 @@ ExternalReferenceTable::ExternalReferenceTable(Isolate* isolate) {
 #define RUNTIME_ENTRY(name, i1, i2)       \
   { Runtime::k##name, "Runtime::" #name } \
   ,
-      RUNTIME_FUNCTION_LIST(RUNTIME_ENTRY)
+      RUNTIME_FUNCTION_LIST(RUNTIME_ENTRY) INLINE_FUNCTION_LIST(RUNTIME_ENTRY)
           INLINE_OPTIMIZED_FUNCTION_LIST(RUNTIME_ENTRY)
 #undef RUNTIME_ENTRY
   };
@@ -1535,6 +1535,10 @@ void StartupSerializer::SerializeObject(HeapObject* obj, HowToCode how_to_code,
       root_index < root_index_wave_front_) {
     PutRoot(root_index, obj, how_to_code, where_to_point, skip);
     return;
+  }
+
+  if (obj->IsCode() && Code::cast(obj)->kind() == Code::FUNCTION) {
+    obj = isolate()->builtins()->builtin(Builtins::kCompileLazy);
   }
 
   if (SerializeKnownObject(obj, how_to_code, where_to_point, skip)) return;

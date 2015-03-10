@@ -5295,7 +5295,7 @@ HValue* HOptimizedGraphBuilder::BuildContextChainWalk(Variable* var) {
 
 void HOptimizedGraphBuilder::VisitVariableProxy(VariableProxy* expr) {
   if (expr->is_this()) {
-    current_info()->set_this_has_uses(true);
+    current_info()->parse_info()->set_this_has_uses(true);
   }
 
   DCHECK(!HasStackOverflow());
@@ -7839,12 +7839,17 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
   }
 
   // Parse and allocate variables.
-  CompilationInfo target_info(target, zone());
   // Use the same AstValueFactory for creating strings in the sub-compilation
   // step, but don't transfer ownership to target_info.
-  target_info.SetAstValueFactory(top_info()->ast_value_factory(), false);
+  ParseInfo parse_info(zone());
+  parse_info.InitializeFromJSFunction(target);
+  parse_info.set_ast_value_factory(
+      top_info()->parse_info()->ast_value_factory());
+  parse_info.set_ast_value_factory_owned(false);
+
+  CompilationInfo target_info(&parse_info);
   Handle<SharedFunctionInfo> target_shared(target->shared());
-  if (!Compiler::ParseAndAnalyze(&target_info)) {
+  if (!Compiler::ParseAndAnalyze(target_info.parse_info())) {
     if (target_info.isolate()->has_pending_exception()) {
       // Parse or scope error, never optimize this function.
       SetStackOverflow();
@@ -9519,22 +9524,6 @@ void HOptimizedGraphBuilder::VisitCallNew(CallNew* expr) {
 }
 
 
-// Support for generating inlined runtime functions.
-
-// Lookup table for generators for runtime calls that are generated inline.
-// Elements of the table are member pointers to functions of
-// HOptimizedGraphBuilder.
-#define INLINE_FUNCTION_GENERATOR_ADDRESS(Name, argc, ressize)  \
-    &HOptimizedGraphBuilder::Generate##Name,
-
-const HOptimizedGraphBuilder::InlineFunctionGenerator
-    HOptimizedGraphBuilder::kInlineFunctionGenerators[] = {
-        INLINE_FUNCTION_LIST(INLINE_FUNCTION_GENERATOR_ADDRESS)
-        INLINE_OPTIMIZED_FUNCTION_LIST(INLINE_FUNCTION_GENERATOR_ADDRESS)
-};
-#undef INLINE_FUNCTION_GENERATOR_ADDRESS
-
-
 template <class ViewClass>
 void HGraphBuilder::BuildArrayBufferViewInitialization(
     HValue* obj,
@@ -9913,29 +9902,21 @@ void HOptimizedGraphBuilder::VisitCallRuntime(CallRuntime* expr) {
 
   const Runtime::Function* function = expr->function();
   DCHECK(function != NULL);
+  switch (function->function_id) {
+#define CALL_INTRINSIC_GENERATOR(Name) \
+  case Runtime::kInline##Name:         \
+    return Generate##Name(expr);
 
-  if (function->intrinsic_type == Runtime::INLINE) {
-    DCHECK(expr->name()->length() > 0);
-    DCHECK(expr->name()->Get(0) == '_');
-    // Call to an inline function.
-    int lookup_index = static_cast<int>(function->function_id) -
-        static_cast<int>(Runtime::kFirstInlineFunction);
-    DCHECK(lookup_index >= 0);
-    DCHECK(static_cast<size_t>(lookup_index) <
-           arraysize(kInlineFunctionGenerators));
-    InlineFunctionGenerator generator = kInlineFunctionGenerators[lookup_index];
-
-    // Call the inline code generator using the pointer-to-member.
-    (this->*generator)(expr);
-  } else {
-    DCHECK(function->intrinsic_type == Runtime::RUNTIME);
-    Handle<String> name = expr->name();
-    int argument_count = expr->arguments()->length();
-    CHECK_ALIVE(VisitExpressions(expr->arguments()));
-    PushArgumentsFromEnvironment(argument_count);
-    HCallRuntime* call = New<HCallRuntime>(name, function,
-                                           argument_count);
-    return ast_context()->ReturnInstruction(call, expr->id());
+    FOR_EACH_HYDROGEN_INTRINSIC(CALL_INTRINSIC_GENERATOR)
+#undef CALL_INTRINSIC_GENERATOR
+    default: {
+      Handle<String> name = expr->name();
+      int argument_count = expr->arguments()->length();
+      CHECK_ALIVE(VisitExpressions(expr->arguments()));
+      PushArgumentsFromEnvironment(argument_count);
+      HCallRuntime* call = New<HCallRuntime>(name, function, argument_count);
+      return ast_context()->ReturnInstruction(call, expr->id());
+    }
   }
 }
 
@@ -11625,23 +11606,12 @@ void HOptimizedGraphBuilder::GenerateHasFastPackedElements(CallRuntime* call) {
 }
 
 
-void HOptimizedGraphBuilder::GenerateIsNonNegativeSmi(CallRuntime* call) {
-  return Bailout(kInlinedRuntimeFunctionIsNonNegativeSmi);
-}
-
-
 void HOptimizedGraphBuilder::GenerateIsUndetectableObject(CallRuntime* call) {
   DCHECK(call->arguments()->length() == 1);
   CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
   HValue* value = Pop();
   HIsUndetectableAndBranch* result = New<HIsUndetectableAndBranch>(value);
   return ast_context()->ReturnControl(result, call->id());
-}
-
-
-void HOptimizedGraphBuilder::GenerateIsStringWrapperSafeForDefaultValueOf(
-    CallRuntime* call) {
-  return Bailout(kInlinedRuntimeFunctionIsStringWrapperSafeForDefaultValueOf);
 }
 
 
@@ -11700,14 +11670,6 @@ void HOptimizedGraphBuilder::GenerateArguments(CallRuntime* call) {
     result = New<HAccessArgumentsAt>(elements, length, checked_key);
   }
   return ast_context()->ReturnInstruction(result, call->id());
-}
-
-
-// Support for accessing the class and value fields of an object.
-void HOptimizedGraphBuilder::GenerateClassOf(CallRuntime* call) {
-  // The special form detected by IsClassOfTest is detected before we get here
-  // and does not cause a bailout.
-  return Bailout(kInlinedRuntimeFunctionClassOf);
 }
 
 
@@ -12015,12 +11977,6 @@ void HOptimizedGraphBuilder::GenerateCallFunction(CallRuntime* call) {
 }
 
 
-void HOptimizedGraphBuilder::GenerateDefaultConstructorCallSuper(
-    CallRuntime* call) {
-  return Bailout(kSuperReference);
-}
-
-
 // Fast call to math functions.
 void HOptimizedGraphBuilder::GenerateMathPow(CallRuntime* call) {
   DCHECK_EQ(2, call->arguments()->length());
@@ -12029,6 +11985,15 @@ void HOptimizedGraphBuilder::GenerateMathPow(CallRuntime* call) {
   HValue* right = Pop();
   HValue* left = Pop();
   HInstruction* result = NewUncasted<HPower>(left, right);
+  return ast_context()->ReturnInstruction(result, call->id());
+}
+
+
+void HOptimizedGraphBuilder::GenerateMathFloor(CallRuntime* call) {
+  DCHECK(call->arguments()->length() == 1);
+  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
+  HValue* value = Pop();
+  HInstruction* result = NewUncasted<HUnaryMathOperation>(value, kMathFloor);
   return ast_context()->ReturnInstruction(result, call->id());
 }
 
@@ -12701,22 +12666,6 @@ void HOptimizedGraphBuilder::GenerateGetCachedArrayIndex(CallRuntime* call) {
   HValue* value = Pop();
   HGetCachedArrayIndex* result = New<HGetCachedArrayIndex>(value);
   return ast_context()->ReturnInstruction(result, call->id());
-}
-
-
-void HOptimizedGraphBuilder::GenerateFastOneByteArrayJoin(CallRuntime* call) {
-  return Bailout(kInlinedRuntimeFunctionFastOneByteArrayJoin);
-}
-
-
-// Support for generators.
-void HOptimizedGraphBuilder::GenerateGeneratorNext(CallRuntime* call) {
-  return Bailout(kInlinedRuntimeFunctionGeneratorNext);
-}
-
-
-void HOptimizedGraphBuilder::GenerateGeneratorThrow(CallRuntime* call) {
-  return Bailout(kInlinedRuntimeFunctionGeneratorThrow);
 }
 
 

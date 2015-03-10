@@ -132,7 +132,6 @@ class OptimizedFunctionVisitor BASE_EMBEDDED {
   V(kNotAHeapNumberUndefined, "not a heap number/undefined")                   \
   V(kNotAJavaScriptObject, "not a JavaScript object")                          \
   V(kNotASmi, "not a Smi")                                                     \
-  V(kNotHeapNumber, "not heap number")                                         \
   V(kNull, "null")                                                             \
   V(kOutOfBounds, "out of bounds")                                             \
   V(kOutsideOfRange, "Outside of range")                                       \
@@ -192,7 +191,7 @@ class Deoptimizer : public Malloced {
     DeoptReason deopt_reason;
   };
 
-  static DeoptInfo GetDeoptInfo(Code* code, int bailout_id);
+  static DeoptInfo GetDeoptInfo(Code* code, byte* from);
 
   struct JumpTableEntry : public ZoneObject {
     inline JumpTableEntry(Address entry, const DeoptInfo& deopt_info,

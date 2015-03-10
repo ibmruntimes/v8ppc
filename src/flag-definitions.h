@@ -367,7 +367,7 @@ DEFINE_BOOL(optimize_for_in, true, "optimize functions containing for-in loops")
 
 DEFINE_BOOL(concurrent_recompilation, true,
             "optimizing hot functions asynchronously on a separate thread")
-DEFINE_BOOL(job_based_recompilation, true,
+DEFINE_BOOL(job_based_recompilation, false,
             "post tasks to v8::Platform instead of using a thread for "
             "concurrent recompilation")
 DEFINE_BOOL(trace_concurrent_recompilation, false,
@@ -408,9 +408,9 @@ DEFINE_BOOL(context_specialization, false,
             "enable context specialization in TurboFan")
 DEFINE_BOOL(turbo_deoptimization, false, "enable deoptimization in TurboFan")
 DEFINE_BOOL(turbo_inlining, false, "enable inlining in TurboFan")
+DEFINE_BOOL(turbo_builtin_inlining, true, "enable builtin inlining in TurboFan")
 DEFINE_BOOL(trace_turbo_inlining, false, "trace TurboFan inlining")
 DEFINE_BOOL(loop_assignment_analysis, true, "perform loop assignment analysis")
-DEFINE_IMPLICATION(turbo_inlining, turbo_types)
 DEFINE_BOOL(turbo_profiling, false, "enable profiling in TurboFan")
 // TODO(dcarney): this is just for experimentation, remove when default.
 DEFINE_BOOL(turbo_delay_ssa_decon, false,

@@ -53,9 +53,7 @@ namespace compiler {
   V(SSEFloat64Div)                 \
   V(SSEFloat64Mod)                 \
   V(SSEFloat64Sqrt)                \
-  V(SSEFloat64Floor)               \
-  V(SSEFloat64Ceil)                \
-  V(SSEFloat64RoundTruncate)       \
+  V(SSEFloat64Round)               \
   V(SSECvtss2sd)                   \
   V(SSECvtsd2ss)                   \
   V(SSEFloat64ToInt32)             \
@@ -87,7 +85,8 @@ namespace compiler {
   V(X64Dec32)                      \
   V(X64Inc32)                      \
   V(X64Push)                       \
-  V(X64StoreWriteBarrier)
+  V(X64StoreWriteBarrier)          \
+  V(X64StackCheck)
 
 
 // Addressing modes represent the "shape" of inputs to an instruction.

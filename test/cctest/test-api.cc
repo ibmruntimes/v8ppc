@@ -6296,7 +6296,7 @@ struct FlagAndPersistent {
 };
 
 
-static void SetFlag(const v8::PhantomCallbackData<FlagAndPersistent>& data) {
+static void SetFlag(const v8::WeakCallbackInfo<FlagAndPersistent>& data) {
   data.GetParameter()->flag = true;
 }
 
@@ -6335,8 +6335,10 @@ static void IndependentWeakHandle(bool global_gc, bool interlinked) {
 
   object_a.flag = false;
   object_b.flag = false;
-  object_a.handle.SetPhantom(&object_a, &SetFlag);
-  object_b.handle.SetPhantom(&object_b, &SetFlag);
+  object_a.handle.SetWeak(&object_a, &SetFlag,
+                          v8::WeakCallbackType::kParameter);
+  object_b.handle.SetWeak(&object_b, &SetFlag,
+                          v8::WeakCallbackType::kParameter);
   CHECK(!object_b.handle.IsIndependent());
   object_a.handle.MarkIndependent();
   object_b.handle.MarkIndependent();
@@ -6391,7 +6393,7 @@ class Trivial2 {
 
 
 void CheckInternalFields(
-    const v8::PhantomCallbackData<v8::Persistent<v8::Object>>& data) {
+    const v8::WeakCallbackInfo<v8::Persistent<v8::Object>>& data) {
   v8::Persistent<v8::Object>* handle = data.GetParameter();
   handle->Reset();
   Trivial* t1 = reinterpret_cast<Trivial*>(data.GetInternalField1());
@@ -6431,8 +6433,8 @@ void InternalFieldCallback(bool global_gc) {
         reinterpret_cast<Trivial2*>(obj->GetAlignedPointerFromInternalField(1));
     CHECK_EQ(103, t2->x());
 
-    handle.SetPhantom<v8::Persistent<v8::Object>>(&handle, CheckInternalFields,
-                                                  0, 1);
+    handle.SetWeak<v8::Persistent<v8::Object>>(
+        &handle, CheckInternalFields, v8::WeakCallbackType::kInternalFields);
     if (!global_gc) {
       handle.MarkIndependent();
     }
@@ -20062,15 +20064,15 @@ THREADED_TEST(FunctionNew) {
   env->Global()->Set(v8_str("func"), func);
   Local<Value> result = CompileRun("func();");
   CHECK(v8::Integer::New(isolate, 17)->Equals(result));
-  // Verify function not cached
-  int serial_number =
-      i::Smi::cast(v8::Utils::OpenHandle(*func)
-          ->shared()->get_api_func_data()->serial_number())->value();
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  i::Handle<i::FixedArray> cache(i_isolate->native_context()->function_cache());
-  if (serial_number < cache->length()) {
-    CHECK(cache->get(serial_number)->IsUndefined());
-  }
+  // Verify function not cached
+  auto serial_number = handle(i::Smi::cast(v8::Utils::OpenHandle(*func)
+                                               ->shared()
+                                               ->get_api_func_data()
+                                               ->serial_number()),
+                              i_isolate);
+  auto cache = i_isolate->function_cache();
+  CHECK(cache->Lookup(serial_number)->IsTheHole());
   // Verify that each Function::New creates a new function instance
   Local<Object> data2 = v8::Object::New(isolate);
   function_new_expected_env = data2;

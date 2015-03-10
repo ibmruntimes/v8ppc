@@ -142,7 +142,8 @@ Heap::Heap()
       external_string_table_(this),
       chunks_queued_for_free_(NULL),
       gc_callbacks_depth_(0),
-      deserialization_complete_(false) {
+      deserialization_complete_(false),
+      concurrent_sweeping_enabled_(false) {
 // Allow build-time customization of the max semispace size. Building
 // V8 with snapshots and a non-default max semispace size is much
 // easier if you can define it as part of the build environment.
@@ -2122,12 +2123,10 @@ class ScavengingVisitor : public StaticVisitorBase {
       if (alignment != kObjectAlignment) {
         target = EnsureDoubleAligned(heap, target, allocation_size);
       }
-
-      // Order is important: slot might be inside of the target if target
-      // was allocated over a dead object and slot comes from the store
-      // buffer.
-      *slot = target;
       MigrateObject(heap, object, target, object_size);
+
+      // Update slot to new target.
+      *slot = target;
 
       heap->IncrementSemiSpaceCopiedObjectSize(object_size);
       return true;
@@ -2161,22 +2160,10 @@ class ScavengingVisitor : public StaticVisitorBase {
       if (alignment != kObjectAlignment) {
         target = EnsureDoubleAligned(heap, target, allocation_size);
       }
-
-      // Order is important: slot might be inside of the target if target
-      // was allocated over a dead object and slot comes from the store
-      // buffer.
-
-      // Unfortunately, the allocation can also write over the slot if the slot
-      // was in free space and the allocation wrote free list data (such as the
-      // free list map or entry size) over the slot.  We guard against this by
-      // checking that the slot still points to the object being moved.  This
-      // should be sufficient because neither the free list map nor the free
-      // list entry size should look like a new space pointer (the former is an
-      // old space pointer, the latter is word-aligned).
-      if (*slot == object) {
-        *slot = target;
-      }
       MigrateObject(heap, object, target, object_size);
+
+      // Update slot to new target.
+      *slot = target;
 
       if (object_contents == POINTER_OBJECT) {
         if (map->instance_type() == JS_FUNCTION_TYPE) {
@@ -5537,6 +5524,9 @@ bool Heap::SetUp() {
   if (!configured_) {
     if (!ConfigureHeapDefault()) return false;
   }
+
+  concurrent_sweeping_enabled_ =
+      FLAG_concurrent_sweeping && isolate_->max_available_threads() > 1;
 
   base::CallOnce(&initialize_gc_once, &InitializeGCOnce);
 

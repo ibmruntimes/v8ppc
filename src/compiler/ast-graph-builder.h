@@ -31,7 +31,7 @@ class AstGraphBuilder : public AstVisitor {
                   LoopAssignmentAnalysis* loop_assignment = NULL);
 
   // Creates a graph by visiting the entire AST.
-  bool CreateGraph(bool constant_context);
+  bool CreateGraph(bool constant_context, bool stack_check = true);
 
   // Helpers to create new control nodes.
   Node* NewIfTrue() { return NewNode(common()->IfTrue()); }
@@ -125,7 +125,7 @@ class AstGraphBuilder : public AstVisitor {
   void set_exit_control(Node* exit) { exit_control_ = exit; }
 
   // Create the main graph body by visiting the AST.
-  void CreateGraphBody();
+  void CreateGraphBody(bool stack_check);
 
   // Create the node that represents the outer context of the function.
   void CreateFunctionContext(bool constant_context);
@@ -253,15 +253,15 @@ class AstGraphBuilder : public AstVisitor {
   Node* BuildHoleCheckThrow(Node* value, Variable* var, Node* not_hole,
                             BailoutId bailout_id);
 
+  // Builders for conditional errors.
+  Node* BuildThrowIfStaticPrototype(Node* name, BailoutId bailout_id);
+
   // Builders for non-local control flow.
   Node* BuildReturn(Node* return_value);
   Node* BuildThrow(Node* exception_value);
 
   // Builders for binary operations.
   Node* BuildBinaryOp(Node* left, Node* right, Token::Value op);
-
-  // Builder for stack-check guards.
-  Node* BuildStackCheck();
 
   // Check if the given statement is an OSR entry.
   // If so, record the stack height into the compilation and return {true}.
@@ -323,6 +323,9 @@ class AstGraphBuilder : public AstVisitor {
   void PrepareFrameState(
       Node* node, BailoutId ast_id,
       OutputFrameStateCombine combine = OutputFrameStateCombine::Ignore());
+  void PrepareFrameStateAfterAndBefore(Node* node, BailoutId ast_id,
+                                       OutputFrameStateCombine combine,
+                                       Node* frame_state_before);
 
   BitVector* GetVariablesAssignedInLoop(IterationStatement* stmt);
 
@@ -413,7 +416,8 @@ class AstGraphBuilder::Environment : public ZoneObject {
 
   // Preserve a checkpoint of the environment for the IR graph. Any
   // further mutation of the environment will not affect checkpoints.
-  Node* Checkpoint(BailoutId ast_id, OutputFrameStateCombine combine);
+  Node* Checkpoint(BailoutId ast_id, OutputFrameStateCombine combine =
+                                         OutputFrameStateCombine::Ignore());
 
   // Control dependency tracked by this environment.
   Node* GetControlDependency() { return control_dependency_; }

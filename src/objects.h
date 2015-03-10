@@ -4268,6 +4268,8 @@ class ScopeInfo : public FixedArray {
   // must be an internalized string.
   int FunctionContextSlotIndex(String* name, VariableMode* mode);
 
+  bool block_scope_is_class_scope();
+  FunctionKind function_kind();
 
   // Copies all the context locals into an object used to materialize a scope.
   static bool CopyContextLocalsToScopeObject(Handle<ScopeInfo> scope_info,
@@ -4373,6 +4375,10 @@ class ScopeInfo : public FixedArray {
   class AsmFunctionField : public BitField<bool, 13, 1> {};
   class IsSimpleParameterListField
       : public BitField<bool, AsmFunctionField::kNext, 1> {};
+  class BlockScopeIsClassScopeField
+      : public BitField<bool, IsSimpleParameterListField::kNext, 1> {};
+  class FunctionKindField
+      : public BitField<FunctionKind, BlockScopeIsClassScopeField::kNext, 7> {};
 
   // BitFields representing the encoded information for context locals in the
   // ContextLocalInfoEntries part.
@@ -5423,7 +5429,7 @@ class Code: public HeapObject {
     return GetCodeAgeStub(isolate, kNotExecutedCodeAge, NO_MARKING_PARITY);
   }
 
-  void PrintDeoptLocation(FILE* out, int bailout_id);
+  void PrintDeoptLocation(FILE* out, Address pc);
   bool CanDeoptAt(Address pc);
 
 #ifdef VERIFY_HEAP
@@ -7231,8 +7237,8 @@ class SharedFunctionInfo: public HeapObject {
     kIsConciseMethod,
     kIsAccessorFunction,
     kIsDefaultConstructor,
-    kIsBaseConstructor,
     kIsSubclassConstructor,
+    kIsBaseConstructor,
     kIsAsmFunction,
     kDeserialized,
     kCompilerHintsCount  // Pseudo entry
@@ -7712,10 +7718,6 @@ class JSBuiltinsObject: public GlobalObject {
   inline Object* javascript_builtin(Builtins::JavaScript id);
   inline void set_javascript_builtin(Builtins::JavaScript id, Object* value);
 
-  // Accessors for code of the runtime routines written in JavaScript.
-  inline Code* javascript_builtin_code(Builtins::JavaScript id);
-  inline void set_javascript_builtin_code(Builtins::JavaScript id, Code* value);
-
   DECLARE_CAST(JSBuiltinsObject)
 
   // Dispatched behavior.
@@ -7727,17 +7729,11 @@ class JSBuiltinsObject: public GlobalObject {
   // (function and code object).
   static const int kJSBuiltinsCount = Builtins::id_count;
   static const int kJSBuiltinsOffset = GlobalObject::kHeaderSize;
-  static const int kJSBuiltinsCodeOffset =
-      GlobalObject::kHeaderSize + (kJSBuiltinsCount * kPointerSize);
   static const int kSize =
-      kJSBuiltinsCodeOffset + (kJSBuiltinsCount * kPointerSize);
+      GlobalObject::kHeaderSize + (kJSBuiltinsCount * kPointerSize);
 
   static int OffsetOfFunctionWithId(Builtins::JavaScript id) {
     return kJSBuiltinsOffset + id * kPointerSize;
-  }
-
-  static int OffsetOfCodeWithId(Builtins::JavaScript id) {
-    return kJSBuiltinsCodeOffset + id * kPointerSize;
   }
 
  private:

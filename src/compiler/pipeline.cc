@@ -8,7 +8,6 @@
 #include <sstream>
 
 #include "src/base/platform/elapsed-timer.h"
-#include "src/bootstrapper.h"  // TODO(mstarzinger): Only temporary.
 #include "src/compiler/ast-graph-builder.h"
 #include "src/compiler/ast-loop-assignment-analyzer.h"
 #include "src/compiler/basic-block-instrumentor.h"
@@ -451,7 +450,10 @@ struct InliningPhase {
   void Run(PipelineData* data, Zone* temp_zone) {
     SourcePositionTable::Scope pos(data->source_positions(),
                                    SourcePosition::Unknown());
-    JSInliner inliner(temp_zone, data->info(), data->jsgraph());
+    JSInliner inliner(data->info()->is_inlining_enabled()
+                          ? JSInliner::kGeneralInlining
+                          : JSInliner::kBuiltinsInlining,
+                      temp_zone, data->info(), data->jsgraph());
     GraphReducer graph_reducer(data->graph(), temp_zone);
     AddReducer(data, &graph_reducer, &inliner);
     graph_reducer.ReduceGraph();
@@ -837,11 +839,10 @@ Handle<Code> Pipeline::GenerateCode() {
   // the correct solution is to restore the context register after invoking
   // builtins from full-codegen.
   Handle<SharedFunctionInfo> shared = info()->shared_info();
-  if (isolate()->bootstrapper()->IsActive() ||
-      shared->disable_optimization_reason() ==
-          kBuiltinFunctionCannotBeOptimized) {
-    shared->DisableOptimization(kBuiltinFunctionCannotBeOptimized);
-    return Handle<Code>::null();
+  for (int i = 0; i < Builtins::NumberOfJavaScriptBuiltins(); i++) {
+    Builtins::JavaScript id = static_cast<Builtins::JavaScript>(i);
+    Object* builtin = isolate()->js_builtins_object()->javascript_builtin(id);
+    if (*info()->closure() == builtin) return Handle<Code>::null();
   }
 
   // TODO(dslomov): support turbo optimization of subclass constructors.
@@ -917,7 +918,7 @@ Handle<Code> Pipeline::GenerateCode() {
     RunPrintAndVerify("Context specialized", true);
   }
 
-  if (info()->is_inlining_enabled()) {
+  if (info()->is_builtin_inlining_enabled() || info()->is_inlining_enabled()) {
     Run<InliningPhase>();
     RunPrintAndVerify("Inlined", true);
   }
