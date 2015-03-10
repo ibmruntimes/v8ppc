@@ -1189,17 +1189,15 @@ void MacroAssembler::DebugBreak() {
 void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
                                     int handler_index) {
   // Adjust this code if not the case.
-  STATIC_ASSERT(StackHandlerConstants::kSize == 5 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kSize == 4 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 1 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kStateOffset == 2 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kStateOffset == 1 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kContextOffset == 2 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kFPOffset == 3 * kPointerSize);
 
   // For the JSEntry handler, we must preserve r1-r7, r0,r8-r15 are available.
   // We want the stack to look like
   // sp -> NextOffset
-  //       CodeObject
   //       state
   //       context
   //       frame pointer
@@ -1211,22 +1209,21 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
   // Set this new handler as the current one.
   StoreP(sp, MemOperand(r8));
 
-  if (kind == StackHandler::JS_ENTRY) {
-    li(r8, Operand::Zero());  // NULL frame pointer.
-    StoreP(r8, MemOperand(sp, StackHandlerConstants::kFPOffset));
-    LoadSmiLiteral(r8, Smi::FromInt(0));  // Indicates no context.
-    StoreP(r8, MemOperand(sp, StackHandlerConstants::kContextOffset));
-  } else {
-    // still not sure if fp is right
-    StoreP(fp, MemOperand(sp, StackHandlerConstants::kFPOffset));
-    StoreP(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
-  }
   unsigned state = StackHandler::IndexField::encode(handler_index) |
                    StackHandler::KindField::encode(kind);
   LoadIntLiteral(r8, state);
-  StoreP(r8, MemOperand(sp, StackHandlerConstants::kStateOffset));
-  mov(r8, Operand(CodeObject()));
-  StoreP(r8, MemOperand(sp, StackHandlerConstants::kCodeOffset));
+
+  if (kind == StackHandler::JS_ENTRY) {
+    li(r0, Operand::Zero());  // NULL frame pointer.
+    LoadSmiLiteral(cp, Smi::FromInt(0));  // Indicates no context.
+    StoreP(r8, MemOperand(sp, StackHandlerConstants::kStateOffset));
+    StoreP(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
+    StoreP(r0, MemOperand(sp, StackHandlerConstants::kFPOffset));
+  } else {
+    StoreP(r8, MemOperand(sp, StackHandlerConstants::kStateOffset));
+    StoreP(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
+    StoreP(fp, MemOperand(sp, StackHandlerConstants::kFPOffset));
+  }
 }
 
 
