@@ -1189,18 +1189,16 @@ void MacroAssembler::DebugBreak() {
 void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
                                     int handler_index) {
   // Adjust this code if not the case.
-  STATIC_ASSERT(StackHandlerConstants::kSize == 4 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kSize == 3 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kStateOffset == 1 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kContextOffset == 2 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kFPOffset == 3 * kPointerSize);
 
-  // For the JSEntry handler, we must preserve r1-r7, r0,r8-r15 are available.
+  // For the JSEntry handler, we must preserve r1-r7, r0,r8-r12 are available.
   // We want the stack to look like
   // sp -> NextOffset
   //       state
   //       context
-  //       frame pointer
 
   // Link the current handler as the next handler.
   mov(r8, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
@@ -1214,16 +1212,10 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
   LoadIntLiteral(r8, state);
 
   if (kind == StackHandler::JS_ENTRY) {
-    li(r0, Operand::Zero());  // NULL frame pointer.
     LoadSmiLiteral(cp, Smi::FromInt(0));  // Indicates no context.
-    StoreP(r8, MemOperand(sp, StackHandlerConstants::kStateOffset));
-    StoreP(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
-    StoreP(r0, MemOperand(sp, StackHandlerConstants::kFPOffset));
-  } else {
-    StoreP(r8, MemOperand(sp, StackHandlerConstants::kStateOffset));
-    StoreP(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
-    StoreP(fp, MemOperand(sp, StackHandlerConstants::kFPOffset));
   }
+  StoreP(r8, MemOperand(sp, StackHandlerConstants::kStateOffset));
+  StoreP(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
 }
 
 
