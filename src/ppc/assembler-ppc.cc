@@ -507,10 +507,10 @@ void Assembler::target_at_put(int pos, int target_pos) {
       CodePatcher patcher(reinterpret_cast<byte*>(buffer_ + pos),
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
                           kMovInstructionsNoConstantPool,
-#else
-                          kMovInstructions,
-#endif
                           CodePatcher::DONT_FLUSH);
+#else
+                          kMovInstructions, CodePatcher::DONT_FLUSH);
+#endif
       // Keep internal references relative until EmitRelocations.
       patcher.masm()->bitwise_mov(dst, target_pos);
       break;
@@ -1601,8 +1601,8 @@ void Assembler::mov(Register dst, const Operand& src) {
   bool relocatable = src.must_output_reloc_info(this);
   bool canOptimize;
 
-  canOptimize = !(relocatable ||
-                  (is_trampoline_pool_blocked() && !is_int16(value)));
+  canOptimize =
+      !(relocatable || (is_trampoline_pool_blocked() && !is_int16(value)));
 
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
   if (use_constant_pool_for_mov(src, canOptimize)) {

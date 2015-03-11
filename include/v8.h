@@ -2007,7 +2007,10 @@ class V8_EXPORT Primitive : public Value { };
 class V8_EXPORT Boolean : public Primitive {
  public:
   bool Value() const;
+  V8_INLINE static Boolean* Cast(v8::Value* obj);
   V8_INLINE static Handle<Boolean> New(Isolate* isolate, bool value);
+ private:
+  static void CheckCast(v8::Value* obj);
 };
 
 
@@ -2941,7 +2944,9 @@ class V8_EXPORT Array : public Object {
    * Clones an element at index |index|.  Returns an empty
    * handle if cloning fails (for any reason).
    */
-  Local<Object> CloneElementAt(uint32_t index);
+  V8_DEPRECATE_SOON("Use maybe version",
+                    Local<Object> CloneElementAt(uint32_t index));
+  MaybeLocal<Object> CloneElementAt(Local<Context> context, uint32_t index);
 
   /**
    * Creates a JavaScript array with the given length. If the length
@@ -3697,7 +3702,11 @@ class V8_EXPORT RegExp : public Object {
    *               static_cast<RegExp::Flags>(kGlobal | kMultiline))
    * is equivalent to evaluating "/foo/gm".
    */
-  static Local<RegExp> New(Handle<String> pattern, Flags flags);
+  static V8_DEPRECATE_SOON("Use maybe version",
+                           Local<RegExp> New(Handle<String> pattern,
+                                             Flags flags));
+  static MaybeLocal<RegExp> New(Local<Context> context, Handle<String> pattern,
+                                Flags flags);
 
   /**
    * Returns the value of the source property: a string representing
@@ -4081,7 +4090,8 @@ class V8_EXPORT FunctionTemplate : public Template {
       int length = 0);
 
   /** Returns the unique function instance in the current execution context.*/
-  Local<Function> GetFunction();
+  V8_DEPRECATE_SOON("Use maybe version", Local<Function> GetFunction());
+  MaybeLocal<Function> GetFunction(Local<Context> context);
 
   /**
    * Set the call-handler callback for a FunctionTemplate.  This
@@ -4224,7 +4234,8 @@ class V8_EXPORT ObjectTemplate : public Template {
   static V8_DEPRECATE_SOON("Use isolate version", Local<ObjectTemplate> New());
 
   /** Creates a new instance of this template.*/
-  Local<Object> NewInstance();
+  V8_DEPRECATE_SOON("Use maybe version", Local<Object> NewInstance());
+  MaybeLocal<Object> NewInstance(Local<Context> context);
 
   /**
    * Sets an accessor on the object template.
@@ -6105,7 +6116,6 @@ class V8_EXPORT TryCatch {
   v8::TryCatch* next_;
   void* exception_;
   void* message_obj_;
-  void* message_script_;
   void* js_stack_comparable_address_;
   bool is_verbose_ : 1;
   bool can_continue_ : 1;
@@ -7402,6 +7412,14 @@ Local<Uint32> Value::ToUint32() const {
 
 
 Local<Int32> Value::ToInt32() const { return ToInt32(Isolate::GetCurrent()); }
+
+
+Boolean* Boolean::Cast(v8::Value* value) {
+#ifdef V8_ENABLE_CHECKS
+  CheckCast(value);
+#endif
+  return static_cast<Boolean*>(value);
+}
 
 
 Name* Name::Cast(v8::Value* value) {

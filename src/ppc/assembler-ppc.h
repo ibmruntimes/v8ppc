@@ -545,11 +545,10 @@ class DeferredRelocInfo {
  public:
   DeferredRelocInfo() {}
   DeferredRelocInfo(int position, RelocInfo::Mode rmode, intptr_t data)
-      : position_(position), rmode_(rmode), data_(data) {
-  }
+      : position_(position), rmode_(rmode), data_(data) {}
 
   int position() const { return position_; }
-  RelocInfo::Mode rmode() const {  return rmode_; }
+  RelocInfo::Mode rmode() const { return rmode_; }
   intptr_t data() const { return data_; }
 
  private:

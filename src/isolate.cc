@@ -82,7 +82,6 @@ void ThreadLocalTop::InitializeInternal() {
   external_caught_exception_ = false;
   failed_access_check_callback_ = NULL;
   save_context_ = NULL;
-  catcher_ = NULL;
   promise_on_stack_ = NULL;
 
   // These members are re-initialized later after deserialization
@@ -91,7 +90,6 @@ void ThreadLocalTop::InitializeInternal() {
   has_pending_message_ = false;
   rethrowing_message_ = false;
   pending_message_obj_ = NULL;
-  pending_message_script_ = NULL;
   scheduled_exception_ = NULL;
 }
 
@@ -190,7 +188,6 @@ void Isolate::Iterate(ObjectVisitor* v, ThreadLocalTop* thread) {
   // Visit the roots from the top for a given thread.
   v->VisitPointer(&thread->pending_exception_);
   v->VisitPointer(&(thread->pending_message_obj_));
-  v->VisitPointer(bit_cast<Object**>(&(thread->pending_message_script_)));
   v->VisitPointer(bit_cast<Object**>(&(thread->context_)));
   v->VisitPointer(&thread->scheduled_exception_);
 
@@ -199,7 +196,6 @@ void Isolate::Iterate(ObjectVisitor* v, ThreadLocalTop* thread) {
        block = block->next_) {
     v->VisitPointer(bit_cast<Object**>(&(block->exception_)));
     v->VisitPointer(bit_cast<Object**>(&(block->message_obj_)));
-    v->VisitPointer(bit_cast<Object**>(&(block->message_script_)));
   }
 
   // Iterate over pointers on native execution stack.
@@ -255,7 +251,6 @@ void Isolate::RegisterTryCatchHandler(v8::TryCatch* that) {
 void Isolate::UnregisterTryCatchHandler(v8::TryCatch* that) {
   DCHECK(thread_local_top()->try_catch_handler() == that);
   thread_local_top()->set_try_catch_handler(that->next_);
-  thread_local_top()->catcher_ = NULL;
 }
 
 
@@ -989,7 +984,6 @@ Object* Isolate::Throw(Object* exception, MessageLocation* location) {
       Handle<Object> message_obj = CreateMessage(exception_handle, location);
 
       thread_local_top()->pending_message_obj_ = *message_obj;
-      thread_local_top()->pending_message_script_ = *location->script();
 
       // If the abort-on-uncaught-exception flag is specified, abort on any
       // exception not caught by JavaScript, even when an external handler is
@@ -1009,11 +1003,6 @@ Object* Isolate::Throw(Object* exception, MessageLocation* location) {
   // Save the message for reporting if the the exception remains uncaught.
   thread_local_top()->has_pending_message_ = report_exception;
 
-  // Do not forget to clean catcher_ if currently thrown exception cannot
-  // be caught.  If necessary, ReThrow will update the catcher.
-  thread_local_top()->catcher_ =
-      can_be_caught_externally ? try_catch_handler() : NULL;
-
   // Set the exception being thrown.
   set_pending_exception(*exception_handle);
   return heap()->exception();
@@ -1021,12 +1010,7 @@ Object* Isolate::Throw(Object* exception, MessageLocation* location) {
 
 
 Object* Isolate::ReThrow(Object* exception) {
-  bool can_be_caught_externally = false;
-  bool catchable_by_javascript = is_catchable_by_javascript(exception);
-  ShouldReportException(&can_be_caught_externally, catchable_by_javascript);
-
-  thread_local_top()->catcher_ = can_be_caught_externally ?
-      try_catch_handler() : NULL;
+  DCHECK(!has_pending_exception());
 
   // Set the exception being re-thrown.
   set_pending_exception(exception);
@@ -1161,11 +1145,8 @@ void Isolate::RestorePendingMessageFromTryCatch(v8::TryCatch* handler) {
   DCHECK(handler->rethrow_);
   DCHECK(handler->capture_message_);
   Object* message = reinterpret_cast<Object*>(handler->message_obj_);
-  Object* script = reinterpret_cast<Object*>(handler->message_script_);
   DCHECK(message->IsJSMessageObject() || message->IsTheHole());
-  DCHECK(script->IsScript() || script->IsTheHole());
   thread_local_top()->pending_message_obj_ = message;
-  thread_local_top()->pending_message_script_ = script;
 }
 
 
@@ -1394,14 +1375,6 @@ Handle<JSMessageObject> Isolate::CreateMessage(Handle<Object> exception,
 }
 
 
-bool Isolate::HasExternalTryCatch() {
-  DCHECK(has_pending_exception());
-
-  return (thread_local_top()->catcher_ != NULL) &&
-      (try_catch_handler() == thread_local_top()->catcher_);
-}
-
-
 bool Isolate::IsFinallyOnTop() {
   // Get the address of the external handler so we can compare the address to
   // determine which one is closer to the top of the stack.
@@ -1446,16 +1419,12 @@ void Isolate::ReportPendingMessages() {
         HandleScope scope(this);
         Handle<JSMessageObject> message_obj(
             JSMessageObject::cast(thread_local_top_.pending_message_obj_));
-        if (!thread_local_top_.pending_message_script_->IsTheHole()) {
-          Handle<Script> script(
-              Script::cast(thread_local_top_.pending_message_script_));
-          int start_pos = message_obj->start_position();
-          int end_pos = message_obj->end_position();
-          MessageLocation location(script, start_pos, end_pos);
-          MessageHandler::ReportMessage(this, &location, message_obj);
-        } else {
-          MessageHandler::ReportMessage(this, NULL, message_obj);
-        }
+        Handle<JSValue> script_wrapper(JSValue::cast(message_obj->script()));
+        Handle<Script> script(Script::cast(script_wrapper->value()));
+        int start_pos = message_obj->start_position();
+        int end_pos = message_obj->end_position();
+        MessageLocation location(script, start_pos, end_pos);
+        MessageHandler::ReportMessage(this, &location, message_obj);
       }
     }
   }
@@ -1471,8 +1440,8 @@ MessageLocation Isolate::GetMessageLocation() {
       !thread_local_top_.pending_message_obj_->IsTheHole()) {
     Handle<JSMessageObject> message_obj(
         JSMessageObject::cast(thread_local_top_.pending_message_obj_));
-    Handle<Script> script(
-        Script::cast(thread_local_top_.pending_message_script_));
+    Handle<JSValue> script_wrapper(JSValue::cast(message_obj->script()));
+    Handle<Script> script(Script::cast(script_wrapper->value()));
     int start_pos = message_obj->start_position();
     int end_pos = message_obj->end_position();
     return MessageLocation(script, start_pos, end_pos);
@@ -1965,22 +1934,23 @@ void Isolate::InitializeThreadLocal() {
 
 
 bool Isolate::PropagatePendingExceptionToExternalTryCatch() {
-  DCHECK(has_pending_exception());
+  Object* exception = pending_exception();
 
-  bool has_external_try_catch = HasExternalTryCatch();
-  if (!has_external_try_catch) {
+  bool can_be_caught_externally = false;
+  bool catchable_by_javascript = is_catchable_by_javascript(exception);
+  ShouldReportException(&can_be_caught_externally, catchable_by_javascript);
+  if (!can_be_caught_externally) {
     thread_local_top_.external_caught_exception_ = false;
     return true;
   }
 
-  bool catchable_by_js = is_catchable_by_javascript(pending_exception());
-  if (catchable_by_js && IsFinallyOnTop()) {
+  if (catchable_by_javascript && IsFinallyOnTop()) {
     thread_local_top_.external_caught_exception_ = false;
     return false;
   }
 
   thread_local_top_.external_caught_exception_ = true;
-  if (thread_local_top_.pending_exception_ == heap()->termination_exception()) {
+  if (!catchable_by_javascript) {
     try_catch_handler()->can_continue_ = false;
     try_catch_handler()->has_terminated_ = true;
     try_catch_handler()->exception_ = heap()->null_value();
@@ -1988,8 +1958,6 @@ bool Isolate::PropagatePendingExceptionToExternalTryCatch() {
     v8::TryCatch* handler = try_catch_handler();
     DCHECK(thread_local_top_.pending_message_obj_->IsJSMessageObject() ||
            thread_local_top_.pending_message_obj_->IsTheHole());
-    DCHECK(thread_local_top_.pending_message_script_->IsScript() ||
-           thread_local_top_.pending_message_script_->IsTheHole());
     handler->can_continue_ = true;
     handler->has_terminated_ = false;
     handler->exception_ = pending_exception();
@@ -1997,7 +1965,6 @@ bool Isolate::PropagatePendingExceptionToExternalTryCatch() {
     if (thread_local_top_.pending_message_obj_->IsTheHole()) return true;
 
     handler->message_obj_ = thread_local_top_.pending_message_obj_;
-    handler->message_script_ = thread_local_top_.pending_message_script_;
   }
   return true;
 }

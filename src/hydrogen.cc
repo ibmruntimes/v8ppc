@@ -3452,8 +3452,8 @@ HGraph::HGraph(CompilationInfo* info)
         HEnvironment(zone_, descriptor.GetEnvironmentParameterCount());
   } else {
     if (FLAG_hydrogen_track_positions) {
-      info->TraceInlinedFunction(info->shared_info(),
-                                 SourcePosition::Unknown());
+      info->TraceInlinedFunction(info->shared_info(), SourcePosition::Unknown(),
+                                 InlinedFunctionInfo::kNoParentId);
     }
     start_environment_ =
         new(zone_) HEnvironment(NULL, info->scope(), info->closure(), zone_);
@@ -3487,9 +3487,8 @@ int HGraph::SourcePositionToScriptPosition(SourcePosition pos) {
     return pos.raw();
   }
 
-  const int id = info()->inlining_id_to_function_id()->at(pos.inlining_id());
-  return info()->inlined_function_infos()->at(id).start_position() +
-         pos.position();
+  return info()->inlined_function_infos()->at(pos.inlining_id())
+      .start_position + pos.position();
 }
 
 
@@ -5266,6 +5265,7 @@ HOptimizedGraphBuilder::LookupGlobalProperty(Variable* var, LookupIterator* it,
     case LookupIterator::ACCESSOR:
     case LookupIterator::ACCESS_CHECK:
     case LookupIterator::INTERCEPTOR:
+    case LookupIterator::INTEGER_INDEXED_EXOTIC:
     case LookupIterator::NOT_FOUND:
       return kUseGeneric;
     case LookupIterator::DATA:
@@ -6071,6 +6071,12 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::LookupInPrototypes() {
 }
 
 
+bool HOptimizedGraphBuilder::PropertyAccessInfo::IsIntegerIndexedExotic() {
+  InstanceType instance_type = map_->instance_type();
+  return instance_type == JS_TYPED_ARRAY_TYPE && IsNonArrayIndexInteger(*name_);
+}
+
+
 bool HOptimizedGraphBuilder::PropertyAccessInfo::CanAccessMonomorphic() {
   if (!CanInlinePropertyAccess(map_)) return false;
   if (IsJSObjectFieldAccessor()) return IsLoad();
@@ -6080,6 +6086,7 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::CanAccessMonomorphic() {
   }
   if (!LookupDescriptor()) return false;
   if (IsFound()) return IsLoad() || !IsReadOnly();
+  if (IsIntegerIndexedExotic()) return false;
   if (!LookupInPrototypes()) return false;
   if (IsLoad()) return true;
 
@@ -7914,8 +7921,8 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
 
   int function_id = 0;
   if (FLAG_hydrogen_track_positions) {
-    function_id =
-        top_info()->TraceInlinedFunction(target_shared, source_position());
+    function_id = top_info()->TraceInlinedFunction(
+        target_shared, source_position(), function_state()->inlining_id());
   }
 
   // Save the pending call context. Set up new one for the inlined function.
@@ -12666,6 +12673,16 @@ void HOptimizedGraphBuilder::GenerateGetCachedArrayIndex(CallRuntime* call) {
   HValue* value = Pop();
   HGetCachedArrayIndex* result = New<HGetCachedArrayIndex>(value);
   return ast_context()->ReturnInstruction(result, call->id());
+}
+
+
+void HOptimizedGraphBuilder::GenerateFastOneByteArrayJoin(CallRuntime* call) {
+  // Simply returning undefined here would be semantically correct and even
+  // avoid the bailout. Nevertheless, some ancient benchmarks like SunSpider's
+  // string-fasta would tank, because fullcode contains an optimized version.
+  // Obviously the fullcode => Crankshaft => bailout => fullcode dance is
+  // faster... *sigh*
+  return Bailout(kInlinedRuntimeFunctionFastOneByteArrayJoin);
 }
 
 

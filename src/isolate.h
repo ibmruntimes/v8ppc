@@ -292,7 +292,6 @@ class ThreadLocalTop BASE_EMBEDDED {
   bool has_pending_message_;
   bool rethrowing_message_;
   Object* pending_message_obj_;
-  Object* pending_message_script_;
 
   // Use a separate value for scheduled exceptions to preserve the
   // invariants that hold about pending_exception.  We may want to
@@ -300,7 +299,6 @@ class ThreadLocalTop BASE_EMBEDDED {
   Object* scheduled_exception_;
   bool external_caught_exception_;
   SaveContext* save_context_;
-  v8::TryCatch* catcher_;
 
   // Stack.
   Address c_entry_fp_;  // the frame pointer of the top c entry frame
@@ -647,7 +645,6 @@ class Isolate {
   void clear_pending_message() {
     thread_local_top_.has_pending_message_ = false;
     thread_local_top_.pending_message_obj_ = heap_.the_hole_value();
-    thread_local_top_.pending_message_script_ = heap_.the_hole_value();
   }
   v8::TryCatch* try_catch_handler() {
     return thread_local_top_.try_catch_handler();
@@ -659,8 +656,6 @@ class Isolate {
     return &thread_local_top_.external_caught_exception_;
   }
 
-  THREAD_LOCAL_TOP_ACCESSOR(v8::TryCatch*, catcher)
-
   THREAD_LOCAL_TOP_ADDRESS(Object*, scheduled_exception)
 
   Address pending_message_obj_address() {
@@ -669,11 +664,6 @@ class Isolate {
 
   Address has_pending_message_address() {
     return reinterpret_cast<Address>(&thread_local_top_.has_pending_message_);
-  }
-
-  Address pending_message_script_address() {
-    return reinterpret_cast<Address>(
-        &thread_local_top_.pending_message_script_);
   }
 
   Object* scheduled_exception() {
@@ -690,7 +680,6 @@ class Isolate {
     thread_local_top_.scheduled_exception_ = heap_.the_hole_value();
   }
 
-  bool HasExternalTryCatch();
   bool IsFinallyOnTop();
 
   bool is_catchable_by_javascript(Object* exception) {
@@ -754,23 +743,19 @@ class Isolate {
 
   class ExceptionScope {
    public:
-    explicit ExceptionScope(Isolate* isolate) :
-      // Scope currently can only be used for regular exceptions,
-      // not termination exception.
-      isolate_(isolate),
-      pending_exception_(isolate_->pending_exception(), isolate_),
-      catcher_(isolate_->catcher())
-    { }
+    // Scope currently can only be used for regular exceptions,
+    // not termination exception.
+    explicit ExceptionScope(Isolate* isolate)
+        : isolate_(isolate),
+          pending_exception_(isolate_->pending_exception(), isolate_) {}
 
     ~ExceptionScope() {
-      isolate_->set_catcher(catcher_);
       isolate_->set_pending_exception(*pending_exception_);
     }
 
    private:
     Isolate* isolate_;
     Handle<Object> pending_exception_;
-    v8::TryCatch* catcher_;
   };
 
   void SetCaptureStackTraceForUncaughtExceptions(

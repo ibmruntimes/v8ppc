@@ -4564,18 +4564,11 @@ void FullCodeGenerator::EmitDebugIsActive(CallRuntime* expr) {
 
 
 void FullCodeGenerator::VisitCallRuntime(CallRuntime* expr) {
-  InlineFunctionGenerator generator = FindInlineFunctionGenerator(expr);
-  if (generator != nullptr) {
-    Comment cmnt(masm_, "[ InlineRuntimeCall");
-    EmitInlineRuntimeCall(expr, generator);
-    return;
-  }
-
-  Comment cmnt(masm_, "[ CallRuntime");
   ZoneList<Expression*>* args = expr->arguments();
   int arg_count = args->length();
 
   if (expr->is_jsruntime()) {
+    Comment cmnt(masm_, "[ CallRuntime");
     // Push the builtins object as receiver.
     __ movp(rax, GlobalObjectOperand());
     __ Push(FieldOperand(rax, GlobalObject::kBuiltinsOffset));
@@ -4611,14 +4604,27 @@ void FullCodeGenerator::VisitCallRuntime(CallRuntime* expr) {
     context()->DropAndPlug(1, rax);
 
   } else {
-    // Push the arguments ("left-to-right").
-    for (int i = 0; i < arg_count; i++) {
-      VisitForStackValue(args->at(i));
-    }
+    const Runtime::Function* function = expr->function();
+    switch (function->function_id) {
+#define CALL_INTRINSIC_GENERATOR(Name)     \
+  case Runtime::kInline##Name: {           \
+    Comment cmnt(masm_, "[ Inline" #Name); \
+    return Emit##Name(expr);               \
+  }
+      FOR_EACH_FULL_CODE_INTRINSIC(CALL_INTRINSIC_GENERATOR)
+#undef CALL_INTRINSIC_GENERATOR
+      default: {
+        Comment cmnt(masm_, "[ CallRuntime for unhandled intrinsic");
+        // Push the arguments ("left-to-right").
+        for (int i = 0; i < arg_count; i++) {
+          VisitForStackValue(args->at(i));
+        }
 
-    // Call the C runtime.
-    __ CallRuntime(expr->function(), arg_count);
-    context()->Plug(rax);
+        // Call the C runtime.
+        __ CallRuntime(function, arg_count);
+        context()->Plug(rax);
+      }
+    }
   }
 }
 
@@ -5272,11 +5278,6 @@ void FullCodeGenerator::EnterFinallyBlock() {
   __ Load(rdx, has_pending_message);
   __ Integer32ToSmi(rdx, rdx);
   __ Push(rdx);
-
-  ExternalReference pending_message_script =
-      ExternalReference::address_of_pending_message_script(isolate());
-  __ Load(rdx, pending_message_script);
-  __ Push(rdx);
 }
 
 
@@ -5284,11 +5285,6 @@ void FullCodeGenerator::ExitFinallyBlock() {
   DCHECK(!result_register().is(rdx));
   DCHECK(!result_register().is(rcx));
   // Restore pending message from stack.
-  __ Pop(rdx);
-  ExternalReference pending_message_script =
-      ExternalReference::address_of_pending_message_script(isolate());
-  __ Store(pending_message_script, rdx);
-
   __ Pop(rdx);
   __ SmiToInteger32(rdx, rdx);
   ExternalReference has_pending_message =

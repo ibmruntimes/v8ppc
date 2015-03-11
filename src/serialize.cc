@@ -104,8 +104,6 @@ ExternalReferenceTable::ExternalReferenceTable(Isolate* isolate) {
       "address_of_pending_message_obj");
   Add(ExternalReference::address_of_has_pending_message(isolate).address(),
       "address_of_has_pending_message");
-  Add(ExternalReference::address_of_pending_message_script(isolate).address(),
-      "pending_message_script");
   Add(ExternalReference::get_make_code_young_function(isolate).address(),
       "Code::MakeCodeYoung");
   Add(ExternalReference::cpu_features().address(), "cpu_features");
@@ -223,8 +221,7 @@ ExternalReferenceTable::ExternalReferenceTable(Isolate* isolate) {
 #define RUNTIME_ENTRY(name, i1, i2)       \
   { Runtime::k##name, "Runtime::" #name } \
   ,
-      RUNTIME_FUNCTION_LIST(RUNTIME_ENTRY) INLINE_FUNCTION_LIST(RUNTIME_ENTRY)
-          INLINE_OPTIMIZED_FUNCTION_LIST(RUNTIME_ENTRY)
+      FOR_EACH_INTRINSIC(RUNTIME_ENTRY)
 #undef RUNTIME_ENTRY
   };
 
@@ -573,6 +570,8 @@ void Deserializer::Deserialize(Isolate* isolate) {
   isolate_->heap()->set_native_contexts_list(
       isolate_->heap()->undefined_value());
   isolate_->heap()->set_array_buffers_list(
+      isolate_->heap()->undefined_value());
+  isolate->heap()->set_new_array_buffer_views_list(
       isolate_->heap()->undefined_value());
 
   // The allocation site list is build during root iteration, but if no sites

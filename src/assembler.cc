@@ -1304,12 +1304,6 @@ ExternalReference ExternalReference::address_of_has_pending_message(
 }
 
 
-ExternalReference ExternalReference::address_of_pending_message_script(
-    Isolate* isolate) {
-  return ExternalReference(isolate->pending_message_script_address());
-}
-
-
 ExternalReference ExternalReference::address_of_min_int() {
   return ExternalReference(reinterpret_cast<void*>(&double_constants.min_int));
 }

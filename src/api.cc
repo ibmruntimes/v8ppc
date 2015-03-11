@@ -59,13 +59,6 @@
 
 namespace v8 {
 
-#define ON_BAILOUT(isolate, location, code)                        \
-  if (IsExecutionTerminatingCheck(isolate)) {                      \
-    code;                                                          \
-    UNREACHABLE();                                                 \
-  }
-
-
 #define EXCEPTION_PREAMBLE(isolate)                                         \
   (isolate)->handle_scope_implementer()->IncrementCallDepth();              \
   DCHECK(!(isolate)->external_caught_exception());                          \
@@ -2143,7 +2136,6 @@ void v8::TryCatch::ResetInternal() {
   i::Object* the_hole = isolate_->heap()->the_hole_value();
   exception_ = the_hole;
   message_obj_ = the_hole;
-  message_script_ = the_hole;
 }
 
 
@@ -2930,6 +2922,14 @@ void v8::Function::CheckCast(Value* that) {
   Utils::ApiCheck(obj->IsJSFunction(),
                   "v8::Function::Cast()",
                   "Could not convert to function");
+}
+
+
+void v8::Boolean::CheckCast(v8::Value* that) {
+  i::Handle<i::Object> obj = Utils::OpenHandle(that);
+  Utils::ApiCheck(obj->IsBoolean(),
+                  "v8::Boolean::Cast()",
+                  "Could not convert to boolean");
 }
 
 
@@ -5477,7 +5477,6 @@ Local<Context> v8::Context::New(
     v8::Handle<Value> global_object) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(external_isolate);
   LOG_API(isolate, "Context::New");
-  ON_BAILOUT(isolate, "v8::Context::New()", return Local<Context>());
   i::HandleScope scope(isolate);
   ExtensionConfiguration no_extensions;
   if (extensions == NULL) extensions = &no_extensions;
@@ -5561,44 +5560,45 @@ void Context::SetErrorMessageForCodeGenerationFromStrings(
 }
 
 
-Local<v8::Object> ObjectTemplate::NewInstance() {
-  i::Handle<i::ObjectTemplateInfo> info = Utils::OpenHandle(this);
-  i::Isolate* isolate = info->GetIsolate();
-  ON_BAILOUT(isolate, "v8::ObjectTemplate::NewInstance()",
-             return Local<v8::Object>());
-  LOG_API(isolate, "ObjectTemplate::NewInstance");
-  ENTER_V8(isolate);
-  EXCEPTION_PREAMBLE(isolate);
-  i::Handle<i::Object> obj;
+MaybeLocal<v8::Object> ObjectTemplate::NewInstance(Local<Context> context) {
+  PREPARE_FOR_EXECUTION(context, "v8::ObjectTemplate::NewInstance()", Object);
+  auto self = Utils::OpenHandle(this);
+  Local<Object> result;
   has_pending_exception =
-      !i::ApiNatives::InstantiateObject(info).ToHandle(&obj);
-  EXCEPTION_BAILOUT_CHECK(isolate, Local<v8::Object>());
-  return Utils::ToLocal(i::Handle<i::JSObject>::cast(obj));
+      !ToLocal<Object>(i::ApiNatives::InstantiateObject(self), &result);
+  RETURN_ON_FAILED_EXECUTION(Object);
+  RETURN_ESCAPED(result);
+}
+
+
+Local<v8::Object> ObjectTemplate::NewInstance() {
+  auto context = ContextFromHeapObject(Utils::OpenHandle(this));
+  RETURN_TO_LOCAL_UNCHECKED(NewInstance(context), Object);
+}
+
+
+MaybeLocal<v8::Function> FunctionTemplate::GetFunction(Local<Context> context) {
+  PREPARE_FOR_EXECUTION(context, "v8::FunctionTemplate::GetFunction()",
+                        Function);
+  auto self = Utils::OpenHandle(this);
+  Local<Function> result;
+  has_pending_exception =
+      !ToLocal<Function>(i::ApiNatives::InstantiateFunction(self), &result);
+  RETURN_ON_FAILED_EXECUTION(Function);
+  RETURN_ESCAPED(result);
 }
 
 
 Local<v8::Function> FunctionTemplate::GetFunction() {
-  i::Handle<i::FunctionTemplateInfo> info = Utils::OpenHandle(this);
-  i::Isolate* isolate = info->GetIsolate();
-  ON_BAILOUT(isolate, "v8::FunctionTemplate::GetFunction()",
-             return Local<v8::Function>());
-  LOG_API(isolate, "FunctionTemplate::GetFunction");
-  ENTER_V8(isolate);
-  EXCEPTION_PREAMBLE(isolate);
-  i::Handle<i::Object> obj;
-  has_pending_exception =
-      !i::ApiNatives::InstantiateFunction(info).ToHandle(&obj);
-  EXCEPTION_BAILOUT_CHECK(isolate, Local<v8::Function>());
-  return Utils::ToLocal(i::Handle<i::JSFunction>::cast(obj));
+  auto context = ContextFromHeapObject(Utils::OpenHandle(this));
+  RETURN_TO_LOCAL_UNCHECKED(GetFunction(context), Function);
 }
 
 
 bool FunctionTemplate::HasInstance(v8::Handle<v8::Value> value) {
-  i::Handle<i::FunctionTemplateInfo> info = Utils::OpenHandle(this);
-  i::Isolate* isolate = info->GetIsolate();
-  ON_BAILOUT(isolate, "v8::FunctionTemplate::HasInstanceOf()", return false);
-  i::Object* obj = *Utils::OpenHandle(*value);
-  return info->IsTemplateFor(obj);
+  auto self = Utils::OpenHandle(this);
+  auto obj = Utils::OpenHandle(*value);
+  return self->IsTemplateFor(*obj);
 }
 
 
@@ -5679,7 +5679,6 @@ inline Local<String> NewString(Isolate* v8_isolate,
                                String::NewStringType type,
                                int length) {
   i::Isolate* isolate = reinterpret_cast<internal::Isolate*>(v8_isolate);
-  ON_BAILOUT(isolate, location, return Local<String>());
   LOG_API(isolate, env);
   if (length == 0) {
     return String::Empty(v8_isolate);
@@ -5992,13 +5991,9 @@ double v8::Date::ValueOf() const {
 
 void v8::Date::DateTimeConfigurationChangeNotification(Isolate* isolate) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  ON_BAILOUT(i_isolate, "v8::Date::DateTimeConfigurationChangeNotification()",
-             return);
   LOG_API(i_isolate, "Date::DateTimeConfigurationChangeNotification");
   ENTER_V8(i_isolate);
-
   i_isolate->date_cache()->ResetDateCache();
-
   if (!i_isolate->eternal_handles()->Exists(
           i::EternalHandles::DATE_CACHE_VERSION)) {
     return;
@@ -6027,18 +6022,24 @@ static i::Handle<i::String> RegExpFlagsToString(RegExp::Flags flags) {
 }
 
 
-Local<v8::RegExp> v8::RegExp::New(Handle<String> pattern,
-                                  Flags flags) {
-  i::Isolate* isolate = Utils::OpenHandle(*pattern)->GetIsolate();
-  LOG_API(isolate, "RegExp::New");
-  ENTER_V8(isolate);
-  EXCEPTION_PREAMBLE(isolate);
-  i::Handle<i::JSRegExp> obj;
-  has_pending_exception = !i::Execution::NewJSRegExp(
-      Utils::OpenHandle(*pattern),
-      RegExpFlagsToString(flags)).ToHandle(&obj);
-  EXCEPTION_BAILOUT_CHECK(isolate, Local<v8::RegExp>());
-  return Utils::ToLocal(i::Handle<i::JSRegExp>::cast(obj));
+MaybeLocal<v8::RegExp> v8::RegExp::New(Local<Context> context,
+                                       Handle<String> pattern, Flags flags) {
+  PREPARE_FOR_EXECUTION(context, "RegExp::New", RegExp);
+  Local<v8::RegExp> result;
+  has_pending_exception =
+      !ToLocal<RegExp>(i::Execution::NewJSRegExp(Utils::OpenHandle(*pattern),
+                                                 RegExpFlagsToString(flags)),
+                       &result);
+  RETURN_ON_FAILED_EXECUTION(RegExp);
+  RETURN_ESCAPED(result);
+}
+
+
+Local<v8::RegExp> v8::RegExp::New(Handle<String> pattern, Flags flags) {
+  auto isolate =
+      reinterpret_cast<Isolate*>(Utils::OpenHandle(*pattern)->GetIsolate());
+  auto context = isolate->GetCurrentContext();
+  RETURN_TO_LOCAL_UNCHECKED(New(context, pattern, flags), RegExp);
 }
 
 
@@ -6088,47 +6089,41 @@ uint32_t v8::Array::Length() const {
 }
 
 
-Local<Object> Array::CloneElementAt(uint32_t index) {
-  i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
-  ON_BAILOUT(isolate, "v8::Array::CloneElementAt()", return Local<Object>());
-  i::Handle<i::JSObject> self = Utils::OpenHandle(this);
-  if (!self->HasFastObjectElements()) {
-    return Local<Object>();
-  }
+MaybeLocal<Object> Array::CloneElementAt(Local<Context> context,
+                                         uint32_t index) {
+  PREPARE_FOR_EXECUTION(context, "v8::Array::CloneElementAt()", Object);
+  auto self = Utils::OpenHandle(this);
+  if (!self->HasFastObjectElements()) return Local<Object>();
   i::FixedArray* elms = i::FixedArray::cast(self->elements());
   i::Object* paragon = elms->get(index);
-  if (!paragon->IsJSObject()) {
-    return Local<Object>();
-  }
+  if (!paragon->IsJSObject()) return Local<Object>();
   i::Handle<i::JSObject> paragon_handle(i::JSObject::cast(paragon));
-  EXCEPTION_PREAMBLE(isolate);
-  ENTER_V8(isolate);
-  i::Handle<i::JSObject> result =
-      isolate->factory()->CopyJSObject(paragon_handle);
-  has_pending_exception = result.is_null();
-  EXCEPTION_BAILOUT_CHECK(isolate, Local<Object>());
-  return Utils::ToLocal(result);
+  Local<Object> result;
+  has_pending_exception = ToLocal<Object>(
+      isolate->factory()->CopyJSObject(paragon_handle), &result);
+  RETURN_ON_FAILED_EXECUTION(Object);
+  RETURN_ESCAPED(result);
+}
+
+
+Local<Object> Array::CloneElementAt(uint32_t index) {
+  auto context = ContextFromHeapObject(Utils::OpenHandle(this));
+  RETURN_TO_LOCAL_UNCHECKED(CloneElementAt(context, index), Object);
 }
 
 
 bool Value::IsPromise() const {
-  i::Handle<i::Object> val = Utils::OpenHandle(this);
-  if (!val->IsJSObject()) return false;
-  i::Handle<i::JSObject> obj = i::Handle<i::JSObject>::cast(val);
-  i::Isolate* isolate = obj->GetIsolate();
-  LOG_API(isolate, "IsPromise");
-  ENTER_V8(isolate);
-  EXCEPTION_PREAMBLE(isolate);
-  i::Handle<i::Object> argv[] = { obj };
-  i::Handle<i::Object> b;
-  has_pending_exception = !i::Execution::Call(
-      isolate,
-      isolate->is_promise(),
-      isolate->factory()->undefined_value(),
-      arraysize(argv), argv,
-      false).ToHandle(&b);
-  EXCEPTION_BAILOUT_CHECK(isolate, false);
-  return b->BooleanValue();
+  auto self = Utils::OpenHandle(this);
+  if (!self->IsJSObject()) return false;
+  auto js_object = i::Handle<i::JSObject>::cast(self);
+  // Promises can't have access checks.
+  if (js_object->map()->is_access_check_needed()) return false;
+  auto isolate = js_object->GetIsolate();
+  // TODO(dcarney): this should just be read from the symbol registry so as not
+  // to be context dependent.
+  auto key = isolate->promise_status();
+  // Shouldn't be possible to throw here.
+  return i::JSObject::HasRealNamedProperty(js_object, key).FromJust();
 }
 
 
@@ -7046,7 +7041,6 @@ bool Isolate::IsDead() {
 
 bool Isolate::AddMessageListener(MessageCallback that, Handle<Value> data) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
-  ON_BAILOUT(isolate, "v8::V8::AddMessageListener()", return false);
   ENTER_V8(isolate);
   i::HandleScope scope(isolate);
   NeanderArray listeners(isolate->factory()->message_listeners());
@@ -7061,7 +7055,6 @@ bool Isolate::AddMessageListener(MessageCallback that, Handle<Value> data) {
 
 void Isolate::RemoveMessageListeners(MessageCallback that) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
-  ON_BAILOUT(isolate, "v8::V8::RemoveMessageListeners()", return);
   ENTER_V8(isolate);
   i::HandleScope scope(isolate);
   NeanderArray listeners(isolate->factory()->message_listeners());
@@ -7179,7 +7172,6 @@ String::Value::~Value() {
   Local<Value> Exception::NAME(v8::Handle<v8::String> raw_message) {          \
     i::Isolate* isolate = i::Isolate::Current();                              \
     LOG_API(isolate, #NAME);                                                  \
-    ON_BAILOUT(isolate, "v8::Exception::" #NAME "()", return Local<Value>()); \
     ENTER_V8(isolate);                                                        \
     i::Object* error;                                                         \
     {                                                                         \
@@ -7225,7 +7217,6 @@ Local<StackTrace> Exception::GetStackTrace(Handle<Value> exception) {
 
 bool Debug::SetDebugEventListener(EventCallback that, Handle<Value> data) {
   i::Isolate* isolate = i::Isolate::Current();
-  ON_BAILOUT(isolate, "v8::Debug::SetDebugEventListener()", return false);
   ENTER_V8(isolate);
   i::HandleScope scope(isolate);
   i::Handle<i::Object> foreign = isolate->factory()->undefined_value();
@@ -7278,52 +7269,54 @@ void Debug::SendCommand(Isolate* isolate,
 }
 
 
+MaybeLocal<Value> Debug::Call(Local<Context> context,
+                              v8::Handle<v8::Function> fun,
+                              v8::Handle<v8::Value> data) {
+  PREPARE_FOR_EXECUTION(context, "v8::Debug::Call()", Value);
+  i::Handle<i::Object> data_obj;
+  if (data.IsEmpty()) {
+    data_obj = isolate->factory()->undefined_value();
+  } else {
+    data_obj = Utils::OpenHandle(*data);
+  }
+  Local<Value> result;
+  has_pending_exception =
+      !ToLocal<Value>(isolate->debug()->Call(Utils::OpenHandle(*fun), data_obj),
+                      &result);
+  RETURN_ON_FAILED_EXECUTION(Value);
+  RETURN_ESCAPED(result);
+}
+
+
 Local<Value> Debug::Call(v8::Handle<v8::Function> fun,
                          v8::Handle<v8::Value> data) {
-  i::Isolate* isolate = i::Isolate::Current();
-  ON_BAILOUT(isolate, "v8::Debug::Call()", return Local<Value>());
-  ENTER_V8(isolate);
-  i::MaybeHandle<i::Object> maybe_result;
-  EXCEPTION_PREAMBLE(isolate);
-  if (data.IsEmpty()) {
-    maybe_result = isolate->debug()->Call(
-        Utils::OpenHandle(*fun), isolate->factory()->undefined_value());
-  } else {
-    maybe_result = isolate->debug()->Call(
-        Utils::OpenHandle(*fun), Utils::OpenHandle(*data));
-  }
-  i::Handle<i::Object> result;
-  has_pending_exception = !maybe_result.ToHandle(&result);
-  EXCEPTION_BAILOUT_CHECK(isolate, Local<Value>());
-  return Utils::ToLocal(result);
+  auto context = ContextFromHeapObject(Utils::OpenHandle(*fun));
+  RETURN_TO_LOCAL_UNCHECKED(Call(context, fun, data), Value);
+}
+
+
+MaybeLocal<Value> Debug::GetMirror(Local<Context> context,
+                                   v8::Handle<v8::Value> obj) {
+  PREPARE_FOR_EXECUTION(context, "v8::Debug::GetMirror()", Value);
+  i::Debug* isolate_debug = isolate->debug();
+  has_pending_exception = !isolate_debug->Load();
+  RETURN_ON_FAILED_EXECUTION(Value);
+  i::Handle<i::JSObject> debug(isolate_debug->debug_context()->global_object());
+  auto name = isolate->factory()->NewStringFromStaticChars("MakeMirror");
+  auto fun_obj = i::Object::GetProperty(debug, name).ToHandleChecked();
+  auto v8_fun = Utils::ToLocal(i::Handle<i::JSFunction>::cast(fun_obj));
+  const int kArgc = 1;
+  v8::Handle<v8::Value> argv[kArgc] = {obj};
+  Local<Value> result;
+  has_pending_exception = !v8_fun->Call(context, Utils::ToLocal(debug), kArgc,
+                                        argv).ToLocal(&result);
+  RETURN_ON_FAILED_EXECUTION(Value);
+  RETURN_ESCAPED(result);
 }
 
 
 Local<Value> Debug::GetMirror(v8::Handle<v8::Value> obj) {
-  i::Isolate* isolate = i::Isolate::Current();
-  ON_BAILOUT(isolate, "v8::Debug::GetMirror()", return Local<Value>());
-  ENTER_V8(isolate);
-  v8::EscapableHandleScope scope(reinterpret_cast<Isolate*>(isolate));
-  i::Debug* isolate_debug = isolate->debug();
-  EXCEPTION_PREAMBLE(isolate);
-  has_pending_exception = !isolate_debug->Load();
-  v8::Local<v8::Value> result;
-  if (!has_pending_exception) {
-    i::Handle<i::JSObject> debug(
-        isolate_debug->debug_context()->global_object());
-    i::Handle<i::String> name = isolate->factory()->InternalizeOneByteString(
-        STATIC_CHAR_VECTOR("MakeMirror"));
-    i::Handle<i::Object> fun_obj =
-        i::Object::GetProperty(debug, name).ToHandleChecked();
-    i::Handle<i::JSFunction> fun = i::Handle<i::JSFunction>::cast(fun_obj);
-    v8::Handle<v8::Function> v8_fun = Utils::ToLocal(fun);
-    const int kArgc = 1;
-    v8::Handle<v8::Value> argv[kArgc] = { obj };
-    result = v8_fun->Call(Utils::ToLocal(debug), kArgc, argv);
-    has_pending_exception = result.IsEmpty();
-  }
-  EXCEPTION_BAILOUT_CHECK(isolate, Local<Value>());
-  return scope.Escape(result);
+  RETURN_TO_LOCAL_UNCHECKED(GetMirror(Local<Context>(), obj), Value);
 }
 
 

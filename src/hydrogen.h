@@ -2187,6 +2187,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(IsMinusZero)                       \
   F(HasCachedArrayIndex)               \
   F(GetCachedArrayIndex)               \
+  F(FastOneByteArrayJoin)              \
   F(DebugBreakInOptimizedCode)         \
   F(StringCharCodeAt)                  \
   F(StringAdd)                         \
@@ -2641,6 +2642,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
     void LoadFieldMaps(Handle<Map> map);
     bool LookupDescriptor();
     bool LookupInPrototypes();
+    bool IsIntegerIndexedExotic();
     bool IsCompatible(PropertyAccessInfo* other);
 
     void GeneralizeRepresentation(Representation r) {
