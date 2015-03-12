@@ -2962,7 +2962,8 @@ void LCodeGen::DoDeferredInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr,
     Handle<Code> code = stub.GetCode();
     // Include instructions below in delta: bitwise_mov32 + call
     int delta = (masm_->InstructionsGeneratedSince(map_check) + 2) *
-        Instruction::kInstrSize + masm_->CallSize(code);
+                    Instruction::kInstrSize +
+                masm_->CallSize(code);
     // r8 is used to communicate the offset to the location of the map check.
     if (is_int16(delta)) {
       delta -= Instruction::kInstrSize;

@@ -87,6 +87,9 @@
   'test-debug/RecursiveBreakpoints': [PASS, FLAKY],
   'test-debug/RecursiveBreakpointsGlobal': [PASS, FLAKY],
 
+  # Fails sometimes.
+  'test-debug/ProcessDebugMessagesThreaded': [PASS, FLAKY],
+
   ##############################################################################
   # TurboFan compiler failures.
 
@@ -235,6 +238,8 @@
 
 ##############################################################################
 ['arch == mipsel or arch == mips', {
+  'test-cpu-profiler/CollectDeoptEvents': [PASS, FAIL],
+
   # BUG(1075): Unresolved crashes on MIPS also.
   'test-serialize/Deserialize': [SKIP],
   'test-serialize/DeserializeFromSecondSerializationAndRunScript2': [SKIP],
@@ -257,6 +262,8 @@
 
 ##############################################################################
 ['arch == mips64el', {
+  'test-cpu-profiler/CollectDeoptEvents': [PASS, FAIL],
+
   # BUG(v8:3154).
   'test-heap/ReleaseOverReservedPages': [PASS, FAIL],
 
@@ -404,10 +411,6 @@
   'test-api/Threading1': [SKIP],
   'test-api/Threading2': [SKIP],
   'test-api/ExternalArrays': [SKIP],
-
-  # issues to be investigated based on latest uplevel
-  'test-run-machops/RunWord64EqualInBranchP': [SKIP],
-  'test-deoptimization/DeoptimizeCompare': [SKIP],
 
   # will not pass until we agree/implement changes to serializce.cc
   'test-serialize/SerializeInternalReference': [SKIP],

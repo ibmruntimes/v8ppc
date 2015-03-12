@@ -1046,8 +1046,7 @@ TEST(ScopeUsesArgumentsSuperThis) {
               .ToHandleChecked();
       i::Handle<i::Script> script = factory->NewScript(source);
       i::Zone zone;
-      i::ParseInfo info(&zone);
-      info.InitializeFromScript(script);
+      i::ParseInfo info(&zone, script);
       i::Parser parser(&info);
       parser.set_allow_harmony_arrow_functions(true);
       parser.set_allow_harmony_classes(true);
@@ -1299,8 +1298,7 @@ TEST(ScopePositions) {
     CHECK_EQ(source->length(), kProgramSize);
     i::Handle<i::Script> script = factory->NewScript(source);
     i::Zone zone;
-    i::ParseInfo info(&zone);
-    info.InitializeFromScript(script);
+    i::ParseInfo info(&zone, script);
     i::Parser parser(&info);
     parser.set_allow_lazy(true);
     parser.set_allow_harmony_scoping(true);
@@ -1459,8 +1457,7 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
   {
     i::Handle<i::Script> script = factory->NewScript(source);
     i::Zone zone;
-    i::ParseInfo info(&zone);
-    info.InitializeFromScript(script);
+    i::ParseInfo info(&zone, script);
     i::Parser parser(&info);
     SetParserFlags(&parser, flags);
     info.set_global();
@@ -2548,8 +2545,7 @@ TEST(DontRegressPreParserDataSizes) {
         factory->NewStringFromUtf8(i::CStrVector(program)).ToHandleChecked();
     i::Handle<i::Script> script = factory->NewScript(source);
     i::Zone zone;
-    i::ParseInfo info(&zone);
-    info.InitializeFromScript(script);
+    i::ParseInfo info(&zone, script);
     i::ScriptData* sd = NULL;
     info.set_cached_data(&sd);
     info.set_compile_options(v8::ScriptCompiler::kProduceParserCache);
@@ -3375,8 +3371,7 @@ TEST(InnerAssignment) {
 
           i::Handle<i::Script> script = factory->NewScript(source);
           i::Zone zone;
-          i::ParseInfo info(&zone);
-          info.InitializeFromScript(script);
+          i::ParseInfo info(&zone, script);
           i::Parser parser(&info);
           parser.set_allow_harmony_scoping(true);
           CHECK(parser.Parse(&info));
@@ -5086,8 +5081,7 @@ TEST(BasicImportExportParsing) {
     {
       i::Handle<i::Script> script = factory->NewScript(source);
       i::Zone zone;
-      i::ParseInfo info(&zone);
-      info.InitializeFromScript(script);
+      i::ParseInfo info(&zone, script);
       i::Parser parser(&info);
       parser.set_allow_harmony_classes(true);
       parser.set_allow_harmony_modules(true);
@@ -5115,8 +5109,7 @@ TEST(BasicImportExportParsing) {
     {
       i::Handle<i::Script> script = factory->NewScript(source);
       i::Zone zone;
-      i::ParseInfo info(&zone);
-      info.InitializeFromScript(script);
+      i::ParseInfo info(&zone, script);
       i::Parser parser(&info);
       parser.set_allow_harmony_classes(true);
       parser.set_allow_harmony_modules(true);
@@ -5207,8 +5200,7 @@ TEST(ImportExportParsingErrors) {
 
     i::Handle<i::Script> script = factory->NewScript(source);
     i::Zone zone;
-    i::ParseInfo info(&zone);
-    info.InitializeFromScript(script);
+    i::ParseInfo info(&zone, script);
     i::Parser parser(&info);
     parser.set_allow_harmony_classes(true);
     parser.set_allow_harmony_modules(true);
@@ -5220,6 +5212,8 @@ TEST(ImportExportParsingErrors) {
 
 
 TEST(ModuleParsingInternals) {
+  i::FLAG_harmony_modules = true;
+
   i::Isolate* isolate = CcTest::i_isolate();
   i::Factory* factory = isolate->factory();
   v8::HandleScope handles(CcTest::isolate());
@@ -5236,17 +5230,26 @@ TEST(ModuleParsingInternals) {
   i::Handle<i::String> source = factory->NewStringFromAsciiChecked(kSource);
   i::Handle<i::Script> script = factory->NewScript(source);
   i::Zone zone;
-  i::ParseInfo info(&zone);
-  info.InitializeFromScript(script);
+  i::ParseInfo info(&zone, script);
   i::AstValueFactory avf(&zone, isolate->heap()->HashSeed());
   i::Parser parser(&info);
   parser.set_allow_harmony_modules(true);
   parser.set_allow_harmony_scoping(true);
   info.set_module();
   CHECK(parser.Parse(&info));
+  CHECK(i::Compiler::Analyze(&info));
+
   i::FunctionLiteral* func = info.function();
-  CHECK_EQ(i::MODULE_SCOPE, func->scope()->scope_type());
-  i::ModuleDescriptor* descriptor = func->scope()->module();
+  i::Scope* module_scope = func->scope();
+  i::Scope* outer_scope = module_scope->outer_scope();
+  CHECK(outer_scope->is_script_scope());
+  CHECK_NULL(outer_scope->outer_scope());
+  CHECK_EQ(1, outer_scope->num_modules());
+  CHECK(module_scope->is_module_scope());
+  CHECK_NOT_NULL(module_scope->module_var());
+  CHECK_EQ(i::INTERNAL, module_scope->module_var()->mode());
+
+  i::ModuleDescriptor* descriptor = module_scope->module();
   CHECK_NOT_NULL(descriptor);
   CHECK_EQ(1, descriptor->Length());
   const i::AstRawString* export_name = avf.GetOneByteString("y");
@@ -5254,7 +5257,7 @@ TEST(ModuleParsingInternals) {
       descriptor->LookupLocalExport(export_name, &zone);
   CHECK_NOT_NULL(local_name);
   CHECK(local_name->IsOneByteEqualTo("x"));
-  i::ZoneList<i::Declaration*>* declarations = func->scope()->declarations();
+  i::ZoneList<i::Declaration*>* declarations = module_scope->declarations();
   CHECK_EQ(3, declarations->length());
   CHECK(declarations->at(0)->proxy()->raw_name()->IsOneByteEqualTo("x"));
   i::ImportDeclaration* import_decl =
@@ -5352,8 +5355,7 @@ void TestLanguageMode(const char* source,
   i::Handle<i::Script> script =
       factory->NewScript(factory->NewStringFromAsciiChecked(source));
   i::Zone zone;
-  i::ParseInfo info(&zone);
-  info.InitializeFromScript(script);
+  i::ParseInfo info(&zone, script);
   i::Parser parser(&info);
   parser.set_allow_strong_mode(true);
   info.set_global();
