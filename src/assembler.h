@@ -432,11 +432,7 @@ class RelocInfo {
     LAST_GCED_ENUM = CELL,
     // Modes <= LAST_COMPACT_ENUM are guaranteed to have compact encoding.
     LAST_COMPACT_ENUM = CODE_TARGET_WITH_ID,
-#if defined(V8_PPC_INTERNAL_REFERENCE_OPT)
     LAST_STANDARD_NONCOMPACT_ENUM = INTERNAL_REFERENCE_ENCODED
-#else
-    LAST_STANDARD_NONCOMPACT_ENUM = INTERNAL_REFERENCE
-#endif
   };
 
   RelocInfo() {}
