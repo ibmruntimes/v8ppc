@@ -1799,7 +1799,7 @@ void Assembler::mov_label_addr(Register dst, Label* label) {
 }
 
 
-void Assembler::emit_label_addr(Label *label) {
+void Assembler::emit_label_addr(Label* label) {
   CheckBuffer();
   RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE);
   int position = link(label);

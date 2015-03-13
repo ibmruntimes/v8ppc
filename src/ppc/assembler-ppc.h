@@ -197,11 +197,10 @@ struct Register {
       1 << 14 | 1 << 15 | 1 << 16 | 1 << 17 | 1 << 18 | 1 << 19 | 1 << 20 |
       1 << 21 | 1 << 22 | 1 << 23 | 1 << 24 | 1 << 25 | 1 << 26 | 1 << 27 |
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
-      (FLAG_enable_embedded_constant_pool ? 0 : 1 << 28) |
+      (FLAG_enable_embedded_constant_pool ? 0 : 1 << 28) | 1 << 30;
 #else
-      1 << 28 |
+      1 << 28 | 1 << 30;
 #endif
-      1 << 30;
 
   static Register from_code(int code) {
     Register r = {code};
@@ -868,22 +867,22 @@ class Assembler : public AssemblerBase {
 
   // This is the length of the BreakLocation::SetDebugBreakAtReturn()
   // code patch FIXED_SEQUENCE
-  static const int kJSReturnSequenceInstructions =
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
+  static const int kJSReturnSequenceInstructions =
       kMovInstructionsNoConstantPool + 3;
 #else
-      kMovInstructions + 3;
+  static const int kJSReturnSequenceInstructions = kMovInstructions + 3;
 #endif
   static const int kJSReturnSequenceLength =
       kJSReturnSequenceInstructions * kInstrSize;
 
   // This is the length of the code sequence from SetDebugBreakAtSlot()
   // FIXED_SEQUENCE
-  static const int kDebugBreakSlotInstructions =
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
+  static const int kDebugBreakSlotInstructions =
       kMovInstructionsNoConstantPool + 2;
 #else
-      kMovInstructions + 2;
+  static const int kDebugBreakSlotInstructions = kMovInstructions + 2;
 #endif
   static const int kDebugBreakSlotLength =
       kDebugBreakSlotInstructions * kInstrSize;
