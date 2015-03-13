@@ -799,12 +799,8 @@ void Deserializer::ReadObject(int space_number, Object** write_back) {
     // Turn internal references encoded as offsets back to absolute addresses.
     Code* code = Code::cast(obj);
     Address entry = code->entry();
-#if defined(V8_PPC_INTERNAL_REFERENCE_OPT)
     int mode_mask = RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE) |
                     RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE_ENCODED);
-#else
-    int mode_mask = RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE);
-#endif
     for (RelocIterator it(code, mode_mask); !it.done(); it.next()) {
       RelocInfo* rinfo = it.rinfo();
       intptr_t offset =
@@ -1958,20 +1954,13 @@ Address Serializer::ObjectSerializer::PrepareCode() {
                   RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT) |
                   RelocInfo::ModeMask(RelocInfo::EXTERNAL_REFERENCE) |
                   RelocInfo::ModeMask(RelocInfo::RUNTIME_ENTRY) |
-#if defined(V8_PPC_INTERNAL_REFERENCE_OPT)
                   RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE) |
                   RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE_ENCODED);
-#else
-                  RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE);
-#endif
   for (RelocIterator it(code, mode_mask); !it.done(); it.next()) {
     RelocInfo* rinfo = it.rinfo();
-#if defined(V8_PPC_INTERNAL_REFERENCE_OPT)
-    if (RelocInfo::IsInternalReference(rinfo->rmode()) ||
-        RelocInfo::IsInternalReferenceEncoded(rinfo->rmode())) {
-#else
-    if (RelocInfo::IsInternalReference(rinfo->rmode())) {
-#endif
+    RelocInfo::Mode rmode = rinfo->rmode();
+    if (RelocInfo::IsInternalReference(rmode) ||
+        RelocInfo::IsInternalReferenceEncoded(rmode)) {
       // Convert internal references to relative offsets.
       Address target = rinfo->target_internal_reference();
       intptr_t offset = target - entry;

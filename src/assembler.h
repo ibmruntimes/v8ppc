@@ -405,9 +405,9 @@ class RelocInfo {
     DEBUG_BREAK_SLOT,    // Additional code inserted for debug break slot.
     EXTERNAL_REFERENCE,  // The address of an external C++ function.
     INTERNAL_REFERENCE,  // An address inside the same function.
-#if defined(V8_PPC_INTERNAL_REFERENCE_OPT)
-    INTERNAL_REFERENCE_ENCODED,  // Encoded internal reference.
-#endif
+
+    // Encoded internal reference, used only on MIPS, MIPS64 and PPC.
+    INTERNAL_REFERENCE_ENCODED,
 
     // Marks constant and veneer pools. Only used on ARM and ARM64.
     // They use a custom noncompact encoding.
@@ -424,12 +424,6 @@ class RelocInfo {
     CODE_AGE_SEQUENCE,  // Not stored in RelocInfo array, used explictly by
                         // code aging.
 
-#if !defined(V8_PPC_INTERNAL_REFERENCE_OPT)
-    // Encoded internal reference, used only on MIPS and MIPS64.
-    // Re-uses previous ARM-only encoding, to fit in RealRelocMode space.
-    INTERNAL_REFERENCE_ENCODED = CONST_POOL,
-
-#endif
     FIRST_REAL_RELOC_MODE = CODE_TARGET,
     LAST_REAL_RELOC_MODE = VENEER_POOL,
     FIRST_PSEUDO_RELOC_MODE = CODE_AGE_SEQUENCE,

@@ -1751,8 +1751,7 @@ HValue* HGraphBuilder::BuildUncheckedDictionaryElementLoad(HValue* receiver,
     details_index->ClearFlag(HValue::kCanOverflow);
     HValue* details =
         Add<HLoadKeyed>(elements, details_index, nullptr, FAST_ELEMENTS);
-    int details_mask = PropertyDetails::TypeField::kMask |
-                       PropertyDetails::DeletedField::kMask;
+    int details_mask = PropertyDetails::TypeField::kMask;
     details = AddUncasted<HBitwise>(Token::BIT_AND, details,
                                     Add<HConstant>(details_mask));
     IfBuilder details_compare(this);
@@ -5328,7 +5327,7 @@ void HOptimizedGraphBuilder::VisitVariableProxy(VariableProxy* expr) {
           Handle<Context> script_context = ScriptContextTable::GetContext(
               script_contexts, lookup.context_index);
           Handle<Object> current_value =
-              FixedArray::get(script_context, lookup.context_index);
+              FixedArray::get(script_context, lookup.slot_index);
 
           // If the values is not the hole, it will stay initialized,
           // so no need to generate a check.
@@ -6489,6 +6488,16 @@ void HOptimizedGraphBuilder::HandleGlobalVariableAssignment(
       }
       Handle<Context> script_context =
           ScriptContextTable::GetContext(script_contexts, lookup.context_index);
+
+      Handle<Object> current_value =
+          FixedArray::get(script_context, lookup.slot_index);
+
+      // If the values is not the hole, it will stay initialized,
+      // so no need to generate a check.
+      if (*current_value == *isolate()->factory()->the_hole_value()) {
+        return Bailout(kReferenceToUninitializedVariable);
+      }
+
       HStoreNamedField* instr = Add<HStoreNamedField>(
           Add<HConstant>(script_context),
           HObjectAccess::ForContextSlot(lookup.slot_index), value);
@@ -12013,7 +12022,7 @@ void HOptimizedGraphBuilder::GenerateMathLogRT(CallRuntime* call) {
 }
 
 
-void HOptimizedGraphBuilder::GenerateMathSqrtRT(CallRuntime* call) {
+void HOptimizedGraphBuilder::GenerateMathSqrt(CallRuntime* call) {
   DCHECK(call->arguments()->length() == 1);
   CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
   HValue* value = Pop();
