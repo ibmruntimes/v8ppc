@@ -511,12 +511,12 @@ class Step(GitRecipesMixin):
     answer = self.ReadLine(default="Y")
     return answer == "" or answer == "Y" or answer == "y"
 
-  def DeleteBranch(self, name):
-    for line in self.GitBranch().splitlines():
+  def DeleteBranch(self, name, cwd=None):
+    for line in self.GitBranch(cwd=cwd).splitlines():
       if re.match(r"\*?\s*%s$" % re.escape(name), line):
         msg = "Branch %s exists, do you want to delete it?" % name
         if self.Confirm(msg):
-          self.GitDeleteBranch(name)
+          self.GitDeleteBranch(name, cwd=cwd)
           print "Branch %s deleted." % name
         else:
           msg = "Can't continue. Please delete branch %s and try again." % name
@@ -538,8 +538,8 @@ class Step(GitRecipesMixin):
     if not self.GitIsWorkdirClean():  # pragma: no cover
       self.Die("Workspace is not clean. Please commit or undo your changes.")
 
-    # Persist current branch.
-    self["current_branch"] = self.GitCurrentBranch()
+    # Checkout master in case the script was left on a work branch.
+    self.GitCheckout('origin/master')
 
     # Fetch unfetched revisions.
     self.vc.Fetch()
@@ -549,12 +549,8 @@ class Step(GitRecipesMixin):
     self.DeleteBranch(self._config["BRANCHNAME"])
 
   def CommonCleanup(self):
-    if ' ' in self["current_branch"]:
-      self.GitCheckout('master')
-    else:
-      self.GitCheckout(self["current_branch"])
-    if self._config["BRANCHNAME"] != self["current_branch"]:
-      self.GitDeleteBranch(self._config["BRANCHNAME"])
+    self.GitCheckout('origin/master')
+    self.GitDeleteBranch(self._config["BRANCHNAME"])
 
     # Clean up all temporary files.
     for f in glob.iglob("%s*" % self._config["PERSISTFILE_BASENAME"]):

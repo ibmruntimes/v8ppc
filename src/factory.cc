@@ -909,19 +909,11 @@ Handle<Cell> Factory::NewCell(Handle<Object> value) {
 }
 
 
-Handle<PropertyCell> Factory::NewPropertyCellWithHole() {
+Handle<PropertyCell> Factory::NewPropertyCell() {
   CALL_HEAP_FUNCTION(
       isolate(),
       isolate()->heap()->AllocatePropertyCell(),
       PropertyCell);
-}
-
-
-Handle<PropertyCell> Factory::NewPropertyCell(Handle<Object> value) {
-  AllowDeferredHandleDereference convert_to_cell;
-  Handle<PropertyCell> cell = NewPropertyCellWithHole();
-  PropertyCell::SetValueInferType(cell, value);
-  return cell;
 }
 
 
@@ -1592,10 +1584,11 @@ Handle<GlobalObject> Factory::NewGlobalObject(Handle<JSFunction> constructor) {
     PropertyDetails details = descs->GetDetails(i);
     // Only accessors are expected.
     DCHECK_EQ(ACCESSOR_CONSTANT, details.type());
-    PropertyDetails d(details.attributes(), ACCESSOR_CONSTANT, i + 1);
+    PropertyDetails d(details.attributes(), ACCESSOR_CONSTANT, i + 1,
+                      PropertyCellType::kMutable);
     Handle<Name> name(descs->GetKey(i));
-    Handle<Object> value(descs->GetCallbacksObject(i), isolate());
-    Handle<PropertyCell> cell = NewPropertyCell(value);
+    Handle<PropertyCell> cell = NewPropertyCell();
+    cell->set_value(descs->GetCallbacksObject(i));
     // |dictionary| already contains enough space for all properties.
     USE(NameDictionary::Add(dictionary, name, cell, d));
   }
@@ -2034,9 +2027,14 @@ void Factory::BecomeJSFunction(Handle<JSProxy> proxy) {
 }
 
 
-Handle<TypeFeedbackVector> Factory::NewTypeFeedbackVector(
-    const FeedbackVectorSpec& spec) {
-  return TypeFeedbackVector::Allocate(isolate(), spec);
+template Handle<TypeFeedbackVector> Factory::NewTypeFeedbackVector(
+    const ZoneFeedbackVectorSpec* spec);
+template Handle<TypeFeedbackVector> Factory::NewTypeFeedbackVector(
+    const FeedbackVectorSpec* spec);
+
+template <typename Spec>
+Handle<TypeFeedbackVector> Factory::NewTypeFeedbackVector(const Spec* spec) {
+  return TypeFeedbackVector::Allocate<Spec>(isolate(), spec);
 }
 
 
@@ -2104,9 +2102,9 @@ Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfo(
   share->set_script(*undefined_value(), SKIP_WRITE_BARRIER);
   share->set_debug_info(*undefined_value(), SKIP_WRITE_BARRIER);
   share->set_inferred_name(*empty_string(), SKIP_WRITE_BARRIER);
-  FeedbackVectorSpec empty_spec;
+  FeedbackVectorSpec empty_spec(0);
   Handle<TypeFeedbackVector> feedback_vector =
-      NewTypeFeedbackVector(empty_spec);
+      NewTypeFeedbackVector(&empty_spec);
   share->set_feedback_vector(*feedback_vector, SKIP_WRITE_BARRIER);
 #if TRACE_MAPS
   share->set_unique_id(isolate()->GetNextUniqueSharedFunctionInfoId());

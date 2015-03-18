@@ -429,10 +429,7 @@ class MaybeLocal {
     return !IsEmpty();
   }
 
-  V8_INLINE Local<T> ToLocalChecked() {
-    // TODO(dcarney): add DCHECK.
-    return Local<T>(val_);
-  }
+  V8_INLINE Local<T> ToLocalChecked();
 
   template <class S>
   V8_INLINE Local<S> FromMaybe(Local<S> default_value) const {
@@ -2034,11 +2031,16 @@ class V8_EXPORT Name : public Primitive {
 };
 
 
+enum class NewStringType { kNormal, kInternalized };
+
+
 /**
  * A JavaScript string value (ECMA-262, 4.3.17).
  */
 class V8_EXPORT String : public Name {
  public:
+  static const int kMaxLength = (1 << 28) - 16;
+
   enum Encoding {
     UNKNOWN_ENCODING = 0x1,
     TWO_BYTE_ENCODING = 0x0,
@@ -2235,26 +2237,52 @@ class V8_EXPORT String : public Name {
 
   V8_INLINE static String* Cast(v8::Value* obj);
 
-  enum NewStringType { kNormalString, kInternalizedString };
+  // TODO(dcarney): remove with deprecation of New functions.
+  enum NewStringType {
+    kNormalString = static_cast<int>(v8::NewStringType::kNormal),
+    kInternalizedString = static_cast<int>(v8::NewStringType::kInternalized)
+  };
 
   /** Allocates a new string from UTF-8 data.*/
-  static Local<String> NewFromUtf8(Isolate* isolate, const char* data,
-                                   NewStringType type = kNormalString,
-                                   int length = -1);
+  static V8_DEPRECATE_SOON(
+      "Use maybe version",
+      Local<String> NewFromUtf8(Isolate* isolate, const char* data,
+                                NewStringType type = kNormalString,
+                                int length = -1));
+
+  /** Allocates a new string from UTF-8 data. Only returns an empty value when
+   * length > kMaxLength. **/
+  static MaybeLocal<String> NewFromUtf8(Isolate* isolate, const char* data,
+                                        v8::NewStringType type,
+                                        int length = -1);
 
   /** Allocates a new string from Latin-1 data.*/
-  static Local<String> NewFromOneByte(
-      Isolate* isolate,
-      const uint8_t* data,
-      NewStringType type = kNormalString,
-      int length = -1);
+  static V8_DEPRECATE_SOON(
+      "Use maybe version",
+      Local<String> NewFromOneByte(Isolate* isolate, const uint8_t* data,
+                                   NewStringType type = kNormalString,
+                                   int length = -1));
+
+  /** Allocates a new string from Latin-1 data.  Only returns an empty value
+   * when length > kMaxLength. **/
+  static MaybeLocal<String> NewFromOneByte(Isolate* isolate,
+                                           const uint8_t* data,
+                                           v8::NewStringType type,
+                                           int length = -1);
 
   /** Allocates a new string from UTF-16 data.*/
-  static Local<String> NewFromTwoByte(
-      Isolate* isolate,
-      const uint16_t* data,
-      NewStringType type = kNormalString,
-      int length = -1);
+  static V8_DEPRECATE_SOON(
+      "Use maybe version",
+      Local<String> NewFromTwoByte(Isolate* isolate, const uint16_t* data,
+                                   NewStringType type = kNormalString,
+                                   int length = -1));
+
+  /** Allocates a new string from UTF-16 data. Only returns an empty value when
+   * length > kMaxLength. **/
+  static MaybeLocal<String> NewFromTwoByte(Isolate* isolate,
+                                           const uint16_t* data,
+                                           v8::NewStringType type,
+                                           int length = -1);
 
   /**
    * Creates a new string by concatenating the left and the right strings
@@ -2270,8 +2298,12 @@ class V8_EXPORT String : public Name {
    * should the underlying buffer be deallocated or modified except through the
    * destructor of the external string resource.
    */
-  static Local<String> NewExternal(Isolate* isolate,
-                                   ExternalStringResource* resource);
+  static V8_DEPRECATE_SOON(
+      "Use maybe version",
+      Local<String> NewExternal(Isolate* isolate,
+                                ExternalStringResource* resource));
+  static MaybeLocal<String> NewExternalTwoByte(
+      Isolate* isolate, ExternalStringResource* resource);
 
   /**
    * Associate an external string resource with this string by transforming it
@@ -2292,8 +2324,12 @@ class V8_EXPORT String : public Name {
    * should the underlying buffer be deallocated or modified except through the
    * destructor of the external string resource.
    */
-  static Local<String> NewExternal(Isolate* isolate,
-                                   ExternalOneByteStringResource* resource);
+  static V8_DEPRECATE_SOON(
+      "Use maybe version",
+      Local<String> NewExternal(Isolate* isolate,
+                                ExternalOneByteStringResource* resource));
+  static MaybeLocal<String> NewExternalOneByte(
+      Isolate* isolate, ExternalOneByteStringResource* resource);
 
   /**
    * Associate an external string resource with this string by transforming it
@@ -5911,9 +5947,12 @@ class V8_EXPORT V8 {
   static Local<Value> GetEternal(Isolate* isolate, int index);
 
   static void CheckIsJust(bool is_just);
+  static void ToLocalEmpty();
 
   template <class T> friend class Handle;
   template <class T> friend class Local;
+  template <class T>
+  friend class MaybeLocal;
   template <class T>
   friend class Maybe;
   template <class T> friend class Eternal;
@@ -6812,6 +6851,15 @@ void Eternal<T>::Set(Isolate* isolate, Local<S> handle) {
 template<class T>
 Local<T> Eternal<T>::Get(Isolate* isolate) {
   return Local<T>(reinterpret_cast<T*>(*V8::GetEternal(isolate, index_)));
+}
+
+
+template <class T>
+Local<T> MaybeLocal<T>::ToLocalChecked() {
+#ifdef V8_ENABLE_CHECKS
+  if (val_ == nullptr) V8::ToLocalEmpty();
+#endif
+  return Local<T>(val_);
 }
 
 

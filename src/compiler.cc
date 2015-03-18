@@ -117,9 +117,11 @@ void CompilationInfo::Initialize(Isolate* isolate,
   no_frame_ranges_ = isolate->cpu_profiler()->is_profiling()
                    ? new List<OffsetRange>(2) : NULL;
   if (FLAG_hydrogen_track_positions) {
-    inlined_function_infos_ = new List<InlinedFunctionInfo>(5);
+    inlined_function_infos_ = new std::vector<InlinedFunctionInfo>();
+    track_positions_ = true;
   } else {
     inlined_function_infos_ = NULL;
+    track_positions_ = false;
   }
 
   for (int i = 0; i < DependentCode::kGroupCount; i++) {
@@ -276,17 +278,17 @@ bool CompilationInfo::is_simple_parameter_list() {
 int CompilationInfo::TraceInlinedFunction(Handle<SharedFunctionInfo> shared,
                                           SourcePosition position,
                                           int parent_id) {
-  DCHECK(FLAG_hydrogen_track_positions);
+  DCHECK(track_positions_);
   DCHECK(inlined_function_infos_);
 
-  int inline_id = inlined_function_infos_->length();
+  int inline_id = static_cast<int>(inlined_function_infos_->size());
   InlinedFunctionInfo info(parent_id, position, UnboundScript::kNoScriptId,
       shared->start_position());
   if (!shared->script()->IsUndefined()) {
     Handle<Script> script(Script::cast(shared->script()));
     info.script_id = script->id()->value();
 
-    if (!script->source()->IsUndefined()) {
+    if (FLAG_hydrogen_track_positions && !script->source()->IsUndefined()) {
       CodeTracer::Scope tracing_scope(isolate()->GetCodeTracer());
       OFStream os(tracing_scope.file());
       os << "--- FUNCTION SOURCE (" << shared->DebugName()->ToCString().get()
@@ -306,9 +308,9 @@ int CompilationInfo::TraceInlinedFunction(Handle<SharedFunctionInfo> shared,
     }
   }
 
-  inlined_function_infos_->Add(info);
+  inlined_function_infos_->push_back(info);
 
-  if (inline_id != 0) {
+  if (FLAG_hydrogen_track_positions && inline_id != 0) {
     CodeTracer::Scope tracing_scope(isolate()->GetCodeTracer());
     OFStream os(tracing_scope.file());
     os << "INLINE (" << shared->DebugName()->ToCString().get() << ") id{"
@@ -480,9 +482,10 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
         info()->shared_info()->disable_optimization_reason());
   }
 
-  graph_builder_ = (FLAG_hydrogen_track_positions || FLAG_trace_ic)
-      ? new(info()->zone()) HOptimizedGraphBuilderWithPositions(info())
-      : new(info()->zone()) HOptimizedGraphBuilder(info());
+  graph_builder_ = (info()->is_tracking_positions() || FLAG_trace_ic)
+                       ? new (info()->zone())
+                             HOptimizedGraphBuilderWithPositions(info())
+                       : new (info()->zone()) HOptimizedGraphBuilder(info());
 
   Timer t(this, &time_taken_to_create_graph_);
   // TODO(titzer): ParseInfo::this_has_uses is only used by Crankshaft. Move.
@@ -1246,6 +1249,7 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
   MaybeHandle<SharedFunctionInfo> maybe_result;
   Handle<SharedFunctionInfo> result;
   if (extension == NULL) {
+    // First check per-isolate compilation cache.
     maybe_result = compilation_cache->LookupScript(
         source, script_name, line_offset, column_offset,
         is_embedder_debug_script, is_shared_cross_origin, context,
@@ -1253,10 +1257,14 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
     if (maybe_result.is_null() && FLAG_serialize_toplevel &&
         compile_options == ScriptCompiler::kConsumeCodeCache &&
         !isolate->debug()->is_loaded()) {
+      // Then check cached code provided by embedder.
       HistogramTimerScope timer(isolate->counters()->compile_deserialize());
       Handle<SharedFunctionInfo> result;
       if (CodeSerializer::Deserialize(isolate, *cached_data, source)
               .ToHandle(&result)) {
+        // Promote to per-isolate compilation cache.
+        DCHECK(!result->dont_cache());
+        compilation_cache->PutScript(source, context, language_mode, result);
         return result;
       }
       // Deserializer failed. Fall through to compile.

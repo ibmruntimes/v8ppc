@@ -388,10 +388,10 @@ void Genesis::SetFunctionInstanceDescriptor(
       static_cast<PropertyAttributes>(DONT_ENUM | READ_ONLY);
 
   Handle<AccessorInfo> length =
-      Accessors::FunctionLengthInfo(isolate(), ro_attribs);
+      Accessors::FunctionLengthInfo(isolate(), roc_attribs);
   {  // Add length.
     AccessorConstantDescriptor d(Handle<Name>(Name::cast(length->name())),
-                                 length, ro_attribs);
+                                 length, roc_attribs);
     map->AppendDescriptor(&d);
   }
   Handle<AccessorInfo> name =
@@ -555,9 +555,9 @@ void Genesis::SetStrictFunctionInstanceDescriptor(
            function_mode == FUNCTION_WITH_READONLY_PROTOTYPE ||
            function_mode == FUNCTION_WITHOUT_PROTOTYPE);
     Handle<AccessorInfo> length =
-        Accessors::FunctionLengthInfo(isolate(), ro_attribs);
+        Accessors::FunctionLengthInfo(isolate(), roc_attribs);
     AccessorConstantDescriptor d(Handle<Name>(Name::cast(length->name())),
-                                 length, ro_attribs);
+                                 length, roc_attribs);
     map->AppendDescriptor(&d);
   }
   Handle<AccessorInfo> name =
@@ -1651,7 +1651,6 @@ void Genesis::InitializeBuiltinTypedArrays() {
 #define EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(id) \
   void Genesis::InstallNativeFunctions_##id() {}
 
-EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_scoping)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_modules)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_strings)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_arrays)
@@ -1684,7 +1683,6 @@ void Genesis::InstallNativeFunctions_harmony_proxies() {
 #define EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(id) \
   void Genesis::InitializeGlobal_##id() {}
 
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_scoping)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_modules)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_strings)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_arrays)
@@ -2145,10 +2143,9 @@ bool Genesis::InstallNatives() {
     if (FLAG_vector_ics) {
       // Apply embeds an IC, so we need a type vector of size 1 in the shared
       // function info.
-      FeedbackVectorSpec spec(0, 1);
-      spec.SetKind(0, Code::CALL_IC);
+      FeedbackVectorSpec spec(0, Code::CALL_IC);
       Handle<TypeFeedbackVector> feedback_vector =
-          factory()->NewTypeFeedbackVector(spec);
+          factory()->NewTypeFeedbackVector(&spec);
       apply->shared()->set_feedback_vector(*feedback_vector);
     }
 
@@ -2272,7 +2269,6 @@ bool Genesis::InstallExperimentalNatives() {
                                                   NULL};
   static const char* harmony_classes_natives[] = {NULL};
   static const char* harmony_modules_natives[] = {NULL};
-  static const char* harmony_scoping_natives[] = {NULL};
   static const char* harmony_object_literals_natives[] = {NULL};
   static const char* harmony_regexps_natives[] = {
       "native harmony-regexp.js", NULL};
@@ -2706,7 +2702,8 @@ void Genesis::TransferNamedProperties(Handle<JSObject> from,
           DCHECK(!to->HasFastProperties());
           // Add to dictionary.
           Handle<Object> callbacks(descs->GetCallbacksObject(i), isolate());
-          PropertyDetails d(details.attributes(), ACCESSOR_CONSTANT, i + 1);
+          PropertyDetails d(details.attributes(), ACCESSOR_CONSTANT, i + 1,
+                            PropertyCellType::kMutable);
           JSObject::SetNormalizedProperty(to, key, callbacks, d);
           break;
         }

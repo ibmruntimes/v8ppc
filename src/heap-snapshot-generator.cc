@@ -1522,8 +1522,6 @@ void V8HeapExplorer::ExtractCellReferences(int entry, Cell* cell) {
 void V8HeapExplorer::ExtractPropertyCellReferences(int entry,
                                                    PropertyCell* cell) {
   ExtractCellReferences(entry, cell);
-  SetInternalReference(cell, entry, "type", cell->type(),
-                       PropertyCell::kTypeOffset);
   MarkAsWeakContainer(cell->dependent_code());
   SetInternalReference(cell, entry, "dependent_code", cell->dependent_code(),
                        PropertyCell::kDependentCodeOffset);

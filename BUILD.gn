@@ -32,9 +32,8 @@ v8_toolset_for_d8 = "host"
 # TODO(GYP): For now we only support 32-bit little-endian target builds from an
 # x64 Linux host. Eventually we need to support all of the host/target
 # configurations v8 runs on.
-if (host_cpu == "x64" &&
+if (host_cpu == "x64" && host_os == "linux" &&
     (target_cpu == "arm" || target_cpu == "mipsel" || target_cpu == "x86")) {
-  assert(host_os == "linux")
   snapshot_toolchain = "//build/toolchain/linux:clang_x86"
 } else {
   snapshot_toolchain = default_toolchain
@@ -114,7 +113,7 @@ config("toolchain") {
   defines = []
   cflags = []
 
-  # TODO(jochen): Add support for arm subarchs, mips, mipsel.
+  # TODO(jochen): Add support for arm subarchs, mips, mipsel, mips64el.
 
   if (v8_target_arch == "arm") {
     defines += [ "V8_TARGET_ARCH_ARM" ]
@@ -124,14 +123,12 @@ config("toolchain") {
       }
       if (arm_fpu == "vfpv3-d16") {
         defines += [ "CAN_USE_VFP3_INSTRUCTIONS" ]
-      }
-      if (arm_fpu == "vfpv3") {
+      } else if (arm_fpu == "vfpv3") {
         defines += [
           "CAN_USE_VFP3_INSTRUCTIONS",
           "CAN_USE_VFP32DREGS",
         ]
-      }
-      if (arm_fpu == "neon") {
+      } else if (arm_fpu == "neon") {
         defines += [
           "CAN_USE_VFP3_INSTRUCTIONS",
           "CAN_USE_VFP32DREGS",
@@ -139,6 +136,7 @@ config("toolchain") {
         ]
       }
     } else {
+      # These defines ares used for the ARM simulator.
       defines += [
         "CAN_USE_ARMV7_INSTRUCTIONS",
         "CAN_USE_VFP3_INSTRUCTIONS",
@@ -151,6 +149,12 @@ config("toolchain") {
   }
   if (v8_target_arch == "arm64") {
     defines += [ "V8_TARGET_ARCH_ARM64" ]
+  }
+  if (v8_target_arch == "mipsel") {
+    defines += [ "V8_TARGET_ARCH_MIPS" ]
+  }
+  if (v8_target_arch == "mips64el") {
+    defines += [ "V8_TARGET_ARCH_MIPS64" ]
   }
   if (v8_target_arch == "x86") {
     defines += [ "V8_TARGET_ARCH_IA32" ]
@@ -596,6 +600,8 @@ source_set("v8_base") {
     "src/compiler/linkage-impl.h",
     "src/compiler/linkage.cc",
     "src/compiler/linkage.h",
+    "src/compiler/liveness-analyzer.cc",
+    "src/compiler/liveness-analyzer.h",
     "src/compiler/load-elimination.cc",
     "src/compiler/load-elimination.h",
     "src/compiler/loop-peeling.cc",
@@ -655,6 +661,8 @@ source_set("v8_base") {
     "src/compiler/simplified-operator.h",
     "src/compiler/source-position.cc",
     "src/compiler/source-position.h",
+    "src/compiler/state-values-utils.cc",
+    "src/compiler/state-values-utils.h",
     "src/compiler/typer.cc",
     "src/compiler/typer.h",
     "src/compiler/value-numbering-reducer.cc",

@@ -110,7 +110,7 @@
   'debug-stepout-scope-part3': [PASS, NO_VARIANTS],
   'es6/debug-stepin-microtasks': [PASS, NO_VARIANTS],
   'es6/debug-stepnext-for': [PASS, NO_VARIANTS],
-  'harmony/debug-evaluate-blockscopes': [PASS, NO_VARIANTS],
+  'es6/debug-evaluate-blockscopes': [PASS, NO_VARIANTS],
   'regress/regress-crbug-259300': [PASS, NO_VARIANTS],
 
   ##############################################################################
@@ -208,7 +208,7 @@
   'fast-prototype': [SKIP],
   'field-type-tracking': [SKIP],
   'getters-on-elements': [SKIP],
-  'harmony/block-let-crankshaft': [SKIP],
+  'es6/block-let-crankshaft': [SKIP],
   'opt-elements-kind': [SKIP],
   'osr-elements-kind': [SKIP],
   'regress/regress-crbug-137689': [SKIP],
@@ -244,6 +244,8 @@
   'regress/regress-3717': [SKIP],
   # Issue 3924.
   'mjsunit/debug-clearbreakpointgroup': [SKIP],
+  # Issue 3969.
+  'mjsunit/debug-references': [PASS, FAIL],
 }],  # 'gc_stress == True'
 
 ##############################################################################
@@ -594,7 +596,8 @@
   'regress/regress-1132': [SKIP],
   'asm/embenchen/box2d': [SKIP],
 
-  # issues to be investigated based on latest uplevel
+  # these two issues started after uplevel, believe they share common cause
   'debug-references': [SKIP],
+  'mirror-object': [SKIP],
 }],  # 'arch == ppc and simulator_run == True'
 ]

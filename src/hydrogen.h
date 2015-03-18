@@ -1874,7 +1874,7 @@ class HGraphBuilder {
   }
 
   void EnterInlinedSource(int start_position, int id) {
-    if (FLAG_hydrogen_track_positions) {
+    if (top_info()->is_tracking_positions()) {
       start_position_ = start_position;
       position_.set_inlining_id(id);
     }
@@ -2624,7 +2624,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
     }
     void NotFound() {
       lookup_type_ = NOT_FOUND;
-      details_ = PropertyDetails(NONE, DATA, 0);
+      details_ = PropertyDetails::Empty();
     }
     Representation representation() const {
       DCHECK(IsFound());

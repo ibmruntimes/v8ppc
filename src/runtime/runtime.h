@@ -63,7 +63,7 @@ namespace internal {
   F(RunningInSimulator, 0, 1)                  \
   F(IsConcurrentRecompilationSupported, 0, 1)  \
   F(OptimizeFunctionOnNextCall, -1, 1)         \
-  F(OptimizeOsr, 0, 1)                         \
+  F(OptimizeOsr, -1, 1)                        \
   F(NeverOptimizeFunction, 1, 1)               \
   F(GetOptimizationStatus, -1, 1)              \
   F(GetOptimizationCount, 1, 1)                \
@@ -153,6 +153,7 @@ namespace internal {
   /* Regular expressions */                    \
   F(RegExpInitializeAndCompile, 3, 1)          \
   F(RegExpExecMultiple, 4, 1)                  \
+  F(RegExpExecReThrow, 4, 1)                   \
                                                \
   /* JSON */                                   \
   F(ParseJson, 1, 1)                           \
@@ -427,7 +428,6 @@ namespace internal {
   /* String and Regexp */                                    \
   F(NumberToStringRT, 1, 1)                                  \
   F(RegExpConstructResultRT, 3, 1)                           \
-  F(RegExpExecRT, 4, 1)                                      \
   F(StringAddRT, 2, 1)                                       \
   F(SubStringRT, 3, 1)                                       \
   F(InternalizeString, 1, 1)                                 \
@@ -564,6 +564,7 @@ namespace internal {
   F(DebugDisassembleFunction, 1, 1)                 \
   F(DebugDisassembleConstructor, 1, 1)              \
   F(FunctionGetInferredName, 1, 1)                  \
+  F(FunctionGetDebugName, 1, 1)                     \
   F(LiveEditFindSharedFunctionInfosForScript, 1, 1) \
   F(LiveEditGatherCompileInfo, 2, 1)                \
   F(LiveEditReplaceScript, 3, 1)                    \

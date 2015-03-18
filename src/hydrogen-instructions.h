@@ -1961,6 +1961,8 @@ class HEnterInlined FINAL : public HTemplateInstruction<0> {
   FunctionLiteral* function() const { return function_; }
   InliningKind inlining_kind() const { return inlining_kind_; }
   BailoutId ReturnId() const { return return_id_; }
+  int inlining_id() const { return inlining_id_; }
+  void set_inlining_id(int inlining_id) { inlining_id_ = inlining_id; }
 
   Representation RequiredInputRepresentation(int index) OVERRIDE {
     return Representation::None();
@@ -1984,6 +1986,7 @@ class HEnterInlined FINAL : public HTemplateInstruction<0> {
         arguments_pushed_(false),
         function_(function),
         inlining_kind_(inlining_kind),
+        inlining_id_(0),
         arguments_var_(arguments_var),
         arguments_object_(arguments_object),
         return_targets_(2, zone) {}
@@ -1995,6 +1998,7 @@ class HEnterInlined FINAL : public HTemplateInstruction<0> {
   bool arguments_pushed_;
   FunctionLiteral* function_;
   InliningKind inlining_kind_;
+  int inlining_id_;
   Variable* arguments_var_;
   HArgumentsObject* arguments_object_;
   ZoneList<HBasicBlock*> return_targets_;
@@ -5416,7 +5420,8 @@ class HLoadGlobalCell FINAL : public HTemplateInstruction<0> {
                                  PropertyDetails);
 
   Unique<Cell> cell() const { return cell_; }
-  bool RequiresHoleCheck() const;
+  // TODO(dcarney): remove this.
+  bool RequiresHoleCheck() const { return false; }
 
   std::ostream& PrintDataTo(std::ostream& os) const OVERRIDE;  // NOLINT
 
@@ -5443,7 +5448,7 @@ class HLoadGlobalCell FINAL : public HTemplateInstruction<0> {
     SetDependsOnFlag(kGlobalVars);
   }
 
-  bool IsDeletable() const OVERRIDE { return !RequiresHoleCheck(); }
+  bool IsDeletable() const OVERRIDE { return true; }
 
   Unique<Cell> cell_;
   PropertyDetails details_;
@@ -5807,7 +5812,8 @@ class HStoreGlobalCell FINAL : public HUnaryOperation {
                                  Handle<PropertyCell>, PropertyDetails);
 
   Unique<PropertyCell> cell() const { return cell_; }
-  bool RequiresHoleCheck() { return details_.IsConfigurable(); }
+  // TODO(dcarney): remove
+  bool RequiresHoleCheck() const { return false; }
   bool NeedsWriteBarrier() {
     return StoringValueNeedsWriteBarrier(value());
   }

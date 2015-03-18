@@ -25,6 +25,7 @@ var kMessages = {
   unterminated_regexp:           ["Invalid regular expression: missing /"],
   unterminated_template:         ["Unterminated template literal"],
   unterminated_template_expr:    ["Missing } in template expression"],
+  unterminated_arg_list:         ["missing ) after argument list"],
   regexp_flags:                  ["Cannot supply flags when constructing one RegExp from another"],
   incompatible_method_receiver:  ["Method ", "%0", " called on incompatible receiver ", "%1"],
   multiple_defaults_in_switch:   ["More than one default clause in switch statement"],
@@ -156,7 +157,6 @@ var kMessages = {
   template_octal_literal:        ["Octal literals are not allowed in template strings."],
   strict_delete:                 ["Delete of an unqualified identifier in strict mode."],
   strict_delete_property:        ["Cannot delete property '", "%0", "' of ", "%1"],
-  strict_const:                  ["Use of const in strict mode."],
   strict_function:               ["In strict mode code, functions can only be declared at top level or immediately within another function." ],
   strict_read_only_property:     ["Cannot assign to read only property '", "%0", "' of ", "%1"],
   strict_cannot_assign:          ["Cannot assign to read only '", "%0", "' in strict mode"],
@@ -170,6 +170,9 @@ var kMessages = {
   strong_for_in:                 ["Please don't use 'for'-'in' loops in strong mode, use 'for'-'of' instead"],
   strong_empty:                  ["Please don't use empty sub-statements in strong mode, make them explicit with '{}' instead"],
   strong_use_before_declaration: ["Please declare variable '", "%0", "' before use in strong mode"],
+  strong_super_call_missing:     ["Please always invoke the super constructor in subclasses in strong mode"],
+  strong_super_call_duplicate:   ["Please don't invoke the super constructor multiple times in strong mode"],
+  strong_super_call_nested:      ["Please don't invoke the super constructor nested inside another statement or expression in strong mode"],
   sloppy_lexical:                ["Block-scoped declarations (let, const, function, class) not yet supported outside strict mode"],
   malformed_arrow_function_parameter_list: ["Malformed arrow function parameter list"],
   generator_poison_pill:         ["'caller' and 'arguments' properties may not be accessed on generator functions."],
@@ -235,7 +238,7 @@ function NoSideEffectToString(obj) {
     }
     return str;
   }
-  if (IS_SYMBOL(obj)) return %_CallFunction(obj, SymbolToString);
+  if (IS_SYMBOL(obj)) return %_CallFunction(obj, $symbolToString);
   if (IS_OBJECT(obj)
       && %GetDataProperty(obj, "toString") === DefaultObjectToString) {
     var constructor = %GetDataProperty(obj, "constructor");
@@ -833,16 +836,13 @@ function CallSiteGetFunction() {
 
 function CallSiteGetFunctionName() {
   // See if the function knows its own name
-  var name = GET_PRIVATE(this, CallSiteFunctionKey).name;
-  if (name) {
-    return name;
-  }
-  name = %FunctionGetInferredName(GET_PRIVATE(this, CallSiteFunctionKey));
+  var fun = GET_PRIVATE(this, CallSiteFunctionKey);
+  var name = %FunctionGetDebugName(fun);
   if (name) {
     return name;
   }
   // Maybe this is an evaluation?
-  var script = %FunctionGetScript(GET_PRIVATE(this, CallSiteFunctionKey));
+  var script = %FunctionGetScript(fun);
   if (script && script.compilation_type == COMPILATION_TYPE_EVAL) {
     return "eval";
   }

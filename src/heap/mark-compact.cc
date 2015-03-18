@@ -721,7 +721,6 @@ void MarkCompactCollector::CollectEvacuationCandidates(PagedSpace* space) {
 
   int count = 0;
   int fragmentation = 0;
-  int page_number = 0;
   Candidate* least = NULL;
 
   PageIterator it(space);
@@ -736,16 +735,9 @@ void MarkCompactCollector::CollectEvacuationCandidates(PagedSpace* space) {
     CHECK(p->slots_buffer() == NULL);
 
     if (FLAG_stress_compaction) {
-      if (FLAG_manual_evacuation_candidates_selection) {
-        if (p->IsFlagSet(MemoryChunk::FORCE_EVACUATION_CANDIDATE_FOR_TESTING)) {
-          p->ClearFlag(MemoryChunk::FORCE_EVACUATION_CANDIDATE_FOR_TESTING);
-          fragmentation = 1;
-        }
-      } else {
-        unsigned int counter = space->heap()->ms_count();
-        if ((counter & 1) == (page_number & 1)) fragmentation = 1;
-        page_number++;
-      }
+      unsigned int counter = space->heap()->ms_count();
+      uintptr_t page_number = reinterpret_cast<uintptr_t>(p) >> kPageSizeBits;
+      if ((counter & 1) == (page_number & 1)) fragmentation = 1;
     } else if (mode == REDUCE_MEMORY_FOOTPRINT) {
       // Don't try to release too many pages.
       if (estimated_release >= over_reserved) {
@@ -1985,7 +1977,8 @@ void MarkCompactCollector::MarkRoots(RootMarkingVisitor* visitor) {
 }
 
 
-void MarkCompactCollector::MarkImplicitRefGroups() {
+void MarkCompactCollector::MarkImplicitRefGroups(
+    MarkObjectFunction mark_object) {
   List<ImplicitRefGroup*>* ref_groups =
       isolate()->global_handles()->implicit_ref_groups();
 
@@ -2003,9 +1996,7 @@ void MarkCompactCollector::MarkImplicitRefGroups() {
     // A parent object is marked, so mark all child heap objects.
     for (size_t j = 0; j < entry->length; ++j) {
       if ((*children[j])->IsHeapObject()) {
-        HeapObject* child = HeapObject::cast(*children[j]);
-        MarkBit mark = Marking::MarkBitFrom(child);
-        MarkObject(child, mark);
+        mark_object(heap(), HeapObject::cast(*children[j]));
       }
     }
 
@@ -2104,7 +2095,7 @@ void MarkCompactCollector::ProcessEphemeralMarking(
     if (!only_process_harmony_weak_collections) {
       isolate()->global_handles()->IterateObjectGroups(
           visitor, &IsUnmarkedHeapObjectWithHeap);
-      MarkImplicitRefGroups();
+      MarkImplicitRefGroups(&MarkCompactMarkingVisitor::MarkObject);
     }
     ProcessWeakCollections();
     work_to_do = !marking_deque_.IsEmpty();
@@ -2162,7 +2153,16 @@ void MarkCompactCollector::RetainMaps() {
         // be created. Do not retain this map.
         continue;
       }
-      new_age = age - 1;
+      Object* prototype = map->prototype();
+      if (prototype->IsHeapObject() &&
+          !Marking::MarkBitFrom(HeapObject::cast(prototype)).Get()) {
+        // The prototype is not marked, age the map.
+        new_age = age - 1;
+      } else {
+        // The prototype and the constructor are marked, this map keeps only
+        // transition tree alive, not JSObjects. Do not age the map.
+        new_age = age;
+      }
       MarkObject(map, map_mark);
     } else {
       new_age = FLAG_retain_maps_for_n_gc;
@@ -2221,21 +2221,6 @@ void MarkCompactCollector::UncommitMarkingDeque() {
     CHECK(success);
     marking_deque_memory_committed_ = false;
   }
-}
-
-
-void MarkCompactCollector::OverApproximateWeakClosure() {
-  GCTracer::Scope gc_scope(heap()->tracer(),
-                           GCTracer::Scope::MC_INCREMENTAL_WEAKCLOSURE);
-
-  RootMarkingVisitor root_visitor(heap());
-  isolate()->global_handles()->IterateObjectGroups(
-      &root_visitor, &IsUnmarkedHeapObjectWithHeap);
-  MarkImplicitRefGroups();
-
-  // Remove object groups after marking phase.
-  heap()->isolate()->global_handles()->RemoveObjectGroups();
-  heap()->isolate()->global_handles()->RemoveImplicitRefGroups();
 }
 
 
@@ -4506,21 +4491,6 @@ bool SlotsBuffer::AddTo(SlotsBufferAllocator* allocator,
   buffer->Add(reinterpret_cast<ObjectSlot>(type));
   buffer->Add(reinterpret_cast<ObjectSlot>(addr));
   return true;
-}
-
-
-static Object* g_smi_slot = NULL;
-
-
-void SlotsBuffer::RemoveSlot(SlotsBuffer* buffer, ObjectSlot slot_to_remove) {
-  DCHECK_EQ(Smi::FromInt(0), g_smi_slot);
-  DCHECK(!IsTypedSlot(slot_to_remove));
-  while (buffer != NULL) {
-    ObjectSlot* slots = buffer->slots_;
-    // Remove entries by replacing them with a dummy slot containing a smi.
-    std::replace(&slots[0], &slots[buffer->idx_], slot_to_remove, &g_smi_slot);
-    buffer = buffer->next_;
-  }
 }
 
 

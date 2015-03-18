@@ -870,7 +870,6 @@ Parser::Parser(ParseInfo* info)
   DCHECK(!info->script().is_null() || info->source_stream() != NULL);
   set_allow_lazy(info->allow_lazy_parsing());
   set_allow_natives(FLAG_allow_natives_syntax || info->is_native());
-  set_allow_harmony_scoping(!info->is_native() && FLAG_harmony_scoping);
   set_allow_harmony_modules(!info->is_native() && FLAG_harmony_modules);
   set_allow_harmony_arrow_functions(FLAG_harmony_arrow_functions);
   set_allow_harmony_numeric_literals(FLAG_harmony_numeric_literals);
@@ -1026,9 +1025,6 @@ FunctionLiteral* Parser::DoParseProgram(ParseInfo* info, Scope** scope,
 
     if (ok && is_strict(language_mode())) {
       CheckStrictOctalLiteral(beg_pos, scanner()->location().end_pos, &ok);
-    }
-
-    if (ok && allow_harmony_scoping() && is_strict(language_mode())) {
       CheckConflictingVarDeclarations(scope_, &ok);
     }
 
@@ -1196,8 +1192,27 @@ void* Parser::ParseStatementList(ZoneList<Statement*>* body, int end_token,
       directive_prologue = false;
     }
 
+    Token::Value token = peek();
     Scanner::Location token_loc = scanner()->peek_location();
+    Scanner::Location old_super_loc = function_state_->super_call_location();
     Statement* stat = ParseStatementListItem(CHECK_OK);
+    Scanner::Location super_loc = function_state_->super_call_location();
+
+    if (is_strong(language_mode()) &&
+        i::IsConstructor(function_state_->kind()) &&
+        !old_super_loc.IsValid() && super_loc.IsValid() &&
+        token != Token::SUPER) {
+      // TODO(rossberg): This is more permissive than spec'ed, it allows e.g.
+      //   super(), 1;
+      //   super() + "";
+      //   super() = 0;
+      // That should still be safe, though, thanks to left-to-right evaluation.
+      // The proper check would be difficult to implement in the preparser.
+      ReportMessageAt(super_loc, "strong_super_call_nested");
+      *ok = false;
+      return NULL;
+    }
+
     if (stat == NULL || stat->IsEmpty()) {
       directive_prologue = false;   // End of directive prologue.
       continue;
@@ -1290,7 +1305,6 @@ Statement* Parser::ParseStatementListItem(bool* ok) {
     case Token::VAR:
       return ParseVariableStatement(kStatementListItem, NULL, ok);
     case Token::LET:
-      DCHECK(allow_harmony_scoping());
       if (is_strict(language_mode())) {
         return ParseVariableStatement(kStatementListItem, NULL, ok);
       }
@@ -1911,7 +1925,7 @@ Variable* Parser::Declare(Declaration* declaration, bool resolve, bool* ok) {
       // because the var declaration is hoisted to the function scope where 'x'
       // is already bound.
       DCHECK(IsDeclaredVariableMode(var->mode()));
-      if (allow_harmony_scoping() && is_strict(language_mode())) {
+      if (is_strict(language_mode())) {
         // In harmony we treat re-declarations as early errors. See
         // ES5 16 for a definition of early errors.
         ParserTraits::ReportMessage("var_redeclaration", name);
@@ -2062,12 +2076,13 @@ Statement* Parser::ParseFunctionDeclaration(
   // In ES6, a function behaves as a lexical binding, except in
   // a script scope, or the initial scope of eval or another function.
   VariableMode mode =
-      is_strong(language_mode()) ? CONST :
-      allow_harmony_scoping() && is_strict(language_mode()) &&
-              !(scope_->is_script_scope() || scope_->is_eval_scope() ||
-                scope_->is_function_scope())
-          ? LET
-          : VAR;
+      is_strong(language_mode())
+          ? CONST
+          : is_strict(language_mode()) &&
+                    !(scope_->is_script_scope() || scope_->is_eval_scope() ||
+                      scope_->is_function_scope())
+                ? LET
+                : VAR;
   VariableProxy* proxy = NewUnresolved(name, mode);
   Declaration* declaration =
       factory()->NewFunctionDeclaration(proxy, mode, fun, scope_, pos);
@@ -2124,7 +2139,7 @@ Statement* Parser::ParseClassDeclaration(ZoneList<const AstRawString*>* names,
 
 
 Block* Parser::ParseBlock(ZoneList<const AstRawString*>* labels, bool* ok) {
-  if (allow_harmony_scoping() && is_strict(language_mode())) {
+  if (is_strict(language_mode())) {
     return ParseScopedBlock(labels, ok);
   }
 
@@ -2246,19 +2261,12 @@ Block* Parser::ParseVariableDeclarations(
       init_op = Token::INIT_CONST_LEGACY;
     } else {
       DCHECK(var_context != kStatement);
-      // In ES5 const is not allowed in strict mode.
-      if (!allow_harmony_scoping()) {
-        ReportMessage("strict_const");
-        *ok = false;
-        return NULL;
-      }
       mode = CONST;
       init_op = Token::INIT_CONST;
     }
     is_const = true;
     needs_init = true;
   } else if (peek() == Token::LET && is_strict(language_mode())) {
-    DCHECK(allow_harmony_scoping());
     Consume(Token::LET);
     DCHECK(var_context != kStatement);
     mode = LET;
@@ -2769,8 +2777,8 @@ Statement* Parser::ParseWithStatement(ZoneList<const AstRawString*>* labels,
 
 CaseClause* Parser::ParseCaseClause(bool* default_seen_ptr, bool* ok) {
   // CaseClause ::
-  //   'case' Expression ':' Statement*
-  //   'default' ':' Statement*
+  //   'case' Expression ':' StatementList
+  //   'default' ':' StatementList
 
   Expression* label = NULL;  // NULL expression indicates default case
   if (peek() == Token::CASE) {
@@ -2792,7 +2800,7 @@ CaseClause* Parser::ParseCaseClause(bool* default_seen_ptr, bool* ok) {
   while (peek() != Token::CASE &&
          peek() != Token::DEFAULT &&
          peek() != Token::RBRACE) {
-    Statement* stat = ParseStatement(NULL, CHECK_OK);
+    Statement* stat = ParseStatementListItem(CHECK_OK);
     statements->Add(stat, zone());
   }
 
@@ -3733,13 +3741,12 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
   //   nested function, and hoisting works normally relative to that.
   Scope* declaration_scope = scope_->DeclarationScope();
   Scope* original_declaration_scope = original_scope_->DeclarationScope();
-  Scope* scope =
-      function_type == FunctionLiteral::DECLARATION &&
-              (!allow_harmony_scoping() || is_sloppy(language_mode())) &&
-              (original_scope_ == original_declaration_scope ||
-               declaration_scope != original_declaration_scope)
-          ? NewScope(declaration_scope, FUNCTION_SCOPE, kind)
-          : NewScope(scope_, FUNCTION_SCOPE, kind);
+  Scope* scope = function_type == FunctionLiteral::DECLARATION &&
+                         is_sloppy(language_mode()) &&
+                         (original_scope_ == original_declaration_scope ||
+                          declaration_scope != original_declaration_scope)
+                     ? NewScope(declaration_scope, FUNCTION_SCOPE, kind)
+                     : NewScope(scope_, FUNCTION_SCOPE, kind);
   ZoneList<Statement*>* body = NULL;
   int materialized_literal_count = -1;
   int expected_property_count = -1;
@@ -3847,12 +3854,11 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     Variable* fvar = NULL;
     Token::Value fvar_init_op = Token::INIT_CONST_LEGACY;
     if (function_type == FunctionLiteral::NAMED_EXPRESSION) {
-      if (allow_harmony_scoping() && is_strict(language_mode())) {
+      if (is_strict(language_mode())) {
         fvar_init_op = Token::INIT_CONST;
       }
       VariableMode fvar_mode =
-          allow_harmony_scoping() && is_strict(language_mode()) ? CONST
-                                                                : CONST_LEGACY;
+          is_strict(language_mode()) ? CONST : CONST_LEGACY;
       DCHECK(function_name != NULL);
       fvar = new (zone())
           Variable(scope_, function_name, fvar_mode, true /* is valid LHS */,
@@ -3926,8 +3932,16 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
       CheckStrictOctalLiteral(scope->start_position(), scope->end_position(),
                               CHECK_OK);
     }
-    if (allow_harmony_scoping() && is_strict(language_mode())) {
+    if (is_strict(language_mode())) {
       CheckConflictingVarDeclarations(scope, CHECK_OK);
+    }
+    if (is_strong(language_mode()) && IsSubclassConstructor(kind)) {
+      if (!function_state.super_call_location().IsValid()) {
+        ReportMessageAt(function_name_location, "strong_super_call_missing",
+                        kReferenceError);
+        *ok = false;
+        return nullptr;
+      }
     }
   }
 
@@ -4126,7 +4140,6 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
                                         NULL, stack_limit_);
     reusable_preparser_->set_allow_lazy(true);
     reusable_preparser_->set_allow_natives(allow_natives());
-    reusable_preparser_->set_allow_harmony_scoping(allow_harmony_scoping());
     reusable_preparser_->set_allow_harmony_modules(allow_harmony_modules());
     reusable_preparser_->set_allow_harmony_arrow_functions(
         allow_harmony_arrow_functions());
