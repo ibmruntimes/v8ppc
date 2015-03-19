@@ -876,6 +876,8 @@ bool LCodeGen::GenerateJumpTable() {
         // table.
         __ Bl(&call_deopt_entry);
       }
+      info()->LogDeoptCallPosition(masm()->pc_offset(),
+                                   table_entry->deopt_info.inlining_id);
 
       masm()->CheckConstPool(false, false);
     }
@@ -1061,6 +1063,7 @@ void LCodeGen::DeoptimizeBranch(
       frame_is_built_ && !info()->saves_caller_doubles()) {
     DeoptComment(deopt_info);
     __ Call(entry, RelocInfo::RUNTIME_ENTRY);
+    info()->LogDeoptCallPosition(masm()->pc_offset(), deopt_info.inlining_id);
   } else {
     Deoptimizer::JumpTableEntry* table_entry =
         new (zone()) Deoptimizer::JumpTableEntry(
@@ -1577,13 +1580,9 @@ void LCodeGen::DoAllocate(LAllocate* instr) {
     flags = static_cast<AllocationFlags>(flags | DOUBLE_ALIGNMENT);
   }
 
-  if (instr->hydrogen()->IsOldPointerSpaceAllocation()) {
-    DCHECK(!instr->hydrogen()->IsOldDataSpaceAllocation());
+  if (instr->hydrogen()->IsOldSpaceAllocation()) {
     DCHECK(!instr->hydrogen()->IsNewSpaceAllocation());
-    flags = static_cast<AllocationFlags>(flags | PRETENURE_OLD_POINTER_SPACE);
-  } else if (instr->hydrogen()->IsOldDataSpaceAllocation()) {
-    DCHECK(!instr->hydrogen()->IsNewSpaceAllocation());
-    flags = static_cast<AllocationFlags>(flags | PRETENURE_OLD_DATA_SPACE);
+    flags = static_cast<AllocationFlags>(flags | PRETENURE);
   }
 
   if (instr->size()->IsConstantOperand()) {
@@ -1638,13 +1637,9 @@ void LCodeGen::DoDeferredAllocate(LAllocate* instr) {
   }
   int flags = AllocateDoubleAlignFlag::encode(
       instr->hydrogen()->MustAllocateDoubleAligned());
-  if (instr->hydrogen()->IsOldPointerSpaceAllocation()) {
-    DCHECK(!instr->hydrogen()->IsOldDataSpaceAllocation());
+  if (instr->hydrogen()->IsOldSpaceAllocation()) {
     DCHECK(!instr->hydrogen()->IsNewSpaceAllocation());
-    flags = AllocateTargetSpace::update(flags, OLD_POINTER_SPACE);
-  } else if (instr->hydrogen()->IsOldDataSpaceAllocation()) {
-    DCHECK(!instr->hydrogen()->IsNewSpaceAllocation());
-    flags = AllocateTargetSpace::update(flags, OLD_DATA_SPACE);
+    flags = AllocateTargetSpace::update(flags, OLD_SPACE);
   } else {
     flags = AllocateTargetSpace::update(flags, NEW_SPACE);
   }
@@ -2662,7 +2657,7 @@ void LCodeGen::DoCheckValue(LCheckValue* instr) {
     UseScratchRegisterScope temps(masm());
     Register temp = temps.AcquireX();
     Handle<Cell> cell = isolate()->factory()->NewCell(object);
-    __ Mov(temp, Operand(Handle<Object>(cell)));
+    __ Mov(temp, Operand(cell));
     __ Ldr(temp, FieldMemOperand(temp, Cell::kValueOffset));
     __ Cmp(reg, temp);
   } else {
@@ -3137,8 +3132,8 @@ void LCodeGen::DoInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr) {
     __ bind(&map_check);
     // Will be patched with the cached map.
     Handle<Cell> cell = factory()->NewCell(factory()->the_hole_value());
-    __ ldr(scratch, Immediate(Handle<Object>(cell)));
-    __ ldr(scratch, FieldMemOperand(scratch, PropertyCell::kValueOffset));
+    __ ldr(scratch, Immediate(cell));
+    __ ldr(scratch, FieldMemOperand(scratch, Cell::kValueOffset));
     __ cmp(map, scratch);
     __ b(&cache_miss, ne);
     // The address of this instruction is computed relative to the map check
@@ -3397,17 +3392,6 @@ void LCodeGen::DoLoadFunctionPrototype(LLoadFunctionPrototype* instr) {
 
   // All done.
   __ Bind(&done);
-}
-
-
-void LCodeGen::DoLoadGlobalCell(LLoadGlobalCell* instr) {
-  Register result = ToRegister(instr->result());
-  __ Mov(result, Operand(Handle<Object>(instr->hydrogen()->cell().handle())));
-  __ Ldr(result, FieldMemOperand(result, Cell::kValueOffset));
-  if (instr->hydrogen()->RequiresHoleCheck()) {
-    DeoptimizeIfRoot(result, Heap::kTheHoleValueRootIndex, instr,
-                     Deoptimizer::kHole);
-  }
 }
 
 
@@ -5184,30 +5168,6 @@ void LCodeGen::DoStoreContextSlot(LStoreContextSlot* instr) {
                               check_needed);
   }
   __ Bind(&skip_assignment);
-}
-
-
-void LCodeGen::DoStoreGlobalCell(LStoreGlobalCell* instr) {
-  Register value = ToRegister(instr->value());
-  Register cell = ToRegister(instr->temp1());
-
-  // Load the cell.
-  __ Mov(cell, Operand(instr->hydrogen()->cell().handle()));
-
-  // If the cell we are storing to contains the hole it could have
-  // been deleted from the property dictionary. In that case, we need
-  // to update the property details in the property dictionary to mark
-  // it as no longer deleted. We deoptimize in that case.
-  if (instr->hydrogen()->RequiresHoleCheck()) {
-    Register payload = ToRegister(instr->temp2());
-    __ Ldr(payload, FieldMemOperand(cell, Cell::kValueOffset));
-    DeoptimizeIfRoot(payload, Heap::kTheHoleValueRootIndex, instr,
-                     Deoptimizer::kHole);
-  }
-
-  // Store the value.
-  __ Str(value, FieldMemOperand(cell, Cell::kValueOffset));
-  // Cells are always rescanned, so no write barrier here.
 }
 
 

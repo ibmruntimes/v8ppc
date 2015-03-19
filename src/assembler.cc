@@ -915,14 +915,21 @@ void RelocInfo::Verify(Isolate* isolate) {
       CHECK(code->address() == HeapObject::cast(found)->address());
       break;
     }
+    case INTERNAL_REFERENCE:
+    case INTERNAL_REFERENCE_ENCODED: {
+      Address target = target_internal_reference();
+      Address pc = target_internal_reference_address();
+      Code* code = Code::cast(isolate->FindCodeObject(pc));
+      CHECK(target >= code->instruction_start());
+      CHECK(target <= code->instruction_end());
+      break;
+    }
     case RUNTIME_ENTRY:
     case JS_RETURN:
     case COMMENT:
     case POSITION:
     case STATEMENT_POSITION:
     case EXTERNAL_REFERENCE:
-    case INTERNAL_REFERENCE:
-    case INTERNAL_REFERENCE_ENCODED:
     case DEOPT_REASON:
     case CONST_POOL:
     case VENEER_POOL:
@@ -1225,31 +1232,15 @@ ExternalReference ExternalReference::new_space_allocation_limit_address(
 }
 
 
-ExternalReference ExternalReference::old_pointer_space_allocation_top_address(
+ExternalReference ExternalReference::old_space_allocation_top_address(
     Isolate* isolate) {
-  return ExternalReference(
-      isolate->heap()->OldPointerSpaceAllocationTopAddress());
+  return ExternalReference(isolate->heap()->OldSpaceAllocationTopAddress());
 }
 
 
-ExternalReference ExternalReference::old_pointer_space_allocation_limit_address(
+ExternalReference ExternalReference::old_space_allocation_limit_address(
     Isolate* isolate) {
-  return ExternalReference(
-      isolate->heap()->OldPointerSpaceAllocationLimitAddress());
-}
-
-
-ExternalReference ExternalReference::old_data_space_allocation_top_address(
-    Isolate* isolate) {
-  return ExternalReference(
-      isolate->heap()->OldDataSpaceAllocationTopAddress());
-}
-
-
-ExternalReference ExternalReference::old_data_space_allocation_limit_address(
-    Isolate* isolate) {
-  return ExternalReference(
-      isolate->heap()->OldDataSpaceAllocationLimitAddress());
+  return ExternalReference(isolate->heap()->OldSpaceAllocationLimitAddress());
 }
 
 

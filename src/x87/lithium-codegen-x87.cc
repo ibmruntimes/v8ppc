@@ -374,10 +374,11 @@ void LCodeGen::GenerateBodyInstructionPost(LInstruction* instr) {
 
 
 bool LCodeGen::GenerateJumpTable() {
+  if (!jump_table_.length()) return !is_aborted();
+
   Label needs_frame;
-  if (jump_table_.length() > 0) {
-    Comment(";;; -------------------- Jump table --------------------");
-  }
+  Comment(";;; -------------------- Jump table --------------------");
+
   for (int i = 0; i < jump_table_.length(); i++) {
     Deoptimizer::JumpTableEntry* table_entry = &jump_table_[i];
     __ bind(&table_entry->label);
@@ -386,33 +387,57 @@ bool LCodeGen::GenerateJumpTable() {
     if (table_entry->needs_frame) {
       DCHECK(!info()->saves_caller_doubles());
       __ push(Immediate(ExternalReference::ForDeoptEntry(entry)));
-      if (needs_frame.is_bound()) {
-        __ jmp(&needs_frame);
-      } else {
-        __ bind(&needs_frame);
-        __ push(MemOperand(ebp, StandardFrameConstants::kContextOffset));
-        // This variant of deopt can only be used with stubs. Since we don't
-        // have a function pointer to install in the stack frame that we're
-        // building, install a special marker there instead.
-        DCHECK(info()->IsStub());
-        __ push(Immediate(Smi::FromInt(StackFrame::STUB)));
-        // Push a PC inside the function so that the deopt code can find where
-        // the deopt comes from. It doesn't have to be the precise return
-        // address of a "calling" LAZY deopt, it only has to be somewhere
-        // inside the code body.
-        Label push_approx_pc;
-        __ call(&push_approx_pc);
-        __ bind(&push_approx_pc);
-        // Push the continuation which was stashed were the ebp should
-        // be. Replace it with the saved ebp.
-        __ push(MemOperand(esp, 3 * kPointerSize));
-        __ mov(MemOperand(esp, 4 * kPointerSize), ebp);
-        __ lea(ebp, MemOperand(esp, 4 * kPointerSize));
-        __ ret(0);  // Call the continuation without clobbering registers.
-      }
+      __ call(&needs_frame);
     } else {
       __ call(entry, RelocInfo::RUNTIME_ENTRY);
     }
+    info()->LogDeoptCallPosition(masm()->pc_offset(),
+                                 table_entry->deopt_info.inlining_id);
+  }
+  if (needs_frame.is_linked()) {
+    __ bind(&needs_frame);
+
+    /* stack layout
+       4: entry address
+       3: return address  <-- esp
+       2: garbage
+       1: garbage
+       0: garbage
+    */
+    __ sub(esp, Immediate(kPointerSize));    // Reserve space for stub marker.
+    __ push(MemOperand(esp, kPointerSize));  // Copy return address.
+    __ push(MemOperand(esp, 3 * kPointerSize));  // Copy entry address.
+
+    /* stack layout
+       4: entry address
+       3: return address
+       2: garbage
+       1: return address
+       0: entry address  <-- esp
+    */
+    __ mov(MemOperand(esp, 4 * kPointerSize), ebp);  // Save ebp.
+
+    // Copy context.
+    __ mov(ebp, MemOperand(ebp, StandardFrameConstants::kContextOffset));
+    __ mov(MemOperand(esp, 3 * kPointerSize), ebp);
+    // Fill ebp with the right stack frame address.
+    __ lea(ebp, MemOperand(esp, 4 * kPointerSize));
+
+    // This variant of deopt can only be used with stubs. Since we don't
+    // have a function pointer to install in the stack frame that we're
+    // building, install a special marker there instead.
+    DCHECK(info()->IsStub());
+    __ mov(MemOperand(esp, 2 * kPointerSize),
+           Immediate(Smi::FromInt(StackFrame::STUB)));
+
+    /* stack layout
+       4: old ebp
+       3: context pointer
+       2: stub marker
+       1: return address
+       0: entry address  <-- esp
+    */
+    __ ret(0);  // Call the continuation without clobbering registers.
   }
   return !is_aborted();
 }
@@ -1150,6 +1175,7 @@ void LCodeGen::DeoptimizeIf(Condition cc, LInstruction* instr,
   if (cc == no_condition && frame_is_built_) {
     DeoptComment(deopt_info);
     __ call(entry, RelocInfo::RUNTIME_ENTRY);
+    info()->LogDeoptCallPosition(masm()->pc_offset(), deopt_info.inlining_id);
   } else {
     Deoptimizer::JumpTableEntry table_entry(entry, deopt_info, bailout_type,
                                             !frame_is_built_);
@@ -5829,13 +5855,9 @@ void LCodeGen::DoAllocate(LAllocate* instr) {
   if (instr->hydrogen()->MustAllocateDoubleAligned()) {
     flags = static_cast<AllocationFlags>(flags | DOUBLE_ALIGNMENT);
   }
-  if (instr->hydrogen()->IsOldPointerSpaceAllocation()) {
-    DCHECK(!instr->hydrogen()->IsOldDataSpaceAllocation());
+  if (instr->hydrogen()->IsOldSpaceAllocation()) {
     DCHECK(!instr->hydrogen()->IsNewSpaceAllocation());
-    flags = static_cast<AllocationFlags>(flags | PRETENURE_OLD_POINTER_SPACE);
-  } else if (instr->hydrogen()->IsOldDataSpaceAllocation()) {
-    DCHECK(!instr->hydrogen()->IsNewSpaceAllocation());
-    flags = static_cast<AllocationFlags>(flags | PRETENURE_OLD_DATA_SPACE);
+    flags = static_cast<AllocationFlags>(flags | PRETENURE);
   }
 
   if (instr->size()->IsConstantOperand()) {
@@ -5898,13 +5920,9 @@ void LCodeGen::DoDeferredAllocate(LAllocate* instr) {
 
   int flags = AllocateDoubleAlignFlag::encode(
       instr->hydrogen()->MustAllocateDoubleAligned());
-  if (instr->hydrogen()->IsOldPointerSpaceAllocation()) {
-    DCHECK(!instr->hydrogen()->IsOldDataSpaceAllocation());
+  if (instr->hydrogen()->IsOldSpaceAllocation()) {
     DCHECK(!instr->hydrogen()->IsNewSpaceAllocation());
-    flags = AllocateTargetSpace::update(flags, OLD_POINTER_SPACE);
-  } else if (instr->hydrogen()->IsOldDataSpaceAllocation()) {
-    DCHECK(!instr->hydrogen()->IsNewSpaceAllocation());
-    flags = AllocateTargetSpace::update(flags, OLD_DATA_SPACE);
+    flags = AllocateTargetSpace::update(flags, OLD_SPACE);
   } else {
     flags = AllocateTargetSpace::update(flags, NEW_SPACE);
   }

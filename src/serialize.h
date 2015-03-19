@@ -306,8 +306,8 @@ class SerializerDeserializer: public ObjectVisitor {
   // Where the pointed-to object can be found:
   enum Where {
     kNewObject = 0,  //              Object is next in snapshot.
-    // 1-7                           One per space.
-    // 0x8                           Unused.
+    // 1-6                           One per space.
+    // 0x7, 0x8                      Unused.
     kRootArray = 0x9,             // Object is found in root array.
     kPartialSnapshotCache = 0xa,  // Object is in the cache.
     kExternalReference = 0xb,     // Pointer to an external reference.
@@ -316,9 +316,11 @@ class SerializerDeserializer: public ObjectVisitor {
     kAttachedReference = 0xe,     // Object is described in an attached list.
     // 0xf                           Used by misc. See below.
     kBackref = 0x10,  //             Object is described relative to end.
-    // 0x11-0x17                     One per space.
+    // 0x11-0x16                     One per space.
+    // 0x17                          Unused.
     kBackrefWithSkip = 0x18,  //     Object is described relative to end.
-    // 0x19-0x1f                     One per space.
+    // 0x19-0x1e                     One per space.
+    // 0x1f                          Unused.
     // 0x20-0x3f                     Used by misc. See below.
     kPointedToMask = 0x3f
   };
@@ -346,6 +348,9 @@ class SerializerDeserializer: public ObjectVisitor {
   };
 
   // Misc.
+
+  // 0x48, 0x88 and 0xc8 are unused.
+
   // Raw data to be copied from the snapshot.  This byte code does not advance
   // the current pointer, which is used for code objects, where we write the
   // entire code in one memcpy, then fix up stuff with kSkip and other byte
@@ -354,6 +359,9 @@ class SerializerDeserializer: public ObjectVisitor {
   // Some common raw lengths: 0x21-0x3f.
   // These autoadvance the current pointer.
   static const int kOnePointerRawData = 0x21;
+
+  // Internal reference encoded as offsets of pc and target from code entry.
+  static const int kInternalReference = 0x08;
 
   static const int kVariableRepeat = 0x60;
   // 0x61-0x6f   Repeat last word
@@ -609,23 +617,21 @@ class Serializer : public SerializerDeserializer {
  protected:
   class ObjectSerializer : public ObjectVisitor {
    public:
-    ObjectSerializer(Serializer* serializer,
-                     Object* o,
-                     SnapshotByteSink* sink,
-                     HowToCode how_to_code,
-                     WhereToPoint where_to_point)
-      : serializer_(serializer),
-        object_(HeapObject::cast(o)),
-        sink_(sink),
-        reference_representation_(how_to_code + where_to_point),
-        bytes_processed_so_far_(0),
-        code_object_(o->IsCode()),
-        code_has_been_output_(false) { }
+    ObjectSerializer(Serializer* serializer, Object* o, SnapshotByteSink* sink,
+                     HowToCode how_to_code, WhereToPoint where_to_point)
+        : serializer_(serializer),
+          object_(HeapObject::cast(o)),
+          sink_(sink),
+          reference_representation_(how_to_code + where_to_point),
+          bytes_processed_so_far_(0),
+          is_code_object_(o->IsCode()),
+          code_has_been_output_(false) {}
     void Serialize();
     void VisitPointers(Object** start, Object** end);
     void VisitEmbeddedPointer(RelocInfo* target);
     void VisitExternalReference(Address* p);
     void VisitExternalReference(RelocInfo* rinfo);
+    void VisitInternalReference(RelocInfo* rinfo);
     void VisitCodeTarget(RelocInfo* target);
     void VisitCodeEntry(Address entry_address);
     void VisitCell(RelocInfo* rinfo);
@@ -658,7 +664,7 @@ class Serializer : public SerializerDeserializer {
     SnapshotByteSink* sink_;
     int reference_representation_;
     int bytes_processed_so_far_;
-    bool code_object_;
+    bool is_code_object_;
     bool code_has_been_output_;
   };
 

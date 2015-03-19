@@ -396,44 +396,25 @@ class AggregatedHistogramTimerScope {
   AHT(compile_lazy, V8.CompileLazyMicroSeconds)
 
 
-#define HISTOGRAM_PERCENTAGE_LIST(HP)                                 \
-  /* Heap fragmentation. */                                           \
-  HP(external_fragmentation_total,                                    \
-     V8.MemoryExternalFragmentationTotal)                             \
-  HP(external_fragmentation_old_pointer_space,                        \
-     V8.MemoryExternalFragmentationOldPointerSpace)                   \
-  HP(external_fragmentation_old_data_space,                           \
-     V8.MemoryExternalFragmentationOldDataSpace)                      \
-  HP(external_fragmentation_code_space,                               \
-     V8.MemoryExternalFragmentationCodeSpace)                         \
-  HP(external_fragmentation_map_space,                                \
-     V8.MemoryExternalFragmentationMapSpace)                          \
-  HP(external_fragmentation_cell_space,                               \
-     V8.MemoryExternalFragmentationCellSpace)                         \
-  HP(external_fragmentation_property_cell_space,                      \
-     V8.MemoryExternalFragmentationPropertyCellSpace)                 \
-  HP(external_fragmentation_lo_space,                                 \
-     V8.MemoryExternalFragmentationLoSpace)                           \
-  /* Percentages of heap committed to each space. */                  \
-  HP(heap_fraction_new_space,                                         \
-     V8.MemoryHeapFractionNewSpace)                                   \
-  HP(heap_fraction_old_pointer_space,                                 \
-     V8.MemoryHeapFractionOldPointerSpace)                            \
-  HP(heap_fraction_old_data_space,                                    \
-     V8.MemoryHeapFractionOldDataSpace)                               \
-  HP(heap_fraction_code_space,                                        \
-     V8.MemoryHeapFractionCodeSpace)                                  \
-  HP(heap_fraction_map_space,                                         \
-     V8.MemoryHeapFractionMapSpace)                                   \
-  HP(heap_fraction_cell_space,                                        \
-     V8.MemoryHeapFractionCellSpace)                                  \
-  HP(heap_fraction_property_cell_space,                               \
-     V8.MemoryHeapFractionPropertyCellSpace)                          \
-  HP(heap_fraction_lo_space,                                          \
-     V8.MemoryHeapFractionLoSpace)                                    \
-  /* Percentage of crankshafted codegen. */                           \
-  HP(codegen_fraction_crankshaft,                                     \
-     V8.CodegenFractionCrankshaft)                                    \
+#define HISTOGRAM_PERCENTAGE_LIST(HP)                                          \
+  /* Heap fragmentation. */                                                    \
+  HP(external_fragmentation_total, V8.MemoryExternalFragmentationTotal)        \
+  HP(external_fragmentation_old_space, V8.MemoryExternalFragmentationOldSpace) \
+  HP(external_fragmentation_code_space,                                        \
+     V8.MemoryExternalFragmentationCodeSpace)                                  \
+  HP(external_fragmentation_map_space, V8.MemoryExternalFragmentationMapSpace) \
+  HP(external_fragmentation_cell_space,                                        \
+     V8.MemoryExternalFragmentationCellSpace)                                  \
+  HP(external_fragmentation_lo_space, V8.MemoryExternalFragmentationLoSpace)   \
+  /* Percentages of heap committed to each space. */                           \
+  HP(heap_fraction_new_space, V8.MemoryHeapFractionNewSpace)                   \
+  HP(heap_fraction_old_space, V8.MemoryHeapFractionOldSpace)                   \
+  HP(heap_fraction_code_space, V8.MemoryHeapFractionCodeSpace)                 \
+  HP(heap_fraction_map_space, V8.MemoryHeapFractionMapSpace)                   \
+  HP(heap_fraction_cell_space, V8.MemoryHeapFractionCellSpace)                 \
+  HP(heap_fraction_lo_space, V8.MemoryHeapFractionLoSpace)                     \
+  /* Percentage of crankshafted codegen. */                                    \
+  HP(codegen_fraction_crankshaft, V8.CodegenFractionCrankshaft)
 
 
 #define HISTOGRAM_MEMORY_LIST(HM)                                     \
@@ -443,8 +424,6 @@ class AggregatedHistogramTimerScope {
      V8.MemoryHeapSampleMapSpaceCommitted)                            \
   HM(heap_sample_cell_space_committed,                                \
      V8.MemoryHeapSampleCellSpaceCommitted)                           \
-  HM(heap_sample_property_cell_space_committed,                       \
-     V8.MemoryHeapSamplePropertyCellSpaceCommitted)                   \
   HM(heap_sample_code_space_committed,                                \
      V8.MemoryHeapSampleCodeSpaceCommitted)                           \
   HM(heap_sample_maximum_committed,                                   \
@@ -606,14 +585,9 @@ class AggregatedHistogramTimerScope {
   SC(new_space_bytes_available, V8.MemoryNewSpaceBytesAvailable)               \
   SC(new_space_bytes_committed, V8.MemoryNewSpaceBytesCommitted)               \
   SC(new_space_bytes_used, V8.MemoryNewSpaceBytesUsed)                         \
-  SC(old_pointer_space_bytes_available,                                        \
-     V8.MemoryOldPointerSpaceBytesAvailable)                                   \
-  SC(old_pointer_space_bytes_committed,                                        \
-     V8.MemoryOldPointerSpaceBytesCommitted)                                   \
-  SC(old_pointer_space_bytes_used, V8.MemoryOldPointerSpaceBytesUsed)          \
-  SC(old_data_space_bytes_available, V8.MemoryOldDataSpaceBytesAvailable)      \
-  SC(old_data_space_bytes_committed, V8.MemoryOldDataSpaceBytesCommitted)      \
-  SC(old_data_space_bytes_used, V8.MemoryOldDataSpaceBytesUsed)                \
+  SC(old_space_bytes_available, V8.MemoryOldSpaceBytesAvailable)               \
+  SC(old_space_bytes_committed, V8.MemoryOldSpaceBytesCommitted)               \
+  SC(old_space_bytes_used, V8.MemoryOldSpaceBytesUsed)                         \
   SC(code_space_bytes_available, V8.MemoryCodeSpaceBytesAvailable)             \
   SC(code_space_bytes_committed, V8.MemoryCodeSpaceBytesCommitted)             \
   SC(code_space_bytes_used, V8.MemoryCodeSpaceBytesUsed)                       \
@@ -623,11 +597,6 @@ class AggregatedHistogramTimerScope {
   SC(cell_space_bytes_available, V8.MemoryCellSpaceBytesAvailable)             \
   SC(cell_space_bytes_committed, V8.MemoryCellSpaceBytesCommitted)             \
   SC(cell_space_bytes_used, V8.MemoryCellSpaceBytesUsed)                       \
-  SC(property_cell_space_bytes_available,                                      \
-     V8.MemoryPropertyCellSpaceBytesAvailable)                                 \
-  SC(property_cell_space_bytes_committed,                                      \
-     V8.MemoryPropertyCellSpaceBytesCommitted)                                 \
-  SC(property_cell_space_bytes_used, V8.MemoryPropertyCellSpaceBytesUsed)      \
   SC(lo_space_bytes_available, V8.MemoryLoSpaceBytesAvailable)                 \
   SC(lo_space_bytes_committed, V8.MemoryLoSpaceBytesCommitted)                 \
   SC(lo_space_bytes_used, V8.MemoryLoSpaceBytesUsed)

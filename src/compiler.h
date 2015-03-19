@@ -97,6 +97,7 @@ struct InlinedFunctionInfo {
   SourcePosition inline_position;
   int script_id;
   int start_position;
+  std::vector<int> deopt_pc_offsets;
 
   static const int kNoParentId = -1;
 };
@@ -162,6 +163,7 @@ class CompilationInfo {
   int num_parameters() const;
   int num_heap_slots() const;
   Code::Flags flags() const;
+  bool has_scope() const { return scope() != nullptr; }
 
   void set_parameter_count(int parameter_count) {
     DCHECK(IsStub());
@@ -269,6 +271,11 @@ class CompilationInfo {
     optimization_id_ = isolate()->NextOptimizationId();
   }
 
+  void SetStub(CodeStub* code_stub) {
+    SetMode(STUB);
+    code_stub_ = code_stub;
+  }
+
   // Deoptimization support.
   bool HasDeoptimizationSupport() const {
     return GetFlag(kDeoptimizationSupport);
@@ -342,6 +349,13 @@ class CompilationInfo {
   std::vector<InlinedFunctionInfo>* inlined_function_infos() {
     return inlined_function_infos_;
   }
+  std::vector<InlinedFunctionInfo>* ReleaseInlinedFunctionInfos() {
+    std::vector<InlinedFunctionInfo>* tmp = inlined_function_infos_;
+    inlined_function_infos_ = NULL;
+    return tmp;
+  }
+
+  void LogDeoptCallPosition(int pc_offset, int inlining_id);
   int TraceInlinedFunction(Handle<SharedFunctionInfo> shared,
                            SourcePosition position, int pareint_id);
 

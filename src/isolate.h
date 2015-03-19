@@ -668,7 +668,8 @@ class Isolate {
     thread_local_top_.scheduled_exception_ = heap_.the_hole_value();
   }
 
-  bool IsFinallyOnTop();
+  bool IsJavaScriptHandlerOnTop(Object* exception);
+  bool IsExternalHandlerOnTop(Object* exception);
 
   bool is_catchable_by_javascript(Object* exception) {
     return exception != heap()->termination_exception();
@@ -782,6 +783,7 @@ class Isolate {
   // Exception throwing support. The caller should use the result
   // of Throw() as its return value.
   Object* Throw(Object* exception, MessageLocation* location = NULL);
+  Object* ThrowIllegalOperation();
 
   template <typename T>
   MUST_USE_RESULT MaybeHandle<T> Throw(Handle<Object> exception,
@@ -790,14 +792,23 @@ class Isolate {
     return MaybeHandle<T>();
   }
 
-  // Re-throw an exception.  This involves no error reporting since
-  // error reporting was handled when the exception was thrown
-  // originally.
+  // Re-throw an exception.  This involves no error reporting since error
+  // reporting was handled when the exception was thrown originally.
   Object* ReThrow(Object* exception);
 
   // Find the correct handler for the current pending exception. This also
   // clears and returns the current pending exception.
   Object* FindHandler();
+
+  // Tries to predict whether the exception will be caught. Note that this can
+  // only produce an estimate, because it is undecidable whether a finally
+  // clause will consume or re-throw an exception. We conservatively assume any
+  // finally clause will behave as if the exception were consumed.
+  bool PredictWhetherExceptionIsCaught(Object* exception);
+
+  // Propagate pending exception message to potential v8::TryCatch. Also call
+  // message handlers when the exception is guaranteed not to be caught.
+  void ReportPendingMessages();
 
   void ScheduleThrow(Object* exception);
   // Re-set pending message, script and positions reported to the TryCatch
@@ -805,17 +816,11 @@ class Isolate {
   void RestorePendingMessageFromTryCatch(v8::TryCatch* handler);
   // Un-schedule an exception that was caught by a TryCatch handler.
   void CancelScheduledExceptionFromTryCatch(v8::TryCatch* handler);
-  void ReportPendingMessages();
   // Return pending location if any or unfilled structure.
   MessageLocation GetMessageLocation();
-  Object* ThrowIllegalOperation();
 
   // Promote a scheduled exception to pending. Asserts has_scheduled_exception.
   Object* PromoteScheduledException();
-  // Checks if exception should be reported and finds out if it's
-  // caught externally.
-  bool ShouldReportException(bool* can_be_caught_externally,
-                             bool catchable_by_javascript);
 
   // Attempts to compute the current source location, storing the
   // result in the target out parameter.
@@ -841,7 +846,6 @@ class Isolate {
   void Iterate(ObjectVisitor* v, ThreadLocalTop* t);
   char* Iterate(ObjectVisitor* v, char* t);
   void IterateThread(ThreadVisitor* v, char* t);
-
 
   // Returns the current native context.
   Handle<Context> native_context();
@@ -1252,11 +1256,6 @@ class Isolate {
                            ThreadLocalTop* archived_thread_data);
 
   void FillCache();
-
-  // Propagate pending exception message to the v8::TryCatch.
-  // If there is no external try-catch or message was successfully propagated,
-  // then return true.
-  bool PropagatePendingExceptionToExternalTryCatch();
 
   // Traverse prototype chain to find out whether the object is derived from
   // the Error object.

@@ -3623,7 +3623,9 @@ class V8_EXPORT DataView : public ArrayBufferView {
  */
 class V8_EXPORT Date : public Object {
  public:
-  static Local<Value> New(Isolate* isolate, double time);
+  static V8_DEPRECATE_SOON("Use maybe version.",
+                           Local<Value> New(Isolate* isolate, double time));
+  static MaybeLocal<Value> New(Local<Context> context, double time);
 
   /**
    * A specialization of Value::NumberValue that is more efficient
@@ -4204,7 +4206,17 @@ class V8_EXPORT FunctionTemplate : public Template {
 };
 
 
-enum class PropertyHandlerFlags { kNone = 0, kAllCanRead = 1 };
+enum class PropertyHandlerFlags {
+  kNone = 0,
+  // See ALL_CAN_READ above.
+  kAllCanRead = 1,
+  // Will not call into interceptor for properties on the receiver or prototype
+  // chain.  Currently only valid for named interceptors.
+  kNonMasking = 1 << 1,
+  // Will not call into interceptor for symbol lookup.  Only meaningful for
+  // named interceptors.
+  kOnlyInterceptStrings = 1 << 2,
+};
 
 
 struct NamedPropertyHandlerConfiguration {
@@ -4659,16 +4671,15 @@ typedef void (*AddHistogramSampleCallback)(void* histogram, int sample);
 // --- Memory Allocation Callback ---
 enum ObjectSpace {
   kObjectSpaceNewSpace = 1 << 0,
-  kObjectSpaceOldPointerSpace = 1 << 1,
-  kObjectSpaceOldDataSpace = 1 << 2,
-  kObjectSpaceCodeSpace = 1 << 3,
-  kObjectSpaceMapSpace = 1 << 4,
-  kObjectSpaceCellSpace = 1 << 5,
-  kObjectSpacePropertyCellSpace = 1 << 6,
-  kObjectSpaceLoSpace = 1 << 7,
-  kObjectSpaceAll = kObjectSpaceNewSpace | kObjectSpaceOldPointerSpace |
-                    kObjectSpaceOldDataSpace | kObjectSpaceCodeSpace |
-                    kObjectSpaceMapSpace | kObjectSpaceLoSpace
+  kObjectSpaceOldSpace = 1 << 1,
+  kObjectSpaceCodeSpace = 1 << 2,
+  kObjectSpaceMapSpace = 1 << 3,
+  kObjectSpaceCellSpace = 1 << 4,
+  kObjectSpacePropertyCellSpace = 1 << 5,
+  kObjectSpaceLoSpace = 1 << 6,
+  kObjectSpaceAll = kObjectSpaceNewSpace | kObjectSpaceOldSpace |
+                    kObjectSpaceCodeSpace | kObjectSpaceMapSpace |
+                    kObjectSpaceLoSpace
 };
 
   enum AllocationAction {
@@ -4921,7 +4932,12 @@ class V8_EXPORT Isolate {
    */
   struct CreateParams {
     CreateParams()
-        : entry_hook(NULL), code_event_handler(NULL), snapshot_blob(NULL) {}
+        : entry_hook(NULL),
+          code_event_handler(NULL),
+          snapshot_blob(NULL),
+          counter_lookup_callback(NULL),
+          create_histogram_callback(NULL),
+          add_histogram_sample_callback(NULL) {}
 
     /**
      * The optional entry_hook allows the host application to provide the
@@ -4947,6 +4963,22 @@ class V8_EXPORT Isolate {
      * Explicitly specify a startup snapshot blob. The embedder owns the blob.
      */
     StartupData* snapshot_blob;
+
+
+    /**
+     * Enables the host application to provide a mechanism for recording
+     * statistics counters.
+     */
+    CounterLookupCallback counter_lookup_callback;
+
+    /**
+     * Enables the host application to provide a mechanism for recording
+     * histograms. The CreateHistogram function returns a
+     * histogram which will later be passed to the AddHistogramSample
+     * function.
+     */
+    CreateHistogramCallback create_histogram_callback;
+    AddHistogramSampleCallback add_histogram_sample_callback;
   };
 
 
@@ -6092,7 +6124,8 @@ class V8_EXPORT TryCatch {
    * Returns the .stack property of the thrown object.  If no .stack
    * property is present an empty handle is returned.
    */
-  Local<Value> StackTrace() const;
+  V8_DEPRECATE_SOON("Use maybe version.", Local<Value> StackTrace()) const;
+  MaybeLocal<Value> StackTrace(Local<Context> context) const;
 
   /**
    * Returns the message associated with this exception.  If there is
@@ -6689,7 +6722,7 @@ class Internals {
   static const int kJSObjectType = 0xbd;
   static const int kFirstNonstringType = 0x80;
   static const int kOddballType = 0x83;
-  static const int kForeignType = 0x88;
+  static const int kForeignType = 0x87;
 
   static const int kUndefinedOddballKind = 5;
   static const int kNullOddballKind = 3;

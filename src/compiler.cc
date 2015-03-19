@@ -221,33 +221,21 @@ void CompilationInfo::RollbackDependencies() {
 
 
 int CompilationInfo::num_parameters() const {
-  if (IsStub()) {
-    DCHECK(parameter_count_ > 0);
-    return parameter_count_;
-  } else {
-    return scope()->num_parameters();
-  }
+  return has_scope() ? scope()->num_parameters() : parameter_count_;
 }
 
 
 int CompilationInfo::num_heap_slots() const {
-  if (IsStub()) {
-    return 0;
-  } else {
-    return scope()->num_heap_slots();
-  }
+  return has_scope() ? scope()->num_heap_slots() : 0;
 }
 
 
 Code::Flags CompilationInfo::flags() const {
-  if (IsStub()) {
-    return Code::ComputeFlags(code_stub()->GetCodeKind(),
-                              code_stub()->GetICState(),
-                              code_stub()->GetExtraICState(),
-                              code_stub()->GetStubType());
-  } else {
-    return Code::ComputeFlags(Code::OPTIMIZED_FUNCTION);
-  }
+  return code_stub() != nullptr
+             ? Code::ComputeFlags(
+                   code_stub()->GetCodeKind(), code_stub()->GetICState(),
+                   code_stub()->GetExtraICState(), code_stub()->GetStubType())
+             : Code::ComputeFlags(Code::OPTIMIZED_FUNCTION);
 }
 
 
@@ -319,6 +307,14 @@ int CompilationInfo::TraceInlinedFunction(Handle<SharedFunctionInfo> shared,
   }
 
   return inline_id;
+}
+
+
+void CompilationInfo::LogDeoptCallPosition(int pc_offset, int inlining_id) {
+  if (!track_positions_ || IsStub()) return;
+  DCHECK_LT(static_cast<size_t>(inlining_id), inlined_function_infos_->size());
+  inlined_function_infos_->at(inlining_id)
+      .deopt_pc_offsets.push_back(pc_offset);
 }
 
 

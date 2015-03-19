@@ -41,11 +41,9 @@ HeapObjectIterator::HeapObjectIterator(PagedSpace* space,
 HeapObjectIterator::HeapObjectIterator(Page* page,
                                        HeapObjectCallback size_func) {
   Space* owner = page->owner();
-  DCHECK(owner == page->heap()->old_pointer_space() ||
-         owner == page->heap()->old_data_space() ||
+  DCHECK(owner == page->heap()->old_space() ||
          owner == page->heap()->map_space() ||
          owner == page->heap()->cell_space() ||
-         owner == page->heap()->property_cell_space() ||
          owner == page->heap()->code_space());
   Initialize(reinterpret_cast<PagedSpace*>(owner), page->area_start(),
              page->area_end(), kOnePageOnly, size_func);
@@ -511,10 +509,6 @@ MemoryChunk* MemoryChunk::Initialize(Heap* heap, Address base, size_t size,
     chunk->SetFlag(IS_EXECUTABLE);
   }
 
-  if (owner == heap->old_data_space()) {
-    chunk->SetFlag(CONTAINS_ONLY_DATA);
-  }
-
   return chunk;
 }
 
@@ -926,18 +920,12 @@ void MemoryChunk::IncrementLiveBytesFromMutator(Address address, int by) {
 
 STATIC_ASSERT(static_cast<ObjectSpace>(1 << AllocationSpace::NEW_SPACE) ==
               ObjectSpace::kObjectSpaceNewSpace);
-STATIC_ASSERT(static_cast<ObjectSpace>(1
-                                       << AllocationSpace::OLD_POINTER_SPACE) ==
-              ObjectSpace::kObjectSpaceOldPointerSpace);
-STATIC_ASSERT(static_cast<ObjectSpace>(1 << AllocationSpace::OLD_DATA_SPACE) ==
-              ObjectSpace::kObjectSpaceOldDataSpace);
+STATIC_ASSERT(static_cast<ObjectSpace>(1 << AllocationSpace::OLD_SPACE) ==
+              ObjectSpace::kObjectSpaceOldSpace);
 STATIC_ASSERT(static_cast<ObjectSpace>(1 << AllocationSpace::CODE_SPACE) ==
               ObjectSpace::kObjectSpaceCodeSpace);
 STATIC_ASSERT(static_cast<ObjectSpace>(1 << AllocationSpace::CELL_SPACE) ==
               ObjectSpace::kObjectSpaceCellSpace);
-STATIC_ASSERT(
-    static_cast<ObjectSpace>(1 << AllocationSpace::PROPERTY_CELL_SPACE) ==
-    ObjectSpace::kObjectSpacePropertyCellSpace);
 STATIC_ASSERT(static_cast<ObjectSpace>(1 << AllocationSpace::MAP_SPACE) ==
               ObjectSpace::kObjectSpaceMapSpace);
 
@@ -1121,11 +1109,7 @@ void PagedSpace::ReleasePage(Page* page) {
     page->Unlink();
   }
 
-  if (page->IsFlagSet(MemoryChunk::CONTAINS_ONLY_DATA)) {
-    heap()->isolate()->memory_allocator()->Free(page);
-  } else {
-    heap()->QueueMemoryChunkForFree(page);
-  }
+  heap()->QueueMemoryChunkForFree(page);
 
   DCHECK(Capacity() > 0);
   accounting_stats_.ShrinkSpace(AreaSize());
@@ -2795,17 +2779,12 @@ void MapSpace::VerifyObject(HeapObject* object) { CHECK(object->IsMap()); }
 
 
 // -----------------------------------------------------------------------------
-// CellSpace and PropertyCellSpace implementation
+// CellSpace implementation
 // TODO(mvstanton): this is weird...the compiler can't make a vtable unless
 // there is at least one non-inlined virtual function. I would prefer to hide
 // the VerifyObject definition behind VERIFY_HEAP.
 
 void CellSpace::VerifyObject(HeapObject* object) { CHECK(object->IsCell()); }
-
-
-void PropertyCellSpace::VerifyObject(HeapObject* object) {
-  CHECK(object->IsPropertyCell());
-}
 
 
 // -----------------------------------------------------------------------------

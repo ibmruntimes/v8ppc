@@ -105,18 +105,10 @@ ExternalReferenceTable::ExternalReferenceTable(Isolate* isolate) {
   Add(ExternalReference::get_make_code_young_function(isolate).address(),
       "Code::MakeCodeYoung");
   Add(ExternalReference::cpu_features().address(), "cpu_features");
-  Add(ExternalReference::old_pointer_space_allocation_top_address(isolate)
-          .address(),
-      "Heap::OldPointerSpaceAllocationTopAddress");
-  Add(ExternalReference::old_pointer_space_allocation_limit_address(isolate)
-          .address(),
-      "Heap::OldPointerSpaceAllocationLimitAddress");
-  Add(ExternalReference::old_data_space_allocation_top_address(isolate)
-          .address(),
-      "Heap::OldDataSpaceAllocationTopAddress");
-  Add(ExternalReference::old_data_space_allocation_limit_address(isolate)
-          .address(),
-      "Heap::OldDataSpaceAllocationLimitAddress");
+  Add(ExternalReference::old_space_allocation_top_address(isolate).address(),
+      "Heap::OldSpaceAllocationTopAddress");
+  Add(ExternalReference::old_space_allocation_limit_address(isolate).address(),
+      "Heap::OldSpaceAllocationLimitAddress");
   Add(ExternalReference::allocation_sites_list_address(isolate).address(),
       "Heap::allocation_sites_list_address()");
   Add(ExternalReference::address_of_uint32_bias().address(), "uint32_bias");
@@ -788,25 +780,13 @@ void Deserializer::ReadObject(int space_number, Object** write_back) {
 #ifdef DEBUG
   if (obj->IsCode()) {
     DCHECK(space_number == CODE_SPACE || space_number == LO_SPACE);
+#ifdef VERIFY_HEAP
+    obj->ObjectVerify();
+#endif  // VERIFY_HEAP
   } else {
     DCHECK(space_number != CODE_SPACE);
   }
-#endif
-
-  if (obj->IsCode()) {
-    // Turn internal references encoded as offsets back to absolute addresses.
-    Code* code = Code::cast(obj);
-    Address entry = code->entry();
-    int mode_mask = RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE) |
-                    RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE_ENCODED);
-    for (RelocIterator it(code, mode_mask); !it.done(); it.next()) {
-      RelocInfo* rinfo = it.rinfo();
-      intptr_t offset =
-          reinterpret_cast<intptr_t>(rinfo->target_internal_reference());
-      DCHECK(0 <= offset && offset <= code->instruction_size());
-      rinfo->set_target_internal_reference(entry + offset);
-    }
-  }
+#endif  // DEBUG
 }
 
 
@@ -852,12 +832,9 @@ void Deserializer::ReadData(Object** current, Object** limit, int source_space,
   // Write barrier support costs around 1% in startup time.  In fact there
   // are no new space objects in current boot snapshots, so it's not needed,
   // but that may change.
-  bool write_barrier_needed = (current_object_address != NULL &&
-                               source_space != NEW_SPACE &&
-                               source_space != CELL_SPACE &&
-                               source_space != PROPERTY_CELL_SPACE &&
-                               source_space != CODE_SPACE &&
-                               source_space != OLD_DATA_SPACE);
+  bool write_barrier_needed =
+      (current_object_address != NULL && source_space != NEW_SPACE &&
+       source_space != CELL_SPACE && source_space != CODE_SPACE);
   while (current < limit) {
     byte data = source_.Get();
     switch (data) {
@@ -958,17 +935,15 @@ void Deserializer::ReadData(Object** current, Object** limit, int source_space,
   }
 
 // This generates a case and a body for the new space (which has to do extra
-// write barrier handling) and handles the other spaces with 8 fall-through
-// cases and one body.
+// write barrier handling) and handles the other spaces with fall-through cases
+// and one body.
 #define ALL_SPACES(where, how, within)                    \
   CASE_STATEMENT(where, how, within, NEW_SPACE)           \
   CASE_BODY(where, how, within, NEW_SPACE)                \
-  CASE_STATEMENT(where, how, within, OLD_DATA_SPACE)      \
-  CASE_STATEMENT(where, how, within, OLD_POINTER_SPACE)   \
+  CASE_STATEMENT(where, how, within, OLD_SPACE)           \
   CASE_STATEMENT(where, how, within, CODE_SPACE)          \
   CASE_STATEMENT(where, how, within, MAP_SPACE)           \
   CASE_STATEMENT(where, how, within, CELL_SPACE)          \
-  CASE_STATEMENT(where, how, within, PROPERTY_CELL_SPACE) \
   CASE_STATEMENT(where, how, within, LO_SPACE)            \
   CASE_BODY(where, how, within, kAnyOldSpace)
 
@@ -1182,6 +1157,21 @@ void Deserializer::ReadData(Object** current, Object** limit, int source_space,
         int size = source_.GetInt();
         current = reinterpret_cast<Object**>(
             reinterpret_cast<intptr_t>(current) + size);
+        break;
+      }
+
+      case kInternalReference: {
+        // Internal reference address is not encoded via skip, but by offset
+        // from code entry.
+        int pc_offset = source_.GetInt();
+        int target_offset = source_.GetInt();
+        Code* code =
+            Code::cast(HeapObject::FromAddress(current_object_address));
+        DCHECK(0 <= pc_offset && pc_offset <= code->instruction_size());
+        DCHECK(0 <= target_offset && target_offset <= code->instruction_size());
+        Address pc = code->entry() + pc_offset;
+        Address target = code->entry() + target_offset;
+        Assembler::deserialization_set_target_internal_reference_at(pc, target);
         break;
       }
 
@@ -1720,7 +1710,7 @@ void Serializer::ObjectSerializer::SerializeExternalString() {
 
   AllocationSpace space = (allocation_size > Page::kMaxRegularHeapObjectSize)
                               ? LO_SPACE
-                              : OLD_DATA_SPACE;
+                              : OLD_SPACE;
   SerializePrologue(space, allocation_size, map);
 
   // Output the rest of the imaginary string.
@@ -1872,6 +1862,28 @@ void Serializer::ObjectSerializer::VisitExternalReference(RelocInfo* rinfo) {
 }
 
 
+void Serializer::ObjectSerializer::VisitInternalReference(RelocInfo* rinfo) {
+  // We can only reference to internal references of code that has been output.
+  DCHECK(is_code_object_ && code_has_been_output_);
+  // We do not use skip from last patched pc to find the pc to patch, since
+  // target_address_address may not return addresses in ascending order when
+  // used for internal references. External references may be stored at the
+  // end of the code in the constant pool, whereas internal references are
+  // inline. That would cause the skip to be negative. Instead, we store the
+  // offset from code entry.
+  Address entry = Code::cast(object_)->entry();
+  intptr_t pc_offset = rinfo->target_internal_reference_address() - entry;
+  intptr_t target_offset = rinfo->target_internal_reference() - entry;
+  DCHECK(0 <= pc_offset &&
+         pc_offset <= Code::cast(object_)->instruction_size());
+  DCHECK(0 <= target_offset &&
+         target_offset <= Code::cast(object_)->instruction_size());
+  sink_->Put(kInternalReference, "InternalRef");
+  sink_->PutInt(static_cast<uintptr_t>(pc_offset), "internal ref address");
+  sink_->PutInt(static_cast<uintptr_t>(target_offset), "internal ref value");
+}
+
+
 void Serializer::ObjectSerializer::VisitRuntimeEntry(RelocInfo* rinfo) {
   int skip = OutputRawData(rinfo->target_address_address(),
                            kCanReturnSkipInsteadOfSkipping);
@@ -1947,7 +1959,6 @@ Address Serializer::ObjectSerializer::PrepareCode() {
   Code* code = serializer_->CopyCode(original);
   // Code age headers are not serializable.
   code->MakeYoung(serializer_->isolate());
-  Address entry = original->entry();
   int mode_mask = RelocInfo::kCodeTargetMask |
                   RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT) |
                   RelocInfo::ModeMask(RelocInfo::EXTERNAL_REFERENCE) |
@@ -1956,15 +1967,7 @@ Address Serializer::ObjectSerializer::PrepareCode() {
                   RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE_ENCODED);
   for (RelocIterator it(code, mode_mask); !it.done(); it.next()) {
     RelocInfo* rinfo = it.rinfo();
-    RelocInfo::Mode rmode = rinfo->rmode();
-    if (RelocInfo::IsInternalReference(rmode) ||
-        RelocInfo::IsInternalReferenceEncoded(rmode)) {
-      // Convert internal references to relative offsets.
-      Address target = rinfo->target_internal_reference();
-      intptr_t offset = target - entry;
-      DCHECK(0 <= offset && offset <= original->instruction_size());
-      rinfo->set_target_internal_reference(reinterpret_cast<Address>(offset));
-    } else if (!(FLAG_enable_ool_constant_pool && rinfo->IsInConstantPool())) {
+    if (!(FLAG_enable_ool_constant_pool && rinfo->IsInConstantPool())) {
       rinfo->WipeOut();
     }
   }
@@ -1987,14 +1990,13 @@ int Serializer::ObjectSerializer::OutputRawData(
   // locations in a non-ascending order.  Luckily that doesn't happen.
   DCHECK(to_skip >= 0);
   bool outputting_code = false;
-  if (to_skip != 0 && code_object_ && !code_has_been_output_) {
+  if (to_skip != 0 && is_code_object_ && !code_has_been_output_) {
     // Output the code all at once and fix later.
     bytes_to_output = object_->Size() + to_skip - bytes_processed_so_far_;
     outputting_code = true;
     code_has_been_output_ = true;
   }
-  if (bytes_to_output != 0 &&
-      (!code_object_ || outputting_code)) {
+  if (bytes_to_output != 0 && (!is_code_object_ || outputting_code)) {
 #define RAW_CASE(index)                                                        \
     if (!outputting_code && bytes_to_output == index * kPointerSize &&         \
         index * kPointerSize == to_skip) {                                     \
@@ -2009,9 +2011,9 @@ int Serializer::ObjectSerializer::OutputRawData(
       sink_->PutInt(bytes_to_output, "length");
     }
 
-    if (code_object_) object_start = PrepareCode();
+    if (is_code_object_) object_start = PrepareCode();
 
-    const char* description = code_object_ ? "Code" : "Byte";
+    const char* description = is_code_object_ ? "Code" : "Byte";
 #ifdef MEMORY_SANITIZER
     // Object sizes are usually rounded up with uninitialized padding space.
     MSAN_MEMORY_IS_INITIALIZED(object_start + base, bytes_to_output);
@@ -2335,7 +2337,6 @@ MaybeHandle<SharedFunctionInfo> CodeSerializer::Deserialize(
     isolate->logger()->CodeCreateEvent(Logger::SCRIPT_TAG, result->code(),
                                        *result, NULL, name);
   }
-
   return scope.CloseAndEscape(result);
 }
 

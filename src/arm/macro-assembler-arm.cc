@@ -1406,13 +1406,10 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
 
   // For the JSEntry handler, we must preserve r0-r4, r5-r6 are available.
   // We will build up the handler from the bottom by pushing on the stack.
-  // Set up the the state (r6) for pushing.
-  unsigned state =
-      StackHandler::IndexField::encode(handler_index) |
-      StackHandler::KindField::encode(kind);
-  mov(r6, Operand(state));
+  // Set up the the index (r6) for pushing.
+  mov(r6, Operand(handler_index));
 
-  // Push the context and state.
+  // Push the context and index.
   if (kind == StackHandler::JS_ENTRY) {
     mov(cp, Operand(Smi::FromInt(0)));  // Indicates no context.
     stm(db_w, sp, r6.bit() | cp.bit());
@@ -1695,12 +1692,11 @@ void MacroAssembler::Allocate(int object_size,
   if ((flags & DOUBLE_ALIGNMENT) != 0) {
     // Align the next allocation. Storing the filler map without checking top is
     // safe in new-space because the limit of the heap is aligned there.
-    DCHECK((flags & PRETENURE_OLD_POINTER_SPACE) == 0);
     STATIC_ASSERT(kPointerAlignment * 2 == kDoubleAlignment);
     and_(scratch2, result, Operand(kDoubleAlignmentMask), SetCC);
     Label aligned;
     b(eq, &aligned);
-    if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
+    if ((flags & PRETENURE) != 0) {
       cmp(result, Operand(ip));
       b(hs, gc_required);
     }
@@ -1809,12 +1805,11 @@ void MacroAssembler::Allocate(Register object_size,
   if ((flags & DOUBLE_ALIGNMENT) != 0) {
     // Align the next allocation. Storing the filler map without checking top is
     // safe in new-space because the limit of the heap is aligned there.
-    DCHECK((flags & PRETENURE_OLD_POINTER_SPACE) == 0);
     DCHECK(kPointerAlignment * 2 == kDoubleAlignment);
     and_(scratch2, result, Operand(kDoubleAlignmentMask), SetCC);
     Label aligned;
     b(eq, &aligned);
-    if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
+    if ((flags & PRETENURE) != 0) {
       cmp(result, Operand(ip));
       b(hs, gc_required);
     }

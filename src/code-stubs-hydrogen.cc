@@ -1340,7 +1340,7 @@ HValue* CodeStubGraphBuilder<StoreGlobalStub>::BuildCodeInitializedStub() {
   HValue* cell = Add<HLoadNamedField>(weak_cell, nullptr,
                                       HObjectAccess::ForWeakCellValue());
   Add<HCheckHeapObject>(cell);
-  HObjectAccess access(HObjectAccess::ForCellPayload(isolate()));
+  HObjectAccess access = HObjectAccess::ForPropertyCellValue();
   HValue* cell_contents = Add<HLoadNamedField>(cell, nullptr, access);
 
   if (stub->is_constant()) {
@@ -1360,8 +1360,7 @@ HValue* CodeStubGraphBuilder<StoreGlobalStub>::BuildCodeInitializedStub() {
     builder.Then();
     builder.Deopt(Deoptimizer::kUnexpectedCellContentsInGlobalStore);
     builder.Else();
-    HStoreNamedField* store = Add<HStoreNamedField>(cell, access, value);
-    store->MarkReceiverAsCell();
+    Add<HStoreNamedField>(cell, access, value);
     builder.End();
   }
 
