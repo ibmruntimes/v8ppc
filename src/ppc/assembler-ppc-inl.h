@@ -78,15 +78,9 @@ Address RelocInfo::target_internal_reference() {
 }
 
 
-void RelocInfo::set_target_internal_reference(Address target) {
-  if (IsInternalReference(rmode_)) {
-    // Jump table entry
-    Memory::Address_at(pc_) = target;
-  } else {
-    // mov sequence
-    DCHECK(IsInternalReferenceEncoded(rmode_));
-    Assembler::set_target_address_at(pc_, host_, target, SKIP_ICACHE_FLUSH);
-  }
+Address RelocInfo::target_internal_reference_address() {
+  DCHECK(IsInternalReference(rmode_) || IsInternalReferenceEncoded(rmode_));
+  return reinterpret_cast<Address>(pc_);
 }
 
 
@@ -104,7 +98,7 @@ Address RelocInfo::target_address_address() {
   if (FLAG_enable_embedded_constant_pool &&
       Assembler::IsConstantPoolLoadStart(pc_)) {
     // We return the PC for ool constant pool since this function is used by the
-    // serializerer and expects the address to reside within the code object.
+    // serializer and expects the address to reside within the code object.
     return reinterpret_cast<Address>(pc_);
   }
 
@@ -349,8 +343,18 @@ Object** RelocInfo::call_object_address() {
 
 void RelocInfo::WipeOut() {
   DCHECK(IsEmbeddedObject(rmode_) || IsCodeTarget(rmode_) ||
-         IsRuntimeEntry(rmode_) || IsExternalReference(rmode_));
-  Assembler::set_target_address_at(pc_, host_, NULL);
+         IsRuntimeEntry(rmode_) || IsExternalReference(rmode_) ||
+         IsInternalReference(rmode_) || IsInternalReferenceEncoded(rmode_));
+  if (IsInternalReference(rmode_)) {
+    // Jump table entry
+    Memory::Address_at(pc_) = NULL;
+  } else if (IsInternalReferenceEncoded(rmode_)) {
+    // mov sequence
+    // Currently used only by deserializer, no need to flush.
+    Assembler::set_target_address_at(pc_, host_, NULL, SKIP_ICACHE_FLUSH);
+  } else {
+    Assembler::set_target_address_at(pc_, host_, NULL);
+  }
 }
 
 
@@ -397,6 +401,9 @@ void RelocInfo::Visit(Isolate* isolate, ObjectVisitor* visitor) {
     visitor->VisitCell(this);
   } else if (mode == RelocInfo::EXTERNAL_REFERENCE) {
     visitor->VisitExternalReference(this);
+  } else if (mode == RelocInfo::INTERNAL_REFERENCE ||
+             mode == RelocInfo::INTERNAL_REFERENCE_ENCODED) {
+    visitor->VisitInternalReference(this);
   } else if (RelocInfo::IsCodeAgeSequence(mode)) {
     visitor->VisitCodeAgeSequence(this);
   } else if (((RelocInfo::IsJSReturn(mode) && IsPatchedReturnSequence()) ||
@@ -421,6 +428,9 @@ void RelocInfo::Visit(Heap* heap) {
     StaticVisitor::VisitCell(heap, this);
   } else if (mode == RelocInfo::EXTERNAL_REFERENCE) {
     StaticVisitor::VisitExternalReference(this);
+  } else if (mode == RelocInfo::INTERNAL_REFERENCE ||
+             mode == RelocInfo::INTERNAL_REFERENCE_ENCODED) {
+    StaticVisitor::VisitInternalReference(this);
   } else if (RelocInfo::IsCodeAgeSequence(mode)) {
     StaticVisitor::VisitCodeAgeSequence(heap, this);
   } else if (heap->isolate()->debug()->has_break_points() &&
@@ -566,6 +576,18 @@ void Assembler::deserialization_set_special_target_at(
     Address instruction_payload, Code* code, Address target) {
   set_target_address_at(instruction_payload, code, target);
 }
+
+
+void Assembler::deserialization_set_target_internal_reference_at(
+    Address pc, Address target) {
+  if (IsLis(instr_at(pc)) && IsOri(instr_at(pc + kInstrSize))) {
+    Code* code = NULL;
+    set_target_address_at(pc, code, target, SKIP_ICACHE_FLUSH);
+  } else {
+    Memory::Address_at(pc) = target;
+  }
+}
+
 
 // This code assumes the FIXED_SEQUENCE of lis/ori
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
