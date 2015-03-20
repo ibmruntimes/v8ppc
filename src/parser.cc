@@ -1145,8 +1145,24 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info,
       // from creating unresolved variables in already-resolved scopes.
       parsing_lazy_arrow_parameters_ = true;
       Expression* expression = ParseExpression(false, &ok);
-      DCHECK(expression->IsFunctionLiteral());
-      result = expression->AsFunctionLiteral();
+      if (ok) {
+        // Scanning must end at the same position that was recorded
+        // previously. If not, parsing has been interrupted due to a
+        // stack overflow, at which point the partially parsed arrow
+        // function concise body happens to be a valid expression. This
+        // is a problem only for arrow functions with single statement
+        // bodies, since there is no end token suck as "}" for normal
+        // functions.
+        if (scanner()->location().end_pos == shared_info->end_position()) {
+          // The pre-parser saw an arrow function here, so the full parser
+          // must produce a FunctionLiteral.
+          DCHECK(expression->IsFunctionLiteral());
+          result = expression->AsFunctionLiteral();
+        } else {
+          result = NULL;
+          ok = false;
+        }
+      }
     } else if (shared_info->is_default_constructor()) {
       result = DefaultConstructor(IsSubclassConstructor(shared_info->kind()),
                                   scope, shared_info->start_position(),
@@ -2707,6 +2723,7 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
   // reported (underlining).
   Expect(Token::RETURN, CHECK_OK);
   Scanner::Location loc = scanner()->location();
+  function_state_->set_return_location(loc);
 
   Token::Value tok = peek();
   Statement* result;
@@ -2721,6 +2738,14 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
       return_value = GetLiteralUndefined(position());
     }
   } else {
+    if (is_strong(language_mode()) &&
+        i::IsConstructor(function_state_->kind())) {
+      int pos = peek_position();
+      ReportMessageAt(Scanner::Location(pos, pos + 1),
+                      "strong_constructor_return_value");
+      *ok = false;
+      return NULL;
+    }
     return_value = ParseExpression(true, CHECK_OK);
   }
   ExpectSemicolon(CHECK_OK);

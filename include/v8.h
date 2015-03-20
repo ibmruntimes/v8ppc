@@ -411,6 +411,16 @@ template <class T> class Local : public Handle<T> {
 };
 
 
+/**
+ * A MaybeLocal<> is a wrapper around Local<> that enforces a check whether
+ * the Local<> is empty before it can be used.
+ *
+ * If an API method returns a MaybeLocal<>, the API method can potentially fail
+ * either because an exception is thrown, or because an exception is pending,
+ * e.g. because a previous API call threw an exception that hasn't been caught
+ * yet, or because a TerminateExecution exception was thrown. In that case, an
+ * empty MaybeLocal is returned.
+ */
 template <class T>
 class MaybeLocal {
  public:
@@ -429,6 +439,7 @@ class MaybeLocal {
     return !IsEmpty();
   }
 
+  // Will crash when checks are enabled if the MaybeLocal<> is empty.
   V8_INLINE Local<T> ToLocalChecked();
 
   template <class S>
@@ -4671,15 +4682,16 @@ typedef void (*AddHistogramSampleCallback)(void* histogram, int sample);
 // --- Memory Allocation Callback ---
 enum ObjectSpace {
   kObjectSpaceNewSpace = 1 << 0,
-  kObjectSpaceOldSpace = 1 << 1,
-  kObjectSpaceCodeSpace = 1 << 2,
-  kObjectSpaceMapSpace = 1 << 3,
-  kObjectSpaceCellSpace = 1 << 4,
-  kObjectSpacePropertyCellSpace = 1 << 5,
-  kObjectSpaceLoSpace = 1 << 6,
-  kObjectSpaceAll = kObjectSpaceNewSpace | kObjectSpaceOldSpace |
-                    kObjectSpaceCodeSpace | kObjectSpaceMapSpace |
-                    kObjectSpaceLoSpace
+  kObjectSpaceOldPointerSpace = 1 << 1,
+  kObjectSpaceOldDataSpace = 1 << 2,
+  kObjectSpaceCodeSpace = 1 << 3,
+  kObjectSpaceMapSpace = 1 << 4,
+  kObjectSpaceCellSpace = 1 << 5,
+  kObjectSpacePropertyCellSpace = 1 << 6,
+  kObjectSpaceLoSpace = 1 << 7,
+  kObjectSpaceAll = kObjectSpaceNewSpace | kObjectSpaceOldPointerSpace |
+                    kObjectSpaceOldDataSpace | kObjectSpaceCodeSpace |
+                    kObjectSpaceMapSpace | kObjectSpaceLoSpace
 };
 
   enum AllocationAction {
@@ -5077,6 +5089,7 @@ class V8_EXPORT Isolate {
   enum UseCounterFeature {
     kUseAsm = 0,
     kBreakIterator = 1,
+    kLegacyConst = 2,
     kUseCounterFeatureCount  // This enum value must be last.
   };
 
@@ -5997,6 +6010,12 @@ class V8_EXPORT V8 {
 /**
  * A simple Maybe type, representing an object which may or may not have a
  * value, see https://hackage.haskell.org/package/base/docs/Data-Maybe.html.
+ *
+ * If an API method returns a Maybe<>, the API method can potentially fail
+ * either because an exception is thrown, or because an exception is pending,
+ * e.g. because a previous API call threw an exception that hasn't been caught
+ * yet, or because a TerminateExecution exception was thrown. In that case, a
+ * "Nothing" value is returned.
  */
 template <class T>
 class Maybe {
@@ -6004,6 +6023,7 @@ class Maybe {
   V8_INLINE bool IsNothing() const { return !has_value; }
   V8_INLINE bool IsJust() const { return has_value; }
 
+  // Will crash when checks are enabled if the Maybe<> is nothing.
   V8_INLINE T FromJust() const {
 #ifdef V8_ENABLE_CHECKS
     V8::CheckIsJust(IsJust());
@@ -6304,6 +6324,13 @@ class V8_EXPORT Context {
 
   /** Returns an isolate associated with a current context. */
   v8::Isolate* GetIsolate();
+
+  /**
+   * The field at kDebugIdIndex is reserved for V8 debugger implementation.
+   * The value is propagated to the scripts compiled in given Context and
+   * can be used for filtering scripts.
+   */
+  enum EmbedderDataFields { kDebugIdIndex = 0 };
 
   /**
    * Gets the embedder data with the given index, which must have been set by a

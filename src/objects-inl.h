@@ -2349,6 +2349,7 @@ void FixedDoubleArray::FillWithHoles(int from, int to) {
 Object* WeakFixedArray::Get(int index) const {
   Object* raw = FixedArray::cast(this)->get(index + kFirstIndex);
   if (raw->IsSmi()) return raw;
+  DCHECK(raw->IsWeakCell());
   return WeakCell::cast(raw)->value();
 }
 
@@ -3147,12 +3148,7 @@ int DescriptorArray::GetFieldIndex(int descriptor_number) {
 
 HeapType* DescriptorArray::GetFieldType(int descriptor_number) {
   DCHECK(GetDetails(descriptor_number).location() == kField);
-  Object* value = GetValue(descriptor_number);
-  if (value->IsWeakCell()) {
-    if (WeakCell::cast(value)->cleared()) return HeapType::Any();
-    value = WeakCell::cast(value)->value();
-  }
-  return HeapType::cast(value);
+  return HeapType::cast(GetValue(descriptor_number));
 }
 
 

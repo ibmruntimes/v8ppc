@@ -424,6 +424,25 @@ class RepresentationSelector {
     }
   }
 
+  void VisitStateValues(Node* node) {
+    if (phase_ == PROPAGATE) {
+      for (int i = 0; i < node->InputCount(); i++) {
+        Enqueue(node->InputAt(i), kTypeAny);
+      }
+    } else {
+      Zone* zone = jsgraph_->zone();
+      ZoneVector<MachineType>* types =
+          new (zone->New(sizeof(ZoneVector<MachineType>)))
+              ZoneVector<MachineType>(node->InputCount(), zone);
+      for (int i = 0; i < node->InputCount(); i++) {
+        MachineTypeUnion input_type = GetInfo(node->InputAt(i))->output;
+        (*types)[i] = static_cast<MachineType>(input_type);
+      }
+      node->set_op(jsgraph_->common()->TypedStateValues(types));
+    }
+    SetOutput(node, kMachAnyTagged);
+  }
+
   const Operator* Int32Op(Node* node) {
     return changer_->Int32OperatorFor(node->opcode());
   }
@@ -538,24 +557,6 @@ class RepresentationSelector {
       //------------------------------------------------------------------
       // Simplified operators.
       //------------------------------------------------------------------
-      case IrOpcode::kAnyToBoolean: {
-        VisitUnop(node, kMachAnyTagged, kTypeBool | kRepTagged);
-        if (lower()) {
-          // AnyToBoolean(x) => Call(ToBooleanStub, x, no-context)
-          Operator::Properties properties = node->op()->properties();
-          Callable callable = CodeFactory::ToBoolean(
-              jsgraph_->isolate(), ToBooleanStub::RESULT_AS_ODDBALL);
-          CallDescriptor::Flags flags = CallDescriptor::kPatchableCallSite;
-          CallDescriptor* desc = Linkage::GetStubCallDescriptor(
-              jsgraph_->isolate(), jsgraph_->zone(), callable.descriptor(), 0,
-              flags, properties);
-          node->set_op(jsgraph_->common()->Call(desc));
-          node->InsertInput(jsgraph_->zone(), 0,
-                            jsgraph_->HeapConstant(callable.code()));
-          node->AppendInput(jsgraph_->zone(), jsgraph_->NoContextConstant());
-        }
-        break;
-      }
       case IrOpcode::kBooleanNot: {
         if (lower()) {
           MachineTypeUnion input = GetInfo(node->InputAt(0))->output;
@@ -1039,10 +1040,7 @@ class RepresentationSelector {
       case IrOpcode::kLoadStackPointer:
         return VisitLeaf(node, kMachPtr);
       case IrOpcode::kStateValues:
-        for (int i = 0; i < node->InputCount(); i++) {
-          ProcessInput(node, i, kTypeAny);
-        }
-        SetOutput(node, kMachAnyTagged);
+        VisitStateValues(node);
         break;
       default:
         VisitInputs(node);

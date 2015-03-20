@@ -1488,7 +1488,7 @@ void MacroAssembler::Allocate(int object_size, Register result,
     andi(scratch2, result, Operand(kDoubleAlignmentMask));
     Label aligned;
     beq(&aligned, cr0);
-    if ((flags & PRETENURE) != 0) {
+    if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
       cmpl(result, ip);
       bge(gc_required);
     }
@@ -1586,7 +1586,7 @@ void MacroAssembler::Allocate(Register object_size, Register result,
     andi(scratch2, result, Operand(kDoubleAlignmentMask));
     Label aligned;
     beq(&aligned, cr0);
-    if ((flags & PRETENURE) != 0) {
+    if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
       cmpl(result, ip);
       bge(gc_required);
     }

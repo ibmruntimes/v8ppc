@@ -266,6 +266,7 @@ action("js2c_experimental") {
     "src/harmony-tostring.js",
     "src/harmony-templates.js",
     "src/harmony-regexp.js",
+    "src/harmony-reflect.js"
   ]
 
   outputs = [
@@ -1392,11 +1393,11 @@ source_set("v8_libbase") {
   if (is_linux) {
     sources += [ "src/base/platform/platform-linux.cc" ]
 
-    libs = [ "rt" ]
+    libs = [ "dl", "rt" ]
   } else if (is_android) {
     defines += [ "CAN_USE_VFP_INSTRUCTIONS" ]
 
-    if (build_os == "mac") {
+    if (host_os == "mac") {
       if (current_toolchain == host_toolchain) {
         sources += [ "src/base/platform/platform-macos.cc" ]
       } else {

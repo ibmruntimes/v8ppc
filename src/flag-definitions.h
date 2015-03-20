@@ -192,7 +192,8 @@ DEFINE_IMPLICATION(es_staging, harmony)
   V(harmony_sloppy, "harmony features in sloppy mode")          \
   V(harmony_unicode, "harmony unicode escapes")                 \
   V(harmony_unicode_regexps, "harmony unicode regexps")         \
-  V(harmony_rest_parameters, "harmony rest parameters")
+  V(harmony_rest_parameters, "harmony rest parameters")         \
+  V(harmony_reflect, "harmony Reflect API")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                               \
@@ -595,7 +596,8 @@ DEFINE_BOOL(print_max_heap_committed, false,
             "in name=value format on exit")
 DEFINE_BOOL(trace_gc_verbose, false,
             "print more details following each garbage collection")
-DEFINE_BOOL(trace_fragmentation, false, "report fragmentation")
+DEFINE_BOOL(trace_fragmentation, false,
+            "report fragmentation for old pointer and data pages")
 DEFINE_BOOL(collect_maps, true,
             "garbage collect maps from which no objects can be reached")
 DEFINE_BOOL(weak_embedded_maps_in_optimized_code, true,

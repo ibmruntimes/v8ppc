@@ -73,7 +73,7 @@ const SharedOperator kSharedOperators[] = {
     SHARED(ToName, Operator::kNoProperties, 1, 1, 1, 1, 1, 1, 2),
     SHARED(ToObject, Operator::kNoProperties, 1, 1, 1, 1, 1, 1, 2),
     SHARED(Yield, Operator::kNoProperties, 1, 0, 1, 1, 1, 1, 2),
-    SHARED(Create, Operator::kEliminatable, 0, 0, 1, 1, 1, 1, 0),
+    SHARED(Create, Operator::kEliminatable, 0, 0, 1, 0, 1, 1, 0),
     SHARED(HasProperty, Operator::kNoProperties, 2, 1, 1, 1, 1, 1, 2),
     SHARED(TypeOf, Operator::kPure, 1, 0, 0, 0, 1, 0, 0),
     SHARED(InstanceOf, Operator::kNoProperties, 2, 1, 1, 1, 1, 1, 2),
@@ -171,7 +171,7 @@ TEST_P(JSStorePropertyOperatorTest, NumberOfInputsAndOutputs) {
   const Operator* op = javascript.StoreProperty(mode);
 
   // TODO(jarin): Get rid of this hack.
-  const int frame_state_input_count = FLAG_turbo_deoptimization ? 1 : 0;
+  const int frame_state_input_count = FLAG_turbo_deoptimization ? 2 : 0;
   EXPECT_EQ(3, op->ValueInputCount());
   EXPECT_EQ(1, OperatorProperties::GetContextInputCount(op));
   EXPECT_EQ(frame_state_input_count,
