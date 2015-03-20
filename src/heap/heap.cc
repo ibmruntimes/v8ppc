@@ -740,8 +740,9 @@ void Heap::HandleGCRequest() {
     return;
   }
   DCHECK(FLAG_overapproximate_weak_closure);
-  DCHECK(!incremental_marking()->weak_closure_was_overapproximated());
-  OverApproximateWeakClosure("GC interrupt");
+  if (!incremental_marking()->weak_closure_was_overapproximated()) {
+    OverApproximateWeakClosure("GC interrupt");
+  }
 }
 
 
@@ -806,6 +807,7 @@ void Heap::CollectAllAvailableGarbage(const char* gc_reason) {
     DisallowHeapAllocation no_recursive_gc;
     isolate()->optimizing_compiler_thread()->Flush();
   }
+  isolate()->ClearSerializerData();
   mark_compact_collector()->SetFlags(kMakeHeapIterableMask |
                                      kReduceMemoryFootprintMask);
   isolate_->compilation_cache()->Clear();

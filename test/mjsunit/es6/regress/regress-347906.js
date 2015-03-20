@@ -2,6 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --noharmony-strings
+// Flags: --allow-natives-syntax
 
-assertEquals(undefined, String.prototype.includes);
+function foo() {
+  return Math.clz32(12.34);
+}
+
+foo();
+foo();
+%OptimizeFunctionOnNextCall(foo);
+foo();
