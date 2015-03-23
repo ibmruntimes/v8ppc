@@ -875,7 +875,6 @@ Parser::Parser(ParseInfo* info)
   set_allow_harmony_numeric_literals(FLAG_harmony_numeric_literals);
   set_allow_harmony_classes(FLAG_harmony_classes);
   set_allow_harmony_object_literals(FLAG_harmony_object_literals);
-  set_allow_harmony_templates(FLAG_harmony_templates);
   set_allow_harmony_sloppy(FLAG_harmony_sloppy);
   set_allow_harmony_unicode(FLAG_harmony_unicode);
   set_allow_harmony_computed_property_names(
@@ -1151,7 +1150,7 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info,
         // stack overflow, at which point the partially parsed arrow
         // function concise body happens to be a valid expression. This
         // is a problem only for arrow functions with single statement
-        // bodies, since there is no end token suck as "}" for normal
+        // bodies, since there is no end token such as "}" for normal
         // functions.
         if (scanner()->location().end_pos == shared_info->end_position()) {
           // The pre-parser saw an arrow function here, so the full parser
@@ -4173,7 +4172,6 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
     reusable_preparser_->set_allow_harmony_classes(allow_harmony_classes());
     reusable_preparser_->set_allow_harmony_object_literals(
         allow_harmony_object_literals());
-    reusable_preparser_->set_allow_harmony_templates(allow_harmony_templates());
     reusable_preparser_->set_allow_harmony_sloppy(allow_harmony_sloppy());
     reusable_preparser_->set_allow_harmony_unicode(allow_harmony_unicode());
     reusable_preparser_->set_allow_harmony_computed_property_names(
