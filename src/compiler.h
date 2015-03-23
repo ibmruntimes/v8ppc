@@ -110,21 +110,21 @@ class CompilationInfo {
   // Various configuration flags for a compilation, as well as some properties
   // of the compiled code produced by a compilation.
   enum Flag {
-    kDeferredCalling = 1 << 7,
-    kNonDeferredCalling = 1 << 8,
-    kSavesCallerDoubles = 1 << 9,
-    kRequiresFrame = 1 << 10,
-    kMustNotHaveEagerFrame = 1 << 11,
-    kDeoptimizationSupport = 1 << 12,
-    kDebug = 1 << 13,
-    kCompilingForDebugging = 1 << 14,
-    kSerializing = 1 << 16,
-    kContextSpecializing = 1 << 17,
-    kInliningEnabled = 1 << 18,
-    kTypingEnabled = 1 << 19,
-    kDisableFutureOptimization = 1 << 20,
-    kSplittingEnabled = 1 << 23,
-    kBuiltinInliningEnabled = 1 << 24
+    kDeferredCalling = 1 << 0,
+    kNonDeferredCalling = 1 << 1,
+    kSavesCallerDoubles = 1 << 2,
+    kRequiresFrame = 1 << 3,
+    kMustNotHaveEagerFrame = 1 << 4,
+    kDeoptimizationSupport = 1 << 5,
+    kDebug = 1 << 6,
+    kCompilingForDebugging = 1 << 7,
+    kSerializing = 1 << 8,
+    kContextSpecializing = 1 << 9,
+    kInliningEnabled = 1 << 10,
+    kTypingEnabled = 1 << 11,
+    kDisableFutureOptimization = 1 << 12,
+    kSplittingEnabled = 1 << 13,
+    kBuiltinInliningEnabled = 1 << 14
   };
 
   explicit CompilationInfo(ParseInfo* parse_info);
@@ -140,7 +140,6 @@ class CompilationInfo {
   bool is_eval() const;
   bool is_native() const;
   bool is_module() const;
-  bool this_has_uses() const;
   LanguageMode language_mode() const;
   Handle<JSFunction> closure() const;
   FunctionLiteral* function() const;
@@ -490,8 +489,6 @@ class CompilationInfoWithZone: public CompilationInfo {
  public:
   explicit CompilationInfoWithZone(Handle<Script> script);
   explicit CompilationInfoWithZone(Handle<JSFunction> closure);
-  CompilationInfoWithZone(CodeStub* stub, Isolate* isolate)
-      : CompilationInfo(stub, isolate, &zone_) {}
 
   // Virtual destructor because a CompilationInfoWithZone has to exit the
   // zone scope and get rid of dependent maps even when the destructor is
