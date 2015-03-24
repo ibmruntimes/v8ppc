@@ -2939,7 +2939,7 @@ void LCodeGen::DoInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr) {
   Register map = temp;
   __ LoadP(map, FieldMemOperand(object, HeapObject::kMapOffset));
   {
-    // Block constant pool emission to ensure the positions of instructions are
+    // Block trampoline emission to ensure the positions of instructions are
     // as expected by the patcher. See InstanceofStub::Generate().
     Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
     __ bind(deferred->map_check());  // Label for calculating code patching.
@@ -2950,7 +2950,7 @@ void LCodeGen::DoInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr) {
     __ mov(ip, Operand(Handle<Object>(cell)));
     __ LoadP(ip, FieldMemOperand(ip, PropertyCell::kValueOffset));
     __ cmp(map, ip);
-    __ bne(&cache_miss);
+    __ bc_short(ne, &cache_miss);
     // We use Factory::the_hole_value() on purpose instead of loading from the
     // root array to force relocation to be able to later patch
     // with true or false.
