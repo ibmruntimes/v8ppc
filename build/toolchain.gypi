@@ -306,7 +306,6 @@
       ['v8_target_arch=="ppc" or v8_target_arch=="ppc64"', {
         'defines': [
           'V8_TARGET_ARCH_PPC',
-          'V8_PPC_PAGESIZE_OPT', # optimization pending contribution
           'V8_PPC_TAGGING_OPT', # optimization pending contribution
           'V8_PPC_SIMULATOR', # feature pending contribution
           'V8_PPC_CONSTANT_POOL_OPT', # feature pending contribution
