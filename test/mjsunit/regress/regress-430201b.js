@@ -25,43 +25,19 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+// Flags: --allow-natives-syntax --expose-gc
 
-function TryGetPrototypeOfNonObject(x) {
-  var caught = 0;
-  try {
-      Object.getPrototypeOf(x);
-  } catch (e) {
-    caught = e;
+(function() {
+  var array_1 = [];
+
+    %SetFlags("--stress-compaction");
+  for (var a = 0; a < 10000; a++) { array_1[a * 100] = 0; }
+
+  gc();
+  gc();
+
+  var array_2 = [];
+  for (var i = 0; i < 321361; i++) {
+    array_2[i] = String.fromCharCode(i)[0];
   }
-
-  assertTrue(caught instanceof TypeError);
-};
-
-function GetPrototypeOfObject(x) {
-  assertDoesNotThrow(Object.getPrototypeOf(x));
-  assertNotNull(Object.getPrototypeOf(x));
-  assertEquals(Object.getPrototypeOf(x), x.__proto__);
-}
-
-function F(){};
-
-// Non object
-var x = 10;
-
-// Object
-var y = new F();
-
-// Make sure that TypeError exceptions are thrown when non-objects are passed
-// as argument
-TryGetPrototypeOfNonObject(0);
-TryGetPrototypeOfNonObject(null);
-TryGetPrototypeOfNonObject('Testing');
-TryGetPrototypeOfNonObject(x);
-
-// Make sure the real objects have this method and that it returns the
-// actual prototype object. Also test for Functions and RegExp.
-GetPrototypeOfObject(this);
-GetPrototypeOfObject(y);
-GetPrototypeOfObject({x:5});
-GetPrototypeOfObject(F);
-GetPrototypeOfObject(RegExp);
+})();

@@ -113,6 +113,7 @@
   'es6/debug-stepnext-for': [PASS, NO_VARIANTS],
   'es6/debug-evaluate-blockscopes': [PASS, NO_VARIANTS],
   'regress/regress-crbug-259300': [PASS, NO_VARIANTS],
+  'es6/regress/regress-468661': [PASS, NO_VARIANTS],
 
   ##############################################################################
   # Too slow in debug mode with --stress-opt mode.
@@ -120,6 +121,11 @@
   'compiler/regress-funcaller': [PASS, ['mode == debug', SKIP]],
   'regress/regress-2318': [PASS, ['mode == debug', SKIP]],
   'regress/regress-create-exception': [PASS, ['mode == debug', SKIP]],
+
+  ##############################################################################
+  # Too slow in debug mode for validation of elements.
+  'regress/regress-430201': [PASS, ['mode == debug', SKIP]],
+  'regress/regress-430201b': [PASS, ['mode == debug', SKIP]],
 
   ##############################################################################
   # Too slow in debug mode for GC stress mode.
@@ -138,6 +144,7 @@
 
   # Very slow on ARM and MIPS, contains no architecture dependent code.
   'unicode-case-overoptimization': [PASS, NO_VARIANTS, ['arch == arm or arch == android_arm or arch == android_arm64 or arch == mipsel or arch == mips64el or arch == mips', TIMEOUT]],
+  'regress/regress-3976': [PASS, NO_VARIANTS, ['arch == arm or arch == android_arm or arch == android_arm64 or arch == mipsel or arch == mips64el or arch == mips', SKIP]],
 
   ##############################################################################
   # This test expects to reach a certain recursion depth, which may not work
@@ -183,6 +190,10 @@
   # BUG(v8:2989). PASS/FAIL on linux32 because crankshaft is turned off for
   # nosse2. Also for arm novfp3.
   'regress/regress-2989': [FAIL, NO_VARIANTS, ['system == linux and arch == x87 or arch == arm and simulator == True', PASS]],
+
+  # BUG(v8:3985). Wrong materialization of arguments object after throwing
+  # an exception.
+  'regress/regress-3985': [PASS, FAIL],
 
   # Skip endain dependent test for mips due to different typed views of the same
   # array buffer.

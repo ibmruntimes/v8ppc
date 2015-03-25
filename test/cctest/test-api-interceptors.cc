@@ -3024,15 +3024,27 @@ THREADED_TEST(NamedAllCanReadInterceptor) {
 
   access_check_data.result = true;
   ExpectInt32("checked.whatever", 17);
-  CHECK_EQ(1, access_check_data.count);
+  CHECK(!CompileRun("Object.getOwnPropertyDescriptor(checked, 'whatever')")
+             ->IsUndefined());
+  CHECK_EQ(2, access_check_data.count);
 
   access_check_data.result = false;
   ExpectInt32("checked.whatever", intercept_data_0.value);
-  CHECK_EQ(2, access_check_data.count);
+  {
+    v8::TryCatch try_catch(isolate);
+    CompileRun("Object.getOwnPropertyDescriptor(checked, 'whatever')");
+    CHECK(try_catch.HasCaught());
+  }
+  CHECK_EQ(4, access_check_data.count);
 
   intercept_data_1.should_intercept = true;
   ExpectInt32("checked.whatever", intercept_data_1.value);
-  CHECK_EQ(3, access_check_data.count);
+  {
+    v8::TryCatch try_catch(isolate);
+    CompileRun("Object.getOwnPropertyDescriptor(checked, 'whatever')");
+    CHECK(try_catch.HasCaught());
+  }
+  CHECK_EQ(6, access_check_data.count);
 }
 
 
@@ -3090,15 +3102,23 @@ THREADED_TEST(IndexedAllCanReadInterceptor) {
 
   access_check_data.result = true;
   ExpectInt32("checked[15]", 17);
-  CHECK_EQ(1, access_check_data.count);
+  CHECK(!CompileRun("Object.getOwnPropertyDescriptor(checked, '15')")
+             ->IsUndefined());
+  CHECK_EQ(3, access_check_data.count);
 
   access_check_data.result = false;
   ExpectInt32("checked[15]", intercept_data_0.value);
-  CHECK_EQ(2, access_check_data.count);
+  // Note: this should throw but without a LookupIterator it's complicated.
+  CHECK(!CompileRun("Object.getOwnPropertyDescriptor(checked, '15')")
+             ->IsUndefined());
+  CHECK_EQ(6, access_check_data.count);
 
   intercept_data_1.should_intercept = true;
   ExpectInt32("checked[15]", intercept_data_1.value);
-  CHECK_EQ(3, access_check_data.count);
+  // Note: this should throw but without a LookupIterator it's complicated.
+  CHECK(!CompileRun("Object.getOwnPropertyDescriptor(checked, '15')")
+             ->IsUndefined());
+  CHECK_EQ(9, access_check_data.count);
 }
 
 
@@ -3226,4 +3246,67 @@ THREADED_TEST(NonMaskingInterceptorPrototypePropertyIC) {
   CompileRun("outer.whatever = 4;");
   ExpectInt32("f(obj)", 239);
   ExpectInt32("f(outer)", 4);
+}
+
+
+namespace {
+
+void DatabaseGetter(Local<Name> name,
+                    const v8::PropertyCallbackInfo<Value>& info) {
+  ApiTestFuzzer::Fuzz();
+  auto context = info.GetIsolate()->GetCurrentContext();
+  Local<v8::Object> db = info.Holder()
+                             ->GetRealNamedProperty(context, v8_str("db"))
+                             .ToLocalChecked()
+                             .As<v8::Object>();
+  if (!db->Has(context, name).FromJust()) return;
+  info.GetReturnValue().Set(db->Get(context, name).ToLocalChecked());
+}
+
+
+void DatabaseSetter(Local<Name> name, Local<Value> value,
+                    const v8::PropertyCallbackInfo<Value>& info) {
+  ApiTestFuzzer::Fuzz();
+  auto context = info.GetIsolate()->GetCurrentContext();
+  if (name->Equals(v8_str("db"))) return;
+  Local<v8::Object> db = info.Holder()
+                             ->GetRealNamedProperty(context, v8_str("db"))
+                             .ToLocalChecked()
+                             .As<v8::Object>();
+  db->Set(context, name, value).FromJust();
+  info.GetReturnValue().Set(value);
+}
+}
+
+
+THREADED_TEST(NonMaskingInterceptorGlobalEvalRegression) {
+  auto isolate = CcTest::isolate();
+  v8::HandleScope handle_scope(isolate);
+  LocalContext context;
+
+  auto interceptor_templ = v8::ObjectTemplate::New(isolate);
+  v8::NamedPropertyHandlerConfiguration conf(DatabaseGetter, DatabaseSetter);
+  conf.flags = v8::PropertyHandlerFlags::kNonMasking;
+  interceptor_templ->SetHandler(conf);
+
+  context->Global()->Set(v8_str("intercepted_1"),
+                         interceptor_templ->NewInstance());
+  context->Global()->Set(v8_str("intercepted_2"),
+                         interceptor_templ->NewInstance());
+
+  // Init dbs.
+  CompileRun(
+      "intercepted_1.db = {};"
+      "intercepted_2.db = {};");
+
+  ExpectInt32(
+      "var obj = intercepted_1;"
+      "obj.x = 4;"
+      "eval('obj.x');"
+      "eval('obj.x');"
+      "eval('obj.x');"
+      "obj = intercepted_2;"
+      "obj.x = 9;"
+      "eval('obj.x');",
+      9);
 }

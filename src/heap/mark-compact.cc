@@ -287,6 +287,60 @@ bool MarkCompactCollector::StartCompaction(CompactionMode mode) {
 }
 
 
+void MarkCompactCollector::ClearInvalidSlotsBufferEntries(PagedSpace* space) {
+  PageIterator it(space);
+  while (it.has_next()) {
+    Page* p = it.next();
+    SlotsBuffer::RemoveInvalidSlots(heap_, p->slots_buffer());
+  }
+}
+
+
+void MarkCompactCollector::ClearInvalidStoreAndSlotsBufferEntries() {
+  heap_->store_buffer()->ClearInvalidStoreBufferEntries();
+
+  ClearInvalidSlotsBufferEntries(heap_->old_pointer_space());
+  ClearInvalidSlotsBufferEntries(heap_->old_data_space());
+  ClearInvalidSlotsBufferEntries(heap_->code_space());
+  ClearInvalidSlotsBufferEntries(heap_->cell_space());
+  ClearInvalidSlotsBufferEntries(heap_->map_space());
+
+  LargeObjectIterator it(heap_->lo_space());
+  for (HeapObject* object = it.Next(); object != NULL; object = it.Next()) {
+    MemoryChunk* chunk = MemoryChunk::FromAddress(object->address());
+    SlotsBuffer::RemoveInvalidSlots(heap_, chunk->slots_buffer());
+  }
+}
+
+
+#ifdef VERIFY_HEAP
+static void VerifyValidSlotsBufferEntries(Heap* heap, PagedSpace* space) {
+  PageIterator it(space);
+  while (it.has_next()) {
+    Page* p = it.next();
+    SlotsBuffer::VerifySlots(heap, p->slots_buffer());
+  }
+}
+
+
+static void VerifyValidStoreAndSlotsBufferEntries(Heap* heap) {
+  heap->store_buffer()->VerifyValidStoreBufferEntries();
+
+  VerifyValidSlotsBufferEntries(heap, heap->old_pointer_space());
+  VerifyValidSlotsBufferEntries(heap, heap->old_data_space());
+  VerifyValidSlotsBufferEntries(heap, heap->code_space());
+  VerifyValidSlotsBufferEntries(heap, heap->cell_space());
+  VerifyValidSlotsBufferEntries(heap, heap->map_space());
+
+  LargeObjectIterator it(heap->lo_space());
+  for (HeapObject* object = it.Next(); object != NULL; object = it.Next()) {
+    MemoryChunk* chunk = MemoryChunk::FromAddress(object->address());
+    SlotsBuffer::VerifySlots(heap, chunk->slots_buffer());
+  }
+}
+#endif
+
+
 void MarkCompactCollector::CollectGarbage() {
   // Make sure that Prepare() has been called. The individual steps below will
   // update the state as they proceed.
@@ -312,11 +366,11 @@ void MarkCompactCollector::CollectGarbage() {
   }
 #endif
 
-  heap_->store_buffer()->ClearInvalidStoreBufferEntries();
+  ClearInvalidStoreAndSlotsBufferEntries();
 
 #ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
-    heap_->store_buffer()->VerifyValidStoreBufferEntries();
+    VerifyValidStoreAndSlotsBufferEntries(heap_);
   }
 #endif
 
@@ -599,11 +653,11 @@ const char* AllocationSpaceName(AllocationSpace space) {
 static int FreeListFragmentation(PagedSpace* space, Page* p) {
   // If page was not swept then there are no free list items on it.
   if (!p->WasSwept()) {
-    if (FLAG_trace_fragmentation) {
+    if (FLAG_trace_fragmentation_verbose) {
       PrintF("%p [%s]: %d bytes live (unswept)\n", reinterpret_cast<void*>(p),
              AllocationSpaceName(space->identity()), p->LiveBytes());
     }
-    return 0;
+    return FLAG_always_compact ? 1 : 0;
   }
 
   PagedSpace::SizeStats sizes;
@@ -620,7 +674,7 @@ static int FreeListFragmentation(PagedSpace* space, Page* p) {
     ratio_threshold = 15;
   }
 
-  if (FLAG_trace_fragmentation) {
+  if (FLAG_trace_fragmentation_verbose) {
     PrintF("%p [%s]: %d (%.2f%%) %d (%.2f%%) %d (%.2f%%) %d (%.2f%%) %s\n",
            reinterpret_cast<void*>(p), AllocationSpaceName(space->identity()),
            static_cast<int>(sizes.small_size_),
@@ -696,6 +750,10 @@ void MarkCompactCollector::CollectEvacuationCandidates(PagedSpace* space) {
     max_evacuation_candidates *= 2;
   }
 
+  if (FLAG_always_compact) {
+    max_evacuation_candidates = kMaxMaxEvacuationCandidates;
+  }
+
   if (FLAG_trace_fragmentation && mode == REDUCE_MEMORY_FOOTPRINT) {
     PrintF(
         "Estimated over reserved memory: %.1f / %.1f MB (threshold %d), "
@@ -709,11 +767,17 @@ void MarkCompactCollector::CollectEvacuationCandidates(PagedSpace* space) {
 
   Candidate candidates[kMaxMaxEvacuationCandidates];
 
+  if (FLAG_trace_fragmentation &&
+      max_evacuation_candidates >= kMaxMaxEvacuationCandidates) {
+    PrintF("Hit max page compaction limit of %d pages\n",
+           kMaxMaxEvacuationCandidates);
+  }
   max_evacuation_candidates =
       Min(kMaxMaxEvacuationCandidates, max_evacuation_candidates);
 
   int count = 0;
   int fragmentation = 0;
+  int page_number = 0;
   Candidate* least = NULL;
 
   PageIterator it(space);
@@ -728,10 +792,17 @@ void MarkCompactCollector::CollectEvacuationCandidates(PagedSpace* space) {
     CHECK(p->slots_buffer() == NULL);
 
     if (FLAG_stress_compaction) {
-      unsigned int counter = space->heap()->ms_count();
-      uintptr_t page_number = reinterpret_cast<uintptr_t>(p) >> kPageSizeBits;
-      if ((counter & 1) == (page_number & 1)) fragmentation = 1;
-    } else if (mode == REDUCE_MEMORY_FOOTPRINT) {
+      if (FLAG_manual_evacuation_candidates_selection) {
+        if (p->IsFlagSet(MemoryChunk::FORCE_EVACUATION_CANDIDATE_FOR_TESTING)) {
+          p->ClearFlag(MemoryChunk::FORCE_EVACUATION_CANDIDATE_FOR_TESTING);
+          fragmentation = 1;
+        }
+      } else {
+        unsigned int counter = space->heap()->ms_count();
+        if ((counter & 1) == (page_number & 1)) fragmentation = 1;
+        page_number++;
+      }
+    } else if (mode == REDUCE_MEMORY_FOOTPRINT && !FLAG_always_compact) {
       // Don't try to release too many pages.
       if (estimated_release >= over_reserved) {
         continue;
@@ -756,7 +827,7 @@ void MarkCompactCollector::CollectEvacuationCandidates(PagedSpace* space) {
         fragmentation = 0;
       }
 
-      if (FLAG_trace_fragmentation) {
+      if (FLAG_trace_fragmentation_verbose) {
         PrintF("%p [%s]: %d (%.2f%%) free %s\n", reinterpret_cast<void*>(p),
                AllocationSpaceName(space->identity()),
                static_cast<int>(free_bytes),
@@ -3026,10 +3097,14 @@ bool MarkCompactCollector::TryPromoteObject(HeapObject* object,
 }
 
 
-bool MarkCompactCollector::IsSlotInBlackObject(Page* p, Address slot) {
+bool MarkCompactCollector::IsSlotInBlackObject(Page* p, Address slot,
+                                               HeapObject** out_object) {
   // This function does not support large objects right now.
   Space* owner = p->owner();
-  if (owner == heap_->lo_space() || owner == NULL) return true;
+  if (owner == heap_->lo_space() || owner == NULL) {
+    *out_object = NULL;
+    return true;
+  }
 
   uint32_t mark_bit_index = p->AddressToMarkbitIndex(slot);
   unsigned int start_index = mark_bit_index >> Bitmap::kBitsPerCellLog2;
@@ -3083,6 +3158,7 @@ bool MarkCompactCollector::IsSlotInBlackObject(Page* p, Address slot) {
       (object->address() + object->Size()) > slot) {
     // If the slot is within the last found object in the cell, the slot is
     // in a live object.
+    *out_object = object;
     return true;
   }
   return false;
@@ -3124,28 +3200,38 @@ bool MarkCompactCollector::IsSlotInBlackObjectSlow(Page* p, Address slot) {
 }
 
 
-bool MarkCompactCollector::IsSlotInLiveObject(HeapObject** address,
-                                              HeapObject* object) {
-  // If the target object is not black, the source slot must be part
-  // of a non-black (dead) object.
-  if (!Marking::IsBlack(Marking::MarkBitFrom(object))) {
-    return false;
-  }
-
+bool MarkCompactCollector::IsSlotInLiveObject(Address slot) {
+  HeapObject* object = NULL;
   // The target object is black but we don't know if the source slot is black.
   // The source object could have died and the slot could be part of a free
   // space. Find out based on mark bits if the slot is part of a live object.
-  if (!IsSlotInBlackObject(
-          Page::FromAddress(reinterpret_cast<Address>(address)),
-          reinterpret_cast<Address>(address))) {
+  if (!IsSlotInBlackObject(Page::FromAddress(slot), slot, &object)) {
     return false;
   }
+
+#if V8_DOUBLE_FIELDS_UNBOXING
+  // |object| is NULL only when the slot belongs to large object space.
+  DCHECK(object != NULL ||
+         Page::FromAnyPointerAddress(heap_, slot)->owner() ==
+             heap_->lo_space());
+  // We don't need to check large objects' layout descriptor since it can't
+  // contain in-object fields anyway.
+  if (object != NULL) {
+    // Filter out slots that happens to point to unboxed double fields.
+    LayoutDescriptorHelper helper(object->map());
+    bool has_only_tagged_fields = helper.all_fields_tagged();
+    if (!has_only_tagged_fields &&
+        !helper.IsTagged(static_cast<int>(slot - object->address()))) {
+      return false;
+    }
+  }
+#endif
 
   return true;
 }
 
 
-void MarkCompactCollector::VerifyIsSlotInLiveObject(HeapObject** address,
+void MarkCompactCollector::VerifyIsSlotInLiveObject(Address slot,
                                                     HeapObject* object) {
   // The target object has to be black.
   CHECK(Marking::IsBlack(Marking::MarkBitFrom(object)));
@@ -3153,9 +3239,7 @@ void MarkCompactCollector::VerifyIsSlotInLiveObject(HeapObject** address,
   // The target object is black but we don't know if the source slot is black.
   // The source object could have died and the slot could be part of a free
   // space. Use the mark bit iterator to find out about liveness of the slot.
-  CHECK(IsSlotInBlackObjectSlow(
-      Page::FromAddress(reinterpret_cast<Address>(address)),
-      reinterpret_cast<Address>(address)));
+  CHECK(IsSlotInBlackObjectSlow(Page::FromAddress(slot), slot));
 }
 
 
@@ -3242,6 +3326,7 @@ void MarkCompactCollector::EvacuateLiveObjectsFromPage(Page* p) {
 
 void MarkCompactCollector::EvacuatePages() {
   int npages = evacuation_candidates_.length();
+  int abandoned_pages = 0;
   for (int i = 0; i < npages; i++) {
     Page* p = evacuation_candidates_[i];
     DCHECK(p->IsEvacuationCandidate() ||
@@ -3257,7 +3342,7 @@ void MarkCompactCollector::EvacuatePages() {
     if (p->IsEvacuationCandidate()) {
       // During compaction we might have to request a new page. Check that we
       // have an emergency page and the space still has room for that.
-      if (space->HasEmergencyMemory() && space->CanExpand()) {
+      if (space->HasEmergencyMemory() || space->CanExpand()) {
         EvacuateLiveObjectsFromPage(p);
         // Unlink the page from the list of pages here. We must not iterate
         // over that page later (e.g. when scan on scavenge pages are
@@ -3273,6 +3358,7 @@ void MarkCompactCollector::EvacuatePages() {
           page->ClearEvacuationCandidate();
           page->SetFlag(Page::RESCAN_ON_EVACUATION);
         }
+        abandoned_pages = npages - i;
         break;
       }
     }
@@ -3284,6 +3370,16 @@ void MarkCompactCollector::EvacuatePages() {
          space = spaces.next()) {
       if (space->HasEmergencyMemory()) {
         space->FreeEmergencyMemory();
+      }
+    }
+    if (FLAG_trace_fragmentation) {
+      if (abandoned_pages != 0) {
+        PrintF(
+            "  Abandon %d out of %d page defragmentations due to lack of "
+            "memory\n",
+            abandoned_pages, npages);
+      } else {
+        PrintF("  Defragmented %d pages\n", npages);
       }
     }
   }
@@ -3629,7 +3725,7 @@ void MarkCompactCollector::EvacuateNewSpaceAndCandidates() {
                              GCTracer::Scope::MC_UPDATE_POINTERS_TO_EVACUATED);
     SlotsBuffer::UpdateSlotsRecordedIn(heap_, migration_slots_buffer_,
                                        code_slots_filtering_required);
-    if (FLAG_trace_fragmentation) {
+    if (FLAG_trace_fragmentation_verbose) {
       PrintF("  migration slots buffer: %d\n",
              SlotsBuffer::SizeOfChain(migration_slots_buffer_));
     }
@@ -3664,7 +3760,7 @@ void MarkCompactCollector::EvacuateNewSpaceAndCandidates() {
       if (p->IsEvacuationCandidate()) {
         SlotsBuffer::UpdateSlotsRecordedIn(heap_, p->slots_buffer(),
                                            code_slots_filtering_required);
-        if (FLAG_trace_fragmentation) {
+        if (FLAG_trace_fragmentation_verbose) {
           PrintF("  page %p slots buffer: %d\n", reinterpret_cast<void*>(p),
                  SlotsBuffer::SizeOfChain(p->slots_buffer()));
         }
@@ -4459,6 +4555,66 @@ bool SlotsBuffer::AddTo(SlotsBufferAllocator* allocator,
   buffer->Add(reinterpret_cast<ObjectSlot>(type));
   buffer->Add(reinterpret_cast<ObjectSlot>(addr));
   return true;
+}
+
+
+static Object* g_smi_slot = NULL;
+
+
+void SlotsBuffer::RemoveInvalidSlots(Heap* heap, SlotsBuffer* buffer) {
+  DCHECK_EQ(Smi::FromInt(0), g_smi_slot);
+
+  // Remove entries by replacing them with a dummy slot containing a smi.
+  const ObjectSlot kRemovedEntry = &g_smi_slot;
+
+  while (buffer != NULL) {
+    SlotsBuffer::ObjectSlot* slots = buffer->slots_;
+    intptr_t slots_count = buffer->idx_;
+
+    for (int slot_idx = 0; slot_idx < slots_count; ++slot_idx) {
+      ObjectSlot slot = slots[slot_idx];
+      if (!IsTypedSlot(slot)) {
+        Object* object = *slot;
+        if (object->IsHeapObject()) {
+          if (heap->InNewSpace(object) ||
+              !heap->mark_compact_collector()->IsSlotInLiveObject(
+                  reinterpret_cast<Address>(slot))) {
+            slots[slot_idx] = kRemovedEntry;
+          }
+        }
+      } else {
+        ++slot_idx;
+        DCHECK(slot_idx < slots_count);
+      }
+    }
+    buffer = buffer->next();
+  }
+}
+
+
+void SlotsBuffer::VerifySlots(Heap* heap, SlotsBuffer* buffer) {
+  DCHECK_EQ(Smi::FromInt(0), g_smi_slot);
+
+  while (buffer != NULL) {
+    SlotsBuffer::ObjectSlot* slots = buffer->slots_;
+    intptr_t slots_count = buffer->idx_;
+
+    for (int slot_idx = 0; slot_idx < slots_count; ++slot_idx) {
+      ObjectSlot slot = slots[slot_idx];
+      if (!IsTypedSlot(slot)) {
+        Object* object = *slot;
+        if (object->IsHeapObject()) {
+          CHECK(!heap->InNewSpace(object));
+          CHECK(heap->mark_compact_collector()->IsSlotInLiveObject(
+              reinterpret_cast<Address>(slot)));
+        }
+      } else {
+        ++slot_idx;
+        DCHECK(slot_idx < slots_count);
+      }
+    }
+    buffer = buffer->next();
+  }
 }
 
 

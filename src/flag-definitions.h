@@ -594,8 +594,9 @@ DEFINE_BOOL(print_max_heap_committed, false,
             "in name=value format on exit")
 DEFINE_BOOL(trace_gc_verbose, false,
             "print more details following each garbage collection")
-DEFINE_BOOL(trace_fragmentation, false,
-            "report fragmentation for old pointer and data pages")
+DEFINE_BOOL(trace_fragmentation, false, "report fragmentation for old space")
+DEFINE_BOOL(trace_fragmentation_verbose, false,
+            "report fragmentation for old space (detailed)")
 DEFINE_BOOL(collect_maps, true,
             "garbage collect maps from which no objects can be reached")
 DEFINE_BOOL(weak_embedded_maps_in_optimized_code, true,
@@ -764,6 +765,11 @@ DEFINE_BOOL(force_marking_deque_overflows, false,
 DEFINE_BOOL(stress_compaction, false,
             "stress the GC compactor to flush out bugs (implies "
             "--force_marking_deque_overflows)")
+
+DEFINE_BOOL(manual_evacuation_candidates_selection, false,
+            "Test mode only flag. It allows an unit test to select evacuation "
+            "candidates pages (requires --stress_compaction).")
+
 
 //
 // Dev shell flags

@@ -1334,7 +1334,10 @@ void AstGraphBuilder::VisitTryCatchStatement(TryCatchStatement* stmt) {
   try_control.BeginTry();
   {
     ControlScopeForCatch scope(this, &try_control);
+    STATIC_ASSERT(TryBlockConstant::kElementCount == 1);
+    environment()->Push(current_context());
     Visit(stmt->try_block());
+    environment()->Pop();
   }
   try_control.EndTry();
 
@@ -1381,7 +1384,10 @@ void AstGraphBuilder::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
   try_control.BeginTry();
   {
     ControlScopeForFinally scope(this, commands, &try_control);
+    STATIC_ASSERT(TryBlockConstant::kElementCount == 1);
+    environment()->Push(current_context());
     Visit(stmt->try_block());
+    environment()->Pop();
   }
   try_control.EndTry(commands->GetFallThroughToken(), fallthrough_result);
 
@@ -1420,7 +1426,6 @@ void AstGraphBuilder::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
 
 
 void AstGraphBuilder::VisitDebuggerStatement(DebuggerStatement* stmt) {
-  // TODO(turbofan): Do we really need a separate reloc-info for this?
   Node* node = NewNode(javascript()->CallRuntime(Runtime::kDebugBreak, 0));
   PrepareFrameState(node, stmt->DebugBreakId());
   environment()->MarkAllLocalsLive();

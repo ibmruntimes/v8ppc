@@ -790,7 +790,7 @@ Expression* ParserTraits::ExpressionFromIdentifier(const AstRawString* name,
   // for Traits::DeclareArrowParametersFromExpression() to be able to
   // pick the names of the parameters.
   return parser_->parsing_lazy_arrow_parameters_
-             ? factory->NewVariableProxy(name, false, start_position,
+             ? factory->NewVariableProxy(name, Variable::NORMAL, start_position,
                                          end_position)
              : scope->NewUnresolved(factory, name, start_position,
                                     end_position);
@@ -1975,7 +1975,7 @@ Variable* Parser::Declare(Declaration* declaration, bool resolve, bool* ok) {
     // For global const variables we bind the proxy to a variable.
     DCHECK(resolve);  // should be set by all callers
     Variable::Kind kind = Variable::NORMAL;
-    var = new (zone()) Variable(declaration_scope, name, mode, true, kind,
+    var = new (zone()) Variable(declaration_scope, name, mode, kind,
                                 kNeedsInitialization, kNotAssigned);
   } else if (declaration_scope->is_eval_scope() &&
              is_sloppy(declaration_scope->language_mode())) {
@@ -1984,7 +1984,7 @@ Variable* Parser::Declare(Declaration* declaration, bool resolve, bool* ok) {
     // DeclareLookupSlot runtime function.
     Variable::Kind kind = Variable::NORMAL;
     // TODO(sigurds) figure out if kNotAssigned is OK here
-    var = new (zone()) Variable(declaration_scope, name, mode, true, kind,
+    var = new (zone()) Variable(declaration_scope, name, mode, kind,
                                 declaration->initialization(), kNotAssigned);
     var->AllocateTo(Variable::LOOKUP, -1);
     resolve = true;
@@ -3201,7 +3201,6 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
 
   Block* inner_block = factory()->NewBlock(NULL, names->length() + 4, false,
                                            RelocInfo::kNoPosition);
-  int pos = scanner()->location().beg_pos;
   ZoneList<Variable*> inner_vars(names->length(), zone());
 
   // For each let variable x:
@@ -3214,8 +3213,9 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
     Declare(declaration, true, CHECK_OK);
     inner_vars.Add(declaration->proxy()->var(), zone());
     VariableProxy* temp_proxy = factory()->NewVariableProxy(temps.at(i));
-    Assignment* assignment = factory()->NewAssignment(
-        is_const ? Token::INIT_CONST : Token::INIT_LET, proxy, temp_proxy, pos);
+    Assignment* assignment =
+        factory()->NewAssignment(is_const ? Token::INIT_CONST : Token::INIT_LET,
+                                 proxy, temp_proxy, RelocInfo::kNoPosition);
     Statement* assignment_statement =
         factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
     proxy->var()->set_initializer_position(init->position());
@@ -3230,8 +3230,8 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
     {
       Expression* const1 = factory()->NewSmiLiteral(1, RelocInfo::kNoPosition);
       VariableProxy* first_proxy = factory()->NewVariableProxy(first);
-      compare =
-          factory()->NewCompareOperation(Token::EQ, first_proxy, const1, pos);
+      compare = factory()->NewCompareOperation(Token::EQ, first_proxy, const1,
+                                               RelocInfo::kNoPosition);
     }
     Statement* clear_first = NULL;
     // Make statement: first = 0.
@@ -3243,8 +3243,8 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
       clear_first =
           factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
     }
-    Statement* clear_first_or_next = factory()->NewIfStatement(
-        compare, clear_first, next, RelocInfo::kNoPosition);
+    Statement* clear_first_or_next =
+        factory()->NewIfStatement(compare, clear_first, next, next->position());
     inner_block->AddStatement(clear_first_or_next, zone());
   }
 
@@ -3265,8 +3265,8 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
   {
     Expression* const1 = factory()->NewSmiLiteral(1, RelocInfo::kNoPosition);
     VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
-    flag_cond =
-        factory()->NewCompareOperation(Token::EQ, flag_proxy, const1, pos);
+    flag_cond = factory()->NewCompareOperation(Token::EQ, flag_proxy, const1,
+                                               RelocInfo::kNoPosition);
   }
 
   // Create chain of expressions "flag = 0, temp_x = x, ..."
@@ -3282,9 +3282,11 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
     }
 
     // Make the comma-separated list of temp_x = x assignments.
+    int inner_var_proxy_pos = scanner()->location().beg_pos;
     for (int i = 0; i < names->length(); i++) {
       VariableProxy* temp_proxy = factory()->NewVariableProxy(temps.at(i));
-      VariableProxy* proxy = factory()->NewVariableProxy(inner_vars.at(i), pos);
+      VariableProxy* proxy =
+          factory()->NewVariableProxy(inner_vars.at(i), inner_var_proxy_pos);
       Assignment* assignment = factory()->NewAssignment(
           Token::ASSIGN, temp_proxy, proxy, RelocInfo::kNoPosition);
       compound_next = factory()->NewBinaryOperation(
@@ -3318,8 +3320,8 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
     {
       Expression* const1 = factory()->NewSmiLiteral(1, RelocInfo::kNoPosition);
       VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
-      compare =
-          factory()->NewCompareOperation(Token::EQ, flag_proxy, const1, pos);
+      compare = factory()->NewCompareOperation(Token::EQ, flag_proxy, const1,
+                                               RelocInfo::kNoPosition);
     }
     Statement* stop =
         factory()->NewBreakStatement(outer_loop, RelocInfo::kNoPosition);
@@ -3666,6 +3668,10 @@ bool CheckAndDeclareArrowParameter(ParserTraits* traits, Expression* expression,
       return false;
     }
 
+    // When the variable was seen, it was recorded as unresolved in the outer
+    // scope. But it's really not unresolved.
+    scope->outer_scope()->RemoveUnresolved(expression->AsVariableProxy());
+
     scope->DeclareParameter(raw_name, VAR);
     ++(*num_params);
     return true;
@@ -3883,8 +3889,8 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
           is_strict(language_mode()) ? CONST : CONST_LEGACY;
       DCHECK(function_name != NULL);
       fvar = new (zone())
-          Variable(scope_, function_name, fvar_mode, true /* is valid LHS */,
-                   Variable::NORMAL, kCreatedInitialized, kNotAssigned);
+          Variable(scope_, function_name, fvar_mode, Variable::NORMAL,
+                   kCreatedInitialized, kNotAssigned);
       VariableProxy* proxy = factory()->NewVariableProxy(fvar);
       VariableDeclaration* fvar_declaration = factory()->NewVariableDeclaration(
           proxy, fvar_mode, scope_, RelocInfo::kNoPosition);
@@ -5476,27 +5482,24 @@ Expression* Parser::CloseTemplateLiteral(TemplateLiteralState* state, int start,
 
   if (!tag) {
     // Build tree of BinaryOps to simplify code-generation
-    Expression* expr = NULL;
+    Expression* expr = cooked_strings->at(0);
+    int i = 0;
+    while (i < expressions->length()) {
+      Expression* sub = expressions->at(i++);
+      Expression* cooked_str = cooked_strings->at(i);
 
-    if (expressions->length() == 0) {
-      // Simple case: treat as string literal
-      expr = cooked_strings->at(0);
-    } else {
-      int i;
-      Expression* cooked_str = cooked_strings->at(0);
+      // Let middle be ToString(sub).
+      ZoneList<Expression*>* args =
+          new (zone()) ZoneList<Expression*>(1, zone());
+      args->Add(sub, zone());
+      Expression* middle = factory()->NewCallRuntime(
+          ast_value_factory()->to_string_string(), NULL, args,
+          sub->position());
+
       expr = factory()->NewBinaryOperation(
-          Token::ADD, cooked_str, expressions->at(0), cooked_str->position());
-      for (i = 1; i < expressions->length(); ++i) {
-        cooked_str = cooked_strings->at(i);
-        expr = factory()->NewBinaryOperation(
-            Token::ADD, expr, factory()->NewBinaryOperation(
-                                  Token::ADD, cooked_str, expressions->at(i),
-                                  cooked_str->position()),
-            cooked_str->position());
-      }
-      cooked_str = cooked_strings->at(i);
-      expr = factory()->NewBinaryOperation(Token::ADD, expr, cooked_str,
-                                           cooked_str->position());
+          Token::ADD, factory()->NewBinaryOperation(
+                          Token::ADD, expr, middle, expr->position()),
+          cooked_str, sub->position());
     }
     return expr;
   } else {

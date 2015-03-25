@@ -1,4 +1,4 @@
-// Copyright 2010 the V8 project authors. All rights reserved.
+// Copyright 2015 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,43 +25,56 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+// Flags: --max-old-space-size=60
 
-function TryGetPrototypeOfNonObject(x) {
-  var caught = 0;
-  try {
-      Object.getPrototypeOf(x);
-  } catch (e) {
-    caught = e;
-  }
+table = [];
 
-  assertTrue(caught instanceof TypeError);
-};
-
-function GetPrototypeOfObject(x) {
-  assertDoesNotThrow(Object.getPrototypeOf(x));
-  assertNotNull(Object.getPrototypeOf(x));
-  assertEquals(Object.getPrototypeOf(x), x.__proto__);
+for (var i = 0; i < 32; i++) {
+ table[i] = String.fromCharCode(i + 0x410);
 }
 
-function F(){};
 
-// Non object
-var x = 10;
+var random = (function() {
+  var seed = 10;
+  return function() {
+    seed = (seed * 1009) % 8831;
+    return seed;
+  };
+})();
 
-// Object
-var y = new F();
 
-// Make sure that TypeError exceptions are thrown when non-objects are passed
-// as argument
-TryGetPrototypeOfNonObject(0);
-TryGetPrototypeOfNonObject(null);
-TryGetPrototypeOfNonObject('Testing');
-TryGetPrototypeOfNonObject(x);
+function key(length) {
+  var s = "";
+  for (var i = 0; i < length; i++) {
+    s += table[random() % 32];
+  }
+  return '"' + s + '"';
+}
 
-// Make sure the real objects have this method and that it returns the
-// actual prototype object. Also test for Functions and RegExp.
-GetPrototypeOfObject(this);
-GetPrototypeOfObject(y);
-GetPrototypeOfObject({x:5});
-GetPrototypeOfObject(F);
-GetPrototypeOfObject(RegExp);
+
+function value() {
+  return '[{' + '"field1" : ' + random() + ', "field2" : ' + random() + '}]';
+}
+
+
+function generate(n) {
+  var s = '{';
+  for (var i = 0; i < n; i++) {
+     if (i > 0) s += ', ';
+     s += key(random() % 10 + 7);
+     s += ':';
+     s += value();
+  }
+  s += '}';
+  return s;
+}
+
+
+print("generating");
+
+var str = generate(50000);
+
+print("parsing "  + str.length);
+JSON.parse(str);
+
+print("done");

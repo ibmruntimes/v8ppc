@@ -97,7 +97,7 @@ struct InlinedFunctionInfo {
   SourcePosition inline_position;
   int script_id;
   int start_position;
-  std::vector<int> deopt_pc_offsets;
+  std::vector<size_t> deopt_pc_offsets;
 
   static const int kNoParentId = -1;
 };
@@ -348,6 +348,9 @@ class CompilationInfo {
   int start_position_for(uint32_t inlining_id) {
     return inlined_function_infos_.at(inlining_id).start_position;
   }
+  const std::vector<InlinedFunctionInfo>& inlined_function_infos() {
+    return inlined_function_infos_;
+  }
 
   void LogDeoptCallPosition(int pc_offset, int inlining_id);
   int TraceInlinedFunction(Handle<SharedFunctionInfo> shared,
@@ -482,22 +485,6 @@ class CompilationInfo {
   DISALLOW_COPY_AND_ASSIGN(CompilationInfo);
 };
 
-
-// Exactly like a CompilationInfo, except also creates and enters a
-// Zone on construction and deallocates it on exit.
-class CompilationInfoWithZone: public CompilationInfo {
- public:
-  explicit CompilationInfoWithZone(Handle<Script> script);
-  explicit CompilationInfoWithZone(Handle<JSFunction> closure);
-
-  // Virtual destructor because a CompilationInfoWithZone has to exit the
-  // zone scope and get rid of dependent maps even when the destructor is
-  // called when cast as a CompilationInfo.
-  virtual ~CompilationInfoWithZone();
-
- private:
-  Zone zone_;
-};
 
 // A wrapper around a CompilationInfo that detaches the Handles from
 // the underlying DeferredHandleScope and stores them in info_ on

@@ -2240,9 +2240,12 @@ TEST(ResetSharedFunctionInfoCountersDuringIncrementalMarking) {
   marking->Start();
 
   // The following two calls will increment CcTest::heap()->global_ic_age().
-  const int kLongIdlePauseInMs = 1000;
+  const double kLongIdlePauseInSeconds = 1.0;
   CcTest::isolate()->ContextDisposedNotification();
-  CcTest::isolate()->IdleNotification(kLongIdlePauseInMs);
+  CcTest::isolate()->IdleNotificationDeadline(
+      (v8::base::TimeTicks::HighResolutionNow().ToInternalValue() /
+       static_cast<double>(v8::base::Time::kMicrosecondsPerSecond)) +
+      kLongIdlePauseInSeconds);
 
   while (!marking->IsStopped() && !marking->IsComplete()) {
     marking->Step(1 * MB, IncrementalMarking::NO_GC_VIA_STACK_GUARD);
@@ -2296,9 +2299,12 @@ TEST(ResetSharedFunctionInfoCountersDuringMarkSweep) {
 
   // The following two calls will increment CcTest::heap()->global_ic_age().
   // Since incremental marking is off, IdleNotification will do full GC.
-  const int kLongIdlePauseInMs = 1000;
+  const double kLongIdlePauseInSeconds = 1.0;
   CcTest::isolate()->ContextDisposedNotification();
-  CcTest::isolate()->IdleNotification(kLongIdlePauseInMs);
+  CcTest::isolate()->IdleNotificationDeadline(
+      (v8::base::TimeTicks::HighResolutionNow().ToInternalValue() /
+       static_cast<double>(v8::base::Time::kMicrosecondsPerSecond)) +
+      kLongIdlePauseInSeconds);
 
   CHECK_EQ(CcTest::heap()->global_ic_age(), f->shared()->ic_age());
   CHECK_EQ(0, f->shared()->opt_count());
@@ -2344,8 +2350,11 @@ TEST(IdleNotificationFinishMarking) {
   marking->SetWeakClosureWasOverApproximatedForTesting(true);
 
   // The next idle notification has to finish incremental marking.
-  const int kLongIdleTime = 1000000;
-  CcTest::isolate()->IdleNotification(kLongIdleTime);
+  const double kLongIdleTime = 1000.0;
+  CcTest::isolate()->IdleNotificationDeadline(
+      (v8::base::TimeTicks::HighResolutionNow().ToInternalValue() /
+       static_cast<double>(v8::base::Time::kMicrosecondsPerSecond)) +
+      kLongIdleTime);
   CHECK_EQ(CcTest::heap()->gc_count(), 1);
 }
 
@@ -4587,17 +4596,33 @@ Handle<JSFunction> GetFunctionByName(Isolate* isolate, const char* name) {
 }
 
 
-void CheckIC(Code* code, Code::Kind kind, InlineCacheState state) {
-  Code* ic = FindFirstIC(code, kind);
-  CHECK(ic->is_inline_cache_stub());
-  CHECK(ic->ic_state() == state);
+void CheckIC(Code* code, Code::Kind kind, SharedFunctionInfo* shared,
+             int ic_slot, InlineCacheState state) {
+  if (FLAG_vector_ics &&
+      (kind == Code::LOAD_IC || kind == Code::KEYED_LOAD_IC ||
+       kind == Code::CALL_IC)) {
+    TypeFeedbackVector* vector = shared->feedback_vector();
+    FeedbackVectorICSlot slot(ic_slot);
+    if (kind == Code::LOAD_IC) {
+      LoadICNexus nexus(vector, slot);
+      CHECK_EQ(nexus.StateFromFeedback(), state);
+    } else if (kind == Code::KEYED_LOAD_IC) {
+      KeyedLoadICNexus nexus(vector, slot);
+      CHECK_EQ(nexus.StateFromFeedback(), state);
+    } else if (kind == Code::CALL_IC) {
+      CallICNexus nexus(vector, slot);
+      CHECK_EQ(nexus.StateFromFeedback(), state);
+    }
+  } else {
+    Code* ic = FindFirstIC(code, kind);
+    CHECK(ic->is_inline_cache_stub());
+    CHECK(ic->ic_state() == state);
+  }
 }
 
 
 TEST(MonomorphicStaysMonomorphicAfterGC) {
   if (FLAG_always_opt) return;
-  // TODO(mvstanton): vector ics need weak support!
-  if (FLAG_vector_ics) return;
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
   Heap* heap = isolate->heap();
@@ -4620,19 +4645,17 @@ TEST(MonomorphicStaysMonomorphicAfterGC) {
     CompileRun("(testIC())");
   }
   heap->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask);
-  CheckIC(loadIC->code(), Code::LOAD_IC, MONOMORPHIC);
+  CheckIC(loadIC->code(), Code::LOAD_IC, loadIC->shared(), 0, MONOMORPHIC);
   {
     v8::HandleScope scope(CcTest::isolate());
     CompileRun("(testIC())");
   }
-  CheckIC(loadIC->code(), Code::LOAD_IC, MONOMORPHIC);
+  CheckIC(loadIC->code(), Code::LOAD_IC, loadIC->shared(), 0, MONOMORPHIC);
 }
 
 
 TEST(PolymorphicStaysPolymorphicAfterGC) {
   if (FLAG_always_opt) return;
-  // TODO(mvstanton): vector ics need weak support!
-  if (FLAG_vector_ics) return;
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
   Heap* heap = isolate->heap();
@@ -4658,12 +4681,12 @@ TEST(PolymorphicStaysPolymorphicAfterGC) {
     CompileRun("(testIC())");
   }
   heap->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask);
-  CheckIC(loadIC->code(), Code::LOAD_IC, POLYMORPHIC);
+  CheckIC(loadIC->code(), Code::LOAD_IC, loadIC->shared(), 0, POLYMORPHIC);
   {
     v8::HandleScope scope(CcTest::isolate());
     CompileRun("(testIC())");
   }
-  CheckIC(loadIC->code(), Code::LOAD_IC, POLYMORPHIC);
+  CheckIC(loadIC->code(), Code::LOAD_IC, loadIC->shared(), 0, POLYMORPHIC);
 }
 
 
@@ -5096,12 +5119,7 @@ TEST(Regress3877) {
 }
 
 
-void CheckMapRetainingFor(int n) {
-  FLAG_retain_maps_for_n_gc = n;
-  Isolate* isolate = CcTest::i_isolate();
-  Heap* heap = isolate->heap();
-  Handle<WeakCell> weak_cell;
-  {
+Handle<WeakCell> AddRetainedMap(Isolate* isolate, Heap* heap) {
     HandleScope inner_scope(isolate);
     Handle<Map> map = Map::Create(isolate, 1);
     v8::Local<v8::Value> result =
@@ -5110,8 +5128,15 @@ void CheckMapRetainingFor(int n) {
         v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(result));
     map->set_prototype(*proto);
     heap->AddRetainedMap(map);
-    weak_cell = inner_scope.CloseAndEscape(Map::WeakCellForMap(map));
-  }
+    return inner_scope.CloseAndEscape(Map::WeakCellForMap(map));
+}
+
+
+void CheckMapRetainingFor(int n) {
+  FLAG_retain_maps_for_n_gc = n;
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  Handle<WeakCell> weak_cell = AddRetainedMap(isolate, heap);
   CHECK(!weak_cell->cleared());
   for (int i = 0; i < n; i++) {
     heap->CollectGarbage(OLD_POINTER_SPACE);
@@ -5129,6 +5154,27 @@ TEST(MapRetaining) {
   CheckMapRetainingFor(0);
   CheckMapRetainingFor(1);
   CheckMapRetainingFor(7);
+}
+
+
+TEST(RegressArrayListGC) {
+  FLAG_retain_maps_for_n_gc = 1;
+  FLAG_incremental_marking = 0;
+  FLAG_gc_global = true;
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  AddRetainedMap(isolate, heap);
+  Handle<Map> map = Map::Create(isolate, 1);
+  heap->CollectGarbage(OLD_POINTER_SPACE);
+  // Force GC in old space on next addition of retained map.
+  Map::WeakCellForMap(map);
+  SimulateFullSpace(CcTest::heap()->new_space());
+  for (int i = 0; i < 10; i++) {
+    heap->AddRetainedMap(map);
+  }
+  heap->CollectGarbage(OLD_POINTER_SPACE);
 }
 
 

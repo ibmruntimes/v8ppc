@@ -471,6 +471,9 @@ template <class T> class Eternal {
 };
 
 
+static const int kInternalFieldsInWeakCallback = 2;
+
+
 template <typename T>
 class WeakCallbackInfo {
  public:
@@ -478,21 +481,28 @@ class WeakCallbackInfo {
 
   WeakCallbackInfo(Isolate* isolate, T* parameter, void* internal_field1,
                    void* internal_field2)
-      : isolate_(isolate),
-        parameter_(parameter),
-        internal_field1_(internal_field1),
-        internal_field2_(internal_field2) {}
+      : isolate_(isolate), parameter_(parameter) {
+    internal_fields_[0] = internal_field1;
+    internal_fields_[1] = internal_field2;
+  }
 
   V8_INLINE Isolate* GetIsolate() const { return isolate_; }
   V8_INLINE T* GetParameter() const { return parameter_; }
-  V8_INLINE void* GetInternalField1() const { return internal_field1_; }
-  V8_INLINE void* GetInternalField2() const { return internal_field2_; }
+  V8_INLINE void* GetInternalField(int index) const;
+
+  V8_INLINE V8_DEPRECATE_SOON("use indexed version",
+                              void* GetInternalField1()) const {
+    return internal_fields_[0];
+  }
+  V8_INLINE V8_DEPRECATE_SOON("use indexed version",
+                              void* GetInternalField2()) const {
+    return internal_fields_[1];
+  }
 
  private:
   Isolate* isolate_;
   T* parameter_;
-  void* internal_field1_;
-  void* internal_field2_;
+  void* internal_fields_[2];
 };
 
 
@@ -5457,7 +5467,9 @@ class V8_EXPORT Isolate {
    *
    * The idle_time_in_ms argument specifies the time V8 has to perform
    * garbage collection. There is no guarantee that the actual work will be
-   * done within the time limit.
+   * done within the time limit. This variant is deprecated and will be removed
+   * in the future.
+   *
    * The deadline_in_seconds argument specifies the deadline V8 has to finish
    * garbage collection work. deadline_in_seconds is compared with
    * MonotonicallyIncreasingTime() and should be based on the same timebase as
@@ -5992,6 +6004,7 @@ class V8_EXPORT V8 {
 
   static void CheckIsJust(bool is_just);
   static void ToLocalEmpty();
+  static void InternalFieldOutOfBounds(int index);
 
   template <class T> friend class Handle;
   template <class T> friend class Local;
@@ -5999,6 +6012,8 @@ class V8_EXPORT V8 {
   friend class MaybeLocal;
   template <class T>
   friend class Maybe;
+  template <class T>
+  friend class WeakCallbackInfo;
   template <class T> friend class Eternal;
   template <class T> friend class PersistentBase;
   template <class T, class M> friend class Persistent;
@@ -6919,6 +6934,17 @@ Local<T> MaybeLocal<T>::ToLocalChecked() {
   if (val_ == nullptr) V8::ToLocalEmpty();
 #endif
   return Local<T>(val_);
+}
+
+
+template <class T>
+void* WeakCallbackInfo<T>::GetInternalField(int index) const {
+#ifdef V8_ENABLE_CHECKS
+  if (index < 0 || index >= kInternalFieldsInWeakCallback) {
+    V8::InternalFieldOutOfBounds(index);
+  }
+#endif
+  return internal_fields_[index];
 }
 
 

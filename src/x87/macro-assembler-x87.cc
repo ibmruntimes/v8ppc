@@ -1002,11 +1002,9 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
   } else {
     push(esi);
   }
-  // Push the state.
-  unsigned state =
-      StackHandler::IndexField::encode(handler_index) |
-      StackHandler::KindField::encode(kind);
-  push(Immediate(state));
+
+  // Push the index.
+  push(Immediate(handler_index));
 
   // Link the current handler as the next handler.
   ExternalReference handler_address(Isolate::kHandlerAddress, isolate());
@@ -2354,6 +2352,17 @@ void MacroAssembler::Move(Register dst, const Immediate& x) {
 
 void MacroAssembler::Move(const Operand& dst, const Immediate& x) {
   mov(dst, x);
+}
+
+
+void MacroAssembler::Lzcnt(Register dst, const Operand& src) {
+  // TODO(intel): Add support for LZCNT (with ABM/BMI1).
+  Label not_zero_src;
+  bsr(dst, src);
+  j(not_zero, &not_zero_src, Label::kNear);
+  Move(dst, Immediate(63));  // 63^31 == 32
+  bind(&not_zero_src);
+  xor_(dst, Immediate(31));  // for x in [0..31], 31^x == 31-x.
 }
 
 

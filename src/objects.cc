@@ -617,7 +617,7 @@ Maybe<PropertyAttributes> JSObject::GetElementAttributesWithFailedAccessCheck(
         FindIndexedAllCanReadHolder(isolate, holder, where_to_start);
     if (!all_can_read_holder.ToHandle(&holder)) break;
     auto result =
-        JSObject::GetElementAttributeFromInterceptor(object, receiver, index);
+        JSObject::GetElementAttributeFromInterceptor(holder, receiver, index);
     if (isolate->has_scheduled_exception()) break;
     if (result.IsJust() && result.FromJust() != ABSENT) return result;
     where_to_start = PrototypeIterator::START_AT_PROTOTYPE;
@@ -8277,9 +8277,14 @@ Handle<WeakFixedArray> WeakFixedArray::Allocate(
 }
 
 
-Handle<ArrayList> ArrayList::Add(Handle<ArrayList> array, Handle<Object> obj) {
+Handle<ArrayList> ArrayList::Add(Handle<ArrayList> array, Handle<Object> obj,
+                                 AddMode mode) {
   int length = array->Length();
   array = EnsureSpace(array, length + 1);
+  if (mode == kReloadLengthAfterAllocation) {
+    DCHECK(array->Length() <= length);
+    length = array->Length();
+  }
   array->Set(length, *obj);
   array->SetLength(length + 1);
   return array;
@@ -8287,9 +8292,12 @@ Handle<ArrayList> ArrayList::Add(Handle<ArrayList> array, Handle<Object> obj) {
 
 
 Handle<ArrayList> ArrayList::Add(Handle<ArrayList> array, Handle<Object> obj1,
-                                 Handle<Object> obj2) {
+                                 Handle<Object> obj2, AddMode mode) {
   int length = array->Length();
   array = EnsureSpace(array, length + 2);
+  if (mode == kReloadLengthAfterAllocation) {
+    length = array->Length();
+  }
   array->Set(length, *obj1);
   array->Set(length + 1, *obj2);
   array->SetLength(length + 2);
@@ -8299,10 +8307,12 @@ Handle<ArrayList> ArrayList::Add(Handle<ArrayList> array, Handle<Object> obj1,
 
 Handle<ArrayList> ArrayList::EnsureSpace(Handle<ArrayList> array, int length) {
   int capacity = array->length();
+  bool empty = (capacity == 0);
   if (capacity < kFirstIndex + length) {
     capacity = kFirstIndex + length;
     capacity = capacity + Max(capacity / 2, 2);
     array = Handle<ArrayList>::cast(FixedArray::CopySize(array, capacity));
+    if (empty) array->SetLength(0);
   }
   return array;
 }
@@ -8455,6 +8465,36 @@ Handle<DeoptimizationOutputData> DeoptimizationOutputData::New(
         LengthOfFixedArray(number_of_deopt_points), pretenure);
   }
   return Handle<DeoptimizationOutputData>::cast(result);
+}
+
+
+int HandlerTable::LookupRange(int pc_offset, int* stack_depth_out) {
+  int innermost_handler = -1, innermost_start = -1;
+  for (int i = 0; i < length(); i += kRangeEntrySize) {
+    int start_offset = Smi::cast(get(i + kRangeStartIndex))->value();
+    int end_offset = Smi::cast(get(i + kRangeEndIndex))->value();
+    int handler_offset = Smi::cast(get(i + kRangeHandlerIndex))->value();
+    int stack_depth = Smi::cast(get(i + kRangeDepthIndex))->value();
+    if (pc_offset > start_offset && pc_offset <= end_offset) {
+      DCHECK_NE(start_offset, innermost_start);
+      if (start_offset < innermost_start) continue;
+      innermost_handler = handler_offset;
+      innermost_start = start_offset;
+      *stack_depth_out = stack_depth;
+    }
+  }
+  return innermost_handler;
+}
+
+
+// TODO(turbofan): Make sure table is sorted and use binary search.
+int HandlerTable::LookupReturn(int pc_offset) {
+  for (int i = 0; i < length(); i += kReturnEntrySize) {
+    int return_offset = Smi::cast(get(i + kReturnOffsetIndex))->value();
+    int handler_offset = Smi::cast(get(i + kReturnHandlerIndex))->value();
+    if (pc_offset == return_offset) return handler_offset;
+  }
+  return -1;
 }
 
 
@@ -11484,6 +11524,30 @@ void DeoptimizationOutputData::DeoptimizationOutputDataPrint(
 }
 
 
+void HandlerTable::HandlerTableRangePrint(std::ostream& os) {
+  os << "   from   to       hdlr\n";
+  for (int i = 0; i < length(); i += kRangeEntrySize) {
+    int pc_start = Smi::cast(get(i + kRangeStartIndex))->value();
+    int pc_end = Smi::cast(get(i + kRangeEndIndex))->value();
+    int handler = Smi::cast(get(i + kRangeHandlerIndex))->value();
+    int depth = Smi::cast(get(i + kRangeDepthIndex))->value();
+    os << "  (" << std::setw(4) << pc_start << "," << std::setw(4) << pc_end
+       << ")  ->  " << std::setw(4) << handler << " (depth=" << depth << ")\n";
+  }
+}
+
+
+void HandlerTable::HandlerTableReturnPrint(std::ostream& os) {
+  os << "   off      hdlr\n";
+  for (int i = 0; i < length(); i += kReturnEntrySize) {
+    int pc_offset = Smi::cast(get(i + kReturnOffsetIndex))->value();
+    int handler = Smi::cast(get(i + kReturnHandlerIndex))->value();
+    os << "  " << std::setw(4) << pc_offset << "  ->  " << std::setw(4)
+       << handler << "\n";
+  }
+}
+
+
 const char* Code::ICState2String(InlineCacheState state) {
   switch (state) {
     case UNINITIALIZED: return "UNINITIALIZED";
@@ -11661,13 +11725,12 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
 #endif
   }
 
-  if (handler_table()->length() > 0 && is_turbofanned()) {
+  if (handler_table()->length() > 0) {
     os << "Handler Table (size = " << handler_table()->Size() << ")\n";
-    for (int i = 0; i < handler_table()->length(); i += 2) {
-      int pc_offset = Smi::cast(handler_table()->get(i))->value();
-      int handler = Smi::cast(handler_table()->get(i + 1))->value();
-      os << static_cast<const void*>(instruction_start() + pc_offset) << "  "
-         << std::setw(4) << pc_offset << " " << std::setw(4) << handler << "\n";
+    if (kind() == FUNCTION) {
+      HandlerTable::cast(handler_table())->HandlerTableRangePrint(os);
+    } else if (kind() == OPTIMIZED_FUNCTION) {
+      HandlerTable::cast(handler_table())->HandlerTableReturnPrint(os);
     }
     os << "\n";
   }

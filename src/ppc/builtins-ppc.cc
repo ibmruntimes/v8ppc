@@ -1599,8 +1599,8 @@ static void Generate_ApplyHelper(MacroAssembler* masm, bool targetIsArgument) {
     __ push(r3);
 
     // Copy all arguments from the array to the stack.
-    Generate_PushAppliedArguments(
-        masm, kArgumentsOffset, kIndexOffset, kLimitOffset);
+    Generate_PushAppliedArguments(masm, kArgumentsOffset, kIndexOffset,
+                                  kLimitOffset);
 
     // Call the function.
     Label call_proxy;
@@ -1677,8 +1677,8 @@ static void Generate_ConstructHelper(MacroAssembler* masm) {
     __ push(r3);
 
     // Copy all arguments from the array to the stack.
-    Generate_PushAppliedArguments(
-        masm, kArgumentsOffset, kIndexOffset, kLimitOffset);
+    Generate_PushAppliedArguments(masm, kArgumentsOffset, kIndexOffset,
+                                  kLimitOffset);
 
     // Use undefined feedback vector
     __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);

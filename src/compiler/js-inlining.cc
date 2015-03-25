@@ -142,7 +142,7 @@ void Inlinee::UnifyReturn(JSGraph* jsgraph) {
         values.push_back(NodeProperties::GetValueInput(input, 0));
         effects.push_back(NodeProperties::GetEffectInput(input));
         edge.UpdateTo(NodeProperties::GetControlInput(input));
-        input->RemoveAllInputs();
+        input->NullAllInputs();
         break;
       default:
         UNREACHABLE();
@@ -320,7 +320,9 @@ Reduction JSInliner::Reduce(Node* node) {
     return NoChange();
   }
 
-  CompilationInfoWithZone info(function);
+  Zone zone;
+  ParseInfo parse_info(&zone, function);
+  CompilationInfo info(&parse_info);
 
   if (!Compiler::ParseAndAnalyze(info.parse_info())) return NoChange();
   if (!Compiler::EnsureDeoptimizationSupport(&info)) return NoChange();

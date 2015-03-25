@@ -1,33 +1,50 @@
-// Copyright 2014 the V8 project authors. All rights reserved.
+// Copyright 2015 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // Flags: --expose-debug-as debug
-// Tests stepping into through Array.prototype.forEach callbacks.
 
 Debug = debug.Debug
 var exception = null;
 var break_count = 0;
-var expected_breaks = -1;
+
+var expected_values =
+  [ReferenceError, ReferenceError, 0, 0, 0, 0, 0, 1, ReferenceError, ReferenceError];
 
 function listener(event, exec_state, event_data, data) {
   try {
     if (event == Debug.DebugEvent.Break) {
       assertTrue(exec_state.frameCount() != 0, "FAIL: Empty stack trace");
+      // Count number of expected breakpoints in this source file.
       if (!break_count) {
-        // Count number of expected breakpoints in this source file.
         var source_text = exec_state.frame(0).func().script().source();
         expected_breaks = source_text.match(/\/\/\s*Break\s+\d+\./g).length;
         print("Expected breaks: " + expected_breaks);
       }
-      var source = exec_state.frame(0).sourceLineText();
+      var frameMirror = exec_state.frame(0);
+
+      var v = null;;
+      try {
+        v = frameMirror.evaluate('i').value();
+      } catch(e) {
+        v = e;
+      }
+
+      var source = frameMirror.sourceLineText();
       print("paused at: " + source);
       assertTrue(source.indexOf("// Break " + break_count + ".") > 0,
                  "Unexpected pause at: " + source + "\n" +
                  "Expected: // Break " + break_count + ".");
+      if (expected_values[break_count] === ReferenceError) {
+        assertTrue(v instanceof ReferenceError);
+      } else {
+        assertSame(expected_values[break_count], v);
+      }
       ++break_count;
+
       if (break_count !== expected_breaks) {
         exec_state.prepareStep(Debug.StepAction.StepIn, 1);
+        print("Next step prepared");
       }
     }
   } catch(e) {
@@ -37,17 +54,22 @@ function listener(event, exec_state, event_data, data) {
 };
 
 Debug.setListener(listener);
-var bound_callback = callback.bind(null);
 
-debugger; // Break 0.
-[1,2].forEach(callback); // Break 1.
-[3,4].forEach(bound_callback); // Break 6.
+var sum = 0;
+(function (){
+  'use strict';
 
-function callback(x) {
-  return x; // Break 2. // Break 4. // Break 7. // Break 9.
-} // Break 3. // Break 5. // Break 8. // Break 10.
+  debugger; // Break 0.
 
-assertNull(exception); // Break 11.
+  for (let i=0; // Break 1.
+       i < 1;   // Break 2. // Break 3. // Break 6. // Break 7.
+       i++) {
+    let key = i; // Break 4.
+    sum += key;   // Break 5.
+  }
+}()); // Break 8.
+
+assertNull(exception); // Break 9.
 assertEquals(expected_breaks, break_count);
 
 Debug.setListener(null);

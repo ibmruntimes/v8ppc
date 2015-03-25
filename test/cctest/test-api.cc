@@ -3217,6 +3217,124 @@ TEST(PersistentValueMap) {
 }
 
 
+namespace {
+
+void* IntKeyToVoidPointer(int key) { return reinterpret_cast<void*>(key << 1); }
+
+
+Local<v8::Object> NewObjectForIntKey(
+    v8::Isolate* isolate, const v8::Global<v8::ObjectTemplate>& templ,
+    int key) {
+  auto local = Local<v8::ObjectTemplate>::New(isolate, templ);
+  auto obj = local->NewInstance();
+  obj->SetAlignedPointerInInternalField(0, IntKeyToVoidPointer(key));
+  return obj;
+}
+
+
+template <typename K, typename V>
+class PhantomStdMapTraits : public v8::StdMapTraits<K, V> {
+ public:
+  typedef typename v8::GlobalValueMap<K, V, PhantomStdMapTraits<K, V>> MapType;
+  static const v8::PersistentContainerCallbackType kCallbackType =
+      v8::kWeakWithInternalFields;
+  struct WeakCallbackDataType {
+    MapType* map;
+    K key;
+  };
+  static WeakCallbackDataType* WeakCallbackParameter(MapType* map, const K& key,
+                                                     Local<V> value) {
+    WeakCallbackDataType* data = new WeakCallbackDataType;
+    data->map = map;
+    data->key = key;
+    return data;
+  }
+  static MapType* MapFromWeakCallbackInfo(
+      const v8::WeakCallbackInfo<WeakCallbackDataType>& data) {
+    return data.GetParameter()->map;
+  }
+  static K KeyFromWeakCallbackInfo(
+      const v8::WeakCallbackInfo<WeakCallbackDataType>& data) {
+    return data.GetParameter()->key;
+  }
+  static void DisposeCallbackData(WeakCallbackDataType* data) { delete data; }
+  static void Dispose(v8::Isolate* isolate, v8::Global<V> value, K key) {
+    CHECK_EQ(IntKeyToVoidPointer(key),
+             v8::Object::GetAlignedPointerFromInternalField(value, 0));
+  }
+  static void DisposeWeak(
+      v8::Isolate* isolate,
+      const v8::WeakCallbackInfo<WeakCallbackDataType>& info, K key) {
+    CHECK_EQ(IntKeyToVoidPointer(key), info.GetInternalField(0));
+  }
+};
+}
+
+
+TEST(GlobalValueMap) {
+  typedef v8::GlobalValueMap<int, v8::Object,
+                             PhantomStdMapTraits<int, v8::Object>> Map;
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::Global<ObjectTemplate> templ;
+  {
+    HandleScope scope(isolate);
+    auto t = ObjectTemplate::New(isolate);
+    t->SetInternalFieldCount(1);
+    templ.Reset(isolate, t);
+  }
+  Map map(isolate);
+  v8::internal::GlobalHandles* global_handles =
+      reinterpret_cast<v8::internal::Isolate*>(isolate)->global_handles();
+  int initial_handle_count = global_handles->global_handles_count();
+  CHECK_EQ(0, static_cast<int>(map.Size()));
+  {
+    HandleScope scope(isolate);
+    Local<v8::Object> obj = map.Get(7);
+    CHECK(obj.IsEmpty());
+    Local<v8::Object> expected = v8::Object::New(isolate);
+    map.Set(7, expected);
+    CHECK_EQ(1, static_cast<int>(map.Size()));
+    obj = map.Get(7);
+    CHECK(expected->Equals(obj));
+    {
+      Map::PersistentValueReference ref = map.GetReference(7);
+      CHECK(expected->Equals(ref.NewLocal(isolate)));
+    }
+    v8::Global<v8::Object> removed = map.Remove(7);
+    CHECK_EQ(0, static_cast<int>(map.Size()));
+    CHECK(expected == removed);
+    removed = map.Remove(7);
+    CHECK(removed.IsEmpty());
+    map.Set(8, expected);
+    CHECK_EQ(1, static_cast<int>(map.Size()));
+    map.Set(8, expected);
+    CHECK_EQ(1, static_cast<int>(map.Size()));
+    {
+      Map::PersistentValueReference ref;
+      Local<v8::Object> expected2 = NewObjectForIntKey(isolate, templ, 8);
+      removed = map.Set(8, v8::Global<v8::Object>(isolate, expected2), &ref);
+      CHECK_EQ(1, static_cast<int>(map.Size()));
+      CHECK(expected == removed);
+      CHECK(expected2->Equals(ref.NewLocal(isolate)));
+    }
+  }
+  CHECK_EQ(initial_handle_count + 1, global_handles->global_handles_count());
+  CcTest::i_isolate()->heap()->CollectAllGarbage(
+      i::Heap::kAbortIncrementalMarkingMask);
+  CHECK_EQ(0, static_cast<int>(map.Size()));
+  CHECK_EQ(initial_handle_count, global_handles->global_handles_count());
+  {
+    HandleScope scope(isolate);
+    Local<v8::Object> value = NewObjectForIntKey(isolate, templ, 9);
+    map.Set(9, value);
+    map.Clear();
+  }
+  CHECK_EQ(0, static_cast<int>(map.Size()));
+  CHECK_EQ(initial_handle_count, global_handles->global_handles_count());
+}
+
+
 TEST(PersistentValueVector) {
   LocalContext env;
   v8::Isolate* isolate = env->GetIsolate();
@@ -8634,6 +8752,32 @@ TEST(SuperAccessControl) {
         "}.m;"
         "var m = %ToMethod(f, prohibited);"
         "m();");
+    CHECK(try_catch.HasCaught());
+  }
+}
+
+
+TEST(Regress470113) {
+  i::FLAG_harmony_classes = true;
+  i::FLAG_harmony_object_literals = true;
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope handle_scope(isolate);
+  v8::Handle<v8::ObjectTemplate> obj_template =
+      v8::ObjectTemplate::New(isolate);
+  obj_template->SetAccessCheckCallbacks(AccessAlwaysBlocked, NULL);
+  LocalContext env;
+  env->Global()->Set(v8_str("prohibited"), obj_template->NewInstance());
+
+  {
+    v8::TryCatch try_catch;
+    CompileRun(
+        "'use strict';\n"
+        "class C extends Object {\n"
+        "   m() { super.powned = 'Powned!'; }\n"
+        "}\n"
+        "let c = new C();\n"
+        "c.m.call(prohibited)");
+
     CHECK(try_catch.HasCaught());
   }
 }
@@ -15746,30 +15890,10 @@ static void CreateGarbageInOldSpace() {
 }
 
 
-// Test that idle notification can be handled and eventually returns true.
-TEST(IdleNotification) {
-  const intptr_t MB = 1024 * 1024;
-  const int IdlePauseInMs = 1000;
-  LocalContext env;
-  v8::HandleScope scope(env->GetIsolate());
-  intptr_t initial_size = CcTest::heap()->SizeOfObjects();
-  CreateGarbageInOldSpace();
-  intptr_t size_with_garbage = CcTest::heap()->SizeOfObjects();
-  CHECK_GT(size_with_garbage, initial_size + MB);
-  bool finished = false;
-  for (int i = 0; i < 200 && !finished; i++) {
-    finished = env->GetIsolate()->IdleNotification(IdlePauseInMs);
-  }
-  intptr_t final_size = CcTest::heap()->SizeOfObjects();
-  CHECK(finished);
-  CHECK_LT(final_size, initial_size + 1);
-}
-
-
 // Test that idle notification can be handled and eventually collects garbage.
 TEST(IdleNotificationWithSmallHint) {
   const intptr_t MB = 1024 * 1024;
-  const int IdlePauseInMs = 900;
+  const double IdlePauseInSeconds = 0.9;
   LocalContext env;
   v8::HandleScope scope(env->GetIsolate());
   intptr_t initial_size = CcTest::heap()->SizeOfObjects();
@@ -15778,7 +15902,10 @@ TEST(IdleNotificationWithSmallHint) {
   CHECK_GT(size_with_garbage, initial_size + MB);
   bool finished = false;
   for (int i = 0; i < 200 && !finished; i++) {
-    finished = env->GetIsolate()->IdleNotification(IdlePauseInMs);
+    finished = env->GetIsolate()->IdleNotificationDeadline(
+        (v8::base::TimeTicks::HighResolutionNow().ToInternalValue() /
+         static_cast<double>(v8::base::Time::kMicrosecondsPerSecond)) +
+        IdlePauseInSeconds);
   }
   intptr_t final_size = CcTest::heap()->SizeOfObjects();
   CHECK(finished);
@@ -15789,7 +15916,7 @@ TEST(IdleNotificationWithSmallHint) {
 // Test that idle notification can be handled and eventually collects garbage.
 TEST(IdleNotificationWithLargeHint) {
   const intptr_t MB = 1024 * 1024;
-  const int IdlePauseInMs = 900;
+  const double IdlePauseInSeconds = 1.0;
   LocalContext env;
   v8::HandleScope scope(env->GetIsolate());
   intptr_t initial_size = CcTest::heap()->SizeOfObjects();
@@ -15798,7 +15925,10 @@ TEST(IdleNotificationWithLargeHint) {
   CHECK_GT(size_with_garbage, initial_size + MB);
   bool finished = false;
   for (int i = 0; i < 200 && !finished; i++) {
-    finished = env->GetIsolate()->IdleNotification(IdlePauseInMs);
+    finished = env->GetIsolate()->IdleNotificationDeadline(
+        (v8::base::TimeTicks::HighResolutionNow().ToInternalValue() /
+         static_cast<double>(v8::base::Time::kMicrosecondsPerSecond)) +
+        IdlePauseInSeconds);
   }
   intptr_t final_size = CcTest::heap()->SizeOfObjects();
   CHECK(finished);
@@ -19824,6 +19954,7 @@ class RequestInterruptTestWithFunctionCall
         isolate_, ShouldContinueCallback, v8::External::New(isolate_, this));
     env_->Global()->Set(v8_str("ShouldContinue"), func);
 
+    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("while (ShouldContinue()) { }");
   }
 };
@@ -19839,6 +19970,7 @@ class RequestInterruptTestWithMethodCall
         isolate_, ShouldContinueCallback, v8::External::New(isolate_, this)));
     env_->Global()->Set(v8_str("Klass"), t->GetFunction());
 
+    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("var obj = new Klass; while (obj.shouldContinue()) { }");
   }
 };
@@ -19854,6 +19986,7 @@ class RequestInterruptTestWithAccessor
         isolate_, ShouldContinueCallback, v8::External::New(isolate_, this)));
     env_->Global()->Set(v8_str("Klass"), t->GetFunction());
 
+    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("var obj = new Klass; while (obj.shouldContinue) { }");
   }
 };
@@ -19871,6 +20004,7 @@ class RequestInterruptTestWithNativeAccessor
         v8::External::New(isolate_, this));
     env_->Global()->Set(v8_str("Klass"), t->GetFunction());
 
+    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("var obj = new Klass; while (obj.shouldContinue) { }");
   }
 
@@ -19900,6 +20034,7 @@ class RequestInterruptTestWithMethodCallAndInterceptor
 
     env_->Global()->Set(v8_str("Klass"), t->GetFunction());
 
+    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("var obj = new Klass; while (obj.shouldContinue()) { }");
   }
 
@@ -19924,6 +20059,7 @@ class RequestInterruptTestWithMathAbs
         v8::External::New(isolate_, this)));
 
     i::FLAG_allow_natives_syntax = true;
+    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("function loopish(o) {"
                "  var pre = 10;"
                "  while (o.abs(1) > 0) {"
@@ -20007,6 +20143,7 @@ class RequestMultipleInterrupts : public RequestInterruptTestBase {
         isolate_, ShouldContinueCallback, v8::External::New(isolate_, this));
     env_->Global()->Set(v8_str("ShouldContinue"), func);
 
+    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("while (ShouldContinue()) { }");
   }
 
@@ -21527,6 +21664,7 @@ TEST(TurboAsmDisablesNeuter) {
       "Module(this, {}, buffer).load();"
       "buffer";
 
+  i::FLAG_turbo_osr = false;  // TODO(titzer): test requires eager TF.
   v8::Local<v8::ArrayBuffer> result = CompileRun(load).As<v8::ArrayBuffer>();
   CHECK_EQ(should_be_neuterable, result->IsNeuterable());
 
@@ -21541,6 +21679,7 @@ TEST(TurboAsmDisablesNeuter) {
       "Module(this, {}, buffer).store();"
       "buffer";
 
+  i::FLAG_turbo_osr = false;  // TODO(titzer): test requires eager TF.
   result = CompileRun(store).As<v8::ArrayBuffer>();
   CHECK_EQ(should_be_neuterable, result->IsNeuterable());
 }
