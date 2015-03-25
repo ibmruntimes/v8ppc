@@ -3219,7 +3219,13 @@ TEST(PersistentValueMap) {
 
 namespace {
 
+#if defined(V8_PPC_TAGGING_OPT)
+void* IntKeyToVoidPointer(int key) {
+  return reinterpret_cast<void*>(key << v8::internal::kSmiTagSize);
+}
+#else
 void* IntKeyToVoidPointer(int key) { return reinterpret_cast<void*>(key << 1); }
+#endif
 
 
 Local<v8::Object> NewObjectForIntKey(
