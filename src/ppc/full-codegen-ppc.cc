@@ -2176,7 +2176,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       const int generator_object_depth = kPointerSize + try_block_size;
       __ LoadP(r3, MemOperand(sp, generator_object_depth));
       __ push(r3);  // g
-      __ Push(Smi::FromInt(expr->index()));              // handler-index
+      __ Push(Smi::FromInt(expr->index()));  // handler-index
       DCHECK(l_continuation.pos() > 0 && Smi::IsValid(l_continuation.pos()));
       __ LoadSmiLiteral(r4, Smi::FromInt(l_continuation.pos()));
       __ StoreP(r4, FieldMemOperand(r3, JSGeneratorObject::kContinuationOffset),

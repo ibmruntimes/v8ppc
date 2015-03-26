@@ -2884,6 +2884,8 @@ class PointersUpdatingVisitor : public ObjectVisitor {
     // Avoid unnecessary changes that might unnecessary flush the instruction
     // cache.
     if (target != old_target) {
+      // TODO(jochen): Remove again after fixing http://crbug.com/452095
+      CHECK(target->IsHeapObject() == old_target->IsHeapObject());
       rinfo->set_target_object(target);
     }
   }
@@ -2894,6 +2896,8 @@ class PointersUpdatingVisitor : public ObjectVisitor {
     Object* old_target = target;
     VisitPointer(&target);
     if (target != old_target) {
+      // TODO(jochen): Remove again after fixing http://crbug.com/452095
+      CHECK(target->IsHeapObject() == old_target->IsHeapObject());
       rinfo->set_target_address(Code::cast(target)->instruction_start());
     }
   }
@@ -2904,6 +2908,8 @@ class PointersUpdatingVisitor : public ObjectVisitor {
     DCHECK(stub != NULL);
     VisitPointer(&stub);
     if (stub != rinfo->code_age_stub()) {
+      // TODO(jochen): Remove again after fixing http://crbug.com/452095
+      CHECK(stub->IsHeapObject() == rinfo->code_age_stub()->IsHeapObject());
       rinfo->set_code_age_stub(Code::cast(stub));
     }
   }
@@ -2915,6 +2921,9 @@ class PointersUpdatingVisitor : public ObjectVisitor {
             rinfo->IsPatchedDebugBreakSlotSequence()));
     Object* target = Code::GetCodeFromTargetAddress(rinfo->call_address());
     VisitPointer(&target);
+    // TODO(jochen): Remove again after fixing http://crbug.com/452095
+    CHECK(target->IsCode() &&
+          HAS_SMI_TAG(Code::cast(target)->instruction_start()));
     rinfo->set_call_address(Code::cast(target)->instruction_start());
   }
 
@@ -3059,6 +3068,9 @@ static void UpdatePointer(HeapObject** address, HeapObject* object) {
          object->GetHeap()->lo_space()->FindPage(
              reinterpret_cast<Address>(address)) != NULL);
   if (map_word.IsForwardingAddress()) {
+    // TODO(jochen): Remove again after fixing http://crbug.com/452095
+    CHECK((*address)->IsHeapObject() ==
+          map_word.ToForwardingAddress()->IsHeapObject());
     // Update the corresponding slot.
     *address = map_word.ToForwardingAddress();
   }
@@ -4558,14 +4570,14 @@ bool SlotsBuffer::AddTo(SlotsBufferAllocator* allocator,
 }
 
 
-static Object* g_smi_slot = NULL;
-
-
 void SlotsBuffer::RemoveInvalidSlots(Heap* heap, SlotsBuffer* buffer) {
-  DCHECK_EQ(Smi::FromInt(0), g_smi_slot);
-
-  // Remove entries by replacing them with a dummy slot containing a smi.
-  const ObjectSlot kRemovedEntry = &g_smi_slot;
+  // Remove entries by replacing them with an old-space slot containing a smi
+  // that is located in an unmovable page.
+  const ObjectSlot kRemovedEntry =
+      HeapObject::RawField(heap->empty_fixed_array(),
+                           FixedArrayBase::kLengthOffset);
+  DCHECK(Page::FromAddress(
+      reinterpret_cast<Address>(kRemovedEntry))->NeverEvacuate());
 
   while (buffer != NULL) {
     SlotsBuffer::ObjectSlot* slots = buffer->slots_;
@@ -4593,8 +4605,6 @@ void SlotsBuffer::RemoveInvalidSlots(Heap* heap, SlotsBuffer* buffer) {
 
 
 void SlotsBuffer::VerifySlots(Heap* heap, SlotsBuffer* buffer) {
-  DCHECK_EQ(Smi::FromInt(0), g_smi_slot);
-
   while (buffer != NULL) {
     SlotsBuffer::ObjectSlot* slots = buffer->slots_;
     intptr_t slots_count = buffer->idx_;
