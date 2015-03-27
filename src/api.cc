@@ -35,7 +35,6 @@
 #include "src/icu_util.h"
 #include "src/json-parser.h"
 #include "src/messages.h"
-#include "src/natives.h"
 #include "src/parser.h"
 #include "src/pending-compilation-error-handler.h"
 #include "src/profile-generator-inl.h"
@@ -47,7 +46,8 @@
 #include "src/sampler.h"
 #include "src/scanner-character-streams.h"
 #include "src/simulator.h"
-#include "src/snapshot.h"
+#include "src/snapshot/natives.h"
+#include "src/snapshot/snapshot.h"
 #include "src/unicode-inl.h"
 #include "src/v8threads.h"
 #include "src/version.h"
@@ -953,6 +953,7 @@ static Local<FunctionTemplate> FunctionTemplateNew(
   obj->set_length(length);
   obj->set_undetectable(false);
   obj->set_needs_access_check(false);
+  obj->set_accept_any_receiver(true);
   if (!signature.IsEmpty())
     obj->set_signature(*Utils::OpenHandle(*signature));
   return Utils::ToLocal(obj);
@@ -1123,6 +1124,15 @@ void FunctionTemplate::SetClassName(Handle<String> name) {
   auto isolate = info->GetIsolate();
   ENTER_V8(isolate);
   info->set_class_name(*Utils::OpenHandle(*name));
+}
+
+
+void FunctionTemplate::SetAcceptAnyReceiver(bool value) {
+  auto info = Utils::OpenHandle(this);
+  EnsureNotInstantiated(info, "v8::FunctionTemplate::SetAcceptAnyReceiver");
+  auto isolate = info->GetIsolate();
+  ENTER_V8(isolate);
+  info->set_accept_any_receiver(value);
 }
 
 
