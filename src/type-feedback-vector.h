@@ -255,12 +255,17 @@ STATIC_ASSERT(WeakCell::kSize >= 2 * kPointerSize);
 STATIC_ASSERT(WeakCell::kValueOffset == AllocationSite::kTransitionInfoOffset);
 STATIC_ASSERT(WeakCell::kValueOffset == FixedArray::kLengthOffset);
 STATIC_ASSERT(WeakCell::kValueOffset == Name::kHashFieldSlot);
+#if defined(V8_PPC_TAGGING_OPT)
+// TODO: Need to show that the spirit of these rules is upheld by the
+// alternate tagging scheme.
+#else  // V8_PPC_TAGGING_OPT
 // Verify that an empty hash field looks like a tagged object, but can't
 // possibly be confused with a pointer.
 STATIC_ASSERT((Name::kEmptyHashField & kHeapObjectTag) == kHeapObjectTag);
 STATIC_ASSERT(Name::kEmptyHashField == 0x3);
 // Verify that a set hash field will not look like a tagged object.
 STATIC_ASSERT(Name::kHashNotComputedMask == kHeapObjectTag);
+#endif  // V8_PPC_TAGGING_OPT
 
 
 // A FeedbackNexus is the combination of a TypeFeedbackVector and a slot.
