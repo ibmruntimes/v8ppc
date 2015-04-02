@@ -484,57 +484,57 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
 
 
 // TODO(mbrandy): fix paths that produce garbage in offset's upper 32-bits.
-#define ASSEMBLE_CHECKED_STORE_FLOAT32()                    \
-  do {                                                      \
-    Label done;                                             \
-    size_t index = 0;                                       \
-    AddressingMode mode = kMode_None;                       \
-    MemOperand operand = i.MemoryOperand(&mode, index);     \
-    DCHECK_EQ(kMode_MRR, mode);                             \
-    Register offset = operand.rb();                         \
-    __ extsw(offset, offset);                               \
-    if (HasRegisterInput(instr, 2)) {                       \
-      __ cmplw(offset, i.InputRegister(2));                 \
-    } else {                                                \
-      __ cmplwi(offset, i.InputImmediate(2));               \
-    }                                                       \
-    __ bge(&done);                                          \
-    DoubleRegister value = i.InputDoubleRegister(3);        \
-    __ frsp(kScratchDoubleReg, value);                      \
-    if (mode == kMode_MRI) {                                \
-      __ stfs(kScratchDoubleReg, operand);                  \
-    } else {                                                \
-      __ stfsx(kScratchDoubleReg, operand);                 \
-    }                                                       \
-    __ bind(&done);                                         \
-    DCHECK_EQ(LeaveRC, i.OutputRCBit());                    \
+#define ASSEMBLE_CHECKED_STORE_FLOAT32()                \
+  do {                                                  \
+    Label done;                                         \
+    size_t index = 0;                                   \
+    AddressingMode mode = kMode_None;                   \
+    MemOperand operand = i.MemoryOperand(&mode, index); \
+    DCHECK_EQ(kMode_MRR, mode);                         \
+    Register offset = operand.rb();                     \
+    __ extsw(offset, offset);                           \
+    if (HasRegisterInput(instr, 2)) {                   \
+      __ cmplw(offset, i.InputRegister(2));             \
+    } else {                                            \
+      __ cmplwi(offset, i.InputImmediate(2));           \
+    }                                                   \
+    __ bge(&done);                                      \
+    DoubleRegister value = i.InputDoubleRegister(3);    \
+    __ frsp(kScratchDoubleReg, value);                  \
+    if (mode == kMode_MRI) {                            \
+      __ stfs(kScratchDoubleReg, operand);              \
+    } else {                                            \
+      __ stfsx(kScratchDoubleReg, operand);             \
+    }                                                   \
+    __ bind(&done);                                     \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                \
   } while (0)
 
 
 // TODO(mbrandy): fix paths that produce garbage in offset's upper 32-bits.
-#define ASSEMBLE_CHECKED_STORE_DOUBLE()                     \
-  do {                                                      \
-    Label done;                                             \
-    size_t index = 0;                                       \
-    AddressingMode mode = kMode_None;                       \
-    MemOperand operand = i.MemoryOperand(&mode, index);     \
-    DCHECK_EQ(kMode_MRR, mode);                             \
-    Register offset = operand.rb();                         \
-    __ extsw(offset, offset);                               \
-    if (HasRegisterInput(instr, 2)) {                       \
-      __ cmplw(offset, i.InputRegister(2));                 \
-    } else {                                                \
-      __ cmplwi(offset, i.InputImmediate(2));               \
-    }                                                       \
-    __ bge(&done);                                          \
-    DoubleRegister value = i.InputDoubleRegister(3);        \
-    if (mode == kMode_MRI) {                                \
-      __ stfd(value, operand);                              \
-    } else {                                                \
-      __ stfdx(value, operand);                             \
-    }                                                       \
-    __ bind(&done);                                         \
-    DCHECK_EQ(LeaveRC, i.OutputRCBit());                    \
+#define ASSEMBLE_CHECKED_STORE_DOUBLE()                 \
+  do {                                                  \
+    Label done;                                         \
+    size_t index = 0;                                   \
+    AddressingMode mode = kMode_None;                   \
+    MemOperand operand = i.MemoryOperand(&mode, index); \
+    DCHECK_EQ(kMode_MRR, mode);                         \
+    Register offset = operand.rb();                     \
+    __ extsw(offset, offset);                           \
+    if (HasRegisterInput(instr, 2)) {                   \
+      __ cmplw(offset, i.InputRegister(2));             \
+    } else {                                            \
+      __ cmplwi(offset, i.InputImmediate(2));           \
+    }                                                   \
+    __ bge(&done);                                      \
+    DoubleRegister value = i.InputDoubleRegister(3);    \
+    if (mode == kMode_MRI) {                            \
+      __ stfd(value, operand);                          \
+    } else {                                            \
+      __ stfdx(value, operand);                         \
+    }                                                   \
+    __ bind(&done);                                     \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                \
   } while (0)
 
 

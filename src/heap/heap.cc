@@ -2225,7 +2225,11 @@ class ScavengingVisitor : public StaticVisitorBase {
                                                   object_size)) {
       return;
     }
-    V8::FatalProcessOutOfMemory("Scavenge promotion failed");
+
+    // If promotion failed, we try to copy the object to the other semi-space
+    if (SemiSpaceCopyObject<alignment>(map, slot, object, object_size)) return;
+
+    UNREACHABLE();
   }
 
 
@@ -2429,8 +2433,6 @@ void Heap::ScavengeObjectSlow(HeapObject** p, HeapObject* object) {
   MapWord first_word = object->map_word();
   SLOW_DCHECK(!first_word.IsForwardingAddress());
   Map* map = first_word.ToMap();
-  // TODO(jochen): Remove again after fixing http://crbug.com/452095
-  CHECK((*p)->IsHeapObject() == object->IsHeapObject());
   map->GetHeap()->DoScavengeObject(map, p, object);
 }
 
@@ -3527,6 +3529,7 @@ void Heap::AdjustLiveBytes(Address address, int by, InvocationMode mode) {
 
 FixedArrayBase* Heap::LeftTrimFixedArray(FixedArrayBase* object,
                                          int elements_to_trim) {
+  DCHECK(!object->IsFixedTypedArrayBase());
   const int element_size = object->IsFixedArray() ? kPointerSize : kDoubleSize;
   const int bytes_to_trim = elements_to_trim * element_size;
   Map* map = object->map();
@@ -3582,14 +3585,30 @@ void Heap::RightTrimFixedArray<Heap::FROM_MUTATOR>(FixedArrayBase*, int);
 
 template<Heap::InvocationMode mode>
 void Heap::RightTrimFixedArray(FixedArrayBase* object, int elements_to_trim) {
-  const int element_size = object->IsFixedArray() ? kPointerSize : kDoubleSize;
-  const int bytes_to_trim = elements_to_trim * element_size;
+  const int len = object->length();
+  DCHECK(elements_to_trim < len);
+
+  int bytes_to_trim;
+  if (object->IsFixedTypedArrayBase()) {
+    InstanceType type = object->map()->instance_type();
+    bytes_to_trim =
+        FixedTypedArrayBase::TypedArraySize(type, len) -
+        FixedTypedArrayBase::TypedArraySize(type, len - elements_to_trim);
+  } else {
+    const int element_size =
+        object->IsFixedArray() ? kPointerSize : kDoubleSize;
+    bytes_to_trim = elements_to_trim * element_size;
+  }
 
   // For now this trick is only applied to objects in new and paged space.
   DCHECK(object->map() != fixed_cow_array_map());
 
-  const int len = object->length();
-  DCHECK(elements_to_trim < len);
+  if (bytes_to_trim == 0) {
+    // No need to create filler and update live bytes counters, just initialize
+    // header of the trimmed array.
+    object->synchronized_set_length(len - elements_to_trim);
+    return;
+  }
 
   // Calculate location of new array end.
   Address new_end = object->address() + object->Size() - bytes_to_trim;

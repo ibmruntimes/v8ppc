@@ -1,3 +1,4 @@
+
 # Copyright 2011 the V8 project authors. All rights reserved.
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -61,6 +62,14 @@
   '11.1.5_4-4-d-2': [FAIL],
   '11.1.5_4-4-d-3': [FAIL],
   '11.1.5_4-4-d-4': [FAIL],
+
+  # NativeError has Error as its [[Prototype]]
+  '15.2.3.2-2-12': [FAIL],
+  '15.2.3.2-2-13': [FAIL],
+  '15.2.3.2-2-14': [FAIL],
+  '15.2.3.2-2-15': [FAIL],
+  '15.2.3.2-2-16': [FAIL],
+  '15.2.3.2-2-17': [FAIL],
 
   # Function length properties are configurable in ES6
   '10.1_L15': [FAIL],
@@ -188,6 +197,16 @@
   'S15.9.5.7_A3_T2': [FAIL],
   'S15.9.5.8_A3_T2': [FAIL],
   'S15.9.5.9_A3_T2': [FAIL],
+
+  # Object.getPrototypeOf wraps primitive values in ES6.
+  '15.2.3.2-1': [FAIL],
+  '15.2.3.2-1-3': [FAIL],
+  '15.2.3.2-1-4': [FAIL],
+
+  # Object.getOwnPropertyDescriptor wraps primitives in ES6.
+  '15.2.3.3-1': [FAIL],
+  '15.2.3.3-1-3': [FAIL],
+  '15.2.3.3-1-4': [FAIL],
 
   ######################## NEEDS INVESTIGATION ###########################
 

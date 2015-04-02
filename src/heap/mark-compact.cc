@@ -1935,27 +1935,26 @@ int MarkCompactCollector::DiscoverAndEvacuateBlackObjectsOnPage(
       current_cell >>= 1;
 
       // TODO(hpayer): Refactor EvacuateObject and call this function instead.
-      if (heap()->ShouldBePromoted(object->address(), size)) {
-        if (!TryPromoteObject(object, size)) {
-          V8::FatalProcessOutOfMemory("Full GC promotion failed");
-        }
-      } else {
-        AllocationResult allocation = new_space->AllocateRaw(size);
-        if (allocation.IsRetry()) {
-          if (!new_space->AddFreshPage()) {
-            // Shouldn't happen. We are sweeping linearly, and to-space
-            // has the same number of pages as from-space, so there is
-            // always room.
-            UNREACHABLE();
-          }
-          allocation = new_space->AllocateRaw(size);
-          DCHECK(!allocation.IsRetry());
-        }
-        Object* target = allocation.ToObjectChecked();
-
-        MigrateObject(HeapObject::cast(target), object, size, NEW_SPACE);
-        heap()->IncrementSemiSpaceCopiedObjectSize(size);
+      if (heap()->ShouldBePromoted(object->address(), size) &&
+          TryPromoteObject(object, size)) {
+        continue;
       }
+
+      AllocationResult allocation = new_space->AllocateRaw(size);
+      if (allocation.IsRetry()) {
+        if (!new_space->AddFreshPage()) {
+          // Shouldn't happen. We are sweeping linearly, and to-space
+          // has the same number of pages as from-space, so there is
+          // always room.
+          UNREACHABLE();
+        }
+        allocation = new_space->AllocateRaw(size);
+        DCHECK(!allocation.IsRetry());
+      }
+      Object* target = allocation.ToObjectChecked();
+
+      MigrateObject(HeapObject::cast(target), object, size, NEW_SPACE);
+      heap()->IncrementSemiSpaceCopiedObjectSize(size);
     }
     *cells = 0;
   }
@@ -2892,8 +2891,6 @@ class PointersUpdatingVisitor : public ObjectVisitor {
     // Avoid unnecessary changes that might unnecessary flush the instruction
     // cache.
     if (target != old_target) {
-      // TODO(jochen): Remove again after fixing http://crbug.com/452095
-      CHECK(target->IsHeapObject() == old_target->IsHeapObject());
       rinfo->set_target_object(target);
     }
   }
@@ -2904,8 +2901,6 @@ class PointersUpdatingVisitor : public ObjectVisitor {
     Object* old_target = target;
     VisitPointer(&target);
     if (target != old_target) {
-      // TODO(jochen): Remove again after fixing http://crbug.com/452095
-      CHECK(target->IsHeapObject() == old_target->IsHeapObject());
       rinfo->set_target_address(Code::cast(target)->instruction_start());
     }
   }
@@ -2916,8 +2911,6 @@ class PointersUpdatingVisitor : public ObjectVisitor {
     DCHECK(stub != NULL);
     VisitPointer(&stub);
     if (stub != rinfo->code_age_stub()) {
-      // TODO(jochen): Remove again after fixing http://crbug.com/452095
-      CHECK(stub->IsHeapObject() == rinfo->code_age_stub()->IsHeapObject());
       rinfo->set_code_age_stub(Code::cast(stub));
     }
   }
@@ -2929,9 +2922,6 @@ class PointersUpdatingVisitor : public ObjectVisitor {
             rinfo->IsPatchedDebugBreakSlotSequence()));
     Object* target = Code::GetCodeFromTargetAddress(rinfo->call_address());
     VisitPointer(&target);
-    // TODO(jochen): Remove again after fixing http://crbug.com/452095
-    CHECK(target->IsCode() &&
-          HAS_SMI_TAG(Code::cast(target)->instruction_start()));
     rinfo->set_call_address(Code::cast(target)->instruction_start());
   }
 
@@ -3076,9 +3066,6 @@ static void UpdatePointer(HeapObject** address, HeapObject* object) {
          object->GetHeap()->lo_space()->FindPage(
              reinterpret_cast<Address>(address)) != NULL);
   if (map_word.IsForwardingAddress()) {
-    // TODO(jochen): Remove again after fixing http://crbug.com/452095
-    CHECK((*address)->IsHeapObject() ==
-          map_word.ToForwardingAddress()->IsHeapObject());
     // Update the corresponding slot.
     *address = map_word.ToForwardingAddress();
   }
@@ -3698,6 +3685,7 @@ void MarkCompactCollector::EvacuateNewSpaceAndCandidates() {
     GCTracer::Scope gc_scope(heap()->tracer(),
                              GCTracer::Scope::MC_SWEEP_NEWSPACE);
     code_slots_filtering_required = MarkInvalidatedCode();
+    EvacuationScope evacuation_scope(this);
     EvacuateNewSpace();
   }
 
@@ -4490,6 +4478,12 @@ void MarkCompactCollector::SweepSpaces() {
     heap_->tracer()->AddSweepingTime(base::OS::TimeCurrentMillis() -
                                      start_time);
   }
+
+#ifdef VERIFY_HEAP
+  if (FLAG_verify_heap && !sweeping_in_progress_) {
+    VerifyEvacuation(heap());
+  }
+#endif
 }
 
 

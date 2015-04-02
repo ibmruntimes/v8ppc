@@ -16,6 +16,9 @@
 namespace v8 {
 namespace internal {
 
+enum ParseElementResult { kElementFound, kElementNotFound, kNullHandle };
+
+
 // A simple json parser.
 template <bool seq_one_byte>
 class JsonParser BASE_EMBEDDED {
@@ -157,7 +160,7 @@ class JsonParser BASE_EMBEDDED {
 
   // Helper for ParseJsonObject. Parses the form "123": obj, which is recorded
   // as an element, not a property.
-  bool ParseElement(Handle<JSObject> json_object);
+  ParseElementResult ParseElement(Handle<JSObject> json_object);
 
   // Parses a JSON array literal (grammar production JSONArray). An array
   // literal is a square-bracketed and comma separated sequence (possibly empty)
@@ -304,7 +307,8 @@ Handle<Object> JsonParser<seq_one_byte>::ParseJsonValue() {
 
 
 template <bool seq_one_byte>
-bool JsonParser<seq_one_byte>::ParseElement(Handle<JSObject> json_object) {
+ParseElementResult JsonParser<seq_one_byte>::ParseElement(
+    Handle<JSObject> json_object) {
   uint32_t index = 0;
   // Maybe an array index, try to parse it.
   if (c0_ == '0') {
@@ -328,11 +332,13 @@ bool JsonParser<seq_one_byte>::ParseElement(Handle<JSObject> json_object) {
       Handle<Object> value = ParseJsonValue();
       if (!value.is_null()) {
         JSObject::SetOwnElement(json_object, index, value, SLOPPY).Assert();
-        return true;
+        return kElementFound;
+      } else {
+        return kNullHandle;
       }
     }
   }
-  return false;
+  return kElementNotFound;
 }
 
 // Parse a JSON object. Position must be right at '{'.
@@ -357,7 +363,9 @@ Handle<Object> JsonParser<seq_one_byte>::ParseJsonObject() {
       Advance();
 
       if (IsDecimalDigit(c0_)) {
-        if (ParseElement(json_object)) continue;
+        ParseElementResult element_result = ParseElement(json_object);
+        if (element_result == kNullHandle) return Handle<Object>::null();
+        if (element_result == kElementFound) continue;
       }
       // Not an index, fallback to the slow path.
 
@@ -446,7 +454,9 @@ Handle<Object> JsonParser<seq_one_byte>::ParseJsonObject() {
         Advance();
 
         if (IsDecimalDigit(c0_)) {
-          if (ParseElement(json_object)) continue;
+          ParseElementResult element_result = ParseElement(json_object);
+          if (element_result == kNullHandle) return Handle<Object>::null();
+          if (element_result == kElementFound) continue;
         }
         // Not an index, fallback to the slow path.
 

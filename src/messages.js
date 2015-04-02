@@ -410,26 +410,34 @@ function MakeReferenceErrorEmbedded(type, arg) {
        else the line number.
  */
 function ScriptLineFromPosition(position) {
+  var lower = 0;
+  var upper = this.lineCount() - 1;
   var line_ends = this.line_ends;
-  var upper = line_ends.length - 1;
-  if (upper < 0) return -1;
 
   // We'll never find invalid positions so bail right away.
-  if (position > line_ends[upper]) return -1;
-  if (position <= line_ends[0]) return 0;
+  if (position > line_ends[upper]) {
+    return -1;
+  }
 
-  var lower = 1;
-  // Binary search.
-  while (true) {
-    var mid = (upper + lower) >> 1;
-    if (position <= line_ends[mid - 1]) {
-      upper = mid - 1;
-    } else if (position > line_ends[mid]){
-      lower = mid + 1;
+  // This means we don't have to safe-guard indexing line_ends[i - 1].
+  if (position <= line_ends[0]) {
+    return 0;
+  }
+
+  // Binary search to find line # from position range.
+  while (upper >= 1) {
+    var i = (lower + upper) >> 1;
+
+    if (position > line_ends[i]) {
+      lower = i + 1;
+    } else if (position <= line_ends[i - 1]) {
+      upper = i - 1;
     } else {
-      return mid;
+      return i;
     }
   }
+
+  return -1;
 }
 
 /**
@@ -588,8 +596,8 @@ function ScriptLineCount() {
 
 
 /**
- * If sourceURL comment is available and script starts at zero returns sourceURL
- * comment contents. Otherwise, script name is returned. See
+ * If sourceURL comment is available returns sourceURL comment contents.
+ * Otherwise, script name is returned. See
  * http://fbug.googlecode.com/svn/branches/firebug1.1/docs/ReleaseNotes_1.1.txt
  * and Source Map Revision 3 proposal for details on using //# sourceURL and
  * deprecated //@ sourceURL comment to identify scripts that don't have name.
@@ -598,12 +606,7 @@ function ScriptLineCount() {
  * deprecated //@ sourceURL comment otherwise.
  */
 function ScriptNameOrSourceURL() {
-  if (this.line_offset > 0 || this.column_offset > 0) {
-    return this.name;
-  }
-  if (this.source_url) {
-    return this.source_url;
-  }
+  if (this.source_url) return this.source_url;
   return this.name;
 }
 
@@ -1169,10 +1172,11 @@ function SetUpError() {
       %FunctionSetPrototype(f, new ErrorPrototype());
     } else {
       %FunctionSetPrototype(f, new $Error());
+      %InternalSetPrototype(f, $Error);
     }
     %FunctionSetInstanceClassName(f, 'Error');
     %AddNamedProperty(f.prototype, 'constructor', f, DONT_ENUM);
-    %AddNamedProperty(f.prototype, "name", name, DONT_ENUM);
+    %AddNamedProperty(f.prototype, 'name', name, DONT_ENUM);
     %SetCode(f, function(m) {
       if (%_IsConstructCall()) {
         try { captureStackTrace(this, f); } catch (e) { }

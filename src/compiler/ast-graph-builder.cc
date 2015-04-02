@@ -112,7 +112,7 @@ class AstGraphBuilder::ContextScope BASE_EMBEDDED {
       : builder_(builder),
         outer_(builder->execution_context()),
         scope_(scope),
-        depth_(builder_->environment()->ContextStackDepth()) {
+        depth_(builder_->environment()->context_chain_length()) {
     builder_->environment()->PushContext(context);  // Push.
     builder_->set_execution_context(this);
   }
@@ -120,7 +120,7 @@ class AstGraphBuilder::ContextScope BASE_EMBEDDED {
   ~ContextScope() {
     builder_->set_execution_context(outer_);  // Pop.
     builder_->environment()->PopContext();
-    CHECK_EQ(depth_, builder_->environment()->ContextStackDepth());
+    CHECK_EQ(depth_, builder_->environment()->context_chain_length());
   }
 
   // Current scope during visitation.
@@ -146,6 +146,7 @@ class AstGraphBuilder::ControlScope BASE_EMBEDDED {
   explicit ControlScope(AstGraphBuilder* builder)
       : builder_(builder),
         outer_(builder->execution_control()),
+        context_length_(builder->environment()->context_chain_length()),
         stack_height_(builder->environment()->stack_height()) {
     builder_->set_execution_control(this);  // Push.
   }
@@ -193,11 +194,13 @@ class AstGraphBuilder::ControlScope BASE_EMBEDDED {
 
   Environment* environment() { return builder_->environment(); }
   AstGraphBuilder* builder() const { return builder_; }
+  int context_length() const { return context_length_; }
   int stack_height() const { return stack_height_; }
 
  private:
   AstGraphBuilder* builder_;
   ControlScope* outer_;
+  int context_length_;
   int stack_height_;
 };
 
@@ -450,9 +453,6 @@ bool AstGraphBuilder::CreateGraph(bool constant_context, bool stack_check) {
   Environment env(this, scope, graph()->start());
   set_environment(&env);
 
-  // Initialize control scope.
-  ControlScope control(this);
-
   if (info()->is_osr()) {
     // Use OSR normal entry as the start of the top-level environment.
     // It will be replaced with {Dead} after typing and optimizations.
@@ -462,6 +462,9 @@ bool AstGraphBuilder::CreateGraph(bool constant_context, bool stack_check) {
   // Initialize the incoming context.
   CreateFunctionContext(constant_context);
   ContextScope incoming(this, scope, function_context_.get());
+
+  // Initialize control scope.
+  ControlScope control(this);
 
   // Build receiver check for sloppy mode if necessary.
   // TODO(mstarzinger/verwaest): Should this be moved back into the CallIC?
@@ -813,7 +816,8 @@ void AstGraphBuilder::ControlScope::PerformCommand(Command command,
   Environment* env = environment()->CopyAsUnreachable();
   ControlScope* current = this;
   while (current != NULL) {
-    environment()->Trim(current->stack_height());
+    environment()->TrimStack(current->stack_height());
+    environment()->TrimContextChain(current->context_length());
     if (current->Execute(command, target, value)) break;
     current = current->outer_;
   }
@@ -2737,13 +2741,8 @@ Node* AstGraphBuilder::BuildThrowIfStaticPrototype(Node* name,
   Node* check = NewNode(javascript()->StrictEqual(), name, prototype_string);
   prototype_check.If(check);
   prototype_check.Then();
-  {
-    const Operator* op =
-        javascript()->CallRuntime(Runtime::kThrowStaticPrototypeError, 0);
-    Node* call = NewNode(op);
-    PrepareFrameState(call, bailout_id);
-    environment()->Push(call);
-  }
+  Node* error = BuildThrowStaticPrototypeError(bailout_id);
+  environment()->Push(error);
   prototype_check.Else();
   environment()->Push(name);
   prototype_check.End();
@@ -3102,7 +3101,9 @@ Node* AstGraphBuilder::BuildThrowError(Node* exception, BailoutId bailout_id) {
   const Operator* op = javascript()->CallRuntime(Runtime::kThrow, 1);
   Node* call = NewNode(op, exception);
   PrepareFrameState(call, bailout_id);
-  return call;
+  Node* control = NewNode(common()->Throw(), call);
+  UpdateControlDependencyToLeaveFunction(control);
+  return control;
 }
 
 
@@ -3113,7 +3114,9 @@ Node* AstGraphBuilder::BuildThrowReferenceError(Variable* variable,
       javascript()->CallRuntime(Runtime::kThrowReferenceError, 1);
   Node* call = NewNode(op, variable_name);
   PrepareFrameState(call, bailout_id);
-  return call;
+  Node* control = NewNode(common()->Throw(), call);
+  UpdateControlDependencyToLeaveFunction(control);
+  return control;
 }
 
 
@@ -3122,7 +3125,20 @@ Node* AstGraphBuilder::BuildThrowConstAssignError(BailoutId bailout_id) {
       javascript()->CallRuntime(Runtime::kThrowConstAssignError, 0);
   Node* call = NewNode(op);
   PrepareFrameState(call, bailout_id);
-  return call;
+  Node* control = NewNode(common()->Throw(), call);
+  UpdateControlDependencyToLeaveFunction(control);
+  return control;
+}
+
+
+Node* AstGraphBuilder::BuildThrowStaticPrototypeError(BailoutId bailout_id) {
+  const Operator* op =
+      javascript()->CallRuntime(Runtime::kThrowStaticPrototypeError, 0);
+  Node* call = NewNode(op);
+  PrepareFrameState(call, bailout_id);
+  Node* control = NewNode(common()->Throw(), call);
+  UpdateControlDependencyToLeaveFunction(control);
+  return control;
 }
 
 
@@ -3296,7 +3312,7 @@ Node* AstGraphBuilder::MakeNode(const Operator* op, int value_input_count,
       if (!result->op()->HasProperty(Operator::kNoThrow) && inside_try_scope) {
         Node* on_exception = graph()->NewNode(common()->IfException(), result);
         environment_->UpdateControlDependency(on_exception);
-        execution_control()->ThrowValue(result);
+        execution_control()->ThrowValue(on_exception);
       }
       // Add implicit success continuation for throwing nodes.
       if (!result->op()->HasProperty(Operator::kNoThrow)) {
@@ -3322,8 +3338,7 @@ void AstGraphBuilder::UpdateControlDependencyToLeaveFunction(Node* exit) {
 
 void AstGraphBuilder::Environment::Merge(Environment* other) {
   DCHECK(values_.size() == other->values_.size());
-  // TODO(titzer): make context stack heights match.
-  DCHECK(contexts_.size() <= other->contexts_.size());
+  DCHECK(contexts_.size() == other->contexts_.size());
 
   // Nothing to do if the other environment is dead.
   if (other->IsMarkedAsUnreachable()) return;
@@ -3338,10 +3353,7 @@ void AstGraphBuilder::Environment::Merge(Environment* other) {
         graph()->NewNode(common()->Merge(1), arraysize(inputs), inputs, true);
     effect_dependency_ = other->effect_dependency_;
     values_ = other->values_;
-    // TODO(titzer): make context stack heights match.
-    size_t min = std::min(contexts_.size(), other->contexts_.size());
     contexts_ = other->contexts_;
-    contexts_.resize(min, nullptr);
     return;
   }
 

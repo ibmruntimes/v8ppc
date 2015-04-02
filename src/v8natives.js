@@ -176,7 +176,7 @@ function GlobalEval(x) {
 
   var global_proxy = %GlobalProxy(global);
 
-  var f = %CompileString(x, false, 0);
+  var f = %CompileString(x, false);
   if (!IS_FUNCTION(f)) return f;
 
   return %_CallFunction(global_proxy, f);
@@ -979,12 +979,9 @@ function DefineOwnProperty(obj, p, desc, should_throw) {
 }
 
 
-// ES5 section 15.2.3.2.
+// ES6 section 19.1.2.9
 function ObjectGetPrototypeOf(obj) {
-  if (!IS_SPEC_OBJECT(obj)) {
-    throw MakeTypeError("called_on_non_object", ["Object.getPrototypeOf"]);
-  }
-  return %_GetPrototype(obj);
+  return %_GetPrototype(TO_OBJECT_INLINE(obj));
 }
 
 // ES6 section 19.1.2.19.
@@ -1003,13 +1000,9 @@ function ObjectSetPrototypeOf(obj, proto) {
 }
 
 
-// ES5 section 15.2.3.3
+// ES6 section 19.1.2.6
 function ObjectGetOwnPropertyDescriptor(obj, p) {
-  if (!IS_SPEC_OBJECT(obj)) {
-    throw MakeTypeError("called_on_non_object",
-                        ["Object.getOwnPropertyDescriptor"]);
-  }
-  var desc = GetOwnPropertyJS(obj, p);
+  var desc = GetOwnPropertyJS(TO_OBJECT_INLINE(obj), p);
   return FromPropertyDescriptor(desc);
 }
 
@@ -1835,7 +1828,7 @@ function FunctionBind(this_arg) { // Length is 1.
 }
 
 
-function NewFunctionFromString(arguments, function_token) {
+function NewFunctionString(arguments, function_token) {
   var n = arguments.length;
   var p = '';
   if (n > 1) {
@@ -1852,20 +1845,21 @@ function NewFunctionFromString(arguments, function_token) {
     // If the formal parameters include an unbalanced block comment, the
     // function must be rejected. Since JavaScript does not allow nested
     // comments we can include a trailing block comment to catch this.
-    p += '\n\x2f**\x2f';
+    p += '\n/' + '**/';
   }
   var body = (n > 0) ? ToString(arguments[n - 1]) : '';
-  var head = '(' + function_token + '(' + p + ') {\n';
-  var src = head + body + '\n})';
-  var global_proxy = %GlobalProxy(global);
-  var f = %_CallFunction(global_proxy, %CompileString(src, true, head.length));
-  %FunctionMarkNameShouldPrintAsAnonymous(f);
-  return f;
+  return '(' + function_token + '(' + p + ') {\n' + body + '\n})';
 }
 
 
 function FunctionConstructor(arg1) {  // length == 1
-  return NewFunctionFromString(arguments, 'function');
+  var source = NewFunctionString(arguments, 'function');
+  var global_proxy = %GlobalProxy(global);
+  // Compile the string in the constructor and not a helper so that errors
+  // appear to come from here.
+  var f = %_CallFunction(global_proxy, %CompileString(source, true));
+  %FunctionMarkNameShouldPrintAsAnonymous(f);
+  return f;
 }
 
 
