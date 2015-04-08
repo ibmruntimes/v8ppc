@@ -64,7 +64,7 @@ Heap::Heap()
       max_semi_space_size_(8 * (kPointerSize / 4) * MB),
       initial_semispace_size_(Page::kPageSize),
       max_old_generation_size_(700ul * (kPointerSize / 4) * MB),
-      max_executable_size_(256ul * (kPointerSize / 4) * MB),
+      max_executable_size_(512ul * (kPointerSize / 4) * MB),
       // Variables set based on semispace_size_ and old_generation_size_ in
       // ConfigureHeap.
       // Will be 4 * reserved_semispace_size_ to ensure that young
