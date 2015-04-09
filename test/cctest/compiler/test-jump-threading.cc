@@ -59,15 +59,15 @@ class TestCode : public HandleAndZoneScope {
     Start();
     sequence_.AddInstruction(Instruction::New(main_zone(), kArchNop));
     int index = static_cast<int>(sequence_.instructions().size()) - 1;
-    AddGapMove(index, RegisterOperand::New(13, main_zone()),
-               RegisterOperand::New(13, main_zone()));
+    AddGapMove(index, RegisterOperand::New(main_zone(), 13),
+               RegisterOperand::New(main_zone(), 13));
   }
   void NonRedundantMoves() {
     Start();
     sequence_.AddInstruction(Instruction::New(main_zone(), kArchNop));
     int index = static_cast<int>(sequence_.instructions().size()) - 1;
-    AddGapMove(index, ImmediateOperand::New(11, main_zone()),
-               RegisterOperand::New(11, main_zone()));
+    AddGapMove(index, ConstantOperand::New(main_zone(), 11),
+               RegisterOperand::New(main_zone(), 11));
   }
   void Other() {
     Start();
@@ -80,8 +80,7 @@ class TestCode : public HandleAndZoneScope {
     rpo_number_ = RpoNumber::FromInt(rpo_number_.ToInt() + 1);
   }
   InstructionOperand UseRpo(int num) {
-    int index = sequence_.AddImmediate(Constant(RpoNumber::FromInt(num)));
-    return ImmediateOperand(index);
+    return sequence_.AddImmediate(Constant(RpoNumber::FromInt(num)));
   }
   void Start(bool deferred = false) {
     if (current_ == NULL) {

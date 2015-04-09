@@ -47,7 +47,8 @@ class IA32OperandConverter : public InstructionOperandConverter {
     }
     DCHECK(op->IsStackSlot() || op->IsDoubleStackSlot());
     // The linkage computes where all spill slots are located.
-    FrameOffset offset = linkage()->GetFrameOffset(op->index(), frame(), extra);
+    FrameOffset offset = linkage()->GetFrameOffset(
+        AllocatedOperand::cast(op)->index(), frame(), extra);
     return Operand(offset.from_stack_pointer() ? esp : ebp, offset.offset());
   }
 
@@ -1271,6 +1272,19 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
           DCHECK(destination->IsStackSlot());
           Operand dst = g.ToOperand(destination);
           __ push(Operand(ebp, StandardFrameConstants::kContextOffset));
+          __ pop(dst);
+        }
+      } else if (info()->IsOptimizing() &&
+                 src.is_identical_to(info()->closure())) {
+        // Loading the JSFunction from the frame is way cheaper than
+        // materializing the actual JSFunction heap object address.
+        if (destination->IsRegister()) {
+          Register dst = g.ToRegister(destination);
+          __ mov(dst, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
+        } else {
+          DCHECK(destination->IsStackSlot());
+          Operand dst = g.ToOperand(destination);
+          __ push(Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
           __ pop(dst);
         }
       } else if (destination->IsRegister()) {

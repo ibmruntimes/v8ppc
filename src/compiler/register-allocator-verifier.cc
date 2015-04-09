@@ -119,11 +119,14 @@ void RegisterAllocatorVerifier::BuildConstraint(const InstructionOperand* op,
   constraint->virtual_register_ = InstructionOperand::kInvalidVirtualRegister;
   if (op->IsConstant()) {
     constraint->type_ = kConstant;
-    constraint->value_ = ConstantOperand::cast(op)->index();
+    constraint->value_ = ConstantOperand::cast(op)->virtual_register();
     constraint->virtual_register_ = constraint->value_;
   } else if (op->IsImmediate()) {
+    auto imm = ImmediateOperand::cast(op);
+    int value = imm->type() == ImmediateOperand::INLINE ? imm->inline_value()
+                                                        : imm->indexed_value();
     constraint->type_ = kImmediate;
-    constraint->value_ = ImmediateOperand::cast(op)->index();
+    constraint->value_ = value;
   } else {
     CHECK(op->IsUnallocated());
     const auto* unallocated = UnallocatedOperand::cast(op);
@@ -180,29 +183,35 @@ void RegisterAllocatorVerifier::CheckConstraint(
   switch (constraint->type_) {
     case kConstant:
       CHECK(op->IsConstant());
-      CHECK_EQ(op->index(), constraint->value_);
+      CHECK_EQ(ConstantOperand::cast(op)->virtual_register(),
+               constraint->value_);
       return;
-    case kImmediate:
+    case kImmediate: {
       CHECK(op->IsImmediate());
-      CHECK_EQ(op->index(), constraint->value_);
+      auto imm = ImmediateOperand::cast(op);
+      int value = imm->type() == ImmediateOperand::INLINE
+                      ? imm->inline_value()
+                      : imm->indexed_value();
+      CHECK_EQ(value, constraint->value_);
       return;
+    }
     case kRegister:
       CHECK(op->IsRegister());
       return;
     case kFixedRegister:
       CHECK(op->IsRegister());
-      CHECK_EQ(op->index(), constraint->value_);
+      CHECK_EQ(RegisterOperand::cast(op)->index(), constraint->value_);
       return;
     case kDoubleRegister:
       CHECK(op->IsDoubleRegister());
       return;
     case kFixedDoubleRegister:
       CHECK(op->IsDoubleRegister());
-      CHECK_EQ(op->index(), constraint->value_);
+      CHECK_EQ(DoubleRegisterOperand::cast(op)->index(), constraint->value_);
       return;
     case kFixedSlot:
       CHECK(op->IsStackSlot());
-      CHECK_EQ(op->index(), constraint->value_);
+      CHECK_EQ(StackSlotOperand::cast(op)->index(), constraint->value_);
       return;
     case kSlot:
       CHECK(op->IsStackSlot());
@@ -343,11 +352,11 @@ class OperandMap : public ZoneObject {
 
   void DropRegisters(const RegisterConfiguration* config) {
     for (int i = 0; i < config->num_general_registers(); ++i) {
-      InstructionOperand op(InstructionOperand::REGISTER, i);
+      RegisterOperand op(i);
       Drop(&op);
     }
     for (int i = 0; i < config->num_double_registers(); ++i) {
-      InstructionOperand op(InstructionOperand::DOUBLE_REGISTER, i);
+      DoubleRegisterOperand op(i);
       Drop(&op);
     }
   }

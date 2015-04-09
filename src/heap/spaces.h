@@ -104,19 +104,15 @@ class MarkBit {
 
   inline MarkBit(CellType* cell, CellType mask) : cell_(cell), mask_(mask) {}
 
-  inline CellType* cell() { return cell_; }
-  inline CellType mask() { return mask_; }
-
 #ifdef DEBUG
   bool operator==(const MarkBit& other) {
     return cell_ == other.cell_ && mask_ == other.mask_;
   }
 #endif
 
-  inline void Set() { *cell_ |= mask_; }
-  inline bool Get() { return (*cell_ & mask_) != 0; }
-  inline void Clear() { *cell_ &= ~mask_; }
-
+ private:
+  inline CellType* cell() { return cell_; }
+  inline CellType mask() { return mask_; }
 
   inline MarkBit Next() {
     CellType new_mask = mask_ << 1;
@@ -127,9 +123,14 @@ class MarkBit {
     }
   }
 
- private:
+  inline void Set() { *cell_ |= mask_; }
+  inline bool Get() { return (*cell_ & mask_) != 0; }
+  inline void Clear() { *cell_ &= ~mask_; }
+
   CellType* cell_;
   CellType mask_;
+
+  friend class Marking;
 };
 
 
@@ -2653,31 +2654,6 @@ class MapSpace : public PagedSpace {
 
  public:
   TRACK_MEMORY("MapSpace")
-};
-
-
-// -----------------------------------------------------------------------------
-// Old space for simple property cell objects
-
-class CellSpace : public PagedSpace {
- public:
-  // Creates a property cell space object with a maximum capacity.
-  CellSpace(Heap* heap, intptr_t max_capacity, AllocationSpace id)
-      : PagedSpace(heap, max_capacity, id, NOT_EXECUTABLE) {}
-
-  virtual int RoundSizeDownToObjectAlignment(int size) {
-    if (base::bits::IsPowerOfTwo32(Cell::kSize)) {
-      return RoundDown(size, Cell::kSize);
-    } else {
-      return (size / Cell::kSize) * Cell::kSize;
-    }
-  }
-
- protected:
-  virtual void VerifyObject(HeapObject* obj);
-
- public:
-  TRACK_MEMORY("CellSpace")
 };
 
 

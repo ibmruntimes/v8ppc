@@ -44,7 +44,8 @@ class X64OperandConverter : public InstructionOperandConverter {
   Operand ToOperand(InstructionOperand* op, int extra = 0) {
     DCHECK(op->IsStackSlot() || op->IsDoubleStackSlot());
     // The linkage computes where all spill slots are located.
-    FrameOffset offset = linkage()->GetFrameOffset(op->index(), frame(), extra);
+    FrameOffset offset = linkage()->GetFrameOffset(
+        AllocatedOperand::cast(op)->index(), frame(), extra);
     return Operand(offset.from_stack_pointer() ? rsp : rbp, offset.offset());
   }
 
@@ -1464,6 +1465,12 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
             // Loading the context from the frame is way cheaper than
             // materializing the actual context heap object address.
             __ movp(dst, Operand(rbp, StandardFrameConstants::kContextOffset));
+          } else if (info()->IsOptimizing() &&
+                     src_object.is_identical_to(info()->closure())) {
+            // Loading the JSFunction from the frame is way cheaper than
+            // materializing the actual JSFunction heap object address.
+            __ movp(dst,
+                    Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
           } else {
             __ Move(dst, src_object);
           }

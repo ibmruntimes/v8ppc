@@ -42,17 +42,33 @@ std::ostream& operator<<(std::ostream& os,
       }
     }
     case InstructionOperand::CONSTANT:
-      return os << "[constant:" << op.index() << "]";
-    case InstructionOperand::IMMEDIATE:
-      return os << "[immediate:" << op.index() << "]";
-    case InstructionOperand::STACK_SLOT:
-      return os << "[stack:" << op.index() << "]";
-    case InstructionOperand::DOUBLE_STACK_SLOT:
-      return os << "[double_stack:" << op.index() << "]";
-    case InstructionOperand::REGISTER:
-      return os << "[" << conf->general_register_name(op.index()) << "|R]";
-    case InstructionOperand::DOUBLE_REGISTER:
-      return os << "[" << conf->double_register_name(op.index()) << "|R]";
+      return os << "[constant:" << ConstantOperand::cast(op).virtual_register()
+                << "]";
+    case InstructionOperand::IMMEDIATE: {
+      auto imm = ImmediateOperand::cast(op);
+      switch (imm.type()) {
+        case ImmediateOperand::INLINE:
+          return os << "#" << imm.inline_value();
+        case ImmediateOperand::INDEXED:
+          return os << "[immediate:" << imm.indexed_value() << "]";
+      }
+    }
+    case InstructionOperand::ALLOCATED:
+      switch (AllocatedOperand::cast(op).allocated_kind()) {
+        case AllocatedOperand::STACK_SLOT:
+          return os << "[stack:" << StackSlotOperand::cast(op).index() << "]";
+        case AllocatedOperand::DOUBLE_STACK_SLOT:
+          return os << "[double_stack:"
+                    << DoubleStackSlotOperand::cast(op).index() << "]";
+        case AllocatedOperand::REGISTER:
+          return os << "["
+                    << conf->general_register_name(
+                           RegisterOperand::cast(op).index()) << "|R]";
+        case AllocatedOperand::DOUBLE_REGISTER:
+          return os << "["
+                    << conf->double_register_name(
+                           DoubleRegisterOperand::cast(op).index()) << "|R]";
+      }
     case InstructionOperand::INVALID:
       return os << "(x)";
   }
@@ -173,7 +189,7 @@ std::ostream& operator<<(std::ostream& os,
 
 void PointerMap::RecordPointer(InstructionOperand* op, Zone* zone) {
   // Do not record arguments as pointers.
-  if (op->IsStackSlot() && op->index() < 0) return;
+  if (op->IsStackSlot() && StackSlotOperand::cast(op)->index() < 0) return;
   DCHECK(!op->IsDoubleRegister() && !op->IsDoubleStackSlot());
   pointer_operands_.Add(op, zone);
 }
@@ -181,7 +197,7 @@ void PointerMap::RecordPointer(InstructionOperand* op, Zone* zone) {
 
 void PointerMap::RemovePointer(InstructionOperand* op) {
   // Do not record arguments as pointers.
-  if (op->IsStackSlot() && op->index() < 0) return;
+  if (op->IsStackSlot() && StackSlotOperand::cast(op)->index() < 0) return;
   DCHECK(!op->IsDoubleRegister() && !op->IsDoubleStackSlot());
   for (int i = 0; i < pointer_operands_.length(); ++i) {
     if (pointer_operands_[i]->Equals(op)) {
@@ -194,7 +210,7 @@ void PointerMap::RemovePointer(InstructionOperand* op) {
 
 void PointerMap::RecordUntagged(InstructionOperand* op, Zone* zone) {
   // Do not record arguments as pointers.
-  if (op->IsStackSlot() && op->index() < 0) return;
+  if (op->IsStackSlot() && StackSlotOperand::cast(op)->index() < 0) return;
   DCHECK(!op->IsDoubleRegister() && !op->IsDoubleStackSlot());
   untagged_operands_.Add(op, zone);
 }
@@ -590,6 +606,16 @@ FrameStateDescriptor* InstructionSequence::GetFrameStateDescriptor(
 
 int InstructionSequence::GetFrameStateDescriptorCount() {
   return static_cast<int>(deoptimization_entries_.size());
+}
+
+
+RpoNumber InstructionSequence::InputRpo(Instruction* instr, size_t index) {
+  InstructionOperand* operand = instr->InputAt(index);
+  Constant constant =
+      operand->IsImmediate()
+          ? GetImmediate(ImmediateOperand::cast(operand))
+          : GetConstant(ConstantOperand::cast(operand)->virtual_register());
+  return constant.ToRpoNumber();
 }
 
 
