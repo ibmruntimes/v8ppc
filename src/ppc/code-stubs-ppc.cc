@@ -2549,7 +2549,7 @@ static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub) {
   FrameScope scope(masm, StackFrame::INTERNAL);
 #endif
 
-  // Arguments register must be smi-tagged to call out.
+  // Number-of-arguments register must be smi-tagged to call out.
   __ SmiTag(r3);
   __ Push(r6, r5, r4, r3);
 
@@ -2582,6 +2582,8 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
 
   // A monomorphic cache hit or an already megamorphic state: invoke the
   // function without changing the state.
+  // We don't know if r7 is a WeakCell or a Symbol, but it's harmless to read at
+  // this position in a symbol (see static asserts in type-feedback-vector.h).
   Label check_allocation_site;
   Register feedback_map = r8;
   Register weak_value = r9;
@@ -2590,12 +2592,11 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
   __ beq(&done);
   __ CompareRoot(r7, Heap::kmegamorphic_symbolRootIndex);
   __ beq(&done);
-  __ LoadP(feedback_map, FieldMemOperand(r7, 0));
+  __ LoadP(feedback_map, FieldMemOperand(r7, HeapObject::kMapOffset));
   __ CompareRoot(feedback_map, Heap::kWeakCellMapRootIndex);
   __ bne(FLAG_pretenuring_call_new ? &miss : &check_allocation_site);
 
-  // If r4 is not equal to the weak cell value, and the weak cell value is
-  // cleared, we have a new chance to become monomorphic.
+  // If the weak cell is cleared, we have a new chance to become monomorphic.
   __ JumpIfSmi(weak_value, &initialize);
   __ b(&megamorphic);
 
@@ -2604,7 +2605,7 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
     // If we came here, we need to see if we are the array function.
     // If we didn't have a matching function, and we didn't find the megamorph
     // sentinel, then we have in the slot either some other function or an
-    // AllocationSite. Do a map check on the object in ecx.
+    // AllocationSite.
     __ CompareRoot(feedback_map, Heap::kAllocationSiteMapRootIndex);
     __ bne(&miss);
 
