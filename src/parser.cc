@@ -2217,8 +2217,8 @@ Block* Parser::ParseVariableStatement(VariableDeclarationContext var_context,
   //   VariableDeclarations ';'
 
   const AstRawString* ignore;
-  Block* result =
-      ParseVariableDeclarations(var_context, NULL, names, &ignore, CHECK_OK);
+  Block* result = ParseVariableDeclarations(
+      var_context, nullptr, names, &ignore, nullptr, nullptr, CHECK_OK);
   ExpectSemicolon(CHECK_OK);
   return result;
 }
@@ -2230,10 +2230,9 @@ Block* Parser::ParseVariableStatement(VariableDeclarationContext var_context,
 // to initialize it properly. This mechanism is used for the parsing
 // of 'for-in' loops.
 Block* Parser::ParseVariableDeclarations(
-    VariableDeclarationContext var_context,
-    VariableDeclarationProperties* decl_props,
-    ZoneList<const AstRawString*>* names,
-    const AstRawString** out,
+    VariableDeclarationContext var_context, int* num_decl,
+    ZoneList<const AstRawString*>* names, const AstRawString** out,
+    Scanner::Location* first_initializer_loc, Scanner::Location* bindings_loc,
     bool* ok) {
   // VariableDeclarations ::
   //   ('var' | 'const' | 'let') (Identifier ('=' AssignmentExpression)?)+[',']
@@ -2306,7 +2305,9 @@ Block* Parser::ParseVariableDeclarations(
   // Create new block with one expected declaration.
   Block* block = factory()->NewBlock(NULL, 1, true, pos);
   int nvars = 0;  // the number of variables declared
+  int bindings_start = peek_position();
   const AstRawString* name = NULL;
+  const AstRawString* first_name = NULL;
   bool is_for_iteration_variable;
   do {
     if (fni_ != NULL) fni_->Enter();
@@ -2314,6 +2315,8 @@ Block* Parser::ParseVariableDeclarations(
     // Parse variable name.
     if (nvars > 0) Consume(Token::COMMA);
     name = ParseIdentifier(kDontAllowEvalOrArguments, CHECK_OK);
+    if (!first_name) first_name = name;
+    Scanner::Location variable_loc = scanner()->location();
     if (fni_ != NULL) fni_->PushVariableName(name);
 
     // Declare variable.
@@ -2388,6 +2391,12 @@ Block* Parser::ParseVariableDeclarations(
       Expect(Token::ASSIGN, CHECK_OK);
       pos = position();
       value = ParseAssignmentExpression(var_context != kForStatement, CHECK_OK);
+      variable_loc.end_pos = scanner()->location().end_pos;
+
+      if (first_initializer_loc && !first_initializer_loc->IsValid()) {
+        *first_initializer_loc = variable_loc;
+      }
+
       // Don't infer if it is "a = function(){...}();"-like expression.
       if (fni_ != NULL &&
           value->AsCall() == NULL &&
@@ -2396,7 +2405,6 @@ Block* Parser::ParseVariableDeclarations(
       } else {
         fni_->RemoveLastFunction();
       }
-      if (decl_props != NULL) *decl_props = kHasInitializers;
       // End position of the initializer is after the assignment expression.
       var->set_initializer_position(scanner()->location().end_pos);
     } else {
@@ -2515,11 +2523,13 @@ Block* Parser::ParseVariableDeclarations(
     if (fni_ != NULL) fni_->Leave();
   } while (peek() == Token::COMMA);
 
-  // If there was a single non-const declaration, return it in the output
-  // parameter for possible use by for/in.
-  if (nvars == 1 && (!is_const || is_for_iteration_variable)) {
-    *out = name;
+  if (bindings_loc) {
+    *bindings_loc =
+        Scanner::Location(bindings_start, scanner()->location().end_pos);
   }
+
+  if (num_decl) *num_decl = nvars;
+  *out = first_name;
 
   return block;
 }
@@ -3363,17 +3373,39 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
     if (peek() == Token::VAR ||
         (peek() == Token::CONST && is_sloppy(language_mode()))) {
       const AstRawString* name = NULL;
-      VariableDeclarationProperties decl_props = kHasNoInitializers;
-      Block* variable_statement =
-          ParseVariableDeclarations(kForStatement, &decl_props, NULL, &name,
-                                    CHECK_OK);
-      bool accept_OF = decl_props == kHasNoInitializers;
+      Scanner::Location first_initializer_loc = Scanner::Location::invalid();
+      Scanner::Location bindings_loc = Scanner::Location::invalid();
+      int num_decl;
+      Block* variable_statement = ParseVariableDeclarations(
+          kForStatement, &num_decl, nullptr, &name, &first_initializer_loc,
+          &bindings_loc, CHECK_OK);
+      bool accept_IN = num_decl >= 1;
+      bool accept_OF = true;
       ForEachStatement::VisitMode mode;
       int each_beg_pos = scanner()->location().beg_pos;
       int each_end_pos = scanner()->location().end_pos;
 
-      if (name != NULL && CheckInOrOf(accept_OF, &mode, ok)) {
+      if (accept_IN && CheckInOrOf(accept_OF, &mode, ok)) {
         if (!*ok) return nullptr;
+        if (num_decl != 1) {
+          const char* loop_type =
+              mode == ForEachStatement::ITERATE ? "for-of" : "for-in";
+          ParserTraits::ReportMessageAt(
+              bindings_loc, "for_inof_loop_multi_bindings", loop_type);
+          *ok = false;
+          return nullptr;
+        }
+        if (first_initializer_loc.IsValid() &&
+            (is_strict(language_mode()) || mode == ForEachStatement::ITERATE)) {
+          if (mode == ForEachStatement::ITERATE) {
+            ReportMessageAt(first_initializer_loc, "for_of_loop_initializer");
+          } else {
+            // TODO(caitp): This should be an error in sloppy mode too.
+            ReportMessageAt(first_initializer_loc, "for_in_loop_initializer");
+          }
+          *ok = false;
+          return nullptr;
+        }
         ForEachStatement* loop =
             factory()->NewForEachStatement(mode, labels, stmt_pos);
         Target target(&this->target_stack_, loop);
@@ -3402,19 +3434,38 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
                is_strict(language_mode())) {
       is_const = peek() == Token::CONST;
       const AstRawString* name = NULL;
-      VariableDeclarationProperties decl_props = kHasNoInitializers;
-      Block* variable_statement =
-          ParseVariableDeclarations(kForStatement, &decl_props,
-                                    &lexical_bindings, &name, CHECK_OK);
-      bool accept_IN = name != NULL && decl_props != kHasInitializers;
-      bool accept_OF = decl_props == kHasNoInitializers;
+      Scanner::Location first_initializer_loc = Scanner::Location::invalid();
+      Scanner::Location bindings_loc = Scanner::Location::invalid();
+      int num_decl;
+      Block* variable_statement = ParseVariableDeclarations(
+          kForStatement, &num_decl, &lexical_bindings, &name,
+          &first_initializer_loc, &bindings_loc, CHECK_OK);
+      bool accept_IN = num_decl >= 1;
+      bool accept_OF = true;
       ForEachStatement::VisitMode mode;
       int each_beg_pos = scanner()->location().beg_pos;
       int each_end_pos = scanner()->location().end_pos;
 
       if (accept_IN && CheckInOrOf(accept_OF, &mode, ok)) {
         if (!*ok) return nullptr;
-
+        if (num_decl != 1) {
+          const char* loop_type =
+              mode == ForEachStatement::ITERATE ? "for-of" : "for-in";
+          ParserTraits::ReportMessageAt(
+              bindings_loc, "for_inof_loop_multi_bindings", loop_type);
+          *ok = false;
+          return nullptr;
+        }
+        if (first_initializer_loc.IsValid() &&
+            (is_strict(language_mode()) || mode == ForEachStatement::ITERATE)) {
+          if (mode == ForEachStatement::ITERATE) {
+            ReportMessageAt(first_initializer_loc, "for_of_loop_initializer");
+          } else {
+            ReportMessageAt(first_initializer_loc, "for_in_loop_initializer");
+          }
+          *ok = false;
+          return nullptr;
+        }
         // Rewrite a for-in statement of the form
         //
         //   for (let/const x in e) b

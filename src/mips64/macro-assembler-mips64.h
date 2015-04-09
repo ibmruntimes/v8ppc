@@ -509,7 +509,7 @@ class MacroAssembler: public Assembler {
   // ---------------------------------------------------------------------------
   // Allocation support.
 
-  // Allocate an object in new space or old pointer space. The object_size is
+  // Allocate an object in new space or old space. The object_size is
   // specified either in bytes or in words if the allocation flag SIZE_IN_WORDS
   // is passed. If the space is exhausted control continues at the gc_required
   // label. The allocated object is returned in result. If the flag
@@ -1702,7 +1702,6 @@ const Operand& rt = Operand(zero_reg), BranchDelaySlot bd = PROTECT
   void BranchAndLinkShort(Label* L, Condition cond, Register rs,
                           const Operand& rt,
                           BranchDelaySlot bdslot = PROTECT);
-  void J(Label* L, BranchDelaySlot bdslot);
   void Jr(Label* L, BranchDelaySlot bdslot);
   void Jalr(Label* L, BranchDelaySlot bdslot);
 

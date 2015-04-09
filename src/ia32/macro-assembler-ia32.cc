@@ -1310,12 +1310,11 @@ void MacroAssembler::Allocate(int object_size,
   // Align the next allocation. Storing the filler map without checking top is
   // safe in new-space because the limit of the heap is aligned there.
   if ((flags & DOUBLE_ALIGNMENT) != 0) {
-    DCHECK((flags & PRETENURE_OLD_POINTER_SPACE) == 0);
     DCHECK(kPointerAlignment * 2 == kDoubleAlignment);
     Label aligned;
     test(result, Immediate(kDoubleAlignmentMask));
     j(zero, &aligned, Label::kNear);
-    if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
+    if ((flags & PRETENURE) != 0) {
       cmp(result, Operand::StaticVariable(allocation_limit));
       j(above_equal, gc_required);
     }
@@ -1387,12 +1386,11 @@ void MacroAssembler::Allocate(int header_size,
   // Align the next allocation. Storing the filler map without checking top is
   // safe in new-space because the limit of the heap is aligned there.
   if ((flags & DOUBLE_ALIGNMENT) != 0) {
-    DCHECK((flags & PRETENURE_OLD_POINTER_SPACE) == 0);
     DCHECK(kPointerAlignment * 2 == kDoubleAlignment);
     Label aligned;
     test(result, Immediate(kDoubleAlignmentMask));
     j(zero, &aligned, Label::kNear);
-    if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
+    if ((flags & PRETENURE) != 0) {
       cmp(result, Operand::StaticVariable(allocation_limit));
       j(above_equal, gc_required);
     }
@@ -1462,12 +1460,11 @@ void MacroAssembler::Allocate(Register object_size,
   // Align the next allocation. Storing the filler map without checking top is
   // safe in new-space because the limit of the heap is aligned there.
   if ((flags & DOUBLE_ALIGNMENT) != 0) {
-    DCHECK((flags & PRETENURE_OLD_POINTER_SPACE) == 0);
     DCHECK(kPointerAlignment * 2 == kDoubleAlignment);
     Label aligned;
     test(result, Immediate(kDoubleAlignmentMask));
     j(zero, &aligned, Label::kNear);
-    if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
+    if ((flags & PRETENURE) != 0) {
       cmp(result, Operand::StaticVariable(allocation_limit));
       j(above_equal, gc_required);
     }
@@ -2380,11 +2377,11 @@ void MacroAssembler::Move(XMMRegister dst, uint32_t src) {
 
 
 void MacroAssembler::Move(XMMRegister dst, uint64_t src) {
-  uint32_t lower = static_cast<uint32_t>(src);
-  uint32_t upper = static_cast<uint32_t>(src >> 32);
-  if (upper == 0) {
-    Move(dst, lower);
+  if (src == 0) {
+    pxor(dst, dst);
   } else {
+    uint32_t lower = static_cast<uint32_t>(src);
+    uint32_t upper = static_cast<uint32_t>(src >> 32);
     unsigned cnt = base::bits::CountPopulation64(src);
     unsigned nlz = base::bits::CountLeadingZeros64(src);
     unsigned ntz = base::bits::CountTrailingZeros64(src);

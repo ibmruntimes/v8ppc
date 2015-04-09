@@ -3092,24 +3092,6 @@ void MacroAssembler::Ret(Condition cond,
 }
 
 
-void MacroAssembler::J(Label* L, BranchDelaySlot bdslot) {
-  BlockTrampolinePoolScope block_trampoline_pool(this);
-
-  uint32_t imm28;
-  imm28 = jump_address(L);
-  imm28 &= kImm28Mask;
-  { BlockGrowBufferScope block_buf_growth(this);
-    // Buffer growth (and relocation) must be blocked for internal references
-    // until associated instructions are emitted and available to be patched.
-    RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE_ENCODED);
-    j(imm28);
-  }
-  // Emit a nop in the branch delay slot if required.
-  if (bdslot == PROTECT)
-    nop();
-}
-
-
 void MacroAssembler::Jr(Label* L, BranchDelaySlot bdslot) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
 
@@ -3151,6 +3133,7 @@ void MacroAssembler::Jalr(Label* L, BranchDelaySlot bdslot) {
 
 
 void MacroAssembler::DropAndRet(int drop) {
+  DCHECK(is_int16(drop * kPointerSize));
   Ret(USE_DELAY_SLOT);
   addiu(sp, sp, drop * kPointerSize);
 }
@@ -3188,7 +3171,7 @@ void MacroAssembler::Drop(int count,
      Branch(&skip, NegateCondition(cond), reg, op);
   }
 
-  addiu(sp, sp, count * kPointerSize);
+  Addu(sp, sp, Operand(count * kPointerSize));
 
   if (cond != al) {
     bind(&skip);
@@ -3328,12 +3311,11 @@ void MacroAssembler::Allocate(int object_size,
   if ((flags & DOUBLE_ALIGNMENT) != 0) {
     // Align the next allocation. Storing the filler map without checking top is
     // safe in new-space because the limit of the heap is aligned there.
-    DCHECK((flags & PRETENURE_OLD_POINTER_SPACE) == 0);
     DCHECK(kPointerAlignment * 2 == kDoubleAlignment);
     And(scratch2, result, Operand(kDoubleAlignmentMask));
     Label aligned;
     Branch(&aligned, eq, scratch2, Operand(zero_reg));
-    if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
+    if ((flags & PRETENURE) != 0) {
       Branch(gc_required, Ugreater_equal, result, Operand(t9));
     }
     li(scratch2, Operand(isolate()->factory()->one_pointer_filler_map()));
@@ -3415,12 +3397,11 @@ void MacroAssembler::Allocate(Register object_size,
   if ((flags & DOUBLE_ALIGNMENT) != 0) {
     // Align the next allocation. Storing the filler map without checking top is
     // safe in new-space because the limit of the heap is aligned there.
-    DCHECK((flags & PRETENURE_OLD_POINTER_SPACE) == 0);
     DCHECK(kPointerAlignment * 2 == kDoubleAlignment);
     And(scratch2, result, Operand(kDoubleAlignmentMask));
     Label aligned;
     Branch(&aligned, eq, scratch2, Operand(zero_reg));
-    if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
+    if ((flags & PRETENURE) != 0) {
       Branch(gc_required, Ugreater_equal, result, Operand(t9));
     }
     li(scratch2, Operand(isolate()->factory()->one_pointer_filler_map()));

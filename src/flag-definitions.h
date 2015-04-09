@@ -190,19 +190,19 @@ DEFINE_IMPLICATION(es_staging, harmony)
   V(harmony_arrow_functions, "harmony arrow functions")         \
   V(harmony_proxies, "harmony proxies")                         \
   V(harmony_sloppy, "harmony features in sloppy mode")          \
-  V(harmony_unicode, "harmony unicode escapes")                 \
   V(harmony_unicode_regexps, "harmony unicode regexps")         \
   V(harmony_rest_parameters, "harmony rest parameters")         \
   V(harmony_reflect, "harmony Reflect API")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                               \
-  V(harmony_computed_property_names, "harmony computed property names") \
-  V(harmony_tostring, "harmony toString")
+  V(harmony_tostring, "harmony toString")                               \
+  V(harmony_unicode, "harmony unicode escapes")
 
 // Features that are shipping (turned on by default, but internal flag remains).
 #define HARMONY_SHIPPING(V)                                                \
   V(harmony_classes, "harmony classes (implies object literal extension)") \
+  V(harmony_computed_property_names, "harmony computed property names")    \
   V(harmony_object_literals, "harmony object literal extensions")
 
 // Once a shipping feature has proved stable in the wild, it will be dropped
@@ -449,6 +449,11 @@ DEFINE_BOOL(enable_sahf, true,
             "enable use of SAHF instruction if available (X64 only)")
 DEFINE_BOOL(enable_avx, true, "enable use of AVX instructions if available")
 DEFINE_BOOL(enable_fma3, true, "enable use of FMA3 instructions if available")
+DEFINE_BOOL(enable_bmi1, true, "enable use of BMI1 instructions if available")
+DEFINE_BOOL(enable_bmi2, true, "enable use of BMI2 instructions if available")
+DEFINE_BOOL(enable_lzcnt, true, "enable use of LZCNT instruction if available")
+DEFINE_BOOL(enable_popcnt, true,
+            "enable use of POPCNT instruction if available")
 DEFINE_BOOL(enable_vfp3, ENABLE_VFP3_DEFAULT,
             "enable use of VFP3 instructions if available")
 DEFINE_BOOL(enable_armv7, ENABLE_ARMV7_DEFAULT,
@@ -613,7 +618,7 @@ DEFINE_BOOL(age_code, true,
             "old code (required for code flushing)")
 DEFINE_BOOL(incremental_marking, true, "use incremental marking")
 DEFINE_BOOL(incremental_marking_steps, true, "do incremental marking steps")
-DEFINE_BOOL(overapproximate_weak_closure, false,
+DEFINE_BOOL(overapproximate_weak_closure, true,
             "overapproximate weak closer to reduce atomic pause time")
 DEFINE_INT(min_progress_during_object_groups_marking, 128,
            "keep overapproximating the weak closure as long as we discover at "

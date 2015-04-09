@@ -30,6 +30,8 @@ struct NodeMatcher {
   }
   Node* InputAt(int index) const { return node()->InputAt(index); }
 
+  bool Equals(const Node* node) const { return node_ == node; }
+
   bool IsComparison() const;
 
 #define DEFINE_IS_OPCODE(Opcode) \
@@ -141,6 +143,7 @@ struct FloatMatcher FINAL : public ValueMatcher<T, kOpcode> {
     return this->Is(0.0) && std::signbit(this->Value());
   }
   bool IsNaN() const { return this->HasValue() && std::isnan(this->Value()); }
+  bool IsZero() const { return this->Is(0.0) && !std::signbit(this->Value()); }
 };
 
 typedef FloatMatcher<float, IrOpcode::kFloat32Constant> Float32Matcher;
@@ -541,6 +544,54 @@ typedef BaseWithIndexAndDisplacementMatcher<Int32AddMatcher>
     BaseWithIndexAndDisplacement32Matcher;
 typedef BaseWithIndexAndDisplacementMatcher<Int64AddMatcher>
     BaseWithIndexAndDisplacement64Matcher;
+
+struct BranchMatcher : public NodeMatcher {
+  explicit BranchMatcher(Node* branch);
+
+  bool Matched() const { return if_true_ && if_false_; }
+
+  Node* Branch() const { return node(); }
+  Node* IfTrue() const { return if_true_; }
+  Node* IfFalse() const { return if_false_; }
+
+ private:
+  Node* if_true_;
+  Node* if_false_;
+};
+
+
+struct DiamondMatcher : public NodeMatcher {
+  explicit DiamondMatcher(Node* merge);
+
+  bool Matched() const { return branch_; }
+  bool IfProjectionsAreOwned() const {
+    return if_true_->OwnedBy(node()) && if_false_->OwnedBy(node());
+  }
+
+  Node* Branch() const { return branch_; }
+  Node* IfTrue() const { return if_true_; }
+  Node* IfFalse() const { return if_false_; }
+  Node* Merge() const { return node(); }
+
+  Node* TrueInputOf(Node* phi) const {
+    DCHECK(IrOpcode::IsPhiOpcode(phi->opcode()));
+    DCHECK_EQ(3, phi->InputCount());
+    DCHECK_EQ(Merge(), phi->InputAt(2));
+    return phi->InputAt(if_true_ == Merge()->InputAt(0) ? 0 : 1);
+  }
+
+  Node* FalseInputOf(Node* phi) const {
+    DCHECK(IrOpcode::IsPhiOpcode(phi->opcode()));
+    DCHECK_EQ(3, phi->InputCount());
+    DCHECK_EQ(Merge(), phi->InputAt(2));
+    return phi->InputAt(if_true_ == Merge()->InputAt(0) ? 1 : 0);
+  }
+
+ private:
+  Node* branch_;
+  Node* if_true_;
+  Node* if_false_;
+};
 
 }  // namespace compiler
 }  // namespace internal

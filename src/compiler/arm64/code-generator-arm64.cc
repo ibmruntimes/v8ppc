@@ -75,6 +75,10 @@ class Arm64OperandConverter FINAL : public InstructionOperandConverter {
         return Operand(InputRegister32(index), UXTB);
       case kMode_Operand2_R_UXTH:
         return Operand(InputRegister32(index), UXTH);
+      case kMode_Operand2_R_SXTB:
+        return Operand(InputRegister32(index), SXTB);
+      case kMode_Operand2_R_SXTH:
+        return Operand(InputRegister32(index), SXTH);
       case kMode_MRI:
       case kMode_MRR:
         break;
@@ -99,6 +103,10 @@ class Arm64OperandConverter FINAL : public InstructionOperandConverter {
         return Operand(InputRegister64(index), UXTB);
       case kMode_Operand2_R_UXTH:
         return Operand(InputRegister64(index), UXTH);
+      case kMode_Operand2_R_SXTB:
+        return Operand(InputRegister64(index), SXTB);
+      case kMode_Operand2_R_SXTH:
+        return Operand(InputRegister64(index), SXTH);
       case kMode_MRI:
       case kMode_MRR:
         break;
@@ -117,6 +125,8 @@ class Arm64OperandConverter FINAL : public InstructionOperandConverter {
       case kMode_Operand2_R_ROR_I:
       case kMode_Operand2_R_UXTB:
       case kMode_Operand2_R_UXTH:
+      case kMode_Operand2_R_SXTB:
+      case kMode_Operand2_R_SXTH:
         break;
       case kMode_MRI:
         *first_index += 2;
@@ -678,6 +688,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ Fmin(i.OutputFloat32Register(), i.InputFloat32Register(0),
               i.InputFloat32Register(1));
       break;
+    case kArm64Float32Abs:
+      __ Fabs(i.OutputFloat32Register(), i.InputFloat32Register(0));
+      break;
     case kArm64Float32Sqrt:
       __ Fsqrt(i.OutputFloat32Register(), i.InputFloat32Register(0));
       break;
@@ -725,6 +738,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArm64Float64Min:
       __ Fmin(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
               i.InputDoubleRegister(1));
+      break;
+    case kArm64Float64Abs:
+      __ Fabs(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
       break;
     case kArm64Float64Neg:
       __ Fneg(i.OutputDoubleRegister(), i.InputDoubleRegister(0));

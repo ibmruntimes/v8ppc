@@ -675,6 +675,13 @@ void InstructionSelector::VisitFloat64Add(Node* node) {
 
 
 void InstructionSelector::VisitFloat32Sub(Node* node) {
+  IA32OperandGenerator g(this);
+  Float32BinopMatcher m(node);
+  if (m.left().IsMinusZero()) {
+    Emit(kSSEFloat32Neg, g.DefineSameAsFirst(node),
+         g.UseRegister(m.right().node()));
+    return;
+  }
   VisitRROFloat(this, node, kAVXFloat32Sub, kSSEFloat32Sub);
 }
 
@@ -682,17 +689,22 @@ void InstructionSelector::VisitFloat32Sub(Node* node) {
 void InstructionSelector::VisitFloat64Sub(Node* node) {
   IA32OperandGenerator g(this);
   Float64BinopMatcher m(node);
-  if (m.left().IsMinusZero() && m.right().IsFloat64RoundDown() &&
-      CanCover(m.node(), m.right().node())) {
-    if (m.right().InputAt(0)->opcode() == IrOpcode::kFloat64Sub &&
-        CanCover(m.right().node(), m.right().InputAt(0))) {
-      Float64BinopMatcher mright0(m.right().InputAt(0));
-      if (mright0.left().IsMinusZero()) {
-        Emit(kSSEFloat64Round | MiscField::encode(kRoundUp),
-             g.DefineAsRegister(node), g.UseRegister(mright0.right().node()));
-        return;
+  if (m.left().IsMinusZero()) {
+    if (m.right().IsFloat64RoundDown() &&
+        CanCover(m.node(), m.right().node())) {
+      if (m.right().InputAt(0)->opcode() == IrOpcode::kFloat64Sub &&
+          CanCover(m.right().node(), m.right().InputAt(0))) {
+        Float64BinopMatcher mright0(m.right().InputAt(0));
+        if (mright0.left().IsMinusZero()) {
+          Emit(kSSEFloat64Round | MiscField::encode(kRoundUp),
+               g.DefineAsRegister(node), g.UseRegister(mright0.right().node()));
+          return;
+        }
       }
     }
+    Emit(kSSEFloat64Neg, g.DefineSameAsFirst(node),
+         g.UseRegister(m.right().node()));
+    return;
   }
   VisitRROFloat(this, node, kAVXFloat64Sub, kSSEFloat64Sub);
 }
@@ -744,6 +756,18 @@ void InstructionSelector::VisitFloat32Min(Node* node) {
 
 void InstructionSelector::VisitFloat64Min(Node* node) {
   VisitRROFloat(this, node, kAVXFloat64Min, kSSEFloat64Min);
+}
+
+
+void InstructionSelector::VisitFloat32Abs(Node* node) {
+  IA32OperandGenerator g(this);
+  Emit(kSSEFloat32Abs, g.DefineSameAsFirst(node), g.Use(node->InputAt(0)));
+}
+
+
+void InstructionSelector::VisitFloat64Abs(Node* node) {
+  IA32OperandGenerator g(this);
+  Emit(kSSEFloat64Abs, g.DefineSameAsFirst(node), g.Use(node->InputAt(0)));
 }
 
 
@@ -1184,8 +1208,10 @@ void InstructionSelector::VisitFloat64InsertHighWord32(Node* node) {
 MachineOperatorBuilder::Flags
 InstructionSelector::SupportedMachineOperatorFlags() {
   MachineOperatorBuilder::Flags flags =
+      MachineOperatorBuilder::kFloat32Abs |
       MachineOperatorBuilder::kFloat32Max |
       MachineOperatorBuilder::kFloat32Min |
+      MachineOperatorBuilder::kFloat64Abs |
       MachineOperatorBuilder::kFloat64Max |
       MachineOperatorBuilder::kFloat64Min |
       MachineOperatorBuilder::kWord32ShiftIsSafe;

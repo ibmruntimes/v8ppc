@@ -197,7 +197,10 @@ var kMessages = {
   duplicate_proto:               ["Duplicate __proto__ fields are not allowed in object literals"],
   param_after_rest:              ["Rest parameter must be last formal parameter"],
   constructor_noncallable:       ["Class constructors cannot be invoked without 'new'"],
-  array_not_subclassable:        ["Subclassing Arrays is not currently supported."]
+  array_not_subclassable:        ["Subclassing Arrays is not currently supported."],
+  for_in_loop_initializer:       ["for-in loop variable declaration may not have an initializer."],
+  for_of_loop_initializer:       ["for-of loop variable declaration may not have an initializer."],
+  for_inof_loop_multi_bindings:  ["Invalid left-hand side in ", "%0", " loop: Must have a single binding."]
 };
 
 

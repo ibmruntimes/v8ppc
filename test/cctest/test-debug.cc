@@ -6697,7 +6697,6 @@ TEST(ProcessDebugMessagesThreaded) {
       v8::FunctionTemplate::New(isolate, StartSendingCommands);
   env->Global()->Set(v8_str("start"), start->GetFunction());
 
-  i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
   CompileRun("start(); while (true) { }");
 
   CHECK_EQ(20, counting_message_handler_counter);
@@ -6731,6 +6730,10 @@ TEST(Backtrace) {
   v8::HandleScope scope(isolate);
 
   v8::Debug::SetMessageHandler(BacktraceData::MessageHandler);
+
+  // TODO(3995): This doesn't work with --always-opt because we don't have
+  // correct source positions in optimized code. Enable once we have.
+  i::FLAG_always_opt = false;
 
   const int kBufferSize = 1000;
   uint16_t buffer[kBufferSize];
@@ -6943,80 +6946,6 @@ TEST(DebugEventContext) {
 }
 
 
-static void* expected_break_data;
-static bool was_debug_break_called;
-static bool was_debug_event_called;
-static void DebugEventBreakDataChecker(const v8::Debug::EventDetails& details) {
-  if (details.GetEvent() == v8::BreakForCommand) {
-    CHECK_EQ(expected_break_data, details.GetClientData());
-    was_debug_event_called = true;
-  } else if (details.GetEvent() == v8::Break) {
-    was_debug_break_called = true;
-  }
-}
-
-
-// Check that event details contain context where debug event occured.
-TEST(DebugEventBreakData) {
-  DebugLocalContext env;
-  v8::Isolate* isolate = env->GetIsolate();
-  v8::HandleScope scope(isolate);
-  v8::Debug::SetDebugEventListener(DebugEventBreakDataChecker);
-
-  TestClientData::constructor_call_counter = 0;
-  TestClientData::destructor_call_counter = 0;
-
-  expected_break_data = NULL;
-  was_debug_event_called = false;
-  was_debug_break_called = false;
-  v8::Debug::DebugBreakForCommand(isolate, NULL);
-  v8::Script::Compile(v8::String::NewFromUtf8(env->GetIsolate(),
-                                              "(function(x){return x;})(1);"))
-      ->Run();
-  CHECK(was_debug_event_called);
-  CHECK(!was_debug_break_called);
-
-  TestClientData* data1 = new TestClientData();
-  expected_break_data = data1;
-  was_debug_event_called = false;
-  was_debug_break_called = false;
-  v8::Debug::DebugBreakForCommand(isolate, data1);
-  v8::Script::Compile(v8::String::NewFromUtf8(env->GetIsolate(),
-                                              "(function(x){return x+1;})(1);"))
-      ->Run();
-  CHECK(was_debug_event_called);
-  CHECK(!was_debug_break_called);
-
-  expected_break_data = NULL;
-  was_debug_event_called = false;
-  was_debug_break_called = false;
-  v8::Debug::DebugBreak(isolate);
-  v8::Script::Compile(v8::String::NewFromUtf8(env->GetIsolate(),
-                                              "(function(x){return x+2;})(1);"))
-      ->Run();
-  CHECK(!was_debug_event_called);
-  CHECK(was_debug_break_called);
-
-  TestClientData* data2 = new TestClientData();
-  expected_break_data = data2;
-  was_debug_event_called = false;
-  was_debug_break_called = false;
-  v8::Debug::DebugBreak(isolate);
-  v8::Debug::DebugBreakForCommand(isolate, data2);
-  v8::Script::Compile(v8::String::NewFromUtf8(env->GetIsolate(),
-                                              "(function(x){return x+3;})(1);"))
-      ->Run();
-  CHECK(was_debug_event_called);
-  CHECK(was_debug_break_called);
-
-  CHECK_EQ(2, TestClientData::constructor_call_counter);
-  CHECK_EQ(TestClientData::constructor_call_counter,
-           TestClientData::destructor_call_counter);
-
-  v8::Debug::SetDebugEventListener(NULL);
-  CheckDebuggerUnloaded();
-}
-
 static bool debug_event_break_deoptimize_done = false;
 
 static void DebugEventBreakDeoptimize(
@@ -7062,7 +6991,6 @@ TEST(DeoptimizeDuringDebugBreak) {
                                         frame_function_name_source,
                                         "frame_function_name");
 
-
   // Set a debug event listener which will keep interrupting execution until
   // debug break. When inside function bar it will deoptimize all functions.
   // This tests lazy deoptimization bailout for the stack check, as the first
@@ -7071,13 +6999,12 @@ TEST(DeoptimizeDuringDebugBreak) {
   v8::Debug::SetDebugEventListener(DebugEventBreakDeoptimize);
 
   // Compile and run function bar which will optimize it for some flag settings.
-  v8::Script::Compile(v8::String::NewFromUtf8(
-                          env->GetIsolate(), "function bar(){}; bar()"))->Run();
+  v8::Local<v8::Function> f = CompileFunction(&env, "function bar(){}", "bar");
+  f->Call(v8::Undefined(env->GetIsolate()), 0, NULL);
 
   // Set debug break and call bar again.
   v8::Debug::DebugBreak(env->GetIsolate());
-  v8::Script::Compile(v8::String::NewFromUtf8(env->GetIsolate(), "bar()"))
-      ->Run();
+  f->Call(v8::Undefined(env->GetIsolate()), 0, NULL);
 
   CHECK(debug_event_break_deoptimize_done);
 

@@ -1074,13 +1074,13 @@ TEST(SerializeToplevelThreeBigStrings) {
   Heap* heap = isolate->heap();
   CHECK(heap->InSpace(
       *v8::Utils::OpenHandle(*CompileRun("a")->ToString(CcTest::isolate())),
-      OLD_DATA_SPACE));
+      OLD_SPACE));
   CHECK(heap->InSpace(
       *v8::Utils::OpenHandle(*CompileRun("b")->ToString(CcTest::isolate())),
-      OLD_DATA_SPACE));
+      OLD_SPACE));
   CHECK(heap->InSpace(
       *v8::Utils::OpenHandle(*CompileRun("c")->ToString(CcTest::isolate())),
-      OLD_DATA_SPACE));
+      OLD_SPACE));
 
   delete cache;
   source_a.Dispose();
@@ -1484,9 +1484,9 @@ TEST(SerializeWithHarmonyScoping) {
 
 
 TEST(SerializeInternalReference) {
-#ifdef V8_TARGET_ARCH_ARM64
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64
   return;
-#endif  // V8_TARGET_ARCH_ARM64
+#endif
   // Disable experimental natives that are loaded after deserialization.
   FLAG_turbo_deoptimization = false;
   FLAG_context_specialization = false;

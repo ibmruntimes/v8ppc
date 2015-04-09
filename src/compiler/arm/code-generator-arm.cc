@@ -554,6 +554,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArmVsqrtF32:
       __ vsqrt(i.OutputFloat32Register(), i.InputFloat32Register(0));
       break;
+    case kArmVabsF32:
+      __ vabs(i.OutputFloat32Register(), i.InputFloat32Register(0));
+      break;
     case kArmVnegF32:
       __ vneg(i.OutputFloat32Register(), i.InputFloat32Register(0));
       break;
@@ -615,6 +618,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     }
     case kArmVsqrtF64:
       __ vsqrt(i.OutputFloat64Register(), i.InputFloat64Register(0));
+      break;
+    case kArmVabsF64:
+      __ vabs(i.OutputFloat64Register(), i.InputFloat64Register(0));
       break;
     case kArmVnegF64:
       __ vneg(i.OutputFloat64Register(), i.InputFloat64Register(0));
@@ -805,7 +811,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       ASSEMBLE_CHECKED_STORE_FLOAT(64);
       break;
   }
-}
+}  // NOLINT(readability/fn_size)
 
 
 // Assembles branches after an instruction.
@@ -854,13 +860,14 @@ void CodeGenerator::AssembleArchTableSwitch(Instruction* instr) {
   ArmOperandConverter i(this, instr);
   Register input = i.InputRegister(0);
   size_t const case_count = instr->InputCount() - 2;
+  // Ensure to emit the constant pool first if necessary.
   __ CheckConstPool(true, true);
   __ cmp(input, Operand(case_count));
   __ BlockConstPoolFor(case_count + 2);
-  __ ldr(pc, MemOperand(pc, input, LSL, 2), lo);
+  __ add(pc, pc, Operand(input, LSL, 2), LeaveCC, lo);
   __ b(GetLabel(i.InputRpo(1)));
   for (size_t index = 0; index < case_count; ++index) {
-    __ dd(GetLabel(i.InputRpo(index + 2)));
+    __ b(GetLabel(i.InputRpo(index + 2)));
   }
 }
 

@@ -2886,7 +2886,11 @@ void MacroAssembler::Pinsrd(XMMRegister dst, const Operand& src, int8_t imm8) {
 
 
 void MacroAssembler::Lzcntl(Register dst, Register src) {
-  // TODO(intel): Add support for LZCNT (BMI1/ABM).
+  if (CpuFeatures::IsSupported(LZCNT)) {
+    CpuFeatureScope scope(this, LZCNT);
+    lzcntl(dst, src);
+    return;
+  }
   Label not_zero_src;
   bsrl(dst, src);
   j(not_zero, &not_zero_src, Label::kNear);
@@ -2897,7 +2901,11 @@ void MacroAssembler::Lzcntl(Register dst, Register src) {
 
 
 void MacroAssembler::Lzcntl(Register dst, const Operand& src) {
-  // TODO(intel): Add support for LZCNT (BMI1/ABM).
+  if (CpuFeatures::IsSupported(LZCNT)) {
+    CpuFeatureScope scope(this, LZCNT);
+    lzcntl(dst, src);
+    return;
+  }
   Label not_zero_src;
   bsrl(dst, src);
   j(not_zero, &not_zero_src, Label::kNear);
@@ -4127,7 +4135,6 @@ void MacroAssembler::MakeSureDoubleAlignedHelper(Register result,
     // Align the next allocation. Storing the filler map without checking top
     // is safe in new-space because the limit of the heap is aligned there.
     DCHECK(kPointerSize * 2 == kDoubleSize);
-    DCHECK((flags & PRETENURE_OLD_POINTER_SPACE) == 0);
     DCHECK(kPointerAlignment * 2 == kDoubleAlignment);
     // Make sure scratch is not clobbered by this function as it might be
     // used in UpdateAllocationTopHelper later.
@@ -4135,7 +4142,7 @@ void MacroAssembler::MakeSureDoubleAlignedHelper(Register result,
     Label aligned;
     testl(result, Immediate(kDoubleAlignmentMask));
     j(zero, &aligned, Label::kNear);
-    if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
+    if ((flags & PRETENURE) != 0) {
       ExternalReference allocation_limit =
           AllocationUtils::GetAllocationLimitReference(isolate(), flags);
       cmpp(result, ExternalOperand(allocation_limit));

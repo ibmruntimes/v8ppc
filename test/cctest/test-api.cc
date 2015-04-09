@@ -607,7 +607,7 @@ TEST(MakingExternalUnalignedOneByteString) {
       "slice('abcdefghijklmnopqrstuvwxyz');"));
 
   // Trigger GCs so that the newly allocated string moves to old gen.
-  SimulateFullSpace(CcTest::heap()->old_pointer_space());
+  SimulateFullSpace(CcTest::heap()->old_space());
   CcTest::heap()->CollectGarbage(i::NEW_SPACE);  // in survivor space now
   CcTest::heap()->CollectGarbage(i::NEW_SPACE);  // in old gen now
 
@@ -727,11 +727,10 @@ THREADED_TEST(ScavengeExternalString) {
     i::Handle<i::String> istring = v8::Utils::OpenHandle(*string);
     CcTest::heap()->CollectGarbage(i::NEW_SPACE);
     in_new_space = CcTest::heap()->InNewSpace(*istring);
-    CHECK(in_new_space || CcTest::heap()->old_data_space()->Contains(*istring));
+    CHECK(in_new_space || CcTest::heap()->old_space()->Contains(*istring));
     CHECK_EQ(0, dispose_count);
   }
-  CcTest::heap()->CollectGarbage(in_new_space ? i::NEW_SPACE
-                                              : i::OLD_DATA_SPACE);
+  CcTest::heap()->CollectGarbage(in_new_space ? i::NEW_SPACE : i::OLD_SPACE);
   CHECK_EQ(1, dispose_count);
 }
 
@@ -750,11 +749,10 @@ THREADED_TEST(ScavengeExternalOneByteString) {
     i::Handle<i::String> istring = v8::Utils::OpenHandle(*string);
     CcTest::heap()->CollectGarbage(i::NEW_SPACE);
     in_new_space = CcTest::heap()->InNewSpace(*istring);
-    CHECK(in_new_space || CcTest::heap()->old_data_space()->Contains(*istring));
+    CHECK(in_new_space || CcTest::heap()->old_space()->Contains(*istring));
     CHECK_EQ(0, dispose_count);
   }
-  CcTest::heap()->CollectGarbage(in_new_space ? i::NEW_SPACE
-                                              : i::OLD_DATA_SPACE);
+  CcTest::heap()->CollectGarbage(in_new_space ? i::NEW_SPACE : i::OLD_SPACE);
   CHECK_EQ(1, dispose_count);
 }
 
@@ -5344,7 +5342,8 @@ void TryCatchMixedNestingCheck(v8::TryCatch* try_catch) {
   CHECK_EQ(0,
            strcmp(*v8::String::Utf8Value(message->Get()), "Uncaught Error: a"));
   CHECK_EQ(1, message->GetLineNumber());
-  CHECK_EQ(6, message->GetStartColumn());
+  // TODO(3995): Our compilers disagree about the position.
+  if (!i::FLAG_always_opt) CHECK_EQ(6, message->GetStartColumn());
 }
 
 
@@ -9826,7 +9825,11 @@ THREADED_TEST(ConstructorForObject) {
     value = CompileRun("new obj2(28)");
     CHECK(try_catch.HasCaught());
     String::Utf8Value exception_value1(try_catch.Exception());
-    CHECK_EQ(0, strcmp("TypeError: obj2 is not a function", *exception_value1));
+    // TODO(3995): Our compilers disagree about the position (and message).
+    if (!i::FLAG_always_opt) {
+      CHECK_EQ(0,
+               strcmp("TypeError: obj2 is not a function", *exception_value1));
+    }
     try_catch.Reset();
 
     Local<Value> args[] = {v8_num(29)};
@@ -10193,7 +10196,11 @@ THREADED_TEST(CallAsFunction) {
     CHECK(try_catch.HasCaught());
     String::Utf8Value exception_value1(try_catch.Exception());
     // TODO(verwaest): Better message
-    CHECK_EQ(0, strcmp("TypeError: obj2 is not a function", *exception_value1));
+    // TODO(3995): Our compilers disagree about the position (and message).
+    if (!i::FLAG_always_opt) {
+      CHECK_EQ(0,
+               strcmp("TypeError: obj2 is not a function", *exception_value1));
+    }
     try_catch.Reset();
 
     // Call an object without call-as-function handler through the API
@@ -10749,8 +10756,11 @@ THREADED_PROFILED_TEST(InterceptorCallICFastApi_SimpleSignature_Miss3) {
       "}");
   CHECK(try_catch.HasCaught());
   // TODO(verwaest): Adjust message.
-  CHECK(v8_str("TypeError: receiver.method is not a function")
-            ->Equals(try_catch.Exception()->ToString(isolate)));
+  // TODO(3995): Our compilers disagree about the position (and message).
+  if (!i::FLAG_always_opt) {
+    CHECK(v8_str("TypeError: receiver.method is not a function")
+              ->Equals(try_catch.Exception()->ToString(isolate)));
+  }
   CHECK_EQ(42, context->Global()->Get(v8_str("saved_result"))->Int32Value());
   CHECK_GE(interceptor_call_count, 50);
 }
@@ -10924,8 +10934,11 @@ THREADED_PROFILED_TEST(CallICFastApi_SimpleSignature_Miss2) {
       "}");
   CHECK(try_catch.HasCaught());
   // TODO(verwaest): Adjust message.
-  CHECK(v8_str("TypeError: receiver.method is not a function")
-            ->Equals(try_catch.Exception()->ToString(isolate)));
+  // TODO(3995): Our compilers disagree about the position (and message).
+  if (!i::FLAG_always_opt) {
+    CHECK(v8_str("TypeError: receiver.method is not a function")
+              ->Equals(try_catch.Exception()->ToString(isolate)));
+  }
   CHECK_EQ(42, context->Global()->Get(v8_str("saved_result"))->Int32Value());
 }
 
@@ -16174,8 +16187,7 @@ TEST(ExternalizeOldSpaceTwoByteCons) {
       CompileRun("'Romeo Montague ' + 'Juliet Capulet'")->ToString(isolate);
   CHECK(v8::Utils::OpenHandle(*cons)->IsConsString());
   CcTest::heap()->CollectAllAvailableGarbage();
-  CHECK(CcTest::heap()->old_pointer_space()->Contains(
-      *v8::Utils::OpenHandle(*cons)));
+  CHECK(CcTest::heap()->old_space()->Contains(*v8::Utils::OpenHandle(*cons)));
 
   TestResource* resource = new TestResource(
       AsciiToTwoByteString("Romeo Montague Juliet Capulet"));
@@ -16197,8 +16209,7 @@ TEST(ExternalizeOldSpaceOneByteCons) {
       CompileRun("'Romeo Montague ' + 'Juliet Capulet'")->ToString(isolate);
   CHECK(v8::Utils::OpenHandle(*cons)->IsConsString());
   CcTest::heap()->CollectAllAvailableGarbage();
-  CHECK(CcTest::heap()->old_pointer_space()->Contains(
-      *v8::Utils::OpenHandle(*cons)));
+  CHECK(CcTest::heap()->old_space()->Contains(*v8::Utils::OpenHandle(*cons)));
 
   TestOneByteResource* resource =
       new TestOneByteResource(i::StrDup("Romeo Montague Juliet Capulet"));
@@ -20056,7 +20067,6 @@ class RequestInterruptTestWithFunctionCall
         isolate_, ShouldContinueCallback, v8::External::New(isolate_, this));
     env_->Global()->Set(v8_str("ShouldContinue"), func);
 
-    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("while (ShouldContinue()) { }");
   }
 };
@@ -20072,7 +20082,6 @@ class RequestInterruptTestWithMethodCall
         isolate_, ShouldContinueCallback, v8::External::New(isolate_, this)));
     env_->Global()->Set(v8_str("Klass"), t->GetFunction());
 
-    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("var obj = new Klass; while (obj.shouldContinue()) { }");
   }
 };
@@ -20088,7 +20097,6 @@ class RequestInterruptTestWithAccessor
         isolate_, ShouldContinueCallback, v8::External::New(isolate_, this)));
     env_->Global()->Set(v8_str("Klass"), t->GetFunction());
 
-    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("var obj = new Klass; while (obj.shouldContinue) { }");
   }
 };
@@ -20106,7 +20114,6 @@ class RequestInterruptTestWithNativeAccessor
         v8::External::New(isolate_, this));
     env_->Global()->Set(v8_str("Klass"), t->GetFunction());
 
-    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("var obj = new Klass; while (obj.shouldContinue) { }");
   }
 
@@ -20136,7 +20143,6 @@ class RequestInterruptTestWithMethodCallAndInterceptor
 
     env_->Global()->Set(v8_str("Klass"), t->GetFunction());
 
-    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("var obj = new Klass; while (obj.shouldContinue()) { }");
   }
 
@@ -20161,7 +20167,6 @@ class RequestInterruptTestWithMathAbs
         v8::External::New(isolate_, this)));
 
     i::FLAG_allow_natives_syntax = true;
-    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("function loopish(o) {"
                "  var pre = 10;"
                "  while (o.abs(1) > 0) {"
@@ -20245,7 +20250,6 @@ class RequestMultipleInterrupts : public RequestInterruptTestBase {
         isolate_, ShouldContinueCallback, v8::External::New(isolate_, this));
     env_->Global()->Set(v8_str("ShouldContinue"), func);
 
-    i::FLAG_turbo_osr = false;  // TODO(titzer): interrupts in TF loops.
     CompileRun("while (ShouldContinue()) { }");
   }
 
@@ -20279,6 +20283,26 @@ class RequestMultipleInterrupts : public RequestInterruptTestBase {
 
 
 TEST(RequestMultipleInterrupts) { RequestMultipleInterrupts().RunTest(); }
+
+
+static bool interrupt_was_called = false;
+
+
+void SmallScriptsInterruptCallback(v8::Isolate* isolate, void* data) {
+  interrupt_was_called = true;
+}
+
+
+TEST(RequestInterruptSmallScripts) {
+  LocalContext env;
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope scope(isolate);
+
+  interrupt_was_called = false;
+  isolate->RequestInterrupt(&SmallScriptsInterruptCallback, NULL);
+  CompileRun("(function(x){return x;})(1);");
+  CHECK(interrupt_was_called);
+}
 
 
 static Local<Value> function_new_expected_env;

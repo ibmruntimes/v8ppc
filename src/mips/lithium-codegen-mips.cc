@@ -200,6 +200,7 @@ bool LCodeGen::GeneratePrologue() {
     Comment(";;; Allocate local context");
     bool need_write_barrier = true;
     // Argument to NewContext is the function, which is in a1.
+    DCHECK(!info()->scope()->is_script_scope());
     if (heap_slots <= FastNewContextStub::kMaximumSlots) {
       FastNewContextStub stub(isolate(), heap_slots);
       __ CallStub(&stub);
@@ -5387,13 +5388,9 @@ void LCodeGen::DoAllocate(LAllocate* instr) {
   if (instr->hydrogen()->MustAllocateDoubleAligned()) {
     flags = static_cast<AllocationFlags>(flags | DOUBLE_ALIGNMENT);
   }
-  if (instr->hydrogen()->IsOldPointerSpaceAllocation()) {
-    DCHECK(!instr->hydrogen()->IsOldDataSpaceAllocation());
+  if (instr->hydrogen()->IsOldSpaceAllocation()) {
     DCHECK(!instr->hydrogen()->IsNewSpaceAllocation());
-    flags = static_cast<AllocationFlags>(flags | PRETENURE_OLD_POINTER_SPACE);
-  } else if (instr->hydrogen()->IsOldDataSpaceAllocation()) {
-    DCHECK(!instr->hydrogen()->IsNewSpaceAllocation());
-    flags = static_cast<AllocationFlags>(flags | PRETENURE_OLD_DATA_SPACE);
+    flags = static_cast<AllocationFlags>(flags | PRETENURE);
   }
   if (instr->size()->IsConstantOperand()) {
     int32_t size = ToInteger32(LConstantOperand::cast(instr->size()));
@@ -5455,13 +5452,9 @@ void LCodeGen::DoDeferredAllocate(LAllocate* instr) {
 
   int flags = AllocateDoubleAlignFlag::encode(
       instr->hydrogen()->MustAllocateDoubleAligned());
-  if (instr->hydrogen()->IsOldPointerSpaceAllocation()) {
-    DCHECK(!instr->hydrogen()->IsOldDataSpaceAllocation());
+  if (instr->hydrogen()->IsOldSpaceAllocation()) {
     DCHECK(!instr->hydrogen()->IsNewSpaceAllocation());
-    flags = AllocateTargetSpace::update(flags, OLD_POINTER_SPACE);
-  } else if (instr->hydrogen()->IsOldDataSpaceAllocation()) {
-    DCHECK(!instr->hydrogen()->IsNewSpaceAllocation());
-    flags = AllocateTargetSpace::update(flags, OLD_DATA_SPACE);
+    flags = AllocateTargetSpace::update(flags, OLD_SPACE);
   } else {
     flags = AllocateTargetSpace::update(flags, NEW_SPACE);
   }

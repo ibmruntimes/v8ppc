@@ -217,14 +217,10 @@ void i::V8::FatalProcessOutOfMemory(const char* location, bool take_snapshot) {
   heap_stats.new_space_size = &new_space_size;
   int new_space_capacity;
   heap_stats.new_space_capacity = &new_space_capacity;
-  intptr_t old_pointer_space_size;
-  heap_stats.old_pointer_space_size = &old_pointer_space_size;
-  intptr_t old_pointer_space_capacity;
-  heap_stats.old_pointer_space_capacity = &old_pointer_space_capacity;
-  intptr_t old_data_space_size;
-  heap_stats.old_data_space_size = &old_data_space_size;
-  intptr_t old_data_space_capacity;
-  heap_stats.old_data_space_capacity = &old_data_space_capacity;
+  intptr_t old_space_size;
+  heap_stats.old_space_size = &old_space_size;
+  intptr_t old_space_capacity;
+  heap_stats.old_space_capacity = &old_space_capacity;
   intptr_t code_space_size;
   heap_stats.code_space_size = &code_space_size;
   intptr_t code_space_capacity;
@@ -7363,12 +7359,6 @@ bool Debug::CheckDebugBreak(Isolate* isolate) {
 }
 
 
-void Debug::DebugBreakForCommand(Isolate* isolate, ClientData* data) {
-  i::Isolate* internal_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  internal_isolate->debug()->EnqueueDebugCommand(data);
-}
-
-
 void Debug::SetMessageHandler(v8::Debug::MessageHandler handler) {
   i::Isolate* isolate = i::Isolate::Current();
   ENTER_V8(isolate);
@@ -7542,6 +7532,12 @@ const CpuProfileNode* CpuProfileNode::GetChild(int index) const {
   const i::ProfileNode* child =
       reinterpret_cast<const i::ProfileNode*>(this)->children()->at(index);
   return reinterpret_cast<const CpuProfileNode*>(child);
+}
+
+
+const std::vector<CpuProfileDeoptInfo>& CpuProfileNode::GetDeoptInfos() const {
+  const i::ProfileNode* node = reinterpret_cast<const i::ProfileNode*>(this);
+  return node->deopt_infos();
 }
 
 

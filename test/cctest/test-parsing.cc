@@ -3433,7 +3433,8 @@ TEST(UseAsmUseCount) {
              "var foo = 1;\n"
              "\"use asm\";\n"  // Only the first one counts.
              "function bar() { \"use asm\"; var baz = 1; }");
-  CHECK_EQ(2, use_counts[v8::Isolate::kUseAsm]);
+  // Optimizing will double-count because the source is parsed twice.
+  CHECK_EQ(i::FLAG_always_opt ? 4 : 2, use_counts[v8::Isolate::kUseAsm]);
 }
 
 
@@ -3452,7 +3453,8 @@ TEST(UseConstLegacyCount) {
       "    const z = 1; var baz = 1;\n"
       "    function q() { const k = 42; }\n"
       "}");
-  CHECK_EQ(4, use_counts[v8::Isolate::kLegacyConst]);
+  // Optimizing will double-count because the source is parsed twice.
+  CHECK_EQ(i::FLAG_always_opt ? 8 : 4, use_counts[v8::Isolate::kLegacyConst]);
 }
 
 
@@ -4623,6 +4625,159 @@ TEST(ConstParsingInForInError) {
       "for(const x,y of []) {}",
       NULL};
   RunParserSyncTest(context_data, data, kError, nullptr, 0, nullptr, 0);
+}
+
+
+TEST(InitializedDeclarationsInStrictForInError) {
+  const char* context_data[][2] = {{"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var i = 1 in {}) {}",
+      "for (var i = void 0 in [1, 2, 3]) {}",
+      "for (let i = 1 in {}) {}",
+      "for (let i = void 0 in [1, 2, 3]) {}",
+      "for (const i = 1 in {}) {}",
+      "for (const i = void 0 in [1, 2, 3]) {}",
+      NULL};
+  RunParserSyncTest(context_data, data, kError);
+}
+
+
+TEST(InitializedDeclarationsInStrictForOfError) {
+  const char* context_data[][2] = {{"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var i = 1 of {}) {}",
+      "for (var i = void 0 of [1, 2, 3]) {}",
+      "for (let i = 1 of {}) {}",
+      "for (let i = void 0 of [1, 2, 3]) {}",
+      "for (const i = 1 of {}) {}",
+      "for (const i = void 0 of [1, 2, 3]) {}",
+      NULL};
+  RunParserSyncTest(context_data, data, kError);
+}
+
+
+TEST(InitializedDeclarationsInSloppyForInError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"function foo(){", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var i = 1 in {}) {}",
+      "for (var i = void 0 in [1, 2, 3]) {}",
+      NULL};
+  // TODO(caitp): This should be an error in sloppy mode.
+  RunParserSyncTest(context_data, data, kSuccess);
+}
+
+
+TEST(InitializedDeclarationsInSloppyForOfError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"function foo(){", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var i = 1 of {}) {}",
+      "for (var i = void 0 of [1, 2, 3]) {}",
+      NULL};
+  RunParserSyncTest(context_data, data, kError);
+}
+
+
+TEST(ForInMultipleDeclarationsError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"function foo(){", "}"},
+                                   {"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var i, j in {}) {}",
+      "for (var i, j in [1, 2, 3]) {}",
+      "for (var i, j = 1 in {}) {}",
+      "for (var i, j = void 0 in [1, 2, 3]) {}",
+
+      "for (let i, j in {}) {}",
+      "for (let i, j in [1, 2, 3]) {}",
+      "for (let i, j = 1 in {}) {}",
+      "for (let i, j = void 0 in [1, 2, 3]) {}",
+
+      "for (const i, j in {}) {}",
+      "for (const i, j in [1, 2, 3]) {}",
+      "for (const i, j = 1 in {}) {}",
+      "for (const i, j = void 0 in [1, 2, 3]) {}",
+      NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonySloppy};
+  RunParserSyncTest(context_data, data, kError, nullptr, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(ForOfMultipleDeclarationsError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"function foo(){", "}"},
+                                   {"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var i, j of {}) {}",
+      "for (var i, j of [1, 2, 3]) {}",
+      "for (var i, j = 1 of {}) {}",
+      "for (var i, j = void 0 of [1, 2, 3]) {}",
+
+      "for (let i, j of {}) {}",
+      "for (let i, j of [1, 2, 3]) {}",
+      "for (let i, j = 1 of {}) {}",
+      "for (let i, j = void 0 of [1, 2, 3]) {}",
+
+      "for (const i, j of {}) {}",
+      "for (const i, j of [1, 2, 3]) {}",
+      "for (const i, j = 1 of {}) {}",
+      "for (const i, j = void 0 of [1, 2, 3]) {}",
+      NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonySloppy};
+  RunParserSyncTest(context_data, data, kError, nullptr, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(ForInNoDeclarationsError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"function foo(){", "}"},
+                                   {"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var in {}) {}",
+      "for (const in {}) {}",
+      NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonySloppy};
+  RunParserSyncTest(context_data, data, kError, nullptr, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(ForOfNoDeclarationsError) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"function foo(){", "}"},
+                                   {"'use strict';", ""},
+                                   {"function foo(){ 'use strict';", "}"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "for (var of [1, 2, 3]) {}",
+      "for (const of [1, 2, 3]) {}",
+      NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonySloppy};
+  RunParserSyncTest(context_data, data, kError, nullptr, 0, always_flags,
+                    arraysize(always_flags));
 }
 
 

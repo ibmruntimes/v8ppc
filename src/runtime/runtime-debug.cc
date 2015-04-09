@@ -2338,9 +2338,12 @@ RUNTIME_FUNCTION(Runtime_DebugGetLoadedScripts) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 0);
 
-  DebugScope debug_scope(isolate->debug());
-  // Fill the script objects.
-  Handle<FixedArray> instances = isolate->debug()->GetLoadedScripts();
+  Handle<FixedArray> instances;
+  {
+    DebugScope debug_scope(isolate->debug());
+    // Fill the script objects.
+    instances = isolate->debug()->GetLoadedScripts();
+  }
 
   // Convert the script objects to proper JS objects.
   for (int i = 0; i < instances->length(); i++) {
@@ -2659,6 +2662,7 @@ RUNTIME_FUNCTION(Runtime_GetDebugContext) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 0);
   Handle<Context> context = isolate->debug()->GetDebugContext();
+  if (context.is_null()) return isolate->heap()->undefined_value();
   context->set_security_token(isolate->native_context()->security_token());
   return context->global_proxy();
 }
