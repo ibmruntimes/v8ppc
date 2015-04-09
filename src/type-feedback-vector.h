@@ -256,7 +256,7 @@ STATIC_ASSERT(WeakCell::kValueOffset == AllocationSite::kTransitionInfoOffset);
 STATIC_ASSERT(WeakCell::kValueOffset == FixedArray::kLengthOffset);
 STATIC_ASSERT(WeakCell::kValueOffset == Name::kHashFieldSlot);
 #if defined(V8_PPC_TAGGING_OPT)
-// TODO: Need to show that the spirit of these rules is upheld by the
+// TODO(mbrandy): Need to show that the spirit of these rules is upheld by the
 // alternate tagging scheme.
 #else  // V8_PPC_TAGGING_OPT
 // Verify that an empty hash field looks like a tagged object, but can't
