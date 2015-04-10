@@ -1696,7 +1696,6 @@ void Heap::ProcessArrayBuffers(WeakObjectRetainer* retainer,
       this, array_buffers_list(), retainer, stop_after_young);
   set_array_buffers_list(array_buffer_obj);
 
-#ifdef DEBUG
   // Verify invariant that young array buffers come before old array buffers
   // in array buffers list if there was no promotion failure.
   Object* undefined = undefined_value();
@@ -1707,10 +1706,9 @@ void Heap::ProcessArrayBuffers(WeakObjectRetainer* retainer,
     if (!old_objects_recorded) {
       old_objects_recorded = !InNewSpace(next);
     }
-    DCHECK((InNewSpace(next) && !old_objects_recorded) || !InNewSpace(next));
+    CHECK((InNewSpace(next) && !old_objects_recorded) || !InNewSpace(next));
     next = JSArrayBuffer::cast(next)->weak_next();
   }
-#endif
 }
 
 
@@ -2486,6 +2484,7 @@ const Heap::StringTypeTable Heap::string_type_table[] = {
 
 
 const Heap::ConstantStringTable Heap::constant_string_table[] = {
+    {"", kempty_stringRootIndex},
 #define CONSTANT_STRING_ELEMENT(name, contents) \
   { contents, k##name##RootIndex }              \
   ,
@@ -4551,14 +4550,15 @@ void Heap::MakeHeapIterable() {
 }
 
 
-void Heap::IdleMarkCompact(const char* message) {
+void Heap::IdleMarkCompact(bool reduce_memory, const char* message) {
   bool uncommit = false;
   if (gc_count_at_last_idle_gc_ == gc_count_) {
     // No GC since the last full GC, the mutator is probably not active.
     isolate_->compilation_cache()->Clear();
     uncommit = true;
   }
-  CollectAllGarbage(kReduceMemoryFootprintMask, message);
+  int flags = reduce_memory ? kReduceMemoryFootprintMask : kNoGCFlags;
+  CollectAllGarbage(flags, message);
   gc_idle_time_handler_.NotifyIdleMarkCompact();
   gc_count_at_last_idle_gc_ = gc_count_;
   if (uncommit) {
@@ -4690,8 +4690,12 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
         gc_idle_time_handler_.NotifyIdleMarkCompact();
         gc_count_at_last_idle_gc_ = gc_count_;
       } else {
-        IdleMarkCompact("idle notification: finalize idle round");
+        IdleMarkCompact(false, "idle notification: finalize idle round");
       }
+      break;
+    }
+    case DO_FULL_GC_COMPACT: {
+      IdleMarkCompact(true, "idle notification: reduce memory footprint");
       break;
     }
     case DO_SCAVENGE:

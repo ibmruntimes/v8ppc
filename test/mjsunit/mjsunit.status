@@ -111,6 +111,9 @@
   'regress/regress-2451': [PASS, NO_VARIANTS],  # with custom snapshot and gc-stress.
   'debug-multiple-breakpoints': [PASS, NO_VARIANTS],  # with custom snapshot and gc-stress.
 
+  # TODO(jarin): Fix for-in deopt points in turbofan.
+  'for-in-opt': [PASS, NO_VARIANTS],
+
   # TODO(mstarzinger): Optimizing top-level code flushed out some correctness
   # issues on ARM and ARM64.
   'es6/math-log2-log10': [PASS, NO_VARIANTS],  # on ARM and ARM64.
@@ -126,6 +129,10 @@
   'debug-stepout-scope-part2': [PASS, NO_VARIANTS],
   'debug-stepout-scope-part3': [PASS, NO_VARIANTS],
   'es6/debug-evaluate-blockscopes': [PASS, NO_VARIANTS],
+
+  # TODO(titzer): --always-opt incorrectly disables CrankShaft soft deopt points
+  'result-table-min': [PASS, NO_VARIANTS],
+  'result-table-max': [PASS, NO_VARIANTS],
 
   ##############################################################################
   # Too slow in debug mode with --stress-opt mode.

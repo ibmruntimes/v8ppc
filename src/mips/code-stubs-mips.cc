@@ -1461,8 +1461,9 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
     __ sw(map, FieldMemOperand(scratch, Cell::kValueOffset));
 
     __ mov(t4, map);
-    // Scratch points at the cell payload. Calculate the start of the object.
-    __ Subu(scratch, scratch, Operand(Cell::kValueOffset - 1));
+    // |scratch| points at the beginning of the cell. Calculate the field
+    // containing the map.
+    __ Addu(function, scratch, Operand(Cell::kValueOffset - 1));
     __ RecordWriteField(scratch, Cell::kValueOffset, t4, function,
                         kRAHasNotBeenSaved, kDontSaveFPRegs,
                         OMIT_REMEMBERED_SET, OMIT_SMI_CHECK);

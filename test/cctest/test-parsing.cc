@@ -1380,7 +1380,8 @@ enum ParserFlag {
   kAllowHarmonySloppy,
   kAllowHarmonyUnicode,
   kAllowHarmonyComputedPropertyNames,
-  kAllowStrongMode
+  kAllowStrongMode,
+  kAllowHarmonySpreadCalls
 };
 
 
@@ -1403,6 +1404,8 @@ void SetParserFlags(i::ParserBase<Traits>* parser,
   parser->set_allow_harmony_classes(flags.Contains(kAllowHarmonyClasses));
   parser->set_allow_harmony_rest_params(
       flags.Contains(kAllowHarmonyRestParameters));
+  parser->set_allow_harmony_spreadcalls(
+      flags.Contains(kAllowHarmonySpreadCalls));
   parser->set_allow_harmony_sloppy(flags.Contains(kAllowHarmonySloppy));
   parser->set_allow_harmony_unicode(flags.Contains(kAllowHarmonyUnicode));
   parser->set_allow_harmony_computed_property_names(
@@ -5104,6 +5107,52 @@ TEST(RestParametersDuplicateEvalArguments) {
 }
 
 
+TEST(SpreadCall) {
+  const char* context_data[][2] = {{"function fn() { 'use strict';} fn(", ");"},
+                                   {"function fn() {} fn(", ");"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {
+      "...([1, 2, 3])", "...'123', ...'456'", "...new Set([1, 2, 3]), 4",
+      "1, ...[2, 3], 4", "...Array(...[1,2,3,4])", "...NaN",
+      "0, 1, ...[2, 3, 4], 5, 6, 7, ...'89'",
+      "0, 1, ...[2, 3, 4], 5, 6, 7, ...'89', 10",
+      "...[0, 1, 2], 3, 4, 5, 6, ...'7', 8, 9",
+      "...[0, 1, 2], 3, 4, 5, 6, ...'7', 8, 9, ...[10]", NULL};
+
+  static const ParserFlag always_flags[] = {kAllowHarmonySpreadCalls};
+
+  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(SpreadCallErrors) {
+  const char* context_data[][2] = {{"function fn() { 'use strict';} fn(", ");"},
+                                   {"function fn() {} fn(", ");"},
+                                   {NULL, NULL}};
+
+  const char* data[] = {"(...[1, 2, 3])", "......[1,2,3]", NULL};
+
+  static const ParserFlag always_flags[] = {kAllowHarmonySpreadCalls};
+
+  RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(BadRestSpread) {
+  const char* context_data[][2] = {{"function fn() { 'use strict';", "} fn();"},
+                                   {"function fn() { ", "} fn();"},
+                                   {NULL, NULL}};
+  const char* data[] = {"return ...[1,2,3];",     "var ...x = [1,2,3];",
+                        "var [...x,] = [1,2,3];", "var [...x, y] = [1,2,3];",
+                        "var {...x} = [1,2,3];",  "var { x } = {x: ...[1,2,3]}",
+                        NULL};
+  RunParserSyncTest(context_data, data, kError, NULL, 0, NULL, 0);
+}
+
+
 TEST(LexicalScopingSloppyMode) {
   const char* context_data[][2] = {
       {"", ""},
@@ -5396,18 +5445,17 @@ TEST(ModuleParsingInternals) {
       "let x = 5;"
       "export { x as y };"
       "import { q as z } from 'm.js';"
-      "import n from 'n.js'";
+      "import n from 'n.js';"
+      "export { a as b } from 'm.js';";
   i::Handle<i::String> source = factory->NewStringFromAsciiChecked(kSource);
   i::Handle<i::Script> script = factory->NewScript(source);
   i::Zone zone;
   i::ParseInfo info(&zone, script);
-  i::AstValueFactory avf(&zone, isolate->heap()->HashSeed());
   i::Parser parser(&info);
   parser.set_allow_harmony_modules(true);
   info.set_module();
   CHECK(parser.Parse(&info));
   CHECK(i::Compiler::Analyze(&info));
-
   i::FunctionLiteral* func = info.function();
   i::Scope* module_scope = func->scope();
   i::Scope* outer_scope = module_scope->outer_scope();
@@ -5417,11 +5465,11 @@ TEST(ModuleParsingInternals) {
   CHECK(module_scope->is_module_scope());
   CHECK_NOT_NULL(module_scope->module_var());
   CHECK_EQ(i::INTERNAL, module_scope->module_var()->mode());
-
   i::ModuleDescriptor* descriptor = module_scope->module();
   CHECK_NOT_NULL(descriptor);
   CHECK_EQ(1, descriptor->Length());
-  const i::AstRawString* export_name = avf.GetOneByteString("y");
+  const i::AstRawString* export_name =
+      info.ast_value_factory()->GetOneByteString("y");
   const i::AstRawString* local_name =
       descriptor->LookupLocalExport(export_name, &zone);
   CHECK_NOT_NULL(local_name);
@@ -5438,6 +5486,12 @@ TEST(ModuleParsingInternals) {
   CHECK(import_decl->import_name()->IsOneByteEqualTo("default"));
   CHECK(import_decl->proxy()->raw_name()->IsOneByteEqualTo("n"));
   CHECK(import_decl->module_specifier()->IsOneByteEqualTo("n.js"));
+  // TODO(adamk): Add test for indirect exports once they're fully implemented.
+  const i::ZoneList<const i::AstRawString*>& requested_modules =
+      descriptor->requested_modules();
+  CHECK_EQ(2, requested_modules.length());
+  CHECK(requested_modules[0]->IsOneByteEqualTo("m.js"));
+  CHECK(requested_modules[1]->IsOneByteEqualTo("n.js"));
 }
 
 
@@ -5788,6 +5842,37 @@ TEST(StrongConstructorReturns) {
                     arraysize(always_flags));
   RunParserSyncTest(strong_context_data, data, kError, NULL, 0, always_flags,
                     arraysize(always_flags));
+}
+
+
+TEST(StrongUndefinedLocal) {
+  const char* context_data[][2] = {{"", ""}, {NULL}};
+
+  const char* data[] = {
+      "function undefined() {'use strong';}",
+      "function* undefined() {'use strong';}",
+      "(function undefined() {'use strong';});",
+      "{foo: (function undefined(){'use strong';})};",
+      "(function* undefined() {'use strong';})",
+      "{foo: (function* undefined(){'use strong';})};",
+      "function foo(a, b, undefined, c, d) {'use strong';}",
+      "function* foo(a, b, undefined, c, d) {'use strong';}",
+      "(function foo(a, b, undefined, c, d) {'use strong';})",
+      "{foo: (function foo(a, b, undefined, c, d) {'use strong';})};",
+      "(function* foo(a, b, undefined, c, d) {'use strong';})",
+      "{foo: (function* foo(a, b, undefined, c, d) {'use strong';})};",
+      "class C { foo(a, b, undefined, c, d) {'use strong';} }",
+      "class C { *foo(a, b, undefined, c, d) {'use strong';} }",
+      "({ foo(a, b, undefined, c, d) {'use strong';} });",
+      "{ *foo(a, b, undefined, c, d) {'use strong';} });",
+      "class undefined {'use strong'}",
+      "(class undefined {'use strong'});",
+      NULL};
+
+  static const ParserFlag always_flags[] = {kAllowStrongMode};
+
+  RunParserSyncTest(context_data, data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
 }
 
 

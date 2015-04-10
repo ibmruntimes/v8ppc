@@ -569,6 +569,7 @@ class ParserTraits {
   bool IsEval(const AstRawString* identifier) const;
   bool IsArguments(const AstRawString* identifier) const;
   bool IsEvalOrArguments(const AstRawString* identifier) const;
+  bool IsUndefined(const AstRawString* identifier) const;
   V8_INLINE bool IsFutureStrictReserved(const AstRawString* identifier) const;
 
   // Returns true if the expression is of type "this.foo".
@@ -811,6 +812,16 @@ class ParserTraits {
     return tag != NULL;
   }
 
+  V8_INLINE ZoneList<v8::internal::Expression*>* PrepareSpreadArguments(
+      ZoneList<v8::internal::Expression*>* list);
+  V8_INLINE void MaterializeUnspreadArgumentsLiterals(int count) {}
+  V8_INLINE Expression* SpreadCall(Expression* function,
+                                   ZoneList<v8::internal::Expression*>* args,
+                                   int pos);
+  V8_INLINE Expression* SpreadCallNew(Expression* function,
+                                      ZoneList<v8::internal::Expression*>* args,
+                                      int pos);
+
  private:
   Parser* parser_;
 };
@@ -1018,6 +1029,13 @@ class Parser : public ParserBase<ParserTraits> {
                                    Expression* tag);
   uint32_t ComputeTemplateLiteralHash(const TemplateLiteral* lit);
 
+  ZoneList<v8::internal::Expression*>* PrepareSpreadArguments(
+      ZoneList<v8::internal::Expression*>* list);
+  Expression* SpreadCall(Expression* function,
+                         ZoneList<v8::internal::Expression*>* args, int pos);
+  Expression* SpreadCallNew(Expression* function,
+                            ZoneList<v8::internal::Expression*>* args, int pos);
+
   Scanner scanner_;
   PreParser* reusable_preparser_;
   Scope* original_scope_;  // for ES5 function declarations in sloppy eval
@@ -1126,6 +1144,25 @@ void ParserTraits::AddTemplateExpression(TemplateLiteralState* state,
 Expression* ParserTraits::CloseTemplateLiteral(TemplateLiteralState* state,
                                                int start, Expression* tag) {
   return parser_->CloseTemplateLiteral(state, start, tag);
+}
+
+
+ZoneList<v8::internal::Expression*>* ParserTraits::PrepareSpreadArguments(
+    ZoneList<v8::internal::Expression*>* list) {
+  return parser_->PrepareSpreadArguments(list);
+}
+
+
+Expression* ParserTraits::SpreadCall(Expression* function,
+                                     ZoneList<v8::internal::Expression*>* args,
+                                     int pos) {
+  return parser_->SpreadCall(function, args, pos);
+}
+
+
+Expression* ParserTraits::SpreadCallNew(
+    Expression* function, ZoneList<v8::internal::Expression*>* args, int pos) {
+  return parser_->SpreadCallNew(function, args, pos);
 }
 } }  // namespace v8::internal
 

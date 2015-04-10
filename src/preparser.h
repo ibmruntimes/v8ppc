@@ -90,6 +90,7 @@ class ParserBase : public Traits {
         allow_harmony_sloppy_(false),
         allow_harmony_computed_property_names_(false),
         allow_harmony_rest_params_(false),
+        allow_harmony_spreadcalls_(false),
         allow_strong_mode_(false) {}
 
   // Getters that indicate whether certain syntactical constructs are
@@ -112,6 +113,7 @@ class ParserBase : public Traits {
   bool allow_harmony_rest_params() const {
     return allow_harmony_rest_params_;
   }
+  bool allow_harmony_spreadcalls() const { return allow_harmony_spreadcalls_; }
 
   bool allow_strong_mode() const { return allow_strong_mode_; }
 
@@ -143,12 +145,15 @@ class ParserBase : public Traits {
   void set_allow_harmony_rest_params(bool allow) {
     allow_harmony_rest_params_ = allow;
   }
+  void set_allow_harmony_spreadcalls(bool allow) {
+    allow_harmony_spreadcalls_ = allow;
+  }
   void set_allow_strong_mode(bool allow) { allow_strong_mode_ = allow; }
 
  protected:
-  enum AllowEvalOrArgumentsAsIdentifier {
-    kAllowEvalOrArguments,
-    kDontAllowEvalOrArguments
+  enum AllowRestrictedIdentifiers {
+    kAllowRestrictedIdentifiers,
+    kDontAllowRestrictedIdentifiers
   };
 
   enum Mode {
@@ -479,6 +484,11 @@ class ParserBase : public Traits {
       *ok = false;
       return;
     }
+    if (is_strong(language_mode) && this->IsUndefined(function_name)) {
+      Traits::ReportMessageAt(function_name_loc, "strong_undefined");
+      *ok = false;
+      return;
+    }
   }
 
   // Checking the parameter names of a function literal. This has to be done
@@ -486,6 +496,7 @@ class ParserBase : public Traits {
   void CheckFunctionParameterNames(LanguageMode language_mode,
                                    bool strict_params,
                                    const Scanner::Location& eval_args_error_loc,
+                                   const Scanner::Location& undefined_error_loc,
                                    const Scanner::Location& dupe_error_loc,
                                    const Scanner::Location& reserved_loc,
                                    bool* ok) {
@@ -493,6 +504,11 @@ class ParserBase : public Traits {
 
     if (is_strict(language_mode) && eval_args_error_loc.IsValid()) {
       Traits::ReportMessageAt(eval_args_error_loc, "strict_eval_arguments");
+      *ok = false;
+      return;
+    }
+    if (is_strong(language_mode) && undefined_error_loc.IsValid()) {
+      Traits::ReportMessageAt(eval_args_error_loc, "strong_undefined");
       *ok = false;
       return;
     }
@@ -547,9 +563,7 @@ class ParserBase : public Traits {
   // allow_eval_or_arguments is kAllowEvalOrArguments, we allow "eval" or
   // "arguments" as identifier even in strict mode (this is needed in cases like
   // "var foo = eval;").
-  IdentifierT ParseIdentifier(
-      AllowEvalOrArgumentsAsIdentifier,
-      bool* ok);
+  IdentifierT ParseIdentifier(AllowRestrictedIdentifiers, bool* ok);
   // Parses an identifier or a strict mode future reserved word, and indicate
   // whether it is strict mode future reserved.
   IdentifierT ParseIdentifierOrStrictReservedWord(
@@ -574,7 +588,8 @@ class ParserBase : public Traits {
       ObjectLiteralCheckerBase* checker, bool in_class, bool has_extends,
       bool is_static, bool* is_computed_name, bool* has_seen_constructor,
       bool* ok);
-  typename Traits::Type::ExpressionList ParseArguments(bool* ok);
+  typename Traits::Type::ExpressionList ParseArguments(
+      Scanner::Location* first_spread_pos, bool* ok);
   ExpressionT ParseAssignmentExpression(bool accept_IN, bool* ok);
   ExpressionT ParseYieldExpression(bool* ok);
   ExpressionT ParseConditionalExpression(bool accept_IN, bool* ok);
@@ -686,6 +701,7 @@ class ParserBase : public Traits {
   bool allow_harmony_sloppy_;
   bool allow_harmony_computed_property_names_;
   bool allow_harmony_rest_params_;
+  bool allow_harmony_spreadcalls_;
   bool allow_strong_mode_;
 };
 
@@ -701,6 +717,9 @@ class PreParserIdentifier {
   }
   static PreParserIdentifier Arguments() {
     return PreParserIdentifier(kArgumentsIdentifier);
+  }
+  static PreParserIdentifier Undefined() {
+    return PreParserIdentifier(kUndefinedIdentifier);
   }
   static PreParserIdentifier FutureReserved() {
     return PreParserIdentifier(kFutureReservedIdentifier);
@@ -726,6 +745,7 @@ class PreParserIdentifier {
   bool IsEval() const { return type_ == kEvalIdentifier; }
   bool IsArguments() const { return type_ == kArgumentsIdentifier; }
   bool IsEvalOrArguments() const { return IsEval() || IsArguments(); }
+  bool IsUndefined() const { return type_ == kUndefinedIdentifier; }
   bool IsLet() const { return type_ == kLetIdentifier; }
   bool IsStatic() const { return type_ == kStaticIdentifier; }
   bool IsYield() const { return type_ == kYieldIdentifier; }
@@ -737,7 +757,6 @@ class PreParserIdentifier {
            type_ == kLetIdentifier || type_ == kStaticIdentifier ||
            type_ == kYieldIdentifier;
   }
-  bool IsValidStrictVariable() const { return type_ == kUnknownIdentifier; }
   V8_INLINE bool IsValidArrowParam() const {
     // A valid identifier can be an arrow function parameter
     // except for eval, arguments, yield, and reserved keywords.
@@ -762,6 +781,7 @@ class PreParserIdentifier {
     kYieldIdentifier,
     kEvalIdentifier,
     kArgumentsIdentifier,
+    kUndefinedIdentifier,
     kPrototypeIdentifier,
     kConstructorIdentifier
   };
@@ -776,6 +796,10 @@ class PreParserExpression {
  public:
   static PreParserExpression Default() {
     return PreParserExpression(TypeField::encode(kExpression));
+  }
+
+  static PreParserExpression Spread(PreParserExpression expression) {
+    return PreParserExpression(TypeField::encode(kSpreadExpression));
   }
 
   static PreParserExpression FromIdentifier(PreParserIdentifier id) {
@@ -906,6 +930,10 @@ class PreParserExpression {
            ExpressionTypeField::decode(code_) == kNoTemplateTagExpression;
   }
 
+  bool IsSpreadExpression() const {
+    return TypeField::decode(code_) == kSpreadExpression;
+  }
+
   PreParserExpression AsFunctionLiteral() { return *this; }
 
   bool IsBinaryOperation() const {
@@ -938,7 +966,8 @@ class PreParserExpression {
     kExpression,
     kIdentifierExpression,
     kStringLiteralExpression,
-    kBinaryOperationExpression
+    kBinaryOperationExpression,
+    kSpreadExpression
   };
 
   enum Parenthesization {
@@ -964,8 +993,8 @@ class PreParserExpression {
                : (IsIdentifier() && AsIdentifier().IsValidArrowParam());
   }
 
-  // The first four bits are for the Type and Parenthesization.
-  typedef BitField<Type, 0, 2> TypeField;
+  // The first five bits are for the Type and Parenthesization.
+  typedef BitField<Type, 0, 3> TypeField;
   typedef BitField<Parenthesization, TypeField::kNext, 2> ParenthesizationField;
 
   // The rest of the bits are interpreted depending on the value
@@ -1166,6 +1195,12 @@ class PreParserFactory {
                                  int pos) {
     return PreParserExpression::Default();
   }
+  PreParserExpression NewCallRuntime(const AstRawString* name,
+                                     const Runtime::Function* function,
+                                     PreParserExpressionList arguments,
+                                     int pos) {
+    return PreParserExpression::Default();
+  }
   PreParserStatement NewReturnStatement(PreParserExpression expression,
                                         int pos) {
     return PreParserStatement::Default();
@@ -1180,6 +1215,10 @@ class PreParserFactory {
       FunctionLiteral::IsParenthesizedFlag is_parenthesized, FunctionKind kind,
       int position) {
     return PreParserExpression::Default();
+  }
+
+  PreParserExpression NewSpread(PreParserExpression expression, int pos) {
+    return PreParserExpression::Spread(expression);
   }
 
   // Return the object itself as AstVisitor and implement the needed
@@ -1235,6 +1274,10 @@ class PreParserTraits {
 
   static bool IsEvalOrArguments(PreParserIdentifier identifier) {
     return identifier.IsEvalOrArguments();
+  }
+
+  static bool IsUndefined(PreParserIdentifier identifier) {
+    return identifier.IsUndefined();
   }
 
   static bool IsPrototype(PreParserIdentifier identifier) {
@@ -1494,6 +1537,19 @@ class PreParserTraits {
                                         bool name_is_strict_reserved, int pos,
                                         bool* ok);
 
+  PreParserExpressionList PrepareSpreadArguments(PreParserExpressionList list) {
+    return list;
+  }
+
+  inline void MaterializeUnspreadArgumentsLiterals(int count);
+
+  inline PreParserExpression SpreadCall(PreParserExpression function,
+                                        PreParserExpressionList args, int pos);
+
+  inline PreParserExpression SpreadCallNew(PreParserExpression function,
+                                           PreParserExpressionList args,
+                                           int pos);
+
  private:
   PreParser* pre_parser_;
 };
@@ -1634,6 +1690,26 @@ void PreParserTraits::MaterializeTemplateCallsiteLiterals() {
 }
 
 
+void PreParserTraits::MaterializeUnspreadArgumentsLiterals(int count) {
+  for (int i = 0; i < count; ++i) {
+    pre_parser_->function_state_->NextMaterializedLiteralIndex();
+  }
+}
+
+
+PreParserExpression PreParserTraits::SpreadCall(PreParserExpression function,
+                                                PreParserExpressionList args,
+                                                int pos) {
+  return pre_parser_->factory()->NewCall(function, args, pos);
+}
+
+PreParserExpression PreParserTraits::SpreadCallNew(PreParserExpression function,
+                                                   PreParserExpressionList args,
+                                                   int pos) {
+  return pre_parser_->factory()->NewCallNew(function, args, pos);
+}
+
+
 PreParserStatementList PreParser::ParseEagerFunctionBody(
     PreParserIdentifier function_name, int pos, Variable* fvar,
     Token::Value fvar_init_op, FunctionKind kind, bool* ok) {
@@ -1726,16 +1802,19 @@ void ParserBase<Traits>::ReportUnexpectedTokenAt(
 }
 
 
-template<class Traits>
+template <class Traits>
 typename ParserBase<Traits>::IdentifierT ParserBase<Traits>::ParseIdentifier(
-    AllowEvalOrArgumentsAsIdentifier allow_eval_or_arguments,
-    bool* ok) {
+    AllowRestrictedIdentifiers allow_restricted_identifiers, bool* ok) {
   Token::Value next = Next();
   if (next == Token::IDENTIFIER) {
     IdentifierT name = this->GetSymbol(scanner());
-    if (allow_eval_or_arguments == kDontAllowEvalOrArguments) {
+    if (allow_restricted_identifiers == kDontAllowRestrictedIdentifiers) {
       if (is_strict(language_mode()) && this->IsEvalOrArguments(name)) {
         ReportMessage("strict_eval_arguments");
+        *ok = false;
+      }
+      if (is_strong(language_mode()) && this->IsUndefined(name)) {
+        ReportMessage("strong_undefined");
         *ok = false;
       }
     } else {
@@ -1757,7 +1836,6 @@ typename ParserBase<Traits>::IdentifierT ParserBase<Traits>::ParseIdentifier(
     return Traits::EmptyIdentifier();
   }
 }
-
 
 template <class Traits>
 typename ParserBase<Traits>::IdentifierT ParserBase<
@@ -1897,7 +1975,7 @@ ParserBase<Traits>::ParsePrimaryExpression(bool* ok) {
     case Token::YIELD:
     case Token::FUTURE_STRICT_RESERVED_WORD: {
       // Using eval or arguments in this context is OK even in strict mode.
-      IdentifierT name = ParseIdentifier(kAllowEvalOrArguments, CHECK_OK);
+      IdentifierT name = ParseIdentifier(kAllowRestrictedIdentifiers, CHECK_OK);
       result = this->ExpressionFromIdentifier(name, beg_pos, end_pos, scope_,
                                               factory());
       break;
@@ -2303,18 +2381,42 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseObjectLiteral(
 
 template <class Traits>
 typename Traits::Type::ExpressionList ParserBase<Traits>::ParseArguments(
-    bool* ok) {
+    Scanner::Location* first_spread_arg_loc, bool* ok) {
   // Arguments ::
   //   '(' (AssignmentExpression)*[','] ')'
 
+  Scanner::Location spread_arg = Scanner::Location::invalid();
   typename Traits::Type::ExpressionList result =
       this->NewExpressionList(4, zone_);
   Expect(Token::LPAREN, CHECK_OK_CUSTOM(NullExpressionList));
   bool done = (peek() == Token::RPAREN);
+  bool was_unspread = false;
+  int unspread_sequences_count = 0;
   while (!done) {
+    bool is_spread = allow_harmony_spreadcalls() && (peek() == Token::ELLIPSIS);
+    int start_pos = peek_position();
+    if (is_spread) Consume(Token::ELLIPSIS);
+
     ExpressionT argument = this->ParseAssignmentExpression(
         true, CHECK_OK_CUSTOM(NullExpressionList));
+    if (is_spread) {
+      if (!spread_arg.IsValid()) {
+        spread_arg.beg_pos = start_pos;
+        spread_arg.end_pos = peek_position();
+      }
+      argument = factory()->NewSpread(argument, start_pos);
+    }
     result->Add(argument, zone_);
+
+    // unspread_sequences_count is the number of sequences of parameters which
+    // are not prefixed with a spread '...' operator.
+    if (is_spread) {
+      was_unspread = false;
+    } else if (!was_unspread) {
+      was_unspread = true;
+      unspread_sequences_count++;
+    }
+
     if (result->length() > Code::kMaxArguments) {
       ReportMessage("too_many_arguments");
       *ok = false;
@@ -2331,6 +2433,15 @@ typename Traits::Type::ExpressionList ParserBase<Traits>::ParseArguments(
     *ok = false;
     return this->NullExpressionList();
   }
+  *first_spread_arg_loc = spread_arg;
+
+  if (spread_arg.IsValid()) {
+    // Unspread parameter sequences are translated into array literals in the
+    // parser. Ensure that the number of materialized literals matches between
+    // the parser and preparser
+    Traits::MaterializeUnspreadArgumentsLiterals(unspread_sequences_count);
+  }
+
   return result;
 }
 
@@ -2645,7 +2756,9 @@ ParserBase<Traits>::ParseLeftHandSideExpression(bool* ok) {
             result->AsFunctionLiteral()->set_parenthesized();
           }
         }
-        typename Traits::Type::ExpressionList args = ParseArguments(CHECK_OK);
+        Scanner::Location spread_pos;
+        typename Traits::Type::ExpressionList args =
+            ParseArguments(&spread_pos, CHECK_OK);
 
         // Keep track of eval() calls since they disable all local variable
         // optimizations.
@@ -2655,7 +2768,13 @@ ParserBase<Traits>::ParseLeftHandSideExpression(bool* ok) {
         // These calls are marked as potentially direct eval calls. Whether
         // they are actually direct calls to eval is determined at run time.
         this->CheckPossibleEvalCall(result, scope_);
-        result = factory()->NewCall(result, args, pos);
+
+        if (spread_pos.IsValid()) {
+          args = Traits::PrepareSpreadArguments(args);
+          result = Traits::SpreadCall(result, args, pos);
+        } else {
+          result = factory()->NewCall(result, args, pos);
+        }
         if (fni_ != NULL) fni_->RemoveLastFunction();
         break;
       }
@@ -2709,9 +2828,16 @@ ParserBase<Traits>::ParseMemberWithNewPrefixesExpression(bool* ok) {
     }
     if (peek() == Token::LPAREN) {
       // NewExpression with arguments.
+      Scanner::Location spread_pos;
       typename Traits::Type::ExpressionList args =
-          this->ParseArguments(CHECK_OK);
-      result = factory()->NewCallNew(result, args, new_pos);
+          this->ParseArguments(&spread_pos, CHECK_OK);
+
+      if (spread_pos.IsValid()) {
+        args = Traits::PrepareSpreadArguments(args);
+        result = Traits::SpreadCallNew(result, args, new_pos);
+      } else {
+        result = factory()->NewCallNew(result, args, new_pos);
+      }
       // The expression can still continue with . or [ after the arguments.
       result = this->ParseMemberExpressionContinuation(result, CHECK_OK);
       return result;
@@ -2952,13 +3078,15 @@ ParserBase<Traits>::ParseArrowFunctionLiteral(int start_pos,
     scope->set_end_position(scanner()->location().end_pos);
 
     // Arrow function *parameter lists* are always checked as in strict mode.
-    // TODO(arv): eval_args_error_loc and reserved_loc needs to be set by
-    // DeclareArrowParametersFromExpression.
+    // TODO(arv): eval_args_error_loc, undefined_error_loc, and reserved_loc
+    // needs to be set by DeclareArrowParametersFromExpression.
     Scanner::Location eval_args_error_loc = Scanner::Location::invalid();
+    Scanner::Location undefined_error_loc = Scanner::Location::invalid();
     Scanner::Location reserved_loc = Scanner::Location::invalid();
     const bool use_strict_params = true;
     this->CheckFunctionParameterNames(language_mode(), use_strict_params,
-        eval_args_error_loc, dupe_error_loc, reserved_loc, CHECK_OK);
+                                      eval_args_error_loc, undefined_error_loc,
+                                      dupe_error_loc, reserved_loc, CHECK_OK);
 
     // Validate strict mode.
     if (is_strict(language_mode())) {
@@ -3082,12 +3210,21 @@ typename ParserBase<Traits>::ExpressionT ParserBase<
     Traits>::CheckAndRewriteReferenceExpression(ExpressionT expression,
                                                 Scanner::Location location,
                                                 const char* message, bool* ok) {
-  if (is_strict(language_mode()) && this->IsIdentifier(expression) &&
-      this->IsEvalOrArguments(this->AsIdentifier(expression))) {
-    this->ReportMessageAt(location, "strict_eval_arguments", kSyntaxError);
-    *ok = false;
-    return this->EmptyExpression();
-  } else if (expression->IsValidReferenceExpression()) {
+  if (this->IsIdentifier(expression)) {
+    if (is_strict(language_mode()) &&
+        this->IsEvalOrArguments(this->AsIdentifier(expression))) {
+      this->ReportMessageAt(location, "strict_eval_arguments", kSyntaxError);
+      *ok = false;
+      return this->EmptyExpression();
+    }
+    if (is_strong(language_mode()) &&
+        this->IsUndefined(this->AsIdentifier(expression))) {
+      this->ReportMessageAt(location, "strong_undefined", kSyntaxError);
+      *ok = false;
+      return this->EmptyExpression();
+    }
+  }
+  if (expression->IsValidReferenceExpression()) {
     return expression;
   } else if (expression->IsCall()) {
     // If it is a call, make it a runtime error for legacy web compatibility.

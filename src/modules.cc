@@ -20,8 +20,9 @@ void ModuleDescriptor::AddLocalExport(const AstRawString* export_name,
   ZoneAllocationPolicy allocator(zone);
 
   if (exports_ == nullptr) {
-    exports_ = new (zone->New(sizeof(ZoneHashMap))) ZoneHashMap(
-        AstRawString::Compare, ZoneHashMap::kDefaultHashMapCapacity, allocator);
+    exports_ = new (zone->New(sizeof(ZoneHashMap)))
+        ZoneHashMap(ZoneHashMap::PointersMatch,
+                    ZoneHashMap::kDefaultHashMapCapacity, allocator);
   }
 
   ZoneHashMap::Entry* p =
@@ -31,6 +32,15 @@ void ModuleDescriptor::AddLocalExport(const AstRawString* export_name,
   }
 
   p->value = const_cast<AstRawString*>(local_name);
+}
+
+
+void ModuleDescriptor::AddModuleRequest(const AstRawString* module_specifier,
+                                        Zone* zone) {
+  // TODO(adamk): Avoid this O(N) operation on each insert by storing
+  // a HashMap, or by de-duping after parsing.
+  if (requested_modules_.Contains(module_specifier)) return;
+  requested_modules_.Add(module_specifier, zone);
 }
 
 
