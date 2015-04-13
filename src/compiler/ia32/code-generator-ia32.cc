@@ -468,6 +468,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kSSEFloat32Div:
       __ divss(i.InputDoubleRegister(0), i.InputOperand(1));
+      // Don't delete this mov. It may improve performance on some CPUs,
+      // when there is a (v)mulss depending on the result.
+      __ movaps(i.OutputDoubleRegister(), i.OutputDoubleRegister());
       break;
     case kSSEFloat32Max:
       __ maxss(i.InputDoubleRegister(0), i.InputOperand(1));
@@ -480,7 +483,6 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kSSEFloat32Abs: {
       // TODO(bmeurer): Use 128-bit constants.
-      // TODO(turbofan): Add AVX version with relaxed register constraints.
       __ pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
       __ psrlq(kScratchDoubleReg, 33);
       __ andps(i.OutputDoubleRegister(), kScratchDoubleReg);
@@ -488,7 +490,6 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     }
     case kSSEFloat32Neg: {
       // TODO(bmeurer): Use 128-bit constants.
-      // TODO(turbofan): Add AVX version with relaxed register constraints.
       __ pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
       __ psllq(kScratchDoubleReg, 31);
       __ xorps(i.OutputDoubleRegister(), kScratchDoubleReg);
@@ -508,6 +509,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kSSEFloat64Div:
       __ divsd(i.InputDoubleRegister(0), i.InputOperand(1));
+      // Don't delete this mov. It may improve performance on some CPUs,
+      // when there is a (v)mulsd depending on the result.
+      __ movaps(i.OutputDoubleRegister(), i.OutputDoubleRegister());
       break;
     case kSSEFloat64Max:
       __ maxsd(i.InputDoubleRegister(0), i.InputOperand(1));
@@ -542,7 +546,6 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     }
     case kSSEFloat64Abs: {
       // TODO(bmeurer): Use 128-bit constants.
-      // TODO(turbofan): Add AVX version with relaxed register constraints.
       __ pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
       __ psrlq(kScratchDoubleReg, 1);
       __ andpd(i.OutputDoubleRegister(), kScratchDoubleReg);
@@ -550,7 +553,6 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     }
     case kSSEFloat64Neg: {
       // TODO(bmeurer): Use 128-bit constants.
-      // TODO(turbofan): Add AVX version with relaxed register constraints.
       __ pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
       __ psllq(kScratchDoubleReg, 63);
       __ xorpd(i.OutputDoubleRegister(), kScratchDoubleReg);
@@ -633,6 +635,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       CpuFeatureScope avx_scope(masm(), AVX);
       __ vdivss(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
                 i.InputOperand(1));
+      // Don't delete this mov. It may improve performance on some CPUs,
+      // when there is a (v)mulss depending on the result.
+      __ movaps(i.OutputDoubleRegister(), i.OutputDoubleRegister());
       break;
     }
     case kAVXFloat32Max: {
@@ -669,6 +674,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       CpuFeatureScope avx_scope(masm(), AVX);
       __ vdivsd(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
                 i.InputOperand(1));
+      // Don't delete this mov. It may improve performance on some CPUs,
+      // when there is a (v)mulsd depending on the result.
+      __ movaps(i.OutputDoubleRegister(), i.OutputDoubleRegister());
       break;
     }
     case kAVXFloat64Max: {
@@ -681,6 +689,38 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       CpuFeatureScope avx_scope(masm(), AVX);
       __ vminsd(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
                 i.InputOperand(1));
+      break;
+    }
+    case kAVXFloat32Abs: {
+      // TODO(bmeurer): Use RIP relative 128-bit constants.
+      __ pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
+      __ psrlq(kScratchDoubleReg, 33);
+      CpuFeatureScope avx_scope(masm(), AVX);
+      __ vandps(i.OutputDoubleRegister(), kScratchDoubleReg, i.InputOperand(0));
+      break;
+    }
+    case kAVXFloat32Neg: {
+      // TODO(bmeurer): Use RIP relative 128-bit constants.
+      __ pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
+      __ psllq(kScratchDoubleReg, 31);
+      CpuFeatureScope avx_scope(masm(), AVX);
+      __ vxorps(i.OutputDoubleRegister(), kScratchDoubleReg, i.InputOperand(0));
+      break;
+    }
+    case kAVXFloat64Abs: {
+      // TODO(bmeurer): Use RIP relative 128-bit constants.
+      __ pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
+      __ psrlq(kScratchDoubleReg, 1);
+      CpuFeatureScope avx_scope(masm(), AVX);
+      __ vandpd(i.OutputDoubleRegister(), kScratchDoubleReg, i.InputOperand(0));
+      break;
+    }
+    case kAVXFloat64Neg: {
+      // TODO(bmeurer): Use RIP relative 128-bit constants.
+      __ pcmpeqd(kScratchDoubleReg, kScratchDoubleReg);
+      __ psllq(kScratchDoubleReg, 63);
+      CpuFeatureScope avx_scope(masm(), AVX);
+      __ vxorpd(i.OutputDoubleRegister(), kScratchDoubleReg, i.InputOperand(0));
       break;
     }
     case kIA32Movsxbl:

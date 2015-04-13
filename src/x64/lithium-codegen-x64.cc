@@ -2076,10 +2076,10 @@ void LCodeGen::DoArithmeticD(LArithmeticD* instr) {
       } else {
         DCHECK(result.is(left));
         __ divsd(left, right);
-        // Don't delete this mov. It may improve performance on some CPUs,
-        // when there is a mulsd depending on the result
-        __ movaps(left, left);
       }
+      // Don't delete this mov. It may improve performance on some CPUs,
+      // when there is a (v)mulsd depending on the result
+      __ movaps(result, result);
       break;
     case Token::MOD: {
       XMMRegister xmm_scratch = double_scratch0();
@@ -3310,7 +3310,7 @@ void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->object()).is(LoadDescriptor::ReceiverRegister()));
   DCHECK(ToRegister(instr->key()).is(LoadDescriptor::NameRegister()));
 
-  if (FLAG_vector_ics) {
+  if (instr->hydrogen()->HasVectorAndSlot()) {
     EmitVectorLoadICRegisters<LLoadKeyedGeneric>(instr);
   }
 

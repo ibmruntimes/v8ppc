@@ -201,7 +201,9 @@ var kMessages = {
   array_not_subclassable:        ["Subclassing Arrays is not currently supported."],
   for_in_loop_initializer:       ["for-in loop variable declaration may not have an initializer."],
   for_of_loop_initializer:       ["for-of loop variable declaration may not have an initializer."],
-  for_inof_loop_multi_bindings:  ["Invalid left-hand side in ", "%0", " loop: Must have a single binding."]
+  for_inof_loop_multi_bindings:  ["Invalid left-hand side in ", "%0", " loop: Must have a single binding."],
+  bad_getter_arity:              ["Getter must not have any formal parameters."],
+  bad_setter_arity:              ["Setter must have exactly one formal parameter."]
 };
 
 
@@ -301,7 +303,7 @@ function ToStringCheckErrorObject(obj) {
 
 
 function ToDetailString(obj) {
-  if (obj != null && IS_OBJECT(obj) && obj.toString === DefaultObjectToString) {
+  if (obj != null && IS_OBJECT(obj) && obj.toString === ObjectToString) {
     var constructor = obj.constructor;
     if (typeof constructor == "function") {
       var constructorName = constructor.name;
@@ -615,10 +617,15 @@ function ScriptNameOrSourceURL() {
 }
 
 
-SetUpLockedPrototype(Script,
-  $Array("source", "name", "source_url", "source_mapping_url", "line_ends",
-         "line_offset", "column_offset"),
-  $Array(
+SetUpLockedPrototype(Script, [
+    "source",
+    "name",
+    "source_url",
+    "source_mapping_url",
+    "line_ends",
+    "line_offset",
+    "column_offset"
+  ], [
     "lineFromPosition", ScriptLineFromPosition,
     "locationFromPosition", ScriptLocationFromPosition,
     "locationFromLine", ScriptLocationFromLine,
@@ -626,7 +633,7 @@ SetUpLockedPrototype(Script,
     "sourceLine", ScriptSourceLine,
     "lineCount", ScriptLineCount,
     "nameOrSourceURL", ScriptNameOrSourceURL
-  )
+  ]
 );
 
 
@@ -675,10 +682,8 @@ function SourceLocationSourceText() {
 
 
 SetUpLockedPrototype(SourceLocation,
-  $Array("script", "position", "line", "column", "start", "end"),
-  $Array(
-    "sourceText", SourceLocationSourceText
- )
+  ["script", "position", "line", "column", "start", "end"],
+  ["sourceText", SourceLocationSourceText]
 );
 
 
@@ -721,8 +726,8 @@ function SourceSliceSourceText() {
 }
 
 SetUpLockedPrototype(SourceSlice,
-  $Array("script", "from_line", "to_line", "from_position", "to_position"),
-  $Array("sourceText", SourceSliceSourceText)
+  ["script", "from_line", "to_line", "from_position", "to_position"],
+  ["sourceText", SourceSliceSourceText]
 );
 
 
@@ -953,7 +958,7 @@ function CallSiteToString() {
   return line;
 }
 
-SetUpLockedPrototype(CallSite, $Array("receiver", "fun", "pos"), $Array(
+SetUpLockedPrototype(CallSite, ["receiver", "fun", "pos"], [
   "getThis", CallSiteGetThis,
   "getTypeName", CallSiteGetTypeName,
   "isToplevel", CallSiteIsToplevel,
@@ -970,7 +975,7 @@ SetUpLockedPrototype(CallSite, $Array("receiver", "fun", "pos"), $Array(
   "getPosition", CallSiteGetPosition,
   "isConstructor", CallSiteIsConstructor,
   "toString", CallSiteToString
-));
+]);
 
 
 function FormatEvalOrigin(script) {

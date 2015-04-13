@@ -1577,11 +1577,6 @@ void Heap::Scavenge() {
   ScavengeWeakObjectRetainer weak_object_retainer(this);
   ProcessYoungWeakReferences(&weak_object_retainer);
 
-  // Collects callback info for handles referenced by young generation that are
-  // pending (about to be collected) and either phantom or internal-fields.
-  // Releases the global handles.  See also PostGarbageCollectionProcessing.
-  isolate()->global_handles()->CollectYoungPhantomCallbackData();
-
   DCHECK(new_space_front == new_space_.top());
 
   // Set age mark.
@@ -4550,15 +4545,14 @@ void Heap::MakeHeapIterable() {
 }
 
 
-void Heap::IdleMarkCompact(bool reduce_memory, const char* message) {
+void Heap::IdleMarkCompact(const char* message) {
   bool uncommit = false;
   if (gc_count_at_last_idle_gc_ == gc_count_) {
     // No GC since the last full GC, the mutator is probably not active.
     isolate_->compilation_cache()->Clear();
     uncommit = true;
   }
-  int flags = reduce_memory ? kReduceMemoryFootprintMask : kNoGCFlags;
-  CollectAllGarbage(flags, message);
+  CollectAllGarbage(kReduceMemoryFootprintMask, message);
   gc_idle_time_handler_.NotifyIdleMarkCompact();
   gc_count_at_last_idle_gc_ = gc_count_;
   if (uncommit) {
@@ -4690,12 +4684,8 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
         gc_idle_time_handler_.NotifyIdleMarkCompact();
         gc_count_at_last_idle_gc_ = gc_count_;
       } else {
-        IdleMarkCompact(false, "idle notification: finalize idle round");
+        IdleMarkCompact("idle notification: finalize idle round");
       }
-      break;
-    }
-    case DO_FULL_GC_COMPACT: {
-      IdleMarkCompact(true, "idle notification: reduce memory footprint");
       break;
     }
     case DO_SCAVENGE:

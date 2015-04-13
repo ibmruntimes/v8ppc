@@ -1018,6 +1018,24 @@ class V8_EXPORT EscapableHandleScope : public HandleScope {
   internal::Object** escape_slot_;
 };
 
+class V8_EXPORT SealHandleScope {
+ public:
+  SealHandleScope(Isolate* isolate);
+  ~SealHandleScope();
+
+ private:
+  // Make it hard to create heap-allocated or illegal handle scopes by
+  // disallowing certain operations.
+  SealHandleScope(const SealHandleScope&);
+  void operator=(const SealHandleScope&);
+  void* operator new(size_t size);
+  void operator delete(void*, size_t);
+
+  internal::Isolate* isolate_;
+  int prev_level_;
+  internal::Object** prev_limit_;
+};
+
 
 // --- Special objects ---
 
@@ -3510,6 +3528,12 @@ class V8_EXPORT ArrayBufferView : public Object {
    * Returns the number of bytes actually written.
    */
   size_t CopyContents(void* dest, size_t byte_length);
+
+  /**
+   * Returns true if ArrayBufferView's backing ArrayBuffer has already been
+   * allocated.
+   */
+  bool HasBuffer() const;
 
   V8_INLINE static ArrayBufferView* Cast(Value* obj);
 

@@ -908,62 +908,19 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
   PreParserFactory factory(NULL);
   FunctionState function_state(&function_state_, &scope_, function_scope, kind,
                                &factory);
-  //  FormalParameterList ::
-  //    '(' (Identifier)*[','] ')'
-  Expect(Token::LPAREN, CHECK_OK);
-  int start_position = position();
-  DuplicateFinder duplicate_finder(scanner()->unicode_cache());
-  // We don't yet know if the function will be strict, so we cannot yet produce
-  // errors for parameter names or duplicates. However, we remember the
-  // locations of these errors if they occur and produce the errors later.
-  Scanner::Location eval_args_error_loc = Scanner::Location::invalid();
-  Scanner::Location dupe_error_loc = Scanner::Location::invalid();
-  Scanner::Location reserved_error_loc = Scanner::Location::invalid();
-
-  // Similarly for strong mode.
-  Scanner::Location undefined_error_loc = Scanner::Location::invalid();
+  FormalParameterErrorLocations error_locs;
 
   bool is_rest = false;
-  bool done = arity_restriction == FunctionLiteral::GETTER_ARITY ||
-      (peek() == Token::RPAREN &&
-       arity_restriction != FunctionLiteral::SETTER_ARITY);
-  while (!done) {
-    bool is_strict_reserved = false;
-    is_rest = peek() == Token::ELLIPSIS && allow_harmony_rest_params();
-    if (is_rest) {
-      Consume(Token::ELLIPSIS);
-    }
-
-    Identifier param_name =
-        ParseIdentifierOrStrictReservedWord(&is_strict_reserved, CHECK_OK);
-    if (!eval_args_error_loc.IsValid() && param_name.IsEvalOrArguments()) {
-      eval_args_error_loc = scanner()->location();
-    }
-    if (!undefined_error_loc.IsValid() && param_name.IsUndefined()) {
-      undefined_error_loc = scanner()->location();
-    }
-    if (!reserved_error_loc.IsValid() && is_strict_reserved) {
-      reserved_error_loc = scanner()->location();
-    }
-
-    int prev_value = scanner()->FindSymbol(&duplicate_finder, 1);
-
-    if (!dupe_error_loc.IsValid() && prev_value != 0) {
-      dupe_error_loc = scanner()->location();
-    }
-
-    if (arity_restriction == FunctionLiteral::SETTER_ARITY) break;
-    done = (peek() == Token::RPAREN);
-    if (!done) {
-      if (is_rest) {
-        ReportMessageAt(scanner()->peek_location(), "param_after_rest");
-        *ok = false;
-        return Expression::Default();
-      }
-      Expect(Token::COMMA, CHECK_OK);
-    }
-  }
+  Expect(Token::LPAREN, CHECK_OK);
+  int start_position = scanner()->location().beg_pos;
+  PreParserFormalParameterList params =
+      ParseFormalParameterList(&error_locs, &is_rest, CHECK_OK);
   Expect(Token::RPAREN, CHECK_OK);
+  int formals_end_position = scanner()->location().end_pos;
+
+  CheckArityRestrictions(params->length(), arity_restriction, start_position,
+                         formals_end_position, ok);
+  if (!*ok) return Expression::Default();
 
   // See Parser::ParseFunctionLiteral for more information about lazy parsing
   // and lazy compilation.
@@ -984,9 +941,8 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
   CheckFunctionName(language_mode(), kind, function_name,
                     name_is_strict_reserved, function_name_location, CHECK_OK);
   const bool use_strict_params = is_rest || IsConciseMethod(kind);
-  CheckFunctionParameterNames(language_mode(), use_strict_params,
-                              eval_args_error_loc, undefined_error_loc,
-                              dupe_error_loc, reserved_error_loc, CHECK_OK);
+  CheckFunctionParameterNames(language_mode(), use_strict_params, error_locs,
+                              CHECK_OK);
 
   if (is_strict(language_mode())) {
     int end_position = scanner()->location().end_pos;

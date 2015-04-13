@@ -2157,6 +2157,12 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   TestContext* inlined_test_context() const {
     return function_state()->test_context();
   }
+  Handle<SharedFunctionInfo> current_shared_info() const {
+    return current_info()->shared_info();
+  }
+  TypeFeedbackVector* current_feedback_vector() const {
+    return current_shared_info()->feedback_vector();
+  }
   void ClearInlinedTestContext() {
     function_state()->ClearInlinedTestContext();
   }
@@ -2644,7 +2650,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
     CompilationInfo* current_info() { return builder_->current_info(); }
 
     bool LoadResult(Handle<Map> map);
-    void LoadFieldMaps(Handle<Map> map);
+    bool LoadFieldMaps(Handle<Map> map);
     bool LookupDescriptor();
     bool LookupInPrototypes();
     bool IsIntegerIndexedExotic();

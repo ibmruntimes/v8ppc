@@ -3706,7 +3706,7 @@ Handle<FixedArray> CompileTimeValue::GetElements(Handle<FixedArray> value) {
 
 bool CheckAndDeclareArrowParameter(ParserTraits* traits, Expression* expression,
                                    Scope* scope, int* num_params,
-                                   Scanner::Location* dupe_loc) {
+                                   FormalParameterErrorLocations* locs) {
   // Case for empty parameter lists:
   //   () => ...
   if (expression == NULL) return true;
@@ -3725,9 +3725,12 @@ bool CheckAndDeclareArrowParameter(ParserTraits* traits, Expression* expression,
     if (traits->IsEvalOrArguments(raw_name) ||
         traits->IsFutureStrictReserved(raw_name))
       return false;
-
+    if (traits->IsUndefined(raw_name) && !locs->undefined_.IsValid()) {
+      locs->undefined_ = Scanner::Location(
+          expression->position(), expression->position() + raw_name->length());
+    }
     if (scope->IsDeclared(raw_name)) {
-      *dupe_loc = Scanner::Location(
+      locs->duplicate_ = Scanner::Location(
           expression->position(), expression->position() + raw_name->length());
       return false;
     }
@@ -3750,9 +3753,9 @@ bool CheckAndDeclareArrowParameter(ParserTraits* traits, Expression* expression,
       return false;
 
     return CheckAndDeclareArrowParameter(traits, binop->left(), scope,
-                                         num_params, dupe_loc) &&
+                                         num_params, locs) &&
            CheckAndDeclareArrowParameter(traits, binop->right(), scope,
-                                         num_params, dupe_loc);
+                                         num_params, locs);
   }
 
   // Any other kind of expression is not a valid parameter list.
@@ -3761,15 +3764,15 @@ bool CheckAndDeclareArrowParameter(ParserTraits* traits, Expression* expression,
 
 
 int ParserTraits::DeclareArrowParametersFromExpression(
-    Expression* expression, Scope* scope, Scanner::Location* dupe_loc,
+    Expression* expression, Scope* scope, FormalParameterErrorLocations* locs,
     bool* ok) {
   int num_params = 0;
   // Always reset the flag: It only needs to be set for the first expression
-  // parsed as arrow function parameter list, becauseonly top-level functions
+  // parsed as arrow function parameter list, because only top-level functions
   // are parsed lazily.
   parser_->parsing_lazy_arrow_parameters_ = false;
-  *ok = CheckAndDeclareArrowParameter(this, expression, scope, &num_params,
-                                      dupe_loc);
+  *ok =
+      CheckAndDeclareArrowParameter(this, expression, scope, &num_params, locs);
   return num_params;
 }
 
@@ -3869,51 +3872,28 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
       function_state.set_generator_object_variable(temp);
     }
 
-    //  FormalParameterList ::
-    //    '(' (Identifier)*[','] ')'
+    FormalParameterErrorLocations error_locs;
+    bool has_rest = false;
     Expect(Token::LPAREN, CHECK_OK);
-    scope->set_start_position(scanner()->location().beg_pos);
+    int start_position = scanner()->location().beg_pos;
+    ZoneList<const AstRawString*>* params =
+        ParseFormalParameterList(&error_locs, &has_rest, CHECK_OK);
+    Expect(Token::RPAREN, CHECK_OK);
+    int formals_end_position = scanner()->location().end_pos;
 
-    // We don't yet know if the function will be strict, so we cannot yet
-    // produce errors for parameter names or duplicates. However, we remember
-    // the locations of these errors if they occur and produce the errors later.
-    Scanner::Location eval_args_error_loc = Scanner::Location::invalid();
-    Scanner::Location dupe_error_loc = Scanner::Location::invalid();
-    Scanner::Location reserved_error_loc = Scanner::Location::invalid();
+    CheckArityRestrictions(params->length(), arity_restriction, start_position,
+                           formals_end_position, CHECK_OK);
 
-    // Similarly for strong mode.
-    Scanner::Location undefined_error_loc = Scanner::Location::invalid();
+    scope->set_start_position(start_position);
 
-    bool is_rest = false;
-    bool done = arity_restriction == FunctionLiteral::GETTER_ARITY ||
-        (peek() == Token::RPAREN &&
-         arity_restriction != FunctionLiteral::SETTER_ARITY);
-    while (!done) {
-      bool is_strict_reserved = false;
-      is_rest = peek() == Token::ELLIPSIS && allow_harmony_rest_params();
-      if (is_rest) {
-        Consume(Token::ELLIPSIS);
-      }
+    num_parameters = params->length();
+    if (error_locs.duplicate_.IsValid()) {
+      duplicate_parameters = FunctionLiteral::kHasDuplicateParameters;
+    }
 
-      const AstRawString* param_name =
-          ParseIdentifierOrStrictReservedWord(&is_strict_reserved, CHECK_OK);
-
-      // Store locations for possible future error reports.
-      if (!eval_args_error_loc.IsValid() && IsEvalOrArguments(param_name)) {
-        eval_args_error_loc = scanner()->location();
-      }
-      if (!undefined_error_loc.IsValid() && IsUndefined(param_name)) {
-        undefined_error_loc = scanner()->location();
-      }
-      if (!reserved_error_loc.IsValid() && is_strict_reserved) {
-        reserved_error_loc = scanner()->location();
-      }
-      if (!dupe_error_loc.IsValid() &&
-          scope_->IsDeclaredParameter(param_name)) {
-        duplicate_parameters = FunctionLiteral::kHasDuplicateParameters;
-        dupe_error_loc = scanner()->location();
-      }
-
+    for (int i = 0; i < params->length(); i++) {
+      const AstRawString* param_name = params->at(i);
+      int is_rest = has_rest && i == params->length() - 1;
       Variable* var = scope_->DeclareParameter(param_name, VAR, is_rest);
       if (is_sloppy(scope->language_mode())) {
         // TODO(sigurds) Mark every parameter as maybe assigned. This is a
@@ -3921,25 +3901,7 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
         // that are assigned via the arguments array.
         var->set_maybe_assigned();
       }
-
-      num_parameters++;
-      if (num_parameters > Code::kMaxArguments) {
-        ReportMessage("too_many_parameters");
-        *ok = false;
-        return NULL;
-      }
-      if (arity_restriction == FunctionLiteral::SETTER_ARITY) break;
-      done = (peek() == Token::RPAREN);
-      if (!done) {
-        if (is_rest) {
-          ReportMessageAt(scanner()->peek_location(), "param_after_rest");
-          *ok = false;
-          return NULL;
-        }
-        Expect(Token::COMMA, CHECK_OK);
-      }
     }
-    Expect(Token::RPAREN, CHECK_OK);
 
     Expect(Token::LBRACE, CHECK_OK);
 
@@ -4021,10 +3983,9 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     CheckFunctionName(language_mode(), kind, function_name,
                       name_is_strict_reserved, function_name_location,
                       CHECK_OK);
-    const bool use_strict_params = is_rest || IsConciseMethod(kind);
-    CheckFunctionParameterNames(language_mode(), use_strict_params,
-                                eval_args_error_loc, undefined_error_loc,
-                                dupe_error_loc, reserved_error_loc, CHECK_OK);
+    const bool use_strict_params = has_rest || IsConciseMethod(kind);
+    CheckFunctionParameterNames(language_mode(), use_strict_params, error_locs,
+                                CHECK_OK);
 
     if (is_strict(language_mode())) {
       CheckStrictOctalLiteral(scope->start_position(), scope->end_position(),

@@ -137,12 +137,11 @@ LiveRange::LiveRange(int id, Zone* zone)
       spills_at_definition_(nullptr) {}
 
 
-void LiveRange::set_assigned_register(int reg,
-                                      InstructionOperandCache* operand_cache) {
+void LiveRange::set_assigned_register(int reg) {
   DCHECK(!HasRegisterAssigned() && !IsSpilled());
   assigned_register_ = reg;
   // TODO(dcarney): stop aliasing hint operands.
-  ConvertUsesToOperand(GetAssignedOperand(operand_cache), nullptr);
+  ConvertUsesToOperand(GetAssignedOperand(), nullptr);
 }
 
 
@@ -265,27 +264,6 @@ bool LiveRange::CanBeSpilled(LifetimePosition pos) {
   auto use_pos = NextRegisterPosition(pos);
   if (use_pos == nullptr) return true;
   return use_pos->pos().Value() > pos.NextStart().End().Value();
-}
-
-
-InstructionOperand* LiveRange::GetAssignedOperand(
-    InstructionOperandCache* cache) const {
-  if (HasRegisterAssigned()) {
-    DCHECK(!IsSpilled());
-    switch (Kind()) {
-      case GENERAL_REGISTERS:
-        return cache->GetRegisterOperand(assigned_register());
-      case DOUBLE_REGISTERS:
-        return cache->GetDoubleRegisterOperand(assigned_register());
-      default:
-        UNREACHABLE();
-    }
-  }
-  DCHECK(IsSpilled());
-  DCHECK(!HasRegisterAssigned());
-  auto op = TopLevel()->GetSpillOperand();
-  DCHECK(!op->IsUnallocated());
-  return op;
 }
 
 
@@ -526,7 +504,7 @@ void LiveRange::AddUsePosition(LifetimePosition pos,
 }
 
 
-void LiveRange::ConvertUsesToOperand(InstructionOperand* op,
+void LiveRange::ConvertUsesToOperand(const InstructionOperand& op,
                                      InstructionOperand* spill_op) {
   for (auto pos = first_pos(); pos != nullptr; pos = pos->next()) {
     DCHECK(Start().Value() <= pos->pos().Value() &&
@@ -541,10 +519,10 @@ void LiveRange::ConvertUsesToOperand(InstructionOperand* op,
         }
         break;
       case UsePositionType::kRequiresRegister:
-        DCHECK(op->IsRegister() || op->IsDoubleRegister());
+        DCHECK(op.IsRegister() || op.IsDoubleRegister());
       // Fall through.
       case UsePositionType::kAny:
-        InstructionOperand::ReplaceWith(pos->operand(), op);
+        InstructionOperand::ReplaceWith(pos->operand(), &op);
         break;
     }
   }
@@ -597,16 +575,6 @@ LifetimePosition LiveRange::FirstIntersection(LiveRange* other) {
 }
 
 
-InstructionOperandCache::InstructionOperandCache() {
-  for (size_t i = 0; i < arraysize(general_register_operands_); ++i) {
-    general_register_operands_[i] = RegisterOperand(static_cast<int>(i));
-  }
-  for (size_t i = 0; i < arraysize(double_register_operands_); ++i) {
-    double_register_operands_[i] = DoubleRegisterOperand(static_cast<int>(i));
-  }
-}
-
-
 RegisterAllocator::RegisterAllocator(const RegisterConfiguration* config,
                                      Zone* zone, Frame* frame,
                                      InstructionSequence* code,
@@ -616,7 +584,6 @@ RegisterAllocator::RegisterAllocator(const RegisterConfiguration* config,
       code_(code),
       debug_name_(debug_name),
       config_(config),
-      operand_cache_(new (code_zone()) InstructionOperandCache()),
       phi_map_(local_zone()),
       live_in_sets_(code->InstructionBlockCount(), nullptr, local_zone()),
       live_ranges_(code->VirtualRegisterCount() * 2, nullptr, local_zone()),
@@ -722,8 +689,8 @@ InstructionOperand* RegisterAllocator::AllocateFixed(
   if (is_tagged) {
     TRACE("Fixed reg is tagged at %d\n", pos);
     auto instr = InstructionAt(pos);
-    if (instr->HasPointerMap()) {
-      instr->pointer_map()->RecordPointer(operand, code_zone());
+    if (instr->HasReferenceMap()) {
+      instr->reference_map()->RecordReference(*operand);
     }
   }
   return operand;
@@ -987,11 +954,11 @@ void RegisterAllocator::AssignSpillSlots() {
 void RegisterAllocator::CommitAssignment() {
   for (auto range : live_ranges()) {
     if (range == nullptr || range->IsEmpty()) continue;
-    auto assigned = range->GetAssignedOperand(operand_cache());
     InstructionOperand* spill_operand = nullptr;
     if (!range->TopLevel()->HasNoSpillType()) {
       spill_operand = range->TopLevel()->GetSpillOperand();
     }
+    auto assigned = range->GetAssignedOperand();
     range->ConvertUsesToOperand(assigned, spill_operand);
     if (!range->IsChild() && spill_operand != nullptr) {
       range->CommitSpillsAtDefinition(code(), spill_operand,
@@ -1226,8 +1193,8 @@ void RegisterAllocator::MeetConstraintsBefore(int instr_index) {
     cur_input->set_virtual_register(second_output->virtual_register());
     AddGapMove(instr_index, Instruction::END, input_copy, cur_input);
     if (HasTaggedValue(input_vreg) && !HasTaggedValue(output_vreg)) {
-      if (second->HasPointerMap()) {
-        second->pointer_map()->RecordPointer(input_copy, code_zone());
+      if (second->HasReferenceMap()) {
+        second->reference_map()->RecordReference(*input_copy);
       }
     } else if (!HasTaggedValue(input_vreg) && HasTaggedValue(output_vreg)) {
       // The input is assumed to immediately have a tagged representation,
@@ -1411,8 +1378,8 @@ void RegisterAllocator::ResolvePhis(const InstructionBlock* block) {
           code()->InstructionBlockAt(block->predecessors()[i]);
       AddGapMove(cur_block->last_instruction_index(), Instruction::END,
                  &phi->inputs()[i], &output);
-      DCHECK(
-          !InstructionAt(cur_block->last_instruction_index())->HasPointerMap());
+      DCHECK(!InstructionAt(cur_block->last_instruction_index())
+                  ->HasReferenceMap());
     }
     auto live_range = LiveRangeFor(phi_vreg);
     int gap_index = block->first_instruction_index();
@@ -1463,9 +1430,9 @@ void RegisterAllocator::ConnectRanges() {
           !CanEagerlyResolveControlFlow(GetInstructionBlock(pos))) {
         continue;
       }
-      auto prev_operand = first_range->GetAssignedOperand(operand_cache());
-      auto cur_operand = second_range->GetAssignedOperand(operand_cache());
-      if (prev_operand->Equals(cur_operand)) continue;
+      auto prev = first_range->GetAssignedOperand();
+      auto cur = second_range->GetAssignedOperand();
+      if (prev == cur) continue;
       bool delay_insertion = false;
       Instruction::GapPosition gap_pos;
       int gap_index = pos.ToInstructionIndex();
@@ -1481,6 +1448,8 @@ void RegisterAllocator::ConnectRanges() {
       }
       auto move = code()->InstructionAt(gap_index)->GetOrCreateParallelMove(
           gap_pos, code_zone());
+      auto prev_operand = InstructionOperand::New(code_zone(), prev);
+      auto cur_operand = InstructionOperand::New(code_zone(), cur);
       if (!delay_insertion) {
         move->AddMove(prev_operand, cur_operand, code_zone());
       } else {
@@ -1678,9 +1647,12 @@ void RegisterAllocator::ResolveControlFlow() {
         if (result.cur_cover_ == result.pred_cover_ ||
             result.cur_cover_->IsSpilled())
           continue;
-        auto pred_op = result.pred_cover_->GetAssignedOperand(operand_cache());
-        auto cur_op = result.cur_cover_->GetAssignedOperand(operand_cache());
-        ResolveControlFlow(block, cur_op, pred_block, pred_op);
+        auto pred_op = result.pred_cover_->GetAssignedOperand();
+        auto cur_op = result.cur_cover_->GetAssignedOperand();
+        if (pred_op == cur_op) continue;
+        auto pred_ptr = InstructionOperand::New(code_zone(), pred_op);
+        auto cur_ptr = InstructionOperand::New(code_zone(), cur_op);
+        ResolveControlFlow(block, cur_ptr, pred_block, pred_ptr);
       }
       iterator.Advance();
     }
@@ -1692,7 +1664,7 @@ void RegisterAllocator::ResolveControlFlow(const InstructionBlock* block,
                                            InstructionOperand* cur_op,
                                            const InstructionBlock* pred,
                                            InstructionOperand* pred_op) {
-  if (pred_op->Equals(cur_op)) return;
+  DCHECK(!pred_op->Equals(cur_op));
   int gap_index;
   Instruction::GapPosition position;
   if (block->PredecessorCount() == 1) {
@@ -1700,7 +1672,7 @@ void RegisterAllocator::ResolveControlFlow(const InstructionBlock* block,
     position = Instruction::START;
   } else {
     DCHECK(pred->SuccessorCount() == 1);
-    DCHECK(!InstructionAt(pred->last_instruction_index())->HasPointerMap());
+    DCHECK(!InstructionAt(pred->last_instruction_index())->HasReferenceMap());
     gap_index = pred->last_instruction_index();
     position = Instruction::END;
   }
@@ -1822,7 +1794,7 @@ bool RegisterAllocator::ExistsUseWithoutDefinition() {
 
 bool RegisterAllocator::SafePointsAreInOrder() const {
   int safe_point = 0;
-  for (auto map : *code()->pointer_maps()) {
+  for (auto map : *code()->reference_maps()) {
     if (safe_point > map->instruction_position()) return false;
     safe_point = map->instruction_position();
   }
@@ -1830,14 +1802,14 @@ bool RegisterAllocator::SafePointsAreInOrder() const {
 }
 
 
-void RegisterAllocator::PopulatePointerMaps() {
+void RegisterAllocator::PopulateReferenceMaps() {
   DCHECK(SafePointsAreInOrder());
 
   // Iterate over all safe point positions and record a pointer
   // for all spilled live ranges at this point.
   int last_range_start = 0;
-  auto pointer_maps = code()->pointer_maps();
-  PointerMapDeque::const_iterator first_it = pointer_maps->begin();
+  auto reference_maps = code()->reference_maps();
+  ReferenceMapDeque::const_iterator first_it = reference_maps->begin();
   for (LiveRange* range : live_ranges()) {
     if (range == nullptr) continue;
     // Iterate over the first parts of multi-part live ranges.
@@ -1859,18 +1831,18 @@ void RegisterAllocator::PopulatePointerMaps() {
 
     // Most of the ranges are in order, but not all.  Keep an eye on when they
     // step backwards and reset the first_it so we don't miss any safe points.
-    if (start < last_range_start) first_it = pointer_maps->begin();
+    if (start < last_range_start) first_it = reference_maps->begin();
     last_range_start = start;
 
     // Step across all the safe points that are before the start of this range,
     // recording how far we step in order to save doing this for the next range.
-    for (; first_it != pointer_maps->end(); ++first_it) {
+    for (; first_it != reference_maps->end(); ++first_it) {
       auto map = *first_it;
       if (map->instruction_position() >= start) break;
     }
 
     // Step through the safe points to see whether they are in the range.
-    for (auto it = first_it; it != pointer_maps->end(); ++it) {
+    for (auto it = first_it; it != reference_maps->end(); ++it) {
       auto map = *it;
       int safe_point = map->instruction_position();
 
@@ -1894,7 +1866,7 @@ void RegisterAllocator::PopulatePointerMaps() {
           !range->GetSpillOperand()->IsConstant()) {
         TRACE("Pointer for range %d (spilled at %d) at safe point %d\n",
               range->id(), range->spill_start_index(), safe_point);
-        map->RecordPointer(range->GetSpillOperand(), code_zone());
+        map->RecordReference(*range->GetSpillOperand());
       }
 
       if (!cur->IsSpilled()) {
@@ -1902,9 +1874,9 @@ void RegisterAllocator::PopulatePointerMaps() {
             "Pointer in register for range %d (start at %d) "
             "at safe point %d\n",
             cur->id(), cur->Start().Value(), safe_point);
-        InstructionOperand* operand = cur->GetAssignedOperand(operand_cache());
-        DCHECK(!operand->IsStackSlot());
-        map->RecordPointer(operand, code_zone());
+        auto operand = cur->GetAssignedOperand();
+        DCHECK(!operand.IsStackSlot());
+        map->RecordReference(operand);
       }
     }
   }
@@ -2534,7 +2506,7 @@ void RegisterAllocator::SetLiveRangeAssignedRegister(LiveRange* range,
     DCHECK(range->Kind() == GENERAL_REGISTERS);
     assigned_registers_->Add(reg);
   }
-  range->set_assigned_register(reg, operand_cache());
+  range->set_assigned_register(reg);
 }
 
 }  // namespace compiler
