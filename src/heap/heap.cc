@@ -160,6 +160,7 @@ Heap::Heap()
   memset(roots_, 0, sizeof(roots_[0]) * kRootListLength);
   set_native_contexts_list(NULL);
   set_array_buffers_list(Smi::FromInt(0));
+  set_last_array_buffer_in_list(Smi::FromInt(0));
   set_allocation_sites_list(Smi::FromInt(0));
   set_encountered_weak_collections(Smi::FromInt(0));
   set_encountered_weak_cells(Smi::FromInt(0));
@@ -797,10 +798,14 @@ void Heap::EnsureFillerObjectAtTop() {
   // pointer of the new space page. We store a filler object there to
   // identify the unused space.
   Address from_top = new_space_.top();
-  Address from_limit = new_space_.limit();
-  if (from_top < from_limit) {
-    int remaining_in_page = static_cast<int>(from_limit - from_top);
-    CreateFillerObjectAt(from_top, remaining_in_page);
+  // Check that from_top is inside its page (i.e., not at the end).
+  Address space_end = new_space_.ToSpaceEnd();
+  if (from_top < space_end) {
+    Page* page = Page::FromAddress(from_top);
+    if (page->Contains(from_top)) {
+      int remaining_in_page = static_cast<int>(page->area_end() - from_top);
+      CreateFillerObjectAt(from_top, remaining_in_page);
+    }
   }
 }
 
@@ -1678,8 +1683,8 @@ void Heap::ProcessYoungWeakReferences(WeakObjectRetainer* retainer) {
 
 
 void Heap::ProcessNativeContexts(WeakObjectRetainer* retainer) {
-  Object* head =
-      VisitWeakList<Context>(this, native_contexts_list(), retainer, false);
+  Object* head = VisitWeakList<Context>(this, native_contexts_list(), retainer,
+                                        false, NULL);
   // Update the head of the list of contexts.
   set_native_contexts_list(head);
 }
@@ -1687,9 +1692,12 @@ void Heap::ProcessNativeContexts(WeakObjectRetainer* retainer) {
 
 void Heap::ProcessArrayBuffers(WeakObjectRetainer* retainer,
                                bool stop_after_young) {
-  Object* array_buffer_obj = VisitWeakList<JSArrayBuffer>(
-      this, array_buffers_list(), retainer, stop_after_young);
+  Object* last_array_buffer = undefined_value();
+  Object* array_buffer_obj =
+      VisitWeakList<JSArrayBuffer>(this, array_buffers_list(), retainer,
+                                   stop_after_young, &last_array_buffer);
   set_array_buffers_list(array_buffer_obj);
+  set_last_array_buffer_in_list(last_array_buffer);
 
   // Verify invariant that young array buffers come before old array buffers
   // in array buffers list if there was no promotion failure.
@@ -1710,7 +1718,7 @@ void Heap::ProcessArrayBuffers(WeakObjectRetainer* retainer,
 void Heap::ProcessNewArrayBufferViews(WeakObjectRetainer* retainer) {
   // Retain the list of new space views.
   Object* typed_array_obj = VisitWeakList<JSArrayBufferView>(
-      this, new_array_buffer_views_list_, retainer, false);
+      this, new_array_buffer_views_list_, retainer, false, NULL);
   set_new_array_buffer_views_list(typed_array_obj);
 
   // Some objects in the list may be in old space now. Find them
@@ -1734,7 +1742,7 @@ void Heap::TearDownArrayBuffers() {
 
 void Heap::ProcessAllocationSites(WeakObjectRetainer* retainer) {
   Object* allocation_site_obj = VisitWeakList<AllocationSite>(
-      this, allocation_sites_list(), retainer, false);
+      this, allocation_sites_list(), retainer, false, NULL);
   set_allocation_sites_list(allocation_site_obj);
 }
 
@@ -5252,11 +5260,11 @@ intptr_t Heap::OldGenerationAllocationLimit(intptr_t old_gen_size,
   const int kMaxHandles = 1000;
   const int kMinHandles = 100;
   double min_factor = 1.1;
-  double max_factor = 4;
+  double max_factor = 1.5;
   // We set the old generation growing factor to 2 to grow the heap slower on
   // memory-constrained devices.
   if (max_old_generation_size_ <= kMaxOldSpaceSizeMediumMemoryDevice) {
-    max_factor = 2;
+    max_factor = 1.5;
   }
   // If there are many freed global handles, then the next full GC will
   // likely collect a lot of garbage. Choose the heap growing factor
@@ -5416,6 +5424,7 @@ bool Heap::CreateHeapObjects() {
 
   set_native_contexts_list(undefined_value());
   set_array_buffers_list(undefined_value());
+  set_last_array_buffer_in_list(undefined_value());
   set_new_array_buffer_views_list(undefined_value());
   set_allocation_sites_list(undefined_value());
   return true;

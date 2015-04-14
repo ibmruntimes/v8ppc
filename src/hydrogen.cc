@@ -2388,6 +2388,8 @@ HInstruction* HGraphBuilder::BuildUncheckedMonomorphicElementAccess(
     PropertyAccessType access_type,
     LoadKeyedHoleMode load_mode,
     KeyedAccessStoreMode store_mode) {
+  DCHECK(top_info()->IsStub() || checked_object->IsCompareMap() ||
+         checked_object->IsCheckMaps());
   DCHECK((!IsExternalArrayElementsKind(elements_kind) &&
               !IsFixedTypedArrayElementsKind(elements_kind)) ||
          !is_js_array);
@@ -5406,8 +5408,11 @@ void HOptimizedGraphBuilder::VisitVariableProxy(VariableProxy* expr) {
                                     variable->name(),
                                     ast_context()->is_for_typeof());
         if (FLAG_vector_ics) {
-          instr->SetVectorAndSlot(handle(current_feedback_vector(), isolate()),
-                                  expr->VariableFeedbackSlot());
+          Handle<SharedFunctionInfo> current_shared =
+              function_state()->compilation_info()->shared_info();
+          instr->SetVectorAndSlot(
+              handle(current_shared->feedback_vector(), isolate()),
+              expr->VariableFeedbackSlot());
         }
         return ast_context()->ReturnInstruction(instr, expr->id());
       }
@@ -6898,8 +6903,10 @@ HInstruction* HOptimizedGraphBuilder::BuildNamedGeneric(
     HLoadNamedGeneric* result =
         New<HLoadNamedGeneric>(object, name, PREMONOMORPHIC);
     if (FLAG_vector_ics) {
+      Handle<SharedFunctionInfo> current_shared =
+          function_state()->compilation_info()->shared_info();
       Handle<TypeFeedbackVector> vector =
-          handle(current_feedback_vector(), isolate());
+          handle(current_shared->feedback_vector(), isolate());
       FeedbackVectorICSlot slot = expr->AsProperty()->PropertyFeedbackSlot();
       result->SetVectorAndSlot(vector, slot);
     }
@@ -6919,10 +6926,16 @@ HInstruction* HOptimizedGraphBuilder::BuildKeyedGeneric(
     HValue* key,
     HValue* value) {
   if (access_type == LOAD) {
-    // HLoadKeyedGeneric with vector ics benefits from being encoded as
-    // MEGAMORPHIC because the vector/slot combo becomes unnecessary.
-    HLoadKeyedGeneric* result = New<HLoadKeyedGeneric>(
-        object, key, FLAG_vector_ics ? MEGAMORPHIC : PREMONOMORPHIC);
+    HLoadKeyedGeneric* result =
+        New<HLoadKeyedGeneric>(object, key, PREMONOMORPHIC);
+    if (FLAG_vector_ics) {
+      Handle<SharedFunctionInfo> current_shared =
+          function_state()->compilation_info()->shared_info();
+      Handle<TypeFeedbackVector> vector =
+          handle(current_shared->feedback_vector(), isolate());
+      FeedbackVectorICSlot slot = expr->AsProperty()->PropertyFeedbackSlot();
+      result->SetVectorAndSlot(vector, slot);
+    }
     return result;
   } else {
     return New<HStoreKeyedGeneric>(object, key, value, function_language_mode(),
@@ -8443,11 +8456,10 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinMethodCall(
         new_size = AddUncasted<HAdd>(length, graph()->GetConstant1());
 
         bool is_array = receiver_map->instance_type() == JS_ARRAY_TYPE;
-        BuildUncheckedMonomorphicElementAccess(array, length,
-                                               value_to_push, is_array,
-                                               elements_kind, STORE,
-                                               NEVER_RETURN_HOLE,
-                                               STORE_AND_GROW_NO_TRANSITION);
+        HValue* checked_array = Add<HCheckMaps>(array, receiver_map);
+        BuildUncheckedMonomorphicElementAccess(
+            checked_array, length, value_to_push, is_array, elements_kind,
+            STORE, NEVER_RETURN_HOLE, STORE_AND_GROW_NO_TRANSITION);
 
         if (!ast_context()->IsEffect()) Push(new_size);
         Add<HSimulate>(expr->id(), REMOVABLE_SIMULATE);
@@ -8814,18 +8826,9 @@ void HOptimizedGraphBuilder::HandleIndirectCall(Call* expr, HValue* function,
   int args_count_no_receiver = arguments_count - 1;
   if (function->IsConstant() &&
       HConstant::cast(function)->handle(isolate())->IsJSFunction()) {
-    HValue* receiver = environment()->ExpressionStackAt(args_count_no_receiver);
-    Handle<Map> receiver_map;
-    if (receiver->IsConstant() &&
-        HConstant::cast(receiver)->handle(isolate())->IsHeapObject()) {
-      receiver_map =
-          handle(Handle<HeapObject>::cast(
-                     HConstant::cast(receiver)->handle(isolate()))->map());
-    }
-
     known_function =
         Handle<JSFunction>::cast(HConstant::cast(function)->handle(isolate()));
-    if (TryInlineBuiltinMethodCall(expr, known_function, receiver_map,
+    if (TryInlineBuiltinMethodCall(expr, known_function, Handle<Map>(),
                                    args_count_no_receiver)) {
       if (FLAG_trace_inlining) {
         PrintF("Inlining builtin ");
@@ -9314,8 +9317,10 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
           expr->IsUsingCallFeedbackICSlot(isolate())) {
         // We've never seen this call before, so let's have Crankshaft learn
         // through the type vector.
+        Handle<SharedFunctionInfo> current_shared =
+            function_state()->compilation_info()->shared_info();
         Handle<TypeFeedbackVector> vector =
-            handle(current_feedback_vector(), isolate());
+            handle(current_shared->feedback_vector(), isolate());
         FeedbackVectorICSlot slot = expr->CallFeedbackICSlot();
         call_function->SetVectorAndSlot(vector, slot);
       }

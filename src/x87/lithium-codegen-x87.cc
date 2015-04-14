@@ -3572,7 +3572,6 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
   // object as a receiver to normal functions. Values have to be
   // passed unchanged to builtins and strict-mode functions.
   Label receiver_ok, global_object;
-  Label::Distance dist = DeoptEveryNTimes() ? Label::kFar : Label::kNear;
   Register scratch = ToRegister(instr->temp());
 
   if (!instr->hydrogen()->known_function()) {
@@ -3582,19 +3581,19 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
            FieldOperand(function, JSFunction::kSharedFunctionInfoOffset));
     __ test_b(FieldOperand(scratch, SharedFunctionInfo::kStrictModeByteOffset),
               1 << SharedFunctionInfo::kStrictModeBitWithinByte);
-    __ j(not_equal, &receiver_ok, dist);
+    __ j(not_equal, &receiver_ok);
 
     // Do not transform the receiver to object for builtins.
     __ test_b(FieldOperand(scratch, SharedFunctionInfo::kNativeByteOffset),
               1 << SharedFunctionInfo::kNativeBitWithinByte);
-    __ j(not_equal, &receiver_ok, dist);
+    __ j(not_equal, &receiver_ok);
   }
 
   // Normal function. Replace undefined or null with global receiver.
   __ cmp(receiver, factory()->null_value());
-  __ j(equal, &global_object, Label::kNear);
+  __ j(equal, &global_object);
   __ cmp(receiver, factory()->undefined_value());
-  __ j(equal, &global_object, Label::kNear);
+  __ j(equal, &global_object);
 
   // The receiver should be a JS object.
   __ test(receiver, Immediate(kSmiTagMask));
@@ -3740,44 +3739,18 @@ void LCodeGen::DoTailCallThroughMegamorphicCache(
   Register name = ToRegister(instr->name());
   DCHECK(receiver.is(LoadDescriptor::ReceiverRegister()));
   DCHECK(name.is(LoadDescriptor::NameRegister()));
-  Register slot = FLAG_vector_ics ? ToRegister(instr->slot()) : no_reg;
-  Register vector = FLAG_vector_ics ? ToRegister(instr->vector()) : no_reg;
-
   Register scratch = ebx;
   Register extra = edi;
-  DCHECK(!extra.is(slot) && !extra.is(vector));
   DCHECK(!scratch.is(receiver) && !scratch.is(name));
   DCHECK(!extra.is(receiver) && !extra.is(name));
 
-  // Important for the tail-call.
-  bool must_teardown_frame = NeedsEagerFrame();
+  // The probe will tail call to a handler if found.
+  // If --vector-ics is on, then it knows to pop the two args first.
+  isolate()->stub_cache()->GenerateProbe(masm(), Code::LOAD_IC,
+                                         instr->hydrogen()->flags(), false,
+                                         receiver, name, scratch, extra);
 
-  if (!instr->hydrogen()->is_just_miss()) {
-    if (FLAG_vector_ics) {
-      __ push(slot);
-      __ push(vector);
-    }
-
-    // The probe will tail call to a handler if found.
-    // If --vector-ics is on, then it knows to pop the two args first.
-    DCHECK(!instr->hydrogen()->is_keyed_load());
-    isolate()->stub_cache()->GenerateProbe(
-        masm(), Code::LOAD_IC, instr->hydrogen()->flags(), must_teardown_frame,
-        receiver, name, scratch, extra);
-
-    if (FLAG_vector_ics) {
-      __ pop(vector);
-      __ pop(slot);
-    }
-  }
-
-  // Tail call to miss if we ended up here.
-  if (must_teardown_frame) __ leave();
-  if (instr->hydrogen()->is_keyed_load()) {
-    KeyedLoadIC::GenerateMiss(masm());
-  } else {
-    LoadIC::GenerateMiss(masm());
-  }
+  LoadIC::GenerateMiss(masm());
 }
 
 

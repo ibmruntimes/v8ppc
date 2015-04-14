@@ -192,7 +192,7 @@ struct WeakListVisitor;
 
 template <class T>
 Object* VisitWeakList(Heap* heap, Object* list, WeakObjectRetainer* retainer,
-                      bool stop_after_young) {
+                      bool stop_after_young, Object** list_tail) {
   Object* undefined = heap->undefined_value();
   Object* head = undefined;
   T* tail = NULL;
@@ -202,6 +202,7 @@ Object* VisitWeakList(Heap* heap, Object* list, WeakObjectRetainer* retainer,
   while (list != undefined) {
     // Check whether to keep the candidate in the list.
     T* candidate = reinterpret_cast<T*>(list);
+    T* original_candidate = candidate;
 
     Object* retained = retainer->RetainAs(list);
     if (retained != NULL) {
@@ -226,6 +227,18 @@ Object* VisitWeakList(Heap* heap, Object* list, WeakObjectRetainer* retainer,
       // tail is a live object, visit it.
       WeakListVisitor<T>::VisitLiveObject(heap, tail, retainer);
 
+      // The list of weak objects is usually order. It starts with objects
+      // recently allocated in the young generation followed by objects
+      // allocated in the old generation. When a migration failure happened,
+      // the list is not ordered until the next GC that has no migration
+      // failure.
+      // For young generation collections we just have to visit until the last
+      // young generation objects.
+      if (stop_after_young && !heap->migration_failure() &&
+          !heap->previous_migration_failure() &&
+          !heap->InNewSpace(original_candidate)) {
+        return head;
+      }
     } else {
       WeakListVisitor<T>::VisitPhantomObject(heap, candidate);
     }
@@ -237,6 +250,7 @@ Object* VisitWeakList(Heap* heap, Object* list, WeakObjectRetainer* retainer,
   // Terminate the list if there is one or more elements.
   if (tail != NULL) {
     WeakListVisitor<T>::SetWeakNext(tail, undefined);
+    if (list_tail) *list_tail = tail;
   }
   return head;
 }
@@ -370,7 +384,7 @@ struct WeakListVisitor<Context> {
                          WeakObjectRetainer* retainer, int index) {
     // Visit the weak list, removing dead intermediate elements.
     Object* list_head =
-        VisitWeakList<T>(heap, context->get(index), retainer, false);
+        VisitWeakList<T>(heap, context->get(index), retainer, false, NULL);
 
     // Update the list head.
     context->set(index, list_head, UPDATE_WRITE_BARRIER);
@@ -422,7 +436,7 @@ struct WeakListVisitor<JSArrayBuffer> {
   static void VisitLiveObject(Heap* heap, JSArrayBuffer* array_buffer,
                               WeakObjectRetainer* retainer) {
     Object* typed_array_obj = VisitWeakList<JSArrayBufferView>(
-        heap, array_buffer->weak_first_view(), retainer, false);
+        heap, array_buffer->weak_first_view(), retainer, false, NULL);
     array_buffer->set_weak_first_view(typed_array_obj);
     if (typed_array_obj != heap->undefined_value() && MustRecordSlots(heap)) {
       Object** slot = HeapObject::RawField(array_buffer,
@@ -455,19 +469,23 @@ struct WeakListVisitor<AllocationSite> {
 
 template Object* VisitWeakList<Context>(Heap* heap, Object* list,
                                         WeakObjectRetainer* retainer,
-                                        bool stop_after_young);
+                                        bool stop_after_young,
+                                        Object** list_tail);
 
 
 template Object* VisitWeakList<JSArrayBuffer>(Heap* heap, Object* list,
                                               WeakObjectRetainer* retainer,
-                                              bool stop_after_young);
+                                              bool stop_after_young,
+                                              Object** list_tail);
 
 template Object* VisitWeakList<JSArrayBufferView>(Heap* heap, Object* list,
                                                   WeakObjectRetainer* retainer,
-                                                  bool stop_after_young);
+                                                  bool stop_after_young,
+                                                  Object** list_tail);
 
 template Object* VisitWeakList<AllocationSite>(Heap* heap, Object* list,
                                                WeakObjectRetainer* retainer,
-                                               bool stop_after_young);
+                                               bool stop_after_young,
+                                               Object** list_tail);
 }
 }  // namespace v8::internal
