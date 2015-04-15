@@ -19,7 +19,7 @@
 #include "src/handles.h"
 #include "src/hashmap.h"
 #include "src/heap/heap.h"
-#include "src/optimizing-compiler-thread.h"
+#include "src/optimizing-compile-dispatcher.h"
 #include "src/regexp-stack.h"
 #include "src/runtime/runtime.h"
 #include "src/runtime-profiler.h"
@@ -407,7 +407,6 @@ typedef List<HeapObject*> DebugObjectCache;
   V(HTracer*, htracer, NULL)                                                   \
   V(CodeTracer*, code_tracer, NULL)                                            \
   V(bool, fp_stubs_generated, false)                                           \
-  V(int, max_available_threads, 0)                                             \
   V(uint32_t, per_isolate_assert_data, 0xFFFFFFFFu)                            \
   V(PromiseRejectCallback, promise_reject_callback, NULL)                      \
   V(const v8::StartupData*, snapshot_blob, NULL)                               \
@@ -1067,20 +1066,20 @@ class Isolate {
 
   bool concurrent_recompilation_enabled() {
     // Thread is only available with flag enabled.
-    DCHECK(optimizing_compiler_thread_ == NULL ||
+    DCHECK(optimizing_compile_dispatcher_ == NULL ||
            FLAG_concurrent_recompilation);
-    return optimizing_compiler_thread_ != NULL;
+    return optimizing_compile_dispatcher_ != NULL;
   }
 
   bool concurrent_osr_enabled() const {
     // Thread is only available with flag enabled.
-    DCHECK(optimizing_compiler_thread_ == NULL ||
+    DCHECK(optimizing_compile_dispatcher_ == NULL ||
            FLAG_concurrent_recompilation);
-    return optimizing_compiler_thread_ != NULL && FLAG_concurrent_osr;
+    return optimizing_compile_dispatcher_ != NULL && FLAG_concurrent_osr;
   }
 
-  OptimizingCompilerThread* optimizing_compiler_thread() {
-    return optimizing_compiler_thread_;
+  OptimizingCompileDispatcher* optimizing_compile_dispatcher() {
+    return optimizing_compile_dispatcher_;
   }
 
   int id() const { return static_cast<int>(id_); }
@@ -1368,7 +1367,7 @@ class Isolate {
 #endif
 
   DeferredHandles* deferred_handles_head_;
-  OptimizingCompilerThread* optimizing_compiler_thread_;
+  OptimizingCompileDispatcher* optimizing_compile_dispatcher_;
 
   // Counts deopt points if deopt_every_n_times is enabled.
   unsigned int stress_deopt_count_;
@@ -1389,7 +1388,7 @@ class Isolate {
 
   friend class ExecutionAccess;
   friend class HandleScopeImplementer;
-  friend class OptimizingCompilerThread;
+  friend class OptimizingCompileDispatcher;
   friend class SweeperThread;
   friend class ThreadManager;
   friend class Simulator;

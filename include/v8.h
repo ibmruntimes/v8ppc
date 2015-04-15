@@ -439,7 +439,7 @@ class MaybeLocal {
     return !IsEmpty();
   }
 
-  // Will crash when checks are enabled if the MaybeLocal<> is empty.
+  // Will crash if the MaybeLocal<> is empty.
   V8_INLINE Local<T> ToLocalChecked();
 
   template <class S>
@@ -4700,9 +4700,11 @@ class V8_EXPORT ResourceConstraints {
    *   device, in bytes.
    * \param virtual_memory_limit The amount of virtual memory on the current
    *   device, in bytes, or zero, if there is no limit.
-   * \param number_of_processors The number of CPUs available on the current
-   *   device.
    */
+  void ConfigureDefaults(uint64_t physical_memory,
+                         uint64_t virtual_memory_limit);
+
+  // Deprecated, will be removed soon.
   void ConfigureDefaults(uint64_t physical_memory,
                          uint64_t virtual_memory_limit,
                          uint32_t number_of_processors);
@@ -4716,9 +4718,13 @@ class V8_EXPORT ResourceConstraints {
   uint32_t* stack_limit() const { return stack_limit_; }
   // Sets an address beyond which the VM's stack may not grow.
   void set_stack_limit(uint32_t* value) { stack_limit_ = value; }
-  int max_available_threads() const { return max_available_threads_; }
+  V8_DEPRECATE_SOON("Unused, will be removed",
+                    int max_available_threads() const) {
+    return max_available_threads_;
+  }
   // Set the number of threads available to V8, assuming at least 1.
-  void set_max_available_threads(int value) {
+  V8_DEPRECATE_SOON("Unused, will be removed",
+                    void set_max_available_threads(int value)) {
     max_available_threads_ = value;
   }
   size_t code_range_size() const { return code_range_size_; }
@@ -6092,7 +6098,7 @@ class V8_EXPORT V8 {
                          int* index);
   static Local<Value> GetEternal(Isolate* isolate, int index);
 
-  static void CheckIsJust(bool is_just);
+  static void FromJustIsNothing();
   static void ToLocalEmpty();
   static void InternalFieldOutOfBounds(int index);
 
@@ -6127,11 +6133,9 @@ class Maybe {
   V8_INLINE bool IsNothing() const { return !has_value; }
   V8_INLINE bool IsJust() const { return has_value; }
 
-  // Will crash when checks are enabled if the Maybe<> is nothing.
+  // Will crash if the Maybe<> is nothing.
   V8_INLINE T FromJust() const {
-#ifdef V8_ENABLE_CHECKS
-    V8::CheckIsJust(IsJust());
-#endif
+    if (V8_UNLIKELY(!IsJust())) V8::FromJustIsNothing();
     return value;
   }
 
@@ -7021,9 +7025,7 @@ Local<T> Eternal<T>::Get(Isolate* isolate) {
 
 template <class T>
 Local<T> MaybeLocal<T>::ToLocalChecked() {
-#ifdef V8_ENABLE_CHECKS
-  if (val_ == nullptr) V8::ToLocalEmpty();
-#endif
+  if (V8_UNLIKELY(val_ == nullptr)) V8::ToLocalEmpty();
   return Local<T>(val_);
 }
 
