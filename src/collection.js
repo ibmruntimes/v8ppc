@@ -2,20 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-"use strict";
-
-// This file relies on the fact that the following declaration has been made
-// in runtime.js:
-// var $Array = global.Array;
-
-var $Set = global.Set;
-var $Map = global.Map;
-
-
 (function() {
+
+"use strict";
 
 %CheckIsBootstrapping();
 
+var GlobalMap = global.Map;
+var GlobalObject = global.Object;
+var GlobalSet = global.Set;
+
+// -------------------------------------------------------------------
 
 function HashToEntry(table, hash, numBuckets) {
   var bucket = ORDERED_HASH_TABLE_HASH_TO_BUCKET(hash, numBuckets);
@@ -102,7 +99,7 @@ function SetConstructor(iterable) {
   if (!IS_NULL_OR_UNDEFINED(iterable)) {
     var adder = this.add;
     if (!IS_SPEC_FUNCTION(adder)) {
-      throw MakeTypeError('property_not_function', ['add', this]);
+      throw MakeTypeError(kPropertyNotFunction, 'add', this);
     }
 
     for (var value of iterable) {
@@ -114,8 +111,7 @@ function SetConstructor(iterable) {
 
 function SetAdd(key) {
   if (!IS_SET(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Set.prototype.add', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver, 'Set.prototype.add', this);
   }
   // Normalize -0 to +0 as required by the spec.
   // Even though we use SameValueZero as the comparison for the keys we don't
@@ -155,8 +151,7 @@ function SetAdd(key) {
 
 function SetHas(key) {
   if (!IS_SET(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Set.prototype.has', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver, 'Set.prototype.has', this);
   }
   var table = %_JSCollectionGetTable(this);
   var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
@@ -167,8 +162,8 @@ function SetHas(key) {
 
 function SetDelete(key) {
   if (!IS_SET(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Set.prototype.delete', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Set.prototype.delete', this);
   }
   var table = %_JSCollectionGetTable(this);
   var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
@@ -189,8 +184,8 @@ function SetDelete(key) {
 
 function SetGetSize() {
   if (!IS_SET(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Set.prototype.size', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Set.prototype.size', this);
   }
   var table = %_JSCollectionGetTable(this);
   return ORDERED_HASH_TABLE_ELEMENT_COUNT(table);
@@ -199,8 +194,8 @@ function SetGetSize() {
 
 function SetClearJS() {
   if (!IS_SET(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Set.prototype.clear', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Set.prototype.clear', this);
   }
   %_SetClear(this);
 }
@@ -208,13 +203,11 @@ function SetClearJS() {
 
 function SetForEach(f, receiver) {
   if (!IS_SET(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Set.prototype.forEach', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Set.prototype.forEach', this);
   }
 
-  if (!IS_SPEC_FUNCTION(f)) {
-    throw MakeTypeError('called_non_callable', [f]);
-  }
+  if (!IS_SPEC_FUNCTION(f)) throw MakeTypeError(kCalledNonCallable, f);
   var needs_wrapper = false;
   if (IS_NULL_OR_UNDEFINED(receiver)) {
     receiver = %GetDefaultReceiver(f) || receiver;
@@ -234,19 +227,20 @@ function SetForEach(f, receiver) {
   }
 }
 
+// -------------------------------------------------------------------
 
-%SetCode($Set, SetConstructor);
-%FunctionSetLength($Set, 0);
-%FunctionSetPrototype($Set, new $Object());
-%AddNamedProperty($Set.prototype, "constructor", $Set, DONT_ENUM);
-%AddNamedProperty(
-    $Set.prototype, symbolToStringTag, "Set", DONT_ENUM | READ_ONLY);
+%SetCode(GlobalSet, SetConstructor);
+%FunctionSetLength(GlobalSet, 0);
+%FunctionSetPrototype(GlobalSet, new GlobalObject());
+%AddNamedProperty(GlobalSet.prototype, "constructor", GlobalSet, DONT_ENUM);
+%AddNamedProperty(GlobalSet.prototype, symbolToStringTag, "Set",
+                  DONT_ENUM | READ_ONLY);
 
 %FunctionSetLength(SetForEach, 1);
 
 // Set up the non-enumerable functions on the Set prototype object.
-InstallGetter($Set.prototype, "size", SetGetSize);
-InstallFunctions($Set.prototype, DONT_ENUM, [
+InstallGetter(GlobalSet.prototype, "size", SetGetSize);
+InstallFunctions(GlobalSet.prototype, DONT_ENUM, [
   "add", SetAdd,
   "has", SetHas,
   "delete", SetDelete,
@@ -268,7 +262,7 @@ function MapConstructor(iterable) {
   if (!IS_NULL_OR_UNDEFINED(iterable)) {
     var adder = this.set;
     if (!IS_SPEC_FUNCTION(adder)) {
-      throw MakeTypeError('property_not_function', ['set', this]);
+      throw MakeTypeError(kPropertyNotFunction, 'set', this);
     }
 
     for (var nextItem of iterable) {
@@ -283,8 +277,8 @@ function MapConstructor(iterable) {
 
 function MapGet(key) {
   if (!IS_MAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Map.prototype.get', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.get', this);
   }
   var table = %_JSCollectionGetTable(this);
   var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
@@ -297,8 +291,8 @@ function MapGet(key) {
 
 function MapSet(key, value) {
   if (!IS_MAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Map.prototype.set', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.set', this);
   }
   // Normalize -0 to +0 as required by the spec.
   // Even though we use SameValueZero as the comparison for the keys we don't
@@ -345,8 +339,8 @@ function MapSet(key, value) {
 
 function MapHas(key) {
   if (!IS_MAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Map.prototype.has', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.has', this);
   }
   var table = %_JSCollectionGetTable(this);
   var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
@@ -357,8 +351,8 @@ function MapHas(key) {
 
 function MapDelete(key) {
   if (!IS_MAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Map.prototype.delete', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.delete', this);
   }
   var table = %_JSCollectionGetTable(this);
   var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
@@ -380,8 +374,8 @@ function MapDelete(key) {
 
 function MapGetSize() {
   if (!IS_MAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Map.prototype.size', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.size', this);
   }
   var table = %_JSCollectionGetTable(this);
   return ORDERED_HASH_TABLE_ELEMENT_COUNT(table);
@@ -390,8 +384,8 @@ function MapGetSize() {
 
 function MapClearJS() {
   if (!IS_MAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Map.prototype.clear', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.clear', this);
   }
   %_MapClear(this);
 }
@@ -399,13 +393,11 @@ function MapClearJS() {
 
 function MapForEach(f, receiver) {
   if (!IS_MAP(this)) {
-    throw MakeTypeError('incompatible_method_receiver',
-                        ['Map.prototype.forEach', this]);
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        'Map.prototype.forEach', this);
   }
 
-  if (!IS_SPEC_FUNCTION(f)) {
-    throw MakeTypeError('called_non_callable', [f]);
-  }
+  if (!IS_SPEC_FUNCTION(f)) throw MakeTypeError(kCalledNonCallable, f);
   var needs_wrapper = false;
   if (IS_NULL_OR_UNDEFINED(receiver)) {
     receiver = %GetDefaultReceiver(f) || receiver;
@@ -423,19 +415,20 @@ function MapForEach(f, receiver) {
   }
 }
 
+// -------------------------------------------------------------------
 
-%SetCode($Map, MapConstructor);
-%FunctionSetLength($Map, 0);
-%FunctionSetPrototype($Map, new $Object());
-%AddNamedProperty($Map.prototype, "constructor", $Map, DONT_ENUM);
+%SetCode(GlobalMap, MapConstructor);
+%FunctionSetLength(GlobalMap, 0);
+%FunctionSetPrototype(GlobalMap, new GlobalObject());
+%AddNamedProperty(GlobalMap.prototype, "constructor", GlobalMap, DONT_ENUM);
 %AddNamedProperty(
-    $Map.prototype, symbolToStringTag, "Map", DONT_ENUM | READ_ONLY);
+    GlobalMap.prototype, symbolToStringTag, "Map", DONT_ENUM | READ_ONLY);
 
 %FunctionSetLength(MapForEach, 1);
 
 // Set up the non-enumerable functions on the Map prototype object.
-InstallGetter($Map.prototype, "size", MapGetSize);
-InstallFunctions($Map.prototype, DONT_ENUM, [
+InstallGetter(GlobalMap.prototype, "size", MapGetSize);
+InstallFunctions(GlobalMap.prototype, DONT_ENUM, [
   "get", MapGet,
   "set", MapSet,
   "has", MapHas,

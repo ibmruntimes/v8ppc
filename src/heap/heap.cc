@@ -3456,7 +3456,7 @@ bool Heap::CanMoveObjectStart(HeapObject* object) {
 void Heap::AdjustLiveBytes(Address address, int by, InvocationMode mode) {
   if (incremental_marking()->IsMarking() &&
       Marking::IsBlack(Marking::MarkBitFrom(address))) {
-    if (mode == FROM_GC) {
+    if (mode == SEQUENTIAL_TO_SWEEPER) {
       MemoryChunk::IncrementLiveBytesFromGC(address, by);
     } else {
       MemoryChunk::IncrementLiveBytesFromMutator(address, by);
@@ -3506,7 +3506,7 @@ FixedArrayBase* Heap::LeftTrimFixedArray(FixedArrayBase* object,
 
   // Maintain consistency of live bytes during incremental marking
   marking()->TransferMark(object->address(), new_start);
-  AdjustLiveBytes(new_start, -bytes_to_trim, Heap::FROM_MUTATOR);
+  AdjustLiveBytes(new_start, -bytes_to_trim, Heap::CONCURRENT_TO_SWEEPER);
 
   // Notify the heap profiler of change in object layout.
   OnMoveEvent(new_object, object, new_object->Size());
@@ -3515,10 +3515,10 @@ FixedArrayBase* Heap::LeftTrimFixedArray(FixedArrayBase* object,
 
 
 // Force instantiation of templatized method.
-template
-void Heap::RightTrimFixedArray<Heap::FROM_GC>(FixedArrayBase*, int);
-template
-void Heap::RightTrimFixedArray<Heap::FROM_MUTATOR>(FixedArrayBase*, int);
+template void Heap::RightTrimFixedArray<Heap::SEQUENTIAL_TO_SWEEPER>(
+    FixedArrayBase*, int);
+template void Heap::RightTrimFixedArray<Heap::CONCURRENT_TO_SWEEPER>(
+    FixedArrayBase*, int);
 
 
 template<Heap::InvocationMode mode>
@@ -5260,11 +5260,11 @@ intptr_t Heap::OldGenerationAllocationLimit(intptr_t old_gen_size,
   const int kMaxHandles = 1000;
   const int kMinHandles = 100;
   double min_factor = 1.1;
-  double max_factor = 1.5;
+  double max_factor = 4;
   // We set the old generation growing factor to 2 to grow the heap slower on
   // memory-constrained devices.
   if (max_old_generation_size_ <= kMaxOldSpaceSizeMediumMemoryDevice) {
-    max_factor = 1.5;
+    max_factor = 2;
   }
   // If there are many freed global handles, then the next full GC will
   // likely collect a lot of garbage. Choose the heap growing factor

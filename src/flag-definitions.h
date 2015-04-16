@@ -390,6 +390,7 @@ DEFINE_BOOL(trace_turbo_types, true, "trace TurboFan's types")
 DEFINE_BOOL(trace_turbo_scheduler, false, "trace TurboFan's scheduler")
 DEFINE_BOOL(trace_turbo_reduction, false, "trace TurboFan's various reducers")
 DEFINE_BOOL(trace_turbo_jt, false, "trace TurboFan's jump threading")
+DEFINE_BOOL(trace_turbo_ceq, false, "trace TurboFan's control equivalence")
 DEFINE_BOOL(turbo_asm, true, "enable TurboFan for asm.js code")
 DEFINE_BOOL(turbo_verify, DEBUG_BOOL, "verify TurboFan graphs at each phase")
 DEFINE_BOOL(turbo_stats, false, "print TurboFan statistics")
@@ -675,7 +676,7 @@ DEFINE_INT(random_seed, 0,
 DEFINE_BOOL(trace_weak_arrays, false, "trace WeakFixedArray usage")
 DEFINE_BOOL(track_prototype_users, false,
             "keep track of which maps refer to a given prototype object")
-DEFINE_BOOL(eliminate_prototype_chain_checks, false,
+DEFINE_BOOL(eliminate_prototype_chain_checks, true,
             "collapse prototype chain checks into single-cell checks")
 DEFINE_IMPLICATION(eliminate_prototype_chain_checks, track_prototype_users)
 DEFINE_BOOL(use_verbose_printer, true, "allows verbose printing")

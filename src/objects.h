@@ -2531,7 +2531,8 @@ class FixedArray: public FixedArrayBase {
   class BodyDescriptor : public FlexibleBodyDescriptor<kHeaderSize> {
    public:
     static inline int SizeOf(Map* map, HeapObject* object) {
-      return SizeFor(reinterpret_cast<FixedArray*>(object)->length());
+      return SizeFor(
+          reinterpret_cast<FixedArray*>(object)->synchronized_length());
     }
   };
 
@@ -10473,6 +10474,11 @@ class JSArray: public JSObject {
   // fail due to out-of-memory situations, but only if the requested
   // capacity is non-zero.
   static void Initialize(Handle<JSArray> array, int capacity, int length = 0);
+
+  // If the JSArray has fast elements, and new_length would result in
+  // normalization, returns true.
+  static inline bool SetElementsLengthWouldNormalize(
+      Heap* heap, Handle<Object> new_length_handle);
 
   // Initializes the array to a certain length.
   inline bool AllowsSetElementsLength();

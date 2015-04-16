@@ -6,12 +6,9 @@
 
 var kMessages = {
   // Error
-  cyclic_proto:                  ["Cyclic __proto__ value"],
-  code_gen_from_strings:         ["%0"],
   constructor_is_generator:      ["Class constructor may not be a generator"],
   constructor_is_accessor:       ["Class constructor may not be an accessor"],
   // TypeError
-  generator_running:             ["Generator is already running"],
   unexpected_token:              ["Unexpected token ", "%0"],
   unexpected_token_number:       ["Unexpected number"],
   unexpected_token_string:       ["Unexpected string"],
@@ -27,7 +24,6 @@ var kMessages = {
   unterminated_template_expr:    ["Missing } in template expression"],
   unterminated_arg_list:         ["missing ) after argument list"],
   regexp_flags:                  ["Cannot supply flags when constructing one RegExp from another"],
-  incompatible_method_receiver:  ["Method ", "%0", " called on incompatible receiver ", "%1"],
   multiple_defaults_in_switch:   ["More than one default clause in switch statement"],
   newline_after_throw:           ["Illegal newline after throw"],
   label_redeclaration:           ["Label '", "%0", "' has already been declared"],
@@ -36,10 +32,7 @@ var kMessages = {
   no_catch_or_finally:           ["Missing catch or finally after try"],
   unknown_label:                 ["Undefined label '", "%0", "'"],
   uncaught_exception:            ["Uncaught ", "%0"],
-  stack_trace:                   ["Stack Trace:\n", "%0"],
-  called_non_callable:           ["%0", " is not a function"],
   undefined_method:              ["Object ", "%1", " has no method '", "%0", "'"],
-  property_not_function:         ["Property '", "%0", "' of object ", "%1", " is not a function"],
   cannot_convert_to_primitive:   ["Cannot convert object to primitive value"],
   not_constructor:               ["%0", " is not a constructor"],
   not_defined:                   ["%0", " is not defined"],
@@ -47,7 +40,6 @@ var kMessages = {
   unsupported_super:             ["Unsupported reference to 'super'"],
   non_object_property_load:      ["Cannot read property '", "%0", "' of ", "%1"],
   non_object_property_store:     ["Cannot set property '", "%0", "' of ", "%1"],
-  with_expression:               ["%0", " has no properties"],
   illegal_invocation:            ["Illegal invocation"],
   no_setter_in_callback:         ["Cannot set property ", "%0", " of ", "%1", " which has only a getter"],
   apply_non_function:            ["Function.prototype.apply was called on ", "%0", ", which is a ", "%1", " and not a function"],
@@ -319,9 +311,9 @@ function ToDetailString(obj) {
 }
 
 
-function MakeGenericError(constructor, type, args) {
-  if (IS_UNDEFINED(args)) args = [];
-  return new constructor(FormatMessage(type, args));
+function MakeGenericError(constructor, type, arg0, arg1, arg2) {
+  if (IS_UNDEFINED(arg0) && IS_STRING(type)) arg0 = [];
+  return new constructor(FormatMessage(type, arg0, arg1, arg2));
 }
 
 
@@ -338,10 +330,21 @@ function MakeGenericError(constructor, type, args) {
 
 
 // Helper functions; called from the runtime system.
-function FormatMessage(type, args) {
+function FormatMessage(type, arg0, arg1, arg2) {
+  if (IS_NUMBER(type)) {
+    var arg0 = NoSideEffectToString(arg0);
+    var arg1 = NoSideEffectToString(arg1);
+    var arg2 = NoSideEffectToString(arg2);
+    try {
+      return %FormatMessageString(type, arg0, arg1, arg2);
+    } catch (e) {
+      return "";
+    }
+  }
+  // TODO(yangguo): remove this code path once we migrated all messages.
   var format = kMessages[type];
   if (!format) return "<unknown message " + type + ">";
-  return FormatString(format, args);
+  return FormatString(format, arg0);
 }
 
 
@@ -366,35 +369,34 @@ function GetSourceLine(message) {
 }
 
 
-function MakeTypeError(type, args) {
-  return MakeGenericError($TypeError, type, args);
+function MakeError(type, arg0, arg1, arg2) {
+  return MakeGenericError($Error, type, arg0, arg1, arg2);
 }
 
 
-function MakeRangeError(type, args) {
-  return MakeGenericError($RangeError, type, args);
+function MakeTypeError(type, arg0, arg1, arg2) {
+  return MakeGenericError($TypeError, type, arg0, arg1, arg2);
 }
 
 
-function MakeSyntaxError(type, args) {
-  return MakeGenericError($SyntaxError, type, args);
+function MakeRangeError(type, arg0, arg1, arg2) {
+  return MakeGenericError($RangeError, type, arg0, arg1, arg2);
 }
 
 
-function MakeReferenceError(type, args) {
-  return MakeGenericError($ReferenceError, type, args);
+function MakeSyntaxError(type, arg0, arg1, arg2) {
+  return MakeGenericError($SyntaxError, type, arg0, arg1, arg2);
 }
 
 
-function MakeEvalError(type, args) {
-  return MakeGenericError($EvalError, type, args);
+function MakeReferenceError(type, arg0, arg1, arg2) {
+  return MakeGenericError($ReferenceError, type, arg0, arg1, arg2);
 }
 
 
-function MakeError(type, args) {
-  return MakeGenericError($Error, type, args);
+function MakeEvalError(type, arg0, arg1, arg2) {
+  return MakeGenericError($EvalError, type, arg0, arg1, arg2);
 }
-
 
 // The embedded versions are called from unoptimized code, with embedded
 // arguments. Those arguments cannot be arrays, which are context-dependent.

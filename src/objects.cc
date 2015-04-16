@@ -33,6 +33,7 @@
 #include "src/log.h"
 #include "src/lookup.h"
 #include "src/macro-assembler.h"
+#include "src/messages.h"
 #include "src/objects-inl.h"
 #include "src/prototype.h"
 #include "src/safepoint-table.h"
@@ -297,10 +298,9 @@ MaybeHandle<Object> Object::GetPropertyWithAccessor(Handle<Object> receiver,
   if (structure->IsAccessorInfo()) {
     Handle<AccessorInfo> info = Handle<AccessorInfo>::cast(structure);
     if (!info->IsCompatibleReceiver(*receiver)) {
-      Handle<Object> args[] = {name, receiver};
       THROW_NEW_ERROR(isolate,
-                      NewTypeError("incompatible_method_receiver",
-                                   HandleVector(args, arraysize(args))),
+                      NewTypeError(MessageTemplate::kIncompatibleMethodReceiver,
+                                   name, receiver),
                       Object);
     }
 
@@ -362,10 +362,9 @@ MaybeHandle<Object> Object::SetPropertyWithAccessor(
     // api style callbacks
     ExecutableAccessorInfo* info = ExecutableAccessorInfo::cast(*structure);
     if (!info->IsCompatibleReceiver(*receiver)) {
-      Handle<Object> args[] = {name, receiver};
       THROW_NEW_ERROR(isolate,
-                      NewTypeError("incompatible_method_receiver",
-                                   HandleVector(args, arraysize(args))),
+                      NewTypeError(MessageTemplate::kIncompatibleMethodReceiver,
+                                   name, receiver),
                       Object);
     }
     Object* call_obj = info->setter();
@@ -1030,7 +1029,8 @@ bool String::MakeExternal(v8::String::ExternalStringResource* resource) {
   self->set_resource(resource);
   if (is_internalized) self->Hash();  // Force regeneration of the hash value.
 
-  heap->AdjustLiveBytes(this->address(), new_size - size, Heap::FROM_MUTATOR);
+  heap->AdjustLiveBytes(this->address(), new_size - size,
+                        Heap::CONCURRENT_TO_SWEEPER);
   return true;
 }
 
@@ -1090,7 +1090,8 @@ bool String::MakeExternal(v8::String::ExternalOneByteStringResource* resource) {
   self->set_resource(resource);
   if (is_internalized) self->Hash();  // Force regeneration of the hash value.
 
-  heap->AdjustLiveBytes(this->address(), new_size - size, Heap::FROM_MUTATOR);
+  heap->AdjustLiveBytes(this->address(), new_size - size,
+                        Heap::CONCURRENT_TO_SWEEPER);
   return true;
 }
 
@@ -2118,7 +2119,7 @@ void JSObject::MigrateFastToFast(Handle<JSObject> object, Handle<Map> new_map) {
   // If there are properties in the new backing store, trim it to the correct
   // size and install the backing store into the object.
   if (external > 0) {
-    heap->RightTrimFixedArray<Heap::FROM_MUTATOR>(*array, inobject);
+    heap->RightTrimFixedArray<Heap::CONCURRENT_TO_SWEEPER>(*array, inobject);
     object->set_properties(*array);
   }
 
@@ -2131,7 +2132,8 @@ void JSObject::MigrateFastToFast(Handle<JSObject> object, Handle<Map> new_map) {
     Address address = object->address();
     heap->CreateFillerObjectAt(
         address + new_instance_size, instance_size_delta);
-    heap->AdjustLiveBytes(address, -instance_size_delta, Heap::FROM_MUTATOR);
+    heap->AdjustLiveBytes(address, -instance_size_delta,
+                          Heap::CONCURRENT_TO_SWEEPER);
   }
 
   // We are storing the new map using release store after creating a filler for
@@ -4643,7 +4645,7 @@ void JSObject::MigrateFastToSlow(Handle<JSObject> object,
     heap->CreateFillerObjectAt(object->address() + new_instance_size,
                                instance_size_delta);
     heap->AdjustLiveBytes(object->address(), -instance_size_delta,
-                          Heap::FROM_MUTATOR);
+                          Heap::CONCURRENT_TO_SWEEPER);
   }
 
   // We are storing the new map using release store after creating a filler for
@@ -8127,7 +8129,7 @@ Handle<PolymorphicCodeCacheHashTable> PolymorphicCodeCacheHashTable::Put(
 void FixedArray::Shrink(int new_length) {
   DCHECK(0 <= new_length && new_length <= length());
   if (new_length < length()) {
-    GetHeap()->RightTrimFixedArray<Heap::FROM_MUTATOR>(
+    GetHeap()->RightTrimFixedArray<Heap::CONCURRENT_TO_SWEEPER>(
         this, length() - new_length);
   }
 }
@@ -9490,7 +9492,7 @@ Handle<String> SeqString::Truncate(Handle<SeqString> string, int new_length) {
     // that are a multiple of pointer size.
     heap->CreateFillerObjectAt(start_of_string + new_size, delta);
   }
-  heap->AdjustLiveBytes(start_of_string, -delta, Heap::FROM_MUTATOR);
+  heap->AdjustLiveBytes(start_of_string, -delta, Heap::CONCURRENT_TO_SWEEPER);
 
   // We are storing the new length using release store after creating a filler
   // for the left-over space to avoid races with the sweeper thread.
@@ -9910,7 +9912,8 @@ void SharedFunctionInfo::EvictFromOptimizedCodeMap(Code* optimized_code,
   }
   if (dst != length) {
     // Always trim even when array is cleared because of heap verifier.
-    GetHeap()->RightTrimFixedArray<Heap::FROM_MUTATOR>(code_map, length - dst);
+    GetHeap()->RightTrimFixedArray<Heap::CONCURRENT_TO_SWEEPER>(code_map,
+                                                                length - dst);
     if (code_map->length() == kEntriesStart) ClearOptimizedCodeMap();
   }
 }
@@ -9921,7 +9924,8 @@ void SharedFunctionInfo::TrimOptimizedCodeMap(int shrink_by) {
   DCHECK(shrink_by % kEntryLength == 0);
   DCHECK(shrink_by <= code_map->length() - kEntriesStart);
   // Always trim even when array is cleared because of heap verifier.
-  GetHeap()->RightTrimFixedArray<Heap::FROM_GC>(code_map, shrink_by);
+  GetHeap()->RightTrimFixedArray<Heap::SEQUENTIAL_TO_SWEEPER>(code_map,
+                                                              shrink_by);
   if (code_map->length() == kEntriesStart) {
     ClearOptimizedCodeMap();
   }
@@ -10121,8 +10125,8 @@ Handle<Cell> Map::GetOrCreatePrototypeChainValidityCell(Handle<Map> map,
     PrototypeIterator iter(isolate, prototype);
     prototype = Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter));
   }
-  PrototypeInfo* proto_info =
-      PrototypeInfo::cast(prototype->map()->prototype_info());
+  Handle<PrototypeInfo> proto_info(
+      PrototypeInfo::cast(prototype->map()->prototype_info()));
   Object* maybe_cell = proto_info->validity_cell();
   // Return existing cell if it's still valid.
   if (maybe_cell->IsCell()) {
@@ -12068,15 +12072,9 @@ MUST_USE_RESULT static MaybeHandle<Object> EndPerformSplice(
 MaybeHandle<Object> JSArray::SetElementsLength(
     Handle<JSArray> array,
     Handle<Object> new_length_handle) {
-  if (array->HasFastElements()) {
-    // If the new array won't fit in a some non-trivial fraction of the max old
-    // space size, then force it to go dictionary mode.
-    int max_fast_array_size = static_cast<int>(
-        (array->GetHeap()->MaxOldGenerationSize() / kDoubleSize) / 4);
-    if (new_length_handle->IsNumber() &&
-        NumberToInt32(*new_length_handle) >= max_fast_array_size) {
-      NormalizeElements(array);
-    }
+  if (array->HasFastElements() &&
+      SetElementsLengthWouldNormalize(array->GetHeap(), new_length_handle)) {
+    NormalizeElements(array);
   }
 
   // We should never end in here with a pixel or external array.
@@ -12526,9 +12524,7 @@ MaybeHandle<Object> JSObject::SetPrototype(Handle<JSObject> object,
        !iter.IsAtEnd(); iter.Advance()) {
     if (JSReceiver::cast(iter.GetCurrent()) == *object) {
       // Cycle detected.
-      THROW_NEW_ERROR(isolate,
-                      NewError("cyclic_proto", HandleVector<Object>(NULL, 0)),
-                      Object);
+      THROW_NEW_ERROR(isolate, NewError(MessageTemplate::kCyclicProto), Object);
     }
   }
 

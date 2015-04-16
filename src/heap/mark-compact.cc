@@ -774,6 +774,11 @@ void MarkCompactCollector::CollectEvacuationCandidates(PagedSpace* space) {
   while (it.has_next()) {
     Page* p = it.next();
     if (p->NeverEvacuate()) continue;
+    if (p->IsFlagSet(Page::POPULAR_PAGE)) {
+      // This page had slots buffer overflow on previous GC, skip it.
+      p->ClearFlag(Page::POPULAR_PAGE);
+      continue;
+    }
 
     // Invariant: Evacuation candidates are just created when marking is
     // started. At the end of a GC all evacuation candidates are cleared and
@@ -2557,7 +2562,7 @@ void MarkCompactCollector::ClearMapTransitions(Map* map, Map* dead_transition) {
     // Non-full-TransitionArray cases can never reach this point.
     DCHECK(TransitionArray::IsFullTransitionArray(transitions));
     TransitionArray* t = TransitionArray::cast(transitions);
-    heap_->RightTrimFixedArray<Heap::FROM_GC>(
+    heap_->RightTrimFixedArray<Heap::SEQUENTIAL_TO_SWEEPER>(
         t, trim * TransitionArray::kTransitionSize);
     t->SetNumberOfTransitions(transition_index);
     // The map still has a full transition array.
@@ -2573,7 +2578,7 @@ void MarkCompactCollector::TrimDescriptorArray(Map* map,
   int to_trim = number_of_descriptors - number_of_own_descriptors;
   if (to_trim == 0) return;
 
-  heap_->RightTrimFixedArray<Heap::FROM_GC>(
+  heap_->RightTrimFixedArray<Heap::SEQUENTIAL_TO_SWEEPER>(
       descriptors, to_trim * DescriptorArray::kDescriptorSize);
   descriptors->SetNumberOfDescriptors(number_of_own_descriptors);
 
@@ -2601,12 +2606,13 @@ void MarkCompactCollector::TrimEnumCache(Map* map,
 
   int to_trim = enum_cache->length() - live_enum;
   if (to_trim <= 0) return;
-  heap_->RightTrimFixedArray<Heap::FROM_GC>(descriptors->GetEnumCache(),
-                                            to_trim);
+  heap_->RightTrimFixedArray<Heap::SEQUENTIAL_TO_SWEEPER>(
+      descriptors->GetEnumCache(), to_trim);
 
   if (!descriptors->HasEnumIndicesCache()) return;
   FixedArray* enum_indices_cache = descriptors->GetEnumIndicesCache();
-  heap_->RightTrimFixedArray<Heap::FROM_GC>(enum_indices_cache, to_trim);
+  heap_->RightTrimFixedArray<Heap::SEQUENTIAL_TO_SWEEPER>(enum_indices_cache,
+                                                          to_trim);
 }
 
 
@@ -4617,13 +4623,13 @@ void MarkCompactCollector::RecordRelocSlot(RelocInfo* rinfo, Object* target) {
           SlotTypeForRMode(rmode), rinfo->pc(), SlotsBuffer::FAIL_ON_OVERFLOW);
     }
     if (!success) {
-      EvictEvacuationCandidate(target_page);
+      EvictPopularEvacuationCandidate(target_page);
     }
   }
 }
 
 
-void MarkCompactCollector::EvictEvacuationCandidate(Page* page) {
+void MarkCompactCollector::EvictPopularEvacuationCandidate(Page* page) {
   if (FLAG_trace_fragmentation) {
     PrintF("Page %p is too popular. Disabling evacuation.\n",
            reinterpret_cast<void*>(page));
@@ -4634,6 +4640,9 @@ void MarkCompactCollector::EvictEvacuationCandidate(Page* page) {
   // TODO(gc) If all evacuation candidates are too popular we
   // should stop slots recording entirely.
   page->ClearEvacuationCandidate();
+
+  DCHECK(!page->IsFlagSet(Page::POPULAR_PAGE));
+  page->SetFlag(Page::POPULAR_PAGE);
 
   // We were not collecting slots on this page that point
   // to other evacuation candidates thus we have to
@@ -4651,7 +4660,7 @@ void MarkCompactCollector::RecordCodeEntrySlot(Address slot, Code* target) {
                             target_page->slots_buffer_address(),
                             SlotsBuffer::CODE_ENTRY_SLOT, slot,
                             SlotsBuffer::FAIL_ON_OVERFLOW)) {
-      EvictEvacuationCandidate(target_page);
+      EvictPopularEvacuationCandidate(target_page);
     }
   }
 }

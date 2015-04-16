@@ -460,7 +460,15 @@ void LCodeGen::DoCallNewArray(LCallNewArray* instr) {
   DCHECK(ToRegister(instr->constructor()).is(x1));
 
   __ Mov(x0, Operand(instr->arity()));
-  __ LoadRoot(x2, Heap::kUndefinedValueRootIndex);
+  if (instr->arity() == 1) {
+    // We only need the allocation site for the case we have a length argument.
+    // The case may bail out to the runtime, which will determine the correct
+    // elements kind with the site.
+    __ Mov(x2, instr->hydrogen()->site());
+  } else {
+    __ LoadRoot(x2, Heap::kUndefinedValueRootIndex);
+  }
+
 
   ElementsKind kind = instr->hydrogen()->elements_kind();
   AllocationSiteOverrideMode override_mode =
@@ -4317,7 +4325,7 @@ void LCodeGen::DoMulConstIS(LMulConstIS* instr) {
   Register left =
       is_smi ? ToRegister(instr->left()) : ToRegister32(instr->left()) ;
   int32_t right = ToInteger32(instr->right());
-  DCHECK((right > -kMaxInt) || (right < kMaxInt));
+  DCHECK((right > -kMaxInt) && (right < kMaxInt));
 
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
   bool bailout_on_minus_zero =
