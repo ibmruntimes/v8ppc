@@ -617,6 +617,10 @@ class Serializer : public SerializerDeserializer {
   BackReferenceMap* back_reference_map() { return &back_reference_map_; }
   RootIndexMap* root_index_map() { return &root_index_map_; }
 
+#ifdef OBJECT_PRINT
+  void CountInstanceType(HeapObject* obj);
+#endif  // OBJECT_PRINT
+
  protected:
   class ObjectSerializer : public ObjectVisitor {
    public:
@@ -718,6 +722,8 @@ class Serializer : public SerializerDeserializer {
 
   SnapshotByteSink* sink() const { return sink_; }
 
+  void OutputStatistics(const char* name);
+
   Isolate* isolate_;
 
   SnapshotByteSink* sink_;
@@ -746,6 +752,12 @@ class Serializer : public SerializerDeserializer {
 
   List<byte> code_buffer_;
 
+#ifdef OBJECT_PRINT
+  static const int kInstanceTypes = 256;
+  int* instance_type_count_;
+  size_t* instance_type_size_;
+#endif  // OBJECT_PRINT
+
   DISALLOW_COPY_AND_ASSIGN(Serializer);
 };
 
@@ -761,6 +773,8 @@ class PartialSerializer : public Serializer {
     InitializeCodeAddressMap();
   }
 
+  ~PartialSerializer() { OutputStatistics("PartialSerializer"); }
+
   // Serialize the objects reachable from a single object pointer.
   void Serialize(Object** o);
   virtual void SerializeObject(HeapObject* o, HowToCode how_to_code,
@@ -774,9 +788,8 @@ class PartialSerializer : public Serializer {
     // unique ID, and deserializing several partial snapshots containing script
     // would cause dupes.
     DCHECK(!o->IsScript());
-    return o->IsName() || o->IsSharedFunctionInfo() ||
-           o->IsHeapNumber() || o->IsCode() ||
-           o->IsScopeInfo() ||
+    return o->IsName() || o->IsSharedFunctionInfo() || o->IsHeapNumber() ||
+           o->IsCode() || o->IsScopeInfo() || o->IsExecutableAccessorInfo() ||
            o->map() ==
                startup_serializer_->isolate()->heap()->fixed_cow_array_map();
   }
@@ -802,6 +815,8 @@ class StartupSerializer : public Serializer {
     isolate->partial_snapshot_cache()->Clear();
     InitializeCodeAddressMap();
   }
+
+  ~StartupSerializer() { OutputStatistics("StartupSerializer"); }
 
   // The StartupSerializer has to serialize the root array, which is slightly
   // different.
@@ -858,6 +873,8 @@ class CodeSerializer : public Serializer {
         num_internalized_strings_(0) {
     back_reference_map_.AddSourceString(source);
   }
+
+  ~CodeSerializer() { OutputStatistics("CodeSerializer"); }
 
   virtual void SerializeObject(HeapObject* o, HowToCode how_to_code,
                                WhereToPoint where_to_point, int skip) OVERRIDE;

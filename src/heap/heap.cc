@@ -878,7 +878,8 @@ bool Heap::CollectGarbage(GarbageCollector collector, const char* gc_reason,
   // Start incremental marking for the next cycle. The heap snapshot
   // generator needs incremental marking to stay off after it aborted.
   if (!mark_compact_collector()->abort_incremental_marking() &&
-      WorthActivatingIncrementalMarking()) {
+      incremental_marking()->IsStopped() &&
+      incremental_marking()->ShouldActivateEvenWithoutIdleNotification()) {
     incremental_marking()->Start();
   }
 
@@ -1135,8 +1136,7 @@ bool Heap::PerformGarbageCollection(
     // Temporarily set the limit for case when PostGarbageCollectionProcessing
     // allocates and triggers GC. The real limit is set at after
     // PostGarbageCollectionProcessing.
-    old_generation_allocation_limit_ =
-        OldGenerationAllocationLimit(PromotedSpaceSizeOfObjects(), 0);
+    SetOldGenerationAllocationLimit(PromotedSpaceSizeOfObjects(), 0);
     old_gen_exhausted_ = false;
     old_generation_size_configured_ = true;
   } else {
@@ -1170,8 +1170,8 @@ bool Heap::PerformGarbageCollection(
     // Register the amount of external allocated memory.
     amount_of_external_allocated_memory_at_last_global_gc_ =
         amount_of_external_allocated_memory_;
-    old_generation_allocation_limit_ = OldGenerationAllocationLimit(
-        PromotedSpaceSizeOfObjects(), freed_global_handles);
+    SetOldGenerationAllocationLimit(PromotedSpaceSizeOfObjects(),
+                                    freed_global_handles);
     // We finished a marking cycle. We can uncommit the marking deque until
     // we start marking again.
     mark_compact_collector_.UncommitMarkingDeque();
@@ -4594,12 +4594,6 @@ bool Heap::TryFinalizeIdleIncrementalMarking(
 }
 
 
-bool Heap::WorthActivatingIncrementalMarking() {
-  return incremental_marking()->IsStopped() &&
-         incremental_marking()->WorthActivating() && NextGCIsLikelyToBeFull();
-}
-
-
 static double MonotonicallyIncreasingTimeInMs() {
   return V8::GetCurrentPlatform()->MonotonicallyIncreasingTime() *
          static_cast<double>(base::Time::kMillisecondsPerSecond);
@@ -4621,6 +4615,7 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
       static_cast<double>(base::Time::kMillisecondsPerSecond);
   HistogramTimerScope idle_notification_scope(
       isolate_->counters()->gc_idle_notification());
+  double idle_time_in_ms = deadline_in_ms - MonotonicallyIncreasingTimeInMs();
 
   GCIdleTimeHandler::HeapState heap_state;
   heap_state.contexts_disposed = contexts_disposed_;
@@ -4629,8 +4624,15 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
   heap_state.size_of_objects = static_cast<size_t>(SizeOfObjects());
   heap_state.incremental_marking_stopped = incremental_marking()->IsStopped();
   // TODO(ulan): Start incremental marking only for large heaps.
+  intptr_t limit = old_generation_allocation_limit_;
+  if (static_cast<size_t>(idle_time_in_ms) >
+      GCIdleTimeHandler::kMaxFrameRenderingIdleTime) {
+    limit = idle_old_generation_allocation_limit_;
+  }
+
   heap_state.can_start_incremental_marking =
-      incremental_marking()->ShouldActivate() && FLAG_incremental_marking &&
+      incremental_marking()->CanBeActivated() &&
+      HeapIsFullEnoughToStartIncrementalMarking(limit) &&
       !mark_compact_collector()->sweeping_in_progress();
   heap_state.sweeping_in_progress =
       mark_compact_collector()->sweeping_in_progress();
@@ -4651,7 +4653,6 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
       static_cast<size_t>(
           tracer()->NewSpaceAllocationThroughputInBytesPerMillisecond());
 
-  double idle_time_in_ms = deadline_in_ms - MonotonicallyIncreasingTimeInMs();
   GCIdleTimeAction action =
       gc_idle_time_handler_.Compute(idle_time_in_ms, heap_state);
   isolate()->counters()->gc_idle_time_allotted_in_ms()->AddSample(
@@ -4853,6 +4854,20 @@ bool Heap::RootIsImmortalImmovable(int root_index) {
     default:
       return false;
   }
+}
+
+
+bool Heap::GetRootListIndex(Handle<HeapObject> object,
+                            Heap::RootListIndex* index_return) {
+  Object* ptr = *object;
+#define IMMORTAL_IMMOVABLE_ROOT(Name)            \
+  if (ptr == roots_[Heap::k##Name##RootIndex]) { \
+    *index_return = k##Name##RootIndex;          \
+    return true;                                 \
+  }
+  IMMORTAL_IMMOVABLE_ROOT_LIST(IMMORTAL_IMMOVABLE_ROOT)
+#undef IMMORTAL_IMMOVABLE_ROOT
+  return false;
 }
 
 
@@ -5255,21 +5270,37 @@ int64_t Heap::PromotedExternalMemorySize() {
 }
 
 
-intptr_t Heap::OldGenerationAllocationLimit(intptr_t old_gen_size,
-                                            int freed_global_handles) {
+intptr_t Heap::CalculateOldGenerationAllocationLimit(double factor,
+                                                     intptr_t old_gen_size) {
+  CHECK(factor > 1.0);
+  CHECK(old_gen_size > 0);
+  intptr_t limit = static_cast<intptr_t>(old_gen_size * factor);
+  limit = Max(limit, kMinimumOldGenerationAllocationLimit);
+  limit += new_space_.Capacity();
+  intptr_t halfway_to_the_max = (old_gen_size + max_old_generation_size_) / 2;
+  return Min(limit, halfway_to_the_max);
+}
+
+
+void Heap::SetOldGenerationAllocationLimit(intptr_t old_gen_size,
+                                           int freed_global_handles) {
   const int kMaxHandles = 1000;
   const int kMinHandles = 100;
-  double min_factor = 1.1;
+  const double min_factor = 1.1;
   double max_factor = 4;
+  const double idle_max_factor = 1.5;
   // We set the old generation growing factor to 2 to grow the heap slower on
   // memory-constrained devices.
   if (max_old_generation_size_ <= kMaxOldSpaceSizeMediumMemoryDevice) {
     max_factor = 2;
   }
+
   // If there are many freed global handles, then the next full GC will
   // likely collect a lot of garbage. Choose the heap growing factor
   // depending on freed global handles.
   // TODO(ulan, hpayer): Take into account mutator utilization.
+  // TODO(hpayer): The idle factor could make the handles heuristic obsolete.
+  // Look into that.
   double factor;
   if (freed_global_handles <= kMinHandles) {
     factor = max_factor;
@@ -5288,11 +5319,10 @@ intptr_t Heap::OldGenerationAllocationLimit(intptr_t old_gen_size,
     factor = min_factor;
   }
 
-  intptr_t limit = static_cast<intptr_t>(old_gen_size * factor);
-  limit = Max(limit, kMinimumOldGenerationAllocationLimit);
-  limit += new_space_.Capacity();
-  intptr_t halfway_to_the_max = (old_gen_size + max_old_generation_size_) / 2;
-  return Min(limit, halfway_to_the_max);
+  old_generation_allocation_limit_ =
+      CalculateOldGenerationAllocationLimit(factor, old_gen_size);
+  idle_old_generation_allocation_limit_ = CalculateOldGenerationAllocationLimit(
+      Min(factor, idle_max_factor), old_gen_size);
 }
 
 
@@ -6330,12 +6360,57 @@ void Heap::ClearObjectStats(bool clear_last_time_stats) {
 }
 
 
-static base::LazyMutex checkpoint_object_stats_mutex = LAZY_MUTEX_INITIALIZER;
+static base::LazyMutex object_stats_mutex = LAZY_MUTEX_INITIALIZER;
+
+
+static void TraceObjectStat(const char* name, int count, int size) {
+  if (size > 0) {
+    PrintF("%40s\tcount= %6d\t size= %6d kb\n", name, count, size);
+  }
+}
+
+
+void Heap::TraceObjectStats() {
+  base::LockGuard<base::Mutex> lock_guard(object_stats_mutex.Pointer());
+  int index;
+  int count;
+  int size;
+  int total_size = 0;
+#define TRACE_OBJECT_COUNT(name)                     \
+  count = static_cast<int>(object_counts_[name]);    \
+  size = static_cast<int>(object_sizes_[name]) / KB; \
+  total_size += size;                                \
+  TraceObjectStat(#name, count, size);
+  INSTANCE_TYPE_LIST(TRACE_OBJECT_COUNT)
+#undef TRACE_OBJECT_COUNT
+#define TRACE_OBJECT_COUNT(name)                      \
+  index = FIRST_CODE_KIND_SUB_TYPE + Code::name;      \
+  count = static_cast<int>(object_counts_[index]);    \
+  size = static_cast<int>(object_sizes_[index]) / KB; \
+  TraceObjectStat("CODE_" #name, count, size);
+  CODE_KIND_LIST(TRACE_OBJECT_COUNT)
+#undef TRACE_OBJECT_COUNT
+#define TRACE_OBJECT_COUNT(name)                      \
+  index = FIRST_FIXED_ARRAY_SUB_TYPE + name;          \
+  count = static_cast<int>(object_counts_[index]);    \
+  size = static_cast<int>(object_sizes_[index]) / KB; \
+  TraceObjectStat("FIXED_ARRAY_" #name, count, size);
+  FIXED_ARRAY_SUB_INSTANCE_TYPE_LIST(TRACE_OBJECT_COUNT)
+#undef TRACE_OBJECT_COUNT
+#define TRACE_OBJECT_COUNT(name)                                              \
+  index =                                                                     \
+      FIRST_CODE_AGE_SUB_TYPE + Code::k##name##CodeAge - Code::kFirstCodeAge; \
+  count = static_cast<int>(object_counts_[index]);                            \
+  size = static_cast<int>(object_sizes_[index]) / KB;                         \
+  TraceObjectStat("CODE_AGE_" #name, count, size);
+  CODE_AGE_LIST_COMPLETE(TRACE_OBJECT_COUNT)
+#undef TRACE_OBJECT_COUNT
+  PrintF("Total size= %d kb\n", total_size);
+}
 
 
 void Heap::CheckpointObjectStats() {
-  base::LockGuard<base::Mutex> lock_guard(
-      checkpoint_object_stats_mutex.Pointer());
+  base::LockGuard<base::Mutex> lock_guard(object_stats_mutex.Pointer());
   Counters* counters = isolate()->counters();
 #define ADJUST_LAST_TIME_OBJECT_COUNT(name)              \
   counters->count_of_##name()->Increment(                \

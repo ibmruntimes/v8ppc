@@ -6592,7 +6592,7 @@ static void IndependentWeakHandle(bool global_gc, bool interlinked) {
 }
 
 
-THREADED_TEST(IndependentWeakHandle) {
+TEST(IndependentWeakHandle) {
   IndependentWeakHandle(false, false);
   IndependentWeakHandle(false, true);
   IndependentWeakHandle(true, false);

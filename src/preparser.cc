@@ -235,6 +235,11 @@ PreParser::Statement PreParser::ParseStatement(bool* ok) {
   // Statement ::
   //   EmptyStatement
   //   ...
+
+  if (peek() == Token::SEMICOLON) {
+    Next();
+    return Statement::Default();
+  }
   return ParseSubStatement(ok);
 }
 
@@ -395,15 +400,16 @@ PreParser::Statement PreParser::ParseBlock(bool* ok) {
   // (ECMA-262, 3rd, 12.2)
   //
   Expect(Token::LBRACE, CHECK_OK);
+  Statement final = Statement::Default();
   while (peek() != Token::RBRACE) {
     if (is_strict(language_mode())) {
-      ParseStatementListItem(CHECK_OK);
+      final = ParseStatementListItem(CHECK_OK);
     } else {
-      ParseStatement(CHECK_OK);
+      final = ParseStatement(CHECK_OK);
     }
   }
   Expect(Token::RBRACE, ok);
-  return Statement::Default();
+  return final;
 }
 
 
@@ -545,7 +551,8 @@ PreParser::Statement PreParser::ParseExpressionOrLabelledStatement(bool* ok) {
     DCHECK(is_sloppy(language_mode()) ||
            !IsFutureStrictReserved(expr.AsIdentifier()));
     Consume(Token::COLON);
-    return ParseStatement(ok);
+    Statement statement = ParseStatement(ok);
+    return statement.IsJumpStatement() ? Statement::Default() : statement;
     // Preparsing is disabled for extensions (because the extension details
     // aren't passed to lazily compiled functions), so we don't
     // accept "native function" in the preparser.
@@ -571,12 +578,16 @@ PreParser::Statement PreParser::ParseIfStatement(bool* ok) {
   Expect(Token::LPAREN, CHECK_OK);
   ParseExpression(true, CHECK_OK);
   Expect(Token::RPAREN, CHECK_OK);
-  ParseSubStatement(CHECK_OK);
+  Statement stat = ParseSubStatement(CHECK_OK);
   if (peek() == Token::ELSE) {
     Next();
-    ParseSubStatement(CHECK_OK);
+    Statement else_stat = ParseSubStatement(CHECK_OK);
+    stat = (stat.IsJumpStatement() && else_stat.IsJumpStatement()) ?
+        Statement::Jump() : Statement::Default();
+  } else {
+    stat = Statement::Default();
   }
-  return Statement::Default();
+  return stat;
 }
 
 
@@ -594,7 +605,7 @@ PreParser::Statement PreParser::ParseContinueStatement(bool* ok) {
     ParseIdentifier(kAllowRestrictedIdentifiers, CHECK_OK);
   }
   ExpectSemicolon(CHECK_OK);
-  return Statement::Default();
+  return Statement::Jump();
 }
 
 
@@ -612,7 +623,7 @@ PreParser::Statement PreParser::ParseBreakStatement(bool* ok) {
     ParseIdentifier(kAllowRestrictedIdentifiers, CHECK_OK);
   }
   ExpectSemicolon(CHECK_OK);
-  return Statement::Default();
+  return Statement::Jump();
 }
 
 
@@ -647,7 +658,7 @@ PreParser::Statement PreParser::ParseReturnStatement(bool* ok) {
     ParseExpression(true, CHECK_OK);
   }
   ExpectSemicolon(CHECK_OK);
-  return Statement::Default();
+  return Statement::Jump();
 }
 
 
@@ -691,11 +702,18 @@ PreParser::Statement PreParser::ParseSwitchStatement(bool* ok) {
     }
     Expect(Token::COLON, CHECK_OK);
     token = peek();
+    Statement statement = Statement::Jump();
     while (token != Token::CASE &&
            token != Token::DEFAULT &&
            token != Token::RBRACE) {
-      ParseStatementListItem(CHECK_OK);
+      statement = ParseStatementListItem(CHECK_OK);
       token = peek();
+    }
+    if (is_strong(language_mode()) && !statement.IsJumpStatement() &&
+        token != Token::RBRACE) {
+      ReportMessageAt(scanner()->location(), "strong_switch_fallthrough");
+      *ok = false;
+      return Statement::Default();
     }
   }
   Expect(Token::RBRACE, ok);
@@ -827,7 +845,7 @@ PreParser::Statement PreParser::ParseThrowStatement(bool* ok) {
   }
   ParseExpression(true, CHECK_OK);
   ExpectSemicolon(ok);
-  return Statement::Default();
+  return Statement::Jump();
 }
 
 
@@ -908,19 +926,62 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
   PreParserFactory factory(NULL);
   FunctionState function_state(&function_state_, &scope_, function_scope, kind,
                                &factory);
-  FormalParameterErrorLocations error_locs;
+  //  FormalParameterList ::
+  //    '(' (Identifier)*[','] ')'
+  Expect(Token::LPAREN, CHECK_OK);
+  int start_position = position();
+  DuplicateFinder duplicate_finder(scanner()->unicode_cache());
+  // We don't yet know if the function will be strict, so we cannot yet produce
+  // errors for parameter names or duplicates. However, we remember the
+  // locations of these errors if they occur and produce the errors later.
+  Scanner::Location eval_args_loc = Scanner::Location::invalid();
+  Scanner::Location dupe_loc = Scanner::Location::invalid();
+  Scanner::Location reserved_loc = Scanner::Location::invalid();
+
+  // Similarly for strong mode.
+  Scanner::Location undefined_loc = Scanner::Location::invalid();
 
   bool is_rest = false;
-  Expect(Token::LPAREN, CHECK_OK);
-  int start_position = scanner()->location().beg_pos;
-  PreParserFormalParameterList params =
-      ParseFormalParameterList(&error_locs, &is_rest, CHECK_OK);
-  Expect(Token::RPAREN, CHECK_OK);
-  int formals_end_position = scanner()->location().end_pos;
+  bool done = arity_restriction == FunctionLiteral::GETTER_ARITY ||
+      (peek() == Token::RPAREN &&
+       arity_restriction != FunctionLiteral::SETTER_ARITY);
+  while (!done) {
+    bool is_strict_reserved = false;
+    is_rest = peek() == Token::ELLIPSIS && allow_harmony_rest_params();
+    if (is_rest) {
+      Consume(Token::ELLIPSIS);
+    }
 
-  CheckArityRestrictions(params->length(), arity_restriction, start_position,
-                         formals_end_position, ok);
-  if (!*ok) return Expression::Default();
+    Identifier param_name =
+        ParseIdentifierOrStrictReservedWord(&is_strict_reserved, CHECK_OK);
+    if (!eval_args_loc.IsValid() && param_name.IsEvalOrArguments()) {
+      eval_args_loc = scanner()->location();
+    }
+    if (!undefined_loc.IsValid() && param_name.IsUndefined()) {
+      undefined_loc = scanner()->location();
+    }
+    if (!reserved_loc.IsValid() && is_strict_reserved) {
+      reserved_loc = scanner()->location();
+    }
+
+    int prev_value = scanner()->FindSymbol(&duplicate_finder, 1);
+
+    if (!dupe_loc.IsValid() && prev_value != 0) {
+      dupe_loc = scanner()->location();
+    }
+
+    if (arity_restriction == FunctionLiteral::SETTER_ARITY) break;
+    done = (peek() == Token::RPAREN);
+    if (!done) {
+      if (is_rest) {
+        ReportMessageAt(scanner()->peek_location(), "param_after_rest");
+        *ok = false;
+        return Expression::Default();
+      }
+      Expect(Token::COMMA, CHECK_OK);
+    }
+  }
+  Expect(Token::RPAREN, CHECK_OK);
 
   // See Parser::ParseFunctionLiteral for more information about lazy parsing
   // and lazy compilation.
@@ -941,8 +1002,8 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
   CheckFunctionName(language_mode(), kind, function_name,
                     name_is_strict_reserved, function_name_location, CHECK_OK);
   const bool use_strict_params = is_rest || IsConciseMethod(kind);
-  CheckFunctionParameterNames(language_mode(), use_strict_params, error_locs,
-                              CHECK_OK);
+  CheckFunctionParameterNames(language_mode(), use_strict_params, eval_args_loc,
+                              undefined_loc, dupe_loc, reserved_loc, CHECK_OK);
 
   if (is_strict(language_mode())) {
     int end_position = scanner()->location().end_pos;

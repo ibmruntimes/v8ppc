@@ -380,7 +380,9 @@ DEFINE_BOOL(omit_map_checks_for_leaf_maps, true,
             "deoptimize the optimized code if the layout of the maps changes.")
 
 // Flags for TurboFan.
-DEFINE_STRING(turbo_filter, "~", "optimization filter for TurboFan compiler")
+DEFINE_BOOL(turbo, false, "enable TurboFan compiler")
+DEFINE_IMPLICATION(turbo, turbo_deoptimization)
+DEFINE_STRING(turbo_filter, "~~", "optimization filter for TurboFan compiler")
 DEFINE_BOOL(trace_turbo, false, "trace generated TurboFan IR")
 DEFINE_BOOL(trace_turbo_graph, false, "trace generated TurboFan graphs")
 DEFINE_IMPLICATION(trace_turbo_graph, trace_turbo)
@@ -626,6 +628,9 @@ DEFINE_BOOL(trace_incremental_marking, false,
             "trace progress of the incremental marking")
 DEFINE_BOOL(track_gc_object_stats, false,
             "track object counts and memory usage")
+DEFINE_BOOL(trace_gc_object_stats, false,
+            "trace object counts and memory usage")
+DEFINE_IMPLICATION(trace_gc_object_stats, track_gc_object_stats)
 DEFINE_BOOL(track_detached_contexts, true,
             "track native contexts that are expected to be garbage collected")
 DEFINE_BOOL(trace_detached_contexts, false,
@@ -673,11 +678,13 @@ DEFINE_INT(random_seed, 0,
            "(0, the default, means to use system random).")
 
 // objects.cc
-DEFINE_BOOL(trace_weak_arrays, false, "trace WeakFixedArray usage")
+DEFINE_BOOL(trace_weak_arrays, false, "Trace WeakFixedArray usage")
 DEFINE_BOOL(track_prototype_users, false,
-            "keep track of which maps refer to a given prototype object")
+            "Keep track of which maps refer to a given prototype object")
+DEFINE_BOOL(trace_prototype_users, false,
+            "Trace updates to prototype user tracking")
 DEFINE_BOOL(eliminate_prototype_chain_checks, true,
-            "collapse prototype chain checks into single-cell checks")
+            "Collapse prototype chain checks into single-cell checks")
 DEFINE_IMPLICATION(eliminate_prototype_chain_checks, track_prototype_users)
 DEFINE_BOOL(use_verbose_printer, true, "allows verbose printing")
 #if TRACE_MAPS
@@ -729,6 +736,8 @@ DEFINE_INT(hash_seed, 0,
 // snapshot-common.cc
 DEFINE_BOOL(profile_deserialization, false,
             "Print the time it takes to deserialize the snapshot.")
+DEFINE_BOOL(serialization_statistics, false,
+            "Collect statistics on serialized objects.")
 
 // Regexp
 DEFINE_BOOL(regexp_optimization, true, "generate optimized regexp code")
