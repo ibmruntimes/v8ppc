@@ -3441,6 +3441,12 @@ static inline void UpdateSlot(Isolate* isolate, ObjectVisitor* v,
       rinfo.Visit(isolate, v);
       break;
     }
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+    case SlotsBuffer::OBJECT_SLOT: {
+      v->VisitPointer(reinterpret_cast<Object**>(addr));
+      break;
+    }
+#endif
     default:
       UNREACHABLE();
       break;
@@ -4608,9 +4614,26 @@ void MarkCompactCollector::RecordRelocSlot(RelocInfo* rinfo, Object* target) {
   if (target_page->IsEvacuationCandidate() &&
       (rinfo->host() == NULL ||
        !ShouldSkipEvacuationSlotRecording(rinfo->host()))) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+    Address addr = rinfo->pc();
+    SlotsBuffer::SlotType slot_type = SlotTypeForRMode(rmode);
+    if (rinfo->IsInConstantPool()) {
+      addr = rinfo->constant_pool_entry_address();
+      if (RelocInfo::IsCodeTarget(rmode)) {
+        slot_type = SlotsBuffer::CODE_ENTRY_SLOT;
+      } else {
+        DCHECK(RelocInfo::IsEmbeddedObject(rmode));
+        slot_type = SlotsBuffer::OBJECT_SLOT;
+      }
+    }
+    bool success = SlotsBuffer::AddTo(
+        &slots_buffer_allocator_, target_page->slots_buffer_address(),
+        slot_type, addr, SlotsBuffer::FAIL_ON_OVERFLOW);
+#else
     bool success = SlotsBuffer::AddTo(
         &slots_buffer_allocator_, target_page->slots_buffer_address(),
         SlotTypeForRMode(rmode), rinfo->pc(), SlotsBuffer::FAIL_ON_OVERFLOW);
+#endif
     if (!success) {
       EvictPopularEvacuationCandidate(target_page);
     }
