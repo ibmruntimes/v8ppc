@@ -64,7 +64,7 @@ class AstString : public ZoneObject {
 
 class AstRawString : public AstString {
  public:
-  int length() const OVERRIDE {
+  int length() const override {
     if (is_one_byte_)
       return literal_bytes_.length();
     return literal_bytes_.length() / 2;
@@ -72,7 +72,7 @@ class AstRawString : public AstString {
 
   int byte_length() const { return literal_bytes_.length(); }
 
-  void Internalize(Isolate* isolate) OVERRIDE;
+  void Internalize(Isolate* isolate) override;
 
   bool AsArrayIndex(uint32_t* index) const;
 
@@ -121,9 +121,9 @@ class AstConsString : public AstString {
       : left_(left),
         right_(right) {}
 
-  int length() const OVERRIDE { return left_->length() + right_->length(); }
+  int length() const override { return left_->length() + right_->length(); }
 
-  void Internalize(Isolate* isolate) OVERRIDE;
+  void Internalize(Isolate* isolate) override;
 
  private:
   friend class AstValueFactory;
@@ -258,10 +258,10 @@ class AstValue : public ZoneObject {
   F(next, "next")                                                          \
   F(proto, "__proto__")                                                    \
   F(prototype, "prototype")                                                \
-  F(reflect_apply, "ReflectApply")                                         \
-  F(reflect_construct, "ReflectConstruct")                                 \
-  F(spread_arguments, "SpreadArguments")                                   \
-  F(spread_iterable, "SpreadIterable")                                     \
+  F(reflect_apply, "$reflectApply")                                        \
+  F(reflect_construct, "$reflectConstruct")                                \
+  F(spread_arguments, "$spreadArguments")                                  \
+  F(spread_iterable, "$spreadIterable")                                    \
   F(this, "this")                                                          \
   F(throw_iterator_result_not_an_object, "ThrowIteratorResultNotAnObject") \
   F(to_string, "ToString")                                                 \

@@ -32,7 +32,7 @@ enum RegisterKind {
 //
 //  [Lifetime::USED_AT_START, Lifetime::USED_AT_END]
 //
-class LifetimePosition FINAL {
+class LifetimePosition final {
  public:
   // Return the lifetime position that corresponds to the beginning of
   // the gap with the given index.
@@ -46,7 +46,7 @@ class LifetimePosition FINAL {
   }
 
   // Returns a numeric representation of this lifetime position.
-  int Value() const { return value_; }
+  int value() const { return value_; }
 
   // Returns the index of the instruction to which this lifetime position
   // corresponds.
@@ -78,26 +78,26 @@ class LifetimePosition FINAL {
   // Returns the lifetime position for the current END.
   LifetimePosition End() const {
     DCHECK(IsValid());
-    return LifetimePosition(Start().Value() + kHalfStep / 2);
+    return LifetimePosition(Start().value_ + kHalfStep / 2);
   }
 
   // Returns the lifetime position for the beginning of the next START.
   LifetimePosition NextStart() const {
     DCHECK(IsValid());
-    return LifetimePosition(Start().Value() + kHalfStep);
+    return LifetimePosition(Start().value_ + kHalfStep);
   }
 
   // Returns the lifetime position for the beginning of the next gap START.
   LifetimePosition NextFullStart() const {
     DCHECK(IsValid());
-    return LifetimePosition(FullStart().Value() + kStep);
+    return LifetimePosition(FullStart().value_ + kStep);
   }
 
   // Returns the lifetime position for the beginning of the previous START.
   LifetimePosition PrevStart() const {
     DCHECK(IsValid());
     DCHECK(value_ >= kHalfStep);
-    return LifetimePosition(Start().Value() - kHalfStep);
+    return LifetimePosition(Start().value_ - kHalfStep);
   }
 
   // Constructs the lifetime position which does not correspond to any
@@ -107,6 +107,30 @@ class LifetimePosition FINAL {
   // Returns true if this lifetime positions corrensponds to some
   // instruction.
   bool IsValid() const { return value_ != -1; }
+
+  bool operator<(const LifetimePosition& that) const {
+    return this->value_ < that.value_;
+  }
+
+  bool operator<=(const LifetimePosition& that) const {
+    return this->value_ <= that.value_;
+  }
+
+  bool operator==(const LifetimePosition& that) const {
+    return this->value_ == that.value_;
+  }
+
+  bool operator!=(const LifetimePosition& that) const {
+    return this->value_ != that.value_;
+  }
+
+  bool operator>(const LifetimePosition& that) const {
+    return this->value_ > that.value_;
+  }
+
+  bool operator>=(const LifetimePosition& that) const {
+    return this->value_ >= that.value_;
+  }
 
   static inline LifetimePosition Invalid() { return LifetimePosition(); }
 
@@ -130,41 +154,41 @@ class LifetimePosition FINAL {
 
 
 // Representation of the non-empty interval [start,end[.
-class UseInterval FINAL : public ZoneObject {
+class UseInterval final : public ZoneObject {
  public:
   UseInterval(LifetimePosition start, LifetimePosition end)
       : start_(start), end_(end), next_(nullptr) {
-    DCHECK(start.Value() < end.Value());
+    DCHECK(start < end);
   }
 
   LifetimePosition start() const { return start_; }
+  void set_start(LifetimePosition start) { start_ = start; }
   LifetimePosition end() const { return end_; }
+  void set_end(LifetimePosition end) { end_ = end; }
   UseInterval* next() const { return next_; }
+  void set_next(UseInterval* next) { next_ = next; }
 
   // Split this interval at the given position without effecting the
   // live range that owns it. The interval must contain the position.
-  void SplitAt(LifetimePosition pos, Zone* zone);
+  UseInterval* SplitAt(LifetimePosition pos, Zone* zone);
 
   // If this interval intersects with other return smallest position
   // that belongs to both of them.
   LifetimePosition Intersect(const UseInterval* other) const {
-    if (other->start().Value() < start_.Value()) return other->Intersect(this);
-    if (other->start().Value() < end_.Value()) return other->start();
+    if (other->start() < start_) return other->Intersect(this);
+    if (other->start() < end_) return other->start();
     return LifetimePosition::Invalid();
   }
 
   bool Contains(LifetimePosition point) const {
-    return start_.Value() <= point.Value() && point.Value() < end_.Value();
+    return start_ <= point && point < end_;
   }
 
-  void set_start(LifetimePosition start) { start_ = start; }
-  void set_next(UseInterval* next) { next_ = next; }
-
+ private:
   LifetimePosition start_;
   LifetimePosition end_;
   UseInterval* next_;
 
- private:
   DISALLOW_COPY_AND_ASSIGN(UseInterval);
 };
 
@@ -172,51 +196,83 @@ class UseInterval FINAL : public ZoneObject {
 enum class UsePositionType : uint8_t { kAny, kRequiresRegister, kRequiresSlot };
 
 
+enum class UsePositionHintType : uint8_t {
+  kNone,
+  kOperand,
+  kUsePos,
+  kPhi,
+  kUnresolved
+};
+
+
+static const int32_t kUnassignedRegister =
+    RegisterConfiguration::kMaxGeneralRegisters;
+
+
+static_assert(kUnassignedRegister <= RegisterConfiguration::kMaxDoubleRegisters,
+              "kUnassignedRegister too small");
+
+
 // Representation of a use position.
-class UsePosition FINAL : public ZoneObject {
+class UsePosition final : public ZoneObject {
  public:
-  UsePosition(LifetimePosition pos, InstructionOperand* operand,
-              InstructionOperand* hint);
+  UsePosition(LifetimePosition pos, InstructionOperand* operand, void* hint,
+              UsePositionHintType hint_type);
 
   InstructionOperand* operand() const { return operand_; }
   bool HasOperand() const { return operand_ != nullptr; }
 
-  InstructionOperand* hint() const { return hint_; }
-  bool HasHint() const;
   bool RegisterIsBeneficial() const {
     return RegisterBeneficialField::decode(flags_);
   }
   UsePositionType type() const { return TypeField::decode(flags_); }
-
-  LifetimePosition pos() const { return pos_; }
-  UsePosition* next() const { return next_; }
-
-  void set_next(UsePosition* next) { next_ = next; }
   void set_type(UsePositionType type, bool register_beneficial);
 
-  InstructionOperand* const operand_;
-  InstructionOperand* const hint_;
-  LifetimePosition const pos_;
-  UsePosition* next_;
+  LifetimePosition pos() const { return pos_; }
+
+  UsePosition* next() const { return next_; }
+  void set_next(UsePosition* next) { next_ = next; }
+
+  // For hinting only.
+  void set_assigned_register(int register_index) {
+    flags_ = AssignedRegisterField::update(flags_, register_index);
+  }
+
+  UsePositionHintType hint_type() const {
+    return HintTypeField::decode(flags_);
+  }
+  bool HasHint() const;
+  bool HintRegister(int* register_index) const;
+  void ResolveHint(UsePosition* use_pos);
+  bool IsResolved() const {
+    return hint_type() != UsePositionHintType::kUnresolved;
+  }
+  static UsePositionHintType HintTypeForOperand(const InstructionOperand& op);
 
  private:
-  typedef BitField8<UsePositionType, 0, 2> TypeField;
-  typedef BitField8<bool, 2, 1> RegisterBeneficialField;
-  uint8_t flags_;
+  typedef BitField<UsePositionType, 0, 2> TypeField;
+  typedef BitField<UsePositionHintType, 2, 3> HintTypeField;
+  typedef BitField<bool, 5, 1> RegisterBeneficialField;
+  typedef BitField<int32_t, 6, 6> AssignedRegisterField;
+
+  InstructionOperand* const operand_;
+  void* hint_;
+  UsePosition* next_;
+  LifetimePosition const pos_;
+  uint32_t flags_;
 
   DISALLOW_COPY_AND_ASSIGN(UsePosition);
 };
+
 
 class SpillRange;
 
 
 // Representation of SSA values' live ranges as a collection of (continuous)
 // intervals over the instruction ordering.
-class LiveRange FINAL : public ZoneObject {
+class LiveRange final : public ZoneObject {
  public:
-  static const int kInvalidAssignment = 0x7fffffff;
-
-  LiveRange(int id, Zone* zone);
+  explicit LiveRange(int id);
 
   UseInterval* first_interval() const { return first_interval_; }
   UsePosition* first_pos() const { return first_pos_; }
@@ -234,6 +290,7 @@ class LiveRange FINAL : public ZoneObject {
   int assigned_register() const { return assigned_register_; }
   int spill_start_index() const { return spill_start_index_; }
   void set_assigned_register(int reg);
+  void UnsetAssignedRegister();
   void MakeSpilled();
   bool is_phi() const { return is_phi_; }
   void set_is_phi(bool is_phi) { is_phi_ = is_phi; }
@@ -246,25 +303,24 @@ class LiveRange FINAL : public ZoneObject {
 
   // Returns use position in this live range that follows both start
   // and last processed use position.
-  // Modifies internal state of live range!
-  UsePosition* NextUsePosition(LifetimePosition start);
+  UsePosition* NextUsePosition(LifetimePosition start) const;
 
   // Returns use position for which register is required in this live
   // range and which follows both start and last processed use position
-  // Modifies internal state of live range!
-  UsePosition* NextRegisterPosition(LifetimePosition start);
+  UsePosition* NextRegisterPosition(LifetimePosition start) const;
 
   // Returns use position for which register is beneficial in this live
   // range and which follows both start and last processed use position
-  // Modifies internal state of live range!
-  UsePosition* NextUsePositionRegisterIsBeneficial(LifetimePosition start);
+  UsePosition* NextUsePositionRegisterIsBeneficial(
+      LifetimePosition start) const;
 
   // Returns use position for which register is beneficial in this live
   // range and which precedes start.
-  UsePosition* PreviousUsePositionRegisterIsBeneficial(LifetimePosition start);
+  UsePosition* PreviousUsePositionRegisterIsBeneficial(
+      LifetimePosition start) const;
 
   // Can this live range be spilled at this position.
-  bool CanBeSpilled(LifetimePosition pos);
+  bool CanBeSpilled(LifetimePosition pos) const;
 
   // Split this live range at the given position which must follow the start of
   // the range.
@@ -274,19 +330,20 @@ class LiveRange FINAL : public ZoneObject {
 
   RegisterKind Kind() const { return kind_; }
   bool HasRegisterAssigned() const {
-    return assigned_register_ != kInvalidAssignment;
+    return assigned_register_ != kUnassignedRegister;
   }
   bool IsSpilled() const { return spilled_; }
 
-  InstructionOperand* current_hint_operand() const {
-    DCHECK(current_hint_operand_ == FirstHint());
-    return current_hint_operand_;
+  // Returns nullptr when no register is hinted, otherwise sets register_index.
+  UsePosition* FirstHintPosition(int* register_index) const;
+  UsePosition* FirstHintPosition() const {
+    int register_index;
+    return FirstHintPosition(&register_index);
   }
-  InstructionOperand* FirstHint() const {
-    UsePosition* pos = first_pos_;
-    while (pos != nullptr && !pos->HasHint()) pos = pos->next();
-    if (pos != nullptr) return pos->hint();
-    return nullptr;
+
+  UsePosition* current_hint_position() const {
+    DCHECK(current_hint_position_ == FirstHintPosition());
+    return current_hint_position_;
   }
 
   LifetimePosition Start() const {
@@ -302,10 +359,12 @@ class LiveRange FINAL : public ZoneObject {
   enum class SpillType { kNoSpillType, kSpillOperand, kSpillRange };
   SpillType spill_type() const { return spill_type_; }
   InstructionOperand* GetSpillOperand() const {
-    return spill_type_ == SpillType::kSpillOperand ? spill_operand_ : nullptr;
+    DCHECK(spill_type_ == SpillType::kSpillOperand);
+    return spill_operand_;
   }
   SpillRange* GetSpillRange() const {
-    return spill_type_ == SpillType::kSpillRange ? spill_range_ : nullptr;
+    DCHECK(spill_type_ == SpillType::kSpillRange);
+    return spill_range_;
   }
   bool HasNoSpillType() const { return spill_type_ == SpillType::kNoSpillType; }
   bool HasSpillOperand() const {
@@ -328,29 +387,29 @@ class LiveRange FINAL : public ZoneObject {
 
   bool ShouldBeAllocatedBefore(const LiveRange* other) const;
   bool CanCover(LifetimePosition position) const;
-  bool Covers(LifetimePosition position);
-  LifetimePosition FirstIntersection(LiveRange* other);
+  bool Covers(LifetimePosition position) const;
+  LifetimePosition FirstIntersection(LiveRange* other) const;
 
   // Add a new interval or a new use position to this live range.
   void EnsureInterval(LifetimePosition start, LifetimePosition end, Zone* zone);
   void AddUseInterval(LifetimePosition start, LifetimePosition end, Zone* zone);
-  void AddUsePosition(LifetimePosition pos, InstructionOperand* operand,
-                      InstructionOperand* hint, Zone* zone);
+  void AddUsePosition(UsePosition* pos);
 
   // Shorten the most recently added interval by setting a new start.
   void ShortenTo(LifetimePosition start);
 
-#ifdef DEBUG
-  // True if target overlaps an existing interval.
-  bool HasOverlap(UseInterval* target) const;
   void Verify() const;
-#endif
+
+  void ConvertUsesToOperand(const InstructionOperand& op,
+                            InstructionOperand* spill_op);
+  void SetUseHints(int register_index);
+  void UnsetUseHints() { SetUseHints(kUnassignedRegister); }
+
+  void set_kind(RegisterKind kind) { kind_ = kind; }
 
  private:
   struct SpillAtDefinitionList;
 
-  void ConvertUsesToOperand(const InstructionOperand& op,
-                            InstructionOperand* spill_op);
   UseInterval* FirstSearchIntervalForPosition(LifetimePosition position) const;
   void AdvanceLastProcessedMarker(UseInterval* to_start_of,
                                   LifetimePosition but_not_past) const;
@@ -359,8 +418,8 @@ class LiveRange FINAL : public ZoneObject {
   int id_;
   bool spilled_ : 1;
   bool has_slot_use_ : 1;  // Relevant only for parent.
-  bool is_phi_ : 1;
-  bool is_non_loop_phi_ : 1;
+  bool is_phi_ : 1;           // Correct only for parent.
+  bool is_non_loop_phi_ : 1;  // Correct only for parent.
   RegisterKind kind_;
   int assigned_register_;
   UseInterval* last_interval_;
@@ -370,9 +429,10 @@ class LiveRange FINAL : public ZoneObject {
   LiveRange* next_;
   // This is used as a cache, it doesn't affect correctness.
   mutable UseInterval* current_interval_;
-  UsePosition* last_processed_use_;
+  // This is used as a cache, it doesn't affect correctness.
+  mutable UsePosition* last_processed_use_;
   // This is used as a cache, it's invalid outside of BuildLiveRanges.
-  InstructionOperand* current_hint_operand_;
+  mutable UsePosition* current_hint_position_;
   int spill_start_index_;
   SpillType spill_type_;
   union {
@@ -381,13 +441,11 @@ class LiveRange FINAL : public ZoneObject {
   };
   SpillAtDefinitionList* spills_at_definition_;
 
-  friend class RegisterAllocator;  // Assigns to kind_.
-
   DISALLOW_COPY_AND_ASSIGN(LiveRange);
 };
 
 
-class SpillRange FINAL : public ZoneObject {
+class SpillRange final : public ZoneObject {
  public:
   SpillRange(LiveRange* range, Zone* zone);
 
@@ -412,23 +470,109 @@ class SpillRange FINAL : public ZoneObject {
 };
 
 
-class RegisterAllocator FINAL : public ZoneObject {
+class RegisterAllocationData final : public ZoneObject {
  public:
-  explicit RegisterAllocator(const RegisterConfiguration* config,
-                             Zone* local_zone, Frame* frame,
-                             InstructionSequence* code,
-                             const char* debug_name = nullptr);
+  class PhiMapValue : public ZoneObject {
+   public:
+    PhiMapValue(PhiInstruction* phi, const InstructionBlock* block, Zone* zone);
+
+    const PhiInstruction* phi() const { return phi_; }
+    const InstructionBlock* block() const { return block_; }
+
+    // For hinting.
+    int assigned_register() const { return assigned_register_; }
+    void set_assigned_register(int register_index) {
+      DCHECK_EQ(assigned_register_, kUnassignedRegister);
+      assigned_register_ = register_index;
+    }
+    void UnsetAssignedRegister() { assigned_register_ = kUnassignedRegister; }
+
+    void AddOperand(InstructionOperand* operand);
+    void CommitAssignment(const InstructionOperand& operand);
+
+   private:
+    PhiInstruction* const phi_;
+    const InstructionBlock* const block_;
+    ZoneVector<InstructionOperand*> incoming_operands_;
+    int assigned_register_;
+  };
+  typedef ZoneMap<int, PhiMapValue*> PhiMap;
+
+  RegisterAllocationData(const RegisterConfiguration* config,
+                         Zone* allocation_zone, Frame* frame,
+                         InstructionSequence* code,
+                         const char* debug_name = nullptr);
 
   const ZoneVector<LiveRange*>& live_ranges() const { return live_ranges_; }
+  ZoneVector<LiveRange*>& live_ranges() { return live_ranges_; }
   const ZoneVector<LiveRange*>& fixed_live_ranges() const {
     return fixed_live_ranges_;
+  }
+  ZoneVector<LiveRange*>& fixed_live_ranges() { return fixed_live_ranges_; }
+  ZoneVector<LiveRange*>& fixed_double_live_ranges() {
+    return fixed_double_live_ranges_;
   }
   const ZoneVector<LiveRange*>& fixed_double_live_ranges() const {
     return fixed_double_live_ranges_;
   }
+  ZoneVector<BitVector*>& live_in_sets() { return live_in_sets_; }
+  ZoneVector<SpillRange*>& spill_ranges() { return spill_ranges_; }
   InstructionSequence* code() const { return code_; }
-  // This zone is for datastructures only needed during register allocation.
-  Zone* local_zone() const { return local_zone_; }
+  // This zone is for datastructures only needed during register allocation
+  // phases.
+  Zone* allocation_zone() const { return allocation_zone_; }
+  // This zone is for InstructionOperands and moves that live beyond register
+  // allocation.
+  Zone* code_zone() const { return code()->zone(); }
+  Frame* frame() const { return frame_; }
+  const char* debug_name() const { return debug_name_; }
+  const RegisterConfiguration* config() const { return config_; }
+
+  LiveRange* LiveRangeFor(int index);
+
+  SpillRange* AssignSpillRangeToLiveRange(LiveRange* range);
+
+  MoveOperands* AddGapMove(int index, Instruction::GapPosition position,
+                           const InstructionOperand& from,
+                           const InstructionOperand& to);
+
+  bool IsReference(int virtual_register) const {
+    return code()->IsReference(virtual_register);
+  }
+
+  bool ExistsUseWithoutDefinition();
+
+  // Creates a new live range.
+  LiveRange* NewLiveRange(int index);
+
+  void MarkAllocated(RegisterKind kind, int index);
+
+  PhiMapValue* InitializePhiMap(const InstructionBlock* block,
+                                PhiInstruction* phi);
+  PhiMapValue* GetPhiMapValueFor(int virtual_register);
+
+ private:
+  Zone* const allocation_zone_;
+  Frame* const frame_;
+  InstructionSequence* const code_;
+  const char* const debug_name_;
+  const RegisterConfiguration* const config_;
+  PhiMap phi_map_;
+  ZoneVector<BitVector*> live_in_sets_;
+  ZoneVector<LiveRange*> live_ranges_;
+  ZoneVector<LiveRange*> fixed_live_ranges_;
+  ZoneVector<LiveRange*> fixed_double_live_ranges_;
+  ZoneVector<SpillRange*> spill_ranges_;
+  BitVector* assigned_registers_;
+  BitVector* assigned_double_registers_;
+
+  DISALLOW_COPY_AND_ASSIGN(RegisterAllocationData);
+};
+
+
+class ConstraintBuilder final : public ZoneObject {
+ public:
+  explicit ConstraintBuilder(RegisterAllocationData* data);
 
   // Phase 1 : insert moves to account for fixed register operands.
   void MeetRegisterConstraints();
@@ -437,63 +581,19 @@ class RegisterAllocator FINAL : public ZoneObject {
   // of blocks containing phis.
   void ResolvePhis();
 
-  // Phase 3: compute liveness of all virtual register.
-  void BuildLiveRanges();
-  bool ExistsUseWithoutDefinition();
-
-  // Phase 4: compute register assignments.
-  void AllocateGeneralRegisters();
-  void AllocateDoubleRegisters();
-
-  // Phase 5: assign spill splots.
-  void AssignSpillSlots();
-
-  // Phase 6: commit assignment.
-  void CommitAssignment();
-
-  // Phase 7: compute values for pointer maps.
-  void PopulateReferenceMaps();
-
-  // Phase 8: reconnect split ranges with moves.
-  void ConnectRanges();
-
-  // Phase 9: insert moves to connect ranges across basic blocks.
-  void ResolveControlFlow();
-
  private:
-  int GetVirtualRegister() { return code()->NextVirtualRegister(); }
+  RegisterAllocationData* data() const { return data_; }
+  InstructionSequence* code() const { return data()->code(); }
+  Zone* allocation_zone() const { return data()->allocation_zone(); }
 
-  // Checks whether the value of a given virtual register is a reference.
-  // TODO(titzer): rename this to IsReference.
-  bool HasTaggedValue(int virtual_register) const;
+  Instruction* InstructionAt(int index) { return code()->InstructionAt(index); }
+  bool IsReference(int virtual_register) const {
+    return data()->IsReference(virtual_register);
+  }
+  LiveRange* LiveRangeFor(int index) { return data()->LiveRangeFor(index); }
 
-  // Returns the register kind required by the given virtual register.
-  RegisterKind RequiredRegisterKind(int virtual_register) const;
-
-  // Creates a new live range.
-  LiveRange* NewLiveRange(int index);
-
-  // This zone is for InstructionOperands and moves that live beyond register
-  // allocation.
-  Zone* code_zone() const { return code()->zone(); }
-
-  BitVector* assigned_registers() { return assigned_registers_; }
-  BitVector* assigned_double_registers() { return assigned_double_registers_; }
-
-#ifdef DEBUG
-  void Verify() const;
-#endif
-
-  void AllocateRegisters();
-  bool CanEagerlyResolveControlFlow(const InstructionBlock* block) const;
-  bool SafePointsAreInOrder() const;
-
-  // Liveness analysis support.
-  BitVector* ComputeLiveOut(const InstructionBlock* block);
-  void AddInitialIntervals(const InstructionBlock* block, BitVector* live_out);
-  bool IsOutputRegisterOf(Instruction* instr, int index);
-  bool IsOutputDoubleRegisterOf(Instruction* instr, int index);
-  void ProcessInstructions(const InstructionBlock* block, BitVector* live);
+  InstructionOperand* AllocateFixed(UnallocatedOperand* operand, int pos,
+                                    bool is_tagged);
   void MeetRegisterConstraints(const InstructionBlock* block);
   void MeetConstraintsBefore(int index);
   void MeetConstraintsAfter(int index);
@@ -501,37 +601,91 @@ class RegisterAllocator FINAL : public ZoneObject {
       const InstructionBlock* block);
   void ResolvePhis(const InstructionBlock* block);
 
-  // Helper methods for building intervals.
-  InstructionOperand* AllocateFixed(UnallocatedOperand* operand, int pos,
-                                    bool is_tagged);
+  RegisterAllocationData* const data_;
+
+  DISALLOW_COPY_AND_ASSIGN(ConstraintBuilder);
+};
+
+
+class LiveRangeBuilder final : public ZoneObject {
+ public:
+  explicit LiveRangeBuilder(RegisterAllocationData* data, Zone* local_zone);
+
+  // Phase 3: compute liveness of all virtual register.
+  void BuildLiveRanges();
+
+ private:
+  RegisterAllocationData* data() const { return data_; }
+  InstructionSequence* code() const { return data()->code(); }
+  Zone* allocation_zone() const { return data()->allocation_zone(); }
+  Zone* code_zone() const { return code()->zone(); }
+  const RegisterConfiguration* config() const { return data()->config(); }
+  ZoneVector<BitVector*>& live_in_sets() const {
+    return data()->live_in_sets();
+  }
+
+  LiveRange* LiveRangeFor(int index) { return data()->LiveRangeFor(index); }
+
+  void Verify() const;
+
+  // Liveness analysis support.
+  BitVector* ComputeLiveOut(const InstructionBlock* block);
+  void AddInitialIntervals(const InstructionBlock* block, BitVector* live_out);
+  void ProcessInstructions(const InstructionBlock* block, BitVector* live);
+  void ProcessPhis(const InstructionBlock* block, BitVector* live);
+  void ProcessLoopHeader(const InstructionBlock* block, BitVector* live);
+
+  static int FixedLiveRangeID(int index) { return -index - 1; }
+  int FixedDoubleLiveRangeID(int index);
+  LiveRange* FixedLiveRangeFor(int index);
+  LiveRange* FixedDoubleLiveRangeFor(int index);
+
+  void MapPhiHint(InstructionOperand* operand, UsePosition* use_pos);
+  void ResolvePhiHint(InstructionOperand* operand, UsePosition* use_pos);
+
+  // Returns the register kind required by the given virtual register.
+  RegisterKind RequiredRegisterKind(int virtual_register) const;
+
+  UsePosition* NewUsePosition(LifetimePosition pos, InstructionOperand* operand,
+                              void* hint, UsePositionHintType hint_type);
+  UsePosition* NewUsePosition(LifetimePosition pos) {
+    return NewUsePosition(pos, nullptr, nullptr, UsePositionHintType::kNone);
+  }
   LiveRange* LiveRangeFor(InstructionOperand* operand);
-  void Define(LifetimePosition position, InstructionOperand* operand,
-              InstructionOperand* hint);
+  // Helper methods for building intervals.
+  UsePosition* Define(LifetimePosition position, InstructionOperand* operand,
+                      void* hint, UsePositionHintType hint_type);
+  void Define(LifetimePosition position, InstructionOperand* operand) {
+    Define(position, operand, nullptr, UsePositionHintType::kNone);
+  }
+  UsePosition* Use(LifetimePosition block_start, LifetimePosition position,
+                   InstructionOperand* operand, void* hint,
+                   UsePositionHintType hint_type);
   void Use(LifetimePosition block_start, LifetimePosition position,
-           InstructionOperand* operand, InstructionOperand* hint);
-  MoveOperands* AddGapMove(int index, Instruction::GapPosition position,
-                           const InstructionOperand& from,
-                           const InstructionOperand& to);
+           InstructionOperand* operand) {
+    Use(block_start, position, operand, nullptr, UsePositionHintType::kNone);
+  }
 
-  // Helper methods for updating the life range lists.
-  void AddToActive(LiveRange* range);
-  void AddToInactive(LiveRange* range);
-  void AddToUnhandledSorted(LiveRange* range);
-  void AddToUnhandledUnsorted(LiveRange* range);
-  void SortUnhandled();
-  bool UnhandledIsSorted();
-  void ActiveToHandled(LiveRange* range);
-  void ActiveToInactive(LiveRange* range);
-  void InactiveToHandled(LiveRange* range);
-  void InactiveToActive(LiveRange* range);
+  RegisterAllocationData* const data_;
+  ZoneMap<InstructionOperand*, UsePosition*> phi_hints_;
 
-  // Helper methods for allocating registers.
-  bool TryReuseSpillForPhi(LiveRange* range);
-  bool TryAllocateFreeReg(LiveRange* range);
-  void AllocateBlockedReg(LiveRange* range);
-  SpillRange* AssignSpillRangeToLiveRange(LiveRange* range);
+  DISALLOW_COPY_AND_ASSIGN(LiveRangeBuilder);
+};
 
-  // Live range splitting helpers.
+
+class RegisterAllocator : public ZoneObject {
+ public:
+  explicit RegisterAllocator(RegisterAllocationData* data, RegisterKind kind);
+
+ protected:
+  RegisterAllocationData* data() const { return data_; }
+  InstructionSequence* code() const { return data()->code(); }
+  RegisterKind mode() const { return mode_; }
+  int num_registers() const { return num_registers_; }
+
+  Zone* allocation_zone() const { return data()->allocation_zone(); }
+
+  LiveRange* LiveRangeFor(int index) { return data()->LiveRangeFor(index); }
 
   // Split the given range at the given position.
   // If range starts at or after the given position then the
@@ -551,6 +705,60 @@ class RegisterAllocator FINAL : public ZoneObject {
   LifetimePosition FindOptimalSplitPos(LifetimePosition start,
                                        LifetimePosition end);
 
+  void Spill(LiveRange* range);
+
+  // If we are trying to spill a range inside the loop try to
+  // hoist spill position out to the point just before the loop.
+  LifetimePosition FindOptimalSpillingPos(LiveRange* range,
+                                          LifetimePosition pos);
+
+ private:
+  RegisterAllocationData* const data_;
+  const RegisterKind mode_;
+  const int num_registers_;
+
+  DISALLOW_COPY_AND_ASSIGN(RegisterAllocator);
+};
+
+
+class LinearScanAllocator final : public RegisterAllocator {
+ public:
+  LinearScanAllocator(RegisterAllocationData* data, RegisterKind kind,
+                      Zone* local_zone);
+
+  // Phase 4: compute register assignments.
+  void AllocateRegisters();
+
+ private:
+  const char* RegisterName(int allocation_index) const;
+
+  ZoneVector<LiveRange*>& unhandled_live_ranges() {
+    return unhandled_live_ranges_;
+  }
+  ZoneVector<LiveRange*>& active_live_ranges() { return active_live_ranges_; }
+  ZoneVector<LiveRange*>& inactive_live_ranges() {
+    return inactive_live_ranges_;
+  }
+
+  void SetLiveRangeAssignedRegister(LiveRange* range, int reg);
+
+  // Helper methods for updating the life range lists.
+  void AddToActive(LiveRange* range);
+  void AddToInactive(LiveRange* range);
+  void AddToUnhandledSorted(LiveRange* range);
+  void AddToUnhandledUnsorted(LiveRange* range);
+  void SortUnhandled();
+  bool UnhandledIsSorted();
+  void ActiveToHandled(LiveRange* range);
+  void ActiveToInactive(LiveRange* range);
+  void InactiveToHandled(LiveRange* range);
+  void InactiveToActive(LiveRange* range);
+
+  // Helper methods for allocating registers.
+  bool TryReuseSpillForPhi(LiveRange* range);
+  bool TryAllocateFreeReg(LiveRange* range);
+  void AllocateBlockedReg(LiveRange* range);
+
   // Spill the given life range after position pos.
   void SpillAfter(LiveRange* range, LifetimePosition pos);
 
@@ -565,102 +773,119 @@ class RegisterAllocator FINAL : public ZoneObject {
 
   void SplitAndSpillIntersecting(LiveRange* range);
 
-  // If we are trying to spill a range inside the loop try to
-  // hoist spill position out to the point just before the loop.
-  LifetimePosition FindOptimalSpillingPos(LiveRange* range,
-                                          LifetimePosition pos);
-
-  void Spill(LiveRange* range);
-  bool IsBlockBoundary(LifetimePosition pos);
-
-  // Helper methods for resolving control flow.
-  void ResolveControlFlow(const InstructionBlock* block,
-                          const InstructionOperand& cur_op,
-                          const InstructionBlock* pred,
-                          const InstructionOperand& pred_op);
-
-  void SetLiveRangeAssignedRegister(LiveRange* range, int reg);
-
-  // Return the block which contains give lifetime position.
-  const InstructionBlock* GetInstructionBlock(LifetimePosition pos);
-
-  // Helper methods for the fixed registers.
-  int RegisterCount() const;
-  static int FixedLiveRangeID(int index) { return -index - 1; }
-  int FixedDoubleLiveRangeID(int index);
-  LiveRange* FixedLiveRangeFor(int index);
-  LiveRange* FixedDoubleLiveRangeFor(int index);
-  LiveRange* LiveRangeFor(int index);
-  Instruction* GetLastInstruction(const InstructionBlock* block);
-
-  const char* RegisterName(int allocation_index);
-
-  Instruction* InstructionAt(int index) { return code()->InstructionAt(index); }
-  void AssignPhiInput(LiveRange* range, const InstructionOperand& assignment);
-
-  Frame* frame() const { return frame_; }
-  const char* debug_name() const { return debug_name_; }
-  const RegisterConfiguration* config() const { return config_; }
-  ZoneVector<LiveRange*>& live_ranges() { return live_ranges_; }
-  ZoneVector<LiveRange*>& fixed_live_ranges() { return fixed_live_ranges_; }
-  ZoneVector<LiveRange*>& fixed_double_live_ranges() {
-    return fixed_double_live_ranges_;
-  }
-  ZoneVector<LiveRange*>& unhandled_live_ranges() {
-    return unhandled_live_ranges_;
-  }
-  ZoneVector<LiveRange*>& active_live_ranges() { return active_live_ranges_; }
-  ZoneVector<LiveRange*>& inactive_live_ranges() {
-    return inactive_live_ranges_;
-  }
-  ZoneVector<SpillRange*>& spill_ranges() { return spill_ranges_; }
-
-  class PhiMapValue : public ZoneObject {
-   public:
-    PhiMapValue(PhiInstruction* phi, const InstructionBlock* block, Zone* zone)
-        : phi(phi), block(block), incoming_moves(zone) {
-      incoming_moves.reserve(phi->operands().size());
-    }
-    PhiInstruction* const phi;
-    const InstructionBlock* const block;
-    ZoneVector<MoveOperands*> incoming_moves;
-  };
-  typedef ZoneMap<int, PhiMapValue*> PhiMap;
-
-  Zone* const local_zone_;
-  Frame* const frame_;
-  InstructionSequence* const code_;
-  const char* const debug_name_;
-
-  const RegisterConfiguration* config_;
-  PhiMap phi_map_;
-
-  // During liveness analysis keep a mapping from block id to live_in sets
-  // for blocks already analyzed.
-  ZoneVector<BitVector*> live_in_sets_;
-
-  // Liveness analysis results.
-  ZoneVector<LiveRange*> live_ranges_;
-
-  // Lists of live ranges
-  ZoneVector<LiveRange*> fixed_live_ranges_;
-  ZoneVector<LiveRange*> fixed_double_live_ranges_;
   ZoneVector<LiveRange*> unhandled_live_ranges_;
   ZoneVector<LiveRange*> active_live_ranges_;
   ZoneVector<LiveRange*> inactive_live_ranges_;
-  ZoneVector<SpillRange*> spill_ranges_;
-
-  RegisterKind mode_;
-  int num_registers_;
-
-  BitVector* assigned_registers_;
-  BitVector* assigned_double_registers_;
 
 #ifdef DEBUG
   LifetimePosition allocation_finger_;
 #endif
 
-  DISALLOW_COPY_AND_ASSIGN(RegisterAllocator);
+  DISALLOW_COPY_AND_ASSIGN(LinearScanAllocator);
+};
+
+class CoallescedLiveRanges;
+
+
+// A variant of the LLVM Greedy Register Allocator. See
+// http://blog.llvm.org/2011/09/greedy-register-allocation-in-llvm-30.html
+class GreedyAllocator final : public RegisterAllocator {
+ public:
+  explicit GreedyAllocator(RegisterAllocationData* data, RegisterKind kind,
+                           Zone* local_zone);
+
+  void AllocateRegisters();
+
+ private:
+  const RegisterConfiguration* config() const { return data()->config(); }
+
+  typedef ZonePriorityQueue<std::pair<unsigned, LiveRange*>> PQueue;
+
+  unsigned GetLiveRangeSize(LiveRange* range);
+  void Enqueue(LiveRange* range);
+
+  void Evict(LiveRange* range);
+  float CalculateSpillWeight(LiveRange* range);
+  float CalculateMaxSpillWeight(const ZoneSet<LiveRange*>& ranges);
+
+
+  bool TryAllocate(LiveRange* current, ZoneSet<LiveRange*>* conflicting);
+  bool TryAllocatePhysicalRegister(unsigned reg_id, LiveRange* range,
+                                   ZoneSet<LiveRange*>* conflicting);
+  bool HandleSpillOperands(LiveRange* range);
+  bool AllocateBlockedRange(LiveRange*, const ZoneSet<LiveRange*>&);
+
+  LiveRange* SpillBetweenUntil(LiveRange* range, LifetimePosition start,
+                               LifetimePosition until, LifetimePosition end);
+  void AssignRangeToRegister(int reg_id, LiveRange* range);
+
+  ZoneVector<CoallescedLiveRanges*> allocations_;
+  PQueue queue_;
+  DISALLOW_COPY_AND_ASSIGN(GreedyAllocator);
+};
+
+
+class OperandAssigner final : public ZoneObject {
+ public:
+  explicit OperandAssigner(RegisterAllocationData* data);
+
+  // Phase 5: assign spill splots.
+  void AssignSpillSlots();
+
+  // Phase 6: commit assignment.
+  void CommitAssignment();
+
+ private:
+  RegisterAllocationData* data() const { return data_; }
+
+  RegisterAllocationData* const data_;
+
+  DISALLOW_COPY_AND_ASSIGN(OperandAssigner);
+};
+
+
+class ReferenceMapPopulator final : public ZoneObject {
+ public:
+  explicit ReferenceMapPopulator(RegisterAllocationData* data);
+
+  // Phase 7: compute values for pointer maps.
+  void PopulateReferenceMaps();
+
+ private:
+  RegisterAllocationData* data() const { return data_; }
+
+  bool SafePointsAreInOrder() const;
+
+  RegisterAllocationData* const data_;
+
+  DISALLOW_COPY_AND_ASSIGN(ReferenceMapPopulator);
+};
+
+
+class LiveRangeConnector final : public ZoneObject {
+ public:
+  explicit LiveRangeConnector(RegisterAllocationData* data);
+
+  // Phase 8: reconnect split ranges with moves.
+  void ConnectRanges(Zone* local_zone);
+
+  // Phase 9: insert moves to connect ranges across basic blocks.
+  void ResolveControlFlow(Zone* local_zone);
+
+ private:
+  RegisterAllocationData* data() const { return data_; }
+  InstructionSequence* code() const { return data()->code(); }
+  Zone* code_zone() const { return code()->zone(); }
+
+  bool CanEagerlyResolveControlFlow(const InstructionBlock* block) const;
+  void ResolveControlFlow(const InstructionBlock* block,
+                          const InstructionOperand& cur_op,
+                          const InstructionBlock* pred,
+                          const InstructionOperand& pred_op);
+
+  RegisterAllocationData* const data_;
+
+  DISALLOW_COPY_AND_ASSIGN(LiveRangeConnector);
 };
 
 }  // namespace compiler

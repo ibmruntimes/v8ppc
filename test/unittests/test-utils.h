@@ -13,8 +13,6 @@
 
 namespace v8 {
 
-std::ostream& operator<<(std::ostream&, ExternalArrayType);
-
 
 class TestWithIsolate : public virtual ::testing::Test {
  public:
@@ -116,7 +114,6 @@ class TestWithIsolateAndZone : public virtual TestWithIsolate {
 
   DISALLOW_COPY_AND_ASSIGN(TestWithIsolateAndZone);
 };
-
 
 }  // namespace internal
 }  // namespace v8

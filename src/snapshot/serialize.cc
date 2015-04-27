@@ -567,8 +567,6 @@ void Deserializer::Deserialize(Isolate* isolate) {
       isolate_->heap()->undefined_value());
   isolate_->heap()->set_last_array_buffer_in_list(
       isolate_->heap()->undefined_value());
-  isolate->heap()->set_new_array_buffer_views_list(
-      isolate_->heap()->undefined_value());
 
   // The allocation site list is build during root iteration, but if no sites
   // were encountered then it needs to be initialized to undefined.
@@ -676,7 +674,7 @@ class StringTableInsertionKey : public HashTableKey {
     DCHECK(string->IsInternalizedString());
   }
 
-  bool IsMatch(Object* string) OVERRIDE {
+  bool IsMatch(Object* string) override {
     // We know that all entries in a hash table had their hash keys created.
     // Use that knowledge to have fast failure.
     if (hash_ != HashForObject(string)) return false;
@@ -684,14 +682,13 @@ class StringTableInsertionKey : public HashTableKey {
     return string_->SlowEquals(String::cast(string));
   }
 
-  uint32_t Hash() OVERRIDE { return hash_; }
+  uint32_t Hash() override { return hash_; }
 
-  uint32_t HashForObject(Object* key) OVERRIDE {
+  uint32_t HashForObject(Object* key) override {
     return String::cast(key)->Hash();
   }
 
-  MUST_USE_RESULT virtual Handle<Object> AsHandle(Isolate* isolate)
-      OVERRIDE {
+  MUST_USE_RESULT virtual Handle<Object> AsHandle(Isolate* isolate) override {
     return handle(string_, isolate);
   }
 
@@ -1246,10 +1243,10 @@ Serializer::~Serializer() {
 
 
 #ifdef OBJECT_PRINT
-void Serializer::CountInstanceType(HeapObject* obj) {
-  int instance_type = obj->map()->instance_type();
+void Serializer::CountInstanceType(Map* map, int size) {
+  int instance_type = map->instance_type();
   instance_type_count_[instance_type]++;
-  instance_type_size_[instance_type] += obj->Size();
+  instance_type_size_[instance_type] += size;
 }
 #endif  // OBJECT_PRINT
 
@@ -1696,7 +1693,7 @@ void Serializer::ObjectSerializer::SerializePrologue(AllocationSpace space,
 
 #ifdef OBJECT_PRINT
   if (FLAG_serialization_statistics) {
-    serializer_->CountInstanceType(object_);
+    serializer_->CountInstanceType(map, size);
   }
 #endif  // OBJECT_PRINT
 
@@ -1779,6 +1776,13 @@ void Serializer::ObjectSerializer::Serialize() {
 
   // We cannot serialize typed array objects correctly.
   DCHECK(!object_->IsJSTypedArray());
+
+  if (object_->IsPrototypeInfo()) {
+    Object* prototype_users = PrototypeInfo::cast(object_)->prototype_users();
+    if (prototype_users->IsWeakFixedArray()) {
+      WeakFixedArray::cast(prototype_users)->Compact();
+    }
+  }
 
   if (object_->IsScript()) {
     // Clear cached line ends.

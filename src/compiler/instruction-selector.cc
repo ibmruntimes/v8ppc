@@ -6,6 +6,7 @@
 
 #include <limits>
 
+#include "src/base/adapters.h"
 #include "src/compiler/instruction-selector-impl.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
@@ -465,9 +466,7 @@ void InstructionSelector::VisitBlock(BasicBlock* block) {
 
   // Visit code in reverse control flow order, because architecture-specific
   // matching may cover more than one node at a time.
-  for (BasicBlock::reverse_iterator i = block->rbegin(); i != block->rend();
-       ++i) {
-    Node* node = *i;
+  for (auto node : base::Reversed(*block)) {
     // Skip nodes that are unused or already defined.
     if (!IsUsed(node) || IsDefined(node)) continue;
     // Generate code for this node "top down", but schedule the code "bottom
@@ -559,11 +558,8 @@ void InstructionSelector::VisitControl(BasicBlock* block) {
       return VisitSwitch(input, sw);
     }
     case BasicBlock::kReturn: {
-      // If the result itself is a return, return its input.
-      Node* value = (input != nullptr && input->opcode() == IrOpcode::kReturn)
-                        ? input->InputAt(0)
-                        : input;
-      return VisitReturn(value);
+      DCHECK_EQ(IrOpcode::kReturn, input->opcode());
+      return VisitReturn(input->InputAt(0));
     }
     case BasicBlock::kDeoptimize: {
       // If the result itself is a return, return its input.
@@ -610,7 +606,8 @@ void InstructionSelector::VisitNode(Node* node) {
     case IrOpcode::kFinish:
       return MarkAsReference(node), VisitFinish(node);
     case IrOpcode::kParameter: {
-      MachineType type = linkage()->GetParameterType(OpParameter<int>(node));
+      MachineType type =
+          linkage()->GetParameterType(ParameterIndexOf(node->op()));
       MarkAsRepresentation(type, node);
       return VisitParameter(node);
     }
@@ -969,7 +966,7 @@ void InstructionSelector::VisitFinish(Node* node) {
 
 void InstructionSelector::VisitParameter(Node* node) {
   OperandGenerator g(this);
-  int index = OpParameter<int>(node);
+  int index = ParameterIndexOf(node->op());
   Emit(kArchNop,
        g.DefineAsLocation(node, linkage()->GetParameterLocation(index),
                           linkage()->GetParameterType(index)));
@@ -1045,20 +1042,15 @@ void InstructionSelector::VisitGoto(BasicBlock* target) {
 
 
 void InstructionSelector::VisitReturn(Node* value) {
+  DCHECK_NOT_NULL(value);
   OperandGenerator g(this);
-  if (value != NULL) {
-    Emit(kArchRet, g.NoOutput(),
-         g.UseLocation(value, linkage()->GetReturnLocation(),
-                       linkage()->GetReturnType()));
-  } else {
-    Emit(kArchRet, g.NoOutput());
-  }
+  Emit(kArchRet, g.NoOutput(),
+       g.UseLocation(value, linkage()->GetReturnLocation(),
+                     linkage()->GetReturnType()));
 }
 
 
 void InstructionSelector::VisitDeoptimize(Node* value) {
-  DCHECK(FLAG_turbo_deoptimization);
-
   OperandGenerator g(this);
 
   FrameStateDescriptor* desc = GetFrameStateDescriptor(value);

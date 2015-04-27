@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/code-factory.h"
 #include "src/compiler/access-builder.h"
 #include "src/compiler/js-graph.h"
 #include "src/compiler/js-typed-lowering.h"
+#include "src/compiler/linkage.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
 #include "src/compiler/operator-properties.h"
@@ -59,7 +61,7 @@ Reduction JSTypedLowering::ReplaceEagerly(Node* old, Node* node) {
 // JSOperator. This class manages the rewriting of context, control, and effect
 // dependencies during lowering of a binop and contains numerous helper
 // functions for matching the types of inputs to an operation.
-class JSBinopReduction FINAL {
+class JSBinopReduction final {
  public:
   JSBinopReduction(JSTypedLowering* lowering, Node* node)
       : lowering_(lowering), node_(node) {}
@@ -211,10 +213,14 @@ class JSBinopReduction FINAL {
   }
 
   Node* CreateFrameStateForLeftInput(Node* frame_state) {
-    if (!FLAG_turbo_deoptimization) return nullptr;
-
     FrameStateCallInfo state_info =
         OpParameter<FrameStateCallInfo>(frame_state);
+
+    if (state_info.bailout_id() == BailoutId::None()) {
+      // Dummy frame state => just leave it as is.
+      return frame_state;
+    }
+
     // If the frame state is already the right one, just return it.
     if (state_info.state_combine().kind() == OutputFrameStateCombine::kPokeAt &&
         state_info.state_combine().GetOffsetToPokeAt() == 1) {
@@ -234,8 +240,6 @@ class JSBinopReduction FINAL {
   }
 
   Node* CreateFrameStateForRightInput(Node* frame_state, Node* converted_left) {
-    if (!FLAG_turbo_deoptimization) return nullptr;
-
     FrameStateCallInfo state_info =
         OpParameter<FrameStateCallInfo>(frame_state);
 
@@ -279,13 +283,6 @@ class JSBinopReduction FINAL {
   Node* ConvertToNumber(Node* node, Node* frame_state) {
     if (NodeProperties::GetBounds(node).upper->Is(Type::PlainPrimitive())) {
       return ConvertPrimitiveToNumber(node);
-    } else if (!FLAG_turbo_deoptimization) {
-      // We cannot use ConvertToPrimitiveNumber here because we need context
-      // for converting general values.
-      Node* const n = graph()->NewNode(javascript()->ToNumber(), node,
-                                       context(), effect(), control());
-      update_effect(n);
-      return n;
     } else {
       Node* const n =
           graph()->NewNode(javascript()->ToNumber(), node, context(),
@@ -325,9 +322,7 @@ Reduction JSTypedLowering::ReduceJSAdd(Node* node) {
   }
   if (r.NeitherInputCanBe(Type::StringOrReceiver())) {
     // JSAdd(x:-string, y:-string) => NumberAdd(ToNumber(x), ToNumber(y))
-    Node* frame_state = FLAG_turbo_deoptimization
-                            ? NodeProperties::GetFrameStateInput(node, 1)
-                            : nullptr;
+    Node* frame_state = NodeProperties::GetFrameStateInput(node, 1);
     r.ConvertInputsToNumber(frame_state);
     return r.ChangeToPureOperator(simplified()->NumberAdd(), Type::Number());
   }
@@ -351,9 +346,14 @@ Reduction JSTypedLowering::ReduceJSAdd(Node* node) {
 Reduction JSTypedLowering::ReduceNumberBinop(Node* node,
                                              const Operator* numberOp) {
   JSBinopReduction r(this, node);
-  Node* frame_state = FLAG_turbo_deoptimization
-                          ? NodeProperties::GetFrameStateInput(node, 1)
-                          : nullptr;
+  if (is_strong(OpParameter<LanguageMode>(node))) {
+    if (r.left_type()->Is(Type::Number()) &&
+        (r.right_type()->Is(Type::Number()))) {
+      return r.ChangeToPureOperator(numberOp, Type::Number());
+    }
+    return NoChange();
+  }
+  Node* frame_state = NodeProperties::GetFrameStateInput(node, 1);
   r.ConvertInputsToNumber(frame_state);
   return r.ChangeToPureOperator(numberOp, Type::Number());
 }
@@ -361,9 +361,7 @@ Reduction JSTypedLowering::ReduceNumberBinop(Node* node,
 
 Reduction JSTypedLowering::ReduceInt32Binop(Node* node, const Operator* intOp) {
   JSBinopReduction r(this, node);
-  Node* frame_state = FLAG_turbo_deoptimization
-                          ? NodeProperties::GetFrameStateInput(node, 1)
-                          : nullptr;
+  Node* frame_state = NodeProperties::GetFrameStateInput(node, 1);
   r.ConvertInputsToNumber(frame_state);
   r.ConvertInputsToUI32(kSigned, kSigned);
   return r.ChangeToPureOperator(intOp, Type::Integral32());
@@ -700,11 +698,9 @@ Reduction JSTypedLowering::ReduceJSToNumber(Node* node) {
       NodeProperties::ReplaceContextInput(node, jsgraph()->NoContextConstant());
       NodeProperties::ReplaceControlInput(node, graph()->start());
       NodeProperties::ReplaceEffectInput(node, graph()->start());
-      if (FLAG_turbo_deoptimization) {
-        DCHECK_EQ(1, OperatorProperties::GetFrameStateInputCount(node->op()));
-        NodeProperties::ReplaceFrameStateInput(node, 0,
-                                               jsgraph()->EmptyFrameState());
-      }
+      DCHECK_EQ(1, OperatorProperties::GetFrameStateInputCount(node->op()));
+      NodeProperties::ReplaceFrameStateInput(node, 0,
+                                             jsgraph()->EmptyFrameState());
       return Changed(node);
     }
   }
@@ -841,19 +837,11 @@ Reduction JSTypedLowering::ReduceJSStoreProperty(Node* node) {
         if (number_reduction.Changed()) {
           value = number_reduction.replacement();
         } else {
-          DCHECK(FLAG_turbo_deoptimization ==
-                 (OperatorProperties::GetFrameStateInputCount(
-                      javascript()->ToNumber()) == 1));
-          if (FLAG_turbo_deoptimization) {
-            Node* frame_state_for_to_number =
-                NodeProperties::GetFrameStateInput(node, 1);
-            value = effect =
-                graph()->NewNode(javascript()->ToNumber(), value, context,
-                                 frame_state_for_to_number, effect, control);
-          } else {
-            value = effect = graph()->NewNode(javascript()->ToNumber(), value,
-                                              context, effect, control);
-          }
+          Node* frame_state_for_to_number =
+              NodeProperties::GetFrameStateInput(node, 1);
+          value = effect =
+              graph()->NewNode(javascript()->ToNumber(), value, context,
+                               frame_state_for_to_number, effect, control);
         }
       }
       // For integer-typed arrays, convert to the integer type.
@@ -934,6 +922,90 @@ Reduction JSTypedLowering::ReduceJSStoreContext(Node* node) {
   node->RemoveInput(2);
   DCHECK_EQ(4, node->InputCount());
   return Changed(node);
+}
+
+
+Reduction JSTypedLowering::ReduceJSCreateClosure(Node* node) {
+  DCHECK_EQ(IrOpcode::kJSCreateClosure, node->opcode());
+  CreateClosureParameters const& p = CreateClosureParametersOf(node->op());
+  Handle<SharedFunctionInfo> shared = p.shared_info();
+
+  // Use the FastNewClosureStub that allocates in new space only for nested
+  // functions that don't need literals cloning.
+  if (p.pretenure() == NOT_TENURED && shared->num_literals() == 0) {
+    Isolate* isolate = jsgraph()->isolate();
+    Callable callable = CodeFactory::FastNewClosure(
+        isolate, shared->language_mode(), shared->kind());
+    CallDescriptor* desc = Linkage::GetStubCallDescriptor(
+        isolate, graph()->zone(), callable.descriptor(), 0,
+        CallDescriptor::kNoFlags);
+    const Operator* new_op = common()->Call(desc);
+    Node* stub_code = jsgraph()->HeapConstant(callable.code());
+    node->ReplaceInput(0, jsgraph()->HeapConstant(shared));
+    node->InsertInput(graph()->zone(), 0, stub_code);
+    node->set_op(new_op);
+    return Changed(node);
+  }
+
+  return NoChange();
+}
+
+
+Reduction JSTypedLowering::ReduceJSCreateLiteralArray(Node* node) {
+  DCHECK_EQ(IrOpcode::kJSCreateLiteralArray, node->opcode());
+  HeapObjectMatcher<FixedArray> mconst(NodeProperties::GetValueInput(node, 2));
+  int length = mconst.Value().handle()->length();
+  int flags = OpParameter<int>(node->op());
+
+  // Use the FastCloneShallowArrayStub only for shallow boilerplates up to the
+  // initial length limit for arrays with "fast" elements kind.
+  if ((flags & ArrayLiteral::kShallowElements) != 0 &&
+      length < JSObject::kInitialMaxFastElementArray) {
+    Isolate* isolate = jsgraph()->isolate();
+    Callable callable = CodeFactory::FastCloneShallowArray(isolate);
+    CallDescriptor* desc = Linkage::GetStubCallDescriptor(
+        isolate, graph()->zone(), callable.descriptor(), 0,
+        (OperatorProperties::GetFrameStateInputCount(node->op()) != 0)
+            ? CallDescriptor::kNeedsFrameState
+            : CallDescriptor::kNoFlags);
+    const Operator* new_op = common()->Call(desc);
+    Node* stub_code = jsgraph()->HeapConstant(callable.code());
+    node->InsertInput(graph()->zone(), 0, stub_code);
+    node->set_op(new_op);
+    return Changed(node);
+  }
+
+  return NoChange();
+}
+
+
+Reduction JSTypedLowering::ReduceJSCreateLiteralObject(Node* node) {
+  DCHECK_EQ(IrOpcode::kJSCreateLiteralObject, node->opcode());
+  HeapObjectMatcher<FixedArray> mconst(NodeProperties::GetValueInput(node, 2));
+  // Constants are pairs, see ObjectLiteral::properties_count().
+  int length = mconst.Value().handle()->length() / 2;
+  int flags = OpParameter<int>(node->op());
+
+  // Use the FastCloneShallowObjectStub only for shallow boilerplates without
+  // elements up to the number of properties that the stubs can handle.
+  if ((flags & ObjectLiteral::kShallowProperties) != 0 &&
+      length <= FastCloneShallowObjectStub::kMaximumClonedProperties) {
+    Isolate* isolate = jsgraph()->isolate();
+    Callable callable = CodeFactory::FastCloneShallowObject(isolate, length);
+    CallDescriptor* desc = Linkage::GetStubCallDescriptor(
+        isolate, graph()->zone(), callable.descriptor(), 0,
+        (OperatorProperties::GetFrameStateInputCount(node->op()) != 0)
+            ? CallDescriptor::kNeedsFrameState
+            : CallDescriptor::kNoFlags);
+    const Operator* new_op = common()->Call(desc);
+    Node* stub_code = jsgraph()->HeapConstant(callable.code());
+    node->InsertInput(graph()->zone(), 3, jsgraph()->Constant(flags));
+    node->InsertInput(graph()->zone(), 0, stub_code);
+    node->set_op(new_op);
+    return Changed(node);
+  }
+
+  return NoChange();
 }
 
 
@@ -1023,6 +1095,12 @@ Reduction JSTypedLowering::Reduce(Node* node) {
       return ReduceJSLoadContext(node);
     case IrOpcode::kJSStoreContext:
       return ReduceJSStoreContext(node);
+    case IrOpcode::kJSCreateClosure:
+      return ReduceJSCreateClosure(node);
+    case IrOpcode::kJSCreateLiteralArray:
+      return ReduceJSCreateLiteralArray(node);
+    case IrOpcode::kJSCreateLiteralObject:
+      return ReduceJSCreateLiteralObject(node);
     default:
       break;
   }
@@ -1036,15 +1114,9 @@ Node* JSTypedLowering::ConvertPrimitiveToNumber(Node* input) {
   Reduction const reduction = ReduceJSToNumberInput(input);
   if (reduction.Changed()) return reduction.replacement();
   // TODO(jarin) Use PlainPrimitiveToNumber once we have it.
-  Node* const conversion =
-      FLAG_turbo_deoptimization
-          ? graph()->NewNode(javascript()->ToNumber(), input,
-                             jsgraph()->NoContextConstant(),
-                             jsgraph()->EmptyFrameState(), graph()->start(),
-                             graph()->start())
-          : graph()->NewNode(javascript()->ToNumber(), input,
-                             jsgraph()->NoContextConstant(), graph()->start(),
-                             graph()->start());
+  Node* const conversion = graph()->NewNode(
+      javascript()->ToNumber(), input, jsgraph()->NoContextConstant(),
+      jsgraph()->EmptyFrameState(), graph()->start(), graph()->start());
   InsertConversion(conversion);
   return conversion;
 }

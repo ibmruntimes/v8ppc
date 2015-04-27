@@ -16,7 +16,6 @@
 #include "src/execution.h"
 #include "src/full-codegen.h"
 #include "src/global-handles.h"
-#include "src/isolate-inl.h"
 #include "src/list.h"
 #include "src/log.h"
 #include "src/messages.h"
@@ -2523,7 +2522,7 @@ MaybeHandle<Object> Debug::PromiseHasUserDefinedRejectHandler(
   Handle<JSFunction> fun = Handle<JSFunction>::cast(
       JSObject::GetDataProperty(isolate_->js_builtins_object(),
                                 isolate_->factory()->NewStringFromStaticChars(
-                                    "PromiseHasUserDefinedRejectHandler")));
+                                    "$promiseHasUserDefinedRejectHandler")));
   return Execution::Call(isolate_, fun, promise, 0, NULL);
 }
 
@@ -2828,21 +2827,18 @@ void Debug::NotifyMessageHandler(v8::DebugEvent event,
   bool sendEventMessage = false;
   switch (event) {
     case v8::Break:
-    case v8::BreakForCommand:
       sendEventMessage = !auto_continue;
       break;
-    case v8::Exception:
-      sendEventMessage = true;
-      break;
+    case v8::NewFunction:
     case v8::BeforeCompile:
+    case v8::CompileError:
+    case v8::PromiseEvent:
+    case v8::AsyncTaskEvent:
       break;
+    case v8::Exception:
     case v8::AfterCompile:
       sendEventMessage = true;
       break;
-    case v8::NewFunction:
-      break;
-    default:
-      UNREACHABLE();
   }
 
   // The debug command interrupt flag might have been set when the command was

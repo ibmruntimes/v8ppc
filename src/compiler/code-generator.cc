@@ -12,7 +12,7 @@ namespace v8 {
 namespace internal {
 namespace compiler {
 
-class CodeGenerator::JumpTable FINAL : public ZoneObject {
+class CodeGenerator::JumpTable final : public ZoneObject {
  public:
   JumpTable(JumpTable* next, Label** targets, size_t target_count)
       : next_(next), targets_(targets), target_count_(target_count) {}
@@ -534,10 +534,9 @@ void CodeGenerator::AddTranslationForOperand(Translation* translation,
                                              InstructionOperand* op,
                                              MachineType type) {
   if (op->IsStackSlot()) {
-    // TODO(jarin) kMachBool and kRepBit should materialize true and false
-    // rather than creating an int value.
-    if (type == kMachBool || type == kRepBit || type == kMachInt32 ||
-        type == kMachInt8 || type == kMachInt16) {
+    if (type == kMachBool || type == kRepBit) {
+      translation->StoreBoolStackSlot(StackSlotOperand::cast(op)->index());
+    } else if (type == kMachInt32 || type == kMachInt8 || type == kMachInt16) {
       translation->StoreInt32StackSlot(StackSlotOperand::cast(op)->index());
     } else if (type == kMachUint32 || type == kMachUint16 ||
                type == kMachUint8) {
@@ -553,10 +552,9 @@ void CodeGenerator::AddTranslationForOperand(Translation* translation,
         DoubleStackSlotOperand::cast(op)->index());
   } else if (op->IsRegister()) {
     InstructionOperandConverter converter(this, instr);
-    // TODO(jarin) kMachBool and kRepBit should materialize true and false
-    // rather than creating an int value.
-    if (type == kMachBool || type == kRepBit || type == kMachInt32 ||
-        type == kMachInt8 || type == kMachInt16) {
+    if (type == kMachBool || type == kRepBit) {
+      translation->StoreBoolRegister(converter.ToRegister(op));
+    } else if (type == kMachInt32 || type == kMachInt8 || type == kMachInt16) {
       translation->StoreInt32Register(converter.ToRegister(op));
     } else if (type == kMachUint32 || type == kMachUint16 ||
                type == kMachUint8) {

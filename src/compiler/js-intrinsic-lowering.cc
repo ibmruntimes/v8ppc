@@ -1,4 +1,3 @@
-
 // Copyright 2015 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -11,6 +10,7 @@
 #include "src/compiler/js-graph.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
+#include "src/compiler/operator-properties.h"
 
 namespace v8 {
 namespace internal {
@@ -95,6 +95,7 @@ Reduction JSIntrinsicLowering::ReduceConstructDouble(Node* node) {
 
 
 Reduction JSIntrinsicLowering::ReduceDeoptimizeNow(Node* node) {
+  // TODO(jarin): This should not depend on the global flag.
   if (!FLAG_turbo_deoptimization) return NoChange();
 
   Node* frame_state = NodeProperties::GetFrameStateInput(node, 0);

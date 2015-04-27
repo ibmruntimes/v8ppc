@@ -81,7 +81,9 @@ class PipelineData {
         instruction_zone_(instruction_zone_scope_.zone()),
         sequence_(nullptr),
         frame_(nullptr),
-        register_allocator_(nullptr) {
+        register_allocation_zone_scope_(zone_pool_),
+        register_allocation_zone_(register_allocation_zone_scope_.zone()),
+        register_allocation_data_(nullptr) {
     PhaseScope scope(pipeline_statistics, "init pipeline data");
     graph_ = new (graph_zone_) Graph(graph_zone_);
     source_positions_.Reset(new SourcePositionTable(graph_));
@@ -121,7 +123,9 @@ class PipelineData {
         instruction_zone_(instruction_zone_scope_.zone()),
         sequence_(nullptr),
         frame_(nullptr),
-        register_allocator_(nullptr) {}
+        register_allocation_zone_scope_(zone_pool_),
+        register_allocation_zone_(register_allocation_zone_scope_.zone()),
+        register_allocation_data_(nullptr) {}
 
   // For register allocation testing entry point.
   PipelineData(ZonePool* zone_pool, CompilationInfo* info,
@@ -148,9 +152,12 @@ class PipelineData {
         instruction_zone_(sequence->zone()),
         sequence_(sequence),
         frame_(nullptr),
-        register_allocator_(nullptr) {}
+        register_allocation_zone_scope_(zone_pool_),
+        register_allocation_zone_(register_allocation_zone_scope_.zone()),
+        register_allocation_data_(nullptr) {}
 
   ~PipelineData() {
+    DeleteRegisterAllocationZone();
     DeleteInstructionZone();
     DeleteGraphZone();
   }
@@ -200,7 +207,11 @@ class PipelineData {
   Zone* instruction_zone() const { return instruction_zone_; }
   InstructionSequence* sequence() const { return sequence_; }
   Frame* frame() const { return frame_; }
-  RegisterAllocator* register_allocator() const { return register_allocator_; }
+
+  Zone* register_allocation_zone() const { return register_allocation_zone_; }
+  RegisterAllocationData* register_allocation_data() const {
+    return register_allocation_data_;
+  }
 
   void DeleteGraphZone() {
     // Destroy objects with destructors first.
@@ -226,11 +237,17 @@ class PipelineData {
     instruction_zone_ = nullptr;
     sequence_ = nullptr;
     frame_ = nullptr;
-    register_allocator_ = nullptr;
+  }
+
+  void DeleteRegisterAllocationZone() {
+    if (register_allocation_zone_ == nullptr) return;
+    register_allocation_zone_scope_.Destroy();
+    register_allocation_zone_ = nullptr;
+    register_allocation_data_ = nullptr;
   }
 
   void InitializeInstructionSequence() {
-    DCHECK(!sequence_);
+    DCHECK(sequence_ == nullptr);
     InstructionBlocks* instruction_blocks =
         InstructionSequence::InstructionBlocksFor(instruction_zone(),
                                                   schedule());
@@ -238,14 +255,14 @@ class PipelineData {
         info()->isolate(), instruction_zone(), instruction_blocks);
   }
 
-  void InitializeRegisterAllocator(Zone* local_zone,
-                                   const RegisterConfiguration* config,
-                                   const char* debug_name) {
-    DCHECK(!register_allocator_);
-    DCHECK(!frame_);
+  void InitializeRegisterAllocationData(const RegisterConfiguration* config,
+                                        const char* debug_name) {
+    DCHECK(frame_ == nullptr);
+    DCHECK(register_allocation_data_ == nullptr);
     frame_ = new (instruction_zone()) Frame();
-    register_allocator_ = new (instruction_zone())
-        RegisterAllocator(config, local_zone, frame(), sequence(), debug_name);
+    register_allocation_data_ = new (register_allocation_zone())
+        RegisterAllocationData(config, register_allocation_zone(), frame(),
+                               sequence(), debug_name);
   }
 
  private:
@@ -281,7 +298,13 @@ class PipelineData {
   Zone* instruction_zone_;
   InstructionSequence* sequence_;
   Frame* frame_;
-  RegisterAllocator* register_allocator_;
+
+  // All objects in the following group of fields are allocated in
+  // register_allocation_zone_.  They are all set to NULL when the zone is
+  // destroyed.
+  ZonePool::Scope register_allocation_zone_scope_;
+  Zone* register_allocation_zone_;
+  RegisterAllocationData* register_allocation_data_;
 
   DISALLOW_COPY_AND_ASSIGN(PipelineData);
 };
@@ -349,7 +372,7 @@ class AstGraphBuilderWithPositions : public AstGraphBuilder {
   }
 
 #define DEF_VISIT(type)                                               \
-  void Visit##type(type* node) OVERRIDE {                             \
+  void Visit##type(type* node) override {                             \
     SourcePositionTable::Scope pos(source_positions_,                 \
                                    SourcePosition(node->position())); \
     AstGraphBuilder::Visit##type(node);                               \
@@ -501,9 +524,7 @@ struct OsrDeconstructionPhase {
     SourcePositionTable::Scope pos(data->source_positions(),
                                    SourcePosition::Unknown());
     OsrHelper osr_helper(data->info());
-    bool success =
-        osr_helper.Deconstruct(data->jsgraph(), data->common(), temp_zone);
-    if (!success) data->info()->RetryOptimization(kOsrCompileFailed);
+    osr_helper.Deconstruct(data->jsgraph(), data->common(), temp_zone);
   }
 };
 
@@ -519,8 +540,16 @@ struct JSTypeFeedbackPhase {
                               data->info()->unoptimized_code(),
                               data->info()->feedback_vector(), native_context);
     GraphReducer graph_reducer(data->graph(), temp_zone);
-    JSTypeFeedbackSpecializer specializer(data->jsgraph(),
-                                          data->js_type_feedback(), &oracle);
+    Handle<GlobalObject> global_object = Handle<GlobalObject>::null();
+    if (data->info()->has_global_object()) {
+      global_object =
+          Handle<GlobalObject>(data->info()->global_object(), data->isolate());
+    }
+    // TODO(titzer): introduce a specialization mode/flags enum to control
+    // specializing to the global object here.
+    JSTypeFeedbackSpecializer specializer(
+        data->jsgraph(), data->js_type_feedback(), &oracle, global_object,
+        data->info()->dependencies());
     AddReducer(data, &graph_reducer, &specializer);
     graph_reducer.ReduceGraph();
   }
@@ -693,7 +722,8 @@ struct MeetRegisterConstraintsPhase {
   static const char* phase_name() { return "meet register constraints"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    data->register_allocator()->MeetRegisterConstraints();
+    ConstraintBuilder builder(data->register_allocation_data());
+    builder.MeetRegisterConstraints();
   }
 };
 
@@ -702,7 +732,8 @@ struct ResolvePhisPhase {
   static const char* phase_name() { return "resolve phis"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    data->register_allocator()->ResolvePhis();
+    ConstraintBuilder builder(data->register_allocation_data());
+    builder.ResolvePhis();
   }
 };
 
@@ -711,25 +742,32 @@ struct BuildLiveRangesPhase {
   static const char* phase_name() { return "build live ranges"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    data->register_allocator()->BuildLiveRanges();
+    LiveRangeBuilder builder(data->register_allocation_data(), temp_zone);
+    builder.BuildLiveRanges();
   }
 };
 
 
+template <typename RegAllocator>
 struct AllocateGeneralRegistersPhase {
   static const char* phase_name() { return "allocate general registers"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    data->register_allocator()->AllocateGeneralRegisters();
+    RegAllocator allocator(data->register_allocation_data(), GENERAL_REGISTERS,
+                           temp_zone);
+    allocator.AllocateRegisters();
   }
 };
 
 
+template <typename RegAllocator>
 struct AllocateDoubleRegistersPhase {
   static const char* phase_name() { return "allocate double registers"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    data->register_allocator()->AllocateDoubleRegisters();
+    RegAllocator allocator(data->register_allocation_data(), DOUBLE_REGISTERS,
+                           temp_zone);
+    allocator.AllocateRegisters();
   }
 };
 
@@ -738,7 +776,8 @@ struct AssignSpillSlotsPhase {
   static const char* phase_name() { return "assign spill slots"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    data->register_allocator()->AssignSpillSlots();
+    OperandAssigner assigner(data->register_allocation_data());
+    assigner.AssignSpillSlots();
   }
 };
 
@@ -747,7 +786,8 @@ struct CommitAssignmentPhase {
   static const char* phase_name() { return "commit assignment"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    data->register_allocator()->CommitAssignment();
+    OperandAssigner assigner(data->register_allocation_data());
+    assigner.CommitAssignment();
   }
 };
 
@@ -756,7 +796,8 @@ struct PopulateReferenceMapsPhase {
   static const char* phase_name() { return "populate pointer maps"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    data->register_allocator()->PopulateReferenceMaps();
+    ReferenceMapPopulator populator(data->register_allocation_data());
+    populator.PopulateReferenceMaps();
   }
 };
 
@@ -765,7 +806,8 @@ struct ConnectRangesPhase {
   static const char* phase_name() { return "connect ranges"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    data->register_allocator()->ConnectRanges();
+    LiveRangeConnector connector(data->register_allocation_data());
+    connector.ConnectRanges(temp_zone);
   }
 };
 
@@ -774,7 +816,8 @@ struct ResolveControlFlowPhase {
   static const char* phase_name() { return "resolve control flow"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    data->register_allocator()->ResolveControlFlow();
+    LiveRangeConnector connector(data->register_allocation_data());
+    connector.ResolveControlFlow(temp_zone);
   }
 };
 
@@ -874,12 +917,6 @@ void Pipeline::RunPrintAndVerify(const char* phase, bool untyped) {
 
 
 Handle<Code> Pipeline::GenerateCode() {
-  if (info()->is_osr() && !FLAG_turbo_osr) {
-    // TODO(turbofan): remove this flag and always handle OSR
-    info()->RetryOptimization(kOsrCompileFailed);
-    return Handle<Code>::null();
-  }
-
   // TODO(mstarzinger): This is just a temporary hack to make TurboFan work,
   // the correct solution is to restore the context register after invoking
   // builtins from full-codegen.
@@ -1001,11 +1038,12 @@ Handle<Code> Pipeline::GenerateCode() {
 
     if (info()->is_osr()) {
       Run<OsrDeconstructionPhase>();
-      if (info()->bailout_reason() != kNoReason) return Handle<Code>::null();
       RunPrintAndVerify("OSR deconstruction");
     }
 
-    if (info()->is_type_feedback_enabled()) {
+    // TODO(turbofan): Type feedback currently requires deoptimization.
+    if (info()->is_deoptimization_enabled() &&
+        info()->is_type_feedback_enabled()) {
       Run<JSTypeFeedbackPhase>();
       RunPrintAndVerify("JSType feedback");
     }
@@ -1216,9 +1254,7 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
   debug_name = GetDebugName(data->info());
 #endif
 
-  ZonePool::Scope zone_scope(data->zone_pool());
-  data->InitializeRegisterAllocator(zone_scope.zone(), config,
-                                    debug_name.get());
+  data->InitializeRegisterAllocationData(config, debug_name.get());
   if (info()->is_osr()) {
     OsrHelper osr_helper(info());
     osr_helper.SetupFrame(data->frame());
@@ -1234,10 +1270,15 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
        << printable;
   }
   if (verifier != nullptr) {
-    CHECK(!data->register_allocator()->ExistsUseWithoutDefinition());
+    CHECK(!data->register_allocation_data()->ExistsUseWithoutDefinition());
   }
-  Run<AllocateGeneralRegistersPhase>();
-  Run<AllocateDoubleRegistersPhase>();
+  if (FLAG_turbo_greedy_regalloc) {
+    Run<AllocateGeneralRegistersPhase<GreedyAllocator>>();
+    Run<AllocateDoubleRegistersPhase<GreedyAllocator>>();
+  } else {
+    Run<AllocateGeneralRegistersPhase<LinearScanAllocator>>();
+    Run<AllocateDoubleRegistersPhase<LinearScanAllocator>>();
+  }
   Run<AssignSpillSlotsPhase>();
 
   Run<CommitAssignmentPhase>();
@@ -1262,8 +1303,11 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
 
   if (FLAG_trace_turbo && !data->MayHaveUnverifiableGraph()) {
     TurboCfgFile tcf(data->isolate());
-    tcf << AsC1VAllocator("CodeGen", data->register_allocator());
+    tcf << AsC1VRegisterAllocationData("CodeGen",
+                                       data->register_allocation_data());
   }
+
+  data->DeleteRegisterAllocationZone();
 }
 
 }  // namespace compiler

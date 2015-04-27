@@ -25,7 +25,6 @@
 #include "src/heap-profiler.h"
 #include "src/hydrogen.h"
 #include "src/ic/stub-cache.h"
-#include "src/isolate-inl.h"
 #include "src/lithium-allocator.h"
 #include "src/log.h"
 #include "src/messages.h"
@@ -408,30 +407,42 @@ Handle<Object> Isolate::CaptureSimpleStackTrace(Handle<JSObject> error_object,
     }
   }
   elements->set(0, Smi::FromInt(sloppy_frames));
+  elements->Shrink(cursor);
   Handle<JSArray> result = factory()->NewJSArrayWithElements(elements);
   result->set_length(Smi::FromInt(cursor));
+  // Queue this structured stack trace for preprocessing on GC.
+  Handle<WeakFixedArray> new_weak_list =
+      WeakFixedArray::Add(factory()->weak_stack_trace_list(), elements);
+  factory()->set_weak_stack_trace_list(new_weak_list);
   return result;
 }
 
 
-void Isolate::CaptureAndSetDetailedStackTrace(Handle<JSObject> error_object) {
+MaybeHandle<JSObject> Isolate::CaptureAndSetDetailedStackTrace(
+    Handle<JSObject> error_object) {
   if (capture_stack_trace_for_uncaught_exceptions_) {
     // Capture stack trace for a detailed exception message.
     Handle<Name> key = factory()->detailed_stack_trace_symbol();
     Handle<JSArray> stack_trace = CaptureCurrentStackTrace(
         stack_trace_for_uncaught_exceptions_frame_limit_,
         stack_trace_for_uncaught_exceptions_options_);
-    JSObject::SetProperty(error_object, key, stack_trace, STRICT).Assert();
+    RETURN_ON_EXCEPTION(
+        this, JSObject::SetProperty(error_object, key, stack_trace, STRICT),
+        JSObject);
   }
+  return error_object;
 }
 
 
-void Isolate::CaptureAndSetSimpleStackTrace(Handle<JSObject> error_object,
-                                            Handle<Object> caller) {
+MaybeHandle<JSObject> Isolate::CaptureAndSetSimpleStackTrace(
+    Handle<JSObject> error_object, Handle<Object> caller) {
   // Capture stack trace for simple stack trace string formatting.
   Handle<Name> key = factory()->stack_trace_symbol();
   Handle<Object> stack_trace = CaptureSimpleStackTrace(error_object, caller);
-  JSObject::SetProperty(error_object, key, stack_trace, STRICT).Assert();
+  RETURN_ON_EXCEPTION(
+      this, JSObject::SetProperty(error_object, key, stack_trace, STRICT),
+      JSObject);
+  return error_object;
 }
 
 
@@ -2368,35 +2379,113 @@ bool Isolate::use_crankshaft() const {
 
 
 bool Isolate::IsFastArrayConstructorPrototypeChainIntact() {
+  PropertyCell* no_elements_cell = heap()->array_protector();
+  bool cell_reports_intact =
+      no_elements_cell->value()->IsSmi() &&
+      Smi::cast(no_elements_cell->value())->value() == kArrayProtectorValid;
+
+#ifdef DEBUG
   Map* root_array_map =
       get_initial_js_array_map(GetInitialFastElementsKind());
-  DCHECK(root_array_map != NULL);
-  JSObject* initial_array_proto = JSObject::cast(*initial_array_prototype());
+  Context* native_context = context()->native_context();
+  JSObject* initial_array_proto = JSObject::cast(
+      native_context->get(Context::INITIAL_ARRAY_PROTOTYPE_INDEX));
+  JSObject* initial_object_proto = JSObject::cast(
+      native_context->get(Context::INITIAL_OBJECT_PROTOTYPE_INDEX));
+
+  if (root_array_map == NULL || initial_array_proto == initial_object_proto) {
+    // We are in the bootstrapping process, and the entire check sequence
+    // shouldn't be performed.
+    return cell_reports_intact;
+  }
 
   // Check that the array prototype hasn't been altered WRT empty elements.
-  if (root_array_map->prototype() != initial_array_proto) return false;
+  if (root_array_map->prototype() != initial_array_proto) {
+    DCHECK_EQ(false, cell_reports_intact);
+    return cell_reports_intact;
+  }
+
   if (initial_array_proto->elements() != heap()->empty_fixed_array()) {
-    return false;
+    DCHECK_EQ(false, cell_reports_intact);
+    return cell_reports_intact;
   }
 
   // Check that the object prototype hasn't been altered WRT empty elements.
-  JSObject* initial_object_proto = JSObject::cast(*initial_object_prototype());
   PrototypeIterator iter(this, initial_array_proto);
   if (iter.IsAtEnd() || iter.GetCurrent() != initial_object_proto) {
-    return false;
+    DCHECK_EQ(false, cell_reports_intact);
+    return cell_reports_intact;
   }
   if (initial_object_proto->elements() != heap()->empty_fixed_array()) {
-    return false;
+    DCHECK_EQ(false, cell_reports_intact);
+    return cell_reports_intact;
   }
 
   iter.Advance();
-  return iter.IsAtEnd();
+  if (!iter.IsAtEnd()) {
+    DCHECK_EQ(false, cell_reports_intact);
+    return cell_reports_intact;
+  }
+
+#endif
+
+  return cell_reports_intact;
+}
+
+
+void Isolate::UpdateArrayProtectorOnSetElement(Handle<JSObject> object) {
+  if (IsFastArrayConstructorPrototypeChainIntact() &&
+      object->map()->is_prototype_map()) {
+    Object* context = heap()->native_contexts_list();
+    while (!context->IsUndefined()) {
+      Context* current_context = Context::cast(context);
+      if (current_context->get(Context::INITIAL_OBJECT_PROTOTYPE_INDEX) ==
+              *object ||
+          current_context->get(Context::INITIAL_ARRAY_PROTOTYPE_INDEX) ==
+              *object) {
+        PropertyCell::SetValueWithInvalidation(
+            factory()->array_protector(),
+            handle(Smi::FromInt(kArrayProtectorInvalid), this));
+        break;
+      }
+      context = current_context->get(Context::NEXT_CONTEXT_LINK);
+    }
+  }
+}
+
+
+bool Isolate::IsAnyInitialArrayPrototype(Handle<JSArray> array) {
+  if (array->map()->is_prototype_map()) {
+    Object* context = heap()->native_contexts_list();
+    while (!context->IsUndefined()) {
+      Context* current_context = Context::cast(context);
+      if (current_context->get(Context::INITIAL_ARRAY_PROTOTYPE_INDEX) ==
+          *array) {
+        return true;
+      }
+      context = current_context->get(Context::NEXT_CONTEXT_LINK);
+    }
+  }
+  return false;
 }
 
 
 CallInterfaceDescriptorData* Isolate::call_descriptor_data(int index) {
   DCHECK(0 <= index && index < CallDescriptors::NUMBER_OF_DESCRIPTORS);
   return &call_descriptor_data_[index];
+}
+
+
+base::RandomNumberGenerator* Isolate::random_number_generator() {
+  if (random_number_generator_ == NULL) {
+    if (FLAG_random_seed != 0) {
+      random_number_generator_ =
+          new base::RandomNumberGenerator(FLAG_random_seed);
+    } else {
+      random_number_generator_ = new base::RandomNumberGenerator();
+    }
+  }
+  return random_number_generator_;
 }
 
 
@@ -2651,6 +2740,17 @@ bool StackLimitCheck::JsHasOverflowed() const {
   if (jssp < stack_guard->real_jslimit()) return true;
 #endif  // USE_SIMULATOR
   return GetCurrentStackPosition() < stack_guard->real_climit();
+}
+
+
+SaveContext::SaveContext(Isolate* isolate)
+    : isolate_(isolate), prev_(isolate->save_context()) {
+  if (isolate->context() != NULL) {
+    context_ = Handle<Context>(isolate->context());
+  }
+  isolate->set_save_context(this);
+
+  c_entry_fp_ = isolate->c_entry_fp(isolate->thread_local_top());
 }
 
 

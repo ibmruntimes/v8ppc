@@ -538,6 +538,8 @@ source_set("v8_base") {
     "src/codegen.h",
     "src/compilation-cache.cc",
     "src/compilation-cache.h",
+    "src/compilation-dependencies.cc",
+    "src/compilation-dependencies.h",
     "src/compilation-statistics.cc",
     "src/compilation-statistics.h",
     "src/compiler/access-builder.cc",
@@ -1015,7 +1017,6 @@ source_set("v8_base") {
     "src/unicode-decoder.cc",
     "src/unicode-decoder.h",
     "src/unique.h",
-    "src/utils-inl.h",
     "src/utils.cc",
     "src/utils.h",
     "src/v8.cc",
@@ -1334,6 +1335,7 @@ source_set("v8_libbase") {
   visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   sources = [
+    "src/base/adapters.h",
     "src/base/atomicops.h",
     "src/base/atomicops_internals_arm64_gcc.h",
     "src/base/atomicops_internals_arm_gcc.h",

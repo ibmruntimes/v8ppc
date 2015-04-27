@@ -4,6 +4,48 @@
 
 // -------------------------------------------------------------------
 
+var $errorToString;
+var $formatMessage;
+var $getStackTraceLine;
+var $messageGetPositionInLine;
+var $messageGetLineNumber;
+var $messageGetSourceLine;
+var $stackOverflowBoilerplate;
+var $stackTraceSymbol;
+var $toDetailString;
+var $Error;
+var $EvalError;
+var $RangeError;
+var $ReferenceError;
+var $SyntaxError;
+var $TypeError;
+var $URIError;
+var MakeError;
+var MakeEvalError;
+var MakeRangeError;
+var MakeReferenceError;
+var MakeSyntaxError;
+var MakeTypeError;
+var MakeURIError;
+var MakeReferenceErrorEmbedded;
+var MakeSyntaxErrorEmbedded;
+var MakeTypeErrorEmbedded;
+
+(function() {
+
+%CheckIsBootstrapping();
+
+var GlobalObject = global.Object;
+var GlobalError;
+var GlobalTypeError;
+var GlobalRangeError;
+var GlobalURIError;
+var GlobalSyntaxError;
+var GlobalReferenceError;
+var GlobalEvalError;
+
+// -------------------------------------------------------------------
+
 var kMessages = {
   // Error
   constructor_is_generator:      ["Class constructor may not be a generator"],
@@ -41,24 +83,12 @@ var kMessages = {
   illegal_invocation:            ["Illegal invocation"],
   no_setter_in_callback:         ["Cannot set property ", "%0", " of ", "%1", " which has only a getter"],
   flags_getter_non_object:       ["RegExp.prototype.flags getter called on non-object ", "%0"],
-  reduce_no_initial:             ["Reduce of empty array with no initial value"],
-  getter_must_be_callable:       ["Getter must be a function: ", "%0"],
-  setter_must_be_callable:       ["Setter must be a function: ", "%0"],
   value_and_accessor:            ["Invalid property.  A property cannot both have accessors and be writable or have a value, ", "%0"],
   proto_object_or_null:          ["Object prototype may only be an Object or null: ", "%0"],
-  property_desc_object:          ["Property description must be an object: ", "%0"],
-  redefine_disallowed:           ["Cannot redefine property: ", "%0"],
-  define_disallowed:             ["Cannot define property:", "%0", ", object is not extensible."],
   non_extensible_proto:          ["%0", " is not extensible"],
   handler_non_object:            ["Proxy.", "%0", " called with non-object as handler"],
   proto_non_object:              ["Proxy.", "%0", " called with non-object as prototype"],
   trap_function_expected:        ["Proxy.", "%0", " called with non-function for '", "%1", "' trap"],
-  handler_trap_missing:          ["Proxy handler ", "%0", " has no '", "%1", "' trap"],
-  handler_trap_must_be_callable: ["Proxy handler ", "%0", " has non-callable '", "%1", "' trap"],
-  handler_returned_false:        ["Proxy handler ", "%0", " returned false from '", "%1", "' trap"],
-  handler_returned_undefined:    ["Proxy handler ", "%0", " returned undefined from '", "%1", "' trap"],
-  proxy_prop_not_configurable:   ["Proxy handler ", "%0", " returned non-configurable descriptor for property '", "%2", "' from '", "%1", "' trap"],
-  proxy_non_object_prop_names:   ["Trap '", "%1", "' returned non-object ", "%0"],
   proxy_repeated_prop_name:      ["Trap '", "%1", "' returned repeated property name '", "%2", "'"],
   invalid_weakmap_key:           ["Invalid value used as weak map key"],
   invalid_weakset_value:         ["Invalid value used in weak set"],
@@ -80,11 +110,7 @@ var kMessages = {
   not_a_promise:                 ["%0", " is not a promise"],
   resolver_not_a_function:       ["Promise resolver ", "%0", " is not a function"],
   promise_cyclic:                ["Chaining cycle detected for promise ", "%0"],
-  array_functions_on_frozen:     ["Cannot modify frozen array elements"],
-  array_functions_change_sealed: ["Cannot add/remove sealed array elements"],
   first_argument_not_regexp:     ["First argument to ", "%0", " must not be a regular expression"],
-  not_iterable:                  ["%0", " is not iterable"],
-  not_an_iterator:               ["%0", " is not an iterator"],
   iterator_result_not_an_object: ["Iterator result ", "%0", " is not an object"],
   iterator_value_not_an_object:  ["Iterator value ", "%0", " is not an entry object"],
   // RangeError
@@ -112,7 +138,6 @@ var kMessages = {
   invalid_lhs_in_postfix_op:     ["Invalid left-hand side expression in postfix operation"],
   invalid_lhs_in_prefix_op:      ["Invalid left-hand side expression in prefix operation"],
   // SyntaxError
-  paren_in_arg_string:           ["Function arg string contains parenthesis"],
   not_isvar:                     ["builtin %IS_VAR: not a variable"],
   single_function_literal:       ["Single function literal required"],
   invalid_regexp_flags:          ["Invalid flags supplied to RegExp constructor '", "%0", "'"],
@@ -121,11 +146,7 @@ var kMessages = {
   illegal_continue:              ["Illegal continue statement"],
   illegal_return:                ["Illegal return statement"],
   error_loading_debugger:        ["Error loading debugger"],
-  no_input_to_regexp:            ["No input to ", "%0"],
-  invalid_json:                  ["String '", "%0", "' is not valid JSON"],
   circular_structure:            ["Converting circular structure to JSON"],
-  called_on_non_object:          ["%0", " called on non-object"],
-  called_on_null_or_undefined:   ["%0", " called on null or undefined"],
   array_indexof_not_defined:     ["Array.getIndexOf: Argument undefined"],
   object_not_extensible:         ["Can't add property ", "%0", ", object is not extensible"],
   illegal_access:                ["Illegal access"],
@@ -149,6 +170,7 @@ var kMessages = {
   strong_ellision:               ["In strong mode, arrays with holes are deprecated, use maps instead"],
   strong_arguments:              ["In strong mode, 'arguments' is deprecated, use '...args' instead"],
   strong_undefined:              ["In strong mode, binding or assigning to 'undefined' is deprecated"],
+  strong_implicit_cast:          ["In strong mode, implicit conversions are deprecated"],
   strong_direct_eval:            ["In strong mode, direct calls to eval are deprecated"],
   strong_switch_fallthrough :    ["In strong mode, switch fall-through is deprecated, terminate each case with 'break', 'continue', 'return' or 'throw'"],
   strong_equal:                  ["In strong mode, '==' and '!=' are deprecated, use '===' and '!==' instead"],
@@ -160,9 +182,11 @@ var kMessages = {
   strong_unbound_global:         ["In strong mode, using an undeclared global variable '", "%0", "' is not allowed"],
   strong_super_call_missing:     ["In strong mode, invoking the super constructor in a subclass is required"],
   strong_super_call_duplicate:   ["In strong mode, invoking the super constructor multiple times is deprecated"],
-  strong_super_call_nested:      ["In strong mode, invoking the super constructor nested inside another statement or expression is deprecated"],
+  strong_super_call_misplaced:   ["In strong mode, the super constructor must be invoked before any assignment to 'this'"],
+  strong_constructor_super:      ["In strong mode, 'super' can only be used to invoke the super constructor, and cannot be nested inside another statement or expression"],
+  strong_constructor_this:       ["In strong mode, 'this' can only be used to initialize properties, and cannot be nested inside another statement or expression"],
   strong_constructor_return_value: ["In strong mode, returning a value from a constructor is deprecated"],
-  strong_constructor_return_misplaced: ["In strong mode, returning from a constructor before its super constructor invocation is deprecated"],
+  strong_constructor_return_misplaced: ["In strong mode, returning from a constructor before its super constructor invocation or all assignments to 'this' is deprecated"],
   sloppy_lexical:                ["Block-scoped declarations (let, const, function, class) not yet supported outside strict mode"],
   malformed_arrow_function_parameter_list: ["Malformed arrow function parameter list"],
   cant_prevent_ext_external_array_elements: ["Cannot prevent extension of an object with external array elements"],
@@ -172,6 +196,7 @@ var kMessages = {
   duplicate_export:              ["Duplicate export of '", "%0", "'"],
   unexpected_super:              ["'super' keyword unexpected here"],
   extends_value_not_a_function:  ["Class extends value ", "%0", " is not a function or null"],
+  extends_value_generator:       ["Class extends value ", "%0", " may not be a generator function"],
   prototype_parent_not_an_object: ["Class extends value does not have valid prototype property ", "%0"],
   duplicate_constructor:         ["A class may only have one constructor"],
   super_constructor_call:        ["A 'super' constructor call may only appear as the first statement of a function, and its arguments may not access 'this'. Other forms are not yet supported."],
@@ -181,7 +206,11 @@ var kMessages = {
   array_not_subclassable:        ["Subclassing Arrays is not currently supported."],
   for_in_loop_initializer:       ["for-in loop variable declaration may not have an initializer."],
   for_of_loop_initializer:       ["for-of loop variable declaration may not have an initializer."],
-  for_inof_loop_multi_bindings:  ["Invalid left-hand side in ", "%0", " loop: Must have a single binding."]
+  for_inof_loop_multi_bindings:  ["Invalid left-hand side in ", "%0", " loop: Must have a single binding."],
+  bad_getter_arity:              ["Getter must not have any formal parameters."],
+  bad_setter_arity:              ["Setter must have exactly one formal parameter."],
+  this_formal_parameter:         ["'this' is not a valid formal parameter name"],
+  duplicate_arrow_function_formal_parameter: ["Arrow function may not have duplicate parameter names"]
 };
 
 
@@ -247,7 +276,7 @@ function NoSideEffectToString(obj) {
 
 // To determine whether we can safely stringify an object using ErrorToString
 // without the risk of side-effects, we need to check whether the object is
-// either an instance of a native error type (via '%_ClassOf'), or has $Error
+// either an instance of a native error type (via '%_ClassOf'), or has Error
 // in its prototype chain and hasn't overwritten 'toString' with something
 // strange and unusual.
 function CanBeSafelyTreatedAsAnErrorObject(obj) {
@@ -263,7 +292,7 @@ function CanBeSafelyTreatedAsAnErrorObject(obj) {
   }
 
   var objToString = %GetDataProperty(obj, "toString");
-  return obj instanceof $Error && objToString === ErrorToString;
+  return obj instanceof GlobalError && objToString === ErrorToString;
 }
 
 
@@ -308,7 +337,7 @@ function MakeGenericError(constructor, type, arg0, arg1, arg2) {
                   DONT_ENUM | DONT_DELETE | READ_ONLY);
 %SetCode(Script, function(x) {
   // Script objects can only be created by the VM.
-  throw new $Error("Not supported");
+  throw MakeError(kUnsupported);
 });
 
 
@@ -349,52 +378,6 @@ function GetSourceLine(message) {
   var location = script.locationFromPosition(start_position, true);
   if (location == null) return "";
   return location.sourceText();
-}
-
-
-function MakeError(type, arg0, arg1, arg2) {
-  return MakeGenericError($Error, type, arg0, arg1, arg2);
-}
-
-
-function MakeTypeError(type, arg0, arg1, arg2) {
-  return MakeGenericError($TypeError, type, arg0, arg1, arg2);
-}
-
-
-function MakeRangeError(type, arg0, arg1, arg2) {
-  return MakeGenericError($RangeError, type, arg0, arg1, arg2);
-}
-
-
-function MakeSyntaxError(type, arg0, arg1, arg2) {
-  return MakeGenericError($SyntaxError, type, arg0, arg1, arg2);
-}
-
-
-function MakeReferenceError(type, arg0, arg1, arg2) {
-  return MakeGenericError($ReferenceError, type, arg0, arg1, arg2);
-}
-
-
-function MakeEvalError(type, arg0, arg1, arg2) {
-  return MakeGenericError($EvalError, type, arg0, arg1, arg2);
-}
-
-// The embedded versions are called from unoptimized code, with embedded
-// arguments. Those arguments cannot be arrays, which are context-dependent.
-function MakeTypeErrorEmbedded(type, arg) {
-  return MakeGenericError($TypeError, type, [arg]);
-}
-
-
-function MakeSyntaxErrorEmbedded(type, arg) {
-  return MakeGenericError($SyntaxError, type, [arg]);
-}
-
-
-function MakeReferenceErrorEmbedded(type, arg) {
-  return MakeGenericError($ReferenceError, type, [arg]);
 }
 
 /**
@@ -1026,7 +1009,7 @@ function GetStackFrames(raw_stack) {
     var fun = raw_stack[i + 1];
     var code = raw_stack[i + 2];
     var pc = raw_stack[i + 3];
-    var pos = %FunctionGetPositionForOffset(code, pc);
+    var pos = %_IsSmi(code) ? code : %FunctionGetPositionForOffset(code, pc);
     sloppy_frames--;
     frames.push(new CallSite(recv, fun, pos, (sloppy_frames < 0)));
   }
@@ -1040,13 +1023,14 @@ var formatting_custom_stack_trace = false;
 
 function FormatStackTrace(obj, raw_stack) {
   var frames = GetStackFrames(raw_stack);
-  if (IS_FUNCTION($Error.prepareStackTrace) && !formatting_custom_stack_trace) {
+  if (IS_FUNCTION(GlobalError.prepareStackTrace) &&
+      !formatting_custom_stack_trace) {
     var array = [];
     %MoveArrayContents(frames, array);
     formatting_custom_stack_trace = true;
     var stack_trace = UNDEFINED;
     try {
-      stack_trace = $Error.prepareStackTrace(obj, array);
+      stack_trace = GlobalError.prepareStackTrace(obj, array);
     } catch (e) {
       throw e;  // The custom formatting function threw.  Rethrow.
     } finally {
@@ -1072,7 +1056,7 @@ function FormatStackTrace(obj, raw_stack) {
     }
     lines.push("    at " + line);
   }
-  return %_CallFunction(lines, "\n", ArrayJoin);
+  return %_CallFunction(lines, "\n", $arrayJoin);
 }
 
 
@@ -1090,8 +1074,6 @@ function GetTypeName(receiver, requireConstructor) {
   return constructorName;
 }
 
-
-var stack_trace_symbol;  // Set during bootstrapping.
 var formatted_stack_trace_symbol = NEW_PRIVATE_OWN("formatted stack trace");
 
 
@@ -1105,7 +1087,7 @@ var StackTraceGetter = function() {
       GET_PRIVATE(holder, formatted_stack_trace_symbol);
     if (IS_UNDEFINED(formatted_stack_trace)) {
       // No formatted stack trace available.
-      var stack_trace = GET_PRIVATE(holder, stack_trace_symbol);
+      var stack_trace = GET_PRIVATE(holder, $stackTraceSymbol);
       if (IS_UNDEFINED(stack_trace)) {
         // Neither formatted nor structured stack trace available.
         // Look further up the prototype chain.
@@ -1113,7 +1095,7 @@ var StackTraceGetter = function() {
         continue;
       }
       formatted_stack_trace = FormatStackTrace(holder, stack_trace);
-      SET_PRIVATE(holder, stack_trace_symbol, UNDEFINED);
+      SET_PRIVATE(holder, $stackTraceSymbol, UNDEFINED);
       SET_PRIVATE(holder, formatted_stack_trace_symbol, formatted_stack_trace);
     }
     return formatted_stack_trace;
@@ -1125,8 +1107,8 @@ var StackTraceGetter = function() {
 // If the receiver equals the holder, set the formatted stack trace that the
 // getter returns.
 var StackTraceSetter = function(v) {
-  if (HAS_PRIVATE(this, stack_trace_symbol)) {
-    SET_PRIVATE(this, stack_trace_symbol, UNDEFINED);
+  if (HAS_PRIVATE(this, $stackTraceSymbol)) {
+    SET_PRIVATE(this, $stackTraceSymbol, UNDEFINED);
     SET_PRIVATE(this, formatted_stack_trace_symbol, v);
   }
 };
@@ -1143,72 +1125,67 @@ var captureStackTrace = function captureStackTrace(obj, cons_opt) {
 }
 
 
-function SetUpError() {
-  // Define special error type constructors.
-
-  var DefineError = function(f) {
-    // Store the error function in both the global object
-    // and the runtime object. The function is fetched
-    // from the runtime object when throwing errors from
-    // within the runtime system to avoid strange side
-    // effects when overwriting the error functions from
-    // user code.
-    var name = f.name;
-    %AddNamedProperty(global, name, f, DONT_ENUM);
-    %AddNamedProperty(builtins, '$' + name, f,
-                      DONT_ENUM | DONT_DELETE | READ_ONLY);
-    // Configure the error function.
-    if (name == 'Error') {
-      // The prototype of the Error object must itself be an error.
-      // However, it can't be an instance of the Error object because
-      // it hasn't been properly configured yet.  Instead we create a
-      // special not-a-true-error-but-close-enough object.
-      var ErrorPrototype = function() {};
-      %FunctionSetPrototype(ErrorPrototype, $Object.prototype);
-      %FunctionSetInstanceClassName(ErrorPrototype, 'Error');
-      %FunctionSetPrototype(f, new ErrorPrototype());
-    } else {
-      %FunctionSetPrototype(f, new $Error());
-      %InternalSetPrototype(f, $Error);
-    }
-    %FunctionSetInstanceClassName(f, 'Error');
-    %AddNamedProperty(f.prototype, 'constructor', f, DONT_ENUM);
-    %AddNamedProperty(f.prototype, 'name', name, DONT_ENUM);
-    %SetCode(f, function(m) {
-      if (%_IsConstructCall()) {
-        try { captureStackTrace(this, f); } catch (e) { }
-        // Define all the expected properties directly on the error
-        // object. This avoids going through getters and setters defined
-        // on prototype objects.
-        if (!IS_UNDEFINED(m)) {
-          %AddNamedProperty(this, 'message', ToString(m), DONT_ENUM);
-        }
-      } else {
-        return new f(m);
+// Define special error type constructors.
+function DefineError(f) {
+  // Store the error function in both the global object
+  // and the runtime object. The function is fetched
+  // from the runtime object when throwing errors from
+  // within the runtime system to avoid strange side
+  // effects when overwriting the error functions from
+  // user code.
+  var name = f.name;
+  %AddNamedProperty(global, name, f, DONT_ENUM);
+  // Configure the error function.
+  if (name == 'Error') {
+    // The prototype of the Error object must itself be an error.
+    // However, it can't be an instance of the Error object because
+    // it hasn't been properly configured yet.  Instead we create a
+    // special not-a-true-error-but-close-enough object.
+    var ErrorPrototype = function() {};
+    %FunctionSetPrototype(ErrorPrototype, GlobalObject.prototype);
+    %FunctionSetInstanceClassName(ErrorPrototype, 'Error');
+    %FunctionSetPrototype(f, new ErrorPrototype());
+  } else {
+    %FunctionSetPrototype(f, new GlobalError());
+    %InternalSetPrototype(f, GlobalError);
+  }
+  %FunctionSetInstanceClassName(f, 'Error');
+  %AddNamedProperty(f.prototype, 'constructor', f, DONT_ENUM);
+  %AddNamedProperty(f.prototype, 'name', name, DONT_ENUM);
+  %SetCode(f, function(m) {
+    if (%_IsConstructCall()) {
+      try { captureStackTrace(this, f); } catch (e) { }
+      // Define all the expected properties directly on the error
+      // object. This avoids going through getters and setters defined
+      // on prototype objects.
+      if (!IS_UNDEFINED(m)) {
+        %AddNamedProperty(this, 'message', ToString(m), DONT_ENUM);
       }
-    });
-    %SetNativeFlag(f);
-  };
+    } else {
+      return new f(m);
+    }
+  });
+  %SetNativeFlag(f);
+  return f;
+};
 
-  DefineError(function Error() { });
-  DefineError(function TypeError() { });
-  DefineError(function RangeError() { });
-  DefineError(function SyntaxError() { });
-  DefineError(function ReferenceError() { });
-  DefineError(function EvalError() { });
-  DefineError(function URIError() { });
-}
+GlobalError = DefineError(function Error() { });
+GlobalEvalError = DefineError(function EvalError() { });
+GlobalRangeError = DefineError(function RangeError() { });
+GlobalReferenceError = DefineError(function ReferenceError() { });
+GlobalSyntaxError = DefineError(function SyntaxError() { });
+GlobalTypeError = DefineError(function TypeError() { });
+GlobalURIError = DefineError(function URIError() { });
 
-SetUpError();
 
-$Error.captureStackTrace = captureStackTrace;
+GlobalError.captureStackTrace = captureStackTrace;
 
-%AddNamedProperty($Error.prototype, 'message', '', DONT_ENUM);
+%AddNamedProperty(GlobalError.prototype, 'message', '', DONT_ENUM);
 
 // Global list of error objects visited during ErrorToString. This is
 // used to detect cycles in error toString formatting.
 var visited_errors = new InternalArray();
-var cyclic_error_marker = new $Object();
+var cyclic_error_marker = new GlobalObject();
 
 function GetPropertyWithoutInvokingMonkeyGetters(error, name) {
   var current = error;
@@ -1224,11 +1201,11 @@ function GetPropertyWithoutInvokingMonkeyGetters(error, name) {
   var desc = %GetOwnProperty(current, name);
   if (desc && desc[IS_ACCESSOR_INDEX]) {
     var isName = name === "name";
-    if (current === $ReferenceError.prototype)
+    if (current === GlobalReferenceError.prototype)
       return isName ? "ReferenceError" : UNDEFINED;
-    if (current === $SyntaxError.prototype)
+    if (current === GlobalSyntaxError.prototype)
       return isName ? "SyntaxError" : UNDEFINED;
-    if (current === $TypeError.prototype)
+    if (current === GlobalTypeError.prototype)
       return isName ? "TypeError" : UNDEFINED;
   }
   // Otherwise, read normally.
@@ -1252,7 +1229,7 @@ function ErrorToStringDetectCycle(error) {
 
 function ErrorToString() {
   if (!IS_SPEC_OBJECT(this)) {
-    throw MakeTypeError("called_on_non_object", ["Error.prototype.toString"]);
+    throw MakeTypeError(kCalledOnNonObject, "Error.prototype.toString");
   }
 
   try {
@@ -1267,18 +1244,70 @@ function ErrorToString() {
   }
 }
 
+InstallFunctions(GlobalError.prototype, DONT_ENUM, ['toString', ErrorToString]);
 
-InstallFunctions($Error.prototype, DONT_ENUM, ['toString', ErrorToString]);
+$errorToString = ErrorToString;
+$formatMessage = FormatMessage;
+$getStackTraceLine = GetStackTraceLine;
+$messageGetPositionInLine = GetPositionInLine;
+$messageGetLineNumber = GetLineNumber;
+$messageGetSourceLine = GetSourceLine;
+$toDetailString = ToDetailString;
 
-// Boilerplate for exceptions for stack overflows. Used from
-// Isolate::StackOverflow().
-function SetUpStackOverflowBoilerplate() {
-  var boilerplate = MakeRangeError(kStackOverflow);
+$Error = GlobalError;
+$EvalError = GlobalEvalError;
+$RangeError = GlobalRangeError;
+$ReferenceError = GlobalReferenceError;
+$SyntaxError = GlobalSyntaxError;
+$TypeError = GlobalTypeError;
+$URIError = GlobalURIError;
 
-  %DefineAccessorPropertyUnchecked(
-      boilerplate, 'stack', StackTraceGetter, StackTraceSetter, DONT_ENUM);
-
-  return boilerplate;
+MakeError = function(type, arg0, arg1, arg2) {
+  return MakeGenericError(GlobalError, type, arg0, arg1, arg2);
 }
 
-var kStackOverflowBoilerplate = SetUpStackOverflowBoilerplate();
+MakeEvalError = function(type, arg0, arg1, arg2) {
+  return MakeGenericError(GlobalEvalError, type, arg0, arg1, arg2);
+}
+
+MakeRangeError = function(type, arg0, arg1, arg2) {
+  return MakeGenericError(GlobalRangeError, type, arg0, arg1, arg2);
+}
+
+MakeReferenceError = function(type, arg0, arg1, arg2) {
+  return MakeGenericError(GlobalReferenceError, type, arg0, arg1, arg2);
+}
+
+MakeSyntaxError = function(type, arg0, arg1, arg2) {
+  return MakeGenericError(GlobalSyntaxError, type, arg0, arg1, arg2);
+}
+
+MakeTypeError = function(type, arg0, arg1, arg2) {
+  return MakeGenericError(GlobalTypeError, type, arg0, arg1, arg2);
+}
+
+MakeURIError = function() {
+  return MakeGenericError(GlobalURIError, kURIMalformed);
+}
+
+// The embedded versions are called from unoptimized code, with embedded
+// arguments. Those arguments cannot be arrays, which are context-dependent.
+MakeSyntaxErrorEmbedded = function(type, arg) {
+  return MakeGenericError(GlobalSyntaxError, type, [arg]);
+}
+
+MakeReferenceErrorEmbedded = function(type, arg) {
+  return MakeGenericError(GlobalReferenceError, type, [arg]);
+}
+
+MakeTypeErrorEmbedded = function(type, arg) {
+  return MakeGenericError(GlobalTypeError, type, [arg]);
+}
+
+//Boilerplate for exceptions for stack overflows. Used from
+//Isolate::StackOverflow().
+$stackOverflowBoilerplate = MakeRangeError(kStackOverflow);
+%DefineAccessorPropertyUnchecked($stackOverflowBoilerplate, 'stack',
+                                 StackTraceGetter, StackTraceSetter, DONT_ENUM);
+
+})();

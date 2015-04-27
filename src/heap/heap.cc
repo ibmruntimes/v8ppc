@@ -24,7 +24,6 @@
 #include "src/heap/objects-visiting.h"
 #include "src/heap/store-buffer.h"
 #include "src/heap-profiler.h"
-#include "src/isolate-inl.h"
 #include "src/runtime-profiler.h"
 #include "src/scopeinfo.h"
 #include "src/snapshot/natives.h"
@@ -101,6 +100,8 @@ Heap::Heap()
       allocation_timeout_(0),
 #endif  // DEBUG
       old_generation_allocation_limit_(initial_old_generation_size_),
+      idle_old_generation_allocation_limit_(
+          kMinimumOldGenerationAllocationLimit),
       old_gen_exhausted_(false),
       inline_allocation_disabled_(false),
       store_buffer_rebuilder_(store_buffer()),
@@ -140,9 +141,7 @@ Heap::Heap()
       chunks_queued_for_free_(NULL),
       gc_callbacks_depth_(0),
       deserialization_complete_(false),
-      concurrent_sweeping_enabled_(false),
-      migration_failure_(false),
-      previous_migration_failure_(false) {
+      concurrent_sweeping_enabled_(false) {
 // Allow build-time customization of the max semispace size. Building
 // V8 with snapshots and a non-default max semispace size is much
 // easier if you can define it as part of the build environment.
@@ -456,6 +455,25 @@ intptr_t Heap::SizeOfObjects() {
 }
 
 
+const char* Heap::GetSpaceName(int idx) {
+  switch (idx) {
+    case NEW_SPACE:
+      return "new_space";
+    case OLD_SPACE:
+      return "old_space";
+    case MAP_SPACE:
+      return "map_space";
+    case CODE_SPACE:
+      return "code_space";
+    case LO_SPACE:
+      return "large_object_space";
+    default:
+      UNREACHABLE();
+  }
+  return nullptr;
+}
+
+
 void Heap::ClearAllICsByKind(Code::Kind kind) {
   HeapObjectIterator it(code_space());
 
@@ -689,13 +707,26 @@ void Heap::GarbageCollectionEpilogue() {
   // Remember the last top pointer so that we can later find out
   // whether we allocated in new space since the last GC.
   new_space_top_after_last_gc_ = new_space()->top();
+}
 
-  if (migration_failure_) {
-    set_previous_migration_failure(true);
-  } else {
-    set_previous_migration_failure(false);
+
+void Heap::PreprocessStackTraces() {
+  if (!weak_stack_trace_list()->IsWeakFixedArray()) return;
+  WeakFixedArray* array = WeakFixedArray::cast(weak_stack_trace_list());
+  int length = array->Length();
+  for (int i = 0; i < length; i++) {
+    if (array->IsEmptySlot(i)) continue;
+    FixedArray* elements = FixedArray::cast(array->Get(i));
+    for (int j = 1; j < elements->length(); j += 4) {
+      Code* code = Code::cast(elements->get(j + 2));
+      int offset = Smi::cast(elements->get(j + 3))->value();
+      Address pc = code->address() + offset;
+      int pos = code->SourcePosition(pc);
+      elements->set(j + 2, Smi::FromInt(pos));
+    }
+    array->Clear(i);
   }
-  set_migration_failure(false);
+  array->Compact();
 }
 
 
@@ -780,7 +811,8 @@ void Heap::CollectAllAvailableGarbage(const char* gc_reason) {
   const int kMaxNumberOfAttempts = 7;
   const int kMinNumberOfAttempts = 2;
   for (int attempt = 0; attempt < kMaxNumberOfAttempts; attempt++) {
-    if (!CollectGarbage(MARK_COMPACTOR, gc_reason, NULL) &&
+    if (!CollectGarbage(MARK_COMPACTOR, gc_reason, NULL,
+                        v8::kGCCallbackFlagForced) &&
         attempt + 1 >= kMinNumberOfAttempts) {
       break;
     }
@@ -834,6 +866,7 @@ bool Heap::CollectGarbage(GarbageCollector collector, const char* gc_reason,
   }
 
   if (collector == MARK_COMPACTOR &&
+      !mark_compact_collector()->finalize_incremental_marking() &&
       !mark_compact_collector()->abort_incremental_marking() &&
       !incremental_marking()->IsStopped() &&
       !incremental_marking()->should_hurry() &&
@@ -1263,6 +1296,8 @@ void Heap::MarkCompactEpilogue() {
   isolate_->counters()->objs_since_last_full()->Set(0);
 
   incremental_marking()->Epilogue();
+
+  PreprocessStackTraces();
 }
 
 
@@ -1669,7 +1704,6 @@ void Heap::UpdateReferencesInExternalStringTable(
 
 void Heap::ProcessAllWeakReferences(WeakObjectRetainer* retainer) {
   ProcessArrayBuffers(retainer, false);
-  ProcessNewArrayBufferViews(retainer);
   ProcessNativeContexts(retainer);
   ProcessAllocationSites(retainer);
 }
@@ -1677,7 +1711,6 @@ void Heap::ProcessAllWeakReferences(WeakObjectRetainer* retainer) {
 
 void Heap::ProcessYoungWeakReferences(WeakObjectRetainer* retainer) {
   ProcessArrayBuffers(retainer, true);
-  ProcessNewArrayBufferViews(retainer);
   ProcessNativeContexts(retainer);
 }
 
@@ -1704,7 +1737,6 @@ void Heap::ProcessArrayBuffers(WeakObjectRetainer* retainer,
   Object* undefined = undefined_value();
   Object* next = array_buffers_list();
   bool old_objects_recorded = false;
-  if (migration_failure()) return;
   while (next != undefined) {
     if (!old_objects_recorded) {
       old_objects_recorded = !InNewSpace(next);
@@ -1712,20 +1744,6 @@ void Heap::ProcessArrayBuffers(WeakObjectRetainer* retainer,
     CHECK((InNewSpace(next) && !old_objects_recorded) || !InNewSpace(next));
     next = JSArrayBuffer::cast(next)->weak_next();
   }
-}
-
-
-void Heap::ProcessNewArrayBufferViews(WeakObjectRetainer* retainer) {
-  // Retain the list of new space views.
-  Object* typed_array_obj = VisitWeakList<JSArrayBufferView>(
-      this, new_array_buffer_views_list_, retainer, false, NULL);
-  set_new_array_buffer_views_list(typed_array_obj);
-
-  // Some objects in the list may be in old space now. Find them
-  // and move them to the corresponding array buffer.
-  Object* view = VisitNewArrayBufferViewsWeakList(
-      this, new_array_buffer_views_list_, retainer);
-  set_new_array_buffer_views_list(view);
 }
 
 
@@ -2160,7 +2178,6 @@ class ScavengingVisitor : public StaticVisitorBase {
       if (SemiSpaceCopyObject<alignment>(map, slot, object, object_size)) {
         return;
       }
-      heap->set_migration_failure(true);
     }
 
     if (PromoteObject<object_contents, alignment>(map, slot, object,
@@ -3078,7 +3095,7 @@ void Heap::CreateInitialObjects() {
                           TENURED));
 
   Handle<SeededNumberDictionary> slow_element_dictionary =
-      SeededNumberDictionary::New(isolate(), 0, TENURED);
+      SeededNumberDictionary::New(isolate(), 1, TENURED);
   slow_element_dictionary->set_requires_slow_elements();
   set_empty_slow_element_dictionary(*slow_element_dictionary);
 
@@ -3086,6 +3103,12 @@ void Heap::CreateInitialObjects() {
 
   // Handling of script id generation is in Factory::NewScript.
   set_last_script_id(Smi::FromInt(v8::UnboundScript::kNoScriptId));
+
+  Handle<PropertyCell> cell = factory->NewPropertyCell();
+  cell->set_value(Smi::FromInt(Isolate::kArrayProtectorValid));
+  set_array_protector(*cell);
+
+  set_weak_stack_trace_list(Smi::FromInt(0));
 
   set_allocation_sites_scratchpad(
       *factory->NewFixedArray(kAllocationSiteScratchpadSize, TENURED));
@@ -3123,6 +3146,7 @@ bool Heap::RootCanBeWrittenAfterInitialization(Heap::RootListIndex root_index) {
     case kDetachedContextsRootIndex:
     case kWeakObjectToCodeTableRootIndex:
     case kRetainedMapsRootIndex:
+    case kWeakStackTraceListRootIndex:
 // Smi values
 #define SMI_ENTRY(type, name, Name) case k##Name##RootIndex:
       SMI_ROOT_LIST(SMI_ENTRY)
@@ -5454,7 +5478,6 @@ bool Heap::CreateHeapObjects() {
   set_native_contexts_list(undefined_value());
   set_array_buffers_list(undefined_value());
   set_last_array_buffer_in_list(undefined_value());
-  set_new_array_buffer_views_list(undefined_value());
   set_allocation_sites_list(undefined_value());
   return true;
 }
@@ -6363,10 +6386,9 @@ void Heap::ClearObjectStats(bool clear_last_time_stats) {
 static base::LazyMutex object_stats_mutex = LAZY_MUTEX_INITIALIZER;
 
 
-static void TraceObjectStat(const char* name, int count, int size) {
-  if (size > 0) {
-    PrintF("%40s\tcount= %6d\t size= %6d kb\n", name, count, size);
-  }
+void Heap::TraceObjectStat(const char* name, int count, int size, double time) {
+  PrintPID("heap:%p, time:%f, gc:%d, type:%s, count:%d, size:%d\n",
+           static_cast<void*>(this), time, ms_count_, name, count, size);
 }
 
 
@@ -6376,25 +6398,26 @@ void Heap::TraceObjectStats() {
   int count;
   int size;
   int total_size = 0;
+  double time = isolate_->time_millis_since_init();
 #define TRACE_OBJECT_COUNT(name)                     \
   count = static_cast<int>(object_counts_[name]);    \
   size = static_cast<int>(object_sizes_[name]) / KB; \
   total_size += size;                                \
-  TraceObjectStat(#name, count, size);
+  TraceObjectStat(#name, count, size, time);
   INSTANCE_TYPE_LIST(TRACE_OBJECT_COUNT)
 #undef TRACE_OBJECT_COUNT
 #define TRACE_OBJECT_COUNT(name)                      \
   index = FIRST_CODE_KIND_SUB_TYPE + Code::name;      \
   count = static_cast<int>(object_counts_[index]);    \
   size = static_cast<int>(object_sizes_[index]) / KB; \
-  TraceObjectStat("CODE_" #name, count, size);
+  TraceObjectStat("*CODE_" #name, count, size, time);
   CODE_KIND_LIST(TRACE_OBJECT_COUNT)
 #undef TRACE_OBJECT_COUNT
 #define TRACE_OBJECT_COUNT(name)                      \
   index = FIRST_FIXED_ARRAY_SUB_TYPE + name;          \
   count = static_cast<int>(object_counts_[index]);    \
   size = static_cast<int>(object_sizes_[index]) / KB; \
-  TraceObjectStat("FIXED_ARRAY_" #name, count, size);
+  TraceObjectStat("*FIXED_ARRAY_" #name, count, size, time);
   FIXED_ARRAY_SUB_INSTANCE_TYPE_LIST(TRACE_OBJECT_COUNT)
 #undef TRACE_OBJECT_COUNT
 #define TRACE_OBJECT_COUNT(name)                                              \
@@ -6402,10 +6425,9 @@ void Heap::TraceObjectStats() {
       FIRST_CODE_AGE_SUB_TYPE + Code::k##name##CodeAge - Code::kFirstCodeAge; \
   count = static_cast<int>(object_counts_[index]);                            \
   size = static_cast<int>(object_sizes_[index]) / KB;                         \
-  TraceObjectStat("CODE_AGE_" #name, count, size);
+  TraceObjectStat("*CODE_AGE_" #name, count, size, time);
   CODE_AGE_LIST_COMPLETE(TRACE_OBJECT_COUNT)
 #undef TRACE_OBJECT_COUNT
-  PrintF("Total size= %d kb\n", total_size);
 }
 
 

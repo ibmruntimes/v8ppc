@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+var $spreadArguments;
+var $spreadIterable;
+
+(function() {
+
 'use strict';
 
 function SpreadArguments() {
@@ -22,7 +27,7 @@ function SpreadArguments() {
 
 function SpreadIterable(collection) {
   if (IS_NULL_OR_UNDEFINED(collection)) {
-    throw MakeTypeError("not_iterable", [collection]);
+    throw MakeTypeError(kNotIterable, collection);
   }
 
   var args = new InternalArray();
@@ -31,3 +36,8 @@ function SpreadIterable(collection) {
   }
   return args;
 }
+
+$spreadArguments = SpreadArguments;
+$spreadIterable = SpreadIterable;
+
+})();

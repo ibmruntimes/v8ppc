@@ -36,7 +36,6 @@
 #include "src/debug.h"
 #include "src/hashmap.h"
 #include "src/heap-profiler.h"
-#include "src/utils-inl.h"
 #include "test/cctest/cctest.h"
 
 using i::AllocationTraceNode;
@@ -668,7 +667,7 @@ TEST(HeapSnapshotAddressReuse) {
   CompileRun(
       "for (var i = 0; i < 10000; ++i)\n"
       "  a[i] = new A();\n");
-  CcTest::heap()->CollectAllGarbage(i::Heap::kNoGCFlags);
+  CcTest::heap()->CollectAllGarbage();
 
   const v8::HeapSnapshot* snapshot2 = heap_profiler->TakeHeapSnapshot();
   CHECK(ValidateSnapshot(snapshot2));
@@ -710,7 +709,7 @@ TEST(HeapEntryIdsAndArrayShift) {
       "for (var i = 0; i < 1; ++i)\n"
       "  a.shift();\n");
 
-  CcTest::heap()->CollectAllGarbage(i::Heap::kNoGCFlags);
+  CcTest::heap()->CollectAllGarbage();
 
   const v8::HeapSnapshot* snapshot2 = heap_profiler->TakeHeapSnapshot();
   CHECK(ValidateSnapshot(snapshot2));
@@ -751,7 +750,7 @@ TEST(HeapEntryIdsAndGC) {
   const v8::HeapSnapshot* snapshot1 = heap_profiler->TakeHeapSnapshot();
   CHECK(ValidateSnapshot(snapshot1));
 
-  CcTest::heap()->CollectAllGarbage(i::Heap::kNoGCFlags);
+  CcTest::heap()->CollectAllGarbage();
 
   const v8::HeapSnapshot* snapshot2 = heap_profiler->TakeHeapSnapshot();
   CHECK(ValidateSnapshot(snapshot2));
@@ -1060,7 +1059,7 @@ TEST(HeapSnapshotObjectsStats) {
   // We have to call GC 6 times. In other case the garbage will be
   // the reason of flakiness.
   for (int i = 0; i < 6; ++i) {
-    CcTest::heap()->CollectAllGarbage(i::Heap::kNoGCFlags);
+    CcTest::heap()->CollectAllGarbage();
   }
 
   v8::SnapshotObjectId initial_id;
@@ -2032,9 +2031,8 @@ bool HasWeakGlobalHandle() {
 
 
 static void PersistentHandleCallback(
-    const v8::WeakCallbackData<v8::Object, v8::Persistent<v8::Object> >& data) {
+    const v8::WeakCallbackInfo<v8::Persistent<v8::Object> >& data) {
   data.GetParameter()->Reset();
-  delete data.GetParameter();
 }
 
 
@@ -2046,7 +2044,8 @@ TEST(WeakGlobalHandle) {
 
   v8::Persistent<v8::Object> handle(env->GetIsolate(),
                                     v8::Object::New(env->GetIsolate()));
-  handle.SetWeak(&handle, PersistentHandleCallback);
+  handle.SetWeak(&handle, PersistentHandleCallback,
+                 v8::WeakCallbackType::kParameter);
 
   CHECK(HasWeakGlobalHandle());
 }
@@ -2578,9 +2577,6 @@ TEST(ArrayBufferAndArrayBufferView) {
   const v8::HeapGraphNode* arr1_buffer =
       GetProperty(arr1_obj, v8::HeapGraphEdge::kInternal, "buffer");
   CHECK(arr1_buffer);
-  const v8::HeapGraphNode* first_view =
-      GetProperty(arr1_buffer, v8::HeapGraphEdge::kWeak, "weak_first_view");
-  CHECK(first_view);
   const v8::HeapGraphNode* backing_store =
       GetProperty(arr1_buffer, v8::HeapGraphEdge::kInternal, "backing_store");
   CHECK(backing_store);

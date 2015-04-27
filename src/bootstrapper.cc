@@ -6,13 +6,13 @@
 
 #include "src/accessors.h"
 #include "src/api-natives.h"
+#include "src/base/utils/random-number-generator.h"
 #include "src/code-stubs.h"
 #include "src/extensions/externalize-string-extension.h"
 #include "src/extensions/free-buffer-extension.h"
 #include "src/extensions/gc-extension.h"
 #include "src/extensions/statistics-extension.h"
 #include "src/extensions/trigger-failure-extension.h"
-#include "src/isolate-inl.h"
 #include "src/snapshot/natives.h"
 #include "src/snapshot/snapshot.h"
 #include "third_party/fdlibm/fdlibm.h"
@@ -501,13 +501,10 @@ Handle<JSFunction> Genesis::CreateEmptyFunction(Isolate* isolate) {
         .Assert();
   }
 
-  // Allocate the empty function as the prototype for function ECMAScript
-  // 262 15.3.4.
-  Handle<String> empty_string =
-      factory->InternalizeOneByteString(STATIC_CHAR_VECTOR("Empty"));
+  // Allocate the empty function as the prototype for function - ES6 19.2.3
   Handle<Code> code(isolate->builtins()->builtin(Builtins::kEmptyFunction));
-  Handle<JSFunction> empty_function = factory->NewFunctionWithoutPrototype(
-      empty_string, code);
+  Handle<JSFunction> empty_function =
+      factory->NewFunctionWithoutPrototype(factory->empty_string(), code);
 
   // Allocate the function map first and then patch the prototype later
   Handle<Map> empty_function_map =
@@ -895,6 +892,8 @@ void Genesis::HookUpGlobalObject(Handle<GlobalObject> global_object,
   // Replace outdated global objects in deserialized contexts.
   for (int i = 0; i < outdated_contexts->length(); ++i) {
     Context* context = Context::cast(outdated_contexts->get(i));
+    // Assert that there is only one native context.
+    DCHECK(!context->IsNativeContext() || context == *native_context());
     DCHECK_EQ(context->global_object(), *global_object_from_snapshot);
     context->set_global_object(*global_object);
   }
@@ -1545,7 +1544,7 @@ void Genesis::InstallNativeFunctions() {
 
   INSTALL_NATIVE(JSFunction, "ToNumber", to_number_fun);
   INSTALL_NATIVE(JSFunction, "ToString", to_string_fun);
-  INSTALL_NATIVE(JSFunction, "ToDetailString", to_detail_string_fun);
+  INSTALL_NATIVE(JSFunction, "$toDetailString", to_detail_string_fun);
   INSTALL_NATIVE(JSFunction, "ToObject", to_object_fun);
   INSTALL_NATIVE(JSFunction, "ToInteger", to_integer_fun);
   INSTALL_NATIVE(JSFunction, "ToUint32", to_uint32_fun);
@@ -1553,29 +1552,30 @@ void Genesis::InstallNativeFunctions() {
   INSTALL_NATIVE(JSFunction, "ToLength", to_length_fun);
 
   INSTALL_NATIVE(JSFunction, "GlobalEval", global_eval_fun);
-  INSTALL_NATIVE(JSFunction, "GetStackTraceLine", get_stack_trace_line_fun);
+  INSTALL_NATIVE(JSFunction, "$getStackTraceLine", get_stack_trace_line_fun);
   INSTALL_NATIVE(JSFunction, "ToCompletePropertyDescriptor",
                  to_complete_property_descriptor);
 
-  INSTALL_NATIVE(Symbol, "promiseStatus", promise_status);
-  INSTALL_NATIVE(JSFunction, "PromiseCreate", promise_create);
-  INSTALL_NATIVE(JSFunction, "PromiseResolve", promise_resolve);
-  INSTALL_NATIVE(JSFunction, "PromiseReject", promise_reject);
-  INSTALL_NATIVE(JSFunction, "PromiseChain", promise_chain);
-  INSTALL_NATIVE(JSFunction, "PromiseCatch", promise_catch);
-  INSTALL_NATIVE(JSFunction, "PromiseThen", promise_then);
+  INSTALL_NATIVE(Symbol, "$promiseStatus", promise_status);
+  INSTALL_NATIVE(JSFunction, "$promiseCreate", promise_create);
+  INSTALL_NATIVE(JSFunction, "$promiseResolve", promise_resolve);
+  INSTALL_NATIVE(JSFunction, "$promiseReject", promise_reject);
+  INSTALL_NATIVE(JSFunction, "$promiseChain", promise_chain);
+  INSTALL_NATIVE(JSFunction, "$promiseCatch", promise_catch);
+  INSTALL_NATIVE(JSFunction, "$promiseThen", promise_then);
 
-  INSTALL_NATIVE(JSFunction, "NotifyChange", observers_notify_change);
-  INSTALL_NATIVE(JSFunction, "EnqueueSpliceRecord", observers_enqueue_splice);
-  INSTALL_NATIVE(JSFunction, "BeginPerformSplice",
+  INSTALL_NATIVE(JSFunction, "$observeNotifyChange", observers_notify_change);
+  INSTALL_NATIVE(JSFunction, "$observeEnqueueSpliceRecord",
+                 observers_enqueue_splice);
+  INSTALL_NATIVE(JSFunction, "$observeBeginPerformSplice",
                  observers_begin_perform_splice);
-  INSTALL_NATIVE(JSFunction, "EndPerformSplice",
+  INSTALL_NATIVE(JSFunction, "$observeEndPerformSplice",
                  observers_end_perform_splice);
-  INSTALL_NATIVE(JSFunction, "NativeObjectObserve",
+  INSTALL_NATIVE(JSFunction, "$observeNativeObjectObserve",
                  native_object_observe);
-  INSTALL_NATIVE(JSFunction, "NativeObjectGetNotifier",
+  INSTALL_NATIVE(JSFunction, "$observeNativeObjectGetNotifier",
                  native_object_get_notifier);
-  INSTALL_NATIVE(JSFunction, "NativeObjectNotifierPerformChange",
+  INSTALL_NATIVE(JSFunction, "$observeNativeObjectNotifierPerformChange",
                  native_object_notifier_perform_change);
   INSTALL_NATIVE(JSFunction, "$arrayValues", array_values_iterator);
 }
@@ -1669,6 +1669,7 @@ EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_computed_property_names)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_rest_parameters)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_reflect)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_spreadcalls)
+EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_destructuring)
 
 
 void Genesis::InstallNativeFunctions_harmony_proxies() {
@@ -1697,6 +1698,7 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_unicode)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_computed_property_names)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_rest_parameters)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_spreadcalls)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_destructuring)
 
 void Genesis::InitializeGlobal_harmony_regexps() {
   Handle<JSObject> builtins(native_context()->builtins());
@@ -1724,14 +1726,12 @@ void Genesis::InitializeGlobal_harmony_reflect() {
   Handle<JSObject> builtins(native_context()->builtins());
   // Install references to functions of the Reflect object
   if (FLAG_harmony_reflect || FLAG_harmony_spreadcalls) {
-    Handle<JSFunction> apply =
-        InstallFunction(builtins, "ReflectApply", JS_OBJECT_TYPE,
-                        JSObject::kHeaderSize, MaybeHandle<JSObject>(),
-                        Builtins::kReflectApply);
-    Handle<JSFunction> construct =
-        InstallFunction(builtins, "ReflectConstruct", JS_OBJECT_TYPE,
-                        JSObject::kHeaderSize, MaybeHandle<JSObject>(),
-                        Builtins::kReflectConstruct);
+    Handle<JSFunction> apply = InstallFunction(
+        builtins, "$reflectApply", JS_OBJECT_TYPE, JSObject::kHeaderSize,
+        MaybeHandle<JSObject>(), Builtins::kReflectApply);
+    Handle<JSFunction> construct = InstallFunction(
+        builtins, "$reflectConstruct", JS_OBJECT_TYPE, JSObject::kHeaderSize,
+        MaybeHandle<JSObject>(), Builtins::kReflectConstruct);
     if (FLAG_vector_ics) {
       // Apply embeds an IC, so we need a type vector of size 1 in the shared
       // function info.
@@ -2303,27 +2303,28 @@ bool Genesis::InstallNatives() {
 
 bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_arrays_natives[] = {
-      "native harmony-array.js", "native harmony-typedarray.js", NULL};
+      "native harmony-array.js", "native harmony-typedarray.js", nullptr};
   static const char* harmony_array_includes_natives[] = {
-      "native harmony-array-includes.js", NULL};
-  static const char* harmony_proxies_natives[] = {"native proxy.js", NULL};
-  static const char* harmony_classes_natives[] = {NULL};
-  static const char* harmony_modules_natives[] = {NULL};
-  static const char* harmony_object_literals_natives[] = {NULL};
-  static const char* harmony_regexps_natives[] = {
-      "native harmony-regexp.js", NULL};
-  static const char* harmony_arrow_functions_natives[] = {NULL};
+      "native harmony-array-includes.js", nullptr};
+  static const char* harmony_proxies_natives[] = {"native proxy.js", nullptr};
+  static const char* harmony_classes_natives[] = {nullptr};
+  static const char* harmony_modules_natives[] = {nullptr};
+  static const char* harmony_object_literals_natives[] = {nullptr};
+  static const char* harmony_regexps_natives[] = {"native harmony-regexp.js",
+                                                  nullptr};
+  static const char* harmony_arrow_functions_natives[] = {nullptr};
   static const char* harmony_tostring_natives[] = {"native harmony-tostring.js",
-                                                   NULL};
-  static const char* harmony_sloppy_natives[] = {NULL};
-  static const char* harmony_unicode_natives[] = {NULL};
-  static const char* harmony_unicode_regexps_natives[] = {NULL};
-  static const char* harmony_computed_property_names_natives[] = {NULL};
-  static const char* harmony_rest_parameters_natives[] = {NULL};
+                                                   nullptr};
+  static const char* harmony_sloppy_natives[] = {nullptr};
+  static const char* harmony_unicode_natives[] = {nullptr};
+  static const char* harmony_unicode_regexps_natives[] = {nullptr};
+  static const char* harmony_computed_property_names_natives[] = {nullptr};
+  static const char* harmony_rest_parameters_natives[] = {nullptr};
   static const char* harmony_reflect_natives[] = {"native harmony-reflect.js",
-                                                  NULL};
+                                                  nullptr};
   static const char* harmony_spreadcalls_natives[] = {
-      "native harmony-spread.js", NULL};
+      "native harmony-spread.js", nullptr};
+  static const char* harmony_destructuring_natives[] = {nullptr};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {
@@ -2474,7 +2475,7 @@ bool Genesis::InstallSpecialObjects(Handle<Context> native_context) {
                             JSObject::SetOwnPropertyIgnoreAttributes(
                                 handle(native_context->builtins(), isolate),
                                 factory->InternalizeOneByteString(
-                                    STATIC_CHAR_VECTOR("stack_trace_symbol")),
+                                    STATIC_CHAR_VECTOR("$stackTraceSymbol")),
                                 factory->stack_trace_symbol(), NONE),
                             false);
 

@@ -131,7 +131,7 @@ Handle<String> MessageHandler::GetMessage(Isolate* isolate,
                                           Handle<Object> data) {
   Factory* factory = isolate->factory();
   Handle<String> fmt_str =
-      factory->InternalizeOneByteString(STATIC_CHAR_VECTOR("FormatMessage"));
+      factory->InternalizeOneByteString(STATIC_CHAR_VECTOR("$formatMessage"));
   Handle<JSFunction> fun = Handle<JSFunction>::cast(Object::GetProperty(
           isolate->js_builtins_object(), fmt_str).ToHandleChecked());
   Handle<JSMessageObject> message = Handle<JSMessageObject>::cast(data);
@@ -189,8 +189,8 @@ MaybeHandle<String> MessageTemplate::FormatMessage(int template_index,
   Handle<String> args[] = {arg0, arg1, arg2};
   for (const char* c = template_string; *c != '\0'; c++) {
     if (*c == '%') {
-      builder.AppendString(args[i++]);
       DCHECK(i < arraysize(args));
+      builder.AppendString(args[i++]);
     } else {
       builder.AppendCharacter(*c);
     }

@@ -114,6 +114,14 @@
   'debug-listbreakpoints': [PASS, NO_VARIANTS],  # arm64 nosnap with turbofan
   'debug-enable-disable-breakpoints': [PASS, NO_VARIANTS],  #arm64 nosnap with turbofan.
 
+  # Issue 4035: unexpected frame->context() in debugger
+  'regress/regress-crbug-107996': [PASS, NO_VARIANTS],
+  'regress/regress-crbug-171715': [PASS, NO_VARIANTS],
+  'regress/regress-crbug-222893': [PASS, NO_VARIANTS],
+  'regress/regress-325676': [PASS, NO_VARIANTS],
+  'debug-evaluate-closure': [PASS, NO_VARIANTS],
+  'debug-evaluate-with': [PASS, NO_VARIANTS],
+
   # TODO(mstarzinger): Optimizing top-level code flushed out some correctness
   # issues on ARM and ARM64.
   'es6/math-log2-log10': [PASS, NO_VARIANTS],  # on ARM and ARM64.
@@ -129,6 +137,8 @@
   'debug-stepout-scope-part2': [PASS, NO_VARIANTS],
   'debug-stepout-scope-part3': [PASS, NO_VARIANTS],
   'es6/debug-evaluate-blockscopes': [PASS, NO_VARIANTS],
+  # issue 4055:
+  'es6/generators-debug-scopes': [PASS, NO_VARIANTS],
 
   # TODO(titzer): --always-opt incorrectly disables CrankShaft soft deopt points
   'result-table-min': [PASS, NO_VARIANTS],
@@ -224,6 +234,8 @@
 
   # Too slow for slow variants.
   'asm/embenchen/*': [PASS, SLOW, FAST_VARIANTS],
+  'asm/poppler/*': [PASS, SLOW, FAST_VARIANTS],
+  'asm/sqlite3/*': [PASS, SLOW, FAST_VARIANTS],
 
   # BUG(v8:3838).
   'regress/regress-3116': [PASS, ['isolates', FLAKY]],
@@ -277,16 +289,16 @@
 
   # Issue 3723.
   'regress/regress-3717': [SKIP],
-  # Issue 3924.
-  'mjsunit/debug-clearbreakpointgroup': [SKIP],
-  # Issue 3969.
-  'mjsunit/debug-references': [SKIP],
+  # Issue 478788.
+  'es7/object-observe': [SKIP],
 }],  # 'gc_stress == True'
 
 ##############################################################################
 ['byteorder == big', {
   # Emscripten requires little-endian, skip all tests on big endian platforms.
   'asm/embenchen/*': [SKIP],
+  'asm/poppler/*': [SKIP],
+  'asm/sqlite3/*': [SKIP],
 }],  # 'byteorder == big'
 
 ##############################################################################

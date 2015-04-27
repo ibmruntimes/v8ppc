@@ -924,8 +924,13 @@ Handle<ObjectTemplate> Shell::CreateGlobalTemplate(Isolate* isolate) {
                        FunctionTemplate::New(isolate, ReadLine));
   global_template->Set(String::NewFromUtf8(isolate, "load"),
                        FunctionTemplate::New(isolate, Load));
-  global_template->Set(String::NewFromUtf8(isolate, "quit"),
-                       FunctionTemplate::New(isolate, Quit));
+  // Some Emscripten-generated code tries to call 'quit', which in turn would
+  // call C's exit(). This would lead to memory leaks, because there is no way
+  // we can terminate cleanly then, so we need a way to hide 'quit'.
+  if (!options.omit_quit) {
+    global_template->Set(String::NewFromUtf8(isolate, "quit"),
+                         FunctionTemplate::New(isolate, Quit));
+  }
   global_template->Set(String::NewFromUtf8(isolate, "version"),
                        FunctionTemplate::New(isolate, Version));
 
@@ -1125,13 +1130,14 @@ static char* ReadChars(Isolate* isolate, const char* name, int* size_out) {
 
 struct DataAndPersistent {
   uint8_t* data;
-  Persistent<ArrayBuffer> handle;
+  int byte_length;
+  Global<ArrayBuffer> handle;
 };
 
 
 static void ReadBufferWeakCallback(
-    const v8::WeakCallbackData<ArrayBuffer, DataAndPersistent>& data) {
-  size_t byte_length = data.GetValue()->ByteLength();
+    const v8::WeakCallbackInfo<DataAndPersistent>& data) {
+  int byte_length = data.GetParameter()->byte_length;
   data.GetIsolate()->AdjustAmountOfExternalAllocatedMemory(
       -static_cast<intptr_t>(byte_length));
 
@@ -1159,10 +1165,12 @@ void Shell::ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& args) {
     Throw(args.GetIsolate(), "Error reading file");
     return;
   }
+  data->byte_length = length;
   Handle<v8::ArrayBuffer> buffer =
       ArrayBuffer::New(isolate, data->data, length);
   data->handle.Reset(isolate, buffer);
-  data->handle.SetWeak(data, ReadBufferWeakCallback);
+  data->handle.SetWeak(data, ReadBufferWeakCallback,
+                       v8::WeakCallbackType::kParameter);
   data->handle.MarkIndependent();
   isolate->AdjustAmountOfExternalAllocatedMemory(length);
 
@@ -1374,6 +1382,9 @@ bool Shell::SetOptions(int argc, char* argv[]) {
       // TODO(jochen) See issue 3351
       options.send_idle_notification = true;
       argv[i] = NULL;
+    } else if (strcmp(argv[i], "--omit-quit") == 0) {
+      options.omit_quit = true;
+      argv[i] = NULL;
     } else if (strcmp(argv[i], "-f") == 0) {
       // Ignore any -f flags for compatibility with other stand-alone
       // JavaScript engines.
@@ -1584,9 +1595,9 @@ class ShellArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
 
 class MockArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
  public:
-  void* Allocate(size_t) OVERRIDE { return malloc(1); }
-  void* AllocateUninitialized(size_t length) OVERRIDE { return malloc(1); }
-  void Free(void* p, size_t) OVERRIDE { free(p); }
+  void* Allocate(size_t) override { return malloc(1); }
+  void* AllocateUninitialized(size_t length) override { return malloc(1); }
+  void Free(void* p, size_t) override { free(p); }
 };
 
 

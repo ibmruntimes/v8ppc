@@ -2,13 +2,69 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+(function() {
+
 'use strict';
 
-// This file relies on the fact that the following declaration has been made
-// in runtime.js:
-// var $Array = global.Array;
+%CheckIsBootstrapping();
+
+var GlobalArray = global.Array;
+var GlobalSymbol = global.Symbol;
 
 // -------------------------------------------------------------------
+
+// ES6 draft 03-17-15, section 22.1.3.3
+function ArrayCopyWithin(target, start, end) {
+  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.copyWithin");
+
+  var array = TO_OBJECT_INLINE(this);
+  var length = ToLength(array.length);
+
+  target = TO_INTEGER(target);
+  var to;
+  if (target < 0) {
+    to = $max(length + target, 0);
+  } else {
+    to = $min(target, length);
+  }
+
+  start = TO_INTEGER(start);
+  var from;
+  if (start < 0) {
+    from = $max(length + start, 0);
+  } else {
+    from = $min(start, length);
+  }
+
+  end = IS_UNDEFINED(end) ? length : TO_INTEGER(end);
+  var final;
+  if (end < 0) {
+    final = $max(length + end, 0);
+  } else {
+    final = $min(end, length);
+  }
+
+  var count = $min(final - from, length - to);
+  var direction = 1;
+  if (from < to && to < (from + count)) {
+    direction = -1;
+    from = from + count - 1;
+    to = to + count - 1;
+  }
+
+  while (count > 0) {
+    if (from in array) {
+      array[to] = array[from];
+    } else {
+      delete array[to];
+    }
+    from = from + direction;
+    to = to + direction;
+    count--;
+  }
+
+  return array;
+}
 
 // ES6 draft 07-15-13, section 15.4.3.23
 function ArrayFind(predicate /* thisArg */) {  // length == 1
@@ -118,8 +174,7 @@ function ArrayFill(value /* [, start [, end ] ] */) {  // length == 1
   }
 
   if ((end - i) > 0 && ObjectIsFrozen(array)) {
-    throw MakeTypeError("array_functions_on_frozen",
-                        ["Array.prototype.fill"]);
+    throw MakeTypeError(kArrayFunctionsOnFrozen);
   }
 
   for (; i < end; i++)
@@ -208,34 +263,26 @@ function ArrayOf() {
 
 // -------------------------------------------------------------------
 
-function HarmonyArrayExtendSymbolPrototype() {
-  %CheckIsBootstrapping();
+InstallConstants(GlobalSymbol, [
+  // TODO(dslomov, caitp): Move to symbol.js when shipping
+  "isConcatSpreadable", symbolIsConcatSpreadable
+]);
 
-  InstallConstants(global.Symbol, [
-    // TODO(dslomov, caitp): Move to symbol.js when shipping
-    "isConcatSpreadable", symbolIsConcatSpreadable
-  ]);
-}
+%FunctionSetLength(ArrayCopyWithin, 2);
+%FunctionSetLength(ArrayFrom, 1);
 
-HarmonyArrayExtendSymbolPrototype();
+// Set up non-enumerable functions on the Array object.
+InstallFunctions(GlobalArray, DONT_ENUM, [
+  "from", ArrayFrom,
+  "of", ArrayOf
+]);
 
-function HarmonyArrayExtendArrayPrototype() {
-  %CheckIsBootstrapping();
+// Set up the non-enumerable functions on the Array prototype object.
+InstallFunctions(GlobalArray.prototype, DONT_ENUM, [
+  "copyWithin", ArrayCopyWithin,
+  "find", ArrayFind,
+  "findIndex", ArrayFindIndex,
+  "fill", ArrayFill
+]);
 
-  %FunctionSetLength(ArrayFrom, 1);
-
-  // Set up non-enumerable functions on the Array object.
-  InstallFunctions($Array, DONT_ENUM, [
-    "from", ArrayFrom,
-    "of", ArrayOf
-  ]);
-
-  // Set up the non-enumerable functions on the Array prototype object.
-  InstallFunctions($Array.prototype, DONT_ENUM, [
-    "find", ArrayFind,
-    "findIndex", ArrayFindIndex,
-    "fill", ArrayFill
-  ]);
-}
-
-HarmonyArrayExtendArrayPrototype();
+})();

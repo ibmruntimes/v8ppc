@@ -185,7 +185,9 @@ namespace internal {
   V(FixedArray, keyed_load_dummy_vector, KeyedLoadDummyVector)                 \
   V(FixedArray, detached_contexts, DetachedContexts)                           \
   V(ArrayList, retained_maps, RetainedMaps)                                    \
-  V(WeakHashTable, weak_object_to_code_table, WeakObjectToCodeTable)
+  V(WeakHashTable, weak_object_to_code_table, WeakObjectToCodeTable)           \
+  V(PropertyCell, array_protector, ArrayProtector)                             \
+  V(Object, weak_stack_trace_list, WeakStackTraceList)
 
 // Entries in this list are limited to Smis and are not visited during GC.
 #define SMI_ROOT_LIST(V)                                                   \
@@ -260,7 +262,7 @@ namespace internal {
   V(toJSON_string, "toJSON")                                   \
   V(KeyedLoadMonomorphic_string, "KeyedLoadMonomorphic")       \
   V(KeyedStoreMonomorphic_string, "KeyedStoreMonomorphic")     \
-  V(stack_overflow_string, "kStackOverflowBoilerplate")        \
+  V(stack_overflow_string, "$stackOverflowBoilerplate")        \
   V(illegal_access_string, "illegal access")                   \
   V(cell_value_string, "%cell_value")                          \
   V(illegal_argument_string, "illegal argument")               \
@@ -664,6 +666,19 @@ class Heap {
     }
     return NULL;
   }
+  Space* space(int idx) {
+    switch (idx) {
+      case NEW_SPACE:
+        return new_space();
+      case LO_SPACE:
+        return lo_space();
+      default:
+        return paged_space(idx);
+    }
+  }
+
+  // Returns name of the space.
+  const char* GetSpaceName(int idx);
 
   bool always_allocate() { return always_allocate_scope_depth_ != 0; }
   Address always_allocate_scope_depth_address() {
@@ -763,6 +778,7 @@ class Heap {
   static const int kNoGCFlags = 0;
   static const int kReduceMemoryFootprintMask = 1;
   static const int kAbortIncrementalMarkingMask = 2;
+  static const int kFinalizeIncrementalMarkingMask = 4;
 
   // Making the heap iterable requires us to abort incremental marking.
   static const int kMakeHeapIterableMask = kAbortIncrementalMarkingMask;
@@ -780,7 +796,7 @@ class Heap {
   // non-zero, then the slower precise sweeper is used, which leaves the heap
   // in a state where we can iterate over the heap visiting all objects.
   void CollectAllGarbage(
-      int flags, const char* gc_reason = NULL,
+      int flags = kFinalizeIncrementalMarkingMask, const char* gc_reason = NULL,
       const GCCallbackFlags gc_callback_flags = kNoGCCallbackFlags);
 
   // Last hope GC, should try to squeeze as much as possible.
@@ -866,13 +882,6 @@ class Heap {
   }
   Object* last_array_buffer_in_list() const {
     return last_array_buffer_in_list_;
-  }
-
-  void set_new_array_buffer_views_list(Object* object) {
-    new_array_buffer_views_list_ = object;
-  }
-  Object* new_array_buffer_views_list() const {
-    return new_array_buffer_views_list_;
   }
 
   void set_allocation_sites_list(Object* object) {
@@ -1441,6 +1450,7 @@ class Heap {
   }
 
   void TraceObjectStats();
+  void TraceObjectStat(const char* name, int count, int size, double time);
   void CheckpointObjectStats();
 
   // We don't use a LockGuard here since we want to lock the heap
@@ -1479,18 +1489,6 @@ class Heap {
                           int size_in_bytes);
 
   bool deserialization_complete() const { return deserialization_complete_; }
-
-  bool migration_failure() const { return migration_failure_; }
-  void set_migration_failure(bool migration_failure) {
-    migration_failure_ = migration_failure;
-  }
-
-  bool previous_migration_failure() const {
-    return previous_migration_failure_;
-  }
-  void set_previous_migration_failure(bool previous_migration_failure) {
-    previous_migration_failure_ = previous_migration_failure;
-  }
 
  protected:
   // Methods made available to tests.
@@ -1666,11 +1664,6 @@ class Heap {
   Object* last_array_buffer_in_list_;
   Object* allocation_sites_list_;
 
-  // This is a global list of array buffer views in new space. When the views
-  // get promoted, they are removed form the list and added to the corresponding
-  // array buffer.
-  Object* new_array_buffer_views_list_;
-
   // List of encountered weak collections (JSWeakMap and JSWeakSet) during
   // marking. It is initialized during marking, destroyed after marking and
   // contains Smi(0) while marking is not active.
@@ -1749,6 +1742,8 @@ class Heap {
   // reporting/verification activities when compiled with DEBUG set.
   void GarbageCollectionPrologue();
   void GarbageCollectionEpilogue();
+
+  void PreprocessStackTraces();
 
   // Pretenuring decisions are made based on feedback collected during new
   // space evacuation. Note that between feedback collection and calling this
@@ -2001,7 +1996,6 @@ class Heap {
 
   void ProcessNativeContexts(WeakObjectRetainer* retainer);
   void ProcessArrayBuffers(WeakObjectRetainer* retainer, bool stop_after_young);
-  void ProcessNewArrayBufferViews(WeakObjectRetainer* retainer);
   void ProcessAllocationSites(WeakObjectRetainer* retainer);
 
   // Deopts all code that contains allocation instruction which are tenured or
@@ -2160,13 +2154,6 @@ class Heap {
   bool deserialization_complete_;
 
   bool concurrent_sweeping_enabled_;
-
-  // A migration failure indicates that a semi-space copy of an object during
-  // a scavenge failed and the object got promoted instead.
-  bool migration_failure_;
-
-  // A migration failure happened in the previous scavenge.
-  bool previous_migration_failure_;
 
   friend class AlwaysAllocateScope;
   friend class Deserializer;

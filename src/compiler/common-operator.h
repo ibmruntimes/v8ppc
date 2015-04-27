@@ -33,7 +33,7 @@ std::ostream& operator<<(std::ostream&, BranchHint);
 BranchHint BranchHintOf(const Operator* const);
 
 
-class SelectParameters FINAL {
+class SelectParameters final {
  public:
   explicit SelectParameters(MachineType type,
                             BranchHint hint = BranchHint::kNone)
@@ -122,7 +122,7 @@ enum FrameStateType {
 };
 
 
-class FrameStateCallInfo FINAL {
+class FrameStateCallInfo final {
  public:
   FrameStateCallInfo(
       FrameStateType type, BailoutId bailout_id,
@@ -156,9 +156,30 @@ std::ostream& operator<<(std::ostream&, FrameStateCallInfo const&);
 size_t ProjectionIndexOf(const Operator* const);
 
 
+// The {IrOpcode::kParameter} opcode represents an incoming parameter to the
+// function. This class bundles the index and a debug name for such operators.
+class ParameterInfo final {
+ public:
+  ParameterInfo(int index, const char* debug_name)
+      : index_(index), debug_name_(debug_name) {}
+
+  int index() const { return index_; }
+  const char* debug_name() const { return debug_name_; }
+
+ private:
+  int index_;
+  const char* debug_name_;
+};
+
+std::ostream& operator<<(std::ostream&, ParameterInfo const&);
+
+int ParameterIndexOf(const Operator* const);
+const ParameterInfo& ParameterInfoOf(const Operator* const);
+
+
 // Interface for building common operators that can be used at any level of IR,
 // including JavaScript, mid-level, and low-level.
-class CommonOperatorBuilder FINAL : public ZoneObject {
+class CommonOperatorBuilder final : public ZoneObject {
  public:
   explicit CommonOperatorBuilder(Zone* zone);
 
@@ -184,7 +205,7 @@ class CommonOperatorBuilder FINAL : public ZoneObject {
   const Operator* Start(int num_formal_parameters);
   const Operator* Loop(int control_input_count);
   const Operator* Merge(int control_input_count);
-  const Operator* Parameter(int index);
+  const Operator* Parameter(int index, const char* debug_name = nullptr);
 
   const Operator* OsrNormalEntry();
   const Operator* OsrLoopEntry();

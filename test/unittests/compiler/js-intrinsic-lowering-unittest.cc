@@ -26,7 +26,7 @@ namespace compiler {
 class JSIntrinsicLoweringTest : public GraphTest {
  public:
   JSIntrinsicLoweringTest() : GraphTest(3), javascript_(zone()) {}
-  ~JSIntrinsicLoweringTest() OVERRIDE {}
+  ~JSIntrinsicLoweringTest() override {}
 
  protected:
   Reduction Reduce(Node* node, MachineOperatorBuilder::Flags flags =
@@ -35,6 +35,12 @@ class JSIntrinsicLoweringTest : public GraphTest {
     JSGraph jsgraph(isolate(), graph(), common(), javascript(), &machine);
     JSIntrinsicLowering reducer(&jsgraph);
     return reducer.Reduce(node);
+  }
+
+  Node* EmptyFrameState() {
+    MachineOperatorBuilder machine(zone());
+    JSGraph jsgraph(isolate(), graph(), common(), javascript(), &machine);
+    return jsgraph.EmptyFrameState();
   }
 
   JSOperatorBuilder* javascript() { return &javascript_; }

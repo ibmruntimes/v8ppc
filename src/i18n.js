@@ -14,7 +14,9 @@
 
 %CheckIsBootstrapping();
 
+var GlobalBoolean = global.Boolean;
 var GlobalDate = global.Date;
+var GlobalNumber = global.Number;
 var GlobalRegExp = global.RegExp;
 var GlobalString = global.String;
 
@@ -217,8 +219,7 @@ var ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR =
 function addBoundMethod(obj, methodName, implementation, length) {
   function getter() {
     if (!%IsInitializedIntlObject(this)) {
-        throw new $TypeError('Method ' + methodName + ' called on a ' +
-                            'non-object or on a wrong type of object.');
+      throw MakeTypeError(kMethodCalledOnWrongObject, methodName);
     }
     var internalName = '__bound' + methodName + '__';
     if (this[internalName] === undefined) {
@@ -227,21 +228,21 @@ function addBoundMethod(obj, methodName, implementation, length) {
       if (length === undefined || length === 2) {
         boundMethod = function(x, y) {
           if (%_IsConstructCall()) {
-            throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+            throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
           }
           return implementation(that, x, y);
         }
       } else if (length === 1) {
         boundMethod = function(x) {
           if (%_IsConstructCall()) {
-            throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+            throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
           }
           return implementation(that, x);
         }
       } else {
         boundMethod = function() {
           if (%_IsConstructCall()) {
-            throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+            throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
           }
           // DateTimeFormat.format needs to be 0 arg method, but can stil
           // receive optional dateValue param. If one was provided, pass it
@@ -253,7 +254,7 @@ function addBoundMethod(obj, methodName, implementation, length) {
           }
         }
       }
-      %FunctionSetName(boundMethod, internalName);
+      SetFunctionName(boundMethod, internalName);
       %FunctionRemovePrototype(boundMethod);
       %SetNativeFlag(boundMethod);
       this[internalName] = boundMethod;
@@ -261,7 +262,7 @@ function addBoundMethod(obj, methodName, implementation, length) {
     return this[internalName];
   }
 
-  %FunctionSetName(getter, methodName);
+  SetFunctionName(getter, methodName);
   %FunctionRemovePrototype(getter);
   %SetNativeFlag(getter);
 
@@ -279,7 +280,7 @@ function addBoundMethod(obj, methodName, implementation, length) {
  */
 function supportedLocalesOf(service, locales, options) {
   if (IS_NULL(service.match(GetServiceRE()))) {
-    throw new $Error('Internal error, wrong service type: ' + service);
+    throw MakeError(kWrongServiceType, service);
   }
 
   // Provide defaults if matcher was not specified.
@@ -293,7 +294,7 @@ function supportedLocalesOf(service, locales, options) {
   if (matcher !== undefined) {
     matcher = GlobalString(matcher);
     if (matcher !== 'lookup' && matcher !== 'best fit') {
-      throw new $RangeError('Illegal value for localeMatcher:' + matcher);
+      throw MakeRangeError(kLocaleMatcher, matcher);
     }
   } else {
     matcher = 'best fit';
@@ -364,30 +365,26 @@ function bestFitSupportedLocalesOf(requestedLocales, availableLocales) {
  * is out of range for that property it throws RangeError.
  */
 function getGetOption(options, caller) {
-  if (options === undefined) {
-    throw new $Error('Internal ' + caller + ' error. ' +
-                    'Default options are missing.');
-  }
+  if (options === undefined) throw MakeError(kDefaultOptionsMissing, caller);
 
   var getOption = function getOption(property, type, values, defaultValue) {
     if (options[property] !== undefined) {
       var value = options[property];
       switch (type) {
         case 'boolean':
-          value = $Boolean(value);
+          value = GlobalBoolean(value);
           break;
         case 'string':
           value = GlobalString(value);
           break;
         case 'number':
-          value = $Number(value);
+          value = GlobalNumber(value);
           break;
         default:
-          throw new $Error('Internal error. Wrong value type.');
+          throw MakeError(kWrongValueType);
       }
       if (values !== undefined && values.indexOf(value) === -1) {
-        throw new $RangeError('Value ' + value + ' out of range for ' + caller +
-                             ' options property ' + property);
+        throw MakeRangeError(kValueOutOfRange, value, caller, property);
       }
 
       return value;
@@ -436,7 +433,7 @@ function resolveLocale(service, requestedLocales, options) {
  */
 function lookupMatcher(service, requestedLocales) {
   if (IS_NULL(service.match(GetServiceRE()))) {
-    throw new $Error('Internal error, wrong service type: ' + service);
+    throw MakeError(kWrongServiceType, service);
   }
 
   // Cache these, they don't ever change per service.
@@ -709,13 +706,13 @@ function canonicalizeLanguageTag(localeID) {
   // null is typeof 'object' so we have to do extra check.
   if (typeof localeID !== 'string' && typeof localeID !== 'object' ||
       IS_NULL(localeID)) {
-    throw new $TypeError('Language ID should be string or object.');
+    throw MakeTypeError(kLanguageID);
   }
 
   var localeString = GlobalString(localeID);
 
   if (isValidLanguageTag(localeString) === false) {
-    throw new $RangeError('Invalid language tag: ' + localeString);
+    throw MakeRangeError(kInvalidLanguageTag, localeString);
   }
 
   // This call will strip -kn but not -kn-true extensions.
@@ -724,7 +721,7 @@ function canonicalizeLanguageTag(localeID) {
   // upgrade to ICU 4.9.
   var tag = %CanonicalizeLanguageTag(localeString);
   if (tag === 'invalid-tag') {
-    throw new $RangeError('Invalid language tag: ' + localeString);
+    throw MakeRangeError(kInvalidLanguageTag, localeString);
   }
 
   return tag;
@@ -867,7 +864,7 @@ function BuildLanguageTagREs() {
  */
 function initializeCollator(collator, locales, options) {
   if (%IsInitializedIntlObject(collator)) {
-    throw new $TypeError('Trying to re-initialize Collator object.');
+    throw MakeTypeError(kReinitializeIntl, "Collator");
   }
 
   if (options === undefined) {
@@ -970,12 +967,11 @@ function initializeCollator(collator, locales, options) {
  */
 %AddNamedProperty(Intl.Collator.prototype, 'resolvedOptions', function() {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     if (!%IsInitializedIntlObjectOfType(this, 'collator')) {
-      throw new $TypeError('resolvedOptions method called on a non-object ' +
-                           'or on a object that is not Intl.Collator.');
+      throw MakeTypeError(kResolvedOptionsCalledOnNonObject, "Collator");
     }
 
     var coll = this;
@@ -994,7 +990,7 @@ function initializeCollator(collator, locales, options) {
   },
   DONT_ENUM
 );
-%FunctionSetName(Intl.Collator.prototype.resolvedOptions, 'resolvedOptions');
+SetFunctionName(Intl.Collator.prototype.resolvedOptions, 'resolvedOptions');
 %FunctionRemovePrototype(Intl.Collator.prototype.resolvedOptions);
 %SetNativeFlag(Intl.Collator.prototype.resolvedOptions);
 
@@ -1007,14 +1003,14 @@ function initializeCollator(collator, locales, options) {
  */
 %AddNamedProperty(Intl.Collator, 'supportedLocalesOf', function(locales) {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     return supportedLocalesOf('collator', locales, %_Arguments(1));
   },
   DONT_ENUM
 );
-%FunctionSetName(Intl.Collator.supportedLocalesOf, 'supportedLocalesOf');
+SetFunctionName(Intl.Collator.supportedLocalesOf, 'supportedLocalesOf');
 %FunctionRemovePrototype(Intl.Collator.supportedLocalesOf);
 %SetNativeFlag(Intl.Collator.supportedLocalesOf);
 
@@ -1056,9 +1052,9 @@ function isWellFormedCurrencyCode(currency) {
 function getNumberOption(options, property, min, max, fallback) {
   var value = options[property];
   if (value !== undefined) {
-    value = $Number(value);
+    value = GlobalNumber(value);
     if ($isNaN(value) || value < min || value > max) {
-      throw new $RangeError(property + ' value is out of range.');
+      throw MakeRangeError(kPropertyValueOutOfRange, property);
     }
     return $floor(value);
   }
@@ -1073,7 +1069,7 @@ function getNumberOption(options, property, min, max, fallback) {
  */
 function initializeNumberFormat(numberFormat, locales, options) {
   if (%IsInitializedIntlObject(numberFormat)) {
-    throw new $TypeError('Trying to re-initialize NumberFormat object.');
+    throw MakeTypeError(kReinitializeIntl, "NumberFormat");
   }
 
   if (options === undefined) {
@@ -1090,11 +1086,11 @@ function initializeNumberFormat(numberFormat, locales, options) {
 
   var currency = getOption('currency', 'string');
   if (currency !== undefined && !isWellFormedCurrencyCode(currency)) {
-    throw new $RangeError('Invalid currency code: ' + currency);
+    throw MakeRangeError(kInvalidCurrencyCode, currency);
   }
 
   if (internalOptions.style === 'currency' && currency === undefined) {
-    throw new $TypeError('Currency code is required with currency style.');
+    throw MakeTypeError(kCurrencyCode);
   }
 
   var currencyDisplay = getOption(
@@ -1197,12 +1193,11 @@ function initializeNumberFormat(numberFormat, locales, options) {
  */
 %AddNamedProperty(Intl.NumberFormat.prototype, 'resolvedOptions', function() {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     if (!%IsInitializedIntlObjectOfType(this, 'numberformat')) {
-      throw new $TypeError('resolvedOptions method called on a non-object' +
-          ' or on a object that is not Intl.NumberFormat.');
+      throw MakeTypeError(kResolvedOptionsCalledOnNonObject, "NumberFormat");
     }
 
     var format = this;
@@ -1239,7 +1234,7 @@ function initializeNumberFormat(numberFormat, locales, options) {
   },
   DONT_ENUM
 );
-%FunctionSetName(Intl.NumberFormat.prototype.resolvedOptions,
+SetFunctionName(Intl.NumberFormat.prototype.resolvedOptions,
                  'resolvedOptions');
 %FunctionRemovePrototype(Intl.NumberFormat.prototype.resolvedOptions);
 %SetNativeFlag(Intl.NumberFormat.prototype.resolvedOptions);
@@ -1253,14 +1248,14 @@ function initializeNumberFormat(numberFormat, locales, options) {
  */
 %AddNamedProperty(Intl.NumberFormat, 'supportedLocalesOf', function(locales) {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     return supportedLocalesOf('numberformat', locales, %_Arguments(1));
   },
   DONT_ENUM
 );
-%FunctionSetName(Intl.NumberFormat.supportedLocalesOf, 'supportedLocalesOf');
+SetFunctionName(Intl.NumberFormat.supportedLocalesOf, 'supportedLocalesOf');
 %FunctionRemovePrototype(Intl.NumberFormat.supportedLocalesOf);
 %SetNativeFlag(Intl.NumberFormat.supportedLocalesOf);
 
@@ -1272,7 +1267,7 @@ function initializeNumberFormat(numberFormat, locales, options) {
  */
 function formatNumber(formatter, value) {
   // Spec treats -0 and +0 as 0.
-  var number = $Number(value) + 0;
+  var number = GlobalNumber(value) + 0;
 
   return %InternalNumberFormat(%GetImplFromInitializedIntlObject(formatter),
                                number);
@@ -1496,7 +1491,7 @@ function toDateTimeOptions(options, required, defaults) {
 function initializeDateTimeFormat(dateFormat, locales, options) {
 
   if (%IsInitializedIntlObject(dateFormat)) {
-    throw new $TypeError('Trying to re-initialize DateTimeFormat object.');
+    throw MakeTypeError(kReinitializeIntl, "DateTimeFormat");
   }
 
   if (options === undefined) {
@@ -1554,7 +1549,7 @@ function initializeDateTimeFormat(dateFormat, locales, options) {
     requestedLocale, {skeleton: ldmlString, timeZone: tz}, resolved);
 
   if (tz !== undefined && tz !== resolved.timeZone) {
-    throw new $RangeError('Unsupported time zone specified ' + tz);
+    throw MakeRangeError(kUnsupportedTimeZone, tz);
   }
 
   %MarkAsInitializedIntlObjectOfType(dateFormat, 'dateformat', formatter);
@@ -1590,12 +1585,11 @@ function initializeDateTimeFormat(dateFormat, locales, options) {
  */
 %AddNamedProperty(Intl.DateTimeFormat.prototype, 'resolvedOptions', function() {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     if (!%IsInitializedIntlObjectOfType(this, 'dateformat')) {
-      throw new $TypeError('resolvedOptions method called on a non-object or ' +
-          'on a object that is not Intl.DateTimeFormat.');
+      throw MakeTypeError(kResolvedOptionsCalledOnNonObject, "DateTimeFormat");
     }
 
     var format = this;
@@ -1632,8 +1626,8 @@ function initializeDateTimeFormat(dateFormat, locales, options) {
   },
   DONT_ENUM
 );
-%FunctionSetName(Intl.DateTimeFormat.prototype.resolvedOptions,
-                 'resolvedOptions');
+SetFunctionName(Intl.DateTimeFormat.prototype.resolvedOptions,
+                'resolvedOptions');
 %FunctionRemovePrototype(Intl.DateTimeFormat.prototype.resolvedOptions);
 %SetNativeFlag(Intl.DateTimeFormat.prototype.resolvedOptions);
 
@@ -1646,14 +1640,14 @@ function initializeDateTimeFormat(dateFormat, locales, options) {
  */
 %AddNamedProperty(Intl.DateTimeFormat, 'supportedLocalesOf', function(locales) {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     return supportedLocalesOf('dateformat', locales, %_Arguments(1));
   },
   DONT_ENUM
 );
-%FunctionSetName(Intl.DateTimeFormat.supportedLocalesOf, 'supportedLocalesOf');
+SetFunctionName(Intl.DateTimeFormat.supportedLocalesOf, 'supportedLocalesOf');
 %FunctionRemovePrototype(Intl.DateTimeFormat.supportedLocalesOf);
 %SetNativeFlag(Intl.DateTimeFormat.supportedLocalesOf);
 
@@ -1668,12 +1662,10 @@ function formatDate(formatter, dateValue) {
   if (dateValue === undefined) {
     dateMs = GlobalDate.now();
   } else {
-    dateMs = $Number(dateValue);
+    dateMs = GlobalNumber(dateValue);
   }
 
-  if (!$isFinite(dateMs)) {
-    throw new $RangeError('Provided date is not in valid range.');
-  }
+  if (!$isFinite(dateMs)) throw MakeRangeError(kDateRange);
 
   return %InternalDateFormat(%GetImplFromInitializedIntlObject(formatter),
                              new GlobalDate(dateMs));
@@ -1717,9 +1709,7 @@ function canonicalizeTimeZoneID(tzID) {
   // We expect only _ and / beside ASCII letters.
   // All inputs should conform to Area/Location from now on.
   var match = GetTimezoneNameCheckRE().exec(tzID);
-  if (IS_NULL(match)) {
-    throw new $RangeError('Expected Area/Location for time zone, got ' + tzID);
-  }
+  if (IS_NULL(match)) throw MakeRangeError(kExpectedLocation, tzID);
 
   var result = toTitleCaseWord(match[1]) + '/' + toTitleCaseWord(match[2]);
   var i = 3;
@@ -1737,7 +1727,7 @@ function canonicalizeTimeZoneID(tzID) {
  */
 function initializeBreakIterator(iterator, locales, options) {
   if (%IsInitializedIntlObject(iterator)) {
-    throw new $TypeError('Trying to re-initialize v8BreakIterator object.');
+    throw MakeTypeError(kReinitializeIntl, "v8BreakIterator");
   }
 
   if (options === undefined) {
@@ -1797,12 +1787,11 @@ function initializeBreakIterator(iterator, locales, options) {
 %AddNamedProperty(Intl.v8BreakIterator.prototype, 'resolvedOptions',
   function() {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     if (!%IsInitializedIntlObjectOfType(this, 'breakiterator')) {
-      throw new $TypeError('resolvedOptions method called on a non-object or ' +
-          'on a object that is not Intl.v8BreakIterator.');
+      throw MakeTypeError(kResolvedOptionsCalledOnNonObject, "v8BreakIterator");
     }
 
     var segmenter = this;
@@ -1816,8 +1805,8 @@ function initializeBreakIterator(iterator, locales, options) {
   },
   DONT_ENUM
 );
-%FunctionSetName(Intl.v8BreakIterator.prototype.resolvedOptions,
-                 'resolvedOptions');
+SetFunctionName(Intl.v8BreakIterator.prototype.resolvedOptions,
+                'resolvedOptions');
 %FunctionRemovePrototype(Intl.v8BreakIterator.prototype.resolvedOptions);
 %SetNativeFlag(Intl.v8BreakIterator.prototype.resolvedOptions);
 
@@ -1831,14 +1820,14 @@ function initializeBreakIterator(iterator, locales, options) {
 %AddNamedProperty(Intl.v8BreakIterator, 'supportedLocalesOf',
   function(locales) {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     return supportedLocalesOf('breakiterator', locales, %_Arguments(1));
   },
   DONT_ENUM
 );
-%FunctionSetName(Intl.v8BreakIterator.supportedLocalesOf, 'supportedLocalesOf');
+SetFunctionName(Intl.v8BreakIterator.supportedLocalesOf, 'supportedLocalesOf');
 %FunctionRemovePrototype(Intl.v8BreakIterator.supportedLocalesOf);
 %SetNativeFlag(Intl.v8BreakIterator.supportedLocalesOf);
 
@@ -1934,11 +1923,11 @@ function cachedOrNewService(service, locales, options, defaults) {
  */
 OverrideFunction(GlobalString.prototype, 'localeCompare', function(that) {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     if (IS_NULL_OR_UNDEFINED(this)) {
-      throw new $TypeError('Method invoked on undefined or null value.');
+      throw MakeTypeError(kMethodInvokedOnNullOrUndefined);
     }
 
     var locales = %_Arguments(1);
@@ -1958,7 +1947,7 @@ OverrideFunction(GlobalString.prototype, 'localeCompare', function(that) {
  */
 OverrideFunction(GlobalString.prototype, 'normalize', function(that) {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     CHECK_OBJECT_COERCIBLE(this, "String.prototype.normalize");
@@ -1967,8 +1956,7 @@ OverrideFunction(GlobalString.prototype, 'normalize', function(that) {
 
     var normalizationForm = NORMALIZATION_FORMS.indexOf(form);
     if (normalizationForm === -1) {
-      throw new $RangeError('The normalization form should be one of '
-          + NORMALIZATION_FORMS.join(', ') + '.');
+      throw MakeRangeError(kNormalizationForm, NORMALIZATION_FORMS.join(', '));
     }
 
     return %StringNormalize(this, normalizationForm);
@@ -1980,13 +1968,13 @@ OverrideFunction(GlobalString.prototype, 'normalize', function(that) {
  * Formats a Number object (this) using locale and options values.
  * If locale or options are omitted, defaults are used.
  */
-OverrideFunction($Number.prototype, 'toLocaleString', function() {
+OverrideFunction(GlobalNumber.prototype, 'toLocaleString', function() {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
-    if (!(this instanceof $Number) && typeof(this) !== 'number') {
-      throw new $TypeError('Method invoked on an object that is not Number.');
+    if (!(this instanceof GlobalNumber) && typeof(this) !== 'number') {
+      throw MakeTypeError(kMethodInvokedOnWrongType, "Number");
     }
 
     var locales = %_Arguments(0);
@@ -2002,7 +1990,7 @@ OverrideFunction($Number.prototype, 'toLocaleString', function() {
  */
 function toLocaleDateTime(date, locales, options, required, defaults, service) {
   if (!(date instanceof GlobalDate)) {
-    throw new $TypeError('Method invoked on an object that is not Date.');
+    throw MakeTypeError(kMethodInvokedOnWrongType, "Date");
   }
 
   if ($isNaN(date)) {
@@ -2025,7 +2013,7 @@ function toLocaleDateTime(date, locales, options, required, defaults, service) {
  */
 OverrideFunction(GlobalDate.prototype, 'toLocaleString', function() {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     var locales = %_Arguments(0);
@@ -2043,7 +2031,7 @@ OverrideFunction(GlobalDate.prototype, 'toLocaleString', function() {
  */
 OverrideFunction(GlobalDate.prototype, 'toLocaleDateString', function() {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     var locales = %_Arguments(0);
@@ -2061,7 +2049,7 @@ OverrideFunction(GlobalDate.prototype, 'toLocaleDateString', function() {
  */
 OverrideFunction(GlobalDate.prototype, 'toLocaleTimeString', function() {
     if (%_IsConstructCall()) {
-      throw new $TypeError(ORDINARY_FUNCTION_CALLED_AS_CONSTRUCTOR);
+      throw MakeTypeError(kOrdinaryFunctionCalledAsConstructor);
     }
 
     var locales = %_Arguments(0);

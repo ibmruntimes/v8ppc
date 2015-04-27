@@ -1277,6 +1277,12 @@ Handle<Code> LoadIC::CompileHandler(LookupIterator* lookup,
         FieldIndex index = FieldIndex::ForInObjectOffset(object_offset, *map);
         return SimpleFieldLoad(index);
       }
+      if (Accessors::IsJSArrayBufferViewFieldAccessor(map, lookup->name(),
+                                                      &object_offset)) {
+        FieldIndex index = FieldIndex::ForInObjectOffset(object_offset, *map);
+        ArrayBufferViewLoadFieldStub stub(isolate(), index);
+        return stub.GetCode();
+      }
 
       Handle<Object> accessors = lookup->GetAccessors();
       if (accessors->IsExecutableAccessorInfo()) {
@@ -1764,7 +1770,11 @@ void StoreIC::UpdateCaches(LookupIterator* lookup, Handle<Object> value,
 static Handle<Code> PropertyCellStoreHandler(
     Isolate* isolate, Handle<JSObject> receiver, Handle<GlobalObject> holder,
     Handle<Name> name, Handle<PropertyCell> cell, PropertyCellType type) {
-  StoreGlobalStub stub(isolate, type == PropertyCellType::kConstant,
+  auto constant_type = Nothing<PropertyCellConstantType>();
+  if (type == PropertyCellType::kConstantType) {
+    constant_type = Just(cell->GetConstantType());
+  }
+  StoreGlobalStub stub(isolate, type, constant_type,
                        receiver->IsJSGlobalProxy());
   auto code = stub.GetCodeCopyFromTemplate(holder, cell);
   // TODO(verwaest): Move caching of these NORMAL stubs outside as well.
@@ -1865,11 +1875,12 @@ Handle<Code> StoreIC::CompileHandler(LookupIterator* lookup,
           DCHECK(holder.is_identical_to(receiver) ||
                  receiver->map()->prototype() == *holder);
           auto cell = lookup->GetPropertyCell();
-          auto union_type = PropertyCell::UpdatedType(
+          auto updated_type = PropertyCell::UpdatedType(
               cell, value, lookup->property_details());
-          return PropertyCellStoreHandler(isolate(), receiver,
-                                          Handle<GlobalObject>::cast(holder),
-                                          lookup->name(), cell, union_type);
+          auto code = PropertyCellStoreHandler(
+              isolate(), receiver, Handle<GlobalObject>::cast(holder),
+              lookup->name(), cell, updated_type);
+          return code;
         }
         DCHECK(holder.is_identical_to(receiver));
         return isolate()->builtins()->StoreIC_Normal();
@@ -2618,7 +2629,7 @@ MaybeHandle<Object> BinaryOpIC::Transition(
 
   // Compute the actual result using the builtin for the binary operation.
   Object* builtin = isolate()->js_builtins_object()->javascript_builtin(
-      TokenToJSBuiltin(state.op()));
+      TokenToJSBuiltin(state.op(), state.language_mode()));
   Handle<JSFunction> function = handle(JSFunction::cast(builtin), isolate());
   Handle<Object> result;
   ASSIGN_RETURN_ON_EXCEPTION(
@@ -2859,43 +2870,38 @@ RUNTIME_FUNCTION(Unreachable) {
 }
 
 
-Builtins::JavaScript BinaryOpIC::TokenToJSBuiltin(Token::Value op) {
-  switch (op) {
-    default:
-      UNREACHABLE();
-    case Token::ADD:
-      return Builtins::ADD;
-      break;
-    case Token::SUB:
-      return Builtins::SUB;
-      break;
-    case Token::MUL:
-      return Builtins::MUL;
-      break;
-    case Token::DIV:
-      return Builtins::DIV;
-      break;
-    case Token::MOD:
-      return Builtins::MOD;
-      break;
-    case Token::BIT_OR:
-      return Builtins::BIT_OR;
-      break;
-    case Token::BIT_AND:
-      return Builtins::BIT_AND;
-      break;
-    case Token::BIT_XOR:
-      return Builtins::BIT_XOR;
-      break;
-    case Token::SAR:
-      return Builtins::SAR;
-      break;
-    case Token::SHR:
-      return Builtins::SHR;
-      break;
-    case Token::SHL:
-      return Builtins::SHL;
-      break;
+Builtins::JavaScript BinaryOpIC::TokenToJSBuiltin(Token::Value op,
+                                                  LanguageMode language_mode) {
+  if (is_strong(language_mode)) {
+    switch (op) {
+      default: UNREACHABLE();
+      case Token::ADD: return Builtins::ADD;
+      case Token::SUB: return Builtins::SUB_STRONG;
+      case Token::MUL: return Builtins::MUL_STRONG;
+      case Token::DIV: return Builtins::DIV_STRONG;
+      case Token::MOD: return Builtins::MOD_STRONG;
+      case Token::BIT_OR: return Builtins::BIT_OR;
+      case Token::BIT_AND: return Builtins::BIT_AND;
+      case Token::BIT_XOR: return Builtins::BIT_XOR;
+      case Token::SAR: return Builtins::SAR;
+      case Token::SHR: return Builtins::SHR;
+      case Token::SHL: return Builtins::SHL;
+    }
+  } else {
+    switch (op) {
+      default: UNREACHABLE();
+      case Token::ADD: return Builtins::ADD;
+      case Token::SUB: return Builtins::SUB;
+      case Token::MUL: return Builtins::MUL;
+      case Token::DIV: return Builtins::DIV;
+      case Token::MOD: return Builtins::MOD;
+      case Token::BIT_OR: return Builtins::BIT_OR;
+      case Token::BIT_AND: return Builtins::BIT_AND;
+      case Token::BIT_XOR: return Builtins::BIT_XOR;
+      case Token::SAR: return Builtins::SAR;
+      case Token::SHR: return Builtins::SHR;
+      case Token::SHL: return Builtins::SHL;
+    }
   }
 }
 

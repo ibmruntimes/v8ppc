@@ -8,7 +8,6 @@
 #include "src/double.h"
 #include "src/factory.h"
 #include "src/hydrogen-infer-representation.h"
-#include "src/property-details-inl.h"
 
 #if V8_TARGET_ARCH_IA32
 #include "src/ia32/lithium-ia32.h"  // NOLINT
@@ -3526,6 +3525,10 @@ bool HLoadKeyed::RequiresHoleCheck() const {
   }
 
   if (IsExternalArrayElementsKind(elements_kind())) {
+    return false;
+  }
+
+  if (hole_mode() == CONVERT_HOLE_TO_UNDEFINED) {
     return false;
   }
 
