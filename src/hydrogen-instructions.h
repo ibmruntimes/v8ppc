@@ -70,6 +70,7 @@ class LChunkBuilder;
   V(CallStub)                                 \
   V(CapturedObject)                           \
   V(Change)                                   \
+  V(CheckArrayBufferNotNeutered)              \
   V(CheckHeapObject)                          \
   V(CheckInstanceType)                        \
   V(CheckMaps)                                \
@@ -2948,6 +2949,36 @@ class HCheckSmi final : public HUnaryOperation {
   explicit HCheckSmi(HValue* value) : HUnaryOperation(value, HType::Smi()) {
     set_representation(Representation::Smi());
     SetFlag(kUseGVN);
+  }
+};
+
+
+class HCheckArrayBufferNotNeutered final : public HUnaryOperation {
+ public:
+  DECLARE_INSTRUCTION_FACTORY_P1(HCheckArrayBufferNotNeutered, HValue*);
+
+  bool HasEscapingOperandAt(int index) override { return false; }
+  Representation RequiredInputRepresentation(int index) override {
+    return Representation::Tagged();
+  }
+
+  HType CalculateInferredType() override {
+    if (value()->type().IsHeapObject()) return value()->type();
+    return HType::HeapObject();
+  }
+
+  DECLARE_CONCRETE_INSTRUCTION(CheckArrayBufferNotNeutered)
+
+ protected:
+  bool DataEquals(HValue* other) override { return true; }
+  int RedefinedOperandIndex() override { return 0; }
+
+ private:
+  explicit HCheckArrayBufferNotNeutered(HValue* value)
+      : HUnaryOperation(value) {
+    set_representation(Representation::Tagged());
+    SetFlag(kUseGVN);
+    SetDependsOnFlag(kCalls);
   }
 };
 
@@ -6097,9 +6128,9 @@ class HObjectAccess final {
         JSArrayBuffer::kByteLengthOffset, Representation::Tagged());
   }
 
-  static HObjectAccess ForJSArrayBufferFlag() {
+  static HObjectAccess ForJSArrayBufferBitField() {
     return HObjectAccess::ForObservableJSObjectOffset(
-        JSArrayBuffer::kFlagOffset, Representation::Smi());
+        JSArrayBuffer::kBitFieldOffset, Representation::Integer32());
   }
 
   static HObjectAccess ForExternalArrayExternalPointer() {

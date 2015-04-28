@@ -542,13 +542,13 @@ template <class T> class PersistentBase {
    *  critical form of resource management!
    */
   template <typename P>
-  V8_INLINE V8_DEPRECATE_SOON(
+  V8_INLINE V8_DEPRECATED(
       "use WeakCallbackInfo version",
       void SetWeak(P* parameter,
                    typename WeakCallbackData<T, P>::Callback callback));
 
   template <typename S, typename P>
-  V8_INLINE V8_DEPRECATE_SOON(
+  V8_INLINE V8_DEPRECATED(
       "use WeakCallbackInfo version",
       void SetWeak(P* parameter,
                    typename WeakCallbackData<S, P>::Callback callback));
@@ -560,7 +560,7 @@ template <class T> class PersistentBase {
   // specify a parameter for the callback or the location of two internal
   // fields in the dying object.
   template <typename P>
-  V8_INLINE V8_DEPRECATE_SOON(
+  V8_INLINE V8_DEPRECATED(
       "use SetWeak",
       void SetPhantom(P* parameter,
                       typename WeakCallbackInfo<P>::Callback callback,
@@ -4794,6 +4794,7 @@ class V8_EXPORT HeapStatistics {
   size_t total_heap_size() { return total_heap_size_; }
   size_t total_heap_size_executable() { return total_heap_size_executable_; }
   size_t total_physical_size() { return total_physical_size_; }
+  size_t total_available_size() { return total_available_size_; }
   size_t used_heap_size() { return used_heap_size_; }
   size_t heap_size_limit() { return heap_size_limit_; }
 
@@ -4801,6 +4802,7 @@ class V8_EXPORT HeapStatistics {
   size_t total_heap_size_;
   size_t total_heap_size_executable_;
   size_t total_physical_size_;
+  size_t total_available_size_;
   size_t used_heap_size_;
   size_t heap_size_limit_;
 

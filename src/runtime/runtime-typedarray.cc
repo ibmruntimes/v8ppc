@@ -14,10 +14,6 @@ namespace internal {
 
 void Runtime::FreeArrayBuffer(Isolate* isolate,
                               JSArrayBuffer* phantom_array_buffer) {
-  if (phantom_array_buffer->should_be_freed()) {
-    DCHECK(phantom_array_buffer->is_external());
-    free(phantom_array_buffer->backing_store());
-  }
   if (phantom_array_buffer->is_external()) return;
 
   size_t allocated_length =
@@ -42,7 +38,7 @@ void Runtime::SetupArrayBuffer(Isolate* isolate,
     array_buffer->SetInternalField(i, Smi::FromInt(0));
   }
   array_buffer->set_backing_store(data);
-  array_buffer->set_flag(Smi::FromInt(0));
+  array_buffer->set_bit_field(0);
   array_buffer->set_is_external(is_external);
   array_buffer->set_is_neuterable(true);
 
