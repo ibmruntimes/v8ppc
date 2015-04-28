@@ -10338,9 +10338,15 @@ class JSArrayBuffer: public JSObject {
   static const int kSizeWithInternalFields =
       kSize + v8::ArrayBuffer::kInternalFieldCount * kPointerSize;
 
+#if defined(V8_PPC_TAGGING_OPT)
+  class IsExternal : public BitField<bool, kSmiTagSize, 1> {};
+  class IsNeuterable : public BitField<bool, kSmiTagSize + 1, 1> {};
+  class WasNeutered : public BitField<bool, kSmiTagSize + 2, 1> {};
+#else
   class IsExternal : public BitField<bool, 1, 1> {};
   class IsNeuterable : public BitField<bool, 2, 1> {};
   class WasNeutered : public BitField<bool, 3, 1> {};
+#endif
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSArrayBuffer);
