@@ -926,7 +926,7 @@ void CodeGenerator::AssemblePrologue() {
   int stack_slots = frame()->GetSpillSlotCount();
   if (descriptor->kind() == CallDescriptor::kCallAddress) {
     bool saved_pp;
-    if (FLAG_enable_ool_constant_pool) {
+    if (FLAG_enable_embedded_constant_pool) {
       __ Push(lr, fp, pp);
       // Adjust FP to point to saved FP.
       __ sub(fp, sp, Operand(StandardFrameConstants::kConstantPoolOffset));
@@ -1184,6 +1184,15 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
   }
 }
 
+
+#if V8_EMBEDDED_CONSTANT_POOL
+
+void CodeGenerator::AssembleConstantPool() {
+  DCHECK(FLAG_enable_embedded_constant_pool);
+  __ EmitConstantPool();
+}
+
+#endif  // V8_EMBEDDED_CONSTANT_POOL
 
 void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
   // On 32-bit ARM we emit the jump tables inline.

@@ -412,6 +412,12 @@ void Assembler::emit(uint32_t x) {
 }
 
 
+void Assembler::emit_q(uint64_t x) {
+  *reinterpret_cast<uint64_t*>(pc_) = x;
+  pc_ += sizeof(uint64_t);
+}
+
+
 void Assembler::emit(Handle<Object> handle) {
   AllowDeferredHandleDereference heap_object_check;
   // Verify all Objects referred by code are NOT in new space.
@@ -476,26 +482,14 @@ void Assembler::emit_w(const Immediate& x) {
 }
 
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
 Address Assembler::target_address_at(Address pc, Address constant_pool) {
-#else
-Address Assembler::target_address_at(Address pc,
-                                     ConstantPoolArray* constant_pool) {
-#endif
   return pc + sizeof(int32_t) + *reinterpret_cast<int32_t*>(pc);
 }
 
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
 void Assembler::set_target_address_at(Address pc, Address constant_pool,
                                       Address target,
                                       ICacheFlushMode icache_flush_mode) {
-#else
-void Assembler::set_target_address_at(Address pc,
-                                      ConstantPoolArray* constant_pool,
-                                      Address target,
-                                      ICacheFlushMode icache_flush_mode) {
-#endif
   int32_t* p = reinterpret_cast<int32_t*>(pc);
   *p = target - (pc + sizeof(int32_t));
   if (icache_flush_mode != SKIP_ICACHE_FLUSH) {

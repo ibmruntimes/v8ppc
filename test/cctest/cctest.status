@@ -387,7 +387,6 @@
   'test-dictionary/HashMap' : [SKIP],
   'test-debug/Backtrace' : [SKIP],
   'test-debug/DebugBreakLoop' : [SKIP],
-  'test-constantpool/ConstantPool' : [SKIP],
   'test-compiler/GetScriptLineNumber' : [SKIP],
   'test-api/ScriptMakingExternalString' : [SKIP],
   'test-api/ScriptMakingExternalOneByteString' : [SKIP],

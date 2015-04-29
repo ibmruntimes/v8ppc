@@ -1944,10 +1944,6 @@ Address Heap::DoScavenge(ObjectVisitor* scavenge_visitor,
 
 STATIC_ASSERT((FixedDoubleArray::kHeaderSize & kDoubleAlignmentMask) ==
               0);  // NOLINT
-STATIC_ASSERT((ConstantPoolArray::kFirstEntryOffset & kDoubleAlignmentMask) ==
-              0);  // NOLINT
-STATIC_ASSERT((ConstantPoolArray::kExtendedFirstOffset &
-               kDoubleAlignmentMask) == 0);  // NOLINT
 STATIC_ASSERT((FixedTypedArrayBase::kDataOffset & kDoubleAlignmentMask) ==
               0);  // NOLINT
 
@@ -2563,8 +2559,6 @@ bool Heap::CreateInitialMaps() {
     ALLOCATE_PARTIAL_MAP(FIXED_ARRAY_TYPE, kVariableSizeSentinel, fixed_array);
     ALLOCATE_PARTIAL_MAP(ODDBALL_TYPE, Oddball::kSize, undefined);
     ALLOCATE_PARTIAL_MAP(ODDBALL_TYPE, Oddball::kSize, null);
-    ALLOCATE_PARTIAL_MAP(CONSTANT_POOL_ARRAY_TYPE, kVariableSizeSentinel,
-                         constant_pool_array);
 
 #undef ALLOCATE_PARTIAL_MAP
   }
@@ -2600,13 +2594,6 @@ bool Heap::CreateInitialMaps() {
     if (!allocation.To(&obj)) return false;
   }
   set_empty_descriptor_array(DescriptorArray::cast(obj));
-
-  // Allocate the constant pool array.
-  {
-    AllocationResult allocation = AllocateEmptyConstantPoolArray();
-    if (!allocation.To(&obj)) return false;
-  }
-  set_empty_constant_pool_array(ConstantPoolArray::cast(obj));
 
   // Fix the instance_descriptors for the existing maps.
   meta_map()->set_code_cache(empty_fixed_array());
@@ -2644,16 +2631,6 @@ bool Heap::CreateInitialMaps() {
     null_map()->set_layout_descriptor(LayoutDescriptor::FastPointerLayout());
   }
 
-  constant_pool_array_map()->set_code_cache(empty_fixed_array());
-  constant_pool_array_map()->set_dependent_code(
-      DependentCode::cast(empty_fixed_array()));
-  constant_pool_array_map()->set_raw_transitions(Smi::FromInt(0));
-  constant_pool_array_map()->set_instance_descriptors(empty_descriptor_array());
-  if (FLAG_unbox_double_fields) {
-    constant_pool_array_map()->set_layout_descriptor(
-        LayoutDescriptor::FastPointerLayout());
-  }
-
   // Fix prototype object for existing maps.
   meta_map()->set_prototype(null_value());
   meta_map()->set_constructor_or_backpointer(null_value());
@@ -2666,9 +2643,6 @@ bool Heap::CreateInitialMaps() {
 
   null_map()->set_prototype(null_value());
   null_map()->set_constructor_or_backpointer(null_value());
-
-  constant_pool_array_map()->set_prototype(null_value());
-  constant_pool_array_map()->set_constructor_or_backpointer(null_value());
 
   {  // Map allocation
 #define ALLOCATE_MAP(instance_type, size, field_name)               \
@@ -3730,31 +3704,6 @@ AllocationResult Heap::AllocateCode(int object_size, bool immovable) {
 
 AllocationResult Heap::CopyCode(Code* code) {
   AllocationResult allocation;
-  HeapObject* new_constant_pool;
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
-  if (FLAG_enable_ool_constant_pool) {
-    ConstantPoolArray* constant_pool =
-        reinterpret_cast<ConstantPoolArray*>(code->constant_pool());
-    if (constant_pool != empty_constant_pool_array()) {
-      // Copy the constant pool, since edits to the copied code may modify
-      // the constant pool.
-      allocation = CopyConstantPoolArray(constant_pool);
-      if (!allocation.To(&new_constant_pool)) return allocation;
-    } else {
-      new_constant_pool = empty_constant_pool_array();
-    }
-  }
-#else
-  if (FLAG_enable_ool_constant_pool &&
-      code->constant_pool() != empty_constant_pool_array()) {
-    // Copy the constant pool, since edits to the copied code may modify
-    // the constant pool.
-    allocation = CopyConstantPoolArray(code->constant_pool());
-    if (!allocation.To(&new_constant_pool)) return allocation;
-  } else {
-    new_constant_pool = empty_constant_pool_array();
-  }
-#endif
 
   HeapObject* result = NULL;
   // Allocate an object the same size as the code object.
@@ -3768,16 +3717,6 @@ AllocationResult Heap::CopyCode(Code* code) {
   CopyBlock(new_addr, old_addr, obj_size);
   Code* new_code = Code::cast(result);
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
-  if (FLAG_enable_ool_constant_pool) {
-    // Update the constant pool.
-    new_code->set_constant_pool(new_constant_pool);
-  }
-#else
-  // Update the constant pool.
-  new_code->set_constant_pool(new_constant_pool);
-#endif
-
   // Relocate the copy.
   DCHECK(IsAligned(bit_cast<intptr_t>(new_code->address()), kCodeAlignment));
   DCHECK(isolate_->code_range() == NULL || !isolate_->code_range()->valid() ||
@@ -3788,39 +3727,14 @@ AllocationResult Heap::CopyCode(Code* code) {
 
 
 AllocationResult Heap::CopyCode(Code* code, Vector<byte> reloc_info) {
-  // Allocate ByteArray and ConstantPoolArray before the Code object, so that we
-  // do not risk leaving uninitialized Code object (and breaking the heap).
+  // Allocate ByteArray before the Code object, so that we do not risk
+  // leaving uninitialized Code object (and breaking the heap).
   ByteArray* reloc_info_array;
   {
     AllocationResult allocation =
         AllocateByteArray(reloc_info.length(), TENURED);
     if (!allocation.To(&reloc_info_array)) return allocation;
   }
-  HeapObject* new_constant_pool;
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
-  if (FLAG_enable_ool_constant_pool) {
-    ConstantPoolArray* constant_pool =
-        reinterpret_cast<ConstantPoolArray*>(code->constant_pool());
-    if (constant_pool != empty_constant_pool_array()) {
-      // Copy the constant pool, since edits to the copied code may modify
-      // the constant pool.
-      AllocationResult allocation = CopyConstantPoolArray(constant_pool);
-      if (!allocation.To(&new_constant_pool)) return allocation;
-    } else {
-      new_constant_pool = empty_constant_pool_array();
-    }
-  }
-#else
-  if (FLAG_enable_ool_constant_pool &&
-      code->constant_pool() != empty_constant_pool_array()) {
-    // Copy the constant pool, since edits to the copied code may modify
-    // the constant pool.
-    AllocationResult allocation = CopyConstantPoolArray(code->constant_pool());
-    if (!allocation.To(&new_constant_pool)) return allocation;
-  } else {
-    new_constant_pool = empty_constant_pool_array();
-  }
-#endif
 
   int new_body_size = RoundUp(code->instruction_size(), kObjectAlignment);
 
@@ -3844,16 +3758,6 @@ AllocationResult Heap::CopyCode(Code* code, Vector<byte> reloc_info) {
 
   Code* new_code = Code::cast(result);
   new_code->set_relocation_info(reloc_info_array);
-
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
-  if (FLAG_enable_ool_constant_pool) {
-    // Update constant pool.
-    new_code->set_constant_pool(new_constant_pool);
-  }
-#else
-  // Update constant pool.
-  new_code->set_constant_pool(new_constant_pool);
-#endif
 
   // Copy patched rinfo.
   CopyBytes(new_code->relocation_start(), reloc_info.start(),
@@ -4347,31 +4251,6 @@ AllocationResult Heap::CopyFixedDoubleArrayWithMap(FixedDoubleArray* src,
 }
 
 
-AllocationResult Heap::CopyConstantPoolArrayWithMap(ConstantPoolArray* src,
-                                                    Map* map) {
-  HeapObject* obj;
-  if (src->is_extended_layout()) {
-    ConstantPoolArray::NumberOfEntries small(src,
-                                             ConstantPoolArray::SMALL_SECTION);
-    ConstantPoolArray::NumberOfEntries extended(
-        src, ConstantPoolArray::EXTENDED_SECTION);
-    AllocationResult allocation =
-        AllocateExtendedConstantPoolArray(small, extended);
-    if (!allocation.To(&obj)) return allocation;
-  } else {
-    ConstantPoolArray::NumberOfEntries small(src,
-                                             ConstantPoolArray::SMALL_SECTION);
-    AllocationResult allocation = AllocateConstantPoolArray(small);
-    if (!allocation.To(&obj)) return allocation;
-  }
-  obj->set_map_no_write_barrier(map);
-  CopyBlock(obj->address() + ConstantPoolArray::kFirstEntryOffset,
-            src->address() + ConstantPoolArray::kFirstEntryOffset,
-            src->size() - ConstantPoolArray::kFirstEntryOffset);
-  return obj;
-}
-
-
 AllocationResult Heap::AllocateRawFixedArray(int length,
                                              PretenureFlag pretenure) {
   if (length < 0 || length > FixedArray::kMaxLength) {
@@ -4458,70 +4337,6 @@ AllocationResult Heap::AllocateRawFixedDoubleArray(int length,
   }
 
   return EnsureDoubleAligned(object, size);
-}
-
-
-AllocationResult Heap::AllocateConstantPoolArray(
-    const ConstantPoolArray::NumberOfEntries& small) {
-  CHECK(small.are_in_range(0, ConstantPoolArray::kMaxSmallEntriesPerType));
-  int size = ConstantPoolArray::SizeFor(small);
-#ifndef V8_HOST_ARCH_64_BIT
-  size += kPointerSize;
-#endif
-  AllocationSpace space = SelectSpace(size, TENURED);
-
-  HeapObject* object;
-  {
-    AllocationResult allocation = AllocateRaw(size, space, OLD_SPACE);
-    if (!allocation.To(&object)) return allocation;
-  }
-  object = EnsureDoubleAligned(object, size);
-  object->set_map_no_write_barrier(constant_pool_array_map());
-
-  ConstantPoolArray* constant_pool = ConstantPoolArray::cast(object);
-  constant_pool->Init(small);
-  constant_pool->ClearPtrEntries(isolate());
-  return constant_pool;
-}
-
-
-AllocationResult Heap::AllocateExtendedConstantPoolArray(
-    const ConstantPoolArray::NumberOfEntries& small,
-    const ConstantPoolArray::NumberOfEntries& extended) {
-  CHECK(small.are_in_range(0, ConstantPoolArray::kMaxSmallEntriesPerType));
-  CHECK(extended.are_in_range(0, kMaxInt));
-  int size = ConstantPoolArray::SizeForExtended(small, extended);
-#ifndef V8_HOST_ARCH_64_BIT
-  size += kPointerSize;
-#endif
-  AllocationSpace space = SelectSpace(size, TENURED);
-
-  HeapObject* object;
-  {
-    AllocationResult allocation = AllocateRaw(size, space, OLD_SPACE);
-    if (!allocation.To(&object)) return allocation;
-  }
-  object = EnsureDoubleAligned(object, size);
-  object->set_map_no_write_barrier(constant_pool_array_map());
-
-  ConstantPoolArray* constant_pool = ConstantPoolArray::cast(object);
-  constant_pool->InitExtended(small, extended);
-  constant_pool->ClearPtrEntries(isolate());
-  return constant_pool;
-}
-
-
-AllocationResult Heap::AllocateEmptyConstantPoolArray() {
-  ConstantPoolArray::NumberOfEntries small(0, 0, 0, 0);
-  int size = ConstantPoolArray::SizeFor(small);
-  HeapObject* result = NULL;
-  {
-    AllocationResult allocation = AllocateRaw(size, OLD_SPACE, OLD_SPACE);
-    if (!allocation.To(&result)) return allocation;
-  }
-  result->set_map_no_write_barrier(constant_pool_array_map());
-  ConstantPoolArray::cast(result)->Init(small);
-  return result;
 }
 
 

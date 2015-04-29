@@ -66,13 +66,8 @@ TEST(Positions) {
 
   writer.Finish();
   relocation_info_size = static_cast<int>(buffer_end - writer.pos());
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
-  CodeDesc desc = { buffer.get(), buffer_size, code_size,
-                    relocation_info_size, 0, NULL };
-#else
-  CodeDesc desc = { buffer.get(), buffer_size, code_size,
-                    relocation_info_size, NULL };
-#endif
+  CodeDesc desc = {buffer.get(), buffer_size, code_size, relocation_info_size,
+                   0, NULL};
 
   // Read only (non-statement) positions.
   {

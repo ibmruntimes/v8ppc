@@ -117,10 +117,8 @@ Handle<Code> CodeGenerator::GenerateCode() {
     }
   }
 
-#if !defined(V8_PPC_CONSTANT_POOL_OPT)
   FinishCode(masm());
 
-#endif
   // Emit the jump tables.
   if (jump_tables_) {
     masm()->Align(kPointerSize);
@@ -130,10 +128,10 @@ Handle<Code> CodeGenerator::GenerateCode() {
     }
   }
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
-  FinishCode(masm());
+  if (FLAG_enable_embedded_constant_pool) {
+    AssembleConstantPool();
+  }
 
-#endif
   safepoints()->Emit(masm(), frame()->GetSpillSlotCount());
 
   Handle<Code> result = v8::internal::CodeGenerator::MakeCodeEpilogue(
@@ -663,6 +661,11 @@ void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
 
 #endif  // !V8_TURBOFAN_BACKEND
 
+#if !V8_TURBOFAN_BACKEND || !V8_EMBEDDED_CONSTANT_POOL
+
+void CodeGenerator::AssembleConstantPool() { UNIMPLEMENTED(); }
+
+#endif  // !V8_TURBOFAN_BACKEND || !V8_EMBEDDED_CONSTANT_POOL
 
 OutOfLineCode::OutOfLineCode(CodeGenerator* gen)
     : masm_(gen->masm()), next_(gen->ools_) {

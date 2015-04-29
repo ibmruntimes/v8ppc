@@ -1269,7 +1269,6 @@ void CodeGenerator::AssemblePrologue() {
     int register_save_area_size = 0;
     RegList frame_saves = fp.bit();
     __ mflr(r0);
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     if (FLAG_enable_embedded_constant_pool) {
       __ Push(r0, fp, kConstantPoolRegister);
       // Adjust FP to point to saved FP.
@@ -1280,10 +1279,6 @@ void CodeGenerator::AssemblePrologue() {
       __ Push(r0, fp);
       __ mr(fp, sp);
     }
-#else
-    __ Push(r0, fp);
-    __ mr(fp, sp);
-#endif
     // Save callee-saved registers.
     const RegList saves = descriptor->CalleeSavedRegisters() & ~frame_saves;
     for (int i = Register::kNumRegisters - 1; i >= 0; i--) {
@@ -1336,11 +1331,9 @@ void CodeGenerator::AssembleReturn() {
       }
       // Restore registers.
       RegList frame_saves = fp.bit();
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
       if (FLAG_enable_embedded_constant_pool) {
         frame_saves |= kConstantPoolRegister.bit();
       }
-#endif
       const RegList saves = descriptor->CalleeSavedRegisters() & ~frame_saves;
       if (saves != 0) {
         __ MultiPop(saves);
@@ -1530,6 +1523,14 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
   }
 }
 
+#if V8_EMBEDDED_CONSTANT_POOL
+
+void CodeGenerator::AssembleConstantPool() {
+  DCHECK(FLAG_enable_embedded_constant_pool);
+  __ EmitConstantPool();
+}
+
+#endif  // V8_EMBEDDED_CONSTANT_POOL
 
 void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
   for (size_t index = 0; index < target_count; ++index) {

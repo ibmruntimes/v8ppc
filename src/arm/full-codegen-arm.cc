@@ -96,7 +96,7 @@ class JumpPatchSite BASE_EMBEDDED {
 // The live registers are:
 //   o r1: the JS function object being called (i.e., ourselves)
 //   o cp: our context
-//   o pp: our caller's constant pool pointer (if FLAG_enable_ool_constant_pool)
+//   o pp: our caller's constant pool pointer (if enabled)
 //   o fp: our caller's frame pointer
 //   o sp: stack pointer
 //   o lr: return address
@@ -358,9 +358,13 @@ void FullCodeGenerator::Generate() {
   }
   EmitReturnSequence();
 
-  // Force emit the constant pool, so it doesn't get emitted in the middle
-  // of the back edge table.
-  masm()->CheckConstPool(true, false);
+  if (FLAG_enable_embedded_constant_pool) {
+    masm()->EmitConstantPool();
+  } else {
+    // Force emit the constant pool, so it doesn't get emitted in the middle
+    // of the back edge table.
+    masm()->CheckConstPool(true, false);
+  }
 }
 
 
@@ -2284,7 +2288,7 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
   __ bind(&resume_frame);
   // lr = return address.
   // fp = caller's frame pointer.
-  // pp = caller's constant pool (if FLAG_enable_ool_constant_pool),
+  // pp = caller's constant pool (if FLAG_enable_embedded_constant_pool),
   // cp = callee's context,
   // r4 = callee's JS function.
   __ PushFixedFrame(r4);
@@ -2305,10 +2309,9 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
     __ ldr(r3, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
 
     { ConstantPoolUnavailableScope constant_pool_unavailable(masm_);
-      if (FLAG_enable_ool_constant_pool) {
+      if (FLAG_enable_embedded_constant_pool) {
         // Load the new code object's constant pool pointer.
-        __ ldr(pp,
-               MemOperand(r3, Code::kConstantPoolOffset - Code::kHeaderSize));
+        __ LoadTargetConstantPoolPointerRegister(r3);
       }
 
       __ ldr(r2, FieldMemOperand(r1, JSGeneratorObject::kContinuationOffset));
@@ -5375,7 +5378,7 @@ void FullCodeGenerator::ExitFinallyBlock() {
 
 static Address GetInterruptImmediateLoadAddress(Address pc) {
   Address load_address = pc - 2 * Assembler::kInstrSize;
-  if (!FLAG_enable_ool_constant_pool) {
+  if (!FLAG_enable_embedded_constant_pool) {
     DCHECK(Assembler::IsLdrPcImmediateOffset(Memory::int32_at(load_address)));
   } else if (Assembler::IsLdrPpRegOffset(Memory::int32_at(load_address))) {
     // This is an extended constant pool lookup.

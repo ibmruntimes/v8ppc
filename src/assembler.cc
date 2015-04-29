@@ -135,11 +135,7 @@ AssemblerBase::AssemblerBase(Isolate* isolate, void* buffer, int buffer_size)
       predictable_code_size_(false),
       // We may use the assembler without an isolate.
       serializer_enabled_(isolate && isolate->serializer_enabled()),
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
       constant_pool_available_(false) {
-#else
-      ool_constant_pool_available_(false) {
-#endif
   if (FLAG_mask_constants_with_cookie && isolate != NULL)  {
     jit_cookie_ = isolate->random_number_generator()->NextInt();
   }
@@ -1648,6 +1644,193 @@ bool PositionsRecorder::WriteRecordedPositions() {
 
   // Return whether something was written.
   return written;
+}
+
+
+ConstantPoolBuilder::ConstantPoolBuilder(int ptr_reach, int double_reach) {
+  info_[ConstantPoolEntry::INTPTR].entries.reserve(64);
+  info_[ConstantPoolEntry::INTPTR].regular_reach = ptr_reach;
+  info_[ConstantPoolEntry::DOUBLE].regular_reach = double_reach;
+}
+
+
+ConstantPoolEntry::Access ConstantPoolBuilder::NextAccess(
+    ConstantPoolEntry::Type type) const {
+  const TypeInfo& info = info_[type];
+
+  if (info.overflow()) return ConstantPoolEntry::OVERFLOWED;
+
+  int dbl_offset = info_[ConstantPoolEntry::DOUBLE].regular_count * kDoubleSize;
+  int ptr_offset =
+      info_[ConstantPoolEntry::INTPTR].regular_count * kPointerSize +
+      dbl_offset;
+
+  if (type == ConstantPoolEntry::DOUBLE) {
+    // Double overflow detection must take into account the reach for both types
+    int ptr_reach = info_[ConstantPoolEntry::INTPTR].regular_reach;
+    if (!is_uintn(dbl_offset, info.regular_reach) ||
+        !is_uintn(ptr_offset + kDoubleSize, ptr_reach)) {
+      return ConstantPoolEntry::OVERFLOWED;
+    }
+  } else {
+    DCHECK(type == ConstantPoolEntry::INTPTR);
+    if (!is_uintn(ptr_offset, info.regular_reach)) {
+      return ConstantPoolEntry::OVERFLOWED;
+    }
+  }
+
+  return ConstantPoolEntry::REGULAR;
+}
+
+
+ConstantPoolEntry::Access ConstantPoolBuilder::AddEntry(
+    ConstantPoolEntry& entry, ConstantPoolEntry::Type type) {
+  DCHECK(!label_.is_bound());
+  TypeInfo& info = info_[type];
+  const int entry_size = ConstantPoolEntry::size(type);
+  bool merged = false;
+
+  if (entry.sharing_ok()) {
+    // Try to merge entries
+    std::vector<ConstantPoolEntry>::const_iterator it =
+        info.shared_entries.cbegin();
+    int end = info.shared_entries.size();
+    for (int i = 0; i < end; i++, it++) {
+      if ((entry_size == kPointerSize) ? entry.value() == it->value()
+                                       : entry.value64() == it->value64()) {
+        // Merge with found entry.
+        entry.merged_index_ = i;
+        merged = true;
+        break;
+      }
+    }
+  }
+
+  ConstantPoolEntry::Access access =
+      (merged ? ConstantPoolEntry::REGULAR : NextAccess(type));
+
+  // Enforce an upper bound on search time by limiting the search to
+  // unique sharable entries which fit in the regular section.
+  if (entry.sharing_ok() && !merged && access == ConstantPoolEntry::REGULAR) {
+    info.shared_entries.push_back(entry);
+  } else {
+    info.entries.push_back(entry);
+  }
+
+  // We're done if we found a match or have already triggered the
+  // overflow state.
+  if (merged || info.overflow()) return access;
+
+  if (access == ConstantPoolEntry::REGULAR) {
+    info.regular_count++;
+  } else {
+    info.overflow_start = info.entries.size() - 1;
+  }
+
+  return access;
+}
+
+
+void ConstantPoolBuilder::EmitGroup(Assembler* assm,
+                                    ConstantPoolEntry::Access access,
+                                    ConstantPoolEntry::Type type) {
+  TypeInfo& info = info_[type];
+  const bool overflow = info.overflow();
+  std::vector<ConstantPoolEntry>& entries = info.entries;
+  std::vector<ConstantPoolEntry>& shared_entries = info.shared_entries;
+  const int entry_size = ConstantPoolEntry::size(type);
+  int base = label_.pos();
+  DCHECK(base > 0);
+  int begin;
+  int end;
+
+  if (access == ConstantPoolEntry::REGULAR) {
+    // Emit any shared entries first
+    int shared_end = shared_entries.size();
+    std::vector<ConstantPoolEntry>::iterator shared_it = shared_entries.begin();
+    for (int i = 0; i < shared_end; i++, shared_it++) {
+      int offset = assm->pc_offset() - base;
+      shared_it->merged_index_ = offset;  // Save offset for merged entries.
+      if (entry_size == kPointerSize) {
+        assm->dp(shared_it->value());
+      } else {
+        assm->dq(shared_it->value64());
+      }
+      DCHECK(is_uintn(offset, info.regular_reach));
+
+      // Patch load sequence with correct offset.
+      assm->SetConstantPoolOffset(shared_it->position_, offset, access, type);
+    }
+
+    // Emit regular entries next;
+    begin = 0;
+    end = overflow ? info.overflow_start : entries.size();
+  } else {
+    DCHECK(access == ConstantPoolEntry::OVERFLOWED);
+    if (!overflow) return;
+    begin = info.overflow_start;
+    end = entries.size();
+  }
+
+  std::vector<ConstantPoolEntry>::const_iterator it = entries.cbegin();
+  if (begin > 0) std::advance(it, begin);
+  for (int i = begin; i < end; i++, it++) {
+    // Update constant pool if necessary and get the entry's offset.
+    int offset;
+    ConstantPoolEntry::Access entry_access;
+    if (it->merged_index_ < 0) {
+      offset = assm->pc_offset() - base;
+      entry_access = access;
+      if (entry_size == kPointerSize) {
+        assm->dp(it->value());
+      } else {
+        assm->dq(it->value64());
+      }
+    } else {
+      // Retrieve offset from shared entry.
+      offset = shared_entries[it->merged_index_].merged_index_;
+      entry_access = ConstantPoolEntry::REGULAR;
+    }
+
+    DCHECK(entry_access == ConstantPoolEntry::OVERFLOWED ||
+           is_uintn(offset, info.regular_reach));
+
+    // Patch load sequence with correct offset.
+    assm->SetConstantPoolOffset(it->position_, offset, entry_access, type);
+  }
+}
+
+
+// Emit and return position of pool.  Zero implies no constant pool.
+int ConstantPoolBuilder::Emit(Assembler* assm) {
+  bool emitted = label_.is_bound();
+  bool empty = (info_[ConstantPoolEntry::INTPTR].entries.empty() &&
+                info_[ConstantPoolEntry::INTPTR].shared_entries.empty() &&
+                info_[ConstantPoolEntry::DOUBLE].entries.empty() &&
+                info_[ConstantPoolEntry::DOUBLE].shared_entries.empty());
+
+  if (!emitted) {
+    // Mark start of constant pool.  Align if necessary.
+    if (!empty) assm->Align(kDoubleSize);
+    assm->bind(&label_);
+    if (!empty) {
+      // Emit in groups based on access and type.
+      // Emit doubles first for alignment purposes.
+      EmitGroup(assm, ConstantPoolEntry::REGULAR, ConstantPoolEntry::DOUBLE);
+      EmitGroup(assm, ConstantPoolEntry::REGULAR, ConstantPoolEntry::INTPTR);
+      if (info_[ConstantPoolEntry::DOUBLE].overflow()) {
+        assm->Align(kDoubleSize);
+        EmitGroup(assm, ConstantPoolEntry::OVERFLOWED,
+                  ConstantPoolEntry::DOUBLE);
+      }
+      if (info_[ConstantPoolEntry::INTPTR].overflow()) {
+        EmitGroup(assm, ConstantPoolEntry::OVERFLOWED,
+                  ConstantPoolEntry::INTPTR);
+      }
+    }
+  }
+
+  return !empty ? label_.pos() : 0;
 }
 
 

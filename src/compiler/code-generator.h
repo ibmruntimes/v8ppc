@@ -96,6 +96,9 @@ class CodeGenerator final : public GapResolver::Assembler {
   // Generates code to deconstruct a the caller's frame, including arguments.
   void AssembleDeconstructActivationRecord();
 
+  // Emits an embedded constant pool.
+  void AssembleConstantPool();
+
   // ===========================================================================
   // ============== Architecture-specific gap resolver methods. ================
   // ===========================================================================

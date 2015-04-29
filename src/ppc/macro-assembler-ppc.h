@@ -102,13 +102,9 @@ class MacroAssembler : public Assembler {
   MacroAssembler(Isolate* isolate, void* buffer, int size);
 
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   // Returns the size of a call in instructions. Note, the value returned is
   // only valid as long as no entries are added to the constant pool between
   // checking the call size and emitting the actual call.
-#else
-  // Returns the size of a call in instructions.
-#endif
   static int CallSize(Register target);
   int CallSize(Address target, RelocInfo::Mode rmode, Condition cond = al);
   static int CallSizeNotPredictableCodeSize(Address target,
@@ -1366,11 +1362,7 @@ class MacroAssembler : public Assembler {
   // ---------------------------------------------------------------------------
   // Patching helpers.
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   // Retrieve/patch the relocated value (lis/ori pair or constant pool load).
-#else
-  // Retrieve/patch the relocated value (lis/ori pair).
-#endif
   void GetRelocatedValue(Register location, Register result, Register scratch);
   void SetRelocatedValue(Register location, Register scratch,
                          Register new_value);
@@ -1458,13 +1450,11 @@ class MacroAssembler : public Assembler {
   // Jumps to found label if a prototype map has dictionary elements.
   void JumpIfDictionaryInPrototypeChain(Register object, Register scratch0,
                                         Register scratch1, Label* found);
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
 
   // Loads the constant pool pointer (kConstantPoolRegister).
   void LoadTargetConstantPoolPointerRegister(Register target);
-  void LoadOwnConstantPoolPointerRegister(Register base = no_reg,
-                                          int code_entry_delta = 0);
-#endif
+  void LoadConstantPoolPointerRegister();
+  void LoadConstantPoolPointerRegister(Register base, int code_entry_delta = 0);
 
  private:
   static const int kSmiShift = kSmiTagSize + kSmiShiftSize;

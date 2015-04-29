@@ -2827,30 +2827,6 @@ void MarkCompactCollector::MigrateObject(HeapObject* dst, HeapObject* src,
                            SlotsBuffer::CODE_ENTRY_SLOT, code_entry_slot,
                            SlotsBuffer::IGNORE_OVERFLOW);
       }
-    } else if (dst->IsConstantPoolArray()) {
-      // We special case ConstantPoolArrays since they could contain integers
-      // value entries which look like tagged pointers.
-      // TODO(mstarzinger): restructure this code to avoid this special-casing.
-      ConstantPoolArray* array = ConstantPoolArray::cast(dst);
-      ConstantPoolArray::Iterator code_iter(array, ConstantPoolArray::CODE_PTR);
-      while (!code_iter.is_finished()) {
-        Address code_entry_slot =
-            dst_addr + array->OffsetOfElementAt(code_iter.next_index());
-        Address code_entry = Memory::Address_at(code_entry_slot);
-
-        if (Page::FromAddress(code_entry)->IsEvacuationCandidate()) {
-          SlotsBuffer::AddTo(&slots_buffer_allocator_, &migration_slots_buffer_,
-                             SlotsBuffer::CODE_ENTRY_SLOT, code_entry_slot,
-                             SlotsBuffer::IGNORE_OVERFLOW);
-        }
-      }
-      ConstantPoolArray::Iterator heap_iter(array, ConstantPoolArray::HEAP_PTR);
-      while (!heap_iter.is_finished()) {
-        Address heap_slot =
-            dst_addr + array->OffsetOfElementAt(heap_iter.next_index());
-        Object* value = Memory::Object_at(heap_slot);
-        RecordMigratedSlot(value, heap_slot);
-      }
     }
   } else if (dest == CODE_SPACE) {
     PROFILE(isolate(), CodeMoveEvent(src_addr, dst_addr));
@@ -3467,12 +3443,10 @@ static inline void UpdateSlot(Isolate* isolate, ObjectVisitor* v,
       rinfo.Visit(isolate, v);
       break;
     }
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     case SlotsBuffer::OBJECT_SLOT: {
       v->VisitPointer(reinterpret_cast<Object**>(addr));
       break;
     }
-#endif
     default:
       UNREACHABLE();
       break;
@@ -4642,7 +4616,6 @@ void MarkCompactCollector::RecordRelocSlot(RelocInfo* rinfo, Object* target) {
   if (target_page->IsEvacuationCandidate() &&
       (rinfo->host() == NULL ||
        !ShouldSkipEvacuationSlotRecording(rinfo->host()))) {
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     Address addr = rinfo->pc();
     SlotsBuffer::SlotType slot_type = SlotTypeForRMode(rmode);
     if (rinfo->IsInConstantPool()) {
@@ -4657,11 +4630,6 @@ void MarkCompactCollector::RecordRelocSlot(RelocInfo* rinfo, Object* target) {
     bool success = SlotsBuffer::AddTo(
         &slots_buffer_allocator_, target_page->slots_buffer_address(),
         slot_type, addr, SlotsBuffer::FAIL_ON_OVERFLOW);
-#else
-    bool success = SlotsBuffer::AddTo(
-        &slots_buffer_allocator_, target_page->slots_buffer_address(),
-        SlotTypeForRMode(rmode), rinfo->pc(), SlotsBuffer::FAIL_ON_OVERFLOW);
-#endif
     if (!success) {
       EvictPopularEvacuationCandidate(target_page);
     }

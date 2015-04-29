@@ -104,7 +104,6 @@
         'test-bit-vector.cc',
         'test-circular-queue.cc',
         'test-compiler.cc',
-        'test-constantpool.cc',
         'test-conversions.cc',
         'test-cpu-profiler.cc',
         'test-date.cc',

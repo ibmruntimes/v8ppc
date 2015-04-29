@@ -113,7 +113,7 @@ bool LCodeGen::GeneratePrologue() {
 
     // r1: Callee's JS function.
     // cp: Callee's context.
-    // pp: Callee's constant pool pointer (if FLAG_enable_ool_constant_pool)
+    // pp: Callee's constant pool pointer (if enabled)
     // fp: Caller's frame pointer.
     // lr: Caller's pc.
 
@@ -383,9 +383,13 @@ bool LCodeGen::GenerateJumpTable() {
     __ bx(entry_offset);
   }
 
-  // Force constant pool emission at the end of the deopt jump table to make
-  // sure that no constant pools are emitted after.
-  masm()->CheckConstPool(true, false);
+  if (FLAG_enable_embedded_constant_pool) {
+    masm()->EmitConstantPool();
+  } else {
+    // Force constant pool emission at the end of the deopt jump table to make
+    // sure that no constant pools are emitted after.
+    masm()->CheckConstPool(true, false);
+  }
 
   // The deoptimization jump table is the last part of the instruction
   // sequence. Mark the generated code as done unless we bailed out.
@@ -1015,10 +1019,6 @@ void LCodeGen::RecordSafepoint(
     } else if (pointer->IsRegister() && (kind & Safepoint::kWithRegisters)) {
       safepoint.DefinePointerRegister(ToRegister(pointer), zone());
     }
-  }
-  if (FLAG_enable_ool_constant_pool && (kind & Safepoint::kWithRegisters)) {
-    // Register pp always contains a pointer to the constant pool.
-    safepoint.DefinePointerRegister(pp, zone());
   }
 }
 

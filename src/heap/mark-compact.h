@@ -318,9 +318,7 @@ class SlotsBuffer {
 
   enum SlotType {
     EMBEDDED_OBJECT_SLOT,
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     OBJECT_SLOT,
-#endif
     RELOCATED_CODE_OBJECT,
     CELL_TARGET_SLOT,
     CODE_TARGET_SLOT,
@@ -334,10 +332,8 @@ class SlotsBuffer {
     switch (type) {
       case EMBEDDED_OBJECT_SLOT:
         return "EMBEDDED_OBJECT_SLOT";
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
       case OBJECT_SLOT:
         return "OBJECT_SLOT";
-#endif
       case RELOCATED_CODE_OBJECT:
         return "RELOCATED_CODE_OBJECT";
       case CELL_TARGET_SLOT:

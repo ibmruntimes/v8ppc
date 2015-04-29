@@ -79,9 +79,8 @@ class AssemblerBase: public Malloced {
     return (enabled_cpu_features_ & (static_cast<uint64_t>(1) << f)) != 0;
   }
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   bool is_constant_pool_available() const {
-    if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+    if (FLAG_enable_embedded_constant_pool) {
       return constant_pool_available_;
     } else {
       // Constant pool not supported on this architecture.
@@ -89,17 +88,6 @@ class AssemblerBase: public Malloced {
       return false;
     }
   }
-#else
-  bool is_ool_constant_pool_available() const {
-    if (FLAG_enable_ool_constant_pool) {
-      return ool_constant_pool_available_;
-    } else {
-      // Out-of-line constant pool not supported on this architecture.
-      UNREACHABLE();
-      return false;
-    }
-  }
-#endif
 
   // Overwrite a host NaN with a quiet target NaN.  Used by mksnapshot for
   // cross-snapshotting.
@@ -120,25 +108,14 @@ class AssemblerBase: public Malloced {
   int buffer_size_;
   bool own_buffer_;
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   void set_constant_pool_available(bool available) {
-    if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+    if (FLAG_enable_embedded_constant_pool) {
       constant_pool_available_ = available;
     } else {
       // Constant pool not supported on this architecture.
       UNREACHABLE();
     }
   }
-#else
-  void set_ool_constant_pool_available(bool available) {
-    if (FLAG_enable_ool_constant_pool) {
-      ool_constant_pool_available_ = available;
-    } else {
-      // Out-of-line constant pool not supported on this architecture.
-      UNREACHABLE();
-    }
-  }
-#endif
 
   // The program counter, which points into the buffer above and moves forward.
   byte* pc_;
@@ -153,11 +130,7 @@ class AssemblerBase: public Malloced {
 
   // Indicates whether the constant pool can be accessed, which is only possible
   // if the pp register points to the current code object's constant pool.
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   bool constant_pool_available_;
-#else
-  bool ool_constant_pool_available_;
-#endif
 
   // Constant pool.
   friend class FrameAndConstantPoolScope;
@@ -440,9 +413,6 @@ class RelocInfo {
   RelocInfo(byte* pc, Mode rmode, intptr_t data, Code* host)
       : pc_(pc), rmode_(rmode), data_(data), host_(host) {
   }
-  RelocInfo(byte* pc, double data64)
-      : pc_(pc), rmode_(NONE64), data64_(data64), host_(NULL) {
-  }
 
   static inline bool IsRealRelocMode(Mode mode) {
     return mode >= FIRST_REAL_RELOC_MODE &&
@@ -514,22 +484,11 @@ class RelocInfo {
   }
   static inline int ModeMask(Mode mode) { return 1 << mode; }
 
-  // Returns true if the first RelocInfo has the same mode and raw data as the
-  // second one.
-  static inline bool IsEqual(RelocInfo first, RelocInfo second) {
-    return first.rmode() == second.rmode() &&
-           (first.rmode() == RelocInfo::NONE64 ?
-              first.raw_data64() == second.raw_data64() :
-              first.data() == second.data());
-  }
-
   // Accessors
   byte* pc() const { return pc_; }
   void set_pc(byte* pc) { pc_ = pc; }
   Mode rmode() const {  return rmode_; }
   intptr_t data() const { return data_; }
-  double data64() const { return data64_; }
-  uint64_t raw_data64() { return bit_cast<uint64_t>(data64_); }
   Code* host() const { return host_; }
   void set_host(Code* host) { host_ = host; }
 
@@ -672,10 +631,7 @@ class RelocInfo {
   // comment).
   byte* pc_;
   Mode rmode_;
-  union {
-    intptr_t data_;
-    double data64_;
-  };
+  intptr_t data_;
   Code* host_;
   // External-reference pointers are also split across instruction-pairs
   // on some platforms, but are accessed via indirect pointers. This location
@@ -1200,6 +1156,83 @@ class NullCallWrapper : public CallWrapper {
 };
 
 
+// -----------------------------------------------------------------------------
+// Embedded constant pool support
+
+class ConstantPoolEntry {
+ public:
+  ConstantPoolEntry() {}
+  ConstantPoolEntry(int position, intptr_t value, bool sharing_ok)
+      : position_(position),
+        merged_index_(sharing_ok ? -1 : -2),
+        value_(value) {}
+  ConstantPoolEntry(int position, double value)
+      : position_(position), merged_index_(-1), value64_(value) {}
+
+  int position() const { return position_; }
+  bool sharing_ok() const { return merged_index_ != -2; }
+  intptr_t value() const { return value_; }
+  uint64_t value64() const { return bit_cast<uint64_t>(value64_); }
+
+  enum Type { INTPTR, DOUBLE, NUMBER_OF_TYPES };
+
+  static int size(Type type) {
+    return ((kPointerSize == kDoubleSize || type == INTPTR) ? kPointerSize
+                                                            : kDoubleSize);
+  }
+
+  enum Access { REGULAR, OVERFLOWED };
+
+ private:
+  int position_;
+  int merged_index_;
+  union {
+    intptr_t value_;
+    double value64_;
+  };
+
+  friend class ConstantPoolBuilder;
+};
+
+
+class ConstantPoolBuilder BASE_EMBEDDED {
+ public:
+  ConstantPoolBuilder(int ptr_reach, int double_reach);
+  ConstantPoolEntry::Access AddEntry(int position, intptr_t value,
+                                     bool sharing_ok) {
+    ConstantPoolEntry entry(position, value, sharing_ok);
+    return AddEntry(entry, ConstantPoolEntry::INTPTR);
+  }
+  ConstantPoolEntry::Access AddEntry(int position, double value) {
+    ConstantPoolEntry entry(position, value);
+    return AddEntry(entry, ConstantPoolEntry::DOUBLE);
+  }
+  ConstantPoolEntry::Access NextAccess(ConstantPoolEntry::Type type) const;
+  int Emit(Assembler* assm);
+  inline Label* Position() { return &label_; }
+
+ private:
+  ConstantPoolEntry::Access AddEntry(ConstantPoolEntry& entry,
+                                     ConstantPoolEntry::Type type);
+  void EmitGroup(Assembler* assm, ConstantPoolEntry::Access access,
+                 ConstantPoolEntry::Type type);
+
+  struct TypeInfo {
+    TypeInfo() : regular_count(0), overflow_start(-1) {}
+    bool overflow() const {
+      return (overflow_start >= 0 &&
+              overflow_start < static_cast<int>(entries.size()));
+    }
+    int regular_reach;
+    int regular_count;
+    int overflow_start;
+    std::vector<ConstantPoolEntry> entries;
+    std::vector<ConstantPoolEntry> shared_entries;
+  };
+
+  Label label_;
+  TypeInfo info_[ConstantPoolEntry::NUMBER_OF_TYPES];
+};
 } }  // namespace v8::internal
 
 #endif  // V8_ASSEMBLER_H_

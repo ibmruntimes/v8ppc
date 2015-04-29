@@ -31,12 +31,6 @@ Register StubFailureTrampolineFrame::constant_pool_pointer_register() {
 }
 
 
-Object*& ExitFrame::constant_pool_slot() const {
-  UNREACHABLE();
-  return Memory::Object_at(NULL);
-}
-
-
 } }  // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_ARM64
