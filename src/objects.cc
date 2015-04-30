@@ -1697,6 +1697,12 @@ String* JSReceiver::class_name() {
 
 
 String* Map::constructor_name() {
+  if (is_prototype_map() && prototype_info()->IsPrototypeInfo()) {
+    PrototypeInfo* proto_info = PrototypeInfo::cast(prototype_info());
+    if (proto_info->constructor_name()->IsString()) {
+      return String::cast(proto_info->constructor_name());
+    }
+  }
   Object* maybe_constructor = GetConstructor();
   if (maybe_constructor->IsJSFunction()) {
     JSFunction* constructor = JSFunction::cast(maybe_constructor);
@@ -3368,7 +3374,7 @@ MaybeHandle<Object> Object::SetDataProperty(LookupIterator* it,
   it->PrepareForDataProperty(value);
 
   // Write the property value.
-  value = it->WriteDataValue(value);
+  it->WriteDataValue(value);
 
   // Send the change record if there are observers.
   if (is_observed && !value->SameValue(*maybe_old.ToHandleChecked())) {
@@ -3423,7 +3429,7 @@ MaybeHandle<Object> Object::AddDataProperty(LookupIterator* it,
     JSObject::AddSlowProperty(receiver, it->name(), value, attributes);
   } else {
     // Write the property value.
-    value = it->WriteDataValue(value);
+    it->WriteDataValue(value);
   }
 
   // Send the change record if there are observers.
@@ -4287,7 +4293,7 @@ MaybeHandle<Object> JSObject::SetOwnPropertyIgnoreAttributes(
         }
 
         it.ReconfigureDataProperty(value, attributes);
-        value = it.WriteDataValue(value);
+        it.WriteDataValue(value);
 
         if (is_observed) {
           RETURN_ON_EXCEPTION(
@@ -4311,7 +4317,7 @@ MaybeHandle<Object> JSObject::SetOwnPropertyIgnoreAttributes(
         if (is_observed) old_value = it.GetDataValue();
 
         it.ReconfigureDataProperty(value, attributes);
-        value = it.WriteDataValue(value);
+        it.WriteDataValue(value);
 
         if (is_observed) {
           if (old_value->SameValue(*value)) {
@@ -10062,21 +10068,26 @@ void JSObject::OptimizeAsPrototype(Handle<JSObject> object,
       Handle<Map> new_map = Map::Copy(handle(object->map()), "CopyAsPrototype");
       JSObject::MigrateToMap(object, new_map);
     }
+    object->map()->set_is_prototype_map(true);
+
+    // Replace the pointer to the exact constructor with the Object function
+    // from the same context if undetectable from JS. This is to avoid keeping
+    // memory alive unnecessarily.
     Object* maybe_constructor = object->map()->GetConstructor();
     if (maybe_constructor->IsJSFunction()) {
       JSFunction* constructor = JSFunction::cast(maybe_constructor);
-      // Replace the pointer to the exact constructor with the Object function
-      // from the same context if undetectable from JS. This is to avoid keeping
-      // memory alive unnecessarily.
+      Isolate* isolate = object->GetIsolate();
       if (!constructor->shared()->IsApiFunction() &&
-          object->class_name() ==
-              object->GetIsolate()->heap()->Object_string()) {
+          object->class_name() == isolate->heap()->Object_string()) {
+        Handle<String> constructor_name(object->constructor_name(), isolate);
         Context* context = constructor->context()->native_context();
         JSFunction* object_function = context->object_function();
         object->map()->SetConstructor(object_function);
+        Handle<PrototypeInfo> proto_info =
+            Map::GetOrCreatePrototypeInfo(object, isolate);
+        proto_info->set_constructor_name(*constructor_name);
       }
     }
-    object->map()->set_is_prototype_map(true);
   }
 }
 
@@ -11368,21 +11379,40 @@ void Code::MarkCodeAsExecuted(byte* sequence, Isolate* isolate) {
 }
 
 
-static Code::Age EffectiveAge(Code::Age age) {
-  if (age == Code::kNotExecutedCodeAge) {
-    // Treat that's never been executed as old immediately.
-    age = Code::kIsOldCodeAge;
-  } else if (age == Code::kExecutedOnceCodeAge) {
-    // Pre-age code that has only been executed once.
-    age = Code::kPreAgedCodeAge;
+// NextAge defines the Code::Age state transitions during a GC cycle.
+static Code::Age NextAge(Code::Age age) {
+  switch (age) {
+    case Code::kNotExecutedCodeAge:  // Keep, until we've been executed.
+    case Code::kToBeExecutedOnceCodeAge:  // Keep, until we've been executed.
+    case Code::kLastCodeAge:  // Clamp at last Code::Age value.
+      return age;
+    case Code::kExecutedOnceCodeAge:
+      // Pre-age code that has only been executed once.
+      return static_cast<Code::Age>(Code::kPreAgedCodeAge + 1);
+    default:
+      return static_cast<Code::Age>(age + 1);  // Default case: Increase age.
   }
-  return age;
+}
+
+
+// IsOldAge defines the collection criteria for a Code object.
+static bool IsOldAge(Code::Age age) {
+  return age >= Code::kIsOldCodeAge || age == Code::kNotExecutedCodeAge;
 }
 
 
 void Code::MakeYoung(Isolate* isolate) {
   byte* sequence = FindCodeAgeSequence();
   if (sequence != NULL) MakeCodeAgeSequenceYoung(sequence, isolate);
+}
+
+
+void Code::MarkToBeExecutedOnce(Isolate* isolate) {
+  byte* sequence = FindCodeAgeSequence();
+  if (sequence != NULL) {
+    PatchPlatformCodeAge(isolate, sequence, kToBeExecutedOnceCodeAge,
+                         NO_MARKING_PARITY);
+  }
 }
 
 
@@ -11393,19 +11423,16 @@ void Code::MakeOlder(MarkingParity current_parity) {
     MarkingParity code_parity;
     Isolate* isolate = GetIsolate();
     GetCodeAgeAndParity(isolate, sequence, &age, &code_parity);
-    age = EffectiveAge(age);
-    if (age != kLastCodeAge && code_parity != current_parity) {
-      PatchPlatformCodeAge(isolate,
-                           sequence,
-                           static_cast<Age>(age + 1),
-                           current_parity);
+    Age next_age = NextAge(age);
+    if (age != next_age && code_parity != current_parity) {
+      PatchPlatformCodeAge(isolate, sequence, next_age, current_parity);
     }
   }
 }
 
 
 bool Code::IsOld() {
-  return GetAge() >= kIsOldCodeAge;
+  return IsOldAge(GetAge());
 }
 
 
@@ -11420,11 +11447,6 @@ byte* Code::FindCodeAgeSequence() {
 
 
 Code::Age Code::GetAge() {
-  return EffectiveAge(GetRawAge());
-}
-
-
-Code::Age Code::GetRawAge() {
   byte* sequence = FindCodeAgeSequence();
   if (sequence == NULL) {
     return kNoAgeCodeAge;
@@ -11468,6 +11490,12 @@ void Code::GetCodeAgeAndParity(Code* code, Age* age,
     *parity = NO_MARKING_PARITY;
     return;
   }
+  stub = *builtins->MarkCodeAsToBeExecutedOnce();
+  if (code == stub) {
+    *age = kToBeExecutedOnceCodeAge;
+    *parity = NO_MARKING_PARITY;
+    return;
+  }
   UNREACHABLE();
 }
 
@@ -11491,6 +11519,10 @@ Code* Code::GetCodeAgeStub(Isolate* isolate, Age age, MarkingParity parity) {
     case kExecutedOnceCodeAge: {
       DCHECK(parity == NO_MARKING_PARITY);
       return *builtins->MarkCodeAsExecutedTwice();
+    }
+    case kToBeExecutedOnceCodeAge: {
+      DCHECK(parity == NO_MARKING_PARITY);
+      return *builtins->MarkCodeAsToBeExecutedOnce();
     }
     default:
       UNREACHABLE();
@@ -11990,10 +12022,8 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
 #endif  // ENABLE_DISASSEMBLER
 
 
-Handle<FixedArray> JSObject::SetFastElementsCapacityAndLength(
-    Handle<JSObject> object,
-    int capacity,
-    int length,
+Handle<FixedArray> JSObject::SetFastElementsCapacity(
+    Handle<JSObject> object, int capacity,
     SetFastElementsCapacitySmiMode smi_mode) {
   // We should never end in here with a pixel or external array.
   DCHECK(!object->HasExternalArrayElements());
@@ -12048,6 +12078,15 @@ Handle<FixedArray> JSObject::SetFastElementsCapacityAndLength(
                             object->GetElementsKind(), new_elements);
   }
 
+  return new_elements;
+}
+
+
+Handle<FixedArray> JSObject::SetFastElementsCapacityAndLength(
+    Handle<JSObject> object, int capacity, int length,
+    SetFastElementsCapacitySmiMode smi_mode) {
+  Handle<FixedArray> new_elements =
+      SetFastElementsCapacity(object, capacity, smi_mode);
   if (object->IsJSArray()) {
     Handle<JSArray>::cast(object)->set_length(Smi::FromInt(length));
   }
@@ -12055,9 +12094,8 @@ Handle<FixedArray> JSObject::SetFastElementsCapacityAndLength(
 }
 
 
-void JSObject::SetFastDoubleElementsCapacityAndLength(Handle<JSObject> object,
-                                                      int capacity,
-                                                      int length) {
+Handle<FixedArrayBase> JSObject::SetFastDoubleElementsCapacity(
+    Handle<JSObject> object, int capacity) {
   // We should never end in here with a pixel or external array.
   DCHECK(!object->HasExternalArrayElements());
 
@@ -12087,9 +12125,18 @@ void JSObject::SetFastDoubleElementsCapacityAndLength(Handle<JSObject> object,
                             object->GetElementsKind(), elems);
   }
 
+  return elems;
+}
+
+
+Handle<FixedArrayBase> JSObject::SetFastDoubleElementsCapacityAndLength(
+    Handle<JSObject> object, int capacity, int length) {
+  Handle<FixedArrayBase> new_elements =
+      SetFastDoubleElementsCapacity(object, capacity);
   if (object->IsJSArray()) {
     Handle<JSArray>::cast(object)->set_length(Smi::FromInt(length));
   }
+  return new_elements;
 }
 
 
@@ -13848,9 +13895,8 @@ void JSObject::GetElementsCapacityAndUsage(int* capacity, int* used) {
 }
 
 
-bool JSObject::WouldConvertToSlowElements(Handle<Object> key) {
-  uint32_t index;
-  if (HasFastElements() && key->ToArrayIndex(&index)) {
+bool JSObject::WouldConvertToSlowElements(uint32_t index) {
+  if (HasFastElements()) {
     Handle<FixedArrayBase> backing_store(FixedArrayBase::cast(elements()));
     uint32_t capacity = static_cast<uint32_t>(backing_store->length());
     if (index >= capacity) {
@@ -17066,11 +17112,18 @@ Handle<JSArrayBuffer> JSTypedArray::MaterializeArrayBuffer(
           map,
           FixedToExternalElementsKind(map->elements_kind()));
 
-  Handle<JSArrayBuffer> buffer = isolate->factory()->NewJSArrayBuffer();
   Handle<FixedTypedArrayBase> fixed_typed_array(
       FixedTypedArrayBase::cast(typed_array->elements()));
-  Runtime::SetupArrayBufferAllocatingData(isolate, buffer,
-      fixed_typed_array->DataSize(), false);
+
+  Handle<JSArrayBuffer> buffer(JSArrayBuffer::cast(typed_array->buffer()),
+                               isolate);
+  void* backing_store =
+      isolate->array_buffer_allocator()->AllocateUninitialized(
+          fixed_typed_array->DataSize());
+  isolate->heap()->RegisterNewArrayBuffer(backing_store,
+                                          fixed_typed_array->DataSize());
+  buffer->set_backing_store(backing_store);
+  buffer->set_is_external(false);
   memcpy(buffer->backing_store(),
          fixed_typed_array->DataPtr(),
          fixed_typed_array->DataSize());
@@ -17079,7 +17132,6 @@ Handle<JSArrayBuffer> JSTypedArray::MaterializeArrayBuffer(
           fixed_typed_array->length(), typed_array->type(),
           static_cast<uint8_t*>(buffer->backing_store()));
 
-  typed_array->set_buffer(*buffer);
   JSObject::SetMapAndElements(typed_array, new_map, new_elements);
 
   return buffer;
@@ -17087,9 +17139,8 @@ Handle<JSArrayBuffer> JSTypedArray::MaterializeArrayBuffer(
 
 
 Handle<JSArrayBuffer> JSTypedArray::GetBuffer() {
-  Handle<Object> result(buffer(), GetIsolate());
-  if (*result != Smi::FromInt(0)) {
-    DCHECK(IsExternalArrayElementsKind(map()->elements_kind()));
+  if (IsExternalArrayElementsKind(map()->elements_kind())) {
+    Handle<Object> result(buffer(), GetIsolate());
     return Handle<JSArrayBuffer>::cast(result);
   }
   Handle<JSTypedArray> self(this);
@@ -17181,9 +17232,8 @@ PropertyCellType PropertyCell::UpdatedType(Handle<PropertyCell> cell,
 }
 
 
-Handle<Object> PropertyCell::UpdateCell(Handle<NameDictionary> dictionary,
-                                        int entry, Handle<Object> value,
-                                        PropertyDetails details) {
+void PropertyCell::UpdateCell(Handle<NameDictionary> dictionary, int entry,
+                              Handle<Object> value, PropertyDetails details) {
   DCHECK(!value->IsTheHole());
   DCHECK(dictionary->ValueAt(entry)->IsPropertyCell());
   Handle<PropertyCell> cell(PropertyCell::cast(dictionary->ValueAt(entry)));
@@ -17204,18 +17254,6 @@ Handle<Object> PropertyCell::UpdateCell(Handle<NameDictionary> dictionary,
   DCHECK(index > 0);
   details = details.set_index(index);
 
-  // Heuristic: if a small-ish string is stored in a previously uninitialized
-  // property cell, internalize it.
-  const int kMaxLengthForInternalization = 200;
-  if ((old_type == PropertyCellType::kUninitialized ||
-       old_type == PropertyCellType::kUndefined) &&
-      value->IsString()) {
-    auto string = Handle<String>::cast(value);
-    if (string->length() <= kMaxLengthForInternalization) {
-      value = cell->GetIsolate()->factory()->InternalizeString(string);
-    }
-  }
-
   auto new_type = UpdatedType(cell, value, original_details);
   if (invalidate) cell = PropertyCell::InvalidateEntry(dictionary, entry);
 
@@ -17230,7 +17268,6 @@ Handle<Object> PropertyCell::UpdateCell(Handle<NameDictionary> dictionary,
     cell->dependent_code()->DeoptimizeDependentCodeGroup(
         isolate, DependentCode::kPropertyCellChangedGroup);
   }
-  return value;
 }
 
 

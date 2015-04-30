@@ -577,6 +577,31 @@ Handle<Code> StoreScriptContextFieldStub::GenerateCode() {
 
 
 template <>
+HValue* CodeStubGraphBuilder<GrowArrayElementsStub>::BuildCodeStub() {
+  HValue* object = GetParameter(GrowArrayElementsDescriptor::kObjectIndex);
+  HValue* key = GetParameter(GrowArrayElementsDescriptor::kKeyIndex);
+  HValue* current_capacity =
+      GetParameter(GrowArrayElementsDescriptor::kCapacityIndex);
+  ElementsKind kind = casted_stub()->elements_kind();
+
+  HValue* elements = AddLoadElements(object);
+  HValue* length =
+      casted_stub()->is_js_array()
+          ? Add<HLoadNamedField>(object, static_cast<HValue*>(NULL),
+                                 HObjectAccess::ForArrayLength(kind))
+          : current_capacity;
+
+  return BuildCheckAndGrowElementsCapacity(object, elements, kind, length,
+                                           current_capacity, key);
+}
+
+
+Handle<Code> GrowArrayElementsStub::GenerateCode() {
+  return DoGenerateCode(this);
+}
+
+
+template <>
 HValue* CodeStubGraphBuilder<LoadFastElementStub>::BuildCodeStub() {
   LoadKeyedHoleMode hole_mode = casted_stub()->convert_hole_to_undefined()
                                     ? CONVERT_HOLE_TO_UNDEFINED
@@ -1187,14 +1212,15 @@ HValue* CodeStubGraphBuilder<BinaryOpICStub>::BuildCodeInitializedStub() {
                     state.op(), left, right,
                     Type::String(zone()), right_type,
                     result_type, state.fixed_right_arg(),
-                    allocation_mode));
+                    allocation_mode, state.language_mode()));
       }
       if_leftisstring.Else();
       {
         Push(BuildBinaryOperation(
                     state.op(), left, right,
                     left_type, right_type, result_type,
-                    state.fixed_right_arg(), allocation_mode));
+                    state.fixed_right_arg(), allocation_mode,
+                    state.language_mode()));
       }
       if_leftisstring.End();
       result = Pop();
@@ -1207,14 +1233,15 @@ HValue* CodeStubGraphBuilder<BinaryOpICStub>::BuildCodeInitializedStub() {
                     state.op(), left, right,
                     left_type, Type::String(zone()),
                     result_type, state.fixed_right_arg(),
-                    allocation_mode));
+                    allocation_mode, state.language_mode()));
       }
       if_rightisstring.Else();
       {
         Push(BuildBinaryOperation(
                     state.op(), left, right,
                     left_type, right_type, result_type,
-                    state.fixed_right_arg(), allocation_mode));
+                    state.fixed_right_arg(), allocation_mode,
+                    state.language_mode()));
       }
       if_rightisstring.End();
       result = Pop();
@@ -1223,7 +1250,7 @@ HValue* CodeStubGraphBuilder<BinaryOpICStub>::BuildCodeInitializedStub() {
     result = BuildBinaryOperation(
             state.op(), left, right,
             left_type, right_type, result_type,
-            state.fixed_right_arg(), allocation_mode);
+            state.fixed_right_arg(), allocation_mode, state.language_mode());
   }
 
   // If we encounter a generic argument, the number conversion is
@@ -1257,7 +1284,8 @@ HValue* CodeStubGraphBuilder<BinaryOpWithAllocationSiteStub>::BuildCodeStub() {
 
   return BuildBinaryOperation(state.op(), left, right,
                               left_type, right_type, result_type,
-                              state.fixed_right_arg(), allocation_mode);
+                              state.fixed_right_arg(), allocation_mode,
+                              state.language_mode());
 }
 
 

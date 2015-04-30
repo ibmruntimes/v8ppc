@@ -751,9 +751,11 @@ class Isolate {
       int frame_limit,
       StackTrace::StackTraceOptions options);
 
+  enum PrintStackMode { kPrintStackConcise, kPrintStackVerbose };
   void PrintCurrentStackTrace(FILE* out);
-  void PrintStack(StringStream* accumulator);
-  void PrintStack(FILE* out);
+  void PrintStack(StringStream* accumulator,
+                  PrintStackMode mode = kPrintStackVerbose);
+  void PrintStack(FILE* out, PrintStackMode mode = kPrintStackVerbose);
   Handle<String> StackTraceString();
   NO_INLINE(void PushStackTraceAndDie(unsigned int magic,
                                       Object* object,
@@ -1153,8 +1155,6 @@ class Isolate {
   BasicBlockProfiler* GetOrCreateBasicBlockProfiler();
   BasicBlockProfiler* basic_block_profiler() { return basic_block_profiler_; }
 
-  static Isolate* NewForTesting() { return new Isolate(false); }
-
   std::string GetTurboCfgFileName();
 
 #if TRACE_MAPS
@@ -1183,6 +1183,13 @@ class Isolate {
   void CheckDetachedContextsAfterGC();
 
   List<Object*>* partial_snapshot_cache() { return &partial_snapshot_cache_; }
+
+  void set_array_buffer_allocator(v8::ArrayBuffer::Allocator* allocator) {
+    array_buffer_allocator_ = allocator;
+  }
+  v8::ArrayBuffer::Allocator* array_buffer_allocator() const {
+    return array_buffer_allocator_;
+  }
 
  protected:
   explicit Isolate(bool enable_serializer);
@@ -1407,6 +1414,8 @@ class Isolate {
   BasicBlockProfiler* basic_block_profiler_;
 
   List<Object*> partial_snapshot_cache_;
+
+  v8::ArrayBuffer::Allocator* array_buffer_allocator_;
 
   friend class ExecutionAccess;
   friend class HandleScopeImplementer;

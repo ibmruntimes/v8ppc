@@ -56,6 +56,7 @@ Handle<PrototypeInfo> Factory::NewPrototypeInfo() {
       Handle<PrototypeInfo>::cast(NewStruct(PROTOTYPE_INFO_TYPE));
   result->set_prototype_users(WeakFixedArray::Empty());
   result->set_validity_cell(Smi::FromInt(0));
+  result->set_constructor_name(Smi::FromInt(0));
   return result;
 }
 
@@ -942,6 +943,8 @@ Handle<PropertyCell> Factory::NewPropertyCell() {
 
 
 Handle<WeakCell> Factory::NewWeakCell(Handle<HeapObject> value) {
+  // It is safe to dereference the value because we are embedding it
+  // in cell and not inspecting its fields.
   AllowDeferredHandleDereference convert_to_cell;
   CALL_HEAP_FUNCTION(isolate(), isolate()->heap()->AllocateWeakCell(*value),
                      WeakCell);
@@ -2004,7 +2007,9 @@ Handle<JSTypedArray> Factory::NewJSTypedArray(ElementsKind elements_kind,
   Handle<Object> length_object = NewNumberFromSize(number_of_elements);
   obj->set_length(*length_object);
 
-  obj->set_buffer(Smi::FromInt(0));
+  Handle<JSArrayBuffer> buffer = isolate()->factory()->NewJSArrayBuffer();
+  Runtime::SetupArrayBuffer(isolate(), buffer, true, NULL, byte_length);
+  obj->set_buffer(*buffer);
   Handle<FixedTypedArrayBase> elements =
       isolate()->factory()->NewFixedTypedArray(
           static_cast<int>(number_of_elements), array_type);

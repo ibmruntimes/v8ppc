@@ -4017,8 +4017,12 @@ void LCodeGen::DoCallWithDescriptor(LCallWithDescriptor* instr) {
       generator.BeforeCall(__ CallSize(code, RelocInfo::CODE_TARGET));
       PlatformInterfaceDescriptor* call_descriptor =
           instr->descriptor().platform_specific_descriptor();
-      __ Call(code, RelocInfo::CODE_TARGET, TypeFeedbackId::None(), al,
-              call_descriptor->storage_mode());
+      if (call_descriptor != NULL) {
+        __ Call(code, RelocInfo::CODE_TARGET, TypeFeedbackId::None(), al,
+                call_descriptor->storage_mode());
+      } else {
+        __ Call(code, RelocInfo::CODE_TARGET, TypeFeedbackId::None(), al);
+      }
     } else {
       DCHECK(instr->target()->IsRegister());
       Register target = ToRegister(instr->target());
@@ -5159,14 +5163,10 @@ void LCodeGen::DoCheckArrayBufferNotNeutered(
   Register view = ToRegister(instr->view());
   Register scratch = scratch0();
 
-  Label has_no_buffer;
   __ ldr(scratch, FieldMemOperand(view, JSArrayBufferView::kBufferOffset));
-  __ JumpIfSmi(scratch, &has_no_buffer);
   __ ldr(scratch, FieldMemOperand(scratch, JSArrayBuffer::kBitFieldOffset));
   __ tst(scratch, Operand(1 << JSArrayBuffer::WasNeutered::kShift));
   DeoptimizeIf(ne, instr, Deoptimizer::kOutOfBounds);
-
-  __ bind(&has_no_buffer);
 }
 
 

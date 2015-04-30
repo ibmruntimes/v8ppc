@@ -4,6 +4,7 @@
 
 #include "test/unittests/compiler/instruction-selector-unittest.h"
 
+#include "src/code-stubs.h"
 #include "src/compiler/graph.h"
 #include "src/compiler/schedule.h"
 #include "src/flags.h"
@@ -28,7 +29,8 @@ InstructionSelectorTest::~InstructionSelectorTest() {}
 
 InstructionSelectorTest::Stream InstructionSelectorTest::StreamBuilder::Build(
     InstructionSelector::Features features,
-    InstructionSelectorTest::StreamBuilderMode mode) {
+    InstructionSelectorTest::StreamBuilderMode mode,
+    InstructionSelector::SourcePositionMode source_position_mode) {
   Schedule* schedule = Export();
   if (FLAG_trace_turbo) {
     OFStream out(stdout);
@@ -44,7 +46,8 @@ InstructionSelectorTest::Stream InstructionSelectorTest::StreamBuilder::Build(
                                instruction_blocks);
   SourcePositionTable source_position_table(graph());
   InstructionSelector selector(test_->zone(), node_count, &linkage, &sequence,
-                               schedule, &source_position_table, features);
+                               schedule, &source_position_table,
+                               source_position_mode, features);
   selector.SelectInstructions();
   if (FLAG_trace_turbo) {
     OFStream out(stdout);
@@ -96,12 +99,12 @@ InstructionSelectorTest::Stream InstructionSelectorTest::StreamBuilder::Build(
   }
   for (auto i : s.virtual_registers_) {
     int const virtual_register = i.second;
-    if (sequence.IsDouble(virtual_register)) {
+    if (sequence.IsFloat(virtual_register)) {
       EXPECT_FALSE(sequence.IsReference(virtual_register));
       s.doubles_.insert(virtual_register);
     }
     if (sequence.IsReference(virtual_register)) {
-      EXPECT_FALSE(sequence.IsDouble(virtual_register));
+      EXPECT_FALSE(sequence.IsFloat(virtual_register));
       s.references_.insert(virtual_register);
     }
   }
@@ -588,6 +591,53 @@ TARGET_TEST_F(InstructionSelectorTest,
 
   EXPECT_EQ(kArchRet, s[index++]->arch_opcode());
   EXPECT_EQ(index, s.size());
+}
+
+
+// -----------------------------------------------------------------------------
+// Tail calls.
+
+TARGET_TEST_F(InstructionSelectorTest, TailCall) {
+  for (int mode = 0; mode < 2; ++mode) {
+    bool supports_tail_calls = FLAG_turbo_tail_calls && (mode == 0);
+
+    StreamBuilder m(this, kMachAnyTagged);
+    Node* start = m.graph()->start();
+    Node* undefined = m.UndefinedConstant();
+
+    StringLengthStub stub(isolate());
+    CallDescriptor* desc = Linkage::GetStubCallDescriptor(
+        isolate(), zone(), stub.GetCallInterfaceDescriptor(), 0,
+        supports_tail_calls ? CallDescriptor::kSupportsTailCalls
+                            : CallDescriptor::kNoFlags,
+        Operator::kNoProperties);
+    Node* stub_node = m.NewNode(m.common()->HeapConstant(
+        Unique<Code>::CreateUninitialized(stub.GetCode())));
+
+    Node* call = m.NewNode(m.common()->Call(desc), stub_node, undefined,
+                           undefined, undefined, undefined, undefined);
+    call->AppendInput(zone(), start);  // effect
+    call->AppendInput(zone(), start);  // control
+
+    m.Return(call);
+    Node* ret = *call->uses().begin();
+    ret->AppendInput(zone(), call);   // effect
+    ret->AppendInput(zone(), start);  // control
+
+    Stream s = m.Build(kAllInstructions);
+    if (supports_tail_calls) {
+      ASSERT_EQ(3U, s.size());
+      EXPECT_EQ(kArchNop, s[0]->arch_opcode());
+      EXPECT_EQ(kArchTailCallCodeObject, s[1]->arch_opcode());
+      EXPECT_EQ(kArchNop, s[2]->arch_opcode());
+    } else {
+      ASSERT_EQ(4U, s.size());
+      EXPECT_EQ(kArchNop, s[0]->arch_opcode());
+      EXPECT_EQ(kArchCallCodeObject, s[1]->arch_opcode());
+      EXPECT_EQ(kArchRet, s[2]->arch_opcode());
+      EXPECT_EQ(kArchNop, s[3]->arch_opcode());
+    }
+  }
 }
 
 }  // namespace compiler

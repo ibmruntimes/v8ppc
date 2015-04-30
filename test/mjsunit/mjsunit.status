@@ -291,6 +291,9 @@
   'regress/regress-3717': [SKIP],
   # Issue 478788.
   'es7/object-observe': [SKIP],
+
+  # Issue 3803.
+  'es6/generators-iteration': [PASS, FLAKY],
 }],  # 'gc_stress == True'
 
 ##############################################################################
@@ -410,7 +413,12 @@
 ['msan == True', {
   # Skip tests not suitable for MSAN.
   'big-array-literal': [SKIP],
-}],  # 'asan == True'
+  # ICU upstream issues.
+  'date': [SKIP],
+  'deep-recursion': [SKIP],
+  'regress/regress-builtinbust-7': [SKIP],
+  'string-localecompare': [SKIP],
+}],  # 'msan == True'
 
 ##############################################################################
 ['arch == arm or arch == android_arm', {

@@ -1316,6 +1316,10 @@ class HGraphBuilder {
                                     bool is_js_array,
                                     PropertyAccessType access_type);
 
+  HValue* BuildCheckAndGrowElementsCapacity(HValue* object, HValue* elements,
+                                            ElementsKind kind, HValue* length,
+                                            HValue* capacity, HValue* key);
+
   HValue* BuildCopyElementsOnWrite(HValue* object,
                                    HValue* elements,
                                    ElementsKind kind,
@@ -1437,7 +1441,7 @@ class HGraphBuilder {
                                Type* result_type,
                                Maybe<int> fixed_right_arg,
                                HAllocationMode allocation_mode,
-                               LanguageMode language_mode = SLOPPY);
+                               LanguageMode language_mode);
 
   HLoadNamedField* AddLoadFixedArrayLength(HValue *object,
                                            HValue *dependency = NULL);
@@ -1895,6 +1899,7 @@ class HGraphBuilder {
   SourcePosition source_position() { return position_; }
   void set_source_position(SourcePosition position) { position_ = position; }
 
+  HValue* BuildAllocateEmptyArrayBuffer(HValue* byte_length);
   template <typename ViewClass>
   void BuildArrayBufferViewInitialization(HValue* obj,
                                           HValue* buffer,

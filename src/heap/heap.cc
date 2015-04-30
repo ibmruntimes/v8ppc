@@ -158,8 +158,6 @@ Heap::Heap()
 
   memset(roots_, 0, sizeof(roots_[0]) * kRootListLength);
   set_native_contexts_list(NULL);
-  set_array_buffers_list(Smi::FromInt(0));
-  set_last_array_buffer_in_list(Smi::FromInt(0));
   set_allocation_sites_list(Smi::FromInt(0));
   set_encountered_weak_collections(Smi::FromInt(0));
   set_encountered_weak_cells(Smi::FromInt(0));
@@ -323,56 +321,58 @@ void Heap::ReportStatisticsBeforeGC() {
 
 void Heap::PrintShortHeapStatistics() {
   if (!FLAG_trace_gc_verbose) return;
-  PrintPID("Memory allocator,   used: %6" V8_PTR_PREFIX
-           "d KB"
-           ", available: %6" V8_PTR_PREFIX "d KB\n",
-           isolate_->memory_allocator()->Size() / KB,
-           isolate_->memory_allocator()->Available() / KB);
-  PrintPID("New space,          used: %6" V8_PTR_PREFIX
-           "d KB"
-           ", available: %6" V8_PTR_PREFIX
-           "d KB"
-           ", committed: %6" V8_PTR_PREFIX "d KB\n",
-           new_space_.Size() / KB, new_space_.Available() / KB,
-           new_space_.CommittedMemory() / KB);
-  PrintPID("Old space,       used: %6" V8_PTR_PREFIX
-           "d KB"
-           ", available: %6" V8_PTR_PREFIX
-           "d KB"
-           ", committed: %6" V8_PTR_PREFIX "d KB\n",
-           old_space_->SizeOfObjects() / KB, old_space_->Available() / KB,
-           old_space_->CommittedMemory() / KB);
-  PrintPID("Code space,         used: %6" V8_PTR_PREFIX
-           "d KB"
-           ", available: %6" V8_PTR_PREFIX
-           "d KB"
-           ", committed: %6" V8_PTR_PREFIX "d KB\n",
-           code_space_->SizeOfObjects() / KB, code_space_->Available() / KB,
-           code_space_->CommittedMemory() / KB);
-  PrintPID("Map space,          used: %6" V8_PTR_PREFIX
-           "d KB"
-           ", available: %6" V8_PTR_PREFIX
-           "d KB"
-           ", committed: %6" V8_PTR_PREFIX "d KB\n",
-           map_space_->SizeOfObjects() / KB, map_space_->Available() / KB,
-           map_space_->CommittedMemory() / KB);
-  PrintPID("Large object space, used: %6" V8_PTR_PREFIX
-           "d KB"
-           ", available: %6" V8_PTR_PREFIX
-           "d KB"
-           ", committed: %6" V8_PTR_PREFIX "d KB\n",
-           lo_space_->SizeOfObjects() / KB, lo_space_->Available() / KB,
-           lo_space_->CommittedMemory() / KB);
-  PrintPID("All spaces,         used: %6" V8_PTR_PREFIX
-           "d KB"
-           ", available: %6" V8_PTR_PREFIX
-           "d KB"
-           ", committed: %6" V8_PTR_PREFIX "d KB\n",
-           this->SizeOfObjects() / KB, this->Available() / KB,
-           this->CommittedMemory() / KB);
-  PrintPID("External memory reported: %6" V8_PTR_PREFIX "d KB\n",
-           static_cast<intptr_t>(amount_of_external_allocated_memory_ / KB));
-  PrintPID("Total time spent in GC  : %.1f ms\n", total_gc_time_ms_);
+  PrintIsolate(isolate_, "Memory allocator,   used: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", available: %6" V8_PTR_PREFIX "d KB\n",
+               isolate_->memory_allocator()->Size() / KB,
+               isolate_->memory_allocator()->Available() / KB);
+  PrintIsolate(isolate_, "New space,          used: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", available: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", committed: %6" V8_PTR_PREFIX "d KB\n",
+               new_space_.Size() / KB, new_space_.Available() / KB,
+               new_space_.CommittedMemory() / KB);
+  PrintIsolate(isolate_, "Old space,       used: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", available: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", committed: %6" V8_PTR_PREFIX "d KB\n",
+               old_space_->SizeOfObjects() / KB, old_space_->Available() / KB,
+               old_space_->CommittedMemory() / KB);
+  PrintIsolate(isolate_, "Code space,         used: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", available: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", committed: %6" V8_PTR_PREFIX "d KB\n",
+               code_space_->SizeOfObjects() / KB, code_space_->Available() / KB,
+               code_space_->CommittedMemory() / KB);
+  PrintIsolate(isolate_, "Map space,          used: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", available: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", committed: %6" V8_PTR_PREFIX "d KB\n",
+               map_space_->SizeOfObjects() / KB, map_space_->Available() / KB,
+               map_space_->CommittedMemory() / KB);
+  PrintIsolate(isolate_, "Large object space, used: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", available: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", committed: %6" V8_PTR_PREFIX "d KB\n",
+               lo_space_->SizeOfObjects() / KB, lo_space_->Available() / KB,
+               lo_space_->CommittedMemory() / KB);
+  PrintIsolate(isolate_, "All spaces,         used: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", available: %6" V8_PTR_PREFIX
+                         "d KB"
+                         ", committed: %6" V8_PTR_PREFIX "d KB\n",
+               this->SizeOfObjects() / KB, this->Available() / KB,
+               this->CommittedMemory() / KB);
+  PrintIsolate(
+      isolate_, "External memory reported: %6" V8_PTR_PREFIX "d KB\n",
+      static_cast<intptr_t>(amount_of_external_allocated_memory_ / KB));
+  PrintIsolate(isolate_, "Total time spent in GC  : %.1f ms\n",
+               total_gc_time_ms_);
 }
 
 
@@ -1709,64 +1709,69 @@ void Heap::UpdateReferencesInExternalStringTable(
 
 
 void Heap::ProcessAllWeakReferences(WeakObjectRetainer* retainer) {
-  ProcessArrayBuffers(retainer, false);
   ProcessNativeContexts(retainer);
   ProcessAllocationSites(retainer);
 }
 
 
 void Heap::ProcessYoungWeakReferences(WeakObjectRetainer* retainer) {
-  ProcessArrayBuffers(retainer, true);
   ProcessNativeContexts(retainer);
 }
 
 
 void Heap::ProcessNativeContexts(WeakObjectRetainer* retainer) {
-  Object* head = VisitWeakList<Context>(this, native_contexts_list(), retainer,
-                                        false, NULL);
+  Object* head = VisitWeakList<Context>(this, native_contexts_list(), retainer);
   // Update the head of the list of contexts.
   set_native_contexts_list(head);
 }
 
 
-void Heap::ProcessArrayBuffers(WeakObjectRetainer* retainer,
-                               bool stop_after_young) {
-  Object* last_array_buffer = undefined_value();
-  Object* array_buffer_obj =
-      VisitWeakList<JSArrayBuffer>(this, array_buffers_list(), retainer,
-                                   stop_after_young, &last_array_buffer);
-  set_array_buffers_list(array_buffer_obj);
-  set_last_array_buffer_in_list(last_array_buffer);
+void Heap::RegisterNewArrayBuffer(void* data, size_t length) {
+  if (!data) return;
+  live_array_buffers_[data] = length;
+  reinterpret_cast<v8::Isolate*>(isolate_)
+      ->AdjustAmountOfExternalAllocatedMemory(length);
+}
 
-  // Verify invariant that young array buffers come before old array buffers
-  // in array buffers list if there was no promotion failure.
-  Object* undefined = undefined_value();
-  Object* next = array_buffers_list();
-  bool old_objects_recorded = false;
-  while (next != undefined) {
-    if (!old_objects_recorded) {
-      old_objects_recorded = !InNewSpace(next);
-    }
-    CHECK((InNewSpace(next) && !old_objects_recorded) || !InNewSpace(next));
-    next = JSArrayBuffer::cast(next)->weak_next();
+
+void Heap::UnregisterArrayBuffer(void* data) {
+  if (!data) return;
+  DCHECK(live_array_buffers_.count(data) > 0);
+  live_array_buffers_.erase(data);
+  not_yet_discovered_array_buffers_.erase(data);
+}
+
+
+void Heap::RegisterLiveArrayBuffer(void* data) {
+  not_yet_discovered_array_buffers_.erase(data);
+}
+
+
+void Heap::FreeDeadArrayBuffers() {
+  for (auto buffer = not_yet_discovered_array_buffers_.begin();
+       buffer != not_yet_discovered_array_buffers_.end(); ++buffer) {
+    isolate_->array_buffer_allocator()->Free(buffer->first, buffer->second);
+    // Don't use the API method here since this could trigger another GC.
+    amount_of_external_allocated_memory_ -= buffer->second;
+    live_array_buffers_.erase(buffer->first);
   }
+  not_yet_discovered_array_buffers_ = live_array_buffers_;
 }
 
 
 void Heap::TearDownArrayBuffers() {
-  Object* undefined = undefined_value();
-  for (Object* o = array_buffers_list(); o != undefined;) {
-    JSArrayBuffer* buffer = JSArrayBuffer::cast(o);
-    Runtime::FreeArrayBuffer(isolate(), buffer);
-    o = buffer->weak_next();
+  for (auto buffer = live_array_buffers_.begin();
+       buffer != live_array_buffers_.end(); ++buffer) {
+    isolate_->array_buffer_allocator()->Free(buffer->first, buffer->second);
   }
-  set_array_buffers_list(undefined);
+  live_array_buffers_.clear();
+  not_yet_discovered_array_buffers_.clear();
 }
 
 
 void Heap::ProcessAllocationSites(WeakObjectRetainer* retainer) {
-  Object* allocation_site_obj = VisitWeakList<AllocationSite>(
-      this, allocation_sites_list(), retainer, false, NULL);
+  Object* allocation_site_obj =
+      VisitWeakList<AllocationSite>(this, allocation_sites_list(), retainer);
   set_allocation_sites_list(allocation_site_obj);
 }
 
@@ -4755,7 +4760,7 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
 
   if ((FLAG_trace_idle_notification && action.type > DO_NOTHING) ||
       FLAG_trace_idle_notification_verbose) {
-    PrintPID("%8.0f ms: ", isolate()->time_millis_since_init());
+    PrintIsolate(isolate_, "%8.0f ms: ", isolate()->time_millis_since_init());
     PrintF(
         "Idle notification: requested idle time %.2f ms, used idle time %.2f "
         "ms, deadline usage %.2f ms [",
@@ -5136,8 +5141,9 @@ bool Heap::ConfigureHeap(int max_semi_space_size, int max_old_space_size,
     if (max_semi_space_size_ > reserved_semispace_size_) {
       max_semi_space_size_ = reserved_semispace_size_;
       if (FLAG_trace_gc) {
-        PrintPID("Max semi-space size cannot be more than %d kbytes\n",
-                 reserved_semispace_size_ >> 10);
+        PrintIsolate(isolate_,
+                     "Max semi-space size cannot be more than %d kbytes\n",
+                     reserved_semispace_size_ >> 10);
       }
     }
   } else {
@@ -5166,10 +5172,10 @@ bool Heap::ConfigureHeap(int max_semi_space_size, int max_old_space_size,
     if (initial_semispace_size > max_semi_space_size_) {
       initial_semispace_size_ = max_semi_space_size_;
       if (FLAG_trace_gc) {
-        PrintPID(
-            "Min semi-space size cannot be more than the maximum "
-            "semi-space size of %d MB\n",
-            max_semi_space_size_ / MB);
+        PrintIsolate(isolate_,
+                     "Min semi-space size cannot be more than the maximum "
+                     "semi-space size of %d MB\n",
+                     max_semi_space_size_ / MB);
       }
     } else {
 #if defined(V8_PPC_PAGESIZE_OPT)
@@ -5188,18 +5194,18 @@ bool Heap::ConfigureHeap(int max_semi_space_size, int max_old_space_size,
     if (target_semispace_size < initial_semispace_size_) {
       target_semispace_size_ = initial_semispace_size_;
       if (FLAG_trace_gc) {
-        PrintPID(
-            "Target semi-space size cannot be less than the minimum "
-            "semi-space size of %d MB\n",
-            initial_semispace_size_ / MB);
+        PrintIsolate(isolate_,
+                     "Target semi-space size cannot be less than the minimum "
+                     "semi-space size of %d MB\n",
+                     initial_semispace_size_ / MB);
       }
     } else if (target_semispace_size > max_semi_space_size_) {
       target_semispace_size_ = max_semi_space_size_;
       if (FLAG_trace_gc) {
-        PrintPID(
-            "Target semi-space size cannot be less than the maximum "
-            "semi-space size of %d MB\n",
-            max_semi_space_size_ / MB);
+        PrintIsolate(isolate_,
+                     "Target semi-space size cannot be less than the maximum "
+                     "semi-space size of %d MB\n",
+                     max_semi_space_size_ / MB);
       }
     } else {
 #if defined(V8_PPC_PAGESIZE_OPT)
@@ -5484,8 +5490,6 @@ bool Heap::CreateHeapObjects() {
   CHECK_EQ(0u, gc_count_);
 
   set_native_contexts_list(undefined_value());
-  set_array_buffers_list(undefined_value());
-  set_last_array_buffer_in_list(undefined_value());
   set_allocation_sites_list(undefined_value());
   return true;
 }
@@ -6395,8 +6399,9 @@ static base::LazyMutex object_stats_mutex = LAZY_MUTEX_INITIALIZER;
 
 
 void Heap::TraceObjectStat(const char* name, int count, int size, double time) {
-  PrintPID("heap:%p, time:%f, gc:%d, type:%s, count:%d, size:%d\n",
-           static_cast<void*>(this), time, ms_count_, name, count, size);
+  PrintIsolate(isolate_,
+               "heap:%p, time:%f, gc:%d, type:%s, count:%d, size:%d\n",
+               static_cast<void*>(this), time, ms_count_, name, count, size);
 }
 
 

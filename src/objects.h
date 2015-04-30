@@ -1942,7 +1942,8 @@ class JSObject: public JSReceiver {
 
   // Would we convert a fast elements array to dictionary mode given
   // an access at key?
-  bool WouldConvertToSlowElements(Handle<Object> key);
+  bool WouldConvertToSlowElements(uint32_t index);
+  inline bool WouldConvertToSlowElements(Handle<Object> key);
   // Do we want to keep the elements in fast case when increasing the
   // capacity?
   bool ShouldConvertToSlowElements(int new_capacity);
@@ -1996,6 +1997,12 @@ class JSObject: public JSReceiver {
     kDontAllowSmiElements
   };
 
+  static Handle<FixedArray> SetFastElementsCapacity(
+      Handle<JSObject> object, int capacity,
+      SetFastElementsCapacitySmiMode smi_mode);
+  static Handle<FixedArrayBase> SetFastDoubleElementsCapacity(
+      Handle<JSObject> object, int capacity);
+
   // Replace the elements' backing store with fast elements of the given
   // capacity.  Update the length for JSArrays.  Returns the new backing
   // store.
@@ -2004,10 +2011,8 @@ class JSObject: public JSReceiver {
       int capacity,
       int length,
       SetFastElementsCapacitySmiMode smi_mode);
-  static void SetFastDoubleElementsCapacityAndLength(
-      Handle<JSObject> object,
-      int capacity,
-      int length);
+  static Handle<FixedArrayBase> SetFastDoubleElementsCapacityAndLength(
+      Handle<JSObject> object, int capacity, int length);
 
   // Lookup interceptors are used for handling properties controlled by host
   // objects.
@@ -5553,14 +5558,15 @@ class Code: public HeapObject {
 
 #define DECLARE_CODE_AGE_ENUM(X) k##X##CodeAge,
   enum Age {
+    kToBeExecutedOnceCodeAge = -3,
     kNotExecutedCodeAge = -2,
     kExecutedOnceCodeAge = -1,
     kNoAgeCodeAge = 0,
     CODE_AGE_LIST(DECLARE_CODE_AGE_ENUM)
     kAfterLastCodeAge,
-    kFirstCodeAge = kNotExecutedCodeAge,
+    kFirstCodeAge = kToBeExecutedOnceCodeAge,
     kLastCodeAge = kAfterLastCodeAge - 1,
-    kCodeAgeCount = kAfterLastCodeAge - kNotExecutedCodeAge - 1,
+    kCodeAgeCount = kAfterLastCodeAge - kFirstCodeAge - 1,
     kIsOldCodeAge = kSexagenarianCodeAge,
     kPreAgedCodeAge = kIsOldCodeAge - 1
   };
@@ -5573,13 +5579,11 @@ class Code: public HeapObject {
   static void MakeCodeAgeSequenceYoung(byte* sequence, Isolate* isolate);
   static void MarkCodeAsExecuted(byte* sequence, Isolate* isolate);
   void MakeYoung(Isolate* isolate);
+  void MarkToBeExecutedOnce(Isolate* isolate);
   void MakeOlder(MarkingParity);
   static bool IsYoungSequence(Isolate* isolate, byte* sequence);
   bool IsOld();
   Age GetAge();
-  // Gets the raw code age, including psuedo code-age values such as
-  // kNotExecutedCodeAge and kExecutedOnceCodeAge.
-  Age GetRawAge();
   static inline Code* GetPreAgedCodeAgeStub(Isolate* isolate) {
     return GetCodeAgeStub(isolate, kNotExecutedCodeAge, NO_MARKING_PARITY);
   }
@@ -6678,6 +6682,8 @@ class PrototypeInfo : public Struct {
   // [validity_cell]: Cell containing the validity bit for prototype chains
   // going through this object, or Smi(0) if uninitialized.
   DECL_ACCESSORS(validity_cell, Object)
+  // [constructor_name]: User-friendly name of the original constructor.
+  DECL_ACCESSORS(constructor_name, Object)
 
   DECLARE_CAST(PrototypeInfo)
 
@@ -6687,7 +6693,8 @@ class PrototypeInfo : public Struct {
 
   static const int kPrototypeUsersOffset = HeapObject::kHeaderSize;
   static const int kValidityCellOffset = kPrototypeUsersOffset + kPointerSize;
-  static const int kSize = kValidityCellOffset + kPointerSize;
+  static const int kConstructorNameOffset = kValidityCellOffset + kPointerSize;
+  static const int kSize = kConstructorNameOffset + kPointerSize;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(PrototypeInfo);
@@ -9903,9 +9910,8 @@ class PropertyCell : public HeapObject {
   static PropertyCellType UpdatedType(Handle<PropertyCell> cell,
                                       Handle<Object> value,
                                       PropertyDetails details);
-  static Handle<Object> UpdateCell(Handle<NameDictionary> dictionary, int entry,
-                                   Handle<Object> value,
-                                   PropertyDetails details);
+  static void UpdateCell(Handle<NameDictionary> dictionary, int entry,
+                         Handle<Object> value, PropertyDetails details);
 
   static Handle<PropertyCell> InvalidateEntry(Handle<NameDictionary> dictionary,
                                               int entry);
@@ -10313,9 +10319,6 @@ class JSArrayBuffer: public JSObject {
   inline bool was_neutered();
   inline void set_was_neutered(bool value);
 
-  // [weak_next]: linked list of array buffers.
-  DECL_ACCESSORS(weak_next, Object)
-
   DECLARE_CAST(JSArrayBuffer)
 
   void Neuter();
@@ -10332,8 +10335,7 @@ class JSArrayBuffer: public JSObject {
 #else
   static const int kBitFieldOffset = kBitFieldSlot + kIntSize;
 #endif
-  static const int kWeakNextOffset = kBitFieldSlot + kPointerSize;
-  static const int kSize = kWeakNextOffset + kPointerSize;
+  static const int kSize = kBitFieldSlot + kPointerSize;
 
   static const int kSizeWithInternalFields =
       kSize + v8::ArrayBuffer::kInternalFieldCount * kPointerSize;

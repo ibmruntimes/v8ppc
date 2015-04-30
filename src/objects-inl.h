@@ -1849,6 +1849,12 @@ void JSObject::EnsureCanContainElements(Handle<JSObject> object,
 }
 
 
+bool JSObject::WouldConvertToSlowElements(Handle<Object> key) {
+  uint32_t index;
+  return key->ToArrayIndex(&index) && WouldConvertToSlowElements(index);
+}
+
+
 void JSObject::SetMapAndElements(Handle<JSObject> object,
                                  Handle<Map> new_map,
                                  Handle<FixedArrayBase> value) {
@@ -5480,6 +5486,7 @@ ACCESSORS(Box, value, Object, kValueOffset)
 
 ACCESSORS(PrototypeInfo, prototype_users, Object, kPrototypeUsersOffset)
 ACCESSORS(PrototypeInfo, validity_cell, Object, kValidityCellOffset)
+ACCESSORS(PrototypeInfo, constructor_name, Object, kConstructorNameOffset)
 
 ACCESSORS(AccessorPair, getter, Object, kGetterOffset)
 ACCESSORS(AccessorPair, setter, Object, kSetterOffset)
@@ -6529,9 +6536,6 @@ void JSArrayBuffer::set_was_neutered(bool value) {
 }
 
 
-ACCESSORS(JSArrayBuffer, weak_next, Object, kWeakNextOffset)
-
-
 Object* JSArrayBufferView::byte_offset() const {
   if (WasNeutered()) return Smi::FromInt(0);
   return Object::cast(READ_FIELD(this, kByteOffsetOffset));
@@ -6564,7 +6568,7 @@ ACCESSORS(JSArrayBufferView, raw_byte_length, Object, kByteLengthOffset)
 
 
 bool JSArrayBufferView::WasNeutered() const {
-  return !buffer()->IsSmi() && JSArrayBuffer::cast(buffer())->was_neutered();
+  return JSArrayBuffer::cast(buffer())->was_neutered();
 }
 
 

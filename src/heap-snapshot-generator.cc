@@ -1575,8 +1575,6 @@ class JSArrayBufferDataEntryAllocator : public HeapEntriesAllocator {
 
 void V8HeapExplorer::ExtractJSArrayBufferReferences(
     int entry, JSArrayBuffer* buffer) {
-  SetWeakReference(buffer, entry, "weak_next", buffer->weak_next(),
-                   JSArrayBuffer::kWeakNextOffset);
   // Setup a reference to a native memory backing_store object.
   if (!buffer->backing_store())
     return;
@@ -2480,6 +2478,9 @@ void NativeObjectsExplorer::SetNativeRootReference(
       FindOrAddGroupInfo(info->GetGroupLabel());
   HeapEntry* group_entry =
       filler_->FindOrAddEntry(group_info, synthetic_entries_allocator_);
+  // |FindOrAddEntry| can move and resize the entries backing store. Reload
+  // potentially-stale pointer.
+  child_entry = filler_->FindEntry(info);
   filler_->SetNamedAutoIndexReference(
       HeapGraphEdge::kInternal,
       group_entry->index(),

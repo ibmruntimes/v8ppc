@@ -1151,6 +1151,7 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> global_object,
             isolate->initial_object_prototype(),
             Builtins::kIllegal);
     native_context()->set_array_buffer_fun(*array_buffer_fun);
+    native_context()->set_array_buffer_map(array_buffer_fun->initial_map());
   }
 
   {  // -- T y p e d A r r a y s
@@ -1606,7 +1607,7 @@ Data* SetBuiltinTypedArray(Isolate* isolate, Handle<JSBuiltinsObject> builtins,
   bool is_external = data != nullptr;
   if (!is_external) {
     data = reinterpret_cast<Data*>(
-        V8::ArrayBufferAllocator()->Allocate(byte_length));
+        isolate->array_buffer_allocator()->Allocate(byte_length));
   }
   Runtime::SetupArrayBuffer(isolate, buffer, is_external, data, byte_length);
 
@@ -1731,18 +1732,6 @@ void Genesis::InitializeGlobal_harmony_reflect() {
     Handle<JSFunction> construct = InstallFunction(
         builtins, "$reflectConstruct", JS_OBJECT_TYPE, JSObject::kHeaderSize,
         MaybeHandle<JSObject>(), Builtins::kReflectConstruct);
-    if (FLAG_vector_ics) {
-      // Apply embeds an IC, so we need a type vector of size 1 in the shared
-      // function info.
-      FeedbackVectorSpec spec(0, Code::CALL_IC);
-      Handle<TypeFeedbackVector> feedback_vector =
-          factory()->NewTypeFeedbackVector(&spec);
-      apply->shared()->set_feedback_vector(*feedback_vector);
-
-      feedback_vector = factory()->NewTypeFeedbackVector(&spec);
-      construct->shared()->set_feedback_vector(*feedback_vector);
-    }
-
     apply->shared()->set_internal_formal_parameter_count(3);
     apply->shared()->set_length(3);
 
@@ -2181,14 +2170,6 @@ bool Genesis::InstallNatives() {
     Handle<JSFunction> apply =
         InstallFunction(proto, "apply", JS_OBJECT_TYPE, JSObject::kHeaderSize,
                         MaybeHandle<JSObject>(), Builtins::kFunctionApply);
-    if (FLAG_vector_ics) {
-      // Apply embeds an IC, so we need a type vector of size 1 in the shared
-      // function info.
-      FeedbackVectorSpec spec(0, Code::CALL_IC);
-      Handle<TypeFeedbackVector> feedback_vector =
-          factory()->NewTypeFeedbackVector(&spec);
-      apply->shared()->set_feedback_vector(*feedback_vector);
-    }
 
     // Make sure that Function.prototype.call appears to be compiled.
     // The code will never be called, but inline caching for call will

@@ -2242,9 +2242,6 @@ class HCallJSFunction final : public HCall<1> {
 };
 
 
-enum CallMode { NORMAL_CALL, TAIL_CALL };
-
-
 class HCallWithDescriptor final : public HInstruction {
  public:
   static HCallWithDescriptor* New(Isolate* isolate, Zone* zone, HValue* context,
@@ -6131,6 +6128,11 @@ class HObjectAccess final {
   static HObjectAccess ForJSArrayBufferBitField() {
     return HObjectAccess::ForObservableJSObjectOffset(
         JSArrayBuffer::kBitFieldOffset, Representation::Integer32());
+  }
+
+  static HObjectAccess ForJSArrayBufferBitFieldSlot() {
+    return HObjectAccess::ForObservableJSObjectOffset(
+        JSArrayBuffer::kBitFieldSlot, Representation::Smi());
   }
 
   static HObjectAccess ForExternalArrayExternalPointer() {

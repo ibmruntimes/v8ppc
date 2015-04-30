@@ -422,6 +422,9 @@ DEFINE_BOOL(turbo_exceptions, false, "enable exception handling in TurboFan")
 DEFINE_BOOL(turbo_stress_loop_peeling, false,
             "stress loop peeling optimization")
 DEFINE_BOOL(turbo_cf_optimization, true, "optimize control flow in TurboFan")
+DEFINE_BOOL(turbo_frame_elision, true, "elide frames in TurboFan")
+DEFINE_BOOL(turbo_tail_calls, false,
+            "enable tail call optimization in TurboFan")
 
 DEFINE_INT(typed_array_max_size_in_heap, 64,
            "threshold for in-heap typed array")
@@ -600,6 +603,8 @@ DEFINE_BOOL(print_max_heap_committed, false,
             "in name=value format on exit")
 DEFINE_BOOL(trace_gc_verbose, false,
             "print more details following each garbage collection")
+DEFINE_INT(trace_allocation_stack_interval, -1,
+           "print stack trace after <n> free-list allocations")
 DEFINE_BOOL(trace_fragmentation, false, "report fragmentation for old space")
 DEFINE_BOOL(trace_fragmentation_verbose, false,
             "report fragmentation for old space (detailed)")

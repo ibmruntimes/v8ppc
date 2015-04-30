@@ -12,22 +12,6 @@
 namespace v8 {
 namespace internal {
 
-void Runtime::FreeArrayBuffer(Isolate* isolate,
-                              JSArrayBuffer* phantom_array_buffer) {
-  if (phantom_array_buffer->is_external()) return;
-
-  size_t allocated_length =
-      NumberToSize(isolate, phantom_array_buffer->byte_length());
-
-  reinterpret_cast<v8::Isolate*>(isolate)
-      ->AdjustAmountOfExternalAllocatedMemory(
-          -static_cast<int64_t>(allocated_length));
-  CHECK(V8::ArrayBufferAllocator() != NULL);
-  V8::ArrayBufferAllocator()->Free(phantom_array_buffer->backing_store(),
-                                   allocated_length);
-}
-
-
 void Runtime::SetupArrayBuffer(Isolate* isolate,
                                Handle<JSArrayBuffer> array_buffer,
                                bool is_external, void* data,
@@ -47,17 +31,8 @@ void Runtime::SetupArrayBuffer(Isolate* isolate,
   CHECK(byte_length->IsSmi() || byte_length->IsHeapNumber());
   array_buffer->set_byte_length(*byte_length);
 
-  if (isolate->heap()->InNewSpace(*array_buffer) ||
-      isolate->heap()->array_buffers_list()->IsUndefined()) {
-    array_buffer->set_weak_next(isolate->heap()->array_buffers_list());
-    isolate->heap()->set_array_buffers_list(*array_buffer);
-    if (isolate->heap()->last_array_buffer_in_list()->IsUndefined()) {
-      isolate->heap()->set_last_array_buffer_in_list(*array_buffer);
-    }
-  } else {
-    JSArrayBuffer::cast(isolate->heap()->last_array_buffer_in_list())
-        ->set_weak_next(*array_buffer);
-    isolate->heap()->set_last_array_buffer_in_list(*array_buffer);
+  if (data && !is_external) {
+    isolate->heap()->RegisterNewArrayBuffer(data, allocated_length);
   }
 }
 
@@ -67,15 +42,15 @@ bool Runtime::SetupArrayBufferAllocatingData(Isolate* isolate,
                                              size_t allocated_length,
                                              bool initialize) {
   void* data;
-  CHECK(V8::ArrayBufferAllocator() != NULL);
+  CHECK(isolate->array_buffer_allocator() != NULL);
   // Prevent creating array buffers when serializing.
   DCHECK(!isolate->serializer_enabled());
   if (allocated_length != 0) {
     if (initialize) {
-      data = V8::ArrayBufferAllocator()->Allocate(allocated_length);
+      data = isolate->array_buffer_allocator()->Allocate(allocated_length);
     } else {
-      data =
-          V8::ArrayBufferAllocator()->AllocateUninitialized(allocated_length);
+      data = isolate->array_buffer_allocator()->AllocateUninitialized(
+          allocated_length);
     }
     if (data == NULL) return false;
   } else {
@@ -83,10 +58,6 @@ bool Runtime::SetupArrayBufferAllocatingData(Isolate* isolate,
   }
 
   SetupArrayBuffer(isolate, array_buffer, false, data, allocated_length);
-
-  reinterpret_cast<v8::Isolate*>(isolate)
-      ->AdjustAmountOfExternalAllocatedMemory(allocated_length);
-
   return true;
 }
 
@@ -173,7 +144,8 @@ RUNTIME_FUNCTION(Runtime_ArrayBufferNeuter) {
   size_t byte_length = NumberToSize(isolate, array_buffer->byte_length());
   array_buffer->set_is_external(true);
   Runtime::NeuterArrayBuffer(array_buffer);
-  V8::ArrayBufferAllocator()->Free(backing_store, byte_length);
+  isolate->heap()->UnregisterArrayBuffer(backing_store);
+  isolate->array_buffer_allocator()->Free(backing_store, byte_length);
   return isolate->heap()->undefined_value();
 }
 
@@ -269,7 +241,9 @@ RUNTIME_FUNCTION(Runtime_TypedArrayInitialize) {
     JSObject::SetMapAndElements(holder, map, elements);
     DCHECK(IsExternalArrayElementsKind(holder->map()->elements_kind()));
   } else {
-    holder->set_buffer(Smi::FromInt(0));
+    Handle<JSArrayBuffer> buffer = isolate->factory()->NewJSArrayBuffer();
+    Runtime::SetupArrayBuffer(isolate, buffer, true, NULL, byte_length);
+    holder->set_buffer(*buffer);
     Handle<FixedTypedArrayBase> elements =
         isolate->factory()->NewFixedTypedArray(static_cast<int>(length),
                                                array_type);

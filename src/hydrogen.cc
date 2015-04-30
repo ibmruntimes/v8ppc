@@ -1300,6 +1300,20 @@ HValue* HGraphBuilder::BuildWrapReceiver(HValue* object, HValue* function) {
 }
 
 
+HValue* HGraphBuilder::BuildCheckAndGrowElementsCapacity(
+    HValue* object, HValue* elements, ElementsKind kind, HValue* length,
+    HValue* capacity, HValue* key) {
+  HValue* max_gap = Add<HConstant>(static_cast<int32_t>(JSObject::kMaxGap));
+  HValue* max_capacity = AddUncasted<HAdd>(capacity, max_gap);
+  Add<HBoundsCheck>(key, max_capacity);
+
+  HValue* new_capacity = BuildNewElementsCapacity(key);
+  HValue* new_elements = BuildGrowElementsCapacity(object, elements, kind, kind,
+                                                   length, new_capacity);
+  return new_elements;
+}
+
+
 HValue* HGraphBuilder::BuildCheckForCapacityGrow(
     HValue* object,
     HValue* elements,
@@ -1323,17 +1337,27 @@ HValue* HGraphBuilder::BuildCheckForCapacityGrow(
                                                 Token::GTE);
   capacity_checker.Then();
 
-  HValue* max_gap = Add<HConstant>(static_cast<int32_t>(JSObject::kMaxGap));
-  HValue* max_capacity = AddUncasted<HAdd>(current_capacity, max_gap);
+  // BuildCheckAndGrowElementsCapacity could de-opt without profitable feedback
+  // therefore we defer calling it to a stub in optimized functions. It is
+  // okay to call directly in a code stub though, because a bailout to the
+  // runtime is tolerable in the corner cases.
+  if (top_info()->IsStub()) {
+    HValue* new_elements = BuildCheckAndGrowElementsCapacity(
+        object, elements, kind, length, current_capacity, key);
+    environment()->Push(new_elements);
+  } else {
+    GrowArrayElementsStub stub(isolate(), is_js_array, kind);
+    GrowArrayElementsDescriptor descriptor(isolate());
+    HConstant* target = Add<HConstant>(stub.GetCode());
+    HValue* op_vals[] = {context(), object, key, current_capacity};
+    HValue* new_elements = Add<HCallWithDescriptor>(
+        target, 0, descriptor, Vector<HValue*>(op_vals, 4));
+    // If the object changed to a dictionary, GrowArrayElements will return a
+    // smi to signal that deopt is required.
+    Add<HCheckHeapObject>(new_elements);
+    environment()->Push(new_elements);
+  }
 
-  Add<HBoundsCheck>(key, max_capacity);
-
-  HValue* new_capacity = BuildNewElementsCapacity(key);
-  HValue* new_elements = BuildGrowElementsCapacity(object, elements,
-                                                   kind, kind, length,
-                                                   new_capacity);
-
-  environment()->Push(new_elements);
   capacity_checker.Else();
 
   environment()->Push(elements);
@@ -3167,29 +3191,21 @@ HValue* HGraphBuilder::BuildArrayBufferViewFieldAccessor(HValue* object,
       object, checked_object, HObjectAccess::ForJSArrayBufferViewBuffer());
   HInstruction* field = Add<HLoadNamedField>(object, checked_object, access);
 
-  IfBuilder if_has_buffer(this);
-  HValue* has_buffer = if_has_buffer.IfNot<HIsSmiAndBranch>(buffer);
-  if_has_buffer.Then();
-  {
-    HInstruction* flags = Add<HLoadNamedField>(
-        buffer, has_buffer, HObjectAccess::ForJSArrayBufferBitField());
-    HValue* was_neutered_mask =
-        Add<HConstant>(1 << JSArrayBuffer::WasNeutered::kShift);
-    HValue* was_neutered_test =
-        AddUncasted<HBitwise>(Token::BIT_AND, flags, was_neutered_mask);
+  HInstruction* flags = Add<HLoadNamedField>(
+      buffer, nullptr, HObjectAccess::ForJSArrayBufferBitField());
+  HValue* was_neutered_mask =
+      Add<HConstant>(1 << JSArrayBuffer::WasNeutered::kShift);
+  HValue* was_neutered_test =
+      AddUncasted<HBitwise>(Token::BIT_AND, flags, was_neutered_mask);
 
-    IfBuilder if_was_neutered(this);
-    if_was_neutered.If<HCompareNumericAndBranch>(
-        was_neutered_test, graph()->GetConstant0(), Token::NE);
-    if_was_neutered.Then();
-    Push(graph()->GetConstant0());
-    if_was_neutered.Else();
-    Push(field);
-    if_was_neutered.End();
-  }
-  if_has_buffer.Else();
+  IfBuilder if_was_neutered(this);
+  if_was_neutered.If<HCompareNumericAndBranch>(
+      was_neutered_test, graph()->GetConstant0(), Token::NE);
+  if_was_neutered.Then();
+  Push(graph()->GetConstant0());
+  if_was_neutered.Else();
   Push(field);
-  if_has_buffer.End();
+  if_was_neutered.End();
 
   return Pop();
 }
@@ -9702,6 +9718,45 @@ void HOptimizedGraphBuilder::VisitCallNew(CallNew* expr) {
 }
 
 
+HValue* HGraphBuilder::BuildAllocateEmptyArrayBuffer(HValue* byte_length) {
+  HAllocate* result =
+      BuildAllocate(Add<HConstant>(JSArrayBuffer::kSizeWithInternalFields),
+                    HType::JSObject(), JS_ARRAY_BUFFER_TYPE, HAllocationMode());
+
+  HValue* global_object = Add<HLoadNamedField>(
+      context(), nullptr,
+      HObjectAccess::ForContextSlot(Context::GLOBAL_OBJECT_INDEX));
+  HValue* native_context = Add<HLoadNamedField>(
+      global_object, nullptr, HObjectAccess::ForGlobalObjectNativeContext());
+  Add<HStoreNamedField>(
+      result, HObjectAccess::ForMap(),
+      Add<HLoadNamedField>(
+          native_context, nullptr,
+          HObjectAccess::ForContextSlot(Context::ARRAY_BUFFER_MAP_INDEX)));
+
+  Add<HStoreNamedField>(result, HObjectAccess::ForJSArrayBufferBackingStore(),
+                        Add<HConstant>(ExternalReference()));
+  Add<HStoreNamedField>(result, HObjectAccess::ForJSArrayBufferByteLength(),
+                        byte_length);
+  Add<HStoreNamedField>(result, HObjectAccess::ForJSArrayBufferBitFieldSlot(),
+                        graph()->GetConstant0());
+  Add<HStoreNamedField>(
+      result, HObjectAccess::ForJSArrayBufferBitField(),
+      Add<HConstant>((1 << JSArrayBuffer::IsExternal::kShift) |
+                     (1 << JSArrayBuffer::IsNeuterable::kShift)));
+
+  for (int field = 0; field < v8::ArrayBuffer::kInternalFieldCount; ++field) {
+    Add<HStoreNamedField>(
+        result,
+        HObjectAccess::ForObservableJSObjectOffset(
+            JSArrayBuffer::kSize + field * kPointerSize, Representation::Smi()),
+        graph()->GetConstant0());
+  }
+
+  return result;
+}
+
+
 template <class ViewClass>
 void HGraphBuilder::BuildArrayBufferViewInitialization(
     HValue* obj,
@@ -9725,17 +9780,8 @@ void HGraphBuilder::BuildArrayBufferViewInitialization(
       obj,
       HObjectAccess::ForJSArrayBufferViewByteLength(),
       byte_length);
-
-  if (buffer != NULL) {
-    Add<HStoreNamedField>(
-        obj,
-        HObjectAccess::ForJSArrayBufferViewBuffer(), buffer);
-  } else {
-    Add<HStoreNamedField>(
-        obj,
-        HObjectAccess::ForJSArrayBufferViewBuffer(),
-        Add<HConstant>(static_cast<int32_t>(0)));
-  }
+  Add<HStoreNamedField>(obj, HObjectAccess::ForJSArrayBufferViewBuffer(),
+                        buffer);
 }
 
 
@@ -9957,8 +10003,12 @@ void HOptimizedGraphBuilder::GenerateTypedArrayInitialize(
 
 
   { //  byte_offset is Smi.
-    BuildArrayBufferViewInitialization<JSTypedArray>(
-        obj, buffer, byte_offset, byte_length);
+    HValue* allocated_buffer = buffer;
+    if (buffer == NULL) {
+      allocated_buffer = BuildAllocateEmptyArrayBuffer(byte_length);
+    }
+    BuildArrayBufferViewInitialization<JSTypedArray>(obj, allocated_buffer,
+                                                     byte_offset, byte_length);
 
 
     HInstruction* length = AddUncasted<HDiv>(byte_length,
@@ -10611,23 +10661,27 @@ HValue* HGraphBuilder::BuildBinaryOperation(
     }
 
     // Convert left argument as necessary.
-    if (left_type->Is(Type::Number())) {
+    if (left_type->Is(Type::Number()) && !is_strong(language_mode)) {
       DCHECK(right_type->Is(Type::String()));
       left = BuildNumberToString(left, left_type);
     } else if (!left_type->Is(Type::String())) {
       DCHECK(right_type->Is(Type::String()));
-      HValue* function = AddLoadJSBuiltin(Builtins::STRING_ADD_RIGHT);
+      HValue* function = AddLoadJSBuiltin(is_strong(language_mode) ?
+                                            Builtins::STRING_ADD_RIGHT_STRONG :
+                                            Builtins::STRING_ADD_RIGHT);
       Add<HPushArguments>(left, right);
       return AddUncasted<HInvokeFunction>(function, 2);
     }
 
     // Convert right argument as necessary.
-    if (right_type->Is(Type::Number())) {
+    if (right_type->Is(Type::Number()) && !is_strong(language_mode)) {
       DCHECK(left_type->Is(Type::String()));
       right = BuildNumberToString(right, right_type);
     } else if (!right_type->Is(Type::String())) {
       DCHECK(left_type->Is(Type::String()));
-      HValue* function = AddLoadJSBuiltin(Builtins::STRING_ADD_LEFT);
+      HValue* function = AddLoadJSBuiltin(is_strong(language_mode) ?
+                                            Builtins::STRING_ADD_LEFT_STRONG :
+                                            Builtins::STRING_ADD_LEFT);
       Add<HPushArguments>(left, right);
       return AddUncasted<HInvokeFunction>(function, 2);
     }

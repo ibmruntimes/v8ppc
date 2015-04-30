@@ -11295,13 +11295,15 @@ THREADED_TEST(ObjectGetConstructorName) {
   v8::Isolate* isolate = CcTest::isolate();
   LocalContext context;
   v8::HandleScope scope(isolate);
-  v8_compile("function Parent() {};"
-             "function Child() {};"
-             "Child.prototype = new Parent();"
-             "var outer = { inner: function() { } };"
-             "var p = new Parent();"
-             "var c = new Child();"
-             "var x = new outer.inner();")->Run();
+  v8_compile(
+      "function Parent() {};"
+      "function Child() {};"
+      "Child.prototype = new Parent();"
+      "var outer = { inner: function() { } };"
+      "var p = new Parent();"
+      "var c = new Child();"
+      "var x = new outer.inner();"
+      "var proto = Child.prototype;")->Run();
 
   Local<v8::Value> p = context->Global()->Get(v8_str("p"));
   CHECK(p->IsObject() &&
@@ -11315,6 +11317,11 @@ THREADED_TEST(ObjectGetConstructorName) {
   CHECK(x->IsObject() &&
         x->ToObject(isolate)->GetConstructorName()->Equals(
             v8_str("outer.inner")));
+
+  Local<v8::Value> child_prototype = context->Global()->Get(v8_str("proto"));
+  CHECK(child_prototype->IsObject() &&
+        child_prototype->ToObject(isolate)->GetConstructorName()->Equals(
+            v8_str("Parent")));
 }
 
 
@@ -12171,6 +12178,7 @@ void SetFunctionEntryHookTest::RunTest() {
   v8::Isolate::CreateParams create_params;
   create_params.entry_hook = EntryHook;
   create_params.code_event_handler = JitEvent;
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
   v8::Isolate* isolate = v8::Isolate::New(create_params);
 
   {
@@ -12193,7 +12201,9 @@ void SetFunctionEntryHookTest::RunTest() {
   Reset();
 
   // Make sure a second isolate is unaffected by the previous entry hook.
-  isolate = v8::Isolate::New();
+  create_params = v8::Isolate::CreateParams();
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+  isolate = v8::Isolate::New(create_params);
   {
     v8::Isolate::Scope scope(isolate);
 
@@ -12374,7 +12384,9 @@ UNINITIALIZED_TEST(SetJitCodeEventHandler) {
 
   // Run this test in a new isolate to make sure we don't
   // have remnants of state from other code.
-  v8::Isolate* isolate = v8::Isolate::New();
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+  v8::Isolate* isolate = v8::Isolate::New(create_params);
   isolate->Enter();
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   i::Heap* heap = i_isolate->heap();
@@ -12430,7 +12442,7 @@ UNINITIALIZED_TEST(SetJitCodeEventHandler) {
   isolate->Dispose();
 
   // Do this in a new isolate.
-  isolate = v8::Isolate::New();
+  isolate = v8::Isolate::New(create_params);
   isolate->Enter();
 
   // Verify that we get callbacks for existing code objects when we
@@ -12580,6 +12592,18 @@ THREADED_TEST(TryCatchSourceInfo) {
       v8::Integer::New(context->GetIsolate(), 7));
   script = v8::Script::Compile(source, &origin2);
   CheckTryCatchSourceInfo(script, resource_name, 7);
+}
+
+
+THREADED_TEST(TryCatchSourceInfoForEOSError) {
+  LocalContext context;
+  v8::HandleScope scope(context->GetIsolate());
+  v8::TryCatch try_catch;
+  v8::Script::Compile(v8_str("!\n"));
+  CHECK(try_catch.HasCaught());
+  v8::Handle<v8::Message> message = try_catch.Message();
+  CHECK_EQ(1, message->GetLineNumber());
+  CHECK_EQ(0, message->GetStartColumn());
 }
 
 
@@ -15284,7 +15308,9 @@ TEST(VisitExternalStrings) {
 
 TEST(ExternalStringCollectedAtTearDown) {
   int destroyed = 0;
-  v8::Isolate* isolate = v8::Isolate::New();
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+  v8::Isolate* isolate = v8::Isolate::New(create_params);
   { v8::Isolate::Scope isolate_scope(isolate);
     v8::HandleScope handle_scope(isolate);
     const char* s = "One string to test them all, one string to find them.";
@@ -15304,7 +15330,9 @@ TEST(ExternalStringCollectedAtTearDown) {
 
 TEST(ExternalInternalizedStringCollectedAtTearDown) {
   int destroyed = 0;
-  v8::Isolate* isolate = v8::Isolate::New();
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+  v8::Isolate* isolate = v8::Isolate::New(create_params);
   { v8::Isolate::Scope isolate_scope(isolate);
     LocalContext env(isolate);
     v8::HandleScope handle_scope(isolate);
@@ -16545,7 +16573,9 @@ TEST(GCInFailedAccessCheckCallback) {
 
 TEST(IsolateNewDispose) {
   v8::Isolate* current_isolate = CcTest::isolate();
-  v8::Isolate* isolate = v8::Isolate::New();
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+  v8::Isolate* isolate = v8::Isolate::New(create_params);
   CHECK(isolate != NULL);
   CHECK(current_isolate != isolate);
   CHECK(current_isolate == CcTest::isolate());
@@ -16559,7 +16589,9 @@ TEST(IsolateNewDispose) {
 
 
 UNINITIALIZED_TEST(DisposeIsolateWhenInUse) {
-  v8::Isolate* isolate = v8::Isolate::New();
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+  v8::Isolate* isolate = v8::Isolate::New(create_params);
   {
     v8::Isolate::Scope i_scope(isolate);
     v8::HandleScope scope(isolate);
@@ -16578,7 +16610,9 @@ UNINITIALIZED_TEST(DisposeIsolateWhenInUse) {
 
 
 static void BreakArrayGuarantees(const char* script) {
-  v8::Isolate* isolate1 = v8::Isolate::New();
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+  v8::Isolate* isolate1 = v8::Isolate::New(create_params);
   isolate1->Enter();
   v8::Persistent<v8::Context> context1;
   {
@@ -16627,7 +16661,9 @@ TEST(VerifyArrayPrototypeGuarantees) {
 
 TEST(RunTwoIsolatesOnSingleThread) {
   // Run isolate 1.
-  v8::Isolate* isolate1 = v8::Isolate::New();
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+  v8::Isolate* isolate1 = v8::Isolate::New(create_params);
   isolate1->Enter();
   v8::Persistent<v8::Context> context1;
   {
@@ -16646,7 +16682,7 @@ TEST(RunTwoIsolatesOnSingleThread) {
   }
 
   // Run isolate 2.
-  v8::Isolate* isolate2 = v8::Isolate::New();
+  v8::Isolate* isolate2 = v8::Isolate::New(create_params);
   v8::Persistent<v8::Context> context2;
 
   {
@@ -16771,7 +16807,9 @@ class IsolateThread : public v8::base::Thread {
       : Thread(Options("IsolateThread")), fib_limit_(fib_limit), result_(0) {}
 
   void Run() {
-    v8::Isolate* isolate = v8::Isolate::New();
+    v8::Isolate::CreateParams create_params;
+    create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+    v8::Isolate* isolate = v8::Isolate::New(create_params);
     result_ = CalcFibonacci(isolate, fib_limit_);
     isolate->Dispose();
   }
@@ -16808,7 +16846,9 @@ TEST(MultipleIsolatesOnIndividualThreads) {
 
 
 TEST(IsolateDifferentContexts) {
-  v8::Isolate* isolate = v8::Isolate::New();
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+  v8::Isolate* isolate = v8::Isolate::New(create_params);
   Local<v8::Context> context;
   {
     v8::Isolate::Scope isolate_scope(isolate);
@@ -16848,6 +16888,7 @@ class InitDefaultIsolateThread : public v8::base::Thread {
 
   void Run() {
     v8::Isolate::CreateParams create_params;
+    create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
     switch (testCase_) {
       case SetResourceConstraints: {
         create_params.constraints.set_max_semi_space_size(1);
@@ -18294,7 +18335,9 @@ TEST(StaticGetters) {
 
 UNINITIALIZED_TEST(IsolateEmbedderData) {
   CcTest::DisableAutomaticDispose();
-  v8::Isolate* isolate = v8::Isolate::New();
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+  v8::Isolate* isolate = v8::Isolate::New(create_params);
   isolate->Enter();
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   for (uint32_t slot = 0; slot < v8::Isolate::GetNumberOfDataSlots(); ++slot) {
