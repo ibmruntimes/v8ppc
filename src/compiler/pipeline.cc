@@ -779,6 +779,16 @@ struct AllocateDoubleRegistersPhase {
 };
 
 
+struct LocateSpillSlotsPhase {
+  static const char* phase_name() { return "locate spill slots"; }
+
+  void Run(PipelineData* data, Zone* temp_zone) {
+    SpillSlotLocator locator(data->register_allocation_data());
+    locator.LocateSpillSlots();
+  }
+};
+
+
 struct AssignSpillSlotsPhase {
   static const char* phase_name() { return "assign spill slots"; }
 
@@ -1129,6 +1139,12 @@ Handle<Code> Pipeline::GenerateCodeForTesting(CompilationInfo* info,
   // Construct a pipeline for scheduling and code generation.
   ZonePool zone_pool;
   PipelineData data(&zone_pool, info, graph, schedule);
+  SmartPointer<PipelineStatistics> pipeline_statistics;
+  if (FLAG_turbo_stats) {
+    pipeline_statistics.Reset(new PipelineStatistics(info, &zone_pool));
+    pipeline_statistics->BeginPhaseKind("test codegen");
+  }
+
   Pipeline pipeline(info);
   pipeline.data_ = &data;
   if (data.schedule() == nullptr) {
@@ -1198,10 +1214,6 @@ Handle<Code> Pipeline::ScheduleAndGenerateCode(
   if (data->compilation_failed()) {
     info()->AbortOptimization(kNotEnoughVirtualRegistersRegalloc);
     return Handle<Code>();
-  }
-
-  if (FLAG_turbo_frame_elision) {
-    Run<FrameElisionPhase>();
   }
 
   BeginPhaseKind("code generation");
@@ -1299,6 +1311,12 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
     Run<AllocateGeneralRegistersPhase<LinearScanAllocator>>();
     Run<AllocateDoubleRegistersPhase<LinearScanAllocator>>();
   }
+
+  if (FLAG_turbo_frame_elision) {
+    Run<LocateSpillSlotsPhase>();
+    Run<FrameElisionPhase>();
+  }
+
   Run<AssignSpillSlotsPhase>();
 
   Run<CommitAssignmentPhase>();

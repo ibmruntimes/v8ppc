@@ -363,7 +363,7 @@ StartupData V8::CreateSnapshotDataBlob(const char* custom_source) {
       {
         HandleScope scope(isolate);
         for (int i = 0; i < i::Natives::GetBuiltinsCount(); i++) {
-          internal_isolate->bootstrapper()->NativesSourceLookup(i);
+          internal_isolate->bootstrapper()->SourceLookup<i::Natives>(i);
         }
       }
       // If we don't do this then we end up with a stray root pointing at the
@@ -3589,7 +3589,7 @@ MaybeLocal<Value> v8::Object::GetOwnPropertyDescriptor(Local<Context> context,
   i::Handle<i::Object> args[] = { obj, key_name };
   i::Handle<i::Object> result;
   has_pending_exception =
-      !CallV8HeapFunction(isolate, "ObjectGetOwnPropertyDescriptor",
+      !CallV8HeapFunction(isolate, "$objectGetOwnPropertyDescriptor",
                           isolate->factory()->undefined_value(),
                           arraysize(args), args).ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION(Value);

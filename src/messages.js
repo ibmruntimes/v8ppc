@@ -110,7 +110,6 @@ var kMessages = {
   not_a_promise:                 ["%0", " is not a promise"],
   resolver_not_a_function:       ["Promise resolver ", "%0", " is not a function"],
   promise_cyclic:                ["Chaining cycle detected for promise ", "%0"],
-  first_argument_not_regexp:     ["First argument to ", "%0", " must not be a regular expression"],
   iterator_result_not_an_object: ["Iterator result ", "%0", " is not an object"],
   iterator_value_not_an_object:  ["Iterator value ", "%0", " is not an entry object"],
   // RangeError
@@ -128,10 +127,6 @@ var kMessages = {
   invalid_data_view_length:      ["Invalid data view length"],
   invalid_data_view_accessor_offset:
                                  ["Offset is outside the bounds of the DataView"],
-
-  invalid_time_value:            ["Invalid time value"],
-  invalid_count_value:           ["Invalid count value"],
-  invalid_code_point:            ["Invalid code point ", "%0"],
   // ReferenceError
   invalid_lhs_in_assignment:     ["Invalid left-hand side in assignment"],
   invalid_lhs_in_for:            ["Invalid left-hand side in for-loop"],
@@ -243,6 +238,13 @@ function FormatString(format, args) {
 }
 
 
+function NoSideEffectsObjectToString() {
+  if (IS_UNDEFINED(this) && !IS_UNDETECTABLE(this)) return "[object Undefined]";
+  if (IS_NULL(this)) return "[object Null]";
+  return "[object " + %_ClassOf(TO_OBJECT_INLINE(this)) + "]";
+}
+
+
 function NoSideEffectToString(obj) {
   if (IS_STRING(obj)) return obj;
   if (IS_NUMBER(obj)) return %_NumberToString(obj);
@@ -250,7 +252,7 @@ function NoSideEffectToString(obj) {
   if (IS_UNDEFINED(obj)) return 'undefined';
   if (IS_NULL(obj)) return 'null';
   if (IS_FUNCTION(obj)) {
-    var str = %_CallFunction(obj, FunctionToString);
+    var str = %_CallFunction(obj, obj, $functionSourceString);
     if (str.length > 128) {
       str = %_SubString(str, 0, 111) + "...<omitted>..." +
             %_SubString(str, str.length - 2, str.length);
@@ -259,7 +261,7 @@ function NoSideEffectToString(obj) {
   }
   if (IS_SYMBOL(obj)) return %_CallFunction(obj, $symbolToString);
   if (IS_OBJECT(obj)
-      && %GetDataProperty(obj, "toString") === ObjectToString) {
+      && %GetDataProperty(obj, "toString") === $objectToString) {
     var constructor = %GetDataProperty(obj, "constructor");
     if (typeof constructor == "function") {
       var constructorName = constructor.name;
@@ -311,7 +313,7 @@ function ToStringCheckErrorObject(obj) {
 
 
 function ToDetailString(obj) {
-  if (obj != null && IS_OBJECT(obj) && obj.toString === ObjectToString) {
+  if (obj != null && IS_OBJECT(obj) && obj.toString === $objectToString) {
     var constructor = obj.constructor;
     if (typeof constructor == "function") {
       var constructorName = constructor.name;
@@ -589,7 +591,7 @@ function ScriptNameOrSourceURL() {
 }
 
 
-SetUpLockedPrototype(Script, [
+$setUpLockedPrototype(Script, [
     "source",
     "name",
     "source_url",
@@ -653,7 +655,7 @@ function SourceLocationSourceText() {
 }
 
 
-SetUpLockedPrototype(SourceLocation,
+$setUpLockedPrototype(SourceLocation,
   ["script", "position", "line", "column", "start", "end"],
   ["sourceText", SourceLocationSourceText]
 );
@@ -697,7 +699,7 @@ function SourceSliceSourceText() {
                         $stringSubstring);
 }
 
-SetUpLockedPrototype(SourceSlice,
+$setUpLockedPrototype(SourceSlice,
   ["script", "from_line", "to_line", "from_position", "to_position"],
   ["sourceText", SourceSliceSourceText]
 );
@@ -792,8 +794,8 @@ function CallSiteGetMethodName() {
   var fun = GET_PRIVATE(this, CallSiteFunctionKey);
   var ownName = fun.name;
   if (ownName && receiver &&
-      (%_CallFunction(receiver, ownName, ObjectLookupGetter) === fun ||
-       %_CallFunction(receiver, ownName, ObjectLookupSetter) === fun ||
+      (%_CallFunction(receiver, ownName, $objectLookupGetter) === fun ||
+       %_CallFunction(receiver, ownName, $objectLookupSetter) === fun ||
        (IS_OBJECT(receiver) && %GetDataProperty(receiver, ownName) === fun))) {
     // To handle DontEnum properties we guess that the method has
     // the same name as the function.
@@ -801,8 +803,8 @@ function CallSiteGetMethodName() {
   }
   var name = null;
   for (var prop in receiver) {
-    if (%_CallFunction(receiver, prop, ObjectLookupGetter) === fun ||
-        %_CallFunction(receiver, prop, ObjectLookupSetter) === fun ||
+    if (%_CallFunction(receiver, prop, $objectLookupGetter) === fun ||
+        %_CallFunction(receiver, prop, $objectLookupSetter) === fun ||
         (IS_OBJECT(receiver) && %GetDataProperty(receiver, prop) === fun)) {
       // If we find more than one match bail out to avoid confusion.
       if (name) {
@@ -919,7 +921,7 @@ function CallSiteToString() {
   return line;
 }
 
-SetUpLockedPrototype(CallSite, ["receiver", "fun", "pos"], [
+$setUpLockedPrototype(CallSite, ["receiver", "fun", "pos"], [
   "getThis", CallSiteGetThis,
   "getTypeName", CallSiteGetTypeName,
   "isToplevel", CallSiteIsToplevel,
@@ -1108,9 +1110,9 @@ var StackTraceSetter = function(v) {
 // when constructing the initial Error prototytpes.
 var captureStackTrace = function captureStackTrace(obj, cons_opt) {
   // Define accessors first, as this may fail and throw.
-  ObjectDefineProperty(obj, 'stack', { get: StackTraceGetter,
-                                       set: StackTraceSetter,
-                                       configurable: true });
+  $objectDefineProperty(obj, 'stack', { get: StackTraceGetter,
+                                        set: StackTraceSetter,
+                                        configurable: true });
   %CollectStackTrace(obj, cons_opt ? cons_opt : captureStackTrace);
 }
 
@@ -1234,7 +1236,8 @@ function ErrorToString() {
   }
 }
 
-InstallFunctions(GlobalError.prototype, DONT_ENUM, ['toString', ErrorToString]);
+$installFunctions(GlobalError.prototype, DONT_ENUM,
+                  ['toString', ErrorToString]);
 
 $errorToString = ErrorToString;
 $formatMessage = FormatMessage;
