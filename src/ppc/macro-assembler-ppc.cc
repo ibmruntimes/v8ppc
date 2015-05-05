@@ -2388,6 +2388,15 @@ void MacroAssembler::GetBuiltinEntry(Register target, Builtins::JavaScript id) {
 }
 
 
+void MacroAssembler::BranchIfNotBuiltin(Register function, Register temp,
+                                        BuiltinFunctionId id, Label* miss) {
+  LoadP(temp, FieldMemOperand(function, JSFunction::kSharedFunctionInfoOffset));
+  LoadP(temp, FieldMemOperand(temp, SharedFunctionInfo::kFunctionDataOffset));
+  CmpSmiLiteral(temp, Smi::FromInt(id), r0);
+  bne(miss);
+}
+
+
 void MacroAssembler::SetCounter(StatsCounter* counter, int value,
                                 Register scratch1, Register scratch2) {
   if (FLAG_native_code_counters && counter->Enabled()) {
