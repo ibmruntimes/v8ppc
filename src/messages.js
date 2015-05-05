@@ -82,7 +82,6 @@ var kMessages = {
   non_object_property_store:     ["Cannot set property '", "%0", "' of ", "%1"],
   illegal_invocation:            ["Illegal invocation"],
   no_setter_in_callback:         ["Cannot set property ", "%0", " of ", "%1", " which has only a getter"],
-  flags_getter_non_object:       ["RegExp.prototype.flags getter called on non-object ", "%0"],
   value_and_accessor:            ["Invalid property.  A property cannot both have accessors and be writable or have a value, ", "%0"],
   proto_object_or_null:          ["Object prototype may only be an Object or null: ", "%0"],
   non_extensible_proto:          ["%0", " is not extensible"],
@@ -93,25 +92,12 @@ var kMessages = {
   invalid_weakmap_key:           ["Invalid value used as weak map key"],
   invalid_weakset_value:         ["Invalid value used in weak set"],
   not_date_object:               ["this is not a Date object."],
-  observe_non_object:            ["Object.", "%0", " cannot ", "%0", " non-object"],
-  observe_non_function:          ["Object.", "%0", " cannot deliver to non-function"],
-  observe_callback_frozen:       ["Object.observe cannot deliver to a frozen function object"],
-  observe_invalid_accept:        ["Third argument to Object.observe must be an array of strings."],
-  observe_type_non_string:       ["Invalid changeRecord with non-string 'type' property"],
-  observe_perform_non_string:    ["Invalid non-string changeType"],
-  observe_perform_non_function:  ["Cannot perform non-function"],
-  observe_notify_non_notifier:   ["notify called on non-notifier object"],
-  observe_global_proxy:          ["%0", " cannot be called on the global proxy object"],
-  not_typed_array:               ["this is not a typed array."],
   invalid_argument:              ["invalid_argument"],
   data_view_not_array_buffer:    ["First argument to DataView constructor must be an ArrayBuffer"],
-  constructor_not_function:      ["Constructor ", "%0", " requires 'new'"],
   not_a_symbol:                  ["%0", " is not a symbol"],
   not_a_promise:                 ["%0", " is not a promise"],
   resolver_not_a_function:       ["Promise resolver ", "%0", " is not a function"],
   promise_cyclic:                ["Chaining cycle detected for promise ", "%0"],
-  iterator_result_not_an_object: ["Iterator result ", "%0", " is not an object"],
-  iterator_value_not_an_object:  ["Iterator value ", "%0", " is not an entry object"],
   // RangeError
   invalid_array_length:          ["Invalid array length"],
   invalid_array_buffer_length:   ["Invalid array buffer length"],
@@ -792,31 +778,8 @@ function CallSiteGetMethodName() {
   // this function.
   var receiver = GET_PRIVATE(this, CallSiteReceiverKey);
   var fun = GET_PRIVATE(this, CallSiteFunctionKey);
-  var ownName = fun.name;
-  if (ownName && receiver &&
-      (%_CallFunction(receiver, ownName, $objectLookupGetter) === fun ||
-       %_CallFunction(receiver, ownName, $objectLookupSetter) === fun ||
-       (IS_OBJECT(receiver) && %GetDataProperty(receiver, ownName) === fun))) {
-    // To handle DontEnum properties we guess that the method has
-    // the same name as the function.
-    return ownName;
-  }
-  var name = null;
-  for (var prop in receiver) {
-    if (%_CallFunction(receiver, prop, $objectLookupGetter) === fun ||
-        %_CallFunction(receiver, prop, $objectLookupSetter) === fun ||
-        (IS_OBJECT(receiver) && %GetDataProperty(receiver, prop) === fun)) {
-      // If we find more than one match bail out to avoid confusion.
-      if (name) {
-        return null;
-      }
-      name = prop;
-    }
-  }
-  if (name) {
-    return name;
-  }
-  return null;
+  var pos = GET_PRIVATE(this, CallSitePositionKey);
+  return %CallSiteGetMethodNameRT(receiver, fun, pos);
 }
 
 function CallSiteGetFileName() {
@@ -849,10 +812,9 @@ function CallSiteIsNative() {
 
 function CallSiteIsConstructor() {
   var receiver = GET_PRIVATE(this, CallSiteReceiverKey);
-  var constructor = (receiver != null && IS_OBJECT(receiver))
-                        ? %GetDataProperty(receiver, "constructor") : null;
-  if (!constructor) return false;
-  return GET_PRIVATE(this, CallSiteFunctionKey) === constructor;
+  var fun = GET_PRIVATE(this, CallSiteFunctionKey);
+  var pos = GET_PRIVATE(this, CallSitePositionKey);
+  return %CallSiteIsConstructorRT(receiver, fun, pos);
 }
 
 function CallSiteToString() {

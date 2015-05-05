@@ -37,10 +37,10 @@ RUNTIME_FUNCTION(Runtime_ReThrow) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_FindExceptionHandler) {
+RUNTIME_FUNCTION(Runtime_UnwindAndFindExceptionHandler) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 0);
-  return isolate->FindHandler();
+  return isolate->UnwindAndFindHandler();
 }
 
 
@@ -66,7 +66,7 @@ RUNTIME_FUNCTION(Runtime_ThrowIteratorResultNotAnObject) {
   CONVERT_ARG_HANDLE_CHECKED(Object, value, 0);
   THROW_NEW_ERROR_RETURN_FAILURE(
       isolate,
-      NewTypeError("iterator_result_not_an_object", HandleVector(&value, 1)));
+      NewTypeError(MessageTemplate::kIteratorResultNotAnObject, value));
 }
 
 
@@ -354,11 +354,13 @@ static inline Object* ReturnBoolean(bool value, Isolate* isolate) {
 CALLSITE_GET(GetFileName, ReturnDereferencedHandle)
 CALLSITE_GET(GetFunctionName, ReturnDereferencedHandle)
 CALLSITE_GET(GetScriptNameOrSourceUrl, ReturnDereferencedHandle)
+CALLSITE_GET(GetMethodName, ReturnDereferencedHandle)
 CALLSITE_GET(GetLineNumber, ReturnPositiveSmiOrNull)
 CALLSITE_GET(GetColumnNumber, ReturnPositiveSmiOrNull)
 CALLSITE_GET(IsNative, ReturnBoolean)
 CALLSITE_GET(IsToplevel, ReturnBoolean)
 CALLSITE_GET(IsEval, ReturnBoolean)
+CALLSITE_GET(IsConstructor, ReturnBoolean)
 
 #undef CALLSITE_GET
 

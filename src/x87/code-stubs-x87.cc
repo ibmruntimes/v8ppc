@@ -1385,6 +1385,9 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
       // Call runtime on identical JSObjects.  Otherwise return equal.
       __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, ecx);
       __ j(above_equal, &not_identical);
+      // Call runtime on identical symbols since we need to throw a TypeError.
+      __ CmpObjectType(eax, SYMBOL_TYPE, ecx);
+      __ j(equal, &not_identical);
     }
     __ Move(eax, Immediate(Smi::FromInt(EQUAL)));
     __ ret(0);
@@ -2230,7 +2233,8 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
   // Ask the runtime for help to determine the handler. This will set eax to
   // contain the current pending exception, don't clobber it.
-  ExternalReference find_handler(Runtime::kFindExceptionHandler, isolate());
+  ExternalReference find_handler(Runtime::kUnwindAndFindExceptionHandler,
+                                 isolate());
   {
     FrameScope scope(masm, StackFrame::MANUAL);
     __ PrepareCallCFunction(3, eax);

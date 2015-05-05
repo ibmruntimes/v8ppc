@@ -502,8 +502,7 @@ class CaptureStackTraceHelper {
     }
   }
 
-  Handle<JSObject> NewStackFrameObject(Handle<JSFunction> fun,
-                                       Handle<Code> code, Address pc,
+  Handle<JSObject> NewStackFrameObject(Handle<JSFunction> fun, int position,
                                        bool is_constructor) {
     Handle<JSObject> stack_frame =
         factory()->NewJSObject(isolate_->object_function());
@@ -512,7 +511,6 @@ class CaptureStackTraceHelper {
 
     if (!line_key_.is_null()) {
       int script_line_offset = script->line_offset()->value();
-      int position = code->SourcePosition(pc);
       int line_number = Script::GetLineNumber(script, position);
       // line_number is already shifted by the script_line_offset.
       int relative_line_number = line_number - script_line_offset;
@@ -586,6 +584,19 @@ class CaptureStackTraceHelper {
 };
 
 
+int PositionFromStackTrace(Handle<FixedArray> elements, int index) {
+  DisallowHeapAllocation no_gc;
+  Object* maybe_code = elements->get(index + 2);
+  if (maybe_code->IsSmi()) {
+    return Smi::cast(maybe_code)->value();
+  } else {
+    Code* code = Code::cast(maybe_code);
+    Address pc = code->address() + Smi::cast(elements->get(index + 3))->value();
+    return code->SourcePosition(pc);
+  }
+}
+
+
 Handle<JSArray> Isolate::GetDetailedFromSimpleStackTrace(
     Handle<JSObject> error_object) {
   Handle<Name> key = factory()->stack_trace_symbol();
@@ -608,15 +619,13 @@ Handle<JSArray> Isolate::GetDetailedFromSimpleStackTrace(
     Handle<Object> recv = handle(elements->get(i), this);
     Handle<JSFunction> fun =
         handle(JSFunction::cast(elements->get(i + 1)), this);
-    Handle<Code> code = handle(Code::cast(elements->get(i + 2)), this);
-    Handle<Smi> offset = handle(Smi::cast(elements->get(i + 3)), this);
-    Address pc = code->address() + offset->value();
     bool is_constructor =
         recv->IsJSObject() &&
         Handle<JSObject>::cast(recv)->map()->GetConstructor() == *fun;
+    int position = PositionFromStackTrace(elements, i);
 
     Handle<JSObject> stack_frame =
-        helper.NewStackFrameObject(fun, code, pc, is_constructor);
+        helper.NewStackFrameObject(fun, position, is_constructor);
 
     FixedArray::cast(stack_trace->elements())->set(frames_seen, *stack_frame);
     frames_seen++;
@@ -648,9 +657,9 @@ Handle<JSArray> Isolate::CaptureCurrentStackTrace(
       // Filter frames from other security contexts.
       if (!(options & StackTrace::kExposeFramesAcrossSecurityOrigins) &&
           !this->context()->HasSameSecurityTokenAs(fun->context())) continue;
-
-      Handle<JSObject> stack_frame = helper.NewStackFrameObject(
-          fun, frames[i].code(), frames[i].pc(), frames[i].is_constructor());
+      int position = frames[i].code()->SourcePosition(frames[i].pc());
+      Handle<JSObject> stack_frame =
+          helper.NewStackFrameObject(fun, position, frames[i].is_constructor());
 
       FixedArray::cast(stack_trace->elements())->set(frames_seen, *stack_frame);
       frames_seen++;
@@ -1025,7 +1034,7 @@ Object* Isolate::ReThrow(Object* exception) {
 }
 
 
-Object* Isolate::FindHandler() {
+Object* Isolate::UnwindAndFindHandler() {
   Object* exception = pending_exception();
 
   Code* code = nullptr;
@@ -1062,19 +1071,19 @@ Object* Isolate::FindHandler() {
       OptimizedFrame* js_frame = static_cast<OptimizedFrame*>(frame);
       int stack_slots = 0;  // Will contain stack slot count of frame.
       offset = js_frame->LookupExceptionHandlerInTable(&stack_slots);
-      if (offset < 0) continue;
+      if (offset >= 0) {
+        // Compute the stack pointer from the frame pointer. This ensures that
+        // argument slots on the stack are dropped as returning would.
+        Address return_sp = frame->fp() -
+                            StandardFrameConstants::kFixedFrameSizeFromFp -
+                            stack_slots * kPointerSize;
 
-      // Compute the stack pointer from the frame pointer. This ensures that
-      // argument slots on the stack are dropped as returning would.
-      Address return_sp = frame->fp() -
-                          StandardFrameConstants::kFixedFrameSizeFromFp -
-                          stack_slots * kPointerSize;
-
-      // Gather information from the frame.
-      code = frame->LookupCode();
-      handler_sp = return_sp;
-      handler_fp = frame->fp();
-      break;
+        // Gather information from the frame.
+        code = frame->LookupCode();
+        handler_sp = return_sp;
+        handler_fp = frame->fp();
+        break;
+      }
     }
 
     // For JavaScript frames we perform a range lookup in the handler table.
@@ -1082,23 +1091,25 @@ Object* Isolate::FindHandler() {
       JavaScriptFrame* js_frame = static_cast<JavaScriptFrame*>(frame);
       int stack_slots = 0;  // Will contain operand stack depth of handler.
       offset = js_frame->LookupExceptionHandlerInTable(&stack_slots);
-      if (offset < 0) continue;
+      if (offset >= 0) {
+        // Compute the stack pointer from the frame pointer. This ensures that
+        // operand stack slots are dropped for nested statements. Also restore
+        // correct context for the handler which is pushed within the try-block.
+        Address return_sp = frame->fp() -
+                            StandardFrameConstants::kFixedFrameSizeFromFp -
+                            stack_slots * kPointerSize;
+        STATIC_ASSERT(TryBlockConstant::kElementCount == 1);
+        context = Context::cast(Memory::Object_at(return_sp - kPointerSize));
 
-      // Compute the stack pointer from the frame pointer. This ensures that
-      // operand stack slots are dropped for nested statements. Also restore
-      // correct context for the handler which is pushed within the try-block.
-      Address return_sp = frame->fp() -
-                          StandardFrameConstants::kFixedFrameSizeFromFp -
-                          stack_slots * kPointerSize;
-      STATIC_ASSERT(TryBlockConstant::kElementCount == 1);
-      context = Context::cast(Memory::Object_at(return_sp - kPointerSize));
-
-      // Gather information from the frame.
-      code = frame->LookupCode();
-      handler_sp = return_sp;
-      handler_fp = frame->fp();
-      break;
+        // Gather information from the frame.
+        code = frame->LookupCode();
+        handler_sp = return_sp;
+        handler_fp = frame->fp();
+        break;
+      }
     }
+
+    RemoveMaterializedObjectsOnUnwind(frame);
   }
 
   // Handler must exist.
@@ -1151,6 +1162,17 @@ Isolate::CatchType Isolate::PredictExceptionCatcher() {
 
   // Handler not found.
   return NOT_CAUGHT;
+}
+
+
+void Isolate::RemoveMaterializedObjectsOnUnwind(StackFrame* frame) {
+  if (frame->is_optimized()) {
+    bool removed = materialized_object_store_->Remove(frame->fp());
+    USE(removed);
+    // If there were any materialized objects, the code should be
+    // marked for deopt.
+    DCHECK(!removed || frame->LookupCode()->marked_for_deoptimization());
+  }
 }
 
 
@@ -1290,14 +1312,11 @@ bool Isolate::ComputeLocationFromStackTrace(MessageLocation* target,
     Handle<JSFunction> fun =
         handle(JSFunction::cast(elements->get(i + 1)), this);
     if (fun->IsFromNativeScript()) continue;
-    Handle<Code> code = handle(Code::cast(elements->get(i + 2)), this);
-    Handle<Smi> offset = handle(Smi::cast(elements->get(i + 3)), this);
-    Address pc = code->address() + offset->value();
 
     Object* script = fun->shared()->script();
     if (script->IsScript() &&
         !(Script::cast(script)->source()->IsUndefined())) {
-      int pos = code->SourcePosition(pc);
+      int pos = PositionFromStackTrace(elements, i);
       Handle<Script> casted_script(Script::cast(script));
       *target = MessageLocation(casted_script, pos, pos + 1);
       return true;

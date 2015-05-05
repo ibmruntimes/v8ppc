@@ -266,6 +266,8 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm, Label* slow,
   if (cond == lt || cond == gt) {
     __ CompareObjectType(r3, r7, r7, FIRST_SPEC_OBJECT_TYPE);
     __ bge(slow);
+    __ CompareObjectType(r3, r7, r7, SYMBOL_TYPE);
+    __ beq(slow);
   } else {
     __ CompareObjectType(r3, r7, r7, HEAP_NUMBER_TYPE);
     __ beq(&heap_number);
@@ -1135,7 +1137,8 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
   // Ask the runtime for help to determine the handler. This will set r3 to
   // contain the current pending exception, don't clobber it.
-  ExternalReference find_handler(Runtime::kFindExceptionHandler, isolate());
+  ExternalReference find_handler(Runtime::kUnwindAndFindExceptionHandler,
+                                 isolate());
   {
     FrameScope scope(masm, StackFrame::MANUAL);
     __ PrepareCallCFunction(3, 0, r3);

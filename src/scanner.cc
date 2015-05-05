@@ -225,6 +225,10 @@ static const byte one_char_tokens[] = {
 
 
 Token::Value Scanner::Next() {
+  if (next_.token == Token::EOS) {
+    next_.location.beg_pos = current_.location.beg_pos;
+    next_.location.end_pos = current_.location.end_pos;
+  }
   current_ = next_;
   has_line_terminator_before_next_ = false;
   has_multiline_comment_before_next_ = false;
@@ -1006,7 +1010,7 @@ Token::Value Scanner::ScanNumber(bool seen_period) {
 
         if (next_.literal_chars->one_byte_literal().length() <= 10 &&
             value <= Smi::kMaxValue && c0_ != '.' && c0_ != 'e' && c0_ != 'E') {
-          smi_value_ = static_cast<int>(value);
+          next_.smi_value_ = static_cast<int>(value);
           literal.Complete();
           HandleLeadSurrogate();
 

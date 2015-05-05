@@ -122,7 +122,7 @@ function NAMEConstructor(arg1, arg2, arg3) {
       NAMEConstructByArrayLike(this, arg1);
     }
   } else {
-    throw MakeTypeError("constructor_not_function", ["NAME"])
+    throw MakeTypeError(kConstructorNotFunction, "NAME")
   }
 }
 
@@ -360,7 +360,7 @@ function DataViewConstructor(buffer, byteOffset, byteLength) { // length = 3
     }
     %_DataViewInitialize(this, buffer, offset, length);
   } else {
-    throw MakeTypeError('constructor_not_function', ["DataView"]);
+    throw MakeTypeError(kConstructorNotFunction, "DataView");
   }
 }
 

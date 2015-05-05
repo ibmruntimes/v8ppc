@@ -290,6 +290,8 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm,
   if (cc == less || cc == greater) {
     __ GetObjectType(a0, t0, t0);
     __ Branch(slow, greater, t0, Operand(FIRST_SPEC_OBJECT_TYPE));
+    __ GetObjectType(a0, t0, t0);
+    __ Branch(slow, eq, t0, Operand(SYMBOL_TYPE));
   } else {
     __ GetObjectType(a0, t0, t0);
     __ Branch(&heap_number, eq, t0, Operand(HEAP_NUMBER_TYPE));
@@ -1146,7 +1148,8 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
   // Ask the runtime for help to determine the handler. This will set v0 to
   // contain the current pending exception, don't clobber it.
-  ExternalReference find_handler(Runtime::kFindExceptionHandler, isolate());
+  ExternalReference find_handler(Runtime::kUnwindAndFindExceptionHandler,
+                                 isolate());
   {
     FrameScope scope(masm, StackFrame::MANUAL);
     __ PrepareCallCFunction(3, 0, a0);
@@ -2930,6 +2933,155 @@ void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
 }
 
 
+void CallIC_RoundStub::Generate(MacroAssembler* masm) {
+  Register function = a1;
+  Register vector = a2;
+  Register slot = a3;
+
+  Register temp1 = a0;
+  Register temp2 = a4;
+  DoubleRegister double_temp1 = f12;
+  DoubleRegister double_temp2 = f14;
+  Label tail, miss;
+
+  // Ensure nobody has snuck in another function.
+  __ BranchIfNotBuiltin(function, temp1, kMathRound, &miss);
+
+  if (arg_count() > 0) {
+    __ ld(temp1, MemOperand(sp, (arg_count() - 1) * kPointerSize));
+    Handle<Map> map = isolate()->factory()->heap_number_map();
+    __ CheckMap(temp1, temp2, map, &tail, DO_SMI_CHECK);
+    __ ldc1(double_temp1, FieldMemOperand(temp1, HeapNumber::kValueOffset));
+
+    // If the number is >0, it doesn't round to -0
+    __ Move(double_temp2, 0.0);
+    __ BranchF64(&tail, nullptr, gt, double_temp1, double_temp2);
+
+    // If the number is <-.5, it doesn't round to -0
+    __ Move(double_temp2, -.5);
+    __ BranchF64(&tail, nullptr, lt, double_temp1, double_temp2);
+
+    // +0 doesn't round to -0
+    __ FmoveHigh(temp1, double_temp1);
+    __ Branch(&tail, ne, temp1, Operand(0xffffffff80000000));
+
+    __ SmiScale(temp1, slot, kPointerSizeLog2);
+    __ Daddu(temp1, temp1, vector);
+    __ li(temp2, Operand(Smi::FromInt(kHasReturnedMinusZeroSentinel)));
+    __ sd(temp2,
+          FieldMemOperand(temp1, FixedArray::kHeaderSize + kPointerSize));
+  }
+
+  __ bind(&tail);
+  // The slow case, we need this no matter what to complete a call after a miss.
+  CallFunctionNoFeedback(masm, arg_count(), true, CallAsMethod());
+
+  // Unreachable.
+  __ stop("Unreachable");
+
+  __ bind(&miss);
+  GenerateMiss(masm);
+  __ Branch(&tail);
+}
+
+
+void CallIC_FloorStub::Generate(MacroAssembler* masm) {
+  Register function = a1;
+  Register vector = a2;
+  Register slot = a3;
+
+  Register temp1 = a0;
+  Register temp2 = a4;
+  DoubleRegister double_temp = f12;
+  Label tail, miss;
+
+  // Ensure nobody has snuck in another function.
+  __ BranchIfNotBuiltin(function, temp1, kMathFloor, &miss);
+
+  if (arg_count() > 0) {
+    __ ld(temp1, MemOperand(sp, (arg_count() - 1) * kPointerSize));
+    Handle<Map> map = isolate()->factory()->heap_number_map();
+    __ CheckMap(temp1, temp2, map, &tail, DO_SMI_CHECK);
+    __ ldc1(double_temp, FieldMemOperand(temp1, HeapNumber::kValueOffset));
+
+    // Only -0 floors to -0.
+    __ FmoveHigh(temp1, double_temp);
+    __ Branch(&tail, ne, temp1, Operand(0xffffffff80000000));
+    __ FmoveLow(temp1, double_temp);
+    __ Branch(&tail, ne, temp1, Operand(zero_reg));
+
+    __ SmiScale(temp1, slot, kPointerSizeLog2);
+    __ Daddu(temp1, temp1, vector);
+    __ li(temp2, Operand(Smi::FromInt(kHasReturnedMinusZeroSentinel)));
+    __ sd(temp2,
+          FieldMemOperand(temp1, FixedArray::kHeaderSize + kPointerSize));
+  }
+
+  __ bind(&tail);
+  // The slow case, we need this no matter what to complete a call after a miss.
+  CallFunctionNoFeedback(masm, arg_count(), true, CallAsMethod());
+
+  // Unreachable.
+  __ stop("Unreachable");
+
+  __ bind(&miss);
+  GenerateMiss(masm);
+  __ Branch(&tail);
+}
+
+
+void CallIC_CeilStub::Generate(MacroAssembler* masm) {
+  Register function = a1;
+  Register vector = a2;
+  Register slot = a3;
+
+  Register temp1 = a0;
+  Register temp2 = a4;
+  DoubleRegister double_temp1 = f12;
+  DoubleRegister double_temp2 = f14;
+  Label tail, miss;
+
+  // Ensure nobody has snuck in another function.
+  __ BranchIfNotBuiltin(function, temp1, kMathCeil, &miss);
+
+  if (arg_count() > 0) {
+    __ ld(temp1, MemOperand(sp, (arg_count() - 1) * kPointerSize));
+    Handle<Map> map = isolate()->factory()->heap_number_map();
+    __ CheckMap(temp1, temp2, map, &tail, DO_SMI_CHECK);
+    __ ldc1(double_temp1, FieldMemOperand(temp1, HeapNumber::kValueOffset));
+
+    // If the number is >0, it doesn't round to -0
+    __ Move(double_temp2, 0.0);
+    __ BranchF64(&tail, nullptr, gt, double_temp1, double_temp2);
+
+    // If the number is <=-1, it doesn't round to -0
+    __ Move(double_temp2, -1.0);
+    __ BranchF64(&tail, nullptr, le, double_temp1, double_temp2);
+
+    // +0 doesn't round to -0.
+    __ FmoveHigh(temp1, double_temp1);
+    __ Branch(&tail, ne, temp1, Operand(0xffffffff80000000));
+
+    __ SmiScale(temp1, slot, kPointerSizeLog2);
+    __ Daddu(temp1, temp1, vector);
+    __ li(temp2, Operand(Smi::FromInt(kHasReturnedMinusZeroSentinel)));
+    __ sd(temp2,
+          FieldMemOperand(temp1, FixedArray::kHeaderSize + kPointerSize));
+  }
+
+  __ bind(&tail);
+  // The slow case, we need this no matter what to complete a call after a miss.
+  CallFunctionNoFeedback(masm, arg_count(), true, CallAsMethod());
+
+  // Unreachable.
+  __ stop("Unreachable");
+
+  __ bind(&miss);
+  GenerateMiss(masm);
+  __ Branch(&tail);
+}
+
+
 void CallICStub::Generate(MacroAssembler* masm) {
   // a1 - function
   // a3 - slot id (Smi)
@@ -3039,6 +3191,11 @@ void CallICStub::Generate(MacroAssembler* masm) {
   // behavior on MISS.
   __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, a4);
   __ Branch(&miss, eq, a1, Operand(a4));
+
+  // Some builtin functions require special handling, miss to the runtime.
+  __ ld(t0, FieldMemOperand(a1, JSFunction::kSharedFunctionInfoOffset));
+  __ ld(t0, FieldMemOperand(t0, SharedFunctionInfo::kFunctionDataOffset));
+  __ Branch(&miss, ne, t0, Operand(Smi::FromInt(0)));
 
   // Update stats.
   __ ld(a4, FieldMemOperand(a2, with_types_offset));
@@ -4630,6 +4787,27 @@ void CallICTrampolineStub::Generate(MacroAssembler* masm) {
 void CallIC_ArrayTrampolineStub::Generate(MacroAssembler* masm) {
   EmitLoadTypeFeedbackVector(masm, a2);
   CallIC_ArrayStub stub(isolate(), state());
+  __ Jump(stub.GetCode(), RelocInfo::CODE_TARGET);
+}
+
+
+void CallIC_RoundTrampolineStub::Generate(MacroAssembler* masm) {
+  EmitLoadTypeFeedbackVector(masm, a2);
+  CallIC_RoundStub stub(isolate(), state());
+  __ Jump(stub.GetCode(), RelocInfo::CODE_TARGET);
+}
+
+
+void CallIC_FloorTrampolineStub::Generate(MacroAssembler* masm) {
+  EmitLoadTypeFeedbackVector(masm, a2);
+  CallIC_FloorStub stub(isolate(), state());
+  __ Jump(stub.GetCode(), RelocInfo::CODE_TARGET);
+}
+
+
+void CallIC_CeilTrampolineStub::Generate(MacroAssembler* masm) {
+  EmitLoadTypeFeedbackVector(masm, a2);
+  CallIC_CeilStub stub(isolate(), state());
   __ Jump(stub.GetCode(), RelocInfo::CODE_TARGET);
 }
 
