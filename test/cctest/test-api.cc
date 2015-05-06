@@ -1782,17 +1782,22 @@ THREADED_TEST(GlobalPrototype) {
 THREADED_TEST(ObjectTemplate) {
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope scope(isolate);
-  Local<ObjectTemplate> templ1 = ObjectTemplate::New(isolate);
+  Local<v8::FunctionTemplate> fun = v8::FunctionTemplate::New(isolate);
+  v8::Local<v8::String> class_name =
+      v8::String::NewFromUtf8(isolate, "the_class_name");
+  fun->SetClassName(class_name);
+  Local<ObjectTemplate> templ1 = ObjectTemplate::New(isolate, fun);
   templ1->Set(isolate, "x", v8_num(10));
   templ1->Set(isolate, "y", v8_num(13));
   LocalContext env;
   Local<v8::Object> instance1 = templ1->NewInstance();
+  CHECK(class_name->StrictEquals(instance1->GetConstructorName()));
   env->Global()->Set(v8_str("p"), instance1);
   CHECK(v8_compile("(p.x == 10)")->Run()->BooleanValue());
   CHECK(v8_compile("(p.y == 13)")->Run()->BooleanValue());
-  Local<v8::FunctionTemplate> fun = v8::FunctionTemplate::New(isolate);
-  fun->PrototypeTemplate()->Set(isolate, "nirk", v8_num(123));
-  Local<ObjectTemplate> templ2 = fun->InstanceTemplate();
+  Local<v8::FunctionTemplate> fun2 = v8::FunctionTemplate::New(isolate);
+  fun2->PrototypeTemplate()->Set(isolate, "nirk", v8_num(123));
+  Local<ObjectTemplate> templ2 = fun2->InstanceTemplate();
   templ2->Set(isolate, "a", v8_num(12));
   templ2->Set(isolate, "b", templ1);
   Local<v8::Object> instance2 = templ2->NewInstance();
@@ -12592,18 +12597,6 @@ THREADED_TEST(TryCatchSourceInfo) {
       v8::Integer::New(context->GetIsolate(), 7));
   script = v8::Script::Compile(source, &origin2);
   CheckTryCatchSourceInfo(script, resource_name, 7);
-}
-
-
-THREADED_TEST(TryCatchSourceInfoForEOSError) {
-  LocalContext context;
-  v8::HandleScope scope(context->GetIsolate());
-  v8::TryCatch try_catch;
-  v8::Script::Compile(v8_str("!\n"));
-  CHECK(try_catch.HasCaught());
-  v8::Handle<v8::Message> message = try_catch.Message();
-  CHECK_EQ(1, message->GetLineNumber());
-  CHECK_EQ(0, message->GetStartColumn());
 }
 
 

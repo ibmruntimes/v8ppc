@@ -54,6 +54,13 @@ namespace v8 {
 namespace internal {
 
 
+struct Heap::StrongRootsList {
+  Object** start;
+  Object** end;
+  StrongRootsList* next;
+};
+
+
 Heap::Heap()
     : amount_of_external_allocated_memory_(0),
       amount_of_external_allocated_memory_at_last_global_gc_(0),
@@ -141,7 +148,8 @@ Heap::Heap()
       chunks_queued_for_free_(NULL),
       gc_callbacks_depth_(0),
       deserialization_complete_(false),
-      concurrent_sweeping_enabled_(false) {
+      concurrent_sweeping_enabled_(false),
+      strong_roots_list_(NULL) {
 // Allow build-time customization of the max semispace size. Building
 // V8 with snapshots and a non-default max semispace size is much
 // easier if you can define it as part of the build environment.
@@ -1937,24 +1945,19 @@ STATIC_ASSERT((ConstantPoolArray::kExtendedFirstOffset &
                kDoubleAlignmentMask) == 0);  // NOLINT
 
 
-INLINE(static HeapObject* EnsureDoubleAligned(Heap* heap, HeapObject* object,
-                                              int size));
-
-static HeapObject* EnsureDoubleAligned(Heap* heap, HeapObject* object,
-                                       int size) {
+HeapObject* Heap::EnsureDoubleAligned(HeapObject* object, int size) {
   if ((OffsetFrom(object->address()) & kDoubleAlignmentMask) != 0) {
-    heap->CreateFillerObjectAt(object->address(), kPointerSize);
+    CreateFillerObjectAt(object->address(), kPointerSize);
     return HeapObject::FromAddress(object->address() + kPointerSize);
   } else {
-    heap->CreateFillerObjectAt(object->address() + size - kPointerSize,
-                               kPointerSize);
+    CreateFillerObjectAt(object->address() + size - kPointerSize, kPointerSize);
     return object;
   }
 }
 
 
 HeapObject* Heap::DoubleAlignForDeserialization(HeapObject* object, int size) {
-  return EnsureDoubleAligned(this, object, size);
+  return EnsureDoubleAligned(object, size);
 }
 
 
@@ -2104,15 +2107,13 @@ class ScavengingVisitor : public StaticVisitorBase {
                                          HeapObject* object, int object_size) {
     Heap* heap = map->GetHeap();
 
-    int allocation_size = object_size;
-    if (alignment != kObjectAlignment) {
-      DCHECK(alignment == kDoubleAlignment);
-      allocation_size += kPointerSize;
-    }
-
     DCHECK(heap->AllowedToBeMigrated(object, NEW_SPACE));
-    AllocationResult allocation =
-        heap->new_space()->AllocateRaw(allocation_size);
+    AllocationResult allocation;
+    if (alignment == kDoubleAlignment) {
+      allocation = heap->new_space()->AllocateRawDoubleAligned(object_size);
+    } else {
+      allocation = heap->new_space()->AllocateRaw(object_size);
+    }
 
     HeapObject* target = NULL;  // Initialization to please compiler.
     if (allocation.To(&target)) {
@@ -2122,9 +2123,6 @@ class ScavengingVisitor : public StaticVisitorBase {
       // object.
       heap->promotion_queue()->SetNewLimit(heap->new_space()->top());
 
-      if (alignment != kObjectAlignment) {
-        target = EnsureDoubleAligned(heap, target, allocation_size);
-      }
       MigrateObject(heap, object, target, object_size);
 
       // Update slot to new target.
@@ -2142,20 +2140,15 @@ class ScavengingVisitor : public StaticVisitorBase {
                                    HeapObject* object, int object_size) {
     Heap* heap = map->GetHeap();
 
-    int allocation_size = object_size;
-    if (alignment != kObjectAlignment) {
-      DCHECK(alignment == kDoubleAlignment);
-      allocation_size += kPointerSize;
-    }
-
     AllocationResult allocation;
-    allocation = heap->old_space()->AllocateRaw(allocation_size);
+    if (alignment == kDoubleAlignment) {
+      allocation = heap->old_space()->AllocateRawDoubleAligned(object_size);
+    } else {
+      allocation = heap->old_space()->AllocateRaw(object_size);
+    }
 
     HeapObject* target = NULL;  // Initialization to please compiler.
     if (allocation.To(&target)) {
-      if (alignment != kObjectAlignment) {
-        target = EnsureDoubleAligned(heap, target, allocation_size);
-      }
       MigrateObject(heap, object, target, object_size);
 
       // Update slot to new target.
@@ -3674,7 +3667,7 @@ AllocationResult Heap::AllocateFixedTypedArray(int length,
   if (!allocation.To(&object)) return allocation;
 
   if (array_type == kExternalFloat64Array) {
-    object = EnsureDoubleAligned(this, object, size);
+    object = EnsureDoubleAligned(object, size);
   }
 
   object->set_map(MapForFixedTypedArray(array_type));
@@ -4449,7 +4442,7 @@ AllocationResult Heap::AllocateRawFixedDoubleArray(int length,
     if (!allocation.To(&object)) return allocation;
   }
 
-  return EnsureDoubleAligned(this, object, size);
+  return EnsureDoubleAligned(object, size);
 }
 
 
@@ -4467,7 +4460,7 @@ AllocationResult Heap::AllocateConstantPoolArray(
     AllocationResult allocation = AllocateRaw(size, space, OLD_SPACE);
     if (!allocation.To(&object)) return allocation;
   }
-  object = EnsureDoubleAligned(this, object, size);
+  object = EnsureDoubleAligned(object, size);
   object->set_map_no_write_barrier(constant_pool_array_map());
 
   ConstantPoolArray* constant_pool = ConstantPoolArray::cast(object);
@@ -4493,7 +4486,7 @@ AllocationResult Heap::AllocateExtendedConstantPoolArray(
     AllocationResult allocation = AllocateRaw(size, space, OLD_SPACE);
     if (!allocation.To(&object)) return allocation;
   }
-  object = EnsureDoubleAligned(this, object, size);
+  object = EnsureDoubleAligned(object, size);
   object->set_map_no_write_barrier(constant_pool_array_map());
 
   ConstantPoolArray* constant_pool = ConstantPoolArray::cast(object);
@@ -5075,6 +5068,12 @@ void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
   isolate_->thread_manager()->Iterate(v);
   v->Synchronize(VisitorSynchronization::kThreadManager);
 
+  // Iterate over other strong roots (currently only identity maps).
+  for (StrongRootsList* list = strong_roots_list_; list; list = list->next) {
+    v->VisitPointers(list->start, list->end);
+  }
+  v->Synchronize(VisitorSynchronization::kStrongRoots);
+
   // Iterate over the pointers the Serialization/Deserialization code is
   // holding.
   // During garbage collection this keeps the partial snapshot cache alive.
@@ -5618,6 +5617,13 @@ void Heap::TearDown() {
   store_buffer()->TearDown();
 
   isolate_->memory_allocator()->TearDown();
+
+  StrongRootsList* next = NULL;
+  for (StrongRootsList* list = strong_roots_list_; list; list = next) {
+    next = list->next;
+    delete list;
+  }
+  strong_roots_list_ = NULL;
 }
 
 
@@ -6515,6 +6521,35 @@ void Heap::CheckpointObjectStats() {
   MemCopy(object_counts_last_time_, object_counts_, sizeof(object_counts_));
   MemCopy(object_sizes_last_time_, object_sizes_, sizeof(object_sizes_));
   ClearObjectStats();
+}
+
+
+void Heap::RegisterStrongRoots(Object** start, Object** end) {
+  StrongRootsList* list = new StrongRootsList();
+  list->next = strong_roots_list_;
+  list->start = start;
+  list->end = end;
+  strong_roots_list_ = list;
+}
+
+
+void Heap::UnregisterStrongRoots(Object** start) {
+  StrongRootsList* prev = NULL;
+  StrongRootsList* list = strong_roots_list_;
+  while (list != nullptr) {
+    StrongRootsList* next = list->next;
+    if (list->start == start) {
+      if (prev) {
+        prev->next = next;
+      } else {
+        strong_roots_list_ = next;
+      }
+      delete list;
+    } else {
+      prev = list;
+    }
+    list = next;
+  }
 }
 }
 }  // namespace v8::internal

@@ -1532,7 +1532,7 @@ void InstructionSelector::VisitTailCall(Node* node) {
     FrameStateDescriptor* frame_state_descriptor = nullptr;
     if (descriptor->NeedsFrameState()) {
       frame_state_descriptor =
-        GetFrameStateDescriptor(node->InputAt(descriptor->InputCount()));
+          GetFrameStateDescriptor(node->InputAt(descriptor->InputCount()));
     }
 
     CallBuffer buffer(zone(), descriptor, frame_state_descriptor);

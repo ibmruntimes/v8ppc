@@ -41,8 +41,7 @@ class ControlReducerTest : public TypedGraphTest {
       os << "-- Graph before control reduction" << std::endl;
       os << AsRPO(*graph());
     }
-    ControlReducer::ReduceGraph(zone(), jsgraph(), common(),
-                                max_phis_for_select);
+    ControlReducer::ReduceGraph(zone(), jsgraph(), max_phis_for_select);
     if (FLAG_trace_turbo_graph) {
       OFStream os(stdout);
       os << "-- Graph after control reduction" << std::endl;
@@ -58,18 +57,11 @@ TEST_F(ControlReducerTest, NonTerminatingLoop) {
   Node* loop = graph()->NewNode(common()->Loop(2), graph()->start());
   loop->AppendInput(graph()->zone(), loop);
   ReduceGraph();
-  Capture<Node*> branch;
   EXPECT_THAT(
       graph()->end(),
-      IsEnd(IsMerge(
-          graph()->start(),
-          IsReturn(IsUndefinedConstant(), graph()->start(),
-                   IsIfFalse(
-                       AllOf(CaptureEq(&branch),
-                             IsBranch(IsAlways(),
-                                      AllOf(loop, IsLoop(graph()->start(),
-                                                         IsIfTrue(CaptureEq(
-                                                             &branch)))))))))));
+      IsEnd(IsMerge(graph()->start(),
+                    IsTerminate(graph()->start(),
+                                AllOf(loop, IsLoop(graph()->start(), loop))))));
 }
 
 
@@ -80,19 +72,12 @@ TEST_F(ControlReducerTest, NonTerminatingLoopWithEffectPhi) {
   ephi->AppendInput(graph()->zone(), ephi);
   ephi->AppendInput(graph()->zone(), loop);
   ReduceGraph();
-  Capture<Node*> branch;
   EXPECT_THAT(
       graph()->end(),
       IsEnd(IsMerge(
           graph()->start(),
-          IsReturn(IsUndefinedConstant(),
-                   AllOf(ephi, IsEffectPhi(graph()->start(), ephi, loop)),
-                   IsIfFalse(
-                       AllOf(CaptureEq(&branch),
-                             IsBranch(IsAlways(),
-                                      AllOf(loop, IsLoop(graph()->start(),
-                                                         IsIfTrue(CaptureEq(
-                                                             &branch)))))))))));
+          IsTerminate(AllOf(ephi, IsEffectPhi(graph()->start(), ephi, loop)),
+                      AllOf(loop, IsLoop(graph()->start(), loop))))));
 }
 
 
@@ -106,22 +91,15 @@ TEST_F(ControlReducerTest, NonTerminatingLoopWithTwoEffectPhis) {
   ephi2->AppendInput(graph()->zone(), ephi2);
   ephi2->AppendInput(graph()->zone(), loop);
   ReduceGraph();
-  Capture<Node*> branch;
   EXPECT_THAT(
       graph()->end(),
       IsEnd(IsMerge(
           graph()->start(),
-          IsReturn(
-              IsUndefinedConstant(),
+          IsTerminate(
               IsEffectSet(
                   AllOf(ephi1, IsEffectPhi(graph()->start(), ephi1, loop)),
                   AllOf(ephi2, IsEffectPhi(graph()->start(), ephi2, loop))),
-              IsIfFalse(AllOf(
-                  CaptureEq(&branch),
-                  IsBranch(
-                      IsAlways(),
-                      AllOf(loop, IsLoop(graph()->start(),
-                                         IsIfTrue(CaptureEq(&branch)))))))))));
+              AllOf(loop, IsLoop(graph()->start(), loop))))));
 }
 
 
@@ -130,16 +108,9 @@ TEST_F(ControlReducerTest, NonTerminatingLoopWithDeadEnd) {
   loop->AppendInput(graph()->zone(), loop);
   graph()->end()->ReplaceInput(0, graph()->NewNode(common()->Dead()));
   ReduceGraph();
-  Capture<Node*> branch;
-  EXPECT_THAT(
-      graph()->end(),
-      IsEnd(IsReturn(
-          IsUndefinedConstant(), graph()->start(),
-          IsIfFalse(AllOf(
-              CaptureEq(&branch),
-              IsBranch(IsAlways(),
-                       AllOf(loop, IsLoop(graph()->start(),
-                                          IsIfTrue(CaptureEq(&branch))))))))));
+  EXPECT_THAT(graph()->end(),
+              IsEnd(IsTerminate(graph()->start(),
+                                AllOf(loop, IsLoop(graph()->start(), loop)))));
 }
 
 

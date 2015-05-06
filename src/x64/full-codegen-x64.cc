@@ -2963,7 +2963,7 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
   // Push the receiver of the enclosing function and do runtime call.
   Variable* this_var = scope()->LookupThis();
   DCHECK_NOT_NULL(this_var);
-  __ Push(VarOperand(this_var, kScratchRegister));
+  __ Push(VarOperand(this_var, rcx));
 
   // Push the language mode.
   __ Push(Smi::FromInt(language_mode()));
@@ -4748,10 +4748,13 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
 
     case Token::TYPEOF: {
       Comment cmnt(masm_, "[ UnaryOperation (TYPEOF)");
-      { StackValueContext context(this);
+      {
+        AccumulatorValueContext context(this);
         VisitForTypeofValue(expr->expression());
       }
-      __ CallRuntime(Runtime::kTypeof, 1);
+      __ movp(rbx, rax);
+      TypeofStub typeof_stub(isolate());
+      __ CallStub(&typeof_stub);
       context()->Plug(rax);
       break;
     }

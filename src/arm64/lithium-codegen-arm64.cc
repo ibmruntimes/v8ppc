@@ -1774,7 +1774,7 @@ void LCodeGen::DoArithmeticT(LArithmeticT* instr) {
   DCHECK(ToRegister(instr->result()).is(x0));
 
   Handle<Code> code = CodeFactory::BinaryOpIC(
-      isolate(), instr->op(), info()->language_mode()).code();
+      isolate(), instr->op(), instr->language_mode()).code();
   CallCode(code, RelocInfo::CODE_TARGET, instr);
 }
 
@@ -5796,9 +5796,17 @@ void LCodeGen::DoTruncateDoubleToIntOrSmi(LTruncateDoubleToIntOrSmi* instr) {
 
 
 void LCodeGen::DoTypeof(LTypeof* instr) {
-  Register input = ToRegister(instr->value());
-  __ Push(input);
-  CallRuntime(Runtime::kTypeof, 1, instr);
+  DCHECK(ToRegister(instr->value()).is(x3));
+  DCHECK(ToRegister(instr->result()).is(x0));
+  Label end, do_call;
+  Register value_register = ToRegister(instr->value());
+  __ JumpIfNotSmi(value_register, &do_call);
+  __ Mov(x0, Immediate(isolate()->factory()->number_string()));
+  __ B(&end);
+  __ Bind(&do_call);
+  TypeofStub stub(isolate());
+  CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
+  __ Bind(&end);
 }
 
 

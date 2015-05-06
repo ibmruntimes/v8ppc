@@ -2176,7 +2176,7 @@ void LCodeGen::DoArithmeticT(LArithmeticT* instr) {
   DCHECK(ToRegister(instr->result()).is(r0));
 
   Handle<Code> code = CodeFactory::BinaryOpIC(
-      isolate(), instr->op(), language_mode()).code();
+      isolate(), instr->op(), instr->language_mode()).code();
   // Block literal pool emission to ensure nop indicating no inlined smi code
   // is in the correct position.
   Assembler::BlockConstPoolScope block_const_pool(masm());
@@ -5551,9 +5551,17 @@ void LCodeGen::DoFunctionLiteral(LFunctionLiteral* instr) {
 
 
 void LCodeGen::DoTypeof(LTypeof* instr) {
-  Register input = ToRegister(instr->value());
-  __ push(input);
-  CallRuntime(Runtime::kTypeof, 1, instr);
+  DCHECK(ToRegister(instr->value()).is(r3));
+  DCHECK(ToRegister(instr->result()).is(r0));
+  Label end, do_call;
+  Register value_register = ToRegister(instr->value());
+  __ JumpIfNotSmi(value_register, &do_call);
+  __ mov(r0, Operand(isolate()->factory()->number_string()));
+  __ jmp(&end);
+  __ bind(&do_call);
+  TypeofStub stub(isolate());
+  CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
+  __ bind(&end);
 }
 
 
