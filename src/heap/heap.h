@@ -231,7 +231,6 @@ namespace internal {
   V(source_string, "source")                                   \
   V(source_url_string, "source_url")                           \
   V(source_mapping_url_string, "source_mapping_url")           \
-  V(this_string, "this")                                       \
   V(global_string, "global")                                   \
   V(ignore_case_string, "ignoreCase")                          \
   V(multiline_string, "multiline")                             \
@@ -1151,6 +1150,8 @@ class Heap {
   // Implements the corresponding V8 API function.
   bool IdleNotification(double deadline_in_seconds);
   bool IdleNotification(int idle_time_in_ms);
+
+  double MonotonicallyIncreasingTimeInMs();
 
   // Declare all the root indices.  This defines the root list order.
   enum RootListIndex {

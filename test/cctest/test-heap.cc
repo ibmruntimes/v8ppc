@@ -31,11 +31,13 @@
 #include "src/v8.h"
 
 #include "src/compilation-cache.h"
+#include "src/deoptimizer.h"
 #include "src/execution.h"
 #include "src/factory.h"
 #include "src/global-handles.h"
 #include "src/ic/ic.h"
 #include "src/macro-assembler.h"
+#include "src/snapshot/snapshot.h"
 #include "test/cctest/cctest.h"
 
 using namespace v8::internal;
@@ -2243,28 +2245,10 @@ TEST(ResetSharedFunctionInfoCountersDuringIncrementalMarking) {
   IncrementalMarking* marking = CcTest::heap()->incremental_marking();
   marking->Abort();
   marking->Start();
-
-  // The following two calls will increment CcTest::heap()->global_ic_age().
-  const double kLongIdlePauseInSeconds = 1.0;
+  // The following calls will increment CcTest::heap()->global_ic_age().
   CcTest::isolate()->ContextDisposedNotification();
-  CcTest::isolate()->IdleNotificationDeadline(
-      (v8::base::TimeTicks::HighResolutionNow().ToInternalValue() /
-       static_cast<double>(v8::base::Time::kMicrosecondsPerSecond)) +
-      kLongIdlePauseInSeconds);
-
-  while (!marking->IsStopped() && !marking->IsComplete()) {
-    marking->Step(1 * MB, IncrementalMarking::NO_GC_VIA_STACK_GUARD);
-  }
-  if (!marking->IsStopped() || marking->should_hurry()) {
-    // We don't normally finish a GC via Step(), we normally finish by
-    // setting the stack guard and then do the final steps in the stack
-    // guard interrupt.  But here we didn't ask for that, and there is no
-    // JS code running to trigger the interrupt, so we explicitly finalize
-    // here.
-    CcTest::heap()->CollectAllGarbage(Heap::kFinalizeIncrementalMarkingMask,
-                                      "Test finalizing incremental mark-sweep");
-  }
-
+  SimulateIncrementalMarking(CcTest::heap());
+  CcTest::heap()->CollectAllGarbage();
   CHECK_EQ(CcTest::heap()->global_ic_age(), f->shared()->ic_age());
   CHECK_EQ(0, f->shared()->opt_count());
   CHECK_EQ(0, f->shared()->code()->profiler_ticks());
@@ -2303,13 +2287,8 @@ TEST(ResetSharedFunctionInfoCountersDuringMarkSweep) {
   CcTest::heap()->incremental_marking()->Abort();
 
   // The following two calls will increment CcTest::heap()->global_ic_age().
-  // Since incremental marking is off, IdleNotification will do full GC.
-  const double kLongIdlePauseInSeconds = 1.0;
   CcTest::isolate()->ContextDisposedNotification();
-  CcTest::isolate()->IdleNotificationDeadline(
-      (v8::base::TimeTicks::HighResolutionNow().ToInternalValue() /
-       static_cast<double>(v8::base::Time::kMicrosecondsPerSecond)) +
-      kLongIdlePauseInSeconds);
+  CcTest::heap()->CollectAllGarbage();
 
   CHECK_EQ(CcTest::heap()->global_ic_age(), f->shared()->ic_age());
   CHECK_EQ(0, f->shared()->opt_count());
@@ -4340,7 +4319,15 @@ TEST(NoWeakHashTableLeakWithIncrementalMarking) {
   i::FLAG_retain_maps_for_n_gc = 0;
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
+
+  // Do not run for no-snap builds.
+  if (!i::Snapshot::HaveASnapshotToStartFrom(isolate)) return;
+
   v8::internal::Heap* heap = CcTest::heap();
+
+  // Get a clean slate regarding optimized functions on the heap.
+  i::Deoptimizer::DeoptimizeAll(isolate);
+  heap->CollectAllGarbage();
 
   if (!isolate->use_crankshaft()) return;
   HandleScope outer_scope(heap->isolate());
@@ -4358,7 +4345,7 @@ TEST(NoWeakHashTableLeakWithIncrementalMarking) {
                "bar%d();"
                "bar%d();"
                "bar%d();"
-               "%%OptimizeFwunctionOnNextCall(bar%d);"
+               "%%OptimizeFunctionOnNextCall(bar%d);"
                "bar%d();",
                i, i, i, i, i, i, i, i);
       CompileRun(source.start());

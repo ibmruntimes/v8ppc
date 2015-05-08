@@ -129,8 +129,8 @@ bool LCodeGen::GeneratePrologue() {
 
     // Sloppy mode functions need to replace the receiver with the global proxy
     // when called as functions (without an explicit receiver object).
-    if (is_sloppy(info()->language_mode()) && info()->MayUseThis() &&
-        !info()->is_native() && info()->scope()->has_this_declaration()) {
+    if (is_sloppy(info_->language_mode()) && info()->MayUseThis() &&
+        !info_->is_native()) {
       Label ok;
       StackArgumentsAccessor args(rsp, scope()->num_parameters());
       __ movp(rcx, args.GetReceiverOperand());
@@ -213,9 +213,8 @@ bool LCodeGen::GeneratePrologue() {
 
     // Copy any necessary parameters into the context.
     int num_parameters = scope()->num_parameters();
-    int first_parameter = scope()->has_this_declaration() ? -1 : 0;
-    for (int i = first_parameter; i < num_parameters; i++) {
-      Variable* var = (i == -1) ? scope()->receiver() : scope()->parameter(i);
+    for (int i = 0; i < num_parameters; i++) {
+      Variable* var = scope()->parameter(i);
       if (var->IsContextSlot()) {
         int parameter_offset = StandardFrameConstants::kCallerSPOffset +
             (num_parameters - 1 - i) * kPointerSize;
@@ -3265,7 +3264,8 @@ void LCodeGen::DoLoadKeyedFixedArray(LLoadKeyed* instr) {
       DeoptimizeIf(equal, instr, Deoptimizer::kHole);
     }
   } else if (hinstr->hole_mode() == CONVERT_HOLE_TO_UNDEFINED) {
-    DCHECK(hinstr->elements_kind() == FAST_HOLEY_ELEMENTS);
+    DCHECK(hinstr->elements_kind() == FAST_HOLEY_SMI_ELEMENTS ||
+           hinstr->elements_kind() == FAST_HOLEY_ELEMENTS);
     Label done;
     __ CompareRoot(result, Heap::kTheHoleValueRootIndex);
     __ j(not_equal, &done);

@@ -168,7 +168,7 @@ class IC {
 
   MaybeHandle<Object> TypeError(const char* type, Handle<Object> object,
                                 Handle<Object> key);
-  MaybeHandle<Object> ReferenceError(const char* type, Handle<Name> name);
+  MaybeHandle<Object> ReferenceError(Handle<Name> name);
 
   // Access the target code for the given IC address.
 #if defined(V8_PPC_CONSTANT_POOL_OPT)

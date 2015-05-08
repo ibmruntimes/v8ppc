@@ -121,7 +121,7 @@ bool LCodeGen::GeneratePrologue() {
     // global proxy when called as functions (without an explicit receiver
     // object).
     if (is_sloppy(info_->language_mode()) && info()->MayUseThis() &&
-        !info_->is_native() && info_->scope()->has_this_declaration()) {
+        !info_->is_native()) {
       Label ok;
       int receiver_offset = info_->scope()->num_parameters() * kPointerSize;
       __ ldr(r2, MemOperand(sp, receiver_offset));
@@ -197,9 +197,8 @@ bool LCodeGen::GeneratePrologue() {
     __ str(r0, MemOperand(fp, StandardFrameConstants::kContextOffset));
     // Copy any necessary parameters into the context.
     int num_parameters = scope()->num_parameters();
-    int first_parameter = scope()->has_this_declaration() ? -1 : 0;
-    for (int i = first_parameter; i < num_parameters; i++) {
-      Variable* var = (i == -1) ? scope()->receiver() : scope()->parameter(i);
+    for (int i = 0; i < num_parameters; i++) {
+      Variable* var = scope()->parameter(i);
       if (var->IsContextSlot()) {
         int parameter_offset = StandardFrameConstants::kCallerSPOffset +
             (num_parameters - 1 - i) * kPointerSize;
@@ -3350,7 +3349,8 @@ void LCodeGen::DoLoadKeyedFixedArray(LLoadKeyed* instr) {
       DeoptimizeIf(eq, instr, Deoptimizer::kHole);
     }
   } else if (instr->hydrogen()->hole_mode() == CONVERT_HOLE_TO_UNDEFINED) {
-    DCHECK(instr->hydrogen()->elements_kind() == FAST_HOLEY_ELEMENTS);
+    DCHECK(instr->hydrogen()->elements_kind() == FAST_HOLEY_SMI_ELEMENTS ||
+           instr->hydrogen()->elements_kind() == FAST_HOLEY_ELEMENTS);
     Label done;
     __ LoadRoot(scratch, Heap::kTheHoleValueRootIndex);
     __ cmp(result, scratch);

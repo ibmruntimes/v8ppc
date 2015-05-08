@@ -193,6 +193,7 @@ DEFINE_IMPLICATION(es_staging, harmony)
   V(harmony_unicode_regexps, "harmony unicode regexps")         \
   V(harmony_reflect, "harmony Reflect API")                     \
   V(harmony_destructuring, "harmony destructuring")             \
+  V(harmony_object, "harmony Object methods")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                               \
@@ -646,6 +647,10 @@ DEFINE_IMPLICATION(trace_detached_contexts, track_detached_contexts)
 #ifdef VERIFY_HEAP
 DEFINE_BOOL(verify_heap, false, "verify heap pointers before and after GC")
 #endif
+
+// counters.cc
+DEFINE_INT(histogram_interval, 600000,
+           "time interval in ms for aggregating memory histograms")
 
 
 // heap-snapshot-generator.cc
