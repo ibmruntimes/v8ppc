@@ -175,6 +175,7 @@ namespace internal {
   V(FixedArray, natives_source_cache, NativesSourceCache)                      \
   V(FixedArray, experimental_natives_source_cache,                             \
     ExperimentalNativesSourceCache)                                            \
+  V(FixedArray, extra_natives_source_cache, ExtraNativesSourceCache)           \
   V(Script, empty_script, EmptyScript)                                         \
   V(NameDictionary, intrinsic_function_names, IntrinsicFunctionNames)          \
   V(Cell, undefined_cell, UndefinedCell)                                       \
@@ -231,7 +232,6 @@ namespace internal {
   V(source_string, "source")                                   \
   V(source_url_string, "source_url")                           \
   V(source_mapping_url_string, "source_mapping_url")           \
-  V(this_string, "this")                                       \
   V(global_string, "global")                                   \
   V(ignore_case_string, "ignoreCase")                          \
   V(multiline_string, "multiline")                             \
@@ -1152,6 +1152,8 @@ class Heap {
   bool IdleNotification(double deadline_in_seconds);
   bool IdleNotification(int idle_time_in_ms);
 
+  double MonotonicallyIncreasingTimeInMs();
+
   // Declare all the root indices.  This defines the root list order.
   enum RootListIndex {
 #define ROOT_INDEX_DECLARATION(type, name, camel_name) k##camel_name##RootIndex,
@@ -1814,12 +1816,15 @@ class Heap {
 
   HeapObject* DoubleAlignForDeserialization(HeapObject* object, int size);
 
+  enum Alignment { kWordAligned, kDoubleAligned };
+
   // Allocate an uninitialized object.  The memory is non-executable if the
   // hardware and OS allow.  This is the single choke-point for allocations
   // performed by the runtime and should not be bypassed (to extend this to
   // inlined allocations, use the Heap::DisableInlineAllocation() support).
   MUST_USE_RESULT inline AllocationResult AllocateRaw(
-      int size_in_bytes, AllocationSpace space, AllocationSpace retry_space);
+      int size_in_bytes, AllocationSpace space, AllocationSpace retry_space,
+      Alignment aligment = kWordAligned);
 
   // Allocates a heap object based on the map.
   MUST_USE_RESULT AllocationResult

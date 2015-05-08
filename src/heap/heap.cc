@@ -919,6 +919,13 @@ bool Heap::CollectGarbage(GarbageCollector collector, const char* gc_reason,
     if (collector == MARK_COMPACTOR && FLAG_track_detached_contexts) {
       isolate()->CheckDetachedContextsAfterGC();
     }
+
+    if (collector == MARK_COMPACTOR) {
+      gc_idle_time_handler_.NotifyMarkCompact();
+    } else {
+      gc_idle_time_handler_.NotifyScavenge();
+    }
+
     tracer()->Stop(collector);
   }
 
@@ -1646,8 +1653,6 @@ void Heap::Scavenge() {
   LOG(isolate_, ResourceEvent("scavenge", "end"));
 
   gc_state_ = NOT_IN_GC;
-
-  gc_idle_time_handler_.NotifyScavenge();
 }
 
 
@@ -1943,6 +1948,8 @@ STATIC_ASSERT((ConstantPoolArray::kFirstEntryOffset & kDoubleAlignmentMask) ==
               0);  // NOLINT
 STATIC_ASSERT((ConstantPoolArray::kExtendedFirstOffset &
                kDoubleAlignmentMask) == 0);  // NOLINT
+STATIC_ASSERT((FixedTypedArrayBase::kDataOffset & kDoubleAlignmentMask) ==
+              0);  // NOLINT
 
 
 HeapObject* Heap::EnsureDoubleAligned(HeapObject* object, int size) {
@@ -2109,11 +2116,15 @@ class ScavengingVisitor : public StaticVisitorBase {
 
     DCHECK(heap->AllowedToBeMigrated(object, NEW_SPACE));
     AllocationResult allocation;
+#ifndef V8_HOST_ARCH_64_BIT
     if (alignment == kDoubleAlignment) {
       allocation = heap->new_space()->AllocateRawDoubleAligned(object_size);
     } else {
       allocation = heap->new_space()->AllocateRaw(object_size);
     }
+#else
+    allocation = heap->new_space()->AllocateRaw(object_size);
+#endif
 
     HeapObject* target = NULL;  // Initialization to please compiler.
     if (allocation.To(&target)) {
@@ -2141,11 +2152,15 @@ class ScavengingVisitor : public StaticVisitorBase {
     Heap* heap = map->GetHeap();
 
     AllocationResult allocation;
+#ifndef V8_HOST_ARCH_64_BIT
     if (alignment == kDoubleAlignment) {
       allocation = heap->old_space()->AllocateRawDoubleAligned(object_size);
     } else {
       allocation = heap->old_space()->AllocateRaw(object_size);
     }
+#else
+    allocation = heap->old_space()->AllocateRaw(object_size);
+#endif
 
     HeapObject* target = NULL;  // Initialization to please compiler.
     if (allocation.To(&target)) {
@@ -2708,8 +2723,8 @@ bool Heap::CreateInitialMaps() {
     ALLOCATE_VARSIZE_MAP(BYTE_ARRAY_TYPE, byte_array)
     ALLOCATE_VARSIZE_MAP(FREE_SPACE_TYPE, free_space)
 
-#define ALLOCATE_EXTERNAL_ARRAY_MAP(Type, type, TYPE, ctype, size)        \
-  ALLOCATE_MAP(EXTERNAL_##TYPE##_ARRAY_TYPE, ExternalArray::kAlignedSize, \
+#define ALLOCATE_EXTERNAL_ARRAY_MAP(Type, type, TYPE, ctype, size) \
+  ALLOCATE_MAP(EXTERNAL_##TYPE##_ARRAY_TYPE, ExternalArray::kSize, \
                external_##type##_array)
 
     TYPED_ARRAYS(ALLOCATE_EXTERNAL_ARRAY_MAP)
@@ -3069,6 +3084,9 @@ void Heap::CreateInitialObjects() {
   set_experimental_natives_source_cache(
       *factory->NewFixedArray(ExperimentalNatives::GetBuiltinsCount()));
 
+  set_extra_natives_source_cache(
+      *factory->NewFixedArray(ExtraNatives::GetBuiltinsCount()));
+
   set_undefined_cell(*factory->NewCell(factory->undefined_value()));
 
   // The symbol registry is initialized lazily.
@@ -3102,7 +3120,7 @@ void Heap::CreateInitialObjects() {
                           TENURED));
 
   Handle<SeededNumberDictionary> slow_element_dictionary =
-      SeededNumberDictionary::New(isolate(), 1, TENURED);
+      SeededNumberDictionary::New(isolate(), 0, TENURED);
   slow_element_dictionary->set_requires_slow_elements();
   set_empty_slow_element_dictionary(*slow_element_dictionary);
 
@@ -3613,7 +3631,7 @@ AllocationResult Heap::AllocateExternalArray(int length,
                                              ExternalArrayType array_type,
                                              void* external_pointer,
                                              PretenureFlag pretenure) {
-  int size = ExternalArray::kAlignedSize;
+  int size = ExternalArray::kSize;
   AllocationSpace space = SelectSpace(size, pretenure);
   HeapObject* result;
   {
@@ -3655,20 +3673,13 @@ AllocationResult Heap::AllocateFixedTypedArray(int length,
   ForFixedTypedArray(array_type, &element_size, &elements_kind);
   int size = OBJECT_POINTER_ALIGN(length * element_size +
                                   FixedTypedArrayBase::kDataOffset);
-#ifndef V8_HOST_ARCH_64_BIT
-  if (array_type == kExternalFloat64Array) {
-    size += kPointerSize;
-  }
-#endif
   AllocationSpace space = SelectSpace(size, pretenure);
 
   HeapObject* object;
-  AllocationResult allocation = AllocateRaw(size, space, OLD_SPACE);
+  AllocationResult allocation = AllocateRaw(
+      size, space, OLD_SPACE,
+      array_type == kExternalFloat64Array ? kDoubleAligned : kWordAligned);
   if (!allocation.To(&object)) return allocation;
-
-  if (array_type == kExternalFloat64Array) {
-    object = EnsureDoubleAligned(object, size);
-  }
 
   object->set_map(MapForFixedTypedArray(array_type));
   FixedTypedArrayBase* elements = FixedTypedArrayBase::cast(object);
@@ -4428,21 +4439,20 @@ AllocationResult Heap::AllocateUninitializedFixedDoubleArray(
 AllocationResult Heap::AllocateRawFixedDoubleArray(int length,
                                                    PretenureFlag pretenure) {
   if (length < 0 || length > FixedDoubleArray::kMaxLength) {
-    v8::internal::Heap::FatalProcessOutOfMemory("invalid array length", true);
+    v8::internal::Heap::FatalProcessOutOfMemory("invalid array length",
+                                                kDoubleAligned);
   }
   int size = FixedDoubleArray::SizeFor(length);
-#ifndef V8_HOST_ARCH_64_BIT
-  size += kPointerSize;
-#endif
   AllocationSpace space = SelectSpace(size, pretenure);
 
   HeapObject* object;
   {
-    AllocationResult allocation = AllocateRaw(size, space, OLD_SPACE);
+    AllocationResult allocation =
+        AllocateRaw(size, space, OLD_SPACE, kDoubleAligned);
     if (!allocation.To(&object)) return allocation;
   }
 
-  return EnsureDoubleAligned(object, size);
+  return object;
 }
 
 
@@ -4450,17 +4460,14 @@ AllocationResult Heap::AllocateConstantPoolArray(
     const ConstantPoolArray::NumberOfEntries& small) {
   CHECK(small.are_in_range(0, ConstantPoolArray::kMaxSmallEntriesPerType));
   int size = ConstantPoolArray::SizeFor(small);
-#ifndef V8_HOST_ARCH_64_BIT
-  size += kPointerSize;
-#endif
   AllocationSpace space = SelectSpace(size, TENURED);
 
   HeapObject* object;
   {
-    AllocationResult allocation = AllocateRaw(size, space, OLD_SPACE);
+    AllocationResult allocation =
+        AllocateRaw(size, space, OLD_SPACE, kDoubleAligned);
     if (!allocation.To(&object)) return allocation;
   }
-  object = EnsureDoubleAligned(object, size);
   object->set_map_no_write_barrier(constant_pool_array_map());
 
   ConstantPoolArray* constant_pool = ConstantPoolArray::cast(object);
@@ -4476,17 +4483,14 @@ AllocationResult Heap::AllocateExtendedConstantPoolArray(
   CHECK(small.are_in_range(0, ConstantPoolArray::kMaxSmallEntriesPerType));
   CHECK(extended.are_in_range(0, kMaxInt));
   int size = ConstantPoolArray::SizeForExtended(small, extended);
-#ifndef V8_HOST_ARCH_64_BIT
-  size += kPointerSize;
-#endif
   AllocationSpace space = SelectSpace(size, TENURED);
 
   HeapObject* object;
   {
-    AllocationResult allocation = AllocateRaw(size, space, OLD_SPACE);
+    AllocationResult allocation =
+        AllocateRaw(size, space, OLD_SPACE, kDoubleAligned);
     if (!allocation.To(&object)) return allocation;
   }
-  object = EnsureDoubleAligned(object, size);
   object->set_map_no_write_barrier(constant_pool_array_map());
 
   ConstantPoolArray* constant_pool = ConstantPoolArray::cast(object);
@@ -4611,6 +4615,7 @@ bool Heap::TryFinalizeIdleIncrementalMarking(
                   static_cast<size_t>(idle_time_in_ms), size_of_objects,
                   final_incremental_mark_compact_speed_in_bytes_per_ms))) {
     CollectAllGarbage(kNoGCFlags, "idle notification: finalize incremental");
+    gc_idle_time_handler_.NotifyIdleMarkCompact();
     ReduceNewSpaceSize(is_long_idle_notification);
     return true;
   }
@@ -4618,7 +4623,7 @@ bool Heap::TryFinalizeIdleIncrementalMarking(
 }
 
 
-static double MonotonicallyIncreasingTimeInMs() {
+double Heap::MonotonicallyIncreasingTimeInMs() {
   return V8::GetCurrentPlatform()->MonotonicallyIncreasingTime() *
          static_cast<double>(base::Time::kMillisecondsPerSecond);
 }
@@ -4639,7 +4644,8 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
       static_cast<double>(base::Time::kMillisecondsPerSecond);
   HistogramTimerScope idle_notification_scope(
       isolate_->counters()->gc_idle_notification());
-  double idle_time_in_ms = deadline_in_ms - MonotonicallyIncreasingTimeInMs();
+  double start_ms = MonotonicallyIncreasingTimeInMs();
+  double idle_time_in_ms = deadline_in_ms - start_ms;
   bool is_long_idle_notification =
       static_cast<size_t>(idle_time_in_ms) >
       GCIdleTimeHandler::kMaxFrameRenderingIdleTime;
@@ -4681,8 +4687,17 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
 
   GCIdleTimeAction action =
       gc_idle_time_handler_.Compute(idle_time_in_ms, heap_state);
+
   isolate()->counters()->gc_idle_time_allotted_in_ms()->AddSample(
       static_cast<int>(idle_time_in_ms));
+  if (is_long_idle_notification) {
+    int committed_memory = static_cast<int>(CommittedMemory() / KB);
+    int used_memory = static_cast<int>(heap_state.size_of_objects / KB);
+    isolate()->counters()->aggregated_memory_heap_committed()->AddSample(
+        start_ms, committed_memory);
+    isolate()->counters()->aggregated_memory_heap_used()->AddSample(
+        start_ms, used_memory);
+  }
 
   bool result = false;
   switch (action.type) {
@@ -4691,6 +4706,7 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
       break;
     case DO_INCREMENTAL_MARKING: {
       if (incremental_marking()->IsStopped()) {
+        // TODO(ulan): take reduce_memory into account.
         incremental_marking()->Start();
       }
       double remaining_idle_time_in_ms = 0.0;

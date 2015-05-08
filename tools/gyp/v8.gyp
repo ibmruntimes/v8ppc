@@ -180,6 +180,7 @@
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
+        '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
         '<(INTERMEDIATE_DIR)/snapshot.cc',
       ],
       'actions': [
@@ -224,6 +225,7 @@
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
+        '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
         '../../src/snapshot/snapshot-empty.cc',
       ],
       'conditions': [
@@ -1286,6 +1288,10 @@
             'gyp_generators': '<!(echo $GYP_GENERATORS)',
           },
           'msvs_disabled_warnings': [4351, 4355, 4800],
+          # When building Official, the .lib is too large and exceeds the 2G
+          # limit. This breaks it into multiple pieces to avoid the limit.
+          # See http://crbug.com/485155.
+          'msvs_shard': 4,
         }],
         ['component=="shared_library"', {
           'defines': [
@@ -1635,6 +1641,7 @@
               '../../tools/concatenate-files.py',
               '<(SHARED_INTERMEDIATE_DIR)/libraries.bin',
               '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental.bin',
+              '<(SHARED_INTERMEDIATE_DIR)/libraries-extras.bin',
             ],
             'conditions': [
               ['want_separate_host_toolset==1', {
@@ -1736,10 +1743,12 @@
           '../../src/harmony-typedarray.js',
           '../../src/harmony-regexp.js',
           '../../src/harmony-reflect.js',
-          '../../src/harmony-spread.js'
+          '../../src/harmony-spread.js',
+          '../../src/harmony-object.js'
         ],
         'libraries_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries.bin',
         'libraries_experimental_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental.bin',
+        'libraries_extras_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-extras.bin',
       },
       'actions': [
         {
@@ -1747,8 +1756,7 @@
           'inputs': [
             '../../tools/js2c.py',
             '<@(library_files)',
-            '<@(i18n_library_files)',
-            '<@(v8_extra_library_files)',
+            '<@(i18n_library_files)'
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
@@ -1759,9 +1767,7 @@
             '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
             'CORE',
             '<@(library_files)',
-            '<@(i18n_library_files)',
-            '--extra',
-            '<@(v8_extra_library_files)',
+            '<@(i18n_library_files)'
           ],
           'conditions': [
             [ 'v8_use_external_startup_data==1', {
@@ -1793,6 +1799,31 @@
               'outputs': ['<@(libraries_experimental_bin_file)'],
               'action': [
                 '--startup_blob', '<@(libraries_experimental_bin_file)'
+              ],
+            }],
+          ],
+        },
+        {
+          'action_name': 'js2c_extras',
+          'inputs': [
+            '../../tools/js2c.py',
+            '<@(v8_extra_library_files)',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
+          ],
+          'action': [
+            'python',
+            '../../tools/js2c.py',
+            '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
+            'EXTRAS',
+            '<@(v8_extra_library_files)',
+          ],
+          'conditions': [
+            [ 'v8_use_external_startup_data==1', {
+              'outputs': ['<@(libraries_extras_bin_file)'],
+              'action': [
+                '--startup_blob', '<@(libraries_extras_bin_file)',
               ],
             }],
           ],

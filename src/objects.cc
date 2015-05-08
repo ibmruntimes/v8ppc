@@ -3228,11 +3228,9 @@ MaybeHandle<Object> Object::SetPropertyInternal(LookupIterator* it,
   // the property did not exist yet on the global object itself, we have to
   // throw a reference error in strict mode.
   if (it->GetReceiver()->IsJSGlobalObject() && is_strict(language_mode)) {
-    Handle<Object> args[] = {it->name()};
-    THROW_NEW_ERROR(
-        it->isolate(),
-        NewReferenceError("not_defined", HandleVector(args, arraysize(args))),
-        Object);
+    THROW_NEW_ERROR(it->isolate(),
+                    NewReferenceError(MessageTemplate::kNotDefined, it->name()),
+                    Object);
   }
 
   *found = false;
@@ -12520,7 +12518,8 @@ bool DependentCode::MarkCodeForDeoptimization(
       WeakCell* cell = WeakCell::cast(obj);
       if (cell->cleared()) continue;
       Code* code = Code::cast(cell->value());
-      if (!code->marked_for_deoptimization()) {
+      if (!code->marked_for_deoptimization() &&
+          (!code->is_turbofanned() || FLAG_turbo_deoptimization)) {
         SetMarkedForDeoptimization(code, group);
         if (invalidate_embedded_objects) {
           code->InvalidateEmbeddedObjects();

@@ -12600,6 +12600,18 @@ THREADED_TEST(TryCatchSourceInfo) {
 }
 
 
+THREADED_TEST(TryCatchSourceInfoForEOSError) {
+  LocalContext context;
+  v8::HandleScope scope(context->GetIsolate());
+  v8::TryCatch try_catch;
+  v8::Script::Compile(v8_str("!\n"));
+  CHECK(try_catch.HasCaught());
+  v8::Handle<v8::Message> message = try_catch.Message();
+  CHECK_EQ(1, message->GetLineNumber());
+  CHECK_EQ(0, message->GetStartColumn());
+}
+
+
 THREADED_TEST(CompilationCache) {
   LocalContext context;
   v8::HandleScope scope(context->GetIsolate());
@@ -21046,4 +21058,22 @@ TEST(SealHandleScopeNested) {
 
     USE(obj);
   }
+}
+
+
+TEST(ExtrasExportsObject) {
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope handle_scope(isolate);
+  LocalContext env;
+
+  // standalone.gypi ensures we include the test-extra.js file, which should
+  // add the testExtraShouldReturnFive export
+  v8::Local<v8::Object> exports = env->GetExtrasExportsObject();
+
+  auto func =
+      exports->Get(v8_str("testExtraShouldReturnFive")).As<v8::Function>();
+  auto undefined = v8::Undefined(isolate);
+  auto result = func->Call(undefined, 0, {}).As<v8::Number>();
+
+  CHECK(result->Value() == 5.0);
 }

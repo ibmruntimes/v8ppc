@@ -39,7 +39,7 @@ static void RelaxControls(Node* node) {
 
 
 JSTypedLowering::JSTypedLowering(JSGraph* jsgraph, Zone* zone)
-    : jsgraph_(jsgraph), simplified_(graph()->zone()), conversions_(zone) {
+    : jsgraph_(jsgraph), simplified_(graph()->zone()) {
   zero_range_ = Type::Range(0.0, 0.0, graph()->zone());
   one_range_ = Type::Range(1.0, 1.0, graph()->zone());
   zero_thirtyone_range_ = Type::Range(0.0, 31.0, graph()->zone());
@@ -658,8 +658,6 @@ Reduction JSTypedLowering::ReduceJSToNumberInput(Node* input) {
     return Changed(input);  // JSToNumber(JSToNumber(x)) => JSToNumber(x)
   }
   // Check if we have a cached conversion.
-  Node* conversion = FindConversion<IrOpcode::kJSToNumber>(input);
-  if (conversion) return Replace(conversion);
   Type* input_type = NodeProperties::GetBounds(input).upper;
   if (input_type->Is(Type::Number())) {
     // JSToNumber(x:number) => x
@@ -692,67 +690,6 @@ Reduction JSTypedLowering::ReduceJSToNumber(Node* node) {
   }
   Type* const input_type = NodeProperties::GetBounds(input).upper;
   if (input_type->Is(Type::PlainPrimitive())) {
-    if (input->opcode() == IrOpcode::kPhi) {
-      // JSToNumber(phi(x1,...,xn,control):plain-primitive,context)
-      //   => phi(JSToNumber(x1,no-context),
-      //          ...,
-      //          JSToNumber(xn,no-context),control)
-      int const input_count = input->InputCount() - 1;
-      Node* const control = input->InputAt(input_count);
-      DCHECK_LE(0, input_count);
-      DCHECK(NodeProperties::IsControl(control));
-      DCHECK(NodeProperties::GetBounds(node).upper->Is(Type::Number()));
-      DCHECK(!NodeProperties::GetBounds(input).upper->Is(Type::Number()));
-      RelaxEffectsAndControls(node);
-      node->set_op(common()->Phi(kMachAnyTagged, input_count));
-      for (int i = 0; i < input_count; ++i) {
-        // We must be very careful not to introduce cycles when pushing
-        // operations into phis. It is safe for {value}, since it appears
-        // as input to the phi that we are replacing, but it's not safe
-        // to simply reuse the context of the {node}. However, ToNumber()
-        // does not require a context anyways, so it's safe to discard it
-        // here and pass the dummy context.
-        Node* const value = ConvertPrimitiveToNumber(input->InputAt(i));
-        if (i < node->InputCount()) {
-          node->ReplaceInput(i, value);
-        } else {
-          node->AppendInput(graph()->zone(), value);
-        }
-      }
-      if (input_count < node->InputCount()) {
-        node->ReplaceInput(input_count, control);
-      } else {
-        node->AppendInput(graph()->zone(), control);
-      }
-      node->TrimInputCount(input_count + 1);
-      return Changed(node);
-    }
-    if (input->opcode() == IrOpcode::kSelect) {
-      // JSToNumber(select(c,x1,x2):plain-primitive,context)
-      //   => select(c,JSToNumber(x1,no-context),JSToNumber(x2,no-context))
-      int const input_count = input->InputCount();
-      BranchHint const input_hint = SelectParametersOf(input->op()).hint();
-      DCHECK_EQ(3, input_count);
-      DCHECK(NodeProperties::GetBounds(node).upper->Is(Type::Number()));
-      DCHECK(!NodeProperties::GetBounds(input).upper->Is(Type::Number()));
-      RelaxEffectsAndControls(node);
-      node->set_op(common()->Select(kMachAnyTagged, input_hint));
-      node->ReplaceInput(0, input->InputAt(0));
-      for (int i = 1; i < input_count; ++i) {
-        // We must be very careful not to introduce cycles when pushing
-        // operations into selects. It is safe for {value}, since it appears
-        // as input to the select that we are replacing, but it's not safe
-        // to simply reuse the context of the {node}. However, ToNumber()
-        // does not require a context anyways, so it's safe to discard it
-        // here and pass the dummy context.
-        Node* const value = ConvertPrimitiveToNumber(input->InputAt(i));
-        node->ReplaceInput(i, value);
-      }
-      node->TrimInputCount(input_count);
-      return Changed(node);
-    }
-    // Remember this conversion.
-    InsertConversion(node);
     if (NodeProperties::GetContextInput(node) !=
             jsgraph()->NoContextConstant() ||
         NodeProperties::GetEffectInput(node) != graph()->start() ||
@@ -829,39 +766,40 @@ Reduction JSTypedLowering::ReduceJSLoadProperty(Node* node) {
   Node* key = NodeProperties::GetValueInput(node, 1);
   Node* base = NodeProperties::GetValueInput(node, 0);
   Type* key_type = NodeProperties::GetBounds(key).upper;
-  // TODO(mstarzinger): This lowering is not correct if:
-  //   a) The typed array or it's buffer is neutered.
   HeapObjectMatcher<Object> mbase(base);
   if (mbase.HasValue() && mbase.Value().handle()->IsJSTypedArray()) {
     Handle<JSTypedArray> const array =
         Handle<JSTypedArray>::cast(mbase.Value().handle());
-    array->GetBuffer()->set_is_neuterable(false);
-    BufferAccess const access(array->type());
-    size_t const k = ElementSizeLog2Of(access.machine_type());
-    double const byte_length = array->byte_length()->Number();
-    CHECK_LT(k, arraysize(shifted_int32_ranges_));
-    if (IsExternalArrayElementsKind(array->map()->elements_kind()) &&
-        key_type->Is(shifted_int32_ranges_[k]) && byte_length <= kMaxInt) {
-      // JSLoadProperty(typed-array, int32)
-      Handle<ExternalArray> elements =
-          Handle<ExternalArray>::cast(handle(array->elements()));
-      Node* buffer = jsgraph()->PointerConstant(elements->external_pointer());
-      Node* length = jsgraph()->Constant(byte_length);
-      Node* effect = NodeProperties::GetEffectInput(node);
-      Node* control = NodeProperties::GetControlInput(node);
-      // Check if we can avoid the bounds check.
-      if (key_type->Min() >= 0 && key_type->Max() < array->length()->Number()) {
-        Node* load = graph()->NewNode(
-            simplified()->LoadElement(
-                AccessBuilder::ForTypedArrayElement(array->type(), true)),
-            buffer, key, effect, control);
+    if (!array->GetBuffer()->was_neutered()) {
+      array->GetBuffer()->set_is_neuterable(false);
+      BufferAccess const access(array->type());
+      size_t const k = ElementSizeLog2Of(access.machine_type());
+      double const byte_length = array->byte_length()->Number();
+      CHECK_LT(k, arraysize(shifted_int32_ranges_));
+      if (IsExternalArrayElementsKind(array->map()->elements_kind()) &&
+          key_type->Is(shifted_int32_ranges_[k]) && byte_length <= kMaxInt) {
+        // JSLoadProperty(typed-array, int32)
+        Handle<ExternalArray> elements =
+            Handle<ExternalArray>::cast(handle(array->elements()));
+        Node* buffer = jsgraph()->PointerConstant(elements->external_pointer());
+        Node* length = jsgraph()->Constant(byte_length);
+        Node* effect = NodeProperties::GetEffectInput(node);
+        Node* control = NodeProperties::GetControlInput(node);
+        // Check if we can avoid the bounds check.
+        if (key_type->Min() >= 0 &&
+            key_type->Max() < array->length()->Number()) {
+          Node* load = graph()->NewNode(
+              simplified()->LoadElement(
+                  AccessBuilder::ForTypedArrayElement(array->type(), true)),
+              buffer, key, effect, control);
+          return ReplaceEagerly(node, load);
+        }
+        // Compute byte offset.
+        Node* offset = Word32Shl(key, static_cast<int>(k));
+        Node* load = graph()->NewNode(simplified()->LoadBuffer(access), buffer,
+                                      offset, length, effect, control);
         return ReplaceEagerly(node, load);
       }
-      // Compute byte offset.
-      Node* offset = Word32Shl(key, static_cast<int>(k));
-      Node* load = graph()->NewNode(simplified()->LoadBuffer(access), buffer,
-                                    offset, length, effect, control);
-      return ReplaceEagerly(node, load);
     }
   }
   return NoChange();
@@ -874,75 +812,76 @@ Reduction JSTypedLowering::ReduceJSStoreProperty(Node* node) {
   Node* value = NodeProperties::GetValueInput(node, 2);
   Type* key_type = NodeProperties::GetBounds(key).upper;
   Type* value_type = NodeProperties::GetBounds(value).upper;
-  // TODO(mstarzinger): This lowering is not correct if:
-  //   a) The typed array or its buffer is neutered.
   HeapObjectMatcher<Object> mbase(base);
   if (mbase.HasValue() && mbase.Value().handle()->IsJSTypedArray()) {
     Handle<JSTypedArray> const array =
         Handle<JSTypedArray>::cast(mbase.Value().handle());
-    array->GetBuffer()->set_is_neuterable(false);
-    BufferAccess const access(array->type());
-    size_t const k = ElementSizeLog2Of(access.machine_type());
-    double const byte_length = array->byte_length()->Number();
-    CHECK_LT(k, arraysize(shifted_int32_ranges_));
-    if (IsExternalArrayElementsKind(array->map()->elements_kind()) &&
-        access.external_array_type() != kExternalUint8ClampedArray &&
-        key_type->Is(shifted_int32_ranges_[k]) && byte_length <= kMaxInt) {
-      // JSLoadProperty(typed-array, int32)
-      Handle<ExternalArray> elements =
-          Handle<ExternalArray>::cast(handle(array->elements()));
-      Node* buffer = jsgraph()->PointerConstant(elements->external_pointer());
-      Node* length = jsgraph()->Constant(byte_length);
-      Node* context = NodeProperties::GetContextInput(node);
-      Node* effect = NodeProperties::GetEffectInput(node);
-      Node* control = NodeProperties::GetControlInput(node);
-      // Convert to a number first.
-      if (!value_type->Is(Type::Number())) {
-        Reduction number_reduction = ReduceJSToNumberInput(value);
-        if (number_reduction.Changed()) {
-          value = number_reduction.replacement();
-        } else {
-          Node* frame_state_for_to_number =
-              NodeProperties::GetFrameStateInput(node, 1);
-          value = effect =
-              graph()->NewNode(javascript()->ToNumber(), value, context,
-                               frame_state_for_to_number, effect, control);
+    if (!array->GetBuffer()->was_neutered()) {
+      array->GetBuffer()->set_is_neuterable(false);
+      BufferAccess const access(array->type());
+      size_t const k = ElementSizeLog2Of(access.machine_type());
+      double const byte_length = array->byte_length()->Number();
+      CHECK_LT(k, arraysize(shifted_int32_ranges_));
+      if (IsExternalArrayElementsKind(array->map()->elements_kind()) &&
+          access.external_array_type() != kExternalUint8ClampedArray &&
+          key_type->Is(shifted_int32_ranges_[k]) && byte_length <= kMaxInt) {
+        // JSLoadProperty(typed-array, int32)
+        Handle<ExternalArray> elements =
+            Handle<ExternalArray>::cast(handle(array->elements()));
+        Node* buffer = jsgraph()->PointerConstant(elements->external_pointer());
+        Node* length = jsgraph()->Constant(byte_length);
+        Node* context = NodeProperties::GetContextInput(node);
+        Node* effect = NodeProperties::GetEffectInput(node);
+        Node* control = NodeProperties::GetControlInput(node);
+        // Convert to a number first.
+        if (!value_type->Is(Type::Number())) {
+          Reduction number_reduction = ReduceJSToNumberInput(value);
+          if (number_reduction.Changed()) {
+            value = number_reduction.replacement();
+          } else {
+            Node* frame_state_for_to_number =
+                NodeProperties::GetFrameStateInput(node, 1);
+            value = effect =
+                graph()->NewNode(javascript()->ToNumber(), value, context,
+                                 frame_state_for_to_number, effect, control);
+          }
         }
-      }
-      // For integer-typed arrays, convert to the integer type.
-      if (TypeOf(access.machine_type()) == kTypeInt32 &&
-          !value_type->Is(Type::Signed32())) {
-        value = graph()->NewNode(simplified()->NumberToInt32(), value);
-      } else if (TypeOf(access.machine_type()) == kTypeUint32 &&
-                 !value_type->Is(Type::Unsigned32())) {
-        value = graph()->NewNode(simplified()->NumberToUint32(), value);
-      }
-      // Check if we can avoid the bounds check.
-      if (key_type->Min() >= 0 && key_type->Max() < array->length()->Number()) {
-        node->set_op(simplified()->StoreElement(
-            AccessBuilder::ForTypedArrayElement(array->type(), true)));
+        // For integer-typed arrays, convert to the integer type.
+        if (TypeOf(access.machine_type()) == kTypeInt32 &&
+            !value_type->Is(Type::Signed32())) {
+          value = graph()->NewNode(simplified()->NumberToInt32(), value);
+        } else if (TypeOf(access.machine_type()) == kTypeUint32 &&
+                   !value_type->Is(Type::Unsigned32())) {
+          value = graph()->NewNode(simplified()->NumberToUint32(), value);
+        }
+        // Check if we can avoid the bounds check.
+        if (key_type->Min() >= 0 &&
+            key_type->Max() < array->length()->Number()) {
+          node->set_op(simplified()->StoreElement(
+              AccessBuilder::ForTypedArrayElement(array->type(), true)));
+          node->ReplaceInput(0, buffer);
+          DCHECK_EQ(key, node->InputAt(1));
+          node->ReplaceInput(2, value);
+          node->ReplaceInput(3, effect);
+          node->ReplaceInput(4, control);
+          node->TrimInputCount(5);
+          RelaxControls(node);
+          return Changed(node);
+        }
+        // Compute byte offset.
+        Node* offset = Word32Shl(key, static_cast<int>(k));
+        // Turn into a StoreBuffer operation.
+        node->set_op(simplified()->StoreBuffer(access));
         node->ReplaceInput(0, buffer);
-        DCHECK_EQ(key, node->InputAt(1));
-        node->ReplaceInput(2, value);
-        node->ReplaceInput(3, effect);
-        node->ReplaceInput(4, control);
-        node->TrimInputCount(5);
+        node->ReplaceInput(1, offset);
+        node->ReplaceInput(2, length);
+        node->ReplaceInput(3, value);
+        node->ReplaceInput(4, effect);
+        node->ReplaceInput(5, control);
+        node->TrimInputCount(6);
         RelaxControls(node);
         return Changed(node);
       }
-      // Compute byte offset.
-      Node* offset = Word32Shl(key, static_cast<int>(k));
-      // Turn into a StoreBuffer operation.
-      node->set_op(simplified()->StoreBuffer(access));
-      node->ReplaceInput(0, buffer);
-      node->ReplaceInput(1, offset);
-      node->ReplaceInput(2, length);
-      node->ReplaceInput(3, value);
-      node->ReplaceInput(4, effect);
-      node->ReplaceInput(5, control);
-      node->TrimInputCount(6);
-      RelaxControls(node);
-      return Changed(node);
     }
   }
   return NoChange();
@@ -1256,34 +1195,9 @@ Node* JSTypedLowering::ConvertPrimitiveToNumber(Node* input) {
   Reduction const reduction = ReduceJSToNumberInput(input);
   if (reduction.Changed()) return reduction.replacement();
   // TODO(jarin) Use PlainPrimitiveToNumber once we have it.
-  Node* const conversion = graph()->NewNode(
+  return graph()->NewNode(
       javascript()->ToNumber(), input, jsgraph()->NoContextConstant(),
       jsgraph()->EmptyFrameState(), graph()->start(), graph()->start());
-  InsertConversion(conversion);
-  return conversion;
-}
-
-
-template <IrOpcode::Value kOpcode>
-Node* JSTypedLowering::FindConversion(Node* input) {
-  size_t const input_id = input->id();
-  if (input_id < conversions_.size()) {
-    Node* const conversion = conversions_[input_id];
-    if (conversion && conversion->opcode() == kOpcode) {
-      return conversion;
-    }
-  }
-  return nullptr;
-}
-
-
-void JSTypedLowering::InsertConversion(Node* conversion) {
-  DCHECK(conversion->opcode() == IrOpcode::kJSToNumber);
-  size_t const input_id = conversion->InputAt(0)->id();
-  if (input_id >= conversions_.size()) {
-    conversions_.resize(2 * input_id + 1);
-  }
-  conversions_[input_id] = conversion;
 }
 
 
