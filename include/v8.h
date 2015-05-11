@@ -5125,6 +5125,7 @@ class V8_EXPORT Isolate {
     kStoreBufferOverflow = 4,
     kSlotsBufferOverflow = 5,
     kObjectObserve = 6,
+    kForcedGC = 7,
     kUseCounterFeatureCount  // This enum value must be last.
   };
 
@@ -6387,12 +6388,6 @@ class V8_EXPORT Context {
    * currently has a special meaning for Chrome's debugger.
    */
   V8_INLINE Local<Value> GetEmbedderData(int index);
-
-  /**
-   * Gets the exports object used by V8 extras. Extra natives get a reference
-   * to this object and can use it to export functionality.
-   */
-  Local<Object> GetExtrasExportsObject();
 
   /**
    * Sets the embedder data with the given index, growing the data as

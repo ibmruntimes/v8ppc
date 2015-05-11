@@ -54,6 +54,26 @@ RUNTIME_FUNCTION(Runtime_SpecialArrayFunctions) {
 }
 
 
+RUNTIME_FUNCTION(Runtime_FixedArrayGet) {
+  SealHandleScope shs(isolate);
+  DCHECK(args.length() == 2);
+  CONVERT_ARG_CHECKED(FixedArray, object, 0);
+  CONVERT_SMI_ARG_CHECKED(index, 1);
+  return object->get(index);
+}
+
+
+RUNTIME_FUNCTION(Runtime_FixedArraySet) {
+  SealHandleScope shs(isolate);
+  DCHECK(args.length() == 3);
+  CONVERT_ARG_CHECKED(FixedArray, object, 0);
+  CONVERT_SMI_ARG_CHECKED(index, 1);
+  CONVERT_ARG_CHECKED(Object, value, 2);
+  object->set(index, value);
+  return isolate->heap()->undefined_value();
+}
+
+
 RUNTIME_FUNCTION(Runtime_TransitionElementsKind) {
   HandleScope scope(isolate);
   RUNTIME_ASSERT(args.length() == 2);
@@ -1223,7 +1243,7 @@ RUNTIME_FUNCTION(Runtime_GrowArrayElements) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 3);
   CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
-  CONVERT_SMI_ARG_CHECKED(key, 1);
+  CONVERT_NUMBER_CHECKED(int, key, Int32, args[1]);
 
   if (key < 0) {
     return object->elements();

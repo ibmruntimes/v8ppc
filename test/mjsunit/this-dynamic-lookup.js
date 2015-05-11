@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-(function () {
-    'use strict';
+// Flags: --harmony-arrow-functions
+// NO HARNESS
 
-    extrasExports.testExtraShouldReturnFive = function () {
-        return 5;
-    };
-})();
+var globalEval = eval;
+globalEval("this; eval('42')");
+globalEval("eval('42'); this");

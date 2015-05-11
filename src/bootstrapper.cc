@@ -201,7 +201,6 @@ class Genesis BASE_EMBEDDED {
   void InitializeGlobal(Handle<GlobalObject> global_object,
                         Handle<JSFunction> empty_function);
   void InitializeExperimentalGlobal();
-  void InitializeExtrasExportsObject();
   // Installs the contents of the native .js files on the global objects.
   // Used for creating a context from scratch.
   void InstallNativeFunctions();
@@ -1442,20 +1441,6 @@ void Genesis::InitializeExperimentalGlobal() {
 }
 
 
-void Genesis::InitializeExtrasExportsObject() {
-  Handle<JSObject> exports =
-      factory()->NewJSObject(isolate()->object_function(), TENURED);
-
-  native_context()->set_extras_exports_object(*exports);
-
-  Handle<JSBuiltinsObject> builtins(native_context()->builtins());
-  Handle<String> exports_string =
-      factory()->InternalizeOneByteString(STATIC_CHAR_VECTOR("extrasExports"));
-  Runtime::SetObjectProperty(isolate(), builtins, exports_string, exports,
-                             STRICT).Assert();
-}
-
-
 bool Genesis::CompileBuiltin(Isolate* isolate, int index) {
   Vector<const char> name = Natives::GetScriptName(index);
   Handle<String> source_code =
@@ -1547,8 +1532,22 @@ bool Genesis::CompileScriptCached(Isolate* isolate,
                      ? top_context->builtins()
                      : top_context->global_object(),
                      isolate);
-  return !Execution::Call(
-      isolate, fun, receiver, 0, NULL).is_null();
+  MaybeHandle<Object> result;
+  if (extension == NULL) {
+    // For non-extension scripts, run script to get the function wrapper.
+    Handle<Object> wrapper;
+    if (!Execution::Call(isolate, fun, receiver, 0, NULL).ToHandle(&wrapper)) {
+      return false;
+    }
+    // Then run the function wrapper.
+    Handle<Object> global_obj(top_context->global_object(), isolate);
+    Handle<Object> args[] = {global_obj};
+    result = Execution::Call(isolate, Handle<JSFunction>::cast(wrapper),
+                             receiver, arraysize(args), args);
+  } else {
+    result = Execution::Call(isolate, fun, receiver, 0, NULL);
+  }
+  return !result.is_null();
 }
 
 
@@ -1889,16 +1888,9 @@ bool Genesis::InstallNatives() {
   builtins->set_global_proxy(native_context()->global_proxy());
 
 
-  // Set up the 'global' properties of the builtins object. The
-  // 'global' property that refers to the global object is the only
-  // way to get from code running in the builtins context to the
-  // global object.
+  // Set up the 'builtin' property, which refers to the js builtins object.
   static const PropertyAttributes attributes =
       static_cast<PropertyAttributes>(READ_ONLY | DONT_DELETE);
-  Handle<String> global_string =
-      factory()->InternalizeOneByteString(STATIC_CHAR_VECTOR("global"));
-  Handle<Object> global_obj(native_context()->global_object(), isolate());
-  JSObject::AddProperty(builtins, global_string, global_obj, attributes);
   Handle<String> builtins_string =
       factory()->InternalizeOneByteString(STATIC_CHAR_VECTOR("builtins"));
   JSObject::AddProperty(builtins, builtins_string, builtins, attributes);
@@ -2977,7 +2969,6 @@ Genesis::Genesis(Isolate* isolate,
   // them after they have already been deserialized would also fail.
   if (!isolate->serializer_enabled()) {
     InitializeExperimentalGlobal();
-    InitializeExtrasExportsObject();
     if (!InstallExperimentalNatives()) return;
     if (!InstallExtraNatives()) return;
   }
