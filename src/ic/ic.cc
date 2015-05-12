@@ -16,7 +16,6 @@
 #include "src/ic/ic-inl.h"
 #include "src/ic/ic-compiler.h"
 #include "src/ic/stub-cache.h"
-#include "src/messages.h"
 #include "src/prototype.h"
 #include "src/runtime/runtime.h"
 
@@ -383,11 +382,10 @@ void IC::UpdateState(Handle<Object> receiver, Handle<Object> name) {
 }
 
 
-MaybeHandle<Object> IC::TypeError(const char* type, Handle<Object> object,
-                                  Handle<Object> key) {
+MaybeHandle<Object> IC::TypeError(MessageTemplate::Template index,
+                                  Handle<Object> object, Handle<Object> key) {
   HandleScope scope(isolate());
-  Handle<Object> args[2] = {key, object};
-  THROW_NEW_ERROR(isolate(), NewTypeError(type, HandleVector(args, 2)), Object);
+  THROW_NEW_ERROR(isolate(), NewTypeError(index, key, object), Object);
 }
 
 
@@ -651,7 +649,8 @@ void CompareIC::Clear(Isolate* isolate, Address address, Code* target,
   CompareICStub stub(target->stub_key(), isolate);
   // Only clear CompareICs that can retain objects.
   if (stub.state() != CompareICState::KNOWN_OBJECT) return;
-  SetTargetAtAddress(address, GetRawUninitialized(isolate, stub.op()),
+  SetTargetAtAddress(address,
+                     GetRawUninitialized(isolate, stub.op(), stub.strong()),
                      constant_pool);
   PatchInlinedSmiCode(address, DISABLE_INLINED_SMI_CHECK);
 }
@@ -746,7 +745,7 @@ MaybeHandle<Object> LoadIC::Load(Handle<Object> object, Handle<Name> name) {
   // If the object is undefined or null it's illegal to try to get any
   // of its properties; throw a TypeError in that case.
   if (object->IsUndefined() || object->IsNull()) {
-    return TypeError("non_object_property_load", object, name);
+    return TypeError(MessageTemplate::kNonObjectPropertyLoad, object, name);
   }
 
   // Check if the name is trivially convertible to an index and get
@@ -1608,7 +1607,7 @@ MaybeHandle<Object> StoreIC::Store(Handle<Object> object, Handle<Name> name,
       Handle<Context> script_context = ScriptContextTable::GetContext(
           script_contexts, lookup_result.context_index);
       if (lookup_result.mode == CONST) {
-        return TypeError("const_assign", object, name);
+        return TypeError(MessageTemplate::kConstAssign, object, name);
       }
 
       Handle<Object> previous_value =
@@ -1644,7 +1643,7 @@ MaybeHandle<Object> StoreIC::Store(Handle<Object> object, Handle<Name> name,
   // If the object is undefined or null it's illegal to try to set any
   // properties on it; throw a TypeError in that case.
   if (object->IsUndefined() || object->IsNull()) {
-    return TypeError("non_object_property_store", object, name);
+    return TypeError(MessageTemplate::kNonObjectPropertyStore, object, name);
   }
 
   // Check if the given name is an array index.
@@ -2730,8 +2729,9 @@ RUNTIME_FUNCTION(BinaryOpIC_MissWithAllocationSite) {
 }
 
 
-Code* CompareIC::GetRawUninitialized(Isolate* isolate, Token::Value op) {
-  CompareICStub stub(isolate, op, CompareICState::UNINITIALIZED,
+Code* CompareIC::GetRawUninitialized(Isolate* isolate, Token::Value op,
+                                     bool strong) {
+  CompareICStub stub(isolate, op, strong, CompareICState::UNINITIALIZED,
                      CompareICState::UNINITIALIZED,
                      CompareICState::UNINITIALIZED);
   Code* code = NULL;
@@ -2740,8 +2740,9 @@ Code* CompareIC::GetRawUninitialized(Isolate* isolate, Token::Value op) {
 }
 
 
-Handle<Code> CompareIC::GetUninitialized(Isolate* isolate, Token::Value op) {
-  CompareICStub stub(isolate, op, CompareICState::UNINITIALIZED,
+Handle<Code> CompareIC::GetUninitialized(Isolate* isolate, Token::Value op,
+                                         bool strong) {
+  CompareICStub stub(isolate, op, strong, CompareICState::UNINITIALIZED,
                      CompareICState::UNINITIALIZED,
                      CompareICState::UNINITIALIZED);
   return stub.GetCode();
@@ -2758,7 +2759,8 @@ Code* CompareIC::UpdateCaches(Handle<Object> x, Handle<Object> y) {
   CompareICState::State state = CompareICState::TargetState(
       old_stub.state(), old_stub.left(), old_stub.right(), op_,
       HasInlinedSmiCode(address()), x, y);
-  CompareICStub stub(isolate(), op_, new_left, new_right, state);
+  CompareICStub stub(isolate(), op_, old_stub.strong(), new_left, new_right,
+                     state);
   if (state == CompareICState::KNOWN_OBJECT) {
     stub.set_known_map(
         Handle<Map>(Handle<JSObject>::cast(x)->map(), isolate()));

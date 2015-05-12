@@ -157,6 +157,7 @@ enum BindingFlags {
   V(ERROR_MESSAGE_FOR_CODE_GEN_FROM_STRINGS_INDEX, Object,                     \
     error_message_for_code_gen_from_strings)                                   \
   V(PROMISE_STATUS_INDEX, Symbol, promise_status)                              \
+  V(PROMISE_VALUE_INDEX, Symbol, promise_value)                                \
   V(PROMISE_CREATE_INDEX, JSFunction, promise_create)                          \
   V(PROMISE_RESOLVE_INDEX, JSFunction, promise_resolve)                        \
   V(PROMISE_REJECT_INDEX, JSFunction, promise_reject)                          \
@@ -185,7 +186,8 @@ enum BindingFlags {
   V(MAP_ITERATOR_MAP_INDEX, Map, map_iterator_map)                             \
   V(SET_ITERATOR_MAP_INDEX, Map, set_iterator_map)                             \
   V(ARRAY_VALUES_ITERATOR_INDEX, JSFunction, array_values_iterator)            \
-  V(SCRIPT_CONTEXT_TABLE_INDEX, ScriptContextTable, script_context_table)
+  V(SCRIPT_CONTEXT_TABLE_INDEX, ScriptContextTable, script_context_table)      \
+  V(BUILTIN_EXPORTS_OBJECT_INDEX, Object, builtin_exports_object)
 
 
 // A table of all script contexts. Every loaded top-level script with top-level
@@ -393,6 +395,7 @@ class Context: public FixedArray {
     RUN_MICROTASKS_INDEX,
     ENQUEUE_MICROTASK_INDEX,
     PROMISE_STATUS_INDEX,
+    PROMISE_VALUE_INDEX,
     PROMISE_CREATE_INDEX,
     PROMISE_RESOLVE_INDEX,
     PROMISE_REJECT_INDEX,
@@ -422,6 +425,7 @@ class Context: public FixedArray {
     SCRIPT_CONTEXT_TABLE_INDEX,
     MAP_CACHE_INDEX,
     TO_LENGTH_FUN_INDEX,
+    BUILTIN_EXPORTS_OBJECT_INDEX,
 
     // Properties from here are treated as weak references by the full GC.
     // Scavenge treats them as strong references.

@@ -1056,6 +1056,7 @@ class Object {
   INLINE(bool IsOrderedHashSet() const);
   INLINE(bool IsOrderedHashMap() const);
   bool IsCallable() const;
+  static bool IsPromise(Handle<Object> object);
 
   // Oddball testing.
   INLINE(bool IsUndefined() const);
@@ -1671,6 +1672,11 @@ class JSReceiver: public HeapObject {
   MUST_USE_RESULT static inline Maybe<PropertyAttributes>
       GetOwnElementAttribute(Handle<JSReceiver> object, uint32_t index);
 
+  static Handle<Object> GetDataProperty(Handle<JSReceiver> object,
+                                        Handle<Name> key);
+  static Handle<Object> GetDataProperty(LookupIterator* it);
+
+
   // Retrieves a permanent object identity hash code. The undefined value might
   // be returned in case no hash was created yet.
   inline Object* GetIdentityHash();
@@ -1694,9 +1700,6 @@ class JSReceiver: public HeapObject {
 
 // Forward declaration for JSObject::GetOrCreateHiddenPropertiesHashTable.
 class ObjectHashTable;
-
-// Forward declaration for JSObject::Copy.
-class AllocationSite;
 
 
 // The JSObject describes real heap allocated JavaScript objects with
@@ -2158,7 +2161,6 @@ class JSObject: public JSReceiver {
   // Copy object.
   enum DeepCopyHints { kNoHints = 0, kObjectIsShallow = 1 };
 
-  static Handle<JSObject> Copy(Handle<JSObject> object);
   MUST_USE_RESULT static MaybeHandle<JSObject> DeepCopy(
       Handle<JSObject> object,
       AllocationSiteUsageContext* site_context,
@@ -2166,10 +2168,6 @@ class JSObject: public JSReceiver {
   MUST_USE_RESULT static MaybeHandle<JSObject> DeepWalk(
       Handle<JSObject> object,
       AllocationSiteCreationContext* site_context);
-
-  static Handle<Object> GetDataProperty(Handle<JSObject> object,
-                                        Handle<Name> key);
-  static Handle<Object> GetDataProperty(LookupIterator* it);
 
   DECLARE_CAST(JSObject)
 
@@ -10579,6 +10577,9 @@ class AccessorInfo: public Struct {
   inline bool all_can_write();
   inline void set_all_can_write(bool value);
 
+  inline bool is_special_data_property();
+  inline void set_is_special_data_property(bool value);
+
   inline PropertyAttributes property_attributes();
   inline void set_property_attributes(PropertyAttributes attributes);
 
@@ -10611,7 +10612,8 @@ class AccessorInfo: public Struct {
   // Bit positions in flag.
   static const int kAllCanReadBit = 0;
   static const int kAllCanWriteBit = 1;
-  class AttributesField: public BitField<PropertyAttributes, 2, 3> {};
+  static const int kSpecialDataProperty = 2;
+  class AttributesField : public BitField<PropertyAttributes, 3, 3> {};
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(AccessorInfo);
 };

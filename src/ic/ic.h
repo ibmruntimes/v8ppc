@@ -7,6 +7,7 @@
 
 #include "src/ic/ic-state.h"
 #include "src/macro-assembler.h"
+#include "src/messages.h"
 
 namespace v8 {
 namespace internal {
@@ -166,8 +167,8 @@ class IC {
   void TraceIC(const char* type, Handle<Object> name, State old_state,
                State new_state);
 
-  MaybeHandle<Object> TypeError(const char* type, Handle<Object> object,
-                                Handle<Object> key);
+  MaybeHandle<Object> TypeError(MessageTemplate::Template,
+                                Handle<Object> object, Handle<Object> key);
   MaybeHandle<Object> ReferenceError(Handle<Name> name);
 
   // Access the target code for the given IC address.
@@ -747,7 +748,8 @@ class CompareIC : public IC {
   static Condition ComputeCondition(Token::Value op);
 
   // Factory method for getting an uninitialized compare stub.
-  static Handle<Code> GetUninitialized(Isolate* isolate, Token::Value op);
+  static Handle<Code> GetUninitialized(Isolate* isolate, Token::Value op,
+                                       bool strong);
 
  private:
   static bool HasInlinedSmiCode(Address address);
@@ -755,7 +757,8 @@ class CompareIC : public IC {
   bool strict() const { return op_ == Token::EQ_STRICT; }
   Condition GetCondition() const { return ComputeCondition(op_); }
 
-  static Code* GetRawUninitialized(Isolate* isolate, Token::Value op);
+  static Code* GetRawUninitialized(Isolate* isolate, Token::Value op,
+                                   bool strong);
 
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
   static void Clear(Isolate* isolate, Address address, Code* target,
