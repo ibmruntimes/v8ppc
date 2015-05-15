@@ -280,9 +280,7 @@ Handle<String> Isolate::StackTraceString() {
 }
 
 
-void Isolate::PushStackTraceAndDie(unsigned int magic,
-                                   Object* object,
-                                   Map* map,
+void Isolate::PushStackTraceAndDie(unsigned int magic, void* ptr1, void* ptr2,
                                    unsigned int magic2) {
   const int kMaxStackTraceSize = 32 * KB;
   Handle<String> trace = StackTraceString();
@@ -291,9 +289,8 @@ void Isolate::PushStackTraceAndDie(unsigned int magic,
   String::WriteToFlat(*trace, buffer, 0, length);
   buffer[length] = '\0';
   // TODO(dcarney): convert buffer to utf8?
-  base::OS::PrintError("Stacktrace (%x-%x) %p %p: %s\n", magic, magic2,
-                       static_cast<void*>(object), static_cast<void*>(map),
-                       reinterpret_cast<char*>(buffer));
+  base::OS::PrintError("Stacktrace (%x-%x) %p %p: %s\n", magic, magic2, ptr1,
+                       ptr2, reinterpret_cast<char*>(buffer));
   base::OS::Abort();
 }
 
@@ -747,16 +744,9 @@ static inline AccessCheckInfo* GetAccessCheckInfo(Isolate* isolate,
 }
 
 
-static void ThrowAccessCheckError(Isolate* isolate) {
-  Handle<String> message =
-      isolate->factory()->InternalizeUtf8String("no access");
-  isolate->ScheduleThrow(*isolate->factory()->NewTypeError(message));
-}
-
-
 void Isolate::ReportFailedAccessCheck(Handle<JSObject> receiver) {
   if (!thread_local_top()->failed_access_check_callback_) {
-    return ThrowAccessCheckError(this);
+    return ScheduleThrow(*factory()->NewTypeError(MessageTemplate::kNoAccess));
   }
 
   DCHECK(receiver->IsAccessCheckNeeded());
@@ -769,7 +759,8 @@ void Isolate::ReportFailedAccessCheck(Handle<JSObject> receiver) {
     AccessCheckInfo* access_check_info = GetAccessCheckInfo(this, receiver);
     if (!access_check_info) {
       AllowHeapAllocation doesnt_matter_anymore;
-      return ThrowAccessCheckError(this);
+      return ScheduleThrow(
+          *factory()->NewTypeError(MessageTemplate::kNoAccess));
     }
     data = handle(access_check_info->data(), this);
   }

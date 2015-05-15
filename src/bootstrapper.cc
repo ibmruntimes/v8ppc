@@ -705,7 +705,7 @@ Handle<Map> Genesis::CreateStrongFunctionMap(
   map->set_function_with_prototype(is_constructor);
   Map::SetPrototype(map, empty_function);
   map->set_is_extensible(is_constructor);
-  // TODO(rossberg): mark strong
+  map->set_is_strong(true);
   return map;
 }
 
@@ -2831,6 +2831,7 @@ void Genesis::TransferNamedProperties(Handle<JSObject> from,
         if (value->IsPropertyCell()) {
           value = handle(PropertyCell::cast(*value)->value(), isolate());
         }
+        if (value->IsTheHole()) continue;
         PropertyDetails details = properties->DetailsAt(i);
         DCHECK_EQ(kData, details.kind());
         JSObject::AddProperty(to, key, value, details.attributes());

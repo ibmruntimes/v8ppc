@@ -594,11 +594,6 @@ void JSEntryStub::FinishCode(Handle<Code> code) {
 }
 
 
-void LoadFastElementStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
-  descriptor->Initialize(FUNCTION_ADDR(KeyedLoadIC_MissFromStubFailure));
-}
-
-
 void LoadDictionaryElementStub::InitializeDescriptor(
     CodeStubDescriptor* descriptor) {
   descriptor->Initialize(FUNCTION_ADDR(KeyedLoadIC_MissFromStubFailure));
@@ -623,10 +618,7 @@ void HandlerStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
 
 CallInterfaceDescriptor HandlerStub::GetCallInterfaceDescriptor() {
   if (kind() == Code::LOAD_IC || kind() == Code::KEYED_LOAD_IC) {
-    if (FLAG_vector_ics) {
-      return VectorLoadICDescriptor(isolate());
-    }
-    return LoadDescriptor(isolate());
+    return VectorLoadICDescriptor(isolate());
   } else {
     DCHECK_EQ(Code::STORE_IC, kind());
     return StoreDescriptor(isolate());
@@ -649,9 +641,6 @@ void ElementsTransitionAndStoreStub::InitializeDescriptor(
 CallInterfaceDescriptor StoreTransitionStub::GetCallInterfaceDescriptor() {
   return StoreTransitionDescriptor(isolate());
 }
-
-
-void MegamorphicLoadStub::InitializeDescriptor(CodeStubDescriptor* d) {}
 
 
 void FastNewClosureStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {

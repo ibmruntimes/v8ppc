@@ -669,7 +669,7 @@ bool LCodeGen::GeneratePrologue() {
     // global proxy when called as functions (without an explicit receiver
     // object).
     if (is_sloppy(info_->language_mode()) && info()->MayUseThis() &&
-        !info()->is_native() && info()->scope()->has_this_declaration()) {
+        !info_->is_native()) {
       Label ok;
       int receiver_offset = info_->scope()->num_parameters() * kXRegSize;
       __ Peek(x10, receiver_offset);
@@ -728,9 +728,8 @@ bool LCodeGen::GeneratePrologue() {
     __ Str(x0, MemOperand(fp, StandardFrameConstants::kContextOffset));
     // Copy any necessary parameters into the context.
     int num_parameters = scope()->num_parameters();
-    int first_parameter = scope()->has_this_declaration() ? -1 : 0;
-    for (int i = first_parameter; i < num_parameters; i++) {
-      Variable* var = (i == -1) ? scope()->receiver() : scope()->parameter(i);
+    for (int i = 0; i < num_parameters; i++) {
+      Variable* var = scope()->parameter(i);
       if (var->IsContextSlot()) {
         Register value = x0;
         Register scratch = x3;
@@ -744,8 +743,9 @@ bool LCodeGen::GeneratePrologue() {
         __ Str(value, target);
         // Update the write barrier. This clobbers value and scratch.
         if (need_write_barrier) {
-          __ RecordWriteContextSlot(cp, target.offset(), value, scratch,
-                                    GetLinkRegisterState(), kSaveFPRegs);
+          __ RecordWriteContextSlot(cp, static_cast<int>(target.offset()),
+                                    value, scratch, GetLinkRegisterState(),
+                                    kSaveFPRegs);
         } else if (FLAG_debug_code) {
           Label done;
           __ JumpIfInNewSpace(cp, &done);
@@ -2019,29 +2019,6 @@ void LCodeGen::CallKnownFunction(Handle<JSFunction> function,
     ParameterCount expected(formal_parameter_count);
     __ InvokeFunction(function_reg, expected, count, CALL_FUNCTION, generator);
   }
-}
-
-
-void LCodeGen::DoTailCallThroughMegamorphicCache(
-    LTailCallThroughMegamorphicCache* instr) {
-  Register receiver = ToRegister(instr->receiver());
-  Register name = ToRegister(instr->name());
-  DCHECK(receiver.is(LoadDescriptor::ReceiverRegister()));
-  DCHECK(name.is(LoadDescriptor::NameRegister()));
-  DCHECK(receiver.is(x1));
-  DCHECK(name.is(x2));
-  Register scratch = x4;
-  Register extra = x5;
-  Register extra2 = x6;
-  Register extra3 = x7;
-
-  // The probe will tail call to a handler if found.
-  isolate()->stub_cache()->GenerateProbe(
-      masm(), Code::LOAD_IC, instr->hydrogen()->flags(), false, receiver, name,
-      scratch, extra, extra2, extra3);
-
-  // Tail call to miss if we ended up here.
-  LoadIC::GenerateMiss(masm());
 }
 
 
@@ -3363,7 +3340,6 @@ void LCodeGen::DoLoadFunctionPrototype(LLoadFunctionPrototype* instr) {
 
 template <class T>
 void LCodeGen::EmitVectorLoadICRegisters(T* instr) {
-  DCHECK(FLAG_vector_ics);
   Register vector_register = ToRegister(instr->temp_vector());
   Register slot_register = VectorLoadICDescriptor::SlotRegister();
   DCHECK(vector_register.is(VectorLoadICDescriptor::VectorRegister()));
@@ -3385,9 +3361,7 @@ void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
              .is(LoadDescriptor::ReceiverRegister()));
   DCHECK(ToRegister(instr->result()).Is(x0));
   __ Mov(LoadDescriptor::NameRegister(), Operand(instr->name()));
-  if (FLAG_vector_ics) {
-    EmitVectorLoadICRegisters<LLoadGlobalGeneric>(instr);
-  }
+  EmitVectorLoadICRegisters<LLoadGlobalGeneric>(instr);
   ContextualMode mode = instr->for_typeof() ? NOT_CONTEXTUAL : CONTEXTUAL;
   Handle<Code> ic = CodeFactory::LoadICInOptimizedCode(isolate(), mode,
                                                        PREMONOMORPHIC).code();
@@ -3714,9 +3688,7 @@ void LCodeGen::DoLoadNamedGeneric(LLoadNamedGeneric* instr) {
   // LoadIC expects name and receiver in registers.
   DCHECK(ToRegister(instr->object()).is(LoadDescriptor::ReceiverRegister()));
   __ Mov(LoadDescriptor::NameRegister(), Operand(instr->name()));
-  if (FLAG_vector_ics) {
-    EmitVectorLoadICRegisters<LLoadNamedGeneric>(instr);
-  }
+  EmitVectorLoadICRegisters<LLoadNamedGeneric>(instr);
 
   Handle<Code> ic = CodeFactory::LoadICInOptimizedCode(
                         isolate(), NOT_CONTEXTUAL,
@@ -5139,14 +5111,9 @@ void LCodeGen::DoStoreContextSlot(LStoreContextSlot* instr) {
     SmiCheck check_needed =
         instr->hydrogen()->value()->type().IsHeapObject()
             ? OMIT_SMI_CHECK : INLINE_SMI_CHECK;
-    __ RecordWriteContextSlot(context,
-                              target.offset(),
-                              value,
-                              scratch,
-                              GetLinkRegisterState(),
-                              kSaveFPRegs,
-                              EMIT_REMEMBERED_SET,
-                              check_needed);
+    __ RecordWriteContextSlot(context, static_cast<int>(target.offset()), value,
+                              scratch, GetLinkRegisterState(), kSaveFPRegs,
+                              EMIT_REMEMBERED_SET, check_needed);
   }
   __ Bind(&skip_assignment);
 }

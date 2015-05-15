@@ -129,8 +129,8 @@ bool LCodeGen::GeneratePrologue() {
 
     // Sloppy mode functions need to replace the receiver with the global proxy
     // when called as functions (without an explicit receiver object).
-    if (is_sloppy(info()->language_mode()) && info()->MayUseThis() &&
-        !info()->is_native() && info()->scope()->has_this_declaration()) {
+    if (is_sloppy(info_->language_mode()) && info()->MayUseThis() &&
+        !info_->is_native()) {
       Label ok;
       StackArgumentsAccessor args(rsp, scope()->num_parameters());
       __ movp(rcx, args.GetReceiverOperand());
@@ -213,9 +213,8 @@ bool LCodeGen::GeneratePrologue() {
 
     // Copy any necessary parameters into the context.
     int num_parameters = scope()->num_parameters();
-    int first_parameter = scope()->has_this_declaration() ? -1 : 0;
-    for (int i = first_parameter; i < num_parameters; i++) {
-      Variable* var = (i == -1) ? scope()->receiver() : scope()->parameter(i);
+    for (int i = 0; i < num_parameters; i++) {
+      Variable* var = scope()->parameter(i);
       if (var->IsContextSlot()) {
         int parameter_offset = StandardFrameConstants::kCallerSPOffset +
             (num_parameters - 1 - i) * kPointerSize;
@@ -2890,7 +2889,6 @@ void LCodeGen::DoReturn(LReturn* instr) {
 
 template <class T>
 void LCodeGen::EmitVectorLoadICRegisters(T* instr) {
-  DCHECK(FLAG_vector_ics);
   Register vector_register = ToRegister(instr->temp_vector());
   Register slot_register = VectorLoadICDescriptor::SlotRegister();
   DCHECK(vector_register.is(VectorLoadICDescriptor::VectorRegister()));
@@ -2913,9 +2911,7 @@ void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
   DCHECK(ToRegister(instr->result()).is(rax));
 
   __ Move(LoadDescriptor::NameRegister(), instr->name());
-  if (FLAG_vector_ics) {
-    EmitVectorLoadICRegisters<LLoadGlobalGeneric>(instr);
-  }
+  EmitVectorLoadICRegisters<LLoadGlobalGeneric>(instr);
   ContextualMode mode = instr->for_typeof() ? NOT_CONTEXTUAL : CONTEXTUAL;
   Handle<Code> ic = CodeFactory::LoadICInOptimizedCode(isolate(), mode,
                                                        PREMONOMORPHIC).code();
@@ -3032,9 +3028,7 @@ void LCodeGen::DoLoadNamedGeneric(LLoadNamedGeneric* instr) {
   DCHECK(ToRegister(instr->result()).is(rax));
 
   __ Move(LoadDescriptor::NameRegister(), instr->name());
-  if (FLAG_vector_ics) {
-    EmitVectorLoadICRegisters<LLoadNamedGeneric>(instr);
-  }
+  EmitVectorLoadICRegisters<LLoadNamedGeneric>(instr);
   Handle<Code> ic = CodeFactory::LoadICInOptimizedCode(
                         isolate(), NOT_CONTEXTUAL,
                         instr->hydrogen()->initialization_state()).code();
@@ -3561,24 +3555,6 @@ void LCodeGen::CallKnownFunction(Handle<JSFunction> function,
     ParameterCount expected(formal_parameter_count);
     __ InvokeFunction(function_reg, expected, count, CALL_FUNCTION, generator);
   }
-}
-
-
-void LCodeGen::DoTailCallThroughMegamorphicCache(
-    LTailCallThroughMegamorphicCache* instr) {
-  Register receiver = ToRegister(instr->receiver());
-  Register name = ToRegister(instr->name());
-  DCHECK(receiver.is(LoadDescriptor::ReceiverRegister()));
-  DCHECK(name.is(LoadDescriptor::NameRegister()));
-  Register scratch = rdi;
-  DCHECK(!scratch.is(receiver) && !scratch.is(name));
-
-  // The probe will tail call to a handler if found.
-  isolate()->stub_cache()->GenerateProbe(masm(), Code::LOAD_IC,
-                                         instr->hydrogen()->flags(), false,
-                                         receiver, name, scratch, no_reg);
-
-  LoadIC::GenerateMiss(masm());
 }
 
 

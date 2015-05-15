@@ -76,8 +76,6 @@ namespace internal {
   V(KeyedLoadGeneric)                       \
   V(LoadScriptContextField)                 \
   V(LoadDictionaryElement)                  \
-  V(LoadFastElement)                        \
-  V(MegamorphicLoad)                        \
   V(NameDictionaryLookup)                   \
   V(NumberToString)                         \
   V(Typeof)                                 \
@@ -95,6 +93,7 @@ namespace internal {
   /* IC Handler stubs */                    \
   V(ArrayBufferViewLoadField)               \
   V(LoadConstant)                           \
+  V(LoadFastElement)                        \
   V(LoadField)                              \
   V(KeyedLoadSloppyArguments)               \
   V(StoreField)                             \
@@ -987,10 +986,7 @@ class FunctionPrototypeStub : public PlatformCodeStub {
   // translated to a hydrogen code stub, a new CallInterfaceDescriptor
   // should be created that just uses that register for more efficient code.
   CallInterfaceDescriptor GetCallInterfaceDescriptor() override {
-    if (FLAG_vector_ics) {
-      return VectorLoadICDescriptor(isolate());
-    }
-    return LoadDescriptor(isolate());
+    return VectorLoadICDescriptor(isolate());
   }
 
   DEFINE_PLATFORM_CODE_STUB(FunctionPrototype, PlatformCodeStub);
@@ -2081,10 +2077,7 @@ class LoadDictionaryElementStub : public HydrogenCodeStub {
       : HydrogenCodeStub(isolate) {}
 
   CallInterfaceDescriptor GetCallInterfaceDescriptor() override {
-    if (FLAG_vector_ics) {
-      return VectorLoadICDescriptor(isolate());
-    }
-    return LoadDescriptor(isolate());
+    return VectorLoadICDescriptor(isolate());
   }
 
   DEFINE_HYDROGEN_CODE_STUB(LoadDictionaryElement, HydrogenCodeStub);
@@ -2175,32 +2168,6 @@ class CallIC_ArrayTrampolineStub : public CallICTrampolineStub {
 
  private:
   DEFINE_PLATFORM_CODE_STUB(CallIC_ArrayTrampoline, CallICTrampolineStub);
-};
-
-
-class MegamorphicLoadStub : public HydrogenCodeStub {
- public:
-  MegamorphicLoadStub(Isolate* isolate, const LoadICState& state)
-      : HydrogenCodeStub(isolate) {
-    set_sub_minor_key(state.GetExtraICState());
-  }
-
-  Code::Kind GetCodeKind() const override { return Code::LOAD_IC; }
-
-  InlineCacheState GetICState() const final { return MEGAMORPHIC; }
-
-  ExtraICState GetExtraICState() const final {
-    return static_cast<ExtraICState>(sub_minor_key());
-  }
-
-  CallInterfaceDescriptor GetCallInterfaceDescriptor() override {
-    if (FLAG_vector_ics) {
-      return VectorLoadICDescriptor(isolate());
-    }
-    return LoadDescriptor(isolate());
-  }
-
-  DEFINE_HYDROGEN_CODE_STUB(MegamorphicLoad, HydrogenCodeStub);
 };
 
 
@@ -2357,17 +2324,19 @@ class StoreScriptContextFieldStub : public ScriptContextFieldStub {
 };
 
 
-class LoadFastElementStub : public HydrogenCodeStub {
+class LoadFastElementStub : public HandlerStub {
  public:
   LoadFastElementStub(Isolate* isolate, bool is_js_array,
                       ElementsKind elements_kind,
                       bool convert_hole_to_undefined = false)
-      : HydrogenCodeStub(isolate) {
+      : HandlerStub(isolate) {
     set_sub_minor_key(
         ElementsKindBits::encode(elements_kind) |
         IsJSArrayBits::encode(is_js_array) |
         CanConvertHoleToUndefined::encode(convert_hole_to_undefined));
   }
+
+  Code::Kind kind() const override { return Code::KEYED_LOAD_IC; }
 
   bool is_js_array() const { return IsJSArrayBits::decode(sub_minor_key()); }
   bool convert_hole_to_undefined() const {
@@ -2383,14 +2352,7 @@ class LoadFastElementStub : public HydrogenCodeStub {
   class IsJSArrayBits: public BitField<bool, 8, 1> {};
   class CanConvertHoleToUndefined : public BitField<bool, 9, 1> {};
 
-  CallInterfaceDescriptor GetCallInterfaceDescriptor() override {
-    if (FLAG_vector_ics) {
-      return VectorLoadICDescriptor(isolate());
-    }
-    return LoadDescriptor(isolate());
-  }
-
-  DEFINE_HYDROGEN_CODE_STUB(LoadFastElement, HydrogenCodeStub);
+  DEFINE_HANDLER_CODE_STUB(LoadFastElement, HandlerStub);
 };
 
 

@@ -1419,7 +1419,8 @@ void HeapObject::HeapObjectShortPrint(std::ostream& os) {  // NOLINT
   }
   switch (map()->instance_type()) {
     case MAP_TYPE:
-      os << "<Map(elements=" << Map::cast(this)->elements_kind() << ")>";
+      os << "<Map(" << ElementsKindToString(Map::cast(this)->elements_kind())
+         << ")>";
       break;
     case FIXED_ARRAY_TYPE:
       os << "<FixedArray[" << FixedArray::cast(this)->length() << "]>";
@@ -2971,6 +2972,13 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
       split_kind, old_descriptors->GetKey(split_nof), split_attributes,
       *new_descriptors, *new_layout_descriptor);
 
+  if (from_kind != to_kind) {
+    // There was an elements kind change in the middle of transition tree and
+    // we reconstructed the tree so that all elements kind transitions are
+    // done at the beginning, therefore the |old_map| is no longer stable.
+    old_map->NotifyLeafMapLayoutChange();
+  }
+
   // If |transition_target_deprecated| is true then the transition array
   // already contains entry for given descriptor. This means that the transition
   // could be inserted regardless of whether transitions array is full or not.
@@ -3278,6 +3286,11 @@ MaybeHandle<Object> Object::SetSuperProperty(LookupIterator* it,
   MaybeHandle<Object> result =
       SetPropertyInternal(it, value, language_mode, store_mode, &found);
   if (found) return result;
+
+  if (!it->GetReceiver()->IsJSReceiver()) {
+    return WriteToReadOnlyProperty(it->isolate(), it->GetReceiver(), it->name(),
+                                   value, language_mode);
+  }
 
   LookupIterator own_lookup(it->GetReceiver(), it->name(), LookupIterator::OWN);
 
@@ -14720,11 +14733,12 @@ Handle<Derived> HashTable<Derived, Shape, Key>::New(
     PretenureFlag pretenure) {
   DCHECK(0 <= at_least_space_for);
   DCHECK(!capacity_option || base::bits::IsPowerOfTwo32(at_least_space_for));
-  int capacity = (capacity_option == USE_CUSTOM_MINIMUM_CAPACITY)
-                     ? at_least_space_for
-                     : isolate->serializer_enabled()
-                           ? ComputeCapacityForSerialization(at_least_space_for)
-                           : ComputeCapacity(at_least_space_for);
+  int capacity =
+      (capacity_option == USE_CUSTOM_MINIMUM_CAPACITY)
+          ? at_least_space_for
+          : isolate->serializer_enabled() && isolate->bootstrapper()->IsActive()
+                ? ComputeCapacityForSerialization(at_least_space_for)
+                : ComputeCapacity(at_least_space_for);
   if (capacity > HashTable::kMaxCapacity) {
     v8::internal::Heap::FatalProcessOutOfMemory("invalid table size", true);
   }

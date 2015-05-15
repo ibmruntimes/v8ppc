@@ -118,8 +118,7 @@ class IC {
   }
 
   static bool ICUseVector(Code::Kind kind) {
-    return (FLAG_vector_ics &&
-            (kind == Code::LOAD_IC || kind == Code::KEYED_LOAD_IC)) ||
+    return kind == Code::LOAD_IC || kind == Code::KEYED_LOAD_IC ||
            kind == Code::CALL_IC;
   }
 
@@ -386,7 +385,7 @@ class LoadIC : public IC {
 
   LoadIC(FrameDepth depth, Isolate* isolate, FeedbackNexus* nexus = NULL)
       : IC(depth, isolate, nexus) {
-    DCHECK(!FLAG_vector_ics || nexus != NULL);
+    DCHECK(nexus != NULL);
     DCHECK(IsLoadStub());
   }
 
@@ -412,9 +411,6 @@ class LoadIC : public IC {
 
   // Code generator routines.
   static void GenerateInitialize(MacroAssembler* masm) { GenerateMiss(masm); }
-  static void GeneratePreMonomorphic(MacroAssembler* masm) {
-    GenerateMiss(masm);
-  }
   static void GenerateMiss(MacroAssembler* masm);
   static void GenerateNormal(MacroAssembler* masm);
   static void GenerateRuntimeGetProperty(MacroAssembler* masm);
@@ -423,8 +419,6 @@ class LoadIC : public IC {
                                       ExtraICState extra_state);
   static Handle<Code> initialize_stub_in_optimized_code(
       Isolate* isolate, ExtraICState extra_state, State initialization_state);
-  static Handle<Code> load_global(Isolate* isolate, Handle<GlobalObject> global,
-                                  Handle<String> name);
 
   MUST_USE_RESULT MaybeHandle<Object> Load(Handle<Object> object,
                                            Handle<Name> name);
@@ -454,10 +448,6 @@ class LoadIC : public IC {
                                       CacheHolderFlag cache_holder) override;
 
  private:
-  virtual Handle<Code> pre_monomorphic_stub() const;
-  static Handle<Code> pre_monomorphic_stub(Isolate* isolate,
-                                           ExtraICState extra_state);
-
   Handle<Code> SimpleFieldLoad(FieldIndex index);
 
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
@@ -490,7 +480,7 @@ class KeyedLoadIC : public LoadIC {
   KeyedLoadIC(FrameDepth depth, Isolate* isolate,
               KeyedLoadICNexus* nexus = NULL)
       : LoadIC(depth, isolate, nexus) {
-    DCHECK(!FLAG_vector_ics || nexus != NULL);
+    DCHECK(nexus != NULL);
     DCHECK(target()->is_keyed_load_stub());
   }
 
@@ -501,9 +491,6 @@ class KeyedLoadIC : public LoadIC {
   static void GenerateMiss(MacroAssembler* masm);
   static void GenerateRuntimeGetProperty(MacroAssembler* masm);
   static void GenerateInitialize(MacroAssembler* masm) { GenerateMiss(masm); }
-  static void GeneratePreMonomorphic(MacroAssembler* masm) {
-    GenerateMiss(masm);
-  }
   static void GenerateMegamorphic(MacroAssembler* masm);
 
   // Bit mask to be tested against bit field for the cases when
@@ -517,16 +504,12 @@ class KeyedLoadIC : public LoadIC {
   static Handle<Code> initialize_stub_in_optimized_code(
       Isolate* isolate, State initialization_state);
   static Handle<Code> ChooseMegamorphicStub(Isolate* isolate);
-  static Handle<Code> pre_monomorphic_stub(Isolate* isolate);
 
   static void Clear(Isolate* isolate, Code* host, KeyedLoadICNexus* nexus);
 
  protected:
   // receiver is HeapObject because it could be a String or a JSObject
   Handle<Code> LoadElementStub(Handle<HeapObject> receiver);
-  virtual Handle<Code> pre_monomorphic_stub() const {
-    return pre_monomorphic_stub(isolate());
-  }
 
  private:
 #if defined(V8_PPC_CONSTANT_POOL_OPT)

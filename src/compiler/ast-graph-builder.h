@@ -244,7 +244,7 @@ class AstGraphBuilder : public AstVisitor {
   Node* BuildPatchReceiverToGlobalProxy(Node* receiver);
 
   // Builders to create local function, script and block contexts.
-  Node* BuildLocalFunctionContext(Node* context, Node* patched_receiver);
+  Node* BuildLocalFunctionContext(Node* context);
   Node* BuildLocalScriptContext(Scope* scope);
   Node* BuildLocalBlockContext(Scope* scope);
 
@@ -255,14 +255,15 @@ class AstGraphBuilder : public AstVisitor {
   Node* BuildRestArgumentsArray(Variable* rest, int index);
 
   // Builders for variable load and assignment.
-  Node* BuildVariableAssignment(Variable* var, Node* value, Token::Value op,
-                                BailoutId bailout_id,
-                                OutputFrameStateCombine state_combine =
-                                    OutputFrameStateCombine::Ignore());
+  Node* BuildVariableAssignment(
+      FrameStateBeforeAndAfter& states, Variable* var, Node* value,
+      Token::Value op, BailoutId bailout_id,
+      OutputFrameStateCombine combine = OutputFrameStateCombine::Ignore());
   Node* BuildVariableDelete(Variable* var, BailoutId bailout_id,
-                            OutputFrameStateCombine state_combine);
-  Node* BuildVariableLoad(Variable* var, BailoutId bailout_id,
-                          const VectorSlotPair& feedback,
+                            OutputFrameStateCombine combine);
+  Node* BuildVariableLoad(FrameStateBeforeAndAfter& states, Variable* var,
+                          BailoutId bailout_id, const VectorSlotPair& feedback,
+                          OutputFrameStateCombine combine,
                           ContextualMode mode = CONTEXTUAL);
 
   // Builders for property loads and stores.

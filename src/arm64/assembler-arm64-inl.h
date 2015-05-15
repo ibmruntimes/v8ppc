@@ -1102,13 +1102,14 @@ Instr Assembler::SF(Register rd) {
 }
 
 
-Instr Assembler::ImmAddSub(int64_t imm) {
+Instr Assembler::ImmAddSub(int imm) {
   DCHECK(IsImmAddSub(imm));
   if (is_uint12(imm)) {  // No shift required.
-    return imm << ImmAddSub_offset;
+    imm <<= ImmAddSub_offset;
   } else {
-    return ((imm >> 12) << ImmAddSub_offset) | (1 << ShiftAddSub_offset);
+    imm = ((imm >> 12) << ImmAddSub_offset) | (1 << ShiftAddSub_offset);
   }
+  return imm;
 }
 
 
@@ -1257,13 +1258,13 @@ LSDataSize Assembler::CalcLSDataSize(LoadStoreOp op) {
 }
 
 
-Instr Assembler::ImmMoveWide(uint64_t imm) {
+Instr Assembler::ImmMoveWide(int imm) {
   DCHECK(is_uint16(imm));
   return imm << ImmMoveWide_offset;
 }
 
 
-Instr Assembler::ShiftMoveWide(int64_t shift) {
+Instr Assembler::ShiftMoveWide(int shift) {
   DCHECK(is_uint2(shift));
   return shift << ShiftMoveWide_offset;
 }

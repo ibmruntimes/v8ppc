@@ -363,19 +363,6 @@ class Expression : public AstNode {
   Bounds bounds() const { return bounds_; }
   void set_bounds(Bounds bounds) { bounds_ = bounds; }
 
-  // Whether the expression is parenthesized
-  bool is_single_parenthesized() const {
-    return IsSingleParenthesizedField::decode(bit_field_);
-  }
-  bool is_multi_parenthesized() const {
-    return IsMultiParenthesizedField::decode(bit_field_);
-  }
-  void increase_parenthesization_level() {
-    bit_field_ = IsMultiParenthesizedField::update(bit_field_,
-                                                   is_single_parenthesized());
-    bit_field_ = IsSingleParenthesizedField::update(bit_field_, true);
-  }
-
   // Type feedback information for assignments and properties.
   virtual bool IsMonomorphic() {
     UNREACHABLE();
@@ -427,8 +414,6 @@ class Expression : public AstNode {
   int base_id_;
   Bounds bounds_;
   class ToBooleanTypesField : public BitField16<byte, 0, 8> {};
-  class IsSingleParenthesizedField : public BitField16<bool, 8, 1> {};
-  class IsMultiParenthesizedField : public BitField16<bool, 9, 1> {};
   uint16_t bit_field_;
   // Ends with 16-bit field; deriving classes in turn begin with
   // 16-bit fields for optimum packing efficiency.
@@ -1607,7 +1592,7 @@ class VariableProxy final : public Expression {
   void BindTo(Variable* var);
 
   bool UsesVariableFeedbackSlot() const {
-    return FLAG_vector_ics && (var()->IsUnallocated() || var()->IsLookupSlot());
+    return var()->IsUnallocated() || var()->IsLookupSlot();
   }
 
   virtual FeedbackVectorRequirements ComputeFeedbackRequirements(
@@ -1706,7 +1691,7 @@ class Property final : public Expression {
 
   virtual FeedbackVectorRequirements ComputeFeedbackRequirements(
       Isolate* isolate, const ICSlotCache* cache) override {
-    return FeedbackVectorRequirements(0, FLAG_vector_ics ? 1 : 0);
+    return FeedbackVectorRequirements(0, 1);
   }
   void SetFirstFeedbackICSlot(FeedbackVectorICSlot slot,
                               ICSlotCache* cache) override {
@@ -1717,7 +1702,7 @@ class Property final : public Expression {
   }
 
   FeedbackVectorICSlot PropertyFeedbackSlot() const {
-    DCHECK(!FLAG_vector_ics || !property_feedback_slot_.IsInvalid());
+    DCHECK(!property_feedback_slot_.IsInvalid());
     return property_feedback_slot_;
   }
 
@@ -1954,9 +1939,7 @@ class CallRuntime final : public Expression {
   bool is_jsruntime() const { return function_ == NULL; }
 
   // Type feedback information.
-  bool HasCallRuntimeFeedbackSlot() const {
-    return FLAG_vector_ics && is_jsruntime();
-  }
+  bool HasCallRuntimeFeedbackSlot() const { return is_jsruntime(); }
   virtual FeedbackVectorRequirements ComputeFeedbackRequirements(
       Isolate* isolate, const ICSlotCache* cache) override {
     return FeedbackVectorRequirements(0, HasCallRuntimeFeedbackSlot() ? 1 : 0);
@@ -2346,9 +2329,7 @@ class Yield final : public Expression {
   }
 
   // Type feedback information.
-  bool HasFeedbackSlots() const {
-    return FLAG_vector_ics && (yield_kind() == kDelegating);
-  }
+  bool HasFeedbackSlots() const { return yield_kind() == kDelegating; }
   virtual FeedbackVectorRequirements ComputeFeedbackRequirements(
       Isolate* isolate, const ICSlotCache* cache) override {
     return FeedbackVectorRequirements(0, HasFeedbackSlots() ? 3 : 0);
@@ -2706,7 +2687,7 @@ class SuperReference final : public Expression {
   // Type feedback information.
   virtual FeedbackVectorRequirements ComputeFeedbackRequirements(
       Isolate* isolate, const ICSlotCache* cache) override {
-    return FeedbackVectorRequirements(0, FLAG_vector_ics ? 1 : 0);
+    return FeedbackVectorRequirements(0, 1);
   }
   void SetFirstFeedbackICSlot(FeedbackVectorICSlot slot,
                               ICSlotCache* cache) override {
@@ -2715,7 +2696,7 @@ class SuperReference final : public Expression {
   Code::Kind FeedbackICSlotKind(int index) override { return Code::LOAD_IC; }
 
   FeedbackVectorICSlot HomeObjectFeedbackSlot() {
-    DCHECK(!FLAG_vector_ics || !homeobject_feedback_slot_.IsInvalid());
+    DCHECK(!homeobject_feedback_slot_.IsInvalid());
     return homeobject_feedback_slot_;
   }
 
@@ -3367,6 +3348,7 @@ class AstNodeFactory final BASE_EMBEDDED {
                                   Variable::Kind variable_kind,
                                   int start_position = RelocInfo::kNoPosition,
                                   int end_position = RelocInfo::kNoPosition) {
+    DCHECK_NOT_NULL(name);
     return new (zone_)
         VariableProxy(zone_, name, variable_kind, start_position, end_position);
   }

@@ -2146,7 +2146,7 @@ void Assembler::sel(SecondaryField fmt, FPURegister fd, FPURegister fs,
   DCHECK((fmt == D) || (fmt == S));
 
   Instr instr = COP1 | fmt << kRsShift | ft.code() << kFtShift |
-      fs.code() << kFsShift | fd.code() << kFdShift | SEL;
+                fs.code() << kFsShift | fd.code() << kFdShift | SEL;
   emit(instr);
 }
 
@@ -2535,7 +2535,7 @@ void Assembler::ceil_l_d(FPURegister fd, FPURegister fs) {
 
 
 void Assembler::mina(SecondaryField fmt, FPURegister fd, FPURegister ft,
-    FPURegister fs) {
+                     FPURegister fs) {
   DCHECK(kArchVariant == kMips64r6);
   DCHECK((fmt == D) || (fmt == S));
   GenInstrRegister(COP1, fmt, ft, fs, fd, MINA);
@@ -2543,7 +2543,7 @@ void Assembler::mina(SecondaryField fmt, FPURegister fd, FPURegister ft,
 
 
 void Assembler::maxa(SecondaryField fmt, FPURegister fd, FPURegister ft,
-    FPURegister fs) {
+                     FPURegister fs) {
   DCHECK(kArchVariant == kMips64r6);
   DCHECK((fmt == D) || (fmt == S));
   GenInstrRegister(COP1, fmt, ft, fs, fd, MAXA);

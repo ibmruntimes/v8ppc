@@ -125,7 +125,7 @@ void FullCodeGenerator::Generate() {
   // global proxy when called as functions (without an explicit receiver
   // object).
   if (is_sloppy(info->language_mode()) && !info->is_native() &&
-      info->MayUseThis() && info->scope()->has_this_declaration()) {
+      info->MayUseThis()) {
     Label ok;
     int receiver_offset = info->scope()->num_parameters() * kXRegSize;
     __ Peek(x10, receiver_offset);
@@ -217,9 +217,8 @@ void FullCodeGenerator::Generate() {
     __ Str(x0, MemOperand(fp, StandardFrameConstants::kContextOffset));
     // Copy any necessary parameters into the context.
     int num_parameters = info->scope()->num_parameters();
-    int first_parameter = info->scope()->has_this_declaration() ? -1 : 0;
-    for (int i = first_parameter; i < num_parameters; i++) {
-      Variable* var = (i == -1) ? scope()->receiver() : scope()->parameter(i);
+    for (int i = 0; i < num_parameters; i++) {
+      Variable* var = scope()->parameter(i);
       if (var->IsContextSlot()) {
         int parameter_offset = StandardFrameConstants::kCallerSPOffset +
             (num_parameters - 1 - i) * kPointerSize;
@@ -231,8 +230,8 @@ void FullCodeGenerator::Generate() {
 
         // Update the write barrier.
         if (need_write_barrier) {
-          __ RecordWriteContextSlot(
-              cp, target.offset(), x10, x11, kLRHasBeenSaved, kDontSaveFPRegs);
+          __ RecordWriteContextSlot(cp, static_cast<int>(target.offset()), x10,
+                                    x11, kLRHasBeenSaved, kDontSaveFPRegs);
         } else if (FLAG_debug_code) {
           Label done;
           __ JumpIfInNewSpace(cp, &done);
@@ -405,7 +404,8 @@ void FullCodeGenerator::EmitBackEdgeBookkeeping(IterationStatement* stmt,
   // we add kCodeSizeMultiplier/2 to the distance (equivalent to adding 0.5 to
   // the result).
   int distance =
-    masm_->SizeOfCodeGeneratedSince(back_edge_target) + kCodeSizeMultiplier / 2;
+      static_cast<int>(masm_->SizeOfCodeGeneratedSince(back_edge_target) +
+                       kCodeSizeMultiplier / 2);
   int weight = Min(kMaxBackEdgeWeight,
                    Max(1, distance / kCodeSizeMultiplier));
   EmitProfilingCounterDecrement(weight);
@@ -791,12 +791,8 @@ void FullCodeGenerator::SetVar(Variable* var,
   // Emit the write barrier code if the location is in the heap.
   if (var->IsContextSlot()) {
     // scratch0 contains the correct context.
-    __ RecordWriteContextSlot(scratch0,
-                              location.offset(),
-                              src,
-                              scratch1,
-                              kLRHasBeenSaved,
-                              kDontSaveFPRegs);
+    __ RecordWriteContextSlot(scratch0, static_cast<int>(location.offset()),
+                              src, scratch1, kLRHasBeenSaved, kDontSaveFPRegs);
   }
 }
 
@@ -1322,13 +1318,9 @@ void FullCodeGenerator::EmitLoadHomeObject(SuperReference* expr) {
   Handle<Symbol> home_object_symbol(isolate()->heap()->home_object_symbol());
   __ Mov(LoadDescriptor::NameRegister(), Operand(home_object_symbol));
 
-  if (FLAG_vector_ics) {
-    __ Mov(VectorLoadICDescriptor::SlotRegister(),
-           SmiFromSlot(expr->HomeObjectFeedbackSlot()));
-    CallLoadIC(NOT_CONTEXTUAL);
-  } else {
-    CallLoadIC(NOT_CONTEXTUAL, expr->HomeObjectFeedbackId());
-  }
+  __ Mov(VectorLoadICDescriptor::SlotRegister(),
+         SmiFromSlot(expr->HomeObjectFeedbackSlot()));
+  CallLoadIC(NOT_CONTEXTUAL);
 
   __ Mov(x10, Operand(isolate()->factory()->undefined_value()));
   __ cmp(x0, x10);
@@ -1396,10 +1388,8 @@ void FullCodeGenerator::EmitLoadGlobalCheckExtensions(VariableProxy* proxy,
 
   __ Ldr(LoadDescriptor::ReceiverRegister(), GlobalObjectMemOperand());
   __ Mov(LoadDescriptor::NameRegister(), Operand(proxy->var()->name()));
-  if (FLAG_vector_ics) {
-    __ Mov(VectorLoadICDescriptor::SlotRegister(),
-           SmiFromSlot(proxy->VariableFeedbackSlot()));
-  }
+  __ Mov(VectorLoadICDescriptor::SlotRegister(),
+         SmiFromSlot(proxy->VariableFeedbackSlot()));
 
   ContextualMode mode = (typeof_state == INSIDE_TYPEOF) ? NOT_CONTEXTUAL
                                                         : CONTEXTUAL;
@@ -1482,10 +1472,8 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
       Comment cmnt(masm_, "Global variable");
       __ Ldr(LoadDescriptor::ReceiverRegister(), GlobalObjectMemOperand());
       __ Mov(LoadDescriptor::NameRegister(), Operand(var->name()));
-      if (FLAG_vector_ics) {
-        __ Mov(VectorLoadICDescriptor::SlotRegister(),
-               SmiFromSlot(proxy->VariableFeedbackSlot()));
-      }
+      __ Mov(VectorLoadICDescriptor::SlotRegister(),
+             SmiFromSlot(proxy->VariableFeedbackSlot()));
       CallGlobalLoadIC(var->name());
       context()->Plug(x0);
       break;
@@ -2058,13 +2046,9 @@ void FullCodeGenerator::EmitNamedPropertyLoad(Property* prop) {
   DCHECK(!prop->IsSuperAccess());
 
   __ Mov(LoadDescriptor::NameRegister(), Operand(key->value()));
-  if (FLAG_vector_ics) {
-    __ Mov(VectorLoadICDescriptor::SlotRegister(),
-           SmiFromSlot(prop->PropertyFeedbackSlot()));
-    CallLoadIC(NOT_CONTEXTUAL);
-  } else {
-    CallLoadIC(NOT_CONTEXTUAL, prop->PropertyFeedbackId());
-  }
+  __ Mov(VectorLoadICDescriptor::SlotRegister(),
+         SmiFromSlot(prop->PropertyFeedbackSlot()));
+  CallLoadIC(NOT_CONTEXTUAL);
 }
 
 
@@ -2084,13 +2068,9 @@ void FullCodeGenerator::EmitKeyedPropertyLoad(Property* prop) {
   SetSourcePosition(prop->position());
   // Call keyed load IC. It has arguments key and receiver in x0 and x1.
   Handle<Code> ic = CodeFactory::KeyedLoadIC(isolate()).code();
-  if (FLAG_vector_ics) {
-    __ Mov(VectorLoadICDescriptor::SlotRegister(),
-           SmiFromSlot(prop->PropertyFeedbackSlot()));
-    CallIC(ic);
-  } else {
-    CallIC(ic, prop->PropertyFeedbackId());
-  }
+  __ Mov(VectorLoadICDescriptor::SlotRegister(),
+         SmiFromSlot(prop->PropertyFeedbackSlot()));
+  CallIC(ic);
 }
 
 
@@ -2753,9 +2733,8 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
 
   __ Ldr(x10, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
   // Prepare to push the receiver of the enclosing function.
-  Variable* this_var = scope()->LookupThis();
-  DCHECK_NOT_NULL(this_var);
-  __ Ldr(x11, VarOperand(this_var, x11));
+  int receiver_offset = 2 + info_->scope()->num_parameters();
+  __ Ldr(x11, MemOperand(fp, receiver_offset * kPointerSize));
 
   // Prepare to push the language mode.
   __ Mov(x12, Smi::FromInt(language_mode()));
@@ -4317,13 +4296,9 @@ void FullCodeGenerator::EmitLoadJSRuntimeFunction(CallRuntime* expr) {
   // Load the function from the receiver.
   Handle<String> name = expr->name();
   __ Mov(LoadDescriptor::NameRegister(), Operand(name));
-  if (FLAG_vector_ics) {
-    __ Mov(VectorLoadICDescriptor::SlotRegister(),
-           SmiFromSlot(expr->CallRuntimeFeedbackSlot()));
-    CallLoadIC(NOT_CONTEXTUAL);
-  } else {
-    CallLoadIC(NOT_CONTEXTUAL, expr->CallRuntimeFeedbackId());
-  }
+  __ Mov(VectorLoadICDescriptor::SlotRegister(),
+         SmiFromSlot(expr->CallRuntimeFeedbackSlot()));
+  CallLoadIC(NOT_CONTEXTUAL);
 }
 
 
@@ -4751,10 +4726,8 @@ void FullCodeGenerator::VisitForTypeofValue(Expression* expr) {
     Comment cmnt(masm_, "Global variable");
     __ Ldr(LoadDescriptor::ReceiverRegister(), GlobalObjectMemOperand());
     __ Mov(LoadDescriptor::NameRegister(), Operand(proxy->name()));
-    if (FLAG_vector_ics) {
-      __ Mov(VectorLoadICDescriptor::SlotRegister(),
-             SmiFromSlot(proxy->VariableFeedbackSlot()));
-    }
+    __ Mov(VectorLoadICDescriptor::SlotRegister(),
+           SmiFromSlot(proxy->VariableFeedbackSlot()));
     // Use a regular load, not a contextual load, to avoid a reference
     // error.
     CallLoadIC(NOT_CONTEXTUAL);
@@ -5108,10 +5081,8 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       __ Bind(&l_call);
       __ Peek(load_receiver, 1 * kPointerSize);
       __ Peek(load_name, 2 * kPointerSize);
-      if (FLAG_vector_ics) {
-        __ Mov(VectorLoadICDescriptor::SlotRegister(),
-               SmiFromSlot(expr->KeyedLoadFeedbackSlot()));
-      }
+      __ Mov(VectorLoadICDescriptor::SlotRegister(),
+             SmiFromSlot(expr->KeyedLoadFeedbackSlot()));
       Handle<Code> ic = CodeFactory::KeyedLoadIC(isolate()).code();
       CallIC(ic, TypeFeedbackId::None());
       __ Mov(x1, x0);
@@ -5128,10 +5099,8 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
 
       __ Push(load_receiver);                               // save result
       __ LoadRoot(load_name, Heap::kdone_stringRootIndex);  // "done"
-      if (FLAG_vector_ics) {
-        __ Mov(VectorLoadICDescriptor::SlotRegister(),
-               SmiFromSlot(expr->DoneFeedbackSlot()));
-      }
+      __ Mov(VectorLoadICDescriptor::SlotRegister(),
+             SmiFromSlot(expr->DoneFeedbackSlot()));
       CallLoadIC(NOT_CONTEXTUAL);                           // x0=result.done
       // The ToBooleanStub argument (result.done) is in x0.
       Handle<Code> bool_ic = ToBooleanStub::GetUninitialized(isolate());
@@ -5141,10 +5110,8 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       // result.value
       __ Pop(load_receiver);                                 // result
       __ LoadRoot(load_name, Heap::kvalue_stringRootIndex);  // "value"
-      if (FLAG_vector_ics) {
-        __ Mov(VectorLoadICDescriptor::SlotRegister(),
-               SmiFromSlot(expr->ValueFeedbackSlot()));
-      }
+      __ Mov(VectorLoadICDescriptor::SlotRegister(),
+             SmiFromSlot(expr->ValueFeedbackSlot()));
       CallLoadIC(NOT_CONTEXTUAL);                            // x0=result.value
       context()->DropAndPlug(2, x0);                         // drop iter and g
       break;
