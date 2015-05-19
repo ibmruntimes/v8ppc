@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/ast.h"
+#include "src/messages.h"
 #include "src/parser.h"
 
 namespace v8 {
@@ -61,7 +62,7 @@ void Parser::PatternRewriter::VisitVariableProxy(VariableProxy* pattern) {
 
   if (descriptor_->declaration_scope->num_var_or_const() >
       kMaxNumFunctionLocals) {
-    parser->ReportMessage("too_many_variables");
+    parser->ReportMessage(MessageTemplate::kTooManyVariables);
     *ok_ = false;
     return;
   }
@@ -207,17 +208,27 @@ void Parser::PatternRewriter::VisitVariableProxy(VariableProxy* pattern) {
 }
 
 
-void Parser::PatternRewriter::VisitObjectLiteral(ObjectLiteral* pattern) {
-  auto temp = descriptor_->declaration_scope->NewTemporary(
-      ast_value_factory()->empty_string());
+Variable* Parser::PatternRewriter::CreateTempVar(Expression* value) {
+  auto temp_scope = descriptor_->parser->scope_->DeclarationScope();
+  auto temp = temp_scope->NewTemporary(ast_value_factory()->empty_string());
   auto assignment =
       factory()->NewAssignment(Token::ASSIGN, factory()->NewVariableProxy(temp),
-                               current_value_, RelocInfo::kNoPosition);
+                               value, RelocInfo::kNoPosition);
+
   block_->AddStatement(
       factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition),
       zone());
+  return temp;
+}
+
+
+void Parser::PatternRewriter::VisitObjectLiteral(ObjectLiteral* pattern) {
+  auto temp = CreateTempVar(current_value_);
+
+  block_->AddStatement(descriptor_->parser->BuildAssertIsCoercible(temp),
+                       zone());
+
   for (ObjectLiteralProperty* property : *pattern->properties()) {
-    // TODO(dslomov): computed property names.
     RecurseIntoSubpattern(
         property->value(),
         factory()->NewProperty(factory()->NewVariableProxy(temp),
@@ -232,7 +243,20 @@ void Parser::PatternRewriter::VisitArrayLiteral(ArrayLiteral* node) {
 
 
 void Parser::PatternRewriter::VisitAssignment(Assignment* node) {
-  // TODO(dslomov): implement.
+  // let {<pattern> = <init>} = <value>
+  //   becomes
+  // temp = <value>;
+  // <pattern> = temp === undefined ? <init> : temp;
+  DCHECK(node->op() == Token::ASSIGN);
+  auto temp = CreateTempVar(current_value_);
+  Expression* is_undefined = factory()->NewCompareOperation(
+      Token::EQ_STRICT, factory()->NewVariableProxy(temp),
+      factory()->NewUndefinedLiteral(RelocInfo::kNoPosition),
+      RelocInfo::kNoPosition);
+  Expression* value = factory()->NewConditional(
+      is_undefined, node->value(), factory()->NewVariableProxy(temp),
+      RelocInfo::kNoPosition);
+  RecurseIntoSubpattern(node->target(), value);
 }
 
 

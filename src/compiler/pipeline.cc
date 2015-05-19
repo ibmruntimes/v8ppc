@@ -545,8 +545,8 @@ struct JSTypeFeedbackPhase {
     // TODO(titzer): introduce a specialization mode/flags enum to control
     // specializing to the global object here.
     JSTypeFeedbackSpecializer specializer(
-        data->jsgraph(), data->js_type_feedback(), &oracle, global_object,
-        data->info()->dependencies());
+        &graph_reducer, data->jsgraph(), data->js_type_feedback(), &oracle,
+        global_object, data->info()->dependencies());
     AddReducer(data, &graph_reducer, &specializer);
     graph_reducer.ReduceGraph();
   }
@@ -557,13 +557,13 @@ struct TypedLoweringPhase {
   static const char* phase_name() { return "typed lowering"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
+    GraphReducer graph_reducer(data->graph(), temp_zone);
     LoadElimination load_elimination;
     JSBuiltinReducer builtin_reducer(data->jsgraph());
-    JSTypedLowering typed_lowering(data->jsgraph(), temp_zone);
-    JSIntrinsicLowering intrinsic_lowering(data->jsgraph());
+    JSTypedLowering typed_lowering(&graph_reducer, data->jsgraph(), temp_zone);
+    JSIntrinsicLowering intrinsic_lowering(&graph_reducer, data->jsgraph());
     SimplifiedOperatorReducer simple_reducer(data->jsgraph());
     CommonOperatorReducer common_reducer(data->jsgraph());
-    GraphReducer graph_reducer(data->graph(), temp_zone);
     AddReducer(data, &graph_reducer, &builtin_reducer);
     AddReducer(data, &graph_reducer, &typed_lowering);
     AddReducer(data, &graph_reducer, &intrinsic_lowering);

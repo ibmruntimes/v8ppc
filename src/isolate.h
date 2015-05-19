@@ -81,22 +81,8 @@ typedef void* ExternalReferenceRedirectorPointer();
 class Debug;
 class Debugger;
 class PromiseOnStack;
-
-#if defined(V8_PPC_SIMULATOR)
-#if defined(USE_SIMULATOR)
 class Redirection;
 class Simulator;
-#endif
-#else  // V8_PPC_SIMULATOR
-#if !defined(__arm__) && V8_TARGET_ARCH_ARM ||       \
-    !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
-    !defined(__PPC__) && V8_TARGET_ARCH_PPC ||       \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS ||     \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS64
-class Redirection;
-class Simulator;
-#endif
-#endif  // V8_PPC_SIMULATOR
 
 
 // Static indirection table for handles to constants.  If a frame
@@ -328,8 +314,7 @@ class ThreadLocalTop BASE_EMBEDDED {
 };
 
 
-#if defined(V8_PPC_SIMULATOR)
-#if defined(USE_SIMULATOR)
+#if USE_SIMULATOR
 
 #define ISOLATE_INIT_SIMULATOR_LIST(V)                                         \
   V(bool, simulator_initialized, false)                                        \
@@ -340,23 +325,6 @@ class ThreadLocalTop BASE_EMBEDDED {
 #define ISOLATE_INIT_SIMULATOR_LIST(V)
 
 #endif
-#else  // V8_PPC_SIMULATOR
-#if V8_TARGET_ARCH_ARM && !defined(__arm__) ||       \
-    V8_TARGET_ARCH_ARM64 && !defined(__aarch64__) || \
-    V8_TARGET_ARCH_PPC && !defined(__PPC__) ||       \
-    V8_TARGET_ARCH_MIPS && !defined(__mips__) ||     \
-    V8_TARGET_ARCH_MIPS64 && !defined(__mips__)
-
-#define ISOLATE_INIT_SIMULATOR_LIST(V)                                         \
-  V(bool, simulator_initialized, false)                                        \
-  V(HashMap*, simulator_i_cache, NULL)                                         \
-  V(Redirection*, simulator_redirection, NULL)
-#else
-
-#define ISOLATE_INIT_SIMULATOR_LIST(V)
-
-#endif
-#endif  // V8_PPC_SIMULATOR
 
 
 #ifdef DEBUG
@@ -438,19 +406,9 @@ class Isolate {
           thread_id_(thread_id),
           stack_limit_(0),
           thread_state_(NULL),
-#if defined(V8_PPC_SIMULATOR)
-#if defined(USE_SIMULATOR)
+#if USE_SIMULATOR
           simulator_(NULL),
 #endif
-#else  // V8_PPC_SIMULATOR
-#if !defined(__arm__) && V8_TARGET_ARCH_ARM ||       \
-    !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
-    !defined(__PPC__) && V8_TARGET_ARCH_PPC ||       \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS ||     \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS64
-          simulator_(NULL),
-#endif
-#endif  // V8_PPC_SIMULATOR
           next_(NULL),
           prev_(NULL) { }
     ~PerIsolateThreadData();
@@ -460,19 +418,9 @@ class Isolate {
     FIELD_ACCESSOR(uintptr_t, stack_limit)
     FIELD_ACCESSOR(ThreadState*, thread_state)
 
-#if defined(V8_PPC_SIMULATOR)
-#if defined(USE_SIMULATOR)
+#if USE_SIMULATOR
     FIELD_ACCESSOR(Simulator*, simulator)
 #endif
-#else  // V8_PPC_SIMULATOR
-#if !defined(__arm__) && V8_TARGET_ARCH_ARM ||       \
-    !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
-    !defined(__PPC__) && V8_TARGET_ARCH_PPC ||       \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS ||     \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS64
-    FIELD_ACCESSOR(Simulator*, simulator)
-#endif
-#endif  // V8_PPC_SIMULATOR
 
     bool Matches(Isolate* isolate, ThreadId thread_id) const {
       return isolate_ == isolate && thread_id_.Equals(thread_id);
@@ -484,19 +432,9 @@ class Isolate {
     uintptr_t stack_limit_;
     ThreadState* thread_state_;
 
-#if defined(V8_PPC_SIMULATOR)
-#if defined(USE_SIMULATOR)
+#if USE_SIMULATOR
     Simulator* simulator_;
 #endif
-#else  // V8_PPC_SIMULATOR
-#if !defined(__arm__) && V8_TARGET_ARCH_ARM ||       \
-    !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
-    !defined(__PPC__) && V8_TARGET_ARCH_PPC ||       \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS ||     \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS64
-    Simulator* simulator_;
-#endif
-#endif  // V8_PPC_SIMULATOR
 
     PerIsolateThreadData* next_;
     PerIsolateThreadData* prev_;

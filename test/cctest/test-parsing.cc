@@ -962,7 +962,6 @@ TEST(ScopeUsesArgumentsSuperThis) {
     THIS = 1 << 2,
     INNER_ARGUMENTS = 1 << 3,
     INNER_SUPER_PROPERTY = 1 << 4,
-    INNER_THIS = 1 << 5
   };
 
   static const struct {
@@ -977,7 +976,7 @@ TEST(ScopeUsesArgumentsSuperThis) {
     {"return this + arguments[0]", ARGUMENTS | THIS},
     {"return this + arguments[0] + super.x",
      ARGUMENTS | SUPER_PROPERTY | THIS},
-    {"return x => this + x", INNER_THIS},
+    {"return x => this + x", THIS},
     {"return x => super.f() + x", INNER_SUPER_PROPERTY},
     {"this.foo = 42;", THIS},
     {"this.foo();", THIS},
@@ -991,9 +990,7 @@ TEST(ScopeUsesArgumentsSuperThis) {
     {"while (true) { while (true) { while (true) return this } }", THIS},
     {"while (true) { while (true) { while (true) return super.f() } }",
      SUPER_PROPERTY},
-    {"if (1) { return () => { while (true) new this() } }", INNER_THIS},
-    // Note that propagation of the inner_uses_this() value does not
-    // cross boundaries of normal functions onto parent scopes.
+    {"if (1) { return () => { while (true) new this() } }", THIS},
     {"return function (x) { return this + x }", NONE},
     {"return { m(x) { return super.m() + x } }", NONE},
     {"var x = function () { this.foo = 42 };", NONE},
@@ -1004,10 +1001,10 @@ TEST(ScopeUsesArgumentsSuperThis) {
     {"return { m(x) { return () => super.m() } }", NONE},
     // Flags must be correctly set when using block scoping.
     {"\"use strict\"; while (true) { let x; this, arguments; }",
-     INNER_ARGUMENTS | INNER_THIS},
+     INNER_ARGUMENTS | THIS},
     {"\"use strict\"; while (true) { let x; this, super.f(), arguments; }",
-     INNER_ARGUMENTS | INNER_SUPER_PROPERTY | INNER_THIS},
-    {"\"use strict\"; if (foo()) { let x; this.f() }", INNER_THIS},
+     INNER_ARGUMENTS | INNER_SUPER_PROPERTY | THIS},
+    {"\"use strict\"; if (foo()) { let x; this.f() }", THIS},
     {"\"use strict\"; if (foo()) { let x; super.f() }",
      INNER_SUPER_PROPERTY},
     {"\"use strict\"; if (1) {"
@@ -1071,13 +1068,15 @@ TEST(ScopeUsesArgumentsSuperThis) {
                scope->uses_arguments());
       CHECK_EQ((source_data[i].expected & SUPER_PROPERTY) != 0,
                scope->uses_super_property());
-      CHECK_EQ((source_data[i].expected & THIS) != 0, scope->uses_this());
+      if ((source_data[i].expected & THIS) != 0) {
+        // Currently the is_used() flag is conservative; all variables in a
+        // script scope are marked as used.
+        CHECK(scope->LookupThis()->is_used());
+      }
       CHECK_EQ((source_data[i].expected & INNER_ARGUMENTS) != 0,
                scope->inner_uses_arguments());
       CHECK_EQ((source_data[i].expected & INNER_SUPER_PROPERTY) != 0,
                scope->inner_uses_super_property());
-      CHECK_EQ((source_data[i].expected & INNER_THIS) != 0,
-               scope->inner_uses_this());
     }
   }
 }
@@ -1333,40 +1332,24 @@ const char* ReadString(unsigned* start) {
 
 i::Handle<i::String> FormatMessage(i::Vector<unsigned> data) {
   i::Isolate* isolate = CcTest::i_isolate();
-  i::Factory* factory = isolate->factory();
-  const char* message =
-      ReadString(&data[i::PreparseDataConstants::kMessageTextPos]);
-  i::Handle<i::String> format = v8::Utils::OpenHandle(
-      *v8::String::NewFromUtf8(CcTest::isolate(), message));
+  int message = data[i::PreparseDataConstants::kMessageTemplatePos];
   int arg_count = data[i::PreparseDataConstants::kMessageArgCountPos];
-  const char* arg = NULL;
-  i::Handle<i::JSArray> args_array;
+  i::Handle<i::Object> arg_object;
   if (arg_count == 1) {
     // Position after text found by skipping past length field and
     // length field content words.
-    int pos = i::PreparseDataConstants::kMessageTextPos + 1 +
-              data[i::PreparseDataConstants::kMessageTextPos];
-    arg = ReadString(&data[pos]);
-    args_array = factory->NewJSArray(1);
-    i::JSArray::SetElement(args_array, 0, v8::Utils::OpenHandle(*v8_str(arg)),
-                           NONE, i::SLOPPY).Check();
+    const char* arg =
+        ReadString(&data[i::PreparseDataConstants::kMessageArgPos]);
+    arg_object =
+        v8::Utils::OpenHandle(*v8::String::NewFromUtf8(CcTest::isolate(), arg));
+    i::DeleteArray(arg);
   } else {
     CHECK_EQ(0, arg_count);
-    args_array = factory->NewJSArray(0);
+    arg_object = isolate->factory()->undefined_value();
   }
 
-  i::Handle<i::JSObject> builtins(isolate->js_builtins_object());
-  i::Handle<i::Object> format_fun =
-      i::Object::GetProperty(isolate, builtins, "$formatMessage")
-          .ToHandleChecked();
-  i::Handle<i::Object> arg_handles[] = { format, args_array };
-  i::Handle<i::Object> result = i::Execution::Call(
-      isolate, format_fun, builtins, 2, arg_handles).ToHandleChecked();
-  CHECK(result->IsString());
-  i::DeleteArray(message);
-  i::DeleteArray(arg);
   data.Dispose();
-  return i::Handle<i::String>::cast(result);
+  return i::MessageTemplate::FormatMessage(isolate, message, arg_object);
 }
 
 
@@ -5125,6 +5108,24 @@ TEST(ParseRestParametersErrors) {
 }
 
 
+TEST(RestParameterInSetterMethodError) {
+  const char* context_data[][2] = {
+      {"'use strict';({ set prop(", ") {} }).prop = 1;"},
+      {"'use strict';(class { static set prop(", ") {} }).prop = 1;"},
+      {"'use strict';(new (class { set prop(", ") {} })).prop = 1;"},
+      {"({ set prop(", ") {} }).prop = 1;"},
+      {"(class { static set prop(", ") {} }).prop = 1;"},
+      {"(new (class { set prop(", ") {} })).prop = 1;"},
+      {nullptr, nullptr}};
+  const char* data[] = {"...a", "...arguments", "...eval", nullptr};
+
+  static const ParserFlag always_flags[] = {
+      kAllowHarmonyRestParameters, kAllowHarmonyClasses, kAllowHarmonySloppy};
+  RunParserSyncTest(context_data, data, kError, nullptr, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
 TEST(RestParametersEvalArguments) {
   const char* strict_context_data[][2] =
       {{"'use strict';(function(",
@@ -6355,6 +6356,7 @@ TEST(StrongModeFreeVariablesNotDeclared) {
 
 TEST(DestructuringPositiveTests) {
   i::FLAG_harmony_destructuring = true;
+  i::FLAG_harmony_computed_property_names = true;
 
   const char* context_data[][2] = {{"'use strict'; let ", " = {};"},
                                    {"var ", " = {};"},
@@ -6365,20 +6367,39 @@ TEST(DestructuringPositiveTests) {
   const char* data[] = {
     "a",
     "{ x : y }",
+    "{ x : y = 1 }",
     "[a]",
+    "[a = 1]",
     "[a,b,c]",
+    "[a, b = 42, c]",
     "{ x : x, y : y }",
+    "{ x : x = 1, y : y }",
+    "{ x : x, y : y = 42 }",
     "[]",
     "{}",
     "[{x:x, y:y}, [a,b,c]]",
+    "[{x:x = 1, y:y = 2}, [a = 3, b = 4, c = 5]]",
+    "{x}",
+    "{x, y}",
+    "{x = 42, y = 15}",
     "[a,,b]",
     "{42 : x}",
+    "{42 : x = 42}",
     "{42e-2 : x}",
+    "{42e-2 : x = 42}",
     "{'hi' : x}",
+    "{'hi' : x = 42}",
     "{var: x}",
+    "{var: x = 42}",
+    "{[x] : z}",
+    "{[1+1] : z}",
+    "{[foo()] : z}",
+    "{}",
     NULL};
   // clang-format on
-  static const ParserFlag always_flags[] = {kAllowHarmonyDestructuring};
+  static const ParserFlag always_flags[] = {kAllowHarmonyObjectLiterals,
+                                            kAllowHarmonyComputedPropertyNames,
+                                            kAllowHarmonyDestructuring};
   RunParserSyncTest(context_data, data, kSuccess, NULL, 0, always_flags,
                     arraysize(always_flags));
 }
@@ -6386,7 +6407,10 @@ TEST(DestructuringPositiveTests) {
 
 TEST(DestructuringNegativeTests) {
   i::FLAG_harmony_destructuring = true;
-  static const ParserFlag always_flags[] = {kAllowHarmonyDestructuring};
+  i::FLAG_harmony_computed_property_names = true;
+  static const ParserFlag always_flags[] = {kAllowHarmonyObjectLiterals,
+                                            kAllowHarmonyComputedPropertyNames,
+                                            kAllowHarmonyDestructuring};
 
   {  // All modes.
     const char* context_data[][2] = {{"'use strict'; let ", " = {};"},
@@ -6438,6 +6462,11 @@ TEST(DestructuringNegativeTests) {
         "var",
         "[var]",
         "{x : {y : var}}",
+        "{x : x = a+}",
+        "{x : x = (a+)}",
+        "{x : x += a}",
+        "{m() {} = 0}",
+        "{[1+1]}",
         NULL};
     // clang-format on
     RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,

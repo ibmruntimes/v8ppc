@@ -773,11 +773,18 @@ void Isolate::ReportFailedAccessCheck(Handle<JSObject> receiver) {
 
 
 bool Isolate::IsInternallyUsedPropertyName(Handle<Object> name) {
+  if (name->IsSymbol()) {
+    return Handle<Symbol>::cast(name)->is_private() &&
+           Handle<Symbol>::cast(name)->is_own();
+  }
   return name.is_identical_to(factory()->hidden_string());
 }
 
 
 bool Isolate::IsInternallyUsedPropertyName(Object* name) {
+  if (name->IsSymbol()) {
+    return Symbol::cast(name)->is_private() && Symbol::cast(name)->is_own();
+  }
   return name == heap()->hidden_string();
 }
 
@@ -1381,9 +1388,9 @@ Handle<JSMessageObject> Isolate::CreateMessage(Handle<Object> exception,
           factory()->InternalizeOneByteString(STATIC_CHAR_VECTOR("exception"));
     }
   }
-  return MessageHandler::MakeMessageObject(this, "uncaught_exception", location,
-                                           HandleVector<Object>(&exception, 1),
-                                           stack_trace_object);
+  return MessageHandler::MakeMessageObject(
+      this, MessageTemplate::kUncaughtException, location, exception,
+      stack_trace_object);
 }
 
 

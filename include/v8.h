@@ -973,6 +973,38 @@ class V8_EXPORT Data {
 
 
 /**
+ * The optional attributes of ScriptOrigin.
+ */
+class ScriptOriginOptions {
+ public:
+  V8_INLINE ScriptOriginOptions(bool is_embedder_debug_script = false,
+                                bool is_shared_cross_origin = false,
+                                bool is_opaque = false)
+      : flags_((is_embedder_debug_script ? kIsEmbedderDebugScript : 0) |
+               (is_shared_cross_origin ? kIsSharedCrossOrigin : 0) |
+               (is_opaque ? kIsOpaque : 0)) {}
+  V8_INLINE ScriptOriginOptions(int flags)
+      : flags_(flags &
+               (kIsEmbedderDebugScript | kIsSharedCrossOrigin | kIsOpaque)) {}
+  bool IsEmbedderDebugScript() const {
+    return (flags_ & kIsEmbedderDebugScript) != 0;
+  }
+  bool IsSharedCrossOrigin() const {
+    return (flags_ & kIsSharedCrossOrigin) != 0;
+  }
+  bool IsOpaque() const { return (flags_ & kIsOpaque) != 0; }
+  int Flags() const { return flags_; }
+
+ private:
+  enum {
+    kIsEmbedderDebugScript = 1,
+    kIsSharedCrossOrigin = 1 << 1,
+    kIsOpaque = 1 << 2
+  };
+  const int flags_;
+};
+
+/**
  * The origin, within a file, of a script.
  */
 class ScriptOrigin {
@@ -984,31 +1016,23 @@ class ScriptOrigin {
       Handle<Boolean> resource_is_shared_cross_origin = Handle<Boolean>(),
       Handle<Integer> script_id = Handle<Integer>(),
       Handle<Boolean> resource_is_embedder_debug_script = Handle<Boolean>(),
-      Handle<Value> source_map_url = Handle<Value>())
-      : resource_name_(resource_name),
-        resource_line_offset_(resource_line_offset),
-        resource_column_offset_(resource_column_offset),
-        resource_is_embedder_debug_script_(resource_is_embedder_debug_script),
-        resource_is_shared_cross_origin_(resource_is_shared_cross_origin),
-        script_id_(script_id),
-        source_map_url_(source_map_url) {}
+      Handle<Value> source_map_url = Handle<Value>(),
+      Handle<Boolean> resource_is_opaque = Handle<Boolean>());
   V8_INLINE Handle<Value> ResourceName() const;
   V8_INLINE Handle<Integer> ResourceLineOffset() const;
   V8_INLINE Handle<Integer> ResourceColumnOffset() const;
   /**
     * Returns true for embedder's debugger scripts
     */
-  V8_INLINE Handle<Boolean> ResourceIsEmbedderDebugScript() const;
-  V8_INLINE Handle<Boolean> ResourceIsSharedCrossOrigin() const;
   V8_INLINE Handle<Integer> ScriptID() const;
   V8_INLINE Handle<Value> SourceMapUrl() const;
+  V8_INLINE ScriptOriginOptions Options() const { return options_; }
 
  private:
   Handle<Value> resource_name_;
   Handle<Integer> resource_line_offset_;
   Handle<Integer> resource_column_offset_;
-  Handle<Boolean> resource_is_embedder_debug_script_;
-  Handle<Boolean> resource_is_shared_cross_origin_;
+  ScriptOriginOptions options_;
   Handle<Integer> script_id_;
   Handle<Value> source_map_url_;
 };
@@ -1160,8 +1184,7 @@ class V8_EXPORT ScriptCompiler {
     Handle<Value> resource_name;
     Handle<Integer> resource_line_offset;
     Handle<Integer> resource_column_offset;
-    Handle<Boolean> resource_is_embedder_debug_script;
-    Handle<Boolean> resource_is_shared_cross_origin;
+    ScriptOriginOptions resource_options;
     Handle<Value> source_map_url;
 
     // Cached data from previous compilation (if a kConsume*Cache flag is
@@ -1450,6 +1473,7 @@ class V8_EXPORT Message {
    * this Message was generated to V8.
    */
   bool IsSharedCrossOrigin() const;
+  bool IsOpaque() const;
 
   // TODO(1245381): Print to a string instead of on a FILE.
   static void PrintCurrentStackTrace(Isolate* isolate, FILE* out);
@@ -4833,6 +4857,24 @@ class V8_EXPORT HeapSpaceStatistics {
 };
 
 
+class V8_EXPORT HeapObjectStatistics {
+ public:
+  HeapObjectStatistics();
+  const char* object_type() { return object_type_; }
+  const char* object_sub_type() { return object_sub_type_; }
+  size_t object_count() { return object_count_; }
+  size_t object_size() { return object_size_; }
+
+ private:
+  const char* object_type_;
+  const char* object_sub_type_;
+  size_t object_count_;
+  size_t object_size_;
+
+  friend class Isolate;
+};
+
+
 class RetainedObjectInfo;
 
 
@@ -5220,6 +5262,23 @@ class V8_EXPORT Isolate {
    */
   bool GetHeapSpaceStatistics(HeapSpaceStatistics* space_statistics,
                               size_t index);
+
+  /**
+   * Returns the number of types of objects tracked in the heap at GC.
+   */
+  size_t NumberOfTrackedHeapObjectTypes();
+
+  /**
+   * Get statistics about objects in the heap.
+   *
+   * \param object_statistics The HeapObjectStatistics object to fill in
+   *   statistics of objects of given type, which were live in the previous GC.
+   * \param type_index The index of the type of object to fill details about,
+   *   which ranges from 0 to NumberOfTrackedHeapObjectTypes() - 1.
+   * \returns true on success.
+   */
+  bool GetHeapObjectStatisticsAtLastGC(HeapObjectStatistics* object_statistics,
+                                       size_t type_index);
 
   /**
    * Get a call stack sample from the isolate.
@@ -7316,6 +7375,24 @@ int FunctionCallbackInfo<T>::Length() const {
   return length_;
 }
 
+ScriptOrigin::ScriptOrigin(Handle<Value> resource_name,
+                           Handle<Integer> resource_line_offset,
+                           Handle<Integer> resource_column_offset,
+                           Handle<Boolean> resource_is_shared_cross_origin,
+                           Handle<Integer> script_id,
+                           Handle<Boolean> resource_is_embedder_debug_script,
+                           Handle<Value> source_map_url,
+                           Handle<Boolean> resource_is_opaque)
+    : resource_name_(resource_name),
+      resource_line_offset_(resource_line_offset),
+      resource_column_offset_(resource_column_offset),
+      options_(!resource_is_embedder_debug_script.IsEmpty() &&
+                   resource_is_embedder_debug_script->IsTrue(),
+               !resource_is_shared_cross_origin.IsEmpty() &&
+                   resource_is_shared_cross_origin->IsTrue(),
+               !resource_is_opaque.IsEmpty() && resource_is_opaque->IsTrue()),
+      script_id_(script_id),
+      source_map_url_(source_map_url) {}
 
 Handle<Value> ScriptOrigin::ResourceName() const {
   return resource_name_;
@@ -7329,16 +7406,6 @@ Handle<Integer> ScriptOrigin::ResourceLineOffset() const {
 
 Handle<Integer> ScriptOrigin::ResourceColumnOffset() const {
   return resource_column_offset_;
-}
-
-
-Handle<Boolean> ScriptOrigin::ResourceIsEmbedderDebugScript() const {
-  return resource_is_embedder_debug_script_;
-}
-
-
-Handle<Boolean> ScriptOrigin::ResourceIsSharedCrossOrigin() const {
-  return resource_is_shared_cross_origin_;
 }
 
 
@@ -7356,8 +7423,7 @@ ScriptCompiler::Source::Source(Local<String> string, const ScriptOrigin& origin,
       resource_name(origin.ResourceName()),
       resource_line_offset(origin.ResourceLineOffset()),
       resource_column_offset(origin.ResourceColumnOffset()),
-      resource_is_embedder_debug_script(origin.ResourceIsEmbedderDebugScript()),
-      resource_is_shared_cross_origin(origin.ResourceIsSharedCrossOrigin()),
+      resource_options(origin.Options()),
       source_map_url(origin.SourceMapUrl()),
       cached_data(data) {}
 

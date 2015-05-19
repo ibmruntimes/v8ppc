@@ -636,35 +636,35 @@ Expression* ParserTraits::BuildUnaryExpression(Expression* expression,
 }
 
 
-Expression* ParserTraits::NewThrowReferenceError(const char* message, int pos) {
+Expression* ParserTraits::NewThrowReferenceError(
+    MessageTemplate::Template message, int pos) {
   return NewThrowError(
       parser_->ast_value_factory()->make_reference_error_string(), message,
       parser_->ast_value_factory()->empty_string(), pos);
 }
 
 
-Expression* ParserTraits::NewThrowSyntaxError(
-    const char* message, const AstRawString* arg, int pos) {
+Expression* ParserTraits::NewThrowSyntaxError(MessageTemplate::Template message,
+                                              const AstRawString* arg,
+                                              int pos) {
   return NewThrowError(parser_->ast_value_factory()->make_syntax_error_string(),
                        message, arg, pos);
 }
 
 
-Expression* ParserTraits::NewThrowTypeError(
-    const char* message, const AstRawString* arg, int pos) {
+Expression* ParserTraits::NewThrowTypeError(MessageTemplate::Template message,
+                                            const AstRawString* arg, int pos) {
   return NewThrowError(parser_->ast_value_factory()->make_type_error_string(),
                        message, arg, pos);
 }
 
 
-Expression* ParserTraits::NewThrowError(
-    const AstRawString* constructor, const char* message,
-    const AstRawString* arg, int pos) {
+Expression* ParserTraits::NewThrowError(const AstRawString* constructor,
+                                        MessageTemplate::Template message,
+                                        const AstRawString* arg, int pos) {
   Zone* zone = parser_->zone();
-  const AstRawString* type =
-      parser_->ast_value_factory()->GetOneByteString(message);
   ZoneList<Expression*>* args = new (zone) ZoneList<Expression*>(2, zone);
-  args->Add(parser_->factory()->NewStringLiteral(type, pos), zone);
+  args->Add(parser_->factory()->NewSmiLiteral(message, pos), zone);
   args->Add(parser_->factory()->NewStringLiteral(arg, pos), zone);
   CallRuntime* call_constructor =
       parser_->factory()->NewCallRuntime(constructor, NULL, args, pos);
@@ -673,8 +673,8 @@ Expression* ParserTraits::NewThrowError(
 
 
 void ParserTraits::ReportMessageAt(Scanner::Location source_location,
-                                   const char* message, const char* arg,
-                                   ParseErrorType error_type) {
+                                   MessageTemplate::Template message,
+                                   const char* arg, ParseErrorType error_type) {
   if (parser_->stack_overflow()) {
     // Suppress the error message (syntax error or such) in the presence of a
     // stack overflow. The isolate allows only one pending exception at at time
@@ -687,14 +687,15 @@ void ParserTraits::ReportMessageAt(Scanner::Location source_location,
 }
 
 
-void ParserTraits::ReportMessage(const char* message, const char* arg,
-                                 ParseErrorType error_type) {
+void ParserTraits::ReportMessage(MessageTemplate::Template message,
+                                 const char* arg, ParseErrorType error_type) {
   Scanner::Location source_location = parser_->scanner()->location();
   ReportMessageAt(source_location, message, arg, error_type);
 }
 
 
-void ParserTraits::ReportMessage(const char* message, const AstRawString* arg,
+void ParserTraits::ReportMessage(MessageTemplate::Template message,
+                                 const AstRawString* arg,
                                  ParseErrorType error_type) {
   Scanner::Location source_location = parser_->scanner()->location();
   ReportMessageAt(source_location, message, arg, error_type);
@@ -702,7 +703,8 @@ void ParserTraits::ReportMessage(const char* message, const AstRawString* arg,
 
 
 void ParserTraits::ReportMessageAt(Scanner::Location source_location,
-                                   const char* message, const AstRawString* arg,
+                                   MessageTemplate::Template message,
+                                   const AstRawString* arg,
                                    ParseErrorType error_type) {
   if (parser_->stack_overflow()) {
     // Suppress the error message (syntax error or such) in the presence of a
@@ -740,7 +742,9 @@ const AstRawString* ParserTraits::GetNextSymbol(Scanner* scanner) {
 
 Expression* ParserTraits::ThisExpression(Scope* scope, AstNodeFactory* factory,
                                          int pos) {
-  return factory->NewVariableProxy(scope->receiver(), pos);
+  return scope->NewUnresolved(factory,
+                              parser_->ast_value_factory()->this_string(),
+                              Variable::THIS, pos, pos + 4);
 }
 
 Expression* ParserTraits::SuperReference(Scope* scope, AstNodeFactory* factory,
@@ -788,7 +792,8 @@ Expression* ParserTraits::ExpressionFromIdentifier(const AstRawString* name,
                                                    Scope* scope,
                                                    AstNodeFactory* factory) {
   if (parser_->fni_ != NULL) parser_->fni_->PushVariableName(name);
-  return scope->NewUnresolved(factory, name, start_position, end_position);
+  return scope->NewUnresolved(factory, name, Variable::NORMAL, start_position,
+                              end_position);
 }
 
 
@@ -967,6 +972,8 @@ FunctionLiteral* Parser::DoParseProgram(ParseInfo* info) {
 
   FunctionLiteral* result = NULL;
   {
+    // TODO(wingo): Add an outer GLOBAL_SCOPE corresponding to the native
+    // context, which will have the "this" binding for script scopes.
     Scope* scope = NewScope(scope_, SCRIPT_SCOPE);
     info->set_script_scope(scope);
     if (!info->context().is_null() && !info->context()->IsNativeContext()) {
@@ -1022,7 +1029,7 @@ FunctionLiteral* Parser::DoParseProgram(ParseInfo* info) {
           !body->at(0)->IsExpressionStatement() ||
           !body->at(0)->AsExpressionStatement()->
               expression()->IsFunctionLiteral()) {
-        ReportMessage("single_function_literal");
+        ReportMessage(MessageTemplate::kSingleFunctionLiteral);
         ok = false;
       }
     }
@@ -1220,13 +1227,13 @@ void* Parser::ParseStatementList(ZoneList<Statement*>* body, int end_token,
       Scanner::Location super_loc = function_state_->super_location();
       if (this_loc.beg_pos != old_this_loc.beg_pos &&
           this_loc.beg_pos != token_loc.beg_pos) {
-        ReportMessageAt(this_loc, "strong_constructor_this");
+        ReportMessageAt(this_loc, MessageTemplate::kStrongConstructorThis);
         *ok = false;
         return nullptr;
       }
       if (super_loc.beg_pos != old_super_loc.beg_pos &&
           super_loc.beg_pos != token_loc.beg_pos) {
-        ReportMessageAt(super_loc, "strong_constructor_super");
+        ReportMessageAt(super_loc, MessageTemplate::kStrongConstructorSuper);
         *ok = false;
         return nullptr;
       }
@@ -1380,7 +1387,8 @@ void* Parser::ParseModuleItemList(ZoneList<Statement*>* body, bool* ok) {
       // TODO(adamk): Pass both local_name and export_name once ParserTraits
       // supports multiple arg error messages.
       // Also try to report this at a better location.
-      ParserTraits::ReportMessage("module_export_undefined", it.local_name());
+      ParserTraits::ReportMessage(MessageTemplate::kModuleExportUndefined,
+                                  it.local_name());
       *ok = false;
       return NULL;
     }
@@ -1477,15 +1485,15 @@ ZoneList<ImportDeclaration*>* Parser::ParseNamedImports(int pos, bool* ok) {
     }
     if (!Token::IsIdentifier(scanner()->current_token(), STRICT, false)) {
       *ok = false;
-      ReportMessage("unexpected_reserved");
+      ReportMessage(MessageTemplate::kUnexpectedReserved);
       return NULL;
     } else if (IsEvalOrArguments(local_name)) {
       *ok = false;
-      ReportMessage("strict_eval_arguments");
+      ReportMessage(MessageTemplate::kStrictEvalArguments);
       return NULL;
     } else if (is_strong(language_mode()) && IsUndefined(local_name)) {
       *ok = false;
-      ReportMessage("strong_undefined");
+      ReportMessage(MessageTemplate::kStrongUndefined);
       return NULL;
     }
     VariableProxy* proxy = NewUnresolved(local_name, IMPORT);
@@ -1629,8 +1637,8 @@ Statement* Parser::ParseExportDefault(bool* ok) {
   if (names.length() == 1) {
     scope_->module()->AddLocalExport(default_string, names.first(), zone(), ok);
     if (!*ok) {
-      ParserTraits::ReportMessageAt(default_loc, "duplicate_export",
-                                    default_string);
+      ParserTraits::ReportMessageAt(
+          default_loc, MessageTemplate::kDuplicateExport, default_string);
       return NULL;
     }
   } else {
@@ -1693,7 +1701,7 @@ Statement* Parser::ParseExportDeclaration(bool* ok) {
       } else if (reserved_loc.IsValid()) {
         // No FromClause, so reserved words are invalid in ExportClause.
         *ok = false;
-        ReportMessageAt(reserved_loc, "unexpected_reserved");
+        ReportMessageAt(reserved_loc, MessageTemplate::kUnexpectedReserved);
         return NULL;
       }
       ExpectSemicolon(CHECK_OK);
@@ -1706,7 +1714,8 @@ Statement* Parser::ParseExportDeclaration(bool* ok) {
                                            zone(), ok);
           if (!*ok) {
             ParserTraits::ReportMessageAt(export_locations[i],
-                                          "duplicate_export", export_names[i]);
+                                          MessageTemplate::kDuplicateExport,
+                                          export_names[i]);
             return NULL;
           }
         }
@@ -1746,7 +1755,7 @@ Statement* Parser::ParseExportDeclaration(bool* ok) {
     descriptor->AddLocalExport(names[i], names[i], zone(), ok);
     if (!*ok) {
       // TODO(adamk): Possibly report this error at the right place.
-      ParserTraits::ReportMessage("duplicate_export", names[i]);
+      ParserTraits::ReportMessage(MessageTemplate::kDuplicateExport, names[i]);
       return NULL;
     }
   }
@@ -1801,7 +1810,8 @@ Statement* Parser::ParseSubStatement(ZoneList<const AstRawString*>* labels,
 
     case Token::SEMICOLON:
       if (is_strong(language_mode())) {
-        ReportMessageAt(scanner()->peek_location(), "strong_empty");
+        ReportMessageAt(scanner()->peek_location(),
+                        MessageTemplate::kStrongEmpty);
         *ok = false;
         return NULL;
       }
@@ -1858,7 +1868,8 @@ Statement* Parser::ParseSubStatement(ZoneList<const AstRawString*>* labels,
       // Statement:
       //    GeneratorDeclaration
       if (is_strict(language_mode())) {
-        ReportMessageAt(scanner()->peek_location(), "strict_function");
+        ReportMessageAt(scanner()->peek_location(),
+                        MessageTemplate::kStrictFunction);
         *ok = false;
         return NULL;
       }
@@ -1917,9 +1928,9 @@ VariableProxy* Parser::NewUnresolved(const AstRawString* name,
   // scope.
   // Let/const variables in harmony mode are always added to the immediately
   // enclosing scope.
-  return DeclarationScope(mode)->NewUnresolved(factory(), name,
-                                               scanner()->location().beg_pos,
-                                               scanner()->location().end_pos);
+  return DeclarationScope(mode)->NewUnresolved(
+      factory(), name, Variable::NORMAL, scanner()->location().beg_pos,
+      scanner()->location().end_pos);
 }
 
 
@@ -1982,12 +1993,12 @@ Variable* Parser::Declare(Declaration* declaration, bool resolve, bool* ok) {
       if (is_strict(language_mode())) {
         // In harmony we treat re-declarations as early errors. See
         // ES5 16 for a definition of early errors.
-        ParserTraits::ReportMessage("var_redeclaration", name);
+        ParserTraits::ReportMessage(MessageTemplate::kVarRedeclaration, name);
         *ok = false;
         return nullptr;
       }
       Expression* expression = NewThrowTypeError(
-          "var_redeclaration", name, declaration->position());
+          MessageTemplate::kVarRedeclaration, name, declaration->position());
       declaration_scope->SetIllegalRedeclaration(expression);
     } else if (mode == VAR) {
       var->set_maybe_assigned();
@@ -2164,7 +2175,7 @@ Statement* Parser::ParseClassDeclaration(ZoneList<const AstRawString*>* names,
 
   Expect(Token::CLASS, CHECK_OK);
   if (!allow_harmony_sloppy() && is_sloppy(language_mode())) {
-    ReportMessage("sloppy_lexical");
+    ReportMessage(MessageTemplate::kSloppyLexical);
     *ok = false;
     return NULL;
   }
@@ -2350,7 +2361,7 @@ void Parser::ParseVariableDeclarations(VariableDeclarationContext var_context,
   if (peek() == Token::VAR) {
     if (is_strong(language_mode())) {
       Scanner::Location location = scanner()->peek_location();
-      ReportMessageAt(location, "strong_var");
+      ReportMessageAt(location, MessageTemplate::kStrongVar);
       *ok = false;
       return;
     }
@@ -2530,8 +2541,9 @@ Statement* Parser::ParseExpressionOrLabelledStatement(
           default:
             if (!scanner()->HasAnyLineTerminatorBeforeNext()) {
               ReportMessageAt(function_state_->this_location(),
-                              is_this ? "strong_constructor_this"
-                                      : "strong_constructor_super");
+                              is_this
+                                  ? MessageTemplate::kStrongConstructorThis
+                                  : MessageTemplate::kStrongConstructorSuper);
               *ok = false;
               return nullptr;
             }
@@ -2562,7 +2574,7 @@ Statement* Parser::ParseExpressionOrLabelledStatement(
     // structured.  However, these are probably changes we want to
     // make later anyway so we should go back and fix this then.
     if (ContainsLabel(labels, label) || TargetStackContainsLabel(label)) {
-      ParserTraits::ReportMessage("label_redeclaration", label);
+      ParserTraits::ReportMessage(MessageTemplate::kLabelRedeclaration, label);
       *ok = false;
       return NULL;
     }
@@ -2595,7 +2607,7 @@ Statement* Parser::ParseExpressionOrLabelledStatement(
   if (peek() == Token::IDENTIFIER && expr->AsVariableProxy() != NULL &&
       expr->AsVariableProxy()->raw_name() ==
           ast_value_factory()->let_string()) {
-    ReportMessage("sloppy_lexical", NULL);
+    ReportMessage(MessageTemplate::kSloppyLexical, NULL);
     *ok = false;
     return NULL;
   }
@@ -2643,9 +2655,9 @@ Statement* Parser::ParseContinueStatement(bool* ok) {
   IterationStatement* target = LookupContinueTarget(label, CHECK_OK);
   if (target == NULL) {
     // Illegal continue statement.
-    const char* message = "illegal_continue";
+    MessageTemplate::Template message = MessageTemplate::kIllegalContinue;
     if (label != NULL) {
-      message = "unknown_label";
+      message = MessageTemplate::kUnknownLabel;
     }
     ParserTraits::ReportMessage(message, label);
     *ok = false;
@@ -2680,9 +2692,9 @@ Statement* Parser::ParseBreakStatement(ZoneList<const AstRawString*>* labels,
   target = LookupBreakTarget(label, CHECK_OK);
   if (target == NULL) {
     // Illegal break statement.
-    const char* message = "illegal_break";
+    MessageTemplate::Template message = MessageTemplate::kIllegalBreak;
     if (label != NULL) {
-      message = "unknown_label";
+      message = MessageTemplate::kUnknownLabel;
     }
     ParserTraits::ReportMessage(message, label);
     *ok = false;
@@ -2721,7 +2733,7 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
         i::IsConstructor(function_state_->kind())) {
       int pos = peek_position();
       ReportMessageAt(Scanner::Location(pos, pos + 1),
-                      "strong_constructor_return_value");
+                      MessageTemplate::kStrongConstructorReturnValue);
       *ok = false;
       return NULL;
     }
@@ -2745,7 +2757,7 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
           Token::ASSIGN, factory()->NewVariableProxy(temp), return_value, pos);
 
       Expression* throw_expression =
-          NewThrowTypeError("derived_constructor_return",
+          NewThrowTypeError(MessageTemplate::kDerivedConstructorReturn,
                             ast_value_factory()->empty_string(), pos);
 
       // %_IsSpecObject(temp)
@@ -2787,7 +2799,7 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
 
   Scope* decl_scope = scope_->DeclarationScope();
   if (decl_scope->is_script_scope() || decl_scope->is_eval_scope()) {
-    ReportMessageAt(loc, "illegal_return");
+    ReportMessageAt(loc, MessageTemplate::kIllegalReturn);
     *ok = false;
     return NULL;
   }
@@ -2804,7 +2816,7 @@ Statement* Parser::ParseWithStatement(ZoneList<const AstRawString*>* labels,
   int pos = position();
 
   if (is_strict(language_mode())) {
-    ReportMessage("strict_mode_with");
+    ReportMessage(MessageTemplate::kStrictWith);
     *ok = false;
     return NULL;
   }
@@ -2837,7 +2849,7 @@ CaseClause* Parser::ParseCaseClause(bool* default_seen_ptr, bool* ok) {
   } else {
     Expect(Token::DEFAULT, CHECK_OK);
     if (*default_seen_ptr) {
-      ReportMessage("multiple_defaults_in_switch");
+      ReportMessage(MessageTemplate::kMultipleDefaultsInSwitch);
       *ok = false;
       return NULL;
     }
@@ -2856,7 +2868,8 @@ CaseClause* Parser::ParseCaseClause(bool* default_seen_ptr, bool* ok) {
   }
   if (is_strong(language_mode()) && stat != NULL && !stat->IsJump() &&
       peek() != Token::RBRACE) {
-    ReportMessageAt(scanner()->location(), "strong_switch_fallthrough");
+    ReportMessageAt(scanner()->location(),
+                    MessageTemplate::kStrongSwitchFallthrough);
     *ok = false;
     return NULL;
   }
@@ -2899,7 +2912,7 @@ Statement* Parser::ParseThrowStatement(bool* ok) {
   Expect(Token::THROW, CHECK_OK);
   int pos = position();
   if (scanner()->HasAnyLineTerminatorBeforeNext()) {
-    ReportMessage("newline_after_throw");
+    ReportMessage(MessageTemplate::kNewlineAfterThrow);
     *ok = false;
     return NULL;
   }
@@ -2930,7 +2943,7 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
 
   Token::Value tok = peek();
   if (tok != Token::CATCH && tok != Token::FINALLY) {
-    ReportMessage("no_catch_or_finally");
+    ReportMessage(MessageTemplate::kNoCatchOrFinally);
     *ok = false;
     return NULL;
   }
@@ -3412,9 +3425,9 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         if (num_decl != 1) {
           const char* loop_type =
               mode == ForEachStatement::ITERATE ? "for-of" : "for-in";
-          ParserTraits::ReportMessageAt(parsing_result.bindings_loc,
-                                        "for_inof_loop_multi_bindings",
-                                        loop_type);
+          ParserTraits::ReportMessageAt(
+              parsing_result.bindings_loc,
+              MessageTemplate::kForInOfLoopMultiBindings, loop_type);
           *ok = false;
           return nullptr;
         }
@@ -3422,11 +3435,11 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
             (is_strict(language_mode()) || mode == ForEachStatement::ITERATE)) {
           if (mode == ForEachStatement::ITERATE) {
             ReportMessageAt(parsing_result.first_initializer_loc,
-                            "for_of_loop_initializer");
+                            MessageTemplate::kForOfLoopInitializer);
           } else {
             // TODO(caitp): This should be an error in sloppy mode too.
             ReportMessageAt(parsing_result.first_initializer_loc,
-                            "for_in_loop_initializer");
+                            MessageTemplate::kForInLoopInitializer);
           }
           *ok = false;
           return nullptr;
@@ -3438,8 +3451,9 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         Expression* enumerable = ParseExpression(true, CHECK_OK);
         Expect(Token::RPAREN, CHECK_OK);
 
-        VariableProxy* each = scope_->NewUnresolved(
-            factory(), parsing_result.SingleName(), each_beg_pos, each_end_pos);
+        VariableProxy* each =
+            scope_->NewUnresolved(factory(), parsing_result.SingleName(),
+                                  Variable::NORMAL, each_beg_pos, each_end_pos);
         Statement* body = ParseSubStatement(NULL, CHECK_OK);
         InitializeForEachStatement(loop, each, enumerable, body);
         Block* result =
@@ -3475,9 +3489,9 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         if (num_decl != 1) {
           const char* loop_type =
               mode == ForEachStatement::ITERATE ? "for-of" : "for-in";
-          ParserTraits::ReportMessageAt(parsing_result.bindings_loc,
-                                        "for_inof_loop_multi_bindings",
-                                        loop_type);
+          ParserTraits::ReportMessageAt(
+              parsing_result.bindings_loc,
+              MessageTemplate::kForInOfLoopMultiBindings, loop_type);
           *ok = false;
           return nullptr;
         }
@@ -3485,10 +3499,10 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
             (is_strict(language_mode()) || mode == ForEachStatement::ITERATE)) {
           if (mode == ForEachStatement::ITERATE) {
             ReportMessageAt(parsing_result.first_initializer_loc,
-                            "for_of_loop_initializer");
+                            MessageTemplate::kForOfLoopInitializer);
           } else {
             ReportMessageAt(parsing_result.first_initializer_loc,
-                            "for_in_loop_initializer");
+                            MessageTemplate::kForInLoopInitializer);
           }
           *ok = false;
           return nullptr;
@@ -3522,8 +3536,9 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         scope_ = for_scope;
         Expect(Token::RPAREN, CHECK_OK);
 
-        VariableProxy* each = scope_->NewUnresolved(
-            factory(), parsing_result.SingleName(), each_end_pos);
+        VariableProxy* each =
+            scope_->NewUnresolved(factory(), parsing_result.SingleName(),
+                                  Variable::NORMAL, each_end_pos);
         Statement* body = ParseSubStatement(NULL, CHECK_OK);
         Block* body_block =
             factory()->NewBlock(NULL, 3, false, RelocInfo::kNoPosition);
@@ -3559,7 +3574,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
       if (CheckInOrOf(accept_OF, &mode, ok)) {
         if (!*ok) return nullptr;
         expression = this->CheckAndRewriteReferenceExpression(
-            expression, lhs_location, "invalid_lhs_in_for", CHECK_OK);
+            expression, lhs_location, MessageTemplate::kInvalidLhsInFor,
+            CHECK_OK);
 
         ForEachStatement* loop =
             factory()->NewForEachStatement(mode, labels, stmt_pos);
@@ -3591,7 +3607,7 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
   // Detect attempts at 'let' declarations in sloppy mode.
   if (peek() == Token::IDENTIFIER && is_sloppy(language_mode()) &&
       is_let_identifier_expression) {
-    ReportMessage("sloppy_lexical", NULL);
+    ReportMessage(MessageTemplate::kSloppyLexical, NULL);
     *ok = false;
     return NULL;
   }
@@ -3722,7 +3738,7 @@ void ParserTraits::DeclareArrowFunctionParameters(
     Scope* scope, Expression* expr, const Scanner::Location& params_loc,
     Scanner::Location* duplicate_loc, bool* ok) {
   if (scope->num_parameters() >= Code::kMaxArguments) {
-    ReportMessageAt(params_loc, "malformed_arrow_function_parameter_list");
+    ReportMessageAt(params_loc, MessageTemplate::kMalformedArrowFunParamList);
     *ok = false;
     return;
   }
@@ -3883,8 +3899,8 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     Expect(Token::RPAREN, CHECK_OK);
     int formals_end_position = scanner()->location().end_pos;
 
-    CheckArityRestrictions(num_parameters, arity_restriction, start_position,
-                           formals_end_position, CHECK_OK);
+    CheckArityRestrictions(num_parameters, arity_restriction, has_rest,
+                           start_position, formals_end_position, CHECK_OK);
 
     Expect(Token::LBRACE, CHECK_OK);
 
@@ -3989,7 +4005,8 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
       if (is_strong(language_mode()) && IsSubclassConstructor(kind)) {
         if (!function_state.super_location().IsValid()) {
           ReportMessageAt(function_name_location,
-                          "strong_super_call_missing", kReferenceError);
+                          MessageTemplate::kStrongSuperCallMissing,
+                          kReferenceError);
           *ok = false;
           return nullptr;
         }
@@ -4133,6 +4150,32 @@ void Parser::AddAssertIsConstruct(ZoneList<Statement*>* body, int pos) {
 }
 
 
+Statement* Parser::BuildAssertIsCoercible(Variable* var) {
+  // if (var === null || var === undefined)
+  //     throw /* type error kNonCoercible) */;
+
+  Expression* condition = factory()->NewBinaryOperation(
+      Token::OR, factory()->NewCompareOperation(
+                     Token::EQ_STRICT, factory()->NewVariableProxy(var),
+                     factory()->NewUndefinedLiteral(RelocInfo::kNoPosition),
+                     RelocInfo::kNoPosition),
+      factory()->NewCompareOperation(
+          Token::EQ_STRICT, factory()->NewVariableProxy(var),
+          factory()->NewNullLiteral(RelocInfo::kNoPosition),
+          RelocInfo::kNoPosition),
+      RelocInfo::kNoPosition);
+  Expression* throw_type_error = this->NewThrowTypeError(
+      MessageTemplate::kNonCoercible, ast_value_factory()->empty_string(),
+      RelocInfo::kNoPosition);
+  IfStatement* if_statement = factory()->NewIfStatement(
+      condition, factory()->NewExpressionStatement(throw_type_error,
+                                                   RelocInfo::kNoPosition),
+      factory()->NewEmptyStatement(RelocInfo::kNoPosition),
+      RelocInfo::kNoPosition);
+  return if_statement;
+}
+
+
 ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
     const AstRawString* function_name, int pos, Variable* fvar,
     Token::Value fvar_init_op, FunctionKind kind, bool* ok) {
@@ -4253,17 +4296,18 @@ ClassLiteral* Parser::ParseClassLiteral(const AstRawString* name,
                                         bool* ok) {
   // All parts of a ClassDeclaration and ClassExpression are strict code.
   if (name_is_strict_reserved) {
-    ReportMessageAt(class_name_location, "unexpected_strict_reserved");
+    ReportMessageAt(class_name_location,
+                    MessageTemplate::kUnexpectedStrictReserved);
     *ok = false;
     return NULL;
   }
   if (IsEvalOrArguments(name)) {
-    ReportMessageAt(class_name_location, "strict_eval_arguments");
+    ReportMessageAt(class_name_location, MessageTemplate::kStrictEvalArguments);
     *ok = false;
     return NULL;
   }
   if (is_strong(language_mode()) && IsUndefined(name)) {
-    ReportMessageAt(class_name_location, "strong_undefined");
+    ReportMessageAt(class_name_location, MessageTemplate::kStrongUndefined);
     *ok = false;
     return NULL;
   }
@@ -4392,7 +4436,7 @@ Expression* Parser::ParseV8Intrinsic(bool* ok) {
     if (args->length() == 1 && args->at(0)->AsVariableProxy() != NULL) {
       return args->at(0);
     } else {
-      ReportMessage("not_isvar");
+      ReportMessage(MessageTemplate::kNotIsvar);
       *ok = false;
       return NULL;
     }
@@ -4402,14 +4446,14 @@ Expression* Parser::ParseV8Intrinsic(bool* ok) {
   if (function != NULL &&
       function->nargs != -1 &&
       function->nargs != args->length()) {
-    ReportMessage("illegal_access");
+    ReportMessage(MessageTemplate::kIllegalAccess);
     *ok = false;
     return NULL;
   }
 
   // Check that the function is defined if it's an inline runtime call.
   if (function == NULL && name->FirstCharacter() == '_') {
-    ParserTraits::ReportMessage("not_defined", name);
+    ParserTraits::ReportMessage(MessageTemplate::kNotDefined, name);
     *ok = false;
     return NULL;
   }
@@ -4434,7 +4478,8 @@ void Parser::CheckConflictingVarDeclarations(Scope* scope, bool* ok) {
     Scanner::Location location = position == RelocInfo::kNoPosition
         ? Scanner::Location::invalid()
         : Scanner::Location(position, position + 1);
-    ParserTraits::ReportMessageAt(location, "var_redeclaration", name);
+    ParserTraits::ReportMessageAt(location, MessageTemplate::kVarRedeclaration,
+                                  name);
     *ok = false;
   }
 }
@@ -5716,9 +5761,8 @@ Expression* Parser::SpreadCall(Expression* function,
     if (function->IsProperty()) {
       // Method calls
       if (function->AsProperty()->IsSuperAccess()) {
-        VariableProxy* original_home =
-            function->AsProperty()->obj()->AsSuperReference()->this_var();
-        VariableProxy* home = factory()->NewVariableProxy(original_home->var());
+        Expression* home =
+            ThisExpression(scope_, factory(), RelocInfo::kNoPosition);
         args->InsertAt(0, function, zone());
         args->InsertAt(1, home, zone());
       } else {

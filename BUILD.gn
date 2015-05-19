@@ -202,7 +202,7 @@ action("js2c") {
 
   sources = [
     "src/macros.py",
-    "src/messages.h",  
+    "src/messages.h",
     "src/runtime.js",
     "src/v8natives.js",
     "src/symbol.js",
@@ -215,6 +215,7 @@ action("js2c") {
     "src/regexp.js",
     "src/arraybuffer.js",
     "src/typedarray.js",
+    "src/iterator-prototype.js",
     "src/generator.js",
     "src/object-observe.js",
     "src/collection.js",
@@ -264,7 +265,7 @@ action("js2c_experimental") {
 
   sources = [
     "src/macros.py",
-    "src/messages.h",  
+    "src/messages.h",
     "src/proxy.js",
     "src/generator.js",
     "src/harmony-array.js",
@@ -474,8 +475,12 @@ source_set("v8_snapshot") {
     ":js2c",
     ":js2c_experimental",
     ":js2c_extras",
-    ":run_mksnapshot",
     ":v8_base",
+  ]
+  public_deps = [
+    # This should be public so downstream targets can declare the snapshot
+    # output file as their inputs.
+    ":run_mksnapshot",
   ]
 
   sources = [
@@ -502,9 +507,11 @@ if (v8_use_external_startup_data) {
       ":js2c",
       ":js2c_experimental",
       ":js2c_extras",
-      ":run_mksnapshot",
       ":v8_base",
+    ]
+    public_deps = [
       ":natives_blob",
+      ":run_mksnapshot",
     ]
 
     sources = [
@@ -1573,6 +1580,10 @@ if (component_mode == "shared_library") {
     } else if (v8_use_snapshot) {
       deps = [
         ":v8_base",
+      ]
+      # v8_snapshot should be public so downstream targets can declare the
+      # snapshot file as their input.
+      public_deps = [
         ":v8_snapshot",
       ]
     } else {
@@ -1608,6 +1619,8 @@ if (component_mode == "shared_library") {
     } else if (v8_use_snapshot) {
       deps = [
         ":v8_base",
+      ]
+      public_deps = [
         ":v8_snapshot",
       ]
     } else {

@@ -628,7 +628,7 @@ UNINITIALIZED_DEPENDENT_TEST(CustomContextDeserialization,
       root =
           deserializer.DeserializePartial(isolate, global_proxy,
                                           &outdated_contexts).ToHandleChecked();
-      CHECK_EQ(2, outdated_contexts->length());
+      CHECK_EQ(3, outdated_contexts->length());
       CHECK(root->IsContext());
       Handle<Context> context = Handle<Context>::cast(root);
       CHECK(context->global_proxy() == *global_proxy);
@@ -808,7 +808,7 @@ static Handle<SharedFunctionInfo> CompileScript(
     Isolate* isolate, Handle<String> source, Handle<String> name,
     ScriptData** cached_data, v8::ScriptCompiler::CompileOptions options) {
   return Compiler::CompileScript(
-      source, name, 0, 0, false, false, Handle<Object>(),
+      source, name, 0, 0, v8::ScriptOriginOptions(), Handle<Object>(),
       Handle<Context>(isolate->native_context()), NULL, cached_data, options,
       NOT_NATIVES_CODE, false);
 }
@@ -887,7 +887,7 @@ TEST(CodeCachePromotedToCompilationCache) {
       isolate, src, src, &cache, v8::ScriptCompiler::kConsumeCodeCache);
 
   CHECK(isolate->compilation_cache()
-            ->LookupScript(src, src, 0, 0, false, false,
+            ->LookupScript(src, src, 0, 0, v8::ScriptOriginOptions(),
                            isolate->native_context(), SLOPPY)
             .ToHandleChecked()
             .is_identical_to(copy));

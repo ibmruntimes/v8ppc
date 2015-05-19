@@ -4269,6 +4269,13 @@ class ScopeInfo : public FixedArray {
   // no contexts are allocated for this scope ContextLength returns 0.
   int ContextLength();
 
+  // Does this scope declare a "this" binding?
+  bool HasReceiver();
+
+  // Does this scope declare a "this" binding, and the "this" binding is stack-
+  // or context-allocated?
+  bool HasAllocatedReceiver();
+
   // Is this scope the scope of a named function expression?
   bool HasFunctionName();
 
@@ -4348,6 +4355,11 @@ class ScopeInfo : public FixedArray {
   // function expressions, only), otherwise returns a value < 0. The name
   // must be an internalized string.
   int FunctionContextSlotIndex(String* name, VariableMode* mode);
+
+  // Lookup support for serialized scope info.  Returns the receiver context
+  // slot index if scope has a "this" binding, and the binding is
+  // context-allocated.  Otherwise returns a value < 0.
+  int ReceiverContextSlotIndex();
 
   bool block_scope_is_class_scope();
   FunctionKind function_kind();
@@ -4436,7 +4448,10 @@ class ScopeInfo : public FixedArray {
   // 7. StrongModeFreeVariablePositionEntries:
   //    Stores the locations (start and end position) of strong mode free
   //    variables.
-  // 8. FunctionNameEntryIndex:
+  // 8. RecieverEntryIndex:
+  //    If the scope binds a "this" value, one slot is reserved to hold the
+  //    context or stack slot index for the variable.
+  // 9. FunctionNameEntryIndex:
   //    If the scope belongs to a named function expression this part contains
   //    information about the function variable. It always occupies two array
   //    slots:  a. The name of the function variable.
@@ -4448,25 +4463,29 @@ class ScopeInfo : public FixedArray {
   int ContextLocalInfoEntriesIndex();
   int StrongModeFreeVariableNameEntriesIndex();
   int StrongModeFreeVariablePositionEntriesIndex();
+  int ReceiverEntryIndex();
   int FunctionNameEntryIndex();
 
-  // Location of the function variable for named function expressions.
-  enum FunctionVariableInfo {
-    NONE,     // No function name present.
-    STACK,    // Function
-    CONTEXT,
-    UNUSED
-  };
+  // Used for the function name variable for named function expressions, and for
+  // the receiver.
+  enum VariableAllocationInfo { NONE, STACK, CONTEXT, UNUSED };
 
   // Properties of scopes.
   class ScopeTypeField : public BitField<ScopeType, 0, 4> {};
-  class CallsEvalField : public BitField<bool, 4, 1> {};
+  class CallsEvalField : public BitField<bool, ScopeTypeField::kNext, 1> {};
   STATIC_ASSERT(LANGUAGE_END == 3);
-  class LanguageModeField : public BitField<LanguageMode, 5, 2> {};
-  class FunctionVariableField : public BitField<FunctionVariableInfo, 7, 2> {};
-  class FunctionVariableMode : public BitField<VariableMode, 9, 3> {};
-  class AsmModuleField : public BitField<bool, 12, 1> {};
-  class AsmFunctionField : public BitField<bool, 13, 1> {};
+  class LanguageModeField
+      : public BitField<LanguageMode, CallsEvalField::kNext, 2> {};
+  class ReceiverVariableField
+      : public BitField<VariableAllocationInfo, LanguageModeField::kNext, 2> {};
+  class FunctionVariableField
+      : public BitField<VariableAllocationInfo, ReceiverVariableField::kNext,
+                        2> {};
+  class FunctionVariableMode
+      : public BitField<VariableMode, FunctionVariableField::kNext, 3> {};
+  class AsmModuleField : public BitField<bool, FunctionVariableMode::kNext, 1> {
+  };
+  class AsmFunctionField : public BitField<bool, AsmModuleField::kNext, 1> {};
   class IsSimpleParameterListField
       : public BitField<bool, AsmFunctionField::kNext, 1> {};
   class BlockScopeIsClassScopeField
@@ -6774,17 +6793,11 @@ class Script: public Struct {
   inline CompilationState compilation_state();
   inline void set_compilation_state(CompilationState state);
 
-  // [is_embedder_debug_script]: An opaque boolean set by the embedder via
-  // ScriptOrigin, and used by the embedder to make decisions about the
-  // script's origin. V8 just passes this through. Encoded in
-  // the 'flags' field.
-  DECL_BOOLEAN_ACCESSORS(is_embedder_debug_script)
-
-  // [is_shared_cross_origin]: An opaque boolean set by the embedder via
-  // ScriptOrigin, and used by the embedder to make decisions about the
-  // script's level of privilege. V8 just passes this through. Encoded in
-  // the 'flags' field.
-  DECL_BOOLEAN_ACCESSORS(is_shared_cross_origin)
+  // [origin_options]: optional attributes set by the embedder via ScriptOrigin,
+  // and used by the embedder to make decisions about the script. V8 just passes
+  // this through. Encoded in the 'flags' field.
+  inline v8::ScriptOriginOptions origin_options();
+  inline void set_origin_options(ScriptOriginOptions origin_options);
 
   DECLARE_CAST(Script)
 
@@ -6836,8 +6849,10 @@ class Script: public Struct {
   // Bit positions in the flags field.
   static const int kCompilationTypeBit = 0;
   static const int kCompilationStateBit = 1;
-  static const int kIsEmbedderDebugScriptBit = 2;
-  static const int kIsSharedCrossOriginBit = 3;
+  static const int kOriginOptionsShift = 2;
+  static const int kOriginOptionsSize = 3;
+  static const int kOriginOptionsMask = ((1 << kOriginOptionsSize) - 1)
+                                        << kOriginOptionsShift;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(Script);
 };
@@ -8060,10 +8075,11 @@ class JSDate: public JSObject {
 class JSMessageObject: public JSObject {
  public:
   // [type]: the type of error message.
-  DECL_ACCESSORS(type, String)
+  inline int type() const;
+  inline void set_type(int value);
 
   // [arguments]: the arguments for formatting the error message.
-  DECL_ACCESSORS(arguments, JSArray)
+  DECL_ACCESSORS(argument, Object)
 
   // [script]: the script from which the error message originated.
   DECL_ACCESSORS(script, Object)

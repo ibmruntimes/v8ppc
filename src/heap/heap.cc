@@ -1040,9 +1040,9 @@ bool Heap::ReserveSpace(Reservation* reservations) {
           DCHECK_LE(size, MemoryAllocator::PageAreaSize(
                               static_cast<AllocationSpace>(space)));
           if (space == NEW_SPACE) {
-            allocation = new_space()->AllocateRaw(size);
+            allocation = new_space()->AllocateRawUnaligned(size);
           } else {
-            allocation = paged_space(space)->AllocateRaw(size);
+            allocation = paged_space(space)->AllocateRawUnaligned(size);
           }
           HeapObject* free_space;
           if (allocation.To(&free_space)) {
@@ -2150,17 +2150,10 @@ class ScavengingVisitor : public StaticVisitorBase {
     Heap* heap = map->GetHeap();
 
     DCHECK(heap->AllowedToBeMigrated(object, NEW_SPACE));
-    AllocationResult allocation;
-#ifdef V8_HOST_ARCH_32_BIT
-    if (alignment == kDoubleAlignment) {
-      allocation =
-          heap->new_space()->AllocateRawAligned(object_size, kDoubleAligned);
-    } else {
-      allocation = heap->new_space()->AllocateRaw(object_size);
-    }
-#else
-    allocation = heap->new_space()->AllocateRaw(object_size);
-#endif
+    AllocationAlignment align =
+        alignment == kDoubleAlignment ? kDoubleAligned : kWordAligned;
+    AllocationResult allocation =
+        heap->new_space()->AllocateRaw(object_size, align);
 
     HeapObject* target = NULL;  // Initialization to please compiler.
     if (allocation.To(&target)) {
@@ -2187,17 +2180,10 @@ class ScavengingVisitor : public StaticVisitorBase {
                                    HeapObject* object, int object_size) {
     Heap* heap = map->GetHeap();
 
-    AllocationResult allocation;
-#ifdef V8_HOST_ARCH_32_BIT
-    if (alignment == kDoubleAlignment) {
-      allocation =
-          heap->old_space()->AllocateRawAligned(object_size, kDoubleAligned);
-    } else {
-      allocation = heap->old_space()->AllocateRaw(object_size);
-    }
-#else
-    allocation = heap->old_space()->AllocateRaw(object_size);
-#endif
+    AllocationAlignment align =
+        alignment == kDoubleAlignment ? kDoubleAligned : kWordAligned;
+    AllocationResult allocation =
+        heap->old_space()->AllocateRaw(object_size, align);
 
     HeapObject* target = NULL;  // Initialization to please compiler.
     if (allocation.To(&target)) {
@@ -4622,18 +4608,8 @@ void Heap::MakeHeapIterable() {
   DCHECK(IsHeapIterable());
 }
 
-
-void Heap::ReduceNewSpaceSize(bool is_long_idle_notification) {
-  if (is_long_idle_notification) {
-    new_space_.Shrink();
-    UncommitFromSpace();
-  }
-}
-
-
 bool Heap::TryFinalizeIdleIncrementalMarking(
-    bool is_long_idle_notification, double idle_time_in_ms,
-    size_t size_of_objects,
+    double idle_time_in_ms, size_t size_of_objects,
     size_t final_incremental_mark_compact_speed_in_bytes_per_ms) {
   if (FLAG_overapproximate_weak_closure &&
       (incremental_marking()->IsReadyToOverApproximateWeakClosure() ||
@@ -4651,7 +4627,6 @@ bool Heap::TryFinalizeIdleIncrementalMarking(
                   final_incremental_mark_compact_speed_in_bytes_per_ms))) {
     CollectAllGarbage(kNoGCFlags, "idle notification: finalize incremental");
     gc_idle_time_handler_.NotifyIdleMarkCompact();
-    ReduceNewSpaceSize(is_long_idle_notification);
     return true;
   }
   return false;
@@ -4758,8 +4733,7 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
                !mark_compact_collector_.marking_deque()->IsEmpty());
       if (remaining_idle_time_in_ms > 0.0) {
         action.additional_work = TryFinalizeIdleIncrementalMarking(
-            is_long_idle_notification, remaining_idle_time_in_ms,
-            heap_state.size_of_objects,
+            remaining_idle_time_in_ms, heap_state.size_of_objects,
             heap_state.final_incremental_mark_compact_speed_in_bytes_per_ms);
       }
       break;
@@ -4776,19 +4750,22 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
                           "idle notification: finalize idle round");
       }
       gc_count_at_last_idle_gc_ = gc_count_;
-      ReduceNewSpaceSize(is_long_idle_notification);
       gc_idle_time_handler_.NotifyIdleMarkCompact();
       break;
     }
     case DO_SCAVENGE:
       CollectGarbage(NEW_SPACE, "idle notification: scavenge");
-      ReduceNewSpaceSize(is_long_idle_notification);
       break;
     case DO_FINALIZE_SWEEPING:
       mark_compact_collector()->EnsureSweepingCompleted();
       break;
     case DO_NOTHING:
       break;
+  }
+
+  if (action.reduce_memory) {
+    new_space_.Shrink();
+    UncommitFromSpace();
   }
 
   double current_time = MonotonicallyIncreasingTimeInMs();
@@ -6607,6 +6584,44 @@ void Heap::UnregisterStrongRoots(Object** start) {
     }
     list = next;
   }
+}
+
+
+bool Heap::GetObjectTypeName(size_t index, const char** object_type,
+                             const char** object_sub_type) {
+  if (index >= OBJECT_STATS_COUNT) return false;
+
+  switch (static_cast<int>(index)) {
+#define COMPARE_AND_RETURN_NAME(name) \
+  case name:                          \
+    *object_type = #name;             \
+    *object_sub_type = "";            \
+    return true;
+    INSTANCE_TYPE_LIST(COMPARE_AND_RETURN_NAME)
+#undef COMPARE_AND_RETURN_NAME
+#define COMPARE_AND_RETURN_NAME(name)         \
+  case FIRST_CODE_KIND_SUB_TYPE + Code::name: \
+    *object_type = "CODE_TYPE";               \
+    *object_sub_type = "CODE_KIND/" #name;    \
+    return true;
+    CODE_KIND_LIST(COMPARE_AND_RETURN_NAME)
+#undef COMPARE_AND_RETURN_NAME
+#define COMPARE_AND_RETURN_NAME(name)     \
+  case FIRST_FIXED_ARRAY_SUB_TYPE + name: \
+    *object_type = "FIXED_ARRAY_TYPE";    \
+    *object_sub_type = #name;             \
+    return true;
+    FIXED_ARRAY_SUB_INSTANCE_TYPE_LIST(COMPARE_AND_RETURN_NAME)
+#undef COMPARE_AND_RETURN_NAME
+#define COMPARE_AND_RETURN_NAME(name)                                          \
+  case FIRST_CODE_AGE_SUB_TYPE + Code::k##name##CodeAge - Code::kFirstCodeAge: \
+    *object_type = "CODE_TYPE";                                                \
+    *object_sub_type = "CODE_AGE/" #name;                                      \
+    return true;
+    CODE_AGE_LIST_COMPLETE(COMPARE_AND_RETURN_NAME)
+#undef COMPARE_AND_RETURN_NAME
+  }
+  return false;
 }
 }
 }  // namespace v8::internal

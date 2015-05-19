@@ -232,6 +232,7 @@ namespace internal {
   V(source_string, "source")                                   \
   V(source_url_string, "source_url")                           \
   V(source_mapping_url_string, "source_mapping_url")           \
+  V(this_string, "this")                                       \
   V(global_string, "global")                                   \
   V(ignore_case_string, "ignoreCase")                          \
   V(multiline_string, "multiline")                             \
@@ -1026,6 +1027,13 @@ class Heap {
   // Print short heap statistics.
   void PrintShortHeapStatistics();
 
+  size_t object_count_last_gc(size_t index) {
+    return index < OBJECT_STATS_COUNT ? object_counts_last_time_[index] : 0;
+  }
+  size_t object_size_last_gc(size_t index) {
+    return index < OBJECT_STATS_COUNT ? object_sizes_last_time_[index] : 0;
+  }
+
   // Write barrier support for address[offset] = o.
   INLINE(void RecordWrite(Address address, int offset));
 
@@ -1458,6 +1466,8 @@ class Heap {
   void TraceObjectStats();
   void TraceObjectStat(const char* name, int count, int size, double time);
   void CheckpointObjectStats();
+  bool GetObjectTypeName(size_t index, const char** object_type,
+                         const char** object_sub_type);
 
   void RegisterStrongRoots(Object** start, Object** end);
   void UnregisterStrongRoots(Object** start);
@@ -2101,11 +2111,9 @@ class Heap {
 
   void SelectScavengingVisitorsTable();
 
-  void ReduceNewSpaceSize(bool is_long_idle_notification);
-
   bool TryFinalizeIdleIncrementalMarking(
-      bool is_long_idle_notification, double idle_time_in_ms,
-      size_t size_of_objects, size_t mark_compact_speed_in_bytes_per_ms);
+      double idle_time_in_ms, size_t size_of_objects,
+      size_t mark_compact_speed_in_bytes_per_ms);
 
   void ClearObjectStats(bool clear_last_time_stats = false);
 
