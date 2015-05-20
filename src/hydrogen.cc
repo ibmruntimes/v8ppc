@@ -5790,7 +5790,8 @@ void HOptimizedGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
     ASSIGN_RETURN_ON_EXCEPTION_VALUE(
         isolate(), raw_boilerplate,
         Runtime::CreateArrayLiteralBoilerplate(
-            isolate(), literals, expr->constant_elements()),
+            isolate(), literals, expr->constant_elements(),
+            is_strong(function_language_mode())),
         Bailout(kArrayBoilerplateCreationFailed));
 
     boilerplate_object = Handle<JSObject>::cast(raw_boilerplate);
@@ -7950,9 +7951,12 @@ int HOptimizedGraphBuilder::InliningAstSize(Handle<JSFunction> target) {
   Handle<JSFunction> caller = current_info()->closure();
   Handle<SharedFunctionInfo> target_shared(target->shared());
 
-  // Always inline builtins marked for inlining.
+  // Always inline functions that force inlining.
+  if (target_shared->force_inline()) {
+    return 0;
+  }
   if (target->IsBuiltin()) {
-    return target_shared->inline_builtin() ? 0 : kNotInlinable;
+    return kNotInlinable;
   }
 
   if (target_shared->IsApiFunction()) {

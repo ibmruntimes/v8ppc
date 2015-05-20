@@ -34,15 +34,16 @@ class FunctionTester : public InitializedHandleScope {
         flags_(flags) {
     Compile(function);
     const uint32_t supported_flags = CompilationInfo::kContextSpecializing |
-                                     CompilationInfo::kBuiltinInliningEnabled |
                                      CompilationInfo::kInliningEnabled |
                                      CompilationInfo::kTypingEnabled;
     CHECK_EQ(0u, flags_ & ~supported_flags);
   }
 
+  // TODO(turbofan): generalize FunctionTester to work with N arguments. Now, it
+  // can handle up to four.
   explicit FunctionTester(Graph* graph)
       : isolate(main_isolate()),
-        function(NewFunction("(function(a,b){})")),
+        function(NewFunction("(function(a,b,c,d){})")),
         flags_(0) {
     CompileGraph(graph);
   }
@@ -53,6 +54,12 @@ class FunctionTester : public InitializedHandleScope {
   MaybeHandle<Object> Call(Handle<Object> a, Handle<Object> b) {
     Handle<Object> args[] = {a, b};
     return Execution::Call(isolate, function, undefined(), 2, args, false);
+  }
+
+  MaybeHandle<Object> Call(Handle<Object> a, Handle<Object> b, Handle<Object> c,
+                           Handle<Object> d) {
+    Handle<Object> args[] = {a, b, c, d};
+    return Execution::Call(isolate, function, undefined(), 4, args, false);
   }
 
   void CheckThrows(Handle<Object> a, Handle<Object> b) {

@@ -133,6 +133,7 @@ Heap::Heap()
       marking_time_(0.0),
       sweeping_time_(0.0),
       last_idle_notification_time_(0.0),
+      last_gc_time_(0.0),
       mark_compact_collector_(this),
       store_buffer_(this),
       marking_(this),
@@ -729,6 +730,7 @@ void Heap::GarbageCollectionEpilogue() {
   // Remember the last top pointer so that we can later find out
   // whether we allocated in new space since the last GC.
   new_space_top_after_last_gc_ = new_space()->top();
+  last_gc_time_ = MonotonicallyIncreasingTimeInMs();
 }
 
 
@@ -935,7 +937,7 @@ bool Heap::CollectGarbage(GarbageCollector collector, const char* gc_reason,
     }
 
     if (collector == MARK_COMPACTOR) {
-      gc_idle_time_handler_.NotifyMarkCompact();
+      gc_idle_time_handler_.NotifyMarkCompact(next_gc_likely_to_collect_more);
     } else {
       gc_idle_time_handler_.NotifyScavenge();
     }
@@ -4633,33 +4635,7 @@ bool Heap::TryFinalizeIdleIncrementalMarking(
 }
 
 
-double Heap::MonotonicallyIncreasingTimeInMs() {
-  return V8::GetCurrentPlatform()->MonotonicallyIncreasingTime() *
-         static_cast<double>(base::Time::kMillisecondsPerSecond);
-}
-
-
-bool Heap::IdleNotification(int idle_time_in_ms) {
-  return IdleNotification(
-      V8::GetCurrentPlatform()->MonotonicallyIncreasingTime() +
-      (static_cast<double>(idle_time_in_ms) /
-       static_cast<double>(base::Time::kMillisecondsPerSecond)));
-}
-
-
-bool Heap::IdleNotification(double deadline_in_seconds) {
-  CHECK(HasBeenSetUp());  // http://crbug.com/425035
-  double deadline_in_ms =
-      deadline_in_seconds *
-      static_cast<double>(base::Time::kMillisecondsPerSecond);
-  HistogramTimerScope idle_notification_scope(
-      isolate_->counters()->gc_idle_notification());
-  double start_ms = MonotonicallyIncreasingTimeInMs();
-  double idle_time_in_ms = deadline_in_ms - start_ms;
-  bool is_long_idle_notification =
-      static_cast<size_t>(idle_time_in_ms) >
-      GCIdleTimeHandler::kMaxFrameRenderingIdleTime;
-
+GCIdleTimeHandler::HeapState Heap::ComputeHeapState(bool reduce_memory) {
   GCIdleTimeHandler::HeapState heap_state;
   heap_state.contexts_disposed = contexts_disposed_;
   heap_state.contexts_disposal_rate =
@@ -4668,7 +4644,7 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
   heap_state.incremental_marking_stopped = incremental_marking()->IsStopped();
   // TODO(ulan): Start incremental marking only for large heaps.
   intptr_t limit = old_generation_allocation_limit_;
-  if (is_long_idle_notification) {
+  if (reduce_memory) {
     limit = idle_old_generation_allocation_limit_;
   }
 
@@ -4694,21 +4670,14 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
   heap_state.new_space_allocation_throughput_in_bytes_per_ms =
       static_cast<size_t>(
           tracer()->NewSpaceAllocationThroughputInBytesPerMillisecond());
+  return heap_state;
+}
 
-  GCIdleTimeAction action =
-      gc_idle_time_handler_.Compute(idle_time_in_ms, heap_state);
 
-  isolate()->counters()->gc_idle_time_allotted_in_ms()->AddSample(
-      static_cast<int>(idle_time_in_ms));
-  if (is_long_idle_notification) {
-    int committed_memory = static_cast<int>(CommittedMemory() / KB);
-    int used_memory = static_cast<int>(heap_state.size_of_objects / KB);
-    isolate()->counters()->aggregated_memory_heap_committed()->AddSample(
-        start_ms, committed_memory);
-    isolate()->counters()->aggregated_memory_heap_used()->AddSample(
-        start_ms, used_memory);
-  }
-
+bool Heap::PerformIdleTimeAction(GCIdleTimeAction action,
+                                 GCIdleTimeHandler::HeapState heap_state,
+                                 double deadline_in_ms,
+                                 bool is_long_idle_notification) {
   bool result = false;
   switch (action.type) {
     case DONE:
@@ -4767,10 +4736,32 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
     new_space_.Shrink();
     UncommitFromSpace();
   }
+  return result;
+}
 
+
+void Heap::IdleNotificationEpilogue(GCIdleTimeAction action,
+                                    GCIdleTimeHandler::HeapState heap_state,
+                                    double start_ms, double deadline_in_ms,
+                                    bool is_long_idle_notification) {
+  double idle_time_in_ms = deadline_in_ms - start_ms;
   double current_time = MonotonicallyIncreasingTimeInMs();
   last_idle_notification_time_ = current_time;
   double deadline_difference = deadline_in_ms - current_time;
+
+  contexts_disposed_ = 0;
+
+  isolate()->counters()->gc_idle_time_allotted_in_ms()->AddSample(
+      static_cast<int>(idle_time_in_ms));
+
+  if (is_long_idle_notification) {
+    int committed_memory = static_cast<int>(CommittedMemory() / KB);
+    int used_memory = static_cast<int>(heap_state.size_of_objects / KB);
+    isolate()->counters()->aggregated_memory_heap_committed()->AddSample(
+        start_ms, committed_memory);
+    isolate()->counters()->aggregated_memory_heap_used()->AddSample(
+        start_ms, used_memory);
+  }
 
   if (deadline_difference >= 0) {
     if (action.type != DONE && action.type != DO_NOTHING) {
@@ -4799,8 +4790,49 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
     }
     PrintF("\n");
   }
+}
 
-  contexts_disposed_ = 0;
+
+double Heap::MonotonicallyIncreasingTimeInMs() {
+  return V8::GetCurrentPlatform()->MonotonicallyIncreasingTime() *
+         static_cast<double>(base::Time::kMillisecondsPerSecond);
+}
+
+
+bool Heap::IdleNotification(int idle_time_in_ms) {
+  return IdleNotification(
+      V8::GetCurrentPlatform()->MonotonicallyIncreasingTime() +
+      (static_cast<double>(idle_time_in_ms) /
+       static_cast<double>(base::Time::kMillisecondsPerSecond)));
+}
+
+
+bool Heap::IdleNotification(double deadline_in_seconds) {
+  CHECK(HasBeenSetUp());
+  static const double kLastGCTimeTreshold = 1000;
+  double deadline_in_ms =
+      deadline_in_seconds *
+      static_cast<double>(base::Time::kMillisecondsPerSecond);
+  HistogramTimerScope idle_notification_scope(
+      isolate_->counters()->gc_idle_notification());
+  double start_ms = MonotonicallyIncreasingTimeInMs();
+  double idle_time_in_ms = deadline_in_ms - start_ms;
+  bool is_long_idle_notification =
+      static_cast<size_t>(idle_time_in_ms) >
+      GCIdleTimeHandler::kMaxFrameRenderingIdleTime;
+  bool has_low_gc_activity = (start_ms - last_gc_time_) > kLastGCTimeTreshold;
+
+  GCIdleTimeHandler::HeapState heap_state =
+      ComputeHeapState(is_long_idle_notification && has_low_gc_activity);
+
+  GCIdleTimeAction action =
+      gc_idle_time_handler_.Compute(idle_time_in_ms, heap_state);
+
+  bool result = PerformIdleTimeAction(action, heap_state, deadline_in_ms,
+                                      is_long_idle_notification);
+
+  IdleNotificationEpilogue(action, heap_state, start_ms, deadline_in_ms,
+                           is_long_idle_notification);
   return result;
 }
 

@@ -12,6 +12,10 @@ var $arraySplice;
 var $arrayUnshift;
 var $innerArrayForEach;
 var $innerArrayEvery;
+var $innerArrayIndexOf;
+var $innerArrayLastIndexOf;
+var $innerArrayReverse;
+var $innerArraySort;
 
 (function(global, shared, exports) {
 
@@ -564,18 +568,7 @@ function SparseReverse(array, len) {
 }
 
 
-function ArrayReverse() {
-  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.reverse");
-
-  var array = TO_OBJECT_INLINE(this);
-  var len = TO_UINT32(array.length);
-
-  if (UseSparseVariant(array, len, IS_ARRAY(array), len)) {
-    %NormalizeElements(array);
-    SparseReverse(array, len);
-    return array;
-  }
-
+function InnerArrayReverse(array, len) {
   var j = len - 1;
   for (var i = 0; i < j; i++, j--) {
     var current_i = array[i];
@@ -597,6 +590,22 @@ function ArrayReverse() {
     }
   }
   return array;
+}
+
+
+function ArrayReverse() {
+  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.reverse");
+
+  var array = TO_OBJECT_INLINE(this);
+  var len = TO_UINT32(array.length);
+
+  if (UseSparseVariant(array, len, IS_ARRAY(array), len)) {
+    %NormalizeElements(array);
+    SparseReverse(array, len);
+    return array;
+  }
+
+  return InnerArrayReverse(array, len);
 }
 
 
@@ -861,9 +870,7 @@ function ArraySplice(start, delete_count) {
 }
 
 
-function ArraySort(comparefn) {
-  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.sort");
-
+function InnerArraySort(length, comparefn) {
   // In-place QuickSort algorithm.
   // For short (length <= 22) arrays, insertion sort is used for efficiency.
 
@@ -1108,7 +1115,6 @@ function ArraySort(comparefn) {
     return first_undefined;
   };
 
-  var length = TO_UINT32(this.length);
   if (length < 2) return this;
 
   var is_array = IS_ARRAY(this);
@@ -1144,6 +1150,14 @@ function ArraySort(comparefn) {
   }
 
   return this;
+}
+
+
+function ArraySort(comparefn) {
+  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.sort");
+
+  var length = TO_UINT32(this.length);
+  return %_CallFunction(this, length, comparefn, InnerArraySort);
 }
 
 
@@ -1320,10 +1334,11 @@ function ArrayMap(f, receiver) {
 }
 
 
-function ArrayIndexOf(element, index) {
-  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.indexOf");
-
-  var length = TO_UINT32(this.length);
+// For .indexOf, we don't need to pass in the number of arguments
+// at the callsite since ToInteger(undefined) == 0; however, for
+// .lastIndexOf, we need to pass it, since the behavior for passing
+// undefined is 0 but for not including the argument is length-1.
+function InnerArrayIndexOf(element, index, length) {
   if (length == 0) return -1;
   if (IS_UNDEFINED(index)) {
     index = 0;
@@ -1377,12 +1392,17 @@ function ArrayIndexOf(element, index) {
 }
 
 
-function ArrayLastIndexOf(element, index) {
-  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.lastIndexOf");
+function ArrayIndexOf(element, index) {
+  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.indexOf");
 
   var length = TO_UINT32(this.length);
+  return %_CallFunction(this, element, index, length, InnerArrayIndexOf);
+}
+
+
+function InnerArrayLastIndexOf(element, index, length, argumentsLength) {
   if (length == 0) return -1;
-  if (%_ArgumentsLength() < 2) {
+  if (argumentsLength < 2) {
     index = length - 1;
   } else {
     index = TO_INTEGER(index);
@@ -1427,6 +1447,15 @@ function ArrayLastIndexOf(element, index) {
     }
   }
   return -1;
+}
+
+
+function ArrayLastIndexOf(element, index) {
+  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.lastIndexOf");
+
+  var length = TO_UINT32(this.length);
+  return %_CallFunction(this, element, index, length,
+                        %_ArgumentsLength(), InnerArrayLastIndexOf);
 }
 
 
@@ -1609,5 +1638,9 @@ $arrayUnshift = ArrayUnshift;
 
 $innerArrayForEach = InnerArrayForEach;
 $innerArrayEvery = InnerArrayEvery;
+$innerArrayIndexOf = InnerArrayIndexOf;
+$innerArrayLastIndexOf = InnerArrayLastIndexOf;
+$innerArrayReverse = InnerArrayReverse;
+$innerArraySort = InnerArraySort;
 
 });

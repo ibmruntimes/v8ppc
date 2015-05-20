@@ -835,8 +835,11 @@ class Global : public PersistentBase<T> {
   typedef void MoveOnlyTypeForCPP03;
 
  private:
+  template <class F>
+  friend class ReturnValue;
   Global(Global&) = delete;
   void operator=(Global&) = delete;
+  V8_INLINE T* operator*() const { return this->val_; }
 };
 
 
@@ -2991,8 +2994,13 @@ class ReturnValue {
     TYPE_CHECK(T, S);
   }
   // Handle setters
-  template <typename S> V8_INLINE void Set(const Persistent<S>& handle);
-  template <typename S> V8_INLINE void Set(const Handle<S> handle);
+  template <typename S>
+  V8_INLINE V8_DEPRECATE_SOON("Use Global<> instead",
+                              void Set(const Persistent<S>& handle));
+  template <typename S>
+  V8_INLINE void Set(const Global<S>& handle);
+  template <typename S>
+  V8_INLINE void Set(const Local<S> handle);
   // Fast primitive setters
   V8_INLINE void Set(bool value);
   V8_INLINE void Set(double i);
@@ -6449,6 +6457,12 @@ class V8_EXPORT Context {
   V8_INLINE Local<Value> GetEmbedderData(int index);
 
   /**
+   * Gets the exports object used by V8 extras. Extra natives get a reference
+   * to this object and can use it to export functionality.
+   */
+  Local<Object> GetExtrasExportsObject();
+
+  /**
    * Sets the embedder data with the given index, growing the data as
    * needed. Note that index 0 currently has a special meaning for Chrome's
    * debugger.
@@ -6822,7 +6836,7 @@ class Internals {
   static const int kJSObjectHeaderSize = 3 * kApiPointerSize;
   static const int kFixedArrayHeaderSize = 2 * kApiPointerSize;
   static const int kContextHeaderSize = 2 * kApiPointerSize;
-  static const int kContextEmbedderDataIndex = 77;
+  static const int kContextEmbedderDataIndex = 78;
   static const int kFullStringRepresentationMask = 0x07;
   static const int kStringEncodingMask = 0x4;
   static const int kExternalTwoByteRepresentationTag = 0x02;
@@ -7214,9 +7228,20 @@ void ReturnValue<T>::Set(const Persistent<S>& handle) {
   }
 }
 
-template<typename T>
-template<typename S>
-void ReturnValue<T>::Set(const Handle<S> handle) {
+template <typename T>
+template <typename S>
+void ReturnValue<T>::Set(const Global<S>& handle) {
+  TYPE_CHECK(T, S);
+  if (V8_UNLIKELY(handle.IsEmpty())) {
+    *value_ = GetDefaultValue();
+  } else {
+    *value_ = *reinterpret_cast<internal::Object**>(*handle);
+  }
+}
+
+template <typename T>
+template <typename S>
+void ReturnValue<T>::Set(const Local<S> handle) {
   TYPE_CHECK(T, S);
   if (V8_UNLIKELY(handle.IsEmpty())) {
     *value_ = GetDefaultValue();

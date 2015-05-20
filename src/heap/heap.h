@@ -1093,7 +1093,10 @@ class Heap {
 
   inline intptr_t PromotedTotalSize() {
     int64_t total = PromotedSpaceSizeOfObjects() + PromotedExternalMemorySize();
-    if (total > kMaxInt) return static_cast<intptr_t>(kMaxInt);
+    if (total > std::numeric_limits<intptr_t>::max()) {
+      // TODO(erikcorry): Use uintptr_t everywhere we do heap size calculations.
+      return std::numeric_limits<intptr_t>::max();
+    }
     if (total < 0) return 0;
     return static_cast<intptr_t>(total);
   }
@@ -2115,6 +2118,18 @@ class Heap {
       double idle_time_in_ms, size_t size_of_objects,
       size_t mark_compact_speed_in_bytes_per_ms);
 
+  GCIdleTimeHandler::HeapState ComputeHeapState(bool reduce_memory);
+
+  bool PerformIdleTimeAction(GCIdleTimeAction action,
+                             GCIdleTimeHandler::HeapState heap_state,
+                             double deadline_in_ms,
+                             bool is_long_idle_notification);
+
+  void IdleNotificationEpilogue(GCIdleTimeAction action,
+                                GCIdleTimeHandler::HeapState heap_state,
+                                double start_ms, double deadline_in_ms,
+                                bool is_long_idle_notification);
+
   void ClearObjectStats(bool clear_last_time_stats = false);
 
   inline void UpdateAllocationsHash(HeapObject* object);
@@ -2139,14 +2154,17 @@ class Heap {
   // Minimal interval between two subsequent collections.
   double min_in_mutator_;
 
-  // Cumulative GC time spent in marking
+  // Cumulative GC time spent in marking.
   double marking_time_;
 
-  // Cumulative GC time spent in sweeping
+  // Cumulative GC time spent in sweeping.
   double sweeping_time_;
 
-  // Last time an idle notification happened
+  // Last time an idle notification happened.
   double last_idle_notification_time_;
+
+  // Last time a garbage collection happened.
+  double last_gc_time_;
 
   MarkCompactCollector mark_compact_collector_;
 

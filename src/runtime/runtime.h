@@ -210,7 +210,7 @@ namespace internal {
   F(SetNativeFlag, 1, 1)                                    \
   F(ThrowStrongModeTooFewArguments, 0, 1)                   \
   F(IsConstructor, 1, 1)                                    \
-  F(SetInlineBuiltinFlag, 1, 1)                             \
+  F(SetForceInlineFlag, 1, 1)                               \
   F(FunctionBindArguments, 4, 1)                            \
   F(BoundFunctionGetBindings, 1, 1)                         \
   F(NewObjectFromBound, 1, 1)                               \
@@ -848,7 +848,7 @@ class Runtime : public AllStatic {
   // Used in runtime.cc and hydrogen's VisitArrayLiteral.
   MUST_USE_RESULT static MaybeHandle<Object> CreateArrayLiteralBoilerplate(
       Isolate* isolate, Handle<FixedArray> literals,
-      Handle<FixedArray> elements);
+      Handle<FixedArray> elements, bool is_strong);
 
   static void WeakCollectionInitialize(
       Isolate* isolate, Handle<JSWeakCollection> weak_collection);

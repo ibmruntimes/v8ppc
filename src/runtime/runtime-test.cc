@@ -372,7 +372,8 @@ RUNTIME_FUNCTION(Runtime_AbortJS) {
 
 RUNTIME_FUNCTION(Runtime_NativeScriptsCount) {
   DCHECK(args.length() == 0);
-  return Smi::FromInt(Natives::GetBuiltinsCount());
+  return Smi::FromInt(Natives::GetBuiltinsCount() +
+                      ExtraNatives::GetBuiltinsCount());
 }
 
 
@@ -500,5 +501,5 @@ TYPED_ARRAYS(TYPED_ARRAYS_CHECK_RUNTIME_FUNCTION)
 TYPED_ARRAYS(FIXED_TYPED_ARRAYS_CHECK_RUNTIME_FUNCTION)
 
 #undef FIXED_TYPED_ARRAYS_CHECK_RUNTIME_FUNCTION
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8

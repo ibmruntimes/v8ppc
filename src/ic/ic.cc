@@ -962,7 +962,7 @@ Handle<Code> LoadIC::initialize_stub(Isolate* isolate,
 
 Handle<Code> LoadIC::initialize_stub_in_optimized_code(
     Isolate* isolate, ExtraICState extra_state, State initialization_state) {
-  return VectorRawLoadStub(isolate, LoadICState(extra_state)).GetCode();
+  return LoadICStub(isolate, LoadICState(extra_state)).GetCode();
 }
 
 
@@ -974,7 +974,7 @@ Handle<Code> KeyedLoadIC::initialize_stub(Isolate* isolate) {
 Handle<Code> KeyedLoadIC::initialize_stub_in_optimized_code(
     Isolate* isolate, State initialization_state) {
   if (initialization_state != MEGAMORPHIC) {
-    return VectorRawKeyedLoadStub(isolate).GetCode();
+    return KeyedLoadICStub(isolate).GetCode();
   }
   switch (initialization_state) {
     case UNINITIALIZED:
@@ -1665,7 +1665,8 @@ Handle<Code> StoreIC::CompileHandler(LookupIterator* lookup,
   // This is currently guaranteed by checks in StoreIC::Store.
   Handle<JSObject> receiver = Handle<JSObject>::cast(lookup->GetReceiver());
   Handle<JSObject> holder = lookup->GetHolder<JSObject>();
-  DCHECK(!receiver->IsAccessCheckNeeded());
+  DCHECK(!receiver->IsAccessCheckNeeded() ||
+         isolate()->IsInternallyUsedPropertyName(lookup->name()));
 
   switch (lookup->state()) {
     case LookupIterator::TRANSITION: {
