@@ -59,6 +59,9 @@
     # Enable compiler warnings when using V8_DEPRECATED apis.
     'v8_deprecation_warnings%': 0,
 
+    # Enable compiler warnings when using V8_DEPRECATE_SOON apis.
+    'v8_imminent_deprecation_warnings%': 0,
+
     'v8_use_simulator%': 'false',
 
     # Set to 1 to enable DCHECKs in release builds.
@@ -89,6 +92,9 @@
       }],
       ['v8_deprecation_warnings==1', {
         'defines': ['V8_DEPRECATION_WARNINGS',],
+      }],
+      ['v8_imminent_deprecation_warnings==1', {
+        'defines': ['V8_IMMINENT_DEPRECATION_WARNINGS',],
       }],
       ['v8_enable_i18n_support==1', {
         'defines': ['V8_I18N_SUPPORT',],

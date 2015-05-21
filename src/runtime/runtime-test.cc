@@ -20,7 +20,8 @@ RUNTIME_FUNCTION(Runtime_DeoptimizeFunction) {
   if (!function->IsOptimized()) return isolate->heap()->undefined_value();
 
   // TODO(turbofan): Deoptimization is not supported yet.
-  if (function->code()->is_turbofanned() && !FLAG_turbo_deoptimization) {
+  if (function->code()->is_turbofanned() &&
+      function->shared()->asm_function() && !FLAG_turbo_asm_deoptimization) {
     return isolate->heap()->undefined_value();
   }
 
@@ -50,7 +51,8 @@ RUNTIME_FUNCTION(Runtime_DeoptimizeNow) {
   if (!function->IsOptimized()) return isolate->heap()->undefined_value();
 
   // TODO(turbofan): Deoptimization is not supported yet.
-  if (function->code()->is_turbofanned() && !FLAG_turbo_deoptimization) {
+  if (function->code()->is_turbofanned() &&
+      function->shared()->asm_function() && !FLAG_turbo_asm_deoptimization) {
     return isolate->heap()->undefined_value();
   }
 
@@ -86,8 +88,7 @@ RUNTIME_FUNCTION(Runtime_OptimizeFunctionOnNextCall) {
   // The following assertion was lifted from the DCHECK inside
   // JSFunction::MarkForOptimization().
   RUNTIME_ASSERT(function->shared()->allows_lazy_compilation() ||
-                 (function->code()->kind() == Code::FUNCTION &&
-                  function->code()->optimizable()));
+                 function->IsOptimizable());
 
   // If the function is already optimized, just return.
   if (function->IsOptimized()) return isolate->heap()->undefined_value();
@@ -131,8 +132,7 @@ RUNTIME_FUNCTION(Runtime_OptimizeOsr) {
   // The following assertion was lifted from the DCHECK inside
   // JSFunction::MarkForOptimization().
   RUNTIME_ASSERT(function->shared()->allows_lazy_compilation() ||
-                 (function->code()->kind() == Code::FUNCTION &&
-                  function->code()->optimizable()));
+                 function->IsOptimizable());
 
   // If the function is already optimized, just return.
   if (function->IsOptimized()) return isolate->heap()->undefined_value();

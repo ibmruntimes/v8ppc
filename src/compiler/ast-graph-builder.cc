@@ -599,7 +599,10 @@ void AstGraphBuilder::CreateGraphBody(bool stack_check) {
 
 
 void AstGraphBuilder::ClearNonLiveSlotsInFrameStates() {
-  if (!FLAG_analyze_environment_liveness) return;
+  if (!FLAG_analyze_environment_liveness ||
+      !info()->is_deoptimization_enabled()) {
+    return;
+  }
 
   NonLiveFrameStateSlotReplacer replacer(
       &state_values_cache_, jsgraph()->UndefinedConstant(),
@@ -660,7 +663,9 @@ AstGraphBuilder::Environment::Environment(AstGraphBuilder* builder,
     : builder_(builder),
       parameters_count_(scope->num_parameters() + 1),
       locals_count_(scope->num_stack_slots()),
-      liveness_block_(builder_->liveness_analyzer()->NewBlock()),
+      liveness_block_(IsLivenessAnalysisEnabled()
+                          ? builder_->liveness_analyzer()->NewBlock()
+                          : nullptr),
       values_(builder_->local_zone()),
       contexts_(builder_->local_zone()),
       control_dependency_(control_dependency),
@@ -696,10 +701,12 @@ AstGraphBuilder::Environment::Environment(AstGraphBuilder* builder,
 }
 
 
-AstGraphBuilder::Environment::Environment(AstGraphBuilder::Environment* copy)
+AstGraphBuilder::Environment::Environment(AstGraphBuilder::Environment* copy,
+                                          LivenessAnalyzerBlock* liveness_block)
     : builder_(copy->builder_),
       parameters_count_(copy->parameters_count_),
       locals_count_(copy->locals_count_),
+      liveness_block_(liveness_block),
       values_(copy->zone()),
       contexts_(copy->zone()),
       control_dependency_(copy->control_dependency_),
@@ -713,14 +720,6 @@ AstGraphBuilder::Environment::Environment(AstGraphBuilder::Environment* copy)
   contexts_.reserve(copy->contexts_.size());
   contexts_.insert(contexts_.begin(), copy->contexts_.begin(),
                    copy->contexts_.end());
-
-  if (FLAG_analyze_environment_liveness) {
-    // Split the liveness blocks.
-    copy->liveness_block_ =
-        builder_->liveness_analyzer()->NewBlock(copy->liveness_block());
-    liveness_block_ =
-        builder_->liveness_analyzer()->NewBlock(copy->liveness_block());
-  }
 }
 
 
@@ -733,7 +732,9 @@ void AstGraphBuilder::Environment::Bind(Variable* variable, Node* node) {
   } else {
     DCHECK(variable->IsStackLocal());
     values()->at(variable->index() + parameters_count_) = node;
-    if (FLAG_analyze_environment_liveness) {
+
+    DCHECK(IsLivenessBlockConsistent());
+    if (liveness_block() != nullptr) {
       liveness_block()->Bind(variable->index());
     }
   }
@@ -748,7 +749,8 @@ Node* AstGraphBuilder::Environment::Lookup(Variable* variable) {
     return values()->at(variable->index() + 1);
   } else {
     DCHECK(variable->IsStackLocal());
-    if (FLAG_analyze_environment_liveness) {
+    DCHECK(IsLivenessBlockConsistent());
+    if (liveness_block() != nullptr) {
       liveness_block()->Lookup(variable->index());
     }
     return values()->at(variable->index() + parameters_count_);
@@ -757,7 +759,8 @@ Node* AstGraphBuilder::Environment::Lookup(Variable* variable) {
 
 
 void AstGraphBuilder::Environment::MarkAllLocalsLive() {
-  if (FLAG_analyze_environment_liveness) {
+  DCHECK(IsLivenessBlockConsistent());
+  if (liveness_block() != nullptr) {
     for (int i = 0; i < locals_count_; i++) {
       liveness_block()->Lookup(i);
     }
@@ -766,12 +769,40 @@ void AstGraphBuilder::Environment::MarkAllLocalsLive() {
 
 
 AstGraphBuilder::Environment*
-AstGraphBuilder::Environment::CopyAndShareLiveness() {
-  Environment* env = new (zone()) Environment(this);
-  if (FLAG_analyze_environment_liveness) {
-    env->liveness_block_ = liveness_block();
+AstGraphBuilder::Environment::CopyForConditional() {
+  LivenessAnalyzerBlock* copy_liveness_block = nullptr;
+  if (liveness_block() != nullptr) {
+    copy_liveness_block =
+        builder_->liveness_analyzer()->NewBlock(liveness_block());
+    liveness_block_ = builder_->liveness_analyzer()->NewBlock(liveness_block());
   }
+  return new (zone()) Environment(this, copy_liveness_block);
+}
+
+
+AstGraphBuilder::Environment*
+AstGraphBuilder::Environment::CopyAsUnreachable() {
+  Environment* env = new (zone()) Environment(this, nullptr);
+  env->MarkAsUnreachable();
   return env;
+}
+
+
+AstGraphBuilder::Environment*
+AstGraphBuilder::Environment::CopyAndShareLiveness() {
+  if (liveness_block() != nullptr) {
+    // Finish the current liveness block before copying.
+    liveness_block_ = builder_->liveness_analyzer()->NewBlock(liveness_block());
+  }
+  Environment* env = new (zone()) Environment(this, liveness_block());
+  return env;
+}
+
+
+AstGraphBuilder::Environment* AstGraphBuilder::Environment::CopyForLoop(
+    BitVector* assigned, bool is_osr) {
+  PrepareForLoop(assigned, is_osr);
+  return CopyAndShareLiveness();
 }
 
 
@@ -822,10 +853,24 @@ Node* AstGraphBuilder::Environment::Checkpoint(
                                   stack_node_, builder()->current_context(),
                                   builder()->GetFunctionClosure(),
                                   builder()->jsgraph()->UndefinedConstant());
-  if (FLAG_analyze_environment_liveness) {
+
+  DCHECK(IsLivenessBlockConsistent());
+  if (liveness_block() != nullptr) {
     liveness_block()->Checkpoint(result);
   }
   return result;
+}
+
+
+bool AstGraphBuilder::Environment::IsLivenessAnalysisEnabled() {
+  return FLAG_analyze_environment_liveness &&
+         builder()->info()->is_deoptimization_enabled();
+}
+
+
+bool AstGraphBuilder::Environment::IsLivenessBlockConsistent() {
+  return (!IsLivenessAnalysisEnabled() || IsMarkedAsUnreachable()) ==
+         (liveness_block() == nullptr);
 }
 
 
@@ -1927,23 +1972,64 @@ void AstGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
 
   // Create nodes to evaluate all the non-constant subexpressions and to store
   // them into the newly cloned array.
-  for (int i = 0; i < expr->values()->length(); i++) {
-    Expression* subexpr = expr->values()->at(i);
+  int array_index = 0;
+  for (; array_index < expr->values()->length(); array_index++) {
+    Expression* subexpr = expr->values()->at(array_index);
+    if (subexpr->IsSpread()) break;
     if (CompileTimeValue::IsCompileTimeValue(subexpr)) continue;
 
     VisitForValue(subexpr);
     {
       FrameStateBeforeAndAfter states(this, subexpr->id());
       Node* value = environment()->Pop();
-      Node* index = jsgraph()->Constant(i);
+      Node* index = jsgraph()->Constant(array_index);
       Node* store =
           BuildKeyedStore(literal, index, value, TypeFeedbackId::None());
-      states.AddToNode(store, expr->GetIdForElement(i),
+      states.AddToNode(store, expr->GetIdForElement(array_index),
                        OutputFrameStateCombine::Ignore());
     }
   }
 
-  environment()->Pop();  // Array literal index.
+  // In case the array literal contains spread expressions it has two parts. The
+  // first part is  the "static" array which has a literal index is  handled
+  // above. The second part is the part after the first spread expression
+  // (inclusive) and these elements gets appended to the array. Note that the
+  // number elements an iterable produces is unknown ahead of time.
+  bool has_spread = array_index < expr->values()->length();
+  if (has_spread) {
+    environment()->Pop();  // Array literal index.
+  }
+
+  for (; array_index < expr->values()->length(); array_index++) {
+    Expression* subexpr = expr->values()->at(array_index);
+    Node* array = environment()->Pop();
+    Node* result;
+
+    if (subexpr->IsSpread()) {
+      VisitForValue(subexpr->AsSpread()->expression());
+      Node* iterable = environment()->Pop();
+      Node* builtins = BuildLoadBuiltinsObject();
+      Node* function = BuildLoadObjectField(
+          builtins, JSBuiltinsObject::OffsetOfFunctionWithId(
+                        Builtins::CONCAT_ITERABLE_TO_ARRAY));
+      result = NewNode(javascript()->CallFunction(3, NO_CALL_FUNCTION_FLAGS,
+                                                  language_mode()),
+                       function, array, iterable);
+    } else {
+      VisitForValue(subexpr);
+      Node* value = environment()->Pop();
+      const Operator* op =
+          javascript()->CallRuntime(Runtime::kAppendElement, 2);
+      result = NewNode(op, array, value);
+    }
+
+    PrepareFrameState(result, expr->GetIdForElement(array_index));
+    environment()->Push(result);
+  }
+
+  if (!has_spread) {
+    environment()->Pop();  // Array literal index.
+  }
   ast_context()->ProduceValue(environment()->Pop());
 }
 
@@ -3464,9 +3550,13 @@ Node* AstGraphBuilder::MakeNode(const Operator* op, int value_input_count,
       }
       // Add implicit exception continuation for throwing nodes.
       if (!result->op()->HasProperty(Operator::kNoThrow) && inside_try_scope) {
+        // Copy the environment for the success continuation.
+        Environment* success_env = environment()->CopyForConditional();
+
         Node* on_exception = graph()->NewNode(common()->IfException(), result);
         environment_->UpdateControlDependency(on_exception);
         execution_control()->ThrowValue(on_exception);
+        set_environment(success_env);
       }
       // Add implicit success continuation for throwing nodes.
       if (!result->op()->HasProperty(Operator::kNoThrow)) {
@@ -3502,21 +3592,23 @@ void AstGraphBuilder::Environment::Merge(Environment* other) {
   if (this->IsMarkedAsUnreachable()) {
     Node* other_control = other->control_dependency_;
     Node* inputs[] = {other_control};
-    liveness_block_ = other->liveness_block_;
     control_dependency_ =
         graph()->NewNode(common()->Merge(1), arraysize(inputs), inputs, true);
     effect_dependency_ = other->effect_dependency_;
     values_ = other->values_;
     contexts_ = other->contexts_;
+    if (IsLivenessAnalysisEnabled()) {
+      liveness_block_ =
+          builder_->liveness_analyzer()->NewBlock(other->liveness_block());
+    }
     return;
   }
 
   // Record the merge for the local variable liveness calculation.
-  // Unfortunately, we have to mirror the logic in the MergeControl method:
-  // connect before merge or loop, or create a new merge otherwise.
-  if (FLAG_analyze_environment_liveness) {
-    if (GetControlDependency()->opcode() != IrOpcode::kLoop &&
-        GetControlDependency()->opcode() != IrOpcode::kMerge) {
+  // For loops, we are connecting a back edge into the existing block;
+  // for merges, we create a new merged block.
+  if (IsLivenessAnalysisEnabled()) {
+    if (GetControlDependency()->opcode() != IrOpcode::kLoop) {
       liveness_block_ =
           builder_->liveness_analyzer()->NewBlock(liveness_block());
     }

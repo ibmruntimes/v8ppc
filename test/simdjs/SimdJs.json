@@ -10,6 +10,8 @@
   "resources": [
     "test/simdjs/data/src/benchmarks/base.js",
     "test/simdjs/data/src/ecmascript_simd.js",
+    "test/simdjs/harness-adapt.js",
+    "test/simdjs/harness-finish.js",
     "test/simdjs/data/src/benchmarks/kernel-template.js",
     "test/simdjs/data/src/benchmarks/averageFloat32x4.js",
     "test/simdjs/data/src/benchmarks/averageFloat32x4LoadFromInt8Array.js",
@@ -29,6 +31,9 @@
     "test/simdjs/data/src/benchmarks/memcpy.js"
   ],
   "run_count": 5,
+  "run_count_android_arm": 1,
+  "run_count_android_arm64": 3,
+  "run_count_arm": 3,
   "tests": [
     {
       "flags": [
@@ -43,14 +48,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -67,14 +64,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -91,14 +80,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -115,14 +96,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -139,14 +112,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -163,14 +128,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -187,14 +144,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -211,14 +160,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -235,14 +176,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -259,14 +192,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -283,14 +208,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -307,14 +224,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -331,14 +240,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -355,14 +256,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -379,14 +272,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -403,14 +288,6 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     },
@@ -427,18 +304,12 @@
         },
         {
           "name": "Non-SIMD"
-        },
-        {
-          "name": "Speedup",
-          "units": "score"
-        },
-        {
-          "name": "Iterations",
-          "units": "count"
         }
       ]
     }
   ],
-  "total": true,
+  "timeout_android_arm": 180,
+  "timeout_android_arm64": 120,
+  "timeout_arm": 120,
   "units": "ms"
 }

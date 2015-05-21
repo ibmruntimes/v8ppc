@@ -4394,7 +4394,6 @@ static int GetCodeChainLength(Code* code) {
 TEST(NextCodeLinkIsWeak) {
   i::FLAG_always_opt = false;
   i::FLAG_allow_natives_syntax = true;
-  i::FLAG_turbo_deoptimization = true;
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
   v8::internal::Heap* heap = CcTest::heap();
@@ -5410,19 +5409,11 @@ TEST(PreprocessStackTrace) {
 }
 
 
-static bool shared_has_been_collected = false;
-static bool builtin_exports_has_been_collected = false;
+static bool utils_has_been_collected = false;
 
-static void SharedHasBeenCollected(
+static void UtilsHasBeenCollected(
     const v8::WeakCallbackInfo<v8::Persistent<v8::Object>>& data) {
-  shared_has_been_collected = true;
-  data.GetParameter()->Reset();
-}
-
-
-static void BuiltinExportsHasBeenCollected(
-    const v8::WeakCallbackInfo<v8::Persistent<v8::Object>>& data) {
-  builtin_exports_has_been_collected = true;
+  utils_has_been_collected = true;
   data.GetParameter()->Reset();
 }
 
@@ -5434,30 +5425,136 @@ TEST(BootstrappingExports) {
 
   if (Snapshot::HaveASnapshotToStartFrom(CcTest::i_isolate())) return;
 
-  shared_has_been_collected = false;
-  builtin_exports_has_been_collected = false;
+  utils_has_been_collected = false;
 
-  v8::Persistent<v8::Object> shared;
-  v8::Persistent<v8::Object> builtin_exports;
+  v8::Persistent<v8::Object> utils;
 
   {
     v8::HandleScope scope(isolate);
     v8::Handle<v8::Object> natives =
         CcTest::global()->Get(v8_str("natives"))->ToObject(isolate);
-    shared.Reset(isolate, natives->Get(v8_str("shared"))->ToObject(isolate));
-    natives->Delete(v8_str("shared"));
-    builtin_exports.Reset(
-        isolate, natives->Get(v8_str("builtin_exports"))->ToObject(isolate));
-    natives->Delete(v8_str("builtin_exports"));
+    utils.Reset(isolate, natives->Get(v8_str("utils"))->ToObject(isolate));
+    natives->Delete(v8_str("utils"));
   }
 
-  shared.SetWeak(&shared, SharedHasBeenCollected,
-                 v8::WeakCallbackType::kParameter);
-  builtin_exports.SetWeak(&builtin_exports, BuiltinExportsHasBeenCollected,
-                          v8::WeakCallbackType::kParameter);
+  utils.SetWeak(&utils, UtilsHasBeenCollected,
+                v8::WeakCallbackType::kParameter);
 
   CcTest::heap()->CollectAllAvailableGarbage("fire weak callbacks");
 
-  CHECK(shared_has_been_collected);
-  CHECK(builtin_exports_has_been_collected);
+  CHECK(utils_has_been_collected);
+}
+
+
+TEST(Regress1878) {
+  FLAG_allow_natives_syntax = true;
+  CcTest::InitializeVM();
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope scope(isolate);
+  v8::Local<v8::Function> constructor =
+      v8::Utils::ToLocal(CcTest::i_isolate()->internal_array_function());
+  CcTest::global()->Set(v8_str("InternalArray"), constructor);
+
+  v8::TryCatch try_catch;
+
+  CompileRun(
+      "var a = Array();"
+      "for (var i = 0; i < 1000; i++) {"
+      "  var ai = new InternalArray(10000);"
+      "  if (%HaveSameMap(ai, a)) throw Error();"
+      "  if (!%HasFastObjectElements(ai)) throw Error();"
+      "}"
+      "for (var i = 0; i < 1000; i++) {"
+      "  var ai = new InternalArray(10000);"
+      "  if (%HaveSameMap(ai, a)) throw Error();"
+      "  if (!%HasFastObjectElements(ai)) throw Error();"
+      "}");
+
+  CHECK(!try_catch.HasCaught());
+}
+
+
+void AllocateInNewSpace(Isolate* isolate, size_t bytes) {
+  CHECK(bytes >= FixedArray::kHeaderSize);
+  CHECK(bytes % kPointerSize == 0);
+  Factory* factory = isolate->factory();
+  HandleScope scope(isolate);
+  AlwaysAllocateScope always_allocate(isolate);
+  int elements =
+      static_cast<int>((bytes - FixedArray::kHeaderSize) / kPointerSize);
+  Handle<FixedArray> array = factory->NewFixedArray(elements, NOT_TENURED);
+  CHECK(isolate->heap()->InNewSpace(*array));
+  CHECK_EQ(bytes, static_cast<size_t>(array->Size()));
+}
+
+
+TEST(NewSpaceAllocationCounter) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  size_t counter1 = heap->NewSpaceAllocationCounter();
+  heap->CollectGarbage(NEW_SPACE);
+  const size_t kSize = 1024;
+  AllocateInNewSpace(isolate, kSize);
+  size_t counter2 = heap->NewSpaceAllocationCounter();
+  CHECK_EQ(kSize, counter2 - counter1);
+  heap->CollectGarbage(NEW_SPACE);
+  size_t counter3 = heap->NewSpaceAllocationCounter();
+  CHECK_EQ(0, counter3 - counter2);
+  // Test counter overflow.
+  size_t max_counter = -1;
+  heap->set_new_space_allocation_counter(max_counter - 10 * kSize);
+  size_t start = heap->NewSpaceAllocationCounter();
+  for (int i = 0; i < 20; i++) {
+    AllocateInNewSpace(isolate, kSize);
+    size_t counter = heap->NewSpaceAllocationCounter();
+    CHECK_EQ(kSize, counter - start);
+    start = counter;
+  }
+}
+
+
+TEST(NewSpaceAllocationThroughput) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  GCTracer* tracer = heap->tracer();
+  int time1 = 100;
+  size_t counter1 = 1000;
+  tracer->SampleNewSpaceAllocation(time1, counter1);
+  int time2 = 200;
+  size_t counter2 = 2000;
+  tracer->SampleNewSpaceAllocation(time2, counter2);
+  size_t throughput =
+      tracer->NewSpaceAllocationThroughputInBytesPerMillisecond();
+  CHECK_EQ((counter2 - counter1) / (time2 - time1), throughput);
+  int time3 = 1000;
+  size_t counter3 = 30000;
+  tracer->SampleNewSpaceAllocation(time3, counter3);
+  throughput = tracer->NewSpaceAllocationThroughputInBytesPerMillisecond();
+  CHECK_EQ((counter3 - counter1) / (time3 - time1), throughput);
+}
+
+
+TEST(NewSpaceAllocationThroughput2) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  GCTracer* tracer = heap->tracer();
+  int time1 = 100;
+  size_t counter1 = 1000;
+  tracer->SampleNewSpaceAllocation(time1, counter1);
+  int time2 = 200;
+  size_t counter2 = 2000;
+  tracer->SampleNewSpaceAllocation(time2, counter2);
+  size_t bytes = tracer->NewSpaceAllocatedBytesInLast(1000);
+  CHECK_EQ(0, bytes);
+  int time3 = 1000;
+  size_t counter3 = 30000;
+  tracer->SampleNewSpaceAllocation(time3, counter3);
+  bytes = tracer->NewSpaceAllocatedBytesInLast(100);
+  CHECK_EQ((counter3 - counter1) * 100 / (time3 - time1), bytes);
 }

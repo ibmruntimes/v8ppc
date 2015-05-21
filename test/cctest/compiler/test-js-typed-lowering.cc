@@ -462,8 +462,9 @@ TEST(JSToNumber_replacement) {
 
   for (size_t i = 0; i < arraysize(types); i++) {
     Node* n = R.Parameter(types[i]);
-    Node* c = R.graph.NewNode(R.javascript.ToNumber(), n, R.context(),
-                              R.start(), R.start());
+    Node* c =
+        R.graph.NewNode(R.javascript.ToNumber(), n, R.context(),
+                        R.EmptyFrameState(R.context()), R.start(), R.start());
     Node* effect_use = R.UseForEffect(c);
     Node* add = R.graph.NewNode(R.simplified.ReferenceEqual(Type::Any()), n, c);
 
@@ -712,8 +713,6 @@ TEST_WITH_STRONG(MixedComparison1) {
 
 
 TEST_WITH_STRONG(RemoveToNumberEffects) {
-  FLAG_turbo_deoptimization = true;
-
   JSTypedLoweringTester R;
 
   Node* effect_use = NULL;
@@ -725,27 +724,16 @@ TEST_WITH_STRONG(RemoveToNumberEffects) {
 
     switch (i) {
       case 0:
-        if (FLAG_turbo_deoptimization) {
-          DCHECK(OperatorProperties::GetFrameStateInputCount(
-                     R.javascript.ToNumber()) == 1);
-          effect_use = R.graph.NewNode(R.javascript.ToNumber(), p0, R.context(),
-                                       frame_state, ton, R.start());
-        } else {
+        DCHECK(OperatorProperties::GetFrameStateInputCount(
+                   R.javascript.ToNumber()) == 1);
         effect_use = R.graph.NewNode(R.javascript.ToNumber(), p0, R.context(),
-                                     ton, R.start());
-        }
+                                     frame_state, ton, R.start());
         break;
       case 1:
-        if (FLAG_turbo_deoptimization) {
-          DCHECK(OperatorProperties::GetFrameStateInputCount(
-                     R.javascript.ToNumber()) == 1);
-          effect_use =
-              R.graph.NewNode(R.javascript.ToNumber(), ton, R.context(),
-                              frame_state, ton, R.start());
-        } else {
-          effect_use = R.graph.NewNode(R.javascript.ToNumber(), ton,
-                                       R.context(), ton, R.start());
-        }
+        DCHECK(OperatorProperties::GetFrameStateInputCount(
+                   R.javascript.ToNumber()) == 1);
+        effect_use = R.graph.NewNode(R.javascript.ToNumber(), ton, R.context(),
+                                     frame_state, ton, R.start());
         break;
       case 2:
         effect_use = R.graph.NewNode(R.common.EffectPhi(1), ton, R.start());

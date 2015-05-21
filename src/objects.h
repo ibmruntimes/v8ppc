@@ -1012,6 +1012,7 @@ template <class C> inline bool Is(Object* obj);
   V(WeakCell)                      \
   V(ObjectHashTable)               \
   V(WeakHashTable)                 \
+  V(WeakValueHashTable)            \
   V(OrderedHashTable)
 
 // Object is the abstract superclass for all classes in the
@@ -1106,6 +1107,11 @@ class Object {
     }
     return true;
   }
+
+  // Checks whether two valid primitive encodings of a property name resolve to
+  // the same logical property. E.g., the smi 1, the string "1" and the double
+  // 1 all refer to the same property, so this helper will return true.
+  inline bool KeyEquals(Object* other);
 
   Handle<HeapType> OptimalType(Isolate* isolate, Representation representation);
 
@@ -1481,8 +1487,7 @@ class HeapObject: public Object {
   static void VerifyHeapPointer(Object* p);
 #endif
 
-  inline bool NeedsToEnsureDoubleAlignment();
-  inline bool NeedsToEnsureDoubleUnalignment();
+  inline AllocationAlignment RequiredAlignment();
 
   // Layout description.
   // First field in a heap object is map.
@@ -3953,7 +3958,7 @@ class ObjectHashTable: public HashTable<ObjectHashTable,
                                         Handle<Object> key,
                                         bool* was_present);
 
- private:
+ protected:
   friend class MarkCompactCollector;
 
   void AddEntry(int entry, Object* key, Object* value);
@@ -4180,6 +4185,8 @@ class WeakHashTable: public HashTable<WeakHashTable,
                                                    Handle<HeapObject> key,
                                                    Handle<HeapObject> value);
 
+  static Handle<FixedArray> GetValues(Handle<WeakHashTable> table);
+
  private:
   friend class MarkCompactCollector;
 
@@ -4192,6 +4199,26 @@ class WeakHashTable: public HashTable<WeakHashTable,
 };
 
 
+class WeakValueHashTable : public ObjectHashTable {
+ public:
+  DECLARE_CAST(WeakValueHashTable)
+
+#ifdef DEBUG
+  // Looks up the value associated with the given key. The hole value is
+  // returned in case the key is not present.
+  Object* LookupWeak(Handle<Object> key);
+#endif  // DEBUG
+
+  // Adds (or overwrites) the value associated with the given key. Mapping a
+  // key to the hole value causes removal of the whole entry.
+  MUST_USE_RESULT static Handle<WeakValueHashTable> PutWeak(
+      Handle<WeakValueHashTable> table, Handle<Object> key,
+      Handle<HeapObject> value);
+
+  static Handle<FixedArray> GetWeakValues(Handle<WeakValueHashTable> table);
+};
+
+
 // JSFunctionResultCache caches results of some JSFunction invocation.
 // It is a fixed array with fixed structure:
 //   [0]: factory function
@@ -4199,7 +4226,7 @@ class WeakHashTable: public HashTable<WeakHashTable,
 //   [2]: current cache size
 //   [3]: dummy field.
 // The rest of array are key/value pairs.
-class JSFunctionResultCache: public FixedArray {
+class JSFunctionResultCache : public FixedArray {
  public:
   static const int kFactoryIndex = 0;
   static const int kFingerIndex = kFactoryIndex + 1;
@@ -5348,10 +5375,6 @@ class Code: public HeapObject {
   inline bool can_have_weak_objects();
   inline void set_can_have_weak_objects(bool value);
 
-  // [optimizable]: For FUNCTION kind, tells if it is optimizable.
-  inline bool optimizable();
-  inline void set_optimizable(bool value);
-
   // [has_deoptimization_support]: For FUNCTION kind, tells if it has
   // deoptimization support.
   inline bool has_deoptimization_support();
@@ -5686,9 +5709,7 @@ class Code: public HeapObject {
 #endif
 
   // Byte offsets within kKindSpecificFlags1Offset.
-  static const int kOptimizableOffset = kKindSpecificFlags1Offset;
-
-  static const int kFullCodeFlags = kOptimizableOffset + 1;
+  static const int kFullCodeFlags = kKindSpecificFlags1Offset;
   class FullCodeFlagsHasDeoptimizationSupportField:
       public BitField<bool, 0, 1> {};  // NOLINT
   class FullCodeFlagsHasDebugBreakSlotsField: public BitField<bool, 1, 1> {};
@@ -7149,6 +7170,9 @@ class SharedFunctionInfo: public HeapObject {
   // Is this a function or top-level/eval code.
   DECL_BOOLEAN_ACCESSORS(is_function)
 
+  // Indicates that code for this function cannot be compiled with Crankshaft.
+  DECL_BOOLEAN_ACCESSORS(dont_crankshaft)
+
   // Indicates that code for this function cannot be cached.
   DECL_BOOLEAN_ACCESSORS(dont_cache)
 
@@ -7435,6 +7459,7 @@ class SharedFunctionInfo: public HeapObject {
     kIsAnonymous,
     kNameShouldPrintAsAnonymous,
     kIsFunction,
+    kDontCrankshaft,
     kDontCache,
     kDontFlush,
     kIsArrow,

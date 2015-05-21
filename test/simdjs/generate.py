@@ -28,11 +28,18 @@ tests = [t for t in tests if t not in SKIP_FILES]
 output = {
   'name': 'SIMDJS',
   'run_count': 5,
+  'run_count_arm': 3,
+  'run_count_android_arm': 1,
+  'run_count_android_arm64': 3,
+  'timeout_arm': 120,
+  'timeout_android_arm': 180,
+  'timeout_android_arm64': 120,
   'units': 'ms',
-  'total': True,
   'resources': [
     'test/simdjs/data/src/benchmarks/base.js',
-    'test/simdjs/data/src/ecmascript_simd.js'
+    'test/simdjs/data/src/ecmascript_simd.js',
+    'test/simdjs/harness-adapt.js',
+    'test/simdjs/harness-finish.js'
   ] + ['test/simdjs/data/src/benchmarks/%s.js' % t for t in tests],
   'flags': ['--harmony-object', 'test/simdjs/harness-adapt.js'],
   'path': ['../../'],
@@ -45,12 +52,10 @@ output = {
       'tests': [
         {'name': 'SIMD'},
         {'name': 'Non-SIMD'},
-        {'name': 'Speedup', 'units': 'score'},
-        {'name': 'Iterations', 'units': 'count'}
       ]
     }
   for test in tests],
 }
 
-with open(os.path.join(SCRIPT_DIR, 'SimdJS.json'), 'w') as fh:
+with open(os.path.join(SCRIPT_DIR, 'SimdJs.json'), 'w') as fh:
   fh.write(json.dumps(output, separators=(',',': '), indent=2, sort_keys=True))

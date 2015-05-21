@@ -909,7 +909,8 @@ void OptimizedFrame::Summarize(List<FrameSummary>* frames) {
 
   // Delegate to JS frame in absence of turbofan deoptimization.
   // TODO(turbofan): Revisit once we support deoptimization across the board.
-  if (LookupCode()->is_turbofanned() && !FLAG_turbo_deoptimization) {
+  if (LookupCode()->is_turbofanned() && function()->shared()->asm_function() &&
+      !FLAG_turbo_asm_deoptimization) {
     return JavaScriptFrame::Summarize(frames);
   }
 
@@ -1046,7 +1047,8 @@ int OptimizedFrame::GetInlineCount() {
 
   // Delegate to JS frame in absence of turbofan deoptimization.
   // TODO(turbofan): Revisit once we support deoptimization across the board.
-  if (LookupCode()->is_turbofanned() && !FLAG_turbo_deoptimization) {
+  if (LookupCode()->is_turbofanned() && function()->shared()->asm_function() &&
+      !FLAG_turbo_asm_deoptimization) {
     return JavaScriptFrame::GetInlineCount();
   }
 
@@ -1070,7 +1072,8 @@ void OptimizedFrame::GetFunctions(List<JSFunction*>* functions) {
 
   // Delegate to JS frame in absence of turbofan deoptimization.
   // TODO(turbofan): Revisit once we support deoptimization across the board.
-  if (LookupCode()->is_turbofanned() && !FLAG_turbo_deoptimization) {
+  if (LookupCode()->is_turbofanned() && function()->shared()->asm_function() &&
+      !FLAG_turbo_asm_deoptimization) {
     return JavaScriptFrame::GetFunctions(functions);
   }
 

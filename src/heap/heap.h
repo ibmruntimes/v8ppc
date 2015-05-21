@@ -1312,6 +1312,19 @@ class Heap {
     }
   }
 
+  void UpdateNewSpaceAllocationCounter() {
+    new_space_allocation_counter_ = NewSpaceAllocationCounter();
+  }
+
+  size_t NewSpaceAllocationCounter() {
+    return new_space_allocation_counter_ + new_space()->AllocatedSinceLastGC();
+  }
+
+  // This should be used only for testing.
+  void set_new_space_allocation_counter(size_t new_value) {
+    new_space_allocation_counter_ = new_value;
+  }
+
   // Update GC statistics that are tracked on the Heap.
   void UpdateCumulativeGCStatistics(double duration, double spent_in_mutator,
                                     double marking_time);
@@ -2114,6 +2127,8 @@ class Heap {
 
   void SelectScavengingVisitorsTable();
 
+  void ReduceNewSpaceSize(GCIdleTimeAction action);
+
   bool TryFinalizeIdleIncrementalMarking(
       double idle_time_in_ms, size_t size_of_objects,
       size_t mark_compact_speed_in_bytes_per_ms);
@@ -2181,6 +2196,11 @@ class Heap {
   // These two counters are monotomically increasing and never reset.
   size_t full_codegen_bytes_generated_;
   size_t crankshaft_codegen_bytes_generated_;
+
+  // This counter is increased before each GC and never reset.
+  // To account for the bytes allocated since the last GC, use the
+  // NewSpaceAllocationCounter() function.
+  size_t new_space_allocation_counter_;
 
   // If the --deopt_every_n_garbage_collections flag is set to a positive value,
   // this variable holds the number of garbage collections since the last

@@ -275,6 +275,24 @@ bool Object::HasValidElements() {
 }
 
 
+bool Object::KeyEquals(Object* second) {
+  Object* first = this;
+  if (second->IsNumber()) {
+    if (first->IsNumber()) return first->Number() == second->Number();
+    Object* temp = first;
+    first = second;
+    second = temp;
+  }
+  if (first->IsNumber()) {
+    DCHECK_LE(0, first->Number());
+    uint32_t expected = static_cast<uint32_t>(first->Number());
+    uint32_t index;
+    return Name::cast(second)->AsArrayIndex(&index) && index == expected;
+  }
+  return Name::cast(first)->Equals(Name::cast(second));
+}
+
+
 Handle<Object> Object::NewStorageFor(Isolate* isolate,
                                      Handle<Object> object,
                                      Representation representation) {
@@ -871,6 +889,9 @@ bool Object::IsHashTable() const {
 bool Object::IsWeakHashTable() const {
   return IsHashTable();
 }
+
+
+bool Object::IsWeakValueHashTable() const { return IsHashTable(); }
 
 
 bool Object::IsDictionary() const {
@@ -2811,23 +2832,16 @@ WriteBarrierMode HeapObject::GetWriteBarrierMode(
 }
 
 
-bool HeapObject::NeedsToEnsureDoubleAlignment() {
+AllocationAlignment HeapObject::RequiredAlignment() {
 #ifdef V8_HOST_ARCH_32_BIT
-  return (IsFixedFloat64Array() || IsFixedDoubleArray() ||
-          IsConstantPoolArray()) &&
-         FixedArrayBase::cast(this)->length() != 0;
-#else
-  return false;
+  if ((IsFixedFloat64Array() || IsFixedDoubleArray() ||
+       IsConstantPoolArray()) &&
+      FixedArrayBase::cast(this)->length() != 0) {
+    return kDoubleAligned;
+  }
+  if (IsHeapNumber()) return kDoubleUnaligned;
 #endif  // V8_HOST_ARCH_32_BIT
-}
-
-
-bool HeapObject::NeedsToEnsureDoubleUnalignment() {
-#ifdef V8_HOST_ARCH_32_BIT
-  return IsHeapNumber();
-#else
-  return false;
-#endif  // V8_HOST_ARCH_32_BIT
+  return kWordAligned;
 }
 
 
@@ -3418,6 +3432,7 @@ CAST_ACCESSOR(UnseededNumberDictionary)
 CAST_ACCESSOR(WeakCell)
 CAST_ACCESSOR(WeakFixedArray)
 CAST_ACCESSOR(WeakHashTable)
+CAST_ACCESSOR(WeakValueHashTable)
 
 
 // static
@@ -4918,18 +4933,6 @@ inline void Code::set_can_have_weak_objects(bool value) {
 }
 
 
-bool Code::optimizable() {
-  DCHECK_EQ(FUNCTION, kind());
-  return READ_BYTE_FIELD(this, kOptimizableOffset) == 1;
-}
-
-
-void Code::set_optimizable(bool value) {
-  DCHECK_EQ(FUNCTION, kind());
-  WRITE_BYTE_FIELD(this, kOptimizableOffset, value ? 1 : 0);
-}
-
-
 bool Code::has_deoptimization_support() {
   DCHECK_EQ(FUNCTION, kind());
   byte flags = READ_BYTE_FIELD(this, kFullCodeFlags);
@@ -5792,11 +5795,6 @@ void SharedFunctionInfo::set_optimization_disabled(bool disable) {
   set_compiler_hints(BooleanBit::set(compiler_hints(),
                                      kOptimizationDisabled,
                                      disable));
-  // If disabling optimizations we reflect that in the code object so
-  // it will not be counted as optimizable code.
-  if ((code()->kind() == Code::FUNCTION) && disable) {
-    code()->set_optimizable(false);
-  }
 }
 
 
@@ -5843,6 +5841,8 @@ BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints,
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, bound, kBoundFunction)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, is_anonymous, kIsAnonymous)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, is_function, kIsFunction)
+BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, dont_crankshaft,
+               kDontCrankshaft)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, dont_cache, kDontCache)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, dont_flush, kDontFlush)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, is_arrow, kIsArrow)
@@ -6037,7 +6037,6 @@ void SharedFunctionInfo::TryReenableOptimization() {
     set_optimization_disabled(false);
     set_opt_count(0);
     set_deopt_count(0);
-    code()->set_optimizable(true);
   }
 }
 
@@ -6075,7 +6074,7 @@ bool JSFunction::IsOptimized() {
 
 
 bool JSFunction::IsOptimizable() {
-  return code()->kind() == Code::FUNCTION && code()->optimizable();
+  return code()->kind() == Code::FUNCTION && !shared()->optimization_disabled();
 }
 
 

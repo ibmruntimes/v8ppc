@@ -8203,8 +8203,7 @@ MaybeHandle<FixedArray> FixedArray::AddKeysFromArrayLike(
   Handle<FixedArray> result;
   ASSIGN_RETURN_ON_EXCEPTION(
       array->GetIsolate(), result,
-      accessor->AddElementsToFixedArray(array, array, content, filter),
-      FixedArray);
+      accessor->AddElementsToFixedArray(array, content, filter), FixedArray);
 
 #ifdef ENABLE_SLOW_DCHECKS
   if (FLAG_enable_slow_asserts) {
@@ -8221,25 +8220,27 @@ MaybeHandle<FixedArray> FixedArray::AddKeysFromArrayLike(
 
 MaybeHandle<FixedArray> FixedArray::UnionOfKeys(Handle<FixedArray> first,
                                                 Handle<FixedArray> second) {
-  ElementsAccessor* accessor = ElementsAccessor::ForArray(second);
-  Handle<FixedArray> result;
-  ASSIGN_RETURN_ON_EXCEPTION(
-      first->GetIsolate(), result,
-      accessor->AddElementsToFixedArray(
-          Handle<Object>::null(),    // receiver
-          Handle<JSObject>::null(),  // holder
-          first, Handle<FixedArrayBase>::cast(second), ALL_KEYS),
-      FixedArray);
-
-#ifdef ENABLE_SLOW_DCHECKS
-  if (FLAG_enable_slow_asserts) {
-    DisallowHeapAllocation no_allocation;
-    for (int i = 0; i < result->length(); i++) {
-      Object* current = result->get(i);
-      DCHECK(current->IsNumber() || current->IsName());
+  if (second->length() == 0) return first;
+  if (first->length() == 0) return second;
+  Isolate* isolate = first->GetIsolate();
+  Handle<FixedArray> result =
+      isolate->factory()->NewFixedArray(first->length() + second->length());
+  for (int i = 0; i < first->length(); i++) {
+    result->set(i, first->get(i));
+  }
+  int pos = first->length();
+  for (int j = 0; j < second->length(); j++) {
+    Object* current = second->get(j);
+    int i;
+    for (i = 0; i < first->length(); i++) {
+      if (current->KeyEquals(first->get(i))) break;
+    }
+    if (i == first->length()) {
+      result->set(pos++, current);
     }
   }
-#endif
+
+  result->Shrink(pos);
   return result;
 }
 
@@ -9807,7 +9808,7 @@ void JSFunction::JSFunctionIterateBody(int object_size, ObjectVisitor* v) {
 void JSFunction::MarkForOptimization() {
   Isolate* isolate = GetIsolate();
   DCHECK(!IsOptimized());
-  DCHECK(shared()->allows_lazy_compilation() || code()->optimizable());
+  DCHECK(shared()->allows_lazy_compilation() || IsOptimizable());
   set_code_no_write_barrier(
       isolate->builtins()->builtin(Builtins::kCompileOptimized));
   // No write barrier required, since the builtin is part of the root set.
@@ -9831,7 +9832,7 @@ void JSFunction::AttemptConcurrentOptimization() {
   }
   DCHECK(!IsInOptimizationQueue());
   DCHECK(!IsOptimized());
-  DCHECK(shared()->allows_lazy_compilation() || code()->optimizable());
+  DCHECK(shared()->allows_lazy_compilation() || IsOptimizable());
   DCHECK(isolate->concurrent_recompilation_enabled());
   if (FLAG_trace_concurrent_recompilation) {
     PrintF("  ** Marking ");
@@ -10729,10 +10730,7 @@ Handle<Object> SharedFunctionInfo::GetSourceCode() {
 bool SharedFunctionInfo::IsInlineable() {
   // Check that the function has a script associated with it.
   if (!script()->IsScript()) return false;
-  if (optimization_disabled()) return false;
-  // If we never ran this (unlikely) then lets try to optimize it.
-  if (code()->kind() != Code::FUNCTION) return true;
-  return code()->optimizable();
+  return !optimization_disabled();
 }
 
 
@@ -10834,12 +10832,8 @@ void SharedFunctionInfo::DisableOptimization(BailoutReason reason) {
   DCHECK(reason != kNoReason);
   set_optimization_disabled(true);
   set_disable_optimization_reason(reason);
-  // Code should be the lazy compilation stub or else unoptimized.  If the
-  // latter, disable optimization for the code too.
+  // Code should be the lazy compilation stub or else unoptimized.
   DCHECK(code()->kind() == Code::FUNCTION || code()->kind() == Code::BUILTIN);
-  if (code()->kind() == Code::FUNCTION) {
-    code()->set_optimizable(false);
-  }
   PROFILE(GetIsolate(), CodeDisableOptEvent(code(), this));
   if (FLAG_trace_opt) {
     PrintF("[disabled optimization for ");
@@ -10875,6 +10869,8 @@ void SharedFunctionInfo::InitFromFunctionLiteral(
   if (lit->dont_optimize_reason() != kNoReason) {
     shared_info->DisableOptimization(lit->dont_optimize_reason());
   }
+  shared_info->set_dont_crankshaft(
+      lit->flags()->Contains(AstPropertiesFlag::kDontCrankshaft));
   shared_info->set_dont_cache(
       lit->flags()->Contains(AstPropertiesFlag::kDontCache));
   shared_info->set_kind(lit->kind());
@@ -10921,7 +10917,6 @@ void SharedFunctionInfo::ResetForNewContext(int new_ic_age) {
         opt_count() >= FLAG_max_opt_count) {
       // Re-enable optimizations if they were disabled due to opt_count limit.
       set_optimization_disabled(false);
-      code()->set_optimizable(true);
     }
     set_opt_count(0);
     set_deopt_count(0);
@@ -12548,8 +12543,7 @@ bool DependentCode::MarkCodeForDeoptimization(
       WeakCell* cell = WeakCell::cast(obj);
       if (cell->cleared()) continue;
       Code* code = Code::cast(cell->value());
-      if (!code->marked_for_deoptimization() &&
-          (!code->is_turbofanned() || FLAG_turbo_deoptimization)) {
+      if (!code->marked_for_deoptimization()) {
         SetMarkedForDeoptimization(code, group);
         if (invalidate_embedded_objects) {
           code->InvalidateEmbeddedObjects();
@@ -16451,6 +16445,49 @@ void WeakHashTable::AddEntry(int entry, Handle<WeakCell> key_cell,
   set(EntryToIndex(entry), *key_cell);
   set(EntryToValueIndex(entry), *value);
   ElementAdded();
+}
+
+
+#ifdef DEBUG
+Object* WeakValueHashTable::LookupWeak(Handle<Object> key) {
+  Object* value = Lookup(key);
+  if (value->IsWeakCell() && !WeakCell::cast(value)->cleared()) {
+    value = WeakCell::cast(value)->value();
+  }
+  return value;
+}
+#endif  // DEBUG
+
+
+Handle<WeakValueHashTable> WeakValueHashTable::PutWeak(
+    Handle<WeakValueHashTable> table, Handle<Object> key,
+    Handle<HeapObject> value) {
+  Handle<WeakCell> cell = value->GetIsolate()->factory()->NewWeakCell(value);
+  return Handle<WeakValueHashTable>::cast(
+      Put(Handle<ObjectHashTable>::cast(table), key, cell));
+}
+
+
+Handle<FixedArray> WeakValueHashTable::GetWeakValues(
+    Handle<WeakValueHashTable> table) {
+  Isolate* isolate = table->GetIsolate();
+  uint32_t capacity = table->Capacity();
+  Handle<FixedArray> results = isolate->factory()->NewFixedArray(capacity);
+  int length = 0;
+  for (uint32_t i = 0; i < capacity; i++) {
+    uint32_t key_index = table->EntryToIndex(i);
+    Object* key = table->get(key_index);
+    if (!table->IsKey(key)) continue;
+    uint32_t value_index = table->EntryToValueIndex(i);
+    WeakCell* value_cell = WeakCell::cast(table->get(value_index));
+    if (value_cell->cleared()) {
+      table->RemoveEntry(i);
+    } else {
+      results->set(length++, value_cell->value());
+    }
+  }
+  results->Shrink(length);
+  return results;
 }
 
 

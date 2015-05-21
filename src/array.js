@@ -12,12 +12,15 @@ var $arraySplice;
 var $arrayUnshift;
 var $innerArrayForEach;
 var $innerArrayEvery;
+var $innerArrayFilter;
 var $innerArrayIndexOf;
 var $innerArrayLastIndexOf;
+var $innerArrayMap;
 var $innerArrayReverse;
+var $innerArraySome;
 var $innerArraySort;
 
-(function(global, shared, exports) {
+(function(global, utils) {
 
 "use strict";
 
@@ -27,8 +30,14 @@ var $innerArraySort;
 // Imports
 
 var GlobalArray = global.Array;
-var InternalArray = exports.InternalArray;
-var InternalPackedArray = exports.InternalPackedArray;
+var InternalArray = utils.InternalArray;
+var InternalPackedArray = utils.InternalPackedArray;
+
+var MathMin;
+
+utils.Import(function(from) {
+  MathMin = from.MathMin;
+});
 
 // -------------------------------------------------------------------
 
@@ -262,7 +271,7 @@ function SparseMove(array, start_i, del_count, len, num_additional_args) {
   // Move data to new array.
   var new_array = new InternalArray(
       // Clamp array length to 2^32-1 to avoid early RangeError.
-      $min(len - del_count + num_additional_args, 0xffffffff));
+      MathMin(len - del_count + num_additional_args, 0xffffffff));
   var big_indices;
   var indices = %GetArrayKeys(array, len);
   if (IS_NUMBER(indices)) {
@@ -1164,14 +1173,7 @@ function ArraySort(comparefn) {
 // The following functions cannot be made efficient on sparse arrays while
 // preserving the semantics, since the calls to the receiver function can add
 // or delete elements from the array.
-function ArrayFilter(f, receiver) {
-  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.filter");
-
-  // Pull out the length so that modifications to the length in the
-  // loop will not affect the looping and side effects are visible.
-  var array = $toObject(this);
-  var length = $toUint32(array.length);
-
+function InnerArrayFilter(f, receiver, array, length) {
   if (!IS_SPEC_FUNCTION(f)) throw MakeTypeError(kCalledNonCallable, f);
   var needs_wrapper = false;
   if (IS_NULL(receiver)) {
@@ -1180,7 +1182,6 @@ function ArrayFilter(f, receiver) {
     needs_wrapper = SHOULD_CREATE_WRAPPER(f, receiver);
   }
 
-  var result = new GlobalArray();
   var accumulator = new InternalArray();
   var accumulator_length = 0;
   var is_array = IS_ARRAY(array);
@@ -1196,6 +1197,18 @@ function ArrayFilter(f, receiver) {
       }
     }
   }
+  return accumulator;
+}
+
+function ArrayFilter(f, receiver) {
+  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.filter");
+
+  // Pull out the length so that modifications to the length in the
+  // loop will not affect the looping and side effects are visible.
+  var array = $toObject(this);
+  var length = $toUint32(array.length);
+  var accumulator = InnerArrayFilter(f, receiver, array, length);
+  var result = new GlobalArray();
   %MoveArrayContents(accumulator, result);
   return result;
 }
@@ -1233,16 +1246,7 @@ function ArrayForEach(f, receiver) {
 }
 
 
-// Executes the function once for each element present in the
-// array until it finds one where callback returns true.
-function ArraySome(f, receiver) {
-  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.some");
-
-  // Pull out the length so that modifications to the length in the
-  // loop will not affect the looping and side effects are visible.
-  var array = $toObject(this);
-  var length = TO_UINT32(array.length);
-
+function InnerArraySome(f, receiver, array, length) {
   if (!IS_SPEC_FUNCTION(f)) throw MakeTypeError(kCalledNonCallable, f);
   var needs_wrapper = false;
   if (IS_NULL(receiver)) {
@@ -1263,6 +1267,19 @@ function ArraySome(f, receiver) {
     }
   }
   return false;
+}
+
+
+// Executes the function once for each element present in the
+// array until it finds one where callback returns true.
+function ArraySome(f, receiver) {
+  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.some");
+
+  // Pull out the length so that modifications to the length in the
+  // loop will not affect the looping and side effects are visible.
+  var array = $toObject(this);
+  var length = TO_UINT32(array.length);
+  return InnerArraySome(f, receiver, array, length);
 }
 
 
@@ -1300,14 +1317,7 @@ function ArrayEvery(f, receiver) {
 }
 
 
-function ArrayMap(f, receiver) {
-  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.map");
-
-  // Pull out the length so that modifications to the length in the
-  // loop will not affect the looping and side effects are visible.
-  var array = $toObject(this);
-  var length = TO_UINT32(array.length);
-
+function InnerArrayMap(f, receiver, array, length) {
   if (!IS_SPEC_FUNCTION(f)) throw MakeTypeError(kCalledNonCallable, f);
   var needs_wrapper = false;
   if (IS_NULL(receiver)) {
@@ -1316,7 +1326,6 @@ function ArrayMap(f, receiver) {
     needs_wrapper = SHOULD_CREATE_WRAPPER(f, receiver);
   }
 
-  var result = new GlobalArray();
   var accumulator = new InternalArray(length);
   var is_array = IS_ARRAY(array);
   var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
@@ -1329,6 +1338,19 @@ function ArrayMap(f, receiver) {
       accumulator[i] = %_CallFunction(new_receiver, element, i, array, f);
     }
   }
+  return accumulator;
+}
+
+
+function ArrayMap(f, receiver) {
+  CHECK_OBJECT_COERCIBLE(this, "Array.prototype.map");
+
+  // Pull out the length so that modifications to the length in the
+  // loop will not affect the looping and side effects are visible.
+  var array = $toObject(this);
+  var length = TO_UINT32(array.length);
+  var accumulator = InnerArrayMap(f, receiver, array, length);
+  var result = new GlobalArray();
   %MoveArrayContents(accumulator, result);
   return result;
 }
@@ -1636,11 +1658,14 @@ $arraySlice = ArraySlice;
 $arraySplice = ArraySplice;
 $arrayUnshift = ArrayUnshift;
 
-$innerArrayForEach = InnerArrayForEach;
 $innerArrayEvery = InnerArrayEvery;
+$innerArrayFilter = InnerArrayFilter;
+$innerArrayForEach = InnerArrayForEach;
 $innerArrayIndexOf = InnerArrayIndexOf;
 $innerArrayLastIndexOf = InnerArrayLastIndexOf;
+$innerArrayMap = InnerArrayMap;
 $innerArrayReverse = InnerArrayReverse;
+$innerArraySome = InnerArraySome;
 $innerArraySort = InnerArraySort;
 
 });

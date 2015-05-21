@@ -54,6 +54,7 @@ var CALL_NON_FUNCTION;
 var CALL_NON_FUNCTION_AS_CONSTRUCTOR;
 var CALL_FUNCTION_PROXY;
 var CALL_FUNCTION_PROXY_AS_CONSTRUCTOR;
+var CONCAT_ITERABLE_TO_ARRAY;
 var APPLY_PREPARE;
 var REFLECT_APPLY_PREPARE;
 var REFLECT_CONSTRUCT_PREPARE;
@@ -85,7 +86,7 @@ var $toPrimitive;
 var $toString;
 var $toUint32;
 
-(function(global, shared, exports) {
+(function(global, utils) {
 
 %CheckIsBootstrapping();
 
@@ -726,6 +727,11 @@ REFLECT_CONSTRUCT_PREPARE = function REFLECT_CONSTRUCT_PREPARE(
 }
 
 
+CONCAT_ITERABLE_TO_ARRAY = function CONCAT_ITERABLE_TO_ARRAY(iterable) {
+  return %$concatIterableToArray(this, iterable);
+};
+
+
 STACK_OVERFLOW = function STACK_OVERFLOW(length) {
   throw %MakeRangeError(kStackOverflow);
 }
@@ -932,6 +938,14 @@ function SameValueZero(x, y) {
   return x === y;
 }
 
+function ConcatIterableToArray(target, iterable) {
+   var index = target.length;
+   for (var element of iterable) {
+     %AddElement(target, index++, element, NONE);
+   }
+   return target;
+}
+
 
 /* ---------------------------------
    - - -   U t i l i t i e s   - - -
@@ -1010,6 +1024,7 @@ function ToPositiveInteger(x, rangeErrorIndex) {
 
 //----------------------------------------------------------------------------
 
+$concatIterableToArray = ConcatIterableToArray;
 $defaultNumber = DefaultNumber;
 $defaultString = DefaultString;
 $NaN = %GetRootNaN();
