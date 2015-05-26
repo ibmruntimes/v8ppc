@@ -1808,8 +1808,11 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
 
   // Emit code to evaluate all the non-constant subexpressions and to store
   // them into the newly cloned array.
-  for (int i = 0; i < length; i++) {
-    Expression* subexpr = subexprs->at(i);
+  int array_index = 0;
+  for (; array_index < length; array_index++) {
+    Expression* subexpr = subexprs->at(array_index);
+    if (subexpr->IsSpread()) break;
+
     // If the subexpression is a literal or a simple materialized literal it
     // is already set in the cloned array.
     if (CompileTimeValue::IsCompileTimeValue(subexpr)) continue;
@@ -1824,7 +1827,7 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
     if (has_constant_fast_elements) {
       // Fast-case array literal with ElementsKind of FAST_*_ELEMENTS, they
       // cannot transition and don't need to call the runtime stub.
-      int offset = FixedArray::kHeaderSize + (i * kPointerSize);
+      int offset = FixedArray::kHeaderSize + (array_index * kPointerSize);
       __ mov(ebx, Operand(esp, kPointerSize));  // Copy of array literal.
       __ mov(ebx, FieldOperand(ebx, JSObject::kElementsOffset));
       // Store the subexpression value in the array's elements.
@@ -1834,16 +1837,41 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
                           EMIT_REMEMBERED_SET, INLINE_SMI_CHECK);
     } else {
       // Store the subexpression value in the array's elements.
-      __ mov(ecx, Immediate(Smi::FromInt(i)));
+      __ mov(ecx, Immediate(Smi::FromInt(array_index)));
       StoreArrayLiteralElementStub stub(isolate());
       __ CallStub(&stub);
     }
 
-    PrepareForBailoutForId(expr->GetIdForElement(i), NO_REGISTERS);
+    PrepareForBailoutForId(expr->GetIdForElement(array_index), NO_REGISTERS);
+  }
+
+  // In case the array literal contains spread expressions it has two parts. The
+  // first part is  the "static" array which has a literal index is  handled
+  // above. The second part is the part after the first spread expression
+  // (inclusive) and these elements gets appended to the array. Note that the
+  // number elements an iterable produces is unknown ahead of time.
+  if (array_index < length && result_saved) {
+    __ Drop(1);  // literal index
+    __ Pop(eax);
+    result_saved = false;
+  }
+  for (; array_index < length; array_index++) {
+    Expression* subexpr = subexprs->at(array_index);
+
+    __ Push(eax);
+    if (subexpr->IsSpread()) {
+      VisitForStackValue(subexpr->AsSpread()->expression());
+      __ InvokeBuiltin(Builtins::CONCAT_ITERABLE_TO_ARRAY, CALL_FUNCTION);
+    } else {
+      VisitForStackValue(subexpr);
+      __ CallRuntime(Runtime::kAppendElement, 2);
+    }
+
+    PrepareForBailoutForId(expr->GetIdForElement(array_index), NO_REGISTERS);
   }
 
   if (result_saved) {
-    __ add(esp, Immediate(kPointerSize));  // literal index
+    __ Drop(1);  // literal index
     context()->PlugTOS();
   } else {
     context()->Plug(eax);
@@ -5241,6 +5269,8 @@ void FullCodeGenerator::EnterFinallyBlock() {
       ExternalReference::address_of_pending_message_obj(isolate());
   __ mov(edx, Operand::StaticVariable(pending_message_obj));
   __ push(edx);
+
+  ClearPendingMessage();
 }
 
 
@@ -5260,6 +5290,15 @@ void FullCodeGenerator::ExitFinallyBlock() {
   __ SmiUntag(edx);
   __ add(edx, Immediate(masm_->CodeObject()));
   __ jmp(edx);
+}
+
+
+void FullCodeGenerator::ClearPendingMessage() {
+  DCHECK(!result_register().is(edx));
+  ExternalReference pending_message_obj =
+      ExternalReference::address_of_pending_message_obj(isolate());
+  __ mov(edx, Immediate(isolate()->factory()->the_hole_value()));
+  __ mov(Operand::StaticVariable(pending_message_obj), edx);
 }
 
 

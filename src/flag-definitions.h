@@ -193,7 +193,8 @@ DEFINE_IMPLICATION(es_staging, harmony)
   V(harmony_unicode_regexps, "harmony unicode regexps")         \
   V(harmony_reflect, "harmony Reflect API")                     \
   V(harmony_destructuring, "harmony destructuring")             \
-  V(harmony_spread_arrays, "harmony spread in array literals")
+  V(harmony_spread_arrays, "harmony spread in array literals")  \
+  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                               \
@@ -664,6 +665,7 @@ DEFINE_BOOL(use_idle_notification, true,
 // ic.cc
 DEFINE_BOOL(use_ic, true, "use inline caching")
 DEFINE_BOOL(trace_ic, false, "trace inline cache state transitions")
+DEFINE_BOOL(vector_stores, false, "use vectors for store ics")
 
 // macro-assembler-ia32.cc
 DEFINE_BOOL(native_code_counters, false,

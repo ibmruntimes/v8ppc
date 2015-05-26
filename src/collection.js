@@ -2,15 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-(function(global, utils) {
+var $getHash;
+var $getExistingHash;
 
+(function(global, utils) {
 "use strict";
 
 %CheckIsBootstrapping();
 
+// -------------------------------------------------------------------
+// Imports
+
 var GlobalMap = global.Map;
 var GlobalObject = global.Object;
 var GlobalSet = global.Set;
+var IntRandom;
+
+utils.Import(function(from) {
+  IntRandom = from.IntRandom;
+});
+
+var NumberIsNaN;
+
+utils.Import(function(from) {
+  NumberIsNaN = from.NumberIsNaN;
+});
 
 // -------------------------------------------------------------------
 
@@ -22,17 +38,19 @@ function HashToEntry(table, hash, numBuckets) {
 
 
 function SetFindEntry(table, numBuckets, key, hash) {
-  var keyIsNaN = $numberIsNaN(key);
-  for (var entry = HashToEntry(table, hash, numBuckets);
-       entry !== NOT_FOUND;
-       entry = ORDERED_HASH_SET_CHAIN_AT(table, entry, numBuckets)) {
-    var candidate = ORDERED_HASH_SET_KEY_AT(table, entry, numBuckets);
-    if (key === candidate) {
+  var entry = HashToEntry(table, hash, numBuckets);
+  if (entry === NOT_FOUND) return entry;
+  var candidate = ORDERED_HASH_SET_KEY_AT(table, entry, numBuckets);
+  if (key === candidate) return entry;
+  var keyIsNaN = NumberIsNaN(key);
+  while (true) {
+    if (keyIsNaN && NumberIsNaN(candidate)) {
       return entry;
     }
-    if (keyIsNaN && $numberIsNaN(candidate)) {
-      return entry;
-    }
+    entry = ORDERED_HASH_SET_CHAIN_AT(table, entry, numBuckets);
+    if (entry === NOT_FOUND) return entry;
+    candidate = ORDERED_HASH_SET_KEY_AT(table, entry, numBuckets);
+    if (key === candidate) return entry;
   }
   return NOT_FOUND;
 }
@@ -40,17 +58,19 @@ function SetFindEntry(table, numBuckets, key, hash) {
 
 
 function MapFindEntry(table, numBuckets, key, hash) {
-  var keyIsNaN = $numberIsNaN(key);
-  for (var entry = HashToEntry(table, hash, numBuckets);
-       entry !== NOT_FOUND;
-       entry = ORDERED_HASH_MAP_CHAIN_AT(table, entry, numBuckets)) {
-    var candidate = ORDERED_HASH_MAP_KEY_AT(table, entry, numBuckets);
-    if (key === candidate) {
+  var entry = HashToEntry(table, hash, numBuckets);
+  if (entry === NOT_FOUND) return entry;
+  var candidate = ORDERED_HASH_MAP_KEY_AT(table, entry, numBuckets);
+  if (key === candidate) return entry;
+  var keyIsNaN = NumberIsNaN(key);
+  while (true) {
+    if (keyIsNaN && NumberIsNaN(candidate)) {
       return entry;
     }
-    if (keyIsNaN && $numberIsNaN(candidate)) {
-      return entry;
-    }
+    entry = ORDERED_HASH_MAP_CHAIN_AT(table, entry, numBuckets);
+    if (entry === NOT_FOUND) return entry;
+    candidate = ORDERED_HASH_MAP_KEY_AT(table, entry, numBuckets);
+    if (key === candidate) return entry;
   }
   return NOT_FOUND;
 }
@@ -66,12 +86,13 @@ function ComputeIntegerHash(key, seed) {
   hash = hash ^ (hash >>> 4);
   hash = (hash * 2057) | 0;  // hash = (hash + (hash << 3)) + (hash << 11);
   hash = hash ^ (hash >>> 16);
-  return hash;
+  return hash & 0x3fffffff;
 }
 %SetForceInlineFlag(ComputeIntegerHash);
 
+var hashCodeSymbol = GLOBAL_PRIVATE("hash_code_symbol");
 
-function GetHash(key) {
+function GetExistingHash(key) {
   if (%_IsSmi(key)) {
     return ComputeIntegerHash(key, 0);
   }
@@ -80,8 +101,23 @@ function GetHash(key) {
     if ((field & 1 /* Name::kHashNotComputedMask */) === 0) {
       return field >>> 2 /* Name::kHashShift */;
     }
+  } else if (IS_SPEC_OBJECT(key) && !%_IsJSProxy(key) && !IS_GLOBAL(key)) {
+    var hash = GET_PRIVATE(key, hashCodeSymbol);
+    return hash;
   }
   return %GenericHash(key);
+}
+%SetForceInlineFlag(GetExistingHash);
+
+
+function GetHash(key) {
+  var hash = GetExistingHash(key);
+  if (IS_UNDEFINED(hash)) {
+    hash = IntRandom() | 0;
+    if (hash === 0) hash = 1;
+    SET_PRIVATE(key, hashCodeSymbol, hash);
+  }
+  return hash;
 }
 %SetForceInlineFlag(GetHash);
 
@@ -155,7 +191,8 @@ function SetHas(key) {
   }
   var table = %_JSCollectionGetTable(this);
   var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
-  var hash = GetHash(key);
+  var hash = GetExistingHash(key);
+  if (IS_UNDEFINED(hash)) return false;
   return SetFindEntry(table, numBuckets, key, hash) !== NOT_FOUND;
 }
 
@@ -167,7 +204,8 @@ function SetDelete(key) {
   }
   var table = %_JSCollectionGetTable(this);
   var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
-  var hash = GetHash(key);
+  var hash = GetExistingHash(key);
+  if (IS_UNDEFINED(hash)) return false;
   var entry = SetFindEntry(table, numBuckets, key, hash);
   if (entry === NOT_FOUND) return false;
 
@@ -239,8 +277,8 @@ function SetForEach(f, receiver) {
 %FunctionSetLength(SetForEach, 1);
 
 // Set up the non-enumerable functions on the Set prototype object.
-$installGetter(GlobalSet.prototype, "size", SetGetSize);
-$installFunctions(GlobalSet.prototype, DONT_ENUM, [
+utils.InstallGetter(GlobalSet.prototype, "size", SetGetSize);
+utils.InstallFunctions(GlobalSet.prototype, DONT_ENUM, [
   "add", SetAdd,
   "has", SetHas,
   "delete", SetDelete,
@@ -282,7 +320,8 @@ function MapGet(key) {
   }
   var table = %_JSCollectionGetTable(this);
   var numBuckets = ORDERED_HASH_TABLE_BUCKET_COUNT(table);
-  var hash = GetHash(key);
+  var hash = GetExistingHash(key);
+  if (IS_UNDEFINED(hash)) return UNDEFINED;
   var entry = MapFindEntry(table, numBuckets, key, hash);
   if (entry === NOT_FOUND) return UNDEFINED;
   return ORDERED_HASH_MAP_VALUE_AT(table, entry, numBuckets);
@@ -427,8 +466,8 @@ function MapForEach(f, receiver) {
 %FunctionSetLength(MapForEach, 1);
 
 // Set up the non-enumerable functions on the Map prototype object.
-$installGetter(GlobalMap.prototype, "size", MapGetSize);
-$installFunctions(GlobalMap.prototype, DONT_ENUM, [
+utils.InstallGetter(GlobalMap.prototype, "size", MapGetSize);
+utils.InstallFunctions(GlobalMap.prototype, DONT_ENUM, [
   "get", MapGet,
   "set", MapSet,
   "has", MapHas,
@@ -436,5 +475,9 @@ $installFunctions(GlobalMap.prototype, DONT_ENUM, [
   "clear", MapClearJS,
   "forEach", MapForEach
 ]);
+
+// Expose to the global scope.
+$getHash = GetHash;
+$getExistingHash = GetExistingHash;
 
 })

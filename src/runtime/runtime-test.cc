@@ -88,7 +88,8 @@ RUNTIME_FUNCTION(Runtime_OptimizeFunctionOnNextCall) {
   // The following assertion was lifted from the DCHECK inside
   // JSFunction::MarkForOptimization().
   RUNTIME_ASSERT(function->shared()->allows_lazy_compilation() ||
-                 function->IsOptimizable());
+                 (function->code()->kind() == Code::FUNCTION &&
+                  !function->shared()->optimization_disabled()));
 
   // If the function is already optimized, just return.
   if (function->IsOptimized()) return isolate->heap()->undefined_value();
@@ -132,7 +133,7 @@ RUNTIME_FUNCTION(Runtime_OptimizeOsr) {
   // The following assertion was lifted from the DCHECK inside
   // JSFunction::MarkForOptimization().
   RUNTIME_ASSERT(function->shared()->allows_lazy_compilation() ||
-                 function->IsOptimizable());
+                 !function->shared()->optimization_disabled());
 
   // If the function is already optimized, just return.
   if (function->IsOptimized()) return isolate->heap()->undefined_value();
@@ -278,8 +279,9 @@ RUNTIME_FUNCTION(Runtime_DebugPrint) {
     // and print some interesting cpu debugging info.
     JavaScriptFrameIterator it(isolate);
     JavaScriptFrame* frame = it.frame();
-    os << "fp = " << frame->fp() << ", sp = " << frame->sp()
-       << ", caller_sp = " << frame->caller_sp() << ": ";
+    os << "fp = " << static_cast<void*>(frame->fp())
+       << ", sp = " << static_cast<void*>(frame->sp())
+       << ", caller_sp = " << static_cast<void*>(frame->caller_sp()) << ": ";
   } else {
     os << "DebugPrint: ";
   }

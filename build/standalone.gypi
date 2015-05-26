@@ -38,7 +38,7 @@
     # Track where uninitialized memory originates from. From fastest to
     # slowest: 0 - no tracking, 1 - track only the initial allocation site, 2
     # - track the chain of stores leading from allocation site to use site.
-    'msan_track_origins%': 1,
+    'msan_track_origins%': 2,
     'visibility%': 'hidden',
     'v8_enable_backtrace%': 0,
     'v8_enable_i18n_support%': 1,
@@ -338,7 +338,6 @@
           '-fPIC',
         ],
         'cflags!': [
-          '-fno-exceptions',
           '-fomit-frame-pointer',
         ],
         'ldflags': [
@@ -387,12 +386,16 @@
           '-Wno-unused-parameter',
           '-Wno-long-long',
           '-pthread',
-          '-fno-exceptions',
           '-pedantic',
           # Don't warn about the "struct foo f = {0};" initialization pattern.
           '-Wno-missing-field-initializers',
         ],
-        'cflags_cc': [ '-Wnon-virtual-dtor', '-fno-rtti', '-std=gnu++0x' ],
+        'cflags_cc': [
+          '-Wnon-virtual-dtor',
+          '-fno-exceptions',
+          '-fno-rtti',
+          '-std=gnu++0x',
+        ],
         'ldflags': [ '-pthread', ],
         'conditions': [
           [ 'clang==1 and (v8_target_arch=="x64" or v8_target_arch=="arm64")', {
@@ -418,11 +421,15 @@
           '-Wall',
           '<(werror)',
           '-Wno-unused-parameter',
-          '-fno-exceptions',
           # Don't warn about the "struct foo f = {0};" initialization pattern.
           '-Wno-missing-field-initializers',
         ],
-        'cflags_cc': [ '-Wnon-virtual-dtor', '-fno-rtti', '-std=gnu++0x' ],
+        'cflags_cc': [
+          '-Wnon-virtual-dtor',
+          '-fno-exceptions',
+          '-fno-rtti',
+          '-std=gnu++0x',
+        ],
         'conditions': [
           [ 'visibility=="hidden"', {
             'cflags': [ '-fvisibility=hidden' ],

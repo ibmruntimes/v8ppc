@@ -897,6 +897,7 @@ class Assembler : public AssemblerBase {
   void clz(Register rd, Register rs);
   void ins_(Register rt, Register rs, uint16_t pos, uint16_t size);
   void ext_(Register rt, Register rs, uint16_t pos, uint16_t size);
+  void bitswap(Register rd, Register rt);
 
   // --------Coprocessor-instructions----------------
 
@@ -965,6 +966,9 @@ class Assembler : public AssemblerBase {
   void ceil_l_s(FPURegister fd, FPURegister fs);
   void ceil_l_d(FPURegister fd, FPURegister fs);
 
+  void class_s(FPURegister fd, FPURegister fs);
+  void class_d(FPURegister fd, FPURegister fs);
+
   void min(SecondaryField fmt, FPURegister fd, FPURegister fs, FPURegister ft);
   void mina(SecondaryField fmt, FPURegister fd, FPURegister fs, FPURegister ft);
   void max(SecondaryField fmt, FPURegister fd, FPURegister fs, FPURegister ft);
@@ -989,6 +993,8 @@ class Assembler : public AssemblerBase {
   // Conditions and branches for MIPSr6.
   void cmp(FPUCondition cond, SecondaryField fmt,
          FPURegister fd, FPURegister ft, FPURegister fs);
+  void cmp_s(FPUCondition cond, FPURegister fd, FPURegister fs, FPURegister ft);
+  void cmp_d(FPUCondition cond, FPURegister fd, FPURegister fs, FPURegister ft);
 
   void bc1eqz(int16_t offset, FPURegister ft);
   void bc1eqz(Label* L, FPURegister ft) {
@@ -1002,6 +1008,8 @@ class Assembler : public AssemblerBase {
   // Conditions and branches for non MIPSr6.
   void c(FPUCondition cond, SecondaryField fmt,
          FPURegister ft, FPURegister fs, uint16_t cc = 0);
+  void c_s(FPUCondition cond, FPURegister ft, FPURegister fs, uint16_t cc = 0);
+  void c_d(FPUCondition cond, FPURegister ft, FPURegister fs, uint16_t cc = 0);
 
   void bc1f(int16_t offset, uint16_t cc = 0);
   void bc1f(Label* L, uint16_t cc = 0) { bc1f(branch_offset(L, false)>>2, cc); }

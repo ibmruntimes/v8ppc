@@ -1590,6 +1590,17 @@ THREADED_TEST(StringObject) {
 }
 
 
+TEST(StringObjectDelete) {
+  LocalContext context;
+  v8::HandleScope scope(context->GetIsolate());
+  v8::Handle<Value> boxed_string = CompileRun("new String(\"test\")");
+  CHECK(boxed_string->IsStringObject());
+  v8::Handle<v8::Object> str_obj = boxed_string.As<v8::Object>();
+  CHECK(!str_obj->Delete(2));
+  CHECK(!str_obj->Delete(v8_num(2)));
+}
+
+
 THREADED_TEST(NumberObject) {
   LocalContext env;
   v8::HandleScope scope(env->GetIsolate());
@@ -2272,12 +2283,24 @@ THREADED_TEST(IdentityHash) {
 }
 
 
-THREADED_TEST(GlobalProxyIdentityHash) {
+void GlobalProxyIdentityHash(bool set_in_js) {
   LocalContext env;
   v8::Isolate* isolate = env->GetIsolate();
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   v8::HandleScope scope(isolate);
   Handle<Object> global_proxy = env->Global();
-  int hash1 = global_proxy->GetIdentityHash();
+  i::Handle<i::Object> i_global_proxy = v8::Utils::OpenHandle(*global_proxy);
+  env->Global()->Set(v8_str("global"), global_proxy);
+  i::Handle<i::Object> original_hash;
+  if (set_in_js) {
+    CompileRun("var m = new Set(); m.add(global);");
+    original_hash = i::Handle<i::Object>(i_global_proxy->GetHash(), i_isolate);
+  } else {
+    original_hash = i::Handle<i::Object>(
+        i::Object::GetOrCreateHash(i_isolate, i_global_proxy));
+  }
+  CHECK(original_hash->IsSmi());
+  int32_t hash1 = i::Handle<i::Smi>::cast(original_hash)->value();
   // Hash should be retained after being detached.
   env->DetachGlobal();
   int hash2 = global_proxy->GetIdentityHash();
@@ -2288,6 +2311,12 @@ THREADED_TEST(GlobalProxyIdentityHash) {
     int hash3 = global_proxy->GetIdentityHash();
     CHECK_EQ(hash1, hash3);
   }
+}
+
+
+THREADED_TEST(GlobalProxyIdentityHash) {
+  GlobalProxyIdentityHash(true);
+  GlobalProxyIdentityHash(false);
 }
 
 
@@ -2458,65 +2487,6 @@ THREADED_TEST(SymbolTemplateProperties) {
 }
 
 
-THREADED_TEST(PrivateProperties) {
-  LocalContext env;
-  v8::Isolate* isolate = env->GetIsolate();
-  v8::HandleScope scope(isolate);
-
-  v8::Local<v8::Object> obj = v8::Object::New(isolate);
-  v8::Local<v8::Private> priv1 = v8::Private::New(isolate);
-  v8::Local<v8::Private> priv2 =
-      v8::Private::New(isolate, v8_str("my-private"));
-
-  CcTest::heap()->CollectAllGarbage();
-
-  CHECK(priv2->Name()->Equals(v8::String::NewFromUtf8(isolate, "my-private")));
-
-  // Make sure delete of a non-existent private symbol property works.
-  CHECK(obj->DeletePrivate(priv1));
-  CHECK(!obj->HasPrivate(priv1));
-
-  CHECK(obj->SetPrivate(priv1, v8::Integer::New(isolate, 1503)));
-  CHECK(obj->HasPrivate(priv1));
-  CHECK_EQ(1503, obj->GetPrivate(priv1)->Int32Value());
-  CHECK(obj->SetPrivate(priv1, v8::Integer::New(isolate, 2002)));
-  CHECK(obj->HasPrivate(priv1));
-  CHECK_EQ(2002, obj->GetPrivate(priv1)->Int32Value());
-
-  CHECK_EQ(0u, obj->GetOwnPropertyNames()->Length());
-  unsigned num_props = obj->GetPropertyNames()->Length();
-  CHECK(obj->Set(v8::String::NewFromUtf8(isolate, "bla"),
-                 v8::Integer::New(isolate, 20)));
-  CHECK_EQ(1u, obj->GetOwnPropertyNames()->Length());
-  CHECK_EQ(num_props + 1, obj->GetPropertyNames()->Length());
-
-  CcTest::heap()->CollectAllGarbage();
-
-  // Add another property and delete it afterwards to force the object in
-  // slow case.
-  CHECK(obj->SetPrivate(priv2, v8::Integer::New(isolate, 2008)));
-  CHECK_EQ(2002, obj->GetPrivate(priv1)->Int32Value());
-  CHECK_EQ(2008, obj->GetPrivate(priv2)->Int32Value());
-  CHECK_EQ(2002, obj->GetPrivate(priv1)->Int32Value());
-  CHECK_EQ(1u, obj->GetOwnPropertyNames()->Length());
-
-  CHECK(obj->HasPrivate(priv1));
-  CHECK(obj->HasPrivate(priv2));
-  CHECK(obj->DeletePrivate(priv2));
-  CHECK(obj->HasPrivate(priv1));
-  CHECK(!obj->HasPrivate(priv2));
-  CHECK_EQ(2002, obj->GetPrivate(priv1)->Int32Value());
-  CHECK_EQ(1u, obj->GetOwnPropertyNames()->Length());
-
-  // Private properties are inherited (for the time being).
-  v8::Local<v8::Object> child = v8::Object::New(isolate);
-  child->SetPrototype(obj);
-  CHECK(child->HasPrivate(priv1));
-  CHECK_EQ(2002, child->GetPrivate(priv1)->Int32Value());
-  CHECK_EQ(0u, child->GetOwnPropertyNames()->Length());
-}
-
-
 THREADED_TEST(GlobalSymbols) {
   LocalContext env;
   v8::Isolate* isolate = env->GetIsolate();
@@ -2562,28 +2532,6 @@ static void CheckWellKnownSymbol(v8::Local<v8::Symbol>(*getter)(v8::Isolate*),
 THREADED_TEST(WellKnownSymbols) {
   CheckWellKnownSymbol(v8::Symbol::GetIterator, "Symbol.iterator");
   CheckWellKnownSymbol(v8::Symbol::GetUnscopables, "Symbol.unscopables");
-}
-
-
-THREADED_TEST(GlobalPrivates) {
-  LocalContext env;
-  v8::Isolate* isolate = env->GetIsolate();
-  v8::HandleScope scope(isolate);
-
-  v8::Local<String> name = v8_str("my-private");
-  v8::Local<v8::Private> glob = v8::Private::ForApi(isolate, name);
-  v8::Local<v8::Object> obj = v8::Object::New(isolate);
-  CHECK(obj->SetPrivate(glob, v8::Integer::New(isolate, 3)));
-
-  v8::Local<v8::Private> glob2 = v8::Private::ForApi(isolate, name);
-  CHECK(obj->HasPrivate(glob2));
-
-  v8::Local<v8::Private> priv = v8::Private::New(isolate, name);
-  CHECK(!obj->HasPrivate(priv));
-
-  CompileRun("var intern = %CreateGlobalPrivateSymbol('my-private')");
-  v8::Local<Value> intern = env->Global()->Get(v8_str("intern"));
-  CHECK(!obj->Has(intern));
 }
 
 
@@ -2867,6 +2815,136 @@ THREADED_TEST(ArrayBuffer_NeuteringScript) {
 
   CHECK(CompileRun("dv.byteLength == 0 && dv.byteOffset == 0")->IsTrue());
   CheckDataViewIsNeutered(dv);
+}
+
+
+class ScopedSharedArrayBufferContents {
+ public:
+  explicit ScopedSharedArrayBufferContents(
+      const v8::SharedArrayBuffer::Contents& contents)
+      : contents_(contents) {}
+  ~ScopedSharedArrayBufferContents() { free(contents_.Data()); }
+  void* Data() const { return contents_.Data(); }
+  size_t ByteLength() const { return contents_.ByteLength(); }
+
+ private:
+  const v8::SharedArrayBuffer::Contents contents_;
+};
+
+
+THREADED_TEST(SharedArrayBuffer_ApiInternalToExternal) {
+  i::FLAG_harmony_sharedarraybuffer = true;
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::HandleScope handle_scope(isolate);
+
+  Local<v8::SharedArrayBuffer> ab = v8::SharedArrayBuffer::New(isolate, 1024);
+  CheckInternalFieldsAreZero(ab);
+  CHECK_EQ(1024, static_cast<int>(ab->ByteLength()));
+  CHECK(!ab->IsExternal());
+  CcTest::heap()->CollectAllGarbage();
+
+  ScopedSharedArrayBufferContents ab_contents(ab->Externalize());
+  CHECK(ab->IsExternal());
+
+  CHECK_EQ(1024, static_cast<int>(ab_contents.ByteLength()));
+  uint8_t* data = static_cast<uint8_t*>(ab_contents.Data());
+  DCHECK(data != NULL);
+  env->Global()->Set(v8_str("ab"), ab);
+
+  v8::Handle<v8::Value> result = CompileRun("ab.byteLength");
+  CHECK_EQ(1024, result->Int32Value());
+
+  result = CompileRun(
+      "var u8 = new Uint8Array(ab);"
+      "u8[0] = 0xFF;"
+      "u8[1] = 0xAA;"
+      "u8.length");
+  CHECK_EQ(1024, result->Int32Value());
+  CHECK_EQ(0xFF, data[0]);
+  CHECK_EQ(0xAA, data[1]);
+  data[0] = 0xCC;
+  data[1] = 0x11;
+  result = CompileRun("u8[0] + u8[1]");
+  CHECK_EQ(0xDD, result->Int32Value());
+}
+
+
+THREADED_TEST(SharedArrayBuffer_JSInternalToExternal) {
+  i::FLAG_harmony_sharedarraybuffer = true;
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::HandleScope handle_scope(isolate);
+
+
+  v8::Local<v8::Value> result = CompileRun(
+      "var ab1 = new SharedArrayBuffer(2);"
+      "var u8_a = new Uint8Array(ab1);"
+      "u8_a[0] = 0xAA;"
+      "u8_a[1] = 0xFF; u8_a.buffer");
+  Local<v8::SharedArrayBuffer> ab1 = Local<v8::SharedArrayBuffer>::Cast(result);
+  CheckInternalFieldsAreZero(ab1);
+  CHECK_EQ(2, static_cast<int>(ab1->ByteLength()));
+  CHECK(!ab1->IsExternal());
+  ScopedSharedArrayBufferContents ab1_contents(ab1->Externalize());
+  CHECK(ab1->IsExternal());
+
+  result = CompileRun("ab1.byteLength");
+  CHECK_EQ(2, result->Int32Value());
+  result = CompileRun("u8_a[0]");
+  CHECK_EQ(0xAA, result->Int32Value());
+  result = CompileRun("u8_a[1]");
+  CHECK_EQ(0xFF, result->Int32Value());
+  result = CompileRun(
+      "var u8_b = new Uint8Array(ab1);"
+      "u8_b[0] = 0xBB;"
+      "u8_a[0]");
+  CHECK_EQ(0xBB, result->Int32Value());
+  result = CompileRun("u8_b[1]");
+  CHECK_EQ(0xFF, result->Int32Value());
+
+  CHECK_EQ(2, static_cast<int>(ab1_contents.ByteLength()));
+  uint8_t* ab1_data = static_cast<uint8_t*>(ab1_contents.Data());
+  CHECK_EQ(0xBB, ab1_data[0]);
+  CHECK_EQ(0xFF, ab1_data[1]);
+  ab1_data[0] = 0xCC;
+  ab1_data[1] = 0x11;
+  result = CompileRun("u8_a[0] + u8_a[1]");
+  CHECK_EQ(0xDD, result->Int32Value());
+}
+
+
+THREADED_TEST(SharedArrayBuffer_External) {
+  i::FLAG_harmony_sharedarraybuffer = true;
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::HandleScope handle_scope(isolate);
+
+  i::ScopedVector<uint8_t> my_data(100);
+  memset(my_data.start(), 0, 100);
+  Local<v8::SharedArrayBuffer> ab3 =
+      v8::SharedArrayBuffer::New(isolate, my_data.start(), 100);
+  CheckInternalFieldsAreZero(ab3);
+  CHECK_EQ(100, static_cast<int>(ab3->ByteLength()));
+  CHECK(ab3->IsExternal());
+
+  env->Global()->Set(v8_str("ab3"), ab3);
+
+  v8::Handle<v8::Value> result = CompileRun("ab3.byteLength");
+  CHECK_EQ(100, result->Int32Value());
+
+  result = CompileRun(
+      "var u8_b = new Uint8Array(ab3);"
+      "u8_b[0] = 0xBB;"
+      "u8_b[1] = 0xCC;"
+      "u8_b.length");
+  CHECK_EQ(100, result->Int32Value());
+  CHECK_EQ(0xBB, my_data[0]);
+  CHECK_EQ(0xCC, my_data[1]);
+  my_data[0] = 0xCC;
+  my_data[1] = 0x11;
+  result = CompileRun("u8_b[0] + u8_b[1]");
+  CHECK_EQ(0xDD, result->Int32Value());
 }
 
 
@@ -7237,84 +7315,6 @@ static void Utf16Helper(
 }
 
 
-static uint16_t StringGet(Handle<String> str, int index) {
-  i::Handle<i::String> istring =
-      v8::Utils::OpenHandle(String::Cast(*str));
-  return istring->Get(index);
-}
-
-
-static void WriteUtf8Helper(
-    LocalContext& context,  // NOLINT
-    const char* name,
-    const char* lengths_name,
-    int len) {
-  Local<v8::Array> b =
-      Local<v8::Array>::Cast(context->Global()->Get(v8_str(name)));
-  Local<v8::Array> alens =
-      Local<v8::Array>::Cast(context->Global()->Get(v8_str(lengths_name)));
-  char buffer[1000];
-  char buffer2[1000];
-  for (int i = 0; i < len; i++) {
-    Local<v8::String> string =
-      Local<v8::String>::Cast(b->Get(i));
-    Local<v8::Number> expected_len =
-      Local<v8::Number>::Cast(alens->Get(i));
-    int utf8_length = static_cast<int>(expected_len->Value());
-    for (int j = utf8_length + 1; j >= 0; j--) {
-      memset(reinterpret_cast<void*>(&buffer), 42, sizeof(buffer));
-      memset(reinterpret_cast<void*>(&buffer2), 42, sizeof(buffer2));
-      int nchars;
-      int utf8_written =
-          string->WriteUtf8(buffer, j, &nchars, String::NO_OPTIONS);
-      int utf8_written2 =
-          string->WriteUtf8(buffer2, j, &nchars, String::NO_NULL_TERMINATION);
-      CHECK_GE(utf8_length + 1, utf8_written);
-      CHECK_GE(utf8_length, utf8_written2);
-      for (int k = 0; k < utf8_written2; k++) {
-        CHECK_EQ(buffer[k], buffer2[k]);
-      }
-      CHECK(nchars * 3 >= utf8_written - 1);
-      CHECK(nchars <= utf8_written);
-      if (j == utf8_length + 1) {
-        CHECK_EQ(utf8_written2, utf8_length);
-        CHECK_EQ(utf8_written2 + 1, utf8_written);
-      }
-      CHECK_EQ(buffer[utf8_written], 42);
-      if (j > utf8_length) {
-        if (utf8_written != 0) CHECK_EQ(buffer[utf8_written - 1], 0);
-        if (utf8_written > 1) CHECK_NE(buffer[utf8_written - 2], 42);
-        Handle<String> roundtrip = v8_str(buffer);
-        CHECK(roundtrip->Equals(string));
-      } else {
-        if (utf8_written != 0) CHECK_NE(buffer[utf8_written - 1], 42);
-      }
-      if (utf8_written2 != 0) CHECK_NE(buffer[utf8_written - 1], 42);
-      if (nchars >= 2) {
-        uint16_t trail = StringGet(string, nchars - 1);
-        uint16_t lead = StringGet(string, nchars - 2);
-        if (((lead & 0xfc00) == 0xd800) &&
-            ((trail & 0xfc00) == 0xdc00)) {
-          unsigned u1 = buffer2[utf8_written2 - 4];
-          unsigned u2 = buffer2[utf8_written2 - 3];
-          unsigned u3 = buffer2[utf8_written2 - 2];
-          unsigned u4 = buffer2[utf8_written2 - 1];
-          CHECK_EQ((u1 & 0xf8), 0xf0u);
-          CHECK_EQ((u2 & 0xc0), 0x80u);
-          CHECK_EQ((u3 & 0xc0), 0x80u);
-          CHECK_EQ((u4 & 0xc0), 0x80u);
-          uint32_t c = 0x10000 + ((lead & 0x3ff) << 10) + (trail & 0x3ff);
-          CHECK_EQ((u4 & 0x3f), (c & 0x3f));
-          CHECK_EQ((u3 & 0x3f), ((c >> 6) & 0x3f));
-          CHECK_EQ((u2 & 0x3f), ((c >> 12) & 0x3f));
-          CHECK_EQ((u1 & 0x3), c >> 18);
-        }
-      }
-    }
-  }
-}
-
-
 THREADED_TEST(Utf16) {
   LocalContext context;
   v8::HandleScope scope(context->GetIsolate());
@@ -7361,9 +7361,6 @@ THREADED_TEST(Utf16) {
       "}");
   Utf16Helper(context, "a", "alens", 9);
   Utf16Helper(context, "a2", "a2lens", 81);
-  WriteUtf8Helper(context, "b", "alens", 9);
-  WriteUtf8Helper(context, "b2", "a2lens", 81);
-  WriteUtf8Helper(context, "c2", "a2lens", 81);
 }
 
 
@@ -7371,15 +7368,6 @@ static bool SameSymbol(Handle<String> s1, Handle<String> s2) {
   i::Handle<i::String> is1(v8::Utils::OpenHandle(*s1));
   i::Handle<i::String> is2(v8::Utils::OpenHandle(*s2));
   return *is1 == *is2;
-}
-
-static void SameSymbolHelper(v8::Isolate* isolate, const char* a,
-                             const char* b) {
-  Handle<String> symbol1 =
-      v8::String::NewFromUtf8(isolate, a, v8::String::kInternalizedString);
-  Handle<String> symbol2 =
-      v8::String::NewFromUtf8(isolate, b, v8::String::kInternalizedString);
-  CHECK(SameSymbol(symbol1, symbol2));
 }
 
 
@@ -7393,18 +7381,6 @@ THREADED_TEST(Utf16Symbol) {
       context->GetIsolate(), "abc", v8::String::kInternalizedString);
   CHECK(SameSymbol(symbol1, symbol2));
 
-  SameSymbolHelper(context->GetIsolate(),
-                   "\360\220\220\205",  // 4 byte encoding.
-                   "\355\240\201\355\260\205");  // 2 3-byte surrogates.
-  SameSymbolHelper(context->GetIsolate(),
-                   "\355\240\201\355\260\206",  // 2 3-byte surrogates.
-                   "\360\220\220\206");  // 4 byte encoding.
-  SameSymbolHelper(context->GetIsolate(),
-                   "x\360\220\220\205",  // 4 byte encoding.
-                   "x\355\240\201\355\260\205");  // 2 3-byte surrogates.
-  SameSymbolHelper(context->GetIsolate(),
-                   "x\355\240\201\355\260\206",  // 2 3-byte surrogates.
-                   "x\360\220\220\206");  // 4 byte encoding.
   CompileRun(
       "var sym0 = 'benedictus';"
       "var sym0b = 'S\303\270ren';"

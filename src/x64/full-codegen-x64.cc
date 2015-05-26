@@ -1643,11 +1643,6 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   // result_saved is false the result is in rax.
   bool result_saved = false;
 
-  // Mark all computed expressions that are bound to a key that
-  // is shadowed by a later occurrence of the same key. For the
-  // marked expressions, no store code is emitted.
-  expr->CalculateEmitStore(zone());
-
   AccessorTable accessor_table(zone());
   int property_index = 0;
   for (; property_index < expr->properties()->length(); property_index++) {
@@ -5295,6 +5290,8 @@ void FullCodeGenerator::EnterFinallyBlock() {
       ExternalReference::address_of_pending_message_obj(isolate());
   __ Load(rdx, pending_message_obj);
   __ Push(rdx);
+
+  ClearPendingMessage();
 }
 
 
@@ -5316,6 +5313,15 @@ void FullCodeGenerator::ExitFinallyBlock() {
   __ Move(rcx, masm_->CodeObject());
   __ addp(rdx, rcx);
   __ jmp(rdx);
+}
+
+
+void FullCodeGenerator::ClearPendingMessage() {
+  DCHECK(!result_register().is(rdx));
+  ExternalReference pending_message_obj =
+      ExternalReference::address_of_pending_message_obj(isolate());
+  __ LoadRoot(rdx, Heap::kTheHoleValueRootIndex);
+  __ Store(pending_message_obj, rdx);
 }
 
 

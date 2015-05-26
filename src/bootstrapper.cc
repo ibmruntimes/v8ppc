@@ -531,6 +531,12 @@ Handle<JSFunction> Genesis::CreateEmptyFunction(Isolate* isolate) {
     native_context()->set_initial_array_prototype(*object_function_prototype);
     Accessors::FunctionSetPrototype(object_fun, object_function_prototype)
         .Assert();
+
+    // Allocate initial strong object map.
+    Handle<Map> strong_object_map =
+        Map::Copy(object_function_map, "EmptyStrongObject");
+    strong_object_map->set_is_strong();
+    native_context()->set_js_object_strong_map(*strong_object_map);
   }
 
   // Allocate the empty function as the prototype for function - ES6 19.2.3
@@ -706,7 +712,7 @@ Handle<Map> Genesis::CreateStrongFunctionMap(
   map->set_function_with_prototype(is_constructor);
   Map::SetPrototype(map, empty_function);
   map->set_is_extensible(is_constructor);
-  map->set_is_strong(true);
+  map->set_is_strong();
   return map;
 }
 
@@ -1020,7 +1026,7 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> global_object,
 
     Handle<Map> initial_strong_map =
         Map::Copy(initial_map, "SetInstancePrototype");
-    initial_strong_map->set_is_strong(true);
+    initial_strong_map->set_is_strong();
     CacheInitialJSArrayMaps(native_context(), initial_strong_map);
   }
 
@@ -1524,7 +1530,8 @@ bool Genesis::CallUtilsFunction(Isolate* isolate, const char* name) {
       isolate->factory()->NewStringFromAsciiChecked(name);
   Handle<Object> fun = JSObject::GetDataProperty(utils, name_string);
   Handle<Object> receiver = isolate->factory()->undefined_value();
-  return !Execution::Call(isolate, fun, receiver, 0, NULL).is_null();
+  Handle<Object> args[] = {utils};
+  return !Execution::Call(isolate, fun, receiver, 1, args).is_null();
 }
 
 
@@ -1747,6 +1754,7 @@ EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_spreadcalls)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_destructuring)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_object)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_spread_arrays)
+EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_sharedarraybuffer)
 
 
 void Genesis::InstallNativeFunctions_harmony_proxies() {
@@ -1837,6 +1845,20 @@ void Genesis::InitializeGlobal_harmony_tostring() {
   Runtime::SetObjectProperty(isolate(), builtins,
                              factory()->harmony_tostring_string(), flag,
                              STRICT).Assert();
+}
+
+
+void Genesis::InitializeGlobal_harmony_sharedarraybuffer() {
+  if (!FLAG_harmony_sharedarraybuffer) return;
+
+  Handle<JSGlobalObject> global(
+      JSGlobalObject::cast(native_context()->global_object()));
+
+  Handle<JSFunction> shared_array_buffer_fun = InstallFunction(
+      global, "SharedArrayBuffer", JS_ARRAY_BUFFER_TYPE,
+      JSArrayBuffer::kSizeWithInternalFields,
+      isolate()->initial_object_prototype(), Builtins::kIllegal);
+  native_context()->set_shared_array_buffer_fun(*shared_array_buffer_fun);
 }
 
 
@@ -2404,6 +2426,8 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_object_natives[] = {"native harmony-object.js",
                                                  NULL};
   static const char* harmony_spread_arrays_natives[] = {nullptr};
+  static const char* harmony_sharedarraybuffer_natives[] = {
+      "native harmony-sharedarraybuffer.js", NULL};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {
@@ -2422,6 +2446,8 @@ bool Genesis::InstallExperimentalNatives() {
     HARMONY_SHIPPING(INSTALL_EXPERIMENTAL_NATIVES);
 #undef INSTALL_EXPERIMENTAL_NATIVES
   }
+
+  CallUtilsFunction(isolate(), "PostExperimentals");
 
   InstallExperimentalNativeFunctions();
   return true;

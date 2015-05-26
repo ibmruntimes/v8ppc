@@ -89,6 +89,7 @@ const char* GetTransitionMarkModifier(KeyedAccessStoreMode mode) {
 
 void IC::TraceIC(const char* type, Handle<Object> name) {
   if (FLAG_trace_ic) {
+    if (AddressIsDeoptimizedCode()) return;
     State new_state =
         UseVector() ? nexus()->StateFromFeedback() : raw_target()->ic_state();
     TraceIC(type, name, state(), new_state);
@@ -248,14 +249,6 @@ bool IC::AddressIsOptimizedCode() const {
   Code* host =
       isolate()->inner_pointer_to_code_cache()->GetCacheEntry(address())->code;
   return host->kind() == Code::OPTIMIZED_FUNCTION;
-}
-
-
-bool IC::AddressIsDeoptimizedCode() const {
-  Code* host =
-      isolate()->inner_pointer_to_code_cache()->GetCacheEntry(address())->code;
-  return host->kind() == Code::OPTIMIZED_FUNCTION &&
-         host->marked_for_deoptimization();
 }
 
 
@@ -596,10 +589,9 @@ void KeyedStoreIC::Clear(Isolate* isolate, Address address, Code* target,
                          ConstantPoolArray* constant_pool) {
 #endif
   if (IsCleared(target)) return;
-  SetTargetAtAddress(
-      address, *pre_monomorphic_stub(
-                   isolate, StoreIC::GetLanguageMode(target->extra_ic_state())),
-      constant_pool);
+  Handle<Code> code = pre_monomorphic_stub(
+      isolate, StoreICState::GetLanguageMode(target->extra_ic_state()));
+  SetTargetAtAddress(address, *code, constant_pool);
 }
 
 
@@ -2831,7 +2823,8 @@ RUNTIME_FUNCTION(LoadPropertyWithInterceptorOnly) {
   Handle<JSObject> holder =
       args.at<JSObject>(NamedLoadHandlerCompiler::kInterceptorArgsHolderIndex);
   HandleScope scope(isolate);
-  auto res = JSObject::GetPropertyWithInterceptor(holder, receiver, name);
+  LookupIterator it(receiver, name, holder, LookupIterator::OWN);
+  auto res = JSObject::GetPropertyWithInterceptor(&it);
   RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
   Handle<Object> result;
   if (res.ToHandle(&result)) return *result;

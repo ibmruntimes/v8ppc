@@ -80,9 +80,8 @@ static Handle<Object> DebugGetProperty(LookupIterator* it,
         if (!accessors->IsAccessorInfo()) {
           return it->isolate()->factory()->undefined_value();
         }
-        MaybeHandle<Object> maybe_result = JSObject::GetPropertyWithAccessor(
-            it->GetReceiver(), it->name(), it->GetHolder<JSObject>(),
-            accessors);
+        MaybeHandle<Object> maybe_result =
+            JSObject::GetPropertyWithAccessor(it);
         Handle<Object> result;
         if (!maybe_result.ToHandle(&result)) {
           result = handle(it->isolate()->pending_exception(), it->isolate());
@@ -2501,18 +2500,21 @@ class EvaluationContextBuilder {
     outer_info_ = handle(function->shared());
     Handle<Context> inner_context;
 
-    // The "this" binding, if any, can't be bound via "with".  If we need to,
-    // add another node onto the outer context to bind "this".
-    if (!MaterializeReceiver(isolate, outer_context, function, frame)
-             .ToHandle(&outer_context))
-      return;
-
     bool stop = false;
     for (ScopeIterator it(isolate, frame, inlined_jsframe_index);
          !it.Failed() && !it.Done() && !stop; it.Next()) {
       ScopeIterator::ScopeType scope_type = it.Type();
 
       if (scope_type == ScopeIterator::ScopeTypeLocal) {
+        Handle<Context> parent_context =
+            it.HasContext() ? it.CurrentContext() : outer_context;
+
+        // The "this" binding, if any, can't be bound via "with".  If we need
+        // to, add another node onto the outer context to bind "this".
+        if (!MaterializeReceiver(isolate, parent_context, function, frame)
+                 .ToHandle(&parent_context))
+          return;
+
         Handle<JSObject> materialized_function =
             NewJSObjectWithNullProto(isolate);
 
@@ -2526,8 +2528,6 @@ class EvaluationContextBuilder {
                  .ToHandle(&materialized_function))
           return;
 
-        Handle<Context> parent_context =
-            it.HasContext() ? it.CurrentContext() : outer_context;
         Handle<Context> with_context = isolate->factory()->NewWithContext(
             function, parent_context, materialized_function);
 

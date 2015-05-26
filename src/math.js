@@ -5,7 +5,6 @@
 var rngstate;  // Initialized to a Uint32Array during genesis.
 
 (function(global, utils) {
-
 "use strict";
 
 %CheckIsBootstrapping();
@@ -136,6 +135,15 @@ function MathRandom() {
   var x = ((r0 << 16) + (r1 & 0xFFFF)) | 0;
   // Division by 0x100000000 through multiplication by reciprocal.
   return (x < 0 ? (x + 0x100000000) : x) * 2.3283064365386962890625e-10;
+}
+
+function MathRandomRaw() {
+  var r0 = (MathImul(18030, rngstate[0] & 0xFFFF) + (rngstate[0] >>> 16)) | 0;
+  rngstate[0] = r0;
+  var r1 = (MathImul(36969, rngstate[1] & 0xFFFF) + (rngstate[1] >>> 16)) | 0;
+  rngstate[1] = r1;
+  var x = ((r0 << 16) + (r1 & 0xFFFF)) | 0;
+  return x & 0x3fffffff;
 }
 
 // ECMA 262 - 15.8.2.15
@@ -292,7 +300,7 @@ var Math = new MathConstructor();
 %AddNamedProperty(Math, symbolToStringTag, "Math", READ_ONLY | DONT_ENUM);
 
 // Set up math constants.
-$installConstants(Math, [
+utils.InstallConstants(Math, [
   // ECMA-262, section 15.8.1.1.
   "E", 2.7182818284590452354,
   // ECMA-262, section 15.8.1.2.
@@ -309,7 +317,7 @@ $installConstants(Math, [
 
 // Set up non-enumerable functions of the Math object and
 // set their names.
-$installFunctions(Math, DONT_ENUM, [
+utils.InstallFunctions(Math, DONT_ENUM, [
   "random", MathRandom,
   "abs", MathAbs,
   "acos", MathAcosJS,
@@ -358,6 +366,7 @@ utils.Export(function(to) {
   to.MathAbs = MathAbs;
   to.MathExp = MathExp;
   to.MathFloor = MathFloorJS;
+  to.IntRandom = MathRandomRaw;
   to.MathMax = MathMax;
   to.MathMin = MathMin;
 });

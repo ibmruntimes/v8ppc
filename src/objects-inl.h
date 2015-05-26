@@ -3300,11 +3300,18 @@ int HashTable<Derived, Shape, Key>::FindEntry(Key key) {
 }
 
 
-// Find entry for key otherwise return kNotFound.
 template<typename Derived, typename Shape, typename Key>
 int HashTable<Derived, Shape, Key>::FindEntry(Isolate* isolate, Key key) {
+  return FindEntry(isolate, key, HashTable::Hash(key));
+}
+
+
+// Find entry for key otherwise return kNotFound.
+template <typename Derived, typename Shape, typename Key>
+int HashTable<Derived, Shape, Key>::FindEntry(Isolate* isolate, Key key,
+                                              int32_t hash) {
   uint32_t capacity = Capacity();
-  uint32_t entry = FirstProbe(HashTable::Hash(key), capacity);
+  uint32_t entry = FirstProbe(hash, capacity);
   uint32_t count = 1;
   // EnsureCapacity will guarantee the hash table is never full.
   while (true) {
@@ -4730,8 +4737,8 @@ bool Map::is_migration_target() {
 }
 
 
-void Map::set_is_strong(bool value) {
-  set_bit_field3(IsStrong::update(bit_field3(), value));
+void Map::set_is_strong() {
+  set_bit_field3(IsStrong::update(bit_field3(), true));
 }
 
 
@@ -6073,11 +6080,6 @@ bool JSFunction::IsOptimized() {
 }
 
 
-bool JSFunction::IsOptimizable() {
-  return code()->kind() == Code::FUNCTION && !shared()->optimization_disabled();
-}
-
-
 bool JSFunction::IsMarkedForOptimization() {
   return code() == GetIsolate()->builtins()->builtin(
       Builtins::kCompileOptimized);
@@ -6545,6 +6547,14 @@ bool JSArrayBuffer::was_neutered() { return WasNeutered::decode(bit_field()); }
 
 void JSArrayBuffer::set_was_neutered(bool value) {
   set_bit_field(WasNeutered::update(bit_field(), value));
+}
+
+
+bool JSArrayBuffer::is_shared() { return IsShared::decode(bit_field()); }
+
+
+void JSArrayBuffer::set_is_shared(bool value) {
+  set_bit_field(IsShared::update(bit_field(), value));
 }
 
 

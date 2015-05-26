@@ -126,7 +126,17 @@ class LookupIterator final BASE_EMBEDDED {
   Isolate* isolate() const { return isolate_; }
   State state() const { return state_; }
 
-  Handle<Name> name() const { return name_; }
+  Handle<Name> name() const {
+    DCHECK(!IsElement());
+    return name_;
+  }
+  Handle<Name> GetName() {
+    if (name_.is_null()) {
+      DCHECK(IsElement());
+      name_ = isolate_->factory()->Uint32ToString(index_);
+    }
+    return name_;
+  }
   uint32_t index() const { return index_; }
 
   bool IsElement() const { return index_ != kMaxUInt32; }
@@ -188,6 +198,7 @@ class LookupIterator final BASE_EMBEDDED {
   int GetConstantIndex() const;
   Handle<PropertyCell> GetPropertyCell() const;
   Handle<Object> GetAccessors() const;
+  Handle<InterceptorInfo> GetInterceptor() const;
   Handle<Object> GetDataValue() const;
   // Usually returns the value that was passed in, but may perform
   // non-observable modifications on it, such as internalize strings.
