@@ -5726,6 +5726,17 @@ MaybeHandle<Object> JSObject::PreventExtensions(Handle<JSObject> object) {
 }
 
 
+bool JSObject::IsExtensible() {
+  if (IsJSGlobalProxy()) {
+    PrototypeIterator iter(GetIsolate(), this);
+    if (iter.IsAtEnd()) return false;
+    DCHECK(iter.GetCurrent()->IsJSGlobalObject());
+    return JSObject::cast(iter.GetCurrent())->map()->is_extensible();
+  }
+  return map()->is_extensible();
+}
+
+
 Handle<SeededNumberDictionary> JSObject::GetNormalizedElementDictionary(
     Handle<JSObject> object) {
   DCHECK(!object->elements()->IsDictionary());
@@ -10368,8 +10379,7 @@ void JSFunction::SetInstancePrototype(Handle<JSFunction> function,
       if (array_function->IsJSFunction() &&
           *function == JSFunction::cast(*array_function)) {
         CacheInitialJSArrayMaps(native_context, new_map);
-        Handle<Map> new_strong_map =
-            Map::Copy(initial_map, "SetInstancePrototype");
+        Handle<Map> new_strong_map = Map::Copy(new_map, "SetInstancePrototype");
         new_strong_map->set_is_strong();
         CacheInitialJSArrayMaps(native_context, new_strong_map);
       }

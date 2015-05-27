@@ -251,8 +251,15 @@ static inline bool IsGrowStoreMode(KeyedAccessStoreMode store_mode) {
 enum IcCheckType { ELEMENT, PROPERTY };
 
 
-// Setter that skips the write barrier if mode is SKIP_WRITE_BARRIER.
-enum WriteBarrierMode { SKIP_WRITE_BARRIER, UPDATE_WRITE_BARRIER };
+// SKIP_WRITE_BARRIER skips the write barrier.
+// UPDATE_WEAK_WRITE_BARRIER skips the marking part of the write barrier and
+// only performs the generational part.
+// UPDATE_WRITE_BARRIER is doing the full barrier, marking and generational.
+enum WriteBarrierMode {
+  SKIP_WRITE_BARRIER,
+  UPDATE_WEAK_WRITE_BARRIER,
+  UPDATE_WRITE_BARRIER
+};
 
 
 // Indicates whether a value can be loaded as a constant.
@@ -2148,9 +2155,11 @@ class JSObject: public JSReceiver {
   // Check whether this object references another object
   bool ReferencesObject(Object* obj);
 
-  // Disalow further properties to be added to the object.
+  // Disalow further properties to be added to the oject.
   MUST_USE_RESULT static MaybeHandle<Object> PreventExtensions(
       Handle<JSObject> object);
+
+  bool IsExtensible();
 
   // ES5 Object.seal
   MUST_USE_RESULT static MaybeHandle<Object> Seal(Handle<JSObject> object);

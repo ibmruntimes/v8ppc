@@ -3322,10 +3322,10 @@ TEST(IncrementalMarkingPreservesMonomorphicCallIC) {
 
   Handle<TypeFeedbackVector> feedback_vector(f->shared()->feedback_vector());
 
-  int expected_slots = 2;
+  int expected_slots = 3;
   CHECK_EQ(expected_slots, feedback_vector->ICSlots());
-  int slot1 = 0;
-  int slot2 = 1;
+  int slot1 = 1;
+  int slot2 = 2;
   CHECK(feedback_vector->Get(FeedbackVectorICSlot(slot1))->IsWeakCell());
   CHECK(feedback_vector->Get(FeedbackVectorICSlot(slot2))->IsWeakCell());
 
@@ -3448,14 +3448,14 @@ TEST(IncrementalMarkingPreservesMonomorphicIC) {
               CcTest::global()->Get(v8_str("f"))));
 
   Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CheckVectorIC(f, 0, MONOMORPHIC);
+  CheckVectorIC(f, 1, MONOMORPHIC);
   CHECK(ic_before->ic_state() == DEFAULT);
 
   SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage();
 
   Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CheckVectorIC(f, 0, MONOMORPHIC);
+  CheckVectorIC(f, 1, MONOMORPHIC);
   CHECK(ic_after->ic_state() == DEFAULT);
 }
 
@@ -3480,7 +3480,7 @@ TEST(IncrementalMarkingClearsMonomorphicIC) {
       *v8::Handle<v8::Function>::Cast(CcTest::global()->Get(v8_str("f"))));
 
   Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CheckVectorIC(f, 0, MONOMORPHIC);
+  CheckVectorIC(f, 1, MONOMORPHIC);
   CHECK(ic_before->ic_state() == DEFAULT);
 
   // Fire context dispose notification.
@@ -3489,7 +3489,7 @@ TEST(IncrementalMarkingClearsMonomorphicIC) {
   CcTest::heap()->CollectAllGarbage();
 
   Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CheckVectorICCleared(f, 0);
+  CheckVectorICCleared(f, 1);
   CHECK(ic_after->ic_state() == DEFAULT);
 }
 
@@ -3521,7 +3521,7 @@ TEST(IncrementalMarkingPreservesPolymorphicIC) {
       *v8::Handle<v8::Function>::Cast(CcTest::global()->Get(v8_str("f"))));
 
   Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CheckVectorIC(f, 0, POLYMORPHIC);
+  CheckVectorIC(f, 1, POLYMORPHIC);
   CHECK(ic_before->ic_state() == DEFAULT);
 
   // Fire context dispose notification.
@@ -3529,7 +3529,7 @@ TEST(IncrementalMarkingPreservesPolymorphicIC) {
   CcTest::heap()->CollectAllGarbage();
 
   Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CheckVectorIC(f, 0, POLYMORPHIC);
+  CheckVectorIC(f, 1, POLYMORPHIC);
   CHECK(ic_after->ic_state() == DEFAULT);
 }
 
@@ -3561,7 +3561,7 @@ TEST(IncrementalMarkingClearsPolymorphicIC) {
       *v8::Handle<v8::Function>::Cast(CcTest::global()->Get(v8_str("f"))));
 
   Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CheckVectorIC(f, 0, POLYMORPHIC);
+  CheckVectorIC(f, 1, POLYMORPHIC);
   CHECK(ic_before->ic_state() == DEFAULT);
 
   // Fire context dispose notification.
@@ -3569,7 +3569,7 @@ TEST(IncrementalMarkingClearsPolymorphicIC) {
   SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage();
 
-  CheckVectorICCleared(f, 0);
+  CheckVectorICCleared(f, 1);
   CHECK(ic_before->ic_state() == DEFAULT);
 }
 
@@ -4719,12 +4719,12 @@ TEST(MonomorphicStaysMonomorphicAfterGC) {
     CompileRun("(testIC())");
   }
   heap->CollectAllGarbage();
-  CheckIC(loadIC->code(), Code::LOAD_IC, loadIC->shared(), 0, MONOMORPHIC);
+  CheckIC(loadIC->code(), Code::LOAD_IC, loadIC->shared(), 1, MONOMORPHIC);
   {
     v8::HandleScope scope(CcTest::isolate());
     CompileRun("(testIC())");
   }
-  CheckIC(loadIC->code(), Code::LOAD_IC, loadIC->shared(), 0, MONOMORPHIC);
+  CheckIC(loadIC->code(), Code::LOAD_IC, loadIC->shared(), 1, MONOMORPHIC);
 }
 
 
@@ -4755,12 +4755,12 @@ TEST(PolymorphicStaysPolymorphicAfterGC) {
     CompileRun("(testIC())");
   }
   heap->CollectAllGarbage();
-  CheckIC(loadIC->code(), Code::LOAD_IC, loadIC->shared(), 0, POLYMORPHIC);
+  CheckIC(loadIC->code(), Code::LOAD_IC, loadIC->shared(), 1, POLYMORPHIC);
   {
     v8::HandleScope scope(CcTest::isolate());
     CompileRun("(testIC())");
   }
-  CheckIC(loadIC->code(), Code::LOAD_IC, loadIC->shared(), 0, POLYMORPHIC);
+  CheckIC(loadIC->code(), Code::LOAD_IC, loadIC->shared(), 1, POLYMORPHIC);
 }
 
 
@@ -5486,21 +5486,20 @@ TEST(OldSpaceAllocationCounter) {
   v8::HandleScope scope(CcTest::isolate());
   Isolate* isolate = CcTest::i_isolate();
   Heap* heap = isolate->heap();
-  // TODO(ulan): remove this GC after fixing no-snapshot failure.
-  heap->CollectGarbage(OLD_SPACE);
   size_t counter1 = heap->OldGenerationAllocationCounter();
   heap->CollectGarbage(NEW_SPACE);
   const size_t kSize = 1024;
   AllocateInSpace(isolate, kSize, OLD_SPACE);
   size_t counter2 = heap->OldGenerationAllocationCounter();
-  CHECK_EQ(kSize, counter2 - counter1);
+  // TODO(ulan): replace all CHECK_LE with CHECK_EQ after v8:4148 is fixed.
+  CHECK_LE(kSize, counter2 - counter1);
   heap->CollectGarbage(NEW_SPACE);
   size_t counter3 = heap->OldGenerationAllocationCounter();
-  CHECK_EQ(0, counter3 - counter2);
+  CHECK_EQ(0u, counter3 - counter2);
   AllocateInSpace(isolate, kSize, OLD_SPACE);
   heap->CollectGarbage(OLD_SPACE);
   size_t counter4 = heap->OldGenerationAllocationCounter();
-  CHECK_EQ(kSize, counter4 - counter3);
+  CHECK_LE(kSize, counter4 - counter3);
   // Test counter overflow.
   size_t max_counter = -1;
   heap->set_old_generation_allocation_counter(max_counter - 10 * kSize);
@@ -5508,7 +5507,7 @@ TEST(OldSpaceAllocationCounter) {
   for (int i = 0; i < 20; i++) {
     AllocateInSpace(isolate, kSize, OLD_SPACE);
     size_t counter = heap->OldGenerationAllocationCounter();
-    CHECK_EQ(kSize, counter - start);
+    CHECK_LE(kSize, counter - start);
     start = counter;
   }
 }
@@ -5549,13 +5548,13 @@ TEST(NewSpaceAllocationThroughput2) {
   int time2 = 200;
   size_t counter2 = 2000;
   tracer->SampleAllocation(time2, counter2, 0);
-  size_t bytes = tracer->AllocatedBytesInLast(1000);
-  CHECK_EQ(10000, bytes);
+  size_t throughput = tracer->AllocationThroughputInBytesPerMillisecond(100);
+  CHECK_EQ((counter2 - counter1) / (time2 - time1), throughput);
   int time3 = 1000;
   size_t counter3 = 30000;
   tracer->SampleAllocation(time3, counter3, 0);
-  bytes = tracer->AllocatedBytesInLast(100);
-  CHECK_EQ((counter3 - counter1) * 100 / (time3 - time1), bytes);
+  throughput = tracer->AllocationThroughputInBytesPerMillisecond(100);
+  CHECK_EQ((counter3 - counter1) / (time3 - time1), throughput);
 }
 
 
@@ -5612,13 +5611,13 @@ TEST(OldGenerationAllocationThroughput) {
   int time2 = 200;
   size_t counter2 = 2000;
   tracer->SampleAllocation(time2, 0, counter2);
-  size_t bytes = tracer->AllocatedBytesInLast(1000);
-  CHECK_EQ(10000, bytes);
+  size_t throughput = tracer->AllocationThroughputInBytesPerMillisecond(100);
+  CHECK_EQ((counter2 - counter1) / (time2 - time1), throughput);
   int time3 = 1000;
   size_t counter3 = 30000;
   tracer->SampleAllocation(time3, 0, counter3);
-  bytes = tracer->AllocatedBytesInLast(100);
-  CHECK_EQ((counter3 - counter1) * 100 / (time3 - time1), bytes);
+  throughput = tracer->AllocationThroughputInBytesPerMillisecond(100);
+  CHECK_EQ((counter3 - counter1) / (time3 - time1), throughput);
 }
 
 
@@ -5634,11 +5633,11 @@ TEST(AllocationThroughput) {
   int time2 = 200;
   size_t counter2 = 2000;
   tracer->SampleAllocation(time2, counter2, counter2);
-  size_t bytes = tracer->AllocatedBytesInLast(1000);
-  CHECK_EQ(20000, bytes);
+  size_t throughput = tracer->AllocationThroughputInBytesPerMillisecond(100);
+  CHECK_EQ(2 * (counter2 - counter1) / (time2 - time1), throughput);
   int time3 = 1000;
   size_t counter3 = 30000;
   tracer->SampleAllocation(time3, counter3, counter3);
-  bytes = tracer->AllocatedBytesInLast(100);
-  CHECK_EQ(2 * (counter3 - counter1) * 100 / (time3 - time1), bytes);
+  throughput = tracer->AllocationThroughputInBytesPerMillisecond(100);
+  CHECK_EQ(2 * (counter3 - counter1) / (time3 - time1), throughput);
 }

@@ -534,7 +534,7 @@ Handle<JSFunction> Genesis::CreateEmptyFunction(Isolate* isolate) {
 
     // Allocate initial strong object map.
     Handle<Map> strong_object_map =
-        Map::Copy(object_function_map, "EmptyStrongObject");
+        Map::Copy(Handle<Map>(object_fun->initial_map()), "EmptyStrongObject");
     strong_object_map->set_is_strong();
     native_context()->set_js_object_strong_map(*strong_object_map);
   }
@@ -790,7 +790,8 @@ static void AddToWeakNativeContextList(Context* context) {
     }
   }
 #endif
-  context->set(Context::NEXT_CONTEXT_LINK, heap->native_contexts_list());
+  context->set(Context::NEXT_CONTEXT_LINK, heap->native_contexts_list(),
+               UPDATE_WEAK_WRITE_BARRIER);
   heap->set_native_contexts_list(context);
 }
 
@@ -1221,13 +1222,19 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> global_object,
     native_context()->set_data_view_fun(*data_view_fun);
   }
 
-  // -- M a p
-  InstallFunction(global, "Map", JS_MAP_TYPE, JSMap::kSize,
-                  isolate->initial_object_prototype(), Builtins::kIllegal);
+  {  // -- M a p
+    Handle<JSFunction> js_map_fun = InstallFunction(
+        global, "Map", JS_MAP_TYPE, JSMap::kSize,
+        isolate->initial_object_prototype(), Builtins::kIllegal);
+    native_context()->set_js_map_map(js_map_fun->initial_map());
+  }
 
-  // -- S e t
-  InstallFunction(global, "Set", JS_SET_TYPE, JSSet::kSize,
-                  isolate->initial_object_prototype(), Builtins::kIllegal);
+  {  // -- S e t
+    Handle<JSFunction> js_set_fun = InstallFunction(
+        global, "Set", JS_SET_TYPE, JSSet::kSize,
+        isolate->initial_object_prototype(), Builtins::kIllegal);
+    native_context()->set_js_set_map(js_set_fun->initial_map());
+  }
 
   {  // Set up the iterator result object
     STATIC_ASSERT(JSGeneratorObject::kResultPropertyCount == 2);
@@ -1659,6 +1666,8 @@ void Genesis::InstallNativeFunctions() {
   INSTALL_NATIVE(JSFunction, "$observeNativeObjectNotifierPerformChange",
                  native_object_notifier_perform_change);
   INSTALL_NATIVE(JSFunction, "$arrayValues", array_values_iterator);
+  INSTALL_NATIVE(JSFunction, "$mapFromArray", map_from_array);
+  INSTALL_NATIVE(JSFunction, "$setFromArray", set_from_array);
 }
 
 
@@ -2199,9 +2208,11 @@ bool Genesis::InstallNatives() {
                     Builtins::kIllegal, kUseStrictFunctionMap);
 
     // Create maps for generator functions and their prototypes.  Store those
-    // maps in the native context. Generator functions do not have writable
-    // prototypes, nor do they have "caller" or "arguments" accessors.
-    Handle<Map> strict_function_map(native_context()->strict_function_map());
+    // maps in the native context. The "prototype" property descriptor is
+    // writable, non-enumerable, and non-configurable (as per ES6 draft
+    // 04-14-15, section 25.2.4.3).
+    Handle<Map> strict_function_map(strict_function_map_writable_prototype_);
+    // Generator functions do not have "caller" or "arguments" accessors.
     Handle<Map> sloppy_generator_function_map =
         Map::Copy(strict_function_map, "SloppyGeneratorFunction");
     Map::SetPrototype(sloppy_generator_function_map,

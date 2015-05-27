@@ -856,7 +856,7 @@ Node* AstGraphBuilder::Environment::Checkpoint(
   Node* result = graph()->NewNode(op, parameters_node_, locals_node_,
                                   stack_node_, builder()->current_context(),
                                   builder()->GetFunctionClosure(),
-                                  builder()->jsgraph()->UndefinedConstant());
+                                  builder()->graph()->start());
 
   DCHECK(IsLivenessBlockConsistent());
   if (liveness_block() != nullptr) {
@@ -2225,6 +2225,13 @@ void AstGraphBuilder::VisitThrow(Throw* expr) {
 
 
 void AstGraphBuilder::VisitProperty(Property* expr) {
+  if (expr->obj()->IsSuperReference()) {
+    // TODO(turbofan): Implement super here.
+    SetStackOverflow();
+    ast_context()->ProduceValue(jsgraph()->UndefinedConstant());
+    return;
+  }
+
   Node* value;
   VectorSlotPair pair = CreateVectorSlotPair(expr->PropertyFeedbackSlot());
   if (expr->key()->IsPropertyName()) {
@@ -2798,6 +2805,8 @@ void AstGraphBuilder::VisitLogicalExpression(BinaryOperation* expr) {
     Visit(expr->right());
   } else if (ast_context()->IsEffect()) {
     environment()->Pop();
+  } else if (ast_context()->IsTest()) {
+    environment()->Poke(0, jsgraph()->TrueConstant());
   }
   compare_if.Else();
   if (!is_logical_and) {
@@ -2805,6 +2814,8 @@ void AstGraphBuilder::VisitLogicalExpression(BinaryOperation* expr) {
     Visit(expr->right());
   } else if (ast_context()->IsEffect()) {
     environment()->Pop();
+  } else if (ast_context()->IsTest()) {
+    environment()->Poke(0, jsgraph()->FalseConstant());
   }
   compare_if.End();
   ast_context()->ReplaceValue();
