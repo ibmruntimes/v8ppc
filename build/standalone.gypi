@@ -76,6 +76,14 @@
       'lsan%': 0,
       'msan%': 0,
       'tsan%': 0,
+      # Enable coverage gathering instrumentation in sanitizer tools. This flag
+      # also controls coverage granularity (1 for function-level, 2 for
+      # block-level, 3 for edge-level).
+      'sanitizer_coverage%': 0,
+      # Use libc++ (buildtools/third_party/libc++ and
+      # buildtools/third_party/libc++abi) instead of stdlibc++ as standard
+      # library. This is intended to be used for instrumented builds.
+      'use_custom_libcxx%': 0,
 
       # goma settings.
       # 1 to use goma.
@@ -101,6 +109,8 @@
     'lsan%': '<(lsan)',
     'msan%': '<(msan)',
     'tsan%': '<(tsan)',
+    'sanitizer_coverage%': '<(sanitizer_coverage)',
+    'use_custom_libcxx%': '<(use_custom_libcxx)',
 
     # Add a simple extra solely for the purpose of the cctests
     'v8_extra_library_files': ['../test/cctest/test-extra.js'],
@@ -178,6 +188,18 @@
       ['asan==1 or lsan==1 or msan==1 or tsan==1', {
         'clang%': 1,
         'use_allocator%': 'none',
+      }],
+      ['asan==1 and OS=="linux"', {
+        'use_custom_libcxx%': 1,
+      }],
+      ['tsan==1', {
+        'use_custom_libcxx%': 1,
+      }],
+      ['msan==1', {
+        # Use a just-built, MSan-instrumented libc++ instead of the system-wide
+        # libstdc++. This is required to avoid false positive reports whenever
+        # the C++ standard library is used.
+        'use_custom_libcxx%': 1,
       }],
     ],
     # Default ARM variable settings.
@@ -321,7 +343,6 @@
               }],
             ],
           }],
-          # TODO(machenbach): Add sanitizer coverage.
           ['lsan==1', {
             'target_conditions': [
               ['_toolset=="target"', {
@@ -367,45 +388,70 @@
                 ],
               }],
             ],
-            # TODO(machenbach): Share this between all *san configs like in
-            # common.gypi.
+          }],
+          ['use_custom_libcxx==1', {
             'dependencies': [
-              # Use libc++ (buildtools/third_party/libc++ and
-              # buildtools/third_party/libc++abi) instead of stdlibc++ as
-              # standard library. This is intended to be used for for
-              # instrumented builds.
               '<(DEPTH)/buildtools/third_party/libc++/libc++.gyp:libcxx_proxy',
+            ],
+          }],
+          ['sanitizer_coverage!=0', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'cflags': [
+                  '-fsanitize-coverage=<(sanitizer_coverage)',
+                ],
+                'defines': [
+                  'SANITIZER_COVERAGE',
+                ],
+              }],
             ],
           }],
         ],
       },
     }],
-    ['asan==1 and OS=="mac"', {
+    ['OS=="mac"', {
       'target_defaults': {
-        'xcode_settings': {
-          'OTHER_CFLAGS+': [
-            '-fno-omit-frame-pointer',
-            '-gline-tables-only',
-            '-fsanitize=address',
-            '-w',  # http://crbug.com/162783
-          ],
-          'OTHER_CFLAGS!': [
-            '-fomit-frame-pointer',
-          ],
-          'defines': [
-            'ADDRESS_SANITIZER',
-          ],
-        },
-        'target_conditions': [
-          ['_type!="static_library"', {
-            'xcode_settings': {'OTHER_LDFLAGS': ['-fsanitize=address']},
+       'conditions': [
+          ['asan==1', {
+            'xcode_settings': {
+              # FIXME(machenbach): This is outdated compared to common.gypi.
+              'OTHER_CFLAGS+': [
+                '-fno-omit-frame-pointer',
+                '-gline-tables-only',
+                '-fsanitize=address',
+                '-w',  # http://crbug.com/162783
+              ],
+              'OTHER_CFLAGS!': [
+                '-fomit-frame-pointer',
+              ],
+              'defines': [
+                'ADDRESS_SANITIZER',
+              ],
+            },
+            'dependencies': [
+              '<(DEPTH)/build/mac/asan.gyp:asan_dynamic_runtime',
+            ],
+            'target_conditions': [
+              ['_type!="static_library"', {
+                'xcode_settings': {'OTHER_LDFLAGS': ['-fsanitize=address']},
+              }],
+            ],
+          }],
+          ['sanitizer_coverage!=0', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'cflags': [
+                  '-fsanitize-coverage=<(sanitizer_coverage)',
+                ],
+                'defines': [
+                  'SANITIZER_COVERAGE',
+                ],
+              }],
+            ],
           }],
         ],
-        'dependencies': [
-          '<(DEPTH)/build/mac/asan.gyp:asan_dynamic_runtime',
-        ],
-      },
-    }],
+      },  # target_defaults
+    }],  # OS=="mac"
     ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
        or OS=="netbsd" or OS=="aix"', {
       'target_defaults': {

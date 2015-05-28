@@ -8638,11 +8638,14 @@ int HandlerTable::LookupRange(int pc_offset, int* stack_depth_out) {
 
 
 // TODO(turbofan): Make sure table is sorted and use binary search.
-int HandlerTable::LookupReturn(int pc_offset) {
+int HandlerTable::LookupReturn(int pc_offset, CatchPrediction* prediction) {
   for (int i = 0; i < length(); i += kReturnEntrySize) {
     int return_offset = Smi::cast(get(i + kReturnOffsetIndex))->value();
-    int handler_offset = Smi::cast(get(i + kReturnHandlerIndex))->value();
-    if (pc_offset == return_offset) return handler_offset;
+    int handler_field = Smi::cast(get(i + kReturnHandlerIndex))->value();
+    if (pc_offset == return_offset) {
+      *prediction = HandlerPredictionField::decode(handler_field);
+      return HandlerOffsetField::decode(handler_field);
+    }
   }
   return -1;
 }
@@ -11636,6 +11639,13 @@ WeakCell* Code::CachedWeakCell() {
 void DeoptimizationInputData::DeoptimizationInputDataPrint(
     std::ostream& os) {  // NOLINT
   disasm::NameConverter converter;
+  int const inlined_function_count = InlinedFunctionCount()->value();
+  os << "Inlined functions (count = " << inlined_function_count << ")\n";
+  for (int id = 0; id < inlined_function_count; ++id) {
+    Object* info = LiteralArray()->get(id);
+    os << " " << Brief(SharedFunctionInfo::cast(info)) << "\n";
+  }
+  os << "\n";
   int deopt_count = DeoptCount();
   os << "Deoptimization Input Data (deopt points = " << deopt_count << ")\n";
   if (0 != deopt_count) {
@@ -11834,12 +11844,14 @@ void HandlerTable::HandlerTableRangePrint(std::ostream& os) {
 
 
 void HandlerTable::HandlerTableReturnPrint(std::ostream& os) {
-  os << "   off      hdlr\n";
+  os << "   off      hdlr (c)\n";
   for (int i = 0; i < length(); i += kReturnEntrySize) {
     int pc_offset = Smi::cast(get(i + kReturnOffsetIndex))->value();
-    int handler = Smi::cast(get(i + kReturnHandlerIndex))->value();
+    int handler_field = Smi::cast(get(i + kReturnHandlerIndex))->value();
+    int handler_offset = HandlerOffsetField::decode(handler_field);
+    CatchPrediction prediction = HandlerPredictionField::decode(handler_field);
     os << "  " << std::setw(4) << pc_offset << "  ->  " << std::setw(4)
-       << handler << "\n";
+       << handler_offset << " (" << prediction << ")\n";
   }
 }
 
@@ -12654,6 +12666,13 @@ MaybeHandle<Object> JSObject::SetPrototype(Handle<JSObject> object,
 #endif
 
   Isolate* isolate = object->GetIsolate();
+  // Strong objects may not have their prototype set via __proto__ or
+  // setPrototypeOf.
+  if (from_javascript && object->map()->is_strong()) {
+    THROW_NEW_ERROR(isolate,
+                    NewTypeError(MessageTemplate::kStrongSetProto, object),
+                    Object);
+  }
   Heap* heap = isolate->heap();
   // Silently ignore the change if value is not a JSObject or null.
   // SpiderMonkey behaves this way.

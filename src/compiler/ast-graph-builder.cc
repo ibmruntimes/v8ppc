@@ -335,9 +335,11 @@ class AstGraphBuilder::ControlScopeForCatch : public ControlScope {
   ControlScopeForCatch(AstGraphBuilder* owner, TryCatchBuilder* control)
       : ControlScope(owner), control_(control) {
     builder()->try_nesting_level_++;  // Increment nesting.
+    builder()->try_catch_nesting_level_++;
   }
   ~ControlScopeForCatch() {
     builder()->try_nesting_level_--;  // Decrement nesting.
+    builder()->try_catch_nesting_level_--;
   }
 
  protected:
@@ -437,6 +439,7 @@ AstGraphBuilder::AstGraphBuilder(Zone* local_zone, CompilationInfo* info,
       globals_(0, local_zone),
       execution_control_(nullptr),
       execution_context_(nullptr),
+      try_catch_nesting_level_(0),
       try_nesting_level_(0),
       input_buffer_size_(0),
       input_buffer_(nullptr),
@@ -851,7 +854,8 @@ Node* AstGraphBuilder::Environment::Checkpoint(
   UpdateStateValues(&stack_node_, parameters_count() + locals_count(),
                     stack_height());
 
-  const Operator* op = common()->FrameState(JS_FRAME, ast_id, combine);
+  const Operator* op = common()->FrameState(JS_FRAME, ast_id, combine,
+                                            builder()->info()->shared_info());
 
   Node* result = graph()->NewNode(op, parameters_node_, locals_node_,
                                   stack_node_, builder()->current_context(),
@@ -1327,27 +1331,14 @@ void AstGraphBuilder::VisitForInStatement(ForInStatement* stmt) {
         NewNode(javascript()->CallRuntime(Runtime::kForInCacheArrayLength, 2),
                 cache_type, cache_array);
     {
-      // TODO(dcarney): this check is actually supposed to be for the
-      //                empty enum case only.
-      IfBuilder have_no_properties(this);
-      Node* empty_array_cond = NewNode(javascript()->StrictEqual(),
-                                       cache_length, jsgraph()->ZeroConstant());
-      have_no_properties.If(empty_array_cond);
-      have_no_properties.Then();
-      // Pop obj and skip loop.
-      environment()->Pop();
-      have_no_properties.Else();
-      {
-        // Construct the rest of the environment.
-        environment()->Push(cache_type);
-        environment()->Push(cache_array);
-        environment()->Push(cache_length);
-        environment()->Push(jsgraph()->ZeroConstant());
+      // Construct the rest of the environment.
+      environment()->Push(cache_type);
+      environment()->Push(cache_array);
+      environment()->Push(cache_length);
+      environment()->Push(jsgraph()->ZeroConstant());
 
-        // Build the actual loop body.
-        VisitForInBody(stmt);
-      }
-      have_no_properties.End();
+      // Build the actual loop body.
+      VisitForInBody(stmt);
     }
     is_null.End();
   }
@@ -1368,14 +1359,15 @@ void AstGraphBuilder::VisitForInBody(ForInStatement* stmt) {
   Node* cache_type = environment()->Peek(3);
   Node* obj = environment()->Peek(4);
 
-  // Check loop termination condition.
-  FrameStateBeforeAndAfter states(this, BailoutId::None());
-  Node* exit_cond = NewNode(javascript()->LessThan(LanguageMode::SLOPPY),
-                            index, cache_length);
-  // TODO(jarin): provide real bailout id.
-  states.AddToNode(exit_cond, BailoutId::None(),
-                   OutputFrameStateCombine::Ignore());
-  for_loop.BreakUnless(exit_cond);
+  // Check loop termination condition (cannot deoptimize).
+  {
+    FrameStateBeforeAndAfter states(this, BailoutId::None());
+    Node* exit_cond = NewNode(javascript()->LessThan(LanguageMode::SLOPPY),
+                              index, cache_length);
+    states.AddToNode(exit_cond, BailoutId::None(),
+                     OutputFrameStateCombine::Ignore());
+    for_loop.BreakUnless(exit_cond);
+  }
   Node* pair = NewNode(javascript()->CallRuntime(Runtime::kForInNext, 4), obj,
                        cache_array, cache_type, index);
   Node* value = NewNode(common()->Projection(0), pair);
@@ -1405,9 +1397,8 @@ void AstGraphBuilder::VisitForInBody(ForInStatement* stmt) {
       IfBuilder is_property_missing(this);
       is_property_missing.If(property_missing);
       is_property_missing.Then();
-      // Inc counter and continue.
+      // Inc counter and continue (cannot deoptimize).
       {
-        // TODO(jarin): provide real bailout id.
         FrameStateBeforeAndAfter states(this, BailoutId::None());
         Node* index_inc = NewNode(javascript()->Add(LanguageMode::SLOPPY),
                                   index, jsgraph()->OneConstant());
@@ -1431,17 +1422,15 @@ void AstGraphBuilder::VisitForInBody(ForInStatement* stmt) {
   index = environment()->Peek(0);
   for_loop.EndBody();
 
-  // Inc counter and continue.
-  Node* index_inc =
-      NewNode(javascript()->Add(LanguageMode::SLOPPY), index,
-              jsgraph()->OneConstant());
+  // Inc counter and continue (cannot deoptimize).
   {
-    // TODO(jarin): provide real bailout ids.
     FrameStateBeforeAndAfter states(this, BailoutId::None());
+    Node* index_inc = NewNode(javascript()->Add(LanguageMode::SLOPPY), index,
+                              jsgraph()->OneConstant());
     states.AddToNode(index_inc, BailoutId::None(),
                      OutputFrameStateCombine::Ignore());
+    environment()->Poke(0, index_inc);
   }
-  environment()->Poke(0, index_inc);
   for_loop.EndLoop();
   environment()->Drop(5);
   // PrepareForBailoutForId(stmt->ExitId(), NO_REGISTERS);
@@ -3564,17 +3553,22 @@ Node* AstGraphBuilder::MakeNode(const Operator* op, int value_input_count,
       }
       // Add implicit exception continuation for throwing nodes.
       if (!result->op()->HasProperty(Operator::kNoThrow) && inside_try_scope) {
+        // Conservative prediction whether caught locally.
+        IfExceptionHint hint = try_catch_nesting_level_ > 0
+                                   ? IfExceptionHint::kLocallyCaught
+                                   : IfExceptionHint::kLocallyUncaught;
         // Copy the environment for the success continuation.
         Environment* success_env = environment()->CopyForConditional();
-
-        Node* on_exception = graph()->NewNode(common()->IfException(), result);
+        const Operator* op = common()->IfException(hint);
+        Node* on_exception = graph()->NewNode(op, result);
         environment_->UpdateControlDependency(on_exception);
         execution_control()->ThrowValue(on_exception);
         set_environment(success_env);
       }
       // Add implicit success continuation for throwing nodes.
       if (!result->op()->HasProperty(Operator::kNoThrow)) {
-        Node* on_success = graph()->NewNode(common()->IfSuccess(), result);
+        const Operator* op = common()->IfSuccess();
+        Node* on_success = graph()->NewNode(op, result);
         environment_->UpdateControlDependency(on_success);
       }
     }
