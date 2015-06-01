@@ -716,13 +716,23 @@ class Heap {
   MUST_USE_RESULT AllocationResult
       CopyJSObject(JSObject* source, AllocationSite* site = NULL);
 
-  // This method assumes overallocation of one word. It will store a filler
-  // before the object if the given object is not double aligned, otherwise
-  // it will place the filler after the object.
-  MUST_USE_RESULT HeapObject* EnsureAligned(HeapObject* object, int size,
-                                            AllocationAlignment alignment);
+  // Calculates the maximum amount of filler that could be required by the
+  // given alignment.
+  static int GetMaximumFillToAlign(AllocationAlignment alignment);
+  // Calculates the actual amount of filler required for a given address at the
+  // given alignment.
+  static int GetFillToAlign(Address address, AllocationAlignment alignment);
 
-  MUST_USE_RESULT HeapObject* PrecedeWithFiller(HeapObject* object);
+  // Creates a filler object and returns a heap object immediately after it.
+  MUST_USE_RESULT HeapObject* PrecedeWithFiller(HeapObject* object,
+                                                int filler_size);
+  // Creates a filler object if needed for alignment and returns a heap object
+  // immediately after it. If any space is left after the returned object,
+  // another filler object is created so the over allocated memory is iterable.
+  MUST_USE_RESULT HeapObject* AlignWithFiller(HeapObject* object,
+                                              int object_size,
+                                              int allocation_size,
+                                              AllocationAlignment alignment);
 
   // Clear the Instanceof cache (used when a prototype changes).
   inline void ClearInstanceofCache();
@@ -1145,6 +1155,8 @@ class Heap {
       256 * kPointerMultiplier;
   static const int kMaxExecutableSizeHugeMemoryDevice =
       256 * kPointerMultiplier;
+
+  static const int kTraceRingBufferSize = 512;
 
   // Calculates the allocation limit based on a given growing factor and a
   // given old generation size.
@@ -2172,6 +2184,9 @@ class Heap {
   inline void UpdateAllocationsHash(uint32_t value);
   inline void PrintAlloctionsHash();
 
+  void AddToRingBuffer(const char* string);
+  void GetFromRingBuffer(char* buffer);
+
   // Object counts and used memory by InstanceType
   size_t object_counts_[OBJECT_STATS_COUNT];
   size_t object_counts_last_time_[OBJECT_STATS_COUNT];
@@ -2238,6 +2253,13 @@ class Heap {
 
   static const int kAllocationSiteScratchpadSize = 256;
   int allocation_sites_scratchpad_length_;
+
+  char trace_ring_buffer_[kTraceRingBufferSize];
+  // If it's not full then the data is from 0 to ring_buffer_end_.  If it's
+  // full then the data is from ring_buffer_end_ to the end of the buffer and
+  // from 0 to ring_buffer_end_.
+  bool ring_buffer_full_;
+  size_t ring_buffer_end_;
 
   static const int kMaxMarkCompactsInIdleRound = 7;
   static const int kIdleScavengeThreshold = 5;
@@ -2310,7 +2332,8 @@ class HeapStats {
   int* objects_per_type;                   // 17
   int* size_per_type;                      // 18
   int* os_error;                           // 19
-  int* end_marker;                         // 20
+  char* last_few_messages;                 // 20
+  int* end_marker;                         // 21
 };
 
 

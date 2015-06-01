@@ -123,6 +123,8 @@
 #define JS_CONTEXT_OP_LIST(V) \
   V(JSLoadContext)            \
   V(JSStoreContext)           \
+  V(JSLoadDynamicGlobal)      \
+  V(JSLoadDynamicContext)     \
   V(JSCreateFunctionContext)  \
   V(JSCreateCatchContext)     \
   V(JSCreateWithContext)      \
@@ -134,6 +136,10 @@
   V(JSCallConstruct)        \
   V(JSCallFunction)         \
   V(JSCallRuntime)          \
+  V(JSForInDone)            \
+  V(JSForInNext)            \
+  V(JSForInPrepare)         \
+  V(JSForInStep)            \
   V(JSYield)                \
   V(JSStackCheck)
 

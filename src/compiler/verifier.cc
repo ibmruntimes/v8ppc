@@ -270,22 +270,12 @@ void Verifier::Visitor::Check(Node* node) {
       CheckNotTyped(node);
       break;
     case IrOpcode::kDeoptimize:
-      // Deoptimize uses are End.
-      for (auto use : node->uses()) {
-        CHECK_EQ(IrOpcode::kEnd, use->opcode());
-      }
-      // Type is empty.
-      CheckNotTyped(node);
     case IrOpcode::kReturn:
-      // Return uses are End.
+    case IrOpcode::kThrow:
+      // Deoptimize, Return and Throw uses are End.
       for (auto use : node->uses()) {
         CHECK_EQ(IrOpcode::kEnd, use->opcode());
       }
-      // Type is empty.
-      CheckNotTyped(node);
-      break;
-    case IrOpcode::kThrow:
-      // TODO(rossberg): what are the constraints on these?
       // Type is empty.
       CheckNotTyped(node);
       break;
@@ -541,6 +531,8 @@ void Verifier::Visitor::Check(Node* node) {
       break;
 
     case IrOpcode::kJSLoadContext:
+    case IrOpcode::kJSLoadDynamicGlobal:
+    case IrOpcode::kJSLoadDynamicContext:
       // Type can be anything.
       CheckUpperIs(node, Type::Any());
       break;
@@ -573,6 +565,25 @@ void Verifier::Visitor::Check(Node* node) {
       // Type can be anything.
       CheckUpperIs(node, Type::Any());
       break;
+
+    case IrOpcode::kJSForInPrepare: {
+      // TODO(bmeurer): What are the constraints on thse?
+      CheckUpperIs(node, Type::Any());
+      break;
+    }
+    case IrOpcode::kJSForInDone: {
+      CheckValueInputIs(node, 0, Type::UnsignedSmall());
+      break;
+    }
+    case IrOpcode::kJSForInNext: {
+      CheckUpperIs(node, Type::Union(Type::Name(), Type::Undefined()));
+      break;
+    }
+    case IrOpcode::kJSForInStep: {
+      CheckValueInputIs(node, 0, Type::UnsignedSmall());
+      CheckUpperIs(node, Type::UnsignedSmall());
+      break;
+    }
 
     case IrOpcode::kJSStackCheck:
       // Type is empty.

@@ -584,7 +584,8 @@ class JavaScriptFrame: public StandardFrame {
 
   // Lookup exception handler for current {pc}, returns -1 if none found. Also
   // returns the expected number of stack slots at the handler site.
-  virtual int LookupExceptionHandlerInTable(int* stack_slots);
+  virtual int LookupExceptionHandlerInTable(
+      int* stack_slots, HandlerTable::CatchPrediction* prediction);
 
   // Architecture-specific register description.
   static Register fp_register();
@@ -660,7 +661,8 @@ class OptimizedFrame : public JavaScriptFrame {
 
   // Lookup exception handler for current {pc}, returns -1 if none found. Also
   // returns the expected number of stack slots at the handler site.
-  virtual int LookupExceptionHandlerInTable(int* stack_slots);
+  virtual int LookupExceptionHandlerInTable(
+      int* stack_slots, HandlerTable::CatchPrediction* prediction);
 
   DeoptimizationInputData* GetDeoptimizationData(int* deopt_index);
 

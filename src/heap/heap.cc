@@ -146,6 +146,8 @@ Heap::Heap()
       old_generation_size_at_last_gc_(0),
       gcs_since_last_deopt_(0),
       allocation_sites_scratchpad_length_(0),
+      ring_buffer_full_(false),
+      ring_buffer_end_(0),
       promotion_queue_(this),
       configured_(false),
       external_string_table_(this),
@@ -1990,31 +1992,54 @@ STATIC_ASSERT((HeapNumber::kValueOffset & kDoubleAlignmentMask) !=
 #endif
 
 
-HeapObject* Heap::EnsureAligned(HeapObject* object, int size,
-                                AllocationAlignment alignment) {
-  if (alignment == kDoubleAligned &&
-      (OffsetFrom(object->address()) & kDoubleAlignmentMask) != 0) {
-    CreateFillerObjectAt(object->address(), kPointerSize);
-    return HeapObject::FromAddress(object->address() + kPointerSize);
-  } else if (alignment == kDoubleUnaligned &&
-             (OffsetFrom(object->address()) & kDoubleAlignmentMask) == 0) {
-    CreateFillerObjectAt(object->address(), kPointerSize);
-    return HeapObject::FromAddress(object->address() + kPointerSize);
-  } else {
-    CreateFillerObjectAt(object->address() + size - kPointerSize, kPointerSize);
-    return object;
+int Heap::GetMaximumFillToAlign(AllocationAlignment alignment) {
+  switch (alignment) {
+    case kWordAligned:
+      return 0;
+    case kDoubleAligned:
+    case kDoubleUnaligned:
+      return kDoubleSize - kPointerSize;
+    default:
+      UNREACHABLE();
   }
+  return 0;
 }
 
 
-HeapObject* Heap::PrecedeWithFiller(HeapObject* object) {
-  CreateFillerObjectAt(object->address(), kPointerSize);
-  return HeapObject::FromAddress(object->address() + kPointerSize);
+int Heap::GetFillToAlign(Address address, AllocationAlignment alignment) {
+  intptr_t offset = OffsetFrom(address);
+  if (alignment == kDoubleAligned && (offset & kDoubleAlignmentMask) != 0)
+    return kPointerSize;
+  if (alignment == kDoubleUnaligned && (offset & kDoubleAlignmentMask) == 0)
+    return kDoubleSize - kPointerSize;  // No fill if double is always aligned.
+  return 0;
+}
+
+
+HeapObject* Heap::PrecedeWithFiller(HeapObject* object, int filler_size) {
+  CreateFillerObjectAt(object->address(), filler_size);
+  return HeapObject::FromAddress(object->address() + filler_size);
+}
+
+
+HeapObject* Heap::AlignWithFiller(HeapObject* object, int object_size,
+                                  int allocation_size,
+                                  AllocationAlignment alignment) {
+  int filler_size = allocation_size - object_size;
+  DCHECK(filler_size > 0);
+  int pre_filler = GetFillToAlign(object->address(), alignment);
+  if (pre_filler) {
+    object = PrecedeWithFiller(object, pre_filler);
+    filler_size -= pre_filler;
+  }
+  if (filler_size)
+    CreateFillerObjectAt(object->address() + object_size, filler_size);
+  return object;
 }
 
 
 HeapObject* Heap::DoubleAlignForDeserialization(HeapObject* object, int size) {
-  return EnsureAligned(object, size, kDoubleAligned);
+  return AlignWithFiller(object, size - kPointerSize, size, kDoubleAligned);
 }
 
 
@@ -5354,6 +5379,30 @@ bool Heap::ConfigureHeap(int max_semi_space_size, int max_old_space_size,
 }
 
 
+void Heap::AddToRingBuffer(const char* string) {
+  size_t first_part =
+      Min(strlen(string), kTraceRingBufferSize - ring_buffer_end_);
+  memcpy(trace_ring_buffer_ + ring_buffer_end_, string, first_part);
+  ring_buffer_end_ += first_part;
+  if (first_part < strlen(string)) {
+    ring_buffer_full_ = true;
+    size_t second_part = strlen(string) - first_part;
+    memcpy(trace_ring_buffer_, string + first_part, second_part);
+    ring_buffer_end_ = second_part;
+  }
+}
+
+
+void Heap::GetFromRingBuffer(char* buffer) {
+  size_t copied = 0;
+  if (ring_buffer_full_) {
+    copied = kTraceRingBufferSize - ring_buffer_end_;
+    memcpy(buffer, trace_ring_buffer_ + ring_buffer_end_, copied);
+  }
+  memcpy(buffer + copied, trace_ring_buffer_, ring_buffer_end_);
+}
+
+
 bool Heap::ConfigureHeapDefault() { return ConfigureHeap(0, 0, 0, 0); }
 
 
@@ -5386,6 +5435,8 @@ void Heap::RecordStats(HeapStats* stats, bool take_snapshot) {
       stats->size_per_type[type] += obj->Size();
     }
   }
+  if (stats->last_few_messages != NULL)
+    GetFromRingBuffer(stats->last_few_messages);
 }
 
 

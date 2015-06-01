@@ -4,7 +4,7 @@
 
 var $functionSourceString;
 var $globalEval;
-var $objectDefineArrayProperty;
+var $objectDefineOwnProperty;
 var $objectGetOwnPropertyDescriptor;
 var $toCompletePropertyDescriptor;
 
@@ -682,14 +682,19 @@ function DefineObjectProperty(obj, p, desc, should_throw) {
         }
         // Step 10a
         if (IsDataDescriptor(current) && IsDataDescriptor(desc)) {
-          if (!current.isWritable() && desc.isWritable()) {
-            if (should_throw) {
-              throw MakeTypeError(kRedefineDisallowed, p);
-            } else {
-              return false;
+          var currentIsWritable = current.isWritable();
+          if (currentIsWritable != desc.isWritable()) {
+            if (!currentIsWritable || IS_STRONG(obj)) {
+              if (should_throw) {
+                throw currentIsWritable
+                    ? MakeTypeError(kStrongRedefineDisallowed, obj, p)
+                    : MakeTypeError(kRedefineDisallowed, p);
+              } else {
+                return false;
+              }
             }
           }
-          if (!current.isWritable() && desc.hasValue() &&
+          if (!currentIsWritable && desc.hasValue() &&
               !$sameValue(desc.getValue(), current.getValue())) {
             if (should_throw) {
               throw MakeTypeError(kRedefineDisallowed, p);
@@ -896,17 +901,6 @@ function DefineArrayProperty(obj, p, desc, should_throw) {
 }
 
 
-function DefineArrayPropertyFromAPI(obj, p, value) {
-  return DefineArrayProperty(obj, p, ToPropertyDescriptor({
-                               value: value,
-                               configurable: true,
-                               enumerable: true,
-                               writable: true
-                             }),
-                             false);
-}
-
-
 // ES5 section 8.12.9, ES5 section 15.4.5.1 and Harmony proxies.
 function DefineOwnProperty(obj, p, desc, should_throw) {
   if (%_IsJSProxy(obj)) {
@@ -920,6 +914,17 @@ function DefineOwnProperty(obj, p, desc, should_throw) {
   } else {
     return DefineObjectProperty(obj, p, desc, should_throw);
   }
+}
+
+
+function DefineOwnPropertyFromAPI(obj, p, value, desc) {
+  return DefineOwnProperty(obj, p, ToPropertyDescriptor({
+                             value: value,
+                             writable: desc[0],
+                             enumerable: desc[1],
+                             configurable: desc[2]
+                           }),
+                           false);
 }
 
 
@@ -1223,7 +1228,10 @@ function ObjectSealJS(obj) {
 function ObjectFreezeJS(obj) {
   if (!IS_SPEC_OBJECT(obj)) return obj;
   var isProxy = %_IsJSProxy(obj);
-  if (isProxy || %HasSloppyArgumentsElements(obj) || %IsObserved(obj)) {
+  // TODO(conradw): Investigate modifying the fast path to accommodate strong
+  // objects.
+  if (isProxy || %HasSloppyArgumentsElements(obj) || %IsObserved(obj) ||
+      IS_STRONG(obj)) {
     if (isProxy) {
       ProxyFix(obj);
     }
@@ -1837,7 +1845,7 @@ function GetIterator(obj, method) {
 
 $functionSourceString = FunctionSourceString;
 $globalEval = GlobalEval;
-$objectDefineArrayProperty = DefineArrayPropertyFromAPI;
+$objectDefineOwnProperty = DefineOwnPropertyFromAPI;
 $objectGetOwnPropertyDescriptor = ObjectGetOwnPropertyDescriptor;
 $toCompletePropertyDescriptor = ToCompletePropertyDescriptor;
 

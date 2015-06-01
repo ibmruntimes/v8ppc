@@ -1506,6 +1506,16 @@ Bounds Typer::Visitor::TypeJSStoreContext(Node* node) {
 }
 
 
+Bounds Typer::Visitor::TypeJSLoadDynamicGlobal(Node* node) {
+  return Bounds::Unbounded(zone());
+}
+
+
+Bounds Typer::Visitor::TypeJSLoadDynamicContext(Node* node) {
+  return Bounds::Unbounded(zone());
+}
+
+
 Bounds Typer::Visitor::WrapContextBoundsForInput(Node* node) {
   Bounds outer = BoundsOrNone(NodeProperties::GetContextInput(node));
   if (outer.upper->Is(Type::None())) {
@@ -1599,6 +1609,30 @@ Bounds Typer::Visitor::TypeJSCallRuntime(Node* node) {
       break;
   }
   return Bounds::Unbounded(zone());
+}
+
+
+Bounds Typer::Visitor::TypeJSForInNext(Node* node) {
+  return Bounds(Type::None(zone()),
+                Type::Union(Type::Name(), Type::Undefined(), zone()));
+}
+
+
+Bounds Typer::Visitor::TypeJSForInPrepare(Node* node) {
+  // TODO(bmeurer): Return a tuple type here.
+  return Bounds::Unbounded(zone());
+}
+
+
+Bounds Typer::Visitor::TypeJSForInDone(Node* node) {
+  return Bounds(Type::None(zone()), Type::Boolean(zone()));
+}
+
+
+Bounds Typer::Visitor::TypeJSForInStep(Node* node) {
+  STATIC_ASSERT(Map::EnumLengthBits::kMax <= FixedArray::kMaxLength);
+  return Bounds(Type::None(zone()),
+                Type::Range(1, FixedArray::kMaxLength + 1, zone()));
 }
 
 

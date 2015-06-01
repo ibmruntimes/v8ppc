@@ -213,6 +213,10 @@ void i::FatalProcessOutOfMemory(const char* location) {
 // When V8 cannot allocated memory FatalProcessOutOfMemory is called.
 // The default fatal error handler is called and execution is stopped.
 void i::V8::FatalProcessOutOfMemory(const char* location, bool take_snapshot) {
+  i::Isolate* isolate = i::Isolate::Current();
+  char last_few_messages[Heap::kTraceRingBufferSize + 1];
+  memset(last_few_messages, 0, Heap::kTraceRingBufferSize + 1);
+
   i::HeapStats heap_stats;
   int start_marker;
   heap_stats.start_marker = &start_marker;
@@ -254,13 +258,17 @@ void i::V8::FatalProcessOutOfMemory(const char* location, bool take_snapshot) {
   heap_stats.size_per_type = size_per_type;
   int os_error;
   heap_stats.os_error = &os_error;
+  heap_stats.last_few_messages = last_few_messages;
   int end_marker;
   heap_stats.end_marker = &end_marker;
-  i::Isolate* isolate = i::Isolate::Current();
   if (isolate->heap()->HasBeenSetUp()) {
     // BUG(1718): Don't use the take_snapshot since we don't support
     // HeapIterator here without doing a special GC.
     isolate->heap()->RecordStats(&heap_stats, false);
+    char* first_newline = strchr(last_few_messages, '\n');
+    if (first_newline == NULL || first_newline[1] == '\0')
+      first_newline = last_few_messages;
+    PrintF("\n<--- Last few GCs --->\n%s\n", first_newline);
   }
   Utils::ApiCheck(false, location, "Allocation failed - process out of memory");
   // If the fatal error handler returns, we stop execution.
@@ -3550,15 +3558,9 @@ Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
     size_t length =
         i::NumberToSize(isolate, i::Handle<i::JSArray>::cast(self)->length());
     if (index >= length) {
-      i::Handle<i::Object> args[] = {
-          self, isolate->factory()->Uint32ToString(index), value_obj};
-      i::Handle<i::Object> result;
-      has_pending_exception =
-          !CallV8HeapFunction(isolate, "$objectDefineArrayProperty",
-                              isolate->factory()->undefined_value(),
-                              arraysize(args), args).ToHandle(&result);
-      RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-      return Just(result->BooleanValue());
+      return DefineOwnProperty(
+          context, Utils::ToLocal(isolate->factory()->Uint32ToString(index)),
+          value, v8::None);
     }
   }
 
@@ -3573,6 +3575,38 @@ Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
                               value_obj, NONE).is_null();
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
   return Just(true);
+}
+
+
+Maybe<bool> v8::Object::DefineOwnProperty(v8::Local<v8::Context> context,
+                                          v8::Local<Name> key,
+                                          v8::Local<Value> value,
+                                          v8::PropertyAttribute attributes) {
+  PREPARE_FOR_EXECUTION_PRIMITIVE(context, "v8::Object::DefineOwnProperty()",
+                                  bool);
+  auto self = Utils::OpenHandle(this);
+  auto key_obj = Utils::OpenHandle(*key);
+  auto value_obj = Utils::OpenHandle(*value);
+
+  if (self->IsAccessCheckNeeded() && !isolate->MayAccess(self)) {
+    isolate->ReportFailedAccessCheck(self);
+    return Nothing<bool>();
+  }
+
+  i::Handle<i::FixedArray> desc = isolate->factory()->NewFixedArray(3);
+  desc->set(0, isolate->heap()->ToBoolean(!(attributes & v8::ReadOnly)));
+  desc->set(1, isolate->heap()->ToBoolean(!(attributes & v8::DontEnum)));
+  desc->set(2, isolate->heap()->ToBoolean(!(attributes & v8::DontDelete)));
+  i::Handle<i::JSArray> desc_array =
+      isolate->factory()->NewJSArrayWithElements(desc, i::FAST_ELEMENTS, 3);
+  i::Handle<i::Object> args[] = {self, key_obj, value_obj, desc_array};
+  i::Handle<i::Object> result;
+  has_pending_exception =
+      !CallV8HeapFunction(isolate, "$objectDefineOwnProperty",
+                          isolate->factory()->undefined_value(),
+                          arraysize(args), args).ToHandle(&result);
+  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+  return Just(result->BooleanValue());
 }
 
 

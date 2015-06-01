@@ -69,7 +69,8 @@ BreakLocation::Iterator::Iterator(Handle<DebugInfo> debug_info,
           ~RelocInfo::ModeMask(RelocInfo::CODE_AGE_SEQUENCE)),
       break_index_(-1),
       position_(1),
-      statement_position_(1) {
+      statement_position_(1),
+      has_immediate_position_(false) {
   Next();
 }
 
@@ -99,6 +100,8 @@ void BreakLocation::Iterator::Next() {
                                    debug_info_->shared()->start_position());
       DCHECK(position_ >= 0);
       DCHECK(statement_position_ >= 0);
+      has_immediate_position_ = true;
+      continue;
     }
 
     // Check for break at return.
@@ -112,7 +115,7 @@ void BreakLocation::Iterator::Next() {
       }
       statement_position_ = position_;
       break_index_++;
-      return;
+      break;
     }
 
     if (RelocInfo::IsCodeTarget(rmode())) {
@@ -124,24 +127,26 @@ void BreakLocation::Iterator::Next() {
 
       if (RelocInfo::IsConstructCall(rmode()) || code->is_call_stub()) {
         break_index_++;
-        return;
+        break;
       }
 
       // Skip below if we only want locations for calls and returns.
       if (type_ == CALLS_AND_RETURNS) continue;
 
-      if ((code->is_inline_cache_stub() && !code->is_binary_op_stub() &&
+      // Only break at an inline cache if it has an immediate position attached.
+      if (has_immediate_position_ &&
+          (code->is_inline_cache_stub() && !code->is_binary_op_stub() &&
            !code->is_compare_ic_stub() && !code->is_to_boolean_ic_stub())) {
         break_index_++;
-        return;
+        break;
       }
       if (code->kind() == Code::STUB) {
         if (RelocInfo::IsDebuggerStatement(rmode())) {
           break_index_++;
-          return;
+          break;
         } else if (CodeStub::GetMajorKey(code) == CodeStub::CallFunction) {
           break_index_++;
-          return;
+          break;
         }
       }
     }
@@ -149,9 +154,10 @@ void BreakLocation::Iterator::Next() {
     if (RelocInfo::IsDebugBreakSlot(rmode()) && type_ != CALLS_AND_RETURNS) {
       // There is always a possible break point at a debug break slot.
       break_index_++;
-      return;
+      break;
     }
   }
+  has_immediate_position_ = false;
 }
 
 
@@ -608,13 +614,7 @@ bool Debug::CompileDebuggerScript(Isolate* isolate, int index) {
       source_code, script_name, 0, 0, ScriptOriginOptions(), Handle<Object>(),
       context, NULL, NULL, ScriptCompiler::kNoCompileOptions, NATIVES_CODE,
       false);
-
-  // Silently ignore stack overflows during compilation.
-  if (function_info.is_null()) {
-    DCHECK(isolate->has_pending_exception());
-    isolate->clear_pending_exception();
-    return false;
-  }
+  if (function_info.is_null()) return false;
 
   // Execute the shared function in the debugger context.
   Handle<JSFunction> function =
@@ -1150,7 +1150,7 @@ void Debug::FloodHandlerWithOneShot() {
   for (JavaScriptFrameIterator it(isolate_, id); !it.done(); it.Advance()) {
     JavaScriptFrame* frame = it.frame();
     int stack_slots = 0;  // The computed stack slot count is not used.
-    if (frame->LookupExceptionHandlerInTable(&stack_slots) > 0) {
+    if (frame->LookupExceptionHandlerInTable(&stack_slots, NULL) > 0) {
       // Flood the function with the catch/finally block with break points.
       FloodWithOneShot(Handle<JSFunction>(frame->function()));
       return;
@@ -2490,6 +2490,7 @@ MaybeHandle<Object> Debug::PromiseHasUserDefinedRejectHandler(
 
 
 void Debug::OnException(Handle<Object> exception, Handle<Object> promise) {
+  // In our prediction, try-finally is not considered to catch.
   Isolate::CatchType catch_type = isolate_->PredictExceptionCatcher();
   bool uncaught = (catch_type == Isolate::NOT_CAUGHT);
   if (promise->IsJSObject()) {

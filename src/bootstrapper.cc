@@ -1195,7 +1195,6 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> global_object,
             isolate->initial_object_prototype(),
             Builtins::kIllegal);
     native_context()->set_array_buffer_fun(*array_buffer_fun);
-    native_context()->set_array_buffer_map(array_buffer_fun->initial_map());
   }
 
   {  // -- T y p e d A r r a y s
@@ -1499,7 +1498,10 @@ bool Genesis::CompileNative(Isolate* isolate, Vector<const char> name,
   // environment has been at least partially initialized. Add a stack check
   // before entering JS code to catch overflow early.
   StackLimitCheck check(isolate);
-  if (check.HasOverflowed()) return false;
+  if (check.HasOverflowed()) {
+    isolate->StackOverflow();
+    return false;
+  }
 
   Handle<Context> context(isolate->context());
 
@@ -2797,6 +2799,8 @@ bool Genesis::ConfigureGlobalObjects(
 
   native_context()->set_initial_array_prototype(
       JSArray::cast(native_context()->array_function()->prototype()));
+  native_context()->set_array_buffer_map(
+      native_context()->array_buffer_fun()->initial_map());
 
   return true;
 }
@@ -2980,7 +2984,10 @@ Genesis::Genesis(Isolate* isolate,
   // environment has been at least partially initialized. Add a stack check
   // before entering JS code to catch overflow early.
   StackLimitCheck check(isolate);
-  if (check.HasOverflowed()) return;
+  if (check.HasOverflowed()) {
+    isolate->StackOverflow();
+    return;
+  }
 
   // The deserializer needs to hook up references to the global proxy.
   // Create an uninitialized global proxy now if we don't have one
