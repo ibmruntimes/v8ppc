@@ -2918,6 +2918,7 @@ AllocationResult Heap::AllocatePropertyCell() {
   PropertyCell* cell = PropertyCell::cast(result);
   cell->set_dependent_code(DependentCode::cast(empty_fixed_array()),
                            SKIP_WRITE_BARRIER);
+  cell->set_property_details(PropertyDetails(Smi::FromInt(0)));
   cell->set_value(the_hole_value());
   return result;
 }
@@ -6747,5 +6748,5 @@ bool Heap::GetObjectTypeName(size_t index, const char** object_type,
   }
   return false;
 }
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8

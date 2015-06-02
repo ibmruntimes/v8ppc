@@ -266,6 +266,7 @@ void FullCodeGenerator::Generate() {
     __ push(edx);
     __ push(Immediate(Smi::FromInt(num_parameters)));
     __ push(Immediate(Smi::FromInt(rest_index)));
+    __ push(Immediate(Smi::FromInt(language_mode())));
 
     RestParamAccessStub stub(isolate());
     __ CallStub(&stub);
@@ -1583,7 +1584,6 @@ void FullCodeGenerator::EmitAccessor(Expression* expression) {
 void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   Comment cmnt(masm_, "[ ObjectLiteral");
 
-  expr->BuildConstantProperties(isolate());
   Handle<FixedArray> constant_properties = expr->constant_properties();
   int flags = expr->ComputeFlags();
   // If any of the keys would store to the elements array, then we shouldn't
@@ -5440,6 +5440,7 @@ BackEdgeTable::BackEdgeState BackEdgeTable::GetBackEdgeState(
 }
 
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_TARGET_ARCH_IA32

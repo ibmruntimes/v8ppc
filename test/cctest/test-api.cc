@@ -7463,10 +7463,10 @@ THREADED_TEST(ToArrayIndex) {
   str = v8_str("-42");
   index = str->ToArrayIndex();
   CHECK(index.IsEmpty());
-  str = v8_str("4294967295");
+  str = v8_str("4294967294");
   index = str->ToArrayIndex();
   CHECK(!index.IsEmpty());
-  CHECK_EQ(4294967295.0, index->Uint32Value());
+  CHECK_EQ(4294967294.0, index->Uint32Value());
   v8::Handle<v8::Number> num = v8::Number::New(isolate, 1);
   index = num->ToArrayIndex();
   CHECK(!index.IsEmpty());
@@ -21406,6 +21406,7 @@ TEST(Map) {
   v8::Local<v8::Map> map = v8::Map::New(isolate);
   CHECK(map->IsObject());
   CHECK(map->IsMap());
+  CHECK(map->GetPrototype()->StrictEquals(CompileRun("Map.prototype")));
   CHECK_EQ(0, map->Size());
 
   v8::Local<v8::Value> val = CompileRun("new Map([[1, 2], [3, 4]])");
@@ -21437,6 +21438,7 @@ TEST(Set) {
   v8::Local<v8::Set> set = v8::Set::New(isolate);
   CHECK(set->IsObject());
   CHECK(set->IsSet());
+  CHECK(set->GetPrototype()->StrictEquals(CompileRun("Set.prototype")));
   CHECK_EQ(0, set->Size());
 
   v8::Local<v8::Value> val = CompileRun("new Set([1, 2])");

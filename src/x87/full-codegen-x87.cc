@@ -263,6 +263,7 @@ void FullCodeGenerator::Generate() {
     __ push(edx);
     __ push(Immediate(Smi::FromInt(num_parameters)));
     __ push(Immediate(Smi::FromInt(rest_index)));
+    __ push(Immediate(Smi::FromInt(language_mode())));
 
     RestParamAccessStub stub(isolate());
     __ CallStub(&stub);
@@ -1190,9 +1191,9 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // just skip it.
   __ push(ecx);  // Enumerable.
   __ push(ebx);  // Current entry.
-  __ InvokeBuiltin(Builtins::FILTER_KEY, CALL_FUNCTION);
+  __ CallRuntime(Runtime::kForInFilter, 2);
   PrepareForBailoutForId(stmt->FilterId(), TOS_REG);
-  __ test(eax, eax);
+  __ cmp(eax, isolate()->factory()->undefined_value());
   __ j(equal, loop_statement.continue_label());
   __ mov(ebx, eax);
 
@@ -5430,6 +5431,7 @@ BackEdgeTable::BackEdgeState BackEdgeTable::GetBackEdgeState(
 }
 
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_TARGET_ARCH_X87

@@ -905,6 +905,9 @@ bool Object::IsNameDictionary() const {
 }
 
 
+bool Object::IsGlobalDictionary() const { return IsDictionary(); }
+
+
 bool Object::IsSeededNumberDictionary() const {
   return IsDictionary();
 }
@@ -1168,11 +1171,8 @@ MaybeHandle<Object> Object::GetProperty(Handle<Object> object,
 MaybeHandle<Object> Object::GetElement(Isolate* isolate,
                                        Handle<Object> object,
                                        uint32_t index) {
-  // GetElement can trigger a getter which can cause allocation.
-  // This was not always the case. This DCHECK is here to catch
-  // leftover incorrect uses.
-  DCHECK(AllowHeapAllocation::IsAllowed());
-  return Object::GetElementWithReceiver(isolate, object, object, index);
+  LookupIterator it(isolate, object, index);
+  return GetProperty(&it);
 }
 
 
@@ -1189,33 +1189,11 @@ Handle<Object> Object::GetPrototypeSkipHiddenPrototypes(
 }
 
 
-MaybeHandle<Object> Object::GetPropertyOrElement(Handle<Object> object,
-                                                 Handle<Name> name) {
-  uint32_t index;
-  Isolate* isolate = name->GetIsolate();
-  if (name->AsArrayIndex(&index)) return GetElement(isolate, object, index);
-  return GetProperty(object, name);
-}
-
-
 MaybeHandle<Object> Object::GetProperty(Isolate* isolate,
                                         Handle<Object> object,
                                         const char* name) {
   Handle<String> str = isolate->factory()->InternalizeUtf8String(name);
-  DCHECK(!str.is_null());
-#ifdef DEBUG
-  uint32_t index;  // Assert that the name is not an array index.
-  DCHECK(!str->AsArrayIndex(&index));
-#endif  // DEBUG
   return GetProperty(object, str);
-}
-
-
-MaybeHandle<Object> JSProxy::GetElementWithHandler(Handle<JSProxy> proxy,
-                                                   Handle<Object> receiver,
-                                                   uint32_t index) {
-  return GetPropertyWithHandler(
-      proxy, receiver, proxy->GetIsolate()->factory()->Uint32ToString(index));
 }
 
 
@@ -1227,14 +1205,6 @@ MaybeHandle<Object> JSProxy::SetElementWithHandler(Handle<JSProxy> proxy,
   Isolate* isolate = proxy->GetIsolate();
   Handle<String> name = isolate->factory()->Uint32ToString(index);
   return SetPropertyWithHandler(proxy, receiver, name, value, language_mode);
-}
-
-
-Maybe<bool> JSProxy::HasElementWithHandler(Handle<JSProxy> proxy,
-                                           uint32_t index) {
-  Isolate* isolate = proxy->GetIsolate();
-  Handle<String> name = isolate->factory()->Uint32ToString(index);
-  return HasPropertyWithHandler(proxy, name);
 }
 
 
@@ -1927,6 +1897,7 @@ void Oddball::set_kind(byte value) {
 
 ACCESSORS(Cell, value, Object, kValueOffset)
 ACCESSORS(PropertyCell, dependent_code, DependentCode, kDependentCodeOffset)
+ACCESSORS(PropertyCell, property_details_raw, Object, kDetailsOffset)
 ACCESSORS(PropertyCell, value, Object, kValueOffset)
 
 Object* WeakCell::value() const { return READ_FIELD(this, kValueOffset); }
@@ -2227,7 +2198,7 @@ void Struct::InitializeBody(int object_size) {
 }
 
 
-bool Object::ToArrayIndex(uint32_t* index) {
+bool Object::ToArrayLength(uint32_t* index) {
   if (IsSmi()) {
     int value = Smi::cast(this)->value();
     if (value < 0) return false;
@@ -2243,6 +2214,11 @@ bool Object::ToArrayIndex(uint32_t* index) {
     }
   }
   return false;
+}
+
+
+bool Object::ToArrayIndex(uint32_t* index) {
+  return ToArrayLength(index) && *index != kMaxUInt32;
 }
 
 
@@ -3384,6 +3360,7 @@ CAST_ACCESSOR(FixedArrayBase)
 CAST_ACCESSOR(FixedDoubleArray)
 CAST_ACCESSOR(FixedTypedArrayBase)
 CAST_ACCESSOR(Foreign)
+CAST_ACCESSOR(GlobalDictionary)
 CAST_ACCESSOR(GlobalObject)
 CAST_ACCESSOR(HandlerTable)
 CAST_ACCESSOR(HeapObject)
@@ -6602,6 +6579,14 @@ Object* JSTypedArray::length() const {
 }
 
 
+uint32_t JSTypedArray::length_value() const {
+  if (WasNeutered()) return 0;
+  uint32_t index = 0;
+  CHECK(Object::cast(READ_FIELD(this, kLengthOffset))->ToArrayLength(&index));
+  return index;
+}
+
+
 void JSTypedArray::set_length(Object* value, WriteBarrierMode mode) {
   WRITE_FIELD(this, kLengthOffset, value);
   CONDITIONAL_WRITE_BARRIER(GetHeap(), this, kLengthOffset, value, mode);
@@ -6793,7 +6778,15 @@ bool JSObject::HasIndexedInterceptor() {
 
 NameDictionary* JSObject::property_dictionary() {
   DCHECK(!HasFastProperties());
+  DCHECK(!IsGlobalObject());
   return NameDictionary::cast(properties());
+}
+
+
+GlobalDictionary* JSObject::global_dictionary() {
+  DCHECK(!HasFastProperties());
+  DCHECK(IsGlobalObject());
+  return GlobalDictionary::cast(properties());
 }
 
 
@@ -6905,7 +6898,7 @@ bool StringHasher::UpdateIndex(uint16_t c) {
       return false;
     }
   }
-  if (array_index_ > 429496729U - ((d + 2) >> 3)) {
+  if (array_index_ > 429496729U - ((d + 3) >> 3)) {
     is_array_index_ = false;
     return false;
   }
@@ -7029,12 +7022,24 @@ String* String::GetForwardedInternalizedString() {
 }
 
 
+MaybeHandle<Object> Object::GetPropertyOrElement(Handle<Object> object,
+                                                 Handle<Name> name) {
+  uint32_t index;
+  LookupIterator it = name->AsArrayIndex(&index)
+                          ? LookupIterator(name->GetIsolate(), object, index)
+                          : LookupIterator(object, name);
+  return GetProperty(&it);
+}
+
+
 Maybe<bool> JSReceiver::HasProperty(Handle<JSReceiver> object,
                                     Handle<Name> name) {
+  // Call the "has" trap on proxies.
   if (object->IsJSProxy()) {
     Handle<JSProxy> proxy = Handle<JSProxy>::cast(object);
     return JSProxy::HasPropertyWithHandler(proxy, name);
   }
+
   Maybe<PropertyAttributes> result = GetPropertyAttributes(object, name);
   return result.IsJust() ? Just(result.FromJust() != ABSENT) : Nothing<bool>();
 }
@@ -7042,34 +7047,80 @@ Maybe<bool> JSReceiver::HasProperty(Handle<JSReceiver> object,
 
 Maybe<bool> JSReceiver::HasOwnProperty(Handle<JSReceiver> object,
                                        Handle<Name> name) {
+  // Call the "has" trap on proxies.
   if (object->IsJSProxy()) {
     Handle<JSProxy> proxy = Handle<JSProxy>::cast(object);
     return JSProxy::HasPropertyWithHandler(proxy, name);
   }
+
   Maybe<PropertyAttributes> result = GetOwnPropertyAttributes(object, name);
   return result.IsJust() ? Just(result.FromJust() != ABSENT) : Nothing<bool>();
 }
 
 
 Maybe<PropertyAttributes> JSReceiver::GetPropertyAttributes(
-    Handle<JSReceiver> object, Handle<Name> key) {
-  uint32_t index;
-  if (object->IsJSObject() && key->AsArrayIndex(&index)) {
-    return GetElementAttribute(object, index);
-  }
-  LookupIterator it(object, key);
+    Handle<JSReceiver> object, Handle<Name> name) {
+  uint32_t index = 0;
+  LookupIterator it = name->AsArrayIndex(&index)
+                          ? LookupIterator(name->GetIsolate(), object, index)
+                          : LookupIterator(object, name);
   return GetPropertyAttributes(&it);
 }
 
 
-Maybe<PropertyAttributes> JSReceiver::GetElementAttribute(
-    Handle<JSReceiver> object, uint32_t index) {
+Maybe<PropertyAttributes> JSReceiver::GetOwnPropertyAttributes(
+    Handle<JSReceiver> object, Handle<Name> name) {
+  uint32_t index = 0;
+  LookupIterator::Configuration c = LookupIterator::HIDDEN;
+  LookupIterator it = name->AsArrayIndex(&index)
+                          ? LookupIterator(name->GetIsolate(), object, index, c)
+                          : LookupIterator(object, name, c);
+  return GetPropertyAttributes(&it);
+}
+
+
+Maybe<bool> JSReceiver::HasElement(Handle<JSReceiver> object, uint32_t index) {
+  // Call the "has" trap on proxies.
   if (object->IsJSProxy()) {
-    return JSProxy::GetElementAttributeWithHandler(
-        Handle<JSProxy>::cast(object), object, index);
+    Isolate* isolate = object->GetIsolate();
+    Handle<Name> name = isolate->factory()->Uint32ToString(index);
+    Handle<JSProxy> proxy = Handle<JSProxy>::cast(object);
+    return JSProxy::HasPropertyWithHandler(proxy, name);
   }
-  return JSObject::GetElementAttributeWithReceiver(
-      Handle<JSObject>::cast(object), object, index, true);
+
+  Maybe<PropertyAttributes> result = GetElementAttributes(object, index);
+  return result.IsJust() ? Just(result.FromJust() != ABSENT) : Nothing<bool>();
+}
+
+
+Maybe<bool> JSReceiver::HasOwnElement(Handle<JSReceiver> object,
+                                      uint32_t index) {
+  // Call the "has" trap on proxies.
+  if (object->IsJSProxy()) {
+    Isolate* isolate = object->GetIsolate();
+    Handle<Name> name = isolate->factory()->Uint32ToString(index);
+    Handle<JSProxy> proxy = Handle<JSProxy>::cast(object);
+    return JSProxy::HasPropertyWithHandler(proxy, name);
+  }
+
+  Maybe<PropertyAttributes> result = GetOwnElementAttributes(object, index);
+  return result.IsJust() ? Just(result.FromJust() != ABSENT) : Nothing<bool>();
+}
+
+
+Maybe<PropertyAttributes> JSReceiver::GetElementAttributes(
+    Handle<JSReceiver> object, uint32_t index) {
+  Isolate* isolate = object->GetIsolate();
+  LookupIterator it(isolate, object, index);
+  return GetPropertyAttributes(&it);
+}
+
+
+Maybe<PropertyAttributes> JSReceiver::GetOwnElementAttributes(
+    Handle<JSReceiver> object, uint32_t index) {
+  Isolate* isolate = object->GetIsolate();
+  LookupIterator it(isolate, object, index, LookupIterator::HIDDEN);
+  return GetPropertyAttributes(&it);
 }
 
 
@@ -7096,40 +7147,6 @@ Object* JSReceiver::GetIdentityHash() {
   return IsJSProxy()
       ? JSProxy::cast(this)->GetIdentityHash()
       : JSObject::cast(this)->GetIdentityHash();
-}
-
-
-Maybe<bool> JSReceiver::HasElement(Handle<JSReceiver> object, uint32_t index) {
-  if (object->IsJSProxy()) {
-    Handle<JSProxy> proxy = Handle<JSProxy>::cast(object);
-    return JSProxy::HasElementWithHandler(proxy, index);
-  }
-  Maybe<PropertyAttributes> result = JSObject::GetElementAttributeWithReceiver(
-      Handle<JSObject>::cast(object), object, index, true);
-  return result.IsJust() ? Just(result.FromJust() != ABSENT) : Nothing<bool>();
-}
-
-
-Maybe<bool> JSReceiver::HasOwnElement(Handle<JSReceiver> object,
-                                      uint32_t index) {
-  if (object->IsJSProxy()) {
-    Handle<JSProxy> proxy = Handle<JSProxy>::cast(object);
-    return JSProxy::HasElementWithHandler(proxy, index);
-  }
-  Maybe<PropertyAttributes> result = JSObject::GetElementAttributeWithReceiver(
-      Handle<JSObject>::cast(object), object, index, false);
-  return result.IsJust() ? Just(result.FromJust() != ABSENT) : Nothing<bool>();
-}
-
-
-Maybe<PropertyAttributes> JSReceiver::GetOwnElementAttribute(
-    Handle<JSReceiver> object, uint32_t index) {
-  if (object->IsJSProxy()) {
-    return JSProxy::GetElementAttributeWithHandler(
-        Handle<JSProxy>::cast(object), object, index);
-  }
-  return JSObject::GetElementAttributeWithReceiver(
-      Handle<JSObject>::cast(object), object, index, false);
 }
 
 
@@ -7194,7 +7211,7 @@ template<typename Derived, typename Shape, typename Key>
 void Dictionary<Derived, Shape, Key>::SetEntry(int entry,
                                                Handle<Object> key,
                                                Handle<Object> value) {
-  SetEntry(entry, key, value, PropertyDetails(Smi::FromInt(0)));
+  this->SetEntry(entry, key, value, PropertyDetails(Smi::FromInt(0)));
 }
 
 
@@ -7203,13 +7220,40 @@ void Dictionary<Derived, Shape, Key>::SetEntry(int entry,
                                                Handle<Object> key,
                                                Handle<Object> value,
                                                PropertyDetails details) {
+  Shape::SetEntry(static_cast<Derived*>(this), entry, key, value, details);
+}
+
+
+template <typename Key>
+template <typename Dictionary>
+void BaseDictionaryShape<Key>::SetEntry(Dictionary* dict, int entry,
+                                        Handle<Object> key,
+                                        Handle<Object> value,
+                                        PropertyDetails details) {
+  STATIC_ASSERT(Dictionary::kEntrySize == 3);
   DCHECK(!key->IsName() || details.dictionary_index() > 0);
-  int index = DerivedHashTable::EntryToIndex(entry);
+  int index = dict->EntryToIndex(entry);
   DisallowHeapAllocation no_gc;
-  WriteBarrierMode mode = FixedArray::GetWriteBarrierMode(no_gc);
-  FixedArray::set(index, *key, mode);
-  FixedArray::set(index+1, *value, mode);
-  FixedArray::set(index+2, details.AsSmi());
+  WriteBarrierMode mode = dict->GetWriteBarrierMode(no_gc);
+  dict->set(index, *key, mode);
+  dict->set(index + 1, *value, mode);
+  dict->set(index + 2, details.AsSmi());
+}
+
+
+template <typename Dictionary>
+void GlobalDictionaryShape::SetEntry(Dictionary* dict, int entry,
+                                     Handle<Object> key, Handle<Object> value,
+                                     PropertyDetails details) {
+  STATIC_ASSERT(Dictionary::kEntrySize == 2);
+  DCHECK(!key->IsName() || details.dictionary_index() > 0);
+  DCHECK(value->IsPropertyCell());
+  int index = dict->EntryToIndex(entry);
+  DisallowHeapAllocation no_gc;
+  WriteBarrierMode mode = dict->GetWriteBarrierMode(no_gc);
+  dict->set(index, *key, mode);
+  dict->set(index + 1, *value, mode);
+  PropertyCell::cast(*value)->set_property_details(details);
 }
 
 
@@ -7277,6 +7321,34 @@ Handle<Object> NameDictionaryShape::AsHandle(Isolate* isolate,
 Handle<FixedArray> NameDictionary::DoGenerateNewEnumerationIndices(
     Handle<NameDictionary> dictionary) {
   return DerivedDictionary::GenerateNewEnumerationIndices(dictionary);
+}
+
+
+template <typename Dictionary>
+PropertyDetails GlobalDictionaryShape::DetailsAt(Dictionary* dict, int entry) {
+  DCHECK(entry >= 0);  // Not found is -1, which is not caught by get().
+  Object* raw_value = dict->ValueAt(entry);
+  DCHECK(raw_value->IsPropertyCell());
+  PropertyCell* cell = PropertyCell::cast(raw_value);
+  return cell->property_details();
+}
+
+
+template <typename Dictionary>
+void GlobalDictionaryShape::DetailsAtPut(Dictionary* dict, int entry,
+                                         PropertyDetails value) {
+  DCHECK(entry >= 0);  // Not found is -1, which is not caught by get().
+  Object* raw_value = dict->ValueAt(entry);
+  DCHECK(raw_value->IsPropertyCell());
+  PropertyCell* cell = PropertyCell::cast(raw_value);
+  cell->set_property_details(value);
+}
+
+
+template <typename Dictionary>
+bool GlobalDictionaryShape::IsDeleted(Dictionary* dict, int entry) {
+  DCHECK(dict->ValueAt(entry)->IsPropertyCell());
+  return PropertyCell::cast(dict->ValueAt(entry))->value()->IsTheHole();
 }
 
 

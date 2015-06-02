@@ -2094,6 +2094,7 @@ void LogGeneratedCodeCoverage(const char* file_line) {
 
 #endif
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_TARGET_ARCH_X87

@@ -370,20 +370,20 @@ Reduction JSTypedLowering::ReduceJSAdd(Node* node) {
     r.ConvertInputsToNumber(frame_state);
     return r.ChangeToPureOperator(simplified()->NumberAdd(), Type::Number());
   }
-#if 0
-  // TODO(turbofan): Lowering of StringAdd is disabled for now because:
-  //   a) The inserted ToString operation screws up valueOf vs. toString order.
-  //   b) Deoptimization at ToString doesn't have corresponding bailout id.
-  //   c) Our current StringAddStub is actually non-pure and requires context.
-  if ((r.OneInputIs(Type::String()) && !r.IsStrong()) ||
-      r.BothInputsAre(Type::String())) {
-    // JSAdd(x:string, y:string) => StringAdd(x, y)
-    // JSAdd(x:string, y) => StringAdd(x, ToString(y))
-    // JSAdd(x, y:string) => StringAdd(ToString(x), y)
-    r.ConvertInputsToString();
-    return r.ChangeToPureOperator(simplified()->StringAdd());
+  if (r.BothInputsAre(Type::String())) {
+    // JSAdd(x:string, y:string) => CallStub[StringAdd](x, y)
+    Callable const callable =
+        CodeFactory::StringAdd(isolate(), STRING_ADD_CHECK_NONE, NOT_TENURED);
+    CallDescriptor const* const desc = Linkage::GetStubCallDescriptor(
+        isolate(), graph()->zone(), callable.descriptor(), 0,
+        CallDescriptor::kNeedsFrameState, node->op()->properties());
+    DCHECK_EQ(2, OperatorProperties::GetFrameStateInputCount(node->op()));
+    node->RemoveInput(NodeProperties::FirstFrameStateIndex(node) + 1);
+    node->InsertInput(graph()->zone(), 0,
+                      jsgraph()->HeapConstant(callable.code()));
+    node->set_op(common()->Call(desc));
+    return Changed(node);
   }
-#endif
   return NoChange();
 }
 
@@ -779,8 +779,7 @@ Reduction JSTypedLowering::ReduceJSLoadProperty(Node* node) {
         Node* effect = NodeProperties::GetEffectInput(node);
         Node* control = NodeProperties::GetControlInput(node);
         // Check if we can avoid the bounds check.
-        if (key_type->Min() >= 0 &&
-            key_type->Max() < array->length()->Number()) {
+        if (key_type->Min() >= 0 && key_type->Max() < array->length_value()) {
           Node* load = graph()->NewNode(
               simplified()->LoadElement(
                   AccessBuilder::ForTypedArrayElement(array->type(), true)),
@@ -850,8 +849,7 @@ Reduction JSTypedLowering::ReduceJSStoreProperty(Node* node) {
           value = graph()->NewNode(simplified()->NumberToUint32(), value);
         }
         // Check if we can avoid the bounds check.
-        if (key_type->Min() >= 0 &&
-            key_type->Max() < array->length()->Number()) {
+        if (key_type->Min() >= 0 && key_type->Max() < array->length_value()) {
           node->set_op(simplified()->StoreElement(
               AccessBuilder::ForTypedArrayElement(array->type(), true)));
           node->ReplaceInput(0, buffer);
@@ -924,6 +922,64 @@ Reduction JSTypedLowering::ReduceJSStoreContext(Node* node) {
 }
 
 
+Reduction JSTypedLowering::ReduceJSLoadDynamicGlobal(Node* node) {
+  DCHECK_EQ(IrOpcode::kJSLoadDynamicGlobal, node->opcode());
+  DynamicGlobalAccess const& access = DynamicGlobalAccessOf(node->op());
+  Node* const context = NodeProperties::GetContextInput(node);
+  Node* const state1 = NodeProperties::GetFrameStateInput(node, 0);
+  Node* const state2 = NodeProperties::GetFrameStateInput(node, 1);
+  Node* const effect = NodeProperties::GetEffectInput(node);
+  Node* const control = NodeProperties::GetControlInput(node);
+  if (access.RequiresFullCheck()) return NoChange();
+
+  // Perform checks whether the fast mode applies, by looking for any extension
+  // object which might shadow the optimistic declaration.
+  uint32_t bitset = access.check_bitset();
+  Node* check_true = control;
+  Node* check_false = graph()->NewNode(common()->Merge(0));
+  for (int depth = 0; bitset != 0; bitset >>= 1, depth++) {
+    if ((bitset & 1) == 0) continue;
+    Node* load = graph()->NewNode(
+        javascript()->LoadContext(depth, Context::EXTENSION_INDEX, false),
+        context, context, effect);
+    Node* check = graph()->NewNode(simplified()->ObjectIsSmi(), load);
+    Node* branch = graph()->NewNode(common()->Branch(BranchHint::kTrue), check,
+                                    check_true);
+    Node* if_true = graph()->NewNode(common()->IfTrue(), branch);
+    Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
+    check_false->set_op(common()->Merge(check_false->InputCount() + 1));
+    check_false->AppendInput(graph()->zone(), if_false);
+    check_true = if_true;
+  }
+
+  // Fast case, because variable is not shadowed. Perform global object load.
+  Unique<Name> name = Unique<Name>::CreateUninitialized(access.name());
+  Node* global = graph()->NewNode(
+      javascript()->LoadContext(0, Context::GLOBAL_OBJECT_INDEX, true), context,
+      context, effect);
+  Node* fast = graph()->NewNode(
+      javascript()->LoadNamed(name, access.feedback(), access.mode()), global,
+      context, state1, state2, global, check_true);
+
+  // Slow case, because variable potentially shadowed. Perform dynamic lookup.
+  uint32_t check_bitset = DynamicGlobalAccess::kFullCheckRequired;
+  Node* slow = graph()->NewNode(
+      javascript()->LoadDynamicGlobal(access.name(), check_bitset,
+                                      access.feedback(), access.mode()),
+      context, context, state1, state2, effect, check_false);
+
+  // Replace value, effect and control uses accordingly.
+  Node* new_control =
+      graph()->NewNode(common()->Merge(2), check_true, check_false);
+  Node* new_effect =
+      graph()->NewNode(common()->EffectPhi(2), fast, slow, new_control);
+  Node* new_value = graph()->NewNode(common()->Phi(kMachAnyTagged, 2), fast,
+                                     slow, new_control);
+  ReplaceWithValue(node, new_value, new_effect, new_control);
+  return Changed(new_value);
+}
+
+
 Reduction JSTypedLowering::ReduceJSCreateClosure(Node* node) {
   DCHECK_EQ(IrOpcode::kJSCreateClosure, node->opcode());
   CreateClosureParameters const& p = CreateClosureParametersOf(node->op());
@@ -958,7 +1014,9 @@ Reduction JSTypedLowering::ReduceJSCreateLiteralArray(Node* node) {
 
   // Use the FastCloneShallowArrayStub only for shallow boilerplates up to the
   // initial length limit for arrays with "fast" elements kind.
+  // TODO(rossberg): Teach strong mode to FastCloneShallowArrayStub.
   if ((flags & ArrayLiteral::kShallowElements) != 0 &&
+      (flags & ArrayLiteral::kIsStrong) == 0 &&
       length < JSObject::kInitialMaxFastElementArray) {
     Isolate* isolate = jsgraph()->isolate();
     Callable callable = CodeFactory::FastCloneShallowArray(isolate);
@@ -1429,6 +1487,8 @@ Reduction JSTypedLowering::Reduce(Node* node) {
       return ReduceJSLoadContext(node);
     case IrOpcode::kJSStoreContext:
       return ReduceJSStoreContext(node);
+    case IrOpcode::kJSLoadDynamicGlobal:
+      return ReduceJSLoadDynamicGlobal(node);
     case IrOpcode::kJSCreateClosure:
       return ReduceJSCreateClosure(node);
     case IrOpcode::kJSCreateLiteralArray:
@@ -1465,6 +1525,9 @@ Factory* JSTypedLowering::factory() const { return jsgraph()->factory(); }
 
 
 Graph* JSTypedLowering::graph() const { return jsgraph()->graph(); }
+
+
+Isolate* JSTypedLowering::isolate() const { return jsgraph()->isolate(); }
 
 
 JSOperatorBuilder* JSTypedLowering::javascript() const {

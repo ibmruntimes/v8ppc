@@ -1225,14 +1225,14 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> global_object,
     Handle<JSFunction> js_map_fun = InstallFunction(
         global, "Map", JS_MAP_TYPE, JSMap::kSize,
         isolate->initial_object_prototype(), Builtins::kIllegal);
-    native_context()->set_js_map_map(js_map_fun->initial_map());
+    native_context()->set_js_map_fun(*js_map_fun);
   }
 
   {  // -- S e t
     Handle<JSFunction> js_set_fun = InstallFunction(
         global, "Set", JS_SET_TYPE, JSSet::kSize,
         isolate->initial_object_prototype(), Builtins::kIllegal);
-    native_context()->set_js_set_map(js_set_fun->initial_map());
+    native_context()->set_js_set_fun(*js_set_fun);
   }
 
   {  // Set up the iterator result object
@@ -2801,6 +2801,10 @@ bool Genesis::ConfigureGlobalObjects(
       JSArray::cast(native_context()->array_function()->prototype()));
   native_context()->set_array_buffer_map(
       native_context()->array_buffer_fun()->initial_map());
+  native_context()->set_js_map_map(
+      native_context()->js_map_fun()->initial_map());
+  native_context()->set_js_set_map(
+      native_context()->js_set_fun()->initial_map());
 
   return true;
 }
@@ -2874,6 +2878,29 @@ void Genesis::TransferNamedProperties(Handle<JSObject> from,
         }
       }
     }
+  } else if (from->IsGlobalObject()) {
+    Handle<GlobalDictionary> properties =
+        Handle<GlobalDictionary>(from->global_dictionary());
+    int capacity = properties->Capacity();
+    for (int i = 0; i < capacity; i++) {
+      Object* raw_key(properties->KeyAt(i));
+      if (properties->IsKey(raw_key)) {
+        DCHECK(raw_key->IsName());
+        // If the property is already there we skip it.
+        Handle<Name> key(Name::cast(raw_key));
+        LookupIterator it(to, key, LookupIterator::OWN_SKIP_INTERCEPTOR);
+        CHECK_NE(LookupIterator::ACCESS_CHECK, it.state());
+        if (it.IsFound()) continue;
+        // Set the property.
+        DCHECK(properties->ValueAt(i)->IsPropertyCell());
+        Handle<PropertyCell> cell(PropertyCell::cast(properties->ValueAt(i)));
+        Handle<Object> value(cell->value(), isolate());
+        if (value->IsTheHole()) continue;
+        PropertyDetails details = cell->property_details();
+        DCHECK_EQ(kData, details.kind());
+        JSObject::AddProperty(to, key, value, details.attributes());
+      }
+    }
   } else {
     Handle<NameDictionary> properties =
         Handle<NameDictionary>(from->property_dictionary());
@@ -2891,10 +2918,7 @@ void Genesis::TransferNamedProperties(Handle<JSObject> from,
         Handle<Object> value = Handle<Object>(properties->ValueAt(i),
                                               isolate());
         DCHECK(!value->IsCell());
-        if (value->IsPropertyCell()) {
-          value = handle(PropertyCell::cast(*value)->value(), isolate());
-        }
-        if (value->IsTheHole()) continue;
+        DCHECK(!value->IsTheHole());
         PropertyDetails details = properties->DetailsAt(i);
         DCHECK_EQ(kData, details.kind());
         JSObject::AddProperty(to, key, value, details.attributes());
@@ -3095,4 +3119,5 @@ void Bootstrapper::FreeThreadResources() {
   DCHECK(!IsActive());
 }
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8

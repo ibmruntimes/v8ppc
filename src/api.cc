@@ -3565,7 +3565,7 @@ Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
   }
 
   Maybe<PropertyAttributes> attributes =
-      i::JSReceiver::GetOwnElementAttribute(self, index);
+      i::JSReceiver::GetOwnElementAttributes(self, index);
   if (attributes.IsJust() && attributes.FromJust() & DONT_DELETE) {
     return Just(false);
   }
@@ -6635,7 +6635,7 @@ size_t v8::ArrayBufferView::ByteLength() {
 
 size_t v8::TypedArray::Length() {
   i::Handle<i::JSTypedArray> obj = Utils::OpenHandle(this);
-  return static_cast<size_t>(obj->length()->Number());
+  return static_cast<size_t>(obj->length_value());
 }
 
 
@@ -8367,4 +8367,5 @@ void InvokeFunctionCallback(const v8::FunctionCallbackInfo<v8::Value>& info,
 }
 
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8

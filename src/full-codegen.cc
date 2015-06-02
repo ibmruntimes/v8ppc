@@ -412,7 +412,8 @@ bool FullCodeGenerator::MustCreateObjectLiteralWithRuntime(
 
 bool FullCodeGenerator::MustCreateArrayLiteralWithRuntime(
     ArrayLiteral* expr) const {
-  return expr->depth() > 1 ||
+  // TODO(rossberg): Teach strong mode to FastCloneShallowArrayStub.
+  return expr->depth() > 1 || expr->is_strong() ||
          expr->values()->length() > JSObject::kInitialMaxFastElementArray;
 }
 
@@ -1648,4 +1649,5 @@ FullCodeGenerator::EnterBlockScopeIfNeeded::~EnterBlockScopeIfNeeded() {
 #undef __
 
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8

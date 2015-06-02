@@ -33,11 +33,8 @@ template <typename ReturnType>
 class SimplifiedLoweringTester : public GraphBuilderTester<ReturnType> {
  public:
   SimplifiedLoweringTester(MachineType p0 = kMachNone,
-                           MachineType p1 = kMachNone,
-                           MachineType p2 = kMachNone,
-                           MachineType p3 = kMachNone,
-                           MachineType p4 = kMachNone)
-      : GraphBuilderTester<ReturnType>(p0, p1, p2, p3, p4),
+                           MachineType p1 = kMachNone)
+      : GraphBuilderTester<ReturnType>(p0, p1),
         typer(this->isolate(), this->graph(), MaybeHandle<Context>()),
         javascript(this->zone()),
         jsgraph(this->isolate(), this->graph(), this->common(), &javascript,
@@ -1269,7 +1266,6 @@ TEST(LowerStringOps_to_call_and_compare) {
     t.CheckLoweringBinop(compare_eq, t.simplified()->StringEqual());
     t.CheckLoweringBinop(compare_lt, t.simplified()->StringLessThan());
     t.CheckLoweringBinop(compare_le, t.simplified()->StringLessThanOrEqual());
-    t.CheckLoweringBinop(IrOpcode::kCall, t.simplified()->StringAdd());
   }
 }
 

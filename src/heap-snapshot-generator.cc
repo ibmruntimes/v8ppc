@@ -1657,17 +1657,33 @@ void V8HeapExplorer::ExtractPropertyReferences(JSObject* js_obj, int entry) {
           break;
       }
     }
+  } else if (js_obj->IsGlobalObject()) {
+    // We assume that global objects can only have slow properties.
+    GlobalDictionary* dictionary = js_obj->global_dictionary();
+    int length = dictionary->Capacity();
+    for (int i = 0; i < length; ++i) {
+      Object* k = dictionary->KeyAt(i);
+      if (dictionary->IsKey(k)) {
+        DCHECK(dictionary->ValueAt(i)->IsPropertyCell());
+        PropertyCell* cell = PropertyCell::cast(dictionary->ValueAt(i));
+        Object* value = cell->value();
+        if (k == heap_->hidden_string()) {
+          TagObject(value, "(hidden properties)");
+          SetInternalReference(js_obj, entry, "hidden_properties", value);
+          continue;
+        }
+        PropertyDetails details = cell->property_details();
+        SetDataOrAccessorPropertyReference(details.kind(), js_obj, entry,
+                                           Name::cast(k), value);
+      }
+    }
   } else {
     NameDictionary* dictionary = js_obj->property_dictionary();
     int length = dictionary->Capacity();
     for (int i = 0; i < length; ++i) {
       Object* k = dictionary->KeyAt(i);
       if (dictionary->IsKey(k)) {
-        Object* target = dictionary->ValueAt(i);
-        // We assume that global objects can only have slow properties.
-        Object* value = target->IsPropertyCell()
-            ? PropertyCell::cast(target)->value()
-            : target;
+        Object* value = dictionary->ValueAt(i);
         if (k == heap_->hidden_string()) {
           TagObject(value, "(hidden properties)");
           SetInternalReference(js_obj, entry, "hidden_properties", value);
@@ -3175,4 +3191,5 @@ void HeapSnapshotJSONSerializer::SerializeStrings() {
 }
 
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8

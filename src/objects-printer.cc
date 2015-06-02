@@ -255,6 +255,8 @@ void JSObject::PrintProperties(std::ostream& os) {  // NOLINT
           break;
       }
     }
+  } else if (IsGlobalObject()) {
+    global_dictionary()->Print(os);
   } else {
     property_dictionary()->Print(os);
   }
@@ -1211,4 +1213,5 @@ void JSObject::PrintTransitions(std::ostream& os) {  // NOLINT
   TransitionArray::PrintTransitions(os, map()->raw_transitions());
 }
 #endif  // defined(DEBUG) || defined(OBJECT_PRINT)
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8

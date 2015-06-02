@@ -1059,6 +1059,7 @@ class Object {
   INLINE(bool IsSpecFunction()) const;
   INLINE(bool IsTemplateInfo()) const;
   INLINE(bool IsNameDictionary() const);
+  INLINE(bool IsGlobalDictionary() const);
   INLINE(bool IsSeededNumberDictionary() const);
   INLINE(bool IsUnseededNumberDictionary() const);
   INLINE(bool IsOrderedHashSet() const);
@@ -1154,7 +1155,7 @@ class Object {
 
   // Implementation of [[Put]], ECMA-262 5th edition, section 8.12.5.
   MUST_USE_RESULT static MaybeHandle<Object> SetProperty(
-      Handle<Object> object, Handle<Name> key, Handle<Object> value,
+      Handle<Object> object, Handle<Name> name, Handle<Object> value,
       LanguageMode language_mode,
       StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED);
 
@@ -1183,15 +1184,13 @@ class Object {
       LookupIterator* it, Handle<Object> value, PropertyAttributes attributes,
       LanguageMode language_mode, StoreFromKeyed store_mode);
   MUST_USE_RESULT static inline MaybeHandle<Object> GetPropertyOrElement(
-      Handle<Object> object,
-      Handle<Name> key);
+      Handle<Object> object, Handle<Name> name);
   MUST_USE_RESULT static inline MaybeHandle<Object> GetProperty(
       Isolate* isolate,
       Handle<Object> object,
       const char* key);
   MUST_USE_RESULT static inline MaybeHandle<Object> GetProperty(
-      Handle<Object> object,
-      Handle<Name> key);
+      Handle<Object> object, Handle<Name> name);
 
   MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithAccessor(
       LookupIterator* it);
@@ -1211,12 +1210,6 @@ class Object {
   MUST_USE_RESULT static inline MaybeHandle<Object> GetElement(
       Isolate* isolate,
       Handle<Object> object,
-      uint32_t index);
-
-  MUST_USE_RESULT static MaybeHandle<Object> GetElementWithReceiver(
-      Isolate* isolate,
-      Handle<Object> object,
-      Handle<Object> receiver,
       uint32_t index);
 
   MUST_USE_RESULT static MaybeHandle<Object> SetElementWithReceiver(
@@ -1251,8 +1244,13 @@ class Object {
   // by ES6 Map and Set.
   bool SameValueZero(Object* other);
 
-  // Tries to convert an object to an array index.  Returns true and sets
-  // the output parameter if it succeeds.
+  // Tries to convert an object to an array length. Returns true and sets the
+  // output parameter if it succeeds.
+  inline bool ToArrayLength(uint32_t* index);
+
+  // Tries to convert an object to an array index. Returns true and sets the
+  // output parameter if it succeeds. Equivalent to ToArrayLength, but does not
+  // allow kMaxUInt32.
   inline bool ToArrayIndex(uint32_t* index);
 
   // Returns true if this is a JSValue containing a string and the index is
@@ -1660,6 +1658,8 @@ class JSReceiver: public HeapObject {
   MUST_USE_RESULT static MaybeHandle<Object> DeleteProperty(
       Handle<JSReceiver> object, Handle<Name> name,
       LanguageMode language_mode = SLOPPY);
+  MUST_USE_RESULT static MaybeHandle<Object> DeleteProperty(
+      LookupIterator* it, LanguageMode language_mode);
   MUST_USE_RESULT static MaybeHandle<Object> DeleteElement(
       Handle<JSReceiver> object, uint32_t index,
       LanguageMode language_mode = SLOPPY);
@@ -1676,18 +1676,20 @@ class JSReceiver: public HeapObject {
 
   MUST_USE_RESULT static inline Maybe<PropertyAttributes> GetPropertyAttributes(
       Handle<JSReceiver> object, Handle<Name> name);
-  MUST_USE_RESULT static Maybe<PropertyAttributes> GetPropertyAttributes(
-      LookupIterator* it);
-  MUST_USE_RESULT static Maybe<PropertyAttributes> GetOwnPropertyAttributes(
-      Handle<JSReceiver> object, Handle<Name> name);
+  MUST_USE_RESULT static inline Maybe<PropertyAttributes>
+  GetOwnPropertyAttributes(Handle<JSReceiver> object, Handle<Name> name);
 
-  MUST_USE_RESULT static inline Maybe<PropertyAttributes> GetElementAttribute(
+  MUST_USE_RESULT static inline Maybe<PropertyAttributes> GetElementAttributes(
       Handle<JSReceiver> object, uint32_t index);
   MUST_USE_RESULT static inline Maybe<PropertyAttributes>
-      GetOwnElementAttribute(Handle<JSReceiver> object, uint32_t index);
+  GetOwnElementAttributes(Handle<JSReceiver> object, uint32_t index);
+
+  MUST_USE_RESULT static Maybe<PropertyAttributes> GetPropertyAttributes(
+      LookupIterator* it);
+
 
   static Handle<Object> GetDataProperty(Handle<JSReceiver> object,
-                                        Handle<Name> key);
+                                        Handle<Name> name);
   static Handle<Object> GetDataProperty(LookupIterator* it);
 
 
@@ -1728,7 +1730,10 @@ class JSObject: public JSReceiver {
   DECL_ACCESSORS(properties, FixedArray)  // Get and set fast properties.
   inline void initialize_properties();
   inline bool HasFastProperties();
-  inline NameDictionary* property_dictionary();  // Gets slow properties.
+  // Gets slow properties for non-global objects.
+  inline NameDictionary* property_dictionary();
+  // Gets global object properties.
+  inline GlobalDictionary* global_dictionary();
 
   // [elements]: The elements (properties with names that are integers).
   //
@@ -1828,13 +1833,11 @@ class JSObject: public JSReceiver {
   };
 
   MUST_USE_RESULT static MaybeHandle<Object> SetOwnPropertyIgnoreAttributes(
-      Handle<JSObject> object,
-      Handle<Name> key,
-      Handle<Object> value,
+      Handle<JSObject> object, Handle<Name> name, Handle<Object> value,
       PropertyAttributes attributes,
       ExecutableAccessorInfoHandling handling = DEFAULT_HANDLING);
 
-  static void AddProperty(Handle<JSObject> object, Handle<Name> key,
+  static void AddProperty(Handle<JSObject> object, Handle<Name> name,
                           Handle<Object> value, PropertyAttributes attributes);
 
   // Extend the receiver with a single fast property appeared first in the
@@ -1851,8 +1854,7 @@ class JSObject: public JSReceiver {
 
   // Sets the property value in a normalized object given (key, value, details).
   // Handles the special representation of JS global objects.
-  static void SetNormalizedProperty(Handle<JSObject> object,
-                                    Handle<Name> key,
+  static void SetNormalizedProperty(Handle<JSObject> object, Handle<Name> name,
                                     Handle<Object> value,
                                     PropertyDetails details);
 
@@ -1876,10 +1878,6 @@ class JSObject: public JSReceiver {
   GetPropertyAttributesWithInterceptor(LookupIterator* it);
   MUST_USE_RESULT static Maybe<PropertyAttributes>
       GetPropertyAttributesWithFailedAccessCheck(LookupIterator* it);
-  MUST_USE_RESULT static Maybe<PropertyAttributes>
-      GetElementAttributeWithReceiver(Handle<JSObject> object,
-                                      Handle<JSReceiver> receiver,
-                                      uint32_t index, bool check_prototype);
 
   // Retrieves an AccessorPair property from the given object. Might return
   // undefined if the property doesn't exist or is of a different kind.
@@ -1999,12 +1997,6 @@ class JSObject: public JSReceiver {
       PropertyAttributes attributes, LanguageMode language_mode,
       bool check_prototype = true, SetPropertyMode set_mode = SET_PROPERTY);
 
-  // Returns the index'th element.
-  // The undefined object if index is out of bounds.
-  MUST_USE_RESULT static MaybeHandle<Object> GetElementWithInterceptor(
-      Handle<JSObject> object, Handle<Object> receiver, uint32_t index,
-      bool check_prototype);
-
   enum SetFastElementsCapacitySmiMode {
     kAllowSmiElements,
     kForceSmiElements,
@@ -2044,11 +2036,11 @@ class JSObject: public JSReceiver {
 
   // Support functions for v8 api (needed for correct interceptor behavior).
   MUST_USE_RESULT static Maybe<bool> HasRealNamedProperty(
-      Handle<JSObject> object, Handle<Name> key);
+      Handle<JSObject> object, Handle<Name> name);
   MUST_USE_RESULT static Maybe<bool> HasRealElementProperty(
       Handle<JSObject> object, uint32_t index);
   MUST_USE_RESULT static Maybe<bool> HasRealNamedCallbackProperty(
-      Handle<JSObject> object, Handle<Name> key);
+      Handle<JSObject> object, Handle<Name> name);
 
   // Get the header size for a JSObject.  Used to compute the index of
   // internal fields as well as the number of internal fields.
@@ -2302,38 +2294,6 @@ class JSObject: public JSReceiver {
   MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithFailedAccessCheck(
       LookupIterator* it);
 
-  MUST_USE_RESULT static MaybeHandle<Object> GetElementWithCallback(
-      Handle<JSObject> object,
-      Handle<Object> receiver,
-      Handle<Object> structure,
-      uint32_t index,
-      Handle<Object> holder);
-
-  MUST_USE_RESULT static Maybe<PropertyAttributes>
-      GetElementAttributeWithInterceptor(Handle<JSObject> object,
-                                         Handle<JSReceiver> receiver,
-                                         uint32_t index, bool continue_search);
-
-  // Queries indexed interceptor on an object for property attributes.
-  //
-  // We determine property attributes as follows:
-  // - if interceptor has a query callback, then the  property attributes are
-  //   the result of query callback for index.
-  // - otherwise if interceptor has a getter callback and it returns
-  //   non-empty value on index, then the property attributes is NONE
-  //   (property is present, and it is enumerable, configurable, writable)
-  // - otherwise there are no property attributes that can be inferred for
-  //   interceptor, and this function returns ABSENT.
-  MUST_USE_RESULT static Maybe<PropertyAttributes>
-      GetElementAttributeFromInterceptor(Handle<JSObject> object,
-                                         Handle<Object> receiver,
-                                         uint32_t index);
-
-  MUST_USE_RESULT static Maybe<PropertyAttributes>
-      GetElementAttributeWithoutInterceptor(Handle<JSObject> object,
-                                            Handle<JSReceiver> receiver,
-                                            uint32_t index,
-                                            bool continue_search);
   MUST_USE_RESULT static MaybeHandle<Object> SetElementWithCallback(
       Handle<Object> object, Handle<Object> structure, uint32_t index,
       Handle<Object> value, Handle<JSObject> holder,
@@ -2357,14 +2317,6 @@ class JSObject: public JSReceiver {
   MUST_USE_RESULT static MaybeHandle<Object> SetFastDoubleElement(
       Handle<JSObject> object, uint32_t index, Handle<Object> value,
       LanguageMode language_mode, bool check_prototype = true);
-  MUST_USE_RESULT static MaybeHandle<Object> GetElementWithFailedAccessCheck(
-      Isolate* isolate, Handle<JSObject> object, Handle<Object> receiver,
-      uint32_t index);
-  MUST_USE_RESULT static Maybe<PropertyAttributes>
-  GetElementAttributesWithFailedAccessCheck(Isolate* isolate,
-                                            Handle<JSObject> object,
-                                            Handle<Object> receiver,
-                                            uint32_t index);
 
   MUST_USE_RESULT static MaybeHandle<Object> SetPropertyWithFailedAccessCheck(
       LookupIterator* it, Handle<Object> value, LanguageMode language_mode);
@@ -2375,20 +2327,12 @@ class JSObject: public JSReceiver {
                               Handle<Object> value,
                               PropertyAttributes attributes);
 
-  MUST_USE_RESULT static MaybeHandle<Object> DeleteProperty(
-      Handle<JSObject> object, Handle<Name> name, LanguageMode language_mode);
   MUST_USE_RESULT static MaybeHandle<Object> DeletePropertyWithInterceptor(
-      Handle<JSObject> holder, Handle<JSObject> receiver, Handle<Name> name);
+      LookupIterator* it);
 
   // Deletes an existing named property in a normalized object.
   static void DeleteNormalizedProperty(Handle<JSObject> object,
                                        Handle<Name> name);
-
-  MUST_USE_RESULT static MaybeHandle<Object> DeleteElement(
-      Handle<JSObject> object, uint32_t index, LanguageMode language_mode);
-  MUST_USE_RESULT static MaybeHandle<Object> DeleteElementWithInterceptor(
-      Handle<JSObject> object,
-      uint32_t index);
 
   bool ReferencesObjectFromElements(FixedArray* elements,
                                     ElementsKind kind,
@@ -3464,6 +3408,11 @@ class HashTable : public HashTableBase {
   static const int kCapacityOffset =
       kHeaderSize + kCapacityIndex * kPointerSize;
 
+  // Returns the index for an entry (of the key)
+  static inline int EntryToIndex(int entry) {
+    return (entry * kEntrySize) + kElementsStartIndex;
+  }
+
  protected:
   friend class ObjectHashTable;
 
@@ -3480,11 +3429,6 @@ class HashTable : public HashTableBase {
       int n,
       Key key,
       PretenureFlag pretenure = NOT_TENURED);
-
-  // Returns the index for an entry (of the key)
-  static inline int EntryToIndex(int entry) {
-    return (entry * kEntrySize) + kElementsStartIndex;
-  }
 
   // Sets the capacity of the hash table.
   void SetCapacity(int capacity) {
@@ -3594,35 +3538,34 @@ class StringTable: public HashTable<StringTable,
 };
 
 
-enum class DictionaryEntryType { kObjects, kCells };
-
-
 template <typename Derived, typename Shape, typename Key>
 class Dictionary: public HashTable<Derived, Shape, Key> {
- protected:
   typedef HashTable<Derived, Shape, Key> DerivedHashTable;
 
  public:
   // Returns the value at entry.
   Object* ValueAt(int entry) {
-    return this->get(DerivedHashTable::EntryToIndex(entry) + 1);
+    return this->get(Derived::EntryToIndex(entry) + 1);
   }
 
   // Set the value for entry.
   void ValueAtPut(int entry, Object* value) {
-    this->set(DerivedHashTable::EntryToIndex(entry) + 1, value);
+    this->set(Derived::EntryToIndex(entry) + 1, value);
   }
 
   // Returns the property details for the property at entry.
   PropertyDetails DetailsAt(int entry) {
-    DCHECK(entry >= 0);  // Not found is -1, which is not caught by get().
-    return PropertyDetails(
-        Smi::cast(this->get(DerivedHashTable::EntryToIndex(entry) + 2)));
+    return Shape::DetailsAt(static_cast<Derived*>(this), entry);
   }
 
   // Set the details for entry.
   void DetailsAtPut(int entry, PropertyDetails value) {
-    this->set(DerivedHashTable::EntryToIndex(entry) + 2, value.AsSmi());
+    Shape::DetailsAtPut(static_cast<Derived*>(this), entry, value);
+  }
+
+  // Returns true if property at given entry is deleted.
+  bool IsDeleted(int entry) {
+    return Shape::IsDeleted(static_cast<Derived*>(this), entry);
   }
 
   // Delete a property from the dictionary.
@@ -3641,76 +3584,30 @@ class Dictionary: public HashTable<Derived, Shape, Key> {
 
   // Returns the number of elements in the dictionary filtering out properties
   // with the specified attributes.
-  template <DictionaryEntryType type>
   int NumberOfElementsFilterAttributes(PropertyAttributes filter);
-  int NumberOfElementsFilterAttributes(Object* holder,
-                                       PropertyAttributes filter) {
-    if (holder->IsGlobalObject()) {
-      return NumberOfElementsFilterAttributes<DictionaryEntryType::kCells>(
-          filter);
-    } else {
-      return NumberOfElementsFilterAttributes<DictionaryEntryType::kObjects>(
-          filter);
-    }
-  }
 
   // Returns the number of enumerable elements in the dictionary.
-  template <DictionaryEntryType type>
   int NumberOfEnumElements() {
-    return NumberOfElementsFilterAttributes<type>(
+    return NumberOfElementsFilterAttributes(
         static_cast<PropertyAttributes>(DONT_ENUM | SYMBOLIC));
-  }
-  int NumberOfEnumElements(Object* holder) {
-    if (holder->IsGlobalObject()) {
-      return NumberOfEnumElements<DictionaryEntryType::kCells>();
-    } else {
-      return NumberOfEnumElements<DictionaryEntryType::kObjects>();
-    }
   }
 
   // Returns true if the dictionary contains any elements that are non-writable,
   // non-configurable, non-enumerable, or have getters/setters.
-  template <DictionaryEntryType type>
   bool HasComplexElements();
-  bool HasComplexElements(Object* holder) {
-    if (holder->IsGlobalObject()) {
-      return HasComplexElements<DictionaryEntryType::kCells>();
-    } else {
-      return HasComplexElements<DictionaryEntryType::kObjects>();
-    }
-  }
 
   enum SortMode { UNSORTED, SORTED };
 
   // Copies keys to preallocated fixed array.
-  template <DictionaryEntryType type>
   void CopyKeysTo(FixedArray* storage, PropertyAttributes filter,
                   SortMode sort_mode);
-  void CopyKeysTo(Object* holder, FixedArray* storage,
-                  PropertyAttributes filter, SortMode sort_mode) {
-    if (holder->IsGlobalObject()) {
-      return CopyKeysTo<DictionaryEntryType::kCells>(storage, filter,
-                                                     sort_mode);
-    } else {
-      return CopyKeysTo<DictionaryEntryType::kObjects>(storage, filter,
-                                                       sort_mode);
-    }
-  }
 
   // Fill in details for properties into storage.
-  template <DictionaryEntryType type>
   void CopyKeysTo(FixedArray* storage, int index, PropertyAttributes filter,
                   SortMode sort_mode);
-  void CopyKeysTo(Object* holder, FixedArray* storage, int index,
-                  PropertyAttributes filter, SortMode sort_mode) {
-    if (holder->IsGlobalObject()) {
-      return CopyKeysTo<DictionaryEntryType::kCells>(storage, index, filter,
-                                                     sort_mode);
-    } else {
-      return CopyKeysTo<DictionaryEntryType::kObjects>(storage, index, filter,
-                                                       sort_mode);
-    }
-  }
+
+  // Copies enumerable keys to preallocated fixed array.
+  void CopyEnumKeysTo(FixedArray* storage);
 
   // Accessors for next enumeration index.
   void SetNextEnumerationIndex(int index) {
@@ -3781,7 +3678,47 @@ class Dictionary: public HashTable<Derived, Shape, Key> {
 };
 
 
-class NameDictionaryShape : public BaseShape<Handle<Name> > {
+template <typename Derived, typename Shape>
+class NameDictionaryBase : public Dictionary<Derived, Shape, Handle<Name> > {
+  typedef Dictionary<Derived, Shape, Handle<Name> > DerivedDictionary;
+
+ public:
+  // Find entry for key, otherwise return kNotFound. Optimized version of
+  // HashTable::FindEntry.
+  int FindEntry(Handle<Name> key);
+};
+
+
+template <typename Key>
+class BaseDictionaryShape : public BaseShape<Key> {
+ public:
+  template <typename Dictionary>
+  static inline PropertyDetails DetailsAt(Dictionary* dict, int entry) {
+    STATIC_ASSERT(Dictionary::kEntrySize == 3);
+    DCHECK(entry >= 0);  // Not found is -1, which is not caught by get().
+    return PropertyDetails(
+        Smi::cast(dict->get(Dictionary::EntryToIndex(entry) + 2)));
+  }
+
+  template <typename Dictionary>
+  static inline void DetailsAtPut(Dictionary* dict, int entry,
+                                  PropertyDetails value) {
+    STATIC_ASSERT(Dictionary::kEntrySize == 3);
+    dict->set(Dictionary::EntryToIndex(entry) + 2, value.AsSmi());
+  }
+
+  template <typename Dictionary>
+  static bool IsDeleted(Dictionary* dict, int entry) {
+    return false;
+  }
+
+  template <typename Dictionary>
+  static inline void SetEntry(Dictionary* dict, int entry, Handle<Object> key,
+                              Handle<Object> value, PropertyDetails details);
+};
+
+
+class NameDictionaryShape : public BaseDictionaryShape<Handle<Name> > {
  public:
   static inline bool IsMatch(Handle<Name> key, Object* other);
   static inline uint32_t Hash(Handle<Name> key);
@@ -3793,36 +3730,47 @@ class NameDictionaryShape : public BaseShape<Handle<Name> > {
 };
 
 
-class NameDictionary: public Dictionary<NameDictionary,
-                                        NameDictionaryShape,
-                                        Handle<Name> > {
-  typedef Dictionary<
-      NameDictionary, NameDictionaryShape, Handle<Name> > DerivedDictionary;
+class NameDictionary
+    : public NameDictionaryBase<NameDictionary, NameDictionaryShape> {
+  typedef NameDictionaryBase<NameDictionary, NameDictionaryShape>
+      DerivedDictionary;
 
  public:
   DECLARE_CAST(NameDictionary)
 
-  // Copies enumerable keys to preallocated fixed array.
-  template <DictionaryEntryType type>
-  void CopyEnumKeysTo(FixedArray* storage);
-  void CopyEnumKeysTo(Object* holder, FixedArray* storage) {
-    if (holder->IsGlobalObject()) {
-      return CopyEnumKeysTo<DictionaryEntryType::kCells>(storage);
-    } else {
-      return CopyEnumKeysTo<DictionaryEntryType::kObjects>(storage);
-    }
-  }
-
   inline static Handle<FixedArray> DoGenerateNewEnumerationIndices(
       Handle<NameDictionary> dictionary);
-
-  // Find entry for key, otherwise return kNotFound. Optimized version of
-  // HashTable::FindEntry.
-  int FindEntry(Handle<Name> key);
 };
 
 
-class NumberDictionaryShape : public BaseShape<uint32_t> {
+class GlobalDictionaryShape : public NameDictionaryShape {
+ public:
+  static const int kEntrySize = 2;  // Overrides NameDictionaryShape::kEntrySize
+
+  template <typename Dictionary>
+  static inline PropertyDetails DetailsAt(Dictionary* dict, int entry);
+
+  template <typename Dictionary>
+  static inline void DetailsAtPut(Dictionary* dict, int entry,
+                                  PropertyDetails value);
+
+  template <typename Dictionary>
+  static bool IsDeleted(Dictionary* dict, int entry);
+
+  template <typename Dictionary>
+  static inline void SetEntry(Dictionary* dict, int entry, Handle<Object> key,
+                              Handle<Object> value, PropertyDetails details);
+};
+
+
+class GlobalDictionary
+    : public NameDictionaryBase<GlobalDictionary, GlobalDictionaryShape> {
+ public:
+  DECLARE_CAST(GlobalDictionary)
+};
+
+
+class NumberDictionaryShape : public BaseDictionaryShape<uint32_t> {
  public:
   static inline bool IsMatch(uint32_t key, Object* other);
   static inline Handle<Object> AsHandle(Isolate* isolate, uint32_t key);
@@ -6377,6 +6325,10 @@ class Map: public HeapObject {
                                               PropertyAttributes attrs_to_add,
                                               Handle<Symbol> transition_marker,
                                               const char* reason);
+
+  static Handle<Map> FixProxy(Handle<Map> map, InstanceType type, int size);
+
+
   // Maximal number of fast properties. Used to restrict the number of map
   // transitions to avoid an explosion in the number of maps for objects used as
   // dictionaries.
@@ -9968,11 +9920,21 @@ class Cell: public HeapObject {
 
 class PropertyCell : public HeapObject {
  public:
+  // [property_details]: details of the global property.
+  DECL_ACCESSORS(property_details_raw, Object)
   // [value]: value of the global property.
   DECL_ACCESSORS(value, Object)
   // [dependent_code]: dependent code that depends on the type of the global
   // property.
   DECL_ACCESSORS(dependent_code, DependentCode)
+
+  PropertyDetails property_details() {
+    return PropertyDetails(Smi::cast(property_details_raw()));
+  }
+
+  void set_property_details(PropertyDetails details) {
+    set_property_details_raw(details.AsSmi());
+  }
 
   PropertyCellConstantType GetConstantType();
 
@@ -9981,11 +9943,11 @@ class PropertyCell : public HeapObject {
   static PropertyCellType UpdatedType(Handle<PropertyCell> cell,
                                       Handle<Object> value,
                                       PropertyDetails details);
-  static void UpdateCell(Handle<NameDictionary> dictionary, int entry,
+  static void UpdateCell(Handle<GlobalDictionary> dictionary, int entry,
                          Handle<Object> value, PropertyDetails details);
 
-  static Handle<PropertyCell> InvalidateEntry(Handle<NameDictionary> dictionary,
-                                              int entry);
+  static Handle<PropertyCell> InvalidateEntry(
+      Handle<GlobalDictionary> dictionary, int entry);
 
   static void SetValueWithInvalidation(Handle<PropertyCell> cell,
                                        Handle<Object> new_value);
@@ -9997,7 +9959,8 @@ class PropertyCell : public HeapObject {
   DECLARE_VERIFIER(PropertyCell)
 
   // Layout description.
-  static const int kValueOffset = HeapObject::kHeaderSize;
+  static const int kDetailsOffset = HeapObject::kHeaderSize;
+  static const int kValueOffset = kDetailsOffset + kPointerSize;
   static const int kDependentCodeOffset = kValueOffset + kPointerSize;
   static const int kSize = kDependentCodeOffset + kPointerSize;
 
@@ -10059,10 +10022,6 @@ class JSProxy: public JSReceiver {
       Handle<JSProxy> proxy,
       Handle<Object> receiver,
       Handle<Name> name);
-  MUST_USE_RESULT static inline MaybeHandle<Object> GetElementWithHandler(
-      Handle<JSProxy> proxy,
-      Handle<Object> receiver,
-      uint32_t index);
 
   // If the handler defines an accessor property with a setter, invoke it.
   // If it defines an accessor property without a setter, or a data property
@@ -10077,10 +10036,6 @@ class JSProxy: public JSReceiver {
       GetPropertyAttributesWithHandler(Handle<JSProxy> proxy,
                                        Handle<Object> receiver,
                                        Handle<Name> name);
-  MUST_USE_RESULT static Maybe<PropertyAttributes>
-      GetElementAttributeWithHandler(Handle<JSProxy> proxy,
-                                     Handle<JSReceiver> receiver,
-                                     uint32_t index);
   MUST_USE_RESULT static MaybeHandle<Object> SetPropertyWithHandler(
       Handle<JSProxy> proxy, Handle<Object> receiver, Handle<Name> name,
       Handle<Object> value, LanguageMode language_mode);
@@ -10129,13 +10084,9 @@ class JSProxy: public JSReceiver {
 
   MUST_USE_RESULT static Maybe<bool> HasPropertyWithHandler(
       Handle<JSProxy> proxy, Handle<Name> name);
-  MUST_USE_RESULT static inline Maybe<bool> HasElementWithHandler(
-      Handle<JSProxy> proxy, uint32_t index);
 
   MUST_USE_RESULT static MaybeHandle<Object> DeletePropertyWithHandler(
       Handle<JSProxy> proxy, Handle<Name> name, LanguageMode language_mode);
-  MUST_USE_RESULT static MaybeHandle<Object> DeleteElementWithHandler(
-      Handle<JSProxy> proxy, uint32_t index, LanguageMode language_mode);
 
   MUST_USE_RESULT Object* GetIdentityHash();
 
@@ -10471,6 +10422,7 @@ class JSTypedArray: public JSArrayBufferView {
  public:
   // [length]: length of typed array in elements.
   DECL_ACCESSORS(length, Object)
+  inline uint32_t length_value() const;
 
   DECLARE_CAST(JSTypedArray)
 

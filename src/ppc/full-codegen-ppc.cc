@@ -273,7 +273,8 @@ void FullCodeGenerator::Generate() {
     __ addi(r6, fp, Operand(StandardFrameConstants::kCallerSPOffset + offset));
     __ mov(r5, Operand(Smi::FromInt(num_parameters)));
     __ mov(r4, Operand(Smi::FromInt(rest_index)));
-    __ Push(r6, r5, r4);
+    __ mov(r7, Operand(Smi::FromInt(language_mode())));
+    __ Push(r6, r5, r4, r7);
 
     RestParamAccessStub stub(isolate());
     __ CallStub(&stub);
@@ -5538,6 +5539,6 @@ BackEdgeTable::BackEdgeState BackEdgeTable::GetBackEdgeState(
          isolate->builtins()->OsrAfterStackCheck()->entry());
   return OSR_AFTER_STACK_CHECK;
 }
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 #endif  // V8_TARGET_ARCH_PPC

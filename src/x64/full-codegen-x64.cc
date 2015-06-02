@@ -262,6 +262,7 @@ void FullCodeGenerator::Generate() {
     __ Push(rdx);
     __ Push(Smi::FromInt(num_parameters));
     __ Push(Smi::FromInt(rest_index));
+    __ Push(Smi::FromInt(language_mode()));
 
     RestParamAccessStub stub(isolate());
     __ CallStub(&stub);
@@ -1617,7 +1618,6 @@ void FullCodeGenerator::EmitAccessor(Expression* expression) {
 void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   Comment cmnt(masm_, "[ ObjectLiteral");
 
-  expr->BuildConstantProperties(isolate());
   Handle<FixedArray> constant_properties = expr->constant_properties();
   int flags = expr->ComputeFlags();
   if (MustCreateObjectLiteralWithRuntime(expr)) {
@@ -5455,6 +5455,7 @@ BackEdgeTable::BackEdgeState BackEdgeTable::GetBackEdgeState(
 }
 
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_TARGET_ARCH_X64

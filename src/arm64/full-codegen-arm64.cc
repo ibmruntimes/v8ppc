@@ -269,7 +269,8 @@ void FullCodeGenerator::Generate() {
     __ Add(x3, fp, StandardFrameConstants::kCallerSPOffset + offset);
     __ Mov(x2, Smi::FromInt(num_parameters));
     __ Mov(x1, Smi::FromInt(rest_index));
-    __ Push(x3, x2, x1);
+    __ Mov(x0, Smi::FromInt(language_mode()));
+    __ Push(x3, x2, x1, x0);
 
     RestParamAccessStub stub(isolate());
     __ CallStub(&stub);
@@ -1629,7 +1630,6 @@ void FullCodeGenerator::EmitAccessor(Expression* expression) {
 void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   Comment cmnt(masm_, "[ ObjectLiteral");
 
-  expr->BuildConstantProperties(isolate());
   Handle<FixedArray> constant_properties = expr->constant_properties();
   __ Ldr(x3, MemOperand(fp,  JavaScriptFrameConstants::kFunctionOffset));
   __ Ldr(x3, FieldMemOperand(x3, JSFunction::kLiteralsOffset));
@@ -5541,6 +5541,7 @@ BackEdgeTable::BackEdgeState BackEdgeTable::GetBackEdgeState(
 }
 
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_TARGET_ARCH_ARM64

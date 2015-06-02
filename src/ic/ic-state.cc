@@ -516,5 +516,5 @@ CompareICState::State CompareICState::TargetState(
   UNREACHABLE();
   return GENERIC;  // Make the compiler happy.
 }
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8

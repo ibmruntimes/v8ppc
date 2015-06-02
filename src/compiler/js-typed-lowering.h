@@ -45,6 +45,7 @@ class JSTypedLowering final : public AdvancedReducer {
   Reduction ReduceJSStoreProperty(Node* node);
   Reduction ReduceJSLoadContext(Node* node);
   Reduction ReduceJSStoreContext(Node* node);
+  Reduction ReduceJSLoadDynamicGlobal(Node* node);
   Reduction ReduceJSEqual(Node* node, bool invert);
   Reduction ReduceJSStrictEqual(Node* node, bool invert);
   Reduction ReduceJSUnaryNot(Node* node);
@@ -72,6 +73,7 @@ class JSTypedLowering final : public AdvancedReducer {
   Factory* factory() const;
   Graph* graph() const;
   JSGraph* jsgraph() const { return jsgraph_; }
+  Isolate* isolate() const;
   JSOperatorBuilder* javascript() const;
   CommonOperatorBuilder* common() const;
   SimplifiedOperatorBuilder* simplified() { return &simplified_; }

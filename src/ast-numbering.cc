@@ -155,7 +155,7 @@ void AstNumberingVisitor::VisitRegExpLiteral(RegExpLiteral* node) {
 void AstNumberingVisitor::VisitVariableProxy(VariableProxy* node) {
   IncrementNodeCount();
   if (node->var()->IsLookupSlot()) {
-    DisableOptimization(kReferenceToAVariableWhichRequiresDynamicLookup);
+    DisableCrankshaft(kReferenceToAVariableWhichRequiresDynamicLookup);
   }
   ReserveFeedbackSlots(node);
   node->set_base_id(ReserveIdRange(VariableProxy::num_ids()));
@@ -224,6 +224,7 @@ void AstNumberingVisitor::VisitCountOperation(CountOperation* node) {
   IncrementNodeCount();
   node->set_base_id(ReserveIdRange(CountOperation::num_ids()));
   Visit(node->expression());
+  ReserveFeedbackSlots(node);
 }
 
 
@@ -415,7 +416,7 @@ void AstNumberingVisitor::VisitForStatement(ForStatement* node) {
 
 void AstNumberingVisitor::VisitClassLiteral(ClassLiteral* node) {
   IncrementNodeCount();
-  DisableOptimization(kClassLiteral);
+  DisableCrankshaft(kClassLiteral);
   node->set_base_id(ReserveIdRange(node->num_ids()));
   if (node->extends()) Visit(node->extends());
   if (node->constructor()) Visit(node->constructor());
@@ -434,6 +435,7 @@ void AstNumberingVisitor::VisitObjectLiteral(ObjectLiteral* node) {
   for (int i = 0; i < node->properties()->length(); i++) {
     VisitObjectLiteralProperty(node->properties()->at(i));
   }
+  node->BuildConstantProperties(isolate());
   // Mark all computed expressions that are bound to a key that
   // is shadowed by a later occurrence of the same key. For the
   // marked expressions, no store code will be is emitted.
@@ -546,5 +548,5 @@ bool AstNumbering::Renumber(Isolate* isolate, Zone* zone,
   AstNumberingVisitor visitor(isolate, zone);
   return visitor.Renumber(function);
 }
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
