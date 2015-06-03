@@ -551,15 +551,16 @@ bool Assembler::IsConstantPoolLoadEnd(Address pc,
                                       ConstantPoolEntry::Access* access) {
   Instr instr = instr_at(pc);
   int opcode = instr & kOpcodeMask;
+  bool overflowed = false;
   if (!(opcode == kLoadIntptrOpcode || opcode == LFD)) return false;
-  bool overflowed = !GetRA(instr).is(kConstantPoolRegister);
-#ifdef DEBUG
-  if (overflowed) {
+  if (!GetRA(instr).is(kConstantPoolRegister)) {
     instr = instr_at(pc - kInstrSize);
     opcode = instr & kOpcodeMask;
-    DCHECK((opcode == ADDIS) && GetRA(instr).is(kConstantPoolRegister));
+    if ((opcode != ADDIS) || !GetRA(instr).is(kConstantPoolRegister)) {
+      return false;
+    }
+    overflowed = true;
   }
-#endif
   if (access) {
     *access = (overflowed ? ConstantPoolEntry::OVERFLOWED
                           : ConstantPoolEntry::REGULAR);
