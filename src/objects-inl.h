@@ -1840,7 +1840,7 @@ void JSObject::EnsureCanContainElements(Handle<JSObject> object,
 
 
 bool JSObject::WouldConvertToSlowElements(Handle<Object> key) {
-  uint32_t index;
+  uint32_t index = 0;
   return key->ToArrayIndex(&index) && WouldConvertToSlowElements(index);
 }
 
