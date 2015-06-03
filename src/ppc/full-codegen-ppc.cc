@@ -400,6 +400,10 @@ void FullCodeGenerator::Generate() {
     __ LoadRoot(r3, Heap::kUndefinedValueRootIndex);
   }
   EmitReturnSequence();
+
+  if (HasStackOverflow()) {
+    masm_->AbortConstantPoolBuilding();
+  }
 }
 
 
