@@ -150,8 +150,6 @@ static inline void FinishCode(MacroAssembler* masm) {
   masm->CheckConstPool(true, false);
 #elif V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64
   masm->ud2();
-#elif defined(V8_PPC_CONSTANT_POOL_OPT) && V8_TARGET_ARCH_PPC
-  masm->EmitConstantPool();
 #endif
 }
 

@@ -131,51 +131,27 @@ class FrameScope {
 
 class FrameAndConstantPoolScope {
  public:
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   FrameAndConstantPoolScope(MacroAssembler* masm, StackFrame::Type type)
       : masm_(masm),
         type_(type),
         old_has_frame_(masm->has_frame()),
-        old_constant_pool_available_((FLAG_enable_ool_constant_pool ||
-                                      FLAG_enable_embedded_constant_pool) &&
+        old_constant_pool_available_(FLAG_enable_embedded_constant_pool &&
                                      masm->is_constant_pool_available()) {
     masm->set_has_frame(true);
-    if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+    if (FLAG_enable_embedded_constant_pool) {
       masm->set_constant_pool_available(true);
     }
     if (type_ != StackFrame::MANUAL && type_ != StackFrame::NONE) {
       masm->EnterFrame(type, !old_constant_pool_available_);
     }
   }
-#else
-  FrameAndConstantPoolScope(MacroAssembler* masm, StackFrame::Type type)
-      : masm_(masm),
-        type_(type),
-        old_has_frame_(masm->has_frame()),
-        old_constant_pool_available_(FLAG_enable_ool_constant_pool &&
-                                     masm->is_ool_constant_pool_available()) {
-    masm->set_has_frame(true);
-    if (FLAG_enable_ool_constant_pool) {
-      masm->set_ool_constant_pool_available(true);
-    }
-    if (type_ != StackFrame::MANUAL && type_ != StackFrame::NONE) {
-      masm->EnterFrame(type, !old_constant_pool_available_);
-    }
-  }
-#endif
 
   ~FrameAndConstantPoolScope() {
     masm_->LeaveFrame(type_);
     masm_->set_has_frame(old_has_frame_);
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
-    if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+    if (FLAG_enable_embedded_constant_pool) {
       masm_->set_constant_pool_available(old_constant_pool_available_);
     }
-#else
-    if (FLAG_enable_ool_constant_pool) {
-      masm_->set_ool_constant_pool_available(old_constant_pool_available_);
-    }
-#endif
   }
 
   // Normally we generate the leave-frame code when this object goes
@@ -200,36 +176,18 @@ class FrameAndConstantPoolScope {
 // Class for scoping the the unavailability of constant pool access.
 class ConstantPoolUnavailableScope {
  public:
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   explicit ConstantPoolUnavailableScope(MacroAssembler* masm)
       : masm_(masm),
-        old_constant_pool_available_((FLAG_enable_ool_constant_pool ||
-                                      FLAG_enable_embedded_constant_pool) &&
+        old_constant_pool_available_(FLAG_enable_embedded_constant_pool &&
                                      masm->is_constant_pool_available()) {
-    if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+    if (FLAG_enable_embedded_constant_pool) {
       masm_->set_constant_pool_available(false);
     }
   }
-#else
-  explicit ConstantPoolUnavailableScope(MacroAssembler* masm)
-      : masm_(masm),
-        old_constant_pool_available_(FLAG_enable_ool_constant_pool &&
-                                     masm->is_ool_constant_pool_available()) {
-    if (FLAG_enable_ool_constant_pool) {
-      masm_->set_ool_constant_pool_available(false);
-    }
-  }
-#endif
   ~ConstantPoolUnavailableScope() {
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
-    if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+    if (FLAG_enable_embedded_constant_pool) {
       masm_->set_constant_pool_available(old_constant_pool_available_);
     }
-#else
-    if (FLAG_enable_ool_constant_pool) {
-      masm_->set_ool_constant_pool_available(old_constant_pool_available_);
-    }
-#endif
   }
 
  private:

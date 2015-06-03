@@ -512,27 +512,12 @@ class Assembler : public AssemblerBase {
   void GetCode(CodeDesc* desc);
 
   // Read/Modify the code target in the branch/call instruction at pc.
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   inline static Address target_address_at(Address pc, Address constant_pool);
-  inline static void set_target_address_at(Address pc, Address constant_pool,
-                                           Address target,
-                                           ICacheFlushMode icache_flush_mode =
-                                               FLUSH_ICACHE_IF_NEEDED);
-#else
-  inline static Address target_address_at(Address pc,
-                                          ConstantPoolArray* constant_pool);
-  inline static void set_target_address_at(Address pc,
-                                           ConstantPoolArray* constant_pool,
-                                           Address target,
-                                           ICacheFlushMode icache_flush_mode =
-                                               FLUSH_ICACHE_IF_NEEDED);
-#endif
+  inline static void set_target_address_at(
+      Address pc, Address constant_pool, Address target,
+      ICacheFlushMode icache_flush_mode = FLUSH_ICACHE_IF_NEEDED);
   static inline Address target_address_at(Address pc, Code* code) {
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     Address constant_pool = code ? code->constant_pool() : NULL;
-#else
-    ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
-#endif
     return target_address_at(pc, constant_pool);
   }
   static inline void set_target_address_at(Address pc,
@@ -540,11 +525,7 @@ class Assembler : public AssemblerBase {
                                            Address target,
                                            ICacheFlushMode icache_flush_mode =
                                                FLUSH_ICACHE_IF_NEEDED) {
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     Address constant_pool = code ? code->constant_pool() : NULL;
-#else
-    ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
-#endif
     set_target_address_at(pc, constant_pool, target);
   }
 
@@ -1467,6 +1448,8 @@ class Assembler : public AssemblerBase {
   // inline tables, e.g., jump-tables.
   void db(uint8_t data);
   void dd(uint32_t data);
+  void dq(uint64_t data);
+  void dp(uintptr_t data) { dd(data); }
   void dd(Label* label);
 
   // Check if there is less than kGap bytes available in the buffer.
@@ -1493,11 +1476,12 @@ class Assembler : public AssemblerBase {
   byte byte_at(int pos) { return buffer_[pos]; }
   void set_byte_at(int pos, byte value) { buffer_[pos] = value; }
 
-  // Allocate a constant pool of the correct size for the generated code.
-  Handle<ConstantPoolArray> NewConstantPool(Isolate* isolate);
-
-  // Generate the constant pool for the generated code.
-  void PopulateConstantPool(ConstantPoolArray* constant_pool);
+  void PatchConstantPoolAccessInstruction(int pc_offset, int offset,
+                                          ConstantPoolEntry::Access access,
+                                          ConstantPoolEntry::Type type) {
+    // No embedded constant pool support.
+    UNREACHABLE();
+  }
 
  protected:
   void emit_sse_operand(XMMRegister reg, const Operand& adr);
@@ -1528,6 +1512,7 @@ class Assembler : public AssemblerBase {
                    TypeFeedbackId id = TypeFeedbackId::None());
   inline void emit(const Immediate& x);
   inline void emit_w(const Immediate& x);
+  inline void emit_q(uint64_t x);
 
   // Emit the code-object-relative offset of the label's position
   inline void emit_code_relative_offset(Label* label);

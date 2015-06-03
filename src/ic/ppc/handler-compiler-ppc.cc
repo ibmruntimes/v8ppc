@@ -25,11 +25,7 @@ void NamedLoadHandlerCompiler::GenerateLoadViaGetter(
   //  -- lr    : return address
   // -----------------------------------
   {
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
-#else
-    FrameScope scope(masm, StackFrame::INTERNAL);
-#endif
 
     if (accessor_index >= 0) {
       DCHECK(!holder.is(scratch));
@@ -66,11 +62,7 @@ void NamedStoreHandlerCompiler::GenerateStoreViaSetter(
   //  -- lr    : return address
   // -----------------------------------
   {
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
-#else
-    FrameScope scope(masm, StackFrame::INTERNAL);
-#endif
 
     // Save value register, so we can restore it later.
     __ push(value());
@@ -657,11 +649,7 @@ void NamedLoadHandlerCompiler::GenerateLoadInterceptorWithFollowup(
   // Save necessary data before invoking an interceptor.
   // Requires a frame to make GC aware of pushed pointers.
   {
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     FrameAndConstantPoolScope frame_scope(masm(), StackFrame::INTERNAL);
-#else
-    FrameScope frame_scope(masm(), StackFrame::INTERNAL);
-#endif
     if (must_preserve_receiver_reg) {
       __ Push(receiver(), holder_reg, this->name());
     } else {

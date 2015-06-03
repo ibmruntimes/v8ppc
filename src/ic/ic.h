@@ -78,12 +78,7 @@ class IC {
   }
 
   // Clear the inline cache to initial state.
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   static void Clear(Isolate* isolate, Address address, Address constant_pool);
-#else
-  static void Clear(Isolate* isolate, Address address,
-                    ConstantPoolArray* constant_pool);
-#endif
 
 #ifdef DEBUG
   bool IsLoadStub() const {
@@ -173,17 +168,10 @@ class IC {
   MaybeHandle<Object> ReferenceError(Handle<Name> name);
 
   // Access the target code for the given IC address.
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   static inline Code* GetTargetAtAddress(Address address,
                                          Address constant_pool);
   static inline void SetTargetAtAddress(Address address, Code* target,
                                         Address constant_pool);
-#else
-  static inline Code* GetTargetAtAddress(Address address,
-                                         ConstantPoolArray* constant_pool);
-  static inline void SetTargetAtAddress(Address address, Code* target,
-                                        ConstantPoolArray* constant_pool);
-#endif
   static void OnTypeFeedbackChanged(Isolate* isolate, Address address,
                                     State old_state, State new_state,
                                     bool target_remains_ic_stub);
@@ -267,14 +255,8 @@ class IC {
 
  private:
   inline Code* raw_target() const;
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   inline Address constant_pool() const;
-  inline void set_raw_constant_pool(Address* constant_pool, Isolate* isolate);
   inline Address raw_constant_pool() const;
-#else
-  inline ConstantPoolArray* constant_pool() const;
-  inline ConstantPoolArray* raw_constant_pool() const;
-#endif
 
   void FindTargetMaps() {
     if (target_maps_set_) return;
@@ -294,24 +276,17 @@ class IC {
   // Frame pointer for the frame that uses (calls) the IC.
   Address fp_;
 
-  // All access to the program counter of an IC structure is indirect
-  // to make the code GC safe. This feature is crucial since
+  // All access to the program counter and constant pool of an IC structure is
+  // indirect to make the code GC safe. This feature is crucial since
   // GetProperty and SetProperty are called and they in turn might
   // invoke the garbage collector.
   Address* pc_address_;
 
-  Isolate* isolate_;
-
   // The constant pool of the code which originally called the IC (which might
   // be for the breakpointed copy of the original code).
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
-  union {
-    Address* raw_constant_pool_;
-    Handle<ConstantPoolArray> raw_constant_pool_handle_;
-  };
-#else
-  Handle<ConstantPoolArray> raw_constant_pool_;
-#endif
+  Address* constant_pool_address_;
+
+  Isolate* isolate_;
 
   // The original code target that missed.
   Handle<Code> target_;
@@ -452,13 +427,8 @@ class LoadIC : public IC {
  private:
   Handle<Code> SimpleFieldLoad(FieldIndex index);
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   static void Clear(Isolate* isolate, Address address, Code* target,
                     Address constant_pool);
-#else
-  static void Clear(Isolate* isolate, Address address, Code* target,
-                    ConstantPoolArray* constant_pool);
-#endif
 
   friend class IC;
 };
@@ -514,13 +484,8 @@ class KeyedLoadIC : public LoadIC {
   Handle<Code> LoadElementStub(Handle<HeapObject> receiver);
 
  private:
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   static void Clear(Isolate* isolate, Address address, Code* target,
                     Address constant_pool);
-#else
-  static void Clear(Isolate* isolate, Address address, Code* target,
-                    ConstantPoolArray* constant_pool);
-#endif
 
   friend class IC;
 };
@@ -587,13 +552,8 @@ class StoreIC : public IC {
  private:
   inline void set_target(Code* code);
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   static void Clear(Isolate* isolate, Address address, Code* target,
                     Address constant_pool);
-#else
-  static void Clear(Isolate* isolate, Address address, Code* target,
-                    ConstantPoolArray* constant_pool);
-#endif
 
   friend class IC;
 };
@@ -673,13 +633,8 @@ class KeyedStoreIC : public StoreIC {
  private:
   inline void set_target(Code* code);
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   static void Clear(Isolate* isolate, Address address, Code* target,
                     Address constant_pool);
-#else
-  static void Clear(Isolate* isolate, Address address, Code* target,
-                    ConstantPoolArray* constant_pool);
-#endif
 
   KeyedAccessStoreMode GetStoreMode(Handle<JSObject> receiver,
                                     Handle<Object> key, Handle<Object> value);
@@ -729,13 +684,8 @@ class CompareIC : public IC {
   static Code* GetRawUninitialized(Isolate* isolate, Token::Value op,
                                    bool strong);
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   static void Clear(Isolate* isolate, Address address, Code* target,
                     Address constant_pool);
-#else
-  static void Clear(Isolate* isolate, Address address, Code* target,
-                    ConstantPoolArray* constant_pool);
-#endif
 
   Token::Value op_;
 
@@ -751,12 +701,7 @@ class CompareNilIC : public IC {
 
   static Handle<Code> GetUninitialized();
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   static void Clear(Address address, Code* target, Address constant_pool);
-#else
-  static void Clear(Address address, Code* target,
-                    ConstantPoolArray* constant_pool);
-#endif
 
   static Handle<Object> DoCompareNilSlow(Isolate* isolate, NilValue nil,
                                          Handle<Object> object);

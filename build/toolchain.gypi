@@ -300,7 +300,6 @@
           'V8_TARGET_ARCH_PPC',
           'V8_PPC_TAGGING_OPT', # optimization pending contribution
           'V8_PPC_SIMULATOR', # feature pending contribution
-          'V8_PPC_CONSTANT_POOL_OPT', # feature pending contribution
           'V8_PPC_CACHE_LINE_SIZE_OPT', # feature pending contribution
         ],
         'conditions': [

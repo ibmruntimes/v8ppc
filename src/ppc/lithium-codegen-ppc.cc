@@ -50,20 +50,12 @@ bool LCodeGen::GenerateCode() {
   // the frame (that is done in GeneratePrologue).
   FrameScope frame_scope(masm_, StackFrame::NONE);
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   bool rc = GeneratePrologue() && GenerateBody() && GenerateDeferredCode() &&
             GenerateJumpTable() && GenerateSafepointTable();
-#ifdef DEBUG
-  if (!rc) {
-    // Avoid DCHECK(!is_linked()) failure in ~Label()
-    masm()->EmitConstantPool();
+  if (FLAG_enable_embedded_constant_pool && !rc) {
+    masm()->AbortConstantPoolBuilding();
   }
-#endif
   return rc;
-#else
-  return GeneratePrologue() && GenerateBody() && GenerateDeferredCode() &&
-         GenerateJumpTable() && GenerateSafepointTable();
-#endif
 }
 
 
@@ -386,10 +378,6 @@ bool LCodeGen::GenerateJumpTable() {
     __ Jump(ip);
   }
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
-  masm()->EmitConstantPool();
-
-#endif
   // The deoptimization jump table is the last part of the instruction
   // sequence. Mark the generated code as done unless we bailed out.
   if (!is_aborted()) status_ = DONE;

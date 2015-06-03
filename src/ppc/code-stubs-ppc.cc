@@ -111,11 +111,7 @@ void HydrogenCodeStub::GenerateLightweightMiss(MacroAssembler* masm,
   int param_count = descriptor.GetEnvironmentParameterCount();
   {
     // Call the runtime system in a fresh internal frame.
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
-#else
-    FrameScope scope(masm, StackFrame::INTERNAL);
-#endif
     DCHECK(param_count == 0 ||
            r3.is(descriptor.GetEnvironmentParameterRegister(param_count - 1)));
     // Push arguments
@@ -1186,19 +1182,15 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   __ bind(&skip);
 
   // Compute the handler entry address and jump to it.
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   ConstantPoolUnavailableScope constant_pool_unavailable(masm);
-#endif
   __ mov(r4, Operand(pending_handler_code_address));
   __ LoadP(r4, MemOperand(r4));
   __ mov(r5, Operand(pending_handler_offset_address));
   __ LoadP(r5, MemOperand(r5));
   __ addi(r4, r4, Operand(Code::kHeaderSize - kHeapObjectTag));  // Code start
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   if (FLAG_enable_embedded_constant_pool) {
-    __ LoadTargetConstantPoolPointerRegister(r4);
+    __ LoadConstantPoolPointerRegisterFromCodeTargetAddress(r4);
   }
-#endif
   __ add(ip, r4, r5);
   __ Jump(ip);
 }
@@ -1240,12 +1232,10 @@ void JSEntryStub::Generate(MacroAssembler* masm) {
   // r7: argv
   __ li(r0, Operand(-1));  // Push a bad frame pointer to fail if it is used.
   __ push(r0);
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   if (FLAG_enable_embedded_constant_pool) {
     __ li(kConstantPoolRegister, Operand::Zero());
     __ push(kConstantPoolRegister);
   }
-#endif
   int marker = type();
   __ LoadSmiLiteral(r0, Smi::FromInt(marker));
   __ push(r0);
@@ -1560,11 +1550,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
     __ InvokeBuiltin(Builtins::INSTANCE_OF, JUMP_FUNCTION);
   } else {
     {
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
       FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
-#else
-      FrameScope scope(masm, StackFrame::INTERNAL);
-#endif
       __ Push(r3, r4);
       __ InvokeBuiltin(Builtins::INSTANCE_OF, CALL_FUNCTION);
     }
@@ -2575,11 +2561,7 @@ static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub) {
   // r5 : Feedback vector
   // r6 : slot in feedback vector (Smi)
   // r4 : the function to call
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
-#else
-  FrameScope scope(masm, StackFrame::INTERNAL);
-#endif
 
   // Number-of-arguments register must be smi-tagged to call out.
   __ SmiTag(r3);
@@ -2751,11 +2733,7 @@ static void EmitSlowCase(MacroAssembler* masm, int argc, Label* non_function) {
 static void EmitWrapCase(MacroAssembler* masm, int argc, Label* cont) {
   // Wrap the receiver and patch it back onto the stack.
   {
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     FrameAndConstantPoolScope frame_scope(masm, StackFrame::INTERNAL);
-#else
-    FrameScope frame_scope(masm, StackFrame::INTERNAL);
-#endif
     __ Push(r4, r6);
     __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
     __ pop(r4);
@@ -3073,11 +3051,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
   // r6 - slot
   // r4 - function
   {
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
-#else
-    FrameScope scope(masm, StackFrame::INTERNAL);
-#endif
     CreateWeakCellStub create_stub(masm->isolate());
     __ Push(r4);
     __ CallStub(&create_stub);
@@ -3105,11 +3079,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
 
 
 void CallICStub::GenerateMiss(MacroAssembler* masm) {
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
-#else
-  FrameScope scope(masm, StackFrame::INTERNAL);
-#endif
 
   // Push the function and feedback info.
   __ Push(r4, r5, r6);
@@ -4078,11 +4048,7 @@ void CompareICStub::GenerateMiss(MacroAssembler* masm) {
     ExternalReference miss =
         ExternalReference(IC_Utility(IC::kCompareIC_Miss), isolate());
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
     FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
-#else
-    FrameScope scope(masm, StackFrame::INTERNAL);
-#endif
     __ Push(r4, r3);
     __ Push(r4, r3);
     __ LoadSmiLiteral(r0, Smi::FromInt(op()));

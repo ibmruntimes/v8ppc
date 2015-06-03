@@ -74,10 +74,6 @@ namespace internal {
 #endif
 #endif
 
-// Determine whether the architecture uses an out-of-line constant pool.
-#define V8_OOL_CONSTANT_POOL 0
-
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
 // Determine whether the architecture uses an embedded constant pool
 // (contiguous constant pool embedded in code object).
 #if V8_TARGET_ARCH_PPC
@@ -86,7 +82,6 @@ namespace internal {
 #define V8_EMBEDDED_CONSTANT_POOL 0
 #endif
 
-#endif
 #ifdef V8_TARGET_ARCH_ARM
 // Set stack limit lower for ARM than for other architectures because
 // stack allocating MacroAssembler takes 120K bytes.
@@ -505,7 +500,6 @@ enum ParseRestriction {
   ONLY_SINGLE_FUNCTION_LITERAL  // Only a single FunctionLiteral expression.
 };
 
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
 // A CodeDesc describes a buffer holding instructions and relocation
 // information. The instructions start at the beginning of the buffer
 // and grow forward, the relocation information starts at the end of
@@ -521,30 +515,13 @@ enum ParseRestriction {
 //  ^
 //  |
 //  buffer
-#else
-// A CodeDesc describes a buffer holding instructions and relocation
-// information. The instructions start at the beginning of the buffer
-// and grow forward, the relocation information starts at the end of
-// the buffer and grows backward.
-//
-//  |<--------------- buffer_size ---------------->|
-//  |<-- instr_size -->|        |<-- reloc_size -->|
-//  +==================+========+==================+
-//  |   instructions   |  free  |    reloc info    |
-//  +==================+========+==================+
-//  ^
-//  |
-//  buffer
-#endif
 
 struct CodeDesc {
   byte* buffer;
   int buffer_size;
   int instr_size;
   int reloc_size;
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
   int constant_pool_size;
-#endif
   Assembler* origin;
 };
 
