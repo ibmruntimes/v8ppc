@@ -59,6 +59,7 @@ TEST(HeapMaps) {
   Heap* heap = CcTest::heap();
   CheckMap(heap->meta_map(), MAP_TYPE, Map::kSize);
   CheckMap(heap->heap_number_map(), HEAP_NUMBER_TYPE, HeapNumber::kSize);
+  CheckMap(heap->float32x4_map(), FLOAT32X4_TYPE, Float32x4::kSize);
   CheckMap(heap->fixed_array_map(), FIXED_ARRAY_TYPE, kVariableSizeSentinel);
   CheckMap(heap->string_map(), STRING_TYPE, kVariableSizeSentinel);
 }
@@ -210,6 +211,60 @@ TEST(HeapObjects) {
   CheckNumber(isolate, 1.1, "1.1");
 
   CheckFindCodeObject(isolate);
+}
+
+
+template <typename T, typename LANE_TYPE, int LANES>
+static void CheckSimdLanes(T* value) {
+  // Get the original values, and check that all lanes can be set to new values
+  // without disturbing the other lanes.
+  LANE_TYPE lane_values[LANES];
+  for (int i = 0; i < LANES; i++) {
+    lane_values[i] = value->get_lane(i);
+  }
+  for (int i = 0; i < LANES; i++) {
+    lane_values[i] += 1;
+    value->set_lane(i, lane_values[i]);
+    for (int j = 0; j < LANES; j++) {
+      CHECK_EQ(lane_values[j], value->get_lane(j));
+    }
+  }
+}
+
+
+TEST(SimdObjects) {
+  CcTest::InitializeVM();
+  Isolate* isolate = CcTest::i_isolate();
+  Factory* factory = isolate->factory();
+
+  HandleScope sc(isolate);
+
+  Handle<Object> value = factory->NewFloat32x4(1, 2, 3, 4);
+  CHECK(value->IsFloat32x4());
+  CHECK(value->BooleanValue());  // SIMD values map to true.
+
+  Float32x4* float32x4 = *Handle<Float32x4>::cast(value);
+  CheckSimdLanes<Float32x4, float, 4>(float32x4);
+
+  // Check ToString for SIMD values.
+  // TODO(bbudge): Switch to Check* style function to test ToString().
+  value = factory->NewFloat32x4(1, 2, 3, 4);
+  float32x4 = *Handle<Float32x4>::cast(value);
+  std::ostringstream os;
+  float32x4->Float32x4Print(os);
+  CHECK_EQ("1, 2, 3, 4", os.str());
+
+  // Check unusual lane values.
+  float32x4->set_lane(0, 0);
+  CHECK_EQ(0, float32x4->get_lane(0));
+  float32x4->set_lane(1, -0.0);
+  CHECK_EQ(-0.0, float32x4->get_lane(1));
+  float quiet_NaN = std::numeric_limits<float>::quiet_NaN();
+  float signaling_NaN = std::numeric_limits<float>::signaling_NaN();
+  float32x4->set_lane(2, quiet_NaN);
+  CHECK(std::isnan(float32x4->get_lane(2)));
+  float32x4->set_lane(3, signaling_NaN);
+  CHECK(std::isnan(float32x4->get_lane(3)));
 }
 
 
@@ -1784,14 +1839,18 @@ TEST(TestSizeOfObjects) {
 
 
 TEST(TestAlignmentCalculations) {
-  // Maximum fill amounts should be consistent.
+  // Maximum fill amounts are consistent.
   int maximum_double_misalignment = kDoubleSize - kPointerSize;
+  int maximum_simd128_misalignment = kSimd128Size - kPointerSize;
   int max_word_fill = Heap::GetMaximumFillToAlign(kWordAligned);
   CHECK_EQ(0, max_word_fill);
   int max_double_fill = Heap::GetMaximumFillToAlign(kDoubleAligned);
   CHECK_EQ(maximum_double_misalignment, max_double_fill);
   int max_double_unaligned_fill = Heap::GetMaximumFillToAlign(kDoubleUnaligned);
   CHECK_EQ(maximum_double_misalignment, max_double_unaligned_fill);
+  int max_simd128_unaligned_fill =
+      Heap::GetMaximumFillToAlign(kSimd128Unaligned);
+  CHECK_EQ(maximum_simd128_misalignment, max_simd128_unaligned_fill);
 
   Address base = reinterpret_cast<Address>(NULL);
   int fill = 0;
@@ -1813,6 +1872,16 @@ TEST(TestAlignmentCalculations) {
   CHECK_EQ(maximum_double_misalignment, fill);
   fill = Heap::GetFillToAlign(base + kPointerSize, kDoubleUnaligned);
   CHECK_EQ(0, fill);
+
+  // 128 bit SIMD types have 2 or 4 possible alignments, depending on platform.
+  fill = Heap::GetFillToAlign(base, kSimd128Unaligned);
+  CHECK_EQ((3 * kPointerSize) & kSimd128AlignmentMask, fill);
+  fill = Heap::GetFillToAlign(base + kPointerSize, kSimd128Unaligned);
+  CHECK_EQ((2 * kPointerSize) & kSimd128AlignmentMask, fill);
+  fill = Heap::GetFillToAlign(base + 2 * kPointerSize, kSimd128Unaligned);
+  CHECK_EQ(kPointerSize, fill);
+  fill = Heap::GetFillToAlign(base + 3 * kPointerSize, kSimd128Unaligned);
+  CHECK_EQ(0, fill);
 }
 
 
@@ -1828,65 +1897,94 @@ static HeapObject* NewSpaceAllocateAligned(int size,
 }
 
 
-TEST(TestAlignedAllocation) {
-  // Double misalignment is 4 on 32-bit platforms, 0 on 64-bit ones.
-  const intptr_t double_misalignment = kDoubleSize - kPointerSize;
-  if (double_misalignment) {
-    Address* top_addr = CcTest::heap()->new_space()->allocation_top_address();
-    // Align the top for the first test.
-    if (!IsAddressAligned(*top_addr, kDoubleAlignment))
-      NewSpaceAllocateAligned(kPointerSize, kWordAligned);
-
-    // Allocate a pointer sized object that must be double aligned.
-    Address start = *top_addr;
-    HeapObject* obj1 = NewSpaceAllocateAligned(kPointerSize, kDoubleAligned);
-    CHECK(IsAddressAligned(obj1->address(), kDoubleAlignment));
-    // Only the object was allocated.
-    CHECK_EQ(kPointerSize, *top_addr - start);
-    // top is now misaligned.
-    // Allocate a second pointer sized object that must be double aligned.
-    HeapObject* obj2 = NewSpaceAllocateAligned(kPointerSize, kDoubleAligned);
-    CHECK(IsAddressAligned(obj2->address(), kDoubleAlignment));
-    // There should be a filler object in between the two objects.
-    CHECK(HeapObject::FromAddress(start + kPointerSize)->IsFiller());
-    // Two objects and a filler object were allocated.
-    CHECK_EQ(2 * kPointerSize + double_misalignment, *top_addr - start);
-
-    // Similarly for kDoubleUnaligned. top is misaligned.
-    start = *top_addr;
-    obj1 = NewSpaceAllocateAligned(kPointerSize, kDoubleUnaligned);
-    CHECK(IsAddressAligned(obj1->address(), kDoubleAlignment, kPointerSize));
-    CHECK_EQ(kPointerSize, *top_addr - start);
-    obj2 = NewSpaceAllocateAligned(kPointerSize, kDoubleUnaligned);
-    CHECK(IsAddressAligned(obj2->address(), kDoubleAlignment, kPointerSize));
-    CHECK(HeapObject::FromAddress(start + kPointerSize)->IsFiller());
-    CHECK_EQ(2 * kPointerSize + double_misalignment, *top_addr - start);
+// Get new space allocation into the desired alignment.
+static Address AlignNewSpace(AllocationAlignment alignment, int offset) {
+  Address* top_addr = CcTest::heap()->new_space()->allocation_top_address();
+  int fill = Heap::GetFillToAlign(*top_addr, alignment);
+  if (fill) {
+    NewSpaceAllocateAligned(fill + offset, kWordAligned);
   }
+  return *top_addr;
 }
 
 
-// Force allocation to happen from the free list, at a desired misalignment.
-static Address SetUpFreeListAllocation(int misalignment) {
-  Heap* heap = CcTest::heap();
-  OldSpace* old_space = heap->old_space();
-  Address top = old_space->top();
-  // First, allocate enough filler to get the linear area into the desired
-  // misalignment.
-  const intptr_t maximum_misalignment = 2 * kPointerSize;
-  const intptr_t maximum_misalignment_mask = maximum_misalignment - 1;
-  intptr_t top_alignment = OffsetFrom(top) & maximum_misalignment_mask;
-  int filler_size = misalignment - static_cast<int>(top_alignment);
-  if (filler_size < 0) filler_size += maximum_misalignment;
-  if (filler_size) {
-    // Create the filler object.
-    AllocationResult allocation = old_space->AllocateRawUnaligned(filler_size);
-    HeapObject* obj = NULL;
-    allocation.To(&obj);
-    heap->CreateFillerObjectAt(obj->address(), filler_size);
+TEST(TestAlignedAllocation) {
+  // Double misalignment is 4 on 32-bit platforms, 0 on 64-bit ones.
+  const intptr_t double_misalignment = kDoubleSize - kPointerSize;
+  Address* top_addr = CcTest::heap()->new_space()->allocation_top_address();
+  Address start;
+  HeapObject* obj;
+  HeapObject* filler;
+  if (double_misalignment) {
+    // Allocate a pointer sized object that must be double aligned at an
+    // aligned address.
+    start = AlignNewSpace(kDoubleAligned, 0);
+    obj = NewSpaceAllocateAligned(kPointerSize, kDoubleAligned);
+    CHECK(IsAddressAligned(obj->address(), kDoubleAlignment));
+    // There is no filler.
+    CHECK_EQ(kPointerSize, *top_addr - start);
+
+    // Allocate a second pointer sized object that must be double aligned at an
+    // unaligned address.
+    start = AlignNewSpace(kDoubleAligned, kPointerSize);
+    obj = NewSpaceAllocateAligned(kPointerSize, kDoubleAligned);
+    CHECK(IsAddressAligned(obj->address(), kDoubleAlignment));
+    // There is a filler object before the object.
+    filler = HeapObject::FromAddress(start);
+    CHECK(obj != filler && filler->IsFiller() &&
+          filler->Size() == kPointerSize);
+    CHECK_EQ(kPointerSize + double_misalignment, *top_addr - start);
+
+    // Similarly for kDoubleUnaligned.
+    start = AlignNewSpace(kDoubleUnaligned, 0);
+    obj = NewSpaceAllocateAligned(kPointerSize, kDoubleUnaligned);
+    CHECK(IsAddressAligned(obj->address(), kDoubleAlignment, kPointerSize));
+    CHECK_EQ(kPointerSize, *top_addr - start);
+    start = AlignNewSpace(kDoubleUnaligned, kPointerSize);
+    obj = NewSpaceAllocateAligned(kPointerSize, kDoubleUnaligned);
+    CHECK(IsAddressAligned(obj->address(), kDoubleAlignment, kPointerSize));
+    // There is a filler object before the object.
+    filler = HeapObject::FromAddress(start);
+    CHECK(obj != filler && filler->IsFiller() &&
+          filler->Size() == kPointerSize);
+    CHECK_EQ(kPointerSize + double_misalignment, *top_addr - start);
   }
-  top = old_space->top();
-  old_space->EmptyAllocationInfo();
-  return top;
+
+  // Now test SIMD alignment. There are 2 or 4 possible alignments, depending
+  // on platform.
+  start = AlignNewSpace(kSimd128Unaligned, 0);
+  obj = NewSpaceAllocateAligned(kPointerSize, kSimd128Unaligned);
+  CHECK(IsAddressAligned(obj->address(), kSimd128Alignment, kPointerSize));
+  // There is no filler.
+  CHECK_EQ(kPointerSize, *top_addr - start);
+  start = AlignNewSpace(kSimd128Unaligned, kPointerSize);
+  obj = NewSpaceAllocateAligned(kPointerSize, kSimd128Unaligned);
+  CHECK(IsAddressAligned(obj->address(), kSimd128Alignment, kPointerSize));
+  // There is a filler object before the object.
+  filler = HeapObject::FromAddress(start);
+  CHECK(obj != filler && filler->IsFiller() &&
+        filler->Size() == kSimd128Size - kPointerSize);
+  CHECK_EQ(kPointerSize + kSimd128Size - kPointerSize, *top_addr - start);
+
+  if (double_misalignment) {
+    // Test the 2 other alignments possible on 32 bit platforms.
+    start = AlignNewSpace(kSimd128Unaligned, 2 * kPointerSize);
+    obj = NewSpaceAllocateAligned(kPointerSize, kSimd128Unaligned);
+    CHECK(IsAddressAligned(obj->address(), kSimd128Alignment, kPointerSize));
+    // There is a filler object before the object.
+    filler = HeapObject::FromAddress(start);
+    CHECK(obj != filler && filler->IsFiller() &&
+          filler->Size() == 2 * kPointerSize);
+    CHECK_EQ(kPointerSize + 2 * kPointerSize, *top_addr - start);
+    start = AlignNewSpace(kSimd128Unaligned, 3 * kPointerSize);
+    obj = NewSpaceAllocateAligned(kPointerSize, kSimd128Unaligned);
+    CHECK(IsAddressAligned(obj->address(), kSimd128Alignment, kPointerSize));
+    // There is a filler object before the object.
+    filler = HeapObject::FromAddress(start);
+    CHECK(obj != filler && filler->IsFiller() &&
+          filler->Size() == kPointerSize);
+    CHECK_EQ(kPointerSize + kPointerSize, *top_addr - start);
+  }
 }
 
 
@@ -1902,38 +2000,105 @@ static HeapObject* OldSpaceAllocateAligned(int size,
 }
 
 
+// Get old space allocation into the desired alignment.
+static Address AlignOldSpace(AllocationAlignment alignment, int offset) {
+  Address* top_addr = CcTest::heap()->old_space()->allocation_top_address();
+  int fill = Heap::GetFillToAlign(*top_addr, alignment);
+  int allocation = fill + offset;
+  if (allocation) {
+    OldSpaceAllocateAligned(allocation, kWordAligned);
+  }
+  Address top = *top_addr;
+  // Now force the remaining allocation onto the free list.
+  CcTest::heap()->old_space()->EmptyAllocationInfo();
+  return top;
+}
+
+
 // Test the case where allocation must be done from the free list, so filler
 // may precede or follow the object.
 TEST(TestAlignedOverAllocation) {
   // Double misalignment is 4 on 32-bit platforms, 0 on 64-bit ones.
   const intptr_t double_misalignment = kDoubleSize - kPointerSize;
+  Address start;
+  HeapObject* obj;
+  HeapObject* filler1;
+  HeapObject* filler2;
   if (double_misalignment) {
-    Address start = SetUpFreeListAllocation(0);
-    HeapObject* obj1 = OldSpaceAllocateAligned(kPointerSize, kDoubleAligned);
-    // The object should be aligned, and a filler object should be created.
-    CHECK(IsAddressAligned(obj1->address(), kDoubleAlignment));
-    CHECK(HeapObject::FromAddress(start)->IsFiller() &&
-          HeapObject::FromAddress(start + kPointerSize)->IsFiller());
+    start = AlignOldSpace(kDoubleAligned, 0);
+    obj = OldSpaceAllocateAligned(kPointerSize, kDoubleAligned);
+    // The object is aligned, and a filler object is created after.
+    CHECK(IsAddressAligned(obj->address(), kDoubleAlignment));
+    filler1 = HeapObject::FromAddress(start + kPointerSize);
+    CHECK(obj != filler1 && filler1->IsFiller() &&
+          filler1->Size() == kPointerSize);
     // Try the opposite alignment case.
-    start = SetUpFreeListAllocation(kPointerSize);
-    HeapObject* obj2 = OldSpaceAllocateAligned(kPointerSize, kDoubleAligned);
-    CHECK(IsAddressAligned(obj2->address(), kDoubleAlignment));
-    CHECK(HeapObject::FromAddress(start)->IsFiller() &&
-          HeapObject::FromAddress(start + kPointerSize)->IsFiller());
+    start = AlignOldSpace(kDoubleAligned, kPointerSize);
+    obj = OldSpaceAllocateAligned(kPointerSize, kDoubleAligned);
+    CHECK(IsAddressAligned(obj->address(), kDoubleAlignment));
+    filler1 = HeapObject::FromAddress(start);
+    CHECK(obj != filler1);
+    CHECK(filler1->IsFiller());
+    CHECK(filler1->Size() == kPointerSize);
+    CHECK(obj != filler1 && filler1->IsFiller() &&
+          filler1->Size() == kPointerSize);
 
     // Similarly for kDoubleUnaligned.
-    start = SetUpFreeListAllocation(0);
-    obj1 = OldSpaceAllocateAligned(kPointerSize, kDoubleUnaligned);
-    // The object should be aligned, and a filler object should be created.
-    CHECK(IsAddressAligned(obj1->address(), kDoubleAlignment, kPointerSize));
-    CHECK(HeapObject::FromAddress(start)->IsFiller() &&
-          HeapObject::FromAddress(start + kPointerSize)->IsFiller());
+    start = AlignOldSpace(kDoubleUnaligned, 0);
+    obj = OldSpaceAllocateAligned(kPointerSize, kDoubleUnaligned);
+    // The object is aligned, and a filler object is created after.
+    CHECK(IsAddressAligned(obj->address(), kDoubleAlignment, kPointerSize));
+    filler1 = HeapObject::FromAddress(start + kPointerSize);
+    CHECK(obj != filler1 && filler1->IsFiller() &&
+          filler1->Size() == kPointerSize);
     // Try the opposite alignment case.
-    start = SetUpFreeListAllocation(kPointerSize);
-    obj2 = OldSpaceAllocateAligned(kPointerSize, kDoubleUnaligned);
-    CHECK(IsAddressAligned(obj2->address(), kDoubleAlignment, kPointerSize));
-    CHECK(HeapObject::FromAddress(start)->IsFiller() &&
-          HeapObject::FromAddress(start + kPointerSize)->IsFiller());
+    start = AlignOldSpace(kDoubleUnaligned, kPointerSize);
+    obj = OldSpaceAllocateAligned(kPointerSize, kDoubleUnaligned);
+    CHECK(IsAddressAligned(obj->address(), kDoubleAlignment, kPointerSize));
+    filler1 = HeapObject::FromAddress(start);
+    CHECK(obj != filler1 && filler1->IsFiller() &&
+          filler1->Size() == kPointerSize);
+  }
+
+  // Now test SIMD alignment. There are 2 or 4 possible alignments, depending
+  // on platform.
+  start = AlignOldSpace(kSimd128Unaligned, 0);
+  obj = OldSpaceAllocateAligned(kPointerSize, kSimd128Unaligned);
+  CHECK(IsAddressAligned(obj->address(), kSimd128Alignment, kPointerSize));
+  // There is a filler object after the object.
+  filler1 = HeapObject::FromAddress(start + kPointerSize);
+  CHECK(obj != filler1 && filler1->IsFiller() &&
+        filler1->Size() == kSimd128Size - kPointerSize);
+  start = AlignOldSpace(kSimd128Unaligned, kPointerSize);
+  obj = OldSpaceAllocateAligned(kPointerSize, kSimd128Unaligned);
+  CHECK(IsAddressAligned(obj->address(), kSimd128Alignment, kPointerSize));
+  // There is a filler object before the object.
+  filler1 = HeapObject::FromAddress(start);
+  CHECK(obj != filler1 && filler1->IsFiller() &&
+        filler1->Size() == kSimd128Size - kPointerSize);
+
+  if (double_misalignment) {
+    // Test the 2 other alignments possible on 32 bit platforms.
+    start = AlignOldSpace(kSimd128Unaligned, 2 * kPointerSize);
+    obj = OldSpaceAllocateAligned(kPointerSize, kSimd128Unaligned);
+    CHECK(IsAddressAligned(obj->address(), kSimd128Alignment, kPointerSize));
+    // There are filler objects before and after the object.
+    filler1 = HeapObject::FromAddress(start);
+    CHECK(obj != filler1 && filler1->IsFiller() &&
+          filler1->Size() == 2 * kPointerSize);
+    filler2 = HeapObject::FromAddress(start + 3 * kPointerSize);
+    CHECK(obj != filler2 && filler2->IsFiller() &&
+          filler2->Size() == kPointerSize);
+    start = AlignOldSpace(kSimd128Unaligned, 3 * kPointerSize);
+    obj = OldSpaceAllocateAligned(kPointerSize, kSimd128Unaligned);
+    CHECK(IsAddressAligned(obj->address(), kSimd128Alignment, kPointerSize));
+    // There are filler objects before and after the object.
+    filler1 = HeapObject::FromAddress(start);
+    CHECK(obj != filler1 && filler1->IsFiller() &&
+          filler1->Size() == kPointerSize);
+    filler2 = HeapObject::FromAddress(start + 2 * kPointerSize);
+    CHECK(obj != filler2 && filler2->IsFiller() &&
+          filler2->Size() == 2 * kPointerSize);
   }
 }
 
@@ -5440,7 +5605,7 @@ static void TestRightTrimFixedTypedArray(i::ExternalArrayType type,
   Heap* heap = isolate->heap();
 
   Handle<FixedTypedArrayBase> array =
-      factory->NewFixedTypedArray(initial_length, type);
+      factory->NewFixedTypedArray(initial_length, type, true);
   int old_size = array->size();
   heap->RightTrimFixedArray<Heap::CONCURRENT_TO_SWEEPER>(*array,
                                                          elements_to_trim);
@@ -5621,7 +5786,7 @@ TEST(NewSpaceAllocationCounter) {
   CHECK_EQ(kSize, counter2 - counter1);
   heap->CollectGarbage(NEW_SPACE);
   size_t counter3 = heap->NewSpaceAllocationCounter();
-  CHECK_EQ(0, counter3 - counter2);
+  CHECK_EQ(0U, counter3 - counter2);
   // Test counter overflow.
   size_t max_counter = -1;
   heap->set_new_space_allocation_counter(max_counter - 10 * kSize);

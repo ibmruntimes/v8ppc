@@ -170,6 +170,7 @@ bool Object::IsHeapObject() const {
 
 TYPE_CHECKER(HeapNumber, HEAP_NUMBER_TYPE)
 TYPE_CHECKER(MutableHeapNumber, MUTABLE_HEAP_NUMBER_TYPE)
+TYPE_CHECKER(Float32x4, FLOAT32X4_TYPE)
 TYPE_CHECKER(Symbol, SYMBOL_TYPE)
 
 
@@ -1320,6 +1321,12 @@ MaybeHandle<Object> JSProxy::SetElementWithHandler(Handle<JSProxy> proxy,
 #define WRITE_INT32_FIELD(p, offset, value) \
   (*reinterpret_cast<int32_t*>(FIELD_ADDR(p, offset)) = value)
 
+#define READ_FLOAT_FIELD(p, offset) \
+  (*reinterpret_cast<const float*>(FIELD_ADDR_CONST(p, offset)))
+
+#define WRITE_FLOAT_FIELD(p, offset, value) \
+  (*reinterpret_cast<float*>(FIELD_ADDR(p, offset)) = value)
+
 #define READ_UINT64_FIELD(p, offset) \
   (*reinterpret_cast<const uint64_t*>(FIELD_ADDR_CONST(p, offset)))
 
@@ -1573,6 +1580,30 @@ int HeapNumber::get_exponent() {
 
 int HeapNumber::get_sign() {
   return READ_INT_FIELD(this, kExponentOffset) & kSignMask;
+}
+
+
+float Float32x4::get_lane(int lane) const {
+  DCHECK(lane < 4 && lane >= 0);
+#if defined(V8_TARGET_LITTLE_ENDIAN)
+  return READ_FLOAT_FIELD(this, kValueOffset + lane * kFloatSize);
+#elif defined(V8_TARGET_BIG_ENDIAN)
+  return READ_FLOAT_FIELD(this, kValueOffset + (3 - lane) * kFloatSize);
+#else
+#error Unknown byte ordering
+#endif
+}
+
+
+void Float32x4::set_lane(int lane, float value) {
+  DCHECK(lane < 4 && lane >= 0);
+#if defined(V8_TARGET_LITTLE_ENDIAN)
+  WRITE_FLOAT_FIELD(this, kValueOffset + lane * kFloatSize, value);
+#elif defined(V8_TARGET_BIG_ENDIAN)
+  WRITE_FLOAT_FIELD(this, kValueOffset + (3 - lane) * kFloatSize, value);
+#else
+#error Unknown byte ordering
+#endif
 }
 
 
@@ -2433,6 +2464,7 @@ AllocationAlignment HeapObject::RequiredAlignment() {
     return kDoubleAligned;
   }
   if (IsHeapNumber()) return kDoubleUnaligned;
+  if (IsFloat32x4()) return kSimd128Unaligned;
 #endif  // V8_HOST_ARCH_32_BIT
   return kWordAligned;
 }
@@ -2973,6 +3005,7 @@ CAST_ACCESSOR(FixedArray)
 CAST_ACCESSOR(FixedArrayBase)
 CAST_ACCESSOR(FixedDoubleArray)
 CAST_ACCESSOR(FixedTypedArrayBase)
+CAST_ACCESSOR(Float32x4)
 CAST_ACCESSOR(Foreign)
 CAST_ACCESSOR(GlobalDictionary)
 CAST_ACCESSOR(GlobalObject)

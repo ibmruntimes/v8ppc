@@ -197,17 +197,17 @@ void FullCodeGenerator::Generate() {
   bool function_in_register = true;
 
   // Possibly allocate a local context.
-  int heap_slots = info->scope()->num_heap_slots() - Context::MIN_CONTEXT_SLOTS;
-  if (heap_slots > 0) {
+  if (info->scope()->num_heap_slots() > 0) {
     Comment cmnt(masm_, "[ Allocate context");
     // Argument to NewContext is the function, which is still in a1.
     bool need_write_barrier = true;
+    int slots = info->scope()->num_heap_slots() - Context::MIN_CONTEXT_SLOTS;
     if (info->scope()->is_script_scope()) {
       __ push(a1);
       __ Push(info->scope()->GetScopeInfo(info->isolate()));
       __ CallRuntime(Runtime::kNewScriptContext, 2);
-    } else if (heap_slots <= FastNewContextStub::kMaximumSlots) {
-      FastNewContextStub stub(isolate(), heap_slots);
+    } else if (slots <= FastNewContextStub::kMaximumSlots) {
+      FastNewContextStub stub(isolate(), slots);
       __ CallStub(&stub);
       // Result of FastNewContextStub is always in new space.
       need_write_barrier = false;
@@ -267,7 +267,7 @@ void FullCodeGenerator::Generate() {
     // new.target is parameter -2.
     int offset = 2 * kPointerSize +
                  (info_->scope()->num_parameters() + 1) * kPointerSize;
-    __ lw(v0, MemOperand(fp, offset));
+    __ ld(v0, MemOperand(fp, offset));
     SetVar(new_target_var, v0, a2, a3);
   }
 
@@ -3897,6 +3897,28 @@ void FullCodeGenerator::EmitValueOf(CallRuntime* expr) {
 }
 
 
+void FullCodeGenerator::EmitThrowIfNotADate(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK_EQ(1, args->length());
+
+  VisitForAccumulatorValue(args->at(0));  // Load the object.
+
+  Label done, not_date_object;
+  Register object = v0;
+  Register result = v0;
+  Register scratch1 = a1;
+
+  __ JumpIfSmi(object, &not_date_object);
+  __ GetObjectType(object, scratch1, scratch1);
+  __ Branch(&done, eq, scratch1, Operand(JS_DATE_TYPE));
+  __ bind(&not_date_object);
+  __ CallRuntime(Runtime::kThrowNotDateError, 0);
+
+  __ bind(&done);
+  context()->Plug(result);
+}
+
+
 void FullCodeGenerator::EmitDateField(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 2);
@@ -3905,20 +3927,15 @@ void FullCodeGenerator::EmitDateField(CallRuntime* expr) {
 
   VisitForAccumulatorValue(args->at(0));  // Load the object.
 
-  Label runtime, done, not_date_object;
   Register object = v0;
   Register result = v0;
   Register scratch0 = t1;
   Register scratch1 = a1;
 
-  __ JumpIfSmi(object, &not_date_object);
-  __ GetObjectType(object, scratch1, scratch1);
-  __ Branch(&not_date_object, ne, scratch1, Operand(JS_DATE_TYPE));
-
   if (index->value() == 0) {
     __ ld(result, FieldMemOperand(object, JSDate::kValueOffset));
-    __ jmp(&done);
   } else {
+    Label runtime, done;
     if (index->value() < JSDate::kFirstUncachedField) {
       ExternalReference stamp = ExternalReference::date_cache_stamp(isolate());
       __ li(scratch1, Operand(stamp));
@@ -3934,13 +3951,10 @@ void FullCodeGenerator::EmitDateField(CallRuntime* expr) {
     __ li(a1, Operand(index));
     __ Move(a0, object);
     __ CallCFunction(ExternalReference::get_date_field_function(isolate()), 2);
-    __ jmp(&done);
+    __ bind(&done);
   }
 
-  __ bind(&not_date_object);
-  __ CallRuntime(Runtime::kThrowNotDateError, 0);
-  __ bind(&done);
-  context()->Plug(v0);
+  context()->Plug(result);
 }
 
 

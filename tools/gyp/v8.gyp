@@ -364,6 +364,10 @@
       'include_dirs+': [
         '../..',
       ],
+      'defines': [
+        # TODO(jochen): Remove again after this is globally turned on.
+        'V8_IMMINENT_DEPRECATION_WARNINGS',
+      ],
       'sources': [  ### gcmole(all) ###
         '../../src/accessors.cc',
         '../../src/accessors.h',
@@ -829,6 +833,7 @@
         '../../src/runtime-profiler.cc',
         '../../src/runtime-profiler.h',
         '../../src/runtime/runtime-array.cc',
+        '../../src/runtime/runtime-atomics.cc',
         '../../src/runtime/runtime-classes.cc',
         '../../src/runtime/runtime-collections.cc',
         '../../src/runtime/runtime-compiler.cc',
@@ -1739,6 +1744,7 @@
           '../../src/messages.h',
           '../../src/proxy.js',
           '../../src/generator.js',
+          '../../src/harmony-atomics.js',
           '../../src/harmony-array.js',
           '../../src/harmony-array-includes.js',
           '../../src/harmony-tostring.js',

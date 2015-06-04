@@ -1599,8 +1599,6 @@ void Heap::Scavenge() {
 
   SelectScavengingVisitorsTable();
 
-  incremental_marking()->PrepareForScavenge();
-
   // Flip the semispaces.  After flipping, to space is empty, from space has
   // live objects.
   new_space_.Flip();
@@ -1995,6 +1993,8 @@ int Heap::GetMaximumFillToAlign(AllocationAlignment alignment) {
     case kDoubleAligned:
     case kDoubleUnaligned:
       return kDoubleSize - kPointerSize;
+    case kSimd128Unaligned:
+      return kSimd128Size - kPointerSize;
     default:
       UNREACHABLE();
   }
@@ -2008,6 +2008,10 @@ int Heap::GetFillToAlign(Address address, AllocationAlignment alignment) {
     return kPointerSize;
   if (alignment == kDoubleUnaligned && (offset & kDoubleAlignmentMask) == 0)
     return kDoubleSize - kPointerSize;  // No fill if double is always aligned.
+  if (alignment == kSimd128Unaligned) {
+    return (kSimd128Size - (static_cast<int>(offset) + kPointerSize)) &
+           kSimd128AlignmentMask;
+  }
   return 0;
 }
 
@@ -2716,6 +2720,7 @@ bool Heap::CreateInitialMaps() {
     ALLOCATE_MAP(HEAP_NUMBER_TYPE, HeapNumber::kSize, heap_number)
     ALLOCATE_MAP(MUTABLE_HEAP_NUMBER_TYPE, HeapNumber::kSize,
                  mutable_heap_number)
+    ALLOCATE_MAP(FLOAT32X4_TYPE, Float32x4::kSize, float32x4)
     ALLOCATE_MAP(SYMBOL_TYPE, Symbol::kSize, symbol)
     ALLOCATE_MAP(FOREIGN_TYPE, Foreign::kSize, foreign)
 
@@ -2861,6 +2866,32 @@ AllocationResult Heap::AllocateHeapNumber(double value, MutableMode mode,
   Map* map = mode == MUTABLE ? mutable_heap_number_map() : heap_number_map();
   HeapObject::cast(result)->set_map_no_write_barrier(map);
   HeapNumber::cast(result)->set_value(value);
+  return result;
+}
+
+
+AllocationResult Heap::AllocateFloat32x4(float w, float x, float y, float z,
+                                         PretenureFlag pretenure) {
+  // Statically ensure that it is safe to allocate SIMD values in paged
+  // spaces.
+  int size = Float32x4::kSize;
+  STATIC_ASSERT(Float32x4::kSize <= Page::kMaxRegularHeapObjectSize);
+
+  AllocationSpace space = SelectSpace(size, pretenure);
+
+  HeapObject* result;
+  {
+    AllocationResult allocation =
+        AllocateRaw(size, space, OLD_SPACE, kSimd128Unaligned);
+    if (!allocation.To(&result)) return allocation;
+  }
+
+  result->set_map_no_write_barrier(float32x4_map());
+  Float32x4* float32x4 = Float32x4::cast(result);
+  float32x4->set_lane(0, w);
+  float32x4->set_lane(1, x);
+  float32x4->set_lane(2, y);
+  float32x4->set_lane(3, z);
   return result;
 }
 
@@ -3709,6 +3740,7 @@ static void ForFixedTypedArray(ExternalArrayType array_type, int* element_size,
 
 AllocationResult Heap::AllocateFixedTypedArray(int length,
                                                ExternalArrayType array_type,
+                                               bool initialize,
                                                PretenureFlag pretenure) {
   int element_size;
   ElementsKind elements_kind;
@@ -3726,7 +3758,7 @@ AllocationResult Heap::AllocateFixedTypedArray(int length,
   object->set_map(MapForFixedTypedArray(array_type));
   FixedTypedArrayBase* elements = FixedTypedArrayBase::cast(object);
   elements->set_length(length);
-  memset(elements->DataPtr(), 0, elements->DataSize());
+  if (initialize) memset(elements->DataPtr(), 0, elements->DataSize());
   return elements;
 }
 
@@ -4270,7 +4302,7 @@ AllocationResult Heap::CopyAndTenureFixedCOWArray(FixedArray* src) {
 
 AllocationResult Heap::AllocateEmptyFixedTypedArray(
     ExternalArrayType array_type) {
-  return AllocateFixedTypedArray(0, array_type, TENURED);
+  return AllocateFixedTypedArray(0, array_type, false, TENURED);
 }
 
 

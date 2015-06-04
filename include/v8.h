@@ -1924,6 +1924,12 @@ class V8_EXPORT Value : public Data {
   bool IsFloat64Array() const;
 
   /**
+   * Returns true if this value is a SIMD Float32x4.
+   * This is an experimental feature.
+   */
+  bool IsFloat32x4() const;
+
+  /**
    * Returns true if this value is a DataView.
    * This is an experimental feature.
    */
@@ -2995,8 +3001,8 @@ class V8_EXPORT Map : public Object {
   size_t Size() const;
 
   /**
-   * Returns an array of [key, value] arrays representing the contents
-   * of this Map.
+   * Returns an array of length Size() * 2, where index N is the Nth key and
+   * index N + 1 is the Nth value.
    */
   Local<Array> AsArray() const;
 
@@ -3006,8 +3012,8 @@ class V8_EXPORT Map : public Object {
   static Local<Map> New(Isolate* isolate);
 
   /**
-   * Creates a new Map containing the elements of array, which must be comprised
-   * of [key, value] arrays.
+   * Creates a new Map containing the elements of array, which must be formatted
+   * in the same manner as the array returned from AsArray().
    * Guaranteed to be side-effect free if the array contains no holes.
    */
   static V8_WARN_UNUSED_RESULT MaybeLocal<Map> FromArray(Local<Context> context,
@@ -7039,10 +7045,10 @@ class Internals {
   static const int kNodeIsIndependentShift = 3;
   static const int kNodeIsPartiallyDependentShift = 4;
 
-  static const int kJSObjectType = 0xbd;
+  static const int kJSObjectType = 0xbe;
   static const int kFirstNonstringType = 0x80;
   static const int kOddballType = 0x83;
-  static const int kForeignType = 0x86;
+  static const int kForeignType = 0x87;
 
   static const int kUndefinedOddballKind = 5;
   static const int kNullOddballKind = 3;
@@ -7800,41 +7806,51 @@ template <class T> Value* Value::Cast(T* value) {
 
 
 Local<Boolean> Value::ToBoolean() const {
-  return ToBoolean(Isolate::GetCurrent());
+  return ToBoolean(Isolate::GetCurrent()->GetCurrentContext())
+      .FromMaybe(Local<Boolean>());
 }
 
 
 Local<Number> Value::ToNumber() const {
-  return ToNumber(Isolate::GetCurrent());
+  return ToNumber(Isolate::GetCurrent()->GetCurrentContext())
+      .FromMaybe(Local<Number>());
 }
 
 
 Local<String> Value::ToString() const {
-  return ToString(Isolate::GetCurrent());
+  return ToString(Isolate::GetCurrent()->GetCurrentContext())
+      .FromMaybe(Local<String>());
 }
 
 
 Local<String> Value::ToDetailString() const {
-  return ToDetailString(Isolate::GetCurrent());
+  return ToDetailString(Isolate::GetCurrent()->GetCurrentContext())
+      .FromMaybe(Local<String>());
 }
 
 
 Local<Object> Value::ToObject() const {
-  return ToObject(Isolate::GetCurrent());
+  return ToObject(Isolate::GetCurrent()->GetCurrentContext())
+      .FromMaybe(Local<Object>());
 }
 
 
 Local<Integer> Value::ToInteger() const {
-  return ToInteger(Isolate::GetCurrent());
+  return ToInteger(Isolate::GetCurrent()->GetCurrentContext())
+      .FromMaybe(Local<Integer>());
 }
 
 
 Local<Uint32> Value::ToUint32() const {
-  return ToUint32(Isolate::GetCurrent());
+  return ToUint32(Isolate::GetCurrent()->GetCurrentContext())
+      .FromMaybe(Local<Uint32>());
 }
 
 
-Local<Int32> Value::ToInt32() const { return ToInt32(Isolate::GetCurrent()); }
+Local<Int32> Value::ToInt32() const {
+  return ToInt32(Isolate::GetCurrent()->GetCurrentContext())
+      .FromMaybe(Local<Int32>());
+}
 
 
 Boolean* Boolean::Cast(v8::Value* value) {

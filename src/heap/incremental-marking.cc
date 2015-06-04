@@ -578,16 +578,6 @@ void IncrementalMarking::MarkObjectGroups() {
 }
 
 
-void IncrementalMarking::PrepareForScavenge() {
-  if (!IsMarking()) return;
-  NewSpacePageIterator it(heap_->new_space()->FromSpaceStart(),
-                          heap_->new_space()->FromSpaceEnd());
-  while (it.has_next()) {
-    Bitmap::Clear(it.next());
-  }
-}
-
-
 void IncrementalMarking::UpdateMarkingDequeAfterScavenge() {
   if (!IsMarking()) return;
 
@@ -639,10 +629,7 @@ void IncrementalMarking::UpdateMarkingDequeAfterScavenge() {
 
 
 void IncrementalMarking::VisitObject(Map* map, HeapObject* obj, int size) {
-  MarkBit map_mark_bit = Marking::MarkBitFrom(map);
-  if (Marking::IsWhite(map_mark_bit)) {
-    WhiteToGreyAndPush(map, map_mark_bit);
-  }
+  MarkObject(heap_, map);
 
   IncrementalMarkingMarkingVisitor::IterateBody(map, obj);
 

@@ -129,6 +129,7 @@ const int kShortSize     = sizeof(short);     // NOLINT
 const int kIntSize       = sizeof(int);       // NOLINT
 const int kInt32Size     = sizeof(int32_t);   // NOLINT
 const int kInt64Size     = sizeof(int64_t);   // NOLINT
+const int kFloatSize     = sizeof(float);     // NOLINT
 const int kDoubleSize    = sizeof(double);    // NOLINT
 const int kIntptrSize    = sizeof(intptr_t);  // NOLINT
 const int kPointerSize   = sizeof(void*);     // NOLINT
@@ -202,6 +203,8 @@ typedef int32_t uc32;
 const int kOneByteSize    = kCharSize;
 const int kUC16Size     = sizeof(uc16);      // NOLINT
 
+// 128 bit SIMD value size.
+const int kSimd128Size = 16;
 
 // Round up n to be a multiple of sz, where sz is a power of 2.
 #define ROUND_UP(n, sz) (((n) + ((sz) - 1)) & ~((sz) - 1))
@@ -313,6 +316,10 @@ const intptr_t kPointerAlignmentMask = kPointerAlignment - 1;
 // Desired alignment for double values.
 const intptr_t kDoubleAlignment = 8;
 const intptr_t kDoubleAlignmentMask = kDoubleAlignment - 1;
+
+// Desired alignment for 128 bit SIMD values.
+const intptr_t kSimd128Alignment = 16;
+const intptr_t kSimd128AlignmentMask = kSimd128Alignment - 1;
 
 // Desired alignment for generated code is 32 bytes (to improve cache line
 // utilization).
@@ -454,7 +461,12 @@ enum AllocationSpace {
 const int kSpaceTagSize = 3;
 const int kSpaceTagMask = (1 << kSpaceTagSize) - 1;
 
-enum AllocationAlignment { kWordAligned, kDoubleAligned, kDoubleUnaligned };
+enum AllocationAlignment {
+  kWordAligned,
+  kDoubleAligned,
+  kDoubleUnaligned,
+  kSimd128Unaligned
+};
 
 // A flag that indicates whether objects should be pretenured when
 // allocated (allocated directly into the old generation) or not
