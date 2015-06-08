@@ -1410,7 +1410,7 @@ void AstGraphBuilder::VisitTryCatchStatement(TryCatchStatement* stmt) {
   try_control.EndCatch();
 
   // TODO(mstarzinger): Remove bailout once everything works.
-  if (!FLAG_turbo_exceptions) SetStackOverflow();
+  if (!FLAG_turbo_try_catch) SetStackOverflow();
 }
 
 
@@ -1479,7 +1479,7 @@ void AstGraphBuilder::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
   commands->ApplyDeferredCommands(token, result);
 
   // TODO(mstarzinger): Remove bailout once everything works.
-  if (!FLAG_turbo_exceptions) SetStackOverflow();
+  if (!FLAG_turbo_try_finally) SetStackOverflow();
 }
 
 
@@ -2216,13 +2216,12 @@ void AstGraphBuilder::VisitThrow(Throw* expr) {
 
 
 void AstGraphBuilder::VisitProperty(Property* expr) {
-  Node* value;
+  Node* value = nullptr;
   LhsKind property_kind = Property::GetAssignType(expr);
   VectorSlotPair pair = CreateVectorSlotPair(expr->PropertyFeedbackSlot());
   switch (property_kind) {
     case VARIABLE:
       UNREACHABLE();
-      value = nullptr;
       break;
     case NAMED_PROPERTY: {
       VisitForValue(expr->obj());
