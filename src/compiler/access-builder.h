@@ -31,6 +31,9 @@ class AccessBuilder final : public AllStatic {
   // Provides access to JSArrayBuffer::backing_store() field.
   static FieldAccess ForJSArrayBufferBackingStore();
 
+  // Provides access to JSDate fields.
+  static FieldAccess ForJSDateField(JSDate::FieldIndex index);
+
   // Provides access to FixedArray::length() field.
   static FieldAccess ForFixedArrayLength();
 
@@ -82,6 +85,12 @@ class AccessBuilder final : public AllStatic {
 
   // Provides access to the TypeFeedbackVector in SharedFunctionInfo.
   static FieldAccess ForSharedFunctionInfoTypeFeedbackVector();
+
+  // Provides access to the next frame pointer in a stack frame.
+  static FieldAccess ForFrameCallerFramePtr();
+
+  // Provides access to the marker in a stack frame.
+  static FieldAccess ForFrameMarker();
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(AccessBuilder);

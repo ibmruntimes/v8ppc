@@ -10580,7 +10580,7 @@ void SharedFunctionInfo::InitFromFunctionLiteral(
   shared_info->set_dont_cache(
       lit->flags()->Contains(AstPropertiesFlag::kDontCache));
   shared_info->set_kind(lit->kind());
-  shared_info->set_uses_super_property(lit->uses_super_property());
+  shared_info->set_needs_home_object(lit->scope()->NeedsHomeObject());
   shared_info->set_asm_function(lit->scope()->asm_function());
 }
 
@@ -11619,6 +11619,12 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
   if (kind() == OPTIMIZED_FUNCTION) {
     os << "stack_slots = " << stack_slots() << "\n";
   }
+  os << "compiler = " << (is_turbofanned()
+                              ? "turbofan"
+                              : is_crankshafted() ? "crankshaft"
+                                                  : kind() == Code::FUNCTION
+                                                        ? "full-codegen"
+                                                        : "unknown") << "\n";
 
   os << "Instructions (size = " << instruction_size() << ")\n";
   {

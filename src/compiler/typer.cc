@@ -439,7 +439,7 @@ void Typer::Run() {
   }
 
   Visitor visitor(this);
-  GraphReducer graph_reducer(graph(), zone());
+  GraphReducer graph_reducer(zone(), graph());
   graph_reducer.AddReducer(&visitor);
   graph_reducer.ReduceGraph();
 }
@@ -1594,6 +1594,7 @@ Bounds Typer::Visitor::TypeJSCallRuntime(Node* node) {
     case Runtime::kInlineDoubleHi:
       return Bounds(Type::None(zone()), Type::Signed32());
     case Runtime::kInlineConstructDouble:
+    case Runtime::kInlineDateField:
     case Runtime::kInlineMathFloor:
     case Runtime::kInlineMathSqrt:
     case Runtime::kInlineMathAcos:
@@ -2308,6 +2309,11 @@ Bounds Typer::Visitor::TypeFloat64InsertHighWord32(Node* node) {
 
 
 Bounds Typer::Visitor::TypeLoadStackPointer(Node* node) {
+  return Bounds(Type::Internal());
+}
+
+
+Bounds Typer::Visitor::TypeLoadFramePointer(Node* node) {
   return Bounds(Type::Internal());
 }
 

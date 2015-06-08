@@ -705,7 +705,7 @@ static void PrintFrames(Isolate* isolate,
 void Isolate::PrintStack(StringStream* accumulator, PrintStackMode mode) {
   // The MentionedObjectCache is not GC-proof at the moment.
   DisallowHeapAllocation no_gc;
-  DCHECK(StringStream::IsMentionedObjectCacheClear(this));
+  DCHECK(accumulator->IsMentionedObjectCacheClear(this));
 
   // Avoid printing anything if there are no frames.
   if (c_entry_fp(thread_local_top()) == 0) return;
@@ -945,16 +945,22 @@ void ReportBootstrappingException(Handle<Object> exception,
   // builtins, print the actual source here so that line numbers match.
   if (location->script()->source()->IsString()) {
     Handle<String> src(String::cast(location->script()->source()));
-    PrintF("Failing script:\n");
+    PrintF("Failing script:");
     int len = src->length();
-    int line_number = 1;
-    PrintF("%5d: ", line_number);
-    for (int i = 0; i < len; i++) {
-      uint16_t character = src->Get(i);
-      PrintF("%c", character);
-      if (character == '\n' && i < len - 2) {
-        PrintF("%5d: ", ++line_number);
+    if (len == 0) {
+      PrintF(" <not available>\n");
+    } else {
+      PrintF("\n");
+      int line_number = 1;
+      PrintF("%5d: ", line_number);
+      for (int i = 0; i < len; i++) {
+        uint16_t character = src->Get(i);
+        PrintF("%c", character);
+        if (character == '\n' && i < len - 2) {
+          PrintF("%5d: ", ++line_number);
+        }
       }
+      PrintF("\n");
     }
   }
 #endif
@@ -2373,11 +2379,11 @@ CodeTracer* Isolate::GetCodeTracer() {
 }
 
 
-Map* Isolate::get_initial_js_array_map(ElementsKind kind,
-                                       ObjectStrength strength) {
+Map* Isolate::get_initial_js_array_map(ElementsKind kind, Strength strength) {
   Context* native_context = context()->native_context();
-  Object* maybe_map_array = strength ? native_context->js_array_strong_maps()
-                                     : native_context->js_array_maps();
+  Object* maybe_map_array = is_strong(strength)
+                                ? native_context->js_array_strong_maps()
+                                : native_context->js_array_maps();
   if (!maybe_map_array->IsUndefined()) {
     Object* maybe_transitioned_map =
         FixedArray::cast(maybe_map_array)->get(kind);

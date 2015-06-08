@@ -242,11 +242,6 @@ void FullCodeGenerator::Generate() {
     }
   }
 
-  Variable* home_object_var = scope()->home_object_var();
-  if (home_object_var != nullptr) {
-    __ Push(r1);
-  }
-
   // Possibly set up a local binding to the this function which is used in
   // derived constructors with super calls.
   Variable* this_function_var = scope()->this_function_var();
@@ -331,18 +326,6 @@ void FullCodeGenerator::Generate() {
     SetVar(arguments, r0, r1, r2);
   }
 
-  // Possibly set up a local binding to the [[HomeObject]].
-  if (home_object_var != nullptr) {
-    Comment cmnt(masm_, "[ Home object");
-    __ Pop(LoadDescriptor::ReceiverRegister());
-    Handle<Symbol> home_object_symbol(isolate()->heap()->home_object_symbol());
-    __ Move(LoadDescriptor::NameRegister(), home_object_symbol);
-    __ Move(LoadDescriptor::SlotRegister(),
-            Operand(SmiFromSlot(function()->HomeObjectFeedbackSlot())));
-    CallLoadIC(NOT_CONTEXTUAL);
-
-    SetVar(home_object_var, r0, r1, r2);
-  }
 
   if (FLAG_trace) {
     __ CallRuntime(Runtime::kTraceEnter, 0);
@@ -1097,7 +1080,7 @@ void FullCodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
     // Record position before stub call for type feedback.
     SetSourcePosition(clause->position());
     Handle<Code> ic = CodeFactory::CompareIC(isolate(), Token::EQ_STRICT,
-                                             language_mode()).code();
+                                             strength(language_mode())).code();
     CallIC(ic, clause->CompareId());
     patch_site.EmitPatchInfo();
 
@@ -1697,9 +1680,9 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
 
   AccessorTable accessor_table(zone());
   int property_index = 0;
-  // store_slot_index points to the vector ic slot for the next store ic used.
+  // store_slot_index points to the vector IC slot for the next store IC used.
   // ObjectLiteral::ComputeFeedbackRequirements controls the allocation of slots
-  // and must be updated if the number of store ics emitted here changes.
+  // and must be updated if the number of store ICs emitted here changes.
   int store_slot_index = 0;
   for (; property_index < expr->properties()->length(); property_index++) {
     ObjectLiteral::Property* property = expr->properties()->at(property_index);
@@ -2023,7 +2006,7 @@ void FullCodeGenerator::VisitAssignment(Assignment* expr) {
       VisitForStackValue(
           property->obj()->AsSuperPropertyReference()->this_var());
       VisitForAccumulatorValue(
-          property->obj()->AsSuperPropertyReference()->home_object_var());
+          property->obj()->AsSuperPropertyReference()->home_object());
       __ Push(result_register());
       if (expr->is_compound()) {
         const Register scratch = r1;
@@ -2036,7 +2019,7 @@ void FullCodeGenerator::VisitAssignment(Assignment* expr) {
       VisitForStackValue(
           property->obj()->AsSuperPropertyReference()->this_var());
       VisitForStackValue(
-          property->obj()->AsSuperPropertyReference()->home_object_var());
+          property->obj()->AsSuperPropertyReference()->home_object());
       VisitForAccumulatorValue(property->key());
       __ Push(result_register());
       if (expr->is_compound()) {
@@ -2497,8 +2480,8 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
   patch_site.EmitJumpIfSmi(scratch1, &smi_case);
 
   __ bind(&stub_call);
-  Handle<Code> code = CodeFactory::BinaryOpIC(
-      isolate(), op, language_mode()).code();
+  Handle<Code> code =
+      CodeFactory::BinaryOpIC(isolate(), op, strength(language_mode())).code();
   CallIC(code, expr->BinaryOperationFeedbackId());
   patch_site.EmitPatchInfo();
   __ jmp(&done);
@@ -2582,6 +2565,10 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
          FieldMemOperand(r0, JSFunction::kPrototypeOrInitialMapOffset));
   __ push(scratch);
 
+  // store_slot_index points to the vector IC slot for the next store IC used.
+  // ClassLiteral::ComputeFeedbackRequirements controls the allocation of slots
+  // and must be updated if the number of store ICs emitted here changes.
+  int store_slot_index = 0;
   for (int i = 0; i < lit->properties()->length(); i++) {
     ObjectLiteral::Property* property = lit->properties()->at(i);
     Expression* value = property->value();
@@ -2604,7 +2591,8 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
     }
 
     VisitForStackValue(value);
-    EmitSetHomeObjectIfNeeded(value, 2);
+    EmitSetHomeObjectIfNeeded(value, 2,
+                              lit->SlotForHomeObject(value, &store_slot_index));
 
     switch (property->kind()) {
       case ObjectLiteral::Property::CONSTANT:
@@ -2637,13 +2625,17 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
 
   // constructor
   __ CallRuntime(Runtime::kToFastProperties, 1);
+
+  // Verify that compilation exactly consumed the number of store ic slots that
+  // the ClassLiteral node had to offer.
+  DCHECK(!FLAG_vector_stores || store_slot_index == lit->slot_count());
 }
 
 
 void FullCodeGenerator::EmitBinaryOp(BinaryOperation* expr, Token::Value op) {
   __ pop(r1);
-  Handle<Code> code = CodeFactory::BinaryOpIC(
-      isolate(), op, language_mode()).code();
+  Handle<Code> code =
+      CodeFactory::BinaryOpIC(isolate(), op, strength(language_mode())).code();
   JumpPatchSite patch_site(masm_);    // unbound, signals no inlined smi code.
   CallIC(code, expr->BinaryOperationFeedbackId());
   patch_site.EmitPatchInfo();
@@ -2680,7 +2672,7 @@ void FullCodeGenerator::EmitAssignment(Expression* expr,
       __ Push(r0);
       VisitForStackValue(prop->obj()->AsSuperPropertyReference()->this_var());
       VisitForAccumulatorValue(
-          prop->obj()->AsSuperPropertyReference()->home_object_var());
+          prop->obj()->AsSuperPropertyReference()->home_object());
       // stack: value, this; r0: home_object
       Register scratch = r2;
       Register scratch2 = r3;
@@ -2697,7 +2689,7 @@ void FullCodeGenerator::EmitAssignment(Expression* expr,
       __ Push(r0);
       VisitForStackValue(prop->obj()->AsSuperPropertyReference()->this_var());
       VisitForStackValue(
-          prop->obj()->AsSuperPropertyReference()->home_object_var());
+          prop->obj()->AsSuperPropertyReference()->home_object());
       VisitForAccumulatorValue(prop->key());
       Register scratch = r2;
       Register scratch2 = r3;
@@ -2923,7 +2915,7 @@ void FullCodeGenerator::VisitProperty(Property* expr) {
     } else {
       VisitForStackValue(expr->obj()->AsSuperPropertyReference()->this_var());
       VisitForStackValue(
-          expr->obj()->AsSuperPropertyReference()->home_object_var());
+          expr->obj()->AsSuperPropertyReference()->home_object());
       EmitNamedSuperPropertyLoad(expr);
     }
   } else {
@@ -2936,7 +2928,7 @@ void FullCodeGenerator::VisitProperty(Property* expr) {
     } else {
       VisitForStackValue(expr->obj()->AsSuperPropertyReference()->this_var());
       VisitForStackValue(
-          expr->obj()->AsSuperPropertyReference()->home_object_var());
+          expr->obj()->AsSuperPropertyReference()->home_object());
       VisitForStackValue(expr->key());
       EmitKeyedSuperPropertyLoad(expr);
     }
@@ -3002,7 +2994,7 @@ void FullCodeGenerator::EmitSuperCallWithLoadIC(Call* expr) {
   // Load the function from the receiver.
   const Register scratch = r1;
   SuperPropertyReference* super_ref = prop->obj()->AsSuperPropertyReference();
-  VisitForStackValue(super_ref->home_object_var());
+  VisitForStackValue(super_ref->home_object());
   VisitForAccumulatorValue(super_ref->this_var());
   __ Push(r0);
   __ Push(r0);
@@ -3062,7 +3054,7 @@ void FullCodeGenerator::EmitKeyedSuperCallWithLoadIC(Call* expr) {
   // Load the function from the receiver.
   const Register scratch = r1;
   SuperPropertyReference* super_ref = prop->obj()->AsSuperPropertyReference();
-  VisitForStackValue(super_ref->home_object_var());
+  VisitForStackValue(super_ref->home_object());
   VisitForAccumulatorValue(super_ref->this_var());
   __ Push(r0);
   __ Push(r0);
@@ -4923,7 +4915,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
       case NAMED_SUPER_PROPERTY: {
         VisitForStackValue(prop->obj()->AsSuperPropertyReference()->this_var());
         VisitForAccumulatorValue(
-            prop->obj()->AsSuperPropertyReference()->home_object_var());
+            prop->obj()->AsSuperPropertyReference()->home_object());
         __ Push(result_register());
         const Register scratch = r1;
         __ ldr(scratch, MemOperand(sp, kPointerSize));
@@ -4936,7 +4928,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
       case KEYED_SUPER_PROPERTY: {
         VisitForStackValue(prop->obj()->AsSuperPropertyReference()->this_var());
         VisitForStackValue(
-            prop->obj()->AsSuperPropertyReference()->home_object_var());
+            prop->obj()->AsSuperPropertyReference()->home_object());
         VisitForAccumulatorValue(prop->key());
         __ Push(result_register());
         const Register scratch = r1;
@@ -5052,8 +5044,8 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
   // Record position before stub call.
   SetSourcePosition(expr->position());
 
-  Handle<Code> code = CodeFactory::BinaryOpIC(
-      isolate(), Token::ADD, language_mode()).code();
+  Handle<Code> code = CodeFactory::BinaryOpIC(isolate(), Token::ADD,
+                                              strength(language_mode())).code();
   CallIC(code, expr->CountBinOpFeedbackId());
   patch_site.EmitPatchInfo();
   __ bind(&done);
@@ -5319,8 +5311,8 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
 
       // Record position and call the compare IC.
       SetSourcePosition(expr->position());
-      Handle<Code> ic =
-          CodeFactory::CompareIC(isolate(), op, language_mode()).code();
+      Handle<Code> ic = CodeFactory::CompareIC(
+                            isolate(), op, strength(language_mode())).code();
       CallIC(ic, expr->CompareOperationFeedbackId());
       patch_site.EmitPatchInfo();
       PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);

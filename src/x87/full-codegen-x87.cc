@@ -235,11 +235,6 @@ void FullCodeGenerator::Generate() {
     }
   }
 
-  Variable* home_object_var = scope()->home_object_var();
-  if (home_object_var != nullptr) {
-    __ push(edi);
-  }
-
   ArgumentsAccessStub::HasNewTarget has_new_target =
       IsSubclassConstructor(info->function()->kind())
           ? ArgumentsAccessStub::HAS_NEW_TARGET
@@ -304,19 +299,6 @@ void FullCodeGenerator::Generate() {
     __ CallStub(&stub);
 
     SetVar(arguments, eax, ebx, edx);
-  }
-
-  // Possibly set up a local binding to the [[HomeObject]].
-  if (home_object_var != nullptr) {
-    Comment cmnt(masm_, "[ Home object");
-    __ pop(LoadDescriptor::ReceiverRegister());
-    Handle<Symbol> home_object_symbol(isolate()->heap()->home_object_symbol());
-    __ mov(LoadDescriptor::NameRegister(), Immediate(home_object_symbol));
-    __ mov(LoadDescriptor::SlotRegister(),
-           Immediate(SmiFromSlot(function()->HomeObjectFeedbackSlot())));
-    CallLoadIC(NOT_CONTEXTUAL);
-
-    SetVar(home_object_var, eax, ebx, edx);
   }
 
   if (FLAG_trace) {
@@ -1009,7 +991,7 @@ void FullCodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
     // Record position before stub call for type feedback.
     SetSourcePosition(clause->position());
     Handle<Code> ic = CodeFactory::CompareIC(isolate(), Token::EQ_STRICT,
-                                             language_mode()).code();
+                                             strength(language_mode())).code();
     CallIC(ic, clause->CompareId());
     patch_site.EmitPatchInfo();
 
@@ -1914,7 +1896,7 @@ void FullCodeGenerator::VisitAssignment(Assignment* expr) {
     case NAMED_SUPER_PROPERTY:
       VisitForStackValue(property->obj()->AsSuperReference()->this_var());
       VisitForAccumulatorValue(
-          property->obj()->AsSuperReference()->home_object_var());
+          property->obj()->AsSuperReference()->home_object());
       __ push(result_register());
       if (expr->is_compound()) {
         __ push(MemOperand(esp, kPointerSize));
@@ -1932,8 +1914,7 @@ void FullCodeGenerator::VisitAssignment(Assignment* expr) {
       break;
     case KEYED_SUPER_PROPERTY:
       VisitForStackValue(property->obj()->AsSuperReference()->this_var());
-      VisitForStackValue(
-          property->obj()->AsSuperReference()->home_object_var());
+      VisitForStackValue(property->obj()->AsSuperReference()->home_object());
       VisitForAccumulatorValue(property->key());
       __ Push(result_register());
       if (expr->is_compound()) {
@@ -2376,8 +2357,8 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
 
   __ bind(&stub_call);
   __ mov(eax, ecx);
-  Handle<Code> code = CodeFactory::BinaryOpIC(
-      isolate(), op, language_mode()).code();
+  Handle<Code> code =
+      CodeFactory::BinaryOpIC(isolate(), op, strength(language_mode())).code();
   CallIC(code, expr->BinaryOperationFeedbackId());
   patch_site.EmitPatchInfo();
   __ jmp(&done, Label::kNear);
@@ -2521,8 +2502,8 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
 
 void FullCodeGenerator::EmitBinaryOp(BinaryOperation* expr, Token::Value op) {
   __ pop(edx);
-  Handle<Code> code = CodeFactory::BinaryOpIC(
-      isolate(), op, language_mode()).code();
+  Handle<Code> code =
+      CodeFactory::BinaryOpIC(isolate(), op, strength(language_mode())).code();
   JumpPatchSite patch_site(masm_);    // unbound, signals no inlined smi code.
   CallIC(code, expr->BinaryOperationFeedbackId());
   patch_site.EmitPatchInfo();
@@ -2558,8 +2539,7 @@ void FullCodeGenerator::EmitAssignment(Expression* expr,
     case NAMED_SUPER_PROPERTY: {
       __ push(eax);
       VisitForStackValue(prop->obj()->AsSuperReference()->this_var());
-      VisitForAccumulatorValue(
-          prop->obj()->AsSuperReference()->home_object_var());
+      VisitForAccumulatorValue(prop->obj()->AsSuperReference()->home_object());
       // stack: value, this; eax: home_object
       Register scratch = ecx;
       Register scratch2 = edx;
@@ -2575,7 +2555,7 @@ void FullCodeGenerator::EmitAssignment(Expression* expr,
     case KEYED_SUPER_PROPERTY: {
       __ push(eax);
       VisitForStackValue(prop->obj()->AsSuperReference()->this_var());
-      VisitForStackValue(prop->obj()->AsSuperReference()->home_object_var());
+      VisitForStackValue(prop->obj()->AsSuperReference()->home_object());
       VisitForAccumulatorValue(prop->key());
       Register scratch = ecx;
       Register scratch2 = edx;
@@ -2798,7 +2778,7 @@ void FullCodeGenerator::VisitProperty(Property* expr) {
       EmitNamedPropertyLoad(expr);
     } else {
       VisitForStackValue(expr->obj()->AsSuperReference()->this_var());
-      VisitForStackValue(expr->obj()->AsSuperReference()->home_object_var());
+      VisitForStackValue(expr->obj()->AsSuperReference()->home_object());
       EmitNamedSuperPropertyLoad(expr);
     }
   } else {
@@ -2810,7 +2790,7 @@ void FullCodeGenerator::VisitProperty(Property* expr) {
       EmitKeyedPropertyLoad(expr);
     } else {
       VisitForStackValue(expr->obj()->AsSuperReference()->this_var());
-      VisitForStackValue(expr->obj()->AsSuperReference()->home_object_var());
+      VisitForStackValue(expr->obj()->AsSuperReference()->home_object());
       VisitForStackValue(expr->key());
       EmitKeyedSuperPropertyLoad(expr);
     }
@@ -2869,7 +2849,7 @@ void FullCodeGenerator::EmitSuperCallWithLoadIC(Call* expr) {
   DCHECK(!key->value()->IsSmi());
   // Load the function from the receiver.
   SuperReference* super_ref = callee->AsProperty()->obj()->AsSuperReference();
-  VisitForStackValue(super_ref->home_object_var());
+  VisitForStackValue(super_ref->home_object());
   VisitForAccumulatorValue(super_ref->this_var());
   __ push(eax);
   __ push(eax);
@@ -2925,7 +2905,7 @@ void FullCodeGenerator::EmitKeyedSuperCallWithLoadIC(Call* expr) {
   SetSourcePosition(prop->position());
   // Load the function from the receiver.
   SuperReference* super_ref = callee->AsProperty()->obj()->AsSuperReference();
-  VisitForStackValue(super_ref->home_object_var());
+  VisitForStackValue(super_ref->home_object());
   VisitForAccumulatorValue(super_ref->this_var());
   __ push(eax);
   __ push(eax);
@@ -4799,7 +4779,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
       case NAMED_SUPER_PROPERTY: {
         VisitForStackValue(prop->obj()->AsSuperReference()->this_var());
         VisitForAccumulatorValue(
-            prop->obj()->AsSuperReference()->home_object_var());
+            prop->obj()->AsSuperReference()->home_object());
         __ push(result_register());
         __ push(MemOperand(esp, kPointerSize));
         __ push(result_register());
@@ -4809,7 +4789,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
 
       case KEYED_SUPER_PROPERTY: {
         VisitForStackValue(prop->obj()->AsSuperReference()->this_var());
-        VisitForStackValue(prop->obj()->AsSuperReference()->home_object_var());
+        VisitForStackValue(prop->obj()->AsSuperReference()->home_object());
         VisitForAccumulatorValue(prop->key());
         __ push(result_register());
         __ push(MemOperand(esp, 2 * kPointerSize));
@@ -4927,9 +4907,8 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
   __ bind(&stub_call);
   __ mov(edx, eax);
   __ mov(eax, Immediate(Smi::FromInt(1)));
-  Handle<Code> code =
-      CodeFactory::BinaryOpIC(
-          isolate(), expr->binary_op(), language_mode()).code();
+  Handle<Code> code = CodeFactory::BinaryOpIC(isolate(), expr->binary_op(),
+                                              strength(language_mode())).code();
   CallIC(code, expr->CountBinOpFeedbackId());
   patch_site.EmitPatchInfo();
   __ bind(&done);
@@ -5196,8 +5175,8 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
 
       // Record position and call the compare IC.
       SetSourcePosition(expr->position());
-      Handle<Code> ic =
-          CodeFactory::CompareIC(isolate(), op, language_mode()).code();
+      Handle<Code> ic = CodeFactory::CompareIC(
+                            isolate(), op, strength(language_mode())).code();
       CallIC(ic, expr->CompareOperationFeedbackId());
       patch_site.EmitPatchInfo();
 

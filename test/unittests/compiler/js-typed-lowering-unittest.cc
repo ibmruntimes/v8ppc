@@ -81,7 +81,7 @@ class JSTypedLoweringTest : public TypedGraphTest {
     MachineOperatorBuilder machine(zone());
     JSGraph jsgraph(isolate(), graph(), common(), javascript(), &machine);
     // TODO(titzer): mock the GraphReducer here for better unit testing.
-    GraphReducer graph_reducer(graph(), zone());
+    GraphReducer graph_reducer(zone(), graph());
     JSTypedLowering reducer(&graph_reducer, &jsgraph, zone());
     return reducer.Reduce(node);
   }
@@ -918,6 +918,40 @@ TEST_F(JSTypedLoweringTest, JSLoadDynamicGlobal) {
     EXPECT_THAT(
         r.replacement(),
         IsPhi(kMachAnyTagged, _, _,
+              IsMerge(
+                  IsIfTrue(IsBranch(
+                      IsReferenceEqual(
+                          Type::Tagged(),
+                          IsLoadContext(
+                              ContextAccess(i, Context::EXTENSION_INDEX, false),
+                              context),
+                          IsNumberConstant(BitEq(0.0))),
+                      control)),
+                  _)));
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// JSLoadDynamicContext
+
+
+TEST_F(JSTypedLoweringTest, JSLoadDynamicContext) {
+  Node* const context = Parameter(Type::Any());
+  Node* const frame_state = EmptyFrameState();
+  Node* const effect = graph()->start();
+  Node* const control = graph()->start();
+  Handle<String> name = factory()->object_string();
+  for (int i = 0; i < DynamicContextAccess::kMaxCheckDepth; ++i) {
+    uint32_t bitset = 1 << i;  // Only single check.
+    Reduction r = Reduce(
+        graph()->NewNode(javascript()->LoadDynamicContext(name, bitset, 23, 42),
+                         context, context, frame_state, effect, control));
+    ASSERT_TRUE(r.Changed());
+    EXPECT_THAT(
+        r.replacement(),
+        IsPhi(kMachAnyTagged,
+              IsLoadContext(ContextAccess(23, 42, false), context), _,
               IsMerge(
                   IsIfTrue(IsBranch(
                       IsReferenceEqual(

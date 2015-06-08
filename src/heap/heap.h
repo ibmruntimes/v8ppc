@@ -1155,6 +1155,7 @@ class Heap {
       256 * kPointerMultiplier;
 
   static const int kTraceRingBufferSize = 512;
+  static const int kStacktraceBufferSize = 512;
 
   // Calculates the allocation limit based on a given growing factor and a
   // given old generation size.
@@ -2153,13 +2154,11 @@ class Heap {
 
   bool PerformIdleTimeAction(GCIdleTimeAction action,
                              GCIdleTimeHandler::HeapState heap_state,
-                             double deadline_in_ms,
-                             bool is_long_idle_notification);
+                             double deadline_in_ms);
 
   void IdleNotificationEpilogue(GCIdleTimeAction action,
                                 GCIdleTimeHandler::HeapState heap_state,
-                                double start_ms, double deadline_in_ms,
-                                bool is_long_idle_notification);
+                                double start_ms, double deadline_in_ms);
 
   void ClearObjectStats(bool clear_last_time_stats = false);
 
@@ -2209,8 +2208,6 @@ class Heap {
   IncrementalMarking incremental_marking_;
 
   GCIdleTimeHandler gc_idle_time_handler_;
-
-  unsigned int gc_count_at_last_idle_gc_;
 
   // These two counters are monotomically increasing and never reset.
   size_t full_codegen_bytes_generated_;
@@ -2316,7 +2313,8 @@ class HeapStats {
   int* size_per_type;                      // 18
   int* os_error;                           // 19
   char* last_few_messages;                 // 20
-  int* end_marker;                         // 21
+  char* js_stacktrace;                     // 21
+  int* end_marker;                         // 22
 };
 
 

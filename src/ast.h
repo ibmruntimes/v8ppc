@@ -2518,12 +2518,8 @@ class FunctionLiteral final : public Expression {
   bool is_expression() const { return IsExpression::decode(bitfield_); }
   bool is_anonymous() const { return IsAnonymous::decode(bitfield_); }
   LanguageMode language_mode() const;
-  bool uses_super_property() const;
 
-  static bool NeedsHomeObject(Expression* literal) {
-    return literal != NULL && literal->IsFunctionLiteral() &&
-           literal->AsFunctionLiteral()->uses_super_property();
-  }
+  static bool NeedsHomeObject(Expression* expr);
 
   int materialized_literal_count() { return materialized_literal_count_; }
   int expected_property_count() { return expected_property_count_; }
@@ -2602,7 +2598,7 @@ class FunctionLiteral final : public Expression {
     bitfield_ = ShouldBeUsedOnceHintBit::update(bitfield_, kShouldBeUsedOnce);
   }
 
-  FunctionKind kind() { return FunctionKindBits::decode(bitfield_); }
+  FunctionKind kind() const { return FunctionKindBits::decode(bitfield_); }
 
   int ast_node_count() { return ast_properties_.node_count(); }
   AstProperties::Flags* flags() { return ast_properties_.flags(); }
@@ -2616,26 +2612,6 @@ class FunctionLiteral final : public Expression {
   BailoutReason dont_optimize_reason() { return dont_optimize_reason_; }
   void set_dont_optimize_reason(BailoutReason reason) {
     dont_optimize_reason_ = reason;
-  }
-
-  static int num_ids() { return parent_num_ids() + 1; }
-  TypeFeedbackId HomeObjectFeedbackId() { return TypeFeedbackId(local_id(0)); }
-
-  // Type feedback information.
-  virtual FeedbackVectorRequirements ComputeFeedbackRequirements(
-      Isolate* isolate, const ICSlotCache* cache) override {
-    return FeedbackVectorRequirements(0, 1);
-  }
-  void SetFirstFeedbackICSlot(FeedbackVectorICSlot slot,
-                              ICSlotCache* cache) override {
-    DCHECK(!slot.IsInvalid());
-    home_object_feedback_slot_ = slot;
-  }
-  Code::Kind FeedbackICSlotKind(int index) override { return Code::LOAD_IC; }
-
-  FeedbackVectorICSlot HomeObjectFeedbackSlot() {
-    DCHECK(!home_object_feedback_slot_.IsInvalid());
-    return home_object_feedback_slot_;
   }
 
  protected:
@@ -2659,8 +2635,7 @@ class FunctionLiteral final : public Expression {
         expected_property_count_(expected_property_count),
         handler_count_(handler_count),
         parameter_count_(parameter_count),
-        function_token_position_(RelocInfo::kNoPosition),
-        home_object_feedback_slot_(FeedbackVectorICSlot::Invalid()) {
+        function_token_position_(RelocInfo::kNoPosition) {
     bitfield_ = IsExpression::encode(function_type != DECLARATION) |
                 IsAnonymous::encode(function_type == ANONYMOUS_EXPRESSION) |
                 Pretenure::encode(false) |
@@ -2671,8 +2646,6 @@ class FunctionLiteral final : public Expression {
                 ShouldBeUsedOnceHintBit::encode(kDontKnowIfShouldBeUsedOnce);
     DCHECK(IsValidFunctionKind(kind));
   }
-
-  static int parent_num_ids() { return Expression::num_ids(); }
 
  private:
   const AstRawString* raw_name_;
@@ -2690,9 +2663,6 @@ class FunctionLiteral final : public Expression {
   int handler_count_;
   int parameter_count_;
   int function_token_position_;
-
-  int local_id(int n) const { return base_id() + parent_num_ids() + n; }
-  FeedbackVectorICSlot home_object_feedback_slot_;
 
   unsigned bitfield_;
   class IsExpression : public BitField<bool, 0, 1> {};
@@ -2735,6 +2705,28 @@ class ClassLiteral final : public Expression {
   // ClassLiteral can vary, so num_ids() is not a static method.
   int num_ids() const { return parent_num_ids() + 4 + properties()->length(); }
 
+  // Object literals need one feedback slot for each non-trivial value, as well
+  // as some slots for home objects.
+  FeedbackVectorRequirements ComputeFeedbackRequirements(
+      Isolate* isolate, const ICSlotCache* cache) override;
+  void SetFirstFeedbackICSlot(FeedbackVectorICSlot slot,
+                              ICSlotCache* cache) override {
+    slot_ = slot;
+  }
+  Code::Kind FeedbackICSlotKind(int index) override { return Code::STORE_IC; }
+  FeedbackVectorICSlot GetNthSlot(int n) const {
+    return FeedbackVectorICSlot(slot_.ToInt() + n);
+  }
+
+  // If value needs a home object, returns a valid feedback vector ic slot
+  // given by slot_index, and increments slot_index.
+  FeedbackVectorICSlot SlotForHomeObject(Expression* value,
+                                         int* slot_index) const;
+
+#ifdef DEBUG
+  int slot_count() const { return slot_count_; }
+#endif
+
  protected:
   ClassLiteral(Zone* zone, const AstRawString* name, Scope* scope,
                VariableProxy* class_variable_proxy, Expression* extends,
@@ -2747,7 +2739,13 @@ class ClassLiteral final : public Expression {
         extends_(extends),
         constructor_(constructor),
         properties_(properties),
-        end_position_(end_position) {}
+        end_position_(end_position),
+#ifdef DEBUG
+        slot_count_(0),
+#endif
+        slot_(FeedbackVectorICSlot::Invalid()) {
+  }
+
   static int parent_num_ids() { return Expression::num_ids(); }
 
  private:
@@ -2760,6 +2758,12 @@ class ClassLiteral final : public Expression {
   FunctionLiteral* constructor_;
   ZoneList<Property*>* properties_;
   int end_position_;
+#ifdef DEBUG
+  // slot_count_ helps validate that the logic to allocate ic slots and the
+  // logic to use them are in sync.
+  int slot_count_;
+#endif
+  FeedbackVectorICSlot slot_;
 };
 
 
@@ -2795,21 +2799,19 @@ class SuperPropertyReference final : public Expression {
   DECLARE_NODE_TYPE(SuperPropertyReference)
 
   VariableProxy* this_var() const { return this_var_; }
-  VariableProxy* home_object_var() const { return home_object_var_; }
+  Expression* home_object() const { return home_object_; }
 
  protected:
   SuperPropertyReference(Zone* zone, VariableProxy* this_var,
-                         VariableProxy* home_object_var, int pos)
-      : Expression(zone, pos),
-        this_var_(this_var),
-        home_object_var_(home_object_var) {
+                         Expression* home_object, int pos)
+      : Expression(zone, pos), this_var_(this_var), home_object_(home_object) {
     DCHECK(this_var->is_this());
-    DCHECK(home_object_var->raw_name()->IsOneByteEqualTo(".home_object"));
+    DCHECK(home_object->IsProperty());
   }
 
  private:
   VariableProxy* this_var_;
-  VariableProxy* home_object_var_;
+  Expression* home_object_;
 };
 
 
@@ -3608,10 +3610,11 @@ class AstNodeFactory final BASE_EMBEDDED {
     return new (zone_) ThisFunction(zone_, pos);
   }
 
-  SuperPropertyReference* NewSuperPropertyReference(
-      VariableProxy* this_var, VariableProxy* home_object_var, int pos) {
+  SuperPropertyReference* NewSuperPropertyReference(VariableProxy* this_var,
+                                                    Expression* home_object,
+                                                    int pos) {
     return new (zone_)
-        SuperPropertyReference(zone_, this_var, home_object_var, pos);
+        SuperPropertyReference(zone_, this_var, home_object, pos);
   }
 
   SuperCallReference* NewSuperCallReference(VariableProxy* this_var,

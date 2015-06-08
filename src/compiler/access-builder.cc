@@ -45,6 +45,13 @@ FieldAccess AccessBuilder::ForJSArrayBufferBackingStore() {
 
 
 // static
+FieldAccess AccessBuilder::ForJSDateField(JSDate::FieldIndex index) {
+  return {kTaggedBase, JSDate::kValueOffset + index * kPointerSize,
+          MaybeHandle<Name>(), Type::Number(), kMachAnyTagged};
+}
+
+
+// static
 FieldAccess AccessBuilder::ForFixedArrayLength() {
   // TODO(turbofan): 2^30 is a valid upper limit for the FixedArray::length
   // field, although it's not the best. If we had a Zone we could create an
@@ -195,6 +202,20 @@ FieldAccess AccessBuilder::ForJSFunctionSharedFunctionInfo() {
 FieldAccess AccessBuilder::ForSharedFunctionInfoTypeFeedbackVector() {
   return {kTaggedBase, SharedFunctionInfo::kFeedbackVectorOffset,
           Handle<Name>(), Type::Any(), kMachAnyTagged};
+}
+
+
+// static
+FieldAccess AccessBuilder::ForFrameCallerFramePtr() {
+  return {kUntaggedBase, StandardFrameConstants::kCallerFPOffset,
+          MaybeHandle<Name>(), Type::Internal(), kMachPtr};
+}
+
+
+// static
+FieldAccess AccessBuilder::ForFrameMarker() {
+  return {kUntaggedBase, StandardFrameConstants::kMarkerOffset,
+          MaybeHandle<Name>(), Type::Tagged(), kMachAnyTagged};
 }
 
 }  // namespace compiler
