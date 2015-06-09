@@ -1006,15 +1006,15 @@ bool Deserializer::ReadData(Object** current, Object** limit, int source_space,
       ALL_SPACES(kBackref, kPlain, kStartOfObject)
       ALL_SPACES(kBackrefWithSkip, kPlain, kStartOfObject)
 #if defined(V8_TARGET_ARCH_MIPS) || defined(V8_TARGET_ARCH_MIPS64) || \
-    defined(V8_TARGET_ARCH_PPC)
+    defined(V8_TARGET_ARCH_PPC) || V8_EMBEDDED_CONSTANT_POOL
       // Deserialize a new object from pointer found in code and write
       // a pointer to it to the current object. Required only for MIPS, PPC or
-      // ARM with ool constant pool, and omitted on the other architectures
+      // ARM with embedded constant pool, and omitted on the other architectures
       // because it is fully unrolled and would cause bloat.
       ALL_SPACES(kNewObject, kFromCode, kStartOfObject)
       // Find a recently deserialized code object using its offset from the
       // current allocation point and write a pointer to it to the current
-      // object. Required only for MIPS, PPC or ARM with ool constant pool.
+      // object. Required only for MIPS, PPC or ARM with embedded constant pool.
       ALL_SPACES(kBackref, kFromCode, kStartOfObject)
       ALL_SPACES(kBackrefWithSkip, kFromCode, kStartOfObject)
 #endif
@@ -1031,7 +1031,7 @@ bool Deserializer::ReadData(Object** current, Object** limit, int source_space,
       CASE_STATEMENT(kRootArray, kPlain, kStartOfObject, 0)
       CASE_BODY(kRootArray, kPlain, kStartOfObject, 0)
 #if defined(V8_TARGET_ARCH_MIPS) || defined(V8_TARGET_ARCH_MIPS64) || \
-    defined(V8_TARGET_ARCH_PPC)
+    defined(V8_TARGET_ARCH_PPC) || V8_EMBEDDED_CONSTANT_POOL
       // Find an object in the roots array and write a pointer to it to in code.
       CASE_STATEMENT(kRootArray, kFromCode, kStartOfObject, 0)
       CASE_BODY(kRootArray, kFromCode, kStartOfObject, 0)
@@ -2128,10 +2128,6 @@ int Serializer::ObjectSerializer::OutputRawData(
     if (is_code_object_) object_start = PrepareCode();
 
     const char* description = is_code_object_ ? "Code" : "Byte";
-#ifdef MEMORY_SANITIZER
-    // Object sizes are usually rounded up with uninitialized padding space.
-    MSAN_MEMORY_IS_INITIALIZED(object_start + base, bytes_to_output);
-#endif  // MEMORY_SANITIZER
     sink_->PutRaw(object_start + base, bytes_to_output, description);
   }
   if (to_skip != 0 && return_skip == kIgnoringReturn) {
@@ -2518,6 +2514,11 @@ Vector<const byte> SnapshotData::Payload() const {
 class Checksum {
  public:
   explicit Checksum(Vector<const byte> payload) {
+#ifdef MEMORY_SANITIZER
+    // Computing the checksum includes padding bytes for objects like strings.
+    // Mark every object as initialized in the code serializer.
+    MSAN_MEMORY_IS_INITIALIZED(payload.start(), payload.length());
+#endif  // MEMORY_SANITIZER
     // Fletcher's checksum. Modified to reduce 64-bit sums to 32-bit.
     uintptr_t a = 1;
     uintptr_t b = 0;

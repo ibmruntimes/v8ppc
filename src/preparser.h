@@ -97,76 +97,36 @@ class ParserBase : public Traits {
         allow_harmony_computed_property_names_(false),
         allow_harmony_rest_params_(false),
         allow_harmony_spreadcalls_(false),
+        allow_harmony_destructuring_(false),
+        allow_harmony_spread_arrays_(false),
+        allow_harmony_new_target_(false),
         allow_strong_mode_(false) {}
 
-  // Getters that indicate whether certain syntactical constructs are
-  // allowed to be parsed by this instance of the parser.
-  bool allow_lazy() const { return allow_lazy_; }
-  bool allow_natives() const { return allow_natives_; }
-  bool allow_harmony_arrow_functions() const {
-    return allow_harmony_arrow_functions_;
-  }
+#define ALLOW_ACCESSORS(name)                           \
+  bool allow_##name() const { return allow_##name##_; } \
+  void set_allow_##name(bool allow) { allow_##name##_ = allow; }
+
+  ALLOW_ACCESSORS(lazy);
+  ALLOW_ACCESSORS(natives);
+  ALLOW_ACCESSORS(harmony_arrow_functions);
+  ALLOW_ACCESSORS(harmony_object_literals);
+  ALLOW_ACCESSORS(harmony_sloppy);
+  ALLOW_ACCESSORS(harmony_computed_property_names);
+  ALLOW_ACCESSORS(harmony_rest_params);
+  ALLOW_ACCESSORS(harmony_spreadcalls);
+  ALLOW_ACCESSORS(harmony_destructuring);
+  ALLOW_ACCESSORS(harmony_spread_arrays);
+  ALLOW_ACCESSORS(harmony_new_target);
+  ALLOW_ACCESSORS(strong_mode);
+#undef ALLOW_ACCESSORS
+
   bool allow_harmony_modules() const { return scanner()->HarmonyModules(); }
   bool allow_harmony_classes() const { return scanner()->HarmonyClasses(); }
-  bool allow_harmony_object_literals() const {
-    return allow_harmony_object_literals_;
-  }
-  bool allow_harmony_sloppy() const { return allow_harmony_sloppy_; }
   bool allow_harmony_unicode() const { return scanner()->HarmonyUnicode(); }
-  bool allow_harmony_computed_property_names() const {
-    return allow_harmony_computed_property_names_;
-  }
-  bool allow_harmony_rest_params() const {
-    return allow_harmony_rest_params_;
-  }
-  bool allow_harmony_spreadcalls() const { return allow_harmony_spreadcalls_; }
-  bool allow_harmony_destructuring() const {
-    return allow_harmony_destructuring_;
-  }
-  bool allow_harmony_spread_arrays() const {
-    return allow_harmony_spread_arrays_;
-  }
 
-  bool allow_strong_mode() const { return allow_strong_mode_; }
-
-  // Setters that determine whether certain syntactical constructs are
-  // allowed to be parsed by this instance of the parser.
-  void set_allow_lazy(bool allow) { allow_lazy_ = allow; }
-  void set_allow_natives(bool allow) { allow_natives_ = allow; }
-  void set_allow_harmony_arrow_functions(bool allow) {
-    allow_harmony_arrow_functions_ = allow;
-  }
-  void set_allow_harmony_modules(bool allow) {
-    scanner()->SetHarmonyModules(allow);
-  }
-  void set_allow_harmony_classes(bool allow) {
-    scanner()->SetHarmonyClasses(allow);
-  }
-  void set_allow_harmony_object_literals(bool allow) {
-    allow_harmony_object_literals_ = allow;
-  }
-  void set_allow_harmony_sloppy(bool allow) {
-    allow_harmony_sloppy_ = allow;
-  }
-  void set_allow_harmony_unicode(bool allow) {
-    scanner()->SetHarmonyUnicode(allow);
-  }
-  void set_allow_harmony_computed_property_names(bool allow) {
-    allow_harmony_computed_property_names_ = allow;
-  }
-  void set_allow_harmony_rest_params(bool allow) {
-    allow_harmony_rest_params_ = allow;
-  }
-  void set_allow_harmony_spreadcalls(bool allow) {
-    allow_harmony_spreadcalls_ = allow;
-  }
-  void set_allow_strong_mode(bool allow) { allow_strong_mode_ = allow; }
-  void set_allow_harmony_destructuring(bool allow) {
-    allow_harmony_destructuring_ = allow;
-  }
-  void set_allow_harmony_spread_arrays(bool allow) {
-    allow_harmony_spread_arrays_ = allow;
-  }
+  void set_allow_harmony_modules(bool a) { scanner()->SetHarmonyModules(a); }
+  void set_allow_harmony_classes(bool a) { scanner()->SetHarmonyClasses(a); }
+  void set_allow_harmony_unicode(bool a) { scanner()->SetHarmonyUnicode(a); }
 
  protected:
   enum AllowRestrictedIdentifiers {
@@ -340,7 +300,7 @@ class ParserBase : public Traits {
   Scope* NewScope(Scope* parent, ScopeType scope_type, FunctionKind kind) {
     DCHECK(ast_value_factory());
     DCHECK(scope_type != MODULE_SCOPE || allow_harmony_modules());
-    DCHECK(scope_type != ARROW_SCOPE || IsArrowFunction(kind));
+    DCHECK(!IsArrowFunction(kind) || scope_type == ARROW_SCOPE);
     Scope* result = new (zone())
         Scope(zone(), parent, scope_type, ast_value_factory(), kind);
     result->Initialize();
@@ -557,40 +517,61 @@ class ParserBase : public Traits {
       Scanner::Location location;
       MessageTemplate::Template message;
       const char* arg;
-
-      bool HasError() const { return location.IsValid(); }
     };
 
-    ExpressionClassifier() {}
+    enum TargetProduction {
+      ExpressionProduction = 1 << 0,
+      BindingPatternProduction = 1 << 1,
+      AssignmentPatternProduction = 1 << 2,
+      DistinctFormalParametersProduction = 1 << 3,
+      StrictModeFormalParametersProduction = 1 << 4,
+      StrongModeFormalParametersProduction = 1 << 5,
+      ArrowFormalParametersProduction = 1 << 6,
 
-    bool is_valid_expression() const { return !expression_error_.HasError(); }
+      PatternProductions =
+          (BindingPatternProduction | AssignmentPatternProduction),
+      FormalParametersProductions = (DistinctFormalParametersProduction |
+                                     StrictModeFormalParametersProduction |
+                                     StrongModeFormalParametersProduction),
+      StandardProductions = ExpressionProduction | PatternProductions,
+      AllProductions = (StandardProductions | FormalParametersProductions |
+                        ArrowFormalParametersProduction)
+    };
+
+    ExpressionClassifier() : invalid_productions_(0) {}
+
+    bool is_valid(unsigned productions) const {
+      return (invalid_productions_ & productions) == 0;
+    }
+
+    bool is_valid_expression() const { return is_valid(ExpressionProduction); }
 
     bool is_valid_binding_pattern() const {
-      return !binding_pattern_error_.HasError();
+      return is_valid(BindingPatternProduction);
     }
 
     bool is_valid_assignment_pattern() const {
-      return !assignment_pattern_error_.HasError();
+      return is_valid(AssignmentPatternProduction);
     }
 
     bool is_valid_arrow_formal_parameters() const {
-      return !arrow_formal_parameters_error_.HasError();
+      return is_valid(ArrowFormalParametersProduction);
     }
 
     bool is_valid_formal_parameter_list_without_duplicates() const {
-      return !duplicate_formal_parameter_error_.HasError();
+      return is_valid(DistinctFormalParametersProduction);
     }
 
     // Note: callers should also check
     // is_valid_formal_parameter_list_without_duplicates().
     bool is_valid_strict_mode_formal_parameters() const {
-      return !strict_mode_formal_parameter_error_.HasError();
+      return is_valid(StrictModeFormalParametersProduction);
     }
 
     // Note: callers should also check is_valid_strict_mode_formal_parameters()
     // and is_valid_formal_parameter_list_without_duplicates().
     bool is_valid_strong_mode_formal_parameters() const {
-      return !strong_mode_formal_parameter_error_.HasError();
+      return is_valid(StrongModeFormalParametersProduction);
     }
 
     const Error& expression_error() const { return expression_error_; }
@@ -623,6 +604,7 @@ class ParserBase : public Traits {
                                MessageTemplate::Template message,
                                const char* arg = nullptr) {
       if (!is_valid_expression()) return;
+      invalid_productions_ |= ExpressionProduction;
       expression_error_.location = loc;
       expression_error_.message = message;
       expression_error_.arg = arg;
@@ -632,6 +614,7 @@ class ParserBase : public Traits {
                                    MessageTemplate::Template message,
                                    const char* arg = nullptr) {
       if (!is_valid_binding_pattern()) return;
+      invalid_productions_ |= BindingPatternProduction;
       binding_pattern_error_.location = loc;
       binding_pattern_error_.message = message;
       binding_pattern_error_.arg = arg;
@@ -641,6 +624,7 @@ class ParserBase : public Traits {
                                       MessageTemplate::Template message,
                                       const char* arg = nullptr) {
       if (!is_valid_assignment_pattern()) return;
+      invalid_productions_ |= AssignmentPatternProduction;
       assignment_pattern_error_.location = loc;
       assignment_pattern_error_.message = message;
       assignment_pattern_error_.arg = arg;
@@ -650,6 +634,7 @@ class ParserBase : public Traits {
                                           MessageTemplate::Template message,
                                           const char* arg = nullptr) {
       if (!is_valid_arrow_formal_parameters()) return;
+      invalid_productions_ |= ArrowFormalParametersProduction;
       arrow_formal_parameters_error_.location = loc;
       arrow_formal_parameters_error_.message = message;
       arrow_formal_parameters_error_.arg = arg;
@@ -657,6 +642,7 @@ class ParserBase : public Traits {
 
     void RecordDuplicateFormalParameterError(const Scanner::Location& loc) {
       if (!is_valid_formal_parameter_list_without_duplicates()) return;
+      invalid_productions_ |= DistinctFormalParametersProduction;
       duplicate_formal_parameter_error_.location = loc;
       duplicate_formal_parameter_error_.message =
           MessageTemplate::kStrictParamDupe;
@@ -670,6 +656,7 @@ class ParserBase : public Traits {
                                               MessageTemplate::Template message,
                                               const char* arg = nullptr) {
       if (!is_valid_strict_mode_formal_parameters()) return;
+      invalid_productions_ |= StrictModeFormalParametersProduction;
       strict_mode_formal_parameter_error_.location = loc;
       strict_mode_formal_parameter_error_.message = message;
       strict_mode_formal_parameter_error_.arg = arg;
@@ -679,56 +666,49 @@ class ParserBase : public Traits {
                                               MessageTemplate::Template message,
                                               const char* arg = nullptr) {
       if (!is_valid_strong_mode_formal_parameters()) return;
+      invalid_productions_ |= StrongModeFormalParametersProduction;
       strong_mode_formal_parameter_error_.location = loc;
       strong_mode_formal_parameter_error_.message = message;
       strong_mode_formal_parameter_error_.arg = arg;
     }
 
-    enum TargetProduction {
-      ExpressionProduction = 1 << 0,
-      BindingPatternProduction = 1 << 1,
-      AssignmentPatternProduction = 1 << 2,
-      FormalParametersProduction = 1 << 3,
-      ArrowFormalParametersProduction = 1 << 4,
-      StandardProductions = (ExpressionProduction | BindingPatternProduction |
-                             AssignmentPatternProduction),
-      PatternProductions =
-          BindingPatternProduction | AssignmentPatternProduction,
-      AllProductions = (StandardProductions | FormalParametersProduction |
-                        ArrowFormalParametersProduction),
-    };
-
     void Accumulate(const ExpressionClassifier& inner,
                     unsigned productions = StandardProductions) {
-      if (productions & ExpressionProduction && is_valid_expression()) {
-        expression_error_ = inner.expression_error_;
-      }
-      if (productions & BindingPatternProduction &&
-          is_valid_binding_pattern()) {
-        binding_pattern_error_ = inner.binding_pattern_error_;
-      }
-      if (productions & AssignmentPatternProduction &&
-          is_valid_assignment_pattern()) {
-        assignment_pattern_error_ = inner.assignment_pattern_error_;
-      }
-      if (productions & FormalParametersProduction) {
-        if (is_valid_formal_parameter_list_without_duplicates()) {
+      // Propagate errors from inner, but don't overwrite already recorded
+      // errors.
+      unsigned non_arrow_inner_invalid_productions =
+          inner.invalid_productions_ & ~ArrowFormalParametersProduction;
+      if (non_arrow_inner_invalid_productions == 0) return;
+      unsigned non_arrow_productions =
+          productions & ~ArrowFormalParametersProduction;
+      unsigned errors =
+          non_arrow_productions & non_arrow_inner_invalid_productions;
+      errors &= ~invalid_productions_;
+      if (errors != 0) {
+        invalid_productions_ |= errors;
+        if (errors & ExpressionProduction)
+          expression_error_ = inner.expression_error_;
+        if (errors & BindingPatternProduction)
+          binding_pattern_error_ = inner.binding_pattern_error_;
+        if (errors & AssignmentPatternProduction)
+          assignment_pattern_error_ = inner.assignment_pattern_error_;
+        if (errors & DistinctFormalParametersProduction)
           duplicate_formal_parameter_error_ =
               inner.duplicate_formal_parameter_error_;
-        }
-        if (is_valid_strict_mode_formal_parameters()) {
+        if (errors & StrictModeFormalParametersProduction)
           strict_mode_formal_parameter_error_ =
               inner.strict_mode_formal_parameter_error_;
-        }
-        if (is_valid_strong_mode_formal_parameters()) {
+        if (errors & StrongModeFormalParametersProduction)
           strong_mode_formal_parameter_error_ =
               inner.strong_mode_formal_parameter_error_;
-        }
       }
+
+      // As an exception to the above, the result continues to be a valid arrow
+      // formal parameters if the inner expression is a valid binding pattern.
       if (productions & ArrowFormalParametersProduction &&
-          is_valid_arrow_formal_parameters()) {
-        // The result continues to be a valid arrow formal parameters if the
-        // inner expression is a valid binding pattern.
+          is_valid_arrow_formal_parameters() &&
+          !inner.is_valid_binding_pattern()) {
+        invalid_productions_ |= ArrowFormalParametersProduction;
         arrow_formal_parameters_error_ = inner.binding_pattern_error_;
       }
     }
@@ -746,6 +726,7 @@ class ParserBase : public Traits {
     }
 
    private:
+    unsigned invalid_productions_;
     Error expression_error_;
     Error binding_pattern_error_;
     Error assignment_pattern_error_;
@@ -903,6 +884,7 @@ class ParserBase : public Traits {
   void AddTemplateExpression(ExpressionT);
   ExpressionT ParseSuperExpression(bool is_new,
                                    ExpressionClassifier* classifier, bool* ok);
+  ExpressionT ParseNewTargetExpression(bool* ok);
   ExpressionT ParseStrongInitializationExpression(
       ExpressionClassifier* classifier, bool* ok);
   ExpressionT ParseStrongSuperCallExpression(ExpressionClassifier* classifier,
@@ -1013,6 +995,7 @@ class ParserBase : public Traits {
   bool allow_harmony_spreadcalls_;
   bool allow_harmony_destructuring_;
   bool allow_harmony_spread_arrays_;
+  bool allow_harmony_new_target_;
   bool allow_strong_mode_;
 };
 
@@ -1719,6 +1702,12 @@ class PreParserTraits {
   static PreParserExpression SuperCallReference(Scope* scope,
                                                 PreParserFactory* factory,
                                                 int pos) {
+    return PreParserExpression::Default();
+  }
+
+  static PreParserExpression NewTargetExpression(Scope* scope,
+                                                 PreParserFactory* factory,
+                                                 int pos) {
     return PreParserExpression::Default();
   }
 
@@ -2945,7 +2934,7 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN,
   // "expression" was not itself an arrow function parameter list, but it might
   // form part of one.  Propagate speculative formal parameter error locations.
   classifier->Accumulate(arrow_formals_classifier,
-                         ExpressionClassifier::FormalParametersProduction);
+                         ExpressionClassifier::FormalParametersProductions);
 
   if (!Token::IsAssignmentOp(peek())) {
     if (fni_ != NULL) fni_->Leave();
@@ -3319,6 +3308,9 @@ ParserBase<Traits>::ParseMemberWithNewPrefixesExpression(
     ExpressionClassifier* classifier, bool* ok) {
   // NewExpression ::
   //   ('new')+ MemberExpression
+  //
+  // NewTarget ::
+  //   'new' '.' 'target'
 
   // The grammar for new expressions is pretty warped. We can have several 'new'
   // keywords following each other, and then a MemberExpression. When we see '('
@@ -3342,6 +3334,8 @@ ParserBase<Traits>::ParseMemberWithNewPrefixesExpression(
     if (peek() == Token::SUPER) {
       const bool is_new = true;
       result = ParseSuperExpression(is_new, classifier, CHECK_OK);
+    } else if (allow_harmony_new_target() && peek() == Token::PERIOD) {
+      return ParseNewTargetExpression(CHECK_OK);
     } else {
       result = this->ParseMemberWithNewPrefixesExpression(classifier, CHECK_OK);
     }
@@ -3565,7 +3559,6 @@ ParserBase<Traits>::ParseSuperExpression(bool is_new,
   Expect(Token::SUPER, CHECK_OK);
 
   Scope* scope = scope_->DeclarationScope();
-
   while (scope->is_eval_scope() || scope->is_arrow_scope()) {
     scope = scope->outer_scope();
     DCHECK_NOT_NULL(scope);
@@ -3599,6 +3592,31 @@ ParserBase<Traits>::ParseSuperExpression(bool is_new,
   ReportMessageAt(scanner()->location(), MessageTemplate::kUnexpectedSuper);
   *ok = false;
   return this->EmptyExpression();
+}
+
+
+template <class Traits>
+typename ParserBase<Traits>::ExpressionT
+ParserBase<Traits>::ParseNewTargetExpression(bool* ok) {
+  int pos = position();
+  Consume(Token::PERIOD);
+  ExpectContextualKeyword(CStrVector("target"), CHECK_OK);
+
+  Scope* scope = scope_->DeclarationScope();
+  while (scope->is_eval_scope() || scope->is_arrow_scope()) {
+    scope = scope->outer_scope();
+    DCHECK_NOT_NULL(scope);
+    scope = scope->DeclarationScope();
+  }
+
+  if (!scope->is_function_scope()) {
+    ReportMessageAt(scanner()->location(),
+                    MessageTemplate::kUnexpectedNewTarget);
+    *ok = false;
+    return this->EmptyExpression();
+  }
+
+  return this->NewTargetExpression(scope_, factory(), pos);
 }
 
 
