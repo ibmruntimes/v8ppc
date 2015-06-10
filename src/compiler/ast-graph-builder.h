@@ -146,6 +146,7 @@ class AstGraphBuilder : public AstVisitor {
   void CreateFunctionContext(bool constant_context);
 
   // Get or create the node that represents the outer function closure.
+  Node* GetFunctionClosureForContext();
   Node* GetFunctionClosure();
 
   // Get or create the node that represents the functions type feedback vector.
@@ -356,6 +357,7 @@ class AstGraphBuilder : public AstVisitor {
 
   // Visit statements.
   void VisitIfNotNull(Statement* stmt);
+  void VisitInScope(Statement* stmt, Scope* scope, Node* context);
 
   // Visit expressions.
   void Visit(Expression* expr);

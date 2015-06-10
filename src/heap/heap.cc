@@ -116,8 +116,11 @@ Heap::Heap()
       gc_safe_size_of_old_object_(NULL),
       total_regexp_code_generated_(0),
       tracer_(this),
+      new_space_high_promotion_mode_active_(false),
       high_survival_rate_period_length_(0),
       promoted_objects_size_(0),
+      low_survival_rate_period_length_(0),
+      survival_rate_(0),
       promotion_ratio_(0),
       semi_space_copied_object_size_(0),
       previous_semi_space_copied_object_size_(0),
@@ -126,6 +129,8 @@ Heap::Heap()
       nodes_copied_in_new_space_(0),
       nodes_promoted_(0),
       maximum_size_scavenges_(0),
+      previous_survival_rate_trend_(Heap::STABLE),
+      survival_rate_trend_(Heap::STABLE),
       max_gc_pause_(0.0),
       total_gc_time_ms_(0.0),
       max_alive_after_gc_(0),
@@ -474,7 +479,6 @@ void Heap::GarbageCollectionPrologue() {
   }
   CheckNewSpaceExpansionCriteria();
   UpdateNewSpaceAllocationCounter();
-  UpdateOldGenerationAllocationCounter();
 }
 
 
@@ -742,8 +746,7 @@ void Heap::GarbageCollectionEpilogue() {
   new_space_top_after_last_gc_ = new_space()->top();
   last_gc_time_ = MonotonicallyIncreasingTimeInMs();
 
-  ReduceNewSpaceSize(
-      tracer()->CurrentAllocationThroughputInBytesPerMillisecond());
+  ReduceNewSpaceSize();
 }
 
 
@@ -1176,6 +1179,24 @@ void Heap::UpdateSurvivalStatistics(int start_new_space_size) {
   } else {
     high_survival_rate_period_length_ = 0;
   }
+
+  if (survival_rate < kYoungSurvivalRateLowThreshold) {
+    low_survival_rate_period_length_++;
+  } else {
+    low_survival_rate_period_length_ = 0;
+  }
+
+  double survival_rate_diff = survival_rate_ - survival_rate;
+
+  if (survival_rate_diff > kYoungSurvivalRateAllowedDeviation) {
+    set_survival_rate_trend(DECREASING);
+  } else if (survival_rate_diff < -kYoungSurvivalRateAllowedDeviation) {
+    set_survival_rate_trend(INCREASING);
+  } else {
+    set_survival_rate_trend(STABLE);
+  }
+
+  survival_rate_ = survival_rate;
 }
 
 bool Heap::PerformGarbageCollection(
@@ -1218,20 +1239,22 @@ bool Heap::PerformGarbageCollection(
   }
 
   if (collector == MARK_COMPACTOR) {
+    UpdateOldGenerationAllocationCounter();
     // Perform mark-sweep with optional compaction.
     MarkCompact();
     sweep_generation_++;
     old_gen_exhausted_ = false;
     old_generation_size_configured_ = true;
+    // This should be updated before PostGarbageCollectionProcessing, which can
+    // cause another GC.
+    old_generation_size_at_last_gc_ = PromotedSpaceSizeOfObjects();
   } else {
     Scavenge();
   }
 
-  // This should be updated before PostGarbageCollectionProcessing, which can
-  // cause another GC.
-  old_generation_size_at_last_gc_ = PromotedSpaceSizeOfObjects();
 
   UpdateSurvivalStatistics(start_new_space_size);
+  ConfigureNewGenerationSize();
   ConfigureInitialOldGenerationSize();
 
   isolate_->counters()->objs_since_last_young()->Set(0);
@@ -1449,7 +1472,8 @@ void Heap::CheckNewSpaceExpansionCriteria() {
       survived_since_last_expansion_ = 0;
     }
   } else if (new_space_.TotalCapacity() < new_space_.MaximumCapacity() &&
-             survived_since_last_expansion_ > new_space_.TotalCapacity()) {
+             survived_since_last_expansion_ > new_space_.TotalCapacity() &&
+             !new_space_high_promotion_mode_active_) {
     // Grow the size of new space if there is room to grow, and enough data
     // has survived scavenge since the last expansion.
     new_space_.Grow();
@@ -2479,6 +2503,38 @@ void Heap::ConfigureInitialOldGenerationSize() {
             static_cast<intptr_t>(
                 static_cast<double>(old_generation_allocation_limit_) *
                 (tracer()->AverageSurvivalRatio() / 100)));
+  }
+}
+
+
+void Heap::ConfigureNewGenerationSize() {
+  if (!new_space_high_promotion_mode_active_ &&
+      new_space_.TotalCapacity() == new_space_.MaximumCapacity() &&
+      IsStableOrIncreasingSurvivalTrend() && IsHighSurvivalRate()) {
+    // Stable high survival rates even though young generation is at
+    // maximum capacity indicates that most objects will be promoted.
+    // To decrease scavenger pauses and final mark-sweep pauses, we
+    // have to limit maximal capacity of the young generation.
+    new_space_high_promotion_mode_active_ = true;
+    if (FLAG_trace_gc) {
+      PrintPID("Limited new space size due to high promotion rate: %d MB\n",
+               new_space_.InitialTotalCapacity() / MB);
+    }
+  } else if (new_space_high_promotion_mode_active_ &&
+             IsStableOrDecreasingSurvivalTrend() && IsLowSurvivalRate()) {
+    // Decreasing low survival rates might indicate that the above high
+    // promotion mode is over and we should allow the young generation
+    // to grow again.
+    new_space_high_promotion_mode_active_ = false;
+    if (FLAG_trace_gc) {
+      PrintPID("Unlimited new space size due to low promotion rate: %d MB\n",
+               new_space_.MaximumCapacity() / MB);
+    }
+  }
+
+  if (new_space_high_promotion_mode_active_ &&
+      new_space_.TotalCapacity() > new_space_.InitialTotalCapacity()) {
+    new_space_.Shrink();
   }
 }
 
@@ -4513,15 +4569,38 @@ void Heap::MakeHeapIterable() {
 }
 
 
-bool Heap::HasLowAllocationRate(size_t allocation_rate) {
-  static const size_t kLowAllocationRate = 1000;
-  if (allocation_rate == 0) return false;
-  return allocation_rate < kLowAllocationRate;
+bool Heap::HasLowYoungGenerationAllocationRate() {
+  const double high_mutator_utilization = 0.995;
+  double mutator_speed = static_cast<double>(
+      tracer()->NewSpaceAllocationThroughputInBytesPerMillisecond());
+  double gc_speed =
+      static_cast<double>(tracer()->ScavengeSpeedInBytesPerMillisecond());
+  if (mutator_speed == 0 || gc_speed == 0) return false;
+  double mutator_utilization = gc_speed / (mutator_speed + gc_speed);
+  return mutator_utilization > high_mutator_utilization;
 }
 
 
-void Heap::ReduceNewSpaceSize(size_t allocation_rate) {
-  if (!FLAG_predictable && HasLowAllocationRate(allocation_rate)) {
+bool Heap::HasLowOldGenerationAllocationRate() {
+  const double high_mutator_utilization = 0.995;
+  double mutator_speed = static_cast<double>(
+      tracer()->OldGenerationAllocationThroughputInBytesPerMillisecond());
+  double gc_speed = static_cast<double>(
+      tracer()->CombinedMarkCompactSpeedInBytesPerMillisecond());
+  if (mutator_speed == 0 || gc_speed == 0) return false;
+  double mutator_utilization = gc_speed / (mutator_speed + gc_speed);
+  return mutator_utilization > high_mutator_utilization;
+}
+
+
+bool Heap::HasLowAllocationRate() {
+  return HasLowYoungGenerationAllocationRate() &&
+         HasLowOldGenerationAllocationRate();
+}
+
+
+void Heap::ReduceNewSpaceSize() {
+  if (!FLAG_predictable && HasLowAllocationRate()) {
     new_space_.Shrink();
     UncommitFromSpace();
   }
@@ -4577,11 +4656,9 @@ GCIdleTimeHandler::HeapState Heap::ComputeHeapState() {
   heap_state.new_space_capacity = new_space_.Capacity();
   heap_state.new_space_allocation_throughput_in_bytes_per_ms =
       tracer()->NewSpaceAllocationThroughputInBytesPerMillisecond();
-  heap_state.current_allocation_throughput_in_bytes_per_ms =
-      tracer()->CurrentAllocationThroughputInBytesPerMillisecond();
+  heap_state.has_low_allocation_rate = HasLowAllocationRate();
   intptr_t limit = old_generation_allocation_limit_;
-  if (HasLowAllocationRate(
-          heap_state.current_allocation_throughput_in_bytes_per_ms)) {
+  if (heap_state.has_low_allocation_rate) {
     limit = idle_old_generation_allocation_limit_;
   }
   heap_state.can_start_incremental_marking =

@@ -1784,7 +1784,11 @@ TEST(TestSizeOfRegExpCode) {
 
   int size_of_regexp_code = size_with_regexp - initial_size;
 
-  CHECK_LE(size_of_regexp_code, 1 * MB);
+  // On some platforms the debug-code flag causes huge amounts of regexp code
+  // to be emitted, breaking this test.
+  if (!FLAG_debug_code) {
+    CHECK_LE(size_of_regexp_code, 1 * MB);
+  }
 
   // Small regexp is half the size, but compiles to more than twice the code
   // due to the optimization steps.
@@ -5808,6 +5812,7 @@ TEST(OldSpaceAllocationCounter) {
   Heap* heap = isolate->heap();
   size_t counter1 = heap->OldGenerationAllocationCounter();
   heap->CollectGarbage(NEW_SPACE);
+  heap->CollectGarbage(NEW_SPACE);
   const size_t kSize = 1024;
   AllocateInSpace(isolate, kSize, OLD_SPACE);
   size_t counter2 = heap->OldGenerationAllocationCounter();
@@ -5868,12 +5873,13 @@ TEST(NewSpaceAllocationThroughput2) {
   int time2 = 200;
   size_t counter2 = 2000;
   tracer->SampleAllocation(time2, counter2, 0);
-  size_t throughput = tracer->AllocationThroughputInBytesPerMillisecond(100);
+  size_t throughput =
+      tracer->NewSpaceAllocationThroughputInBytesPerMillisecond(100);
   CHECK_EQ((counter2 - counter1) / (time2 - time1), throughput);
   int time3 = 1000;
   size_t counter3 = 30000;
   tracer->SampleAllocation(time3, counter3, 0);
-  throughput = tracer->AllocationThroughputInBytesPerMillisecond(100);
+  throughput = tracer->NewSpaceAllocationThroughputInBytesPerMillisecond(100);
   CHECK_EQ((counter3 - counter1) / (time3 - time1), throughput);
 }
 
@@ -5932,12 +5938,14 @@ TEST(OldGenerationAllocationThroughput) {
   int time2 = 200;
   size_t counter2 = 2000;
   tracer->SampleAllocation(time2, 0, counter2);
-  size_t throughput = tracer->AllocationThroughputInBytesPerMillisecond(100);
+  size_t throughput =
+      tracer->OldGenerationAllocationThroughputInBytesPerMillisecond(100);
   CHECK_EQ((counter2 - counter1) / (time2 - time1), throughput);
   int time3 = 1000;
   size_t counter3 = 30000;
   tracer->SampleAllocation(time3, 0, counter3);
-  throughput = tracer->AllocationThroughputInBytesPerMillisecond(100);
+  throughput =
+      tracer->OldGenerationAllocationThroughputInBytesPerMillisecond(100);
   CHECK_EQ((counter3 - counter1) / (time3 - time1), throughput);
 }
 

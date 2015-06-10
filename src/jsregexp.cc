@@ -4842,6 +4842,7 @@ bool RegExpDisjunction::SortConsecutiveAtoms(RegExpCompiler* compiler) {
       i++;
     }
     // i is length or it is the index of an atom.
+    if (i == length) break;
     int first_atom = i;
     i++;
     while (i < length) {
@@ -4852,8 +4853,13 @@ bool RegExpDisjunction::SortConsecutiveAtoms(RegExpCompiler* compiler) {
     // Sort atoms to get ones with common prefixes together.
     // This step is not valid if we are in a case-independent regexp,
     // because it would change /is|I/ to /I|is/, and order matters when
-    // the regexp parts don't match only disjoint starting points.
+    // the regexp parts don't match only disjoint starting points. To fix
+    // this would need a version of CompareFirstChar that uses case-
+    // independent character classes for comparison.
     if (!compiler->ignore_case()) {
+      DCHECK_LT(first_atom, alternatives->length());
+      DCHECK_LE(i, alternatives->length());
+      DCHECK_LE(first_atom, i);
       alternatives->StableSort(CompareFirstChar, first_atom, i - first_atom);
     }
     if (i - first_atom > 1) found_consecutive_atoms = true;
@@ -4892,7 +4898,10 @@ void RegExpDisjunction::RationalizeConsecutiveAtoms(RegExpCompiler* compiler) {
     }
     if (i > first_with_prefix + 2) {
       // Found worthwhile run of alternatives with common prefix of at least one
-      // character.  Find out how long the common prefix is.
+      // character.  The sorting function above did not sort on more than one
+      // character for reasons of correctness, but there may still be a longer
+      // common prefix if the terms were similar or presorted in the input.
+      // Find out how long the common prefix is.
       int run_length = i - first_with_prefix;
       atom = alternatives->at(first_with_prefix)->AsAtom();
       for (int j = 1; j < run_length && prefix_length > 1; j++) {

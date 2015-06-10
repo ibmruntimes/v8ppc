@@ -262,7 +262,7 @@ class JSBinopReduction final {
     // left operand.
     const Operator* op = jsgraph()->common()->FrameState(
         state_info.type(), state_info.bailout_id(),
-        OutputFrameStateCombine::PokeAt(1));
+        OutputFrameStateCombine::PokeAt(1), state_info.shared_info());
 
     return graph()->NewNode(op,
                             frame_state->InputAt(kFrameStateParametersInput),
@@ -286,7 +286,7 @@ class JSBinopReduction final {
     // top of the stack (i.e., the slot used for the right operand).
     const Operator* op = jsgraph()->common()->FrameState(
         state_info.type(), state_info.bailout_id(),
-        OutputFrameStateCombine::PokeAt(0));
+        OutputFrameStateCombine::PokeAt(0), state_info.shared_info());
 
     // Change the left operand {converted_left} on the expression stack.
     Node* stack = frame_state->InputAt(2);
@@ -1348,8 +1348,14 @@ Reduction JSTypedLowering::ReduceJSForInPrepare(Node* node) {
       Revisit(use);
     } else {
       if (NodeProperties::IsControlEdge(edge)) {
-        DCHECK_EQ(IrOpcode::kIfSuccess, use->opcode());
-        Replace(use, control);
+        if (use->opcode() == IrOpcode::kIfSuccess) {
+          Replace(use, control);
+        } else if (use->opcode() == IrOpcode::kIfException) {
+          edge.UpdateTo(cache_type_true0);
+          continue;
+        } else {
+          UNREACHABLE();
+        }
       } else {
         DCHECK(NodeProperties::IsValueEdge(edge));
         DCHECK_EQ(IrOpcode::kProjection, use->opcode());

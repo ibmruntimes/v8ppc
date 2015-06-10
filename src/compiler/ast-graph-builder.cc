@@ -453,6 +453,21 @@ AstGraphBuilder::AstGraphBuilder(Zone* local_zone, CompilationInfo* info,
 }
 
 
+Node* AstGraphBuilder::GetFunctionClosureForContext() {
+  Scope* declaration_scope = current_scope()->DeclarationScope();
+  if (declaration_scope->is_script_scope() ||
+      declaration_scope->is_module_scope()) {
+    // Contexts nested in the native context have a canonical empty function as
+    // their closure, not the anonymous closure containing the global code.
+    // Pass a SMI sentinel and let the runtime look up the empty function.
+    return jsgraph()->SmiConstant(0);
+  } else {
+    DCHECK(declaration_scope->is_function_scope());
+    return GetFunctionClosure();
+  }
+}
+
+
 Node* AstGraphBuilder::GetFunctionClosure() {
   if (!function_closure_.is_set()) {
     const Operator* op = common()->Parameter(
@@ -1191,10 +1206,9 @@ void AstGraphBuilder::VisitWithStatement(WithStatement* stmt) {
   VisitForValue(stmt->expression());
   Node* value = environment()->Pop();
   const Operator* op = javascript()->CreateWithContext();
-  Node* context = NewNode(op, value, GetFunctionClosure());
+  Node* context = NewNode(op, value, GetFunctionClosureForContext());
   PrepareFrameState(context, stmt->EntryId());
-  ContextScope scope(this, stmt->scope(), context);
-  Visit(stmt->statement());
+  VisitInScope(stmt->statement(), stmt->scope(), context);
 }
 
 
@@ -1386,6 +1400,8 @@ void AstGraphBuilder::VisitForOfStatement(ForOfStatement* stmt) {
 
 void AstGraphBuilder::VisitTryCatchStatement(TryCatchStatement* stmt) {
   TryCatchBuilder try_control(this);
+  ExternalReference message_object =
+      ExternalReference::address_of_pending_message_obj(isolate());
 
   // Evaluate the try-block inside a control scope. This simulates a handler
   // that is intercepting 'throw' control commands.
@@ -1399,24 +1415,18 @@ void AstGraphBuilder::VisitTryCatchStatement(TryCatchStatement* stmt) {
   }
   try_control.EndTry();
 
-  // Clear message object as we enter the catch block.
-  ExternalReference message_object =
-      ExternalReference::address_of_pending_message_obj(isolate());
-  Node* the_hole = jsgraph()->TheHoleConstant();
-  BuildStoreExternal(message_object, kMachAnyTagged, the_hole);
-
   // Create a catch scope that binds the exception.
   Node* exception = try_control.GetExceptionNode();
   Unique<String> name = MakeUnique(stmt->variable()->name());
   const Operator* op = javascript()->CreateCatchContext(name);
-  Node* context = NewNode(op, exception, GetFunctionClosure());
-  PrepareFrameState(context, BailoutId::None());
-  {
-    ContextScope scope(this, stmt->scope(), context);
-    DCHECK(stmt->scope()->declarations()->is_empty());
-    // Evaluate the catch-block.
-    Visit(stmt->catch_block());
-  }
+  Node* context = NewNode(op, exception, GetFunctionClosureForContext());
+
+  // Clear message object as we enter the catch block.
+  Node* the_hole = jsgraph()->TheHoleConstant();
+  BuildStoreExternal(message_object, kMachAnyTagged, the_hole);
+
+  // Evaluate the catch-block.
+  VisitInScope(stmt->catch_block(), stmt->scope(), context);
   try_control.EndCatch();
 
   // TODO(mstarzinger): Remove bailout once everything works.
@@ -1426,7 +1436,6 @@ void AstGraphBuilder::VisitTryCatchStatement(TryCatchStatement* stmt) {
 
 void AstGraphBuilder::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
   TryFinallyBuilder try_control(this);
-
   ExternalReference message_object =
       ExternalReference::address_of_pending_message_obj(isolate());
 
@@ -2429,7 +2438,7 @@ void AstGraphBuilder::VisitCall(Call* expr) {
       }
     }
     Node* language = jsgraph()->Constant(language_mode());
-    Node* position = jsgraph()->Constant(info()->scope()->start_position());
+    Node* position = jsgraph()->Constant(current_scope()->start_position());
     const Operator* op =
         javascript()->CallRuntime(Runtime::kResolvePossiblyDirectEval, 6);
     Node* pair =
@@ -2514,6 +2523,9 @@ void AstGraphBuilder::VisitCallRuntime(CallRuntime* expr) {
 
   // Create node to perform the runtime call.
   Runtime::FunctionId functionId = function->function_id;
+  // TODO(mstarzinger): This bailout is a gigantic hack, the owner is ashamed.
+  if (functionId == Runtime::kInlineGeneratorNext) SetStackOverflow();
+  if (functionId == Runtime::kInlineGeneratorThrow) SetStackOverflow();
   const Operator* call = javascript()->CallRuntime(functionId, args->length());
   Node* value = ProcessArguments(call, args->length());
   PrepareFrameState(value, expr->id(), ast_context()->GetStateCombine());
@@ -2835,6 +2847,13 @@ void AstGraphBuilder::VisitIfNotNull(Statement* stmt) {
 }
 
 
+void AstGraphBuilder::VisitInScope(Statement* stmt, Scope* s, Node* context) {
+  ContextScope scope(this, s, context);
+  DCHECK(s->declarations()->is_empty());
+  Visit(stmt);
+}
+
+
 void AstGraphBuilder::VisitIterationBody(IterationStatement* stmt,
                                          LoopBuilder* loop) {
   ControlScopeForIteration scope(this, stmt, loop);
@@ -3069,12 +3088,12 @@ Node* AstGraphBuilder::BuildLocalFunctionContext(Node* context,
 
 
 Node* AstGraphBuilder::BuildLocalScriptContext(Scope* scope) {
-  Node* closure = GetFunctionClosure();
+  DCHECK(scope->is_script_scope());
 
   // Allocate a new local context.
   const Operator* op = javascript()->CreateScriptContext();
   Node* scope_info = jsgraph()->Constant(scope->GetScopeInfo(isolate()));
-  Node* local_context = NewNode(op, closure, scope_info);
+  Node* local_context = NewNode(op, GetFunctionClosure(), scope_info);
   PrepareFrameState(local_context, BailoutId::FunctionEntry());
 
   return local_context;
@@ -3082,12 +3101,12 @@ Node* AstGraphBuilder::BuildLocalScriptContext(Scope* scope) {
 
 
 Node* AstGraphBuilder::BuildLocalBlockContext(Scope* scope) {
-  Node* closure = GetFunctionClosure();
+  DCHECK(scope->is_block_scope());
 
   // Allocate a new local context.
   const Operator* op = javascript()->CreateBlockContext();
   Node* scope_info = jsgraph()->Constant(scope->GetScopeInfo(isolate()));
-  Node* local_context = NewNode(op, scope_info, closure);
+  Node* local_context = NewNode(op, scope_info, GetFunctionClosureForContext());
 
   return local_context;
 }
