@@ -76,10 +76,8 @@ Handle<Code> CodeGenerator::GenerateCode() {
 
   // Define deoptimization literals for all inlined functions.
   DCHECK_EQ(0u, deoptimization_literals_.size());
-  for (auto frame_state_descriptor : code()->frame_state_descriptors()) {
-    Handle<SharedFunctionInfo> shared_info;
-    if (frame_state_descriptor->shared_info().ToHandle(&shared_info) &&
-        !shared_info.is_identical_to(info->shared_info())) {
+  for (auto shared_info : info->inlined_functions()) {
+    if (!shared_info.is_identical_to(info->shared_info())) {
       DefineDeoptimizationLiteral(shared_info);
     }
   }
@@ -223,7 +221,16 @@ bool CodeGenerator::IsMaterializableFromFrame(Handle<HeapObject> object,
 bool CodeGenerator::IsMaterializableFromRoot(
     Handle<HeapObject> object, Heap::RootListIndex* index_return) {
   if (linkage()->GetIncomingDescriptor()->IsJSFunctionCall()) {
-    return isolate()->heap()->GetRootListIndex(object, index_return);
+    // Check if {object} is one of the non-smi roots that cannot be written
+    // after initialization.
+    for (int i = 0; i < Heap::kSmiRootsStart; ++i) {
+      Heap::RootListIndex const index = static_cast<Heap::RootListIndex>(i);
+      if (!Heap::RootCanBeWrittenAfterInitialization(index) &&
+          *object == isolate()->heap()->root(index)) {
+        *index_return = index;
+        return true;
+      }
+    }
   }
   return false;
 }
