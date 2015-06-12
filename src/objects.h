@@ -1176,9 +1176,6 @@ class Object {
   MUST_USE_RESULT static MaybeHandle<Object> WriteToReadOnlyProperty(
       Isolate* isolate, Handle<Object> reciever, Handle<Object> name,
       Handle<Object> value, LanguageMode language_mode);
-  MUST_USE_RESULT static MaybeHandle<Object> WriteToReadOnlyElement(
-      Isolate* isolate, Handle<Object> receiver, uint32_t index,
-      Handle<Object> value, LanguageMode language_mode);
   MUST_USE_RESULT static MaybeHandle<Object> RedefineNonconfigurableProperty(
       Isolate* isolate, Handle<Object> name, Handle<Object> value,
       LanguageMode language_mode);
@@ -1841,16 +1838,31 @@ class JSObject: public JSReceiver {
   MUST_USE_RESULT static MaybeHandle<Object> SetPropertyWithInterceptor(
       LookupIterator* it, Handle<Object> value);
 
+  // SetLocalPropertyIgnoreAttributes converts callbacks to fields. We need to
+  // grant an exemption to ExecutableAccessor callbacks in some cases.
+  enum ExecutableAccessorInfoHandling { DEFAULT_HANDLING, DONT_FORCE_FIELD };
+
+  MUST_USE_RESULT static MaybeHandle<Object> DefineOwnPropertyIgnoreAttributes(
+      LookupIterator* it, Handle<Object> value, PropertyAttributes attributes,
+      ExecutableAccessorInfoHandling handling = DEFAULT_HANDLING);
+
   MUST_USE_RESULT static MaybeHandle<Object> SetOwnPropertyIgnoreAttributes(
       Handle<JSObject> object, Handle<Name> name, Handle<Object> value,
-      PropertyAttributes attributes);
+      PropertyAttributes attributes,
+      ExecutableAccessorInfoHandling handling = DEFAULT_HANDLING);
 
   MUST_USE_RESULT static MaybeHandle<Object> SetOwnElementIgnoreAttributes(
       Handle<JSObject> object, uint32_t index, Handle<Object> value,
-      PropertyAttributes attributes);
+      PropertyAttributes attributes,
+      ExecutableAccessorInfoHandling handling = DEFAULT_HANDLING);
 
-  MUST_USE_RESULT static MaybeHandle<Object> ReconfigureAsDataProperty(
-      LookupIterator* it, Handle<Object> value, PropertyAttributes attributes);
+  // Equivalent to one of the above depending on whether |name| can be converted
+  // to an array index.
+  MUST_USE_RESULT static MaybeHandle<Object>
+  DefinePropertyOrElementIgnoreAttributes(
+      Handle<JSObject> object, Handle<Name> name, Handle<Object> value,
+      PropertyAttributes attributes = NONE,
+      ExecutableAccessorInfoHandling handling = DEFAULT_HANDLING);
 
   static void AddProperty(Handle<JSObject> object, Handle<Name> name,
                           Handle<Object> value, PropertyAttributes attributes);
@@ -2006,9 +2018,6 @@ class JSObject: public JSReceiver {
   }
 
   // These methods do not perform access checks!
-  MUST_USE_RESULT static MaybeHandle<AccessorPair> GetOwnElementAccessorPair(
-      Handle<JSObject> object, uint32_t index);
-
   static void UpdateAllocationSite(Handle<JSObject> object,
                                    ElementsKind to_kind);
 
@@ -2307,7 +2316,7 @@ class JSObject: public JSReceiver {
       LookupIterator* it);
 
   MUST_USE_RESULT static MaybeHandle<Object> SetPropertyWithFailedAccessCheck(
-      LookupIterator* it, Handle<Object> value, LanguageMode language_mode);
+      LookupIterator* it, Handle<Object> value);
 
   // Add a property to a slow-case object.
   static void AddSlowProperty(Handle<JSObject> object,
@@ -4045,12 +4054,13 @@ class ScopeInfo : public FixedArray {
   FunctionKind function_kind();
 
   // Copies all the context locals into an object used to materialize a scope.
-  static bool CopyContextLocalsToScopeObject(Handle<ScopeInfo> scope_info,
+  static void CopyContextLocalsToScopeObject(Handle<ScopeInfo> scope_info,
                                              Handle<Context> context,
                                              Handle<JSObject> scope_object);
 
 
   static Handle<ScopeInfo> Create(Isolate* isolate, Zone* zone, Scope* scope);
+  static Handle<ScopeInfo> CreateGlobalThisBinding(Isolate* isolate);
 
   // Serializes empty scope info.
   static ScopeInfo* Empty(Isolate* isolate);

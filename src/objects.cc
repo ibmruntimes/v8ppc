@@ -536,10 +536,11 @@ static bool FindAllCanWriteHolder(LookupIterator* it) {
 
 
 MaybeHandle<Object> JSObject::SetPropertyWithFailedAccessCheck(
-    LookupIterator* it, Handle<Object> value, LanguageMode language_mode) {
+    LookupIterator* it, Handle<Object> value) {
   Handle<JSObject> checked = it->GetHolder<JSObject>();
   if (FindAllCanWriteHolder(it)) {
-    return SetPropertyWithAccessor(it, value, language_mode);
+    // The supplied language-mode is ignored by SetPropertyWithAccessor.
+    return SetPropertyWithAccessor(it, value, SLOPPY);
   }
 
   it->isolate()->ReportFailedAccessCheck(checked);
@@ -2420,7 +2421,7 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
 
   ElementsKind from_kind = root_map->elements_kind();
   ElementsKind to_kind = old_map->elements_kind();
-  if (from_kind != to_kind &&
+  if (from_kind != to_kind && to_kind != DICTIONARY_ELEMENTS &&
       !(IsTransitionableFastElementsKind(from_kind) &&
         IsMoreGeneralElementsKindTransition(from_kind, to_kind))) {
     return CopyGeneralizeAllRepresentations(old_map, modify_index, store_mode,
@@ -2884,6 +2885,15 @@ MaybeHandle<Map> Map::TryUpdate(Handle<Map> old_map) {
   // Check the state of the root map.
   Map* root_map = old_map->FindRootMap();
   if (!old_map->EquivalentToForTransition(root_map)) return MaybeHandle<Map>();
+
+  ElementsKind from_kind = root_map->elements_kind();
+  ElementsKind to_kind = old_map->elements_kind();
+  if (from_kind != to_kind) {
+    // Try to follow existing elements kind transitions.
+    root_map = root_map->LookupElementsTransitionMap(to_kind);
+    if (root_map == NULL) return MaybeHandle<Map>();
+    // From here on, use the map with correct elements kind as root map.
+  }
   int root_nof = root_map->NumberOfOwnDescriptors();
 
   int old_nof = old_map->NumberOfOwnDescriptors();
@@ -3035,8 +3045,7 @@ MaybeHandle<Object> Object::SetPropertyInternal(LookupIterator* it,
         if (it->HasAccess()) break;
         // Check whether it makes sense to reuse the lookup iterator. Here it
         // might still call into setters up the prototype chain.
-        return JSObject::SetPropertyWithFailedAccessCheck(it, value,
-                                                          language_mode);
+        return JSObject::SetPropertyWithFailedAccessCheck(it, value);
 
       case LookupIterator::JSPROXY:
         if (it->HolderIsReceiverOrHiddenPrototype()) {
@@ -3156,9 +3165,8 @@ MaybeHandle<Object> Object::SetSuperProperty(LookupIterator* it,
   for (; own_lookup.IsFound(); own_lookup.Next()) {
     switch (own_lookup.state()) {
       case LookupIterator::ACCESS_CHECK:
-        if (!it->isolate()->MayAccess(own_lookup.GetHolder<JSObject>())) {
-          return JSObject::SetPropertyWithFailedAccessCheck(&own_lookup, value,
-                                                            language_mode);
+        if (!own_lookup.HasAccess()) {
+          return JSObject::SetPropertyWithFailedAccessCheck(&own_lookup, value);
         }
         break;
 
@@ -3168,8 +3176,8 @@ MaybeHandle<Object> Object::SetSuperProperty(LookupIterator* it,
       case LookupIterator::DATA: {
         PropertyDetails details = own_lookup.property_details();
         if (details.IsConfigurable() || !details.IsReadOnly()) {
-          return JSObject::ReconfigureAsDataProperty(&own_lookup, value,
-                                                     details.attributes());
+          return JSObject::DefineOwnPropertyIgnoreAttributes(
+              &own_lookup, value, details.attributes());
         }
         return WriteToReadOnlyProperty(&own_lookup, value, language_mode);
       }
@@ -3177,8 +3185,8 @@ MaybeHandle<Object> Object::SetSuperProperty(LookupIterator* it,
       case LookupIterator::ACCESSOR: {
         PropertyDetails details = own_lookup.property_details();
         if (details.IsConfigurable()) {
-          return JSObject::ReconfigureAsDataProperty(&own_lookup, value,
-                                                     details.attributes());
+          return JSObject::DefineOwnPropertyIgnoreAttributes(
+              &own_lookup, value, details.attributes());
         }
 
         return RedefineNonconfigurableProperty(it->isolate(), it->GetName(),
@@ -3223,17 +3231,6 @@ MaybeHandle<Object> Object::WriteToReadOnlyProperty(
 }
 
 
-MaybeHandle<Object> Object::WriteToReadOnlyElement(Isolate* isolate,
-                                                   Handle<Object> receiver,
-                                                   uint32_t index,
-                                                   Handle<Object> value,
-                                                   LanguageMode language_mode) {
-  return WriteToReadOnlyProperty(isolate, receiver,
-                                 isolate->factory()->NewNumberFromUint(index),
-                                 value, language_mode);
-}
-
-
 MaybeHandle<Object> Object::RedefineNonconfigurableProperty(
     Isolate* isolate, Handle<Object> name, Handle<Object> value,
     LanguageMode language_mode) {
@@ -3262,11 +3259,12 @@ MaybeHandle<Object> Object::SetDataProperty(LookupIterator* it,
   MaybeHandle<Object> maybe_old;
   if (is_observed) maybe_old = it->GetDataValue();
 
+  Handle<Object> to_assign = value;
   // Convert the incoming value to a number for storing into typed arrays.
   if (it->IsElement() && (receiver->HasExternalArrayElements() ||
                           receiver->HasFixedTypedArrayElements())) {
     if (!value->IsNumber() && !value->IsUndefined()) {
-      ASSIGN_RETURN_ON_EXCEPTION(it->isolate(), value,
+      ASSIGN_RETURN_ON_EXCEPTION(it->isolate(), to_assign,
                                  Execution::ToNumber(it->isolate(), value),
                                  Object);
     }
@@ -3274,10 +3272,10 @@ MaybeHandle<Object> Object::SetDataProperty(LookupIterator* it,
 
   // Possibly migrate to the most up-to-date map that will be able to store
   // |value| under it->name().
-  it->PrepareForDataProperty(value);
+  it->PrepareForDataProperty(to_assign);
 
   // Write the property value.
-  value = it->WriteDataValue(value);
+  it->WriteDataValue(to_assign);
 
   // Send the change record if there are observers.
   if (is_observed && !value->SameValue(*maybe_old.ToHandleChecked())) {
@@ -4132,60 +4130,93 @@ void ExecutableAccessorInfo::ClearSetter(Handle<ExecutableAccessorInfo> info) {
 }
 
 
-MaybeHandle<Object> JSObject::ReconfigureAsDataProperty(
-    LookupIterator* it, Handle<Object> value, PropertyAttributes attributes) {
+// Reconfigures a property to a data property with attributes, even if it is not
+// reconfigurable.
+// Requires a LookupIterator that does not look at the prototype chain beyond
+// hidden prototypes.
+MaybeHandle<Object> JSObject::DefineOwnPropertyIgnoreAttributes(
+    LookupIterator* it, Handle<Object> value, PropertyAttributes attributes,
+    ExecutableAccessorInfoHandling handling) {
   Handle<JSObject> object = Handle<JSObject>::cast(it->GetReceiver());
   bool is_observed = object->map()->is_observed() &&
                      (it->IsElement() ||
                       !it->isolate()->IsInternallyUsedPropertyName(it->name()));
 
-  switch (it->state()) {
-    case LookupIterator::INTERCEPTOR:
-    case LookupIterator::JSPROXY:
-    case LookupIterator::NOT_FOUND:
-    case LookupIterator::TRANSITION:
-    case LookupIterator::ACCESS_CHECK:
-      UNREACHABLE();
+  for (; it->IsFound(); it->Next()) {
+    switch (it->state()) {
+      case LookupIterator::JSPROXY:
+      case LookupIterator::NOT_FOUND:
+      case LookupIterator::TRANSITION:
+        UNREACHABLE();
 
-    case LookupIterator::INTEGER_INDEXED_EXOTIC:
-      return value;
-
-    case LookupIterator::ACCESSOR: {
-      PropertyDetails details = it->property_details();
-      // Ensure the context isn't changed after calling into accessors.
-      AssertNoContextChange ncc(it->isolate());
-
-      Handle<Object> accessors = it->GetAccessors();
-
-      // Special handling for ExecutableAccessorInfo, which behaves like a
-      // data property.
-      if (accessors->IsExecutableAccessorInfo()) {
-        Handle<Object> result;
-        ASSIGN_RETURN_ON_EXCEPTION(
-            it->isolate(), result,
-            JSObject::SetPropertyWithAccessor(it, value, STRICT), Object);
-        DCHECK(result->SameValue(*value));
-
-        if (details.attributes() == attributes) return value;
-
-        // Reconfigure the accessor if attributes mismatch.
-        Handle<ExecutableAccessorInfo> new_data = Accessors::CloneAccessor(
-            it->isolate(), Handle<ExecutableAccessorInfo>::cast(accessors));
-        new_data->set_property_attributes(attributes);
-        // By clearing the setter we don't have to introduce a lookup to
-        // the setter, simply make it unavailable to reflect the
-        // attributes.
-        if (attributes & READ_ONLY) {
-          ExecutableAccessorInfo::ClearSetter(new_data);
+      case LookupIterator::ACCESS_CHECK:
+        if (!it->HasAccess()) {
+          return SetPropertyWithFailedAccessCheck(it, value);
         }
+        break;
 
-        if (it->IsElement()) {
-          SetElementCallback(it->GetHolder<JSObject>(), it->index(), new_data,
-                             attributes);
+      // If there's an interceptor, try to store the property with the
+      // interceptor.
+      // In case of success, the attributes will have been reset to the default
+      // attributes of the interceptor, rather than the incoming attributes.
+      //
+      // TODO(verwaest): JSProxy afterwards verify the attributes that the
+      // JSProxy claims it has, and verifies that they are compatible. If not,
+      // they throw. Here we should do the same.
+      case LookupIterator::INTERCEPTOR:
+        if (handling == DONT_FORCE_FIELD) {
+          MaybeHandle<Object> maybe_result =
+              JSObject::SetPropertyWithInterceptor(it, value);
+          if (!maybe_result.is_null()) return maybe_result;
+          if (it->isolate()->has_pending_exception()) return maybe_result;
+        }
+        break;
+
+      case LookupIterator::INTEGER_INDEXED_EXOTIC:
+        return value;
+
+      case LookupIterator::ACCESSOR: {
+        Handle<Object> accessors = it->GetAccessors();
+
+        // Special handling for ExecutableAccessorInfo, which behaves like a
+        // data property.
+        if (accessors->IsExecutableAccessorInfo() &&
+            handling == DONT_FORCE_FIELD) {
+          PropertyDetails details = it->property_details();
+          // Ensure the context isn't changed after calling into accessors.
+          AssertNoContextChange ncc(it->isolate());
+
+          Handle<Object> result;
+          ASSIGN_RETURN_ON_EXCEPTION(
+              it->isolate(), result,
+              JSObject::SetPropertyWithAccessor(it, value, STRICT), Object);
+          DCHECK(result->SameValue(*value));
+
+          if (details.attributes() == attributes) return value;
+
+          // Reconfigure the accessor if attributes mismatch.
+          Handle<ExecutableAccessorInfo> new_data = Accessors::CloneAccessor(
+              it->isolate(), Handle<ExecutableAccessorInfo>::cast(accessors));
+          new_data->set_property_attributes(attributes);
+          // By clearing the setter we don't have to introduce a lookup to
+          // the setter, simply make it unavailable to reflect the
+          // attributes.
+          if (attributes & READ_ONLY) {
+            ExecutableAccessorInfo::ClearSetter(new_data);
+          }
+
+          if (it->IsElement()) {
+            SetElementCallback(it->GetHolder<JSObject>(), it->index(), new_data,
+                               attributes);
+          } else {
+            SetPropertyCallback(it->GetHolder<JSObject>(), it->name(), new_data,
+                                attributes);
+          }
         } else {
-          SetPropertyCallback(it->GetHolder<JSObject>(), it->name(), new_data,
-                              attributes);
+          it->ReconfigureDataProperty(value, attributes);
+          it->WriteDataValue(value);
         }
+
         if (is_observed) {
           RETURN_ON_EXCEPTION(
               it->isolate(),
@@ -4193,104 +4224,78 @@ MaybeHandle<Object> JSObject::ReconfigureAsDataProperty(
                                   it->factory()->the_hole_value()),
               Object);
         }
+
         return value;
       }
-
-      it->ReconfigureDataProperty(value, attributes);
-      it->WriteDataValue(value);
-
-      if (is_observed) {
-        RETURN_ON_EXCEPTION(
-            it->isolate(),
-            EnqueueChangeRecord(object, "reconfigure", it->GetName(),
-                                it->factory()->the_hole_value()),
-            Object);
-      }
-
-      return value;
-    }
-
-    case LookupIterator::DATA: {
-      PropertyDetails details = it->property_details();
-      Handle<Object> old_value = it->factory()->the_hole_value();
-      // Regular property update if the attributes match.
-      if (details.attributes() == attributes) {
-        return SetDataProperty(it, value);
-      }
-
-      // Special case: properties of typed arrays cannot be reconfigured to
-      // non-writable nor to non-enumerable.
-      if (it->IsElement() && (object->HasExternalArrayElements() ||
-                              object->HasFixedTypedArrayElements())) {
-        return RedefineNonconfigurableProperty(it->isolate(), it->GetName(),
-                                               value, STRICT);
-      }
-
-      // Reconfigure the data property if the attributes mismatch.
-      if (is_observed) old_value = it->GetDataValue();
-
-      it->ReconfigureDataProperty(value, attributes);
-      it->WriteDataValue(value);
-
-      if (is_observed) {
-        if (old_value->SameValue(*value)) {
-          old_value = it->factory()->the_hole_value();
+      case LookupIterator::DATA: {
+        PropertyDetails details = it->property_details();
+        Handle<Object> old_value = it->factory()->the_hole_value();
+        // Regular property update if the attributes match.
+        if (details.attributes() == attributes) {
+          return SetDataProperty(it, value);
         }
-        RETURN_ON_EXCEPTION(it->isolate(),
-                            EnqueueChangeRecord(object, "reconfigure",
-                                                it->GetName(), old_value),
-                            Object);
+
+        // Special case: properties of typed arrays cannot be reconfigured to
+        // non-writable nor to non-enumerable.
+        if (it->IsElement() && (object->HasExternalArrayElements() ||
+                                object->HasFixedTypedArrayElements())) {
+          return RedefineNonconfigurableProperty(it->isolate(), it->GetName(),
+                                                 value, STRICT);
+        }
+
+        // Reconfigure the data property if the attributes mismatch.
+        if (is_observed) old_value = it->GetDataValue();
+
+        it->ReconfigureDataProperty(value, attributes);
+        it->WriteDataValue(value);
+
+        if (is_observed) {
+          if (old_value->SameValue(*value)) {
+            old_value = it->factory()->the_hole_value();
+          }
+          RETURN_ON_EXCEPTION(it->isolate(),
+                              EnqueueChangeRecord(object, "reconfigure",
+                                                  it->GetName(), old_value),
+                              Object);
+        }
+        return value;
       }
     }
   }
 
-  return value;
+  return AddDataProperty(it, value, attributes, STRICT,
+                         CERTAINLY_NOT_STORE_FROM_KEYED);
 }
 
 
-// Reconfigures a property to a data property with attributes, even if it is not
-// reconfigurable.
 MaybeHandle<Object> JSObject::SetOwnPropertyIgnoreAttributes(
     Handle<JSObject> object, Handle<Name> name, Handle<Object> value,
-    PropertyAttributes attributes) {
+    PropertyAttributes attributes, ExecutableAccessorInfoHandling handling) {
   DCHECK(!value->IsTheHole());
-  LookupIterator it(object, name, LookupIterator::OWN_SKIP_INTERCEPTOR);
-  if (it.state() == LookupIterator::ACCESS_CHECK) {
-    if (!it.isolate()->MayAccess(object)) {
-      return SetPropertyWithFailedAccessCheck(&it, value, SLOPPY);
-    }
-    it.Next();
-  }
-
-  if (it.IsFound()) {
-    return ReconfigureAsDataProperty(&it, value, attributes);
-  }
-
-  return AddDataProperty(&it, value, attributes, STRICT,
-                         CERTAINLY_NOT_STORE_FROM_KEYED);
+  LookupIterator it(object, name, LookupIterator::OWN);
+  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes, handling);
 }
 
 
 MaybeHandle<Object> JSObject::SetOwnElementIgnoreAttributes(
     Handle<JSObject> object, uint32_t index, Handle<Object> value,
-    PropertyAttributes attributes) {
-  DCHECK(!object->HasExternalArrayElements());
+    PropertyAttributes attributes, ExecutableAccessorInfoHandling handling) {
   Isolate* isolate = object->GetIsolate();
-  LookupIterator it(isolate, object, index,
-                    LookupIterator::OWN_SKIP_INTERCEPTOR);
-  if (it.state() == LookupIterator::ACCESS_CHECK) {
-    if (!isolate->MayAccess(object)) {
-      return SetPropertyWithFailedAccessCheck(&it, value, STRICT);
-    }
-    it.Next();
-  }
+  LookupIterator it(isolate, object, index, LookupIterator::OWN);
+  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes, handling);
+}
 
-  if (it.IsFound()) {
-    return ReconfigureAsDataProperty(&it, value, attributes);
-  }
 
-  return AddDataProperty(&it, value, attributes, STRICT,
-                         MAY_BE_STORE_FROM_KEYED);
+MaybeHandle<Object> JSObject::DefinePropertyOrElementIgnoreAttributes(
+    Handle<JSObject> object, Handle<Name> name, Handle<Object> value,
+    PropertyAttributes attributes, ExecutableAccessorInfoHandling handling) {
+  Isolate* isolate = object->GetIsolate();
+  uint32_t index;
+  LookupIterator it =
+      name->AsArrayIndex(&index)
+          ? LookupIterator(isolate, object, index, LookupIterator::OWN)
+          : LookupIterator(object, name, LookupIterator::OWN);
+  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes, handling);
 }
 
 
@@ -6396,21 +6401,6 @@ MaybeHandle<Object> JSObject::DefineAccessor(Handle<JSObject> object,
                                              Handle<Object> setter,
                                              PropertyAttributes attributes) {
   Isolate* isolate = object->GetIsolate();
-  // Check access rights if needed.
-  if (object->IsAccessCheckNeeded() && !isolate->MayAccess(object)) {
-    isolate->ReportFailedAccessCheck(object);
-    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
-    return isolate->factory()->undefined_value();
-  }
-
-  if (object->IsJSGlobalProxy()) {
-    PrototypeIterator iter(isolate, object);
-    if (iter.IsAtEnd()) return isolate->factory()->undefined_value();
-    DCHECK(PrototypeIterator::GetCurrent(iter)->IsJSGlobalObject());
-    DefineAccessor(Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter)),
-                   name, getter, setter, attributes);
-    return isolate->factory()->undefined_value();
-  }
 
   // Make sure that the top context does not change when doing callbacks or
   // interceptor calls.
@@ -6420,39 +6410,36 @@ MaybeHandle<Object> JSObject::DefineAccessor(Handle<JSObject> object,
   if (name->IsString()) name = String::Flatten(Handle<String>::cast(name));
 
   uint32_t index = 0;
-  bool is_element = name->AsArrayIndex(&index);
+  LookupIterator::Configuration c = LookupIterator::HIDDEN_SKIP_INTERCEPTOR;
+  LookupIterator it = name->AsArrayIndex(&index)
+                          ? LookupIterator(isolate, object, index, c)
+                          : LookupIterator(object, name, c);
+
+  if (it.state() == LookupIterator::ACCESS_CHECK) {
+    if (!it.HasAccess()) {
+      isolate->ReportFailedAccessCheck(it.GetHolder<JSObject>());
+      RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
+      return isolate->factory()->undefined_value();
+    }
+    it.Next();
+  }
 
   Handle<Object> old_value = isolate->factory()->the_hole_value();
   bool is_observed = object->map()->is_observed() &&
                      !isolate->IsInternallyUsedPropertyName(name);
   bool preexists = false;
   if (is_observed) {
-    if (is_element) {
-      Maybe<bool> maybe = HasOwnElement(object, index);
-      // Workaround for a GCC 4.4.3 bug which leads to "‘preexists’ may be used
-      // uninitialized in this function".
-      if (!maybe.IsJust()) {
-        DCHECK(false);
-        return isolate->factory()->undefined_value();
-      }
-      preexists = maybe.FromJust();
-      if (preexists && GetOwnElementAccessorPair(object, index).is_null()) {
-        old_value =
-            Object::GetElement(isolate, object, index).ToHandleChecked();
-      }
-    } else {
-      LookupIterator it(object, name, LookupIterator::HIDDEN_SKIP_INTERCEPTOR);
-      CHECK(GetPropertyAttributes(&it).IsJust());
-      preexists = it.IsFound();
-      if (preexists && (it.state() == LookupIterator::DATA ||
-                        it.GetAccessors()->IsAccessorInfo())) {
-        old_value = GetProperty(&it).ToHandleChecked();
-      }
+    CHECK(GetPropertyAttributes(&it).IsJust());
+    preexists = it.IsFound();
+    if (preexists && (it.state() == LookupIterator::DATA ||
+                      it.GetAccessors()->IsAccessorInfo())) {
+      old_value = GetProperty(&it).ToHandleChecked();
     }
   }
 
-  if (is_element) {
-    DefineElementAccessor(object, index, getter, setter, attributes);
+  if (it.IsElement()) {
+    DefineElementAccessor(it.GetStoreTarget(), index, getter, setter,
+                          attributes);
   } else {
     DCHECK(getter->IsSpecFunction() || getter->IsUndefined() ||
            getter->IsNull());
@@ -6460,11 +6447,6 @@ MaybeHandle<Object> JSObject::DefineAccessor(Handle<JSObject> object,
            setter->IsNull());
     // At least one of the accessors needs to be a new value.
     DCHECK(!getter->IsNull() || !setter->IsNull());
-    LookupIterator it(object, name, LookupIterator::OWN_SKIP_INTERCEPTOR);
-    if (it.state() == LookupIterator::ACCESS_CHECK) {
-      // We already did an access check before. We do have access.
-      it.Next();
-    }
     if (!getter->IsNull()) {
       it.TransitionToAccessorProperty(ACCESSOR_GETTER, getter, attributes);
     }
@@ -6486,75 +6468,52 @@ MaybeHandle<Object> JSObject::DefineAccessor(Handle<JSObject> object,
 MaybeHandle<Object> JSObject::SetAccessor(Handle<JSObject> object,
                                           Handle<AccessorInfo> info) {
   Isolate* isolate = object->GetIsolate();
-  Factory* factory = isolate->factory();
-  Handle<Name> name(Name::cast(info->name()));
-
-  // Check access rights if needed.
-  if (object->IsAccessCheckNeeded() && !isolate->MayAccess(object)) {
-    isolate->ReportFailedAccessCheck(object);
-    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
-    return factory->undefined_value();
-  }
-
-  if (object->IsJSGlobalProxy()) {
-    PrototypeIterator iter(isolate, object);
-    if (iter.IsAtEnd()) return object;
-    DCHECK(PrototypeIterator::GetCurrent(iter)->IsJSGlobalObject());
-    return SetAccessor(
-        Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter)), info);
-  }
 
   // Make sure that the top context does not change when doing callbacks or
   // interceptor calls.
   AssertNoContextChange ncc(isolate);
 
   // Try to flatten before operating on the string.
+  Handle<Name> name(Name::cast(info->name()));
   if (name->IsString()) name = String::Flatten(Handle<String>::cast(name));
 
   uint32_t index = 0;
-  bool is_element = name->AsArrayIndex(&index);
+  LookupIterator::Configuration c = LookupIterator::HIDDEN_SKIP_INTERCEPTOR;
+  LookupIterator it = name->AsArrayIndex(&index)
+                          ? LookupIterator(isolate, object, index, c)
+                          : LookupIterator(object, name, c);
 
-  if (is_element) {
-    if (object->IsJSArray()) return factory->undefined_value();
-
-    // Accessors overwrite previous callbacks (cf. with getters/setters).
-    switch (object->GetElementsKind()) {
-      case FAST_SMI_ELEMENTS:
-      case FAST_ELEMENTS:
-      case FAST_DOUBLE_ELEMENTS:
-      case FAST_HOLEY_SMI_ELEMENTS:
-      case FAST_HOLEY_ELEMENTS:
-      case FAST_HOLEY_DOUBLE_ELEMENTS:
-        break;
-
-#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size)                        \
-      case EXTERNAL_##TYPE##_ELEMENTS:                                         \
-      case TYPE##_ELEMENTS:                                                    \
-
-      TYPED_ARRAYS(TYPED_ARRAY_CASE)
-#undef TYPED_ARRAY_CASE
-        // Ignore getters and setters on pixel and external array
-        // elements.
-        return factory->undefined_value();
-
-      case DICTIONARY_ELEMENTS:
-        break;
-      case SLOPPY_ARGUMENTS_ELEMENTS:
-        UNIMPLEMENTED();
-        break;
+  // Duplicate ACCESS_CHECK outside of GetPropertyAttributes for the case that
+  // the FailedAccessCheckCallbackFunction doesn't throw an exception.
+  //
+  // TODO(verwaest): Force throw an exception if the callback doesn't, so we can
+  // remove reliance on default return values.
+  if (it.state() == LookupIterator::ACCESS_CHECK) {
+    if (!it.HasAccess()) {
+      isolate->ReportFailedAccessCheck(object);
+      RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
+      return it.factory()->undefined_value();
     }
+    it.Next();
+  }
 
+  CHECK(GetPropertyAttributes(&it).IsJust());
+
+  // ES5 forbids turning a property into an accessor if it's not
+  // configurable. See 8.6.1 (Table 5).
+  if (it.IsFound() && (it.IsReadOnly() || !it.IsConfigurable())) {
+    return it.factory()->undefined_value();
+  }
+
+  // Ignore accessors on typed arrays.
+  if (it.IsElement() && (object->HasFixedTypedArrayElements() ||
+                         object->HasExternalArrayElements())) {
+    return it.factory()->undefined_value();
+  }
+
+  if (it.IsElement()) {
     SetElementCallback(object, index, info, info->property_attributes());
   } else {
-    // Lookup the name.
-    LookupIterator it(object, name, LookupIterator::HIDDEN_SKIP_INTERCEPTOR);
-    CHECK(GetPropertyAttributes(&it).IsJust());
-    // ES5 forbids turning a property into an accessor if it's not
-    // configurable. See 8.6.1 (Table 5).
-    if (it.IsFound() && (it.IsReadOnly() || !it.IsConfigurable())) {
-      return factory->undefined_value();
-    }
-
     SetPropertyCallback(object, name, info, info->property_attributes());
   }
 
@@ -6573,68 +6532,43 @@ MaybeHandle<Object> JSObject::GetAccessor(Handle<JSObject> object,
 
   // Make the lookup and include prototypes.
   uint32_t index = 0;
-  if (name->AsArrayIndex(&index)) {
-    for (PrototypeIterator iter(isolate, object,
-                                PrototypeIterator::START_AT_RECEIVER);
-         !iter.IsAtEnd(); iter.Advance()) {
-      Handle<Object> current = PrototypeIterator::GetCurrent(iter);
-      // Check access rights if needed.
-      if (current->IsAccessCheckNeeded() &&
-          !isolate->MayAccess(Handle<JSObject>::cast(current))) {
-        isolate->ReportFailedAccessCheck(Handle<JSObject>::cast(current));
+  LookupIterator::Configuration c =
+      LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR;
+  LookupIterator it = name->AsArrayIndex(&index)
+                          ? LookupIterator(isolate, object, index, c)
+                          : LookupIterator(object, name, c);
+
+  for (; it.IsFound(); it.Next()) {
+    switch (it.state()) {
+      case LookupIterator::INTERCEPTOR:
+      case LookupIterator::NOT_FOUND:
+      case LookupIterator::TRANSITION:
+        UNREACHABLE();
+
+      case LookupIterator::ACCESS_CHECK:
+        if (it.HasAccess()) continue;
+        isolate->ReportFailedAccessCheck(it.GetHolder<JSObject>());
         RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
         return isolate->factory()->undefined_value();
-      }
 
-      if (current->IsJSObject() &&
-          Handle<JSObject>::cast(current)->HasDictionaryElements()) {
-        JSObject* js_object = JSObject::cast(*current);
-        SeededNumberDictionary* dictionary = js_object->element_dictionary();
-        int entry = dictionary->FindEntry(index);
-        if (entry != SeededNumberDictionary::kNotFound) {
-          Object* element = dictionary->ValueAt(entry);
-          if (dictionary->DetailsAt(entry).type() == ACCESSOR_CONSTANT &&
-              element->IsAccessorPair()) {
-            return handle(AccessorPair::cast(element)->GetComponent(component),
-                          isolate);
-          }
-        }
-      }
-    }
-  } else {
-    LookupIterator it(object, name,
-                      LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
-    for (; it.IsFound(); it.Next()) {
-      switch (it.state()) {
-        case LookupIterator::INTERCEPTOR:
-        case LookupIterator::NOT_FOUND:
-        case LookupIterator::TRANSITION:
-          UNREACHABLE();
+      case LookupIterator::JSPROXY:
+        return isolate->factory()->undefined_value();
 
-        case LookupIterator::ACCESS_CHECK:
-          if (it.HasAccess()) continue;
-          isolate->ReportFailedAccessCheck(it.GetHolder<JSObject>());
-          RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
-          return isolate->factory()->undefined_value();
-
-        case LookupIterator::JSPROXY:
-          return isolate->factory()->undefined_value();
-
-        case LookupIterator::INTEGER_INDEXED_EXOTIC:
-          return isolate->factory()->undefined_value();
-        case LookupIterator::DATA:
-          continue;
-        case LookupIterator::ACCESSOR: {
-          Handle<Object> maybe_pair = it.GetAccessors();
-          if (maybe_pair->IsAccessorPair()) {
-            return handle(
-                AccessorPair::cast(*maybe_pair)->GetComponent(component),
-                isolate);
-          }
+      case LookupIterator::INTEGER_INDEXED_EXOTIC:
+        return isolate->factory()->undefined_value();
+      case LookupIterator::DATA:
+        continue;
+      case LookupIterator::ACCESSOR: {
+        Handle<Object> maybe_pair = it.GetAccessors();
+        if (maybe_pair->IsAccessorPair()) {
+          return handle(
+              AccessorPair::cast(*maybe_pair)->GetComponent(component),
+              isolate);
         }
       }
     }
   }
+
   return isolate->factory()->undefined_value();
 }
 
@@ -11938,25 +11872,22 @@ void JSArray::Expand(Handle<JSArray> array, int required_size) {
 }
 
 
-// Returns false if the passed-in index is marked non-configurable,
-// which will cause the ES5 truncation operation to halt, and thus
-// no further old values need be collected.
+// Returns false if the passed-in index is marked non-configurable, which will
+// cause the truncation operation to halt, and thus no further old values need
+// be collected.
 static bool GetOldValue(Isolate* isolate,
                         Handle<JSObject> object,
                         uint32_t index,
                         List<Handle<Object> >* old_values,
                         List<uint32_t>* indices) {
-  Maybe<PropertyAttributes> maybe =
-      JSReceiver::GetOwnElementAttributes(object, index);
-  DCHECK(maybe.IsJust());
-  DCHECK(maybe.FromJust() != ABSENT);
-  if (maybe.FromJust() == DONT_DELETE) return false;
-  Handle<Object> value;
-  if (!JSObject::GetOwnElementAccessorPair(object, index).is_null()) {
-    value = Handle<Object>::cast(isolate->factory()->the_hole_value());
-  } else {
-    value = Object::GetElement(isolate, object, index).ToHandleChecked();
-  }
+  LookupIterator it(isolate, object, index, LookupIterator::HIDDEN);
+  CHECK(JSReceiver::GetPropertyAttributes(&it).IsJust());
+  DCHECK(it.IsFound());
+  if (!it.IsConfigurable()) return false;
+  Handle<Object> value =
+      it.state() == LookupIterator::ACCESSOR
+          ? Handle<Object>::cast(isolate->factory()->the_hole_value())
+          : JSReceiver::GetDataProperty(&it);
   old_values->Add(value);
   indices->Add(index);
   return true;
@@ -12456,24 +12387,6 @@ void JSObject::EnsureCanContainElements(Handle<JSObject> object,
   // direction.
   return EnsureCanContainElements(
       object, args->arguments() - first_arg - (arg_count - 1), arg_count, mode);
-}
-
-
-MaybeHandle<AccessorPair> JSObject::GetOwnElementAccessorPair(
-    Handle<JSObject> object,
-    uint32_t index) {
-  if (object->IsJSGlobalProxy()) {
-    PrototypeIterator iter(object->GetIsolate(), object);
-    if (iter.IsAtEnd()) return MaybeHandle<AccessorPair>();
-    DCHECK(PrototypeIterator::GetCurrent(iter)->IsJSGlobalObject());
-    return GetOwnElementAccessorPair(
-        Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter)), index);
-  }
-
-  // Check for lookup interceptor.
-  if (object->HasIndexedInterceptor()) return MaybeHandle<AccessorPair>();
-
-  return object->GetElementsAccessor()->GetAccessorPair(object, index);
 }
 
 
@@ -16572,7 +16485,8 @@ Handle<JSArrayBuffer> JSTypedArray::MaterializeArrayBuffer(
   void* backing_store =
       isolate->array_buffer_allocator()->AllocateUninitialized(
           fixed_typed_array->DataSize());
-  isolate->heap()->RegisterNewArrayBuffer(backing_store,
+  isolate->heap()->RegisterNewArrayBuffer(isolate->heap()->InNewSpace(*buffer),
+                                          backing_store,
                                           fixed_typed_array->DataSize());
   buffer->set_backing_store(backing_store);
   buffer->set_is_external(false);

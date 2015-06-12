@@ -7,6 +7,7 @@
 #include "src/compiler/code-generator-impl.h"
 #include "src/compiler/linkage.h"
 #include "src/compiler/pipeline.h"
+#include "src/snapshot/serialize.h"  // TODO(turbofan): RootIndexMap
 
 namespace v8 {
 namespace internal {
@@ -96,12 +97,29 @@ Handle<Code> CodeGenerator::GenerateCode() {
       if (FLAG_code_comments) {
         // TODO(titzer): these code comments are a giant memory leak.
         Vector<char> buffer = Vector<char>::New(200);
-        SNPrintF(buffer, "-- B%d start%s%s%s%s --", block->rpo_number().ToInt(),
-                 block->IsDeferred() ? " (deferred)" : "",
-                 block->needs_frame() ? "" : " (no frame)",
-                 block->must_construct_frame() ? " (construct frame)" : "",
-                 block->must_deconstruct_frame() ? " (deconstruct frame)" : "");
-        masm()->RecordComment(buffer.start());
+        char* buffer_start = buffer.start();
+
+        int next = SNPrintF(
+            buffer, "-- B%d start%s%s%s%s", block->rpo_number().ToInt(),
+            block->IsDeferred() ? " (deferred)" : "",
+            block->needs_frame() ? "" : " (no frame)",
+            block->must_construct_frame() ? " (construct frame)" : "",
+            block->must_deconstruct_frame() ? " (deconstruct frame)" : "");
+
+        buffer = buffer.SubVector(next, buffer.length());
+
+        if (block->IsLoopHeader()) {
+          next =
+              SNPrintF(buffer, " (loop up to %d)", block->loop_end().ToInt());
+          buffer = buffer.SubVector(next, buffer.length());
+        }
+        if (block->loop_header().IsValid()) {
+          next =
+              SNPrintF(buffer, " (in loop %d)", block->loop_header().ToInt());
+          buffer = buffer.SubVector(next, buffer.length());
+        }
+        SNPrintF(buffer, " --");
+        masm()->RecordComment(buffer_start);
       }
       masm()->bind(GetLabel(current_block_));
       for (int i = block->code_start(); i < block->code_end(); ++i) {
@@ -221,15 +239,11 @@ bool CodeGenerator::IsMaterializableFromFrame(Handle<HeapObject> object,
 bool CodeGenerator::IsMaterializableFromRoot(
     Handle<HeapObject> object, Heap::RootListIndex* index_return) {
   if (linkage()->GetIncomingDescriptor()->IsJSFunctionCall()) {
-    // Check if {object} is one of the non-smi roots that cannot be written
-    // after initialization.
-    for (int i = 0; i < Heap::kSmiRootsStart; ++i) {
-      Heap::RootListIndex const index = static_cast<Heap::RootListIndex>(i);
-      if (!Heap::RootCanBeWrittenAfterInitialization(index) &&
-          *object == isolate()->heap()->root(index)) {
-        *index_return = index;
-        return true;
-      }
+    RootIndexMap map(isolate());
+    int root_index = map.Lookup(*object);
+    if (root_index != RootIndexMap::kInvalidRootIndex) {
+      *index_return = static_cast<Heap::RootListIndex>(root_index);
+      return true;
     }
   }
   return false;
