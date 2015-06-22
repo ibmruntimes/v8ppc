@@ -920,7 +920,7 @@ void FullCodeGenerator::VisitFunctionDeclaration(
     case Variable::UNALLOCATED: {
       globals_->Add(variable->name(), zone());
       Handle<SharedFunctionInfo> function =
-          Compiler::BuildFunctionInfo(declaration->fun(), script(), info_);
+          Compiler::GetSharedFunctionInfo(declaration->fun(), script(), info_);
       // Check for stack-overflow exception.
       if (function.is_null()) return SetStackOverflow();
       globals_->Add(function, zone());
@@ -2487,11 +2487,11 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       break;
     }
     case Token::ADD:
-      __ AdduAndCheckForOverflow(v0, left, right, scratch1);
+      __ DadduAndCheckForOverflow(v0, left, right, scratch1);
       __ BranchOnOverflow(&stub_call, scratch1);
       break;
     case Token::SUB:
-      __ SubuAndCheckForOverflow(v0, left, right, scratch1);
+      __ DsubuAndCheckForOverflow(v0, left, right, scratch1);
       __ BranchOnOverflow(&stub_call, scratch1);
       break;
     case Token::MUL: {
@@ -2525,7 +2525,8 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
 }
 
 
-void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
+void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit,
+                                                  int* used_store_slots) {
   // Constructor is in v0.
   DCHECK(lit != NULL);
   __ push(v0);
@@ -2537,10 +2538,6 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
         FieldMemOperand(v0, JSFunction::kPrototypeOrInitialMapOffset));
   __ push(scratch);
 
-  // store_slot_index points to the vector IC slot for the next store IC used.
-  // ClassLiteral::ComputeFeedbackRequirements controls the allocation of slots
-  // and must be updated if the number of store ICs emitted here changes.
-  int store_slot_index = 0;
   for (int i = 0; i < lit->properties()->length(); i++) {
     ObjectLiteral::Property* property = lit->properties()->at(i);
     Expression* value = property->value();
@@ -2564,7 +2561,7 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
 
     VisitForStackValue(value);
     EmitSetHomeObjectIfNeeded(value, 2,
-                              lit->SlotForHomeObject(value, &store_slot_index));
+                              lit->SlotForHomeObject(value, used_store_slots));
 
     switch (property->kind()) {
       case ObjectLiteral::Property::CONSTANT:
@@ -2597,10 +2594,6 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
 
   // constructor
   __ CallRuntime(Runtime::kToFastProperties, 1);
-
-  // Verify that compilation exactly consumed the number of store ic slots that
-  // the ClassLiteral node had to offer.
-  DCHECK(!FLAG_vector_stores || store_slot_index == lit->slot_count());
 }
 
 
@@ -3630,6 +3623,28 @@ void FullCodeGenerator::EmitIsArray(CallRuntime* expr) {
 }
 
 
+void FullCodeGenerator::EmitIsTypedArray(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK(args->length() == 1);
+
+  VisitForAccumulatorValue(args->at(0));
+
+  Label materialize_true, materialize_false;
+  Label* if_true = NULL;
+  Label* if_false = NULL;
+  Label* fall_through = NULL;
+  context()->PrepareTest(&materialize_true, &materialize_false, &if_true,
+                         &if_false, &fall_through);
+
+  __ JumpIfSmi(v0, if_false);
+  __ GetObjectType(v0, a1, a1);
+  PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
+  Split(eq, a1, Operand(JS_TYPED_ARRAY_TYPE), if_true, if_false, fall_through);
+
+  context()->Plug(if_true, if_false);
+}
+
+
 void FullCodeGenerator::EmitIsRegExp(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 1);
@@ -4484,7 +4499,7 @@ void FullCodeGenerator::EmitFastOneByteArrayJoin(CallRuntime* expr) {
   __ lbu(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
   __ JumpIfInstanceTypeIsNotSequentialOneByte(scratch1, scratch2, &bailout);
   __ ld(scratch1, FieldMemOperand(string, SeqOneByteString::kLengthOffset));
-  __ AdduAndCheckForOverflow(string_length, string_length, scratch1, scratch3);
+  __ DadduAndCheckForOverflow(string_length, string_length, scratch1, scratch3);
   __ BranchOnOverflow(&bailout, scratch3);
   __ Branch(&loop, lt, element, Operand(elements_end));
 
@@ -5000,7 +5015,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     Register scratch1 = a1;
     Register scratch2 = a4;
     __ li(scratch1, Operand(Smi::FromInt(count_value)));
-    __ AdduAndCheckForOverflow(v0, v0, scratch1, scratch2);
+    __ DadduAndCheckForOverflow(v0, v0, scratch1, scratch2);
     __ BranchOnNoOverflow(&done, scratch2);
     // Call stub. Undo operation first.
     __ Move(v0, a0);
@@ -5067,7 +5082,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
         }
       } else {
         EmitVariableAssignment(expr->expression()->AsVariableProxy()->var(),
-                               Token::ASSIGN);
+                               Token::ASSIGN, expr->CountSlot());
         PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
         context()->Plug(v0);
       }

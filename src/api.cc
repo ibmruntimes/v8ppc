@@ -3503,43 +3503,16 @@ Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
                                            v8::Local<Value> value) {
   PREPARE_FOR_EXECUTION_PRIMITIVE(context, "v8::Object::CreateDataProperty()",
                                   bool);
-  auto self = Utils::OpenHandle(this);
-  auto key_obj = Utils::OpenHandle(*key);
-  auto value_obj = Utils::OpenHandle(*value);
+  i::Handle<i::JSObject> self = Utils::OpenHandle(this);
+  i::Handle<i::Name> key_obj = Utils::OpenHandle(*key);
+  i::Handle<i::Object> value_obj = Utils::OpenHandle(*value);
 
-  if (self->IsAccessCheckNeeded() && !isolate->MayAccess(self)) {
-    isolate->ReportFailedAccessCheck(self);
-    return Nothing<bool>();
-  }
-
-  if (!self->IsExtensible()) return Just(false);
-
-  uint32_t index = 0;
-  if (key_obj->AsArrayIndex(&index)) {
-    return CreateDataProperty(context, index, value);
-  }
-
-  // Special case for Array.length.
-  if (self->IsJSArray() &&
-      key->StrictEquals(Utils::ToLocal(isolate->factory()->length_string()))) {
-    // Length is not configurable, however, CreateDataProperty always attempts
-    // to create a configurable property, so we just fail here.
-    return Just(false);
-  }
-
-  i::LookupIterator it(self, key_obj, i::LookupIterator::OWN_SKIP_INTERCEPTOR);
-  if (it.IsFound() && it.state() == i::LookupIterator::ACCESS_CHECK) {
-    DCHECK(isolate->MayAccess(self));
-    it.Next();
-  }
-
-  if (it.IsFound() && !it.IsConfigurable()) return Just(false);
-
-  has_pending_exception = i::JSObject::SetOwnPropertyIgnoreAttributes(
-                              self, key_obj, value_obj, NONE,
-                              i::JSObject::DONT_FORCE_FIELD).is_null();
+  i::LookupIterator it = i::LookupIterator::PropertyOrElement(
+      isolate, self, key_obj, i::LookupIterator::OWN);
+  Maybe<bool> result = i::JSObject::CreateDataProperty(&it, value_obj);
+  has_pending_exception = result.IsNothing();
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-  return Just(true);
+  return result;
 }
 
 
@@ -3548,37 +3521,14 @@ Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
                                            v8::Local<Value> value) {
   PREPARE_FOR_EXECUTION_PRIMITIVE(context, "v8::Object::CreateDataProperty()",
                                   bool);
-  auto self = Utils::OpenHandle(this);
-  auto value_obj = Utils::OpenHandle(*value);
+  i::Handle<i::JSObject> self = Utils::OpenHandle(this);
+  i::Handle<i::Object> value_obj = Utils::OpenHandle(*value);
 
-  if (self->IsAccessCheckNeeded() && !isolate->MayAccess(self)) {
-    isolate->ReportFailedAccessCheck(self);
-    return Nothing<bool>();
-  }
-
-  if (!self->IsExtensible()) return Just(false);
-
-  if (self->IsJSArray()) {
-    size_t length =
-        i::NumberToSize(isolate, i::Handle<i::JSArray>::cast(self)->length());
-    if (index >= length) {
-      return DefineOwnProperty(
-          context, Utils::ToLocal(isolate->factory()->Uint32ToString(index)),
-          value, v8::None);
-    }
-  }
-
-  Maybe<PropertyAttributes> attributes =
-      i::JSReceiver::GetOwnElementAttributes(self, index);
-  if (attributes.IsJust() && attributes.FromJust() & DONT_DELETE) {
-    return Just(false);
-  }
-
-  has_pending_exception = i::JSObject::SetOwnElementIgnoreAttributes(
-                              self, index, value_obj, NONE,
-                              i::JSObject::DONT_FORCE_FIELD).is_null();
+  i::LookupIterator it(isolate, self, index, i::LookupIterator::OWN);
+  Maybe<bool> result = i::JSObject::CreateDataProperty(&it, value_obj);
+  has_pending_exception = result.IsNothing();
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-  return Just(true);
+  return result;
 }
 
 
@@ -3708,9 +3658,6 @@ i::MaybeHandle<i::Object> DeleteObjectProperty(
     name = i::Handle<i::String>::cast(converted);
   }
 
-  if (name->IsString()) {
-    name = i::String::Flatten(i::Handle<i::String>::cast(name));
-  }
   return i::JSReceiver::DeleteProperty(receiver, name, language_mode);
 }
 
@@ -4223,8 +4170,9 @@ MaybeLocal<Value> v8::Object::GetRealNamedPropertyInPrototypeChain(
   i::PrototypeIterator iter(isolate, self);
   if (iter.IsAtEnd()) return MaybeLocal<Value>();
   auto proto = i::PrototypeIterator::GetCurrent(iter);
-  i::LookupIterator it(self, key_obj, i::Handle<i::JSReceiver>::cast(proto),
-                       i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
+  i::LookupIterator it = i::LookupIterator::PropertyOrElement(
+      isolate, self, key_obj, i::Handle<i::JSReceiver>::cast(proto),
+      i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
   Local<Value> result;
   has_pending_exception = !ToLocal<Value>(i::Object::GetProperty(&it), &result);
   RETURN_ON_FAILED_EXECUTION(Value);
@@ -4252,8 +4200,9 @@ v8::Object::GetRealNamedPropertyAttributesInPrototypeChain(
   i::PrototypeIterator iter(isolate, self);
   if (iter.IsAtEnd()) return Nothing<PropertyAttribute>();
   auto proto = i::PrototypeIterator::GetCurrent(iter);
-  i::LookupIterator it(self, key_obj, i::Handle<i::JSReceiver>::cast(proto),
-                       i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
+  i::LookupIterator it = i::LookupIterator::PropertyOrElement(
+      isolate, self, key_obj, i::Handle<i::JSReceiver>::cast(proto),
+      i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
   auto result = i::JSReceiver::GetPropertyAttributes(&it);
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(PropertyAttribute);
   if (!it.IsFound()) return Nothing<PropertyAttribute>();
@@ -4277,8 +4226,9 @@ MaybeLocal<Value> v8::Object::GetRealNamedProperty(Local<Context> context,
   PREPARE_FOR_EXECUTION(context, "v8::Object::GetRealNamedProperty()", Value);
   auto self = Utils::OpenHandle(this);
   auto key_obj = Utils::OpenHandle(*key);
-  i::LookupIterator it(self, key_obj,
-                       i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
+  i::LookupIterator it = i::LookupIterator::PropertyOrElement(
+      isolate, self, key_obj,
+      i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
   Local<Value> result;
   has_pending_exception = !ToLocal<Value>(i::Object::GetProperty(&it), &result);
   RETURN_ON_FAILED_EXECUTION(Value);
@@ -4300,8 +4250,9 @@ Maybe<PropertyAttribute> v8::Object::GetRealNamedPropertyAttributes(
       PropertyAttribute);
   auto self = Utils::OpenHandle(this);
   auto key_obj = Utils::OpenHandle(*key);
-  i::LookupIterator it(self, key_obj,
-                       i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
+  i::LookupIterator it = i::LookupIterator::PropertyOrElement(
+      isolate, self, key_obj,
+      i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
   auto result = i::JSReceiver::GetPropertyAttributes(&it);
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(PropertyAttribute);
   if (!it.IsFound()) return Nothing<PropertyAttribute>();
@@ -7269,9 +7220,8 @@ size_t Isolate::NumberOfHeapSpaces() {
 
 bool Isolate::GetHeapSpaceStatistics(HeapSpaceStatistics* space_statistics,
                                      size_t index) {
-  if (!space_statistics)
-    return false;
-  if (index > i::LAST_SPACE || index < i::FIRST_SPACE)
+  if (!space_statistics) return false;
+  if (!i::Heap::IsValidAllocationSpace(static_cast<i::AllocationSpace>(index)))
     return false;
 
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);

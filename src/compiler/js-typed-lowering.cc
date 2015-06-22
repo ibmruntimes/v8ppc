@@ -824,7 +824,7 @@ Reduction JSTypedLowering::ReduceJSLoadProperty(Node* node) {
   Node* key = NodeProperties::GetValueInput(node, 1);
   Node* base = NodeProperties::GetValueInput(node, 0);
   Type* key_type = NodeProperties::GetBounds(key).upper;
-  HeapObjectMatcher<Object> mbase(base);
+  HeapObjectMatcher mbase(base);
   if (mbase.HasValue() && mbase.Value().handle()->IsJSTypedArray()) {
     Handle<JSTypedArray> const array =
         Handle<JSTypedArray>::cast(mbase.Value().handle());
@@ -871,7 +871,7 @@ Reduction JSTypedLowering::ReduceJSStoreProperty(Node* node) {
   Node* value = NodeProperties::GetValueInput(node, 2);
   Type* key_type = NodeProperties::GetBounds(key).upper;
   Type* value_type = NodeProperties::GetBounds(value).upper;
-  HeapObjectMatcher<Object> mbase(base);
+  HeapObjectMatcher mbase(base);
   if (mbase.HasValue() && mbase.Value().handle()->IsJSTypedArray()) {
     Handle<JSTypedArray> const array =
         Handle<JSTypedArray>::cast(mbase.Value().handle());
@@ -1132,8 +1132,8 @@ Reduction JSTypedLowering::ReduceJSCreateClosure(Node* node) {
 
 Reduction JSTypedLowering::ReduceJSCreateLiteralArray(Node* node) {
   DCHECK_EQ(IrOpcode::kJSCreateLiteralArray, node->opcode());
-  HeapObjectMatcher<FixedArray> mconst(NodeProperties::GetValueInput(node, 2));
-  int length = mconst.Value().handle()->length();
+  HeapObjectMatcher mconst(NodeProperties::GetValueInput(node, 2));
+  int length = Handle<FixedArray>::cast(mconst.Value().handle())->length();
   int flags = OpParameter<int>(node->op());
 
   // Use the FastCloneShallowArrayStub only for shallow boilerplates up to the
@@ -1162,9 +1162,9 @@ Reduction JSTypedLowering::ReduceJSCreateLiteralArray(Node* node) {
 
 Reduction JSTypedLowering::ReduceJSCreateLiteralObject(Node* node) {
   DCHECK_EQ(IrOpcode::kJSCreateLiteralObject, node->opcode());
-  HeapObjectMatcher<FixedArray> mconst(NodeProperties::GetValueInput(node, 2));
+  HeapObjectMatcher mconst(NodeProperties::GetValueInput(node, 2));
   // Constants are pairs, see ObjectLiteral::properties_count().
-  int length = mconst.Value().handle()->length() / 2;
+  int length = Handle<FixedArray>::cast(mconst.Value().handle())->length() / 2;
   int flags = OpParameter<int>(node->op());
 
   // Use the FastCloneShallowObjectStub only for shallow boilerplates without
@@ -1227,9 +1227,10 @@ Reduction JSTypedLowering::ReduceJSCreateWithContext(Node* node) {
 Reduction JSTypedLowering::ReduceJSCreateBlockContext(Node* node) {
   DCHECK_EQ(IrOpcode::kJSCreateBlockContext, node->opcode());
   Node* const input = NodeProperties::GetValueInput(node, 0);
-  HeapObjectMatcher<ScopeInfo> minput(input);
+  HeapObjectMatcher minput(input);
   DCHECK(minput.HasValue());  // TODO(mstarzinger): Make ScopeInfo static.
-  int context_length = minput.Value().handle()->ContextLength();
+  int context_length =
+      Handle<ScopeInfo>::cast(minput.Value().handle())->ContextLength();
   if (FLAG_turbo_allocate && context_length < kBlockContextAllocationLimit) {
     // JSCreateBlockContext(s:scope[length < limit], f)
     Node* const effect = NodeProperties::GetEffectInput(node);
@@ -1258,6 +1259,39 @@ Reduction JSTypedLowering::ReduceJSCreateBlockContext(Node* node) {
     node->set_op(common()->Finish(1));
     node->TrimInputCount(2);
     return Changed(node);
+  }
+  return NoChange();
+}
+
+
+Reduction JSTypedLowering::ReduceJSCallFunction(Node* node) {
+  DCHECK_EQ(IrOpcode::kJSCallFunction, node->opcode());
+  CallFunctionParameters const& p = CallFunctionParametersOf(node->op());
+  int const arity = static_cast<int>(p.arity() - 2);
+  Node* const function = NodeProperties::GetValueInput(node, 0);
+  Type* const function_type = NodeProperties::GetBounds(function).upper;
+  Node* const receiver = NodeProperties::GetValueInput(node, 1);
+  Type* const receiver_type = NodeProperties::GetBounds(receiver).upper;
+  Node* const effect = NodeProperties::GetEffectInput(node);
+  Node* const control = NodeProperties::GetControlInput(node);
+
+  // Check that {function} is actually a JSFunction with the correct arity.
+  if (function_type->IsFunction() &&
+      function_type->AsFunction()->Arity() == arity) {
+    // Check that the {receiver} doesn't need to be wrapped.
+    if (receiver_type->Is(Type::ReceiverOrUndefined())) {
+      Node* const context = graph()->NewNode(
+          simplified()->LoadField(AccessBuilder::ForJSFunctionContext()),
+          function, effect, control);
+      NodeProperties::ReplaceContextInput(node, context);
+      CallDescriptor::Flags flags = CallDescriptor::kNeedsFrameState;
+      if (is_strict(p.language_mode())) {
+        flags |= CallDescriptor::kSupportsTailCalls;
+      }
+      node->set_op(common()->Call(Linkage::GetJSCallDescriptor(
+          graph()->zone(), false, 1 + arity, flags)));
+      return Changed(node);
+    }
   }
   return NoChange();
 }
@@ -1631,6 +1665,8 @@ Reduction JSTypedLowering::Reduce(Node* node) {
       return ReduceJSCreateWithContext(node);
     case IrOpcode::kJSCreateBlockContext:
       return ReduceJSCreateBlockContext(node);
+    case IrOpcode::kJSCallFunction:
+      return ReduceJSCallFunction(node);
     case IrOpcode::kJSForInDone:
       return ReduceJSForInDone(node);
     case IrOpcode::kJSForInNext:

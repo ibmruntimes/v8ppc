@@ -302,7 +302,7 @@ void StaticMarkingVisitor<StaticVisitor>::VisitMap(Map* map,
 
   // When map collection is enabled we have to mark through map's transitions
   // and back pointers in a special way to make these links weak.
-  if (FLAG_collect_maps && map_object->CanTransition()) {
+  if (map_object->CanTransition()) {
     MarkMapContents(heap, map_object);
   } else {
     StaticVisitor::VisitPointers(
@@ -329,11 +329,11 @@ void StaticMarkingVisitor<StaticVisitor>::VisitWeakCell(Map* map,
                                                         HeapObject* object) {
   Heap* heap = map->GetHeap();
   WeakCell* weak_cell = reinterpret_cast<WeakCell*>(object);
-  Object* undefined = heap->undefined_value();
+  Object* the_hole = heap->the_hole_value();
   // Enqueue weak cell in linked list of encountered weak collections.
   // We can ignore weak cells with cleared values because they will always
   // contain smi zero.
-  if (weak_cell->next() == undefined && !weak_cell->cleared()) {
+  if (weak_cell->next() == the_hole && !weak_cell->cleared()) {
     weak_cell->set_next(heap->encountered_weak_cells(),
                         UPDATE_WEAK_WRITE_BARRIER);
     heap->set_encountered_weak_cells(weak_cell);
@@ -508,7 +508,7 @@ void StaticMarkingVisitor<StaticVisitor>::VisitJSArrayBuffer(
       HeapObject::RawField(object, JSArrayBuffer::BodyDescriptor::kStartOffset),
       HeapObject::RawField(object, JSArrayBuffer::kSizeWithInternalFields));
   if (!JSArrayBuffer::cast(object)->is_external()) {
-    heap->RegisterLiveArrayBuffer(heap->InNewSpace(object),
+    heap->RegisterLiveArrayBuffer(false,
                                   JSArrayBuffer::cast(object)->backing_store());
   }
 }

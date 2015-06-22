@@ -1672,20 +1672,16 @@ void LCodeGen::DoSubI(LSubI* instr) {
   } else {  // can_overflow.
     Register overflow = scratch0();
     Register scratch = scratch1();
-    if (right->IsStackSlot() || right->IsConstantOperand()) {
+    if (right->IsStackSlot()) {
       Register right_reg = EmitLoadRegister(right, scratch);
       __ SubuAndCheckForOverflow(ToRegister(result),
                                  ToRegister(left),
                                  right_reg,
                                  overflow);  // Reg at also used as scratch.
     } else {
-      DCHECK(right->IsRegister());
-      // Due to overflow check macros not supporting constant operands,
-      // handling the IsConstantOperand case was moved to prev if clause.
-      __ SubuAndCheckForOverflow(ToRegister(result),
-                                 ToRegister(left),
-                                 ToRegister(right),
-                                 overflow);  // Reg at also used as scratch.
+      DCHECK(right->IsRegister() || right->IsConstantOperand());
+      __ SubuAndCheckForOverflow(ToRegister(result), ToRegister(left),
+                                 ToOperand(right), overflow, scratch);
     }
     DeoptimizeIf(lt, instr, Deoptimizer::kOverflow, overflow,
                  Operand(zero_reg));
@@ -1872,21 +1868,16 @@ void LCodeGen::DoAddI(LAddI* instr) {
   } else {  // can_overflow.
     Register overflow = scratch0();
     Register scratch = scratch1();
-    if (right->IsStackSlot() ||
-        right->IsConstantOperand()) {
+    if (right->IsStackSlot()) {
       Register right_reg = EmitLoadRegister(right, scratch);
       __ AdduAndCheckForOverflow(ToRegister(result),
                                  ToRegister(left),
                                  right_reg,
                                  overflow);  // Reg at also used as scratch.
     } else {
-      DCHECK(right->IsRegister());
-      // Due to overflow check macros not supporting constant operands,
-      // handling the IsConstantOperand case was moved to prev if clause.
-      __ AdduAndCheckForOverflow(ToRegister(result),
-                                 ToRegister(left),
-                                 ToRegister(right),
-                                 overflow);  // Reg at also used as scratch.
+      DCHECK(right->IsRegister() || right->IsConstantOperand());
+      __ AdduAndCheckForOverflow(ToRegister(result), ToRegister(left),
+                                 ToOperand(right), overflow, scratch);
     }
     DeoptimizeIf(lt, instr, Deoptimizer::kOverflow, overflow,
                  Operand(zero_reg));

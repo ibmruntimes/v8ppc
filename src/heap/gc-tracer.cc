@@ -184,6 +184,7 @@ void GCTracer::Stop(GarbageCollector collector) {
   current_.end_object_size = heap_->SizeOfObjects();
   current_.end_memory_size = heap_->isolate()->memory_allocator()->Size();
   current_.end_holes_size = CountTotalHolesSize(heap_);
+  current_.survived_new_space_object_size = heap_->SurvivedNewSpaceObjectSize();
 
   AddAllocation(current_.end_time);
 
@@ -566,12 +567,14 @@ intptr_t GCTracer::IncrementalMarkingSpeedInBytesPerMillisecond() const {
 }
 
 
-intptr_t GCTracer::ScavengeSpeedInBytesPerMillisecond() const {
+intptr_t GCTracer::ScavengeSpeedInBytesPerMillisecond(
+    ScavengeSpeedMode mode) const {
   intptr_t bytes = 0;
   double durations = 0.0;
   EventBuffer::const_iterator iter = scavenger_events_.begin();
   while (iter != scavenger_events_.end()) {
-    bytes += iter->new_space_object_size;
+    bytes += mode == kForAllObjects ? iter->new_space_object_size
+                                    : iter->survived_new_space_object_size;
     durations += iter->end_time - iter->start_time;
     ++iter;
   }
@@ -618,12 +621,12 @@ intptr_t GCTracer::FinalIncrementalMarkCompactSpeedInBytesPerMillisecond()
 double GCTracer::CombinedMarkCompactSpeedInBytesPerMillisecond() {
   if (combined_mark_compact_speed_cache_ > 0)
     return combined_mark_compact_speed_cache_;
-  const double kEpsilon = 1;
+  const double kMinimumMarkingSpeed = 0.5;
   double speed1 =
       static_cast<double>(IncrementalMarkingSpeedInBytesPerMillisecond());
   double speed2 = static_cast<double>(
       FinalIncrementalMarkCompactSpeedInBytesPerMillisecond());
-  if (speed1 + speed2 < kEpsilon) {
+  if (speed1 < kMinimumMarkingSpeed || speed2 < kMinimumMarkingSpeed) {
     // No data for the incremental marking speed.
     // Return the non-incremental mark-compact speed.
     combined_mark_compact_speed_cache_ =
@@ -684,9 +687,11 @@ size_t GCTracer::AllocationThroughputInBytesPerMillisecond(
 }
 
 
-size_t GCTracer::CurrentAllocationThroughputInBytesPerMillisecond() const {
+size_t GCTracer::CurrentOldGenerationAllocationThroughputInBytesPerMillisecond()
+    const {
   static const double kThroughputTimeFrame = 5000;
-  return AllocationThroughputInBytesPerMillisecond(kThroughputTimeFrame);
+  return OldGenerationAllocationThroughputInBytesPerMillisecond(
+      kThroughputTimeFrame);
 }
 
 

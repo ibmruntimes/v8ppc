@@ -80,6 +80,9 @@ class Graph : public ZoneObject {
     return NewNode(op, arraysize(nodes), nodes);
   }
 
+  // Clone the {node}, and assign a new node id to the copy.
+  Node* CloneNode(const Node* node);
+
   template <class Visitor>
   inline void VisitNodeInputsFromEnd(Visitor* visitor);
 
@@ -92,7 +95,7 @@ class Graph : public ZoneObject {
 
   size_t NodeCount() const { return next_node_id_; }
 
-  void Decorate(Node* node, bool incomplete);
+  void Decorate(Node* node);
   void AddDecorator(GraphDecorator* decorator);
   void RemoveDecorator(GraphDecorator* decorator);
 
@@ -117,7 +120,7 @@ class Graph : public ZoneObject {
 class GraphDecorator : public ZoneObject {
  public:
   virtual ~GraphDecorator() {}
-  virtual void Decorate(Node* node, bool incomplete) = 0;
+  virtual void Decorate(Node* node) = 0;
 };
 
 }  // namespace compiler

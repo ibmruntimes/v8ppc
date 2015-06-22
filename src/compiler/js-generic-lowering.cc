@@ -54,7 +54,6 @@ Reduction JSGenericLowering::Reduce(Node* node) {
         Node* test = graph()->NewNode(machine()->WordEqual(), condition,
                                       jsgraph()->TrueConstant());
         node->ReplaceInput(0, test);
-        break;
       }
       // Fall-through.
     default:
@@ -196,9 +195,6 @@ void JSGenericLowering::ReplaceWithCompareIC(Node* node, Token::Value token) {
 
   // Finally patch the original node to select a boolean.
   NodeProperties::ReplaceUses(node, node, compare, compare, compare);
-  // TODO(mstarzinger): Just a work-around because SelectLowering might
-  // otherwise introduce a Phi without any uses, making Scheduler unhappy.
-  if (node->UseCount() == 0) return;
   node->TrimInputCount(3);
   node->ReplaceInput(0, booleanize);
   node->ReplaceInput(1, true_value);
@@ -209,35 +205,12 @@ void JSGenericLowering::ReplaceWithCompareIC(Node* node, Token::Value token) {
 
 void JSGenericLowering::ReplaceWithStubCall(Node* node, Callable callable,
                                             CallDescriptor::Flags flags) {
-  const Operator* old_op = node->op();
-  Operator::Properties properties = old_op->properties();
+  Operator::Properties properties = node->op()->properties();
   CallDescriptor* desc = Linkage::GetStubCallDescriptor(
       isolate(), zone(), callable.descriptor(), 0, flags, properties);
-  const Operator* new_op = common()->Call(desc);
-
   Node* stub_code = jsgraph()->HeapConstant(callable.code());
   node->InsertInput(zone(), 0, stub_code);
-  node->set_op(new_op);
-
-#if 0 && DEBUG
-    // Check for at most one framestate and that it's at the right position.
-  int where = -1;
-  for (int index = 0; index < node->InputCount(); index++) {
-    if (node->InputAt(index)->opcode() == IrOpcode::kFrameState) {
-      if (where >= 0) {
-        V8_Fatal(__FILE__, __LINE__,
-                 "node #%d:%s already has a framestate at index %d",
-                 node->id(), node->op()->mnemonic(), where);
-      }
-      where = index;
-      DCHECK_EQ(NodeProperties::FirstFrameStateIndex(node), where);
-      DCHECK(flags & CallDescriptor::kNeedsFrameState);
-    }
-  }
-  if (flags & CallDescriptor::kNeedsFrameState) {
-    DCHECK_GE(where, 0);  // should have found a frame state.
-  }
-#endif
+  node->set_op(common()->Call(desc));
 }
 
 
@@ -292,33 +265,33 @@ void JSGenericLowering::ReplaceWithRuntimeCall(Node* node,
 
 
 void JSGenericLowering::LowerJSUnaryNot(Node* node) {
+  CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
   Callable callable = CodeFactory::ToBoolean(
       isolate(), ToBooleanStub::RESULT_AS_INVERSE_ODDBALL);
-  CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
   ReplaceWithStubCall(node, callable,
                       CallDescriptor::kPatchableCallSite | flags);
 }
 
 
 void JSGenericLowering::LowerJSTypeOf(Node* node) {
-  Callable callable = CodeFactory::Typeof(isolate());
   CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
+  Callable callable = CodeFactory::Typeof(isolate());
   ReplaceWithStubCall(node, callable, flags);
 }
 
 
 void JSGenericLowering::LowerJSToBoolean(Node* node) {
+  CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
   Callable callable =
       CodeFactory::ToBoolean(isolate(), ToBooleanStub::RESULT_AS_ODDBALL);
-  CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
   ReplaceWithStubCall(node, callable,
                       CallDescriptor::kPatchableCallSite | flags);
 }
 
 
 void JSGenericLowering::LowerJSToNumber(Node* node) {
-  Callable callable = CodeFactory::ToNumber(isolate());
   CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
+  Callable callable = CodeFactory::ToNumber(isolate());
   ReplaceWithStubCall(node, callable, flags);
 }
 
@@ -392,17 +365,12 @@ void JSGenericLowering::LowerJSHasProperty(Node* node) {
 
 
 void JSGenericLowering::LowerJSInstanceOf(Node* node) {
-  InstanceofStub::Flags flags = static_cast<InstanceofStub::Flags>(
+  CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
+  InstanceofStub::Flags stub_flags = static_cast<InstanceofStub::Flags>(
       InstanceofStub::kReturnTrueFalseObject |
       InstanceofStub::kArgsInRegisters);
-  InstanceofStub stub(isolate(), flags);
-  CallInterfaceDescriptor d = stub.GetCallInterfaceDescriptor();
-  CallDescriptor::Flags desc_flags = AdjustFrameStatesForCall(node);
-  CallDescriptor* desc =
-      Linkage::GetStubCallDescriptor(isolate(), zone(), d, 0, desc_flags);
-  Node* stub_code = jsgraph()->HeapConstant(stub.GetCode());
-  node->InsertInput(zone(), 0, stub_code);
-  node->set_op(common()->Call(desc));
+  Callable callable = CodeFactory::Instanceof(isolate(), stub_flags);
+  ReplaceWithStubCall(node, callable, flags);
 }
 
 
@@ -514,52 +482,7 @@ void JSGenericLowering::LowerJSCallConstruct(Node* node) {
 }
 
 
-bool JSGenericLowering::TryLowerDirectJSCall(Node* node) {
-  // Lower to a direct call to a constant JSFunction if legal.
-  const CallFunctionParameters& p = CallFunctionParametersOf(node->op());
-  int arg_count = static_cast<int>(p.arity() - 2);
-
-  // Check the function is a constant and is really a JSFunction.
-  HeapObjectMatcher<Object> function_const(node->InputAt(0));
-  if (!function_const.HasValue()) return false;  // not a constant.
-  Handle<Object> func = function_const.Value().handle();
-  if (!func->IsJSFunction()) return false;  // not a function.
-  Handle<JSFunction> function = Handle<JSFunction>::cast(func);
-  if (arg_count != function->shared()->internal_formal_parameter_count()) {
-    return false;
-  }
-
-  // Check the receiver doesn't need to be wrapped.
-  Node* receiver = node->InputAt(1);
-  if (!NodeProperties::IsTyped(receiver)) return false;
-  Type* ok_receiver = Type::Union(Type::Undefined(), Type::Receiver(), zone());
-  if (!NodeProperties::GetBounds(receiver).upper->Is(ok_receiver)) return false;
-
-  int index = NodeProperties::FirstContextIndex(node);
-
-  // TODO(titzer): total hack to share function context constants.
-  // Remove this when the JSGraph canonicalizes heap constants.
-  Node* context = node->InputAt(index);
-  HeapObjectMatcher<Context> context_const(context);
-  if (!context_const.HasValue() ||
-      *(context_const.Value().handle()) != function->context()) {
-    context = jsgraph()->HeapConstant(Handle<Context>(function->context()));
-  }
-  node->ReplaceInput(index, context);
-  CallDescriptor::Flags flags = FlagsForNode(node);
-  if (is_strict(p.language_mode())) flags |= CallDescriptor::kSupportsTailCalls;
-  CallDescriptor* desc =
-      Linkage::GetJSCallDescriptor(zone(), false, 1 + arg_count, flags);
-  node->set_op(common()->Call(desc));
-  return true;
-}
-
-
 void JSGenericLowering::LowerJSCallFunction(Node* node) {
-  // Fast case: call function directly.
-  if (TryLowerDirectJSCall(node)) return;
-
-  // General case: CallFunctionStub.
   const CallFunctionParameters& p = CallFunctionParametersOf(node->op());
   int arg_count = static_cast<int>(p.arity() - 2);
   CallFunctionStub stub(isolate(), arg_count, p.flags());

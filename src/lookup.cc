@@ -121,26 +121,10 @@ void LookupIterator::PrepareForDataProperty(Handle<Object> value) {
       JSObject::UpdateAllocationSite(holder, new_kind);
       if (IsFastDoubleElementsKind(old_kind) !=
           IsFastDoubleElementsKind(new_kind)) {
-        Handle<FixedArrayBase> old_elements(holder->elements());
-        int capacity = old_elements->length();
-        Handle<FixedArrayBase> new_elements;
-        if (IsFastDoubleElementsKind(new_kind)) {
-          new_elements = factory()->NewFixedDoubleArray(capacity);
-        } else {
-          new_elements = factory()->NewFixedArray(capacity);
-        }
-
+        uint32_t capacity = holder->elements()->length();
         ElementsAccessor* accessor = ElementsAccessor::ForKind(new_kind);
-        accessor->CopyElements(holder, new_elements, old_kind);
-
-        JSObject::ValidateElements(holder);
-        JSObject::SetMapAndElements(holder, holder_map_, new_elements);
-
-        if (FLAG_trace_elements_transitions) {
-          JSObject::PrintElementsTransition(
-              stdout, holder, old_kind, old_elements, new_kind, new_elements);
-        }
-        // SetMapAndElements above migrated the object. No reloading of property
+        accessor->GrowCapacityAndConvert(holder, capacity);
+        // GrowCapacityAndConvert migrated the object. No reloading of property
         // infomation is necessary for elements.
         return;
       } else if (FLAG_trace_elements_transitions) {
@@ -173,21 +157,17 @@ void LookupIterator::ReconfigureDataProperty(Handle<Object> value,
   Handle<JSObject> holder = GetHolder<JSObject>();
   if (IsElement()) {
     // TODO(verwaest): Clean up.
-    if (attributes == NONE && !holder->HasDictionaryElements() &&
-        !holder->HasDictionaryArgumentsElements()) {
-      ElementsAccessor* accessor = holder->GetElementsAccessor();
-      accessor->Set(holder, index(), value);
+    DCHECK(holder->HasFastElements() || holder->HasDictionaryElements() ||
+           holder->HasSloppyArgumentsElements());
+    DCHECK(attributes != NONE || !holder->HasFastElements());
+    Handle<SeededNumberDictionary> d = JSObject::NormalizeElements(holder);
+    // TODO(verwaest): Move this into NormalizeElements.
+    d->set_requires_slow_elements();
+    if (holder->HasDictionaryElements()) {
+      JSObject::SetDictionaryElement(holder, index(), value, attributes);
     } else {
-      DCHECK(holder->HasFastElements() || holder->HasDictionaryElements() ||
-             holder->HasSloppyArgumentsElements());
-      Handle<SeededNumberDictionary> d = JSObject::NormalizeElements(holder);
-      // TODO(verwaest): Move this into NormalizeElements.
-      d->set_requires_slow_elements();
-      if (holder->HasDictionaryElements()) {
-        JSObject::SetDictionaryElement(holder, index(), value, attributes);
-      } else {
-        JSObject::SetSloppyArgumentsElement(holder, index(), value, attributes);
-      }
+      JSObject::SetDictionaryArgumentsElement(holder, index(), value,
+                                              attributes);
     }
   } else if (holder_map_->is_dictionary_map()) {
     PropertyDetails details(attributes, v8::internal::DATA, 0,
@@ -236,7 +216,7 @@ void LookupIterator::PrepareTransitionToDataProperty(
         Handle<GlobalObject>::cast(receiver), name());
     DCHECK(cell->value()->IsTheHole());
     transition_ = cell;
-  } else if (transition->GetBackPointer()->IsMap()) {
+  } else if (!transition->is_dictionary_map()) {
     property_details_ = transition->GetLastDescriptorDetails();
     has_property_ = true;
   }
@@ -424,15 +404,14 @@ void LookupIterator::WriteDataValue(Handle<Object> value) {
   Handle<JSObject> holder = GetHolder<JSObject>();
   if (IsElement()) {
     ElementsAccessor* accessor = holder->GetElementsAccessor();
-    accessor->Set(holder, index_, value);
+    accessor->Set(holder->elements(), index_, *value);
   } else if (holder->IsGlobalObject()) {
     Handle<GlobalDictionary> property_dictionary =
         handle(holder->global_dictionary());
     PropertyCell::UpdateCell(property_dictionary, dictionary_entry(), value,
                              property_details_);
   } else if (holder_map_->is_dictionary_map()) {
-    Handle<NameDictionary> property_dictionary =
-        handle(holder->property_dictionary());
+    NameDictionary* property_dictionary = holder->property_dictionary();
     property_dictionary->ValueAtPut(dictionary_entry(), *value);
   } else if (property_details_.type() == v8::internal::DATA) {
     holder->WriteToField(descriptor_number(), *value);

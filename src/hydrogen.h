@@ -2171,6 +2171,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
 #define FOR_EACH_HYDROGEN_INTRINSIC(F) \
   F(IsSmi)                             \
   F(IsArray)                           \
+  F(IsTypedArray)                      \
   F(IsRegExp)                          \
   F(IsJSProxy)                         \
   F(IsConstructCall)                   \
@@ -2503,6 +2504,9 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   bool IsCallArrayInlineable(int argument_count, Handle<AllocationSite> site);
   void BuildInlinedCallArray(Expression* expression, int argument_count,
                              Handle<AllocationSite> site);
+
+  void BuildInitializeInobjectProperties(HValue* receiver,
+                                         Handle<Map> initial_map);
 
   class PropertyAccessInfo {
    public:

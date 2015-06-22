@@ -241,25 +241,6 @@ bool FunctionLiteral::NeedsHomeObject(Expression* expr) {
 }
 
 
-// Helper to find an existing shared function info in the baseline code for the
-// given function literal. Used to canonicalize SharedFunctionInfo objects.
-void FunctionLiteral::InitializeSharedInfo(
-    Handle<Code> unoptimized_code) {
-  for (RelocIterator it(*unoptimized_code); !it.done(); it.next()) {
-    RelocInfo* rinfo = it.rinfo();
-    if (rinfo->rmode() != RelocInfo::EMBEDDED_OBJECT) continue;
-    Object* obj = rinfo->target_object();
-    if (obj->IsSharedFunctionInfo()) {
-      SharedFunctionInfo* shared = SharedFunctionInfo::cast(obj);
-      if (shared->start_position() == start_position()) {
-        shared_info_ = Handle<SharedFunctionInfo>(shared);
-        break;
-      }
-    }
-  }
-}
-
-
 ObjectLiteralProperty::ObjectLiteralProperty(Expression* key, Expression* value,
                                              Kind kind, bool is_static,
                                              bool is_computed_name)
@@ -306,6 +287,10 @@ FeedbackVectorRequirements ClassLiteral::ComputeFeedbackRequirements(
 
     Expression* value = property->value();
     if (FunctionLiteral::NeedsHomeObject(value)) ic_slots++;
+  }
+
+  if (scope() != NULL && class_variable_proxy()->var()->IsUnallocated()) {
+    ic_slots++;
   }
 
 #ifdef DEBUG
@@ -521,9 +506,9 @@ void ArrayLiteral::BuildConstantElements(Isolate* isolate) {
   if (!constant_elements_.is_null()) return;
 
   // Allocate a fixed array to hold all the object literals.
-  Handle<JSArray> array =
-      isolate->factory()->NewJSArray(0, FAST_HOLEY_SMI_ELEMENTS);
-  JSArray::Expand(array, values()->length());
+  Handle<JSArray> array = isolate->factory()->NewJSArray(
+      FAST_HOLEY_SMI_ELEMENTS, values()->length(), values()->length(),
+      Strength::WEAK, INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
 
   // Fill in the literals.
   bool is_simple = true;
@@ -557,8 +542,7 @@ void ArrayLiteral::BuildConstantElements(Isolate* isolate) {
   }
 
   if (array_index != values()->length()) {
-    JSArray::SetElementsLength(
-        array, handle(Smi::FromInt(array_index), isolate)).Assert();
+    JSArray::SetLength(array, array_index);
   }
   Handle<FixedArrayBase> element_values(array->elements());
 

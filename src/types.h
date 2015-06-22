@@ -266,18 +266,23 @@ namespace internal {
   V(Integral32,          kSigned32 | kUnsigned32) \
   V(PlainNumber,         kIntegral32 | kOtherNumber) \
   V(OrderedNumber,       kPlainNumber | kMinusZero) \
+  V(MinusZeroOrNaN,      kMinusZero | kNaN) \
   V(Number,              kOrderedNumber | kNaN) \
   V(String,              kInternalizedString | kOtherString) \
   V(UniqueName,          kSymbol | kInternalizedString) \
   V(Name,                kSymbol | kString) \
+  V(BooleanOrNumber,     kBoolean | kNumber) \
+  V(NullOrUndefined,     kNull | kUndefined) \
   V(NumberOrString,      kNumber | kString) \
-  V(PlainPrimitive,      kNumberOrString | kBoolean | kNull | kUndefined) \
+  V(NumberOrUndefined,   kNumber | kUndefined) \
+  V(PlainPrimitive,      kNumberOrString | kBoolean | kNullOrUndefined) \
   V(Primitive,           kSymbol | kPlainPrimitive) \
   V(DetectableObject,    kGlobalObject | kOtherObject) \
   V(DetectableReceiver,  kDetectableObject | kProxy) \
   V(Detectable,          kDetectableReceiver | kNumber | kName) \
   V(Object,              kDetectableObject | kUndetectable) \
   V(Receiver,            kObject | kProxy) \
+  V(ReceiverOrUndefined, kReceiver | kUndefined) \
   V(StringOrReceiver,    kString | kReceiver) \
   V(Unique,              kBoolean | kUniqueName | kNull | kUndefined | \
                          kReceiver) \
@@ -309,18 +314,23 @@ namespace internal {
   V(Integral32,          kSigned32 | kUnsigned32) \
   V(PlainNumber,         kIntegral32 | kOtherNumber) \
   V(OrderedNumber,       kPlainNumber | kMinusZero) \
+  V(MinusZeroOrNaN,      kMinusZero | kNaN) \
   V(Number,              kOrderedNumber | kNaN) \
   V(String,              kInternalizedString | kOtherString) \
   V(UniqueName,          kSymbol | kInternalizedString) \
   V(Name,                kSymbol | kString) \
+  V(BooleanOrNumber,     kBoolean | kNumber) \
+  V(NullOrUndefined,     kNull | kUndefined) \
   V(NumberOrString,      kNumber | kString) \
-  V(PlainPrimitive,      kNumberOrString | kBoolean | kNull | kUndefined) \
+  V(NumberOrUndefined,   kNumber | kUndefined) \
+  V(PlainPrimitive,      kNumberOrString | kBoolean | kNullOrUndefined) \
   V(Primitive,           kSymbol | kPlainPrimitive) \
   V(DetectableObject,    kGlobalObject | kOtherObject) \
   V(DetectableReceiver,  kDetectableObject | kProxy) \
   V(Detectable,          kDetectableReceiver | kNumber | kName) \
   V(Object,              kDetectableObject | kUndetectable) \
   V(Receiver,            kObject | kProxy) \
+  V(ReceiverOrUndefined, kReceiver | kUndefined) \
   V(StringOrReceiver,    kString | kReceiver) \
   V(Unique,              kBoolean | kUniqueName | kNull | kUndefined | \
                          kReceiver) \
@@ -497,6 +507,14 @@ class TypeImpl : public Config::Base {
     function->InitParameter(0, param0);
     function->InitParameter(1, param1);
     function->InitParameter(2, param2);
+    return function;
+  }
+  static TypeHandle Function(TypeHandle result, int arity, TypeHandle* params,
+                             Region* region) {
+    FunctionHandle function = Function(result, Any(region), arity, region);
+    for (int i = 0; i < arity; ++i) {
+      function->InitParameter(i, params[i]);
+    }
     return function;
   }
 

@@ -165,6 +165,7 @@ namespace internal {
   V(HeapNumber, nan_value, NanValue)                                           \
   V(HeapNumber, infinity_value, InfinityValue)                                 \
   V(HeapNumber, minus_zero_value, MinusZeroValue)                              \
+  V(HeapNumber, minus_infinity_value, MinusInfinityValue)                      \
   V(JSObject, message_listeners, MessageListeners)                             \
   V(UnseededNumberDictionary, code_stubs, CodeStubs)                           \
   V(UnseededNumberDictionary, non_monomorphic_cache, NonMonomorphicCache)      \
@@ -955,6 +956,9 @@ class Heap {
   bool InSpace(Address addr, AllocationSpace space);
   bool InSpace(HeapObject* value, AllocationSpace space);
 
+  // Checks whether the space is valid.
+  static bool IsValidAllocationSpace(AllocationSpace space);
+
   // Checks whether the given object is allowed to be migrated from it's
   // current space into the given destination space. Used for debugging.
   inline bool AllowedToBeMigrated(HeapObject* object, AllocationSpace dest);
@@ -1157,14 +1161,28 @@ class Heap {
   static const int kTraceRingBufferSize = 512;
   static const int kStacktraceBufferSize = 512;
 
+  static const double kMinHeapGrowingFactor;
+  static const double kMaxHeapGrowingFactor;
+  static const double kMaxHeapGrowingFactorMemoryConstrained;
+  static const double kMaxHeapGrowingFactorIdle;
+  static const double kTargetMutatorUtilization;
+
+  static double HeapGrowingFactor(double gc_speed, double mutator_speed);
+
   // Calculates the allocation limit based on a given growing factor and a
   // given old generation size.
   intptr_t CalculateOldGenerationAllocationLimit(double factor,
                                                  intptr_t old_gen_size);
 
   // Sets the allocation limit to trigger the next full garbage collection.
-  void SetOldGenerationAllocationLimit(intptr_t old_gen_size,
-                                       size_t current_allocation_throughput);
+  void SetOldGenerationAllocationLimit(intptr_t old_gen_size, double gc_speed,
+                                       double mutator_speed);
+
+  // Decrease the allocation limit if the new limit based on the given
+  // parameters is lower than the current limit.
+  void DampenOldGenerationAllocationLimit(intptr_t old_gen_size,
+                                          double gc_speed,
+                                          double mutator_speed);
 
   // Indicates whether inline bump-pointer allocation has been disabled.
   bool inline_allocation_disabled() { return inline_allocation_disabled_; }
@@ -1258,6 +1276,10 @@ class Heap {
   inline void IncrementSemiSpaceCopiedObjectSize(int object_size) {
     DCHECK(object_size > 0);
     semi_space_copied_object_size_ += object_size;
+  }
+
+  inline intptr_t SurvivedNewSpaceObjectSize() {
+    return promoted_objects_size_ + semi_space_copied_object_size_;
   }
 
   inline void IncrementNodesDiedInNewSpace() { nodes_died_in_new_space_++; }
@@ -1577,11 +1599,11 @@ class Heap {
   void UnregisterArrayBuffer(bool in_new_space, void* data);
 
   // A live ArrayBuffer was discovered during marking/scavenge.
-  void RegisterLiveArrayBuffer(bool in_new_space, void* data);
+  void RegisterLiveArrayBuffer(bool from_scavenge, void* data);
 
   // Frees all backing store pointers that weren't discovered in the previous
   // marking or scavenge phase.
-  void FreeDeadArrayBuffers(bool in_new_space);
+  void FreeDeadArrayBuffers(bool from_scavenge);
 
   // Prepare for a new scavenge phase. A new marking phase is implicitly
   // prepared by finishing the previous one.
@@ -1854,7 +1876,7 @@ class Heap {
   // space evacuation. Note that between feedback collection and calling this
   // method object in old space must not move.
   // Right now we only process pretenuring feedback in high promotion mode.
-  void ProcessPretenuringFeedback();
+  bool ProcessPretenuringFeedback();
 
   // Checks whether a global GC is necessary
   GarbageCollector SelectGarbageCollector(AllocationSpace space,
@@ -2351,10 +2373,24 @@ class Heap {
 
   bool concurrent_sweeping_enabled_;
 
+  // |live_array_buffers_| maps externally allocated memory used as backing
+  // store for ArrayBuffers to the length of the respective memory blocks.
+  //
+  // At the beginning of mark/compact, |not_yet_discovered_array_buffers_| is
+  // a copy of |live_array_buffers_| and we remove pointers as we discover live
+  // ArrayBuffer objects during marking. At the end of mark/compact, the
+  // remaining memory blocks can be freed.
   std::map<void*, size_t> live_array_buffers_;
-  std::map<void*, size_t> live_new_array_buffers_;
   std::map<void*, size_t> not_yet_discovered_array_buffers_;
-  std::map<void*, size_t> not_yet_discovered_new_array_buffers_;
+
+  // To be able to free memory held by ArrayBuffers during scavenge as well, we
+  // have a separate list of allocated memory held by ArrayBuffers in new space.
+  //
+  // Since mark/compact also evacuates the new space, all pointers in the
+  // |live_array_buffers_for_scavenge_| list are also in the
+  // |live_array_buffers_| list.
+  std::map<void*, size_t> live_array_buffers_for_scavenge_;
+  std::map<void*, size_t> not_yet_discovered_array_buffers_for_scavenge_;
 
   struct StrongRootsList;
   StrongRootsList* strong_roots_list_;

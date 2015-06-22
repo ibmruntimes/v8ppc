@@ -280,9 +280,8 @@ BasicJsonStringifier::Result BasicJsonStringifier::StackPush(
       }
     }
   }
-  JSArray::EnsureSize(stack_, length + 1);
+  JSArray::SetLength(stack_, length + 1);
   FixedArray::cast(stack_->elements())->set(length, *object);
-  stack_->set_length(Smi::FromInt(length + 1));
   return SUCCESS;
 }
 
@@ -580,12 +579,9 @@ BasicJsonStringifier::Result BasicJsonStringifier::SerializeJSObject(
       } else {
         DCHECK(key->IsNumber());
         key_handle = factory()->NumberToString(Handle<Object>(key, isolate_));
-        uint32_t index;
         if (key->IsSmi()) {
           maybe_property = Object::GetElement(
               isolate_, object, Smi::cast(key)->value());
-        } else if (key_handle->AsArrayIndex(&index)) {
-          maybe_property = Object::GetElement(isolate_, object, index);
         } else {
           maybe_property = Object::GetPropertyOrElement(object, key_handle);
         }

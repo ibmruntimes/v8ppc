@@ -1226,8 +1226,9 @@ void FullCodeGenerator::VisitTryCatchStatement(TryCatchStatement* stmt) {
   Label try_entry, handler_entry, exit;
   __ jmp(&try_entry);
   __ bind(&handler_entry);
-
+  PrepareForBailoutForId(stmt->HandlerId(), NO_REGISTERS);
   ClearPendingMessage();
+
   // Exception handler code, the exception is in the result register.
   // Extend the context before executing the catch block.
   { Comment cmnt(masm_, "[ Extend catch context");
@@ -1295,6 +1296,8 @@ void FullCodeGenerator::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
   // Jump to try-handler setup and try-block code.
   __ jmp(&try_entry);
   __ bind(&handler_entry);
+  PrepareForBailoutForId(stmt->HandlerId(), NO_REGISTERS);
+
   // Exception handler code.  This code is only executed when an exception
   // is thrown.  The exception is in the result register, and must be
   // preserved by the finally block.  Call the finally block and then
@@ -1385,7 +1388,7 @@ void FullCodeGenerator::VisitFunctionLiteral(FunctionLiteral* expr) {
 
   // Build the function boilerplate and instantiate it.
   Handle<SharedFunctionInfo> function_info =
-      Compiler::BuildFunctionInfo(expr, script(), info_);
+      Compiler::GetSharedFunctionInfo(expr, script(), info_);
   if (function_info.is_null()) {
     SetStackOverflow();
     return;
@@ -1421,13 +1424,22 @@ void FullCodeGenerator::VisitClassLiteral(ClassLiteral* lit) {
 
     __ CallRuntime(Runtime::kDefineClass, 6);
     PrepareForBailoutForId(lit->CreateLiteralId(), TOS_REG);
-    EmitClassDefineProperties(lit);
+
+    int store_slot_index = 0;
+    EmitClassDefineProperties(lit, &store_slot_index);
 
     if (lit->scope() != NULL) {
       DCHECK_NOT_NULL(lit->class_variable_proxy());
+      FeedbackVectorICSlot slot = FLAG_vector_stores
+                                      ? lit->GetNthSlot(store_slot_index++)
+                                      : FeedbackVectorICSlot::Invalid();
       EmitVariableAssignment(lit->class_variable_proxy()->var(),
-                             Token::INIT_CONST);
+                             Token::INIT_CONST, slot);
     }
+
+    // Verify that compilation exactly consumed the number of store ic slots
+    // that the ClassLiteral node had to offer.
+    DCHECK(!FLAG_vector_stores || store_slot_index == lit->slot_count());
   }
 
   context()->Plug(result_register());

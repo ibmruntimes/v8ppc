@@ -75,7 +75,7 @@ class LCodeGen: public LCodeGenBase {
   DoubleRegister EmitLoadDoubleRegister(LOperand* op,
                                         FloatRegister flt_scratch,
                                         DoubleRegister dbl_scratch);
-  int32_t ToRepresentation_donotuse(LConstantOperand* op,
+  int64_t ToRepresentation_donotuse(LConstantOperand* op,
                                     const Representation& r) const;
   int32_t ToInteger32(LConstantOperand* op) const;
   Smi* ToSmi(LConstantOperand* op) const;
@@ -251,6 +251,7 @@ class LCodeGen: public LCodeGenBase {
                                    String::Encoding encoding);
 
   void EmitIntegerMathAbs(LMathAbs* instr);
+  void EmitSmiMathAbs(LMathAbs* instr);
 
   // Support for recording safepoint and position information.
   void RecordSafepoint(LPointerMap* pointers,

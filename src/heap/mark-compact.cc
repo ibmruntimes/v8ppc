@@ -345,7 +345,7 @@ void MarkCompactCollector::CollectGarbage() {
   // arrays are cleared or contain only live code objects.
   ProcessAndClearWeakCells();
 
-  if (FLAG_collect_maps) ClearNonLiveReferences();
+  ClearNonLiveReferences();
 
   ClearWeakCollections();
 
@@ -369,7 +369,7 @@ void MarkCompactCollector::CollectGarbage() {
 
 #ifdef VERIFY_HEAP
   VerifyWeakEmbeddedObjectsInCode();
-  if (FLAG_collect_maps && FLAG_omit_map_checks_for_leaf_maps) {
+  if (FLAG_omit_map_checks_for_leaf_maps) {
     VerifyOmittedMapChecks();
   }
 #endif
@@ -898,6 +898,11 @@ void CodeFlusher::ProcessJSFunctionCandidates() {
         shared->ShortPrint();
         PrintF(" - age: %d]\n", code->GetAge());
       }
+      // Always flush the optimized code map if requested by flag.
+      if (FLAG_cache_optimized_code && FLAG_flush_optimized_code_cache &&
+          !shared->optimized_code_map()->IsSmi()) {
+        shared->ClearOptimizedCodeMap();
+      }
       shared->set_code(lazy_compile);
       candidate->set_code(lazy_compile);
     } else {
@@ -940,6 +945,11 @@ void CodeFlusher::ProcessSharedFunctionInfoCandidates() {
         PrintF("[code-flushing clears: ");
         candidate->ShortPrint();
         PrintF(" - age: %d]\n", code->GetAge());
+      }
+      // Always flush the optimized code map if requested by flag.
+      if (FLAG_cache_optimized_code && FLAG_flush_optimized_code_cache &&
+          !candidate->optimized_code_map()->IsSmi()) {
+        candidate->ClearOptimizedCodeMap();
       }
       candidate->set_code(lazy_compile);
     }
@@ -2637,7 +2647,7 @@ void MarkCompactCollector::AbortWeakCollections() {
 
 
 void MarkCompactCollector::ProcessAndClearWeakCells() {
-  HeapObject* undefined = heap()->undefined_value();
+  HeapObject* the_hole = heap()->the_hole_value();
   Object* weak_cell_obj = heap()->encountered_weak_cells();
   while (weak_cell_obj != Smi::FromInt(0)) {
     WeakCell* weak_cell = reinterpret_cast<WeakCell*>(weak_cell_obj);
@@ -2672,19 +2682,19 @@ void MarkCompactCollector::ProcessAndClearWeakCells() {
       RecordSlot(slot, slot, *slot);
     }
     weak_cell_obj = weak_cell->next();
-    weak_cell->set_next(undefined, SKIP_WRITE_BARRIER);
+    weak_cell->set_next(the_hole, SKIP_WRITE_BARRIER);
   }
   heap()->set_encountered_weak_cells(Smi::FromInt(0));
 }
 
 
 void MarkCompactCollector::AbortWeakCells() {
-  Object* undefined = heap()->undefined_value();
+  Object* the_hole = heap()->the_hole_value();
   Object* weak_cell_obj = heap()->encountered_weak_cells();
   while (weak_cell_obj != Smi::FromInt(0)) {
     WeakCell* weak_cell = reinterpret_cast<WeakCell*>(weak_cell_obj);
     weak_cell_obj = weak_cell->next();
-    weak_cell->set_next(undefined, SKIP_WRITE_BARRIER);
+    weak_cell->set_next(the_hole, SKIP_WRITE_BARRIER);
   }
   heap()->set_encountered_weak_cells(Smi::FromInt(0));
 }
@@ -2779,7 +2789,12 @@ void MarkCompactCollector::MigrateObjectTagged(HeapObject* dst, HeapObject* src,
 
 void MarkCompactCollector::MigrateObjectMixed(HeapObject* dst, HeapObject* src,
                                               int size) {
-  if (FLAG_unbox_double_fields) {
+  if (src->IsFixedTypedArrayBase()) {
+    heap()->MoveBlock(dst->address(), src->address(), size);
+    Address base_pointer_slot =
+        dst->address() + FixedTypedArrayBase::kBasePointerOffset;
+    RecordMigratedSlot(Memory::Object_at(base_pointer_slot), base_pointer_slot);
+  } else if (FLAG_unbox_double_fields) {
     Address dst_addr = dst->address();
     Address src_addr = src->address();
     Address src_slot = src_addr;
@@ -3198,7 +3213,10 @@ bool MarkCompactCollector::IsSlotInLiveObject(Address slot) {
       }
 
       case HeapObjectContents::kMixedValues: {
-        if (FLAG_unbox_double_fields) {
+        if (object->IsFixedTypedArrayBase()) {
+          return static_cast<int>(slot - object->address()) ==
+                 FixedTypedArrayBase::kBasePointerOffset;
+        } else if (FLAG_unbox_double_fields) {
           // Filter out slots that happen to point to unboxed double fields.
           LayoutDescriptorHelper helper(object->map());
           DCHECK(!helper.all_fields_tagged());

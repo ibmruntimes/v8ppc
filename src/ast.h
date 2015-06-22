@@ -127,9 +127,8 @@ AST_NODE_LIST(DEF_FORWARD_DECLARATION)
 
 
 // Typedef only introduced to avoid unreadable code.
-// Please do appreciate the required space in "> >".
-typedef ZoneList<Handle<String> > ZoneStringList;
-typedef ZoneList<Handle<Object> > ZoneObjectList;
+typedef ZoneList<Handle<String>> ZoneStringList;
+typedef ZoneList<Handle<Object>> ZoneObjectList;
 
 
 #define DECLARE_NODE_TYPE(type)                                          \
@@ -138,12 +137,7 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
   friend class AstNodeFactory;
 
 
-enum AstPropertiesFlag {
-  kDontSelfOptimize,
-  kDontSoftInline,
-  kDontCrankshaft,
-  kDontCache
-};
+enum AstPropertiesFlag { kDontSelfOptimize, kDontCrankshaft };
 
 
 class FeedbackVectorRequirements {
@@ -484,7 +478,7 @@ class Block final : public BreakableStatement {
   }
 
   ZoneList<Statement*>* statements() { return &statements_; }
-  bool is_initializer_block() const { return is_initializer_block_; }
+  bool ignore_completion_value() const { return ignore_completion_value_; }
 
   static int num_ids() { return parent_num_ids() + 1; }
   BailoutId DeclsId() const { return BailoutId(local_id(0)); }
@@ -499,10 +493,10 @@ class Block final : public BreakableStatement {
 
  protected:
   Block(Zone* zone, ZoneList<const AstRawString*>* labels, int capacity,
-        bool is_initializer_block, int pos)
+        bool ignore_completion_value, int pos)
       : BreakableStatement(zone, labels, TARGET_FOR_NAMED_ONLY, pos),
         statements_(capacity, zone),
-        is_initializer_block_(is_initializer_block),
+        ignore_completion_value_(ignore_completion_value),
         scope_(NULL) {}
   static int parent_num_ids() { return BreakableStatement::num_ids(); }
 
@@ -510,7 +504,7 @@ class Block final : public BreakableStatement {
   int local_id(int n) const { return base_id() + parent_num_ids() + n; }
 
   ZoneList<Statement*> statements_;
-  bool is_initializer_block_;
+  bool ignore_completion_value_;
   Scope* scope_;
 };
 
@@ -1163,12 +1157,27 @@ class TryStatement : public Statement {
  public:
   Block* try_block() const { return try_block_; }
 
+  void set_base_id(int id) { base_id_ = id; }
+  static int num_ids() { return parent_num_ids() + 1; }
+  BailoutId HandlerId() const { return BailoutId(local_id(0)); }
+
  protected:
   TryStatement(Zone* zone, Block* try_block, int pos)
-      : Statement(zone, pos), try_block_(try_block) {}
+      : Statement(zone, pos),
+        try_block_(try_block),
+        base_id_(BailoutId::None().ToInt()) {}
+  static int parent_num_ids() { return 0; }
+
+  int base_id() const {
+    DCHECK(!BailoutId(base_id_).IsNone());
+    return base_id_;
+  }
 
  private:
+  int local_id(int n) const { return base_id() + parent_num_ids() + n; }
+
   Block* try_block_;
+  int base_id_;
 };
 
 
@@ -2503,8 +2512,6 @@ class FunctionLiteral final : public Expression {
   bool AllowsLazyCompilation();
   bool AllowsLazyCompilationWithoutContext();
 
-  void InitializeSharedInfo(Handle<Code> code);
-
   Handle<String> debug_name() const {
     if (raw_name_ != NULL && !raw_name_->IsEmpty()) {
       return raw_name_->string();
@@ -2538,9 +2545,6 @@ class FunctionLiteral final : public Expression {
     DCHECK(inferred_name_.is_null());
     inferred_name_ = Handle<String>();
   }
-
-  // shared_info may be null if it's not cached in full code.
-  Handle<SharedFunctionInfo> shared_info() { return shared_info_; }
 
   bool pretenure() { return Pretenure::decode(bitfield_); }
   void set_pretenure() { bitfield_ |= Pretenure::encode(true); }
@@ -2623,7 +2627,6 @@ class FunctionLiteral final : public Expression {
  private:
   const AstRawString* raw_name_;
   Handle<String> name_;
-  Handle<SharedFunctionInfo> shared_info_;
   Scope* scope_;
   ZoneList<Statement*>* body_;
   const AstString* raw_inferred_name_;
@@ -3271,12 +3274,10 @@ class AstNodeFactory final BASE_EMBEDDED {
     return new (zone_) ExportDeclaration(zone_, proxy, scope, pos);
   }
 
-  Block* NewBlock(ZoneList<const AstRawString*>* labels,
-                  int capacity,
-                  bool is_initializer_block,
-                  int pos) {
+  Block* NewBlock(ZoneList<const AstRawString*>* labels, int capacity,
+                  bool ignore_completion_value, int pos) {
     return new (zone_)
-        Block(zone_, labels, capacity, is_initializer_block, pos);
+        Block(zone_, labels, capacity, ignore_completion_value, pos);
   }
 
 #define STATEMENT_WITH_LABELS(NodeType)                                     \

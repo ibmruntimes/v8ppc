@@ -170,11 +170,12 @@
   ##############################################################################
   # Only RegExp stuff tested, no need for extensive optimizing compiler tests.
   'regexp-global': [PASS, NO_VARIANTS],
-  'third_party/regexp-pcre': [PASS, NO_VARIANTS],
+  'third_party/regexp-pcre/regexp-pcre': [PASS, NO_VARIANTS],
 
   ##############################################################################
   # No need to waste time for this test.
   'd8-performance-now': [PASS, NO_VARIANTS],
+  'regress/regress-crbug-491062': [PASS, NO_VARIANTS],
 
   # Issue 488: this test sometimes times out.
   'array-constructor': [PASS, TIMEOUT],
@@ -294,9 +295,6 @@
   'regress/regress-3717': [SKIP],
   # Issue 478788.
   'es7/object-observe': [SKIP],
-
-  # Issue 3803.
-  'es6/generators-iteration': [PASS, FLAKY],
 }],  # 'gc_stress == True'
 
 ##############################################################################
@@ -379,7 +377,6 @@
   'regress/regress-331444': [PASS, SLOW],
   'regress/regress-490': [PASS, SLOW],
   'regress/regress-crbug-217858': [PASS, SLOW],
-  'regress/regress-crbug-491062': [PASS, SLOW],
   'regress/regress-create-exception': [PASS, SLOW],
   'regress/regress-json-stringify-gc': [PASS, SLOW],
   'string-indexof-2': [PASS, SLOW],
@@ -638,12 +635,6 @@
   'harmony/private': [SKIP],
   'harmony/symbols': [SKIP],
 }],  # 'arch == nacl_ia32 or arch == nacl_x64'
-
-##############################################################################
-['arch == x87', {
-  # Currently Turbofan is not supported by x87.
-  'compiler/opt-next-call-turbo': [SKIP],
-}],  # 'arch == x87'
 
 ##############################################################################
 ['deopt_fuzzer == True', {

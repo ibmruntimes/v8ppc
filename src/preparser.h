@@ -502,7 +502,9 @@ class ParserBase : public Traits {
   }
 
   void ReportUnexpectedToken(Token::Value token);
-  void ReportUnexpectedTokenAt(Scanner::Location location, Token::Value token);
+  void ReportUnexpectedTokenAt(
+      Scanner::Location location, Token::Value token,
+      MessageTemplate::Template message = MessageTemplate::kUnexpectedToken);
 
 
   void ReportClassifierError(const ExpressionClassifier::Error& error) {
@@ -555,7 +557,7 @@ class ParserBase : public Traits {
                                      ExpressionT expr, bool* ok) {
     if (classifier->is_valid_binding_pattern()) {
       // A simple arrow formal parameter: IDENTIFIER => BODY.
-      if (!this->IsIdentifier(expr)) {
+      if (!allow_harmony_destructuring() && !this->IsIdentifier(expr)) {
         Traits::ReportMessageAt(scanner()->location(),
                                 MessageTemplate::kUnexpectedToken,
                                 Token::String(scanner()->current_token()));
@@ -1555,7 +1557,7 @@ class PreParserTraits {
     return !tag.IsNoTemplateTag();
   }
 
-  void DeclareFormalParameter(Scope* scope, PreParserIdentifier param,
+  void DeclareFormalParameter(Scope* scope, PreParserExpression pattern,
                               ExpressionClassifier* classifier, bool is_rest) {}
 
   void CheckConflictingVarDeclarations(Scope* scope, bool* ok) {}
@@ -1814,10 +1816,10 @@ void ParserBase<Traits>::ReportUnexpectedToken(Token::Value token) {
 }
 
 
-template<class Traits>
+template <class Traits>
 void ParserBase<Traits>::ReportUnexpectedTokenAt(
-    Scanner::Location source_location, Token::Value token) {
-
+    Scanner::Location source_location, Token::Value token,
+    MessageTemplate::Template message) {
   // Four of the tokens are treated specially
   switch (token) {
     case Token::EOS:
@@ -1850,8 +1852,7 @@ void ParserBase<Traits>::ReportUnexpectedTokenAt(
     default:
       const char* name = Token::String(token);
       DCHECK(name != NULL);
-      Traits::ReportMessageAt(source_location,
-                              MessageTemplate::kUnexpectedToken, name);
+      Traits::ReportMessageAt(source_location, message, name);
   }
 }
 
@@ -2064,7 +2065,7 @@ ParserBase<Traits>::ParsePrimaryExpression(ExpressionClassifier* classifier,
     case Token::THIS: {
       BindingPatternUnexpectedToken(classifier);
       Consume(Token::THIS);
-      if (is_strong(language_mode())) {
+      if (FLAG_strong_this && is_strong(language_mode())) {
         // Constructors' usages of 'this' in strong mode are parsed separately.
         // TODO(rossberg): this does not work with arrow functions yet.
         if (i::IsConstructor(function_state_->kind())) {
@@ -2152,6 +2153,13 @@ ParserBase<Traits>::ParsePrimaryExpression(ExpressionClassifier* classifier,
         classifier->RecordBindingPatternError(scanner()->location(),
                                               MessageTemplate::kUnexpectedToken,
                                               Token::String(Token::RPAREN));
+        // Give a good error to the user who might have typed e.g. "return();".
+        if (peek() != Token::ARROW) {
+          ReportUnexpectedTokenAt(scanner_->peek_location(), peek(),
+                                  MessageTemplate::kMissingArrow);
+          *ok = false;
+          return this->EmptyExpression();
+        }
         Scope* scope =
             this->NewScope(scope_, ARROW_SCOPE, FunctionKind::kArrowFunction);
         scope->set_start_position(beg_pos);
@@ -3095,6 +3103,13 @@ ParserBase<Traits>::ParseLeftHandSideExpression(
         break;
       }
 
+      case Token::TEMPLATE_SPAN:
+      case Token::TEMPLATE_TAIL: {
+        BindingPatternUnexpectedToken(classifier);
+        result = ParseTemplateLiteral(result, position(), classifier, CHECK_OK);
+        break;
+      }
+
       default:
         return result;
     }
@@ -3487,10 +3502,21 @@ void ParserBase<Traits>::ParseFormalParameter(Scope* scope, bool is_rest,
                                               bool* ok) {
   // FormalParameter[Yield,GeneratorParameter] :
   //   BindingElement[?Yield, ?GeneratorParameter]
-  IdentifierT name = ParseAndClassifyIdentifier(classifier, ok);
+
+  Token::Value next = peek();
+  ExpressionT pattern = ParsePrimaryExpression(classifier, ok);
   if (!*ok) return;
 
-  Traits::DeclareFormalParameter(scope, name, classifier, is_rest);
+  ValidateBindingPattern(classifier, ok);
+  if (!*ok) return;
+
+  if (!allow_harmony_destructuring() && !Traits::IsIdentifier(pattern)) {
+    ReportUnexpectedToken(next);
+    *ok = false;
+    return;
+  }
+
+  Traits::DeclareFormalParameter(scope, pattern, classifier, is_rest);
 }
 
 

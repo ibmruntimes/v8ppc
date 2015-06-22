@@ -48,7 +48,7 @@ const SharedOperator kSharedOperators[] = {
         value_input_count, effect_input_count, control_input_count,          \
         value_output_count, effect_output_count, control_output_count        \
   }
-    SHARED(Dead, Operator::kFoldable, 0, 0, 0, 0, 0, 1),
+    SHARED(Dead, Operator::kFoldable, 0, 0, 0, 1, 1, 1),
     SHARED(IfTrue, Operator::kKontrol, 0, 0, 1, 0, 0, 1),
     SHARED(IfFalse, Operator::kKontrol, 0, 0, 1, 0, 0, 1),
     SHARED(IfSuccess, Operator::kKontrol, 0, 0, 1, 0, 0, 1),

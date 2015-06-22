@@ -724,17 +724,18 @@ static bool IterateElements(Isolate* isolate, Handle<JSObject> receiver,
 static bool IsConcatSpreadable(Isolate* isolate, Handle<Object> obj) {
   HandleScope handle_scope(isolate);
   if (!obj->IsSpecObject()) return false;
-  if (obj->IsJSArray()) return true;
   if (FLAG_harmony_arrays) {
     Handle<Symbol> key(isolate->factory()->is_concat_spreadable_symbol());
     Handle<Object> value;
     MaybeHandle<Object> maybeValue =
         i::Runtime::GetObjectProperty(isolate, obj, key);
     if (maybeValue.ToHandle(&value)) {
-      return value->BooleanValue();
+      if (!value->IsUndefined()) {
+        return value->BooleanValue();
+      }
     }
   }
-  return false;
+  return obj->IsJSArray();
 }
 
 
@@ -1067,8 +1068,8 @@ static Object* ArrayConstructorCommon(Isolate* isolate,
     Handle<Object> argument_one = caller_args->at<Object>(0);
     if (argument_one->IsSmi()) {
       int value = Handle<Smi>::cast(argument_one)->value();
-      if (value < 0 || JSArray::SetElementsLengthWouldNormalize(isolate->heap(),
-                                                                argument_one)) {
+      if (value < 0 ||
+          JSArray::SetLengthWouldNormalize(isolate->heap(), value)) {
         // the array is a dictionary in this case.
         can_use_type_feedback = false;
       } else if (value != 0) {
@@ -1257,16 +1258,7 @@ RUNTIME_FUNCTION(Runtime_GrowArrayElements) {
     }
 
     uint32_t new_capacity = JSObject::NewElementsCapacity(index + 1);
-    ElementsKind kind = object->GetElementsKind();
-    if (IsFastDoubleElementsKind(kind)) {
-      JSObject::SetFastDoubleElementsCapacity(object, new_capacity);
-    } else {
-      JSObject::SetFastElementsCapacitySmiMode set_capacity_mode =
-          object->HasFastSmiElements() ? JSObject::kAllowSmiElements
-                                       : JSObject::kDontAllowSmiElements;
-      JSObject::SetFastElementsCapacity(object, new_capacity,
-                                        set_capacity_mode);
-    }
+    object->GetElementsAccessor()->GrowCapacityAndConvert(object, new_capacity);
   }
 
   // On success, return the fixed array elements.

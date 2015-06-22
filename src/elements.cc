@@ -613,19 +613,14 @@ class ElementsAccessorBase : public ElementsAccessor {
     }
   }
 
-  virtual Handle<Object> Set(Handle<JSObject> holder, uint32_t key,
-                             Handle<FixedArrayBase> backing_store,
-                             Handle<Object> value) final {
-    return ElementsAccessorSubclass::SetImpl(holder, key, backing_store, value);
+  virtual void Set(FixedArrayBase* backing_store, uint32_t key,
+                   Object* value) final {
+    ElementsAccessorSubclass::SetImpl(backing_store, key, value);
   }
 
-  static Handle<Object> SetImpl(Handle<JSObject> obj, uint32_t key,
-                                Handle<FixedArrayBase> backing_store,
-                                Handle<Object> value) {
-    CHECK(key <
-          ElementsAccessorSubclass::GetCapacityImpl(*obj, *backing_store));
-    return BackingStore::SetValue(
-        obj, Handle<BackingStore>::cast(backing_store), key, value);
+  static void SetImpl(FixedArrayBase* backing_store, uint32_t key,
+                      Object* value) {
+    BackingStore::cast(backing_store)->SetValue(key, value);
   }
 
   virtual MaybeHandle<AccessorPair> GetAccessorPair(
@@ -641,28 +636,22 @@ class ElementsAccessorBase : public ElementsAccessor {
     return MaybeHandle<AccessorPair>();
   }
 
-  MUST_USE_RESULT virtual MaybeHandle<Object> SetLength(
-      Handle<JSArray> array, Handle<Object> length) final {
-    return ElementsAccessorSubclass::SetLengthImpl(
-        array, length, handle(array->elements()));
+  virtual void SetLength(Handle<JSArray> array, uint32_t length) final {
+    ElementsAccessorSubclass::SetLengthImpl(array, length,
+                                            handle(array->elements()));
   }
 
-  MUST_USE_RESULT static MaybeHandle<Object> SetLengthImpl(
-      Handle<JSObject> obj,
-      Handle<Object> length,
-      Handle<FixedArrayBase> backing_store);
+  static void SetLengthImpl(Handle<JSArray> array, uint32_t length,
+                            Handle<FixedArrayBase> backing_store);
 
-  virtual void SetCapacityAndLength(Handle<JSArray> array, int capacity,
-                                    int length) final {
-    ElementsAccessorSubclass::
-        SetFastElementsCapacityAndLength(array, capacity, length);
-  }
-
-  static void SetFastElementsCapacityAndLength(
-      Handle<JSObject> obj,
-      int capacity,
-      int length) {
+  static void GrowCapacityAndConvertImpl(Handle<JSObject> obj,
+                                         uint32_t capacity) {
     UNIMPLEMENTED();
+  }
+
+  virtual void GrowCapacityAndConvert(Handle<JSObject> object,
+                                      uint32_t capacity) final {
+    ElementsAccessorSubclass::GrowCapacityAndConvertImpl(object, capacity);
   }
 
   virtual void Delete(Handle<JSObject> obj, uint32_t key,
@@ -870,57 +859,6 @@ class FastElementsAccessor
 
   typedef typename KindTraits::BackingStore BackingStore;
 
-  // Adjusts the length of the fast backing store.
-  static Handle<Object> SetLengthWithoutNormalize(
-      Handle<FixedArrayBase> backing_store,
-      Handle<JSArray> array,
-      Handle<Object> length_object,
-      uint32_t length) {
-    Isolate* isolate = array->GetIsolate();
-    uint32_t old_capacity = backing_store->length();
-    Handle<Object> old_length(array->length(), isolate);
-    bool same_or_smaller_size = old_length->IsSmi() &&
-        static_cast<uint32_t>(Handle<Smi>::cast(old_length)->value()) >= length;
-    ElementsKind kind = array->GetElementsKind();
-
-    if (!same_or_smaller_size && IsFastElementsKind(kind) &&
-        !IsFastHoleyElementsKind(kind)) {
-      kind = GetHoleyElementsKind(kind);
-      JSObject::TransitionElementsKind(array, kind);
-    }
-
-    // Check whether the backing store should be shrunk.
-    if (length <= old_capacity) {
-      if (array->HasFastSmiOrObjectElements()) {
-        backing_store = JSObject::EnsureWritableFastElements(array);
-      }
-      if (2 * length <= old_capacity) {
-        // If more than half the elements won't be used, trim the array.
-        if (length == 0) {
-          array->initialize_elements();
-        } else {
-          isolate->heap()->RightTrimFixedArray<Heap::CONCURRENT_TO_SWEEPER>(
-              *backing_store, old_capacity - length);
-        }
-      } else {
-        // Otherwise, fill the unused tail with holes.
-        int old_length = FastD2IChecked(array->length()->Number());
-        for (int i = length; i < old_length; i++) {
-          Handle<BackingStore>::cast(backing_store)->set_the_hole(i);
-        }
-      }
-      return length_object;
-    }
-
-    // Check whether the backing store should be expanded.
-    uint32_t min = JSObject::NewElementsCapacity(old_capacity);
-    uint32_t new_capacity = length > min ? length : min;
-    FastElementsAccessorSubclass::SetFastElementsCapacityAndLength(
-        array, new_capacity, length);
-    JSObject::ValidateElements(array);
-    return length_object;
-  }
-
   static void DeleteCommon(Handle<JSObject> obj, uint32_t key,
                            LanguageMode language_mode) {
     DCHECK(obj->HasFastSmiOrObjectElements() ||
@@ -1080,7 +1018,7 @@ class FastSmiOrObjectElementsAccessor
         break;
       case SLOPPY_ARGUMENTS_ELEMENTS: {
         // TODO(verwaest): This is a temporary hack to support extending
-        // SLOPPY_ARGUMENTS_ELEMENTS in SetFastElementsCapacityAndLength.
+        // SLOPPY_ARGUMENTS_ELEMENTS in GrowCapacityAndConvert.
         // This case should be UNREACHABLE().
         FixedArray* parameter_map = FixedArray::cast(from);
         FixedArrayBase* arguments = FixedArrayBase::cast(parameter_map->get(1));
@@ -1099,16 +1037,13 @@ class FastSmiOrObjectElementsAccessor
   }
 
 
-  static void SetFastElementsCapacityAndLength(
-      Handle<JSObject> obj,
-      uint32_t capacity,
-      uint32_t length) {
+  static void GrowCapacityAndConvertImpl(Handle<JSObject> obj,
+                                         uint32_t capacity) {
     JSObject::SetFastElementsCapacitySmiMode set_capacity_mode =
         obj->HasFastSmiElements()
             ? JSObject::kAllowSmiElements
             : JSObject::kDontAllowSmiElements;
-    JSObject::SetFastElementsCapacityAndLength(
-        obj, capacity, length, set_capacity_mode);
+    JSObject::SetFastElementsCapacity(obj, capacity, set_capacity_mode);
   }
 };
 
@@ -1170,10 +1105,32 @@ class FastDoubleElementsAccessor
       : FastElementsAccessor<FastElementsAccessorSubclass,
                              KindTraits>(name) {}
 
-  static void SetFastElementsCapacityAndLength(Handle<JSObject> obj,
-                                               uint32_t capacity,
-                                               uint32_t length) {
-    JSObject::SetFastDoubleElementsCapacityAndLength(obj, capacity, length);
+  static void GrowCapacityAndConvertImpl(Handle<JSObject> object,
+                                         uint32_t capacity) {
+    Handle<FixedArrayBase> elements =
+        object->GetIsolate()->factory()->NewFixedDoubleArray(capacity);
+    ElementsKind from_kind = object->GetElementsKind();
+    ElementsKind to_kind = IsHoleyElementsKind(from_kind)
+                               ? FAST_HOLEY_DOUBLE_ELEMENTS
+                               : FAST_DOUBLE_ELEMENTS;
+
+    Handle<Map> new_map = JSObject::GetElementsTransitionMap(object, to_kind);
+
+    Handle<FixedArrayBase> old_elements(object->elements());
+    int packed = kPackedSizeNotKnown;
+    if (IsFastPackedElementsKind(from_kind) && object->IsJSArray()) {
+      packed = Smi::cast(JSArray::cast(*object)->length())->value();
+    }
+    CopyElementsImpl(*old_elements, 0, *elements, from_kind, 0, packed,
+                     ElementsAccessor::kCopyToEndAndInitializeToHole);
+
+    JSObject::SetMapAndElements(object, new_map, elements);
+    JSObject::ValidateElements(object);
+
+    if (FLAG_trace_elements_transitions) {
+      JSObject::PrintElementsTransition(stdout, object, from_kind, old_elements,
+                                        to_kind, elements);
+    }
   }
 
  protected:
@@ -1276,13 +1233,10 @@ class TypedElementsAccessor
     return PropertyDetails(DONT_DELETE, DATA, 0, PropertyCellType::kNoCell);
   }
 
-  MUST_USE_RESULT static MaybeHandle<Object> SetLengthImpl(
-      Handle<JSObject> obj,
-      Handle<Object> length,
-      Handle<FixedArrayBase> backing_store) {
+  static void SetLengthImpl(Handle<JSArray> array, uint32_t length,
+                            Handle<FixedArrayBase> backing_store) {
     // External arrays do not support changing their length.
     UNREACHABLE();
-    return obj;
   }
 
   virtual void Delete(Handle<JSObject> obj, uint32_t key,
@@ -1332,20 +1286,15 @@ class DictionaryElementsAccessor
       : ElementsAccessorBase<DictionaryElementsAccessor,
                              ElementsKindTraits<DICTIONARY_ELEMENTS> >(name) {}
 
-  // Adjusts the length of the dictionary backing store and returns the new
-  // length according to ES5 section 15.4.5.2 behavior.
-  static Handle<Object> SetLengthWithoutNormalize(
-      Handle<FixedArrayBase> store,
-      Handle<JSArray> array,
-      Handle<Object> length_object,
-      uint32_t length) {
+  static void SetLengthImpl(Handle<JSArray> array, uint32_t length,
+                            Handle<FixedArrayBase> backing_store) {
     Handle<SeededNumberDictionary> dict =
-        Handle<SeededNumberDictionary>::cast(store);
+        Handle<SeededNumberDictionary>::cast(backing_store);
     Isolate* isolate = array->GetIsolate();
     int capacity = dict->Capacity();
-    uint32_t new_length = length;
-    uint32_t old_length = static_cast<uint32_t>(array->length()->Number());
-    if (new_length < old_length) {
+    uint32_t old_length = 0;
+    CHECK(array->length()->ToArrayLength(&old_length));
+    if (dict->requires_slow_elements() && length < old_length) {
       // Find last non-deletable element in range of elements to be
       // deleted and adjust range accordingly.
       for (int i = 0; i < capacity; i++) {
@@ -1353,18 +1302,15 @@ class DictionaryElementsAccessor
         Object* key = dict->KeyAt(i);
         if (key->IsNumber()) {
           uint32_t number = static_cast<uint32_t>(key->Number());
-          if (new_length <= number && number < old_length) {
+          if (length <= number && number < old_length) {
             PropertyDetails details = dict->DetailsAt(i);
-            if (!details.IsConfigurable()) new_length = number + 1;
+            if (!details.IsConfigurable()) length = number + 1;
           }
         }
       }
-      if (new_length != length) {
-        length_object = isolate->factory()->NewNumberFromUint(new_length);
-      }
     }
 
-    if (new_length == 0) {
+    if (length == 0) {
       // Flush the backing store.
       JSObject::ResetElements(array);
     } else {
@@ -1376,7 +1322,7 @@ class DictionaryElementsAccessor
         Object* key = dict->KeyAt(i);
         if (key->IsNumber()) {
           uint32_t number = static_cast<uint32_t>(key->Number());
-          if (new_length <= number && number < old_length) {
+          if (length <= number && number < old_length) {
             dict->SetEntry(i, the_hole_value, the_hole_value);
             removed_entries++;
           }
@@ -1386,7 +1332,14 @@ class DictionaryElementsAccessor
       // Update the number of elements.
       dict->ElementsRemoved(removed_entries);
     }
-    return length_object;
+
+    if (length <= Smi::kMaxValue) {
+      array->set_length(Smi::FromInt(length));
+    } else {
+      Isolate* isolate = array->GetIsolate();
+      Handle<Object> length_obj = isolate->factory()->NewNumberFromUint(length);
+      array->set_length(*length_obj);
+    }
   }
 
   static void DeleteCommon(Handle<JSObject> obj, uint32_t key,
@@ -1447,15 +1400,11 @@ class DictionaryElementsAccessor
     return isolate->factory()->the_hole_value();
   }
 
-  static Handle<Object> SetImpl(Handle<JSObject> obj, uint32_t key,
-                                Handle<FixedArrayBase> store,
-                                Handle<Object> value) {
-    Handle<SeededNumberDictionary> backing_store =
-        Handle<SeededNumberDictionary>::cast(store);
+  static void SetImpl(FixedArrayBase* store, uint32_t key, Object* value) {
+    SeededNumberDictionary* backing_store = SeededNumberDictionary::cast(store);
     int entry = backing_store->FindEntry(key);
     DCHECK_NE(SeededNumberDictionary::kNotFound, entry);
-    backing_store->ValueAtPut(entry, *value);
-    return value;
+    backing_store->ValueAtPut(entry, value);
   }
 
   static MaybeHandle<AccessorPair> GetAccessorPairImpl(
@@ -1546,21 +1495,18 @@ class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
     }
   }
 
-  static Handle<Object> SetImpl(Handle<JSObject> obj, uint32_t key,
-                                Handle<FixedArrayBase> store,
-                                Handle<Object> value) {
-    Handle<FixedArray> parameter_map = Handle<FixedArray>::cast(store);
-    Object* probe = GetParameterMapArg(*parameter_map, key);
+  static void SetImpl(FixedArrayBase* store, uint32_t key, Object* value) {
+    FixedArray* parameter_map = FixedArray::cast(store);
+    Object* probe = GetParameterMapArg(parameter_map, key);
     if (!probe->IsTheHole()) {
       Context* context = Context::cast(parameter_map->get(0));
       int context_index = Smi::cast(probe)->value();
       DCHECK(!context->get(context_index)->IsTheHole());
-      context->set(context_index, *value);
-      return value;
+      context->set(context_index, value);
+    } else {
+      FixedArray* arguments = FixedArray::cast(parameter_map->get(1));
+      ElementsAccessor::ForArray(arguments)->Set(arguments, key, value);
     }
-    Handle<FixedArray> arguments(FixedArray::cast(parameter_map->get(1)));
-    return ElementsAccessor::ForArray(arguments)
-        ->Set(obj, key, arguments, value);
   }
 
   static MaybeHandle<AccessorPair> GetAccessorPairImpl(
@@ -1578,14 +1524,10 @@ class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
     }
   }
 
-  MUST_USE_RESULT static MaybeHandle<Object> SetLengthImpl(
-      Handle<JSObject> obj,
-      Handle<Object> length,
-      Handle<FixedArrayBase> parameter_map) {
-    // TODO(mstarzinger): This was never implemented but will be used once we
-    // correctly implement [[DefineOwnProperty]] on arrays.
-    UNIMPLEMENTED();
-    return obj;
+  static void SetLengthImpl(Handle<JSArray> array, uint32_t length,
+                            Handle<FixedArrayBase> parameter_map) {
+    // Sloppy arguments objects are not arrays.
+    UNREACHABLE();
   }
 
   virtual void Delete(Handle<JSObject> obj, uint32_t key,
@@ -1716,106 +1658,81 @@ void ElementsAccessor::TearDown() {
 
 
 template <typename ElementsAccessorSubclass, typename ElementsKindTraits>
-MUST_USE_RESULT
-MaybeHandle<Object> ElementsAccessorBase<ElementsAccessorSubclass,
-                                         ElementsKindTraits>::
-    SetLengthImpl(Handle<JSObject> obj,
-                  Handle<Object> length,
+void ElementsAccessorBase<ElementsAccessorSubclass, ElementsKindTraits>::
+    SetLengthImpl(Handle<JSArray> array, uint32_t length,
                   Handle<FixedArrayBase> backing_store) {
-  Isolate* isolate = obj->GetIsolate();
-  Handle<JSArray> array = Handle<JSArray>::cast(obj);
+  DCHECK(!JSArray::SetLengthWouldNormalize(array->GetHeap(), length));
+  DCHECK(IsFastElementsKind(array->GetElementsKind()));
+  uint32_t old_length = 0;
+  CHECK(array->length()->ToArrayIndex(&old_length));
 
-  // Fast case: The new length fits into a Smi.
-  Handle<Object> smi_length;
+  if (old_length < length) {
+    ElementsKind kind = array->GetElementsKind();
+    if (!IsFastHoleyElementsKind(kind)) {
+      kind = GetHoleyElementsKind(kind);
+      JSObject::TransitionElementsKind(array, kind);
+    }
+  }
 
-  if (Object::ToSmi(isolate, length).ToHandle(&smi_length) &&
-      smi_length->IsSmi()) {
-    const int value = Handle<Smi>::cast(smi_length)->value();
-    if (value >= 0) {
-      Handle<Object> new_length = ElementsAccessorSubclass::
-          SetLengthWithoutNormalize(backing_store, array, smi_length, value);
-      DCHECK(!new_length.is_null());
-
-      // even though the proposed length was a smi, new_length could
-      // still be a heap number because SetLengthWithoutNormalize doesn't
-      // allow the array length property to drop below the index of
-      // non-deletable elements.
-      DCHECK(new_length->IsSmi() || new_length->IsHeapNumber() ||
-             new_length->IsUndefined());
-      if (new_length->IsSmi()) {
-        array->set_length(*Handle<Smi>::cast(new_length));
-        return array;
-      } else if (new_length->IsHeapNumber()) {
-        array->set_length(*new_length);
-        return array;
+  // Check whether the backing store should be shrunk.
+  uint32_t capacity = backing_store->length();
+  if (length == 0) {
+    array->initialize_elements();
+  } else if (length <= capacity) {
+    if (array->HasFastSmiOrObjectElements()) {
+      backing_store = JSObject::EnsureWritableFastElements(array);
+    }
+    if (2 * length <= capacity) {
+      // If more than half the elements won't be used, trim the array.
+      array->GetHeap()->RightTrimFixedArray<Heap::CONCURRENT_TO_SWEEPER>(
+          *backing_store, capacity - length);
+    } else {
+      // Otherwise, fill the unused tail with holes.
+      for (uint32_t i = length; i < old_length; i++) {
+        BackingStore::cast(*backing_store)->set_the_hole(i);
       }
-    } else {
-      return ThrowArrayLengthRangeError(isolate);
     }
+  } else {
+    // Check whether the backing store should be expanded.
+    capacity = Max(length, JSObject::NewElementsCapacity(capacity));
+    ElementsAccessorSubclass::GrowCapacityAndConvertImpl(array, capacity);
   }
 
-  // Slow case: The new length does not fit into a Smi or conversion
-  // to slow elements is needed for other reasons.
-  if (length->IsNumber()) {
-    uint32_t value;
-    if (length->ToArrayLength(&value)) {
-      Handle<SeededNumberDictionary> dictionary =
-          JSObject::NormalizeElements(array);
-      DCHECK(!dictionary.is_null());
-
-      Handle<Object> new_length = DictionaryElementsAccessor::
-          SetLengthWithoutNormalize(dictionary, array, length, value);
-      DCHECK(!new_length.is_null());
-
-      DCHECK(new_length->IsNumber());
-      array->set_length(*new_length);
-      return array;
-    } else {
-      return ThrowArrayLengthRangeError(isolate);
-    }
-  }
-
-  // Fall-back case: The new length is not a number so make the array
-  // size one and set only element to length.
-  Handle<FixedArray> new_backing_store = isolate->factory()->NewFixedArray(1);
-  new_backing_store->set(0, *length);
-  JSArray::SetContent(array, new_backing_store);
-  return array;
+  array->set_length(Smi::FromInt(length));
+  JSObject::ValidateElements(array);
 }
 
 
 MaybeHandle<Object> ArrayConstructInitializeElements(Handle<JSArray> array,
                                                      Arguments* args) {
-  // Optimize the case where there is one argument and the argument is a
-  // small smi.
-  if (args->length() == 1) {
-    Handle<Object> obj = args->at<Object>(0);
-    if (obj->IsSmi()) {
-      int len = Handle<Smi>::cast(obj)->value();
-      if (len > 0 && len < JSObject::kInitialMaxFastElementArray) {
-        ElementsKind elements_kind = array->GetElementsKind();
-        JSArray::Initialize(array, len, len);
+  if (args->length() == 0) {
+    // Optimize the case where there are no parameters passed.
+    JSArray::Initialize(array, JSArray::kPreallocatedArrayElements);
+    return array;
 
-        if (!IsFastHoleyElementsKind(elements_kind)) {
-          elements_kind = GetHoleyElementsKind(elements_kind);
-          JSObject::TransitionElementsKind(array, elements_kind);
-        }
-        return array;
-      } else if (len == 0) {
-        JSArray::Initialize(array, JSArray::kPreallocatedArrayElements);
-        return array;
-      }
+  } else if (args->length() == 1 && args->at<Object>(0)->IsNumber()) {
+    uint32_t length;
+    if (!args->at<Object>(0)->ToArrayLength(&length)) {
+      return ThrowArrayLengthRangeError(array->GetIsolate());
     }
 
-    // Take the argument as the length.
-    JSArray::Initialize(array, 0);
+    // Optimize the case where there is one argument and the argument is a small
+    // smi.
+    if (length > 0 && length < JSObject::kInitialMaxFastElementArray) {
+      ElementsKind elements_kind = array->GetElementsKind();
+      JSArray::Initialize(array, length, length);
 
-    return JSArray::SetElementsLength(array, obj);
-  }
-
-  // Optimize the case where there are no parameters passed.
-  if (args->length() == 0) {
-    JSArray::Initialize(array, JSArray::kPreallocatedArrayElements);
+      if (!IsFastHoleyElementsKind(elements_kind)) {
+        elements_kind = GetHoleyElementsKind(elements_kind);
+        JSObject::TransitionElementsKind(array, elements_kind);
+      }
+    } else if (length == 0) {
+      JSArray::Initialize(array, JSArray::kPreallocatedArrayElements);
+    } else {
+      // Take the argument as the length.
+      JSArray::Initialize(array, 0);
+      JSArray::SetLength(array, length);
+    }
     return array;
   }
 

@@ -522,7 +522,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ Add(new_obj, new_obj, kHeapObjectTag);
 
       // Check if a non-empty properties array is needed. Continue with
-      // allocated object if not, or fall through to runtime call if it is.
+      // allocated object if not; allocate and initialize a FixedArray if yes.
       Register element_count = x3;
       __ Ldrb(element_count,
               FieldMemOperand(init_map, Map::kUnusedPropertyFieldsOffset));
@@ -1388,6 +1388,8 @@ static void Generate_PushAppliedArguments(MacroAssembler* masm,
   Label entry, loop;
   Register receiver = LoadDescriptor::ReceiverRegister();
   Register key = LoadDescriptor::NameRegister();
+  Register slot = LoadDescriptor::SlotRegister();
+  Register vector = LoadWithVectorDescriptor::VectorRegister();
 
   __ Ldr(key, MemOperand(fp, indexOffset));
   __ B(&entry);
@@ -1397,7 +1399,13 @@ static void Generate_PushAppliedArguments(MacroAssembler* masm,
   __ Ldr(receiver, MemOperand(fp, argumentsOffset));
 
   // Use inline caching to speed up access to arguments.
-  Handle<Code> ic = masm->isolate()->builtins()->KeyedLoadIC_Megamorphic();
+  FeedbackVectorSpec spec(0, Code::KEYED_LOAD_IC);
+  Handle<TypeFeedbackVector> feedback_vector =
+      masm->isolate()->factory()->NewTypeFeedbackVector(&spec);
+  int index = feedback_vector->GetIndex(FeedbackVectorICSlot(0));
+  __ Mov(slot, Smi::FromInt(index));
+  __ Mov(vector, feedback_vector);
+  Handle<Code> ic = KeyedLoadICStub(masm->isolate()).GetCode();
   __ Call(ic, RelocInfo::CODE_TARGET);
 
   // Push the nth argument.

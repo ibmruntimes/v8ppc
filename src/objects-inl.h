@@ -1245,46 +1245,11 @@ MaybeHandle<Object> Object::GetProperty(Isolate* isolate,
     }                                                                \
   }
 
-#ifndef V8_TARGET_ARCH_MIPS
-  #define READ_DOUBLE_FIELD(p, offset) \
-    (*reinterpret_cast<const double*>(FIELD_ADDR_CONST(p, offset)))
-#else  // V8_TARGET_ARCH_MIPS
-  // Prevent gcc from using load-double (mips ldc1) on (possibly)
-  // non-64-bit aligned HeapNumber::value.
-  static inline double read_double_field(const void* p, int offset) {
-    union conversion {
-      double d;
-      uint32_t u[2];
-    } c;
-    c.u[0] = (*reinterpret_cast<const uint32_t*>(
-        FIELD_ADDR_CONST(p, offset)));
-    c.u[1] = (*reinterpret_cast<const uint32_t*>(
-        FIELD_ADDR_CONST(p, offset + 4)));
-    return c.d;
-  }
-  #define READ_DOUBLE_FIELD(p, offset) read_double_field(p, offset)
-#endif  // V8_TARGET_ARCH_MIPS
+#define READ_DOUBLE_FIELD(p, offset) \
+  ReadDoubleValue(FIELD_ADDR_CONST(p, offset))
 
-#ifndef V8_TARGET_ARCH_MIPS
-  #define WRITE_DOUBLE_FIELD(p, offset, value) \
-    (*reinterpret_cast<double*>(FIELD_ADDR(p, offset)) = value)
-#else  // V8_TARGET_ARCH_MIPS
-  // Prevent gcc from using store-double (mips sdc1) on (possibly)
-  // non-64-bit aligned HeapNumber::value.
-  static inline void write_double_field(void* p, int offset,
-                                        double value) {
-    union conversion {
-      double d;
-      uint32_t u[2];
-    } c;
-    c.d = value;
-    (*reinterpret_cast<uint32_t*>(FIELD_ADDR(p, offset))) = c.u[0];
-    (*reinterpret_cast<uint32_t*>(FIELD_ADDR(p, offset + 4))) = c.u[1];
-  }
-  #define WRITE_DOUBLE_FIELD(p, offset, value) \
-    write_double_field(p, offset, value)
-#endif  // V8_TARGET_ARCH_MIPS
-
+#define WRITE_DOUBLE_FIELD(p, offset, value) \
+  WriteDoubleValue(FIELD_ADDR(p, offset), value)
 
 #define READ_INT_FIELD(p, offset) \
   (*reinterpret_cast<const int*>(FIELD_ADDR_CONST(p, offset)))
@@ -1538,6 +1503,9 @@ HeapObjectContents HeapObject::ContentType() {
   } else if (type == JS_FUNCTION_TYPE) {
     return HeapObjectContents::kMixedValues;
 #endif
+  } else if (type >= FIRST_FIXED_TYPED_ARRAY_TYPE &&
+             type <= LAST_FIXED_TYPED_ARRAY_TYPE) {
+    return HeapObjectContents::kMixedValues;
   } else if (type <= LAST_DATA_TYPE) {
     // TODO(jochen): Why do we claim that Code and Map contain only raw values?
     return HeapObjectContents::kRawValues;
@@ -3195,7 +3163,6 @@ bool Name::Equals(Handle<Name> one, Handle<Name> two) {
 ACCESSORS(Symbol, name, Object, kNameOffset)
 ACCESSORS(Symbol, flags, Smi, kFlagsOffset)
 BOOL_ACCESSORS(Symbol, flags, is_private, kPrivateBit)
-BOOL_ACCESSORS(Symbol, flags, is_own, kOwnBit)
 
 
 bool String::Equals(String* other) {
@@ -3221,6 +3188,12 @@ Handle<String> String::Flatten(Handle<String> string, PretenureFlag pretenure) {
   Handle<ConsString> cons = Handle<ConsString>::cast(string);
   if (cons->IsFlat()) return handle(cons->first());
   return SlowFlatten(cons, pretenure);
+}
+
+
+Handle<Name> Name::Flatten(Handle<Name> name, PretenureFlag pretenure) {
+  if (name->IsSymbol()) return name;
+  return String::Flatten(Handle<String>::cast(name));
 }
 
 
@@ -3877,6 +3850,9 @@ void ExternalFloat64Array::set(int index, double value) {
 }
 
 
+ACCESSORS(FixedTypedArrayBase, base_pointer, Object, kBasePointerOffset)
+
+
 void* FixedTypedArrayBase::DataPtr() {
   return FIELD_ADDR(this, kDataOffset);
 }
@@ -4025,28 +4001,20 @@ Handle<Object> FixedTypedArray<Traits>::get(
 
 
 template <class Traits>
-Handle<Object> FixedTypedArray<Traits>::SetValue(
-    Handle<JSObject> holder, Handle<FixedTypedArray<Traits> > array,
-    uint32_t index, Handle<Object> value) {
+void FixedTypedArray<Traits>::SetValue(uint32_t index, Object* value) {
   ElementType cast_value = Traits::defaultValue();
-  Handle<JSArrayBufferView> view = Handle<JSArrayBufferView>::cast(holder);
-  if (!view->WasNeutered()) {
-    if (index < static_cast<uint32_t>(array->length())) {
-      if (value->IsSmi()) {
-        int int_value = Handle<Smi>::cast(value)->value();
-        cast_value = from_int(int_value);
-      } else if (value->IsHeapNumber()) {
-        double double_value = Handle<HeapNumber>::cast(value)->value();
-        cast_value = from_double(double_value);
-      } else {
-        // Clamp undefined to the default value. All other types have been
-        // converted to a number type further up in the call chain.
-        DCHECK(value->IsUndefined());
-      }
-      array->set(index, cast_value);
-    }
+  if (value->IsSmi()) {
+    int int_value = Smi::cast(value)->value();
+    cast_value = from_int(int_value);
+  } else if (value->IsHeapNumber()) {
+    double double_value = HeapNumber::cast(value)->value();
+    cast_value = from_double(double_value);
+  } else {
+    // Clamp undefined to the default value. All other types have been
+    // converted to a number type further up in the call chain.
+    DCHECK(value->IsUndefined());
   }
-  return Traits::ToHandle(array->GetIsolate(), cast_value);
+  set(index, cast_value);
 }
 
 
@@ -4867,7 +4835,6 @@ Object* Code::GetObjectFromEntryAddress(Address location_of_address) {
 
 
 bool Code::IsWeakObjectInOptimizedCode(Object* object) {
-  if (!FLAG_collect_maps) return false;
   if (object->IsMap()) {
     return Map::cast(object)->CanTransition() &&
            FLAG_weak_embedded_maps_in_optimized_code;
@@ -5180,6 +5147,7 @@ ACCESSORS(Script, line_ends, Object, kLineEndsOffset)
 ACCESSORS(Script, eval_from_shared, Object, kEvalFromSharedOffset)
 ACCESSORS_TO_SMI(Script, eval_from_instructions_offset,
                  kEvalFrominstructionsOffsetOffset)
+ACCESSORS(Script, shared_function_infos, Object, kSharedFunctionInfosOffset)
 ACCESSORS_TO_SMI(Script, flags, kFlagsOffset)
 ACCESSORS(Script, source_url, Object, kSourceUrlOffset)
 ACCESSORS(Script, source_mapping_url, Object, kSourceMappingUrlOffset)
@@ -5451,7 +5419,6 @@ BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, is_anonymous, kIsAnonymous)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, is_function, kIsFunction)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, dont_crankshaft,
                kDontCrankshaft)
-BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, dont_cache, kDontCache)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, dont_flush, kDontFlush)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, is_arrow, kIsArrow)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, is_generator, kIsGenerator)
@@ -6427,8 +6394,9 @@ uint32_t Name::Hash() {
   return String::cast(this)->ComputeAndSetHash();
 }
 
-bool Name::IsOwn() {
-  return this->IsSymbol() && Symbol::cast(this)->is_own();
+
+bool Name::IsPrivate() {
+  return this->IsSymbol() && Symbol::cast(this)->is_private();
 }
 
 
@@ -6637,10 +6605,8 @@ String* String::GetForwardedInternalizedString() {
 
 MaybeHandle<Object> Object::GetPropertyOrElement(Handle<Object> object,
                                                  Handle<Name> name) {
-  uint32_t index;
-  LookupIterator it = name->AsArrayIndex(&index)
-                          ? LookupIterator(name->GetIsolate(), object, index)
-                          : LookupIterator(object, name);
+  LookupIterator it =
+      LookupIterator::PropertyOrElement(name->GetIsolate(), object, name);
   return GetProperty(&it);
 }
 
@@ -6673,21 +6639,16 @@ Maybe<bool> JSReceiver::HasOwnProperty(Handle<JSReceiver> object,
 
 Maybe<PropertyAttributes> JSReceiver::GetPropertyAttributes(
     Handle<JSReceiver> object, Handle<Name> name) {
-  uint32_t index = 0;
-  LookupIterator it = name->AsArrayIndex(&index)
-                          ? LookupIterator(name->GetIsolate(), object, index)
-                          : LookupIterator(object, name);
+  LookupIterator it =
+      LookupIterator::PropertyOrElement(name->GetIsolate(), object, name);
   return GetPropertyAttributes(&it);
 }
 
 
 Maybe<PropertyAttributes> JSReceiver::GetOwnPropertyAttributes(
     Handle<JSReceiver> object, Handle<Name> name) {
-  uint32_t index = 0;
-  LookupIterator::Configuration c = LookupIterator::HIDDEN;
-  LookupIterator it = name->AsArrayIndex(&index)
-                          ? LookupIterator(name->GetIsolate(), object, index, c)
-                          : LookupIterator(object, name, c);
+  LookupIterator it = LookupIterator::PropertyOrElement(
+      name->GetIsolate(), object, name, LookupIterator::HIDDEN);
   return GetPropertyAttributes(&it);
 }
 
@@ -7036,42 +6997,22 @@ int Map::SlackForArraySize(int old_size, int size_limit) {
 }
 
 
-void JSArray::EnsureSize(Handle<JSArray> array, int required_size) {
-  DCHECK(array->HasFastSmiOrObjectElements());
-  Handle<FixedArray> elts = handle(FixedArray::cast(array->elements()));
-  const int kArraySizeThatFitsComfortablyInNewSpace = 128;
-  if (elts->length() < required_size) {
-    // Doubling in size would be overkill, but leave some slack to avoid
-    // constantly growing.
-    Expand(array, required_size + (required_size >> 3));
-    // It's a performance benefit to keep a frequently used array in new-space.
-  } else if (!array->GetHeap()->new_space()->Contains(*elts) &&
-             required_size < kArraySizeThatFitsComfortablyInNewSpace) {
-    // Expand will allocate a new backing store in new space even if the size
-    // we asked for isn't larger than what we had before.
-    Expand(array, required_size);
-  }
-}
-
-
 void JSArray::set_length(Smi* length) {
   // Don't need a write barrier for a Smi.
   set_length(static_cast<Object*>(length), SKIP_WRITE_BARRIER);
 }
 
 
-bool JSArray::SetElementsLengthWouldNormalize(
-    Heap* heap, Handle<Object> new_length_handle) {
+bool JSArray::SetLengthWouldNormalize(Heap* heap, uint32_t new_length) {
   // If the new array won't fit in a some non-trivial fraction of the max old
   // space size, then force it to go dictionary mode.
-  int max_fast_array_size =
-      static_cast<int>((heap->MaxOldGenerationSize() / kDoubleSize) / 4);
-  return new_length_handle->IsNumber() &&
-         NumberToInt32(*new_length_handle) >= max_fast_array_size;
+  uint32_t max_fast_array_size =
+      static_cast<uint32_t>((heap->MaxOldGenerationSize() / kDoubleSize) / 4);
+  return new_length >= max_fast_array_size;
 }
 
 
-bool JSArray::AllowsSetElementsLength() {
+bool JSArray::AllowsSetLength() {
   bool result = elements()->IsFixedArray() || elements()->IsFixedDoubleArray();
   DCHECK(result == !HasExternalArrayElements());
   return result;
@@ -7220,6 +7161,19 @@ template<typename StaticVisitor>
 void Foreign::ForeignIterateBody() {
   StaticVisitor::VisitExternalReference(
       reinterpret_cast<Address*>(FIELD_ADDR(this, kForeignAddressOffset)));
+}
+
+
+void FixedTypedArrayBase::FixedTypedArrayBaseIterateBody(ObjectVisitor* v) {
+  v->VisitPointer(
+      reinterpret_cast<Object**>(FIELD_ADDR(this, kBasePointerOffset)));
+}
+
+
+template <typename StaticVisitor>
+void FixedTypedArrayBase::FixedTypedArrayBaseIterateBody() {
+  StaticVisitor::VisitPointer(
+      reinterpret_cast<Object**>(FIELD_ADDR(this, kBasePointerOffset)));
 }
 
 

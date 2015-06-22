@@ -549,7 +549,7 @@ PreParser::Statement PreParser::ParseVariableDeclarations(
           ParsePrimaryExpression(&pattern_classifier, CHECK_OK);
       ValidateBindingPattern(&pattern_classifier, CHECK_OK);
 
-      if (!FLAG_harmony_destructuring && !pattern.IsIdentifier()) {
+      if (!allow_harmony_destructuring() && !pattern.IsIdentifier()) {
         ReportUnexpectedToken(next);
         *ok = false;
         return Statement::Default();
@@ -599,6 +599,8 @@ PreParser::Statement PreParser::ParseExpressionOrLabelledStatement(bool* ok) {
       return Statement::Default();
 
     case Token::THIS:
+      if (!FLAG_strong_this) break;
+      // Fall through.
     case Token::SUPER:
       if (is_strong(language_mode()) &&
           i::IsConstructor(function_state_->kind())) {

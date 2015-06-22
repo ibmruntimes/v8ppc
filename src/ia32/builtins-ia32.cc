@@ -358,17 +358,9 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // ebx: JSObject
       // edi: FixedArray
       // ecx: start of next object
-      { Label loop, entry;
-        __ mov(edx, factory->undefined_value());
-        __ lea(eax, Operand(edi, FixedArray::kHeaderSize));
-        __ jmp(&entry);
-        __ bind(&loop);
-        __ mov(Operand(eax, 0), edx);
-        __ add(eax, Immediate(kPointerSize));
-        __ bind(&entry);
-        __ cmp(eax, ecx);
-        __ j(below, &loop);
-      }
+      __ mov(edx, factory->undefined_value());
+      __ lea(eax, Operand(edi, FixedArray::kHeaderSize));
+      __ InitializeFieldsWithFiller(eax, ecx, edx);
 
       // Store the initialized FixedArray into the properties field of
       // the JSObject
@@ -1052,13 +1044,21 @@ static void Generate_PushAppliedArguments(MacroAssembler* masm,
   Label entry, loop;
   Register receiver = LoadDescriptor::ReceiverRegister();
   Register key = LoadDescriptor::NameRegister();
+  Register slot = LoadDescriptor::SlotRegister();
+  Register vector = LoadWithVectorDescriptor::VectorRegister();
   __ mov(key, Operand(ebp, indexOffset));
   __ jmp(&entry);
   __ bind(&loop);
   __ mov(receiver, Operand(ebp, argumentsOffset));  // load arguments
 
   // Use inline caching to speed up access to arguments.
-  Handle<Code> ic = masm->isolate()->builtins()->KeyedLoadIC_Megamorphic();
+  FeedbackVectorSpec spec(0, Code::KEYED_LOAD_IC);
+  Handle<TypeFeedbackVector> feedback_vector =
+      masm->isolate()->factory()->NewTypeFeedbackVector(&spec);
+  int index = feedback_vector->GetIndex(FeedbackVectorICSlot(0));
+  __ mov(slot, Immediate(Smi::FromInt(index)));
+  __ mov(vector, Immediate(feedback_vector));
+  Handle<Code> ic = KeyedLoadICStub(masm->isolate()).GetCode();
   __ call(ic, RelocInfo::CODE_TARGET);
   // It is important that we do not have a test instruction after the
   // call.  A test instruction after the call is used to indicate that

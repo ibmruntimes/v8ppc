@@ -85,6 +85,9 @@ class RingBuffer {
 };
 
 
+enum ScavengeSpeedMode { kForAllObjects, kForSurvivedObjects };
+
+
 // GCTracer collects and prints ONE line after each garbage collector
 // invocation IFF --trace_gc is used.
 // TODO(ernstm): Unit tests.
@@ -227,6 +230,8 @@ class GCTracer {
 
     // Size of new space objects in constructor.
     intptr_t new_space_object_size;
+    // Size of survived new space objects in desctructor.
+    intptr_t survived_new_space_object_size;
 
     // Number of incremental marking steps since creation of tracer.
     // (value at start of event)
@@ -371,7 +376,8 @@ class GCTracer {
 
   // Compute the average scavenge speed in bytes/millisecond.
   // Returns 0 if no events have been recorded.
-  intptr_t ScavengeSpeedInBytesPerMillisecond() const;
+  intptr_t ScavengeSpeedInBytesPerMillisecond(
+      ScavengeSpeedMode mode = kForAllObjects) const;
 
   // Compute the average mark-sweep speed in bytes/millisecond.
   // Returns 0 if no events have been recorded.
@@ -402,10 +408,10 @@ class GCTracer {
   // Returns 0 if no allocation events have been recorded.
   size_t AllocationThroughputInBytesPerMillisecond(double time_ms) const;
 
-  // Allocation throughput in heap in bytes/milliseconds in
+  // Allocation throughput in old generation in bytes/milliseconds in
   // the last five seconds.
   // Returns 0 if no allocation events have been recorded.
-  size_t CurrentAllocationThroughputInBytesPerMillisecond() const;
+  size_t CurrentOldGenerationAllocationThroughputInBytesPerMillisecond() const;
 
   // Computes the context disposal rate in milliseconds. It takes the time
   // frame of the first recorded context disposal to the current time and

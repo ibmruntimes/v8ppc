@@ -676,17 +676,9 @@ Handle<Symbol> Factory::NewSymbol() {
 }
 
 
-Handle<Symbol> Factory::NewPrivateSymbol() {
+Handle<Symbol> Factory::NewPrivateSymbol(Handle<Object> name) {
   Handle<Symbol> symbol = NewSymbol();
   symbol->set_is_private(true);
-  return symbol;
-}
-
-
-Handle<Symbol> Factory::NewPrivateOwnSymbol(Handle<Object> name) {
-  Handle<Symbol> symbol = NewSymbol();
-  symbol->set_is_private(true);
-  symbol->set_is_own(true);
   if (name->IsString()) {
     symbol->set_name(*name);
   } else {
@@ -852,6 +844,7 @@ Handle<Script> Factory::NewScript(Handle<String> source) {
   script->set_line_ends(heap->undefined_value());
   script->set_eval_from_shared(heap->undefined_value());
   script->set_eval_from_instructions_offset(Smi::FromInt(0));
+  script->set_shared_function_infos(Smi::FromInt(0));
   script->set_flags(Smi::FromInt(0));
 
   return script;
@@ -1399,6 +1392,7 @@ Handle<JSFunction> Factory::NewFunctionFromSharedFunctionInfo(
     if (literals != NULL) result->set_literals(literals);
     Code* code = info->GetCodeFromOptimizedCodeMap(index);
     DCHECK(!code->marked_for_deoptimization());
+    DCHECK(result->shared()->is_compiled());
     result->ReplaceCode(code);
   }
 

@@ -785,7 +785,7 @@ TEST(JSArray) {
   JSArray::Initialize(array, 0);
 
   // Set array length to 0.
-  JSArray::SetElementsLength(array, handle(Smi::FromInt(0), isolate)).Check();
+  JSArray::SetLength(array, 0);
   CHECK_EQ(Smi::FromInt(0), array->length());
   // Must be in fast mode.
   CHECK(array->HasFastSmiOrObjectElements());
@@ -797,13 +797,11 @@ TEST(JSArray) {
   CHECK_EQ(*element, *name);
 
   // Set array length with larger than smi value.
-  Handle<Object> length =
-      factory->NewNumberFromUint(static_cast<uint32_t>(Smi::kMaxValue) + 1);
-  JSArray::SetElementsLength(array, length).Check();
+  JSArray::SetLength(array, static_cast<uint32_t>(Smi::kMaxValue) + 1);
 
   uint32_t int_length = 0;
-  CHECK(length->ToArrayIndex(&int_length));
-  CHECK_EQ(*length, array->length());
+  CHECK(array->length()->ToArrayIndex(&int_length));
+  CHECK_EQ(static_cast<uint32_t>(Smi::kMaxValue) + 1, int_length);
   CHECK(array->HasDictionaryElements());  // Must be in slow mode.
 
   // array[length] = name.
@@ -1382,8 +1380,10 @@ TEST(TestCodeFlushingIncrementalAbort) {
   // disabled.
   int position = 0;
   Handle<Object> breakpoint_object(Smi::FromInt(0), isolate);
+  EnableDebugger();
   isolate->debug()->SetBreakPoint(function, breakpoint_object, &position);
   isolate->debug()->ClearAllBreakPoints();
+  DisableDebugger();
 
   // Force optimization now that code flushing is disabled.
   { v8::HandleScope scope(CcTest::isolate());
@@ -3407,7 +3407,6 @@ TEST(TransitionArraySimpleToFull) {
 
 
 TEST(Regress2143a) {
-  i::FLAG_collect_maps = true;
   i::FLAG_incremental_marking = true;
   CcTest::InitializeVM();
   v8::HandleScope scope(CcTest::isolate());
@@ -3447,7 +3446,6 @@ TEST(Regress2143a) {
 
 
 TEST(Regress2143b) {
-  i::FLAG_collect_maps = true;
   i::FLAG_incremental_marking = true;
   i::FLAG_allow_natives_syntax = true;
   CcTest::InitializeVM();
@@ -5923,6 +5921,53 @@ TEST(MessageObjectLeak) {
   FLAG_turbo_try_finally = true;
 
   CompileRun(test);
+}
+
+
+static void CheckEqualSharedFunctionInfos(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  Handle<Object> obj1 = v8::Utils::OpenHandle(*args[0]);
+  Handle<Object> obj2 = v8::Utils::OpenHandle(*args[1]);
+  Handle<JSFunction> fun1 = Handle<JSFunction>::cast(obj1);
+  Handle<JSFunction> fun2 = Handle<JSFunction>::cast(obj2);
+  CHECK(fun1->shared() == fun2->shared());
+}
+
+
+static void RemoveCodeAndGC(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  Isolate* isolate = CcTest::i_isolate();
+  Handle<Object> obj = v8::Utils::OpenHandle(*args[0]);
+  Handle<JSFunction> fun = Handle<JSFunction>::cast(obj);
+  fun->ReplaceCode(*isolate->builtins()->CompileLazy());
+  fun->shared()->ReplaceCode(*isolate->builtins()->CompileLazy());
+  isolate->heap()->CollectAllAvailableGarbage("remove code and gc");
+}
+
+
+TEST(CanonicalSharedFunctionInfo) {
+  CcTest::InitializeVM();
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope scope(isolate);
+  v8::Handle<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate);
+  global->Set(isolate, "check", v8::FunctionTemplate::New(
+                                    isolate, CheckEqualSharedFunctionInfos));
+  global->Set(isolate, "remove",
+              v8::FunctionTemplate::New(isolate, RemoveCodeAndGC));
+  v8::Local<v8::Context> context = v8::Context::New(isolate, NULL, global);
+  v8::Context::Scope cscope(context);
+  CompileRun(
+      "function f() { return function g() {}; }"
+      "var g1 = f();"
+      "remove(f);"
+      "var g2 = f();"
+      "check(g1, g2);");
+
+  CompileRun(
+      "function f() { return (function() { return function g() {}; })(); }"
+      "var g1 = f();"
+      "remove(f);"
+      "var g2 = f();"
+      "check(g1, g2);");
 }
 
 

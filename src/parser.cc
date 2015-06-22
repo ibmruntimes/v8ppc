@@ -1183,13 +1183,19 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info,
       scope->set_start_position(shared_info->start_position());
       ExpressionClassifier formals_classifier;
       bool has_rest = false;
-      if (Check(Token::LPAREN)) {
-        // '(' StrictFormalParameters ')'
-        ParseFormalParameterList(scope, &has_rest, &formals_classifier, &ok);
-        if (ok) ok = Check(Token::RPAREN);
-      } else {
-        // BindingIdentifier
-        ParseFormalParameter(scope, has_rest, &formals_classifier, &ok);
+      {
+        // Parsing patterns as variable reference expression creates
+        // NewUnresolved references in current scope. Entrer arrow function
+        // scope for formal parameter parsing.
+        BlockState block_state(&scope_, scope);
+        if (Check(Token::LPAREN)) {
+          // '(' StrictFormalParameters ')'
+          ParseFormalParameterList(scope, &has_rest, &formals_classifier, &ok);
+          if (ok) ok = Check(Token::RPAREN);
+        } else {
+          // BindingIdentifier
+          ParseFormalParameter(scope, has_rest, &formals_classifier, &ok);
+        }
       }
 
       if (ok) {
@@ -2562,6 +2568,8 @@ Statement* Parser::ParseExpressionOrLabelledStatement(
       return nullptr;
 
     case Token::THIS:
+      if (!FLAG_strong_this) break;
+      // Fall through.
     case Token::SUPER:
       if (is_strong(language_mode()) &&
           i::IsConstructor(function_state_->kind())) {
@@ -3222,14 +3230,21 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
   //    let/const x = i;
   //    temp_x = x;
   //    first = 1;
+  //    undefined;
   //    outer: for (;;) {
-  //      let/const x = temp_x;
-  //      if (first == 1) {
-  //        first = 0;
-  //      } else {
-  //        next;
+  //      { // This block's only function is to ensure that the statements it
+  //        // contains do not affect the normal completion value. This is
+  //        // accomplished by setting its ignore_completion_value bit.
+  //        // No new lexical scope is introduced, so lexically scoped variables
+  //        // declared here will be scoped to the outer for loop.
+  //        let/const x = temp_x;
+  //        if (first == 1) {
+  //          first = 0;
+  //        } else {
+  //          next;
+  //        }
+  //        flag = 1;
   //      }
-  //      flag = 1;
   //      labels: for (; flag == 1; flag = 0, temp_x = x) {
   //        if (cond) {
   //          body
@@ -3282,6 +3297,13 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
     outer_block->AddStatement(assignment_statement, zone());
   }
 
+  // make statement: undefined;
+  outer_block->AddStatement(
+      factory()->NewExpressionStatement(
+          factory()->NewUndefinedLiteral(RelocInfo::kNoPosition),
+          RelocInfo::kNoPosition),
+      zone());
+
   // Make statement: outer: for (;;)
   // Note that we don't actually create the label, or set this loop up as an
   // explicit break target, instead handing it directly to those nodes that
@@ -3294,8 +3316,10 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
   outer_block->set_scope(for_scope);
   scope_ = inner_scope;
 
-  Block* inner_block = factory()->NewBlock(NULL, names->length() + 4, false,
-                                           RelocInfo::kNoPosition);
+  Block* inner_block =
+      factory()->NewBlock(NULL, 3, false, RelocInfo::kNoPosition);
+  Block* ignore_completion_block = factory()->NewBlock(
+      NULL, names->length() + 2, true, RelocInfo::kNoPosition);
   ZoneList<Variable*> inner_vars(names->length(), zone());
   // For each let variable x:
   //    make statement: let/const x = temp_x.
@@ -3314,7 +3338,7 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
         factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
     DCHECK(init->position() != RelocInfo::kNoPosition);
     proxy->var()->set_initializer_position(init->position());
-    inner_block->AddStatement(assignment_statement, zone());
+    ignore_completion_block->AddStatement(assignment_statement, zone());
   }
 
   // Make statement: if (first == 1) { first = 0; } else { next; }
@@ -3340,7 +3364,7 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
     }
     Statement* clear_first_or_next = factory()->NewIfStatement(
         compare, clear_first, next, RelocInfo::kNoPosition);
-    inner_block->AddStatement(clear_first_or_next, zone());
+    ignore_completion_block->AddStatement(clear_first_or_next, zone());
   }
 
   Variable* flag = scope_->DeclarationScope()->NewTemporary(temp_name);
@@ -3352,9 +3376,9 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
         Token::ASSIGN, flag_proxy, const1, RelocInfo::kNoPosition);
     Statement* assignment_statement =
         factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
-    inner_block->AddStatement(assignment_statement, zone());
+    ignore_completion_block->AddStatement(assignment_statement, zone());
   }
-
+  inner_block->AddStatement(ignore_completion_block, zone());
   // Make cond expression for main loop: flag == 1.
   Expression* flag_cond = NULL;
   {
@@ -3402,7 +3426,7 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
   }
 
   // Make statement: labels: for (; flag == 1; flag = 0, temp_x = x)
-  // Note that we re-use the original loop node, which retains it labels
+  // Note that we re-use the original loop node, which retains its labels
   // and ensures that any break or continue statements in body point to
   // the right place.
   loop->Initialize(NULL, flag_cond, compound_next_statement, body_or_stop);
@@ -3803,7 +3827,10 @@ void ParserTraits::ParseArrowFunctionFormalParameters(
     expr = expr->AsSpread()->expression();
   }
 
-  DCHECK(expr->IsVariableProxy());
+  if (!expr->IsVariableProxy()) {
+    // TODO(dslomov): support pattern desugaring
+    return;
+  }
   DCHECK(!expr->AsVariableProxy()->is_this());
 
   const AstRawString* raw_name = expr->AsVariableProxy()->raw_name();
@@ -3816,7 +3843,7 @@ void ParserTraits::ParseArrowFunctionFormalParameters(
   parser_->scope_->RemoveUnresolved(expr->AsVariableProxy());
 
   ExpressionClassifier classifier;
-  DeclareFormalParameter(scope, raw_name, &classifier, *has_rest);
+  DeclareFormalParameter(scope, expr, &classifier, *has_rest);
   if (!duplicate_loc->IsValid()) {
     *duplicate_loc = classifier.duplicate_formal_parameter_error().location;
   }
