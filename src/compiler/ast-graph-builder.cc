@@ -448,6 +448,10 @@ AstGraphBuilder::AstGraphBuilder(Zone* local_zone, CompilationInfo* info,
       state_values_cache_(jsgraph),
       liveness_analyzer_(static_cast<size_t>(info->scope()->num_stack_slots()),
                          local_zone),
+      frame_state_function_info_(common()->CreateFrameStateFunctionInfo(
+          FrameStateType::kJavaScriptFunction,
+          info->num_parameters_including_this(),
+          info->scope()->num_stack_slots(), info->shared_info())),
       js_type_feedback_(js_type_feedback) {
   InitializeAstVisitor(info->isolate(), local_zone);
 }
@@ -476,16 +480,6 @@ Node* AstGraphBuilder::GetFunctionClosure() {
     function_closure_.set(node);
   }
   return function_closure_.get();
-}
-
-
-Node* AstGraphBuilder::GetFeedbackVector() {
-  if (!feedback_vector_.is_set()) {
-    Node* vector =
-        jsgraph()->Constant(handle(info()->shared_info()->feedback_vector()));
-    feedback_vector_.set(vector);
-  }
-  return feedback_vector_.get();
 }
 
 
@@ -869,8 +863,8 @@ Node* AstGraphBuilder::Environment::Checkpoint(
   UpdateStateValues(&stack_node_, parameters_count() + locals_count(),
                     stack_height());
 
-  const Operator* op = common()->FrameState(JS_FRAME, ast_id, combine,
-                                            builder()->info()->shared_info());
+  const Operator* op = common()->FrameState(
+      ast_id, combine, builder()->frame_state_function_info());
 
   Node* result = graph()->NewNode(op, parameters_node_, locals_node_,
                                   stack_node_, builder()->current_context(),
@@ -1833,7 +1827,7 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
                        feedback_getter);
     VisitForValueOrNull(it->second->setter);
     VectorSlotPair feedback_setter = CreateVectorSlotPair(
-        expr->SlotForHomeObject(it->second->getter, &store_slot_index));
+        expr->SlotForHomeObject(it->second->setter, &store_slot_index));
     BuildSetHomeObject(environment()->Top(), literal, it->second->setter,
                        feedback_setter);
     Node* setter = environment()->Pop();
@@ -3293,7 +3287,7 @@ Node* AstGraphBuilder::BuildVariableLoad(Variable* variable,
         uint32_t check_bitset = ComputeBitsetForDynamicGlobal(variable);
         const Operator* op = javascript()->LoadDynamicGlobal(
             name, check_bitset, feedback, contextual_mode);
-        value = NewNode(op, GetFeedbackVector(), current_context());
+        value = NewNode(op, BuildLoadFeedbackVector(), current_context());
         states.AddToNode(value, bailout_id, combine);
       } else if (mode == DYNAMIC_LOCAL) {
         Variable* local = variable->local_if_not_shadowed();
@@ -3317,7 +3311,7 @@ Node* AstGraphBuilder::BuildVariableLoad(Variable* variable,
         uint32_t check_bitset = DynamicGlobalAccess::kFullCheckRequired;
         const Operator* op = javascript()->LoadDynamicGlobal(
             name, check_bitset, feedback, contextual_mode);
-        value = NewNode(op, GetFeedbackVector(), current_context());
+        value = NewNode(op, BuildLoadFeedbackVector(), current_context());
         states.AddToNode(value, bailout_id, combine);
       }
       return value;
@@ -3491,8 +3485,8 @@ static inline Node* Record(JSTypeFeedbackTable* js_type_feedback, Node* node,
 Node* AstGraphBuilder::BuildKeyedLoad(Node* object, Node* key,
                                       const VectorSlotPair& feedback) {
   const Operator* op = javascript()->LoadProperty(feedback);
-  return Record(js_type_feedback_,
-                NewNode(op, object, key, GetFeedbackVector()), feedback.slot());
+  Node* node = NewNode(op, object, key, BuildLoadFeedbackVector());
+  return Record(js_type_feedback_, node, feedback.slot());
 }
 
 
@@ -3501,8 +3495,8 @@ Node* AstGraphBuilder::BuildNamedLoad(Node* object, Handle<Name> name,
                                       ContextualMode mode) {
   const Operator* op =
       javascript()->LoadNamed(MakeUnique(name), feedback, mode);
-  return Record(js_type_feedback_, NewNode(op, object, GetFeedbackVector()),
-                feedback.slot());
+  Node* node = NewNode(op, object, BuildLoadFeedbackVector());
+  return Record(js_type_feedback_, node, feedback.slot());
 }
 
 
@@ -3510,7 +3504,11 @@ Node* AstGraphBuilder::BuildKeyedStore(Node* object, Node* key, Node* value,
                                        const VectorSlotPair& feedback,
                                        TypeFeedbackId id) {
   const Operator* op = javascript()->StoreProperty(language_mode(), feedback);
-  return Record(js_type_feedback_, NewNode(op, object, key, value), id);
+  Node* node = NewNode(op, object, key, value, BuildLoadFeedbackVector());
+  if (FLAG_vector_stores) {
+    return Record(js_type_feedback_, node, feedback.slot());
+  }
+  return Record(js_type_feedback_, node, id);
 }
 
 
@@ -3520,7 +3518,11 @@ Node* AstGraphBuilder::BuildNamedStore(Node* object, Handle<Name> name,
                                        TypeFeedbackId id) {
   const Operator* op =
       javascript()->StoreNamed(language_mode(), MakeUnique(name), feedback);
-  return Record(js_type_feedback_, NewNode(op, object, value), id);
+  Node* node = NewNode(op, object, value, BuildLoadFeedbackVector());
+  if (FLAG_vector_stores) {
+    return Record(js_type_feedback_, node, feedback.slot());
+  }
+  return Record(js_type_feedback_, node, id);
 }
 
 
@@ -3529,8 +3531,8 @@ Node* AstGraphBuilder::BuildNamedSuperLoad(Node* receiver, Node* home_object,
                                            const VectorSlotPair& feedback) {
   Node* name_node = jsgraph()->Constant(name);
   const Operator* op = javascript()->CallRuntime(Runtime::kLoadFromSuper, 3);
-  Node* value = NewNode(op, receiver, home_object, name_node);
-  return Record(js_type_feedback_, value, feedback.slot());
+  Node* node = NewNode(op, receiver, home_object, name_node);
+  return Record(js_type_feedback_, node, feedback.slot());
 }
 
 
@@ -3539,8 +3541,8 @@ Node* AstGraphBuilder::BuildKeyedSuperLoad(Node* receiver, Node* home_object,
                                            const VectorSlotPair& feedback) {
   const Operator* op =
       javascript()->CallRuntime(Runtime::kLoadKeyedFromSuper, 3);
-  Node* value = NewNode(op, receiver, home_object, key);
-  return Record(js_type_feedback_, value, feedback.slot());
+  Node* node = NewNode(op, receiver, home_object, key);
+  return Record(js_type_feedback_, node, feedback.slot());
 }
 
 
@@ -3551,8 +3553,8 @@ Node* AstGraphBuilder::BuildKeyedSuperStore(Node* receiver, Node* home_object,
                                         ? Runtime::kStoreKeyedToSuper_Strict
                                         : Runtime::kStoreKeyedToSuper_Sloppy;
   const Operator* op = javascript()->CallRuntime(function_id, 4);
-  Node* result = NewNode(op, receiver, home_object, key, value);
-  return Record(js_type_feedback_, result, id);
+  Node* node = NewNode(op, receiver, home_object, key, value);
+  return Record(js_type_feedback_, node, id);
 }
 
 
@@ -3564,14 +3566,21 @@ Node* AstGraphBuilder::BuildNamedSuperStore(Node* receiver, Node* home_object,
                                         ? Runtime::kStoreToSuper_Strict
                                         : Runtime::kStoreToSuper_Sloppy;
   const Operator* op = javascript()->CallRuntime(function_id, 4);
-  Node* result = NewNode(op, receiver, home_object, name_node, value);
-  return Record(js_type_feedback_, result, id);
+  Node* node = NewNode(op, receiver, home_object, name_node, value);
+  return Record(js_type_feedback_, node, id);
 }
 
 
 Node* AstGraphBuilder::BuildLoadObjectField(Node* object, int offset) {
   return NewNode(jsgraph()->machine()->Load(kMachAnyTagged), object,
                  jsgraph()->IntPtrConstant(offset - kHeapObjectTag));
+}
+
+
+Node* AstGraphBuilder::BuildLoadImmutableObjectField(Node* object, int offset) {
+  return graph()->NewNode(jsgraph()->machine()->Load(kMachAnyTagged), object,
+                          jsgraph()->IntPtrConstant(offset - kHeapObjectTag),
+                          graph()->start(), graph()->start());
 }
 
 
@@ -3598,6 +3607,19 @@ Node* AstGraphBuilder::BuildLoadGlobalProxy() {
 }
 
 
+Node* AstGraphBuilder::BuildLoadFeedbackVector() {
+  if (!feedback_vector_.is_set()) {
+    Node* closure = GetFunctionClosure();
+    Node* shared = BuildLoadImmutableObjectField(
+        closure, JSFunction::kSharedFunctionInfoOffset);
+    Node* vector = BuildLoadImmutableObjectField(
+        shared, SharedFunctionInfo::kFeedbackVectorOffset);
+    feedback_vector_.set(vector);
+  }
+  return feedback_vector_.get();
+}
+
+
 Node* AstGraphBuilder::BuildLoadExternal(ExternalReference reference,
                                          MachineType type) {
   return NewNode(jsgraph()->machine()->Load(type),
@@ -3619,8 +3641,10 @@ Node* AstGraphBuilder::BuildToBoolean(Node* input) {
   // TODO(bmeurer, mstarzinger): Refactor this into a separate optimization
   // method.
   switch (input->opcode()) {
-    case IrOpcode::kNumberConstant:
-      return jsgraph_->BooleanConstant(!NumberMatcher(input).Is(0));
+    case IrOpcode::kNumberConstant: {
+      NumberMatcher m(input);
+      return jsgraph_->BooleanConstant(!m.Is(0) && !m.IsNaN());
+    }
     case IrOpcode::kHeapConstant: {
       Handle<HeapObject> object = HeapObjectMatcher(input).Value().handle();
       return jsgraph_->BooleanConstant(object->BooleanValue());

@@ -2454,7 +2454,8 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
 }
 
 
-void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
+void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit,
+                                                  int* used_store_slots) {
   // Constructor is in eax.
   DCHECK(lit != NULL);
   __ push(eax);
@@ -2465,10 +2466,6 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
   __ mov(scratch, FieldOperand(eax, JSFunction::kPrototypeOrInitialMapOffset));
   __ Push(scratch);
 
-  // store_slot_index points to the vector IC slot for the next store IC used.
-  // ClassLiteral::ComputeFeedbackRequirements controls the allocation of slots
-  // and must be updated if the number of store ICs emitted here changes.
-  int store_slot_index = 0;
   for (int i = 0; i < lit->properties()->length(); i++) {
     ObjectLiteral::Property* property = lit->properties()->at(i);
     Expression* value = property->value();
@@ -2491,7 +2488,7 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
 
     VisitForStackValue(value);
     EmitSetHomeObjectIfNeeded(value, 2,
-                              lit->SlotForHomeObject(value, &store_slot_index));
+                              lit->SlotForHomeObject(value, used_store_slots));
 
     switch (property->kind()) {
       case ObjectLiteral::Property::CONSTANT:
@@ -2519,10 +2516,6 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
 
   // constructor
   __ CallRuntime(Runtime::kToFastProperties, 1);
-
-  // Verify that compilation exactly consumed the number of store ic slots that
-  // the ClassLiteral node had to offer.
-  DCHECK(!FLAG_vector_stores || store_slot_index == lit->slot_count());
 }
 
 
@@ -3796,25 +3789,25 @@ void FullCodeGenerator::EmitValueOf(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitThrowIfNotADate(CallRuntime* expr) {
+void FullCodeGenerator::EmitIsDate(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK_EQ(1, args->length());
 
-  VisitForAccumulatorValue(args->at(0));  // Load the object.
+  VisitForAccumulatorValue(args->at(0));
 
-  Label done, not_date_object;
-  Register object = eax;
-  Register result = eax;
-  Register scratch = ecx;
+  Label materialize_true, materialize_false;
+  Label* if_true = nullptr;
+  Label* if_false = nullptr;
+  Label* fall_through = nullptr;
+  context()->PrepareTest(&materialize_true, &materialize_false, &if_true,
+                         &if_false, &fall_through);
 
-  __ JumpIfSmi(object, &not_date_object, Label::kNear);
-  __ CmpObjectType(object, JS_DATE_TYPE, scratch);
-  __ j(equal, &done, Label::kNear);
-  __ bind(&not_date_object);
-  __ CallRuntime(Runtime::kThrowNotDateError, 0);
+  __ JumpIfSmi(eax, if_false);
+  __ CmpObjectType(eax, JS_DATE_TYPE, ebx);
+  PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
+  Split(equal, if_true, if_false, fall_through);
 
-  __ bind(&done);
-  context()->Plug(result);
+  context()->Plug(if_true, if_false);
 }
 
 

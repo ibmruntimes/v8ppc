@@ -2565,6 +2565,9 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
                  target_descriptors->GetFieldType(modify_index)));
     }
 #endif
+    if (*target_map != *old_map) {
+      old_map->NotifyLeafMapLayoutChange();
+    }
     return target_map;
   }
 
@@ -2818,13 +2821,6 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
       split_kind, old_descriptors->GetKey(split_nof), split_attributes,
       *new_descriptors, *new_layout_descriptor);
 
-  if (from_kind != to_kind) {
-    // There was an elements kind change in the middle of transition tree and
-    // we reconstructed the tree so that all elements kind transitions are
-    // done at the beginning, therefore the |old_map| is no longer stable.
-    old_map->NotifyLeafMapLayoutChange();
-  }
-
   // If |transition_target_deprecated| is true then the transition array
   // already contains entry for given descriptor. This means that the transition
   // could be inserted regardless of whether transitions array is full or not.
@@ -2834,6 +2830,8 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
                                             new_kind, new_attributes,
                                             "GenAll_CantHaveMoreTransitions");
   }
+
+  old_map->NotifyLeafMapLayoutChange();
 
   if (FLAG_trace_generalization && modify_index >= 0) {
     PropertyDetails old_details = old_descriptors->GetDetails(modify_index);
@@ -3389,7 +3387,10 @@ MaybeHandle<Object> Object::AddDataProperty(LookupIterator* it,
       }
     }
 
-    return JSObject::AddDataElement(receiver, it->index(), value, attributes);
+    MaybeHandle<Object> result =
+        JSObject::AddDataElement(receiver, it->index(), value, attributes);
+    JSObject::ValidateElements(receiver);
+    return result;
   } else {
     // Migrate to the most up-to-date map that will be able to store |value|
     // under it->name() with |attributes|.
@@ -11802,89 +11803,6 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
 #endif  // ENABLE_DISASSEMBLER
 
 
-Handle<FixedArray> JSObject::SetFastElementsCapacity(
-    Handle<JSObject> object, int capacity,
-    SetFastElementsCapacitySmiMode smi_mode) {
-  // We should never end in here with a pixel or external array.
-  DCHECK(!object->HasExternalArrayElements());
-
-  // Allocate a new fast elements backing store.
-  Isolate* isolate = object->GetIsolate();
-  Handle<FixedArray> new_elements =
-      isolate->factory()->NewUninitializedFixedArray(capacity);
-
-  isolate->UpdateArrayProtectorOnSetLength(object);
-
-  ElementsKind elements_kind = object->GetElementsKind();
-  ElementsKind new_elements_kind;
-  // The resized array has FAST_*_SMI_ELEMENTS if the capacity mode forces it,
-  // or if it's allowed and the old elements array contained only SMIs.
-  bool has_fast_smi_elements =
-      (smi_mode == kForceSmiElements) ||
-      ((smi_mode == kAllowSmiElements) && object->HasFastSmiElements());
-  if (has_fast_smi_elements) {
-    if (IsHoleyElementsKind(elements_kind)) {
-      new_elements_kind = FAST_HOLEY_SMI_ELEMENTS;
-    } else {
-      new_elements_kind = FAST_SMI_ELEMENTS;
-    }
-  } else {
-    if (IsHoleyElementsKind(elements_kind)) {
-      new_elements_kind = FAST_HOLEY_ELEMENTS;
-    } else {
-      new_elements_kind = FAST_ELEMENTS;
-    }
-  }
-  Handle<FixedArrayBase> old_elements(object->elements());
-  ElementsAccessor* accessor = ElementsAccessor::ForKind(new_elements_kind);
-  accessor->CopyElements(object, new_elements, elements_kind);
-
-  if (elements_kind == SLOPPY_ARGUMENTS_ELEMENTS) {
-    Handle<FixedArray> parameter_map = Handle<FixedArray>::cast(old_elements);
-    parameter_map->set(1, *new_elements);
-  } else {
-    Handle<Map> new_map = (new_elements_kind != elements_kind)
-        ? GetElementsTransitionMap(object, new_elements_kind)
-        : handle(object->map());
-    JSObject::ValidateElements(object);
-    JSObject::SetMapAndElements(object, new_map, new_elements);
-
-    // Transition through the allocation site as well if present.
-    JSObject::UpdateAllocationSite(object, new_elements_kind);
-  }
-
-  if (FLAG_trace_elements_transitions) {
-    PrintElementsTransition(stdout, object, elements_kind, old_elements,
-                            object->GetElementsKind(), new_elements);
-  }
-
-  return new_elements;
-}
-
-
-Handle<FixedArray> JSObject::SetFastElementsCapacityAndLength(
-    Handle<JSObject> object, int capacity, int length,
-    SetFastElementsCapacitySmiMode smi_mode) {
-  Handle<FixedArray> new_elements =
-      SetFastElementsCapacity(object, capacity, smi_mode);
-  if (object->IsJSArray()) {
-    Handle<JSArray>::cast(object)->set_length(Smi::FromInt(length));
-  }
-  return new_elements;
-}
-
-
-void JSObject::SetFastDoubleElementsCapacityAndLength(Handle<JSObject> object,
-                                                      int capacity,
-                                                      int length) {
-  ElementsAccessor* accessor = ElementsAccessor::ForKind(FAST_DOUBLE_ELEMENTS);
-  accessor->GrowCapacityAndConvert(object, capacity);
-  if (object->IsJSArray()) {
-    Handle<JSArray>::cast(object)->set_length(Smi::FromInt(length));
-  }
-}
-
-
 // static
 void JSArray::Initialize(Handle<JSArray> array, int capacity, int length) {
   DCHECK(capacity >= 0);
@@ -12433,115 +12351,18 @@ bool JSObject::HasDictionaryArgumentsElements() {
 }
 
 
-void JSObject::AddFastElement(Handle<JSObject> object, uint32_t index,
-                              Handle<Object> value) {
-  DCHECK(object->HasFastSmiOrObjectElements() ||
-         object->HasFastArgumentsElements());
+ElementsAccessor* JSObject::GetElementsAccessor() {
+  return ElementsAccessor::ForKind(GetElementsKind());
+}
 
-  Isolate* isolate = object->GetIsolate();
 
-  Handle<FixedArray> backing_store(FixedArray::cast(object->elements()));
-  if (object->HasSloppyArgumentsElements()) {
-    backing_store = handle(FixedArray::cast(backing_store->get(1)));
-  } else {
-    // Array optimizations rely on the prototype lookups of Array objects always
-    // returning undefined. If there is a store to the initial prototype object,
-    // make sure all of these optimizations are invalidated.
-    isolate->UpdateArrayProtectorOnSetElement(object);
-    backing_store = EnsureWritableFastElements(object);
+void JSObject::ValidateElements(Handle<JSObject> object) {
+#ifdef ENABLE_SLOW_DCHECKS
+  if (FLAG_enable_slow_asserts) {
+    ElementsAccessor* accessor = object->GetElementsAccessor();
+    accessor->Validate(object);
   }
-  uint32_t capacity = static_cast<uint32_t>(backing_store->length());
-
-  uint32_t new_capacity = capacity;
-  // Check if the length property of this object needs to be updated.
-  uint32_t array_length = 0;
-  bool must_update_array_length = false;
-  bool introduces_holes = true;
-  if (object->IsJSArray()) {
-    CHECK(
-        Handle<JSArray>::cast(object)->length()->ToArrayLength(&array_length));
-    introduces_holes = index > array_length;
-    if (index >= array_length) {
-      must_update_array_length = true;
-      array_length = index + 1;
-    }
-  } else {
-    introduces_holes = index >= capacity;
-  }
-
-  // If the array is growing, and it's not growth by a single element at the
-  // end, make sure that the ElementsKind is HOLEY.
-  if (introduces_holes && !IsFastHoleyElementsKind(object->GetElementsKind())) {
-    ElementsKind transitioned_kind =
-        GetHoleyElementsKind(object->GetElementsKind());
-    TransitionElementsKind(object, transitioned_kind);
-  }
-
-  // Check if the capacity of the backing store needs to be increased, or if
-  // a transition to slow elements is necessary.
-  if (index >= capacity) {
-    bool convert_to_slow = true;
-    if ((index - capacity) < kMaxGap) {
-      new_capacity = NewElementsCapacity(index + 1);
-      DCHECK(new_capacity > index);
-      if (!object->ShouldConvertToSlowElements(new_capacity)) {
-        convert_to_slow = false;
-      }
-    }
-    if (convert_to_slow) {
-      NormalizeElements(object);
-      AddDictionaryElement(object, index, value, NONE);
-      return;
-    }
-  }
-
-  if (object->HasFastSmiElements() && !value->IsSmi()) {
-    // Convert to fast double elements if appropriate.
-    if (value->IsNumber()) {
-      // Consider fixing the boilerplate as well if we have one.
-      ElementsKind to_kind = IsHoleyElementsKind(object->GetElementsKind())
-                                 ? FAST_HOLEY_DOUBLE_ELEMENTS
-                                 : FAST_DOUBLE_ELEMENTS;
-
-      UpdateAllocationSite(object, to_kind);
-
-      SetFastDoubleElementsCapacityAndLength(object, new_capacity,
-                                             array_length);
-      FixedDoubleArray::cast(object->elements())->set(index, value->Number());
-      JSObject::ValidateElements(object);
-      return;
-    }
-
-    // Change elements kind from Smi-only to generic FAST if necessary.
-    ElementsKind kind = object->HasFastHoleyElements()
-        ? FAST_HOLEY_ELEMENTS
-        : FAST_ELEMENTS;
-
-    UpdateAllocationSite(object, kind);
-    Handle<Map> new_map = GetElementsTransitionMap(object, kind);
-    JSObject::MigrateToMap(object, new_map);
-    DCHECK(IsFastObjectElementsKind(object->GetElementsKind()));
-  }
-
-  // Increase backing store capacity if that's been decided previously.
-  // Otherwise, set the new element and length.
-  if (new_capacity == capacity) {
-    DCHECK(object->elements()->IsFixedArray());
-    backing_store->set(index, *value);
-    if (must_update_array_length) {
-      Handle<JSArray>::cast(object)->set_length(Smi::FromInt(array_length));
-    }
-  } else {
-    SetFastElementsCapacitySmiMode smi_mode =
-        value->IsSmi() && object->HasFastSmiElements()
-            ? kAllowSmiElements
-            : kDontAllowSmiElements;
-    Handle<FixedArray> new_elements =
-        SetFastElementsCapacityAndLength(object, new_capacity, array_length,
-                                         smi_mode);
-    new_elements->set(index, *value);
-    JSObject::ValidateElements(object);
-  }
+#endif
 }
 
 
@@ -12577,30 +12398,6 @@ void JSObject::SetDictionaryArgumentsElement(Handle<JSObject> object,
     AddDictionaryElement(object, index, value, attributes);
   } else {
     SetDictionaryElement(object, index, value, attributes);
-  }
-}
-
-
-void JSObject::AddSloppyArgumentsElement(Handle<JSObject> object,
-                                         uint32_t index, Handle<Object> value,
-                                         PropertyAttributes attributes) {
-  DCHECK(object->HasSloppyArgumentsElements());
-
-  // TODO(verwaest): Handle with the elements accessor.
-  FixedArray* parameter_map = FixedArray::cast(object->elements());
-
-#ifdef DEBUG
-  uint32_t length = parameter_map->length();
-  if (index < length - 2) {
-    Object* probe = parameter_map->get(index + 2);
-    DCHECK(probe->IsTheHole());
-  }
-#endif
-
-  if (parameter_map->get(1)->IsDictionary()) {
-    AddDictionaryElement(object, index, value, attributes);
-  } else {
-    AddFastElement(object, index, value);
   }
 }
 
@@ -12696,24 +12493,13 @@ void JSObject::AddDictionaryElement(Handle<JSObject> object, uint32_t index,
   if (object->ShouldConvertToFastElements()) {
     uint32_t new_length = 0;
     if (object->IsJSArray()) {
-      CHECK(
-          Handle<JSArray>::cast(object)->length()->ToArrayLength(&new_length));
+      CHECK(JSArray::cast(*object)->length()->ToArrayLength(&new_length));
     } else {
       new_length = dictionary->max_number_key() + 1;
     }
-    bool has_smi_only_elements = false;
-    bool should_convert_to_fast_double_elements =
-        object->ShouldConvertToFastDoubleElements(&has_smi_only_elements);
-    SetFastElementsCapacitySmiMode smi_mode =
-        has_smi_only_elements ? kForceSmiElements : kAllowSmiElements;
-
-    if (should_convert_to_fast_double_elements) {
-      SetFastDoubleElementsCapacityAndLength(object, new_length, new_length);
-    } else {
-      SetFastElementsCapacityAndLength(object, new_length, new_length,
-                                       smi_mode);
-    }
-    JSObject::ValidateElements(object);
+    ElementsKind to_kind = object->BestFittingFastElementsKind();
+    ElementsAccessor* accessor = ElementsAccessor::ForKind(to_kind);
+    accessor->GrowCapacityAndConvert(object, new_length);
 #ifdef DEBUG
     if (FLAG_trace_normalization) {
       OFStream os(stdout);
@@ -12722,80 +12508,6 @@ void JSObject::AddDictionaryElement(Handle<JSObject> object, uint32_t index,
     }
 #endif
   }
-}
-
-
-void JSObject::AddFastDoubleElement(Handle<JSObject> object, uint32_t index,
-                                    Handle<Object> value) {
-  DCHECK(object->HasFastDoubleElements());
-
-  Handle<FixedArrayBase> base_elms(FixedArrayBase::cast(object->elements()));
-  uint32_t elms_length = static_cast<uint32_t>(base_elms->length());
-  uint32_t length = elms_length;
-
-  bool introduces_holes = true;
-  if (object->IsJSArray()) {
-    // In case of JSArray, the length does not equal the capacity.
-    CHECK(Handle<JSArray>::cast(object)->length()->ToArrayLength(&length));
-    introduces_holes = index > length;
-  } else {
-    introduces_holes = index >= elms_length;
-  }
-
-  // If the value object is not a heap number, switch to fast elements and try
-  // again.
-  if (!value->IsNumber()) {
-    SetFastElementsCapacityAndLength(object, elms_length, length,
-                                     kDontAllowSmiElements);
-    AddFastElement(object, index, value);
-    return;
-  }
-
-  // If the array is growing, and it's not growth by a single element at the
-  // end, make sure that the ElementsKind is HOLEY.
-  if (introduces_holes && !IsFastHoleyElementsKind(object->GetElementsKind())) {
-    ElementsKind transitioned_kind = FAST_HOLEY_DOUBLE_ELEMENTS;
-    TransitionElementsKind(object, transitioned_kind);
-  }
-
-  // Check whether there is extra space in the fixed array.
-  if (index < elms_length) {
-    Handle<FixedDoubleArray> elms(FixedDoubleArray::cast(object->elements()));
-    elms->set(index, value->Number());
-    if (object->IsJSArray()) {
-      // Update the length of the array if needed.
-      uint32_t array_length = 0;
-      CHECK(Handle<JSArray>::cast(object)->length()->ToArrayLength(
-          &array_length));
-      if (index >= array_length) {
-        Handle<JSArray>::cast(object)->set_length(Smi::FromInt(index + 1));
-      }
-    }
-    return;
-  }
-
-  // Allow gap in fast case.
-  if ((index - elms_length) < kMaxGap) {
-    // Try allocating extra space.
-    int new_capacity = NewElementsCapacity(index+1);
-    if (!object->ShouldConvertToSlowElements(new_capacity)) {
-      DCHECK(static_cast<uint32_t>(new_capacity) > index);
-      SetFastDoubleElementsCapacityAndLength(object, new_capacity, index + 1);
-      FixedDoubleArray::cast(object->elements())->set(index, value->Number());
-      JSObject::ValidateElements(object);
-      return;
-    }
-  }
-
-  // Otherwise default to slow case.
-  DCHECK(object->HasFastDoubleElements());
-  DCHECK(object->map()->has_fast_double_elements());
-  DCHECK(object->elements()->IsFixedDoubleArray() ||
-         object->elements()->length() == 0);
-
-  NormalizeElements(object);
-  DCHECK(object->HasDictionaryElements());
-  AddDictionaryElement(object, index, value, NONE);
 }
 
 
@@ -12809,66 +12521,109 @@ MaybeHandle<Object> JSReceiver::SetElement(Handle<JSReceiver> object,
 }
 
 
+static void AddFastElement(Handle<JSObject> object, uint32_t index,
+                           Handle<Object> value, ElementsKind from_kind,
+                           uint32_t capacity, uint32_t new_capacity) {
+  // Check if the length property of this object needs to be updated.
+  uint32_t array_length = 0;
+  bool introduces_holes = true;
+  if (object->IsJSArray()) {
+    CHECK(JSArray::cast(*object)->length()->ToArrayLength(&array_length));
+    introduces_holes = index > array_length;
+  } else {
+    introduces_holes = index >= capacity;
+  }
+
+  ElementsKind to_kind = value->OptimalElementsKind();
+  if (IsHoleyElementsKind(from_kind)) to_kind = GetHoleyElementsKind(to_kind);
+  to_kind = IsMoreGeneralElementsKindTransition(from_kind, to_kind) ? to_kind
+                                                                    : from_kind;
+  if (introduces_holes) to_kind = GetHoleyElementsKind(to_kind);
+  ElementsAccessor* accessor = ElementsAccessor::ForKind(to_kind);
+
+  // Increase backing store capacity if that's been decided previously.
+  if (capacity != new_capacity || IsDictionaryElementsKind(from_kind) ||
+      IsFastDoubleElementsKind(from_kind) !=
+          IsFastDoubleElementsKind(to_kind)) {
+    accessor->GrowCapacityAndConvert(object, new_capacity);
+  } else if (from_kind != to_kind) {
+    JSObject::TransitionElementsKind(object, to_kind);
+  }
+
+  if (object->IsJSArray() && index >= array_length) {
+    Handle<JSArray>::cast(object)->set_length(Smi::FromInt(index + 1));
+  }
+
+  accessor->Set(object->elements(), index, *value);
+}
+
+
 // static
-MaybeHandle<Object> JSObject::AddDataElement(Handle<JSObject> receiver,
+MaybeHandle<Object> JSObject::AddDataElement(Handle<JSObject> object,
                                              uint32_t index,
                                              Handle<Object> value,
                                              PropertyAttributes attributes) {
-  DCHECK(receiver->map()->is_extensible());
+  DCHECK(object->map()->is_extensible());
 
-  Isolate* isolate = receiver->GetIsolate();
+  Isolate* isolate = object->GetIsolate();
 
   // TODO(verwaest): Use ElementAccessor.
   Handle<Object> old_length_handle;
-  if (receiver->IsJSArray() && receiver->map()->is_observed()) {
-    old_length_handle = handle(JSArray::cast(*receiver)->length(), isolate);
+  if (object->IsJSArray() && object->map()->is_observed()) {
+    old_length_handle = handle(JSArray::cast(*object)->length(), isolate);
   }
 
-  if (attributes != NONE) {
-    Handle<SeededNumberDictionary> d = JSObject::NormalizeElements(receiver);
-    // TODO(verwaest): Move this into NormalizeElements.
-    d->set_requires_slow_elements();
+  ElementsKind kind = object->GetElementsKind();
+  bool handle_slow = false;
+  uint32_t capacity = 0;
+  uint32_t new_capacity = 0;
+  if (IsFastElementsKind(kind) || object->HasFastArgumentsElements()) {
+    if (attributes != NONE) {
+      // TODO(verwaest): Move set_requires_slow_elements into NormalizeElements.
+      NormalizeElements(object)->set_requires_slow_elements();
+      handle_slow = true;
+    } else {
+      if (IsSloppyArgumentsElements(kind)) {
+        FixedArray* parameter_map = FixedArray::cast(object->elements());
+        FixedArray* arguments = FixedArray::cast(parameter_map->get(1));
+        capacity = static_cast<uint32_t>(arguments->length());
+      } else {
+        if (IsFastSmiOrObjectElementsKind(kind)) {
+          EnsureWritableFastElements(object);
+        }
+        capacity = static_cast<uint32_t>(object->elements()->length());
+      }
+
+      new_capacity = capacity;
+      // Check if the capacity of the backing store needs to be increased, or if
+      // a transition to slow elements is necessary.
+      if (index >= capacity) {
+        handle_slow = true;
+        if ((index - capacity) < kMaxGap) {
+          new_capacity = NewElementsCapacity(index + 1);
+          DCHECK_LT(index, new_capacity);
+          handle_slow = object->ShouldConvertToSlowElements(new_capacity);
+        }
+        if (handle_slow) NormalizeElements(object);
+      }
+    }
+  } else {
+    handle_slow = true;
   }
 
-  Handle<Object> result = value;
-
-  switch (receiver->GetElementsKind()) {
-    case FAST_SMI_ELEMENTS:
-    case FAST_ELEMENTS:
-    case FAST_HOLEY_SMI_ELEMENTS:
-    case FAST_HOLEY_ELEMENTS:
-      AddFastElement(receiver, index, value);
-      break;
-    case FAST_DOUBLE_ELEMENTS:
-    case FAST_HOLEY_DOUBLE_ELEMENTS:
-      AddFastDoubleElement(receiver, index, value);
-      break;
-
-    case DICTIONARY_ELEMENTS:
-      AddDictionaryElement(receiver, index, value, attributes);
-      break;
-    case SLOPPY_ARGUMENTS_ELEMENTS:
-      AddSloppyArgumentsElement(receiver, index, value, attributes);
-      break;
-
-// Elements cannot be added to typed arrays.
-#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size) \
-  case EXTERNAL_##TYPE##_ELEMENTS:                      \
-  case TYPE##_ELEMENTS:
-
-      TYPED_ARRAYS(TYPED_ARRAY_CASE)
-
-#undef TYPED_ARRAY_CASE
-      UNREACHABLE();
-      break;
+  if (handle_slow) {
+    DCHECK(object->HasDictionaryElements() ||
+           object->HasDictionaryArgumentsElements());
+    AddDictionaryElement(object, index, value, attributes);
+  } else {
+    AddFastElement(object, index, value, kind, capacity, new_capacity);
   }
 
   if (!old_length_handle.is_null() &&
-      !old_length_handle->SameValue(
-          Handle<JSArray>::cast(receiver)->length())) {
-    // |old_length_handle| is kept null above unless the receiver is observed.
-    DCHECK(receiver->map()->is_observed());
-    Handle<JSArray> array = Handle<JSArray>::cast(receiver);
+      !old_length_handle->SameValue(Handle<JSArray>::cast(object)->length())) {
+    // |old_length_handle| is kept null above unless the object is observed.
+    DCHECK(object->map()->is_observed());
+    Handle<JSArray> array = Handle<JSArray>::cast(object);
     Handle<String> name = isolate->factory()->Uint32ToString(index);
     Handle<Object> new_length_handle(array->length(), isolate);
     uint32_t old_length = 0;
@@ -12878,28 +12633,28 @@ MaybeHandle<Object> JSObject::AddDataElement(Handle<JSObject> receiver,
 
     RETURN_ON_EXCEPTION(isolate, BeginPerformSplice(array), Object);
     RETURN_ON_EXCEPTION(
-        isolate, JSObject::EnqueueChangeRecord(
-                     array, "add", name, isolate->factory()->the_hole_value()),
+        isolate, EnqueueChangeRecord(array, "add", name,
+                                     isolate->factory()->the_hole_value()),
         Object);
-    RETURN_ON_EXCEPTION(
-        isolate, JSObject::EnqueueChangeRecord(
-                     array, "update", isolate->factory()->length_string(),
-                     old_length_handle),
-        Object);
+    RETURN_ON_EXCEPTION(isolate,
+                        EnqueueChangeRecord(array, "update",
+                                            isolate->factory()->length_string(),
+                                            old_length_handle),
+                        Object);
     RETURN_ON_EXCEPTION(isolate, EndPerformSplice(array), Object);
     Handle<JSArray> deleted = isolate->factory()->NewJSArray(0);
     RETURN_ON_EXCEPTION(isolate, EnqueueSpliceRecord(array, old_length, deleted,
                                                      new_length - old_length),
                         Object);
-  } else if (receiver->map()->is_observed()) {
+  } else if (object->map()->is_observed()) {
     Handle<String> name = isolate->factory()->Uint32ToString(index);
-    RETURN_ON_EXCEPTION(isolate, JSObject::EnqueueChangeRecord(
-                                     receiver, "add", name,
+    RETURN_ON_EXCEPTION(
+        isolate, EnqueueChangeRecord(object, "add", name,
                                      isolate->factory()->the_hole_value()),
-                        Object);
+        Object);
   }
 
-  return result;
+  return value;
 }
 
 
@@ -13023,25 +12778,23 @@ void JSObject::UpdateAllocationSite(Handle<JSObject> object,
 
 void JSObject::TransitionElementsKind(Handle<JSObject> object,
                                       ElementsKind to_kind) {
-  ElementsKind from_kind = object->map()->elements_kind();
+  ElementsKind from_kind = object->GetElementsKind();
 
   if (IsFastHoleyElementsKind(from_kind)) {
     to_kind = GetHoleyElementsKind(to_kind);
   }
 
   if (from_kind == to_kind) return;
-  // Don't update the site if to_kind isn't fast
-  if (IsFastElementsKind(to_kind)) {
-    UpdateAllocationSite(object, to_kind);
-  }
 
-  Isolate* isolate = object->GetIsolate();
-  if (object->elements() == isolate->heap()->empty_fixed_array() ||
-      (IsFastSmiOrObjectElementsKind(from_kind) &&
-       IsFastSmiOrObjectElementsKind(to_kind)) ||
-      (from_kind == FAST_DOUBLE_ELEMENTS &&
-       to_kind == FAST_HOLEY_DOUBLE_ELEMENTS)) {
-    DCHECK(from_kind != TERMINAL_FAST_ELEMENTS_KIND);
+  // This method should never be called for any other case.
+  DCHECK(IsFastElementsKind(from_kind));
+  DCHECK(IsFastElementsKind(to_kind));
+  DCHECK_NE(TERMINAL_FAST_ELEMENTS_KIND, from_kind);
+
+  UpdateAllocationSite(object, to_kind);
+  if (object->elements() == object->GetHeap()->empty_fixed_array() ||
+      IsFastDoubleElementsKind(from_kind) ==
+          IsFastDoubleElementsKind(to_kind)) {
     // No change is needed to the elements() buffer, the transition
     // only requires a map change.
     Handle<Map> new_map = GetElementsTransitionMap(object, to_kind);
@@ -13050,42 +12803,14 @@ void JSObject::TransitionElementsKind(Handle<JSObject> object,
       Handle<FixedArrayBase> elms(object->elements());
       PrintElementsTransition(stdout, object, from_kind, elms, to_kind, elms);
     }
-    return;
+  } else {
+    DCHECK((IsFastSmiElementsKind(from_kind) &&
+            IsFastDoubleElementsKind(to_kind)) ||
+           (IsFastDoubleElementsKind(from_kind) &&
+            IsFastObjectElementsKind(to_kind)));
+    uint32_t c = static_cast<uint32_t>(object->elements()->length());
+    ElementsAccessor::ForKind(to_kind)->GrowCapacityAndConvert(object, c);
   }
-
-  Handle<FixedArrayBase> elms(object->elements());
-  uint32_t capacity = static_cast<uint32_t>(elms->length());
-  uint32_t length = capacity;
-
-  if (object->IsJSArray()) {
-    Object* raw_length = Handle<JSArray>::cast(object)->length();
-    if (raw_length->IsUndefined()) {
-      // If length is undefined, then JSArray is being initialized and has no
-      // elements, assume a length of zero.
-      length = 0;
-    } else {
-      CHECK(raw_length->ToArrayLength(&length));
-    }
-  }
-
-  if (IsFastSmiElementsKind(from_kind) &&
-      IsFastDoubleElementsKind(to_kind)) {
-    SetFastDoubleElementsCapacityAndLength(object, capacity, length);
-    JSObject::ValidateElements(object);
-    return;
-  }
-
-  if (IsFastDoubleElementsKind(from_kind) &&
-      IsFastObjectElementsKind(to_kind)) {
-    SetFastElementsCapacityAndLength(object, capacity, length,
-                                     kDontAllowSmiElements);
-    JSObject::ValidateElements(object);
-    return;
-  }
-
-  // This method should never be called for any other case than the ones
-  // handled above.
-  UNREACHABLE();
 }
 
 
@@ -13300,29 +13025,23 @@ bool JSObject::ShouldConvertToFastElements() {
 }
 
 
-bool JSObject::ShouldConvertToFastDoubleElements(
-    bool* has_smi_only_elements) {
-  *has_smi_only_elements = false;
-  if (HasSloppyArgumentsElements()) return false;
-  if (FLAG_unbox_double_arrays) {
-    DCHECK(HasDictionaryElements());
-    SeededNumberDictionary* dictionary = element_dictionary();
-    bool found_double = false;
-    for (int i = 0; i < dictionary->Capacity(); i++) {
-      Object* key = dictionary->KeyAt(i);
-      if (key->IsNumber()) {
-        Object* value = dictionary->ValueAt(i);
-        if (!value->IsNumber()) return false;
-        if (!value->IsSmi()) {
-          found_double = true;
-        }
+ElementsKind JSObject::BestFittingFastElementsKind() {
+  if (HasSloppyArgumentsElements()) return FAST_HOLEY_ELEMENTS;
+  DCHECK(HasDictionaryElements());
+  SeededNumberDictionary* dictionary = element_dictionary();
+  ElementsKind kind = FAST_HOLEY_SMI_ELEMENTS;
+  for (int i = 0; i < dictionary->Capacity(); i++) {
+    Object* key = dictionary->KeyAt(i);
+    if (key->IsNumber()) {
+      Object* value = dictionary->ValueAt(i);
+      if (!value->IsNumber()) return FAST_HOLEY_ELEMENTS;
+      if (!value->IsSmi()) {
+        if (!FLAG_unbox_double_arrays) return FAST_HOLEY_ELEMENTS;
+        kind = FAST_HOLEY_DOUBLE_ELEMENTS;
       }
     }
-    *has_smi_only_elements = !found_double;
-    return found_double;
-  } else {
-    return false;
   }
+  return kind;
 }
 
 

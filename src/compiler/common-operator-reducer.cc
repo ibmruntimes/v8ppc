@@ -68,21 +68,20 @@ Reduction CommonOperatorReducer::ReduceBranch(Node* node) {
   Decision const decision = DecideCondition(cond);
   if (decision == Decision::kUnknown) return NoChange();
   Node* const control = node->InputAt(1);
-  node->set_op(common()->Dead());
-  node->TrimInputCount(0);
+  if (!dead_.is_set()) dead_.set(graph()->NewNode(common()->Dead()));
   for (Node* const use : node->uses()) {
     switch (use->opcode()) {
       case IrOpcode::kIfTrue:
-        Replace(use, (decision == Decision::kTrue) ? control : node);
+        Replace(use, (decision == Decision::kTrue) ? control : dead_.get());
         break;
       case IrOpcode::kIfFalse:
-        Replace(use, (decision == Decision::kFalse) ? control : node);
+        Replace(use, (decision == Decision::kFalse) ? control : dead_.get());
         break;
       default:
         UNREACHABLE();
     }
   }
-  return Changed(node);
+  return Replace(dead_.get());
 }
 
 
@@ -179,15 +178,15 @@ Reduction CommonOperatorReducer::ReducePhi(Node* node) {
           }
         }
         if (mcond.left().Equals(vtrue) && mcond.right().Equals(vfalse) &&
-            machine()->HasFloat32Min()) {
+            machine()->Float32Min().IsSupported()) {
           // We might now be able to further reduce the {merge} node.
           Revisit(merge);
-          return Change(node, machine()->Float32Min(), vtrue, vfalse);
+          return Change(node, machine()->Float32Min().op(), vtrue, vfalse);
         } else if (mcond.left().Equals(vfalse) && mcond.right().Equals(vtrue) &&
-                   machine()->HasFloat32Max()) {
+                   machine()->Float32Max().IsSupported()) {
           // We might now be able to further reduce the {merge} node.
           Revisit(merge);
-          return Change(node, machine()->Float32Max(), vtrue, vfalse);
+          return Change(node, machine()->Float32Max().op(), vtrue, vfalse);
         }
       } else if (cond->opcode() == IrOpcode::kFloat64LessThan) {
         Float64BinopMatcher mcond(cond);
@@ -201,15 +200,15 @@ Reduction CommonOperatorReducer::ReducePhi(Node* node) {
           }
         }
         if (mcond.left().Equals(vtrue) && mcond.right().Equals(vfalse) &&
-            machine()->HasFloat64Min()) {
+            machine()->Float64Min().IsSupported()) {
           // We might now be able to further reduce the {merge} node.
           Revisit(merge);
-          return Change(node, machine()->Float64Min(), vtrue, vfalse);
+          return Change(node, machine()->Float64Min().op(), vtrue, vfalse);
         } else if (mcond.left().Equals(vfalse) && mcond.right().Equals(vtrue) &&
-                   machine()->HasFloat64Max()) {
+                   machine()->Float64Max().IsSupported()) {
           // We might now be able to further reduce the {merge} node.
           Revisit(merge);
-          return Change(node, machine()->Float64Max(), vtrue, vfalse);
+          return Change(node, machine()->Float64Max().op(), vtrue, vfalse);
         }
       }
     }
@@ -256,11 +255,11 @@ Reduction CommonOperatorReducer::ReduceSelect(Node* node) {
         }
       }
       if (mcond.left().Equals(vtrue) && mcond.right().Equals(vfalse) &&
-          machine()->HasFloat32Min()) {
-        return Change(node, machine()->Float32Min(), vtrue, vfalse);
+          machine()->Float32Min().IsSupported()) {
+        return Change(node, machine()->Float32Min().op(), vtrue, vfalse);
       } else if (mcond.left().Equals(vfalse) && mcond.right().Equals(vtrue) &&
-                 machine()->HasFloat32Max()) {
-        return Change(node, machine()->Float32Max(), vtrue, vfalse);
+                 machine()->Float32Max().IsSupported()) {
+        return Change(node, machine()->Float32Max().op(), vtrue, vfalse);
       }
       break;
     }
@@ -274,11 +273,11 @@ Reduction CommonOperatorReducer::ReduceSelect(Node* node) {
         }
       }
       if (mcond.left().Equals(vtrue) && mcond.right().Equals(vfalse) &&
-          machine()->HasFloat64Min()) {
-        return Change(node, machine()->Float64Min(), vtrue, vfalse);
+          machine()->Float64Min().IsSupported()) {
+        return Change(node, machine()->Float64Min().op(), vtrue, vfalse);
       } else if (mcond.left().Equals(vfalse) && mcond.right().Equals(vtrue) &&
-                 machine()->HasFloat64Max()) {
-        return Change(node, machine()->Float64Max(), vtrue, vfalse);
+                 machine()->Float64Max().IsSupported()) {
+        return Change(node, machine()->Float64Max().op(), vtrue, vfalse);
       }
       break;
     }

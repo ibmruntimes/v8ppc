@@ -88,7 +88,6 @@ class AstGraphBuilder : public AstVisitor {
   // Nodes representing values in the activation record.
   SetOncePointer<Node> function_closure_;
   SetOncePointer<Node> function_context_;
-  SetOncePointer<Node> feedback_vector_;
 
   // Tracks how many try-blocks are currently entered.
   int try_catch_nesting_level_;
@@ -97,6 +96,9 @@ class AstGraphBuilder : public AstVisitor {
   // Temporary storage for building node input lists.
   int input_buffer_size_;
   Node** input_buffer_;
+
+  // Optimization to cache loaded feedback vector.
+  SetOncePointer<Node> feedback_vector_;
 
   // Control nodes that exit the function body.
   ZoneVector<Node*> exit_controls_;
@@ -109,6 +111,9 @@ class AstGraphBuilder : public AstVisitor {
 
   // Analyzer of local variable liveness.
   LivenessAnalyzer liveness_analyzer_;
+
+  // Function info for frame state construction.
+  const FrameStateFunctionInfo* const frame_state_function_info_;
 
   // Type feedback table.
   JSTypeFeedbackTable* js_type_feedback_;
@@ -133,6 +138,9 @@ class AstGraphBuilder : public AstVisitor {
   Scope* current_scope() const;
   Node* current_context() const;
   LivenessAnalyzer* liveness_analyzer() { return &liveness_analyzer_; }
+  const FrameStateFunctionInfo* frame_state_function_info() const {
+    return frame_state_function_info_;
+  }
 
   void set_environment(Environment* env) { environment_ = env; }
   void set_ast_context(AstContext* ctx) { ast_context_ = ctx; }
@@ -148,9 +156,6 @@ class AstGraphBuilder : public AstVisitor {
   // Get or create the node that represents the outer function closure.
   Node* GetFunctionClosureForContext();
   Node* GetFunctionClosure();
-
-  // Get or create the node that represents the functions type feedback vector.
-  Node* GetFeedbackVector();
 
   // Node creation helpers.
   Node* NewNode(const Operator* op, bool incomplete = false) {
@@ -306,8 +311,11 @@ class AstGraphBuilder : public AstVisitor {
   Node* BuildLoadBuiltinsObject();
   Node* BuildLoadGlobalObject();
   Node* BuildLoadGlobalProxy();
-  Node* BuildLoadClosure();
+  Node* BuildLoadFeedbackVector();
+
+  // Builder for accessing a (potentially immutable) object field.
   Node* BuildLoadObjectField(Node* object, int offset);
+  Node* BuildLoadImmutableObjectField(Node* object, int offset);
 
   // Builders for accessing external references.
   Node* BuildLoadExternal(ExternalReference ref, MachineType type);
