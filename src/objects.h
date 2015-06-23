@@ -2015,14 +2015,11 @@ class JSObject: public JSReceiver {
   // an access at key?
   bool WouldConvertToSlowElements(uint32_t index);
   inline bool WouldConvertToSlowElements(Handle<Object> key);
-  // Do we want to keep the elements in fast case when increasing the
-  // capacity?
-  bool ShouldConvertToSlowElements(int new_capacity);
-  // Returns true if the backing storage for the slow-case elements of
-  // this object takes up nearly as much space as a fast-case backing
-  // storage would.  In that case the JSObject should have fast
-  // elements.
-  bool ShouldConvertToFastElements();
+  // Do we want to keep fast elements when adding an element at |index|?
+  // Returns |new_capacity| indicating to which capacity the object should be
+  // increased.
+  bool ShouldConvertToSlowElements(uint32_t capacity, uint32_t index,
+                                   uint32_t* new_capacity);
   ElementsKind BestFittingFastElementsKind();
 
   // Computes the new capacity when expanding the elements of a JSObject.
@@ -6228,7 +6225,6 @@ class Map: public HeapObject {
       Handle<LayoutDescriptor> layout_descriptor);
 
  private:
-  static void ConnectElementsTransition(Handle<Map> parent, Handle<Map> child);
   static void ConnectTransition(Handle<Map> parent, Handle<Map> child,
                                 Handle<Name> name, SimpleTransitionFlag flag);
 
@@ -6265,9 +6261,6 @@ class Map: public HeapObject {
   // This includes adding transitions to the leaf map or changing
   // the descriptor array.
   inline void NotifyLeafMapLayoutChange();
-
-  static Handle<Map> TransitionElementsToSlow(Handle<Map> object,
-                                              ElementsKind to_kind);
 
   void DeprecateTransitionTree();
   bool DeprecateTarget(PropertyKind kind, Name* key,
@@ -10168,10 +10161,6 @@ class JSArray: public JSObject {
   // Overload the length setter to skip write barrier when the length
   // is set to a smi. This matches the set function on FixedArray.
   inline void set_length(Smi* length);
-
-  static void JSArrayUpdateLengthFromIndex(Handle<JSArray> array,
-                                           uint32_t index,
-                                           Handle<Object> value);
 
   static bool HasReadOnlyLength(Handle<JSArray> array);
   static bool WouldChangeReadOnlyLength(Handle<JSArray> array, uint32_t index);

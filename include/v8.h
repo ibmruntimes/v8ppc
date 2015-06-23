@@ -3000,6 +3000,16 @@ class V8_EXPORT Array : public Object {
 class V8_EXPORT Map : public Object {
  public:
   size_t Size() const;
+  void Clear();
+  V8_WARN_UNUSED_RESULT MaybeLocal<Value> Get(Local<Context> context,
+                                              Local<Value> key);
+  V8_WARN_UNUSED_RESULT MaybeLocal<Map> Set(Local<Context> context,
+                                            Local<Value> key,
+                                            Local<Value> value);
+  V8_WARN_UNUSED_RESULT Maybe<bool> Has(Local<Context> context,
+                                        Local<Value> key);
+  V8_WARN_UNUSED_RESULT Maybe<bool> Delete(Local<Context> context,
+                                           Local<Value> key);
 
   /**
    * Returns an array of length Size() * 2, where index N is the Nth key and
@@ -3034,6 +3044,13 @@ class V8_EXPORT Map : public Object {
 class V8_EXPORT Set : public Object {
  public:
   size_t Size() const;
+  void Clear();
+  V8_WARN_UNUSED_RESULT MaybeLocal<Set> Add(Local<Context> context,
+                                            Local<Value> key);
+  V8_WARN_UNUSED_RESULT Maybe<bool> Has(Local<Context> context,
+                                        Local<Value> key);
+  V8_WARN_UNUSED_RESULT Maybe<bool> Delete(Local<Context> context,
+                                           Local<Value> key);
 
   /**
    * Returns an array of the keys in this Set.
@@ -5941,7 +5958,7 @@ class V8_EXPORT Isolate {
   void SetObjectGroupId(internal::Object** object, UniqueId id);
   void SetReferenceFromGroup(UniqueId id, internal::Object** object);
   void SetReference(internal::Object** parent, internal::Object** child);
-  void CollectAllGarbage(const char* gc_reason);
+  void CollectGarbage(const char* gc_reason);
 };
 
 class V8_EXPORT StartupData {
@@ -8253,7 +8270,7 @@ int64_t Isolate::AdjustAmountOfExternalAllocatedMemory(
   if (change_in_bytes > 0 &&
       amount - *amount_of_external_allocated_memory_at_last_global_gc >
           I::kExternalAllocationLimit) {
-    CollectAllGarbage("external memory allocation limit reached.");
+    CollectGarbage("external memory allocation limit reached.");
   }
   *amount_of_external_allocated_memory = amount;
   return *amount_of_external_allocated_memory;
