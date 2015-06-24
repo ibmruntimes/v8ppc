@@ -875,7 +875,7 @@ void PatchInlinedSmiCode(Address address, InlinedSmiCheck check) {
   } else {
     DCHECK(check == DISABLE_INLINED_SMI_CHECK);
 #if V8_TARGET_ARCH_PPC64
-    DCHECK(Assembler::IsRldicl(instr_at_patch));
+    DCHECK(Assembler::IsAndi(instr_at_patch));
 #else
     DCHECK(Assembler::IsRlwinm(instr_at_patch));
 #endif
