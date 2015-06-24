@@ -13,12 +13,13 @@ namespace internal {
 namespace compiler {
 
 // Forward declarations.
-class LazyTypeCache;
+class TyperCache;
 
 
 class Typer {
  public:
-  Typer(Isolate* isolate, Graph* graph, MaybeHandle<Context> context);
+  Typer(Isolate* isolate, Graph* graph, Type::FunctionType* function_type,
+        MaybeHandle<Context> context);
   ~Typer();
 
   void Run();
@@ -33,23 +34,21 @@ class Typer {
   MaybeHandle<Context> context() const { return context_; }
   Zone* zone() const { return graph()->zone(); }
   Isolate* isolate() const { return isolate_; }
+  Type::FunctionType* function_type() const { return function_type_; }
 
   Isolate* const isolate_;
   Graph* const graph_;
+  Type::FunctionType* function_type_;
   MaybeHandle<Context> const context_;
   Decorator* decorator_;
+  TyperCache const& cache_;
 
   Type* singleton_false_;
   Type* singleton_true_;
-  Type* singleton_zero_;
-  Type* singleton_one_;
-  Type* zero_or_one_;
-  Type* zeroish_;
   Type* signed32ish_;
   Type* unsigned32ish_;
   Type* falsish_;
   Type* truish_;
-  LazyTypeCache* const cache_;
 
   DISALLOW_COPY_AND_ASSIGN(Typer);
 };
