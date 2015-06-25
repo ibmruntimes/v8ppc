@@ -70,9 +70,7 @@ BreakLocation::BreakLocation(Handle<DebugInfo> debug_info, RelocInfo* rinfo,
       data_(rinfo->data()),
       original_data_(original_rinfo->data()),
       position_(position),
-      statement_position_(statement_position) {
-  DCHECK(debug_info_->GetIsolate()->debug()->is_active());
-}
+      statement_position_(statement_position) {}
 
 
 BreakLocation::Iterator::Iterator(Handle<DebugInfo> debug_info,
@@ -2081,7 +2079,7 @@ Handle<Object> Debug::FindSharedFunctionInfoInScript(Handle<Script> script,
       // If the candidate is not compiled, compile it to reveal any inner
       // functions which might contain the requested source position. This
       // will compile all inner functions that cannot be compiled without a
-      // context, because Compiler::BuildFunctionInfo checks whether the
+      // context, because Compiler::GetSharedFunctionInfo checks whether the
       // debugger is active.
       MaybeHandle<Code> maybe_result = target_function.is_null()
           ? Compiler::GetUnoptimizedCode(target)

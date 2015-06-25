@@ -1538,8 +1538,10 @@ void SerializationData::WriteTag(SerializationTag tag) { data.Add(tag); }
 
 
 void SerializationData::WriteMemory(const void* p, int length) {
-  i::Vector<uint8_t> block = data.AddBlock(0, length);
-  memcpy(&block[0], p, length);
+  if (length > 0) {
+    i::Vector<uint8_t> block = data.AddBlock(0, length);
+    memcpy(&block[0], p, length);
+  }
 }
 
 
@@ -1970,7 +1972,6 @@ bool Shell::SerializeValue(Isolate* isolate, Handle<Value> value,
                            ObjectList* seen_objects,
                            SerializationData* out_data) {
   DCHECK(out_data);
-  HandleScope scope(isolate);
   Local<Context> context = isolate->GetCurrentContext();
 
   if (value->IsUndefined()) {

@@ -875,16 +875,23 @@ class AccessorPair;
 class AllocationSite;
 class AllocationSiteCreationContext;
 class AllocationSiteUsageContext;
+class Cell;
 class ConsString;
 class DictionaryElementsAccessor;
 class ElementsAccessor;
 class FixedArrayBase;
 class FunctionLiteral;
 class GlobalObject;
+class JSBuiltinsObject;
 class LayoutDescriptor;
 class LookupIterator;
+class ObjectHashTable;
 class ObjectVisitor;
+class PropertyCell;
+class SafepointEntry;
+class SharedFunctionInfo;
 class StringStream;
+class TypeFeedbackInfo;
 class TypeFeedbackVector;
 class WeakCell;
 
@@ -1733,9 +1740,6 @@ class JSReceiver: public HeapObject {
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSReceiver);
 };
 
-// Forward declaration for JSObject::GetOrCreateHiddenPropertiesHashTable.
-class ObjectHashTable;
-
 
 // The JSObject describes real heap allocated JavaScript objects with
 // properties.
@@ -1899,9 +1903,6 @@ class JSObject: public JSReceiver {
   static void SetNormalizedProperty(Handle<JSObject> object, Handle<Name> name,
                                     Handle<Object> value,
                                     PropertyDetails details);
-  static void AddDictionaryElement(Handle<JSObject> object, uint32_t index,
-                                   Handle<Object> value,
-                                   PropertyAttributes attributes);
   static void SetDictionaryElement(Handle<JSObject> object, uint32_t index,
                                    Handle<Object> value,
                                    PropertyAttributes attributes);
@@ -2011,12 +2012,6 @@ class JSObject: public JSReceiver {
   // an access at key?
   bool WouldConvertToSlowElements(uint32_t index);
   inline bool WouldConvertToSlowElements(Handle<Object> key);
-  // Do we want to keep fast elements when adding an element at |index|?
-  // Returns |new_capacity| indicating to which capacity the object should be
-  // increased.
-  bool ShouldConvertToSlowElements(uint32_t capacity, uint32_t index,
-                                   uint32_t* new_capacity);
-  ElementsKind BestFittingFastElementsKind();
 
   // Computes the new capacity when expanding the elements of a JSObject.
   static uint32_t NewElementsCapacity(uint32_t old_capacity) {
@@ -2285,6 +2280,9 @@ class JSObject: public JSReceiver {
       Handle<JSObject> object, const char* type, Handle<Name> name,
       Handle<Object> old_value);
 
+  // Gets the current elements capacity and the number of used elements.
+  void GetElementsCapacityAndUsage(int* capacity, int* used);
+
  private:
   friend class DictionaryElementsAccessor;
   friend class JSReceiver;
@@ -2318,12 +2316,6 @@ class JSObject: public JSReceiver {
   bool ReferencesObjectFromElements(FixedArray* elements,
                                     ElementsKind kind,
                                     Object* object);
-
-  // Returns true if most of the elements backing storage is used.
-  bool HasDenseElements();
-
-  // Gets the current elements capacity and the number of used elements.
-  void GetElementsCapacityAndUsage(int* capacity, int* used);
 
   static bool CanSetCallback(Handle<JSObject> object, Handle<Name> name);
   static void SetElementCallback(Handle<JSObject> object,
@@ -4846,12 +4838,6 @@ class HandlerTable : public FixedArray {
 };
 
 
-// Forward declaration.
-class Cell;
-class PropertyCell;
-class SafepointEntry;
-class TypeFeedbackInfo;
-
 // Code describes objects with on-the-fly generated machine code.
 class Code: public HeapObject {
  public:
@@ -5081,7 +5067,7 @@ class Code: public HeapObject {
   inline bool back_edges_patched_for_osr();
 
   // [to_boolean_foo]: For kind TO_BOOLEAN_IC tells what state the stub is in.
-  inline byte to_boolean_state();
+  inline uint16_t to_boolean_state();
 
   // [has_function_cache]: For kind STUB tells whether there is a function
   // cache is passed to the stub.
@@ -6415,6 +6401,10 @@ class Script: public Struct {
   // function from which eval was called where eval was called.
   DECL_ACCESSORS(eval_from_instructions_offset, Smi)
 
+  // [shared_function_infos]: weak fixed array containing all shared
+  // function infos created from this script.
+  DECL_ACCESSORS(shared_function_infos, Object)
+
   // [flags]: Holds an exciting bitfield.
   DECL_ACCESSORS(flags, Smi)
 
@@ -6462,6 +6452,10 @@ class Script: public Struct {
   // Get the JS object wrapping the given script; create it if none exists.
   static Handle<JSObject> GetWrapper(Handle<Script> script);
 
+  // Look through the list of existing shared function infos to find one
+  // that matches the function literal.  Return empty handle if not found.
+  MaybeHandle<SharedFunctionInfo> FindSharedFunctionInfo(FunctionLiteral* fun);
+
   // Dispatched behavior.
   DECLARE_PRINTER(Script)
   DECLARE_VERIFIER(Script)
@@ -6478,8 +6472,9 @@ class Script: public Struct {
   static const int kEvalFromSharedOffset = kIdOffset + kPointerSize;
   static const int kEvalFrominstructionsOffsetOffset =
       kEvalFromSharedOffset + kPointerSize;
-  static const int kFlagsOffset =
+  static const int kSharedFunctionInfosOffset =
       kEvalFrominstructionsOffsetOffset + kPointerSize;
+  static const int kFlagsOffset = kSharedFunctionInfosOffset + kPointerSize;
   static const int kSourceUrlOffset = kFlagsOffset + kPointerSize;
   static const int kSourceMappingUrlOffset = kSourceUrlOffset + kPointerSize;
   static const int kSize = kSourceMappingUrlOffset + kPointerSize;
@@ -6558,6 +6553,14 @@ enum BuiltinFunctionId {
 };
 
 
+// Result of searching in an optimized code map of a SharedFunctionInfo. Note
+// that {code == nullptr} indicates that no entry has been found.
+struct CodeAndLiterals {
+  Code* code;            // Cached optimized code.
+  FixedArray* literals;  // Cached literals array.
+};
+
+
 // SharedFunctionInfo describes the JSFunction information that can be
 // shared by multiple instances of the function.
 class SharedFunctionInfo: public HeapObject {
@@ -6573,16 +6576,10 @@ class SharedFunctionInfo: public HeapObject {
   // and a shared literals array or Smi(0) if none.
   DECL_ACCESSORS(optimized_code_map, Object)
 
-  // Returns index i of the entry with the specified context and OSR entry.
-  // At position i - 1 is the context, position i the code, and i + 1 the
-  // literals array.  Returns -1 when no matching entry is found.
-  int SearchOptimizedCodeMap(Context* native_context, BailoutId osr_ast_id);
-
-  // Installs optimized code from the code map on the given closure. The
-  // index has to be consistent with a search result as defined above.
-  FixedArray* GetLiteralsFromOptimizedCodeMap(int index);
-
-  Code* GetCodeFromOptimizedCodeMap(int index);
+  // Returns entry from optimized code map for specified context and OSR entry.
+  // Note that {code == nullptr} indicates no matching entry has been found.
+  CodeAndLiterals SearchOptimizedCodeMap(Context* native_context,
+                                         BailoutId osr_ast_id);
 
   // Clear optimized code map.
   void ClearOptimizedCodeMap();
@@ -6609,6 +6606,11 @@ class SharedFunctionInfo: public HeapObject {
                                     Handle<Code> code,
                                     Handle<FixedArray> literals,
                                     BailoutId osr_ast_id);
+
+  // Set up the link between shared function info and the script. The shared
+  // function info is added to the list on the script.
+  static void SetScript(Handle<SharedFunctionInfo> shared,
+                        Handle<Object> script_object);
 
   // Layout description of the optimized code map.
   static const int kNextMapIndex = 0;
@@ -6822,6 +6824,9 @@ class SharedFunctionInfo: public HeapObject {
 
   // Indicates that the the shared function info is deserialized from cache.
   DECL_BOOLEAN_ACCESSORS(deserialized)
+
+  // Indicates that the the shared function info has never been compiled before.
+  DECL_BOOLEAN_ACCESSORS(never_compiled)
 
   inline FunctionKind kind();
   inline void set_kind(FunctionKind kind);
@@ -7094,6 +7099,7 @@ class SharedFunctionInfo: public HeapObject {
     kInClassLiteral,
     kIsAsmFunction,
     kDeserialized,
+    kNeverCompiled,
     kCompilerHintsCount  // Pseudo entry
   };
   // Add hints for other modes when they're added.
@@ -7510,9 +7516,6 @@ class JSGlobalProxy : public JSObject {
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSGlobalProxy);
 };
 
-
-// Forward declaration.
-class JSBuiltinsObject;
 
 // Common super class for JavaScript global objects and the special
 // builtins global objects.

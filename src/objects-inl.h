@@ -4683,9 +4683,7 @@ bool Code::back_edges_patched_for_osr() {
 }
 
 
-byte Code::to_boolean_state() {
-  return extra_ic_state();
-}
+uint16_t Code::to_boolean_state() { return extra_ic_state(); }
 
 
 bool Code::has_function_cache() {
@@ -5146,6 +5144,7 @@ ACCESSORS(Script, line_ends, Object, kLineEndsOffset)
 ACCESSORS(Script, eval_from_shared, Object, kEvalFromSharedOffset)
 ACCESSORS_TO_SMI(Script, eval_from_instructions_offset,
                  kEvalFrominstructionsOffsetOffset)
+ACCESSORS(Script, shared_function_infos, Object, kSharedFunctionInfosOffset)
 ACCESSORS_TO_SMI(Script, flags, kFlagsOffset)
 ACCESSORS(Script, source_url, Object, kSourceUrlOffset)
 ACCESSORS(Script, source_mapping_url, Object, kSourceMappingUrlOffset)
@@ -5240,6 +5239,8 @@ BOOL_ACCESSORS(SharedFunctionInfo,
                kHasDuplicateParameters)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, asm_function, kIsAsmFunction)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, deserialized, kDeserialized)
+BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, never_compiled,
+               kNeverCompiled)
 
 
 #if V8_HOST_ARCH_32_BIT
@@ -5486,6 +5487,8 @@ void SharedFunctionInfo::ReplaceCode(Code* value) {
   DCHECK(code()->gc_metadata() == NULL && value->gc_metadata() == NULL);
 
   set_code(value);
+
+  if (is_compiled()) set_never_compiled(false);
 }
 
 

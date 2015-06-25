@@ -1095,8 +1095,8 @@ void AstGraphBuilder::VisitFunctionDeclaration(FunctionDeclaration* decl) {
   Variable* variable = decl->proxy()->var();
   switch (variable->location()) {
     case Variable::UNALLOCATED: {
-      Handle<SharedFunctionInfo> function =
-          Compiler::BuildFunctionInfo(decl->fun(), info()->script(), info());
+      Handle<SharedFunctionInfo> function = Compiler::GetSharedFunctionInfo(
+          decl->fun(), info()->script(), info());
       // Check for stack-overflow exception.
       if (function.is_null()) return SetStackOverflow();
       globals()->push_back(variable->name());
@@ -1519,14 +1519,10 @@ void AstGraphBuilder::VisitDebuggerStatement(DebuggerStatement* stmt) {
 void AstGraphBuilder::VisitFunctionLiteral(FunctionLiteral* expr) {
   Node* context = current_context();
 
-  // Build a new shared function info if we cannot find one in the baseline
-  // code. We also have a stack overflow if the recursive compilation did.
-  expr->InitializeSharedInfo(handle(info()->shared_info()->code()));
-  Handle<SharedFunctionInfo> shared_info = expr->shared_info();
-  if (shared_info.is_null()) {
-    shared_info = Compiler::BuildFunctionInfo(expr, info()->script(), info());
-    CHECK(!shared_info.is_null());  // TODO(mstarzinger): Set stack overflow?
-  }
+  // Find or build a shared function info.
+  Handle<SharedFunctionInfo> shared_info =
+      Compiler::GetSharedFunctionInfo(expr, info()->script(), info());
+  CHECK(!shared_info.is_null());  // TODO(mstarzinger): Set stack overflow?
 
   // Create node to instantiate a new closure.
   PretenureFlag pretenure = expr->pretenure() ? TENURED : NOT_TENURED;
@@ -2360,7 +2356,7 @@ void AstGraphBuilder::VisitCall(Call* expr) {
       callee_value = NewNode(common()->Projection(0), pair);
       receiver_value = NewNode(common()->Projection(1), pair);
 
-      PrepareFrameState(pair, expr->LookupId(),
+      PrepareFrameState(pair, expr->EvalOrLookupId(),
                         OutputFrameStateCombine::Push(2));
       break;
     }
@@ -2428,18 +2424,6 @@ void AstGraphBuilder::VisitCall(Call* expr) {
       break;
     case Call::POSSIBLY_EVAL_CALL:
       possibly_eval = true;
-      if (callee->AsVariableProxy()->var()->IsLookupSlot()) {
-        Variable* variable = callee->AsVariableProxy()->var();
-        Node* name = jsgraph()->Constant(variable->name());
-        const Operator* op =
-            javascript()->CallRuntime(Runtime::kLoadLookupSlot, 2);
-        Node* pair = NewNode(op, current_context(), name);
-        callee_value = NewNode(common()->Projection(0), pair);
-        receiver_value = NewNode(common()->Projection(1), pair);
-        PrepareFrameState(pair, expr->LookupId(),
-                          OutputFrameStateCombine::Push(2));
-        break;
-      }
     // Fall through.
     case Call::OTHER_CALL:
       VisitForValue(callee);
@@ -2475,7 +2459,7 @@ void AstGraphBuilder::VisitCall(Call* expr) {
         javascript()->CallRuntime(Runtime::kResolvePossiblyDirectEval, 5);
     Node* new_callee =
         NewNode(op, callee, source, function, language, position);
-    PrepareFrameState(new_callee, expr->EvalId(),
+    PrepareFrameState(new_callee, expr->EvalOrLookupId(),
                       OutputFrameStateCombine::PokeAt(arg_count + 1));
 
     // Patch callee on the environment.

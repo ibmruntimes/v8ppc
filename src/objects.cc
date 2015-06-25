@@ -9590,7 +9590,7 @@ void SharedFunctionInfo::AddToOptimizedCodeMap(
   } else {
     // Copy old map and append one new entry.
     Handle<FixedArray> old_code_map = Handle<FixedArray>::cast(value);
-    DCHECK_EQ(-1, shared->SearchOptimizedCodeMap(*native_context, osr_ast_id));
+    DCHECK(!shared->SearchOptimizedCodeMap(*native_context, osr_ast_id).code);
     old_length = old_code_map->length();
     new_code_map = FixedArray::CopySize(
         old_code_map, old_length + kEntryLength);
@@ -9617,27 +9617,6 @@ void SharedFunctionInfo::AddToOptimizedCodeMap(
   }
 #endif
   shared->set_optimized_code_map(*new_code_map);
-}
-
-
-FixedArray* SharedFunctionInfo::GetLiteralsFromOptimizedCodeMap(int index) {
-  DCHECK(index > kEntriesStart);
-  FixedArray* code_map = FixedArray::cast(optimized_code_map());
-  if (!bound()) {
-    FixedArray* cached_literals = FixedArray::cast(code_map->get(index + 1));
-    DCHECK_NOT_NULL(cached_literals);
-    return cached_literals;
-  }
-  return NULL;
-}
-
-
-Code* SharedFunctionInfo::GetCodeFromOptimizedCodeMap(int index) {
-  DCHECK(index > kEntriesStart);
-  FixedArray* code_map = FixedArray::cast(optimized_code_map());
-  Code* code = Code::cast(code_map->get(index));
-  DCHECK_NOT_NULL(code);
-  return code;
 }
 
 
@@ -10404,6 +10383,55 @@ Handle<JSObject> Script::GetWrapper(Handle<Script> script) {
 }
 
 
+MaybeHandle<SharedFunctionInfo> Script::FindSharedFunctionInfo(
+    FunctionLiteral* fun) {
+  if (shared_function_infos()->IsWeakFixedArray()) {
+    WeakFixedArray* array = WeakFixedArray::cast(shared_function_infos());
+    for (int i = 0; i < array->Length(); i++) {
+      Object* obj = array->Get(i);
+      if (!obj->IsSharedFunctionInfo()) continue;
+      SharedFunctionInfo* shared = SharedFunctionInfo::cast(obj);
+      if (fun->function_token_position() == shared->function_token_position() &&
+          fun->start_position() == shared->start_position()) {
+        return Handle<SharedFunctionInfo>(shared);
+      }
+    }
+  }
+  return MaybeHandle<SharedFunctionInfo>();
+}
+
+
+void SharedFunctionInfo::SetScript(Handle<SharedFunctionInfo> shared,
+                                   Handle<Object> script_object) {
+  if (shared->script() == *script_object) return;
+  // Remove shared function info from old script's list.
+  if (shared->script()->IsScript()) {
+    Script* old_script = Script::cast(shared->script());
+    if (old_script->shared_function_infos()->IsWeakFixedArray()) {
+      WeakFixedArray* list =
+          WeakFixedArray::cast(old_script->shared_function_infos());
+      list->Remove(shared);
+    }
+  }
+  // Add shared function info to new script's list.
+  if (script_object->IsScript()) {
+    Handle<Script> script = Handle<Script>::cast(script_object);
+    Handle<Object> list(script->shared_function_infos(), shared->GetIsolate());
+#ifdef DEBUG
+    bool found = false;
+    list = WeakFixedArray::Add(list, shared, WeakFixedArray::kAddIfNotFound,
+                               &found);
+    CHECK(!found);
+#else
+    list = WeakFixedArray::Add(list, shared, WeakFixedArray::kAlwaysAdd);
+#endif  // DEBUG
+    script->set_shared_function_infos(*list);
+  }
+  // Finally set new script.
+  shared->set_script(*script_object);
+}
+
+
 String* SharedFunctionInfo::DebugName() {
   Object* n = name();
   if (!n->IsString() || String::cast(n)->length() == 0) return inferred_name();
@@ -10615,11 +10643,10 @@ void SharedFunctionInfo::ResetForNewContext(int new_ic_age) {
 }
 
 
-int SharedFunctionInfo::SearchOptimizedCodeMap(Context* native_context,
-                                               BailoutId osr_ast_id) {
+CodeAndLiterals SharedFunctionInfo::SearchOptimizedCodeMap(
+    Context* native_context, BailoutId osr_ast_id) {
   DisallowHeapAllocation no_gc;
   DCHECK(native_context->IsNativeContext());
-  if (!FLAG_cache_optimized_code) return -1;
   Object* value = optimized_code_map();
   if (!value->IsSmi()) {
     FixedArray* optimized_code_map = FixedArray::cast(value);
@@ -10628,7 +10655,8 @@ int SharedFunctionInfo::SearchOptimizedCodeMap(Context* native_context,
     for (int i = kEntriesStart; i < length; i += kEntryLength) {
       if (optimized_code_map->get(i + kContextOffset) == native_context &&
           optimized_code_map->get(i + kOsrAstIdOffset) == osr_ast_id_smi) {
-        return i + kCachedCodeOffset;
+        return {Code::cast(optimized_code_map->get(i + kCachedCodeOffset)),
+                FixedArray::cast(optimized_code_map->get(i + kLiteralsOffset))};
       }
     }
     if (FLAG_trace_opt) {
@@ -10637,7 +10665,7 @@ int SharedFunctionInfo::SearchOptimizedCodeMap(Context* native_context,
       PrintF("]\n");
     }
   }
-  return -1;
+  return {nullptr, nullptr};
 }
 
 
@@ -12288,113 +12316,12 @@ void JSObject::ValidateElements(Handle<JSObject> object) {
 }
 
 
-void JSObject::SetDictionaryArgumentsElement(Handle<JSObject> object,
-                                             uint32_t index,
-                                             Handle<Object> value,
-                                             PropertyAttributes attributes) {
-  // TODO(verwaest): Handle with the elements accessor.
-  Isolate* isolate = object->GetIsolate();
-
-  DCHECK(object->HasDictionaryArgumentsElements());
-
-  Handle<FixedArray> parameter_map(FixedArray::cast(object->elements()));
-  uint32_t length = parameter_map->length();
-  Handle<Object> probe =
-      index < length - 2
-          ? handle(parameter_map->get(index + 2), isolate)
-          : Handle<Object>::cast(isolate->factory()->the_hole_value());
-  if (!probe->IsTheHole()) {
-    Handle<Context> context(Context::cast(parameter_map->get(0)));
-    int context_index = Handle<Smi>::cast(probe)->value();
-    DCHECK(!context->get(context_index)->IsTheHole());
-    context->set(context_index, *value);
-
-    DCHECK_NE(NONE, attributes);
-
-    // Redefining attributes of an aliased element destroys fast aliasing.
-    parameter_map->set_the_hole(index + 2);
-    // For elements that are still writable we re-establish slow aliasing.
-    if ((attributes & READ_ONLY) == 0) {
-      value = isolate->factory()->NewAliasedArgumentsEntry(context_index);
-    }
-    AddDictionaryElement(object, index, value, attributes);
-  } else {
-    SetDictionaryElement(object, index, value, attributes);
-  }
-}
-
-
-void JSObject::SetDictionaryElement(Handle<JSObject> object, uint32_t index,
-                                    Handle<Object> value,
-                                    PropertyAttributes attributes) {
-  // TODO(verwaest): Handle with the elements accessor.
-  Isolate* isolate = object->GetIsolate();
-
-  // Insert element in the dictionary.
-  Handle<FixedArray> elements(FixedArray::cast(object->elements()));
-  bool is_arguments =
-      (elements->map() == isolate->heap()->sloppy_arguments_elements_map());
-
-  DCHECK(object->HasDictionaryElements() ||
-         object->HasDictionaryArgumentsElements());
-
-  Handle<SeededNumberDictionary> dictionary(is_arguments
-    ? SeededNumberDictionary::cast(elements->get(1))
-    : SeededNumberDictionary::cast(*elements));
-
-  int entry = dictionary->FindEntry(index);
-  DCHECK_NE(SeededNumberDictionary::kNotFound, entry);
-
-  PropertyDetails details = dictionary->DetailsAt(entry);
-  details = PropertyDetails(attributes, DATA, details.dictionary_index(),
-                            PropertyCellType::kNoCell);
-  dictionary->DetailsAtPut(entry, details);
-
-  // Elements of the arguments object in slow mode might be slow aliases.
-  if (is_arguments) {
-    Handle<Object> element(dictionary->ValueAt(entry), isolate);
-    if (element->IsAliasedArgumentsEntry()) {
-      Handle<AliasedArgumentsEntry> entry =
-          Handle<AliasedArgumentsEntry>::cast(element);
-      Handle<Context> context(Context::cast(elements->get(0)));
-      int context_index = entry->aliased_context_slot();
-      DCHECK(!context->get(context_index)->IsTheHole());
-      context->set(context_index, *value);
-      // For elements that are still writable we keep slow aliasing.
-      if (!details.IsReadOnly()) value = element;
-    }
-  }
-
-  dictionary->ValueAtPut(entry, *value);
-}
-
-
-static bool ShouldConvertToFastElements(SeededNumberDictionary* dictionary,
-                                        uint32_t array_size) {
-  // If properties with non-standard attributes or accessors were added, we
-  // cannot go back to fast elements.
-  if (dictionary->requires_slow_elements()) return false;
-  uint32_t dictionary_size = static_cast<uint32_t>(dictionary->Capacity()) *
-                             SeededNumberDictionary::kEntrySize;
-  return 2 * dictionary_size >= array_size;
-}
-
-
-void JSObject::AddDictionaryElement(Handle<JSObject> object, uint32_t index,
-                                    Handle<Object> value,
-                                    PropertyAttributes attributes) {
-  // TODO(verwaest): Handle with the elements accessor.
-  // Insert element in the dictionary.
-  DCHECK(object->HasDictionaryElements() ||
-         object->HasDictionaryArgumentsElements());
-  DCHECK(object->map()->is_extensible());
-
-  Handle<FixedArray> elements(FixedArray::cast(object->elements()));
-  bool is_arguments = object->HasSloppyArgumentsElements();
-  Handle<SeededNumberDictionary> dictionary(
-      is_arguments ? SeededNumberDictionary::cast(elements->get(1))
-                   : SeededNumberDictionary::cast(*elements));
-
+static void AddDictionaryElement(Handle<JSObject> object,
+                                 Handle<SeededNumberDictionary> dictionary,
+                                 uint32_t index, Handle<Object> value,
+                                 PropertyAttributes attributes) {
+// TODO(verwaest): Handle with the elements accessor.
+// Insert element in the dictionary.
 #ifdef DEBUG
   int entry = dictionary->FindEntry(index);
   DCHECK_EQ(SeededNumberDictionary::kNotFound, entry);
@@ -12404,40 +12331,12 @@ void JSObject::AddDictionaryElement(Handle<JSObject> object, uint32_t index,
   Handle<SeededNumberDictionary> new_dictionary =
       SeededNumberDictionary::AddNumberEntry(dictionary, index, value, details);
 
-  if (*dictionary != *new_dictionary) {
-    if (is_arguments) {
-      elements->set(1, *new_dictionary);
-    } else {
-      object->set_elements(*new_dictionary);
-    }
-  }
+  if (*dictionary == *new_dictionary) return;
 
-  uint32_t length = 0;
-  if (object->IsJSArray()) {
-    CHECK(JSArray::cast(*object)->length()->ToArrayLength(&length));
-    if (index >= length) {
-      length = index + 1;
-      Isolate* isolate = object->GetIsolate();
-      Handle<Object> length_obj = isolate->factory()->NewNumberFromUint(length);
-      JSArray::cast(*object)->set_length(*length_obj);
-    }
-  } else if (!new_dictionary->requires_slow_elements()) {
-    length = new_dictionary->max_number_key() + 1;
-  }
-
-  // Attempt to put this object back in fast case.
-  if (object->HasDenseElements() &&
-      ShouldConvertToFastElements(*new_dictionary, length)) {
-    ElementsKind to_kind = object->BestFittingFastElementsKind();
-    ElementsAccessor* accessor = ElementsAccessor::ForKind(to_kind);
-    accessor->GrowCapacityAndConvert(object, length);
-#ifdef DEBUG
-    if (FLAG_trace_normalization) {
-      OFStream os(stdout);
-      os << "Object elements are fast case again:\n";
-      object->Print(os);
-    }
-#endif
+  if (object->HasSloppyArgumentsElements()) {
+    FixedArray::cast(object->elements())->set(1, *new_dictionary);
+  } else {
+    object->set_elements(*new_dictionary);
   }
 }
 
@@ -12454,16 +12353,9 @@ MaybeHandle<Object> JSReceiver::SetElement(Handle<JSReceiver> object,
 
 static void AddFastElement(Handle<JSObject> object, uint32_t index,
                            Handle<Object> value, ElementsKind from_kind,
-                           uint32_t capacity, uint32_t new_capacity) {
-  // Check if the length property of this object needs to be updated.
-  uint32_t array_length = 0;
-  bool introduces_holes = true;
-  if (object->IsJSArray()) {
-    CHECK(JSArray::cast(*object)->length()->ToArrayLength(&array_length));
-    introduces_holes = index > array_length;
-  } else {
-    introduces_holes = index >= capacity;
-  }
+                           uint32_t array_length, uint32_t capacity,
+                           uint32_t new_capacity) {
+  bool introduces_holes = !object->IsJSArray() || index > array_length;
 
   ElementsKind to_kind = value->OptimalElementsKind();
   if (IsHoleyElementsKind(from_kind)) to_kind = GetHoleyElementsKind(to_kind);
@@ -12473,7 +12365,9 @@ static void AddFastElement(Handle<JSObject> object, uint32_t index,
   ElementsAccessor* accessor = ElementsAccessor::ForKind(to_kind);
 
   // Increase backing store capacity if that's been decided previously.
-  if (capacity != new_capacity || IsDictionaryElementsKind(from_kind) ||
+  // The capacity is indicated as 0 if the incoming object was dictionary or
+  // slow-mode sloppy arguments.
+  if (capacity != new_capacity ||
       IsFastDoubleElementsKind(from_kind) !=
           IsFastDoubleElementsKind(to_kind)) {
     accessor->GrowCapacityAndConvert(object, new_capacity);
@@ -12481,11 +12375,95 @@ static void AddFastElement(Handle<JSObject> object, uint32_t index,
     JSObject::TransitionElementsKind(object, to_kind);
   }
 
-  if (object->IsJSArray() && index >= array_length) {
-    Handle<JSArray>::cast(object)->set_length(Smi::FromInt(index + 1));
-  }
-
   accessor->Set(object->elements(), index, *value);
+}
+
+
+// Do we want to keep fast elements when adding an element at |index|? Returns
+// |new_capacity| indicating to which capacity the object should be increased.
+static bool ShouldConvertToSlowElements(JSObject* object, uint32_t capacity,
+                                        uint32_t index,
+                                        uint32_t* new_capacity) {
+  STATIC_ASSERT(JSObject::kMaxUncheckedOldFastElementsLength <=
+                JSObject::kMaxUncheckedFastElementsLength);
+  if (index < capacity) {
+    *new_capacity = capacity;
+    return false;
+  }
+  if (index - capacity >= JSObject::kMaxGap) return true;
+  *new_capacity = JSObject::NewElementsCapacity(index + 1);
+  DCHECK_LT(index, *new_capacity);
+  if (*new_capacity <= JSObject::kMaxUncheckedOldFastElementsLength ||
+      (*new_capacity <= JSObject::kMaxUncheckedFastElementsLength &&
+       object->GetHeap()->InNewSpace(object))) {
+    return false;
+  }
+  // If the fast-case backing storage takes up roughly three times as
+  // much space (in machine words) as a dictionary backing storage
+  // would, the object should have slow elements.
+  int old_capacity = 0;
+  int used_elements = 0;
+  object->GetElementsCapacityAndUsage(&old_capacity, &used_elements);
+  int dictionary_size = SeededNumberDictionary::ComputeCapacity(used_elements) *
+                        SeededNumberDictionary::kEntrySize;
+  return 3 * static_cast<uint32_t>(dictionary_size) <= *new_capacity;
+}
+
+
+bool JSObject::WouldConvertToSlowElements(uint32_t index) {
+  if (HasFastElements()) {
+    Handle<FixedArrayBase> backing_store(FixedArrayBase::cast(elements()));
+    uint32_t capacity = static_cast<uint32_t>(backing_store->length());
+    uint32_t new_capacity;
+    return ShouldConvertToSlowElements(this, capacity, index, &new_capacity);
+  }
+  return false;
+}
+
+
+static ElementsKind BestFittingFastElementsKind(JSObject* object) {
+  if (object->HasSloppyArgumentsElements()) return SLOPPY_ARGUMENTS_ELEMENTS;
+  DCHECK(object->HasDictionaryElements());
+  SeededNumberDictionary* dictionary = object->element_dictionary();
+  ElementsKind kind = FAST_HOLEY_SMI_ELEMENTS;
+  for (int i = 0; i < dictionary->Capacity(); i++) {
+    Object* key = dictionary->KeyAt(i);
+    if (key->IsNumber()) {
+      Object* value = dictionary->ValueAt(i);
+      if (!value->IsNumber()) return FAST_HOLEY_ELEMENTS;
+      if (!value->IsSmi()) {
+        if (!FLAG_unbox_double_arrays) return FAST_HOLEY_ELEMENTS;
+        kind = FAST_HOLEY_DOUBLE_ELEMENTS;
+      }
+    }
+  }
+  return kind;
+}
+
+
+static bool ShouldConvertToFastElements(JSObject* object,
+                                        SeededNumberDictionary* dictionary,
+                                        uint32_t index,
+                                        uint32_t* new_capacity) {
+  // If properties with non-standard attributes or accessors were added, we
+  // cannot go back to fast elements.
+  if (dictionary->requires_slow_elements()) return false;
+
+  // Adding a property with this index will require slow elements.
+  if (index >= static_cast<uint32_t>(Smi::kMaxValue)) return false;
+
+  if (object->IsJSArray()) {
+    Object* length = JSArray::cast(object)->length();
+    if (!length->IsSmi()) return false;
+    *new_capacity = static_cast<uint32_t>(Smi::cast(length)->value());
+  } else {
+    *new_capacity = dictionary->max_number_key() + 1;
+  }
+  *new_capacity = Max(index + 1, *new_capacity);
+
+  uint32_t dictionary_size = static_cast<uint32_t>(dictionary->Capacity()) *
+                             SeededNumberDictionary::kEntrySize;
+  return 2 * dictionary_size >= *new_capacity;
 }
 
 
@@ -12498,61 +12476,67 @@ MaybeHandle<Object> JSObject::AddDataElement(Handle<JSObject> object,
 
   Isolate* isolate = object->GetIsolate();
 
-  // TODO(verwaest): Use ElementAccessor.
+  ElementsKind kind = object->GetElementsKind();
+  bool handle_slow;
+  uint32_t old_length = 0;
+  uint32_t old_capacity = 0;
+  uint32_t new_capacity = 0;
+
   Handle<Object> old_length_handle;
-  if (object->IsJSArray() && object->map()->is_observed()) {
-    old_length_handle = handle(JSArray::cast(*object)->length(), isolate);
+  if (object->IsJSArray()) {
+    CHECK(JSArray::cast(*object)->length()->ToArrayLength(&old_length));
+    if (object->map()->is_observed()) {
+      old_length_handle = handle(JSArray::cast(*object)->length(), isolate);
+    }
   }
 
-  ElementsKind kind = object->GetElementsKind();
-  bool handle_slow = IsDictionaryElementsKind(kind);
-  uint32_t capacity = 0;
-  uint32_t new_capacity = 0;
-  if (attributes != NONE) {
-    // TODO(verwaest): Move set_requires_slow_elements into NormalizeElements.
-    NormalizeElements(object)->set_requires_slow_elements();
-    handle_slow = true;
-  } else if (IsSloppyArgumentsElements(kind)) {
-    FixedArray* parameter_map = FixedArray::cast(object->elements());
-    FixedArray* arguments = FixedArray::cast(parameter_map->get(1));
-    if (arguments->IsDictionary()) {
-      handle_slow = true;
-    } else {
-      capacity = static_cast<uint32_t>(arguments->length());
-      handle_slow =
-          object->ShouldConvertToSlowElements(capacity, index, &new_capacity);
-      if (handle_slow) NormalizeElements(object);
-    }
-  } else if (!handle_slow) {
-    capacity = static_cast<uint32_t>(object->elements()->length());
+  Handle<SeededNumberDictionary> dictionary;
+  FixedArrayBase* elements = object->elements();
+  if (IsSloppyArgumentsElements(kind)) {
+    elements = FixedArrayBase::cast(FixedArray::cast(elements)->get(1));
+  }
+
+  if (elements->IsSeededNumberDictionary()) {
+    dictionary = handle(SeededNumberDictionary::cast(elements));
+    handle_slow = attributes != NONE ||
+                  !ShouldConvertToFastElements(*object, *dictionary, index,
+                                               &new_capacity);
+    if (!handle_slow) kind = BestFittingFastElementsKind(*object);
+  } else {
+    old_capacity = static_cast<uint32_t>(elements->length());
     handle_slow =
-        object->ShouldConvertToSlowElements(capacity, index, &new_capacity);
+        attributes != NONE || ShouldConvertToSlowElements(*object, old_capacity,
+                                                          index, &new_capacity);
     if (handle_slow) {
-      NormalizeElements(object);
+      dictionary = NormalizeElements(object);
     } else if (IsFastSmiOrObjectElementsKind(kind)) {
       EnsureWritableFastElements(object);
     }
   }
 
   if (handle_slow) {
+    if (attributes != NONE) dictionary->set_requires_slow_elements();
     DCHECK(object->HasDictionaryElements() ||
            object->HasDictionaryArgumentsElements());
-    AddDictionaryElement(object, index, value, attributes);
+    AddDictionaryElement(object, dictionary, index, value, attributes);
   } else {
-    AddFastElement(object, index, value, kind, capacity, new_capacity);
+    AddFastElement(object, index, value, kind, old_length, old_capacity,
+                   new_capacity);
   }
 
-  if (!old_length_handle.is_null() &&
-      !old_length_handle->SameValue(Handle<JSArray>::cast(object)->length())) {
+  uint32_t new_length = old_length;
+  Handle<Object> new_length_handle;
+  if (object->IsJSArray() && index >= old_length) {
+    new_length = index + 1;
+    new_length_handle = isolate->factory()->NewNumberFromUint(new_length);
+    JSArray::cast(*object)->set_length(*new_length_handle);
+  }
+
+  if (!old_length_handle.is_null() && new_length != old_length) {
     // |old_length_handle| is kept null above unless the object is observed.
     DCHECK(object->map()->is_observed());
     Handle<JSArray> array = Handle<JSArray>::cast(object);
     Handle<String> name = isolate->factory()->Uint32ToString(index);
-    Handle<Object> new_length_handle(array->length(), isolate);
-    uint32_t old_length = 0;
-    uint32_t new_length = 0;
-    CHECK(old_length_handle->ToArrayLength(&old_length));
-    CHECK(new_length_handle->ToArrayLength(&new_length));
 
     RETURN_ON_EXCEPTION(isolate, BeginPerformSplice(array), Object);
     RETURN_ON_EXCEPTION(
@@ -12780,14 +12764,6 @@ MaybeHandle<Object> JSArray::ReadOnlyLengthError(Handle<JSArray> array) {
 }
 
 
-bool JSObject::HasDenseElements() {
-  int capacity = 0;
-  int used = 0;
-  GetElementsCapacityAndUsage(&capacity, &used);
-  return (capacity == 0) || (used > (capacity / 2));
-}
-
-
 void JSObject::GetElementsCapacityAndUsage(int* capacity, int* used) {
   *capacity = 0;
   *used = 0;
@@ -12860,65 +12836,6 @@ void JSObject::GetElementsCapacityAndUsage(int* capacity, int* used) {
       break;
     }
   }
-}
-
-
-bool JSObject::WouldConvertToSlowElements(uint32_t index) {
-  if (HasFastElements()) {
-    Handle<FixedArrayBase> backing_store(FixedArrayBase::cast(elements()));
-    uint32_t capacity = static_cast<uint32_t>(backing_store->length());
-    uint32_t new_capacity;
-    return ShouldConvertToSlowElements(capacity, index, &new_capacity);
-  }
-  return false;
-}
-
-
-bool JSObject::ShouldConvertToSlowElements(uint32_t capacity, uint32_t index,
-                                           uint32_t* new_capacity) {
-  STATIC_ASSERT(kMaxUncheckedOldFastElementsLength <=
-                kMaxUncheckedFastElementsLength);
-  if (index < capacity) {
-    *new_capacity = capacity;
-    return false;
-  }
-  if (index - capacity >= kMaxGap) return true;
-  *new_capacity = NewElementsCapacity(index + 1);
-  DCHECK_LT(index, *new_capacity);
-  if (*new_capacity <= kMaxUncheckedOldFastElementsLength ||
-      (*new_capacity <= kMaxUncheckedFastElementsLength &&
-       GetHeap()->InNewSpace(this))) {
-    return false;
-  }
-  // If the fast-case backing storage takes up roughly three times as
-  // much space (in machine words) as a dictionary backing storage
-  // would, the object should have slow elements.
-  int old_capacity = 0;
-  int used_elements = 0;
-  GetElementsCapacityAndUsage(&old_capacity, &used_elements);
-  int dictionary_size = SeededNumberDictionary::ComputeCapacity(used_elements) *
-      SeededNumberDictionary::kEntrySize;
-  return 3 * static_cast<uint32_t>(dictionary_size) <= *new_capacity;
-}
-
-
-ElementsKind JSObject::BestFittingFastElementsKind() {
-  if (HasSloppyArgumentsElements()) return FAST_HOLEY_ELEMENTS;
-  DCHECK(HasDictionaryElements());
-  SeededNumberDictionary* dictionary = element_dictionary();
-  ElementsKind kind = FAST_HOLEY_SMI_ELEMENTS;
-  for (int i = 0; i < dictionary->Capacity(); i++) {
-    Object* key = dictionary->KeyAt(i);
-    if (key->IsNumber()) {
-      Object* value = dictionary->ValueAt(i);
-      if (!value->IsNumber()) return FAST_HOLEY_ELEMENTS;
-      if (!value->IsSmi()) {
-        if (!FLAG_unbox_double_arrays) return FAST_HOLEY_ELEMENTS;
-        kind = FAST_HOLEY_DOUBLE_ELEMENTS;
-      }
-    }
-  }
-  return kind;
 }
 
 
