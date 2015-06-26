@@ -3179,6 +3179,7 @@ class StringTable: public HashTable<StringTable,
   // added. The return value is the string found.
   static Handle<String> LookupString(Isolate* isolate, Handle<String> key);
   static Handle<String> LookupKey(Isolate* isolate, HashTableKey* key);
+  static String* LookupKeyIfExists(Isolate* isolate, HashTableKey* key);
 
   // Tries to internalize given string and returns string handle on success
   // or an empty handle otherwise.
@@ -6554,7 +6555,7 @@ enum BuiltinFunctionId {
 
 
 // Result of searching in an optimized code map of a SharedFunctionInfo. Note
-// that {code == nullptr} indicates that no entry has been found.
+// that both {code} and {literals} can be NULL to pass search result status.
 struct CodeAndLiterals {
   Code* code;            // Cached optimized code.
   FixedArray* literals;  // Cached literals array.
@@ -6577,7 +6578,8 @@ class SharedFunctionInfo: public HeapObject {
   DECL_ACCESSORS(optimized_code_map, Object)
 
   // Returns entry from optimized code map for specified context and OSR entry.
-  // Note that {code == nullptr} indicates no matching entry has been found.
+  // Note that {code == nullptr} indicates no matching entry has been found,
+  // whereas {literals == nullptr} indicates the code is context-independent.
   CodeAndLiterals SearchOptimizedCodeMap(Context* native_context,
                                          BailoutId osr_ast_id);
 
@@ -6587,20 +6589,14 @@ class SharedFunctionInfo: public HeapObject {
   // Removed a specific optimized code object from the optimized code map.
   void EvictFromOptimizedCodeMap(Code* optimized_code, const char* reason);
 
-  // Unconditionally clear the type feedback vector (including vector ICs).
-  void ClearTypeFeedbackInfo();
-
-  // Clear the type feedback vector with a more subtle policy at GC time.
-  void ClearTypeFeedbackInfoAtGCTime();
-
   // Trims the optimized code map after entries have been removed.
   void TrimOptimizedCodeMap(int shrink_by);
 
-  // Initialize a SharedFunctionInfo from a parsed function literal.
-  static void InitFromFunctionLiteral(Handle<SharedFunctionInfo> shared_info,
-                                      FunctionLiteral* lit);
+  // Add a new entry to the optimized code map for context-independent code.
+  static void AddSharedCodeToOptimizedCodeMap(Handle<SharedFunctionInfo> shared,
+                                              Handle<Code> code);
 
-  // Add a new entry to the optimized code map.
+  // Add a new entry to the optimized code map for context-dependent code.
   static void AddToOptimizedCodeMap(Handle<SharedFunctionInfo> shared,
                                     Handle<Context> native_context,
                                     Handle<Code> code,
@@ -6614,7 +6610,8 @@ class SharedFunctionInfo: public HeapObject {
 
   // Layout description of the optimized code map.
   static const int kNextMapIndex = 0;
-  static const int kEntriesStart = 1;
+  static const int kSharedCodeIndex = 1;
+  static const int kEntriesStart = 2;
   static const int kContextOffset = 0;
   static const int kCachedCodeOffset = 1;
   static const int kLiteralsOffset = 2;
@@ -6654,6 +6651,12 @@ class SharedFunctionInfo: public HeapObject {
   // (increasingly) from crankshafted code where sufficient feedback isn't
   // available.
   DECL_ACCESSORS(feedback_vector, TypeFeedbackVector)
+
+  // Unconditionally clear the type feedback vector (including vector ICs).
+  void ClearTypeFeedbackInfo();
+
+  // Clear the type feedback vector with a more subtle policy at GC time.
+  void ClearTypeFeedbackInfoAtGCTime();
 
 #if TRACE_MAPS
   // [unique_id] - For --trace-maps purposes, an identifier that's persistent
@@ -6896,6 +6899,10 @@ class SharedFunctionInfo: public HeapObject {
   int CalculateInObjectProperties();
 
   inline bool is_simple_parameter_list();
+
+  // Initialize a SharedFunctionInfo from a parsed function literal.
+  static void InitFromFunctionLiteral(Handle<SharedFunctionInfo> shared_info,
+                                      FunctionLiteral* lit);
 
   // Dispatched behavior.
   DECLARE_PRINTER(SharedFunctionInfo)
