@@ -319,24 +319,20 @@ void Scope::Initialize() {
     receiver_ = var;
   }
 
-  if (is_function_scope()) {
-    if (!is_arrow_scope()) {
-      // Declare 'arguments' variable which exists in all non arrow functions.
-      // Note that it might never be accessed, in which case it won't be
-      // allocated during variable allocation.
-      variables_.Declare(this, ast_value_factory_->arguments_string(), VAR,
-                         Variable::ARGUMENTS, kCreatedInitialized);
-    }
+  if (is_function_scope() && !is_arrow_scope()) {
+    // Declare 'arguments' variable which exists in all non arrow functions.
+    // Note that it might never be accessed, in which case it won't be
+    // allocated during variable allocation.
+    variables_.Declare(this, ast_value_factory_->arguments_string(), VAR,
+                       Variable::ARGUMENTS, kCreatedInitialized);
 
-    if (subclass_constructor) {
-      DCHECK(!is_arrow_scope());
+    if (subclass_constructor || FLAG_harmony_new_target) {
       variables_.Declare(this, ast_value_factory_->new_target_string(), CONST,
                          Variable::NORMAL, kCreatedInitialized);
     }
 
     if (IsConciseMethod(function_kind_) || IsConstructor(function_kind_) ||
         IsAccessorFunction(function_kind_)) {
-      DCHECK(!is_arrow_scope());
       variables_.Declare(this, ast_value_factory_->this_function_string(),
                          CONST, Variable::NORMAL, kCreatedInitialized);
     }
@@ -731,6 +727,17 @@ bool Scope::HasLazyCompilableOuterContext() const {
     }
   }
   return true;
+}
+
+
+bool Scope::AllowsLazyParsing() const {
+  // If we are inside a block scope, we must parse eagerly to find out how
+  // to allocate variables on the block scope. At this point, declarations may
+  // not have yet been parsed.
+  for (const Scope* scope = this; scope != NULL; scope = scope->outer_scope_) {
+    if (scope->is_block_scope()) return false;
+  }
+  return AllowsLazyCompilation();
 }
 
 

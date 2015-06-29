@@ -704,6 +704,10 @@ void Shell::WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args) {
     workers_.Add(worker);
 
     String::Utf8Value function_string(args[0]->ToString());
+    if (!*function_string) {
+      Throw(args.GetIsolate(), "Function.prototype.toString failed");
+      return;
+    }
     worker->StartExecuteInThread(isolate, *function_string);
   }
 }
@@ -1706,7 +1710,7 @@ void Worker::ExecuteInThread() {
         // First run the script
         Handle<String> file_name = String::NewFromUtf8(isolate, "unnamed");
         Handle<String> source = String::NewFromUtf8(isolate, script_);
-        if (Shell::ExecuteString(isolate, source, file_name, true, true)) {
+        if (Shell::ExecuteString(isolate, source, file_name, false, true)) {
           // Get the message handler
           Handle<Value> onmessage =
               global->Get(String::NewFromUtf8(isolate, "onmessage"));

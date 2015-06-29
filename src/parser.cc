@@ -6,6 +6,7 @@
 
 #include "src/api.h"
 #include "src/ast.h"
+#include "src/ast-literal-reindexer.h"
 #include "src/bailout-reason.h"
 #include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"
@@ -907,8 +908,6 @@ Parser::Parser(ParseInfo* info)
   set_allow_natives(FLAG_allow_natives_syntax || info->is_native());
   set_allow_harmony_modules(!info->is_native() && FLAG_harmony_modules);
   set_allow_harmony_arrow_functions(FLAG_harmony_arrow_functions);
-  set_allow_harmony_classes(FLAG_harmony_classes);
-  set_allow_harmony_object_literals(FLAG_harmony_object_literals);
   set_allow_harmony_sloppy(FLAG_harmony_sloppy);
   set_allow_harmony_unicode(FLAG_harmony_unicode);
   set_allow_harmony_computed_property_names(
@@ -1181,6 +1180,7 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info,
       scope->set_start_position(shared_info->start_position());
       ExpressionClassifier formals_classifier;
       ParserFormalParameterParsingState parsing_state(scope);
+      Checkpoint checkpoint(this);
       {
         // Parsing patterns as variable reference expression creates
         // NewUnresolved references in current scope. Entrer arrow function
@@ -1199,6 +1199,7 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info,
       }
 
       if (ok) {
+        checkpoint.Restore(&parsing_state.materialized_literals_count);
         Expression* expression =
             ParseArrowFunctionLiteral(parsing_state, formals_classifier, &ok);
         if (ok) {
@@ -3855,6 +3856,20 @@ void ParserTraits::ParseArrowFunctionFormalParameters(
 }
 
 
+void ParserTraits::ReindexLiterals(
+    const ParserFormalParameterParsingState& parsing_state) {
+  if (parser_->function_state_->materialized_literal_count() > 0) {
+    AstLiteralReindexer reindexer;
+
+    for (const auto p : parsing_state.params) {
+      if (p.pattern != nullptr) reindexer.Reindex(p.pattern);
+    }
+    DCHECK(reindexer.count() <=
+           parser_->function_state_->materialized_literal_count());
+  }
+}
+
+
 FunctionLiteral* Parser::ParseFunctionLiteral(
     const AstRawString* function_name, Scanner::Location function_name_location,
     bool name_is_strict_reserved, FunctionKind kind, int function_token_pos,
@@ -4021,9 +4036,9 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
 
     // To make this additional case work, both Parser and PreParser implement a
     // logic where only top-level functions will be parsed lazily.
-    bool is_lazily_parsed = (mode() == PARSE_LAZILY &&
-                             scope_->AllowsLazyCompilation() &&
-                             !parenthesized_function_);
+    bool is_lazily_parsed = mode() == PARSE_LAZILY &&
+                            scope_->AllowsLazyParsing() &&
+                            !parenthesized_function_;
     parenthesized_function_ = false;  // The bit was set for this function only.
 
     // Eager or lazy parse?
@@ -4033,11 +4048,6 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     // try to lazy parse in the first place, we'll have to parse eagerly.
     Scanner::BookmarkScope bookmark(scanner());
     if (is_lazily_parsed) {
-      for (Scope* s = scope_->outer_scope();
-           s != nullptr && (s != s->DeclarationScope()); s = s->outer_scope()) {
-        s->ForceContextAllocation();
-      }
-
       Scanner::BookmarkScope* maybe_bookmark =
           bookmark.Set() ? &bookmark : nullptr;
       SkipLazyFunctionBody(&materialized_literal_count,
@@ -4368,8 +4378,6 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
     SET_ALLOW(natives);
     SET_ALLOW(harmony_modules);
     SET_ALLOW(harmony_arrow_functions);
-    SET_ALLOW(harmony_classes);
-    SET_ALLOW(harmony_object_literals);
     SET_ALLOW(harmony_sloppy);
     SET_ALLOW(harmony_unicode);
     SET_ALLOW(harmony_computed_property_names);

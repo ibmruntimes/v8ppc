@@ -92,7 +92,6 @@ class ParserBase : public Traits {
         allow_lazy_(false),
         allow_natives_(false),
         allow_harmony_arrow_functions_(false),
-        allow_harmony_object_literals_(false),
         allow_harmony_sloppy_(false),
         allow_harmony_computed_property_names_(false),
         allow_harmony_rest_params_(false),
@@ -109,7 +108,6 @@ class ParserBase : public Traits {
   ALLOW_ACCESSORS(lazy);
   ALLOW_ACCESSORS(natives);
   ALLOW_ACCESSORS(harmony_arrow_functions);
-  ALLOW_ACCESSORS(harmony_object_literals);
   ALLOW_ACCESSORS(harmony_sloppy);
   ALLOW_ACCESSORS(harmony_computed_property_names);
   ALLOW_ACCESSORS(harmony_rest_params);
@@ -121,11 +119,9 @@ class ParserBase : public Traits {
 #undef ALLOW_ACCESSORS
 
   bool allow_harmony_modules() const { return scanner()->HarmonyModules(); }
-  bool allow_harmony_classes() const { return scanner()->HarmonyClasses(); }
   bool allow_harmony_unicode() const { return scanner()->HarmonyUnicode(); }
 
   void set_allow_harmony_modules(bool a) { scanner()->SetHarmonyModules(a); }
-  void set_allow_harmony_classes(bool a) { scanner()->SetHarmonyClasses(a); }
   void set_allow_harmony_unicode(bool a) { scanner()->SetHarmonyUnicode(a); }
 
  protected:
@@ -156,15 +152,14 @@ class ParserBase : public Traits {
   class BlockState BASE_EMBEDDED {
    public:
     BlockState(Scope** scope_stack, Scope* scope)
-        : scope_stack_(scope_stack), outer_scope_(*scope_stack), scope_(scope) {
-      *scope_stack_ = scope_;
+        : scope_stack_(scope_stack), outer_scope_(*scope_stack) {
+      *scope_stack_ = scope;
     }
     ~BlockState() { *scope_stack_ = outer_scope_; }
 
    private:
     Scope** scope_stack_;
     Scope* outer_scope_;
-    Scope* scope_;
   };
 
   class FunctionState BASE_EMBEDDED {
@@ -179,6 +174,10 @@ class ParserBase : public Traits {
     }
     int materialized_literal_count() {
       return next_materialized_literal_index_;
+    }
+
+    void SkipMaterializedLiterals(int count) {
+      next_materialized_literal_index_ += count;
     }
 
     void AddProperty() { expected_property_count_++; }
@@ -262,7 +261,10 @@ class ParserBase : public Traits {
       expected_property_count_ = function_state_->expected_property_count_;
     }
 
-    void Restore() {
+    void Restore(int* materialized_literal_index_delta) {
+      *materialized_literal_index_delta =
+          function_state_->next_materialized_literal_index_ -
+          next_materialized_literal_index_;
       function_state_->next_materialized_literal_index_ =
           next_materialized_literal_index_;
       function_state_->expected_property_count_ = expected_property_count_;
@@ -778,7 +780,6 @@ class ParserBase : public Traits {
   bool allow_lazy_;
   bool allow_natives_;
   bool allow_harmony_arrow_functions_;
-  bool allow_harmony_object_literals_;
   bool allow_harmony_sloppy_;
   bool allow_harmony_computed_property_names_;
   bool allow_harmony_rest_params_;
@@ -1276,10 +1277,14 @@ class PreParserFactory {
 
 struct PreParserFormalParameterParsingState {
   explicit PreParserFormalParameterParsingState(Scope* scope)
-      : scope(scope), has_rest(false), is_simple_parameter_list(true) {}
+      : scope(scope),
+        has_rest(false),
+        is_simple_parameter_list(true),
+        materialized_literals_count(0) {}
   Scope* scope;
   bool has_rest;
   bool is_simple_parameter_list;
+  int materialized_literals_count;
 };
 
 
@@ -1566,6 +1571,9 @@ class PreParserTraits {
       PreParserFormalParameterParsingState* parsing_state,
       PreParserExpression expression, const Scanner::Location& params_loc,
       Scanner::Location* duplicate_loc, bool* ok);
+
+  void ReindexLiterals(
+      const PreParserFormalParameterParsingState& parsing_state) {}
 
   struct TemplateLiteralState {};
 
@@ -2479,7 +2487,7 @@ ParserBase<Traits>::ParsePropertyDefinition(
   bool is_get = false;
   bool is_set = false;
   bool name_is_static = false;
-  bool is_generator = allow_harmony_object_literals_ && Check(Token::MUL);
+  bool is_generator = Check(Token::MUL);
 
   Token::Value name_token = peek();
   int next_beg_pos = scanner()->peek_location().beg_pos;
@@ -2503,8 +2511,7 @@ ParserBase<Traits>::ParsePropertyDefinition(
     value = this->ParseAssignmentExpression(
         true, classifier, CHECK_OK_CUSTOM(EmptyObjectLiteralProperty));
 
-  } else if (is_generator ||
-             (allow_harmony_object_literals_ && peek() == Token::LPAREN)) {
+  } else if (is_generator || peek() == Token::LPAREN) {
     // Concise Method
     if (!*is_computed_name) {
       checker->CheckProperty(name_token, kMethodProperty, is_static,
@@ -2576,9 +2583,8 @@ ParserBase<Traits>::ParsePropertyDefinition(
         is_get ? ObjectLiteralProperty::GETTER : ObjectLiteralProperty::SETTER,
         is_static, *is_computed_name);
 
-  } else if (!in_class && allow_harmony_object_literals_ &&
-             Token::IsIdentifier(name_token, language_mode(),
-                                 this->is_generator())) {
+  } else if (!in_class && Token::IsIdentifier(name_token, language_mode(),
+                                              this->is_generator())) {
     DCHECK(!*is_computed_name);
     DCHECK(!is_static);
 
@@ -2779,16 +2785,17 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN,
       accept_IN, &arrow_formals_classifier, CHECK_OK);
 
   if (allow_harmony_arrow_functions() && peek() == Token::ARROW) {
-    checkpoint.Restore();
     BindingPatternUnexpectedToken(classifier);
     ValidateArrowFormalParameters(&arrow_formals_classifier, expression,
                                   parenthesized_formals, CHECK_OK);
     Scanner::Location loc(lhs_location.beg_pos, scanner()->location().end_pos);
     Scope* scope =
         this->NewScope(scope_, ARROW_SCOPE, FunctionKind::kArrowFunction);
+    FormalParameterParsingStateT parsing_state(scope);
+    checkpoint.Restore(&parsing_state.materialized_literals_count);
+
     scope->set_start_position(lhs_location.beg_pos);
     Scanner::Location duplicate_loc = Scanner::Location::invalid();
-    FormalParameterParsingStateT parsing_state(scope);
     this->ParseArrowFunctionFormalParameters(&parsing_state, expression, loc,
                                              &duplicate_loc, CHECK_OK);
     if (duplicate_loc.IsValid()) {
@@ -3691,6 +3698,11 @@ ParserBase<Traits>::ParseArrowFunctionLiteral(
     FunctionState function_state(&function_state_, &scope_,
                                  formal_parameters.scope, kArrowFunction,
                                  &function_factory);
+
+    function_state.SkipMaterializedLiterals(
+        formal_parameters.materialized_literals_count);
+
+    this->ReindexLiterals(formal_parameters);
 
     Expect(Token::ARROW, CHECK_OK);
 
