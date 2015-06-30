@@ -230,7 +230,8 @@ class CallSite {
     "In strong mode, calling a function with too few arguments is deprecated") \
   T(StrongDeleteProperty,                                                      \
     "On strong object %, deletion of property % is deprecated")                \
-  T(StrongImplicitCast, "In strong mode, implicit conversions are deprecated") \
+  T(StrongImplicitConversion,                                                  \
+    "In strong mode, implicit conversions are deprecated")                     \
   T(StrongRedefineDisallowed,                                                  \
     "On strong object %, redefining writable, non-configurable property '%' "  \
     "to be non-writable is deprecated")                                        \
@@ -375,6 +376,8 @@ class CallSite {
     "instead")                                                                 \
   T(StrongForIn,                                                               \
     "In strong mode, 'for'-'in' loops are deprecated, use 'for'-'of' instead") \
+  T(StrongPropertyAccess,                                                      \
+    "In strong mode, accessing missing property '%' of % is deprecated")       \
   T(StrongSuperCallDuplicate,                                                  \
     "In strong mode, invoking the super constructor multiple times is "        \
     "deprecated")                                                              \
