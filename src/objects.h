@@ -7312,6 +7312,9 @@ class JSFunction: public JSObject {
   // Tells whether this function is defined in an extension script.
   inline bool IsFromExtensionScript();
 
+  // Tells whether this function should be subject to debugging.
+  inline bool IsSubjectToDebugging();
+
   // Tells whether or not the function needs arguments adaption.
   inline bool NeedsArgumentsAdaption();
 

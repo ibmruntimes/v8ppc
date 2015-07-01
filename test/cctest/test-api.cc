@@ -13303,17 +13303,18 @@ TEST(ForceSet) {
 
 
 TEST(ForceSetWithInterceptor) {
-  force_set_get_count = 0;
-  force_set_set_count = 0;
-  pass_on_get = false;
-
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope scope(isolate);
   v8::Handle<v8::ObjectTemplate> templ = v8::ObjectTemplate::New(isolate);
   templ->SetHandler(v8::NamedPropertyHandlerConfiguration(
       ForceSetInterceptGetter, ForceSetInterceptSetter));
+  pass_on_get = true;
   LocalContext context(NULL, templ);
   v8::Handle<v8::Object> global = context->Global();
+
+  force_set_get_count = 0;
+  force_set_set_count = 0;
+  pass_on_get = false;
 
   v8::Handle<v8::String> some_property =
       v8::String::NewFromUtf8(isolate, "a");
@@ -21451,164 +21452,6 @@ TEST(SealHandleScopeNested) {
 
     USE(obj);
   }
-}
-
-
-static bool access_was_called = false;
-
-
-static bool AccessAlwaysAllowedWithFlag(Local<v8::Object> global,
-                                        Local<Value> name, v8::AccessType type,
-                                        Local<Value> data) {
-  access_was_called = true;
-  return true;
-}
-
-
-static bool AccessAlwaysBlockedWithFlag(Local<v8::Object> global,
-                                        Local<Value> name, v8::AccessType type,
-                                        Local<Value> data) {
-  access_was_called = true;
-  return false;
-}
-
-
-TEST(StrongModeAccessCheckAllowed) {
-  i::FLAG_strong_mode = true;
-  v8::Isolate* isolate = CcTest::isolate();
-  v8::HandleScope handle_scope(isolate);
-  v8::Handle<Value> value;
-  access_was_called = false;
-
-  v8::Handle<v8::ObjectTemplate> obj_template =
-      v8::ObjectTemplate::New(isolate);
-
-  obj_template->Set(v8_str("x"), v8::Integer::New(isolate, 42));
-  obj_template->SetAccessCheckCallbacks(AccessAlwaysAllowedWithFlag, NULL);
-
-  // Create an environment
-  v8::Local<Context> context0 = Context::New(isolate, NULL, obj_template);
-  context0->Enter();
-  v8::Handle<v8::Object> global0 = context0->Global();
-  global0->Set(v8_str("object"), obj_template->NewInstance());
-  {
-    v8::TryCatch try_catch(isolate);
-    value = CompileRun("'use strong'; object.x");
-    CHECK(!try_catch.HasCaught());
-    CHECK(!access_was_called);
-    CHECK_EQ(42, value->Int32Value());
-  }
-  {
-    v8::TryCatch try_catch(isolate);
-    value = CompileRun("'use strong'; object.foo");
-    CHECK(try_catch.HasCaught());
-    CHECK(!access_was_called);
-  }
-  {
-    v8::TryCatch try_catch(isolate);
-    value = CompileRun("'use strong'; object[10]");
-    CHECK(try_catch.HasCaught());
-    CHECK(!access_was_called);
-  }
-
-  // Create an environment
-  v8::Local<Context> context1 = Context::New(isolate);
-  context1->Enter();
-  v8::Handle<v8::Object> global1 = context1->Global();
-  global1->Set(v8_str("object"), obj_template->NewInstance());
-  {
-    v8::TryCatch try_catch(isolate);
-    value = CompileRun("'use strong'; object.x");
-    CHECK(!try_catch.HasCaught());
-    CHECK(access_was_called);
-    CHECK_EQ(42, value->Int32Value());
-  }
-  access_was_called = false;
-  {
-    v8::TryCatch try_catch(isolate);
-    value = CompileRun("'use strong'; object.foo");
-    CHECK(try_catch.HasCaught());
-    CHECK(access_was_called);
-  }
-  access_was_called = false;
-  {
-    v8::TryCatch try_catch(isolate);
-    value = CompileRun("'use strong'; object[10]");
-    CHECK(try_catch.HasCaught());
-    CHECK(access_was_called);
-  }
-
-  context1->Exit();
-  context0->Exit();
-}
-
-
-TEST(StrongModeAccessCheckBlocked) {
-  i::FLAG_strong_mode = true;
-  v8::Isolate* isolate = CcTest::isolate();
-  v8::HandleScope handle_scope(isolate);
-  v8::Handle<Value> value;
-  access_was_called = false;
-
-  v8::Handle<v8::ObjectTemplate> obj_template =
-      v8::ObjectTemplate::New(isolate);
-
-  obj_template->Set(v8_str("x"), v8::Integer::New(isolate, 42));
-  obj_template->SetAccessCheckCallbacks(AccessAlwaysBlockedWithFlag, NULL);
-
-  // Create an environment
-  v8::Local<Context> context0 = Context::New(isolate, NULL, obj_template);
-  context0->Enter();
-  v8::Handle<v8::Object> global0 = context0->Global();
-  global0->Set(v8_str("object"), obj_template->NewInstance());
-  {
-    v8::TryCatch try_catch(isolate);
-    value = CompileRun("'use strong'; object.x");
-    CHECK(!try_catch.HasCaught());
-    CHECK(!access_was_called);
-    CHECK_EQ(42, value->Int32Value());
-  }
-  {
-    v8::TryCatch try_catch(isolate);
-    value = CompileRun("'use strong'; object.foo");
-    CHECK(try_catch.HasCaught());
-    CHECK(!access_was_called);
-  }
-  {
-    v8::TryCatch try_catch(isolate);
-    value = CompileRun("'use strong'; object[10]");
-    CHECK(try_catch.HasCaught());
-    CHECK(!access_was_called);
-  }
-
-  // Create an environment
-  v8::Local<Context> context1 = Context::New(isolate);
-  context1->Enter();
-  v8::Handle<v8::Object> global1 = context1->Global();
-  global1->Set(v8_str("object"), obj_template->NewInstance());
-  {
-    v8::TryCatch try_catch(isolate);
-    value = CompileRun("'use strong'; object.x");
-    CHECK(try_catch.HasCaught());
-    CHECK(access_was_called);
-  }
-  access_was_called = false;
-  {
-    v8::TryCatch try_catch(isolate);
-    value = CompileRun("'use strong'; object.foo");
-    CHECK(try_catch.HasCaught());
-    CHECK(access_was_called);
-  }
-  access_was_called = false;
-  {
-    v8::TryCatch try_catch(isolate);
-    value = CompileRun("'use strong'; object[10]");
-    CHECK(try_catch.HasCaught());
-    CHECK(access_was_called);
-  }
-
-  context1->Exit();
-  context0->Exit();
 }
 
 

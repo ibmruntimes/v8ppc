@@ -260,8 +260,7 @@ bool MarkCompactCollector::StartCompaction(CompactionMode mode) {
 
     CollectEvacuationCandidates(heap()->old_space());
 
-    if (FLAG_compact_code_space && (mode == NON_INCREMENTAL_COMPACTION ||
-                                    FLAG_incremental_code_compaction)) {
+    if (FLAG_compact_code_space) {
       CollectEvacuationCandidates(heap()->code_space());
     } else if (FLAG_trace_fragmentation) {
       TraceFragmentation(heap()->code_space());
@@ -869,9 +868,8 @@ void CodeFlusher::ProcessJSFunctionCandidates() {
         shared->ShortPrint();
         PrintF(" - age: %d]\n", code->GetAge());
       }
-      // Always flush the optimized code map if requested by flag.
-      if (FLAG_flush_optimized_code_cache &&
-          !shared->optimized_code_map()->IsSmi()) {
+      // Always flush the optimized code map if there is one.
+      if (!shared->optimized_code_map()->IsSmi()) {
         shared->ClearOptimizedCodeMap();
       }
       shared->set_code(lazy_compile);
@@ -917,9 +915,8 @@ void CodeFlusher::ProcessSharedFunctionInfoCandidates() {
         candidate->ShortPrint();
         PrintF(" - age: %d]\n", code->GetAge());
       }
-      // Always flush the optimized code map if requested by flag.
-      if (FLAG_flush_optimized_code_cache &&
-          !candidate->optimized_code_map()->IsSmi()) {
+      // Always flush the optimized code map if there is one.
+      if (!candidate->optimized_code_map()->IsSmi()) {
         candidate->ClearOptimizedCodeMap();
       }
       candidate->set_code(lazy_compile);
@@ -947,6 +944,7 @@ void CodeFlusher::ProcessOptimizedCodeMaps() {
     next_holder = GetNextCodeMap(holder);
     ClearNextCodeMap(holder);
 
+    // Process context-dependent entries in the optimized code map.
     FixedArray* code_map = FixedArray::cast(holder->optimized_code_map());
     int new_length = SharedFunctionInfo::kEntriesStart;
     int old_length = code_map->length();
@@ -970,6 +968,21 @@ void CodeFlusher::ProcessOptimizedCodeMaps() {
           isolate_->heap()->mark_compact_collector()->RecordSlot(slot, slot,
                                                                  *slot);
         }
+      }
+    }
+
+    // Process context-independent entry in the optimized code map.
+    Object* shared_object = code_map->get(SharedFunctionInfo::kSharedCodeIndex);
+    if (shared_object->IsCode()) {
+      Code* shared_code = Code::cast(shared_object);
+      if (Marking::IsWhite(Marking::MarkBitFrom(shared_code))) {
+        code_map->set_undefined(SharedFunctionInfo::kSharedCodeIndex);
+      } else {
+        DCHECK(Marking::IsBlack(Marking::MarkBitFrom(shared_code)));
+        Object** slot =
+            code_map->RawFieldOfElementAt(SharedFunctionInfo::kSharedCodeIndex);
+        isolate_->heap()->mark_compact_collector()->RecordSlot(slot, slot,
+                                                               *slot);
       }
     }
 
@@ -1572,11 +1585,6 @@ void MarkCompactCollector::PrepareThreadForCodeFlushing(Isolate* isolate,
 
 
 void MarkCompactCollector::PrepareForCodeFlushing() {
-  // Enable code flushing for non-incremental cycles.
-  if (FLAG_flush_code && !FLAG_flush_code_incrementally) {
-    EnableCodeFlushing(!was_marked_incrementally_);
-  }
-
   // If code flushing is disabled, there is no need to prepare for it.
   if (!is_code_flushing_enabled()) return;
 
@@ -2308,11 +2316,6 @@ void MarkCompactCollector::AfterMarking() {
   // Flush code from collected candidates.
   if (is_code_flushing_enabled()) {
     code_flusher_->ProcessCandidates();
-    // If incremental marker does not support code flushing, we need to
-    // disable it before incremental marking steps for next cycle.
-    if (FLAG_flush_code && !FLAG_flush_code_incrementally) {
-      EnableCodeFlushing(false);
-    }
   }
 
   if (FLAG_track_gc_object_stats) {
