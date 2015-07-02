@@ -1044,8 +1044,8 @@ void Assembler::cmpwi(Register src1, const Operand& src2, CRegister cr) {
   // For cmpwi against 0, save postition and cr for later examination
   // of potential optimization.
   if (imm16 == 0 && pos > 0 && last_bound_pos_ != pos) {
-     optimizable_cmpi_pos_ = pos;
-     cmpi_cr_ = cr;
+    optimizable_cmpi_pos_ = pos;
+    cmpi_cr_ = cr;
   }
   emit(CMPI | cr.code() * B23 | L * B21 | src1.code() * B16 | imm16);
 }

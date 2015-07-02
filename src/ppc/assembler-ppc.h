@@ -783,7 +783,7 @@ class Assembler : public AssemblerBase {
         } else if ((xinstr & kOpcodeMask) == ANDIx) {
           cr = cr0;
           pc_ -= kInstrSize;
-           // nothing to do here since andi. records.
+          // nothing to do here since andi. records.
         }
         // didn't match one of the above, must keep cmpwi.
       }

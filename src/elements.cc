@@ -47,6 +47,8 @@
 //     - FixedUint8ClampedElementsAccessor
 //   - DictionaryElementsAccessor
 //   - SloppyArgumentsElementsAccessor
+//     - FastSloppyArgumentsElementsAccessor
+//     - SlowSloppyArgumentsElementsAccessor
 
 
 namespace v8 {
@@ -61,48 +63,45 @@ static const int kPackedSizeNotKnown = -1;
 // fast element handler for smi-only arrays.  The implementation is currently
 // identical.  Note that the order must match that of the ElementsKind enum for
 // the |accessor_array[]| below to work.
-#define ELEMENTS_LIST(V)                                                \
-  V(FastPackedSmiElementsAccessor, FAST_SMI_ELEMENTS, FixedArray)       \
-  V(FastHoleySmiElementsAccessor, FAST_HOLEY_SMI_ELEMENTS,              \
-    FixedArray)                                                         \
-  V(FastPackedObjectElementsAccessor, FAST_ELEMENTS, FixedArray)        \
-  V(FastHoleyObjectElementsAccessor, FAST_HOLEY_ELEMENTS, FixedArray)   \
-  V(FastPackedDoubleElementsAccessor, FAST_DOUBLE_ELEMENTS,             \
-    FixedDoubleArray)                                                   \
-  V(FastHoleyDoubleElementsAccessor, FAST_HOLEY_DOUBLE_ELEMENTS,        \
-    FixedDoubleArray)                                                   \
-  V(DictionaryElementsAccessor, DICTIONARY_ELEMENTS,                    \
-    SeededNumberDictionary)                                             \
-  V(SloppyArgumentsElementsAccessor, SLOPPY_ARGUMENTS_ELEMENTS,         \
-    FixedArray)                                                         \
-  V(ExternalInt8ElementsAccessor, EXTERNAL_INT8_ELEMENTS,               \
-    ExternalInt8Array)                                                  \
-  V(ExternalUint8ElementsAccessor,                                      \
-    EXTERNAL_UINT8_ELEMENTS, ExternalUint8Array)                        \
-  V(ExternalInt16ElementsAccessor, EXTERNAL_INT16_ELEMENTS,             \
-    ExternalInt16Array)                                                 \
-  V(ExternalUint16ElementsAccessor,                                     \
-    EXTERNAL_UINT16_ELEMENTS, ExternalUint16Array)                      \
-  V(ExternalInt32ElementsAccessor, EXTERNAL_INT32_ELEMENTS,             \
-    ExternalInt32Array)                                                 \
-  V(ExternalUint32ElementsAccessor,                                     \
-    EXTERNAL_UINT32_ELEMENTS, ExternalUint32Array)                      \
-  V(ExternalFloat32ElementsAccessor,                                    \
-    EXTERNAL_FLOAT32_ELEMENTS, ExternalFloat32Array)                    \
-  V(ExternalFloat64ElementsAccessor,                                    \
-    EXTERNAL_FLOAT64_ELEMENTS, ExternalFloat64Array)                    \
-  V(ExternalUint8ClampedElementsAccessor,                               \
-    EXTERNAL_UINT8_CLAMPED_ELEMENTS,                                    \
-    ExternalUint8ClampedArray)                                          \
-  V(FixedUint8ElementsAccessor, UINT8_ELEMENTS, FixedUint8Array)        \
-  V(FixedInt8ElementsAccessor, INT8_ELEMENTS, FixedInt8Array)           \
-  V(FixedUint16ElementsAccessor, UINT16_ELEMENTS, FixedUint16Array)     \
-  V(FixedInt16ElementsAccessor, INT16_ELEMENTS, FixedInt16Array)        \
-  V(FixedUint32ElementsAccessor, UINT32_ELEMENTS, FixedUint32Array)     \
-  V(FixedInt32ElementsAccessor, INT32_ELEMENTS, FixedInt32Array)        \
-  V(FixedFloat32ElementsAccessor, FLOAT32_ELEMENTS, FixedFloat32Array)  \
-  V(FixedFloat64ElementsAccessor, FLOAT64_ELEMENTS, FixedFloat64Array)  \
-  V(FixedUint8ClampedElementsAccessor, UINT8_CLAMPED_ELEMENTS,          \
+#define ELEMENTS_LIST(V)                                                      \
+  V(FastPackedSmiElementsAccessor, FAST_SMI_ELEMENTS, FixedArray)             \
+  V(FastHoleySmiElementsAccessor, FAST_HOLEY_SMI_ELEMENTS, FixedArray)        \
+  V(FastPackedObjectElementsAccessor, FAST_ELEMENTS, FixedArray)              \
+  V(FastHoleyObjectElementsAccessor, FAST_HOLEY_ELEMENTS, FixedArray)         \
+  V(FastPackedDoubleElementsAccessor, FAST_DOUBLE_ELEMENTS, FixedDoubleArray) \
+  V(FastHoleyDoubleElementsAccessor, FAST_HOLEY_DOUBLE_ELEMENTS,              \
+    FixedDoubleArray)                                                         \
+  V(DictionaryElementsAccessor, DICTIONARY_ELEMENTS, SeededNumberDictionary)  \
+  V(FastSloppyArgumentsElementsAccessor, FAST_SLOPPY_ARGUMENTS_ELEMENTS,      \
+    FixedArray)                                                               \
+  V(SlowSloppyArgumentsElementsAccessor, SLOW_SLOPPY_ARGUMENTS_ELEMENTS,      \
+    FixedArray)                                                               \
+  V(ExternalInt8ElementsAccessor, EXTERNAL_INT8_ELEMENTS, ExternalInt8Array)  \
+  V(ExternalUint8ElementsAccessor, EXTERNAL_UINT8_ELEMENTS,                   \
+    ExternalUint8Array)                                                       \
+  V(ExternalInt16ElementsAccessor, EXTERNAL_INT16_ELEMENTS,                   \
+    ExternalInt16Array)                                                       \
+  V(ExternalUint16ElementsAccessor, EXTERNAL_UINT16_ELEMENTS,                 \
+    ExternalUint16Array)                                                      \
+  V(ExternalInt32ElementsAccessor, EXTERNAL_INT32_ELEMENTS,                   \
+    ExternalInt32Array)                                                       \
+  V(ExternalUint32ElementsAccessor, EXTERNAL_UINT32_ELEMENTS,                 \
+    ExternalUint32Array)                                                      \
+  V(ExternalFloat32ElementsAccessor, EXTERNAL_FLOAT32_ELEMENTS,               \
+    ExternalFloat32Array)                                                     \
+  V(ExternalFloat64ElementsAccessor, EXTERNAL_FLOAT64_ELEMENTS,               \
+    ExternalFloat64Array)                                                     \
+  V(ExternalUint8ClampedElementsAccessor, EXTERNAL_UINT8_CLAMPED_ELEMENTS,    \
+    ExternalUint8ClampedArray)                                                \
+  V(FixedUint8ElementsAccessor, UINT8_ELEMENTS, FixedUint8Array)              \
+  V(FixedInt8ElementsAccessor, INT8_ELEMENTS, FixedInt8Array)                 \
+  V(FixedUint16ElementsAccessor, UINT16_ELEMENTS, FixedUint16Array)           \
+  V(FixedInt16ElementsAccessor, INT16_ELEMENTS, FixedInt16Array)              \
+  V(FixedUint32ElementsAccessor, UINT32_ELEMENTS, FixedUint32Array)           \
+  V(FixedInt32ElementsAccessor, INT32_ELEMENTS, FixedInt32Array)              \
+  V(FixedFloat32ElementsAccessor, FLOAT32_ELEMENTS, FixedFloat32Array)        \
+  V(FixedFloat64ElementsAccessor, FLOAT64_ELEMENTS, FixedFloat64Array)        \
+  V(FixedUint8ClampedElementsAccessor, UINT8_CLAMPED_ELEMENTS,                \
     FixedUint8ClampedArray)
 
 
@@ -549,7 +548,7 @@ void CheckArrayAbuse(Handle<JSObject> obj, const char* op, uint32_t key,
 template <typename ElementsAccessorSubclass,
           typename ElementsTraitsParam>
 class ElementsAccessorBase : public ElementsAccessor {
- protected:
+ public:
   explicit ElementsAccessorBase(const char* name)
       : ElementsAccessor(name) { }
 
@@ -862,7 +861,6 @@ class ElementsAccessorBase : public ElementsAccessor {
     return result;
   }
 
- protected:
   static uint32_t GetCapacityImpl(JSObject* holder,
                                   FixedArrayBase* backing_store) {
     return backing_store->length();
@@ -920,440 +918,6 @@ class ElementsAccessorBase : public ElementsAccessor {
  private:
   DISALLOW_COPY_AND_ASSIGN(ElementsAccessorBase);
 };
-
-
-// Super class for all fast element arrays.
-template<typename FastElementsAccessorSubclass,
-         typename KindTraits>
-class FastElementsAccessor
-    : public ElementsAccessorBase<FastElementsAccessorSubclass, KindTraits> {
- public:
-  explicit FastElementsAccessor(const char* name)
-      : ElementsAccessorBase<FastElementsAccessorSubclass,
-                             KindTraits>(name) {}
-
- protected:
-  friend class ElementsAccessorBase<FastElementsAccessorSubclass, KindTraits>;
-  friend class SloppyArgumentsElementsAccessor;
-
-  typedef typename KindTraits::BackingStore BackingStore;
-
-  static void DeleteCommon(Handle<JSObject> obj, uint32_t key,
-                           LanguageMode language_mode) {
-    DCHECK(obj->HasFastSmiOrObjectElements() ||
-           obj->HasFastDoubleElements() ||
-           obj->HasFastArgumentsElements());
-    Isolate* isolate = obj->GetIsolate();
-    Heap* heap = obj->GetHeap();
-    Handle<FixedArrayBase> elements(obj->elements());
-    if (*elements == heap->empty_fixed_array()) return;
-
-    Handle<BackingStore> backing_store = Handle<BackingStore>::cast(elements);
-    bool is_sloppy_arguments_elements_map =
-        backing_store->map() == heap->sloppy_arguments_elements_map();
-    if (is_sloppy_arguments_elements_map) {
-      backing_store = handle(
-          BackingStore::cast(Handle<FixedArray>::cast(backing_store)->get(1)),
-          isolate);
-    }
-    uint32_t length = static_cast<uint32_t>(
-        obj->IsJSArray()
-        ? Smi::cast(Handle<JSArray>::cast(obj)->length())->value()
-        : backing_store->length());
-    if (key < length) {
-      if (!is_sloppy_arguments_elements_map) {
-        ElementsKind kind = KindTraits::Kind;
-        if (IsFastPackedElementsKind(kind)) {
-          JSObject::TransitionElementsKind(obj, GetHoleyElementsKind(kind));
-        }
-        if (IsFastSmiOrObjectElementsKind(KindTraits::Kind)) {
-          Handle<Object> writable = JSObject::EnsureWritableFastElements(obj);
-          backing_store = Handle<BackingStore>::cast(writable);
-        }
-      }
-      backing_store->set_the_hole(key);
-      // If an old space backing store is larger than a certain size and
-      // has too few used values, normalize it.
-      // To avoid doing the check on every delete we require at least
-      // one adjacent hole to the value being deleted.
-      const int kMinLengthForSparsenessCheck = 64;
-      if (backing_store->length() >= kMinLengthForSparsenessCheck &&
-          !heap->InNewSpace(*backing_store) &&
-          ((key > 0 && backing_store->is_the_hole(key - 1)) ||
-           (key + 1 < length && backing_store->is_the_hole(key + 1)))) {
-        int num_used = 0;
-        for (int i = 0; i < backing_store->length(); ++i) {
-          if (!backing_store->is_the_hole(i)) ++num_used;
-          // Bail out early if more than 1/4 is used.
-          if (4 * num_used > backing_store->length()) break;
-        }
-        if (4 * num_used <= backing_store->length()) {
-          JSObject::NormalizeElements(obj);
-        }
-      }
-    }
-  }
-
-  static void ReconfigureImpl(Handle<JSObject> object,
-                              Handle<FixedArrayBase> store, uint32_t index,
-                              Handle<Object> value,
-                              PropertyAttributes attributes) {
-    Handle<SeededNumberDictionary> dictionary =
-        JSObject::NormalizeElements(object);
-    index = dictionary->FindEntry(index);
-    object->GetElementsAccessor()->Reconfigure(object, dictionary, index, value,
-                                               attributes);
-  }
-
-  static void AddImpl(Handle<JSObject> object, uint32_t index,
-                      Handle<Object> value, PropertyAttributes attributes,
-                      uint32_t new_capacity) {
-    DCHECK_EQ(NONE, attributes);
-    ElementsKind from_kind = object->GetElementsKind();
-    ElementsKind to_kind = FastElementsAccessorSubclass::kind();
-    if (IsDictionaryElementsKind(from_kind) ||
-        IsFastDoubleElementsKind(from_kind) !=
-            IsFastDoubleElementsKind(to_kind) ||
-        FastElementsAccessorSubclass::GetCapacityImpl(
-            *object, object->elements()) != new_capacity) {
-      FastElementsAccessorSubclass::GrowCapacityAndConvertImpl(object,
-                                                               new_capacity);
-    } else {
-      if (from_kind != to_kind) {
-        JSObject::TransitionElementsKind(object, to_kind);
-      }
-      if (IsFastSmiOrObjectElementsKind(from_kind)) {
-        DCHECK(IsFastSmiOrObjectElementsKind(to_kind));
-        JSObject::EnsureWritableFastElements(object);
-      }
-    }
-    FastElementsAccessorSubclass::SetImpl(object->elements(), index, *value);
-  }
-
-  virtual void Delete(Handle<JSObject> obj, uint32_t key,
-                      LanguageMode language_mode) final {
-    DeleteCommon(obj, key, language_mode);
-  }
-
-  static bool HasIndexImpl(FixedArrayBase* backing_store, uint32_t index) {
-    return !BackingStore::cast(backing_store)->is_the_hole(index);
-  }
-
-  static void ValidateContents(Handle<JSObject> holder, int length) {
-#if DEBUG
-    Isolate* isolate = holder->GetIsolate();
-    HandleScope scope(isolate);
-    Handle<FixedArrayBase> elements(holder->elements(), isolate);
-    Map* map = elements->map();
-    DCHECK((IsFastSmiOrObjectElementsKind(KindTraits::Kind) &&
-            (map == isolate->heap()->fixed_array_map() ||
-             map == isolate->heap()->fixed_cow_array_map())) ||
-           (IsFastDoubleElementsKind(KindTraits::Kind) ==
-            ((map == isolate->heap()->fixed_array_map() && length == 0) ||
-             map == isolate->heap()->fixed_double_array_map())));
-    if (length == 0) return;  // nothing to do!
-    DisallowHeapAllocation no_gc;
-    Handle<BackingStore> backing_store = Handle<BackingStore>::cast(elements);
-    if (IsFastSmiElementsKind(KindTraits::Kind)) {
-      for (int i = 0; i < length; i++) {
-        DCHECK(BackingStore::get(backing_store, i)->IsSmi() ||
-               (IsFastHoleyElementsKind(KindTraits::Kind) &&
-                backing_store->is_the_hole(i)));
-      }
-    }
-#endif
-  }
-};
-
-
-static inline ElementsKind ElementsKindForArray(FixedArrayBase* array) {
-  switch (array->map()->instance_type()) {
-    case FIXED_ARRAY_TYPE:
-      if (array->IsDictionary()) {
-        return DICTIONARY_ELEMENTS;
-      } else {
-        return FAST_HOLEY_ELEMENTS;
-      }
-    case FIXED_DOUBLE_ARRAY_TYPE:
-      return FAST_HOLEY_DOUBLE_ELEMENTS;
-
-#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size)                       \
-    case EXTERNAL_##TYPE##_ARRAY_TYPE:                                        \
-      return EXTERNAL_##TYPE##_ELEMENTS;                                      \
-    case FIXED_##TYPE##_ARRAY_TYPE:                                           \
-      return TYPE##_ELEMENTS;
-
-    TYPED_ARRAYS(TYPED_ARRAY_CASE)
-#undef TYPED_ARRAY_CASE
-
-    default:
-      UNREACHABLE();
-  }
-  return FAST_HOLEY_ELEMENTS;
-}
-
-
-template<typename FastElementsAccessorSubclass,
-         typename KindTraits>
-class FastSmiOrObjectElementsAccessor
-    : public FastElementsAccessor<FastElementsAccessorSubclass, KindTraits> {
- public:
-  explicit FastSmiOrObjectElementsAccessor(const char* name)
-      : FastElementsAccessor<FastElementsAccessorSubclass,
-                             KindTraits>(name) {}
-
-  // NOTE: this method violates the handlified function signature convention:
-  // raw pointer parameters in the function that allocates.
-  // See ElementsAccessor::CopyElements() for details.
-  // This method could actually allocate if copying from double elements to
-  // object elements.
-  static void CopyElementsImpl(FixedArrayBase* from, uint32_t from_start,
-                               FixedArrayBase* to, ElementsKind from_kind,
-                               uint32_t to_start, int packed_size,
-                               int copy_size) {
-    DisallowHeapAllocation no_gc;
-    ElementsKind to_kind = KindTraits::Kind;
-    switch (from_kind) {
-      case FAST_SMI_ELEMENTS:
-      case FAST_HOLEY_SMI_ELEMENTS:
-      case FAST_ELEMENTS:
-      case FAST_HOLEY_ELEMENTS:
-        CopyObjectToObjectElements(from, from_kind, from_start, to, to_kind,
-                                   to_start, copy_size);
-        break;
-      case FAST_DOUBLE_ELEMENTS:
-      case FAST_HOLEY_DOUBLE_ELEMENTS: {
-        AllowHeapAllocation allow_allocation;
-        CopyDoubleToObjectElements(
-            from, from_start, to, to_kind, to_start, copy_size);
-        break;
-      }
-      case DICTIONARY_ELEMENTS:
-        CopyDictionaryToObjectElements(from, from_start, to, to_kind, to_start,
-                                       copy_size);
-        break;
-      case SLOPPY_ARGUMENTS_ELEMENTS: {
-        // TODO(verwaest): This is a temporary hack to support extending
-        // SLOPPY_ARGUMENTS_ELEMENTS in GrowCapacityAndConvert.
-        // This case should be UNREACHABLE().
-        FixedArray* parameter_map = FixedArray::cast(from);
-        FixedArrayBase* arguments = FixedArrayBase::cast(parameter_map->get(1));
-        ElementsKind from_kind = ElementsKindForArray(arguments);
-        CopyElementsImpl(arguments, from_start, to, from_kind,
-                         to_start, packed_size, copy_size);
-        break;
-      }
-#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size)                       \
-      case EXTERNAL_##TYPE##_ELEMENTS:                                        \
-      case TYPE##_ELEMENTS:                                                   \
-        UNREACHABLE();
-      TYPED_ARRAYS(TYPED_ARRAY_CASE)
-#undef TYPED_ARRAY_CASE
-    }
-  }
-};
-
-
-class FastPackedSmiElementsAccessor
-    : public FastSmiOrObjectElementsAccessor<
-        FastPackedSmiElementsAccessor,
-        ElementsKindTraits<FAST_SMI_ELEMENTS> > {
- public:
-  explicit FastPackedSmiElementsAccessor(const char* name)
-      : FastSmiOrObjectElementsAccessor<
-          FastPackedSmiElementsAccessor,
-          ElementsKindTraits<FAST_SMI_ELEMENTS> >(name) {}
-};
-
-
-class FastHoleySmiElementsAccessor
-    : public FastSmiOrObjectElementsAccessor<
-        FastHoleySmiElementsAccessor,
-        ElementsKindTraits<FAST_HOLEY_SMI_ELEMENTS> > {
- public:
-  explicit FastHoleySmiElementsAccessor(const char* name)
-      : FastSmiOrObjectElementsAccessor<
-          FastHoleySmiElementsAccessor,
-          ElementsKindTraits<FAST_HOLEY_SMI_ELEMENTS> >(name) {}
-};
-
-
-class FastPackedObjectElementsAccessor
-    : public FastSmiOrObjectElementsAccessor<
-        FastPackedObjectElementsAccessor,
-        ElementsKindTraits<FAST_ELEMENTS> > {
- public:
-  explicit FastPackedObjectElementsAccessor(const char* name)
-      : FastSmiOrObjectElementsAccessor<
-          FastPackedObjectElementsAccessor,
-          ElementsKindTraits<FAST_ELEMENTS> >(name) {}
-};
-
-
-class FastHoleyObjectElementsAccessor
-    : public FastSmiOrObjectElementsAccessor<
-        FastHoleyObjectElementsAccessor,
-        ElementsKindTraits<FAST_HOLEY_ELEMENTS> > {
- public:
-  explicit FastHoleyObjectElementsAccessor(const char* name)
-      : FastSmiOrObjectElementsAccessor<
-          FastHoleyObjectElementsAccessor,
-          ElementsKindTraits<FAST_HOLEY_ELEMENTS> >(name) {}
-};
-
-
-template<typename FastElementsAccessorSubclass,
-         typename KindTraits>
-class FastDoubleElementsAccessor
-    : public FastElementsAccessor<FastElementsAccessorSubclass, KindTraits> {
- public:
-  explicit FastDoubleElementsAccessor(const char* name)
-      : FastElementsAccessor<FastElementsAccessorSubclass,
-                             KindTraits>(name) {}
-
- protected:
-  static void CopyElementsImpl(FixedArrayBase* from, uint32_t from_start,
-                               FixedArrayBase* to, ElementsKind from_kind,
-                               uint32_t to_start, int packed_size,
-                               int copy_size) {
-    DisallowHeapAllocation no_allocation;
-    switch (from_kind) {
-      case FAST_SMI_ELEMENTS:
-        CopyPackedSmiToDoubleElements(from, from_start, to, to_start,
-                                      packed_size, copy_size);
-        break;
-      case FAST_HOLEY_SMI_ELEMENTS:
-        CopySmiToDoubleElements(from, from_start, to, to_start, copy_size);
-        break;
-      case FAST_DOUBLE_ELEMENTS:
-      case FAST_HOLEY_DOUBLE_ELEMENTS:
-        CopyDoubleToDoubleElements(from, from_start, to, to_start, copy_size);
-        break;
-      case FAST_ELEMENTS:
-      case FAST_HOLEY_ELEMENTS:
-        CopyObjectToDoubleElements(from, from_start, to, to_start, copy_size);
-        break;
-      case DICTIONARY_ELEMENTS:
-        CopyDictionaryToDoubleElements(from, from_start, to, to_start,
-                                       copy_size);
-        break;
-      case SLOPPY_ARGUMENTS_ELEMENTS:
-        UNREACHABLE();
-
-#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size)                       \
-      case EXTERNAL_##TYPE##_ELEMENTS:                                        \
-      case TYPE##_ELEMENTS:                                                   \
-        UNREACHABLE();
-      TYPED_ARRAYS(TYPED_ARRAY_CASE)
-#undef TYPED_ARRAY_CASE
-    }
-  }
-};
-
-
-class FastPackedDoubleElementsAccessor
-    : public FastDoubleElementsAccessor<
-        FastPackedDoubleElementsAccessor,
-        ElementsKindTraits<FAST_DOUBLE_ELEMENTS> > {
- public:
-  friend class ElementsAccessorBase<FastPackedDoubleElementsAccessor,
-                                    ElementsKindTraits<FAST_DOUBLE_ELEMENTS> >;
-  explicit FastPackedDoubleElementsAccessor(const char* name)
-      : FastDoubleElementsAccessor<
-          FastPackedDoubleElementsAccessor,
-          ElementsKindTraits<FAST_DOUBLE_ELEMENTS> >(name) {}
-};
-
-
-class FastHoleyDoubleElementsAccessor
-    : public FastDoubleElementsAccessor<
-        FastHoleyDoubleElementsAccessor,
-        ElementsKindTraits<FAST_HOLEY_DOUBLE_ELEMENTS> > {
- public:
-  friend class ElementsAccessorBase<
-    FastHoleyDoubleElementsAccessor,
-    ElementsKindTraits<FAST_HOLEY_DOUBLE_ELEMENTS> >;
-  explicit FastHoleyDoubleElementsAccessor(const char* name)
-      : FastDoubleElementsAccessor<
-          FastHoleyDoubleElementsAccessor,
-          ElementsKindTraits<FAST_HOLEY_DOUBLE_ELEMENTS> >(name) {}
-};
-
-
-// Super class for all external element arrays.
-template<ElementsKind Kind>
-class TypedElementsAccessor
-    : public ElementsAccessorBase<TypedElementsAccessor<Kind>,
-                                  ElementsKindTraits<Kind> > {
- public:
-  explicit TypedElementsAccessor(const char* name)
-      : ElementsAccessorBase<AccessorClass,
-                             ElementsKindTraits<Kind> >(name) {}
-
- protected:
-  typedef typename ElementsKindTraits<Kind>::BackingStore BackingStore;
-  typedef TypedElementsAccessor<Kind> AccessorClass;
-
-  friend class ElementsAccessorBase<AccessorClass,
-                                    ElementsKindTraits<Kind> >;
-
-  static Handle<Object> GetImpl(Handle<JSObject> obj, uint32_t key,
-                                Handle<FixedArrayBase> backing_store) {
-    if (key < AccessorClass::GetCapacityImpl(*obj, *backing_store)) {
-      return BackingStore::get(Handle<BackingStore>::cast(backing_store), key);
-    } else {
-      return backing_store->GetIsolate()->factory()->undefined_value();
-    }
-  }
-
-  static PropertyDetails GetDetailsImpl(FixedArrayBase* backing_store,
-                                        uint32_t index) {
-    return PropertyDetails(DONT_DELETE, DATA, 0, PropertyCellType::kNoCell);
-  }
-
-  static void SetLengthImpl(Handle<JSArray> array, uint32_t length,
-                            Handle<FixedArrayBase> backing_store) {
-    // External arrays do not support changing their length.
-    UNREACHABLE();
-  }
-
-  virtual void Delete(Handle<JSObject> obj, uint32_t key,
-                      LanguageMode language_mode) final {
-    // External arrays always ignore deletes.
-  }
-
-  static uint32_t GetIndexForKeyImpl(JSObject* holder,
-                                     FixedArrayBase* backing_store,
-                                     uint32_t key) {
-    return key < AccessorClass::GetCapacityImpl(holder, backing_store)
-               ? key
-               : kMaxUInt32;
-  }
-
-  static uint32_t GetCapacityImpl(JSObject* holder,
-                                  FixedArrayBase* backing_store) {
-    JSArrayBufferView* view = JSArrayBufferView::cast(holder);
-    if (view->WasNeutered()) return 0;
-    return backing_store->length();
-  }
-};
-
-
-
-#define EXTERNAL_ELEMENTS_ACCESSOR(Type, type, TYPE, ctype, size)    \
-  typedef TypedElementsAccessor<EXTERNAL_##TYPE##_ELEMENTS>          \
-      External##Type##ElementsAccessor;
-
-TYPED_ARRAYS(EXTERNAL_ELEMENTS_ACCESSOR)
-#undef EXTERNAL_ELEMENTS_ACCESSOR
-
-#define FIXED_ELEMENTS_ACCESSOR(Type, type, TYPE, ctype, size)       \
-  typedef TypedElementsAccessor<TYPE##_ELEMENTS >                    \
-      Fixed##Type##ElementsAccessor;
-
-TYPED_ARRAYS(FIXED_ELEMENTS_ACCESSOR)
-#undef FIXED_ELEMENTS_ACCESSOR
-
 
 
 class DictionaryElementsAccessor
@@ -1417,13 +981,20 @@ class DictionaryElementsAccessor
     array->set_length(*length_obj);
   }
 
+  static void CopyElementsImpl(FixedArrayBase* from, uint32_t from_start,
+                               FixedArrayBase* to, ElementsKind from_kind,
+                               uint32_t to_start, int packed_size,
+                               int copy_size) {
+    UNREACHABLE();
+  }
+
+
   static void DeleteCommon(Handle<JSObject> obj, uint32_t key,
                            LanguageMode language_mode) {
     Isolate* isolate = obj->GetIsolate();
     Handle<FixedArray> backing_store(FixedArray::cast(obj->elements()),
                                      isolate);
-    bool is_arguments =
-        (obj->GetElementsKind() == SLOPPY_ARGUMENTS_ELEMENTS);
+    bool is_arguments = obj->HasSloppyArgumentsElements();
     if (is_arguments) {
       backing_store = handle(FixedArray::cast(backing_store->get(1)), isolate);
     }
@@ -1445,18 +1016,6 @@ class DictionaryElementsAccessor
       }
     }
   }
-
-  static void CopyElementsImpl(FixedArrayBase* from, uint32_t from_start,
-                               FixedArrayBase* to, ElementsKind from_kind,
-                               uint32_t to_start, int packed_size,
-                               int copy_size) {
-    UNREACHABLE();
-  }
-
-
- protected:
-  friend class ElementsAccessorBase<DictionaryElementsAccessor,
-                                    ElementsKindTraits<DICTIONARY_ELEMENTS> >;
 
   virtual void Delete(Handle<JSObject> obj, uint32_t key,
                       LanguageMode language_mode) final {
@@ -1556,18 +1115,400 @@ class DictionaryElementsAccessor
 };
 
 
-class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
-    SloppyArgumentsElementsAccessor,
-    ElementsKindTraits<SLOPPY_ARGUMENTS_ELEMENTS> > {
+// Super class for all fast element arrays.
+template<typename FastElementsAccessorSubclass,
+         typename KindTraits>
+class FastElementsAccessor
+    : public ElementsAccessorBase<FastElementsAccessorSubclass, KindTraits> {
+ public:
+  explicit FastElementsAccessor(const char* name)
+      : ElementsAccessorBase<FastElementsAccessorSubclass,
+                             KindTraits>(name) {}
+
+  typedef typename KindTraits::BackingStore BackingStore;
+
+  static void DeleteCommon(Handle<JSObject> obj, uint32_t key,
+                           LanguageMode language_mode) {
+    DCHECK(obj->HasFastSmiOrObjectElements() ||
+           obj->HasFastDoubleElements() ||
+           obj->HasFastArgumentsElements());
+    Isolate* isolate = obj->GetIsolate();
+    Heap* heap = obj->GetHeap();
+    Handle<FixedArrayBase> elements(obj->elements());
+    if (*elements == heap->empty_fixed_array()) return;
+
+    Handle<BackingStore> backing_store = Handle<BackingStore>::cast(elements);
+    bool is_sloppy_arguments_elements_map =
+        backing_store->map() == heap->sloppy_arguments_elements_map();
+    if (is_sloppy_arguments_elements_map) {
+      backing_store = handle(
+          BackingStore::cast(Handle<FixedArray>::cast(backing_store)->get(1)),
+          isolate);
+    }
+    uint32_t length = static_cast<uint32_t>(
+        obj->IsJSArray()
+        ? Smi::cast(Handle<JSArray>::cast(obj)->length())->value()
+        : backing_store->length());
+    if (key < length) {
+      if (!is_sloppy_arguments_elements_map) {
+        ElementsKind kind = KindTraits::Kind;
+        if (IsFastPackedElementsKind(kind)) {
+          JSObject::TransitionElementsKind(obj, GetHoleyElementsKind(kind));
+        }
+        if (IsFastSmiOrObjectElementsKind(KindTraits::Kind)) {
+          Handle<Object> writable = JSObject::EnsureWritableFastElements(obj);
+          backing_store = Handle<BackingStore>::cast(writable);
+        }
+      }
+      backing_store->set_the_hole(key);
+      // If an old space backing store is larger than a certain size and
+      // has too few used values, normalize it.
+      // To avoid doing the check on every delete we require at least
+      // one adjacent hole to the value being deleted.
+      const int kMinLengthForSparsenessCheck = 64;
+      if (backing_store->length() >= kMinLengthForSparsenessCheck &&
+          !heap->InNewSpace(*backing_store) &&
+          ((key > 0 && backing_store->is_the_hole(key - 1)) ||
+           (key + 1 < length && backing_store->is_the_hole(key + 1)))) {
+        int num_used = 0;
+        for (int i = 0; i < backing_store->length(); ++i) {
+          if (!backing_store->is_the_hole(i)) ++num_used;
+          // Bail out early if more than 1/4 is used.
+          if (4 * num_used > backing_store->length()) break;
+        }
+        if (4 * num_used <= backing_store->length()) {
+          JSObject::NormalizeElements(obj);
+        }
+      }
+    }
+  }
+
+  static void ReconfigureImpl(Handle<JSObject> object,
+                              Handle<FixedArrayBase> store, uint32_t index,
+                              Handle<Object> value,
+                              PropertyAttributes attributes) {
+    Handle<SeededNumberDictionary> dictionary =
+        JSObject::NormalizeElements(object);
+    index = dictionary->FindEntry(index);
+    DictionaryElementsAccessor::ReconfigureImpl(object, dictionary, index,
+                                                value, attributes);
+  }
+
+  static void AddImpl(Handle<JSObject> object, uint32_t index,
+                      Handle<Object> value, PropertyAttributes attributes,
+                      uint32_t new_capacity) {
+    DCHECK_EQ(NONE, attributes);
+    ElementsKind from_kind = object->GetElementsKind();
+    ElementsKind to_kind = FastElementsAccessorSubclass::kind();
+    if (IsDictionaryElementsKind(from_kind) ||
+        IsFastDoubleElementsKind(from_kind) !=
+            IsFastDoubleElementsKind(to_kind) ||
+        FastElementsAccessorSubclass::GetCapacityImpl(
+            *object, object->elements()) != new_capacity) {
+      FastElementsAccessorSubclass::GrowCapacityAndConvertImpl(object,
+                                                               new_capacity);
+    } else {
+      if (from_kind != to_kind) {
+        JSObject::TransitionElementsKind(object, to_kind);
+      }
+      if (IsFastSmiOrObjectElementsKind(from_kind)) {
+        DCHECK(IsFastSmiOrObjectElementsKind(to_kind));
+        JSObject::EnsureWritableFastElements(object);
+      }
+    }
+    FastElementsAccessorSubclass::SetImpl(object->elements(), index, *value);
+  }
+
+  virtual void Delete(Handle<JSObject> obj, uint32_t key,
+                      LanguageMode language_mode) final {
+    DeleteCommon(obj, key, language_mode);
+  }
+
+  static bool HasIndexImpl(FixedArrayBase* backing_store, uint32_t index) {
+    return !BackingStore::cast(backing_store)->is_the_hole(index);
+  }
+
+  static void ValidateContents(Handle<JSObject> holder, int length) {
+#if DEBUG
+    Isolate* isolate = holder->GetIsolate();
+    HandleScope scope(isolate);
+    Handle<FixedArrayBase> elements(holder->elements(), isolate);
+    Map* map = elements->map();
+    DCHECK((IsFastSmiOrObjectElementsKind(KindTraits::Kind) &&
+            (map == isolate->heap()->fixed_array_map() ||
+             map == isolate->heap()->fixed_cow_array_map())) ||
+           (IsFastDoubleElementsKind(KindTraits::Kind) ==
+            ((map == isolate->heap()->fixed_array_map() && length == 0) ||
+             map == isolate->heap()->fixed_double_array_map())));
+    if (length == 0) return;  // nothing to do!
+    DisallowHeapAllocation no_gc;
+    Handle<BackingStore> backing_store = Handle<BackingStore>::cast(elements);
+    if (IsFastSmiElementsKind(KindTraits::Kind)) {
+      for (int i = 0; i < length; i++) {
+        DCHECK(BackingStore::get(backing_store, i)->IsSmi() ||
+               (IsFastHoleyElementsKind(KindTraits::Kind) &&
+                backing_store->is_the_hole(i)));
+      }
+    }
+#endif
+  }
+};
+
+
+template<typename FastElementsAccessorSubclass,
+         typename KindTraits>
+class FastSmiOrObjectElementsAccessor
+    : public FastElementsAccessor<FastElementsAccessorSubclass, KindTraits> {
+ public:
+  explicit FastSmiOrObjectElementsAccessor(const char* name)
+      : FastElementsAccessor<FastElementsAccessorSubclass,
+                             KindTraits>(name) {}
+
+  // NOTE: this method violates the handlified function signature convention:
+  // raw pointer parameters in the function that allocates.
+  // See ElementsAccessor::CopyElements() for details.
+  // This method could actually allocate if copying from double elements to
+  // object elements.
+  static void CopyElementsImpl(FixedArrayBase* from, uint32_t from_start,
+                               FixedArrayBase* to, ElementsKind from_kind,
+                               uint32_t to_start, int packed_size,
+                               int copy_size) {
+    DisallowHeapAllocation no_gc;
+    ElementsKind to_kind = KindTraits::Kind;
+    switch (from_kind) {
+      case FAST_SMI_ELEMENTS:
+      case FAST_HOLEY_SMI_ELEMENTS:
+      case FAST_ELEMENTS:
+      case FAST_HOLEY_ELEMENTS:
+        CopyObjectToObjectElements(from, from_kind, from_start, to, to_kind,
+                                   to_start, copy_size);
+        break;
+      case FAST_DOUBLE_ELEMENTS:
+      case FAST_HOLEY_DOUBLE_ELEMENTS: {
+        AllowHeapAllocation allow_allocation;
+        CopyDoubleToObjectElements(
+            from, from_start, to, to_kind, to_start, copy_size);
+        break;
+      }
+      case DICTIONARY_ELEMENTS:
+        CopyDictionaryToObjectElements(from, from_start, to, to_kind, to_start,
+                                       copy_size);
+        break;
+      case FAST_SLOPPY_ARGUMENTS_ELEMENTS:
+      case SLOW_SLOPPY_ARGUMENTS_ELEMENTS:
+        UNREACHABLE();
+#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size)                       \
+      case EXTERNAL_##TYPE##_ELEMENTS:                                        \
+      case TYPE##_ELEMENTS:                                                   \
+        UNREACHABLE();
+      TYPED_ARRAYS(TYPED_ARRAY_CASE)
+#undef TYPED_ARRAY_CASE
+    }
+  }
+};
+
+
+class FastPackedSmiElementsAccessor
+    : public FastSmiOrObjectElementsAccessor<
+        FastPackedSmiElementsAccessor,
+        ElementsKindTraits<FAST_SMI_ELEMENTS> > {
+ public:
+  explicit FastPackedSmiElementsAccessor(const char* name)
+      : FastSmiOrObjectElementsAccessor<
+          FastPackedSmiElementsAccessor,
+          ElementsKindTraits<FAST_SMI_ELEMENTS> >(name) {}
+};
+
+
+class FastHoleySmiElementsAccessor
+    : public FastSmiOrObjectElementsAccessor<
+        FastHoleySmiElementsAccessor,
+        ElementsKindTraits<FAST_HOLEY_SMI_ELEMENTS> > {
+ public:
+  explicit FastHoleySmiElementsAccessor(const char* name)
+      : FastSmiOrObjectElementsAccessor<
+          FastHoleySmiElementsAccessor,
+          ElementsKindTraits<FAST_HOLEY_SMI_ELEMENTS> >(name) {}
+};
+
+
+class FastPackedObjectElementsAccessor
+    : public FastSmiOrObjectElementsAccessor<
+        FastPackedObjectElementsAccessor,
+        ElementsKindTraits<FAST_ELEMENTS> > {
+ public:
+  explicit FastPackedObjectElementsAccessor(const char* name)
+      : FastSmiOrObjectElementsAccessor<
+          FastPackedObjectElementsAccessor,
+          ElementsKindTraits<FAST_ELEMENTS> >(name) {}
+};
+
+
+class FastHoleyObjectElementsAccessor
+    : public FastSmiOrObjectElementsAccessor<
+        FastHoleyObjectElementsAccessor,
+        ElementsKindTraits<FAST_HOLEY_ELEMENTS> > {
+ public:
+  explicit FastHoleyObjectElementsAccessor(const char* name)
+      : FastSmiOrObjectElementsAccessor<
+          FastHoleyObjectElementsAccessor,
+          ElementsKindTraits<FAST_HOLEY_ELEMENTS> >(name) {}
+};
+
+
+template<typename FastElementsAccessorSubclass,
+         typename KindTraits>
+class FastDoubleElementsAccessor
+    : public FastElementsAccessor<FastElementsAccessorSubclass, KindTraits> {
+ public:
+  explicit FastDoubleElementsAccessor(const char* name)
+      : FastElementsAccessor<FastElementsAccessorSubclass,
+                             KindTraits>(name) {}
+
+  static void CopyElementsImpl(FixedArrayBase* from, uint32_t from_start,
+                               FixedArrayBase* to, ElementsKind from_kind,
+                               uint32_t to_start, int packed_size,
+                               int copy_size) {
+    DisallowHeapAllocation no_allocation;
+    switch (from_kind) {
+      case FAST_SMI_ELEMENTS:
+        CopyPackedSmiToDoubleElements(from, from_start, to, to_start,
+                                      packed_size, copy_size);
+        break;
+      case FAST_HOLEY_SMI_ELEMENTS:
+        CopySmiToDoubleElements(from, from_start, to, to_start, copy_size);
+        break;
+      case FAST_DOUBLE_ELEMENTS:
+      case FAST_HOLEY_DOUBLE_ELEMENTS:
+        CopyDoubleToDoubleElements(from, from_start, to, to_start, copy_size);
+        break;
+      case FAST_ELEMENTS:
+      case FAST_HOLEY_ELEMENTS:
+        CopyObjectToDoubleElements(from, from_start, to, to_start, copy_size);
+        break;
+      case DICTIONARY_ELEMENTS:
+        CopyDictionaryToDoubleElements(from, from_start, to, to_start,
+                                       copy_size);
+        break;
+      case FAST_SLOPPY_ARGUMENTS_ELEMENTS:
+      case SLOW_SLOPPY_ARGUMENTS_ELEMENTS:
+        UNREACHABLE();
+
+#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size)                       \
+      case EXTERNAL_##TYPE##_ELEMENTS:                                        \
+      case TYPE##_ELEMENTS:                                                   \
+        UNREACHABLE();
+      TYPED_ARRAYS(TYPED_ARRAY_CASE)
+#undef TYPED_ARRAY_CASE
+    }
+  }
+};
+
+
+class FastPackedDoubleElementsAccessor
+    : public FastDoubleElementsAccessor<
+        FastPackedDoubleElementsAccessor,
+        ElementsKindTraits<FAST_DOUBLE_ELEMENTS> > {
+ public:
+  explicit FastPackedDoubleElementsAccessor(const char* name)
+      : FastDoubleElementsAccessor<
+          FastPackedDoubleElementsAccessor,
+          ElementsKindTraits<FAST_DOUBLE_ELEMENTS> >(name) {}
+};
+
+
+class FastHoleyDoubleElementsAccessor
+    : public FastDoubleElementsAccessor<
+        FastHoleyDoubleElementsAccessor,
+        ElementsKindTraits<FAST_HOLEY_DOUBLE_ELEMENTS> > {
+ public:
+  explicit FastHoleyDoubleElementsAccessor(const char* name)
+      : FastDoubleElementsAccessor<
+          FastHoleyDoubleElementsAccessor,
+          ElementsKindTraits<FAST_HOLEY_DOUBLE_ELEMENTS> >(name) {}
+};
+
+
+// Super class for all external element arrays.
+template<ElementsKind Kind>
+class TypedElementsAccessor
+    : public ElementsAccessorBase<TypedElementsAccessor<Kind>,
+                                  ElementsKindTraits<Kind> > {
+ public:
+  explicit TypedElementsAccessor(const char* name)
+      : ElementsAccessorBase<AccessorClass,
+                             ElementsKindTraits<Kind> >(name) {}
+
+  typedef typename ElementsKindTraits<Kind>::BackingStore BackingStore;
+  typedef TypedElementsAccessor<Kind> AccessorClass;
+
+  static Handle<Object> GetImpl(Handle<JSObject> obj, uint32_t key,
+                                Handle<FixedArrayBase> backing_store) {
+    if (key < AccessorClass::GetCapacityImpl(*obj, *backing_store)) {
+      return BackingStore::get(Handle<BackingStore>::cast(backing_store), key);
+    } else {
+      return backing_store->GetIsolate()->factory()->undefined_value();
+    }
+  }
+
+  static PropertyDetails GetDetailsImpl(FixedArrayBase* backing_store,
+                                        uint32_t index) {
+    return PropertyDetails(DONT_DELETE, DATA, 0, PropertyCellType::kNoCell);
+  }
+
+  static void SetLengthImpl(Handle<JSArray> array, uint32_t length,
+                            Handle<FixedArrayBase> backing_store) {
+    // External arrays do not support changing their length.
+    UNREACHABLE();
+  }
+
+  virtual void Delete(Handle<JSObject> obj, uint32_t key,
+                      LanguageMode language_mode) final {
+    // External arrays always ignore deletes.
+  }
+
+  static uint32_t GetIndexForKeyImpl(JSObject* holder,
+                                     FixedArrayBase* backing_store,
+                                     uint32_t key) {
+    return key < AccessorClass::GetCapacityImpl(holder, backing_store)
+               ? key
+               : kMaxUInt32;
+  }
+
+  static uint32_t GetCapacityImpl(JSObject* holder,
+                                  FixedArrayBase* backing_store) {
+    JSArrayBufferView* view = JSArrayBufferView::cast(holder);
+    if (view->WasNeutered()) return 0;
+    return backing_store->length();
+  }
+};
+
+
+
+#define EXTERNAL_ELEMENTS_ACCESSOR(Type, type, TYPE, ctype, size)    \
+  typedef TypedElementsAccessor<EXTERNAL_##TYPE##_ELEMENTS>          \
+      External##Type##ElementsAccessor;
+
+TYPED_ARRAYS(EXTERNAL_ELEMENTS_ACCESSOR)
+#undef EXTERNAL_ELEMENTS_ACCESSOR
+
+#define FIXED_ELEMENTS_ACCESSOR(Type, type, TYPE, ctype, size)       \
+  typedef TypedElementsAccessor<TYPE##_ELEMENTS >                    \
+      Fixed##Type##ElementsAccessor;
+
+TYPED_ARRAYS(FIXED_ELEMENTS_ACCESSOR)
+#undef FIXED_ELEMENTS_ACCESSOR
+
+
+template <typename SloppyArgumentsElementsAccessorSubclass,
+          typename ArgumentsAccessor, typename KindTraits>
+class SloppyArgumentsElementsAccessor
+    : public ElementsAccessorBase<SloppyArgumentsElementsAccessorSubclass,
+                                  KindTraits> {
  public:
   explicit SloppyArgumentsElementsAccessor(const char* name)
-      : ElementsAccessorBase<
-          SloppyArgumentsElementsAccessor,
-          ElementsKindTraits<SLOPPY_ARGUMENTS_ELEMENTS> >(name) {}
- protected:
-  friend class ElementsAccessorBase<
-      SloppyArgumentsElementsAccessor,
-      ElementsKindTraits<SLOPPY_ARGUMENTS_ELEMENTS> >;
+      : ElementsAccessorBase<SloppyArgumentsElementsAccessorSubclass,
+                             KindTraits>(name) {}
 
   static Handle<Object> GetImpl(Handle<JSObject> obj, uint32_t key,
                                 Handle<FixedArrayBase> parameters) {
@@ -1584,8 +1525,7 @@ class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
       // Object is not mapped, defer to the arguments.
       Handle<FixedArray> arguments(FixedArray::cast(parameter_map->get(1)),
                                    isolate);
-      Handle<Object> result =
-          ElementsAccessor::ForArray(arguments)->Get(obj, key, arguments);
+      Handle<Object> result = ArgumentsAccessor::GetImpl(obj, key, arguments);
       // Elements of the arguments object in slow mode might be slow aliases.
       if (result->IsAliasedArgumentsEntry()) {
         DisallowHeapAllocation no_gc;
@@ -1600,20 +1540,22 @@ class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
     }
   }
 
+  virtual void Delete(Handle<JSObject> obj, uint32_t key,
+                      LanguageMode language_mode) final {
+    FixedArray* parameter_map = FixedArray::cast(obj->elements());
+    if (!GetParameterMapArg(parameter_map, key)->IsTheHole()) {
+      // TODO(kmillikin): We could check if this was the last aliased
+      // parameter, and revert to normal elements in that case.  That
+      // would enable GC of the context.
+      parameter_map->set_the_hole(key + 2);
+    } else {
+      ArgumentsAccessor::DeleteCommon(obj, key, language_mode);
+    }
+  }
+
   static void GrowCapacityAndConvertImpl(Handle<JSObject> object,
                                          uint32_t capacity) {
-    Handle<FixedArray> parameter_map(FixedArray::cast(object->elements()));
-    Handle<FixedArray> old_elements(FixedArray::cast(parameter_map->get(1)));
-    ElementsKind from_kind = old_elements->IsDictionary() ? DICTIONARY_ELEMENTS
-                                                          : FAST_HOLEY_ELEMENTS;
-    // This method should only be called if there's a reason to update the
-    // elements.
-    DCHECK(IsDictionaryElementsKind(from_kind) ||
-           static_cast<uint32_t>(old_elements->length()) < capacity);
-    Handle<FixedArrayBase> elements =
-        ConvertElementsWithCapacity(object, old_elements, from_kind, capacity);
-    parameter_map->set(1, *elements);
-    JSObject::ValidateElements(object);
+    UNREACHABLE();
   }
 
   static void SetImpl(FixedArrayBase* store, uint32_t key, Object* value) {
@@ -1626,7 +1568,119 @@ class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
       context->set(context_index, value);
     } else {
       FixedArray* arguments = FixedArray::cast(parameter_map->get(1));
-      ElementsAccessor::ForArray(arguments)->Set(arguments, key, value);
+      ArgumentsAccessor::SetImpl(arguments, key, value);
+    }
+  }
+
+  static MaybeHandle<AccessorPair> GetAccessorPairImpl(
+      Handle<JSObject> obj, uint32_t key, Handle<FixedArrayBase> parameters) {
+    Handle<FixedArray> parameter_map = Handle<FixedArray>::cast(parameters);
+    Handle<Object> probe(GetParameterMapArg(*parameter_map, key),
+                         obj->GetIsolate());
+    if (!probe->IsTheHole()) {
+      return MaybeHandle<AccessorPair>();
+    } else {
+      // If not aliased, check the arguments.
+      Handle<FixedArray> arguments(FixedArray::cast(parameter_map->get(1)));
+      return ArgumentsAccessor::GetAccessorPairImpl(obj, key, arguments);
+    }
+  }
+
+  static void SetLengthImpl(Handle<JSArray> array, uint32_t length,
+                            Handle<FixedArrayBase> parameter_map) {
+    // Sloppy arguments objects are not arrays.
+    UNREACHABLE();
+  }
+
+  static uint32_t GetCapacityImpl(JSObject* holder,
+                                  FixedArrayBase* backing_store) {
+    FixedArray* parameter_map = FixedArray::cast(backing_store);
+    FixedArrayBase* arguments = FixedArrayBase::cast(parameter_map->get(1));
+    return parameter_map->length() - 2 +
+           ArgumentsAccessor::GetCapacityImpl(holder, arguments);
+  }
+
+  static bool HasIndexImpl(FixedArrayBase* parameters, uint32_t index) {
+    FixedArray* parameter_map = FixedArray::cast(parameters);
+    uint32_t length = parameter_map->length() - 2;
+    if (index < length) {
+      return !GetParameterMapArg(parameter_map, index)->IsTheHole();
+    }
+
+    FixedArrayBase* arguments = FixedArrayBase::cast(parameter_map->get(1));
+    return ArgumentsAccessor::HasIndexImpl(arguments, index - length);
+  }
+
+  static uint32_t GetKeyForIndexImpl(FixedArrayBase* parameters,
+                                     uint32_t index) {
+    FixedArray* parameter_map = FixedArray::cast(parameters);
+    uint32_t length = parameter_map->length() - 2;
+    if (index < length) return index;
+
+    FixedArray* arguments = FixedArray::cast(parameter_map->get(1));
+    return ArgumentsAccessor::GetKeyForIndexImpl(arguments, index - length);
+  }
+
+  static uint32_t GetIndexForKeyImpl(JSObject* holder,
+                                     FixedArrayBase* parameters, uint32_t key) {
+    FixedArray* parameter_map = FixedArray::cast(parameters);
+    Object* probe = GetParameterMapArg(parameter_map, key);
+    if (!probe->IsTheHole()) return key;
+
+    FixedArray* arguments = FixedArray::cast(parameter_map->get(1));
+    uint32_t index =
+        ArgumentsAccessor::GetIndexForKeyImpl(holder, arguments, key);
+    if (index == kMaxUInt32) return index;
+    return (parameter_map->length() - 2) + index;
+  }
+
+  static PropertyDetails GetDetailsImpl(FixedArrayBase* parameters,
+                                        uint32_t index) {
+    FixedArray* parameter_map = FixedArray::cast(parameters);
+    uint32_t length = parameter_map->length() - 2;
+    if (index < length) {
+      return PropertyDetails(NONE, DATA, 0, PropertyCellType::kNoCell);
+    }
+    index -= length;
+    FixedArray* arguments = FixedArray::cast(parameter_map->get(1));
+    return ArgumentsAccessor::GetDetailsImpl(arguments, index);
+  }
+
+  static Object* GetParameterMapArg(FixedArray* parameter_map, uint32_t key) {
+    uint32_t length = parameter_map->length() - 2;
+    return key < length
+               ? parameter_map->get(key + 2)
+               : Object::cast(parameter_map->GetHeap()->the_hole_value());
+  }
+};
+
+
+class SlowSloppyArgumentsElementsAccessor
+    : public SloppyArgumentsElementsAccessor<
+          SlowSloppyArgumentsElementsAccessor, DictionaryElementsAccessor,
+          ElementsKindTraits<SLOW_SLOPPY_ARGUMENTS_ELEMENTS> > {
+ public:
+  explicit SlowSloppyArgumentsElementsAccessor(const char* name)
+      : SloppyArgumentsElementsAccessor<
+            SlowSloppyArgumentsElementsAccessor, DictionaryElementsAccessor,
+            ElementsKindTraits<SLOW_SLOPPY_ARGUMENTS_ELEMENTS> >(name) {}
+
+  static void AddImpl(Handle<JSObject> object, uint32_t key,
+                      Handle<Object> value, PropertyAttributes attributes,
+                      uint32_t new_capacity) {
+    Handle<FixedArray> parameter_map(FixedArray::cast(object->elements()));
+    Handle<FixedArrayBase> old_elements(
+        FixedArrayBase::cast(parameter_map->get(1)));
+    Handle<SeededNumberDictionary> dictionary =
+        old_elements->IsSeededNumberDictionary()
+            ? Handle<SeededNumberDictionary>::cast(old_elements)
+            : JSObject::NormalizeElements(object);
+    PropertyDetails details(attributes, DATA, 0, PropertyCellType::kNoCell);
+    Handle<SeededNumberDictionary> new_dictionary =
+        SeededNumberDictionary::AddNumberEntry(dictionary, key, value, details);
+    if (attributes != NONE) new_dictionary->set_requires_slow_elements();
+    if (*dictionary != *new_dictionary) {
+      FixedArray::cast(object->elements())->set(1, *new_dictionary);
     }
   }
 
@@ -1653,20 +1707,31 @@ class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
       }
 
       PropertyDetails details(attributes, DATA, 0, PropertyCellType::kNoCell);
-      Handle<SeededNumberDictionary> arguments =
-          parameter_map->get(1)->IsSeededNumberDictionary()
-              ? handle(SeededNumberDictionary::cast(parameter_map->get(1)))
-              : JSObject::NormalizeElements(object);
+      Handle<SeededNumberDictionary> arguments(
+          SeededNumberDictionary::cast(parameter_map->get(1)));
       arguments = SeededNumberDictionary::AddNumberEntry(arguments, index,
                                                          value, details);
       parameter_map->set(1, *arguments);
     } else {
       Handle<FixedArrayBase> arguments(
           FixedArrayBase::cast(parameter_map->get(1)));
-      ElementsAccessor::ForArray(arguments)
-          ->Reconfigure(object, arguments, index - length, value, attributes);
+      DictionaryElementsAccessor::ReconfigureImpl(
+          object, arguments, index - length, value, attributes);
     }
   }
+};
+
+
+class FastSloppyArgumentsElementsAccessor
+    : public SloppyArgumentsElementsAccessor<
+          FastSloppyArgumentsElementsAccessor, FastHoleyObjectElementsAccessor,
+          ElementsKindTraits<FAST_SLOPPY_ARGUMENTS_ELEMENTS> > {
+ public:
+  explicit FastSloppyArgumentsElementsAccessor(const char* name)
+      : SloppyArgumentsElementsAccessor<
+            FastSloppyArgumentsElementsAccessor,
+            FastHoleyObjectElementsAccessor,
+            ElementsKindTraits<FAST_SLOPPY_ARGUMENTS_ELEMENTS> >(name) {}
 
   static void AddImpl(Handle<JSObject> object, uint32_t key,
                       Handle<Object> value, PropertyAttributes attributes,
@@ -1682,48 +1747,19 @@ class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
     SetImpl(object->elements(), key, *value);
   }
 
-  static MaybeHandle<AccessorPair> GetAccessorPairImpl(
-      Handle<JSObject> obj, uint32_t key, Handle<FixedArrayBase> parameters) {
-    Handle<FixedArray> parameter_map = Handle<FixedArray>::cast(parameters);
-    Handle<Object> probe(GetParameterMapArg(*parameter_map, key),
-                         obj->GetIsolate());
-    if (!probe->IsTheHole()) {
-      return MaybeHandle<AccessorPair>();
-    } else {
-      // If not aliased, check the arguments.
-      Handle<FixedArray> arguments(FixedArray::cast(parameter_map->get(1)));
-      return ElementsAccessor::ForArray(arguments)
-          ->GetAccessorPair(obj, key, arguments);
+  static void ReconfigureImpl(Handle<JSObject> object,
+                              Handle<FixedArrayBase> store, uint32_t index,
+                              Handle<Object> value,
+                              PropertyAttributes attributes) {
+    Handle<SeededNumberDictionary> dictionary =
+        JSObject::NormalizeElements(object);
+    FixedArray::cast(*store)->set(1, *dictionary);
+    uint32_t length = static_cast<uint32_t>(store->length()) - 2;
+    if (index >= length) {
+      index = dictionary->FindEntry(index - length) + length;
     }
-  }
-
-  static void SetLengthImpl(Handle<JSArray> array, uint32_t length,
-                            Handle<FixedArrayBase> parameter_map) {
-    // Sloppy arguments objects are not arrays.
-    UNREACHABLE();
-  }
-
-  virtual void Delete(Handle<JSObject> obj, uint32_t key,
-                      LanguageMode language_mode) final {
-    Isolate* isolate = obj->GetIsolate();
-    Handle<FixedArray> parameter_map(FixedArray::cast(obj->elements()));
-    Handle<Object> probe(GetParameterMapArg(*parameter_map, key), isolate);
-    if (!probe->IsTheHole()) {
-      // TODO(kmillikin): We could check if this was the last aliased
-      // parameter, and revert to normal elements in that case.  That
-      // would enable GC of the context.
-      parameter_map->set_the_hole(key + 2);
-    } else {
-      Handle<FixedArray> arguments(FixedArray::cast(parameter_map->get(1)));
-      if (arguments->IsDictionary()) {
-        DictionaryElementsAccessor::DeleteCommon(obj, key, language_mode);
-      } else {
-        // It's difficult to access the version of DeleteCommon that is declared
-        // in the templatized super class, call the concrete implementation in
-        // the class for the most generalized ElementsKind subclass.
-        FastHoleyObjectElementsAccessor::DeleteCommon(obj, key, language_mode);
-      }
-    }
+    SlowSloppyArgumentsElementsAccessor::ReconfigureImpl(object, store, index,
+                                                         value, attributes);
   }
 
   static void CopyElementsImpl(FixedArrayBase* from, uint32_t from_start,
@@ -1731,88 +1767,34 @@ class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
                                uint32_t to_start, int packed_size,
                                int copy_size) {
     DCHECK(!to->IsDictionary());
-    if (from_kind == DICTIONARY_ELEMENTS) {
+    if (from_kind == SLOW_SLOPPY_ARGUMENTS_ELEMENTS) {
       CopyDictionaryToObjectElements(from, from_start, to, FAST_HOLEY_ELEMENTS,
                                      to_start, copy_size);
     } else {
-      DCHECK_EQ(FAST_HOLEY_ELEMENTS, from_kind);
-      CopyObjectToObjectElements(from, from_kind, from_start, to,
+      DCHECK_EQ(FAST_SLOPPY_ARGUMENTS_ELEMENTS, from_kind);
+      CopyObjectToObjectElements(from, FAST_HOLEY_ELEMENTS, from_start, to,
                                  FAST_HOLEY_ELEMENTS, to_start, copy_size);
     }
   }
 
-  static uint32_t GetCapacityImpl(JSObject* holder,
-                                  FixedArrayBase* backing_store) {
-    FixedArray* parameter_map = FixedArray::cast(backing_store);
-    FixedArrayBase* arguments = FixedArrayBase::cast(parameter_map->get(1));
-    return parameter_map->length() - 2 +
-           ForArray(arguments)->GetCapacity(holder, arguments);
-  }
-
-  static bool HasIndexImpl(FixedArrayBase* parameters, uint32_t index) {
-    FixedArray* parameter_map = FixedArray::cast(parameters);
-    uint32_t length = parameter_map->length() - 2;
-    if (index < length) {
-      return !GetParameterMapArg(parameter_map, index)->IsTheHole();
-    }
-
-    FixedArrayBase* arguments = FixedArrayBase::cast(parameter_map->get(1));
-    return ForArray(arguments)->HasIndex(arguments, index - length);
-  }
-
-  static uint32_t GetKeyForIndexImpl(FixedArrayBase* parameters,
-                                     uint32_t index) {
-    FixedArray* parameter_map = FixedArray::cast(parameters);
-    uint32_t length = parameter_map->length() - 2;
-    if (index < length) return index;
-
-    FixedArray* arguments = FixedArray::cast(parameter_map->get(1));
-    return ForArray(arguments)->GetKeyForIndex(arguments, index - length);
-  }
-
-  static uint32_t GetIndexForKeyImpl(JSObject* holder,
-                                     FixedArrayBase* parameters, uint32_t key) {
-    FixedArray* parameter_map = FixedArray::cast(parameters);
-    Object* probe = GetParameterMapArg(parameter_map, key);
-    if (!probe->IsTheHole()) return key;
-
-    FixedArray* arguments = FixedArray::cast(parameter_map->get(1));
-    uint32_t index = ElementsAccessor::ForArray(arguments)
-                         ->GetIndexForKey(holder, arguments, key);
-    if (index == kMaxUInt32) return index;
-    return (parameter_map->length() - 2) + index;
-  }
-
-  static PropertyDetails GetDetailsImpl(FixedArrayBase* parameters,
-                                        uint32_t index) {
-    FixedArray* parameter_map = FixedArray::cast(parameters);
-    uint32_t length = parameter_map->length() - 2;
-    if (index < length) {
-      return PropertyDetails(NONE, DATA, 0, PropertyCellType::kNoCell);
-    }
-    index -= length;
-    FixedArray* arguments = FixedArray::cast(parameter_map->get(1));
-    return ElementsAccessor::ForArray(arguments)->GetDetails(arguments, index);
-  }
-
- private:
-  static Object* GetParameterMapArg(FixedArray* parameter_map, uint32_t key) {
-    uint32_t length = parameter_map->length() - 2;
-    return key < length
-               ? parameter_map->get(key + 2)
-               : Object::cast(parameter_map->GetHeap()->the_hole_value());
+  static void GrowCapacityAndConvertImpl(Handle<JSObject> object,
+                                         uint32_t capacity) {
+    Handle<FixedArray> parameter_map(FixedArray::cast(object->elements()));
+    Handle<FixedArray> old_elements(FixedArray::cast(parameter_map->get(1)));
+    ElementsKind from_kind = object->GetElementsKind();
+    // This method should only be called if there's a reason to update the
+    // elements.
+    DCHECK(from_kind == SLOW_SLOPPY_ARGUMENTS_ELEMENTS ||
+           static_cast<uint32_t>(old_elements->length()) < capacity);
+    Handle<FixedArrayBase> elements =
+        ConvertElementsWithCapacity(object, old_elements, from_kind, capacity);
+    Handle<Map> new_map = JSObject::GetElementsTransitionMap(
+        object, FAST_SLOPPY_ARGUMENTS_ELEMENTS);
+    JSObject::MigrateToMap(object, new_map);
+    parameter_map->set(1, *elements);
+    JSObject::ValidateElements(object);
   }
 };
-
-
-ElementsAccessor* ElementsAccessor::ForArray(FixedArrayBase* array) {
-  return elements_accessors_[ElementsKindForArray(array)];
-}
-
-
-ElementsAccessor* ElementsAccessor::ForArray(Handle<FixedArrayBase> array) {
-  return ForArray(*array);
-}
 
 
 void ElementsAccessor::InitializeOncePerProcess() {

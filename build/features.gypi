@@ -102,7 +102,7 @@
       ['v8_use_simulator=="true"', {
         'defines': ['USE_SIMULATOR',],
       }],
-      ['v8_use_external_startup_data==1', {
+      ['v8_use_snapshot=="true" and v8_use_external_startup_data==1', {
         'defines': ['V8_USE_EXTERNAL_STARTUP_DATA',],
       }],
       ['dcheck_always_on!=0', {
