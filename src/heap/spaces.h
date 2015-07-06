@@ -1014,10 +1014,6 @@ class SkipList {
     list->AddObject(addr, size);
   }
 
-  void Lock() { mutex_.Lock(); }
-
-  void Unlock() { mutex_.Unlock(); }
-
  private:
   static const int kRegionSizeLog2 = 13;
   static const int kRegionSize = 1 << kRegionSizeLog2;
@@ -1026,7 +1022,6 @@ class SkipList {
   STATIC_ASSERT(Page::kPageSize % kRegionSize == 0);
 
   Address starts_[kSize];
-  base::Mutex mutex_;
 };
 
 
@@ -1594,7 +1589,6 @@ class FreeList {
 
   PagedSpace* owner_;
   Heap* heap_;
-  int unreported_allocation_;
 
   static const int kSmallListMax = 0xff * kPointerSize;
   static const int kMediumListMax = 0x7ff * kPointerSize;
@@ -1791,8 +1785,13 @@ class PagedSpace : public Space {
   void ResetFreeList() { free_list_.Reset(); }
 
   // Set space allocation info.
-  void SetTopAndLimit(Address top, Address limit);
-  void ReturnLinearAllocationAreaToFreeList();
+  void SetTopAndLimit(Address top, Address limit) {
+    DCHECK(top == limit ||
+           Page::FromAddress(top) == Page::FromAddress(limit - 1));
+    MemoryChunk::UpdateHighWaterMark(allocation_info_.top());
+    allocation_info_.set_top(top);
+    allocation_info_.set_limit(limit);
+  }
 
   // Empty space allocation info, returning unused area to free list.
   void EmptyAllocationInfo() {

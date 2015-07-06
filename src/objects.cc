@@ -334,8 +334,7 @@ MaybeHandle<Object> Object::GetPropertyWithAccessor(
 
     LOG(isolate, ApiNamedPropertyAccess("load", *holder, *name));
     PropertyCallbackArguments args(isolate, info->data(), *receiver, *holder);
-    v8::Handle<v8::Value> result =
-        args.Call(call_fun, v8::Utils::ToLocal(name));
+    v8::Local<v8::Value> result = args.Call(call_fun, v8::Utils::ToLocal(name));
     RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     if (result.IsEmpty()) {
       return ReadAbsentProperty(isolate, receiver, name, language_mode);
@@ -2982,7 +2981,7 @@ MaybeHandle<Object> JSObject::SetPropertyWithInterceptor(LookupIterator* it,
   if (interceptor->setter()->IsUndefined()) return MaybeHandle<Object>();
 
   Handle<JSObject> holder = it->GetHolder<JSObject>();
-  v8::Handle<v8::Value> result;
+  v8::Local<v8::Value> result;
   PropertyCallbackArguments args(isolate, interceptor->data(),
                                  *it->GetReceiver(), *holder);
 
@@ -4347,7 +4346,7 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
   PropertyCallbackArguments args(isolate, interceptor->data(),
                                  *it->GetReceiver(), *holder);
   if (!interceptor->query()->IsUndefined()) {
-    v8::Handle<v8::Integer> result;
+    v8::Local<v8::Integer> result;
     if (it->IsElement()) {
       uint32_t index = it->index();
       v8::IndexedPropertyQueryCallback query =
@@ -4372,7 +4371,7 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
     }
   } else if (!interceptor->getter()->IsUndefined()) {
     // TODO(verwaest): Use GetPropertyWithInterceptor?
-    v8::Handle<v8::Value> result;
+    v8::Local<v8::Value> result;
     if (it->IsElement()) {
       uint32_t index = it->index();
       v8::IndexedPropertyGetterCallback getter =
@@ -5114,7 +5113,7 @@ MaybeHandle<Object> JSObject::DeletePropertyWithInterceptor(
 
   PropertyCallbackArguments args(isolate, interceptor->data(),
                                  *it->GetReceiver(), *holder);
-  v8::Handle<v8::Boolean> result;
+  v8::Local<v8::Boolean> result;
   if (it->IsElement()) {
     uint32_t index = it->index();
     v8::IndexedPropertyDeleterCallback deleter =
@@ -5146,14 +5145,13 @@ MaybeHandle<Object> JSObject::DeletePropertyWithInterceptor(
 
 
 void JSObject::DeleteNormalizedProperty(Handle<JSObject> object,
-                                        Handle<Name> name) {
+                                        Handle<Name> name, int entry) {
   DCHECK(!object->HasFastProperties());
   Isolate* isolate = object->GetIsolate();
 
   if (object->IsGlobalObject()) {
     // If we have a global object, invalidate the cell and swap in a new one.
     Handle<GlobalDictionary> dictionary(object->global_dictionary());
-    int entry = dictionary->FindEntry(name);
     DCHECK_NE(GlobalDictionary::kNotFound, entry);
 
     auto cell = PropertyCell::InvalidateEntry(dictionary, entry);
@@ -5163,7 +5161,6 @@ void JSObject::DeleteNormalizedProperty(Handle<JSObject> object,
         cell->property_details().set_cell_type(PropertyCellType::kInvalidated));
   } else {
     Handle<NameDictionary> dictionary(object->property_dictionary());
-    int entry = dictionary->FindEntry(name);
     DCHECK_NE(NameDictionary::kNotFound, entry);
 
     NameDictionary::DeleteProperty(dictionary, entry);
@@ -5222,16 +5219,12 @@ MaybeHandle<Object> JSReceiver::DeleteProperty(LookupIterator* it,
         if (!it->IsConfigurable() || receiver->map()->is_strong()) {
           // Fail if the property is not configurable, or on a strong object.
           if (is_strict(language_mode)) {
-            if (receiver->map()->is_strong()) {
-              THROW_NEW_ERROR(
-                  isolate, NewTypeError(MessageTemplate::kStrongDeleteProperty,
-                                        receiver, it->GetName()),
-                  Object);
-            }
-            THROW_NEW_ERROR(isolate,
-                            NewTypeError(MessageTemplate::kStrictDeleteProperty,
-                                         it->GetName(), receiver),
-                            Object);
+            MessageTemplate::Template templ =
+                receiver->map()->is_strong()
+                    ? MessageTemplate::kStrongDeleteProperty
+                    : MessageTemplate::kStrictDeleteProperty;
+            THROW_NEW_ERROR(
+                isolate, NewTypeError(templ, it->GetName(), receiver), Object);
           }
           return it->factory()->false_value();
         }
@@ -5244,18 +5237,7 @@ MaybeHandle<Object> JSReceiver::DeleteProperty(LookupIterator* it,
           return it->factory()->true_value();
         }
 
-        if (it->IsElement()) {
-          ElementsAccessor* accessor = holder->GetElementsAccessor();
-          accessor->Delete(holder, it->index(), language_mode);
-        } else {
-          PropertyNormalizationMode mode = holder->map()->is_prototype_map()
-                                               ? KEEP_INOBJECT_PROPERTIES
-                                               : CLEAR_INOBJECT_PROPERTIES;
-
-          JSObject::NormalizeProperties(holder, mode, 0, "DeletingProperty");
-          JSObject::DeleteNormalizedProperty(holder, it->name());
-          JSObject::ReoptimizeIfPrototype(holder);
-        }
+        it->Delete();
 
         if (is_observed) {
           RETURN_ON_EXCEPTION(isolate,
@@ -6784,8 +6766,9 @@ Handle<Map> Map::ShareDescriptor(Handle<Map> map,
     if (old_size == 0) {
       descriptors = DescriptorArray::Allocate(map->GetIsolate(), 0, 1);
     } else {
-      EnsureDescriptorSlack(
-          map, SlackForArraySize(old_size, kMaxNumberOfDescriptors));
+      int slack = SlackForArraySize(map->is_prototype_map(), old_size,
+                                    kMaxNumberOfDescriptors);
+      EnsureDescriptorSlack(map, slack);
       descriptors = handle(map->instance_descriptors());
     }
   }
@@ -12900,7 +12883,7 @@ MaybeHandle<Object> JSObject::GetPropertyWithInterceptor(LookupIterator* it,
   }
 
   Handle<JSObject> holder = it->GetHolder<JSObject>();
-  v8::Handle<v8::Value> result;
+  v8::Local<v8::Value> result;
   PropertyCallbackArguments args(isolate, interceptor->data(),
                                  *it->GetReceiver(), *holder);
 
@@ -12943,7 +12926,7 @@ MaybeHandle<JSObject> JSObject::GetKeysForNamedInterceptor(
   Handle<InterceptorInfo> interceptor(object->GetNamedInterceptor());
   PropertyCallbackArguments
       args(isolate, interceptor->data(), *receiver, *object);
-  v8::Handle<v8::Object> result;
+  v8::Local<v8::Object> result;
   if (!interceptor->enumerator()->IsUndefined()) {
     v8::GenericNamedPropertyEnumeratorCallback enum_fun =
         v8::ToCData<v8::GenericNamedPropertyEnumeratorCallback>(
@@ -12966,7 +12949,7 @@ MaybeHandle<JSObject> JSObject::GetKeysForIndexedInterceptor(
   Handle<InterceptorInfo> interceptor(object->GetIndexedInterceptor());
   PropertyCallbackArguments
       args(isolate, interceptor->data(), *receiver, *object);
-  v8::Handle<v8::Object> result;
+  v8::Local<v8::Object> result;
   if (!interceptor->enumerator()->IsUndefined()) {
     v8::IndexedPropertyEnumeratorCallback enum_fun =
         v8::ToCData<v8::IndexedPropertyEnumeratorCallback>(

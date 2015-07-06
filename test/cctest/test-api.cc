@@ -7448,6 +7448,57 @@ THREADED_TEST(Utf16Symbol) {
 }
 
 
+THREADED_TEST(Utf16MissingTrailing) {
+  LocalContext context;
+  v8::HandleScope scope(context->GetIsolate());
+
+  // Make sure it will go past the buffer, so it will call `WriteUtf16Slow`
+  int size = 1024 * 64;
+  uint8_t* buffer = new uint8_t[size];
+  for (int i = 0; i < size; i += 4) {
+    buffer[i] = 0xf0;
+    buffer[i + 1] = 0x9d;
+    buffer[i + 2] = 0x80;
+    buffer[i + 3] = 0x9e;
+  }
+
+  // Now invoke the decoder without last 3 bytes
+  v8::Local<v8::String> str =
+      v8::String::NewFromUtf8(
+          context->GetIsolate(), reinterpret_cast<char*>(buffer),
+          v8::NewStringType::kNormal, size - 3).ToLocalChecked();
+  USE(str);
+  delete[] buffer;
+}
+
+
+THREADED_TEST(Utf16Trailing3Byte) {
+  LocalContext context;
+  v8::HandleScope scope(context->GetIsolate());
+
+  // Make sure it will go past the buffer, so it will call `WriteUtf16Slow`
+  int size = 1024 * 63;
+  uint8_t* buffer = new uint8_t[size];
+  for (int i = 0; i < size; i += 3) {
+    buffer[i] = 0xe2;
+    buffer[i + 1] = 0x80;
+    buffer[i + 2] = 0xa6;
+  }
+
+  // Now invoke the decoder without last 3 bytes
+  v8::Local<v8::String> str =
+      v8::String::NewFromUtf8(
+          context->GetIsolate(), reinterpret_cast<char*>(buffer),
+          v8::NewStringType::kNormal, size).ToLocalChecked();
+
+  v8::String::Value value(str);
+  CHECK_EQ(value.length(), size / 3);
+  CHECK_EQ((*value)[value.length() - 1], 0x2026);
+
+  delete[] buffer;
+}
+
+
 THREADED_TEST(ToArrayIndex) {
   LocalContext context;
   v8::Isolate* isolate = context->GetIsolate();
@@ -7580,6 +7631,22 @@ THREADED_TEST(ExceptionCreateMessage) {
   stackTrace = message->GetStackTrace();
   CHECK(stackTrace.IsEmpty());
   CHECK(v8::Exception::GetStackTrace(error).IsEmpty());
+}
+
+
+THREADED_TEST(ExceptionCreateMessageLength) {
+  LocalContext context;
+  v8::HandleScope scope(context->GetIsolate());
+
+  // Test that the message is not truncated.
+  TryCatch try_catch(context->GetIsolate());
+  CompileRun(
+      "var message = 'm';"
+      "while (message.length < 1000) message += message;"
+      "throw message;");
+  CHECK(try_catch.HasCaught());
+
+  CHECK_LT(1000, try_catch.Message()->Get()->Length());
 }
 
 
@@ -15324,7 +15391,6 @@ static void CreateGarbageInOldSpace() {
 
 // Test that idle notification can be handled and eventually collects garbage.
 TEST(TestIdleNotification) {
-  if (!i::FLAG_incremental_marking) return;
   const intptr_t MB = 1024 * 1024;
   const double IdlePauseInSeconds = 1.0;
   LocalContext env;
@@ -15335,9 +15401,6 @@ TEST(TestIdleNotification) {
   CHECK_GT(size_with_garbage, initial_size + MB);
   bool finished = false;
   for (int i = 0; i < 200 && !finished; i++) {
-    if (i < 10 && CcTest::heap()->incremental_marking()->IsStopped()) {
-      CcTest::heap()->StartIdleIncrementalMarking();
-    }
     finished = env->GetIsolate()->IdleNotificationDeadline(
         (v8::base::TimeTicks::HighResolutionNow().ToInternalValue() /
          static_cast<double>(v8::base::Time::kMicrosecondsPerSecond)) +

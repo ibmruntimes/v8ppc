@@ -26,6 +26,7 @@
 #include "src/compiler/instruction-selector.h"
 #include "src/compiler/js-builtin-reducer.h"
 #include "src/compiler/js-context-specialization.h"
+#include "src/compiler/js-frame-specialization.h"
 #include "src/compiler/js-generic-lowering.h"
 #include "src/compiler/js-inlining.h"
 #include "src/compiler/js-intrinsic-lowering.h"
@@ -365,9 +366,9 @@ class AstGraphBuilderWithPositions final : public AstGraphBuilder {
         source_positions_(source_positions),
         start_position_(info->shared_info()->start_position()) {}
 
-  bool CreateGraph(bool constant_context, bool stack_check) {
+  bool CreateGraph(bool stack_check) {
     SourcePositionTable::Scope pos_scope(source_positions_, start_position_);
-    return AstGraphBuilder::CreateGraph(constant_context, stack_check);
+    return AstGraphBuilder::CreateGraph(stack_check);
   }
 
 #define DEF_VISIT(type)                                               \
@@ -474,12 +475,12 @@ struct LoopAssignmentAnalysisPhase {
 struct GraphBuilderPhase {
   static const char* phase_name() { return "graph builder"; }
 
-  void Run(PipelineData* data, Zone* temp_zone, bool constant_context) {
+  void Run(PipelineData* data, Zone* temp_zone) {
     AstGraphBuilderWithPositions graph_builder(
         temp_zone, data->info(), data->jsgraph(), data->loop_assignment(),
         data->js_type_feedback(), data->source_positions());
     bool stack_check = !data->info()->IsStub();
-    if (!graph_builder.CreateGraph(constant_context, stack_check)) {
+    if (!graph_builder.CreateGraph(stack_check)) {
       data->set_compilation_failed();
     }
   }
@@ -495,15 +496,21 @@ struct InliningPhase {
                                               data->common());
     CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
                                          data->common(), data->machine());
-    JSContextSpecializer context_specializer(&graph_reducer, data->jsgraph());
+    JSContextSpecialization context_specialization(
+        &graph_reducer, data->jsgraph(), data->info()->context());
+    JSFrameSpecialization frame_specialization(data->info()->osr_frame(),
+                                               data->jsgraph());
     JSInliner inliner(&graph_reducer, data->info()->is_inlining_enabled()
                                           ? JSInliner::kGeneralInlining
                                           : JSInliner::kRestrictedInlining,
                       temp_zone, data->info(), data->jsgraph());
     AddReducer(data, &graph_reducer, &dead_code_elimination);
     AddReducer(data, &graph_reducer, &common_reducer);
+    if (data->info()->is_frame_specializing()) {
+      AddReducer(data, &graph_reducer, &frame_specialization);
+    }
     if (data->info()->is_context_specializing()) {
-      AddReducer(data, &graph_reducer, &context_specializer);
+      AddReducer(data, &graph_reducer, &context_specialization);
     }
     AddReducer(data, &graph_reducer, &inliner);
     graph_reducer.ReduceGraph();
@@ -1031,9 +1038,15 @@ Handle<Code> Pipeline::GenerateCode() {
     Run<LoopAssignmentAnalysisPhase>();
   }
 
-  Run<GraphBuilderPhase>(info()->is_context_specializing());
+  Run<GraphBuilderPhase>();
   if (data.compilation_failed()) return Handle<Code>::null();
   RunPrintAndVerify("Initial untyped", true);
+
+  // Perform OSR deconstruction.
+  if (info()->is_osr()) {
+    Run<OsrDeconstructionPhase>();
+    RunPrintAndVerify("OSR deconstruction", true);
+  }
 
   // Perform context specialization and inlining (if enabled).
   Run<InliningPhase>();
@@ -1071,11 +1084,6 @@ Handle<Code> Pipeline::GenerateCode() {
       RunPrintAndVerify("Loop peeled");
     }
 
-    if (info()->is_osr()) {
-      Run<OsrDeconstructionPhase>();
-      RunPrintAndVerify("OSR deconstruction");
-    }
-
     if (info()->is_type_feedback_enabled()) {
       Run<JSTypeFeedbackPhase>();
       RunPrintAndVerify("JSType feedback");
@@ -1095,12 +1103,6 @@ Handle<Code> Pipeline::GenerateCode() {
     Run<ChangeLoweringPhase>();
     // TODO(jarin, rossberg): Remove UNTYPED once machine typing works.
     RunPrintAndVerify("Lowered changes", true);
-  } else {
-    if (info()->is_osr()) {
-      Run<OsrDeconstructionPhase>();
-      if (info()->bailout_reason() != kNoReason) return Handle<Code>::null();
-      RunPrintAndVerify("OSR deconstruction", true);
-    }
   }
 
   // Lower any remaining generic JSOperators.

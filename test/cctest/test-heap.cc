@@ -2029,10 +2029,6 @@ TEST(TestAlignedOverAllocation) {
   HeapObject* filler2;
   if (double_misalignment) {
     start = AlignOldSpace(kDoubleAligned, 0);
-    // If we run out of linear allocation area then we might get null here.  In
-    // that case we are unlucky and the test is not going to work, but it's not
-    // a test failure, this is a reasonable thing to happen.  Just abandon.
-    if (start == NULL) return;
     obj = OldSpaceAllocateAligned(kPointerSize, kDoubleAligned);
     // The object is aligned, and a filler object is created after.
     CHECK(IsAddressAligned(obj->address(), kDoubleAlignment));
@@ -2041,7 +2037,6 @@ TEST(TestAlignedOverAllocation) {
           filler1->Size() == kPointerSize);
     // Try the opposite alignment case.
     start = AlignOldSpace(kDoubleAligned, kPointerSize);
-    if (start == NULL) return;
     obj = OldSpaceAllocateAligned(kPointerSize, kDoubleAligned);
     CHECK(IsAddressAligned(obj->address(), kDoubleAlignment));
     filler1 = HeapObject::FromAddress(start);
@@ -2053,7 +2048,6 @@ TEST(TestAlignedOverAllocation) {
 
     // Similarly for kDoubleUnaligned.
     start = AlignOldSpace(kDoubleUnaligned, 0);
-    if (start == NULL) return;
     obj = OldSpaceAllocateAligned(kPointerSize, kDoubleUnaligned);
     // The object is aligned, and a filler object is created after.
     CHECK(IsAddressAligned(obj->address(), kDoubleAlignment, kPointerSize));
@@ -2062,7 +2056,6 @@ TEST(TestAlignedOverAllocation) {
           filler1->Size() == kPointerSize);
     // Try the opposite alignment case.
     start = AlignOldSpace(kDoubleUnaligned, kPointerSize);
-    if (start == NULL) return;
     obj = OldSpaceAllocateAligned(kPointerSize, kDoubleUnaligned);
     CHECK(IsAddressAligned(obj->address(), kDoubleAlignment, kPointerSize));
     filler1 = HeapObject::FromAddress(start);
@@ -2073,7 +2066,6 @@ TEST(TestAlignedOverAllocation) {
   // Now test SIMD alignment. There are 2 or 4 possible alignments, depending
   // on platform.
   start = AlignOldSpace(kSimd128Unaligned, 0);
-  if (start == NULL) return;
   obj = OldSpaceAllocateAligned(kPointerSize, kSimd128Unaligned);
   CHECK(IsAddressAligned(obj->address(), kSimd128Alignment, kPointerSize));
   // There is a filler object after the object.
@@ -2081,7 +2073,6 @@ TEST(TestAlignedOverAllocation) {
   CHECK(obj != filler1 && filler1->IsFiller() &&
         filler1->Size() == kSimd128Size - kPointerSize);
   start = AlignOldSpace(kSimd128Unaligned, kPointerSize);
-  if (start == NULL) return;
   obj = OldSpaceAllocateAligned(kPointerSize, kSimd128Unaligned);
   CHECK(IsAddressAligned(obj->address(), kSimd128Alignment, kPointerSize));
   // There is a filler object before the object.
@@ -2092,7 +2083,6 @@ TEST(TestAlignedOverAllocation) {
   if (double_misalignment) {
     // Test the 2 other alignments possible on 32 bit platforms.
     start = AlignOldSpace(kSimd128Unaligned, 2 * kPointerSize);
-    if (start == NULL) return;
     obj = OldSpaceAllocateAligned(kPointerSize, kSimd128Unaligned);
     CHECK(IsAddressAligned(obj->address(), kSimd128Alignment, kPointerSize));
     // There are filler objects before and after the object.
@@ -2103,7 +2093,6 @@ TEST(TestAlignedOverAllocation) {
     CHECK(obj != filler2 && filler2->IsFiller() &&
           filler2->Size() == kPointerSize);
     start = AlignOldSpace(kSimd128Unaligned, 3 * kPointerSize);
-    if (start == NULL) return;
     obj = OldSpaceAllocateAligned(kPointerSize, kSimd128Unaligned);
     CHECK(IsAddressAligned(obj->address(), kSimd128Alignment, kPointerSize));
     // There are filler objects before and after the object.
@@ -5401,10 +5390,9 @@ TEST(Regress388880) {
   Handle<JSObject> o = factory->NewJSObjectFromMap(map1, TENURED, false);
   o->set_properties(*factory->empty_fixed_array());
 
-  // Ensure that the object allocated where we need it.  If not, then abandon
-  // the test, since this isn't actually something we can reasonably require.
+  // Ensure that the object allocated where we need it.
   Page* page = Page::FromAddress(o->address());
-  if (desired_offset != page->Offset(o->address())) return;
+  CHECK_EQ(desired_offset, page->Offset(o->address()));
 
   // Now we have an object right at the end of the page.
 
@@ -6041,7 +6029,9 @@ TEST(SlotsBufferObjectSlotsRemoval) {
   buffer->Add(HeapObject::RawField(*array, FixedArray::kHeaderSize));
   DCHECK(reinterpret_cast<void*>(buffer->Get(0)) ==
          HeapObject::RawField(*array, FixedArray::kHeaderSize));
-  SlotsBuffer::RemoveObjectSlots(CcTest::i_isolate()->heap(), buffer, *array);
+  SlotsBuffer::RemoveObjectSlots(CcTest::i_isolate()->heap(), buffer,
+                                 array->address(),
+                                 array->address() + array->Size());
   DCHECK(reinterpret_cast<void*>(buffer->Get(0)) ==
          HeapObject::RawField(heap->empty_fixed_array(),
                               FixedArrayBase::kLengthOffset));
@@ -6054,7 +6044,9 @@ TEST(SlotsBufferObjectSlotsRemoval) {
          reinterpret_cast<Object**>(SlotsBuffer::EMBEDDED_OBJECT_SLOT));
   DCHECK(reinterpret_cast<void*>(buffer->Get(2)) ==
          HeapObject::RawField(*array, FixedArray::kHeaderSize));
-  SlotsBuffer::RemoveObjectSlots(CcTest::i_isolate()->heap(), buffer, *array);
+  SlotsBuffer::RemoveObjectSlots(CcTest::i_isolate()->heap(), buffer,
+                                 array->address(),
+                                 array->address() + array->Size());
   DCHECK(reinterpret_cast<void*>(buffer->Get(1)) ==
          HeapObject::RawField(heap->empty_fixed_array(),
                               FixedArrayBase::kLengthOffset));
