@@ -15391,6 +15391,7 @@ static void CreateGarbageInOldSpace() {
 
 // Test that idle notification can be handled and eventually collects garbage.
 TEST(TestIdleNotification) {
+  if (!i::FLAG_incremental_marking) return;
   const intptr_t MB = 1024 * 1024;
   const double IdlePauseInSeconds = 1.0;
   LocalContext env;
@@ -15401,6 +15402,9 @@ TEST(TestIdleNotification) {
   CHECK_GT(size_with_garbage, initial_size + MB);
   bool finished = false;
   for (int i = 0; i < 200 && !finished; i++) {
+    if (i < 10 && CcTest::heap()->incremental_marking()->IsStopped()) {
+      CcTest::heap()->StartIdleIncrementalMarking();
+    }
     finished = env->GetIsolate()->IdleNotificationDeadline(
         (v8::base::TimeTicks::HighResolutionNow().ToInternalValue() /
          static_cast<double>(v8::base::Time::kMicrosecondsPerSecond)) +
@@ -21843,4 +21847,43 @@ TEST(Set) {
 
   set->Clear();
   CHECK_EQ(0U, set->Size());
+}
+
+
+TEST(CompatibleReceiverCheckOnCachedICHandler) {
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope scope(isolate);
+  v8::Local<v8::FunctionTemplate> parent = FunctionTemplate::New(isolate);
+  v8::Local<v8::Signature> signature = v8::Signature::New(isolate, parent);
+  auto returns_42 =
+      v8::FunctionTemplate::New(isolate, Returns42, Local<Value>(), signature);
+  parent->PrototypeTemplate()->SetAccessorProperty(v8_str("age"), returns_42);
+  v8::Local<v8::FunctionTemplate> child = v8::FunctionTemplate::New(isolate);
+  child->Inherit(parent);
+  LocalContext env;
+  env->Global()->Set(v8_str("Child"), child->GetFunction());
+
+  // Make sure there's a compiled stub for "Child.prototype.age" in the cache.
+  CompileRun(
+      "var real = new Child();\n"
+      "for (var i = 0; i < 3; ++i) {\n"
+      "  real.age;\n"
+      "}\n");
+
+  // Check that the cached stub is never used.
+  ExpectInt32(
+      "var fake = Object.create(Child.prototype);\n"
+      "var result = 0;\n"
+      "function test(d) {\n"
+      "  if (d == 3) return;\n"
+      "  try {\n"
+      "    fake.age;\n"
+      "    result = 1;\n"
+      "  } catch (e) {\n"
+      "  }\n"
+      "  test(d+1);\n"
+      "}\n"
+      "test(0);\n"
+      "result;\n",
+      0);
 }

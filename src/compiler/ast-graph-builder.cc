@@ -566,12 +566,11 @@ void AstGraphBuilder::CreateGraphBody(bool stack_check) {
   Variable* rest_parameter = scope->rest_parameter(&rest_index);
   BuildRestArgumentsArray(rest_parameter, rest_index);
 
-  // Build .this_function var if it is used.
-  BuildThisFunctionVar(scope->this_function_var());
+  // Build assignment to {.this_function} variable if it is used.
+  BuildThisFunctionVariable(scope->this_function_var());
 
-  if (scope->new_target_var() != nullptr) {
-    SetStackOverflow();
-  }
+  // Build assignment to {new.target} variable if it is used.
+  BuildNewTargetVariable(scope->new_target_var());
 
   // Emit tracing call if requested to do so.
   if (FLAG_trace) {
@@ -2538,15 +2537,21 @@ void AstGraphBuilder::VisitCallRuntime(CallRuntime* expr) {
     return VisitCallJSRuntime(expr);
   }
 
+  // TODO(mstarzinger): This bailout is a gigantic hack, the owner is ashamed.
+  if (function->function_id == Runtime::kInlineGeneratorNext ||
+      function->function_id == Runtime::kInlineGeneratorThrow ||
+      function->function_id == Runtime::kInlineDefaultConstructorCallSuper ||
+      function->function_id == Runtime::kInlineCallSuperWithSpread) {
+    ast_context()->ProduceValue(jsgraph()->TheHoleConstant());
+    return SetStackOverflow();
+  }
+
   // Evaluate all arguments to the runtime call.
   ZoneList<Expression*>* args = expr->arguments();
   VisitForValues(args);
 
   // Create node to perform the runtime call.
   Runtime::FunctionId functionId = function->function_id;
-  // TODO(mstarzinger): This bailout is a gigantic hack, the owner is ashamed.
-  if (functionId == Runtime::kInlineGeneratorNext) SetStackOverflow();
-  if (functionId == Runtime::kInlineGeneratorThrow) SetStackOverflow();
   const Operator* call = javascript()->CallRuntime(functionId, args->length());
   FrameStateBeforeAndAfter states(this, expr->CallId());
   Node* value = ProcessArguments(call, args->length());
@@ -2819,7 +2824,10 @@ void AstGraphBuilder::VisitCompareOperation(CompareOperation* expr) {
 }
 
 
-void AstGraphBuilder::VisitSpread(Spread* expr) { UNREACHABLE(); }
+void AstGraphBuilder::VisitSpread(Spread* expr) {
+  // Handled entirely by the parser itself.
+  UNREACHABLE();
+}
 
 
 void AstGraphBuilder::VisitThisFunction(ThisFunction* expr) {
@@ -2830,20 +2838,21 @@ void AstGraphBuilder::VisitThisFunction(ThisFunction* expr) {
 
 void AstGraphBuilder::VisitSuperPropertyReference(
     SuperPropertyReference* expr) {
-  // TODO(turbofan): Implement super here.
-  SetStackOverflow();
-  ast_context()->ProduceValue(jsgraph()->UndefinedConstant());
+  Node* value = BuildThrowUnsupportedSuperError(expr->id());
+  ast_context()->ProduceValue(value);
 }
 
 
 void AstGraphBuilder::VisitSuperCallReference(SuperCallReference* expr) {
-  // TODO(turbofan): Implement super here.
-  SetStackOverflow();
-  ast_context()->ProduceValue(jsgraph()->UndefinedConstant());
+  // Handled by VisitCall
+  UNREACHABLE();
 }
 
 
-void AstGraphBuilder::VisitCaseClause(CaseClause* expr) { UNREACHABLE(); }
+void AstGraphBuilder::VisitCaseClause(CaseClause* expr) {
+  // Handled entirely in VisitSwitch.
+  UNREACHABLE();
+}
 
 
 void AstGraphBuilder::VisitDeclarations(ZoneList<Declaration*>* declarations) {
@@ -3146,10 +3155,8 @@ Node* AstGraphBuilder::BuildArgumentsObject(Variable* arguments) {
   DCHECK(arguments->IsContextSlot() || arguments->IsStackAllocated());
   // This should never lazy deopt, so it is fine to send invalid bailout id.
   FrameStateBeforeAndAfter states(this, BailoutId::None());
-  VectorSlotPair feedback;
-  BuildVariableAssignment(arguments, object, Token::ASSIGN, feedback,
+  BuildVariableAssignment(arguments, object, Token::ASSIGN, VectorSlotPair(),
                           BailoutId::None(), states);
-
   return object;
 }
 
@@ -3162,27 +3169,43 @@ Node* AstGraphBuilder::BuildRestArgumentsArray(Variable* rest, int index) {
   Node* object = NewNode(op, jsgraph()->SmiConstant(index),
                          jsgraph()->SmiConstant(language_mode()));
 
-  // Assign the object to the rest array
+  // Assign the object to the rest parameter variable.
   DCHECK(rest->IsContextSlot() || rest->IsStackAllocated());
   // This should never lazy deopt, so it is fine to send invalid bailout id.
   FrameStateBeforeAndAfter states(this, BailoutId::None());
-  VectorSlotPair feedback;
-  BuildVariableAssignment(rest, object, Token::ASSIGN, feedback,
+  BuildVariableAssignment(rest, object, Token::ASSIGN, VectorSlotPair(),
                           BailoutId::None(), states);
-
   return object;
 }
 
 
-Node* AstGraphBuilder::BuildThisFunctionVar(Variable* this_function_var) {
+Node* AstGraphBuilder::BuildThisFunctionVariable(Variable* this_function_var) {
   if (this_function_var == nullptr) return nullptr;
 
+  // Retrieve the closure we were called with.
   Node* this_function = GetFunctionClosure();
+
+  // Assign the object to the {.this_function} variable.
   FrameStateBeforeAndAfter states(this, BailoutId::None());
-  VectorSlotPair feedback;
   BuildVariableAssignment(this_function_var, this_function, Token::INIT_CONST,
-                          feedback, BailoutId::None(), states);
+                          VectorSlotPair(), BailoutId::None(), states);
   return this_function;
+}
+
+
+Node* AstGraphBuilder::BuildNewTargetVariable(Variable* new_target_var) {
+  if (new_target_var == nullptr) return nullptr;
+
+  // Retrieve the original constructor in case we are called as a constructor.
+  const Operator* op =
+      javascript()->CallRuntime(Runtime::kGetOriginalConstructor, 0);
+  Node* object = NewNode(op);
+
+  // Assign the object to the {new.target} variable.
+  FrameStateBeforeAndAfter states(this, BailoutId::None());
+  BuildVariableAssignment(new_target_var, object, Token::INIT_CONST,
+                          VectorSlotPair(), BailoutId::None(), states);
+  return object;
 }
 
 
@@ -3261,9 +3284,12 @@ Node* AstGraphBuilder::BuildVariableLoad(Variable* variable,
         }
       } else if (mode == LET || mode == CONST) {
         // Perform check for uninitialized let/const variables.
+        // TODO(mstarzinger): For now we cannot use the below optimization for
+        // the {this} parameter, because JSConstructStubForDerived magically
+        // passes {the_hole} as a receiver.
         if (value->op() == the_hole->op()) {
           value = BuildThrowReferenceError(variable, bailout_id);
-        } else if (value->opcode() == IrOpcode::kPhi) {
+        } else if (value->opcode() == IrOpcode::kPhi || variable->is_this()) {
           value = BuildHoleCheckThrow(value, variable, value, bailout_id);
         }
       }
@@ -3775,6 +3801,17 @@ Node* AstGraphBuilder::BuildThrowConstAssignError(BailoutId bailout_id) {
 Node* AstGraphBuilder::BuildThrowStaticPrototypeError(BailoutId bailout_id) {
   const Operator* op =
       javascript()->CallRuntime(Runtime::kThrowStaticPrototypeError, 0);
+  Node* call = NewNode(op);
+  PrepareFrameState(call, bailout_id);
+  Node* control = NewNode(common()->Throw(), call);
+  UpdateControlDependencyToLeaveFunction(control);
+  return call;
+}
+
+
+Node* AstGraphBuilder::BuildThrowUnsupportedSuperError(BailoutId bailout_id) {
+  const Operator* op =
+      javascript()->CallRuntime(Runtime::kThrowUnsupportedSuperError, 0);
   Node* call = NewNode(op);
   PrepareFrameState(call, bailout_id);
   Node* control = NewNode(common()->Throw(), call);
