@@ -203,7 +203,8 @@ Code::Flags CompilationInfo::flags() const {
 // profiler, so they trigger their own optimization when they're called
 // for the SharedFunctionInfo::kCallsUntilPrimitiveOptimization-th time.
 bool CompilationInfo::ShouldSelfOptimize() {
-  return FLAG_crankshaft && !function()->flags()->Contains(kDontSelfOptimize) &&
+  return FLAG_crankshaft &&
+         !(function()->flags() & AstProperties::kDontSelfOptimize) &&
          !function()->dont_optimize() &&
          function()->scope()->AllowsLazyCompilation() &&
          (!has_shared_info() || !shared_info()->optimization_disabled());
@@ -753,7 +754,8 @@ static bool Renumber(ParseInfo* parse_info) {
     FunctionLiteral* lit = parse_info->function();
     shared_info->set_ast_node_count(lit->ast_node_count());
     MaybeDisableOptimization(shared_info, lit->dont_optimize_reason());
-    shared_info->set_dont_crankshaft(lit->flags()->Contains(kDontCrankshaft));
+    shared_info->set_dont_crankshaft(lit->flags() &
+                                     AstProperties::kDontCrankshaft);
   }
   return true;
 }
@@ -1442,11 +1444,6 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfo(
     // shared function info for this function literal has been created for the
     // first time. It may have already been compiled previously.
     result->set_never_compiled(outer_info->is_first_compile() && lazy);
-
-    if (literal->scope()->new_target_var() != nullptr) {
-      Handle<Code> stub(isolate->builtins()->JSConstructStubNewTarget());
-      result->set_construct_stub(*stub);
-    }
 
     RecordFunctionCompilation(Logger::FUNCTION_TAG, &info, result);
     result->set_allows_lazy_compilation(literal->AllowsLazyCompilation());

@@ -3292,6 +3292,12 @@ MaybeHandle<Object> Object::SetDataProperty(LookupIterator* it,
       ASSIGN_RETURN_ON_EXCEPTION(it->isolate(), to_assign,
                                  Execution::ToNumber(it->isolate(), value),
                                  Object);
+      // ToNumber above might modify the receiver, causing the cached
+      // holder_map to mismatch the actual holder->map() after this point.
+      // Reload the map to be in consistent state. Other cached state cannot
+      // have been invalidated since typed array elements cannot be reconfigured
+      // in any way.
+      it->ReloadHolderMap();
     }
   }
 
@@ -10620,8 +10626,8 @@ void SharedFunctionInfo::InitFromFunctionLiteral(
   if (lit->dont_optimize_reason() != kNoReason) {
     shared_info->DisableOptimization(lit->dont_optimize_reason());
   }
-  shared_info->set_dont_crankshaft(
-      lit->flags()->Contains(AstPropertiesFlag::kDontCrankshaft));
+  shared_info->set_dont_crankshaft(lit->flags() &
+                                   AstProperties::kDontCrankshaft);
   shared_info->set_kind(lit->kind());
   shared_info->set_needs_home_object(lit->scope()->NeedsHomeObject());
   shared_info->set_asm_function(lit->scope()->asm_function());

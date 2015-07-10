@@ -101,6 +101,17 @@ void LookupIterator::ReloadPropertyInformation() {
 }
 
 
+void LookupIterator::ReloadHolderMap() {
+  DCHECK_EQ(DATA, state_);
+  DCHECK(IsElement());
+  DCHECK(JSObject::cast(*holder_)->HasExternalArrayElements() ||
+         JSObject::cast(*holder_)->HasFixedTypedArrayElements());
+  if (*holder_map_ != holder_->map()) {
+    holder_map_ = handle(holder_->map(), isolate_);
+  }
+}
+
+
 void LookupIterator::PrepareForDataProperty(Handle<Object> value) {
   DCHECK(state_ == DATA || state_ == ACCESSOR);
   DCHECK(HolderIsReceiverOrHiddenPrototype());
@@ -414,7 +425,7 @@ void LookupIterator::WriteDataValue(Handle<Object> value) {
   Handle<JSObject> holder = GetHolder<JSObject>();
   if (IsElement()) {
     ElementsAccessor* accessor = holder->GetElementsAccessor();
-    accessor->Set(holder->elements(), index_, *value);
+    accessor->Set(holder->elements(), number_, *value);
   } else if (holder->IsGlobalObject()) {
     Handle<GlobalDictionary> property_dictionary =
         handle(holder->global_dictionary());

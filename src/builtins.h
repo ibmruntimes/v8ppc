@@ -70,7 +70,6 @@ enum BuiltinExtraArguments {
   V(JSConstructStubGeneric, BUILTIN, UNINITIALIZED, kNoExtraICState)         \
   V(JSConstructStubForDerived, BUILTIN, UNINITIALIZED, kNoExtraICState)      \
   V(JSConstructStubApi, BUILTIN, UNINITIALIZED, kNoExtraICState)             \
-  V(JSConstructStubNewTarget, BUILTIN, UNINITIALIZED, kNoExtraICState)       \
   V(JSEntryTrampoline, BUILTIN, UNINITIALIZED, kNoExtraICState)              \
   V(JSConstructEntryTrampoline, BUILTIN, UNINITIALIZED, kNoExtraICState)     \
   V(CompileLazy, BUILTIN, UNINITIALIZED, kNoExtraICState)                    \
@@ -142,14 +141,6 @@ enum BuiltinExtraArguments {
 // Define list of builtins used by the debugger implemented in assembly.
 #define BUILTIN_LIST_DEBUG_A(V)                                               \
   V(Return_DebugBreak,                         BUILTIN, DEBUG_STUB,           \
-                                               DEBUG_BREAK)                   \
-  V(CallFunctionStub_DebugBreak,               BUILTIN, DEBUG_STUB,           \
-                                               DEBUG_BREAK)                   \
-  V(CallConstructStub_DebugBreak,              BUILTIN, DEBUG_STUB,           \
-                                               DEBUG_BREAK)                   \
-  V(CallConstructStub_Recording_DebugBreak,    BUILTIN, DEBUG_STUB,           \
-                                               DEBUG_BREAK)                   \
-  V(CallICStub_DebugBreak,                     CALL_IC, DEBUG_STUB,           \
                                                DEBUG_BREAK)                   \
   V(Slot_DebugBreak,                           BUILTIN, DEBUG_STUB,           \
                                                DEBUG_BREAK)                   \
@@ -317,7 +308,6 @@ class Builtins {
   static void Generate_JSConstructStubGeneric(MacroAssembler* masm);
   static void Generate_JSConstructStubForDerived(MacroAssembler* masm);
   static void Generate_JSConstructStubApi(MacroAssembler* masm);
-  static void Generate_JSConstructStubNewTarget(MacroAssembler* masm);
   static void Generate_JSEntryTrampoline(MacroAssembler* masm);
   static void Generate_JSConstructEntryTrampoline(MacroAssembler* masm);
   static void Generate_NotifyDeoptimized(MacroAssembler* masm);

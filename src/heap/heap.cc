@@ -5895,6 +5895,8 @@ void Heap::TearDown() {
     PrintAlloctionsHash();
   }
 
+  memory_reducer_.TearDown();
+
   TearDownArrayBuffers();
 
   isolate_->global_handles()->TearDown();
