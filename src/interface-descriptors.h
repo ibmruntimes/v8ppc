@@ -57,6 +57,8 @@ class PlatformInterfaceDescriptor;
   V(ApiGetter)                                \
   V(ArgumentsAccessRead)                      \
   V(StoreArrayLiteralElement)                 \
+  V(LoadGlobalViaContext)                     \
+  V(StoreGlobalViaContext)                    \
   V(MathPowTagged)                            \
   V(MathPowInteger)                           \
   V(ContextOnly)                              \
@@ -111,7 +113,7 @@ class CallInterfaceDescriptorData {
   // InterfaceDescriptor, and freed on destruction. This is because static
   // arrays of Registers cause creation of runtime static initializers
   // which we don't want.
-  SmartArrayPointer<Register> register_params_;
+  base::SmartArrayPointer<Register> register_params_;
 
   // Specifies types for parameters and return
   Type::FunctionType* function_type_;
@@ -423,6 +425,29 @@ class CallConstructDescriptor : public CallInterfaceDescriptor {
 class RegExpConstructResultDescriptor : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(RegExpConstructResultDescriptor, CallInterfaceDescriptor)
+};
+
+
+class LoadGlobalViaContextDescriptor : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(LoadGlobalViaContextDescriptor,
+                                               CallInterfaceDescriptor)
+
+  static const Register DepthRegister();
+  static const Register SlotRegister();
+  static const Register NameRegister();
+};
+
+
+class StoreGlobalViaContextDescriptor : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(StoreGlobalViaContextDescriptor,
+                                               CallInterfaceDescriptor)
+
+  static const Register DepthRegister();
+  static const Register SlotRegister();
+  static const Register NameRegister();
+  static const Register ValueRegister();
 };
 
 

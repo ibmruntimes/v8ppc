@@ -284,7 +284,7 @@ class AstGraphBuilder : public AstVisitor {
                           FrameStateBeforeAndAfter& states,
                           const VectorSlotPair& feedback,
                           OutputFrameStateCombine framestate_combine,
-                          ContextualMode mode = CONTEXTUAL);
+                          TypeofMode typeof_mode = NOT_INSIDE_TYPEOF);
 
   // Builders for property loads and stores.
   Node* BuildKeyedLoad(Node* receiver, Node* key,
@@ -307,10 +307,12 @@ class AstGraphBuilder : public AstVisitor {
                             const VectorSlotPair& feedback);
 
   // Builders for global variable loads and stores.
-  Node* BuildGlobalLoad(Node* global, Handle<Name> name,
-                        const VectorSlotPair& feedback, ContextualMode mode);
-  Node* BuildGlobalStore(Node* global, Handle<Name> name, Node* value,
-                         const VectorSlotPair& feedback, TypeFeedbackId id);
+  Node* BuildGlobalLoad(Node* script_context, Node* global, Handle<Name> name,
+                        const VectorSlotPair& feedback, TypeofMode typeof_mode,
+                        int slot_index);
+  Node* BuildGlobalStore(Node* script_context, Node* global, Handle<Name> name,
+                         Node* value, const VectorSlotPair& feedback,
+                         TypeFeedbackId id, int slot_index);
 
   // Builders for accessing the function context.
   Node* BuildLoadBuiltinsObject();

@@ -179,6 +179,7 @@
       ],
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
+        '<(SHARED_INTERMEDIATE_DIR)/code-stub-libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
         '<(INTERMEDIATE_DIR)/snapshot.cc',
@@ -224,6 +225,7 @@
       ],
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
+        '<(SHARED_INTERMEDIATE_DIR)/code-stub-libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
         '../../src/snapshot/snapshot-empty.cc',
@@ -519,6 +521,8 @@
         '../../src/compiler/js-operator.h',
         '../../src/compiler/js-type-feedback.cc',
         '../../src/compiler/js-type-feedback.h',
+        '../../src/compiler/js-type-feedback-lowering.cc',
+        '../../src/compiler/js-type-feedback-lowering.h',
         '../../src/compiler/js-typed-lowering.cc',
         '../../src/compiler/js-typed-lowering.h',
         '../../src/compiler/jump-threading.cc',
@@ -900,7 +904,6 @@
         '../../src/signature.h',
         '../../src/simulator.h',
         '../../src/small-pointer-list.h',
-        '../../src/smart-pointers.h',
         '../../src/snapshot/natives.h',
         '../../src/snapshot/serialize.cc',
         '../../src/snapshot/serialize.h',
@@ -1430,6 +1433,7 @@
         '../../src/base/safe_conversions_impl.h',
         '../../src/base/safe_math.h',
         '../../src/base/safe_math_impl.h',
+        '../../src/base/smart-pointers.h',
         '../../src/base/sys-info.cc',
         '../../src/base/sys-info.h',
         '../../src/base/utils/random-number-generator.cc',
@@ -1683,6 +1687,7 @@
             'inputs': [
               '../../tools/concatenate-files.py',
               '<(SHARED_INTERMEDIATE_DIR)/libraries.bin',
+              '<(SHARED_INTERMEDIATE_DIR)/libraries-code-stub.bin',
               '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental.bin',
               '<(SHARED_INTERMEDIATE_DIR)/libraries-extras.bin',
             ],
@@ -1794,7 +1799,13 @@
           '../../src/harmony-object.js',
           '../../src/harmony-sharedarraybuffer.js',
         ],
+        'code_stub_library_files': [
+          '../../src/macros.py',
+          '../../src/messages.h',
+          '../../src/code-stubs.js',
+        ],
         'libraries_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries.bin',
+        'libraries_code_stub_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-code-stub.bin',
         'libraries_experimental_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental.bin',
         'libraries_extras_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-extras.bin',
       },
@@ -1847,6 +1858,31 @@
               'outputs': ['<@(libraries_experimental_bin_file)'],
               'action': [
                 '--startup_blob', '<@(libraries_experimental_bin_file)'
+              ],
+            }],
+          ],
+        },
+        {
+          'action_name': 'js2c_code_stubs',
+          'inputs': [
+            '../../tools/js2c.py',
+            '<@(code_stub_library_files)',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/code-stub-libraries.cc',
+          ],
+          'action': [
+            'python',
+            '../../tools/js2c.py',
+            '<(SHARED_INTERMEDIATE_DIR)/code-stub-libraries.cc',
+            'CODE_STUB',
+            '<@(code_stub_library_files)'
+          ],
+          'conditions': [
+            [ 'v8_use_external_startup_data==1', {
+              'outputs': ['<@(libraries_code_stub_bin_file)'],
+              'action': [
+                '--startup_blob', '<@(libraries_code_stub_bin_file)'
               ],
             }],
           ],

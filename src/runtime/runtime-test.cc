@@ -342,7 +342,7 @@ RUNTIME_FUNCTION(Runtime_SetFlags) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 1);
   CONVERT_ARG_CHECKED(String, arg, 0);
-  SmartArrayPointer<char> flags =
+  base::SmartArrayPointer<char> flags =
       arg->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
   FlagList::SetFlagsFromString(flags.get(), StrLength(flags.get()));
   return isolate->heap()->undefined_value();
@@ -378,7 +378,8 @@ RUNTIME_FUNCTION(Runtime_AbortJS) {
 RUNTIME_FUNCTION(Runtime_NativeScriptsCount) {
   DCHECK(args.length() == 0);
   return Smi::FromInt(Natives::GetBuiltinsCount() +
-                      ExtraNatives::GetBuiltinsCount());
+                      ExtraNatives::GetBuiltinsCount() +
+                      CodeStubNatives::GetBuiltinsCount());
 }
 
 

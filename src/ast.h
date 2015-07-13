@@ -11,6 +11,7 @@
 #include "src/ast-value-factory.h"
 #include "src/bailout-reason.h"
 #include "src/base/flags.h"
+#include "src/base/smart-pointers.h"
 #include "src/factory.h"
 #include "src/isolate.h"
 #include "src/jsregexp.h"
@@ -18,7 +19,6 @@
 #include "src/modules.h"
 #include "src/runtime/runtime.h"
 #include "src/small-pointer-list.h"
-#include "src/smart-pointers.h"
 #include "src/token.h"
 #include "src/types.h"
 #include "src/utils.h"
@@ -1667,7 +1667,7 @@ class VariableProxy final : public Expression {
   void BindTo(Variable* var);
 
   bool UsesVariableFeedbackSlot() const {
-    return var()->IsUnallocatedOrGlobalSlot() || var()->IsLookupSlot();
+    return var()->IsUnallocated() || var()->IsLookupSlot();
   }
 
   virtual FeedbackVectorRequirements ComputeFeedbackRequirements(

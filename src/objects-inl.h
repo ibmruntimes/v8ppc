@@ -1132,19 +1132,6 @@ bool Object::IsMinusZero() const {
 }
 
 
-MaybeHandle<Smi> Object::ToSmi(Isolate* isolate, Handle<Object> object) {
-  if (object->IsSmi()) return Handle<Smi>::cast(object);
-  if (object->IsHeapNumber()) {
-    double value = Handle<HeapNumber>::cast(object)->value();
-    int int_value = FastD2I(value);
-    if (value == FastI2D(int_value) && Smi::IsValid(int_value)) {
-      return handle(Smi::FromInt(int_value), isolate);
-    }
-  }
-  return Handle<Smi>();
-}
-
-
 MaybeHandle<JSReceiver> Object::ToObject(Isolate* isolate,
                                          Handle<Object> object) {
   return ToObject(
@@ -1170,6 +1157,14 @@ MaybeHandle<Object> Object::GetElement(Isolate* isolate, Handle<Object> object,
                                        LanguageMode language_mode) {
   LookupIterator it(isolate, object, index);
   return GetProperty(&it, language_mode);
+}
+
+
+MaybeHandle<Object> Object::SetElement(Isolate* isolate, Handle<Object> object,
+                                       uint32_t index, Handle<Object> value,
+                                       LanguageMode language_mode) {
+  LookupIterator it(isolate, object, index);
+  return SetProperty(&it, value, language_mode, MAY_BE_STORE_FROM_KEYED);
 }
 
 
@@ -1830,12 +1825,6 @@ void JSObject::EnsureCanContainElements(Handle<JSObject> object,
 }
 
 
-bool JSObject::WouldConvertToSlowElements(Handle<Object> key) {
-  uint32_t index = 0;
-  return key->ToArrayIndex(&index) && WouldConvertToSlowElements(index);
-}
-
-
 void JSObject::SetMapAndElements(Handle<JSObject> object,
                                  Handle<Map> new_map,
                                  Handle<FixedArrayBase> value) {
@@ -2148,7 +2137,8 @@ void JSObject::InitializeBody(Map* map,
   int size = map->instance_size();
   int offset = kHeaderSize;
   if (filler_value != pre_allocated_value) {
-    int pre_allocated = map->pre_allocated_property_fields();
+    int pre_allocated =
+        map->inobject_properties() - map->unused_property_fields();
     DCHECK(pre_allocated * kPointerSize + kHeaderSize <= size);
     for (int i = 0; i < pre_allocated; i++) {
       WRITE_FIELD(this, offset, pre_allocated_value);
@@ -4083,11 +4073,6 @@ int Map::inobject_properties() {
 }
 
 
-int Map::pre_allocated_property_fields() {
-  return READ_BYTE_FIELD(this, kPreAllocatedPropertyFieldsOffset);
-}
-
-
 int Map::GetInObjectPropertyOffset(int index) {
   // Adjust for the number of properties stored in the object.
   index -= inobject_properties();
@@ -4161,12 +4146,7 @@ void Map::set_inobject_properties(int value) {
 }
 
 
-void Map::set_pre_allocated_property_fields(int value) {
-  DCHECK(0 <= value && value < 256);
-  WRITE_BYTE_FIELD(this,
-                   kPreAllocatedPropertyFieldsOffset,
-                   static_cast<byte>(value));
-}
+void Map::clear_unused() { WRITE_BYTE_FIELD(this, kUnusedOffset, 0); }
 
 
 InstanceType Map::instance_type() {
@@ -4603,14 +4583,16 @@ void Code::set_allow_osr_at_loop_nesting_level(int level) {
 
 int Code::profiler_ticks() {
   DCHECK_EQ(FUNCTION, kind());
-  return READ_BYTE_FIELD(this, kProfilerTicksOffset);
+  return ProfilerTicksField::decode(
+      READ_UINT32_FIELD(this, kKindSpecificFlags1Offset));
 }
 
 
 void Code::set_profiler_ticks(int ticks) {
-  DCHECK(ticks < 256);
   if (kind() == FUNCTION) {
-    WRITE_BYTE_FIELD(this, kProfilerTicksOffset, ticks);
+    unsigned previous = READ_UINT32_FIELD(this, kKindSpecificFlags1Offset);
+    unsigned updated = ProfilerTicksField::update(previous, ticks);
+    WRITE_UINT32_FIELD(this, kKindSpecificFlags1Offset, updated);
   }
 }
 

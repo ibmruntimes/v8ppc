@@ -19,6 +19,12 @@ namespace v8 {
 namespace internal {
 
 
+RUNTIME_FUNCTION(UnexpectedStubMiss) {
+  FATAL("Unexpected deopt of a stub");
+  return Smi::FromInt(0);
+}
+
+
 CodeStubDescriptor::CodeStubDescriptor(CodeStub* stub)
     : call_descriptor_(stub->GetCallInterfaceDescriptor()),
       stack_parameter_count_(no_reg),
@@ -467,11 +473,8 @@ namespace {
 
 Handle<JSFunction> GetFunction(Isolate* isolate, const char* name) {
   v8::ExtensionConfiguration no_extensions;
-  Handle<Context> ctx = isolate->bootstrapper()->CreateEnvironment(
-      MaybeHandle<JSGlobalProxy>(), v8::Local<v8::ObjectTemplate>(),
-      &no_extensions);
-  Handle<JSBuiltinsObject> builtins = handle(ctx->builtins());
-  MaybeHandle<Object> fun = Object::GetProperty(isolate, builtins, name);
+  MaybeHandle<Object> fun = Object::GetProperty(
+      isolate, isolate->factory()->code_stub_exports_object(), name);
   Handle<JSFunction> function = Handle<JSFunction>::cast(fun.ToHandleChecked());
   DCHECK(!function->IsUndefined() &&
          "JavaScript implementation of stub not found");
@@ -502,6 +505,7 @@ Handle<Code> TurboFanCodeStub::GenerateCode() {
   ParseInfo parse_info(&zone, inner);
   CompilationInfo info(&parse_info);
   info.SetFunctionType(GetCallInterfaceDescriptor().GetFunctionType());
+  info.MarkAsContextSpecializing();
   info.SetStub(this);
   return info.GenerateCodeStub();
 }
@@ -717,6 +721,20 @@ void RegExpConstructResultStub::InitializeDescriptor(
     CodeStubDescriptor* descriptor) {
   descriptor->Initialize(
       Runtime::FunctionForId(Runtime::kRegExpConstructResultRT)->entry);
+}
+
+
+void LoadGlobalViaContextStub::InitializeDescriptor(
+    CodeStubDescriptor* descriptor) {
+  // Must never deoptimize.
+  descriptor->Initialize(FUNCTION_ADDR(UnexpectedStubMiss));
+}
+
+
+void StoreGlobalViaContextStub::InitializeDescriptor(
+    CodeStubDescriptor* descriptor) {
+  // Must never deoptimize.
+  descriptor->Initialize(FUNCTION_ADDR(UnexpectedStubMiss));
 }
 
 

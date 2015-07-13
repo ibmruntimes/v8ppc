@@ -14,30 +14,6 @@
 namespace v8 {
 namespace internal {
 
-// Returns a single character string where first character equals
-// string->Get(index).
-static Handle<Object> GetCharAt(Handle<String> string, uint32_t index) {
-  DCHECK_LT(index, static_cast<uint32_t>(string->length()));
-  Factory* factory = string->GetIsolate()->factory();
-  return factory->LookupSingleCharacterStringFromCode(
-      String::Flatten(string)->Get(index));
-}
-
-
-MaybeHandle<Object> Runtime::GetElementOrCharAt(Isolate* isolate,
-                                                Handle<Object> object,
-                                                uint32_t index,
-                                                LanguageMode language_mode) {
-  // Handle [] indexing on Strings
-  if (object->IsString() &&
-      index < static_cast<uint32_t>(String::cast(*object)->length())) {
-    Handle<Object> result = GetCharAt(Handle<String>::cast(object), index);
-    if (!result->IsUndefined()) return result;
-  }
-
-  return Object::GetElement(isolate, object, index, language_mode);
-}
-
 
 MaybeHandle<Name> Runtime::ToName(Isolate* isolate, Handle<Object> key) {
   if (key->IsName()) {
@@ -65,7 +41,7 @@ MaybeHandle<Object> Runtime::GetObjectProperty(Isolate* isolate,
   // Check if the given key is an array index.
   uint32_t index = 0;
   if (key->ToArrayIndex(&index)) {
-    return GetElementOrCharAt(isolate, object, index, language_mode);
+    return Object::GetElement(isolate, object, index, language_mode);
   }
 
   // Convert the key to a name - possibly by calling back into JavaScript.
@@ -77,7 +53,7 @@ MaybeHandle<Object> Runtime::GetObjectProperty(Isolate* isolate,
   // TODO(verwaest): Make sure GetProperty(LookupIterator*) can handle this, and
   // remove the special casing here.
   if (name->AsArrayIndex(&index)) {
-    return GetElementOrCharAt(isolate, object, index);
+    return Object::GetElement(isolate, object, index);
   } else {
     return Object::GetProperty(object, name, language_mode);
   }
@@ -153,7 +129,9 @@ MaybeHandle<Object> Runtime::KeyedGetObjectProperty(
     Handle<String> str = Handle<String>::cast(receiver_obj);
     int index = Handle<Smi>::cast(key_obj)->value();
     if (index >= 0 && index < str->length()) {
-      return GetCharAt(str, index);
+      Factory* factory = isolate->factory();
+      return factory->LookupSingleCharacterStringFromCode(
+          String::Flatten(str)->Get(index));
     }
   }
 
@@ -194,18 +172,13 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
   // Check if the given key is an array index.
   uint32_t index = 0;
   if (key->ToArrayIndex(&index)) {
-    // TODO(verwaest): Support other objects as well.
-    if (!object->IsJSReceiver()) return value;
-    return JSReceiver::SetElement(Handle<JSReceiver>::cast(object), index,
-                                  value, language_mode);
+    return Object::SetElement(isolate, object, index, value, language_mode);
   }
 
   Handle<Name> name;
   ASSIGN_RETURN_ON_EXCEPTION(isolate, name, ToName(isolate, key), Object);
 
   LookupIterator it = LookupIterator::PropertyOrElement(isolate, object, name);
-  // TODO(verwaest): Support other objects as well.
-  if (it.IsElement() && !object->IsJSReceiver()) return value;
   return Object::SetProperty(&it, value, language_mode,
                              Object::MAY_BE_STORE_FROM_KEYED);
 }
@@ -444,6 +417,70 @@ RUNTIME_FUNCTION(Runtime_ObjectSeal) {
 
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result, JSObject::Seal(object));
+  return *result;
+}
+
+
+RUNTIME_FUNCTION(Runtime_LoadGlobalViaContext) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 3);
+  CONVERT_ARG_HANDLE_CHECKED(Context, script_context, 0);
+  CONVERT_SMI_ARG_CHECKED(index, 1);
+  CONVERT_ARG_HANDLE_CHECKED(Name, name, 2);
+  DCHECK(script_context->IsScriptContext());
+  DCHECK(script_context->get(index)->IsPropertyCell());
+
+  Handle<GlobalObject> global(script_context->global_object());
+
+  LookupIterator it(global, name, LookupIterator::OWN);
+  if (LookupIterator::DATA == it.state()) {
+    // Now update cell in the script context.
+    Handle<PropertyCell> cell = it.GetPropertyCell();
+    script_context->set(index, *cell);
+  } else {
+    // This is not a fast case, so keep this access in a slow mode.
+    // Store empty_property_cell here to release the outdated property cell.
+    script_context->set(index, isolate->heap()->empty_property_cell());
+  }
+
+  Handle<Object> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result, Object::GetProperty(&it));
+
+  return *result;
+}
+
+
+RUNTIME_FUNCTION(Runtime_StoreGlobalViaContext) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 5);
+  CONVERT_ARG_HANDLE_CHECKED(Context, script_context, 0);
+  CONVERT_SMI_ARG_CHECKED(index, 1);
+  CONVERT_ARG_HANDLE_CHECKED(Name, name, 2);
+  CONVERT_ARG_HANDLE_CHECKED(Object, value, 3);
+  CONVERT_LANGUAGE_MODE_ARG_CHECKED(language_mode_arg, 4);
+  DCHECK(script_context->IsScriptContext());
+  DCHECK(script_context->get(index)->IsPropertyCell());
+  LanguageMode language_mode = language_mode_arg;
+
+  Handle<GlobalObject> global(script_context->global_object());
+
+  LookupIterator it(global, name, LookupIterator::OWN);
+  if (LookupIterator::DATA == it.state()) {
+    // Now update cell in the script context.
+    Handle<PropertyCell> cell = it.GetPropertyCell();
+    script_context->set(index, *cell);
+  } else {
+    // This is not a fast case, so keep this access in a slow mode.
+    // Store empty_property_cell here to release the outdated property cell.
+    script_context->set(index, isolate->heap()->empty_property_cell());
+  }
+
+  Handle<Object> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result,
+      Object::SetProperty(&it, value, language_mode,
+                          Object::CERTAINLY_NOT_STORE_FROM_KEYED));
+
   return *result;
 }
 

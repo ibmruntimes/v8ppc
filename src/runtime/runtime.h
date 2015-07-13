@@ -76,6 +76,7 @@ namespace internal {
   F(ToMethod, 2, 1)                           \
   F(HomeObjectSymbol, 0, 1)                   \
   F(DefineClass, 6, 1)                        \
+  F(DefineClassStrong, 6, 1)                  \
   F(DefineClassMethod, 3, 1)                  \
   F(ClassGetSourceCode, 1, 1)                 \
   F(LoadFromSuper, 4, 1)                      \
@@ -332,7 +333,8 @@ namespace internal {
   F(Unlikely, 1, 1)                           \
   F(HarmonyToString, 0, 1)                    \
   F(GetTypeFeedbackVector, 1, 1)              \
-  F(GetCallerJSFunction, 0, 1)
+  F(GetCallerJSFunction, 0, 1)                \
+  F(GetCodeStubExportsObject, 0, 1)
 
 
 #define FOR_EACH_INTRINSIC_JSON(F) \
@@ -438,6 +440,8 @@ namespace internal {
   F(GetPropertyStrong, 2, 1)                         \
   F(KeyedGetProperty, 2, 1)                          \
   F(KeyedGetPropertyStrong, 2, 1)                    \
+  F(LoadGlobalViaContext, 3, 1)                      \
+  F(StoreGlobalViaContext, 5, 1)                     \
   F(AddNamedProperty, 4, 1)                          \
   F(SetProperty, 4, 1)                               \
   F(AddElement, 3, 1)                                \
@@ -813,15 +817,6 @@ class Runtime : public AllStatic {
 
   // Get the intrinsic function with the given function entry address.
   static const Function* FunctionForEntry(Address ref);
-
-  // TODO(1240886): Some of the following methods are *not* handle safe, but
-  // accept handle arguments. This seems fragile.
-
-  // Support getting the characters in a string using [] notation as
-  // in Firefox/SpiderMonkey, Safari and Opera.
-  MUST_USE_RESULT static MaybeHandle<Object> GetElementOrCharAt(
-      Isolate* isolate, Handle<Object> object, uint32_t index,
-      LanguageMode language_mode = SLOPPY);
 
   MUST_USE_RESULT static MaybeHandle<Object> DeleteObjectProperty(
       Isolate* isolate, Handle<JSReceiver> receiver, Handle<Object> key,

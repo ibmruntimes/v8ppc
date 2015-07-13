@@ -13,21 +13,21 @@ namespace internal {
 
 
 // static
-Callable CodeFactory::LoadIC(Isolate* isolate, ContextualMode mode,
+Callable CodeFactory::LoadIC(Isolate* isolate, TypeofMode typeof_mode,
                              LanguageMode language_mode) {
   return Callable(
       LoadIC::initialize_stub(
-          isolate, LoadICState(mode, language_mode).GetExtraICState()),
+          isolate, LoadICState(typeof_mode, language_mode).GetExtraICState()),
       LoadDescriptor(isolate));
 }
 
 
 // static
 Callable CodeFactory::LoadICInOptimizedCode(
-    Isolate* isolate, ContextualMode mode, LanguageMode language_mode,
+    Isolate* isolate, TypeofMode typeof_mode, LanguageMode language_mode,
     InlineCacheState initialization_state) {
   auto code = LoadIC::initialize_stub_in_optimized_code(
-      isolate, LoadICState(mode, language_mode).GetExtraICState(),
+      isolate, LoadICState(typeof_mode, language_mode).GetExtraICState(),
       initialization_state);
   return Callable(code, LoadWithVectorDescriptor(isolate));
 }
@@ -134,6 +134,21 @@ Callable CodeFactory::CompareIC(Isolate* isolate, Token::Value op,
 Callable CodeFactory::BinaryOpIC(Isolate* isolate, Token::Value op,
                                  Strength strength) {
   BinaryOpICStub stub(isolate, op, strength);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+
+// static
+Callable CodeFactory::LoadGlobalViaContext(Isolate* isolate, int depth) {
+  LoadGlobalViaContextStub stub(isolate, depth);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+
+// static
+Callable CodeFactory::StoreGlobalViaContext(Isolate* isolate, int depth,
+                                            LanguageMode language_mode) {
+  StoreGlobalViaContextStub stub(isolate, depth, language_mode);
   return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
 }
 

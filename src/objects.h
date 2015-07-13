@@ -11,6 +11,7 @@
 #include "src/assert-scope.h"
 #include "src/bailout-reason.h"
 #include "src/base/bits.h"
+#include "src/base/smart-pointers.h"
 #include "src/builtins.h"
 #include "src/checks.h"
 #include "src/elements-kind.h"
@@ -18,7 +19,6 @@
 #include "src/flags.h"
 #include "src/list.h"
 #include "src/property-details.h"
-#include "src/smart-pointers.h"
 #include "src/unicode-inl.h"
 #include "src/unicode-decoder.h"
 #include "src/zone.h"
@@ -175,10 +175,7 @@ enum KeyedAccessStoreMode {
 };
 
 
-enum ContextualMode {
-  NOT_CONTEXTUAL,
-  CONTEXTUAL
-};
+enum TypeofMode { INSIDE_TYPEOF, NOT_INSIDE_TYPEOF };
 
 
 enum MutableMode {
@@ -287,12 +284,6 @@ enum PrototypeOptimizationMode { REGULAR_PROTOTYPE, FAST_PROTOTYPE };
 enum TransitionFlag {
   INSERT_TRANSITION,
   OMIT_TRANSITION
-};
-
-
-enum DebugExtraICState {
-  DEBUG_BREAK,
-  DEBUG_PREPARE_STEP_IN
 };
 
 
@@ -1163,10 +1154,6 @@ class Object {
                                           Handle<Object> object,
                                           Handle<Context> context);
 
-  // Converts this to a Smi if possible.
-  MUST_USE_RESULT static inline MaybeHandle<Smi> ToSmi(Isolate* isolate,
-                                                       Handle<Object> object);
-
   MUST_USE_RESULT static MaybeHandle<Object> GetProperty(
       LookupIterator* it, LanguageMode language_mode = SLOPPY);
 
@@ -1228,6 +1215,10 @@ class Object {
   MUST_USE_RESULT static inline MaybeHandle<Object> GetElement(
       Isolate* isolate, Handle<Object> object, uint32_t index,
       LanguageMode language_mode = SLOPPY);
+
+  MUST_USE_RESULT static inline MaybeHandle<Object> SetElement(
+      Isolate* isolate, Handle<Object> object, uint32_t index,
+      Handle<Object> value, LanguageMode language_mode);
 
   static inline Handle<Object> GetPrototypeSkipHiddenPrototypes(
       Isolate* isolate, Handle<Object> receiver);
@@ -1671,10 +1662,6 @@ class JSReceiver: public HeapObject {
  public:
   DECLARE_CAST(JSReceiver)
 
-  MUST_USE_RESULT static MaybeHandle<Object> SetElement(
-      Handle<JSReceiver> object, uint32_t index, Handle<Object> value,
-      LanguageMode language_mode);
-
   // Implementation of [[HasProperty]], ECMA-262 5th edition, section 8.12.6.
   MUST_USE_RESULT static inline Maybe<bool> HasProperty(
       Handle<JSReceiver> object, Handle<Name> name);
@@ -2019,7 +2006,6 @@ class JSObject: public JSReceiver {
   // Would we convert a fast elements array to dictionary mode given
   // an access at key?
   bool WouldConvertToSlowElements(uint32_t index);
-  inline bool WouldConvertToSlowElements(Handle<Object> key);
 
   // Computes the new capacity when expanding the elements of a JSObject.
   static uint32_t NewElementsCapacity(uint32_t old_capacity) {
@@ -5333,8 +5319,7 @@ class Code: public HeapObject {
   class FullCodeFlagsIsCompiledOptimizable: public BitField<bool, 2, 1> {};
   class FullCodeFlagsHasRelocInfoForSerialization
       : public BitField<bool, 3, 1> {};
-
-  static const int kProfilerTicksOffset = kFullCodeFlags + 1;
+  class ProfilerTicksField : public BitField<int, 4, 28> {};
 
   // Flags layout.  BitField<type, shift, size>.
   class ICStateField : public BitField<InlineCacheState, 0, 4> {};
@@ -5554,13 +5539,12 @@ class Map: public HeapObject {
   inline int instance_size();
   inline void set_instance_size(int value);
 
+  // Only to clear an unused byte, remove once byte is used.
+  inline void clear_unused();
+
   // Count of properties allocated in the object.
   inline int inobject_properties();
   inline void set_inobject_properties(int value);
-
-  // Count of property fields pre-allocated in the object when first allocated.
-  inline int pre_allocated_property_fields();
-  inline void set_pre_allocated_property_fields(int value);
 
   // Instance type.
   inline InstanceType instance_type();
@@ -6003,13 +5987,6 @@ class Map: public HeapObject {
   int NumberOfDescribedProperties(DescriptorFlag which = OWN_DESCRIPTORS,
                                   PropertyAttributes filter = NONE);
 
-  // Returns the number of slots allocated for the initial properties
-  // backing storage for instances of this map.
-  int InitialPropertiesLength() {
-    return pre_allocated_property_fields() + unused_property_fields() -
-        inobject_properties();
-  }
-
   DECLARE_CAST(Map)
 
   // Code cache operations.
@@ -6145,9 +6122,9 @@ class Map: public HeapObject {
   static const int kInObjectPropertiesByte = 1;
   static const int kInObjectPropertiesOffset =
       kInstanceSizesOffset + kInObjectPropertiesByte;
-  static const int kPreAllocatedPropertyFieldsByte = 2;
-  static const int kPreAllocatedPropertyFieldsOffset =
-      kInstanceSizesOffset + kPreAllocatedPropertyFieldsByte;
+  // Note there is one byte available for use here.
+  static const int kUnusedByte = 2;
+  static const int kUnusedOffset = kInstanceSizesOffset + kUnusedByte;
   static const int kVisitorIdByte = 3;
   static const int kVisitorIdOffset = kInstanceSizesOffset + kVisitorIdByte;
 
@@ -6165,6 +6142,7 @@ class Map: public HeapObject {
   static const int kInstanceTypeAndBitFieldOffset =
       kInstanceAttributesOffset + 0;
   static const int kBitField2Offset = kInstanceAttributesOffset + 2;
+  static const int kUnusedPropertyFieldsByte = 3;
   static const int kUnusedPropertyFieldsOffset = kInstanceAttributesOffset + 3;
 
   STATIC_ASSERT(kInstanceTypeAndBitFieldOffset ==
@@ -8891,12 +8869,11 @@ class String: public Name {
   // ROBUST_STRING_TRAVERSAL invokes behaviour that is robust  This means it
   // handles unexpected data without causing assert failures and it does not
   // do any heap allocations.  This is useful when printing stack traces.
-  SmartArrayPointer<char> ToCString(AllowNullsFlag allow_nulls,
-                                    RobustnessFlag robustness_flag,
-                                    int offset,
-                                    int length,
-                                    int* length_output = 0);
-  SmartArrayPointer<char> ToCString(
+  base::SmartArrayPointer<char> ToCString(AllowNullsFlag allow_nulls,
+                                          RobustnessFlag robustness_flag,
+                                          int offset, int length,
+                                          int* length_output = 0);
+  base::SmartArrayPointer<char> ToCString(
       AllowNullsFlag allow_nulls = DISALLOW_NULLS,
       RobustnessFlag robustness_flag = FAST_STRING_TRAVERSAL,
       int* length_output = 0);
@@ -8907,7 +8884,7 @@ class String: public Name {
   // ROBUST_STRING_TRAVERSAL invokes behaviour that is robust  This means it
   // handles unexpected data without causing assert failures and it does not
   // do any heap allocations.  This is useful when printing stack traces.
-  SmartArrayPointer<uc16> ToWideCString(
+  base::SmartArrayPointer<uc16> ToWideCString(
       RobustnessFlag robustness_flag = FAST_STRING_TRAVERSAL);
 
   bool ComputeArrayIndex(uint32_t* index);

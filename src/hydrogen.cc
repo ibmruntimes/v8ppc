@@ -339,7 +339,7 @@ void HBasicBlock::RegisterPredecessor(HBasicBlock* pred) {
     DCHECK(IsLoopHeader() || first_ == NULL);
     HEnvironment* incoming_env = pred->last_environment();
     if (IsLoopHeader()) {
-      DCHECK(phis()->length() == incoming_env->length());
+      DCHECK_EQ(phis()->length(), incoming_env->length());
       for (int i = 0; i < phis_.length(); ++i) {
         phis_[i]->AddInput(incoming_env->values()->at(i));
       }
@@ -994,6 +994,13 @@ void HGraphBuilder::IfBuilder::Finish(HBasicBlock** then_continuation,
     *then_continuation = then_record->block_;
   }
   DCHECK(then_record->next_ == NULL);
+}
+
+
+void HGraphBuilder::IfBuilder::EndUnreachable() {
+  if (captured_) return;
+  Finish();
+  builder()->set_current_block(nullptr);
 }
 
 
@@ -3134,6 +3141,17 @@ void HGraphBuilder::BuildCreateAllocationMemento(
 }
 
 
+HInstruction* HGraphBuilder::BuildGetNativeContext() {
+  // Get the global object, then the native context
+  HValue* global_object = Add<HLoadNamedField>(
+      context(), nullptr,
+      HObjectAccess::ForContextSlot(Context::GLOBAL_OBJECT_INDEX));
+  return Add<HLoadNamedField>(global_object, nullptr,
+                              HObjectAccess::ForObservableJSObjectOffset(
+                                  GlobalObject::kNativeContextOffset));
+}
+
+
 HInstruction* HGraphBuilder::BuildGetNativeContext(HValue* closure) {
   // Get the global object, then the native context
   HInstruction* context = Add<HLoadNamedField>(
@@ -3157,14 +3175,51 @@ HInstruction* HGraphBuilder::BuildGetScriptContext(int context_index) {
 }
 
 
-HInstruction* HGraphBuilder::BuildGetNativeContext() {
-  // Get the global object, then the native context
-  HValue* global_object = Add<HLoadNamedField>(
-      context(), nullptr,
-      HObjectAccess::ForContextSlot(Context::GLOBAL_OBJECT_INDEX));
-  return Add<HLoadNamedField>(global_object, nullptr,
-                              HObjectAccess::ForObservableJSObjectOffset(
-                                  GlobalObject::kNativeContextOffset));
+HValue* HGraphBuilder::BuildGetParentContext(HValue* depth, int depth_value) {
+  HValue* script_context = context();
+  if (depth != NULL) {
+    HValue* zero = graph()->GetConstant0();
+
+    Push(script_context);
+    Push(depth);
+
+    LoopBuilder loop(this);
+    loop.BeginBody(2);  // Drop script_context and depth from last environment
+                        // to appease live range building without simulates.
+    depth = Pop();
+    script_context = Pop();
+
+    script_context = Add<HLoadNamedField>(
+        script_context, nullptr,
+        HObjectAccess::ForContextSlot(Context::PREVIOUS_INDEX));
+    depth = AddUncasted<HSub>(depth, graph()->GetConstant1());
+    depth->ClearFlag(HValue::kCanOverflow);
+
+    IfBuilder if_break(this);
+    if_break.If<HCompareNumericAndBranch, HValue*>(depth, zero, Token::EQ);
+    if_break.Then();
+    {
+      Push(script_context);  // The result.
+      loop.Break();
+    }
+    if_break.Else();
+    {
+      Push(script_context);
+      Push(depth);
+    }
+    loop.EndBody();
+    if_break.End();
+
+    script_context = Pop();
+  } else if (depth_value > 0) {
+    // Unroll the above loop.
+    for (int i = 0; i < depth_value; i++) {
+      script_context = Add<HLoadNamedField>(
+          script_context, nullptr,
+          HObjectAccess::ForContextSlot(Context::PREVIOUS_INDEX));
+    }
+  }
+  return script_context;
 }
 
 
@@ -3989,7 +4044,7 @@ AstContext::AstContext(HOptimizedGraphBuilder* owner, Expression::Context kind)
     : owner_(owner),
       kind_(kind),
       outer_(owner->ast_context()),
-      for_typeof_(false) {
+      typeof_mode_(NOT_INSIDE_TYPEOF) {
   owner->set_ast_context(this);  // Push.
 #ifdef DEBUG
   DCHECK(owner->environment()->frame_type() == JS_FUNCTION);
@@ -4237,7 +4292,7 @@ void HOptimizedGraphBuilder::VisitForValue(Expression* expr,
 
 void HOptimizedGraphBuilder::VisitForTypeOf(Expression* expr) {
   ValueContext for_value(this, ARGUMENTS_NOT_ALLOWED);
-  for_value.set_for_typeof(true);
+  for_value.set_typeof_mode(INSIDE_TYPEOF);
   Visit(expr);
 }
 
@@ -5508,10 +5563,8 @@ void HOptimizedGraphBuilder::VisitVariableProxy(VariableProxy* expr) {
         HValue* global_object = Add<HLoadNamedField>(
             context(), nullptr,
             HObjectAccess::ForContextSlot(Context::GLOBAL_OBJECT_INDEX));
-        HLoadGlobalGeneric* instr =
-            New<HLoadGlobalGeneric>(global_object,
-                                    variable->name(),
-                                    ast_context()->is_for_typeof());
+        HLoadGlobalGeneric* instr = New<HLoadGlobalGeneric>(
+            global_object, variable->name(), ast_context()->typeof_mode());
         instr->SetVectorAndSlot(handle(current_feedback_vector(), isolate()),
                                 expr->VariableFeedbackSlot());
         return ast_context()->ReturnInstruction(instr, expr->id());
@@ -7872,7 +7925,7 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(Call* expr,
     bool try_inline = FLAG_polymorphic_inlining && !needs_wrapping;
     if (FLAG_trace_inlining && try_inline) {
       Handle<JSFunction> caller = current_info()->closure();
-      SmartArrayPointer<char> caller_name =
+      base::SmartArrayPointer<char> caller_name =
           caller->shared()->DebugName()->ToCString();
       PrintF("Trying to inline the polymorphic call to %s from %s\n",
              name->ToCString().get(),
@@ -7954,9 +8007,9 @@ void HOptimizedGraphBuilder::TraceInline(Handle<JSFunction> target,
                                          Handle<JSFunction> caller,
                                          const char* reason) {
   if (FLAG_trace_inlining) {
-    SmartArrayPointer<char> target_name =
+    base::SmartArrayPointer<char> target_name =
         target->shared()->DebugName()->ToCString();
-    SmartArrayPointer<char> caller_name =
+    base::SmartArrayPointer<char> caller_name =
         caller->shared()->DebugName()->ToCString();
     if (reason == NULL) {
       PrintF("Inlined %s called from %s.\n", target_name.get(),
@@ -9556,9 +9609,9 @@ void HOptimizedGraphBuilder::BuildInlinedCallArray(
 // Checks whether allocation using the given constructor can be inlined.
 static bool IsAllocationInlineable(Handle<JSFunction> constructor) {
   return constructor->has_initial_map() &&
-      constructor->initial_map()->instance_type() == JS_OBJECT_TYPE &&
-      constructor->initial_map()->instance_size() < HAllocate::kMaxInlineSize &&
-      constructor->initial_map()->InitialPropertiesLength() == 0;
+         constructor->initial_map()->instance_type() == JS_OBJECT_TYPE &&
+         constructor->initial_map()->instance_size() <
+             HAllocate::kMaxInlineSize;
 }
 
 
@@ -9644,7 +9697,6 @@ void HOptimizedGraphBuilder::VisitCallNew(CallNew* expr) {
     DCHECK(constructor->has_initial_map());
     Handle<Map> initial_map(constructor->initial_map());
     int instance_size = initial_map->instance_size();
-    DCHECK(initial_map->InitialPropertiesLength() == 0);
 
     // Allocate an instance of the implicit receiver object.
     HValue* size_in_bytes = Add<HConstant>(instance_size);

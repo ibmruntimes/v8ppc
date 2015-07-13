@@ -3558,7 +3558,7 @@ void MacroAssembler::DebugBreak() {
   LoadAddress(rbx, ExternalReference(Runtime::kDebugBreak, isolate()));
   CEntryStub ces(isolate(), 1);
   DCHECK(AllowThisStubCall(&ces));
-  Call(ces.GetCode(), RelocInfo::DEBUG_BREAK);
+  Call(ces.GetCode(), RelocInfo::DEBUGGER_STATEMENT);
 }
 
 
@@ -4301,21 +4301,6 @@ void MacroAssembler::Allocate(Register object_size,
   if ((flags & TAG_OBJECT) != 0) {
     addp(result, Immediate(kHeapObjectTag));
   }
-}
-
-
-void MacroAssembler::UndoAllocationInNewSpace(Register object) {
-  ExternalReference new_space_allocation_top =
-      ExternalReference::new_space_allocation_top_address(isolate());
-
-  // Make sure the object has no tag before resetting top.
-  andp(object, Immediate(~kHeapObjectTagMask));
-  Operand top_operand = ExternalOperand(new_space_allocation_top);
-#ifdef DEBUG
-  cmpp(object, top_operand);
-  Check(below, kUndoAllocationOfNonAllocatedMemory);
-#endif
-  movp(top_operand, object);
 }
 
 

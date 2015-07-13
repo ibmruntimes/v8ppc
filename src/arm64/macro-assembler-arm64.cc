@@ -3033,7 +3033,7 @@ void MacroAssembler::DebugBreak() {
   Mov(x1, ExternalReference(Runtime::kDebugBreak, isolate()));
   CEntryStub ces(isolate(), 1);
   DCHECK(AllowThisStubCall(&ces));
-  Call(ces.GetCode(), RelocInfo::DEBUG_BREAK);
+  Call(ces.GetCode(), RelocInfo::DEBUGGER_STATEMENT);
 }
 
 
@@ -3220,26 +3220,6 @@ void MacroAssembler::Allocate(Register object_size,
   if ((flags & TAG_OBJECT) != 0) {
     ObjectTag(result, result);
   }
-}
-
-
-void MacroAssembler::UndoAllocationInNewSpace(Register object,
-                                              Register scratch) {
-  ExternalReference new_space_allocation_top =
-      ExternalReference::new_space_allocation_top_address(isolate());
-
-  // Make sure the object has no tag before resetting top.
-  Bic(object, object, kHeapObjectTagMask);
-#ifdef DEBUG
-  // Check that the object un-allocated is below the current top.
-  Mov(scratch, new_space_allocation_top);
-  Ldr(scratch, MemOperand(scratch));
-  Cmp(object, scratch);
-  Check(lt, kUndoAllocationOfNonAllocatedMemory);
-#endif
-  // Write the address of the object to un-allocate as the current top.
-  Mov(scratch, new_space_allocation_top);
-  Str(object, MemOperand(scratch));
 }
 
 

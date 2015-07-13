@@ -472,9 +472,9 @@ static bool IterateElementsSlow(Isolate* isolate, Handle<JSObject> receiver,
     if (!maybe.IsJust()) return false;
     if (maybe.FromJust()) {
       Handle<Object> element_value;
-      ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-          isolate, element_value,
-          Runtime::GetElementOrCharAt(isolate, receiver, i), false);
+      ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, element_value,
+                                       Object::GetElement(isolate, receiver, i),
+                                       false);
       visitor->visit(i, element_value);
     }
   }
@@ -1113,8 +1113,8 @@ static Object* ArrayConstructorCommon(Isolate* isolate,
       allocation_site = site;
     }
 
-    array = Handle<JSArray>::cast(factory->NewJSObjectFromMap(
-        initial_map, NOT_TENURED, true, allocation_site));
+    array = Handle<JSArray>::cast(
+        factory->NewJSObjectFromMap(initial_map, NOT_TENURED, allocation_site));
   } else {
     array = Handle<JSArray>::cast(factory->NewJSObject(constructor));
 

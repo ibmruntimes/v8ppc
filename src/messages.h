@@ -230,6 +230,7 @@ class CallSite {
     "In strong mode, calling a function with too few arguments is deprecated") \
   T(StrongDeleteProperty,                                                      \
     "Deleting property '%' of strong object '%' is deprecated")                \
+  T(StrongExtendNull, "In strong mode, classes extending null are deprecated") \
   T(StrongImplicitConversion,                                                  \
     "In strong mode, implicit conversions are deprecated")                     \
   T(StrongRedefineDisallowed,                                                  \
@@ -455,8 +456,8 @@ class MessageHandler {
   static void DefaultMessageReport(Isolate* isolate, const MessageLocation* loc,
                                    Handle<Object> message_obj);
   static Handle<String> GetMessage(Isolate* isolate, Handle<Object> data);
-  static SmartArrayPointer<char> GetLocalizedMessage(Isolate* isolate,
-                                                     Handle<Object> data);
+  static base::SmartArrayPointer<char> GetLocalizedMessage(Isolate* isolate,
+                                                           Handle<Object> data);
 };
 } }  // namespace v8::internal
 

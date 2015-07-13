@@ -222,9 +222,10 @@ RUNTIME_FUNCTION(Runtime_RenderCallSite) {
   if (location.start_pos() == -1) return isolate->heap()->empty_string();
 
   Zone zone;
-  SmartPointer<ParseInfo> info(location.function()->shared()->is_function()
-                                   ? new ParseInfo(&zone, location.function())
-                                   : new ParseInfo(&zone, location.script()));
+  base::SmartPointer<ParseInfo> info(
+      location.function()->shared()->is_function()
+          ? new ParseInfo(&zone, location.function())
+          : new ParseInfo(&zone, location.script()));
 
   if (!Parser::ParseStatic(info.get())) {
     isolate->clear_pending_exception();
@@ -467,5 +468,12 @@ RUNTIME_FUNCTION(Runtime_GetCallerJSFunction) {
   RUNTIME_ASSERT(it.frame()->type() == StackFrame::JAVA_SCRIPT);
   return JavaScriptFrame::cast(it.frame())->function();
 }
+
+
+RUNTIME_FUNCTION(Runtime_GetCodeStubExportsObject) {
+  HandleScope shs(isolate);
+  return isolate->heap()->code_stub_exports_object();
+}
+
 }  // namespace internal
 }  // namespace v8

@@ -436,9 +436,6 @@
   # https://code.google.com/p/v8/issues/detail?id=4245
   'built-ins/String/prototype/split/S15.5.4.14_A2_T37': [FAIL],
 
-  # https://code.google.com/p/v8/issues/detail?id=3088
-  'built-ins/Symbol/auto-boxing-strict': [FAIL],
-
   # The order of adding the name property is wrong
   # https://code.google.com/p/v8/issues/detail?id=4199
   'language/computed-property-names/class/static/method-number': [FAIL, FAIL_SLOPPY],
@@ -504,20 +501,6 @@
   'built-ins/GeneratorPrototype/return/try-finally-nested-try-catch-within-outer-try-before-nested': [FAIL],
   'built-ins/GeneratorPrototype/return/try-finally-within-finally': [FAIL],
   'built-ins/GeneratorPrototype/return/try-finally-within-try': [FAIL],
-
-   # https://code.google.com/p/v8/issues/detail?id=4177
-   'language/arguments-object/mapped/mapped-arguments-nonconfigurable-2': [FAIL],
-   'language/arguments-object/mapped/mapped-arguments-nonconfigurable-3': [FAIL],
-   'language/arguments-object/mapped/mapped-arguments-nonconfigurable-4': [FAIL],
-   'language/arguments-object/mapped/mapped-arguments-nonconfigurable-delete-2': [FAIL],
-   'language/arguments-object/mapped/mapped-arguments-nonconfigurable-delete-3': [FAIL],
-   'language/arguments-object/mapped/mapped-arguments-nonconfigurable-delete-4': [FAIL],
-   'language/arguments-object/mapped/mapped-arguments-nonconfigurable-nonwritable-3': [FAIL],
-   'language/arguments-object/mapped/mapped-arguments-nonconfigurable-nonwritable-4': [FAIL],
-   'language/arguments-object/mapped/mapped-arguments-nonconfigurable-nonwritable-5': [FAIL],
-   'language/arguments-object/mapped/mapped-arguments-nonconfigurable-strict-delete-2': [FAIL],
-   'language/arguments-object/mapped/mapped-arguments-nonconfigurable-strict-delete-3': [FAIL],
-   'language/arguments-object/mapped/mapped-arguments-nonconfigurable-strict-delete-4': [FAIL],
 
    # https://code.google.com/p/v8/issues/detail?id=811
   'language/expressions/assignment/destructuring/array-elem-elision': [FAIL],

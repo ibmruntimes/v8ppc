@@ -412,9 +412,7 @@ void Map::MapPrint(std::ostream& os) {  // NOLINT
   os << " - type: " << TypeToString(instance_type()) << "\n";
   os << " - instance size: " << instance_size() << "\n";
   os << " - inobject properties: " << inobject_properties() << "\n";
-  os << " - elements kind: " << ElementsKindToString(elements_kind());
-  os << "\n - pre-allocated property fields: "
-     << pre_allocated_property_fields() << "\n";
+  os << " - elements kind: " << ElementsKindToString(elements_kind()) << "\n";
   os << " - unused property fields: " << unused_property_fields() << "\n";
   if (is_deprecated()) os << " - deprecated_map\n";
   if (is_stable()) os << " - stable_map\n";
@@ -748,10 +746,8 @@ void SharedFunctionInfo::SharedFunctionInfoPrint(std::ostream& os) {  // NOLINT
     String* source = String::cast(Script::cast(script())->source());
     int start = start_position();
     int length = end_position() - start;
-    SmartArrayPointer<char> source_string =
-        source->ToCString(DISALLOW_NULLS,
-                          FAST_STRING_TRAVERSAL,
-                          start, length, NULL);
+    base::SmartArrayPointer<char> source_string = source->ToCString(
+        DISALLOW_NULLS, FAST_STRING_TRAVERSAL, start, length, NULL);
     os << source_string.get();
   }
   // Script files are often large, hard to read.

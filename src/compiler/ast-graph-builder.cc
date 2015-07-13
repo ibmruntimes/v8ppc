@@ -1562,7 +1562,10 @@ void AstGraphBuilder::VisitClassLiteralContents(ClassLiteral* expr) {
   Node* script = jsgraph()->Constant(info()->script());
   Node* start = jsgraph()->Constant(expr->start_position());
   Node* end = jsgraph()->Constant(expr->end_position());
-  const Operator* opc = javascript()->CallRuntime(Runtime::kDefineClass, 6);
+  const Operator* opc = javascript()->CallRuntime(
+      is_strong(language_mode()) ? Runtime::kDefineClassStrong
+                                 : Runtime::kDefineClass,
+      6);
   Node* literal = NewNode(opc, name, extends, constructor, script, start, end);
   PrepareFrameState(literal, expr->CreateLiteralId(),
                     OutputFrameStateCombine::Push());
@@ -1637,6 +1640,14 @@ void AstGraphBuilder::VisitClassLiteralContents(ClassLiteral* expr) {
   const Operator* op = javascript()->CallRuntime(Runtime::kToFastProperties, 1);
   NewNode(op, environment()->Pop());  // prototype
   NewNode(op, environment()->Pop());  // literal
+  if (is_strong(language_mode())) {
+    // TODO(conradw): It would be more efficient to define the properties with
+    // the right attributes the first time round.
+    literal =
+        NewNode(javascript()->CallRuntime(Runtime::kObjectFreeze, 1), literal);
+    // Freezing the class object should never deopt.
+    PrepareFrameState(literal, BailoutId::None());
+  }
 
   // Assign to class variable.
   if (expr->scope() != NULL) {
@@ -1649,7 +1660,6 @@ void AstGraphBuilder::VisitClassLiteralContents(ClassLiteral* expr) {
     BuildVariableAssignment(var, literal, Token::INIT_CONST, feedback,
                             BailoutId::None(), states);
   }
-
   ast_context()->ProduceValue(literal);
 }
 
@@ -2945,7 +2955,7 @@ void AstGraphBuilder::VisitTypeof(UnaryOperation* expr) {
     FrameStateBeforeAndAfter states(this, BeforeId(proxy));
     operand =
         BuildVariableLoad(proxy->var(), expr->expression()->id(), states, pair,
-                          OutputFrameStateCombine::Push(), NOT_CONTEXTUAL);
+                          OutputFrameStateCombine::Push(), INSIDE_TYPEOF);
   } else {
     VisitForValue(expr->expression());
     operand = environment()->Pop();
@@ -3257,16 +3267,30 @@ Node* AstGraphBuilder::BuildVariableLoad(Variable* variable,
                                          FrameStateBeforeAndAfter& states,
                                          const VectorSlotPair& feedback,
                                          OutputFrameStateCombine combine,
-                                         ContextualMode contextual_mode) {
+                                         TypeofMode typeof_mode) {
   Node* the_hole = jsgraph()->TheHoleConstant();
   VariableMode mode = variable->mode();
   switch (variable->location()) {
     case VariableLocation::GLOBAL:
     case VariableLocation::UNALLOCATED: {
       // Global var, const, or let variable.
+      Node* script_context = current_context();
+      int slot_index = -1;
+      if (variable->index() > 0) {
+        DCHECK(variable->IsStaticGlobalObjectProperty());
+        // Each var occupies two slots in the context: for reads and writes.
+        slot_index = variable->index();
+        int depth = current_scope()->ContextChainLength(variable->scope());
+        if (depth > 0) {
+          const Operator* op = javascript()->LoadContext(
+              depth - 1, Context::PREVIOUS_INDEX, true);
+          script_context = NewNode(op, current_context());
+        }
+      }
       Node* global = BuildLoadGlobalObject();
       Handle<Name> name = variable->name();
-      Node* value = BuildGlobalLoad(global, name, feedback, contextual_mode);
+      Node* value = BuildGlobalLoad(script_context, global, name, feedback,
+                                    typeof_mode, slot_index);
       states.AddToNode(value, bailout_id, combine);
       return value;
     }
@@ -3322,7 +3346,7 @@ Node* AstGraphBuilder::BuildVariableLoad(Variable* variable,
       if (mode == DYNAMIC_GLOBAL) {
         uint32_t check_bitset = ComputeBitsetForDynamicGlobal(variable);
         const Operator* op = javascript()->LoadDynamicGlobal(
-            name, check_bitset, feedback, contextual_mode);
+            name, check_bitset, feedback, typeof_mode);
         value = NewNode(op, BuildLoadFeedbackVector(), current_context());
         states.AddToNode(value, bailout_id, combine);
       } else if (mode == DYNAMIC_LOCAL) {
@@ -3347,7 +3371,7 @@ Node* AstGraphBuilder::BuildVariableLoad(Variable* variable,
       } else if (mode == DYNAMIC) {
         uint32_t check_bitset = DynamicGlobalAccess::kFullCheckRequired;
         const Operator* op = javascript()->LoadDynamicGlobal(
-            name, check_bitset, feedback, contextual_mode);
+            name, check_bitset, feedback, typeof_mode);
         value = NewNode(op, BuildLoadFeedbackVector(), current_context());
         states.AddToNode(value, bailout_id, combine);
       }
@@ -3404,10 +3428,24 @@ Node* AstGraphBuilder::BuildVariableAssignment(
     case VariableLocation::GLOBAL:
     case VariableLocation::UNALLOCATED: {
       // Global var, const, or let variable.
+      Node* script_context = current_context();
+      int slot_index = -1;
+      if (variable->index() > 0) {
+        DCHECK(variable->IsStaticGlobalObjectProperty());
+        // Each var occupies two slots in the context: for reads and writes.
+        slot_index = variable->index();
+        int depth = current_scope()->ContextChainLength(variable->scope());
+        if (depth > 0) {
+          const Operator* op = javascript()->LoadContext(
+              depth - 1, Context::PREVIOUS_INDEX, true);
+          script_context = NewNode(op, current_context());
+        }
+      }
       Node* global = BuildLoadGlobalObject();
       Handle<Name> name = variable->name();
-      Node* store = BuildGlobalStore(global, name, value, feedback,
-                                     TypeFeedbackId::None());
+      Node* store =
+          BuildGlobalStore(script_context, global, name, value, feedback,
+                           TypeFeedbackId::None(), slot_index);
       states.AddToNode(store, bailout_id, combine);
       return store;
     }
@@ -3611,23 +3649,25 @@ Node* AstGraphBuilder::BuildNamedSuperStore(Node* receiver, Node* home_object,
 }
 
 
-Node* AstGraphBuilder::BuildGlobalLoad(Node* object, Handle<Name> name,
+Node* AstGraphBuilder::BuildGlobalLoad(Node* script_context, Node* global,
+                                       Handle<Name> name,
                                        const VectorSlotPair& feedback,
-                                       ContextualMode mode) {
-  const Operator* op =
-      javascript()->LoadGlobal(MakeUnique(name), feedback, mode);
-  Node* node = NewNode(op, object, BuildLoadFeedbackVector());
+                                       TypeofMode typeof_mode, int slot_index) {
+  const Operator* op = javascript()->LoadGlobal(MakeUnique(name), feedback,
+                                                typeof_mode, slot_index);
+  Node* node = NewNode(op, script_context, global, BuildLoadFeedbackVector());
   return Record(js_type_feedback_, node, feedback.slot());
 }
 
 
-Node* AstGraphBuilder::BuildGlobalStore(Node* object, Handle<Name> name,
-                                        Node* value,
+Node* AstGraphBuilder::BuildGlobalStore(Node* script_context, Node* global,
+                                        Handle<Name> name, Node* value,
                                         const VectorSlotPair& feedback,
-                                        TypeFeedbackId id) {
-  const Operator* op =
-      javascript()->StoreGlobal(language_mode(), MakeUnique(name), feedback);
-  Node* node = NewNode(op, object, value, BuildLoadFeedbackVector());
+                                        TypeFeedbackId id, int slot_index) {
+  const Operator* op = javascript()->StoreGlobal(
+      language_mode(), MakeUnique(name), feedback, slot_index);
+  Node* node =
+      NewNode(op, script_context, global, value, BuildLoadFeedbackVector());
   if (FLAG_vector_stores) {
     return Record(js_type_feedback_, node, feedback.slot());
   }
@@ -3921,7 +3961,7 @@ Node** AstGraphBuilder::EnsureInputBufferSize(int size) {
 
 Node* AstGraphBuilder::MakeNode(const Operator* op, int value_input_count,
                                 Node** value_inputs, bool incomplete) {
-  DCHECK(op->ValueInputCount() == value_input_count);
+  DCHECK_EQ(op->ValueInputCount(), value_input_count);
 
   bool has_context = OperatorProperties::HasContextInput(op);
   int frame_state_count = OperatorProperties::GetFrameStateInputCount(op);

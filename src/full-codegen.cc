@@ -205,11 +205,11 @@ void FullCodeGenerator::PrepareForBailout(Expression* node, State state) {
 }
 
 
-void FullCodeGenerator::CallLoadIC(ContextualMode contextual_mode,
+void FullCodeGenerator::CallLoadIC(TypeofMode typeof_mode,
                                    LanguageMode language_mode,
                                    TypeFeedbackId id) {
   Handle<Code> ic =
-      CodeFactory::LoadIC(isolate(), contextual_mode, language_mode).code();
+      CodeFactory::LoadIC(isolate(), typeof_mode, language_mode).code();
   CallIC(ic, id);
 }
 
@@ -1184,7 +1184,9 @@ void FullCodeGenerator::VisitClassLiteral(ClassLiteral* lit) {
     __ Push(Smi::FromInt(lit->start_position()));
     __ Push(Smi::FromInt(lit->end_position()));
 
-    __ CallRuntime(Runtime::kDefineClass, 6);
+    __ CallRuntime(is_strong(language_mode()) ? Runtime::kDefineClassStrong
+                                              : Runtime::kDefineClass,
+                   6);
     PrepareForBailoutForId(lit->CreateLiteralId(), TOS_REG);
 
     int store_slot_index = 0;
@@ -1202,6 +1204,13 @@ void FullCodeGenerator::VisitClassLiteral(ClassLiteral* lit) {
     // Verify that compilation exactly consumed the number of store ic slots
     // that the ClassLiteral node had to offer.
     DCHECK(!FLAG_vector_stores || store_slot_index == lit->slot_count());
+
+    if (is_strong(language_mode())) {
+      // TODO(conradw): It would be more efficient to define the properties with
+      // the right attributes the first time round.
+      __ Push(result_register());
+      __ CallRuntime(Runtime::kObjectFreeze, 1);
+    }
   }
 
   context()->Plug(result_register());
