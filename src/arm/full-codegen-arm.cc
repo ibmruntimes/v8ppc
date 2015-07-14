@@ -2172,8 +2172,8 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       Label suspend, continuation, post_runtime, resume;
 
       __ jmp(&suspend);
-
       __ bind(&continuation);
+      __ RecordGeneratorContinuation();
       __ jmp(&resume);
 
       __ bind(&suspend);
@@ -2244,9 +2244,12 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       EnterTryBlock(handler_index, &l_catch);
       const int try_block_size = TryCatch::kElementCount * kPointerSize;
       __ push(r0);                                       // result
+
       __ jmp(&l_suspend);
       __ bind(&l_continuation);
+      __ RecordGeneratorContinuation();
       __ jmp(&l_resume);
+
       __ bind(&l_suspend);
       const int generator_object_depth = kPointerSize + try_block_size;
       __ ldr(r0, MemOperand(sp, generator_object_depth));
@@ -2658,6 +2661,19 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit,
 
   // constructor
   __ CallRuntime(Runtime::kToFastProperties, 1);
+
+  if (is_strong(language_mode())) {
+    __ ldr(scratch,
+           FieldMemOperand(r0, JSFunction::kPrototypeOrInitialMapOffset));
+    __ push(r0);
+    __ push(scratch);
+    // TODO(conradw): It would be more efficient to define the properties with
+    // the right attributes the first time round.
+    // Freeze the prototype.
+    __ CallRuntime(Runtime::kObjectFreeze, 1);
+    // Freeze the constructor.
+    __ CallRuntime(Runtime::kObjectFreeze, 1);
+  }
 }
 
 

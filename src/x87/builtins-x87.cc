@@ -100,45 +100,8 @@ void Builtins::Generate_InOptimizationQueue(MacroAssembler* masm) {
 }
 
 
-static void Generate_Runtime_NewObject(MacroAssembler* masm,
-                                       bool create_memento,
-                                       Register original_constructor,
-                                       Label* count_incremented,
-                                       Label* allocated) {
-  int offset = 0;
-  if (create_memento) {
-    // Get the cell or allocation site.
-    __ mov(edi, Operand(esp, kPointerSize * 2));
-    __ push(edi);
-    offset = kPointerSize;
-  }
-
-  // Must restore esi (context) and edi (constructor) before calling
-  // runtime.
-  __ mov(esi, Operand(ebp, StandardFrameConstants::kContextOffset));
-  __ mov(edi, Operand(esp, offset));
-  __ push(edi);
-  __ push(original_constructor);
-  if (create_memento) {
-    __ CallRuntime(Runtime::kNewObjectWithAllocationSite, 3);
-  } else {
-    __ CallRuntime(Runtime::kNewObject, 2);
-  }
-  __ mov(ebx, eax);  // store result in ebx
-
-  // Runtime_NewObjectWithAllocationSite increments allocation count.
-  // Skip the increment.
-  if (create_memento) {
-    __ jmp(count_incremented);
-  } else {
-    __ jmp(allocated);
-  }
-}
-
-
 static void Generate_JSConstructStubHelper(MacroAssembler* masm,
                                            bool is_api_function,
-                                           bool use_new_target,
                                            bool create_memento) {
   // ----------- S t a t e -------------
   //  -- eax: number of arguments
@@ -163,28 +126,19 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     __ SmiTag(eax);
     __ push(eax);
     __ push(edi);
-    if (use_new_target) {
-      __ push(edx);
-    }
-
-    __ cmp(edx, edi);
-    Label normal_new;
-    Label count_incremented;
-    Label allocated;
-    __ j(equal, &normal_new);
-
-    // Original constructor and function are different.
-    Generate_Runtime_NewObject(masm, create_memento, edx, &count_incremented,
-                               &allocated);
-    __ bind(&normal_new);
+    __ push(edx);
 
     // Try to allocate the object without transitioning into C code. If any of
     // the preconditions is not met, the code bails out to the runtime call.
-    Label rt_call;
+    Label rt_call, allocated;
     if (FLAG_inline_new) {
       ExternalReference debug_step_in_fp =
           ExternalReference::debug_step_in_fp_address(masm->isolate());
       __ cmp(Operand::StaticVariable(debug_step_in_fp), Immediate(0));
+      __ j(not_equal, &rt_call);
+
+      // Fall back to runtime if the original constructor and function differ.
+      __ cmp(edx, edi);
       __ j(not_equal, &rt_call);
 
       // Verified that the constructor is a JSFunction.
@@ -223,12 +177,14 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         __ j(not_equal, &allocate);
 
         __ push(eax);
+        __ push(edx);
         __ push(edi);
 
         __ push(edi);  // constructor
         __ CallRuntime(Runtime::kFinalizeInstanceSize, 1);
 
         __ pop(edi);
+        __ pop(edx);
         __ pop(eax);
         __ mov(esi, Map::kSlackTrackingCounterEnd - 1);
 
@@ -316,16 +272,42 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     }
 
     // Allocate the new receiver object using the runtime call.
+    // edx: original constructor
     __ bind(&rt_call);
-    Generate_Runtime_NewObject(masm, create_memento, edi, &count_incremented,
-                               &allocated);
+    int offset = kPointerSize;
+    if (create_memento) {
+      // Get the cell or allocation site.
+      __ mov(edi, Operand(esp, kPointerSize * 3));
+      __ push(edi);  // argument 1: allocation site
+      offset += kPointerSize;
+    }
+
+    // Must restore esi (context) and edi (constructor) before calling
+    // runtime.
+    __ mov(esi, Operand(ebp, StandardFrameConstants::kContextOffset));
+    __ mov(edi, Operand(esp, offset));
+    __ push(edi);  // argument 2/1: constructor function
+    __ push(edx);  // argument 3/2: original constructor
+    if (create_memento) {
+      __ CallRuntime(Runtime::kNewObjectWithAllocationSite, 3);
+    } else {
+      __ CallRuntime(Runtime::kNewObject, 2);
+    }
+    __ mov(ebx, eax);  // store result in ebx
+
+    // Runtime_NewObjectWithAllocationSite increments allocation count.
+    // Skip the increment.
+    Label count_incremented;
+    if (create_memento) {
+      __ jmp(&count_incremented);
+    }
+
     // New object allocated.
     // ebx: newly allocated object
     __ bind(&allocated);
 
     if (create_memento) {
-      int offset = (use_new_target ? 3 : 2) * kPointerSize;
-      __ mov(ecx, Operand(esp, offset));
+      __ mov(ecx, Operand(esp, 3 * kPointerSize));
       __ cmp(ecx, masm->isolate()->factory()->undefined_value());
       __ j(equal, &count_incremented);
       // ecx is an AllocationSite. We are creating a memento from it, so we
@@ -336,9 +318,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     }
 
     // Restore the parameters.
-    if (use_new_target) {
-      __ pop(edx);  // new.target
-    }
+    __ pop(edx);  // new.target
     __ pop(edi);  // Constructor function.
 
     // Retrieve smi-tagged arguments count from the stack.
@@ -347,9 +327,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 
     // Push new.target onto the construct frame. This is stored just below the
     // receiver on the stack.
-    if (use_new_target) {
-      __ push(edx);
-    }
+    __ push(edx);
 
     // Push the allocated receiver to the stack. We need two copies
     // because we may have to return the original one and the calling
@@ -383,9 +361,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     }
 
     // Store offset of return address for deoptimizer.
-    // TODO(arv): Remove the "!use_new_target" before supporting optimization
-    // of functions that reference new.target
-    if (!is_api_function && !use_new_target) {
+    if (!is_api_function) {
       masm->isolate()->heap()->SetConstructStubDeoptPCOffset(masm->pc_offset());
     }
 
@@ -413,8 +389,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // Restore the arguments count and leave the construct frame. The arguments
     // count is stored below the reciever and the new.target.
     __ bind(&exit);
-    int offset = (use_new_target ? 2 : 1) * kPointerSize;
-    __ mov(ebx, Operand(esp, offset));
+    __ mov(ebx, Operand(esp, 2 * kPointerSize));
 
     // Leave construct frame.
   }
@@ -430,17 +405,12 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 
 
 void Builtins::Generate_JSConstructStubGeneric(MacroAssembler* masm) {
-  Generate_JSConstructStubHelper(masm, false, false, FLAG_pretenuring_call_new);
+  Generate_JSConstructStubHelper(masm, false, FLAG_pretenuring_call_new);
 }
 
 
 void Builtins::Generate_JSConstructStubApi(MacroAssembler* masm) {
-  Generate_JSConstructStubHelper(masm, true, false, false);
-}
-
-
-void Builtins::Generate_JSConstructStubNewTarget(MacroAssembler* masm) {
-  Generate_JSConstructStubHelper(masm, false, true, FLAG_pretenuring_call_new);
+  Generate_JSConstructStubHelper(masm, true, false);
 }
 
 

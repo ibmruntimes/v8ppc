@@ -2084,8 +2084,8 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       Label suspend, continuation, post_runtime, resume;
 
       __ jmp(&suspend);
-
       __ bind(&continuation);
+      __ RecordGeneratorContinuation();
       __ jmp(&resume);
 
       __ bind(&suspend);
@@ -2158,9 +2158,12 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       EnterTryBlock(handler_index, &l_catch);
       const int try_block_size = TryCatch::kElementCount * kPointerSize;
       __ push(eax);                                      // result
+
       __ jmp(&l_suspend);
       __ bind(&l_continuation);
+      __ RecordGeneratorContinuation();
       __ jmp(&l_resume);
+
       __ bind(&l_suspend);
       const int generator_object_depth = kPointerSize + try_block_size;
       __ mov(eax, Operand(esp, generator_object_depth));
@@ -2198,6 +2201,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       CallIC(ic, TypeFeedbackId::None());
       __ mov(edi, eax);
       __ mov(Operand(esp, 2 * kPointerSize), edi);
+      SetCallPosition(expr, 1);
       CallFunctionStub stub(isolate(), 1, CALL_AS_METHOD);
       __ CallStub(&stub);
 
@@ -2554,6 +2558,19 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit,
 
   // constructor
   __ CallRuntime(Runtime::kToFastProperties, 1);
+
+  if (is_strong(language_mode())) {
+    __ mov(scratch,
+           FieldOperand(eax, JSFunction::kPrototypeOrInitialMapOffset));
+    __ push(eax);
+    __ push(scratch);
+    // TODO(conradw): It would be more efficient to define the properties with
+    // the right attributes the first time round.
+    // Freeze the prototype.
+    __ CallRuntime(Runtime::kObjectFreeze, 1);
+    // Freeze the constructor.
+    __ CallRuntime(Runtime::kObjectFreeze, 1);
+  }
 }
 
 
@@ -3015,7 +3032,7 @@ void FullCodeGenerator::EmitCall(Call* expr, CallICState::CallType call_type) {
     VisitForStackValue(args->at(i));
   }
 
-  SetExpressionPosition(expr);
+  SetCallPosition(expr, arg_count);
   Handle<Code> ic = CodeFactory::CallIC(isolate(), arg_count, call_type).code();
   __ Move(edx, Immediate(SmiFromSlot(expr->CallFeedbackICSlot())));
   __ mov(edi, Operand(esp, (arg_count + 1) * kPointerSize));
@@ -3146,7 +3163,7 @@ void FullCodeGenerator::VisitCall(Call* expr) {
 
     PrepareForBailoutForId(expr->EvalId(), NO_REGISTERS);
 
-    SetExpressionPosition(expr);
+    SetCallPosition(expr, arg_count);
     CallFunctionStub stub(isolate(), arg_count, NO_CALL_FUNCTION_FLAGS);
     __ mov(edi, Operand(esp, (arg_count + 1) * kPointerSize));
     __ CallStub(&stub);
@@ -3217,7 +3234,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetExpressionPosition(expr);
+  SetConstructCallPosition(expr);
 
   // Load function and argument count into edi and eax.
   __ Move(eax, Immediate(arg_count));
@@ -3260,7 +3277,7 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetExpressionPosition(expr);
+  SetConstructCallPosition(expr);
 
   // Load function and argument count into edi and eax.
   __ Move(eax, Immediate(arg_count));
@@ -4682,7 +4699,7 @@ void FullCodeGenerator::EmitCallJSRuntimeFunction(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   int arg_count = args->length();
 
-  SetExpressionPosition(expr);
+  SetCallPosition(expr, arg_count);
   CallFunctionStub stub(isolate(), arg_count, NO_CALL_FUNCTION_FLAGS);
   __ mov(edi, Operand(esp, (arg_count + 1) * kPointerSize));
   __ CallStub(&stub);

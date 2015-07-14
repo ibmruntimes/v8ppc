@@ -2352,6 +2352,19 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit,
 
   // constructor
   __ CallRuntime(Runtime::kToFastProperties, 1);
+
+  if (is_strong(language_mode())) {
+    __ Ldr(scratch,
+           FieldMemOperand(x0, JSFunction::kPrototypeOrInitialMapOffset));
+    __ push(x0);
+    __ Push(scratch);
+    // TODO(conradw): It would be more efficient to define the properties with
+    // the right attributes the first time round.
+    // Freeze the prototype.
+    __ CallRuntime(Runtime::kObjectFreeze, 1);
+    // Freeze the constructor.
+    __ CallRuntime(Runtime::kObjectFreeze, 1);
+  }
 }
 
 
@@ -5099,11 +5112,11 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       Label suspend, continuation, post_runtime, resume;
 
       __ B(&suspend);
-
       // TODO(jbramley): This label is bound here because the following code
       // looks at its pos(). Is it possible to do something more efficient here,
       // perhaps using Adr?
       __ Bind(&continuation);
+      __ RecordGeneratorContinuation();
       __ B(&resume);
 
       __ Bind(&suspend);
@@ -5174,12 +5187,13 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       EnterTryBlock(handler_index, &l_catch);
       const int try_block_size = TryCatch::kElementCount * kPointerSize;
       __ Push(x0);                                       // result
-      __ B(&l_suspend);
 
+      __ B(&l_suspend);
       // TODO(jbramley): This label is bound here because the following code
       // looks at its pos(). Is it possible to do something more efficient here,
       // perhaps using Adr?
       __ Bind(&l_continuation);
+      __ RecordGeneratorContinuation();
       __ B(&l_resume);
 
       __ Bind(&l_suspend);

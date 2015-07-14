@@ -85,7 +85,7 @@ Handle<JSReceiver> LookupIterator::GetRoot(Isolate* isolate,
 
 
 Handle<Map> LookupIterator::GetReceiverMap() const {
-  if (receiver_->IsNumber()) return isolate_->factory()->heap_number_map();
+  if (receiver_->IsNumber()) return factory()->heap_number_map();
   return handle(Handle<HeapObject>::cast(receiver_)->map(), isolate_);
 }
 
@@ -277,20 +277,19 @@ void LookupIterator::TransitionToAccessorProperty(
   // handled via a trap. Adding properties to primitive values is not
   // observable.
   Handle<JSObject> receiver = GetStoreTarget();
-  holder_ = receiver;
-  holder_map_ =
-      Map::TransitionToAccessorProperty(handle(receiver->map(), isolate_),
-                                        name_, component, accessor, attributes);
-  JSObject::MigrateToMap(receiver, holder_map_);
 
-  ReloadPropertyInformation();
+  if (!IsElement() && !receiver->map()->is_dictionary_map()) {
+    holder_ = receiver;
+    holder_map_ = Map::TransitionToAccessorProperty(
+        handle(receiver->map(), isolate_), name_, component, accessor,
+        attributes);
+    JSObject::MigrateToMap(receiver, holder_map_);
 
-  if (!holder_map_->is_dictionary_map()) return;
+    ReloadPropertyInformation();
 
+    if (!holder_map_->is_dictionary_map()) return;
+  }
 
-  // Install the accessor into the dictionary-mode object.
-  PropertyDetails details(attributes, ACCESSOR_CONSTANT, 0,
-                          PropertyCellType::kMutable);
   Handle<AccessorPair> pair;
   if (state() == ACCESSOR && GetAccessors()->IsAccessorPair()) {
     pair = Handle<AccessorPair>::cast(GetAccessors());
@@ -302,12 +301,57 @@ void LookupIterator::TransitionToAccessorProperty(
       pair->set(component, *accessor);
     }
   } else {
-    pair = isolate()->factory()->NewAccessorPair();
+    pair = factory()->NewAccessorPair();
     pair->set(component, *accessor);
   }
-  JSObject::SetNormalizedProperty(receiver, name_, pair, details);
 
-  JSObject::ReoptimizeIfPrototype(receiver);
+  TransitionToAccessorPair(pair, attributes);
+}
+
+
+void LookupIterator::TransitionToAccessorPair(Handle<Object> pair,
+                                              PropertyAttributes attributes) {
+  Handle<JSObject> receiver = GetStoreTarget();
+  holder_ = receiver;
+
+  PropertyDetails details(attributes, ACCESSOR_CONSTANT, 0,
+                          PropertyCellType::kMutable);
+
+  if (IsElement()) {
+    // TODO(verwaest): Remove this hack once we have a quick way to check the
+    // prototype chain in element setters.
+    // TODO(verwaest): Move code into the element accessor.
+    bool was_dictionary = receiver->HasDictionaryElements();
+    Handle<SeededNumberDictionary> dictionary =
+        JSObject::NormalizeElements(receiver);
+    was_dictionary = was_dictionary && dictionary->requires_slow_elements();
+
+    dictionary = SeededNumberDictionary::Set(dictionary, index_, pair, details);
+    dictionary->set_requires_slow_elements();
+
+    if (receiver->HasSlowArgumentsElements()) {
+      FixedArray* parameter_map = FixedArray::cast(receiver->elements());
+      uint32_t length = parameter_map->length() - 2;
+      if (number_ < length) {
+        parameter_map->set(number_ + 2, heap()->the_hole_value());
+      }
+      FixedArray::cast(receiver->elements())->set(1, *dictionary);
+    } else {
+      receiver->set_elements(*dictionary);
+      if (!was_dictionary) heap()->ClearAllICsByKind(Code::KEYED_STORE_IC);
+    }
+  } else {
+    PropertyNormalizationMode mode = receiver->map()->is_prototype_map()
+                                         ? KEEP_INOBJECT_PROPERTIES
+                                         : CLEAR_INOBJECT_PROPERTIES;
+    // Normalize object to make this operation simple.
+    JSObject::NormalizeProperties(receiver, mode, 0,
+                                  "TransitionToAccessorPair");
+
+    JSObject::SetNormalizedProperty(receiver, name_, pair, details);
+    JSObject::ReoptimizeIfPrototype(receiver);
+  }
+
   holder_map_ = handle(receiver->map(), isolate_);
   ReloadPropertyInformation();
 }

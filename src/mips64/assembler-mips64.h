@@ -1103,6 +1103,9 @@ class Assembler : public AssemblerBase {
   // Mark address of the ExitJSFrame code.
   void RecordJSReturn();
 
+  // Mark generator continuation.
+  void RecordGeneratorContinuation();
+
   // Mark address of a debug break slot.
   void RecordDebugBreakSlot();
   void RecordDebugBreakSlotForCall(int argc);
@@ -1342,7 +1345,7 @@ class Assembler : public AssemblerBase {
   void GrowBuffer();
   inline void emit(Instr x);
   inline void emit(uint64_t x);
-  inline void CheckTrampolinePoolQuick();
+  inline void CheckTrampolinePoolQuick(int extra_instructions = 0);
 
   // Instruction generation.
   // We have 3 different kind of encoding layout on MIPS.
