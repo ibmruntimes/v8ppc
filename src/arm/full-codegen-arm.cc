@@ -498,11 +498,6 @@ void FullCodeGenerator::EmitReturnSequence() {
     EmitProfilingCounterReset();
     __ bind(&ok);
 
-#ifdef DEBUG
-    // Add a label for checking the size of the code used for returning.
-    Label check_exit_codesize;
-    __ bind(&check_exit_codesize);
-#endif
     // Make sure that the constant pool is not emitted inside of the return
     // sequence.
     { Assembler::BlockConstPoolScope block_const_pool(masm_);
@@ -511,7 +506,6 @@ void FullCodeGenerator::EmitReturnSequence() {
       SetReturnPosition(function());
       // TODO(svenpanne) The code below is sometimes 4 words, sometimes 5!
       PredictableCodeSizeScope predictable(masm_, -1);
-      __ RecordJSReturn();
       int no_frame_start = __ LeaveFrame(StackFrame::JAVA_SCRIPT);
       { ConstantPoolUnavailableScope constant_pool_unavailable(masm_);
         __ add(sp, sp, Operand(sp_delta));
@@ -519,13 +513,6 @@ void FullCodeGenerator::EmitReturnSequence() {
         info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
       }
     }
-
-#ifdef DEBUG
-    // Check that the size of the code used for returning is large enough
-    // for the debugger's requirements.
-    DCHECK(Assembler::kJSReturnSequenceInstructions <=
-           masm_->InstructionsGeneratedSince(&check_exit_codesize));
-#endif
   }
 }
 
@@ -3386,9 +3373,6 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
       expr->expression()->AsSuperCallReference();
   DCHECK_NOT_NULL(super_call_ref);
 
-  VariableProxy* new_target_proxy = super_call_ref->new_target_var();
-  VisitForStackValue(new_target_proxy);
-
   EmitLoadSuperConstructor(super_call_ref);
   __ push(result_register());
 
@@ -3402,6 +3386,10 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
   SetConstructCallPosition(expr);
+
+  // Load original constructor into r4.
+  VisitForAccumulatorValue(super_call_ref->new_target_var());
+  __ mov(r4, result_register());
 
   // Load function and argument count into r1 and r0.
   __ mov(r0, Operand(arg_count));
@@ -3422,8 +3410,6 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
 
   CallConstructStub stub(isolate(), SUPER_CALL_RECORD_TARGET);
   __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
-
-  __ Drop(1);
 
   RecordJSReturnSite(expr);
 
@@ -4334,6 +4320,9 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   VisitForStackValue(args->at(1));
   __ CallRuntime(Runtime::kGetPrototype, 1);
   __ Push(result_register());
+
+  // Load original constructor into r4.
+  __ ldr(r4, MemOperand(sp, 1 * kPointerSize));
 
   // Check if the calling frame is an arguments adaptor frame.
   Label adaptor_frame, args_set_up, runtime;
@@ -5246,6 +5235,10 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
   } else if (String::Equals(check, factory->symbol_string())) {
     __ JumpIfSmi(r0, if_false);
     __ CompareObjectType(r0, r0, r1, SYMBOL_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->float32x4_string())) {
+    __ JumpIfSmi(r0, if_false);
+    __ CompareObjectType(r0, r0, r1, FLOAT32X4_TYPE);
     Split(eq, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->boolean_string())) {
     __ CompareRoot(r0, Heap::kTrueValueRootIndex);

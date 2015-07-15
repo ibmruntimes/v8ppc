@@ -492,34 +492,23 @@ void FullCodeGenerator::EmitReturnSequence() {
     EmitProfilingCounterReset();
     __ Bind(&ok);
 
-    // Make sure that the constant pool is not emitted inside of the return
-    // sequence. This sequence can get patched when the debugger is used. See
-    // debug-arm64.cc:BreakLocation::SetDebugBreakAtReturn().
-    {
-      InstructionAccurateScope scope(masm_,
-                                     Assembler::kJSReturnSequenceInstructions);
-      SetReturnPosition(function());
-      __ RecordJSReturn();
-      // This code is generated using Assembler methods rather than Macro
-      // Assembler methods because it will be patched later on, and so the size
-      // of the generated code must be consistent.
-      const Register& current_sp = __ StackPointer();
-      // Nothing ensures 16 bytes alignment here.
-      DCHECK(!current_sp.Is(csp));
-      __ mov(current_sp, fp);
-      int no_frame_start = masm_->pc_offset();
-      __ ldp(fp, lr, MemOperand(current_sp, 2 * kXRegSize, PostIndex));
-      // Drop the arguments and receiver and return.
-      // TODO(all): This implementation is overkill as it supports 2**31+1
-      // arguments, consider how to improve it without creating a security
-      // hole.
-      __ ldr_pcrel(ip0, (3 * kInstructionSize) >> kLoadLiteralScaleLog2);
-      __ add(current_sp, current_sp, ip0);
-      __ ret();
-      int32_t arg_count = info_->scope()->num_parameters() + 1;
-      __ dc64(kXRegSize * arg_count);
-      info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
-    }
+    SetReturnPosition(function());
+    const Register& current_sp = __ StackPointer();
+    // Nothing ensures 16 bytes alignment here.
+    DCHECK(!current_sp.Is(csp));
+    __ Mov(current_sp, fp);
+    int no_frame_start = masm_->pc_offset();
+    __ Ldp(fp, lr, MemOperand(current_sp, 2 * kXRegSize, PostIndex));
+    // Drop the arguments and receiver and return.
+    // TODO(all): This implementation is overkill as it supports 2**31+1
+    // arguments, consider how to improve it without creating a security
+    // hole.
+    __ ldr_pcrel(ip0, (3 * kInstructionSize) >> kLoadLiteralScaleLog2);
+    __ Add(current_sp, current_sp, ip0);
+    __ Ret();
+    int32_t arg_count = info_->scope()->num_parameters() + 1;
+    __ dc64(kXRegSize * arg_count);
+    info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
   }
 }
 
@@ -3074,9 +3063,6 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
       expr->expression()->AsSuperCallReference();
   DCHECK_NOT_NULL(super_call_ref);
 
-  VariableProxy* new_target_proxy = super_call_ref->new_target_var();
-  VisitForStackValue(new_target_proxy);
-
   EmitLoadSuperConstructor(super_call_ref);
   __ push(result_register());
 
@@ -3090,6 +3076,10 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
   SetConstructCallPosition(expr);
+
+  // Load original constructor into x4.
+  VisitForAccumulatorValue(super_call_ref->new_target_var());
+  __ Mov(x4, result_register());
 
   // Load function and argument count into x1 and x0.
   __ Mov(x0, arg_count);
@@ -3110,8 +3100,6 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
 
   CallConstructStub stub(isolate(), SUPER_CALL_RECORD_TARGET);
   __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
-
-  __ Drop(1);
 
   RecordJSReturnSite(expr);
 
@@ -4043,6 +4031,9 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   __ CallRuntime(Runtime::kGetPrototype, 1);
   __ Push(result_register());
 
+  // Load original constructor into x4.
+  __ Peek(x4, 1 * kPointerSize);
+
   // Check if the calling frame is an arguments adaptor frame.
   Label adaptor_frame, args_set_up, runtime;
   __ Ldr(x11, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
@@ -4934,6 +4925,12 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     ASM_LOCATION("FullCodeGenerator::EmitLiteralCompareTypeof symbol_string");
     __ JumpIfSmi(x0, if_false);
     __ CompareObjectType(x0, x0, x1, SYMBOL_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->float32x4_string())) {
+    ASM_LOCATION(
+        "FullCodeGenerator::EmitLiteralCompareTypeof float32x4_string");
+    __ JumpIfSmi(x0, if_false);
+    __ CompareObjectType(x0, x0, x1, FLOAT32X4_TYPE);
     Split(eq, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->boolean_string())) {
     ASM_LOCATION("FullCodeGenerator::EmitLiteralCompareTypeof boolean_string");

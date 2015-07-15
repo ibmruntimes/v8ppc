@@ -695,8 +695,7 @@ bool Object::IsJSReceiver() const {
 
 bool Object::IsJSObject() const {
   STATIC_ASSERT(LAST_JS_OBJECT_TYPE == LAST_TYPE);
-  return IsHeapObject() &&
-      HeapObject::cast(this)->map()->instance_type() >= FIRST_JS_OBJECT_TYPE;
+  return IsHeapObject() && HeapObject::cast(this)->map()->IsJSObjectMap();
 }
 
 
@@ -2215,15 +2214,9 @@ bool Object::IsStringObjectWithCharacterAt(uint32_t index) {
 
 void Object::VerifyApiCallResultType() {
 #if DEBUG
-  if (!(IsSmi() ||
-        IsString() ||
-        IsSymbol() ||
-        IsSpecObject() ||
-        IsHeapNumber() ||
-        IsUndefined() ||
-        IsTrue() ||
-        IsFalse() ||
-        IsNull())) {
+  if (!(IsSmi() || IsString() || IsSymbol() || IsSpecObject() ||
+        IsHeapNumber() || IsFloat32x4() || IsUndefined() || IsTrue() ||
+        IsFalse() || IsNull())) {
     FATAL("API call returned invalid object");
   }
 #endif  // DEBUG
@@ -5158,8 +5151,7 @@ void Script::set_origin_options(ScriptOriginOptions origin_options) {
 
 
 ACCESSORS(DebugInfo, shared, SharedFunctionInfo, kSharedFunctionInfoIndex)
-ACCESSORS(DebugInfo, original_code, Code, kOriginalCodeIndex)
-ACCESSORS(DebugInfo, code, Code, kPatchedCodeIndex)
+ACCESSORS(DebugInfo, code, Code, kCodeIndex)
 ACCESSORS(DebugInfo, break_points, FixedArray, kBreakPointsStateIndex)
 
 ACCESSORS_TO_SMI(BreakPointInfo, code_position, kCodePositionIndex)

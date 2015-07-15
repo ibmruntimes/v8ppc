@@ -15,6 +15,9 @@
 #include "src/base/compiler-specific.h"
 #endif  // !V8_SHARED
 
+#include "src/base/once.h"
+
+
 namespace v8 {
 
 
@@ -214,9 +217,9 @@ class SerializationData {
   }
 
  private:
-  i::List<uint8_t> data;
-  i::List<ArrayBuffer::Contents> array_buffer_contents;
-  i::List<SharedArrayBuffer::Contents> shared_array_buffer_contents;
+  i::List<uint8_t> data_;
+  i::List<ArrayBuffer::Contents> array_buffer_contents_;
+  i::List<SharedArrayBuffer::Contents> shared_array_buffer_contents_;
 };
 
 
@@ -273,7 +276,6 @@ class Worker {
   };
 
   void ExecuteInThread();
-  void Cleanup();
   static void PostMessageOut(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   base::Semaphore in_semaphore_;
@@ -364,6 +366,7 @@ class Shell : public i::AllStatic {
   static void Exit(int exit_code);
   static void OnExit(Isolate* isolate);
   static void CollectGarbage(Isolate* isolate);
+  static void EmptyMessageQueues(Isolate* isolate);
 
 #ifndef V8_SHARED
   // TODO(binji): stupid implementation for now. Is there an easy way to hash an
@@ -411,6 +414,7 @@ class Shell : public i::AllStatic {
 
   static void Print(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Write(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void QuitOnce(v8::FunctionCallbackInfo<v8::Value>* args);
   static void Quit(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Version(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Read(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -468,6 +472,7 @@ class Shell : public i::AllStatic {
 
  private:
   static Persistent<Context> evaluation_context_;
+  static base::OnceType quit_once_;
 #ifndef V8_SHARED
   static Persistent<Context> utility_context_;
   static CounterMap* counter_map_;

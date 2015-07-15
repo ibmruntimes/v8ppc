@@ -490,12 +490,6 @@ void FullCodeGenerator::EmitReturnSequence() {
     EmitProfilingCounterReset();
     __ bind(&ok);
 
-#ifdef DEBUG
-    // Add a label for checking the size of the code used for returning.
-    Label check_exit_codesize;
-    masm_->bind(&check_exit_codesize);
-#endif
-
     // Make sure that the constant pool is not emitted inside of the return
     // sequence.
     { Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
@@ -504,7 +498,6 @@ void FullCodeGenerator::EmitReturnSequence() {
       int32_t arg_count = info_->scope()->num_parameters() + 1;
       int32_t sp_delta = arg_count * kPointerSize;
       SetReturnPosition(function());
-      __ RecordJSReturn();
       masm_->mov(sp, fp);
       int no_frame_start = masm_->pc_offset();
       masm_->MultiPop(static_cast<RegList>(fp.bit() | ra.bit()));
@@ -512,13 +505,6 @@ void FullCodeGenerator::EmitReturnSequence() {
       masm_->Jump(ra);
       info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
     }
-
-#ifdef DEBUG
-    // Check that the size of the code used for returning is large enough
-    // for the debugger's requirements.
-    DCHECK(Assembler::kJSReturnSequenceInstructions <=
-           masm_->InstructionsGeneratedSince(&check_exit_codesize));
-#endif
   }
 }
 
@@ -3369,9 +3355,6 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
       expr->expression()->AsSuperCallReference();
   DCHECK_NOT_NULL(super_call_ref);
 
-  VariableProxy* new_target_proxy = super_call_ref->new_target_var();
-  VisitForStackValue(new_target_proxy);
-
   EmitLoadSuperConstructor(super_call_ref);
   __ push(result_register());
 
@@ -3385,6 +3368,10 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
   SetConstructCallPosition(expr);
+
+  // Load original constructor into a4.
+  VisitForAccumulatorValue(super_call_ref->new_target_var());
+  __ mov(a4, result_register());
 
   // Load function and argument count into a1 and a0.
   __ li(a0, Operand(arg_count));
@@ -3405,8 +3392,6 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
 
   CallConstructStub stub(isolate(), SUPER_CALL_RECORD_TARGET);
   __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
-
-  __ Drop(1);
 
   RecordJSReturnSite(expr);
 
@@ -4345,6 +4330,9 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   __ CallRuntime(Runtime::kGetPrototype, 1);
   __ Push(result_register());
 
+  // Load original constructor into a4.
+  __ ld(a4, MemOperand(sp, 1 * kPointerSize));
+
   // Check if the calling frame is an arguments adaptor frame.
   Label adaptor_frame, args_set_up, runtime;
   __ ld(a2, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
@@ -5270,6 +5258,10 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ JumpIfSmi(v0, if_false);
     __ GetObjectType(v0, v0, a1);
     Split(eq, a1, Operand(SYMBOL_TYPE), if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->float32x4_string())) {
+    __ JumpIfSmi(v0, if_false);
+    __ GetObjectType(v0, v0, a1);
+    Split(eq, a1, Operand(FLOAT32X4_TYPE), if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->boolean_string())) {
     __ LoadRoot(at, Heap::kTrueValueRootIndex);
     __ Branch(if_true, eq, v0, Operand(at));

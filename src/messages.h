@@ -243,6 +243,7 @@ class CallSite {
     "Cannot convert a Symbol wrapper object to a primitive value")             \
   T(SymbolToNumber, "Cannot convert a Symbol value to a number")               \
   T(SymbolToString, "Cannot convert a Symbol value to a string")               \
+  T(SimdToNumber, "Cannot convert a SIMD value to a number")                   \
   T(UndefinedOrNullToObject, "Cannot convert undefined or null to object")     \
   T(ValueAndAccessor,                                                          \
     "Invalid property.  A property cannot both have accessors and be "         \
@@ -297,8 +298,6 @@ class CallSite {
   T(ConstructorIsGenerator, "Class constructor may not be a generator")        \
   T(DerivedConstructorReturn,                                                  \
     "Derived constructors may only return object or undefined")                \
-  T(DuplicateArrawFunFormalParam,                                              \
-    "Arrow function may not have duplicate parameter names")                   \
   T(DuplicateConstructor, "A class may only have one constructor")             \
   T(DuplicateExport, "Duplicate export of '%'")                                \
   T(DuplicateProto,                                                            \
@@ -335,6 +334,7 @@ class CallSite {
   T(ParamAfterRest, "Rest parameter must be last formal parameter")            \
   T(BadSetterRestParameter,                                                    \
     "Setter function argument must not be a rest parameter")                   \
+  T(ParamDupe, "Duplicate parameter name not allowed in this context")         \
   T(ParenthesisInArgString, "Function arg string contains parenthesis")        \
   T(SingleFunctionLiteral, "Single function literal required")                 \
   T(SloppyLexical,                                                             \
@@ -346,8 +346,6 @@ class CallSite {
     "In strict mode code, functions can only be declared at top level or "     \
     "immediately within another function.")                                    \
   T(StrictOctalLiteral, "Octal literals are not allowed in strict mode.")      \
-  T(StrictParamDupe,                                                           \
-    "Strict mode function may not have duplicate parameter names")             \
   T(StrictWith, "Strict mode code may not include a with statement")           \
   T(StrongArguments,                                                           \
     "In strong mode, 'arguments' is deprecated, use '...args' instead")        \
@@ -411,6 +409,7 @@ class CallSite {
   T(UnexpectedTokenIdentifier, "Unexpected identifier")                        \
   T(UnexpectedTokenNumber, "Unexpected number")                                \
   T(UnexpectedTokenString, "Unexpected string")                                \
+  T(UnexpectedTokenRegExp, "Unexpected regular expression")                    \
   T(UnknownLabel, "Undefined label '%'")                                       \
   T(UnterminatedArgList, "missing ) after argument list")                      \
   T(UnterminatedRegExp, "Invalid regular expression: missing /")               \

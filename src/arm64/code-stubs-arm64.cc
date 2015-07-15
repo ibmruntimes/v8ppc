@@ -227,6 +227,9 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm, Register left,
     // Call runtime on identical symbols since we need to throw a TypeError.
     __ Cmp(right_type, SYMBOL_TYPE);
     __ B(eq, slow);
+    // Call runtime on identical SIMD values since we must throw a TypeError.
+    __ Cmp(right_type, FLOAT32X4_TYPE);
+    __ B(eq, slow);
     if (is_strong(strength)) {
       // Call the runtime on anything that is converted in the semantics, since
       // we need to throw a TypeError. Smis have already been ruled out.
@@ -245,6 +248,9 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm, Register left,
     __ B(ge, slow);
     // Call runtime on identical symbols since we need to throw a TypeError.
     __ Cmp(right_type, SYMBOL_TYPE);
+    __ B(eq, slow);
+    // Call runtime on identical SIMD values since we must throw a TypeError.
+    __ Cmp(right_type, FLOAT32X4_TYPE);
     __ B(eq, slow);
     if (is_strong(strength)) {
       // Call the runtime on anything that is converted in the semantics,
@@ -2985,7 +2991,8 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   // x0 : number of arguments
   // x1 : the function to call
   // x2 : feedback vector
-  // x3 : slot in feedback vector (smi) (if r2 is not the megamorphic symbol)
+  // x3 : slot in feedback vector (Smi, for RecordCallTarget)
+  // x4 : original constructor (for IsSuperConstructorCall)
   Register function = x1;
   Label slow, non_function_call;
 
@@ -2997,7 +3004,14 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
                          &slow);
 
   if (RecordCallTarget()) {
+    if (IsSuperConstructorCall()) {
+      __ Push(x4);
+    }
+    // TODO(mstarzinger): Consider tweaking target recording to avoid push/pop.
     GenerateRecordCallTarget(masm, x0, function, x2, x3, x4, x5, x11);
+    if (IsSuperConstructorCall()) {
+      __ Pop(x4);
+    }
 
     __ Add(x5, x2, Operand::UntagSmiAndScale(x3, kPointerSizeLog2));
     if (FLAG_pretenuring_call_new) {
@@ -3020,9 +3034,7 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   }
 
   if (IsSuperConstructorCall()) {
-    __ Mov(x4, Operand(1 * kPointerSize));
-    __ Add(x4, x4, Operand(x0, LSL, kPointerSizeLog2));
-    __ Peek(x3, x4);
+    __ Mov(x3, x4);
   } else {
     __ Mov(x3, function);
   }

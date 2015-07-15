@@ -1704,6 +1704,9 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
       // Call runtime on identical symbols since we need to throw a TypeError.
       __ cmpb(ecx, static_cast<uint8_t>(SYMBOL_TYPE));
       __ j(equal, &runtime_call, Label::kFar);
+      // Call runtime on identical SIMD values since we must throw a TypeError.
+      __ cmpb(ecx, static_cast<uint8_t>(FLOAT32X4_TYPE));
+      __ j(equal, &runtime_call, Label::kFar);
       if (is_strong(strength())) {
         // We have already tested for smis and heap numbers, so if both
         // arguments are not strings we must proceed to the slow case.
@@ -2144,10 +2147,14 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
 void CallConstructStub::Generate(MacroAssembler* masm) {
   // eax : number of arguments
   // ebx : feedback vector
-  // edx : (only if ebx is not the megamorphic symbol) slot in feedback
-  //       vector (Smi)
+  // ecx : original constructor (for IsSuperConstructorCall)
+  // edx : slot in feedback vector (Smi, for RecordCallTarget)
   // edi : constructor function
   Label slow, non_function_call;
+
+  if (IsSuperConstructorCall()) {
+    __ push(ecx);
+  }
 
   // Check that function is not a smi.
   __ JumpIfSmi(edi, &non_function_call);
@@ -2181,7 +2188,7 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   }
 
   if (IsSuperConstructorCall()) {
-    __ mov(edx, Operand(esp, eax, times_pointer_size, 2 * kPointerSize));
+    __ pop(edx);
   } else {
     // Pass original constructor to construct stub.
     __ mov(edx, edi);
@@ -2198,6 +2205,7 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   // edi: called object
   // eax: number of arguments
   // ecx: object map
+  // esp[0]: original receiver
   Label do_call;
   __ bind(&slow);
   __ CmpInstanceType(ecx, JS_FUNCTION_PROXY_TYPE);
@@ -2208,6 +2216,9 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   __ bind(&non_function_call);
   __ GetBuiltinEntry(edx, Builtins::CALL_NON_FUNCTION_AS_CONSTRUCTOR);
   __ bind(&do_call);
+  if (IsSuperConstructorCall()) {
+    __ Drop(1);
+  }
   // Set expected number of arguments to zero (not changing eax).
   __ Move(ebx, Immediate(0));
   Handle<Code> arguments_adaptor =
@@ -3026,10 +3037,9 @@ void StringCharFromCodeGenerator::GenerateFast(MacroAssembler* masm) {
   // Fast case of Heap::LookupSingleCharacterStringFromCode.
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiShiftSize == 0);
-  DCHECK(base::bits::IsPowerOfTwo32(String::kMaxOneByteCharCode + 1));
-  __ test(code_,
-          Immediate(kSmiTagMask |
-                    ((~String::kMaxOneByteCharCode) << kSmiTagSize)));
+  DCHECK(base::bits::IsPowerOfTwo32(String::kMaxOneByteCharCodeU + 1));
+  __ test(code_, Immediate(kSmiTagMask |
+                           ((~String::kMaxOneByteCharCodeU) << kSmiTagSize)));
   __ j(not_zero, &slow_case_);
 
   Factory* factory = masm->isolate()->factory();

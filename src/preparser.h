@@ -1175,6 +1175,11 @@ class PreParserFactory {
                                       int pos) {
     return PreParserExpression::Default();
   }
+  PreParserExpression NewArrayLiteral(PreParserExpressionList values,
+                                      int first_spread_index, int literal_index,
+                                      bool is_strong, int pos) {
+    return PreParserExpression::Default();
+  }
   PreParserExpression NewObjectLiteralProperty(PreParserExpression key,
                                                PreParserExpression value,
                                                ObjectLiteralProperty::Kind kind,
@@ -1627,7 +1632,8 @@ class PreParserTraits {
       PreParserIdentifier name, Scanner::Location function_name_location,
       FunctionNameValidity function_name_validity, FunctionKind kind,
       int function_token_position, FunctionLiteral::FunctionType type,
-      FunctionLiteral::ArityRestriction arity_restriction, bool* ok);
+      FunctionLiteral::ArityRestriction arity_restriction,
+      LanguageMode language_mode, bool* ok);
 
   PreParserExpression ParseClassLiteral(PreParserIdentifier name,
                                         Scanner::Location class_name_location,
@@ -1775,7 +1781,8 @@ class PreParser : public ParserBase<PreParserTraits> {
       Identifier name, Scanner::Location function_name_location,
       FunctionNameValidity function_name_validity, FunctionKind kind,
       int function_token_pos, FunctionLiteral::FunctionType function_type,
-      FunctionLiteral::ArityRestriction arity_restriction, bool* ok);
+      FunctionLiteral::ArityRestriction arity_restriction,
+      LanguageMode language_mode, bool* ok);
   void ParseLazyFunctionLiteralBody(bool* ok,
                                     Scanner::BookmarkScope* bookmark = nullptr);
 
@@ -2170,7 +2177,7 @@ ParserBase<Traits>::ParsePrimaryExpression(ExpressionClassifier* classifier,
     case Token::SMI:
     case Token::NUMBER:
       classifier->RecordBindingPatternError(
-          scanner()->location(), MessageTemplate::kUnexpectedTokenNumber);
+          scanner()->peek_location(), MessageTemplate::kUnexpectedTokenNumber);
       Next();
       result =
           this->ExpressionFromLiteral(token, beg_pos, scanner(), factory());
@@ -2190,17 +2197,21 @@ ParserBase<Traits>::ParsePrimaryExpression(ExpressionClassifier* classifier,
 
     case Token::STRING: {
       classifier->RecordBindingPatternError(
-          scanner()->location(), MessageTemplate::kUnexpectedTokenString);
+          scanner()->peek_location(), MessageTemplate::kUnexpectedTokenString);
       Consume(Token::STRING);
       result = this->ExpressionFromString(beg_pos, scanner(), factory());
       break;
     }
 
     case Token::ASSIGN_DIV:
+      classifier->RecordBindingPatternError(
+          scanner()->peek_location(), MessageTemplate::kUnexpectedTokenRegExp);
       result = this->ParseRegExpLiteral(true, classifier, CHECK_OK);
       break;
 
     case Token::DIV:
+      classifier->RecordBindingPatternError(
+          scanner()->peek_location(), MessageTemplate::kUnexpectedTokenRegExp);
       result = this->ParseRegExpLiteral(false, classifier, CHECK_OK);
       break;
 
@@ -2302,6 +2313,9 @@ ParserBase<Traits>::ParsePrimaryExpression(ExpressionClassifier* classifier,
 
     case Token::TEMPLATE_SPAN:
     case Token::TEMPLATE_TAIL:
+      classifier->RecordBindingPatternError(
+          scanner()->peek_location(),
+          MessageTemplate::kUnexpectedTemplateString);
       result = this->ParseTemplateLiteral(Traits::NoTemplateTag(), beg_pos,
                                           classifier, CHECK_OK);
       break;
@@ -2388,6 +2402,7 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseArrayLiteral(
   int pos = peek_position();
   typename Traits::Type::ExpressionList values =
       this->NewExpressionList(4, zone_);
+  int first_spread_index = -1;
   Expect(Token::LBRACK, CHECK_OK);
   while (peek() != Token::RBRACK) {
     bool seen_spread = false;
@@ -2410,6 +2425,9 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseArrayLiteral(
           this->ParseAssignmentExpression(true, classifier, CHECK_OK);
       elem = factory()->NewSpread(argument, start_pos);
       seen_spread = true;
+      if (first_spread_index < 0) {
+        first_spread_index = values->length();
+      }
     } else {
       elem = this->ParseAssignmentExpression(true, classifier, CHECK_OK);
     }
@@ -2426,7 +2444,7 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseArrayLiteral(
   // Update the scope information before the pre-parsing bailout.
   int literal_index = function_state_->NextMaterializedLiteralIndex();
 
-  return factory()->NewArrayLiteral(values, literal_index,
+  return factory()->NewArrayLiteral(values, first_spread_index, literal_index,
                                     is_strong(language_mode()), pos);
 }
 
@@ -2550,7 +2568,7 @@ ParserBase<Traits>::ParsePropertyDefinition(
     value = this->ParseFunctionLiteral(
         name, scanner()->location(), kSkipFunctionNameCheck, kind,
         RelocInfo::kNoPosition, FunctionLiteral::ANONYMOUS_EXPRESSION,
-        FunctionLiteral::NORMAL_ARITY,
+        FunctionLiteral::NORMAL_ARITY, language_mode(),
         CHECK_OK_CUSTOM(EmptyObjectLiteralProperty));
 
     return factory()->NewObjectLiteralProperty(name_expression, value,
@@ -2583,7 +2601,7 @@ ParserBase<Traits>::ParsePropertyDefinition(
         name, scanner()->location(), kSkipFunctionNameCheck, kind,
         RelocInfo::kNoPosition, FunctionLiteral::ANONYMOUS_EXPRESSION,
         is_get ? FunctionLiteral::GETTER_ARITY : FunctionLiteral::SETTER_ARITY,
-        CHECK_OK_CUSTOM(EmptyObjectLiteralProperty));
+        language_mode(), CHECK_OK_CUSTOM(EmptyObjectLiteralProperty));
 
     // Make sure the name expression is a string since we need a Name for
     // Runtime_DefineAccessorPropertyUnchecked and since we can determine this
@@ -3302,7 +3320,7 @@ ParserBase<Traits>::ParseMemberExpression(ExpressionClassifier* classifier,
         is_generator ? FunctionKind::kGeneratorFunction
                      : FunctionKind::kNormalFunction,
         function_token_position, function_type, FunctionLiteral::NORMAL_ARITY,
-        CHECK_OK);
+        language_mode(), CHECK_OK);
   } else if (peek() == Token::SUPER) {
     const bool is_new = false;
     result = ParseSuperExpression(is_new, classifier, CHECK_OK);

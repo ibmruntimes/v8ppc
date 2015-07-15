@@ -1379,6 +1379,9 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
       // Call runtime on identical symbols since we need to throw a TypeError.
       __ cmpb(ecx, static_cast<uint8_t>(SYMBOL_TYPE));
       __ j(equal, &runtime_call, Label::kFar);
+      // Call runtime on identical SIMD values since we must throw a TypeError.
+      __ cmpb(ecx, static_cast<uint8_t>(FLOAT32X4_TYPE));
+      __ j(equal, &runtime_call, Label::kFar);
       if (is_strong(strength())) {
         // We have already tested for smis and heap numbers, so if both
         // arguments are not strings we must proceed to the slow case.
@@ -2716,10 +2719,9 @@ void StringCharFromCodeGenerator::GenerateFast(MacroAssembler* masm) {
   // Fast case of Heap::LookupSingleCharacterStringFromCode.
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiShiftSize == 0);
-  DCHECK(base::bits::IsPowerOfTwo32(String::kMaxOneByteCharCode + 1));
-  __ test(code_,
-          Immediate(kSmiTagMask |
-                    ((~String::kMaxOneByteCharCode) << kSmiTagSize)));
+  DCHECK(base::bits::IsPowerOfTwo32(String::kMaxOneByteCharCodeU + 1));
+  __ test(code_, Immediate(kSmiTagMask |
+                           ((~String::kMaxOneByteCharCodeU) << kSmiTagSize)));
   __ j(not_zero, &slow_case_);
 
   Factory* factory = masm->isolate()->factory();

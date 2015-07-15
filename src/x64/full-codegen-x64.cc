@@ -467,35 +467,14 @@ void FullCodeGenerator::EmitReturnSequence() {
     __ Pop(rax);
     EmitProfilingCounterReset();
     __ bind(&ok);
-#ifdef DEBUG
-    // Add a label for checking the size of the code used for returning.
-    Label check_exit_codesize;
-    masm_->bind(&check_exit_codesize);
-#endif
+
     SetReturnPosition(function());
-    __ RecordJSReturn();
-    // Do not use the leave instruction here because it is too short to
-    // patch with the code required by the debugger.
-    __ movp(rsp, rbp);
-    __ popq(rbp);
     int no_frame_start = masm_->pc_offset();
+    __ leave();
 
     int arg_count = info_->scope()->num_parameters() + 1;
     int arguments_bytes = arg_count * kPointerSize;
     __ Ret(arguments_bytes, rcx);
-
-    // Add padding that will be overwritten by a debugger breakpoint.  We
-    // have just generated at least 7 bytes: "movp rsp, rbp; pop rbp; ret k"
-    // (3 + 1 + 3) for x64 and at least 6 (2 + 1 + 3) bytes for x32.
-    const int kPadding = Assembler::kJSReturnSequenceLength -
-                         kPointerSize == kInt64Size ? 7 : 6;
-    for (int i = 0; i < kPadding; ++i) {
-      masm_->int3();
-    }
-    // Check that the size of the code used for returning is large enough
-    // for the debugger's requirements.
-    DCHECK(Assembler::kJSReturnSequenceLength <=
-           masm_->SizeOfCodeGeneratedSince(&check_exit_codesize));
 
     info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
   }
@@ -3271,9 +3250,6 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
       expr->expression()->AsSuperCallReference();
   DCHECK_NOT_NULL(super_call_ref);
 
-  VariableProxy* new_target_proxy = super_call_ref->new_target_var();
-  VisitForStackValue(new_target_proxy);
-
   EmitLoadSuperConstructor(super_call_ref);
   __ Push(result_register());
 
@@ -3288,7 +3264,11 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   // constructor invocation.
   SetConstructCallPosition(expr);
 
-  // Load function and argument count into edi and eax.
+  // Load original constructor into rcx.
+  VisitForAccumulatorValue(super_call_ref->new_target_var());
+  __ movp(rcx, result_register());
+
+  // Load function and argument count into rdi and rax.
   __ Set(rax, arg_count);
   __ movp(rdi, Operand(rsp, arg_count * kPointerSize));
 
@@ -3307,8 +3287,6 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
 
   CallConstructStub stub(isolate(), SUPER_CALL_RECORD_TARGET);
   __ call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
-
-  __ Drop(1);
 
   RecordJSReturnSite(expr);
 
@@ -4232,11 +4210,14 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   __ CallRuntime(Runtime::kGetPrototype, 1);
   __ Push(result_register());
 
+  // Load original constructor into rcx.
+  __ movp(rcx, Operand(rsp, 1 * kPointerSize));
+
   // Check if the calling frame is an arguments adaptor frame.
   Label adaptor_frame, args_set_up, runtime;
   __ movp(rdx, Operand(rbp, StandardFrameConstants::kCallerFPOffset));
-  __ movp(rcx, Operand(rdx, StandardFrameConstants::kContextOffset));
-  __ Cmp(rcx, Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR));
+  __ movp(rbx, Operand(rdx, StandardFrameConstants::kContextOffset));
+  __ Cmp(rbx, Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR));
   __ j(equal, &adaptor_frame);
   // default constructor has no arguments, so no adaptor frame means no args.
   __ movp(rax, Immediate(0));
@@ -4245,17 +4226,17 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   // Copy arguments from adaptor frame.
   {
     __ bind(&adaptor_frame);
-    __ movp(rcx, Operand(rdx, ArgumentsAdaptorFrameConstants::kLengthOffset));
-    __ SmiToInteger64(rcx, rcx);
+    __ movp(rbx, Operand(rdx, ArgumentsAdaptorFrameConstants::kLengthOffset));
+    __ SmiToInteger64(rbx, rbx);
 
-    __ movp(rax, rcx);
-    __ leap(rdx, Operand(rdx, rcx, times_pointer_size,
+    __ movp(rax, rbx);
+    __ leap(rdx, Operand(rdx, rbx, times_pointer_size,
                          StandardFrameConstants::kCallerSPOffset));
     Label loop;
     __ bind(&loop);
     __ Push(Operand(rdx, -1 * kPointerSize));
     __ subp(rdx, Immediate(kPointerSize));
-    __ decp(rcx);
+    __ decp(rbx);
     __ j(not_zero, &loop);
   }
 
@@ -5202,6 +5183,10 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
   } else if (String::Equals(check, factory->symbol_string())) {
     __ JumpIfSmi(rax, if_false);
     __ CmpObjectType(rax, SYMBOL_TYPE, rdx);
+    Split(equal, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->float32x4_string())) {
+    __ JumpIfSmi(rax, if_false);
+    __ CmpObjectType(rax, FLOAT32X4_TYPE, rdx);
     Split(equal, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->boolean_string())) {
     __ CompareRoot(rax, Heap::kTrueValueRootIndex);

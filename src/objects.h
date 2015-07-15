@@ -377,6 +377,7 @@ const int kStubMinorKeyBits = kSmiValueSize - kStubMajorKeyBits - 1;
   V(SHORT_EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE) \
                                                                 \
   V(SYMBOL_TYPE)                                                \
+  V(FLOAT32X4_TYPE)                                             \
                                                                 \
   V(MAP_TYPE)                                                   \
   V(CODE_TYPE)                                                  \
@@ -386,7 +387,6 @@ const int kStubMinorKeyBits = kSmiValueSize - kStubMajorKeyBits - 1;
                                                                 \
   V(HEAP_NUMBER_TYPE)                                           \
   V(MUTABLE_HEAP_NUMBER_TYPE)                                   \
-  V(FLOAT32X4_TYPE)                                             \
   V(FOREIGN_TYPE)                                               \
   V(BYTE_ARRAY_TYPE)                                            \
   V(FREE_SPACE_TYPE)                                            \
@@ -915,6 +915,7 @@ template <class C> inline bool Is(Object* obj);
 #define HEAP_OBJECT_TYPE_LIST(V)   \
   V(HeapNumber)                    \
   V(MutableHeapNumber)             \
+  V(Float32x4)                     \
   V(Name)                          \
   V(UniqueName)                    \
   V(String)                        \
@@ -949,7 +950,6 @@ template <class C> inline bool Is(Object* obj);
   V(FixedFloat32Array)             \
   V(FixedFloat64Array)             \
   V(FixedUint8ClampedArray)        \
-  V(Float32x4)                     \
   V(ByteArray)                     \
   V(FreeSpace)                     \
   V(JSReceiver)                    \
@@ -2102,6 +2102,8 @@ class JSObject: public JSReceiver {
   static Handle<SeededNumberDictionary> NormalizeElements(
       Handle<JSObject> object);
 
+  void RequireSlowElements(SeededNumberDictionary* dictionary);
+
   // Transform slow named properties to fast variants.
   static void MigrateSlowToFast(Handle<JSObject> object,
                                 int unused_property_fields, const char* reason);
@@ -2274,8 +2276,8 @@ class JSObject: public JSReceiver {
       Handle<JSObject> object, const char* type, Handle<Name> name,
       Handle<Object> old_value);
 
-  // Gets the current elements capacity and the number of used elements.
-  void GetElementsCapacityAndUsage(int* capacity, int* used);
+  // Gets the number of currently used elements.
+  int GetFastElementsUsage();
 
   // Deletes an existing named property in a normalized object.
   static void DeleteNormalizedProperty(Handle<JSObject> object,
@@ -2330,7 +2332,7 @@ class JSObject: public JSReceiver {
   static Handle<Smi> GetOrCreateIdentityHash(Handle<JSObject> object);
 
   static Handle<SeededNumberDictionary> GetNormalizedElementDictionary(
-      Handle<JSObject> object);
+      Handle<JSObject> object, Handle<FixedArrayBase> elements);
 
   // Helper for fast versions of preventExtensions, seal, and freeze.
   // attrs is one of NONE, SEALED, or FROZEN (depending on the operation).
@@ -5763,8 +5765,6 @@ class Map: public HeapObject {
   static Handle<Map> PrepareForDataProperty(Handle<Map> old_map,
                                             int descriptor_number,
                                             Handle<Object> value);
-  static Handle<Map> PrepareForDataElement(Handle<Map> old_map,
-                                           Handle<Object> value);
 
   static Handle<Map> Normalize(Handle<Map> map, PropertyNormalizationMode mode,
                                const char* reason);
@@ -6027,6 +6027,7 @@ class Map: public HeapObject {
   bool IsJSObjectMap() {
     return instance_type() >= FIRST_JS_OBJECT_TYPE;
   }
+  bool IsJSArrayMap() { return instance_type() == JS_ARRAY_TYPE; }
   bool IsStringMap() { return instance_type() < FIRST_NONSTRING_TYPE; }
   bool IsJSProxyMap() {
     InstanceType type = instance_type();
@@ -10587,8 +10588,6 @@ class DebugInfo: public Struct {
  public:
   // The shared function info for the source being debugged.
   DECL_ACCESSORS(shared, SharedFunctionInfo)
-  // Code object for the original code.
-  DECL_ACCESSORS(original_code, Code)
   // Code object for the patched code. This code object is the code object
   // currently active for the function.
   DECL_ACCESSORS(code, Code)
@@ -10622,12 +10621,8 @@ class DebugInfo: public Struct {
   DECLARE_VERIFIER(DebugInfo)
 
   static const int kSharedFunctionInfoIndex = Struct::kHeaderSize;
-  static const int kOriginalCodeIndex = kSharedFunctionInfoIndex + kPointerSize;
-  static const int kPatchedCodeIndex = kOriginalCodeIndex + kPointerSize;
-  static const int kActiveBreakPointsCountIndex =
-      kPatchedCodeIndex + kPointerSize;
-  static const int kBreakPointsStateIndex =
-      kActiveBreakPointsCountIndex + kPointerSize;
+  static const int kCodeIndex = kSharedFunctionInfoIndex + kPointerSize;
+  static const int kBreakPointsStateIndex = kCodeIndex + kPointerSize;
   static const int kSize = kBreakPointsStateIndex + kPointerSize;
 
   static const int kEstimatedNofBreakPointsInFunction = 16;

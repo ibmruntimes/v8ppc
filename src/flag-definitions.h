@@ -196,7 +196,8 @@ DEFINE_BOOL(legacy_const, true, "legacy semantics for const in sloppy mode")
   V(harmony_destructuring, "harmony destructuring")             \
   V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")     \
   V(harmony_atomics, "harmony atomics")                         \
-  V(harmony_new_target, "harmony new.target")
+  V(harmony_new_target, "harmony new.target")                   \
+  V(harmony_simd, "harmony simd")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                       \
@@ -665,7 +666,7 @@ DEFINE_BOOL(use_idle_notification, true,
 DEFINE_BOOL(use_ic, true, "use inline caching")
 DEFINE_BOOL(trace_ic, false, "trace inline cache state transitions")
 DEFINE_BOOL(vector_stores, false, "use vectors for store ics")
-DEFINE_BOOL(global_var_shortcuts, false, "use ic-less global loads and stores")
+DEFINE_BOOL(global_var_shortcuts, true, "use ic-less global loads and stores")
 
 // macro-assembler-ia32.cc
 DEFINE_BOOL(native_code_counters, false,
