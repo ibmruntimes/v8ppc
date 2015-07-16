@@ -1979,7 +1979,8 @@ TestKeyedSetterCreatingOwnPropertiesNonConfigurable(42, 43, 44);
 
   class Derived extends Base {
     constructor() {
-      super();
+      let r = super();
+      assertEquals(this, r);
       derivedCalled++;
     }
   }
@@ -1995,7 +1996,8 @@ TestKeyedSetterCreatingOwnPropertiesNonConfigurable(42, 43, 44);
 
   class DerivedDerived extends Derived {
     constructor() {
-      super();
+      let r = super();
+      assertEquals(this, r);
       derivedDerivedCalled++;
     }
   }
@@ -2015,7 +2017,8 @@ TestKeyedSetterCreatingOwnPropertiesNonConfigurable(42, 43, 44);
   }
   class Derived2 extends Base2 {
     constructor(v1, v2) {
-      super(v1);
+      let r = super(v1);
+      assertEquals(this, r);
       this.fromDerived = v2;
     }
   }
@@ -2128,7 +2131,8 @@ TestKeyedSetterCreatingOwnPropertiesNonConfigurable(42, 43, 44);
   }
   class Derived extends Base {
     constructor(x) {
-      eval('super(x)');
+      let r = eval('super(x)');
+      assertEquals(this, r);
     }
   }
   let d = new Derived(42);
@@ -2145,7 +2149,8 @@ TestKeyedSetterCreatingOwnPropertiesNonConfigurable(42, 43, 44);
   }
   class Derived extends Base {
     constructor(x) {
-      (() => super(x))();
+      let r = (() => super(x))();
+      assertEquals(this, r);
     }
   }
   let d = new Derived(42);
@@ -2181,6 +2186,47 @@ TestKeyedSetterCreatingOwnPropertiesNonConfigurable(42, 43, 44);
 })();
 
 
+(function TestSuperCallInLoop() {
+  'use strict';
+  class Base {
+    constructor(x) {
+      this.x = x;
+    }
+  }
+  class Derived extends Base {
+    constructor(x, n) {
+      for (var i = 0; i < n; ++i) {
+        super(x);
+      }
+    }
+  }
+
+  let o = new Derived(23, 1);
+  assertEquals(23, o.x);
+  assertInstanceof(o, Derived);
+
+  assertThrows("new Derived(42, 0)", ReferenceError);
+  assertThrows("new Derived(65, 2)", ReferenceError);
+})();
+
+
+(function TestSuperCallReentrant() {
+  'use strict';
+  class Base {
+    constructor(fun) {
+      this.x = fun();
+    }
+  }
+  class Derived extends Base {
+    constructor(x) {
+      let f = () => super(() => x)
+      super(f);
+    }
+  }
+  assertThrows("new Derived(23)", ReferenceError);
+})();
+
+
 (function TestSuperCallSpreadInEval() {
   'use strict';
   class Base {
@@ -2190,7 +2236,8 @@ TestKeyedSetterCreatingOwnPropertiesNonConfigurable(42, 43, 44);
   }
   class Derived extends Base {
     constructor(x) {
-      eval('super(...[x])');
+      let r = eval('super(...[x])');
+      assertEquals(this, r);
     }
   }
   let d = new Derived(42);
@@ -2207,7 +2254,8 @@ TestKeyedSetterCreatingOwnPropertiesNonConfigurable(42, 43, 44);
   }
   class Derived extends Base {
     constructor(x) {
-      (() => super(...[x]))();
+      let r = (() => super(...[x]))();
+      assertEquals(this, r);
     }
   }
   let d = new Derived(42);

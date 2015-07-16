@@ -531,8 +531,7 @@ class FullCodeGenerator: public AstVisitor {
   F(RegExpConstructResult)                \
   F(GetFromCache)                         \
   F(NumberToString)                       \
-  F(DebugIsActive)                        \
-  F(CallSuperWithSpread)
+  F(DebugIsActive)
 
 #define GENERATOR_DECLARATION(Name) void Emit##Name(CallRuntime* call);
   FOR_EACH_FULL_CODE_INTRINSIC(GENERATOR_DECLARATION)
@@ -644,9 +643,6 @@ class FullCodeGenerator: public AstVisitor {
       FeedbackVectorICSlot slot = FeedbackVectorICSlot::Invalid());
 
   void EmitLoadSuperConstructor(SuperCallReference* super_call_ref);
-  void EmitInitializeThisAfterSuper(
-      SuperCallReference* super_call_ref,
-      FeedbackVectorICSlot slot = FeedbackVectorICSlot::Invalid());
 
   void CallIC(Handle<Code> code,
               TypeFeedbackId id = TypeFeedbackId::None());

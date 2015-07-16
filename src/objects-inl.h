@@ -2214,9 +2214,15 @@ bool Object::IsStringObjectWithCharacterAt(uint32_t index) {
 
 void Object::VerifyApiCallResultType() {
 #if DEBUG
-  if (!(IsSmi() || IsString() || IsSymbol() || IsSpecObject() ||
-        IsHeapNumber() || IsFloat32x4() || IsUndefined() || IsTrue() ||
-        IsFalse() || IsNull())) {
+  if (!(IsSmi() ||
+        IsString() ||
+        IsSymbol() ||
+        IsSpecObject() ||
+        IsHeapNumber() ||
+        IsUndefined() ||
+        IsTrue() ||
+        IsFalse() ||
+        IsNull())) {
     FATAL("API call returned invalid object");
   }
 #endif  // DEBUG
@@ -5590,29 +5596,22 @@ void SharedFunctionInfo::TryReenableOptimization() {
 }
 
 
+bool SharedFunctionInfo::IsSubjectToDebugging() {
+  Object* script_obj = script();
+  if (script_obj->IsUndefined()) return false;
+  Script* script = Script::cast(script_obj);
+  Script::Type type = static_cast<Script::Type>(script->type()->value());
+  return type == Script::TYPE_NORMAL;
+}
+
+
 bool JSFunction::IsBuiltin() {
   return context()->global_object()->IsJSBuiltinsObject();
 }
 
 
-bool JSFunction::IsFromNativeScript() {
-  Object* script = shared()->script();
-  bool native = script->IsScript() &&
-                Script::cast(script)->type()->value() == Script::TYPE_NATIVE;
-  DCHECK(!IsBuiltin() || native);  // All builtins are also native.
-  return native;
-}
-
-
-bool JSFunction::IsFromExtensionScript() {
-  Object* script = shared()->script();
-  return script->IsScript() &&
-         Script::cast(script)->type()->value() == Script::TYPE_EXTENSION;
-}
-
-
 bool JSFunction::IsSubjectToDebugging() {
-  return !IsFromNativeScript() && !IsFromExtensionScript();
+  return shared()->IsSubjectToDebugging();
 }
 
 

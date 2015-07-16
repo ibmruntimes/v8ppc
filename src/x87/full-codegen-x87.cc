@@ -461,26 +461,14 @@ void FullCodeGenerator::EmitReturnSequence() {
     __ pop(eax);
     EmitProfilingCounterReset();
     __ bind(&ok);
-#ifdef DEBUG
-    // Add a label for checking the size of the code used for returning.
-    Label check_exit_codesize;
-    masm_->bind(&check_exit_codesize);
-#endif
+
     SetReturnPosition(function());
-    __ RecordJSReturn();
-    // Do not use the leave instruction here because it is too short to
-    // patch with the code required by the debugger.
-    __ mov(esp, ebp);
     int no_frame_start = masm_->pc_offset();
-    __ pop(ebp);
+    __ leave();
 
     int arg_count = info_->scope()->num_parameters() + 1;
     int arguments_bytes = arg_count * kPointerSize;
     __ Ret(arguments_bytes, ecx);
-    // Check that the size of the code used for returning is large enough
-    // for the debugger's requirements.
-    DCHECK(Assembler::kJSReturnSequenceLength <=
-           masm_->SizeOfCodeGeneratedSince(&check_exit_codesize));
     info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
   }
 }
@@ -1930,7 +1918,7 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
 
 
 void FullCodeGenerator::VisitAssignment(Assignment* expr) {
-  DCHECK(expr->target()->IsValidReferenceExpression());
+  DCHECK(expr->target()->IsValidReferenceExpressionOrThis());
 
   Comment cmnt(masm_, "[ Assignment");
   SetExpressionPosition(expr, INSERT_BREAK);
@@ -2587,7 +2575,7 @@ void FullCodeGenerator::EmitBinaryOp(BinaryOperation* expr, Token::Value op) {
 
 void FullCodeGenerator::EmitAssignment(Expression* expr,
                                        FeedbackVectorICSlot slot) {
-  DCHECK(expr->IsValidReferenceExpression());
+  DCHECK(expr->IsValidReferenceExpressionOrThis());
 
   Property* prop = expr->AsProperty();
   LhsKind assign_type = Property::GetAssignType(prop);
@@ -2728,6 +2716,19 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
     __ CallRuntime(Runtime::kThrowReferenceError, 1);
     __ bind(&const_error);
     __ CallRuntime(Runtime::kThrowConstAssignError, 0);
+
+  } else if (var->is_this() && op == Token::INIT_CONST) {
+    // Initializing assignment to const {this} needs a write barrier.
+    DCHECK(var->IsStackAllocated() || var->IsContextSlot());
+    Label uninitialized_this;
+    MemOperand location = VarOperand(var, ecx);
+    __ mov(edx, location);
+    __ cmp(edx, isolate()->factory()->the_hole_value());
+    __ j(equal, &uninitialized_this);
+    __ push(Immediate(var->name()));
+    __ CallRuntime(Runtime::kThrowReferenceError, 1);
+    __ bind(&uninitialized_this);
+    EmitStoreToStackLocalOrContextSlot(var, location);
 
   } else if (!var->is_const_mode() || op == Token::INIT_CONST) {
     if (var->IsLookupSlot()) {
@@ -3071,22 +3072,6 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
 }
 
 
-void FullCodeGenerator::EmitInitializeThisAfterSuper(
-    SuperCallReference* super_call_ref, FeedbackVectorICSlot slot) {
-  Variable* this_var = super_call_ref->this_var()->var();
-  GetVar(ecx, this_var);
-  __ cmp(ecx, isolate()->factory()->the_hole_value());
-
-  Label uninitialized_this;
-  __ j(equal, &uninitialized_this);
-  __ push(Immediate(this_var->name()));
-  __ CallRuntime(Runtime::kThrowReferenceError, 1);
-  __ bind(&uninitialized_this);
-
-  EmitVariableAssignment(this_var, Token::INIT_CONST, slot);
-}
-
-
 // See http://www.ecma-international.org/ecma-262/6.0/#sec-function-calls.
 void FullCodeGenerator::PushCalleeAndWithBaseObject(Call* expr) {
   VariableProxy* callee = expr->expression()->AsVariableProxy();
@@ -3262,9 +3247,6 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
       expr->expression()->AsSuperCallReference();
   DCHECK_NOT_NULL(super_call_ref);
 
-  VariableProxy* new_target_proxy = super_call_ref->new_target_var();
-  VisitForStackValue(new_target_proxy);
-
   EmitLoadSuperConstructor(super_call_ref);
   __ push(result_register());
 
@@ -3278,6 +3260,10 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
   SetConstructCallPosition(expr);
+
+  // Load original constructor into ecx.
+  VisitForAccumulatorValue(super_call_ref->new_target_var());
+  __ mov(ecx, result_register());
 
   // Load function and argument count into edi and eax.
   __ Move(eax, Immediate(arg_count));
@@ -3299,11 +3285,8 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   CallConstructStub stub(isolate(), SUPER_CALL_RECORD_TARGET);
   __ call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
 
-  __ Drop(1);
-
   RecordJSReturnSite(expr);
 
-  EmitInitializeThisAfterSuper(super_call_ref, expr->CallFeedbackICSlot());
   context()->Plug(eax);
 }
 
@@ -4225,11 +4208,14 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   __ CallRuntime(Runtime::kGetPrototype, 1);
   __ push(result_register());
 
+  // Load original constructor into ecx.
+  __ mov(ecx, Operand(esp, 1 * kPointerSize));
+
   // Check if the calling frame is an arguments adaptor frame.
   Label adaptor_frame, args_set_up, runtime;
   __ mov(edx, Operand(ebp, StandardFrameConstants::kCallerFPOffset));
-  __ mov(ecx, Operand(edx, StandardFrameConstants::kContextOffset));
-  __ cmp(ecx, Immediate(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
+  __ mov(ebx, Operand(edx, StandardFrameConstants::kContextOffset));
+  __ cmp(ebx, Immediate(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ j(equal, &adaptor_frame);
   // default constructor has no arguments, so no adaptor frame means no args.
   __ mov(eax, Immediate(0));
@@ -4238,17 +4224,17 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   // Copy arguments from adaptor frame.
   {
     __ bind(&adaptor_frame);
-    __ mov(ecx, Operand(edx, ArgumentsAdaptorFrameConstants::kLengthOffset));
-    __ SmiUntag(ecx);
+    __ mov(ebx, Operand(edx, ArgumentsAdaptorFrameConstants::kLengthOffset));
+    __ SmiUntag(ebx);
 
-    __ mov(eax, ecx);
-    __ lea(edx, Operand(edx, ecx, times_pointer_size,
+    __ mov(eax, ebx);
+    __ lea(edx, Operand(edx, ebx, times_pointer_size,
                         StandardFrameConstants::kCallerSPOffset));
     Label loop;
     __ bind(&loop);
     __ push(Operand(edx, -1 * kPointerSize));
     __ sub(edx, Immediate(kPointerSize));
-    __ dec(ecx);
+    __ dec(ebx);
     __ j(not_zero, &loop);
   }
 
@@ -4641,46 +4627,6 @@ void FullCodeGenerator::EmitDebugIsActive(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitCallSuperWithSpread(CallRuntime* expr) {
-  // Assert: expr == CallRuntime("ReflectConstruct")
-  DCHECK_EQ(1, expr->arguments()->length());
-  CallRuntime* call = expr->arguments()->at(0)->AsCallRuntime();
-
-  ZoneList<Expression*>* args = call->arguments();
-  DCHECK_EQ(3, args->length());
-
-  SuperCallReference* super_call_ref = args->at(0)->AsSuperCallReference();
-  DCHECK_NOT_NULL(super_call_ref);
-
-  // Load ReflectConstruct function
-  EmitLoadJSRuntimeFunction(call);
-
-  // Push the target function under the receiver
-  __ push(Operand(esp, 0));
-  __ mov(Operand(esp, kPointerSize), eax);
-
-  // Push super constructor
-  EmitLoadSuperConstructor(super_call_ref);
-  __ Push(result_register());
-
-  // Push arguments array
-  VisitForStackValue(args->at(1));
-
-  // Push NewTarget
-  DCHECK(args->at(2)->IsVariableProxy());
-  VisitForStackValue(args->at(2));
-
-  EmitCallJSRuntimeFunction(call);
-
-  // Restore context register.
-  __ mov(esi, Operand(ebp, StandardFrameConstants::kContextOffset));
-  context()->DropAndPlug(1, eax);
-
-  // TODO(mvstanton): with FLAG_vector_stores this needs a slot id.
-  EmitInitializeThisAfterSuper(super_call_ref);
-}
-
-
 void FullCodeGenerator::EmitLoadJSRuntimeFunction(CallRuntime* expr) {
   // Push the builtins object as receiver.
   __ mov(eax, GlobalObjectOperand());
@@ -4876,7 +4822,7 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
 
 
 void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
-  DCHECK(expr->expression()->IsValidReferenceExpression());
+  DCHECK(expr->expression()->IsValidReferenceExpressionOrThis());
 
   Comment cmnt(masm_, "[ CountOperation");
 
@@ -5168,10 +5114,6 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
   } else if (String::Equals(check, factory->symbol_string())) {
     __ JumpIfSmi(eax, if_false);
     __ CmpObjectType(eax, SYMBOL_TYPE, edx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->float32x4_string())) {
-    __ JumpIfSmi(eax, if_false);
-    __ CmpObjectType(eax, FLOAT32X4_TYPE, edx);
     Split(equal, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->boolean_string())) {
     __ cmp(eax, isolate()->factory()->true_value());

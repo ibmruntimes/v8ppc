@@ -86,8 +86,7 @@ namespace internal {
   F(StoreKeyedToSuper_Strict, 4, 1)           \
   F(StoreKeyedToSuper_Sloppy, 4, 1)           \
   F(HandleStepInForDerivedConstructors, 1, 1) \
-  F(DefaultConstructorCallSuper, 2, 1)        \
-  F(CallSuperWithSpread, 1, 1)
+  F(DefaultConstructorCallSuper, 2, 1)
 
 
 #define FOR_EACH_INTRINSIC_COLLECTIONS(F) \
@@ -557,16 +556,6 @@ namespace internal {
   F(Arguments, 1, 1)
 
 
-#define FOR_EACH_INTRINSIC_SIMD(F) \
-  F(CreateFloat32x4, 4, 1)         \
-  F(NewFloat32x4Wrapper, 1, 1)     \
-  F(Float32x4Check, 1, 1)          \
-  F(Float32x4ExtractLane, 2, 1)    \
-  F(Float32x4Equals, 2, 1)         \
-  F(Float32x4SameValue, 2, 1)      \
-  F(Float32x4SameValueZero, 2, 1)
-
-
 #define FOR_EACH_INTRINSIC_STRINGS(F)           \
   F(StringReplaceOneCharWithString, 3, 1)       \
   F(StringIndexOf, 3, 1)                        \
@@ -742,7 +731,6 @@ namespace internal {
   FOR_EACH_INTRINSIC_PROXY(F)               \
   FOR_EACH_INTRINSIC_REGEXP(F)              \
   FOR_EACH_INTRINSIC_SCOPES(F)              \
-  FOR_EACH_INTRINSIC_SIMD(F)                \
   FOR_EACH_INTRINSIC_STRINGS(F)             \
   FOR_EACH_INTRINSIC_SYMBOL(F)              \
   FOR_EACH_INTRINSIC_TEST(F)                \
