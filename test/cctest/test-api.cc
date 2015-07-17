@@ -8754,6 +8754,11 @@ THREADED_TEST(AccessControlGetOwnPropertyNames) {
   obj_template->Set(v8_str("x"), v8::Integer::New(isolate, 42));
   obj_template->SetAccessCheckCallbacks(AccessAlwaysBlocked, NULL);
 
+  // Add an accessor accessible by cross-domain JS code.
+  obj_template->SetAccessor(
+      v8_str("accessible_prop"), EchoGetter, EchoSetter, v8::Handle<Value>(),
+      v8::AccessControl(v8::ALL_CAN_READ | v8::ALL_CAN_WRITE));
+
   // Create an environment
   v8::Local<Context> context0 = Context::New(isolate, NULL, obj_template);
   context0->Enter();
@@ -8776,11 +8781,15 @@ THREADED_TEST(AccessControlGetOwnPropertyNames) {
   // global object should be blocked by access checks on the global
   // proxy object.  Accessing the object that requires access checks
   // is blocked by the access checks on the object itself.
-  value = CompileRun("Object.getOwnPropertyNames(other).length == 0");
-  CHECK(value.IsEmpty());
+  value = CompileRun(
+      "var names = Object.getOwnPropertyNames(other);"
+      "names.length == 1 && names[0] == 'accessible_prop';");
+  CHECK(value->BooleanValue());
 
-  value = CompileRun("Object.getOwnPropertyNames(object).length == 0");
-  CHECK(value.IsEmpty());
+  value = CompileRun(
+      "var names = Object.getOwnPropertyNames(object);"
+      "names.length == 1 && names[0] == 'accessible_prop';");
+  CHECK(value->BooleanValue());
 
   context1->Exit();
   context0->Exit();
@@ -18136,20 +18145,20 @@ THREADED_TEST(Regress93759) {
   CHECK(result1->Equals(simple_object->GetPrototype()));
 
   Local<Value> result2 = CompileRun("Object.getPrototypeOf(protected)");
-  CHECK(result2.IsEmpty());
+  CHECK(result2->IsNull());
 
   Local<Value> result3 = CompileRun("Object.getPrototypeOf(global)");
   CHECK(result3->Equals(global_object->GetPrototype()));
 
   Local<Value> result4 = CompileRun("Object.getPrototypeOf(proxy)");
-  CHECK(result4.IsEmpty());
+  CHECK(result4->IsNull());
 
   Local<Value> result5 = CompileRun("Object.getPrototypeOf(hidden)");
   CHECK(result5->Equals(
       object_with_hidden->GetPrototype()->ToObject(isolate)->GetPrototype()));
 
   Local<Value> result6 = CompileRun("Object.getPrototypeOf(phidden)");
-  CHECK(result6.IsEmpty());
+  CHECK(result6->IsNull());
 }
 
 
@@ -19396,7 +19405,6 @@ TEST(AccessCheckThrows) {
   CheckCorrectThrow("%IsPropertyEnumerable(other, 'x')");
   CheckCorrectThrow("%GetPropertyNames(other)");
   // PROPERTY_ATTRIBUTES_NONE = 0
-  CheckCorrectThrow("%GetOwnPropertyNames(other, 0)");
   CheckCorrectThrow("%DefineAccessorPropertyUnchecked("
                         "other, 'x', null, null, 1)");
 
@@ -21317,14 +21325,10 @@ TEST(GetPrototypeAccessControl) {
 
   env->Global()->Set(v8_str("prohibited"), obj_template->NewInstance());
 
-  {
-    v8::TryCatch try_catch(isolate);
-    CompileRun(
-        "function f() { %_GetPrototype(prohibited); }"
-        "%OptimizeFunctionOnNextCall(f);"
-        "f();");
-    CHECK(try_catch.HasCaught());
-  }
+  CHECK(CompileRun(
+            "function f() { return %_GetPrototype(prohibited); }"
+            "%OptimizeFunctionOnNextCall(f);"
+            "f();")->IsNull());
 }
 
 

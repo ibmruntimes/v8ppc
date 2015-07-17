@@ -81,6 +81,8 @@ MaybeHandle<JSReceiver> Object::ToObject(Isolate* isolate,
     constructor = handle(native_context->string_function(), isolate);
   } else if (object->IsSymbol()) {
     constructor = handle(native_context->symbol_function(), isolate);
+  } else if (object->IsFloat32x4()) {
+    constructor = handle(native_context->float32x4_function(), isolate);
   } else {
     return MaybeHandle<JSReceiver>();
   }
@@ -465,7 +467,8 @@ MaybeHandle<Object> Object::SetPropertyWithDefinedSetter(
 }
 
 
-static bool FindAllCanReadHolder(LookupIterator* it) {
+// static
+bool JSObject::AllCanRead(LookupIterator* it) {
   // Skip current iteration, it's in state ACCESS_CHECK or INTERCEPTOR, both of
   // which have already been checked.
   DCHECK(it->state() == LookupIterator::ACCESS_CHECK ||
@@ -487,7 +490,7 @@ static bool FindAllCanReadHolder(LookupIterator* it) {
 MaybeHandle<Object> JSObject::GetPropertyWithFailedAccessCheck(
     LookupIterator* it) {
   Handle<JSObject> checked = it->GetHolder<JSObject>();
-  while (FindAllCanReadHolder(it)) {
+  while (AllCanRead(it)) {
     if (it->state() == LookupIterator::ACCESSOR) {
       return GetPropertyWithAccessor(it, SLOPPY);
     }
@@ -507,7 +510,7 @@ MaybeHandle<Object> JSObject::GetPropertyWithFailedAccessCheck(
 Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithFailedAccessCheck(
     LookupIterator* it) {
   Handle<JSObject> checked = it->GetHolder<JSObject>();
-  while (FindAllCanReadHolder(it)) {
+  while (AllCanRead(it)) {
     if (it->state() == LookupIterator::ACCESSOR) {
       return Just(it->property_details().attributes());
     }
@@ -523,7 +526,8 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithFailedAccessCheck(
 }
 
 
-static bool FindAllCanWriteHolder(LookupIterator* it) {
+// static
+bool JSObject::AllCanWrite(LookupIterator* it) {
   for (; it->IsFound(); it->Next()) {
     if (it->state() == LookupIterator::ACCESSOR) {
       Handle<Object> accessors = it->GetAccessors();
@@ -539,7 +543,7 @@ static bool FindAllCanWriteHolder(LookupIterator* it) {
 MaybeHandle<Object> JSObject::SetPropertyWithFailedAccessCheck(
     LookupIterator* it, Handle<Object> value) {
   Handle<JSObject> checked = it->GetHolder<JSObject>();
-  if (FindAllCanWriteHolder(it)) {
+  if (AllCanWrite(it)) {
     // The supplied language-mode is ignored by SetPropertyWithAccessor.
     return SetPropertyWithAccessor(it, value, SLOPPY);
   }
@@ -605,7 +609,7 @@ Map* Object::GetRootMap(Isolate* isolate) {
 
   HeapObject* heap_object = HeapObject::cast(this);
 
-  // The object is either a number, a string, a boolean,
+  // The object is either a number, a string, a symbol, a boolean, a SIMD value,
   // a real JS object, or a Harmony proxy.
   if (heap_object->IsJSReceiver()) {
     return heap_object->map();
@@ -624,6 +628,9 @@ Map* Object::GetRootMap(Isolate* isolate) {
   if (heap_object->IsBoolean()) {
     return context->boolean_function()->initial_map();
   }
+  if (heap_object->IsFloat32x4()) {
+    return context->float32x4_function()->initial_map();
+  }
   return isolate->heap()->null_value()->map();
 }
 
@@ -639,7 +646,7 @@ Object* Object::GetHash() {
 
 Object* Object::GetSimpleHash() {
   // The object is either a Smi, a HeapNumber, a name, an odd-ball,
-  // a real JS object, or a Harmony proxy.
+  // a SIMD value type, a real JS object, or a Harmony proxy.
   if (IsSmi()) {
     uint32_t hash = ComputeIntegerHash(Smi::cast(this)->value(), kZeroHashSeed);
     return Smi::FromInt(hash & Smi::kMaxValue);
@@ -661,6 +668,16 @@ Object* Object::GetSimpleHash() {
   if (IsOddball()) {
     uint32_t hash = Oddball::cast(this)->to_string()->Hash();
     return Smi::FromInt(hash);
+  }
+  if (IsFloat32x4()) {
+    Float32x4* simd = Float32x4::cast(this);
+    uint32_t seed = v8::internal::kZeroHashSeed;
+    uint32_t hash;
+    hash = ComputeIntegerHash(bit_cast<uint32_t>(simd->get_lane(0)), seed);
+    hash = ComputeIntegerHash(bit_cast<uint32_t>(simd->get_lane(1)), hash * 31);
+    hash = ComputeIntegerHash(bit_cast<uint32_t>(simd->get_lane(2)), hash * 31);
+    hash = ComputeIntegerHash(bit_cast<uint32_t>(simd->get_lane(3)), hash * 31);
+    return Smi::FromInt(hash & Smi::kMaxValue);
   }
   DCHECK(IsJSReceiver());
   JSReceiver* receiver = JSReceiver::cast(this);
@@ -688,6 +705,14 @@ bool Object::SameValue(Object* other) {
   if (IsString() && other->IsString()) {
     return String::cast(this)->Equals(String::cast(other));
   }
+  if (IsFloat32x4() && other->IsFloat32x4()) {
+    Float32x4* x = Float32x4::cast(this);
+    Float32x4* y = Float32x4::cast(other);
+    return v8::internal::SameValue(x->get_lane(0), y->get_lane(0)) &&
+           v8::internal::SameValue(x->get_lane(1), y->get_lane(1)) &&
+           v8::internal::SameValue(x->get_lane(2), y->get_lane(2)) &&
+           v8::internal::SameValue(x->get_lane(3), y->get_lane(3));
+  }
   return false;
 }
 
@@ -702,6 +727,14 @@ bool Object::SameValueZero(Object* other) {
   }
   if (IsString() && other->IsString()) {
     return String::cast(this)->Equals(String::cast(other));
+  }
+  if (IsFloat32x4() && other->IsFloat32x4()) {
+    Float32x4* x = Float32x4::cast(this);
+    Float32x4* y = Float32x4::cast(other);
+    return v8::internal::SameValueZero(x->get_lane(0), y->get_lane(0)) &&
+           v8::internal::SameValueZero(x->get_lane(1), y->get_lane(1)) &&
+           v8::internal::SameValueZero(x->get_lane(2), y->get_lane(2)) &&
+           v8::internal::SameValueZero(x->get_lane(3), y->get_lane(3));
   }
   return false;
 }
@@ -1515,8 +1548,12 @@ void HeapNumber::HeapNumberPrint(std::ostream& os) {  // NOLINT
 
 
 void Float32x4::Float32x4Print(std::ostream& os) {  // NOLINT
-  os << get_lane(0) << ", " << get_lane(1) << ", " << get_lane(2) << ", "
-     << get_lane(3);
+  char arr[100];
+  Vector<char> buffer(arr, arraysize(arr));
+  os << std::string(DoubleToCString(get_lane(0), buffer)) << ", "
+     << std::string(DoubleToCString(get_lane(1), buffer)) << ", "
+     << std::string(DoubleToCString(get_lane(2), buffer)) << ", "
+     << std::string(DoubleToCString(get_lane(3), buffer));
 }
 
 
@@ -12854,10 +12891,11 @@ void FixedArray::SortPairs(FixedArray* numbers, uint32_t len) {
 // Fill in the names of own properties into the supplied storage. The main
 // purpose of this function is to provide reflection information for the object
 // mirrors.
-void JSObject::GetOwnPropertyNames(
-    FixedArray* storage, int index, PropertyAttributes filter) {
+int JSObject::GetOwnPropertyNames(FixedArray* storage, int index,
+                                  PropertyAttributes filter) {
   DCHECK(storage->length() >= (NumberOfOwnProperties(filter) - index));
   if (HasFastProperties()) {
+    int start_index = index;
     int real_size = map()->NumberOfOwnDescriptors();
     DescriptorArray* descs = map()->instance_descriptors();
     for (int i = 0; i < real_size; i++) {
@@ -12866,12 +12904,13 @@ void JSObject::GetOwnPropertyNames(
         storage->set(index++, descs->GetKey(i));
       }
     }
+    return index - start_index;
   } else if (IsGlobalObject()) {
-    global_dictionary()->CopyKeysTo(storage, index, filter,
-                                    GlobalDictionary::UNSORTED);
+    return global_dictionary()->CopyKeysTo(storage, index, filter,
+                                           GlobalDictionary::UNSORTED);
   } else {
-    property_dictionary()->CopyKeysTo(storage, index, filter,
-                                      NameDictionary::UNSORTED);
+    return property_dictionary()->CopyKeysTo(storage, index, filter,
+                                             NameDictionary::UNSORTED);
   }
 }
 
@@ -12971,7 +13010,7 @@ int JSObject::GetOwnElementKeys(FixedArray* storage,
 
     case DICTIONARY_ELEMENTS: {
       if (storage != NULL) {
-        element_dictionary()->CopyKeysTo(storage, filter,
+        element_dictionary()->CopyKeysTo(storage, 0, filter,
                                          SeededNumberDictionary::SORTED);
       }
       counter += element_dictionary()->NumberOfElementsFilterAttributes(filter);
@@ -12988,7 +13027,7 @@ int JSObject::GetOwnElementKeys(FixedArray* storage,
         SeededNumberDictionary* dictionary =
             SeededNumberDictionary::cast(arguments);
         if (storage != NULL) {
-          dictionary->CopyKeysTo(storage, filter,
+          dictionary->CopyKeysTo(storage, 0, filter,
                                  SeededNumberDictionary::UNSORTED);
         }
         counter += dictionary->NumberOfElementsFilterAttributes(filter);
@@ -14718,29 +14757,6 @@ bool Dictionary<Derived, Shape, Key>::HasComplexElements() {
 }
 
 
-template <typename Derived, typename Shape, typename Key>
-void Dictionary<Derived, Shape, Key>::CopyKeysTo(
-    FixedArray* storage, PropertyAttributes filter,
-    typename Dictionary<Derived, Shape, Key>::SortMode sort_mode) {
-  DCHECK(storage->length() >= NumberOfElementsFilterAttributes(filter));
-  int capacity = this->Capacity();
-  int index = 0;
-  for (int i = 0; i < capacity; i++) {
-    Object* k = this->KeyAt(i);
-    if (this->IsKey(k) && !FilterKey(k, filter)) {
-      if (this->IsDeleted(i)) continue;
-      PropertyDetails details = this->DetailsAt(i);
-      PropertyAttributes attr = details.attributes();
-      if ((attr & filter) == 0) storage->set(index++, k);
-    }
-  }
-  if (sort_mode == Dictionary::SORTED) {
-    storage->SortPairs(storage, index);
-  }
-  DCHECK(storage->length() >= index);
-}
-
-
 template <typename Dictionary>
 struct EnumIndexComparator {
   explicit EnumIndexComparator(Dictionary* dict) : dict(dict) {}
@@ -14780,10 +14796,11 @@ void Dictionary<Derived, Shape, Key>::CopyEnumKeysTo(FixedArray* storage) {
 
 
 template <typename Derived, typename Shape, typename Key>
-void Dictionary<Derived, Shape, Key>::CopyKeysTo(
+int Dictionary<Derived, Shape, Key>::CopyKeysTo(
     FixedArray* storage, int index, PropertyAttributes filter,
     typename Dictionary<Derived, Shape, Key>::SortMode sort_mode) {
   DCHECK(storage->length() >= NumberOfElementsFilterAttributes(filter));
+  int start_index = index;
   int capacity = this->Capacity();
   for (int i = 0; i < capacity; i++) {
     Object* k = this->KeyAt(i);
@@ -14798,6 +14815,7 @@ void Dictionary<Derived, Shape, Key>::CopyKeysTo(
     storage->SortPairs(storage, index);
   }
   DCHECK(storage->length() >= index);
+  return index - start_index;
 }
 
 

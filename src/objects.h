@@ -377,6 +377,7 @@ const int kStubMinorKeyBits = kSmiValueSize - kStubMajorKeyBits - 1;
   V(SHORT_EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE) \
                                                                 \
   V(SYMBOL_TYPE)                                                \
+  V(FLOAT32X4_TYPE)                                             \
                                                                 \
   V(MAP_TYPE)                                                   \
   V(CODE_TYPE)                                                  \
@@ -386,7 +387,6 @@ const int kStubMinorKeyBits = kSmiValueSize - kStubMajorKeyBits - 1;
                                                                 \
   V(HEAP_NUMBER_TYPE)                                           \
   V(MUTABLE_HEAP_NUMBER_TYPE)                                   \
-  V(FLOAT32X4_TYPE)                                             \
   V(FOREIGN_TYPE)                                               \
   V(BYTE_ARRAY_TYPE)                                            \
   V(FREE_SPACE_TYPE)                                            \
@@ -915,6 +915,7 @@ template <class C> inline bool Is(Object* obj);
 #define HEAP_OBJECT_TYPE_LIST(V)   \
   V(HeapNumber)                    \
   V(MutableHeapNumber)             \
+  V(Float32x4)                     \
   V(Name)                          \
   V(UniqueName)                    \
   V(String)                        \
@@ -949,7 +950,6 @@ template <class C> inline bool Is(Object* obj);
   V(FixedFloat32Array)             \
   V(FixedFloat64Array)             \
   V(FixedUint8ClampedArray)        \
-  V(Float32x4)                     \
   V(ByteArray)                     \
   V(FreeSpace)                     \
   V(JSReceiver)                    \
@@ -2053,9 +2053,9 @@ class JSObject: public JSReceiver {
   // with the specified attributes (ignoring interceptors).
   int NumberOfOwnProperties(PropertyAttributes filter = NONE);
   // Fill in details for properties into storage starting at the specified
-  // index.
-  void GetOwnPropertyNames(
-      FixedArray* storage, int index, PropertyAttributes filter = NONE);
+  // index. Returns the number of properties added.
+  int GetOwnPropertyNames(FixedArray* storage, int index,
+                          PropertyAttributes filter = NONE);
 
   // Returns the number of properties on this object filtering out properties
   // with the specified attributes (ignoring interceptors).
@@ -2282,6 +2282,9 @@ class JSObject: public JSReceiver {
   // Deletes an existing named property in a normalized object.
   static void DeleteNormalizedProperty(Handle<JSObject> object,
                                        Handle<Name> name, int entry);
+
+  static bool AllCanRead(LookupIterator* it);
+  static bool AllCanWrite(LookupIterator* it);
 
  private:
   friend class JSReceiver;
@@ -3249,13 +3252,10 @@ class Dictionary: public HashTable<Derived, Shape, Key> {
 
   enum SortMode { UNSORTED, SORTED };
 
-  // Copies keys to preallocated fixed array.
-  void CopyKeysTo(FixedArray* storage, PropertyAttributes filter,
-                  SortMode sort_mode);
-
   // Fill in details for properties into storage.
-  void CopyKeysTo(FixedArray* storage, int index, PropertyAttributes filter,
-                  SortMode sort_mode);
+  // Returns the number of properties added.
+  int CopyKeysTo(FixedArray* storage, int index, PropertyAttributes filter,
+                 SortMode sort_mode);
 
   // Copies enumerable keys to preallocated fixed array.
   void CopyEnumKeysTo(FixedArray* storage);
