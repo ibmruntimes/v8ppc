@@ -584,11 +584,6 @@ void AstGraphBuilder::CreateGraphBody(bool stack_check) {
     return;
   }
 
-  // Visit implicit declaration of the function name.
-  if (scope->is_function_scope() && scope->function() != NULL) {
-    VisitVariableDeclaration(scope->function());
-  }
-
   // Visit declarations within the function scope.
   VisitDeclarations(scope->declarations());
 
@@ -2583,8 +2578,7 @@ void AstGraphBuilder::VisitCallRuntime(CallRuntime* expr) {
 
   // TODO(mstarzinger): This bailout is a gigantic hack, the owner is ashamed.
   if (function->function_id == Runtime::kInlineGeneratorNext ||
-      function->function_id == Runtime::kInlineGeneratorThrow ||
-      function->function_id == Runtime::kInlineDefaultConstructorCallSuper) {
+      function->function_id == Runtime::kInlineGeneratorThrow) {
     ast_context()->ProduceValue(jsgraph()->TheHoleConstant());
     return SetStackOverflow();
   }

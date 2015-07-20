@@ -4191,7 +4191,9 @@ MaybeHandle<Object> JSObject::DefineOwnPropertyIgnoreAttributes(
 
       case LookupIterator::ACCESS_CHECK:
         if (!it->HasAccess()) {
-          return SetPropertyWithFailedAccessCheck(it, value);
+          it->isolate()->ReportFailedAccessCheck(it->GetHolder<JSObject>());
+          RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(it->isolate(), Object);
+          return value;
         }
         break;
 
@@ -6149,10 +6151,13 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
   Handle<JSFunction> arguments_function(
       JSFunction::cast(isolate->sloppy_arguments_map()->GetConstructor()));
 
+  PrototypeIterator::WhereToEnd end = type == OWN_ONLY
+                                          ? PrototypeIterator::END_AT_NON_HIDDEN
+                                          : PrototypeIterator::END_AT_NULL;
   // Only collect keys if access is permitted.
   for (PrototypeIterator iter(isolate, object,
                               PrototypeIterator::START_AT_RECEIVER);
-       !iter.IsAtEnd(); iter.Advance()) {
+       !iter.IsAtEnd(end); iter.Advance()) {
     if (PrototypeIterator::GetCurrent(iter)->IsJSProxy()) {
       Handle<JSProxy> proxy(JSProxy::cast(*PrototypeIterator::GetCurrent(iter)),
                             isolate);
@@ -6179,8 +6184,10 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
 
     // Check access rights if required.
     if (current->IsAccessCheckNeeded() && !isolate->MayAccess(current)) {
-      isolate->ReportFailedAccessCheck(current);
-      RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, FixedArray);
+      if (iter.IsAtEnd(PrototypeIterator::END_AT_NON_HIDDEN)) {
+        isolate->ReportFailedAccessCheck(current);
+        RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, FixedArray);
+      }
       break;
     }
 
@@ -6241,10 +6248,6 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
       }
       DCHECK(ContainsOnlyValidKeys(content));
     }
-
-    // If we only want own properties we bail out after the first
-    // iteration.
-    if (type == OWN_ONLY) break;
   }
   return content;
 }
@@ -9325,11 +9328,32 @@ void JSFunction::JSFunctionIterateBody(int object_size, ObjectVisitor* v) {
 }
 
 
+bool JSFunction::Inlines(SharedFunctionInfo* candidate) {
+  DisallowHeapAllocation no_gc;
+  if (shared() == candidate) return true;
+  if (code()->kind() != Code::OPTIMIZED_FUNCTION) return false;
+  DeoptimizationInputData* const data =
+      DeoptimizationInputData::cast(code()->deoptimization_data());
+  if (data->length() == 0) return false;
+  FixedArray* const literals = data->LiteralArray();
+  int const inlined_count = data->InlinedFunctionCount()->value();
+  for (int i = 0; i < inlined_count; ++i) {
+    if (SharedFunctionInfo::cast(literals->get(i)) == candidate) {
+      return true;
+    }
+  }
+  return false;
+}
+
+
 void JSFunction::MarkForOptimization() {
   Isolate* isolate = GetIsolate();
+  // Do not optimize if function contains break points.
+  if (shared()->HasDebugInfo()) return;
   DCHECK(!IsOptimized());
   DCHECK(shared()->allows_lazy_compilation() ||
          !shared()->optimization_disabled());
+  DCHECK(!shared()->HasDebugInfo());
   set_code_no_write_barrier(
       isolate->builtins()->builtin(Builtins::kCompileOptimized));
   // No write barrier required, since the builtin is part of the root set.
@@ -13010,7 +13034,7 @@ int JSObject::GetOwnElementKeys(FixedArray* storage,
 
     case DICTIONARY_ELEMENTS: {
       if (storage != NULL) {
-        element_dictionary()->CopyKeysTo(storage, 0, filter,
+        element_dictionary()->CopyKeysTo(storage, counter, filter,
                                          SeededNumberDictionary::SORTED);
       }
       counter += element_dictionary()->NumberOfElementsFilterAttributes(filter);
@@ -13027,7 +13051,7 @@ int JSObject::GetOwnElementKeys(FixedArray* storage,
         SeededNumberDictionary* dictionary =
             SeededNumberDictionary::cast(arguments);
         if (storage != NULL) {
-          dictionary->CopyKeysTo(storage, 0, filter,
+          dictionary->CopyKeysTo(storage, counter, filter,
                                  SeededNumberDictionary::UNSORTED);
         }
         counter += dictionary->NumberOfElementsFilterAttributes(filter);

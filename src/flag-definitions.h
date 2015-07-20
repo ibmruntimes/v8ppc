@@ -358,7 +358,7 @@ DEFINE_BOOL(lookup_sample_by_shared, true,
             "when picking a function to optimize, watch for shared function "
             "info, not JSFunction itself")
 DEFINE_BOOL(cache_optimized_code, true, "cache optimized code for closures")
-DEFINE_BOOL(flush_optimized_code_cache, true,
+DEFINE_BOOL(flush_optimized_code_cache, false,
             "flushes the cache of optimized code for closures on every GC")
 DEFINE_BOOL(inline_construct, true, "inline constructor calls")
 DEFINE_BOOL(inline_arguments, true, "inline functions with arguments object")
@@ -666,7 +666,7 @@ DEFINE_BOOL(use_idle_notification, true,
 DEFINE_BOOL(use_ic, true, "use inline caching")
 DEFINE_BOOL(trace_ic, false, "trace inline cache state transitions")
 DEFINE_BOOL(vector_stores, false, "use vectors for store ics")
-DEFINE_BOOL(global_var_shortcuts, true, "use ic-less global loads and stores")
+DEFINE_BOOL(global_var_shortcuts, false, "use ic-less global loads and stores")
 
 // macro-assembler-ia32.cc
 DEFINE_BOOL(native_code_counters, false,

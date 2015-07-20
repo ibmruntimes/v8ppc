@@ -4357,11 +4357,6 @@ bool HOptimizedGraphBuilder::BuildGraph() {
   body_entry->SetJoinId(BailoutId::FunctionEntry());
   set_current_block(body_entry);
 
-  // Handle implicit declaration of the function name in named function
-  // expressions before other declarations.
-  if (scope->is_function_scope() && scope->function() != NULL) {
-    VisitVariableDeclaration(scope->function());
-  }
   VisitDeclarations(scope->declarations());
   Add<HSimulate>(BailoutId::Declarations());
 
@@ -5559,6 +5554,17 @@ void HOptimizedGraphBuilder::VisitVariableProxy(VariableProxy* expr) {
           instr->SetDependsOnFlag(kGlobalVars);
           return ast_context()->ReturnInstruction(instr, expr->id());
         }
+      } else if (variable->IsGlobalSlot()) {
+        DCHECK(variable->index() > 0);
+        DCHECK(variable->IsStaticGlobalObjectProperty());
+        // Each var occupies two slots in the context: for reads and writes.
+        int slot_index = variable->index();
+        int depth = scope()->ContextChainLength(variable->scope());
+
+        HLoadGlobalViaContext* instr =
+            New<HLoadGlobalViaContext>(variable->name(), depth, slot_index);
+        return ast_context()->ReturnInstruction(instr, expr->id());
+
       } else {
         HValue* global_object = Add<HLoadNamedField>(
             context(), nullptr,
@@ -6780,6 +6786,19 @@ void HOptimizedGraphBuilder::HandleGlobalVariableAssignment(
     if (instr->HasObservableSideEffects()) {
       Add<HSimulate>(ast_id, REMOVABLE_SIMULATE);
     }
+  } else if (var->IsGlobalSlot()) {
+    DCHECK(var->index() > 0);
+    DCHECK(var->IsStaticGlobalObjectProperty());
+    // Each var occupies two slots in the context: for reads and writes.
+    int slot_index = var->index() + 1;
+    int depth = scope()->ContextChainLength(var->scope());
+
+    HStoreGlobalViaContext* instr = Add<HStoreGlobalViaContext>(
+        var->name(), value, depth, slot_index, function_language_mode());
+    USE(instr);
+    DCHECK(instr->HasObservableSideEffects());
+    Add<HSimulate>(ast_id, REMOVABLE_SIMULATE);
+
   } else {
     HValue* global_object = Add<HLoadNamedField>(
         context(), nullptr,
@@ -8130,6 +8149,10 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
 
   CompilationInfo target_info(&parse_info);
   Handle<SharedFunctionInfo> target_shared(target->shared());
+  if (target_shared->HasDebugInfo()) {
+    TraceInline(target, caller, "target is being debugged");
+    return false;
+  }
   if (!Compiler::ParseAndAnalyze(target_info.parse_info())) {
     if (target_info.isolate()->has_pending_exception()) {
       // Parse or scope error, never optimize this function.
