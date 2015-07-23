@@ -122,7 +122,7 @@ void StoreBuffer::StoreBufferOverflow(Isolate* isolate) {
 }
 
 
-#if V8_TARGET_ARCH_X64
+#if defined(V8_TARGET_ARCH_X64) || defined(V8_TARGET_ARCH_PPC64)
 static int CompareAddresses(const void* void_a, const void* void_b) {
   intptr_t a =
       reinterpret_cast<intptr_t>(*reinterpret_cast<const Address*>(void_a));
