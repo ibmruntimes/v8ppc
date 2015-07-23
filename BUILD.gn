@@ -694,7 +694,6 @@ source_set("v8_base") {
     "src/compiler/frame-states.h",
     "src/compiler/gap-resolver.cc",
     "src/compiler/gap-resolver.h",
-    "src/compiler/graph-builder.h",
     "src/compiler/graph-reducer.cc",
     "src/compiler/graph-reducer.h",
     "src/compiler/graph-replay.cc",
@@ -713,8 +712,12 @@ source_set("v8_base") {
     "src/compiler/instruction-selector.h",
     "src/compiler/instruction.cc",
     "src/compiler/instruction.h",
+    "src/compiler/interpreter-assembler.cc",
+    "src/compiler/interpreter-assembler.h",
     "src/compiler/js-builtin-reducer.cc",
     "src/compiler/js-builtin-reducer.h",
+    "src/compiler/js-context-relaxation.cc",
+    "src/compiler/js-context-relaxation.h",
     "src/compiler/js-context-specialization.cc",
     "src/compiler/js-context-specialization.h",
     "src/compiler/js-frame-specialization.cc",
@@ -994,6 +997,10 @@ source_set("v8_base") {
     "src/interface-descriptors.h",
     "src/interpreter-irregexp.cc",
     "src/interpreter-irregexp.h",
+    "src/interpreter/bytecodes.cc",
+    "src/interpreter/bytecodes.h",
+    "src/interpreter/interpreter.cc",
+    "src/interpreter/interpreter.h",
     "src/isolate.cc",
     "src/isolate.h",
     "src/json-parser.h",
@@ -1750,7 +1757,7 @@ if ((current_toolchain == host_toolchain && v8_toolset_for_d8 == "host") ||
       "//build/config/sanitizers:deps",
     ]
 
-    # TODO(jochen): Add support for readline and vtunejit.
+    # TODO(jochen): Add support for vtunejit.
 
     if (is_posix) {
       sources += [ "src/d8-posix.cc" ]
@@ -1760,8 +1767,6 @@ if ((current_toolchain == host_toolchain && v8_toolset_for_d8 == "host") ||
 
     if (!is_component_build) {
       sources += [
-        "src/d8-debug.cc",
-        "src/d8-debug.h",
         "$target_gen_dir/d8-js.cc",
       ]
     }

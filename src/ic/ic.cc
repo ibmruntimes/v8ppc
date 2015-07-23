@@ -2329,7 +2329,7 @@ void CallIC::HandleMiss(Handle<Object> function) {
 //
 
 // Used from ic-<arch>.cc.
-RUNTIME_FUNCTION(CallIC_Miss) {
+RUNTIME_FUNCTION(Runtime_CallIC_Miss) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   DCHECK(args.length() == 3);
@@ -2344,7 +2344,7 @@ RUNTIME_FUNCTION(CallIC_Miss) {
 }
 
 
-RUNTIME_FUNCTION(CallIC_Customization_Miss) {
+RUNTIME_FUNCTION(Runtime_CallIC_Customization_Miss) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   DCHECK(args.length() == 3);
@@ -2361,7 +2361,7 @@ RUNTIME_FUNCTION(CallIC_Customization_Miss) {
 
 
 // Used from ic-<arch>.cc.
-RUNTIME_FUNCTION(LoadIC_Miss) {
+RUNTIME_FUNCTION(Runtime_LoadIC_Miss) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   Handle<Object> receiver = args.at<Object>(0);
@@ -2392,7 +2392,7 @@ RUNTIME_FUNCTION(LoadIC_Miss) {
 
 
 // Used from ic-<arch>.cc
-RUNTIME_FUNCTION(KeyedLoadIC_Miss) {
+RUNTIME_FUNCTION(Runtime_KeyedLoadIC_Miss) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   Handle<Object> receiver = args.at<Object>(0);
@@ -2411,7 +2411,7 @@ RUNTIME_FUNCTION(KeyedLoadIC_Miss) {
 }
 
 
-RUNTIME_FUNCTION(KeyedLoadIC_MissFromStubFailure) {
+RUNTIME_FUNCTION(Runtime_KeyedLoadIC_MissFromStubFailure) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   Handle<Object> receiver = args.at<Object>(0);
@@ -2432,7 +2432,7 @@ RUNTIME_FUNCTION(KeyedLoadIC_MissFromStubFailure) {
 
 
 // Used from ic-<arch>.cc.
-RUNTIME_FUNCTION(StoreIC_Miss) {
+RUNTIME_FUNCTION(Runtime_StoreIC_Miss) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   Handle<Object> receiver = args.at<Object>(0);
@@ -2470,7 +2470,7 @@ RUNTIME_FUNCTION(StoreIC_Miss) {
 }
 
 
-RUNTIME_FUNCTION(StoreIC_MissFromStubFailure) {
+RUNTIME_FUNCTION(Runtime_StoreIC_MissFromStubFailure) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   Handle<Object> receiver = args.at<Object>(0);
@@ -2478,8 +2478,12 @@ RUNTIME_FUNCTION(StoreIC_MissFromStubFailure) {
   Handle<Object> value = args.at<Object>(2);
   Handle<Object> result;
 
+  // Bailouts from transitioning stores may have the map to transition to as an
+  // extra argument.
+  DCHECK(args.length() < 4 || args.at<Object>(3)->IsMap());
+
   if (FLAG_vector_stores) {
-    DCHECK(args.length() == 5);
+    DCHECK(args.length() == 5 || args.length() == 6);
     Handle<Smi> slot = args.at<Smi>(3);
     Handle<TypeFeedbackVector> vector = args.at<TypeFeedbackVector>(4);
     FeedbackVectorICSlot vector_slot = vector->ToICSlot(slot->value());
@@ -2509,7 +2513,7 @@ RUNTIME_FUNCTION(StoreIC_MissFromStubFailure) {
 
 
 // Used from ic-<arch>.cc.
-RUNTIME_FUNCTION(KeyedStoreIC_Miss) {
+RUNTIME_FUNCTION(Runtime_KeyedStoreIC_Miss) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   Handle<Object> receiver = args.at<Object>(0);
@@ -2538,7 +2542,7 @@ RUNTIME_FUNCTION(KeyedStoreIC_Miss) {
 }
 
 
-RUNTIME_FUNCTION(KeyedStoreIC_MissFromStubFailure) {
+RUNTIME_FUNCTION(Runtime_KeyedStoreIC_MissFromStubFailure) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   Handle<Object> receiver = args.at<Object>(0);
@@ -2567,7 +2571,7 @@ RUNTIME_FUNCTION(KeyedStoreIC_MissFromStubFailure) {
 }
 
 
-RUNTIME_FUNCTION(StoreIC_Slow) {
+RUNTIME_FUNCTION(Runtime_StoreIC_Slow) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 3);
   StoreIC ic(IC::NO_EXTRA_FRAME, isolate);
@@ -2583,7 +2587,7 @@ RUNTIME_FUNCTION(StoreIC_Slow) {
 }
 
 
-RUNTIME_FUNCTION(KeyedStoreIC_Slow) {
+RUNTIME_FUNCTION(Runtime_KeyedStoreIC_Slow) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 3);
   KeyedStoreIC ic(IC::NO_EXTRA_FRAME, isolate);
@@ -2599,15 +2603,16 @@ RUNTIME_FUNCTION(KeyedStoreIC_Slow) {
 }
 
 
-RUNTIME_FUNCTION(ElementsTransitionAndStoreIC_Miss) {
+RUNTIME_FUNCTION(Runtime_ElementsTransitionAndStoreIC_Miss) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   DCHECK(args.length() == 4);
   KeyedStoreIC ic(IC::EXTRA_CALL_FRAME, isolate);
-  Handle<Object> value = args.at<Object>(0);
-  Handle<Map> map = args.at<Map>(1);
-  Handle<Object> key = args.at<Object>(2);
-  Handle<Object> object = args.at<Object>(3);
+  Handle<Object> object = args.at<Object>(0);
+  Handle<Object> key = args.at<Object>(1);
+  Handle<Object> value = args.at<Object>(2);
+  Handle<Map> map = args.at<Map>(3);
+
   LanguageMode language_mode = ic.language_mode();
   if (object->IsJSObject()) {
     JSObject::TransitionElementsKind(Handle<JSObject>::cast(object),
@@ -2696,7 +2701,7 @@ MaybeHandle<Object> BinaryOpIC::Transition(
 }
 
 
-RUNTIME_FUNCTION(BinaryOpIC_Miss) {
+RUNTIME_FUNCTION(Runtime_BinaryOpIC_Miss) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   DCHECK_EQ(2, args.length());
@@ -2711,7 +2716,7 @@ RUNTIME_FUNCTION(BinaryOpIC_Miss) {
 }
 
 
-RUNTIME_FUNCTION(BinaryOpIC_MissWithAllocationSite) {
+RUNTIME_FUNCTION(Runtime_BinaryOpIC_MissWithAllocationSite) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   DCHECK_EQ(3, args.length());
@@ -2790,7 +2795,7 @@ Code* CompareIC::UpdateCaches(Handle<Object> x, Handle<Object> y) {
 
 
 // Used from CompareICStub::GenerateMiss in code-stubs-<arch>.cc.
-RUNTIME_FUNCTION(CompareIC_Miss) {
+RUNTIME_FUNCTION(Runtime_CompareIC_Miss) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   DCHECK(args.length() == 3);
@@ -2851,7 +2856,7 @@ Handle<Object> CompareNilIC::CompareNil(Handle<Object> object) {
 }
 
 
-RUNTIME_FUNCTION(CompareNilIC_Miss) {
+RUNTIME_FUNCTION(Runtime_CompareNilIC_Miss) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   Handle<Object> object = args.at<Object>(0);
@@ -2860,7 +2865,7 @@ RUNTIME_FUNCTION(CompareNilIC_Miss) {
 }
 
 
-RUNTIME_FUNCTION(Unreachable) {
+RUNTIME_FUNCTION(Runtime_Unreachable) {
   UNREACHABLE();
   CHECK(false);
   return isolate->heap()->undefined_value();
@@ -2912,7 +2917,7 @@ Handle<Object> ToBooleanIC::ToBoolean(Handle<Object> object) {
 }
 
 
-RUNTIME_FUNCTION(ToBooleanIC_Miss) {
+RUNTIME_FUNCTION(Runtime_ToBooleanIC_Miss) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   DCHECK(args.length() == 1);
   HandleScope scope(isolate);
@@ -2922,7 +2927,7 @@ RUNTIME_FUNCTION(ToBooleanIC_Miss) {
 }
 
 
-RUNTIME_FUNCTION(StoreCallbackProperty) {
+RUNTIME_FUNCTION(Runtime_StoreCallbackProperty) {
   Handle<JSObject> receiver = args.at<JSObject>(0);
   Handle<JSObject> holder = args.at<JSObject>(1);
   Handle<HeapObject> callback_or_cell = args.at<HeapObject>(2);
@@ -2959,7 +2964,7 @@ RUNTIME_FUNCTION(StoreCallbackProperty) {
  * Returns |Heap::no_interceptor_result_sentinel()| if interceptor doesn't
  * provide any value for the given name.
  */
-RUNTIME_FUNCTION(LoadPropertyWithInterceptorOnly) {
+RUNTIME_FUNCTION(Runtime_LoadPropertyWithInterceptorOnly) {
   DCHECK(args.length() == NamedLoadHandlerCompiler::kInterceptorArgsLength);
   Handle<Name> name =
       args.at<Name>(NamedLoadHandlerCompiler::kInterceptorArgsNameIndex);
@@ -2982,7 +2987,7 @@ RUNTIME_FUNCTION(LoadPropertyWithInterceptorOnly) {
  * Loads a property with an interceptor performing post interceptor
  * lookup if interceptor failed.
  */
-RUNTIME_FUNCTION(LoadPropertyWithInterceptor) {
+RUNTIME_FUNCTION(Runtime_LoadPropertyWithInterceptor) {
   HandleScope scope(isolate);
   DCHECK(args.length() == NamedLoadHandlerCompiler::kInterceptorArgsLength);
   Handle<Name> name =
@@ -3013,7 +3018,7 @@ RUNTIME_FUNCTION(LoadPropertyWithInterceptor) {
 }
 
 
-RUNTIME_FUNCTION(StorePropertyWithInterceptor) {
+RUNTIME_FUNCTION(Runtime_StorePropertyWithInterceptor) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 3);
   StoreIC ic(IC::NO_EXTRA_FRAME, isolate);
@@ -3042,7 +3047,7 @@ RUNTIME_FUNCTION(StorePropertyWithInterceptor) {
 }
 
 
-RUNTIME_FUNCTION(LoadElementWithInterceptor) {
+RUNTIME_FUNCTION(Runtime_LoadElementWithInterceptor) {
   // TODO(verwaest): This should probably get the holder and receiver as input.
   HandleScope scope(isolate);
   Handle<JSObject> receiver = args.at<JSObject>(0);
@@ -3058,7 +3063,7 @@ RUNTIME_FUNCTION(LoadElementWithInterceptor) {
 }
 
 
-RUNTIME_FUNCTION(LoadIC_MissFromStubFailure) {
+RUNTIME_FUNCTION(Runtime_LoadIC_MissFromStubFailure) {
   TimerEventScope<TimerEventIcMiss> timer(isolate);
   HandleScope scope(isolate);
   Handle<Object> receiver = args.at<Object>(0);
@@ -3087,15 +3092,5 @@ RUNTIME_FUNCTION(LoadIC_MissFromStubFailure) {
 
   return *result;
 }
-
-
-static const Address IC_utilities[] = {
-#define ADDR(name) FUNCTION_ADDR(name),
-    IC_UTIL_LIST(ADDR) NULL
-#undef ADDR
-};
-
-
-Address IC::AddressFromUtilityId(IC::UtilityId id) { return IC_utilities[id]; }
 }  // namespace internal
 }  // namespace v8

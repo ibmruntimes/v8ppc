@@ -33,7 +33,7 @@ static void InitializeArrayConstructorDescriptor(
                            JS_FUNCTION_STUB_MODE);
   } else {
     descriptor->Initialize(r0, deopt_handler, constant_stack_parameter_count,
-                           JS_FUNCTION_STUB_MODE, PASS_ARGUMENTS);
+                           JS_FUNCTION_STUB_MODE);
   }
 }
 
@@ -49,7 +49,7 @@ static void InitializeInternalArrayConstructorDescriptor(
                            JS_FUNCTION_STUB_MODE);
   } else {
     descriptor->Initialize(r0, deopt_handler, constant_stack_parameter_count,
-                           JS_FUNCTION_STUB_MODE, PASS_ARGUMENTS);
+                           JS_FUNCTION_STUB_MODE);
   }
 }
 
@@ -1837,10 +1837,7 @@ void LoadIndexedInterceptorStub::Generate(MacroAssembler* masm) {
   __ Push(receiver, key);  // Receiver, key.
 
   // Perform tail call to the entry.
-  __ TailCallExternalReference(
-      ExternalReference(IC_Utility(IC::kLoadElementWithInterceptor),
-                        masm->isolate()),
-      2, 1);
+  __ TailCallRuntime(Runtime::kLoadElementWithInterceptor, 2, 1);
 
   __ bind(&slow);
   PropertyAccessCompiler::TailCallBuiltin(
@@ -2384,32 +2381,41 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 }
 
 
-static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub) {
+static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub,
+                                       bool is_super) {
   // r0 : number of arguments to the construct function
-  // r2 : Feedback vector
-  // r3 : slot in feedback vector (Smi)
   // r1 : the function to call
+  // r2 : feedback vector
+  // r3 : slot in feedback vector (Smi)
+  // r4 : original constructor (for IsSuperConstructorCall)
   FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
 
   // Number-of-arguments register must be smi-tagged to call out.
   __ SmiTag(r0);
   __ Push(r3, r2, r1, r0);
+  if (is_super) {
+    __ Push(r4);
+  }
 
   __ CallStub(stub);
 
+  if (is_super) {
+    __ Pop(r4);
+  }
   __ Pop(r3, r2, r1, r0);
   __ SmiUntag(r0);
 }
 
 
-static void GenerateRecordCallTarget(MacroAssembler* masm) {
+static void GenerateRecordCallTarget(MacroAssembler* masm, bool is_super) {
   // Cache the called function in a feedback vector slot.  Cache states
   // are uninitialized, monomorphic (indicated by a JSFunction), and
   // megamorphic.
   // r0 : number of arguments to the construct function
   // r1 : the function to call
-  // r2 : Feedback vector
+  // r2 : feedback vector
   // r3 : slot in feedback vector (Smi)
+  // r4 : original constructor (for IsSuperConstructorCall)
   Label initialize, done, miss, megamorphic, not_array_function;
 
   DCHECK_EQ(*TypeFeedbackVector::MegamorphicSentinel(masm->isolate()),
@@ -2417,23 +2423,23 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
   DCHECK_EQ(*TypeFeedbackVector::UninitializedSentinel(masm->isolate()),
             masm->isolate()->heap()->uninitialized_symbol());
 
-  // Load the cache state into r4.
-  __ add(r4, r2, Operand::PointerOffsetFromSmiKey(r3));
-  __ ldr(r4, FieldMemOperand(r4, FixedArray::kHeaderSize));
+  // Load the cache state into r5.
+  __ add(r5, r2, Operand::PointerOffsetFromSmiKey(r3));
+  __ ldr(r5, FieldMemOperand(r5, FixedArray::kHeaderSize));
 
   // A monomorphic cache hit or an already megamorphic state: invoke the
   // function without changing the state.
-  // We don't know if r4 is a WeakCell or a Symbol, but it's harmless to read at
+  // We don't know if r5 is a WeakCell or a Symbol, but it's harmless to read at
   // this position in a symbol (see static asserts in type-feedback-vector.h).
   Label check_allocation_site;
-  Register feedback_map = r5;
-  Register weak_value = r6;
-  __ ldr(weak_value, FieldMemOperand(r4, WeakCell::kValueOffset));
+  Register feedback_map = r6;
+  Register weak_value = r9;
+  __ ldr(weak_value, FieldMemOperand(r5, WeakCell::kValueOffset));
   __ cmp(r1, weak_value);
   __ b(eq, &done);
-  __ CompareRoot(r4, Heap::kmegamorphic_symbolRootIndex);
+  __ CompareRoot(r5, Heap::kmegamorphic_symbolRootIndex);
   __ b(eq, &done);
-  __ ldr(feedback_map, FieldMemOperand(r4, HeapObject::kMapOffset));
+  __ ldr(feedback_map, FieldMemOperand(r5, HeapObject::kMapOffset));
   __ CompareRoot(feedback_map, Heap::kWeakCellMapRootIndex);
   __ b(ne, FLAG_pretenuring_call_new ? &miss : &check_allocation_site);
 
@@ -2451,8 +2457,8 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
     __ b(ne, &miss);
 
     // Make sure the function is the Array() function
-    __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r4);
-    __ cmp(r1, r4);
+    __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r5);
+    __ cmp(r1, r5);
     __ b(ne, &megamorphic);
     __ jmp(&done);
   }
@@ -2461,14 +2467,14 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
 
   // A monomorphic miss (i.e, here the cache is not uninitialized) goes
   // megamorphic.
-  __ CompareRoot(r4, Heap::kuninitialized_symbolRootIndex);
+  __ CompareRoot(r5, Heap::kuninitialized_symbolRootIndex);
   __ b(eq, &initialize);
   // MegamorphicSentinel is an immortal immovable object (undefined) so no
   // write-barrier is needed.
   __ bind(&megamorphic);
-  __ add(r4, r2, Operand::PointerOffsetFromSmiKey(r3));
+  __ add(r5, r2, Operand::PointerOffsetFromSmiKey(r3));
   __ LoadRoot(ip, Heap::kmegamorphic_symbolRootIndex);
-  __ str(ip, FieldMemOperand(r4, FixedArray::kHeaderSize));
+  __ str(ip, FieldMemOperand(r5, FixedArray::kHeaderSize));
   __ jmp(&done);
 
   // An uninitialized cache is patched with the function
@@ -2476,22 +2482,22 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
 
   if (!FLAG_pretenuring_call_new) {
     // Make sure the function is the Array() function
-    __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r4);
-    __ cmp(r1, r4);
+    __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r5);
+    __ cmp(r1, r5);
     __ b(ne, &not_array_function);
 
     // The target function is the Array constructor,
     // Create an AllocationSite if we don't already have it, store it in the
     // slot.
     CreateAllocationSiteStub create_stub(masm->isolate());
-    CallStubInRecordCallTarget(masm, &create_stub);
+    CallStubInRecordCallTarget(masm, &create_stub, is_super);
     __ b(&done);
 
     __ bind(&not_array_function);
   }
 
   CreateWeakCellStub create_stub(masm->isolate());
-  CallStubInRecordCallTarget(masm, &create_stub);
+  CallStubInRecordCallTarget(masm, &create_stub, is_super);
   __ bind(&done);
 }
 
@@ -2624,14 +2630,7 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   __ b(ne, &slow);
 
   if (RecordCallTarget()) {
-    if (IsSuperConstructorCall()) {
-      __ push(r4);
-    }
-    // TODO(mstarzinger): Consider tweaking target recording to avoid push/pop.
-    GenerateRecordCallTarget(masm);
-    if (IsSuperConstructorCall()) {
-      __ pop(r4);
-    }
+    GenerateRecordCallTarget(masm, IsSuperConstructorCall());
 
     __ add(r5, r2, Operand::PointerOffsetFromSmiKey(r3));
     if (FLAG_pretenuring_call_new) {
@@ -2909,11 +2908,10 @@ void CallICStub::GenerateMiss(MacroAssembler* masm) {
   __ Push(r1, r2, r3);
 
   // Call the entry.
-  IC::UtilityId id = GetICState() == DEFAULT ? IC::kCallIC_Miss
-                                             : IC::kCallIC_Customization_Miss;
-
-  ExternalReference miss = ExternalReference(IC_Utility(id), masm->isolate());
-  __ CallExternalReference(miss, 3);
+  Runtime::FunctionId id = GetICState() == DEFAULT
+                               ? Runtime::kCallIC_Miss
+                               : Runtime::kCallIC_Customization_Miss;
+  __ CallRuntime(id, 3);
 
   // Move result to edi and exit the internal frame.
   __ mov(r1, r0);
@@ -3824,15 +3822,12 @@ void CompareICStub::GenerateKnownObjects(MacroAssembler* masm) {
 void CompareICStub::GenerateMiss(MacroAssembler* masm) {
   {
     // Call the runtime system in a fresh internal frame.
-    ExternalReference miss =
-        ExternalReference(IC_Utility(IC::kCompareIC_Miss), isolate());
-
     FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
     __ Push(r1, r0);
     __ Push(lr, r1, r0);
     __ mov(ip, Operand(Smi::FromInt(op())));
     __ push(ip);
-    __ CallExternalReference(miss, 3);
+    __ CallRuntime(Runtime::kCompareIC_Miss, 3);
     // Compute the entry point of the rewritten stub.
     __ add(r2, r0, Operand(Code::kHeaderSize - kHeapObjectTag));
     // Restore registers.
@@ -4677,8 +4672,9 @@ void VectorKeyedStoreICStub::GenerateImpl(MacroAssembler* masm, bool in_frame) {
 void ProfileEntryHookStub::MaybeCallEntryHook(MacroAssembler* masm) {
   if (masm->isolate()->function_entry_hook() != NULL) {
     ProfileEntryHookStub stub(masm->isolate());
-    int code_size = masm->CallStubSize(&stub) + 2 * Assembler::kInstrSize;
-    PredictableCodeSizeScope predictable(masm, code_size);
+    PredictableCodeSizeScope predictable(masm);
+    predictable.ExpectSize(masm->CallStubSize(&stub) +
+                           2 * Assembler::kInstrSize);
     __ push(lr);
     __ CallStub(&stub);
     __ pop(lr);

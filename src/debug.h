@@ -16,6 +16,7 @@
 #include "src/frames-inl.h"
 #include "src/hashmap.h"
 #include "src/liveedit.h"
+#include "src/runtime/runtime.h"
 #include "src/string-stream.h"
 #include "src/v8threads.h"
 
@@ -493,11 +494,6 @@ class Debug {
            break_id() == id;
   }
 
-  bool RequiresEagerCompilation(bool allows_lazy_without_ctx = false) {
-    return LiveEditFunctionTracker::IsActive(isolate_) ||
-           (is_active() && !allows_lazy_without_ctx);
-  }
-
   // Flags and states.
   DebugScope* debugger_entry() {
     return reinterpret_cast<DebugScope*>(
@@ -708,9 +704,6 @@ class Debug {
 
   DISALLOW_COPY_AND_ASSIGN(Debug);
 };
-
-
-DECLARE_RUNTIME_FUNCTION(Debug_Break);
 
 
 // This scope is used to load and enter the debug context and create a new

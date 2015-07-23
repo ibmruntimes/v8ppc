@@ -44,8 +44,6 @@
 #include "src/base/platform/platform.h"
 #include "src/base/sys-info.h"
 #include "src/basic-block-profiler.h"
-#include "src/d8-debug.h"
-#include "src/debug.h"
 #include "src/snapshot/natives.h"
 #include "src/utils.h"
 #include "src/v8.h"
@@ -169,37 +167,6 @@ class PerIsolateData {
 };
 
 
-LineEditor *LineEditor::current_ = NULL;
-
-
-LineEditor::LineEditor(Type type, const char* name)
-    : type_(type), name_(name) {
-  if (current_ == NULL || current_->type_ < type) current_ = this;
-}
-
-
-class DumbLineEditor: public LineEditor {
- public:
-  explicit DumbLineEditor(Isolate* isolate)
-      : LineEditor(LineEditor::DUMB, "dumb"), isolate_(isolate) { }
-  virtual Local<String> Prompt(const char* prompt);
-
- private:
-  Isolate* isolate_;
-};
-
-
-Local<String> DumbLineEditor::Prompt(const char* prompt) {
-  printf("%s", prompt);
-#if defined(__native_client__)
-  // Native Client libc is used to being embedded in Chrome and
-  // has trouble recognizing when to flush.
-  fflush(stdout);
-#endif
-  return Shell::ReadFromStdin(isolate_);
-}
-
-
 #ifndef V8_SHARED
 CounterMap* Shell::counter_map_;
 base::OS::MemoryMappedFile* Shell::counters_file_ = NULL;
@@ -218,7 +185,6 @@ i::List<SharedArrayBuffer::Contents> Shell::externalized_shared_contents_;
 Global<Context> Shell::evaluation_context_;
 ArrayBuffer::Allocator* Shell::array_buffer_allocator;
 ShellOptions Shell::options;
-const char* Shell::kPrompt = "d8> ";
 base::OnceType Shell::quit_once_ = V8_ONCE_INIT;
 
 #ifndef V8_SHARED
@@ -328,18 +294,9 @@ MaybeLocal<Script> Shell::CompileString(
 bool Shell::ExecuteString(Isolate* isolate, Local<String> source,
                           Local<Value> name, bool print_result,
                           bool report_exceptions, SourceType source_type) {
-#ifndef V8_SHARED
-  bool FLAG_debugger = i::FLAG_debugger;
-#else
-  bool FLAG_debugger = false;
-#endif  // !V8_SHARED
   HandleScope handle_scope(isolate);
   TryCatch try_catch(isolate);
   options.script_executed = true;
-  if (FLAG_debugger) {
-    // When debugging make exceptions appear to be uncaught.
-    try_catch.SetVerbose(true);
-  }
 
   MaybeLocal<Value> maybe_result;
   {
@@ -351,8 +308,7 @@ bool Shell::ExecuteString(Isolate* isolate, Local<String> source,
     if (!Shell::CompileString(isolate, source, name, options.compile_options,
                               source_type).ToLocal(&script)) {
       // Print errors that happened during compilation.
-      if (report_exceptions && !FLAG_debugger)
-        ReportException(isolate, &try_catch);
+      if (report_exceptions) ReportException(isolate, &try_catch);
       return false;
     }
     maybe_result = script->Run(realm);
@@ -363,8 +319,7 @@ bool Shell::ExecuteString(Isolate* isolate, Local<String> source,
   if (!maybe_result.ToLocal(&result)) {
     DCHECK(try_catch.HasCaught());
     // Print errors that happened during execution.
-    if (report_exceptions && !FLAG_debugger)
-      ReportException(isolate, &try_catch);
+    if (report_exceptions) ReportException(isolate, &try_catch);
     return false;
   }
   DCHECK(!try_catch.HasCaught());
@@ -932,69 +887,6 @@ void Shell::ReportException(Isolate* isolate, v8::TryCatch* try_catch) {
 
 
 #ifndef V8_SHARED
-Local<Array> Shell::GetCompletions(Isolate* isolate, Local<String> text,
-                                   Local<String> full) {
-  EscapableHandleScope handle_scope(isolate);
-  v8::Local<v8::Context> utility_context =
-      v8::Local<v8::Context>::New(isolate, utility_context_);
-  v8::Context::Scope context_scope(utility_context);
-  Local<Object> global = utility_context->Global();
-  Local<Value> fun = global->Get(utility_context,
-                                 String::NewFromUtf8(isolate, "GetCompletions",
-                                                     NewStringType::kNormal)
-                                     .ToLocalChecked()).ToLocalChecked();
-  static const int kArgc = 3;
-  v8::Local<v8::Context> evaluation_context =
-      v8::Local<v8::Context>::New(isolate, evaluation_context_);
-  Local<Value> argv[kArgc] = {evaluation_context->Global(), text, full};
-  Local<Value> val = Local<Function>::Cast(fun)
-                         ->Call(utility_context, global, kArgc, argv)
-                         .ToLocalChecked();
-  return handle_scope.Escape(Local<Array>::Cast(val));
-}
-
-
-Local<Object> Shell::DebugMessageDetails(Isolate* isolate,
-                                         Local<String> message) {
-  EscapableHandleScope handle_scope(isolate);
-  v8::Local<v8::Context> context =
-      v8::Local<v8::Context>::New(isolate, utility_context_);
-  v8::Context::Scope context_scope(context);
-  Local<Object> global = context->Global();
-  Local<Value> fun =
-      global->Get(context, String::NewFromUtf8(isolate, "DebugMessageDetails",
-                                               NewStringType::kNormal)
-                               .ToLocalChecked()).ToLocalChecked();
-  static const int kArgc = 1;
-  Local<Value> argv[kArgc] = {message};
-  Local<Value> val = Local<Function>::Cast(fun)
-                         ->Call(context, global, kArgc, argv)
-                         .ToLocalChecked();
-  return handle_scope.Escape(Local<Object>(Local<Object>::Cast(val)));
-}
-
-
-Local<Value> Shell::DebugCommandToJSONRequest(Isolate* isolate,
-                                              Local<String> command) {
-  EscapableHandleScope handle_scope(isolate);
-  v8::Local<v8::Context> context =
-      v8::Local<v8::Context>::New(isolate, utility_context_);
-  v8::Context::Scope context_scope(context);
-  Local<Object> global = context->Global();
-  Local<Value> fun =
-      global->Get(context,
-                  String::NewFromUtf8(isolate, "DebugCommandToJSONRequest",
-                                      NewStringType::kNormal).ToLocalChecked())
-          .ToLocalChecked();
-  static const int kArgc = 1;
-  Local<Value> argv[kArgc] = {command};
-  Local<Value> val = Local<Function>::Cast(fun)
-                         ->Call(context, global, kArgc, argv)
-                         .ToLocalChecked();
-  return handle_scope.Escape(Local<Value>(val));
-}
-
-
 int32_t* Counter::Bind(const char* name, bool is_histogram) {
   int i;
   for (i = 0; i < kMaxNameSize - 1 && name[i]; i++)
@@ -1110,6 +1002,8 @@ void Shell::InstallUtilityScript(Isolate* isolate) {
   HandleScope scope(isolate);
   // If we use the utility context, we have to set the security tokens so that
   // utility, evaluation and debug context can all access each other.
+  Local<ObjectTemplate> global_template = CreateGlobalTemplate(isolate);
+  utility_context_.Reset(isolate, Context::New(isolate, NULL, global_template));
   v8::Local<v8::Context> utility_context =
       v8::Local<v8::Context>::New(isolate, utility_context_);
   v8::Local<v8::Context> evaluation_context =
@@ -1117,22 +1011,6 @@ void Shell::InstallUtilityScript(Isolate* isolate) {
   utility_context->SetSecurityToken(Undefined(isolate));
   evaluation_context->SetSecurityToken(Undefined(isolate));
   v8::Context::Scope context_scope(utility_context);
-
-  if (i::FLAG_debugger) printf("JavaScript debugger enabled\n");
-  // Install the debugger object in the utility scope
-  i::Debug* debug = reinterpret_cast<i::Isolate*>(isolate)->debug();
-  debug->Load();
-  i::Handle<i::Context> debug_context = debug->debug_context();
-  i::Handle<i::JSObject> js_debug
-      = i::Handle<i::JSObject>(debug_context->global_object());
-  utility_context->Global()
-      ->Set(utility_context,
-            String::NewFromUtf8(isolate, "$debug", NewStringType::kNormal)
-                .ToLocalChecked(),
-            Utils::ToLocal(js_debug))
-      .FromJust();
-  debug_context->set_security_token(
-      reinterpret_cast<i::Isolate*>(isolate)->heap()->undefined_value());
 
   // Run the d8 shell utility script in the utility context
   int source_index = i::NativesCollection<i::D8>::GetIndex("d8");
@@ -1160,9 +1038,6 @@ void Shell::InstallUtilityScript(Isolate* isolate) {
       : i::Handle<i::Script>(i::Script::cast(
           i::SharedFunctionInfo::cast(*compiled_script)->script()));
   script_object->set_type(i::Smi::FromInt(i::Script::TYPE_NATIVE));
-
-  // Start the in-process debugger if requested.
-  if (i::FLAG_debugger) v8::Debug::SetDebugEventListener(HandleDebugEvent);
 }
 #endif  // !V8_SHARED
 
@@ -1298,21 +1173,6 @@ void Shell::Initialize(Isolate* isolate) {
 }
 
 
-void Shell::InitializeDebugger(Isolate* isolate) {
-  if (options.test_shell) return;
-#ifndef V8_SHARED
-  HandleScope scope(isolate);
-  Local<ObjectTemplate> global_template = CreateGlobalTemplate(isolate);
-  utility_context_.Reset(isolate,
-                         Context::New(isolate, NULL, global_template));
-  if (utility_context_.IsEmpty()) {
-    printf("Failed to initialize debugger\n");
-    Shell::Exit(1);
-  }
-#endif  // !V8_SHARED
-}
-
-
 Local<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
 #ifndef V8_SHARED
   // This needs to be a critical section since this is not thread-safe
@@ -1371,8 +1231,6 @@ inline bool operator<(const CounterAndKey& lhs, const CounterAndKey& rhs) {
 
 
 void Shell::OnExit(v8::Isolate* isolate) {
-  LineEditor* line_editor = LineEditor::Get();
-  if (line_editor) line_editor->Close();
 #ifndef V8_SHARED
   reinterpret_cast<i::Isolate*>(isolate)->DumpAndResetCompilationStats();
   if (i::FLAG_dump_counters) {
@@ -1530,12 +1388,16 @@ void Shell::RunShell(Isolate* isolate) {
   Local<String> name =
       String::NewFromUtf8(isolate, "(d8)", NewStringType::kNormal)
           .ToLocalChecked();
-  LineEditor* console = LineEditor::Get();
-  printf("V8 version %s [console: %s]\n", V8::GetVersion(), console->name());
-  console->Open(isolate);
+  printf("V8 version %s\n", V8::GetVersion());
   while (true) {
     HandleScope inner_scope(isolate);
-    Local<String> input = console->Prompt(Shell::kPrompt);
+    printf(" d8>");
+#if defined(__native_client__)
+    // Native Client libc is used to being embedded in Chrome and
+    // has trouble recognizing when to flush.
+    fflush(stdout);
+#endif
+    Local<String> input = Shell::ReadFromStdin(isolate);
     if (input.IsEmpty()) break;
     ExecuteString(isolate, input, name, true, true);
   }
@@ -2027,9 +1889,6 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     } else if (strcmp(argv[i], "--dump-counters") == 0) {
       printf("D8 with shared library does not include counters\n");
       return false;
-    } else if (strcmp(argv[i], "--debugger") == 0) {
-      printf("Javascript debugger not included\n");
-      return false;
 #endif  // V8_SHARED
 #ifdef V8_USE_EXTERNAL_STARTUP_DATA
     } else if (strncmp(argv[i], "--natives_blob=", 15) == 0) {
@@ -2103,13 +1962,6 @@ int Shell::RunMain(Isolate* isolate, int argc, char* argv[]) {
     if (options.last_run && options.use_interactive_shell()) {
       // Keep using the same context in the interactive shell.
       evaluation_context_.Reset(isolate, context);
-#ifndef V8_SHARED
-      // If the interactive debugger is enabled make sure to activate
-      // it before running the files passed on the command line.
-      if (i::FLAG_debugger) {
-        InstallUtilityScript(isolate);
-      }
-#endif  // !V8_SHARED
     }
     {
       Context::Scope cscope(context);
@@ -2530,12 +2382,10 @@ int Shell::Main(int argc, char* argv[]) {
   }
 #endif
   Isolate* isolate = Isolate::New(create_params);
-  DumbLineEditor dumb_line_editor(isolate);
   {
     Isolate::Scope scope(isolate);
     Initialize(isolate);
     PerIsolateData data(isolate);
-    InitializeDebugger(isolate);
 
 #ifndef V8_SHARED
     if (options.dump_heap_constants) {
@@ -2574,9 +2424,7 @@ int Shell::Main(int argc, char* argv[]) {
     // executed, but never on --test
     if (options.use_interactive_shell()) {
 #ifndef V8_SHARED
-      if (!i::FLAG_debugger) {
-        InstallUtilityScript(isolate);
-      }
+      InstallUtilityScript(isolate);
 #endif  // !V8_SHARED
       RunShell(isolate);
     }

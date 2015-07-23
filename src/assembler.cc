@@ -158,6 +158,10 @@ AssemblerBase::~AssemblerBase() {
 // -----------------------------------------------------------------------------
 // Implementation of PredictableCodeSizeScope
 
+PredictableCodeSizeScope::PredictableCodeSizeScope(AssemblerBase* assembler)
+    : PredictableCodeSizeScope(assembler, -1) {}
+
+
 PredictableCodeSizeScope::PredictableCodeSizeScope(AssemblerBase* assembler,
                                                    int expected_size)
     : assembler_(assembler),
@@ -1003,11 +1007,6 @@ ExternalReference ExternalReference::isolate_address(Isolate* isolate) {
 }
 
 
-ExternalReference::ExternalReference(const IC_Utility& ic_utility,
-                                     Isolate* isolate)
-  : address_(Redirect(isolate, ic_utility.address())) {}
-
-
 ExternalReference::ExternalReference(StatsCounter* counter)
   : address_(reinterpret_cast<Address>(counter->GetInternalPointer())) {}
 
@@ -1509,14 +1508,15 @@ ExternalReference ExternalReference::mod_two_doubles_operation(
 }
 
 
-ExternalReference ExternalReference::debug_break(Isolate* isolate) {
-  return ExternalReference(Redirect(isolate, FUNCTION_ADDR(Debug_Break)));
-}
-
-
 ExternalReference ExternalReference::debug_step_in_fp_address(
     Isolate* isolate) {
   return ExternalReference(isolate->debug()->step_in_fp_addr());
+}
+
+
+ExternalReference ExternalReference::fixed_typed_array_base_data_offset() {
+  return ExternalReference(reinterpret_cast<void*>(
+      FixedTypedArrayBase::kDataOffset - kHeapObjectTag));
 }
 
 

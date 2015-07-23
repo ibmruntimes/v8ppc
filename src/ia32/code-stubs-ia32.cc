@@ -37,7 +37,7 @@ static void InitializeArrayConstructorDescriptor(
                            JS_FUNCTION_STUB_MODE);
   } else {
     descriptor->Initialize(eax, deopt_handler, constant_stack_parameter_count,
-                           JS_FUNCTION_STUB_MODE, PASS_ARGUMENTS);
+                           JS_FUNCTION_STUB_MODE);
   }
 }
 
@@ -56,7 +56,7 @@ static void InitializeInternalArrayConstructorDescriptor(
                            JS_FUNCTION_STUB_MODE);
   } else {
     descriptor->Initialize(eax, deopt_handler, constant_stack_parameter_count,
-                           JS_FUNCTION_STUB_MODE, PASS_ARGUMENTS);
+                           JS_FUNCTION_STUB_MODE);
   }
 }
 
@@ -688,9 +688,7 @@ void LoadIndexedInterceptorStub::Generate(MacroAssembler* masm) {
   __ push(scratch);   // return address
 
   // Perform tail call to the entry.
-  ExternalReference ref = ExternalReference(
-      IC_Utility(IC::kLoadElementWithInterceptor), masm->isolate());
-  __ TailCallExternalReference(ref, 2, 1);
+  __ TailCallRuntime(Runtime::kLoadElementWithInterceptor, 2, 1);
 
   __ bind(&slow);
   PropertyAccessCompiler::TailCallBuiltin(
@@ -1916,38 +1914,57 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
 }
 
 
-static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub) {
+static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub,
+                                       bool is_super) {
   // eax : number of arguments to the construct function
-  // ebx : Feedback vector
+  // ebx : feedback vector
   // edx : slot in feedback vector (Smi)
   // edi : the function to call
-  FrameScope scope(masm, StackFrame::INTERNAL);
+  // esp[0]: original receiver (for IsSuperConstructorCall)
+  if (is_super) {
+    __ pop(ecx);
+  }
 
-  // Number-of-arguments register must be smi-tagged to call out.
-  __ SmiTag(eax);
-  __ push(eax);
-  __ push(edi);
-  __ push(edx);
-  __ push(ebx);
+  {
+    FrameScope scope(masm, StackFrame::INTERNAL);
 
-  __ CallStub(stub);
+    // Number-of-arguments register must be smi-tagged to call out.
+    __ SmiTag(eax);
+    __ push(eax);
+    __ push(edi);
+    __ push(edx);
+    __ push(ebx);
+    if (is_super) {
+      __ push(ecx);
+    }
 
-  __ pop(ebx);
-  __ pop(edx);
-  __ pop(edi);
-  __ pop(eax);
-  __ SmiUntag(eax);
+    __ CallStub(stub);
+
+    if (is_super) {
+      __ pop(ecx);
+    }
+    __ pop(ebx);
+    __ pop(edx);
+    __ pop(edi);
+    __ pop(eax);
+    __ SmiUntag(eax);
+  }
+
+  if (is_super) {
+    __ push(ecx);
+  }
 }
 
 
-static void GenerateRecordCallTarget(MacroAssembler* masm) {
+static void GenerateRecordCallTarget(MacroAssembler* masm, bool is_super) {
   // Cache the called function in a feedback vector slot.  Cache states
   // are uninitialized, monomorphic (indicated by a JSFunction), and
   // megamorphic.
   // eax : number of arguments to the construct function
-  // ebx : Feedback vector
+  // ebx : feedback vector
   // edx : slot in feedback vector (Smi)
   // edi : the function to call
+  // esp[0]: original receiver (for IsSuperConstructorCall)
   Isolate* isolate = masm->isolate();
   Label initialize, done, miss, megamorphic, not_array_function;
 
@@ -2016,14 +2033,14 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
     // Create an AllocationSite if we don't already have it, store it in the
     // slot.
     CreateAllocationSiteStub create_stub(isolate);
-    CallStubInRecordCallTarget(masm, &create_stub);
+    CallStubInRecordCallTarget(masm, &create_stub, is_super);
     __ jmp(&done);
 
     __ bind(&not_array_function);
   }
 
   CreateWeakCellStub create_stub(isolate);
-  CallStubInRecordCallTarget(masm, &create_stub);
+  CallStubInRecordCallTarget(masm, &create_stub, is_super);
   __ bind(&done);
 }
 
@@ -2163,7 +2180,7 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   __ j(not_equal, &slow);
 
   if (RecordCallTarget()) {
-    GenerateRecordCallTarget(masm);
+    GenerateRecordCallTarget(masm, IsSuperConstructorCall());
 
     if (FLAG_pretenuring_call_new) {
       // Put the AllocationSite from the feedback vector into ebx.
@@ -2205,7 +2222,7 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   // edi: called object
   // eax: number of arguments
   // ecx: object map
-  // esp[0]: original receiver
+  // esp[0]: original receiver (for IsSuperConstructorCall)
   Label do_call;
   __ bind(&slow);
   __ CmpInstanceType(ecx, JS_FUNCTION_PROXY_TYPE);
@@ -2446,11 +2463,10 @@ void CallICStub::GenerateMiss(MacroAssembler* masm) {
   __ push(edx);
 
   // Call the entry.
-  IC::UtilityId id = GetICState() == DEFAULT ? IC::kCallIC_Miss
-                                             : IC::kCallIC_Customization_Miss;
-
-  ExternalReference miss = ExternalReference(IC_Utility(id), masm->isolate());
-  __ CallExternalReference(miss, 3);
+  Runtime::FunctionId id = GetICState() == DEFAULT
+                               ? Runtime::kCallIC_Miss
+                               : Runtime::kCallIC_Customization_Miss;
+  __ CallRuntime(id, 3);
 
   // Move result to edi and exit the internal frame.
   __ mov(edi, eax);
@@ -3905,15 +3921,13 @@ void CompareICStub::GenerateKnownObjects(MacroAssembler* masm) {
 void CompareICStub::GenerateMiss(MacroAssembler* masm) {
   {
     // Call the runtime system in a fresh internal frame.
-    ExternalReference miss = ExternalReference(IC_Utility(IC::kCompareIC_Miss),
-                                               isolate());
     FrameScope scope(masm, StackFrame::INTERNAL);
     __ push(edx);  // Preserve edx and eax.
     __ push(eax);
     __ push(edx);  // And also use them as the arguments.
     __ push(eax);
     __ push(Immediate(Smi::FromInt(op())));
-    __ CallExternalReference(miss, 3);
+    __ CallRuntime(Runtime::kCompareIC_Miss, 3);
     // Compute the entry point of the rewritten stub.
     __ lea(edi, FieldOperand(eax, Code::kHeaderSize));
     __ pop(eax);

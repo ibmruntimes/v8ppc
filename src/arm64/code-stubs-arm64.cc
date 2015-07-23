@@ -36,7 +36,7 @@ static void InitializeArrayConstructorDescriptor(
                            JS_FUNCTION_STUB_MODE);
   } else {
     descriptor->Initialize(x0, deopt_handler, constant_stack_parameter_count,
-                           JS_FUNCTION_STUB_MODE, PASS_ARGUMENTS);
+                           JS_FUNCTION_STUB_MODE);
   }
 }
 
@@ -70,7 +70,7 @@ static void InitializeInternalArrayConstructorDescriptor(
                            JS_FUNCTION_STUB_MODE);
   } else {
     descriptor->Initialize(x0, deopt_handler, constant_stack_parameter_count,
-                           JS_FUNCTION_STUB_MODE, PASS_ARGUMENTS);
+                           JS_FUNCTION_STUB_MODE);
   }
 }
 
@@ -2056,10 +2056,7 @@ void LoadIndexedInterceptorStub::Generate(MacroAssembler* masm) {
 
   // Everything is fine, call runtime.
   __ Push(receiver, key);
-  __ TailCallExternalReference(
-      ExternalReference(IC_Utility(IC::kLoadElementWithInterceptor),
-                        masm->isolate()),
-      2, 1);
+  __ TailCallRuntime(Runtime::kLoadElementWithInterceptor, 2, 1);
 
   __ Bind(&slow);
   PropertyAccessCompiler::TailCallBuiltin(
@@ -2748,18 +2745,26 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
 static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub,
                                        Register argc, Register function,
-                                       Register feedback_vector,
-                                       Register index) {
+                                       Register feedback_vector, Register index,
+                                       Register orig_construct, bool is_super) {
   FrameScope scope(masm, StackFrame::INTERNAL);
 
   // Number-of-arguments register must be smi-tagged to call out.
   __ SmiTag(argc);
-  __ Push(argc, function, feedback_vector, index);
+  if (is_super) {
+    __ Push(argc, function, feedback_vector, index, orig_construct);
+  } else {
+    __ Push(argc, function, feedback_vector, index);
+  }
 
   DCHECK(feedback_vector.Is(x2) && index.Is(x3));
   __ CallStub(stub);
 
-  __ Pop(index, feedback_vector, function, argc);
+  if (is_super) {
+    __ Pop(orig_construct, index, feedback_vector, function, argc);
+  } else {
+    __ Pop(index, feedback_vector, function, argc);
+  }
   __ SmiUntag(argc);
 }
 
@@ -2767,17 +2772,19 @@ static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub,
 static void GenerateRecordCallTarget(MacroAssembler* masm, Register argc,
                                      Register function,
                                      Register feedback_vector, Register index,
-                                     Register scratch1, Register scratch2,
-                                     Register scratch3) {
+                                     Register orig_construct, Register scratch1,
+                                     Register scratch2, Register scratch3,
+                                     bool is_super) {
   ASM_LOCATION("GenerateRecordCallTarget");
   DCHECK(!AreAliased(scratch1, scratch2, scratch3, argc, function,
-                     feedback_vector, index));
+                     feedback_vector, index, orig_construct));
   // Cache the called function in a feedback vector slot. Cache states are
   // uninitialized, monomorphic (indicated by a JSFunction), and megamorphic.
   //  argc :            number of arguments to the construct function
   //  function :        the function to call
   //  feedback_vector : the feedback vector
   //  index :           slot in feedback vector (smi)
+  //  orig_construct :  original constructor (for IsSuperConstructorCall)
   Label initialize, done, miss, megamorphic, not_array_function;
 
   DCHECK_EQ(*TypeFeedbackVector::MegamorphicSentinel(masm->isolate()),
@@ -2856,7 +2863,8 @@ static void GenerateRecordCallTarget(MacroAssembler* masm, Register argc,
     // slot.
     CreateAllocationSiteStub create_stub(masm->isolate());
     CallStubInRecordCallTarget(masm, &create_stub, argc, function,
-                               feedback_vector, index);
+                               feedback_vector, index, orig_construct,
+                               is_super);
     __ B(&done);
 
     __ Bind(&not_array_function);
@@ -2864,7 +2872,7 @@ static void GenerateRecordCallTarget(MacroAssembler* masm, Register argc,
 
   CreateWeakCellStub create_stub(masm->isolate());
   CallStubInRecordCallTarget(masm, &create_stub, argc, function,
-                             feedback_vector, index);
+                             feedback_vector, index, orig_construct, is_super);
   __ Bind(&done);
 }
 
@@ -3004,14 +3012,8 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
                          &slow);
 
   if (RecordCallTarget()) {
-    if (IsSuperConstructorCall()) {
-      __ Push(x4);
-    }
-    // TODO(mstarzinger): Consider tweaking target recording to avoid push/pop.
-    GenerateRecordCallTarget(masm, x0, function, x2, x3, x4, x5, x11);
-    if (IsSuperConstructorCall()) {
-      __ Pop(x4);
-    }
+    GenerateRecordCallTarget(masm, x0, function, x2, x3, x4, x5, x11, x12,
+                             IsSuperConstructorCall());
 
     __ Add(x5, x2, Operand::UntagSmiAndScale(x3, kPointerSizeLog2));
     if (FLAG_pretenuring_call_new) {
@@ -3311,11 +3313,10 @@ void CallICStub::GenerateMiss(MacroAssembler* masm) {
   __ Push(x1, x2, x3);
 
   // Call the entry.
-  IC::UtilityId id = GetICState() == DEFAULT ? IC::kCallIC_Miss
-                                             : IC::kCallIC_Customization_Miss;
-
-  ExternalReference miss = ExternalReference(IC_Utility(id), masm->isolate());
-  __ CallExternalReference(miss, 3);
+  Runtime::FunctionId id = GetICState() == DEFAULT
+                               ? Runtime::kCallIC_Miss
+                               : Runtime::kCallIC_Customization_Miss;
+  __ CallRuntime(id, 3);
 
   // Move result to edi and exit the internal frame.
   __ Mov(x1, x0);
@@ -3756,9 +3757,6 @@ void CompareICStub::GenerateMiss(MacroAssembler* masm) {
 
   Register stub_entry = x11;
   {
-    ExternalReference miss =
-      ExternalReference(IC_Utility(IC::kCompareIC_Miss), isolate());
-
     FrameScope scope(masm, StackFrame::INTERNAL);
     Register op = x10;
     Register left = x1;
@@ -3770,7 +3768,7 @@ void CompareICStub::GenerateMiss(MacroAssembler* masm) {
     __ Push(left, right, op);
 
     // Call the miss handler. This also pops the arguments.
-    __ CallExternalReference(miss, 3);
+    __ CallRuntime(Runtime::kCompareIC_Miss, 3);
 
     // Compute the entry point of the rewritten stub.
     __ Add(stub_entry, x0, Code::kHeaderSize - kHeapObjectTag);

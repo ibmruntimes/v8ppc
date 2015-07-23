@@ -168,16 +168,11 @@ class Scope: public ZoneObject {
   // such a variable again if it was added; otherwise this is a no-op.
   void RemoveUnresolved(VariableProxy* var);
 
-  // Creates a new internal variable in this scope.  The name is only used
-  // for printing and cannot be used to find the variable.  In particular,
-  // the only way to get hold of the temporary is by keeping the Variable*
-  // around.
-  Variable* NewInternal(const AstRawString* name);
-
-  // Creates a new temporary variable in this scope.  The name is only used
-  // for printing and cannot be used to find the variable.  In particular,
-  // the only way to get hold of the temporary is by keeping the Variable*
-  // around.  The name should not clash with a legitimate variable names.
+  // Creates a new temporary variable in this scope's TemporaryScope.  The
+  // name is only used for printing and cannot be used to find the variable.
+  // In particular, the only way to get hold of the temporary is by keeping the
+  // Variable* around.  The name should not clash with a legitimate variable
+  // names.
   Variable* NewTemporary(const AstRawString* name);
 
   // Adds the specific declaration node to the list of declarations in
@@ -483,14 +478,18 @@ class Scope: public ZoneObject {
   // The number of contexts between this and scope; zero if this == scope.
   int ContextChainLength(Scope* scope);
 
-  // Find the script scope.
-  // Used in modules implemenetation to find hosting scope.
-  // TODO(rossberg): is this needed?
-  Scope* ScriptScope();
-
-  // Find the first function, global, or eval scope.  This is the scope
-  // where var declarations will be hoisted to in the implementation.
+  // Find the first function, script, eval or (declaration) block scope. This is
+  // the scope where var declarations will be hoisted to in the implementation.
   Scope* DeclarationScope();
+
+  // Find the first non-block declaration scope. This should be either a script,
+  // function, or eval scope. Same as DeclarationScope(), but skips
+  // declaration "block" scopes. Used for declaring temporaries.
+  Scope* TemporaryScope();
+
+  // Find the first (non-arrow) function or script scope.  This is where
+  // 'this' is bound, and what determines the function kind.
+  Scope* ReceiverScope();
 
   Handle<ScopeInfo> GetScopeInfo(Isolate* isolate);
 

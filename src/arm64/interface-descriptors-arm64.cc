@@ -47,9 +47,6 @@ const Register StoreGlobalViaContextDescriptor::NameRegister() { return x3; }
 const Register StoreGlobalViaContextDescriptor::ValueRegister() { return x0; }
 
 
-const Register ElementTransitionAndStoreDescriptor::MapRegister() { return x3; }
-
-
 const Register InstanceofDescriptor::left() {
   // Object to check (instanceof lhs).
   return x11;
@@ -77,6 +74,14 @@ const Register MathPowIntegerDescriptor::exponent() { return x12; }
 
 const Register GrowArrayElementsDescriptor::ObjectRegister() { return x0; }
 const Register GrowArrayElementsDescriptor::KeyRegister() { return x3; }
+
+
+void StoreTransitionDescriptor::InitializePlatformSpecific(
+    CallInterfaceDescriptorData* data) {
+  Register registers[] = {ReceiverRegister(), NameRegister(), ValueRegister(),
+                          MapRegister()};
+  data->InitializePlatformSpecific(arraysize(registers), registers);
+}
 
 
 void FastNewClosureDescriptor::InitializePlatformSpecific(

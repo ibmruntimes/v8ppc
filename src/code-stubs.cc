@@ -31,7 +31,6 @@ CodeStubDescriptor::CodeStubDescriptor(CodeStub* stub)
       hint_stack_parameter_count_(-1),
       function_mode_(NOT_JS_FUNCTION_STUB_MODE),
       deoptimization_handler_(NULL),
-      handler_arguments_mode_(DONT_PASS_ARGUMENTS),
       miss_handler_(),
       has_miss_handler_(false) {
   stub->InitializeDescriptor(this);
@@ -43,7 +42,6 @@ CodeStubDescriptor::CodeStubDescriptor(Isolate* isolate, uint32_t stub_key)
       hint_stack_parameter_count_(-1),
       function_mode_(NOT_JS_FUNCTION_STUB_MODE),
       deoptimization_handler_(NULL),
-      handler_arguments_mode_(DONT_PASS_ARGUMENTS),
       miss_handler_(),
       has_miss_handler_(false) {
   CodeStub::InitializeDescriptor(isolate, stub_key, this);
@@ -62,11 +60,9 @@ void CodeStubDescriptor::Initialize(Address deoptimization_handler,
 void CodeStubDescriptor::Initialize(Register stack_parameter_count,
                                     Address deoptimization_handler,
                                     int hint_stack_parameter_count,
-                                    StubFunctionMode function_mode,
-                                    HandlerArgumentsMode handler_mode) {
+                                    StubFunctionMode function_mode) {
   Initialize(deoptimization_handler, hint_stack_parameter_count, function_mode);
   stack_parameter_count_ = stack_parameter_count;
-  handler_arguments_mode_ = handler_mode;
 }
 
 
@@ -506,6 +502,7 @@ Handle<Code> TurboFanCodeStub::GenerateCode() {
   CompilationInfo info(&parse_info);
   info.SetFunctionType(GetCallInterfaceDescriptor().GetFunctionType());
   info.MarkAsContextSpecializing();
+  info.MarkAsDeoptimizationEnabled();
   info.SetStub(this);
   return info.GenerateCodeStub();
 }
@@ -624,7 +621,8 @@ void JSEntryStub::FinishCode(Handle<Code> code) {
 
 void LoadDictionaryElementStub::InitializeDescriptor(
     CodeStubDescriptor* descriptor) {
-  descriptor->Initialize(FUNCTION_ADDR(KeyedLoadIC_MissFromStubFailure));
+  descriptor->Initialize(
+      FUNCTION_ADDR(Runtime_KeyedLoadIC_MissFromStubFailure));
 }
 
 
@@ -639,11 +637,13 @@ void KeyedLoadGenericStub::InitializeDescriptor(
 
 void HandlerStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
   if (kind() == Code::STORE_IC) {
-    descriptor->Initialize(FUNCTION_ADDR(StoreIC_MissFromStubFailure));
+    descriptor->Initialize(FUNCTION_ADDR(Runtime_StoreIC_MissFromStubFailure));
   } else if (kind() == Code::KEYED_LOAD_IC) {
-    descriptor->Initialize(FUNCTION_ADDR(KeyedLoadIC_MissFromStubFailure));
+    descriptor->Initialize(
+        FUNCTION_ADDR(Runtime_KeyedLoadIC_MissFromStubFailure));
   } else if (kind() == Code::KEYED_STORE_IC) {
-    descriptor->Initialize(FUNCTION_ADDR(KeyedStoreIC_MissFromStubFailure));
+    descriptor->Initialize(
+        FUNCTION_ADDR(Runtime_KeyedStoreIC_MissFromStubFailure));
   }
 }
 
@@ -660,13 +660,15 @@ CallInterfaceDescriptor HandlerStub::GetCallInterfaceDescriptor() const {
 
 void StoreFastElementStub::InitializeDescriptor(
     CodeStubDescriptor* descriptor) {
-  descriptor->Initialize(FUNCTION_ADDR(KeyedStoreIC_MissFromStubFailure));
+  descriptor->Initialize(
+      FUNCTION_ADDR(Runtime_KeyedStoreIC_MissFromStubFailure));
 }
 
 
 void ElementsTransitionAndStoreStub::InitializeDescriptor(
     CodeStubDescriptor* descriptor) {
-  descriptor->Initialize(FUNCTION_ADDR(ElementsTransitionAndStoreIC_Miss));
+  descriptor->Initialize(
+      FUNCTION_ADDR(Runtime_ElementsTransitionAndStoreIC_Miss));
 }
 
 
@@ -753,29 +755,30 @@ void AllocateHeapNumberStub::InitializeDescriptor(
 
 
 void CompareNilICStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
-  descriptor->Initialize(FUNCTION_ADDR(CompareNilIC_Miss));
-  descriptor->SetMissHandler(
-      ExternalReference(IC_Utility(IC::kCompareNilIC_Miss), isolate()));
+  descriptor->Initialize(FUNCTION_ADDR(Runtime_CompareNilIC_Miss));
+  descriptor->SetMissHandler(ExternalReference(
+      Runtime::FunctionForId(Runtime::kCompareNilIC_Miss), isolate()));
 }
 
 
 void ToBooleanStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
-  descriptor->Initialize(FUNCTION_ADDR(ToBooleanIC_Miss));
-  descriptor->SetMissHandler(
-      ExternalReference(IC_Utility(IC::kToBooleanIC_Miss), isolate()));
+  descriptor->Initialize(FUNCTION_ADDR(Runtime_ToBooleanIC_Miss));
+  descriptor->SetMissHandler(ExternalReference(
+      Runtime::FunctionForId(Runtime::kToBooleanIC_Miss), isolate()));
 }
 
 
 void BinaryOpICStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
-  descriptor->Initialize(FUNCTION_ADDR(BinaryOpIC_Miss));
-  descriptor->SetMissHandler(
-      ExternalReference(IC_Utility(IC::kBinaryOpIC_Miss), isolate()));
+  descriptor->Initialize(FUNCTION_ADDR(Runtime_BinaryOpIC_Miss));
+  descriptor->SetMissHandler(ExternalReference(
+      Runtime::FunctionForId(Runtime::kBinaryOpIC_Miss), isolate()));
 }
 
 
 void BinaryOpWithAllocationSiteStub::InitializeDescriptor(
     CodeStubDescriptor* descriptor) {
-  descriptor->Initialize(FUNCTION_ADDR(BinaryOpIC_MissWithAllocationSite));
+  descriptor->Initialize(
+      FUNCTION_ADDR(Runtime_BinaryOpIC_MissWithAllocationSite));
 }
 
 

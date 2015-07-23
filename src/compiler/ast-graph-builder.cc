@@ -449,9 +449,9 @@ AstGraphBuilder::AstGraphBuilder(Zone* local_zone, CompilationInfo* info,
       liveness_analyzer_(static_cast<size_t>(info->scope()->num_stack_slots()),
                          local_zone),
       frame_state_function_info_(common()->CreateFrameStateFunctionInfo(
-          FrameStateType::kJavaScriptFunction,
-          info->num_parameters_including_this(),
-          info->scope()->num_stack_slots(), info->shared_info())),
+          FrameStateType::kJavaScriptFunction, info->num_parameters() + 1,
+          info->scope()->num_stack_slots(), info->shared_info(),
+          CALL_MAINTAINS_NATIVE_CONTEXT)),
       js_type_feedback_(js_type_feedback) {
   InitializeAstVisitor(info->isolate(), local_zone);
 }
@@ -519,6 +519,13 @@ bool AstGraphBuilder::CreateGraph(bool stack_check) {
 
   // Initialize control scope.
   ControlScope control(this);
+
+  // TODO(mstarzinger): For now we cannot assume that the {this} parameter is
+  // not {the_hole}, because for derived classes {this} has a TDZ and the
+  // JSConstructStubForDerived magically passes {the_hole} as a receiver.
+  if (scope->has_this_declaration() && scope->receiver()->is_const_mode()) {
+    env.RawParameterBind(0, jsgraph()->TheHoleConstant());
+  }
 
   // Build receiver check for sloppy mode if necessary.
   // TODO(mstarzinger/verwaest): Should this be moved back into the CallIC?
@@ -1500,7 +1507,8 @@ void AstGraphBuilder::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
 
 
 void AstGraphBuilder::VisitDebuggerStatement(DebuggerStatement* stmt) {
-  Node* node = NewNode(javascript()->CallRuntime(Runtime::kDebugBreak, 0));
+  Node* node =
+      NewNode(javascript()->CallRuntime(Runtime::kHandleDebuggerStatement, 0));
   PrepareFrameState(node, stmt->DebugBreakId());
   environment()->MarkAllLocalsLive();
 }
@@ -3352,12 +3360,9 @@ Node* AstGraphBuilder::BuildVariableLoad(Variable* variable,
         }
       } else if (mode == LET || mode == CONST) {
         // Perform check for uninitialized let/const variables.
-        // TODO(mstarzinger): For now we cannot use the below optimization for
-        // the {this} parameter, because JSConstructStubForDerived magically
-        // passes {the_hole} as a receiver.
         if (value->op() == the_hole->op()) {
           value = BuildThrowReferenceError(variable, bailout_id);
-        } else if (value->opcode() == IrOpcode::kPhi || variable->is_this()) {
+        } else if (value->opcode() == IrOpcode::kPhi) {
           value = BuildHoleCheckThenThrow(value, variable, value, bailout_id);
         }
       }

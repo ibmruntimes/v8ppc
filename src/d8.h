@@ -93,26 +93,6 @@ class CounterMap {
 #endif  // !V8_SHARED
 
 
-class LineEditor {
- public:
-  enum Type { DUMB = 0, READLINE = 1 };
-  LineEditor(Type type, const char* name);
-  virtual ~LineEditor() { }
-
-  virtual Local<String> Prompt(const char* prompt) = 0;
-  virtual bool Open(Isolate* isolate) { return true; }
-  virtual bool Close() { return true; }
-  virtual void AddHistory(const char* str) { }
-
-  const char* name() { return name_; }
-  static LineEditor* Get() { return current_; }
- private:
-  Type type_;
-  const char* name_;
-  static LineEditor* current_;
-};
-
-
 class SourceGroup {
  public:
   SourceGroup() :
@@ -380,8 +360,6 @@ class Shell : public i::AllStatic {
                                             const SerializationData& data,
                                             int* offset);
   static void CleanupWorkers();
-  static Local<Array> GetCompletions(Isolate* isolate, Local<String> text,
-                                     Local<String> full);
   static int* LookupCounter(const char* name);
   static void* CreateHistogram(const char* name,
                                int min,
@@ -389,11 +367,6 @@ class Shell : public i::AllStatic {
                                size_t buckets);
   static void AddHistogramSample(void* histogram, int sample);
   static void MapCounters(v8::Isolate* isolate, const char* name);
-
-  static Local<Object> DebugMessageDetails(Isolate* isolate,
-                                           Local<String> message);
-  static Local<Value> DebugCommandToJSONRequest(Isolate* isolate,
-                                                Local<String> command);
 
   static void PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& args);
 #endif  // !V8_SHARED
@@ -492,7 +465,6 @@ class Shell : public i::AllStatic {
   static void InstallUtilityScript(Isolate* isolate);
 #endif  // !V8_SHARED
   static void Initialize(Isolate* isolate);
-  static void InitializeDebugger(Isolate* isolate);
   static void RunShell(Isolate* isolate);
   static bool SetOptions(int argc, char* argv[]);
   static Local<ObjectTemplate> CreateGlobalTemplate(Isolate* isolate);
