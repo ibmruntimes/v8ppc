@@ -14,7 +14,7 @@
 #include "src/debug.h"
 #include "src/deoptimizer.h"
 #include "src/execution.h"
-#include "src/full-codegen.h"
+#include "src/full-codegen/full-codegen.h"
 #include "src/global-handles.h"
 #include "src/list.h"
 #include "src/log.h"
@@ -1461,7 +1461,7 @@ bool Debug::PrepareFunctionForBreakPoints(Handle<SharedFunctionInfo> shared) {
         if (function->code()->kind() == Code::OPTIMIZED_FUNCTION) {
           Deoptimizer::DeoptimizeFunction(function);
         }
-        functions.Add(handle(function));
+        if (function->shared() == *shared) functions.Add(handle(function));
       } else if (include_generators && obj->IsJSGeneratorObject()) {
         JSGeneratorObject* generator_obj = JSGeneratorObject::cast(obj);
         if (!generator_obj->is_suspended()) continue;

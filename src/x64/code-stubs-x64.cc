@@ -3901,12 +3901,12 @@ void NameDictionaryLookupStub::GenerateNegativeLookup(MacroAssembler* masm,
             Immediate(name->Hash() + NameDictionary::GetProbeOffset(i)));
 
     // Scale the index by multiplying by the entry size.
-    DCHECK(NameDictionary::kEntrySize == 3);
+    STATIC_ASSERT(NameDictionary::kEntrySize == 3);
     __ leap(index, Operand(index, index, times_2, 0));  // index *= 3.
 
     Register entity_name = r0;
     // Having undefined at this place means the name is not contained.
-    DCHECK_EQ(kSmiTagSize, 1);
+    STATIC_ASSERT(kSmiTagSize == 1);
     __ movp(entity_name, Operand(properties,
                                  index,
                                  times_pointer_size,
@@ -3972,7 +3972,7 @@ void NameDictionaryLookupStub::GeneratePositiveLookup(MacroAssembler* masm,
     __ andp(r1, r0);
 
     // Scale the index by multiplying by the entry size.
-    DCHECK(NameDictionary::kEntrySize == 3);
+    STATIC_ASSERT(NameDictionary::kEntrySize == 3);
     __ leap(r1, Operand(r1, r1, times_2, 0));  // r1 = r1 * 3
 
     // Check if the key is identical to the name.
@@ -4034,7 +4034,7 @@ void NameDictionaryLookupStub::Generate(MacroAssembler* masm) {
     __ andp(scratch, Operand(rsp, 0));
 
     // Scale the index by multiplying by the entry size.
-    DCHECK(NameDictionary::kEntrySize == 3);
+    STATIC_ASSERT(NameDictionary::kEntrySize == 3);
     __ leap(index(), Operand(scratch, scratch, times_2, 0));  // index *= 3.
 
     // Having undefined at this place means the name is not contained.
@@ -4731,12 +4731,12 @@ static void CreateArrayDispatchOneArgument(MacroAssembler* masm,
 
   Label normal_sequence;
   if (mode == DONT_OVERRIDE) {
-    DCHECK(FAST_SMI_ELEMENTS == 0);
-    DCHECK(FAST_HOLEY_SMI_ELEMENTS == 1);
-    DCHECK(FAST_ELEMENTS == 2);
-    DCHECK(FAST_HOLEY_ELEMENTS == 3);
-    DCHECK(FAST_DOUBLE_ELEMENTS == 4);
-    DCHECK(FAST_HOLEY_DOUBLE_ELEMENTS == 5);
+    STATIC_ASSERT(FAST_SMI_ELEMENTS == 0);
+    STATIC_ASSERT(FAST_HOLEY_SMI_ELEMENTS == 1);
+    STATIC_ASSERT(FAST_ELEMENTS == 2);
+    STATIC_ASSERT(FAST_HOLEY_ELEMENTS == 3);
+    STATIC_ASSERT(FAST_DOUBLE_ELEMENTS == 4);
+    STATIC_ASSERT(FAST_HOLEY_DOUBLE_ELEMENTS == 5);
 
     // is the low bit set? If so, we are holey and that is good.
     __ testb(rdx, Immediate(1));
@@ -5030,6 +5030,160 @@ void InternalArrayConstructorStub::Generate(MacroAssembler* masm) {
 
   __ bind(&fast_elements_case);
   GenerateCase(masm, FAST_ELEMENTS);
+}
+
+
+void LoadGlobalViaContextStub::Generate(MacroAssembler* masm) {
+  Register context_reg = rsi;
+  Register slot_reg = rbx;
+  Register name_reg = rcx;
+  Register result_reg = rax;
+  Label slow_case;
+
+  // Go up context chain to the script context.
+  for (int i = 0; i < depth(); ++i) {
+    __ movp(rdi, ContextOperand(context_reg, Context::PREVIOUS_INDEX));
+    context_reg = rdi;
+  }
+
+  // Load the PropertyCell value at the specified slot.
+  __ movp(result_reg, ContextOperand(context_reg, slot_reg));
+  __ movp(result_reg, FieldOperand(result_reg, PropertyCell::kValueOffset));
+
+  // Check that value is not the_hole.
+  __ CompareRoot(result_reg, Heap::kTheHoleValueRootIndex);
+  __ j(equal, &slow_case, Label::kNear);
+  __ Ret();
+
+  // Fallback to the runtime.
+  __ bind(&slow_case);
+  __ Integer32ToSmi(slot_reg, slot_reg);
+  __ PopReturnAddressTo(kScratchRegister);
+  __ Push(slot_reg);
+  __ Push(name_reg);
+  __ Push(kScratchRegister);
+  __ TailCallRuntime(Runtime::kLoadGlobalViaContext, 2, 1);
+}
+
+
+void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
+  Register context_reg = rsi;
+  Register slot_reg = rbx;
+  Register name_reg = rcx;
+  Register value_reg = rax;
+  Register cell_reg = r8;
+  Register cell_details_reg = rdx;
+  Register cell_value_reg = r9;
+  Label fast_heapobject_case, fast_smi_case, slow_case;
+
+  if (FLAG_debug_code) {
+    __ CompareRoot(value_reg, Heap::kTheHoleValueRootIndex);
+    __ Check(not_equal, kUnexpectedValue);
+    __ AssertName(name_reg);
+  }
+
+  // Go up context chain to the script context.
+  for (int i = 0; i < depth(); ++i) {
+    __ movp(rdi, ContextOperand(context_reg, Context::PREVIOUS_INDEX));
+    context_reg = rdi;
+  }
+
+  // Load the PropertyCell at the specified slot.
+  __ movp(cell_reg, ContextOperand(context_reg, slot_reg));
+
+  // Load PropertyDetails for the cell (actually only the cell_type and kind).
+  __ SmiToInteger32(cell_details_reg,
+                    FieldOperand(cell_reg, PropertyCell::kDetailsOffset));
+  __ andl(cell_details_reg,
+          Immediate(PropertyDetails::PropertyCellTypeField::kMask |
+                    PropertyDetails::KindField::kMask));
+
+
+  // Check if PropertyCell holds mutable data.
+  Label not_mutable_data;
+  __ cmpl(cell_details_reg,
+          Immediate(PropertyDetails::PropertyCellTypeField::encode(
+                        PropertyCellType::kMutable) |
+                    PropertyDetails::KindField::encode(kData)));
+  __ j(not_equal, &not_mutable_data);
+  __ JumpIfSmi(value_reg, &fast_smi_case);
+  __ bind(&fast_heapobject_case);
+  __ movp(FieldOperand(cell_reg, PropertyCell::kValueOffset), value_reg);
+  __ RecordWriteField(cell_reg, PropertyCell::kValueOffset, value_reg,
+                      cell_value_reg, kDontSaveFPRegs, EMIT_REMEMBERED_SET,
+                      OMIT_SMI_CHECK);
+  // RecordWriteField clobbers the value register, so we need to reload.
+  __ movp(value_reg, FieldOperand(cell_reg, PropertyCell::kValueOffset));
+  __ Ret();
+  __ bind(&not_mutable_data);
+
+  // Check if PropertyCell value matches the new value (relevant for Constant,
+  // ConstantType and Undefined cells).
+  Label not_same_value;
+  __ movp(cell_value_reg, FieldOperand(cell_reg, PropertyCell::kValueOffset));
+  __ cmpp(cell_value_reg, value_reg);
+  __ j(not_equal, &not_same_value,
+       FLAG_debug_code ? Label::kFar : Label::kNear);
+  if (FLAG_debug_code) {
+    Label done;
+    // This can only be true for Constant, ConstantType and Undefined cells,
+    // because we never store the_hole via this stub.
+    __ cmpl(cell_details_reg,
+            Immediate(PropertyDetails::PropertyCellTypeField::encode(
+                          PropertyCellType::kConstant) |
+                      PropertyDetails::KindField::encode(kData)));
+    __ j(equal, &done);
+    __ cmpl(cell_details_reg,
+            Immediate(PropertyDetails::PropertyCellTypeField::encode(
+                          PropertyCellType::kConstantType) |
+                      PropertyDetails::KindField::encode(kData)));
+    __ j(equal, &done);
+    __ cmpl(cell_details_reg,
+            Immediate(PropertyDetails::PropertyCellTypeField::encode(
+                          PropertyCellType::kUndefined) |
+                      PropertyDetails::KindField::encode(kData)));
+    __ Check(equal, kUnexpectedValue);
+    __ bind(&done);
+  }
+  __ Ret();
+  __ bind(&not_same_value);
+
+  // Check if PropertyCell contains data with constant type.
+  __ cmpl(cell_details_reg,
+          Immediate(PropertyDetails::PropertyCellTypeField::encode(
+                        PropertyCellType::kConstantType) |
+                    PropertyDetails::KindField::encode(kData)));
+  __ j(not_equal, &slow_case, Label::kNear);
+
+  // Now either both old and new values must be SMIs or both must be heap
+  // objects with same map.
+  Label value_is_heap_object;
+  __ JumpIfNotSmi(value_reg, &value_is_heap_object, Label::kNear);
+  __ JumpIfNotSmi(cell_value_reg, &slow_case, Label::kNear);
+  // Old and new values are SMIs, no need for a write barrier here.
+  __ bind(&fast_smi_case);
+  __ movp(FieldOperand(cell_reg, PropertyCell::kValueOffset), value_reg);
+  __ Ret();
+  __ bind(&value_is_heap_object);
+  __ JumpIfSmi(cell_value_reg, &slow_case, Label::kNear);
+  Register cell_value_map_reg = cell_value_reg;
+  __ movp(cell_value_map_reg,
+          FieldOperand(cell_value_reg, HeapObject::kMapOffset));
+  __ cmpp(cell_value_map_reg, FieldOperand(value_reg, HeapObject::kMapOffset));
+  __ j(equal, &fast_heapobject_case);
+
+  // Fallback to the runtime.
+  __ bind(&slow_case);
+  __ Integer32ToSmi(slot_reg, slot_reg);
+  __ PopReturnAddressTo(kScratchRegister);
+  __ Push(slot_reg);
+  __ Push(name_reg);
+  __ Push(value_reg);
+  __ Push(kScratchRegister);
+  __ TailCallRuntime(is_strict(language_mode())
+                         ? Runtime::kStoreGlobalViaContext_Strict
+                         : Runtime::kStoreGlobalViaContext_Sloppy,
+                     3, 1);
 }
 
 
