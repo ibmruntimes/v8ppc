@@ -59,7 +59,6 @@ bool FullCodeGenerator::MakeCode(CompilationInfo* info) {
   cgen.PopulateHandlerTable(code);
   code->set_has_deoptimization_support(info->HasDeoptimizationSupport());
   code->set_has_reloc_info_for_serialization(info->will_serialize());
-  code->set_compiled_optimizable(info->IsOptimizable());
   code->set_allow_osr_at_loop_nesting_level(0);
   code->set_profiler_ticks(0);
   code->set_back_edge_table_offset(table_offset);
@@ -1310,9 +1309,11 @@ void FullCodeGenerator::VisitClassLiteral(ClassLiteral* lit) {
 
     if (lit->scope() != NULL) {
       DCHECK_NOT_NULL(lit->class_variable_proxy());
-      FeedbackVectorICSlot slot = FLAG_vector_stores
-                                      ? lit->GetNthSlot(store_slot_index++)
-                                      : FeedbackVectorICSlot::Invalid();
+      FeedbackVectorICSlot slot =
+          FLAG_vector_stores &&
+                  lit->class_variable_proxy()->var()->IsUnallocated()
+              ? lit->GetNthSlot(store_slot_index++)
+              : FeedbackVectorICSlot::Invalid();
       EmitVariableAssignment(lit->class_variable_proxy()->var(),
                              Token::INIT_CONST, slot);
     }

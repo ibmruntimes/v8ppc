@@ -11618,8 +11618,7 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
 
 
 void BytecodeArray::Disassemble(std::ostream& os) {
-  os << "Frame size " << frame_size()
-     << ", number of locals = " << number_of_locals() << "\n";
+  os << "Frame size " << frame_size() << "\n";
   Vector<char> buf = Vector<char>::New(50);
   int bytecode_size = 0;
   for (int i = 0; i < this->length(); i += bytecode_size) {
@@ -11635,7 +11634,7 @@ void BytecodeArray::Disassemble(std::ostream& os) {
     for (int j = bytecode_size; j < interpreter::Bytecodes::kMaximumSize; j++) {
       os << "   ";
     }
-    os << bytecode;
+    os << bytecode << "\n";
   }
 }
 
@@ -15888,7 +15887,9 @@ void PropertyCell::UpdateCell(Handle<GlobalDictionary> dictionary, int entry,
   const PropertyDetails original_details = cell->property_details();
   // Data accesses could be cached in ics or optimized code.
   bool invalidate =
-      original_details.kind() == kData && details.kind() == kAccessor;
+      (original_details.kind() == kData && details.kind() == kAccessor) ||
+      ((original_details.attributes() & READ_ONLY) !=
+       (details.attributes() & READ_ONLY));
   int index = original_details.dictionary_index();
   PropertyCellType old_type = original_details.cell_type();
   // Preserve the enumeration index unless the property was deleted or never

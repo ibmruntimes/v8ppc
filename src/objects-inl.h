@@ -3639,8 +3639,17 @@ void BytecodeArray::set(int index, byte value) {
 }
 
 
-INT_ACCESSORS(BytecodeArray, frame_size, kFrameSizeOffset)
-INT_ACCESSORS(BytecodeArray, number_of_locals, kNumberOfLocalsOffset)
+void BytecodeArray::set_frame_size(int frame_size) {
+  // We need at least one stack slot for the return register.
+  DCHECK_GE(frame_size, kPointerSize);
+  DCHECK(IsAligned(frame_size, static_cast<unsigned>(kPointerSize)));
+  WRITE_INT_FIELD(this, kFrameSizeOffset, frame_size);
+}
+
+
+int BytecodeArray::frame_size() const {
+  return READ_INT_FIELD(this, kFrameSizeOffset);
+}
 
 
 Address BytecodeArray::GetFirstBytecodeAddress() {
@@ -4563,21 +4572,6 @@ void Code::set_has_debug_break_slots(bool value) {
   DCHECK_EQ(FUNCTION, kind());
   unsigned flags = READ_UINT32_FIELD(this, kFullCodeFlags);
   flags = FullCodeFlagsHasDebugBreakSlotsField::update(flags, value);
-  WRITE_UINT32_FIELD(this, kFullCodeFlags, flags);
-}
-
-
-bool Code::is_compiled_optimizable() {
-  DCHECK_EQ(FUNCTION, kind());
-  unsigned flags = READ_UINT32_FIELD(this, kFullCodeFlags);
-  return FullCodeFlagsIsCompiledOptimizable::decode(flags);
-}
-
-
-void Code::set_compiled_optimizable(bool value) {
-  DCHECK_EQ(FUNCTION, kind());
-  unsigned flags = READ_UINT32_FIELD(this, kFullCodeFlags);
-  flags = FullCodeFlagsIsCompiledOptimizable::update(flags, value);
   WRITE_UINT32_FIELD(this, kFullCodeFlags, flags);
 }
 

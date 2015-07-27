@@ -484,8 +484,10 @@ class Scope: public ZoneObject {
 
   // Find the first non-block declaration scope. This should be either a script,
   // function, or eval scope. Same as DeclarationScope(), but skips
-  // declaration "block" scopes. Used for declaring temporaries.
-  Scope* TemporaryScope();
+  // declaration "block" scopes. Used for differentiating associated
+  // function objects (i.e., the scope for which a function prologue allocates
+  // a context) or declaring temporaries.
+  Scope* ClosureScope();
 
   // Find the first (non-arrow) function or script scope.  This is where
   // 'this' is bound, and what determines the function kind.
@@ -553,8 +555,6 @@ class Scope: public ZoneObject {
   // variables may be implicitly 'declared' by being used (possibly in
   // an inner scope) with no intervening with statements or eval calls.
   VariableMap variables_;
-  // Compiler-allocated (user-invisible) internals.
-  ZoneList<Variable*> internals_;
   // Compiler-allocated (user-invisible) temporaries.
   ZoneList<Variable*> temps_;
   // Parameter list in source order.
@@ -629,7 +629,7 @@ class Scope: public ZoneObject {
   // The number of modules (including nested ones).
   int num_modules_;
 
-  // For module scopes, the host scope's internal variable binding this module.
+  // For module scopes, the host scope's temporary variable binding this module.
   Variable* module_var_;
 
   // Rest parameter

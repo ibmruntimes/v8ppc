@@ -191,6 +191,7 @@ DEFINE_BOOL(legacy_const, true, "legacy semantics for const in sloppy mode")
   V(harmony_regexps, "harmony regular expression extensions")   \
   V(harmony_proxies, "harmony proxies")                         \
   V(harmony_sloppy, "harmony features in sloppy mode")          \
+  V(harmony_sloppy_let, "harmony let in sloppy mode")           \
   V(harmony_unicode_regexps, "harmony unicode regexps")         \
   V(harmony_reflect, "harmony Reflect API")                     \
   V(harmony_destructuring, "harmony destructuring")             \
@@ -240,6 +241,7 @@ HARMONY_SHIPPING(FLAG_SHIPPING_FEATURES)
 
 // Feature dependencies.
 DEFINE_IMPLICATION(harmony_unicode_regexps, harmony_unicode)
+DEFINE_IMPLICATION(harmony_sloppy_let, harmony_sloppy)
 
 
 // Flags for experimental implementation features.
@@ -675,7 +677,7 @@ DEFINE_BOOL(use_idle_notification, true,
 DEFINE_BOOL(use_ic, true, "use inline caching")
 DEFINE_BOOL(trace_ic, false, "trace inline cache state transitions")
 DEFINE_BOOL(vector_stores, false, "use vectors for store ics")
-DEFINE_BOOL(global_var_shortcuts, false, "use ic-less global loads and stores")
+DEFINE_BOOL(global_var_shortcuts, true, "use ic-less global loads and stores")
 
 // macro-assembler-ia32.cc
 DEFINE_BOOL(native_code_counters, false,

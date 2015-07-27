@@ -4254,8 +4254,6 @@ class BytecodeArray : public FixedArrayBase {
   // Accessors for frame size and the number of locals
   inline int frame_size() const;
   inline void set_frame_size(int value);
-  inline int number_of_locals() const;
-  inline void set_number_of_locals(int value);
 
   DECLARE_CAST(BytecodeArray)
 
@@ -4269,8 +4267,7 @@ class BytecodeArray : public FixedArrayBase {
 
   // Layout description.
   static const int kFrameSizeOffset = FixedArrayBase::kHeaderSize;
-  static const int kNumberOfLocalsOffset = kFrameSizeOffset + kIntSize;
-  static const int kHeaderSize = kNumberOfLocalsOffset + kIntSize;
+  static const int kHeaderSize = kFrameSizeOffset + kIntSize;
 
   static const int kAlignedSize = OBJECT_POINTER_ALIGN(kHeaderSize);
 
@@ -5060,11 +5057,6 @@ class Code: public HeapObject {
   inline bool has_debug_break_slots();
   inline void set_has_debug_break_slots(bool value);
 
-  // [compiled_with_optimizing]: For FUNCTION kind, tells if it has
-  // been compiled with IsOptimizing set to true.
-  inline bool is_compiled_optimizable();
-  inline void set_compiled_optimizable(bool value);
-
   // [has_reloc_info_for_serialization]: For FUNCTION kind, tells if its
   // reloc info includes runtime and external references to support
   // serialization/deserialization.
@@ -5359,9 +5351,9 @@ class Code: public HeapObject {
   class FullCodeFlagsHasDeoptimizationSupportField:
       public BitField<bool, 0, 1> {};  // NOLINT
   class FullCodeFlagsHasDebugBreakSlotsField: public BitField<bool, 1, 1> {};
-  class FullCodeFlagsIsCompiledOptimizable: public BitField<bool, 2, 1> {};
   class FullCodeFlagsHasRelocInfoForSerialization
-      : public BitField<bool, 3, 1> {};
+      : public BitField<bool, 2, 1> {};
+  // Bit 3 in this bitfield is unused.
   class ProfilerTicksField : public BitField<int, 4, 28> {};
 
   // Flags layout.  BitField<type, shift, size>.
