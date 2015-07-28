@@ -5324,8 +5324,6 @@ void LoadGlobalViaContextStub::Generate(MacroAssembler* masm) {
   Register context = cp;
   Register result = r3;
   Register slot = r5;
-  Register name = r6;
-  Label slow_case;
 
   // Go up the context chain to the script context.
   for (int i = 0; i < depth(); ++i) {
@@ -5344,23 +5342,21 @@ void LoadGlobalViaContextStub::Generate(MacroAssembler* masm) {
   __ Ret(ne);
 
   // Fallback to runtime.
-  __ bind(&slow_case);
   __ SmiTag(slot);
-  __ Push(slot, name);
-  __ TailCallRuntime(Runtime::kLoadGlobalViaContext, 2, 1);
+  __ Push(slot);
+  __ TailCallRuntime(Runtime::kLoadGlobalViaContext, 1, 1);
 }
 
 
 void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   Register value = r3;
   Register slot = r5;
-  Register name = r6;
 
   Register cell = r4;
-  Register cell_details = r7;
-  Register cell_value = r8;
-  Register cell_value_map = r9;
-  Register scratch = r10;
+  Register cell_details = r6;
+  Register cell_value = r7;
+  Register cell_value_map = r8;
+  Register scratch = r9;
 
   Register context = cp;
   Register context_temp = cell;
@@ -5370,7 +5366,6 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   if (FLAG_debug_code) {
     __ CompareRoot(value, Heap::kTheHoleValueRootIndex);
     __ Check(ne, kUnexpectedValue);
-    __ AssertName(name);
   }
 
   // Go up the context chain to the script context.
@@ -5404,8 +5399,8 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   __ StoreP(value, FieldMemOperand(cell, PropertyCell::kValueOffset), r0);
   // RecordWriteField clobbers the value register, so we copy it before the
   // call.
-  __ mr(r7, value);
-  __ RecordWriteField(cell, PropertyCell::kValueOffset, r7, scratch,
+  __ mr(r6, value);
+  __ RecordWriteField(cell, PropertyCell::kValueOffset, r6, scratch,
                       kLRHasNotBeenSaved, kDontSaveFPRegs, EMIT_REMEMBERED_SET,
                       OMIT_SMI_CHECK);
   __ Ret();
@@ -5474,11 +5469,11 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   // Fallback to runtime.
   __ bind(&slow_case);
   __ SmiTag(slot);
-  __ Push(slot, name, value);
+  __ Push(slot, value);
   __ TailCallRuntime(is_strict(language_mode())
                          ? Runtime::kStoreGlobalViaContext_Strict
                          : Runtime::kStoreGlobalViaContext_Sloppy,
-                     3, 1);
+                     2, 1);
 }
 
 
