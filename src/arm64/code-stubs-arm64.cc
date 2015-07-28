@@ -5498,7 +5498,6 @@ void LoadGlobalViaContextStub::Generate(MacroAssembler* masm) {
   Register context = cp;
   Register result = x0;
   Register slot = x2;
-  Register name = x3;
   Label slow_case;
 
   // Go up the context chain to the script context.
@@ -5519,8 +5518,8 @@ void LoadGlobalViaContextStub::Generate(MacroAssembler* masm) {
   // Fallback to runtime.
   __ Bind(&slow_case);
   __ SmiTag(slot);
-  __ Push(slot, name);
-  __ TailCallRuntime(Runtime::kLoadGlobalViaContext, 2, 1);
+  __ Push(slot);
+  __ TailCallRuntime(Runtime::kLoadGlobalViaContext, 1, 1);
 }
 
 
@@ -5528,7 +5527,6 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   Register context = cp;
   Register value = x0;
   Register slot = x2;
-  Register name = x3;
   Register context_temp = x10;
   Register cell = x10;
   Register cell_details = x11;
@@ -5540,7 +5538,6 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   if (FLAG_debug_code) {
     __ CompareRoot(value, Heap::kTheHoleValueRootIndex);
     __ Check(ne, kUnexpectedValue);
-    __ AssertName(name);
   }
 
   // Go up the context chain to the script context.
@@ -5553,16 +5550,13 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   __ Add(cell, context, Operand(slot, LSL, kPointerSizeLog2));
   __ Ldr(cell, ContextMemOperand(cell));
 
-  // Check that cell value is not the_hole.
-  __ Ldr(cell_value, FieldMemOperand(cell, PropertyCell::kValueOffset));
-  __ JumpIfRoot(cell_value, Heap::kTheHoleValueRootIndex, &slow_case);
-
   // Load PropertyDetails for the cell (actually only the cell_type and kind).
   __ Ldr(cell_details,
          UntagSmiFieldMemOperand(cell, PropertyCell::kDetailsOffset));
   __ And(cell_details, cell_details,
          PropertyDetails::PropertyCellTypeField::kMask |
-             PropertyDetails::KindField::kMask);
+             PropertyDetails::KindField::kMask |
+             PropertyDetails::kAttributesReadOnlyMask);
 
   // Check if PropertyCell holds mutable data.
   Label not_mutable_data;
@@ -5585,8 +5579,13 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   // Check if PropertyCell value matches the new value (relevant for Constant,
   // ConstantType and Undefined cells).
   Label not_same_value;
+  __ Ldr(cell_value, FieldMemOperand(cell, PropertyCell::kValueOffset));
   __ Cmp(cell_value, value);
   __ B(ne, &not_same_value);
+
+  // Make sure the PropertyCell is not marked READ_ONLY.
+  __ Tst(cell_details, PropertyDetails::kAttributesReadOnlyMask);
+  __ B(ne, &slow_case);
 
   if (FLAG_debug_code) {
     Label done;
@@ -5609,7 +5608,8 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   __ Ret();
   __ Bind(&not_same_value);
 
-  // Check if PropertyCell contains data with constant type.
+  // Check if PropertyCell contains data with constant type (and is not
+  // READ_ONLY).
   __ Cmp(cell_details, PropertyDetails::PropertyCellTypeField::encode(
                            PropertyCellType::kConstantType) |
                            PropertyDetails::KindField::encode(kData));
@@ -5636,11 +5636,11 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   // Fall back to the runtime.
   __ Bind(&slow_case);
   __ SmiTag(slot);
-  __ Push(slot, name, value);
+  __ Push(slot, value);
   __ TailCallRuntime(is_strict(language_mode())
                          ? Runtime::kStoreGlobalViaContext_Strict
                          : Runtime::kStoreGlobalViaContext_Sloppy,
-                     3, 1);
+                     2, 1);
 }
 
 

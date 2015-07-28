@@ -3153,15 +3153,13 @@ void LCodeGen::DoLoadGlobalViaContext(LLoadGlobalViaContext* instr) {
   int const slot = instr->slot_index();
   int const depth = instr->depth();
   if (depth <= LoadGlobalViaContextStub::kMaximumDepth) {
-    __ mov(LoadGlobalViaContextDescriptor::SlotRegister(), slot);
-    __ mov(LoadGlobalViaContextDescriptor::NameRegister(), instr->name());
+    __ mov(LoadGlobalViaContextDescriptor::SlotRegister(), Immediate(slot));
     Handle<Code> stub =
         CodeFactory::LoadGlobalViaContext(isolate(), depth).code();
     CallCode(stub, RelocInfo::CODE_TARGET, instr);
   } else {
     __ Push(Smi::FromInt(slot));
-    __ Push(instr->name());
-    __ CallRuntime(Runtime::kLoadGlobalViaContext, 2);
+    __ CallRuntime(Runtime::kLoadGlobalViaContext, 1);
   }
 }
 
@@ -3344,38 +3342,29 @@ void LCodeGen::DoLoadKeyedExternalArray(LLoadKeyed* instr) {
       instr->hydrogen()->key()->representation(),
       elements_kind,
       instr->base_offset()));
-  if (elements_kind == EXTERNAL_FLOAT32_ELEMENTS ||
-      elements_kind == FLOAT32_ELEMENTS) {
+  if (elements_kind == FLOAT32_ELEMENTS) {
     X87Mov(ToX87Register(instr->result()), operand, kX87FloatOperand);
-  } else if (elements_kind == EXTERNAL_FLOAT64_ELEMENTS ||
-             elements_kind == FLOAT64_ELEMENTS) {
+  } else if (elements_kind == FLOAT64_ELEMENTS) {
     X87Mov(ToX87Register(instr->result()), operand);
   } else {
     Register result(ToRegister(instr->result()));
     switch (elements_kind) {
-      case EXTERNAL_INT8_ELEMENTS:
       case INT8_ELEMENTS:
         __ movsx_b(result, operand);
         break;
-      case EXTERNAL_UINT8_CLAMPED_ELEMENTS:
-      case EXTERNAL_UINT8_ELEMENTS:
       case UINT8_ELEMENTS:
       case UINT8_CLAMPED_ELEMENTS:
         __ movzx_b(result, operand);
         break;
-      case EXTERNAL_INT16_ELEMENTS:
       case INT16_ELEMENTS:
         __ movsx_w(result, operand);
         break;
-      case EXTERNAL_UINT16_ELEMENTS:
       case UINT16_ELEMENTS:
         __ movzx_w(result, operand);
         break;
-      case EXTERNAL_INT32_ELEMENTS:
       case INT32_ELEMENTS:
         __ mov(result, operand);
         break;
-      case EXTERNAL_UINT32_ELEMENTS:
       case UINT32_ELEMENTS:
         __ mov(result, operand);
         if (!instr->hydrogen()->CheckFlag(HInstruction::kUint32)) {
@@ -3383,8 +3372,6 @@ void LCodeGen::DoLoadKeyedExternalArray(LLoadKeyed* instr) {
           DeoptimizeIf(negative, instr, Deoptimizer::kNegativeValue);
         }
         break;
-      case EXTERNAL_FLOAT32_ELEMENTS:
-      case EXTERNAL_FLOAT64_ELEMENTS:
       case FLOAT32_ELEMENTS:
       case FLOAT64_ELEMENTS:
       case FAST_SMI_ELEMENTS:
@@ -3463,7 +3450,7 @@ void LCodeGen::DoLoadKeyedFixedArray(LLoadKeyed* instr) {
 
 
 void LCodeGen::DoLoadKeyed(LLoadKeyed* instr) {
-  if (instr->is_typed_elements()) {
+  if (instr->is_fixed_typed_array()) {
     DoLoadKeyedExternalArray(instr);
   } else if (instr->hydrogen()->representation().IsDouble()) {
     DoLoadKeyedFixedDoubleArray(instr);
@@ -4553,20 +4540,18 @@ void LCodeGen::DoStoreGlobalViaContext(LStoreGlobalViaContext* instr) {
   int const slot = instr->slot_index();
   int const depth = instr->depth();
   if (depth <= StoreGlobalViaContextStub::kMaximumDepth) {
-    __ mov(StoreGlobalViaContextDescriptor::SlotRegister(), slot);
-    __ mov(StoreGlobalViaContextDescriptor::NameRegister(), instr->name());
+    __ mov(StoreGlobalViaContextDescriptor::SlotRegister(), Immediate(slot));
     Handle<Code> stub = CodeFactory::StoreGlobalViaContext(
                             isolate(), depth, instr->language_mode())
                             .code();
     CallCode(stub, RelocInfo::CODE_TARGET, instr);
   } else {
     __ Push(Smi::FromInt(slot));
-    __ Push(instr->name());
     __ Push(StoreGlobalViaContextDescriptor::ValueRegister());
     __ CallRuntime(is_strict(instr->language_mode())
                        ? Runtime::kStoreGlobalViaContext_Strict
                        : Runtime::kStoreGlobalViaContext_Sloppy,
-                   3);
+                   2);
   }
 }
 
@@ -4610,11 +4595,9 @@ void LCodeGen::DoStoreKeyedExternalArray(LStoreKeyed* instr) {
       instr->hydrogen()->key()->representation(),
       elements_kind,
       instr->base_offset()));
-  if (elements_kind == EXTERNAL_FLOAT32_ELEMENTS ||
-      elements_kind == FLOAT32_ELEMENTS) {
+  if (elements_kind == FLOAT32_ELEMENTS) {
     X87Mov(operand, ToX87Register(instr->value()), kX87FloatOperand);
-  } else if (elements_kind == EXTERNAL_FLOAT64_ELEMENTS ||
-             elements_kind == FLOAT64_ELEMENTS) {
+  } else if (elements_kind == FLOAT64_ELEMENTS) {
     uint64_t int_val = kHoleNanInt64;
     int32_t lower = static_cast<int32_t>(int_val);
     int32_t upper = static_cast<int32_t>(int_val >> (kBitsPerInt));
@@ -4644,28 +4627,19 @@ void LCodeGen::DoStoreKeyedExternalArray(LStoreKeyed* instr) {
   } else {
     Register value = ToRegister(instr->value());
     switch (elements_kind) {
-      case EXTERNAL_UINT8_CLAMPED_ELEMENTS:
-      case EXTERNAL_UINT8_ELEMENTS:
-      case EXTERNAL_INT8_ELEMENTS:
       case UINT8_ELEMENTS:
       case INT8_ELEMENTS:
       case UINT8_CLAMPED_ELEMENTS:
         __ mov_b(operand, value);
         break;
-      case EXTERNAL_INT16_ELEMENTS:
-      case EXTERNAL_UINT16_ELEMENTS:
       case UINT16_ELEMENTS:
       case INT16_ELEMENTS:
         __ mov_w(operand, value);
         break;
-      case EXTERNAL_INT32_ELEMENTS:
-      case EXTERNAL_UINT32_ELEMENTS:
       case UINT32_ELEMENTS:
       case INT32_ELEMENTS:
         __ mov(operand, value);
         break;
-      case EXTERNAL_FLOAT32_ELEMENTS:
-      case EXTERNAL_FLOAT64_ELEMENTS:
       case FLOAT32_ELEMENTS:
       case FLOAT64_ELEMENTS:
       case FAST_SMI_ELEMENTS:
@@ -4781,7 +4755,7 @@ void LCodeGen::DoStoreKeyedFixedArray(LStoreKeyed* instr) {
 
 void LCodeGen::DoStoreKeyed(LStoreKeyed* instr) {
   // By cases...external, fast-double, fast
-  if (instr->is_typed_elements()) {
+  if (instr->is_fixed_typed_array()) {
     DoStoreKeyedExternalArray(instr);
   } else if (instr->hydrogen()->value()->representation().IsDouble()) {
     DoStoreKeyedFixedDoubleArray(instr);

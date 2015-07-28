@@ -3388,15 +3388,12 @@ void LCodeGen::DoLoadGlobalViaContext(LLoadGlobalViaContext* instr) {
   int const depth = instr->depth();
   if (depth <= LoadGlobalViaContextStub::kMaximumDepth) {
     __ Mov(LoadGlobalViaContextDescriptor::SlotRegister(), Operand(slot));
-    __ Mov(LoadGlobalViaContextDescriptor::NameRegister(),
-           Operand(instr->name()));
     Handle<Code> stub =
         CodeFactory::LoadGlobalViaContext(isolate(), depth).code();
     CallCode(stub, RelocInfo::CODE_TARGET, instr);
   } else {
     __ Push(Smi::FromInt(slot));
-    __ Push(instr->name());
-    __ CallRuntime(Runtime::kLoadGlobalViaContext, 2);
+    __ CallRuntime(Runtime::kLoadGlobalViaContext, 1);
   }
 }
 
@@ -3458,42 +3455,33 @@ void LCodeGen::DoLoadKeyedExternal(LLoadKeyedExternal* instr) {
                                        elements_kind,
                                        instr->base_offset());
 
-  if ((elements_kind == EXTERNAL_FLOAT32_ELEMENTS) ||
-      (elements_kind == FLOAT32_ELEMENTS)) {
+  if (elements_kind == FLOAT32_ELEMENTS) {
     DoubleRegister result = ToDoubleRegister(instr->result());
     __ Ldr(result.S(), mem_op);
     __ Fcvt(result, result.S());
-  } else if ((elements_kind == EXTERNAL_FLOAT64_ELEMENTS) ||
-             (elements_kind == FLOAT64_ELEMENTS)) {
+  } else if (elements_kind == FLOAT64_ELEMENTS) {
     DoubleRegister result = ToDoubleRegister(instr->result());
     __ Ldr(result, mem_op);
   } else {
     Register result = ToRegister(instr->result());
 
     switch (elements_kind) {
-      case EXTERNAL_INT8_ELEMENTS:
       case INT8_ELEMENTS:
         __ Ldrsb(result, mem_op);
         break;
-      case EXTERNAL_UINT8_CLAMPED_ELEMENTS:
-      case EXTERNAL_UINT8_ELEMENTS:
       case UINT8_ELEMENTS:
       case UINT8_CLAMPED_ELEMENTS:
         __ Ldrb(result, mem_op);
         break;
-      case EXTERNAL_INT16_ELEMENTS:
       case INT16_ELEMENTS:
         __ Ldrsh(result, mem_op);
         break;
-      case EXTERNAL_UINT16_ELEMENTS:
       case UINT16_ELEMENTS:
         __ Ldrh(result, mem_op);
         break;
-      case EXTERNAL_INT32_ELEMENTS:
       case INT32_ELEMENTS:
         __ Ldrsw(result, mem_op);
         break;
-      case EXTERNAL_UINT32_ELEMENTS:
       case UINT32_ELEMENTS:
         __ Ldr(result.W(), mem_op);
         if (!instr->hydrogen()->CheckFlag(HInstruction::kUint32)) {
@@ -3504,8 +3492,6 @@ void LCodeGen::DoLoadKeyedExternal(LLoadKeyedExternal* instr) {
         break;
       case FLOAT32_ELEMENTS:
       case FLOAT64_ELEMENTS:
-      case EXTERNAL_FLOAT32_ELEMENTS:
-      case EXTERNAL_FLOAT64_ELEMENTS:
       case FAST_HOLEY_DOUBLE_ELEMENTS:
       case FAST_HOLEY_ELEMENTS:
       case FAST_HOLEY_SMI_ELEMENTS:
@@ -5180,44 +5166,33 @@ void LCodeGen::DoStoreKeyedExternal(LStoreKeyedExternal* instr) {
                                      elements_kind,
                                      instr->base_offset());
 
-  if ((elements_kind == EXTERNAL_FLOAT32_ELEMENTS) ||
-      (elements_kind == FLOAT32_ELEMENTS)) {
+  if (elements_kind == FLOAT32_ELEMENTS) {
     DoubleRegister value = ToDoubleRegister(instr->value());
     DoubleRegister dbl_scratch = double_scratch();
     __ Fcvt(dbl_scratch.S(), value);
     __ Str(dbl_scratch.S(), dst);
-  } else if ((elements_kind == EXTERNAL_FLOAT64_ELEMENTS) ||
-             (elements_kind == FLOAT64_ELEMENTS)) {
+  } else if (elements_kind == FLOAT64_ELEMENTS) {
     DoubleRegister value = ToDoubleRegister(instr->value());
     __ Str(value, dst);
   } else {
     Register value = ToRegister(instr->value());
 
     switch (elements_kind) {
-      case EXTERNAL_UINT8_CLAMPED_ELEMENTS:
-      case EXTERNAL_INT8_ELEMENTS:
-      case EXTERNAL_UINT8_ELEMENTS:
       case UINT8_ELEMENTS:
       case UINT8_CLAMPED_ELEMENTS:
       case INT8_ELEMENTS:
         __ Strb(value, dst);
         break;
-      case EXTERNAL_INT16_ELEMENTS:
-      case EXTERNAL_UINT16_ELEMENTS:
       case INT16_ELEMENTS:
       case UINT16_ELEMENTS:
         __ Strh(value, dst);
         break;
-      case EXTERNAL_INT32_ELEMENTS:
-      case EXTERNAL_UINT32_ELEMENTS:
       case INT32_ELEMENTS:
       case UINT32_ELEMENTS:
         __ Str(value.W(), dst);
         break;
       case FLOAT32_ELEMENTS:
       case FLOAT64_ELEMENTS:
-      case EXTERNAL_FLOAT32_ELEMENTS:
-      case EXTERNAL_FLOAT64_ELEMENTS:
       case FAST_DOUBLE_ELEMENTS:
       case FAST_ELEMENTS:
       case FAST_SMI_ELEMENTS:
@@ -5548,20 +5523,17 @@ void LCodeGen::DoStoreGlobalViaContext(LStoreGlobalViaContext* instr) {
   int const depth = instr->depth();
   if (depth <= StoreGlobalViaContextStub::kMaximumDepth) {
     __ Mov(StoreGlobalViaContextDescriptor::SlotRegister(), Operand(slot));
-    __ Mov(StoreGlobalViaContextDescriptor::NameRegister(),
-           Operand(instr->name()));
     Handle<Code> stub = CodeFactory::StoreGlobalViaContext(
                             isolate(), depth, instr->language_mode())
                             .code();
     CallCode(stub, RelocInfo::CODE_TARGET, instr);
   } else {
     __ Push(Smi::FromInt(slot));
-    __ Push(instr->name());
     __ Push(StoreGlobalViaContextDescriptor::ValueRegister());
     __ CallRuntime(is_strict(instr->language_mode())
                        ? Runtime::kStoreGlobalViaContext_Strict
                        : Runtime::kStoreGlobalViaContext_Sloppy,
-                   3);
+                   2);
   }
 }
 

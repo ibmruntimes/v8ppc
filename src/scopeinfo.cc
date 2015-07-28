@@ -340,7 +340,7 @@ int ScopeInfo::ContextLength() {
                        scope_type() == MODULE_SCOPE;
 
     if (has_context) {
-      return Context::MIN_CONTEXT_SLOTS + context_locals + 2 * context_globals +
+      return Context::MIN_CONTEXT_SLOTS + context_locals + context_globals +
              (function_name_context_slot ? 1 : 0);
     }
   }
@@ -553,7 +553,7 @@ int ScopeInfo::ContextSlotIndex(Handle<ScopeInfo> scope_info,
           var -= scope_info->ContextLocalCount();
           *location = VariableLocation::GLOBAL;
           result = Context::MIN_CONTEXT_SLOTS +
-                   scope_info->ContextLocalCount() + 2 * var;
+                   scope_info->ContextLocalCount() + var;
         }
 
         context_slot_cache->Update(scope_info, name, *mode, *location,
@@ -569,6 +569,14 @@ int ScopeInfo::ContextSlotIndex(Handle<ScopeInfo> scope_info,
                                kNotAssigned, -1);
   }
   return -1;
+}
+
+
+String* ScopeInfo::ContextSlotName(int slot_index) {
+  int const var = slot_index - Context::MIN_CONTEXT_SLOTS;
+  DCHECK_LE(0, var);
+  DCHECK_LT(var, ContextLocalCount() + ContextGlobalCount());
+  return ContextLocalName(var);
 }
 
 

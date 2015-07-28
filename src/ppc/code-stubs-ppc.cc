@@ -5394,7 +5394,8 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   __ SmiUntag(cell_details);
   __ andi(cell_details, cell_details,
           Operand(PropertyDetails::PropertyCellTypeField::kMask |
-                  PropertyDetails::KindField::kMask));
+                  PropertyDetails::KindField::kMask |
+                  PropertyDetails::kAttributesReadOnlyMask));
 
   // Check if PropertyCell holds mutable data.
   Label not_mutable_data;
@@ -5421,6 +5422,10 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   __ cmp(cell_value, value);
   __ bne(&not_same_value);
 
+  // Make sure the PropertyCell is not marked READ_ONLY.
+  __ andi(r0, cell_details, Operand(PropertyDetails::kAttributesReadOnlyMask));
+  __ bne(&slow_case, cr0);
+
   if (FLAG_debug_code) {
     Label done;
     // This can only be true for Constant, ConstantType and Undefined cells,
@@ -5445,7 +5450,8 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   __ Ret();
   __ bind(&not_same_value);
 
-  // Check if PropertyCell contains data with constant type.
+  // Check if PropertyCell contains data with constant type (and is not
+  // READ_ONLY).
   __ cmpi(cell_details, Operand(PropertyDetails::PropertyCellTypeField::encode(
                                     PropertyCellType::kConstantType) |
                                 PropertyDetails::KindField::encode(kData)));

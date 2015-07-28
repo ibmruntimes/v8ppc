@@ -5304,7 +5304,6 @@ void InternalArrayConstructorStub::Generate(MacroAssembler* masm) {
 void LoadGlobalViaContextStub::Generate(MacroAssembler* masm) {
   Register context_reg = cp;
   Register slot_reg = a2;
-  Register name_reg = a3;
   Register result_reg = v0;
   Label slow_case;
 
@@ -5317,8 +5316,7 @@ void LoadGlobalViaContextStub::Generate(MacroAssembler* masm) {
   // Load the PropertyCell value at the specified slot.
   __ dsll(at, slot_reg, kPointerSizeLog2);
   __ Daddu(at, at, Operand(context_reg));
-  __ Daddu(at, at, Context::SlotOffset(0));
-  __ ld(result_reg, MemOperand(at));
+  __ ld(result_reg, ContextOperand(at, 0));
   __ ld(result_reg, FieldMemOperand(result_reg, PropertyCell::kValueOffset));
 
   // Check that value is not the_hole.
@@ -5329,15 +5327,14 @@ void LoadGlobalViaContextStub::Generate(MacroAssembler* masm) {
   // Fallback to the runtime.
   __ bind(&slow_case);
   __ SmiTag(slot_reg);
-  __ Push(slot_reg, name_reg);
-  __ TailCallRuntime(Runtime::kLoadGlobalViaContext, 2, 1);
+  __ Push(slot_reg);
+  __ TailCallRuntime(Runtime::kLoadGlobalViaContext, 1, 1);
 }
 
 
 void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   Register context_reg = cp;
   Register slot_reg = a2;
-  Register name_reg = a3;
   Register value_reg = a0;
   Register cell_reg = a4;
   Register cell_value_reg = a5;
@@ -5347,7 +5344,6 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   if (FLAG_debug_code) {
     __ LoadRoot(at, Heap::kTheHoleValueRootIndex);
     __ Check(ne, kUnexpectedValue, value_reg, Operand(at));
-    __ AssertName(name_reg);
   }
 
   // Go up context chain to the script context.
@@ -5359,13 +5355,7 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   // Load the PropertyCell at the specified slot.
   __ dsll(at, slot_reg, kPointerSizeLog2);
   __ Daddu(at, at, Operand(context_reg));
-  __ Daddu(at, at, Context::SlotOffset(0));
-  __ ld(cell_reg, MemOperand(at));
-
-  // Check that cell value is not the_hole.
-  __ ld(cell_value_reg, FieldMemOperand(cell_reg, PropertyCell::kValueOffset));
-  __ LoadRoot(at, Heap::kTheHoleValueRootIndex);
-  __ Branch(&slow_case, eq, cell_value_reg, Operand(at));
+  __ ld(cell_reg, ContextOperand(at, 0));
 
   // Load PropertyDetails for the cell (actually only the cell_type and kind).
   __ ld(cell_details_reg,
@@ -5373,7 +5363,8 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   __ SmiUntag(cell_details_reg);
   __ And(cell_details_reg, cell_details_reg,
          PropertyDetails::PropertyCellTypeField::kMask |
-             PropertyDetails::KindField::kMask);
+             PropertyDetails::KindField::kMask |
+             PropertyDetails::kAttributesReadOnlyMask);
 
   // Check if PropertyCell holds mutable data.
   Label not_mutable_data;
@@ -5395,7 +5386,11 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   // Check if PropertyCell value matches the new value (relevant for Constant,
   // ConstantType and Undefined cells).
   Label not_same_value;
+  __ ld(cell_value_reg, FieldMemOperand(cell_reg, PropertyCell::kValueOffset));
   __ Branch(&not_same_value, ne, value_reg, Operand(cell_value_reg));
+  // Make sure the PropertyCell is not marked READ_ONLY.
+  __ And(at, cell_details_reg, PropertyDetails::kAttributesReadOnlyMask);
+  __ Branch(&slow_case, ne, at, Operand(zero_reg));
   if (FLAG_debug_code) {
     Label done;
     // This can only be true for Constant, ConstantType and Undefined cells,
@@ -5417,7 +5412,8 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   __ Ret();
   __ bind(&not_same_value);
 
-  // Check if PropertyCell contains data with constant type.
+  // Check if PropertyCell contains data with constant type (and is not
+  // READ_ONLY).
   __ Branch(&slow_case, ne, cell_details_reg,
             Operand(PropertyDetails::PropertyCellTypeField::encode(
                         PropertyCellType::kConstantType) |
@@ -5443,11 +5439,11 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   // Fallback to the runtime.
   __ bind(&slow_case);
   __ SmiTag(slot_reg);
-  __ Push(slot_reg, name_reg, value_reg);
+  __ Push(slot_reg, value_reg);
   __ TailCallRuntime(is_strict(language_mode())
                          ? Runtime::kStoreGlobalViaContext_Strict
                          : Runtime::kStoreGlobalViaContext_Sloppy,
-                     3, 1);
+                     2, 1);
 }
 
 
