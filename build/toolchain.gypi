@@ -301,6 +301,7 @@
           'V8_PPC_TAGGING_OPT', # optimization pending contribution
           'V8_PPC_SIMULATOR', # feature pending contribution
           'V8_PPC_CACHE_LINE_SIZE_OPT', # feature pending contribution
+          'V8_PPC_PERF_ANNOTATE_SUPPORT', # feature pending contribution
         ],
         'conditions': [
           ['v8_target_arch=="ppc64"', {

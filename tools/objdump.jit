@@ -1,0 +1,18 @@
+#!/bin/bash
+file=${@: -1}
+if [[ "${file##*.}" == "map" ]]; then
+  for f in /tmp/elfdump*
+  do
+    objdump $* "$f" 2>&1 | grep -v "File format" | grep -v "ˆ$" 
+  done
+else
+  objdump $*
+fi
+              
+# Steps to run:
+# $ perf record d8 --gdbjit --gdbjit_full --gdbjit_dump --perf_basic_prof run.js
+#                    ("--perf_basic_prof" will generate /tmp/perf-*.map file)
+              
+# $perf report --objdump=./objdump.jit
+# or
+# $ perf annotate --objdump=./objdump.jit
