@@ -84,6 +84,8 @@ namespace internal {
   F(HomeObjectSymbol, 0, 1)                   \
   F(DefineClass, 6, 1)                        \
   F(DefineClassStrong, 6, 1)                  \
+  F(FinalizeClassDefinition, 2, 1)            \
+  F(FinalizeClassDefinitionStrong, 2, 1)      \
   F(DefineClassMethod, 3, 1)                  \
   F(ClassGetSourceCode, 1, 1)                 \
   F(LoadFromSuper, 4, 1)                      \
@@ -538,10 +540,11 @@ namespace internal {
 
 #define FOR_EACH_INTRINSIC_SCOPES(F)                         \
   F(ThrowConstAssignError, 0, 1)                             \
-  F(DeclareGlobals, 3, 1)                                    \
+  F(DeclareGlobals, 2, 1)                                    \
   F(InitializeVarGlobal, 3, 1)                               \
   F(InitializeConstGlobal, 2, 1)                             \
-  F(DeclareLookupSlot, 4, 1)                                 \
+  F(DeclareLookupSlot, 2, 1)                                 \
+  F(DeclareReadOnlyLookupSlot, 2, 1)                         \
   F(InitializeLegacyConstLookupSlot, 3, 1)                   \
   F(NewArguments, 1, 1) /* TODO(turbofan): Only temporary */ \
   F(NewSloppyArguments, 3, 1)                                \

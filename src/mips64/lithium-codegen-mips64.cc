@@ -1215,7 +1215,7 @@ void LCodeGen::DoDivI(LDivI* instr) {
 
   // On MIPS div is asynchronous - it will run in the background while we
   // check for special cases.
-  __ Ddiv(result, dividend, divisor);
+  __ Div(result, dividend, divisor);
 
   // Check for x / 0.
   if (hdiv->CheckFlag(HValue::kCanBeDivByZero)) {
@@ -3686,9 +3686,8 @@ void LCodeGen::DoDeclareGlobals(LDeclareGlobals* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
   __ li(scratch0(), instr->hydrogen()->pairs());
   __ li(scratch1(), Operand(Smi::FromInt(instr->hydrogen()->flags())));
-  // The context is the first argument.
-  __ Push(cp, scratch0(), scratch1());
-  CallRuntime(Runtime::kDeclareGlobals, 3, instr);
+  __ Push(scratch0(), scratch1());
+  CallRuntime(Runtime::kDeclareGlobals, 2, instr);
 }
 
 

@@ -60,8 +60,14 @@ Handle<Code> InterpreterAssembler::GenerateCode() {
 }
 
 
-Node* InterpreterAssembler::BytecodePointer() {
-  return raw_assembler_->Parameter(Linkage::kInterpreterBytecodeParameter);
+Node* InterpreterAssembler::BytecodeArrayPointer() {
+  return raw_assembler_->Parameter(Linkage::kInterpreterBytecodeArrayParameter);
+}
+
+
+Node* InterpreterAssembler::BytecodeOffset() {
+  return raw_assembler_->Parameter(
+      Linkage::kInterpreterBytecodeOffsetParameter);
 }
 
 
@@ -83,16 +89,17 @@ Node* InterpreterAssembler::RegisterFrameOffset(int index) {
 
 
 Node* InterpreterAssembler::RegisterFrameOffset(Node* index) {
-  return raw_assembler_->Int32Sub(
+  return raw_assembler_->IntPtrSub(
       Int32Constant(kFirstRegisterOffsetFromFp),
-      raw_assembler_->Word32Shl(index, Int32Constant(kPointerSizeLog2)));
+      raw_assembler_->WordShl(index, Int32Constant(kPointerSizeLog2)));
 }
 
 
-Node* InterpreterAssembler::BytecodeArg(int delta) {
-  DCHECK_LT(delta, interpreter::Bytecodes::NumberOfArguments(bytecode_));
-  return raw_assembler_->Load(kMachUint8, BytecodePointer(),
-                              Int32Constant(1 + delta));
+Node* InterpreterAssembler::BytecodeOperand(int delta) {
+  DCHECK_LT(delta, interpreter::Bytecodes::NumberOfOperands(bytecode_));
+  return raw_assembler_->Load(
+      kMachUint8, BytecodeArrayPointer(),
+      raw_assembler_->IntPtrAdd(BytecodeOffset(), Int32Constant(1 + delta)));
 }
 
 
@@ -120,15 +127,33 @@ Node* InterpreterAssembler::StoreRegister(Node* value, Node* index) {
 }
 
 
+void InterpreterAssembler::Return() {
+  Node* exit_trampoline_code_object =
+      HeapConstant(Unique<HeapObject>::CreateImmovable(
+          isolate()->builtins()->InterpreterExitTrampoline()));
+  // If the order of the parameters you need to change the call signature below.
+  STATIC_ASSERT(0 == Linkage::kInterpreterBytecodeOffsetParameter);
+  STATIC_ASSERT(1 == Linkage::kInterpreterBytecodeArrayParameter);
+  STATIC_ASSERT(2 == Linkage::kInterpreterDispatchTableParameter);
+  Node* tail_call = graph()->NewNode(
+      common()->TailCall(call_descriptor()), exit_trampoline_code_object,
+      BytecodeOffset(), BytecodeArrayPointer(), DispatchTablePointer(),
+      graph()->start(), graph()->start());
+  schedule()->AddTailCall(raw_assembler_->CurrentBlock(), tail_call);
+  // This should always be the end node.
+  SetEndInput(tail_call);
+}
+
+
 Node* InterpreterAssembler::Advance(int delta) {
-  return raw_assembler_->IntPtrAdd(BytecodePointer(), Int32Constant(delta));
+  return raw_assembler_->IntPtrAdd(BytecodeOffset(), Int32Constant(delta));
 }
 
 
 void InterpreterAssembler::Dispatch() {
-  Node* new_bytecode_pointer = Advance(interpreter::Bytecodes::Size(bytecode_));
-  Node* target_bytecode =
-      raw_assembler_->Load(kMachUint8, new_bytecode_pointer);
+  Node* new_bytecode_offset = Advance(interpreter::Bytecodes::Size(bytecode_));
+  Node* target_bytecode = raw_assembler_->Load(
+      kMachUint8, BytecodeArrayPointer(), new_bytecode_offset);
 
   // TODO(rmcilroy): Create a code target dispatch table to avoid conversion
   // from code object on every dispatch.
@@ -138,14 +163,14 @@ void InterpreterAssembler::Dispatch() {
                                 Int32Constant(kPointerSizeLog2)));
 
   // If the order of the parameters you need to change the call signature below.
-  STATIC_ASSERT(0 == Linkage::kInterpreterBytecodeParameter);
-  STATIC_ASSERT(1 == Linkage::kInterpreterDispatchTableParameter);
-  Node* tail_call = graph()->NewNode(common()->TailCall(call_descriptor()),
-                                     target_code_object, new_bytecode_pointer,
-                                     DispatchTablePointer(), graph()->start(),
-                                     graph()->start());
+  STATIC_ASSERT(0 == Linkage::kInterpreterBytecodeOffsetParameter);
+  STATIC_ASSERT(1 == Linkage::kInterpreterBytecodeArrayParameter);
+  STATIC_ASSERT(2 == Linkage::kInterpreterDispatchTableParameter);
+  Node* tail_call = graph()->NewNode(
+      common()->TailCall(call_descriptor()), target_code_object,
+      new_bytecode_offset, BytecodeArrayPointer(), DispatchTablePointer(),
+      graph()->start(), graph()->start());
   schedule()->AddTailCall(raw_assembler_->CurrentBlock(), tail_call);
-
   // This should always be the end node.
   SetEndInput(tail_call);
 }
@@ -199,6 +224,11 @@ Node* InterpreterAssembler::Int32Constant(int value) {
 
 Node* InterpreterAssembler::NumberConstant(double value) {
   return raw_assembler_->NumberConstant(value);
+}
+
+
+Node* InterpreterAssembler::HeapConstant(Unique<HeapObject> object) {
+  return raw_assembler_->HeapConstant(object);
 }
 
 

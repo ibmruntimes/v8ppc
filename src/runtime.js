@@ -766,7 +766,6 @@ function ToPrimitive(x, hint) {
   if (IS_STRING(x)) return x;
   // Normal behavior.
   if (!IS_SPEC_OBJECT(x)) return x;
-  if (IS_SYMBOL_WRAPPER(x)) throw MakeTypeError(kSymbolToPrimitive);
   if (IS_FLOAT32X4(x)) return x;
   if (hint == NO_HINT) hint = (IS_DATE(x)) ? STRING_HINT : NUMBER_HINT;
   return (hint == NUMBER_HINT) ? DefaultNumber(x) : DefaultString(x);
@@ -792,8 +791,7 @@ function ToNumber(x) {
   }
   if (IS_BOOLEAN(x)) return x ? 1 : 0;
   if (IS_UNDEFINED(x)) return NAN;
-  if (IS_SYMBOL(x)) throw MakeTypeError(kSymbolToNumber);
-  if (IS_FLOAT32X4(x)) throw MakeTypeError(kSimdToNumber);
+  // Types that can't be converted to number are caught in DefaultNumber.
   return (IS_NULL(x)) ? 0 : ToNumber(DefaultNumber(x));
 }
 
@@ -804,8 +802,7 @@ function NonNumberToNumber(x) {
   }
   if (IS_BOOLEAN(x)) return x ? 1 : 0;
   if (IS_UNDEFINED(x)) return NAN;
-  if (IS_SYMBOL(x)) throw MakeTypeError(kSymbolToNumber);
-  if (IS_FLOAT32X4(x)) throw MakeTypeError(kSimdToNumber);
+  // Types that can't be converted to number are caught in DefaultNumber.
   return (IS_NULL(x)) ? 0 : ToNumber(DefaultNumber(x));
 }
 
@@ -816,7 +813,7 @@ function ToString(x) {
   if (IS_NUMBER(x)) return %_NumberToString(x);
   if (IS_BOOLEAN(x)) return x ? 'true' : 'false';
   if (IS_UNDEFINED(x)) return 'undefined';
-  if (IS_SYMBOL(x)) throw MakeTypeError(kSymbolToString);
+  // Types that can't be converted to string are caught in DefaultString.
   return (IS_NULL(x)) ? 'null' : ToString(DefaultString(x));
 }
 
@@ -824,7 +821,7 @@ function NonStringToString(x) {
   if (IS_NUMBER(x)) return %_NumberToString(x);
   if (IS_BOOLEAN(x)) return x ? 'true' : 'false';
   if (IS_UNDEFINED(x)) return 'undefined';
-  if (IS_SYMBOL(x)) throw MakeTypeError(kSymbolToString);
+  // Types that can't be converted to string are caught in DefaultString.
   return (IS_NULL(x)) ? 'null' : ToString(DefaultString(x));
 }
 
@@ -944,18 +941,17 @@ function IsConcatSpreadable(O) {
 
 // ECMA-262, section 8.6.2.6, page 28.
 function DefaultNumber(x) {
-  if (!IS_SYMBOL_WRAPPER(x) && !IS_FLOAT32X4_WRAPPER(x)) {
-    var valueOf = x.valueOf;
-    if (IS_SPEC_FUNCTION(valueOf)) {
-      var v = %_CallFunction(x, valueOf);
-      if (IsPrimitive(v)) return v;
-    }
-
-    var toString = x.toString;
-    if (IS_SPEC_FUNCTION(toString)) {
-      var s = %_CallFunction(x, toString);
-      if (IsPrimitive(s)) return s;
-    }
+  var valueOf = x.valueOf;
+  if (IS_SPEC_FUNCTION(valueOf)) {
+    var v = %_CallFunction(x, valueOf);
+    if (IS_SYMBOL(v)) throw MakeTypeError(kSymbolToNumber);
+    if (IS_FLOAT32X4(v)) throw MakeTypeError(kSimdToNumber);
+    if (IsPrimitive(v)) return v;
+  }
+  var toString = x.toString;
+  if (IS_SPEC_FUNCTION(toString)) {
+    var s = %_CallFunction(x, toString);
+    if (IsPrimitive(s)) return s;
   }
   throw MakeTypeError(kCannotConvertToPrimitive);
 }
@@ -963,6 +959,7 @@ function DefaultNumber(x) {
 // ECMA-262, section 8.6.2.6, page 28.
 function DefaultString(x) {
   if (!IS_SYMBOL_WRAPPER(x)) {
+    if (IS_SYMBOL(x)) throw MakeTypeError(kSymbolToString);
     var toString = x.toString;
     if (IS_SPEC_FUNCTION(toString)) {
       var s = %_CallFunction(x, toString);

@@ -315,7 +315,7 @@ void FullCodeGenerator::Generate() {
 
     // Arguments to ArgumentsAccessStub:
     //   function, receiver address, parameter count.
-    // The stub will rewrite receiever and parameter count if the previous
+    // The stub will rewrite receiver and parameter count if the previous
     // stack frame was an arguments adapter frame.
     ArgumentsAccessStub::Type type;
     if (is_strict(language_mode()) || !is_simple_parameter_list()) {
@@ -409,10 +409,6 @@ void FullCodeGenerator::EmitProfilingCounterReset() {
   Label start;
   __ bind(&start);
   int reset_value = FLAG_interrupt_budget;
-  if (info_->is_debug()) {
-    // Detect debug break requests as soon as possible.
-    reset_value = FLAG_interrupt_budget >> 4;
-  }
   __ mov(r2, Operand(profiling_counter_));
   // The mov instruction above can be either 1 to 3 (for ARMv7) or 1 to 5
   // instructions (for ARMv6) depending upon whether it is an extended constant
@@ -864,21 +860,20 @@ void FullCodeGenerator::VisitVariableDeclaration(
       __ mov(r2, Operand(variable->name()));
       // Declaration nodes are always introduced in one of four modes.
       DCHECK(IsDeclaredVariableMode(mode));
-      PropertyAttributes attr =
-          IsImmutableVariableMode(mode) ? READ_ONLY : NONE;
-      __ mov(r1, Operand(Smi::FromInt(attr)));
       // Push initial value, if any.
       // Note: For variables we must not push an initial value (such as
       // 'undefined') because we may have a (legal) redeclaration and we
       // must not destroy the current value.
       if (hole_init) {
         __ LoadRoot(r0, Heap::kTheHoleValueRootIndex);
-        __ Push(cp, r2, r1, r0);
       } else {
         __ mov(r0, Operand(Smi::FromInt(0)));  // Indicates no initial value.
-        __ Push(cp, r2, r1, r0);
       }
-      __ CallRuntime(Runtime::kDeclareLookupSlot, 4);
+      __ Push(r2, r0);
+      __ CallRuntime(IsImmutableVariableMode(mode)
+                         ? Runtime::kDeclareReadOnlyLookupSlot
+                         : Runtime::kDeclareLookupSlot,
+                     2);
       break;
     }
   }
@@ -931,11 +926,10 @@ void FullCodeGenerator::VisitFunctionDeclaration(
     case VariableLocation::LOOKUP: {
       Comment cmnt(masm_, "[ FunctionDeclaration");
       __ mov(r2, Operand(variable->name()));
-      __ mov(r1, Operand(Smi::FromInt(NONE)));
-      __ Push(cp, r2, r1);
+      __ Push(r2);
       // Push initial value for function declaration.
       VisitForStackValue(declaration->fun());
-      __ CallRuntime(Runtime::kDeclareLookupSlot, 4);
+      __ CallRuntime(Runtime::kDeclareLookupSlot, 2);
       break;
     }
   }
@@ -944,11 +938,10 @@ void FullCodeGenerator::VisitFunctionDeclaration(
 
 void FullCodeGenerator::DeclareGlobals(Handle<FixedArray> pairs) {
   // Call the runtime to declare the globals.
-  // The context is the first argument.
   __ mov(r1, Operand(pairs));
   __ mov(r0, Operand(Smi::FromInt(DeclareGlobalsFlags())));
-  __ Push(cp, r1, r0);
-  __ CallRuntime(Runtime::kDeclareGlobals, 3);
+  __ Push(r1, r0);
+  __ CallRuntime(Runtime::kDeclareGlobals, 2);
   // Return value is ignored.
 }
 
@@ -2574,24 +2567,12 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit,
     }
   }
 
-  // prototype
-  __ CallRuntime(Runtime::kToFastProperties, 1);
-
-  // constructor
-  __ CallRuntime(Runtime::kToFastProperties, 1);
-
-  if (is_strong(language_mode())) {
-    __ ldr(scratch,
-           FieldMemOperand(r0, JSFunction::kPrototypeOrInitialMapOffset));
-    __ push(r0);
-    __ push(scratch);
-    // TODO(conradw): It would be more efficient to define the properties with
-    // the right attributes the first time round.
-    // Freeze the prototype.
-    __ CallRuntime(Runtime::kObjectFreeze, 1);
-    // Freeze the constructor.
-    __ CallRuntime(Runtime::kObjectFreeze, 1);
-  }
+  // Set both the prototype and constructor to have fast properties, and also
+  // freeze them in strong mode.
+  __ CallRuntime(is_strong(language_mode())
+                     ? Runtime::kFinalizeClassDefinitionStrong
+                     : Runtime::kFinalizeClassDefinition,
+                 2);
 }
 
 

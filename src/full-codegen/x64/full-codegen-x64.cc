@@ -823,13 +823,9 @@ void FullCodeGenerator::VisitVariableDeclaration(
 
     case VariableLocation::LOOKUP: {
       Comment cmnt(masm_, "[ VariableDeclaration");
-      __ Push(rsi);
       __ Push(variable->name());
       // Declaration nodes are always introduced in one of four modes.
       DCHECK(IsDeclaredVariableMode(mode));
-      PropertyAttributes attr =
-          IsImmutableVariableMode(mode) ? READ_ONLY : NONE;
-      __ Push(Smi::FromInt(attr));
       // Push initial value, if any.
       // Note: For variables we must not push an initial value (such as
       // 'undefined') because we may have a (legal) redeclaration and we
@@ -839,7 +835,10 @@ void FullCodeGenerator::VisitVariableDeclaration(
       } else {
         __ Push(Smi::FromInt(0));  // Indicates no initial value.
       }
-      __ CallRuntime(Runtime::kDeclareLookupSlot, 4);
+      __ CallRuntime(IsImmutableVariableMode(mode)
+                         ? Runtime::kDeclareReadOnlyLookupSlot
+                         : Runtime::kDeclareLookupSlot,
+                     2);
       break;
     }
   }
@@ -890,11 +889,9 @@ void FullCodeGenerator::VisitFunctionDeclaration(
 
     case VariableLocation::LOOKUP: {
       Comment cmnt(masm_, "[ FunctionDeclaration");
-      __ Push(rsi);
       __ Push(variable->name());
-      __ Push(Smi::FromInt(NONE));
       VisitForStackValue(declaration->fun());
-      __ CallRuntime(Runtime::kDeclareLookupSlot, 4);
+      __ CallRuntime(Runtime::kDeclareLookupSlot, 2);
       break;
     }
   }
@@ -903,10 +900,9 @@ void FullCodeGenerator::VisitFunctionDeclaration(
 
 void FullCodeGenerator::DeclareGlobals(Handle<FixedArray> pairs) {
   // Call the runtime to declare the globals.
-  __ Push(rsi);  // The context is the first argument.
   __ Push(pairs);
   __ Push(Smi::FromInt(DeclareGlobalsFlags()));
-  __ CallRuntime(Runtime::kDeclareGlobals, 3);
+  __ CallRuntime(Runtime::kDeclareGlobals, 2);
   // Return value is ignored.
 }
 
@@ -2478,24 +2474,12 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit,
     }
   }
 
-  // prototype
-  __ CallRuntime(Runtime::kToFastProperties, 1);
-
-  // constructor
-  __ CallRuntime(Runtime::kToFastProperties, 1);
-
-  if (is_strong(language_mode())) {
-    __ movp(scratch,
-            FieldOperand(rax, JSFunction::kPrototypeOrInitialMapOffset));
-    __ Push(rax);
-    __ Push(scratch);
-    // TODO(conradw): It would be more efficient to define the properties with
-    // the right attributes the first time round.
-    // Freeze the prototype.
-    __ CallRuntime(Runtime::kObjectFreeze, 1);
-    // Freeze the constructor.
-    __ CallRuntime(Runtime::kObjectFreeze, 1);
-  }
+  // Set both the prototype and constructor to have fast properties, and also
+  // freeze them in strong mode.
+  __ CallRuntime(is_strong(language_mode())
+                     ? Runtime::kFinalizeClassDefinitionStrong
+                     : Runtime::kFinalizeClassDefinition,
+                 2);
 }
 
 

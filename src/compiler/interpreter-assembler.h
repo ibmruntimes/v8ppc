@@ -11,6 +11,7 @@
 #include "src/base/smart-pointers.h"
 #include "src/frames.h"
 #include "src/interpreter/bytecodes.h"
+#include "src/unique.h"
 
 namespace v8 {
 namespace internal {
@@ -40,15 +41,19 @@ class InterpreterAssembler {
   // Constants.
   Node* Int32Constant(int value);
   Node* NumberConstant(double value);
+  Node* HeapConstant(Unique<HeapObject> object);
 
-  // Returns the bytecode argument |index| for the current bytecode.
-  Node* BytecodeArg(int index);
+  // Returns the bytecode operand |index| for the current bytecode.
+  Node* BytecodeOperand(int index);
 
   // Loads from and stores to the interpreter register file.
   Node* LoadRegister(int index);
   Node* LoadRegister(Node* index);
   Node* StoreRegister(Node* value, int index);
   Node* StoreRegister(Node* value, Node* index);
+
+  // Returns from the function.
+  void Return();
 
   // Dispatch to the bytecode.
   void Dispatch();
@@ -68,9 +73,11 @@ class InterpreterAssembler {
   Graph* graph();
 
  private:
-  // Returns the pointer to the current bytecode.
-  Node* BytecodePointer();
-  // Returns the pointer to first entry in the interpreter dispatch table.
+  // Returns a tagged pointer to the current function's BytecodeArray object.
+  Node* BytecodeArrayPointer();
+  // Returns the offset from the BytecodeArrayPointer of the current bytecode.
+  Node* BytecodeOffset();
+  // Returns a pointer to first entry in the interpreter dispatch table.
   Node* DispatchTablePointer();
   // Returns the frame pointer for the current function.
   Node* FramePointer();
@@ -79,8 +86,8 @@ class InterpreterAssembler {
   Node* RegisterFrameOffset(int index);
   Node* RegisterFrameOffset(Node* index);
 
-  // Returns BytecodePointer() advanced by delta bytecodes. Note: this does not
-  // update BytecodePointer() itself.
+  // Returns BytecodeOffset() advanced by delta bytecodes. Note: this does not
+  // update BytecodeOffset() itself.
   Node* Advance(int delta);
 
   // Sets the end node of the graph.

@@ -403,10 +403,6 @@ void FullCodeGenerator::EmitProfilingCounterDecrement(int delta) {
 
 void FullCodeGenerator::EmitProfilingCounterReset() {
   int reset_value = FLAG_interrupt_budget;
-  if (info_->is_debug()) {
-    // Detect debug break requests as soon as possible.
-    reset_value = FLAG_interrupt_budget >> 4;
-  }
   __ Mov(x2, Operand(profiling_counter_));
   __ Mov(x3, Smi::FromInt(reset_value));
   __ Str(x3, FieldMemOperand(x2, Cell::kValueOffset));
@@ -865,21 +861,21 @@ void FullCodeGenerator::VisitVariableDeclaration(
       __ Mov(x2, Operand(variable->name()));
       // Declaration nodes are always introduced in one of four modes.
       DCHECK(IsDeclaredVariableMode(mode));
-      PropertyAttributes attr = IsImmutableVariableMode(mode) ? READ_ONLY
-                                                              : NONE;
-      __ Mov(x1, Smi::FromInt(attr));
       // Push initial value, if any.
       // Note: For variables we must not push an initial value (such as
       // 'undefined') because we may have a (legal) redeclaration and we
       // must not destroy the current value.
       if (hole_init) {
         __ LoadRoot(x0, Heap::kTheHoleValueRootIndex);
-        __ Push(cp, x2, x1, x0);
+        __ Push(x2, x0);
       } else {
         // Pushing 0 (xzr) indicates no initial value.
-        __ Push(cp, x2, x1, xzr);
+        __ Push(x2, xzr);
       }
-      __ CallRuntime(Runtime::kDeclareLookupSlot, 4);
+      __ CallRuntime(IsImmutableVariableMode(mode)
+                         ? Runtime::kDeclareReadOnlyLookupSlot
+                         : Runtime::kDeclareLookupSlot,
+                     2);
       break;
     }
   }
@@ -932,11 +928,10 @@ void FullCodeGenerator::VisitFunctionDeclaration(
     case VariableLocation::LOOKUP: {
       Comment cmnt(masm_, "[ Function Declaration");
       __ Mov(x2, Operand(variable->name()));
-      __ Mov(x1, Smi::FromInt(NONE));
-      __ Push(cp, x2, x1);
+      __ Push(x2);
       // Push initial value for function declaration.
       VisitForStackValue(declaration->fun());
-      __ CallRuntime(Runtime::kDeclareLookupSlot, 4);
+      __ CallRuntime(Runtime::kDeclareLookupSlot, 2);
       break;
     }
   }
@@ -951,8 +946,8 @@ void FullCodeGenerator::DeclareGlobals(Handle<FixedArray> pairs) {
     flags = x10;
   __ Mov(flags, Smi::FromInt(DeclareGlobalsFlags()));
   }
-  __ Push(cp, x11, flags);
-  __ CallRuntime(Runtime::kDeclareGlobals, 3);
+  __ Push(x11, flags);
+  __ CallRuntime(Runtime::kDeclareGlobals, 2);
   // Return value is ignored.
 }
 
@@ -2268,24 +2263,12 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit,
     }
   }
 
-  // prototype
-  __ CallRuntime(Runtime::kToFastProperties, 1);
-
-  // constructor
-  __ CallRuntime(Runtime::kToFastProperties, 1);
-
-  if (is_strong(language_mode())) {
-    __ Ldr(scratch,
-           FieldMemOperand(x0, JSFunction::kPrototypeOrInitialMapOffset));
-    __ push(x0);
-    __ Push(scratch);
-    // TODO(conradw): It would be more efficient to define the properties with
-    // the right attributes the first time round.
-    // Freeze the prototype.
-    __ CallRuntime(Runtime::kObjectFreeze, 1);
-    // Freeze the constructor.
-    __ CallRuntime(Runtime::kObjectFreeze, 1);
-  }
+  // Set both the prototype and constructor to have fast properties, and also
+  // freeze them in strong mode.
+  __ CallRuntime(is_strong(language_mode())
+                     ? Runtime::kFinalizeClassDefinitionStrong
+                     : Runtime::kFinalizeClassDefinition,
+                 2);
 }
 
 

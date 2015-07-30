@@ -17,24 +17,17 @@ struct MipsLinkageHelperTraits {
   static Register ReturnValue2Reg() { return v1; }
   static Register JSCallFunctionReg() { return a1; }
   static Register ContextReg() { return cp; }
-  static Register InterpreterBytecodePointerReg() { return s0; }
-  static Register InterpreterDispatchTableReg() { return s1; }
+  static Register InterpreterBytecodeOffsetReg() {
+    return kInterpreterBytecodeOffsetRegister;
+  }
+  static Register InterpreterBytecodeArrayReg() {
+    return kInterpreterBytecodeArrayRegister;
+  }
+  static Register InterpreterDispatchTableReg() {
+    return kInterpreterDispatchTableRegister;
+  }
   static Register RuntimeCallFunctionReg() { return a1; }
   static Register RuntimeCallArgCountReg() { return a0; }
-  static RegList CCalleeSaveRegisters() {
-    return s0.bit() | s1.bit() | s2.bit() | s3.bit() | s4.bit() | s5.bit() |
-           s6.bit() | s7.bit();
-  }
-  static RegList CCalleeSaveFPRegisters() {
-    return f20.bit() | f22.bit() | f24.bit() | f26.bit() | f28.bit() |
-           f30.bit();
-  }
-  static Register CRegisterParameter(int i) {
-    static Register register_parameters[] = {a0, a1, a2, a3};
-    return register_parameters[i];
-  }
-  static int CRegisterParametersLength() { return 4; }
-  static int CStackBackingStoreLength() { return 0; }
 };
 
 
@@ -62,12 +55,6 @@ CallDescriptor* Linkage::GetStubCallDescriptor(
   return LH::GetStubCallDescriptor(isolate, zone, descriptor,
                                    stack_parameter_count, flags, properties,
                                    return_type);
-}
-
-
-CallDescriptor* Linkage::GetSimplifiedCDescriptor(Zone* zone,
-                                                  const MachineSignature* sig) {
-  return LH::GetSimplifiedCDescriptor(zone, sig);
 }
 
 

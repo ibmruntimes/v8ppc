@@ -192,6 +192,8 @@ int Linkage::FrameStateInputCount(Runtime::FunctionId function) {
   switch (function) {
     case Runtime::kAllocateInTargetSpace:
     case Runtime::kDateField:
+    case Runtime::kFinalizeClassDefinition:        // TODO(conradw): Is it safe?
+    case Runtime::kFinalizeClassDefinitionStrong:  // TODO(conradw): Is it safe?
     case Runtime::kDefineClassMethod:              // TODO(jarin): Is it safe?
     case Runtime::kDefineGetterPropertyUnchecked:  // TODO(jarin): Is it safe?
     case Runtime::kDefineSetterPropertyUnchecked:  // TODO(jarin): Is it safe?
@@ -280,11 +282,6 @@ CallDescriptor* Linkage::GetStubCallDescriptor(
 }
 
 
-CallDescriptor* Linkage::GetSimplifiedCDescriptor(Zone* zone,
-                                                  const MachineSignature* sig) {
-  UNIMPLEMENTED();
-  return NULL;
-}
 #endif  // !V8_TURBOFAN_BACKEND
 }  // namespace compiler
 }  // namespace internal

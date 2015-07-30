@@ -1714,6 +1714,22 @@ Matcher<Node*> IsTailCall(
 }
 
 
+Matcher<Node*> IsTailCall(
+    const Matcher<CallDescriptor const*>& descriptor_matcher,
+    const Matcher<Node*>& value0_matcher, const Matcher<Node*>& value1_matcher,
+    const Matcher<Node*>& value2_matcher, const Matcher<Node*>& value3_matcher,
+    const Matcher<Node*>& effect_matcher,
+    const Matcher<Node*>& control_matcher) {
+  std::vector<Matcher<Node*>> value_matchers;
+  value_matchers.push_back(value0_matcher);
+  value_matchers.push_back(value1_matcher);
+  value_matchers.push_back(value2_matcher);
+  value_matchers.push_back(value3_matcher);
+  return MakeMatcher(new IsTailCallMatcher(descriptor_matcher, value_matchers,
+                                           effect_matcher, control_matcher));
+}
+
+
 Matcher<Node*> IsReferenceEqual(const Matcher<Type*>& type_matcher,
                                 const Matcher<Node*>& lhs_matcher,
                                 const Matcher<Node*>& rhs_matcher) {
@@ -1877,6 +1893,7 @@ IS_BINOP_MATCHER(Int32LessThan)
 IS_BINOP_MATCHER(Uint32LessThan)
 IS_BINOP_MATCHER(Uint32LessThanOrEqual)
 IS_BINOP_MATCHER(Int64Add)
+IS_BINOP_MATCHER(Int64Sub)
 IS_BINOP_MATCHER(Float32Max)
 IS_BINOP_MATCHER(Float32Min)
 IS_BINOP_MATCHER(Float32Equal)
