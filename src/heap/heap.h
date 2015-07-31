@@ -169,8 +169,7 @@ namespace internal {
   V(FixedArray, materialized_objects, MaterializedObjects)                     \
   V(FixedArray, allocation_sites_scratchpad, AllocationSitesScratchpad)        \
   V(FixedArray, microtask_queue, MicrotaskQueue)                               \
-  V(FixedArray, keyed_load_dummy_vector, KeyedLoadDummyVector)                 \
-  V(FixedArray, keyed_store_dummy_vector, KeyedStoreDummyVector)               \
+  V(FixedArray, dummy_vector, DummyVector)                                     \
   V(FixedArray, detached_contexts, DetachedContexts)                           \
   V(ArrayList, retained_maps, RetainedMaps)                                    \
   V(WeakHashTable, weak_object_to_code_table, WeakObjectToCodeTable)           \
@@ -1179,7 +1178,8 @@ class Heap {
 
   // Sets the allocation limit to trigger the next full garbage collection.
   void SetOldGenerationAllocationLimit(intptr_t old_gen_size, double gc_speed,
-                                       double mutator_speed);
+                                       double mutator_speed,
+                                       int freed_global_handles);
 
   // Decrease the allocation limit if the new limit based on the given
   // parameters is lower than the current limit.

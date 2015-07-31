@@ -16,13 +16,13 @@ namespace compiler {
 namespace {
 // Platform-specific configuration for C calling convention.
 LinkageLocation regloc(Register reg) {
-  return LinkageLocation(Register::ToAllocationIndex(reg));
+  return LinkageLocation::ForRegister(Register::ToAllocationIndex(reg));
 }
 
 
 LinkageLocation stackloc(int i) {
   DCHECK_LT(i, 0);
-  return LinkageLocation(i);
+  return LinkageLocation::ForCallerFrameSlot(i);
 }
 
 
@@ -226,14 +226,14 @@ CallDescriptor* Linkage::GetSimplifiedCDescriptor(
 
   // The target for C calls is always an address (i.e. machine pointer).
   MachineType target_type = kMachPtr;
-  LinkageLocation target_loc = LinkageLocation::AnyRegister();
+  LinkageLocation target_loc = LinkageLocation::ForAnyRegister();
   return new (zone) CallDescriptor(  // --
       CallDescriptor::kCallAddress,  // kind
       target_type,                   // target MachineType
       target_loc,                    // target location
       msig,                          // machine_sig
       locations.Build(),             // location_sig
-      0,                             // js_parameter_count
+      0,                             // stack_parameter_count
       Operator::kNoProperties,       // properties
       kCalleeSaveRegisters,          // callee-saved registers
       kCalleeSaveFPRegisters,        // callee-saved fp regs

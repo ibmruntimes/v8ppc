@@ -10,7 +10,7 @@
 #include "src/code-stubs.h"
 #include "src/codegen.h"
 #include "src/compiler.h"
-#include "src/debug.h"
+#include "src/debug/debug.h"
 #include "src/full-codegen/full-codegen.h"
 #include "src/ic/ic.h"
 #include "src/parser.h"
@@ -349,6 +349,11 @@ void FullCodeGenerator::Generate() {
     { Comment cmnt(masm_, "[ Declarations");
       VisitDeclarations(scope()->declarations());
     }
+
+    // Assert that the declarations do not use ICs. Otherwise the debugger
+    // won't be able to redirect a PC at an IC to the correct IC in newly
+    // recompiled code.
+    DCHECK_EQ(0, ic_total_count_);
 
     { Comment cmnt(masm_, "[ Stack check");
       PrepareForBailoutForId(BailoutId::Declarations(), NO_REGISTERS);
@@ -1020,8 +1025,8 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, ecx);
   __ j(above_equal, &done_convert, Label::kNear);
   __ bind(&convert);
-  __ push(eax);
-  __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
+  ToObjectStub stub(isolate());
+  __ CallStub(&stub);
   __ bind(&done_convert);
   PrepareForBailoutForId(stmt->ToObjectId(), TOS_REG);
   __ push(eax);
@@ -3911,6 +3916,19 @@ void FullCodeGenerator::EmitNumberToString(CallRuntime* expr) {
   VisitForAccumulatorValue(args->at(0));
 
   NumberToStringStub stub(isolate());
+  __ CallStub(&stub);
+  context()->Plug(eax);
+}
+
+
+void FullCodeGenerator::EmitToObject(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK_EQ(1, args->length());
+
+  // Load the argument into eax and convert it.
+  VisitForAccumulatorValue(args->at(0));
+
+  ToObjectStub stub(isolate());
   __ CallStub(&stub);
   context()->Plug(eax);
 }

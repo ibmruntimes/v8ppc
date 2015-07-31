@@ -994,8 +994,9 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
       __ SmiTag(eax);
       __ push(eax);
 
-      __ push(ebx);
-      __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
+      __ mov(eax, ebx);
+      ToObjectStub stub(masm->isolate());
+      __ CallStub(&stub);
       __ mov(ebx, eax);
       __ Move(edx, Immediate(0));  // restore
 
@@ -1104,7 +1105,8 @@ static void Generate_PushAppliedArguments(MacroAssembler* masm,
   __ mov(receiver, Operand(ebp, argumentsOffset));  // load arguments
 
   // Use inline caching to speed up access to arguments.
-  FeedbackVectorSpec spec(0, Code::KEYED_LOAD_IC);
+  Code::Kind kinds[] = {Code::KEYED_LOAD_IC};
+  FeedbackVectorSpec spec(0, 1, kinds);
   Handle<TypeFeedbackVector> feedback_vector =
       masm->isolate()->factory()->NewTypeFeedbackVector(&spec);
   int index = feedback_vector->GetIndex(FeedbackVectorICSlot(0));
@@ -1215,8 +1217,9 @@ static void Generate_ApplyHelper(MacroAssembler* masm, bool targetIsArgument) {
     __ j(above_equal, &push_receiver);
 
     __ bind(&call_to_object);
-    __ push(ebx);
-    __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
+    __ mov(eax, ebx);
+    ToObjectStub stub(masm->isolate());
+    __ CallStub(&stub);
     __ mov(ebx, eax);
     __ jmp(&push_receiver);
 

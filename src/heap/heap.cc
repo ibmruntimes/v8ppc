@@ -14,7 +14,7 @@
 #include "src/compilation-cache.h"
 #include "src/conversions.h"
 #include "src/cpu-profiler.h"
-#include "src/debug.h"
+#include "src/debug/debug.h"
 #include "src/deoptimizer.h"
 #include "src/global-handles.h"
 #include "src/heap/gc-idle-time-handler.h"
@@ -966,7 +966,9 @@ bool Heap::CollectGarbage(GarbageCollector collector, const char* gc_reason,
           (committed_memory_before - committed_memory_after) > MB ||
           HasHighFragmentation(used_memory_after, committed_memory_after) ||
           (detached_contexts()->length() > 0);
-      memory_reducer_.NotifyMarkCompact(event);
+      if (deserialization_complete_) {
+        memory_reducer_.NotifyMarkCompact(event);
+      }
     }
 
     tracer()->Stop(collector);
@@ -1325,7 +1327,8 @@ bool Heap::PerformGarbageCollection(
     // Register the amount of external allocated memory.
     amount_of_external_allocated_memory_at_last_global_gc_ =
         amount_of_external_allocated_memory_;
-    SetOldGenerationAllocationLimit(old_gen_size, gc_speed, mutator_speed);
+    SetOldGenerationAllocationLimit(old_gen_size, gc_speed, mutator_speed,
+                                    freed_global_handles);
   } else if (HasLowYoungGenerationAllocationRate() &&
              old_generation_size_configured_) {
     DampenOldGenerationAllocationLimit(old_gen_size, gc_speed, mutator_speed);
@@ -3410,25 +3413,17 @@ void Heap::CreateInitialObjects() {
   set_microtask_queue(empty_fixed_array());
 
   {
-    FeedbackVectorSpec spec(0, Code::KEYED_LOAD_IC);
+    Code::Kind kinds[] = {Code::LOAD_IC, Code::KEYED_LOAD_IC, Code::STORE_IC,
+                          Code::KEYED_STORE_IC};
+    FeedbackVectorSpec spec(0, 4, kinds);
     Handle<TypeFeedbackVector> dummy_vector =
         factory->NewTypeFeedbackVector(&spec);
-    dummy_vector->Set(FeedbackVectorICSlot(0),
-                      *TypeFeedbackVector::MegamorphicSentinel(isolate()),
-                      SKIP_WRITE_BARRIER);
-    set_keyed_load_dummy_vector(*dummy_vector);
-  }
-
-  if (FLAG_vector_stores) {
-    FeedbackVectorSpec spec(0, Code::KEYED_STORE_IC);
-    Handle<TypeFeedbackVector> dummy_vector =
-        factory->NewTypeFeedbackVector(&spec);
-    dummy_vector->Set(FeedbackVectorICSlot(0),
-                      *TypeFeedbackVector::MegamorphicSentinel(isolate()),
-                      SKIP_WRITE_BARRIER);
-    set_keyed_store_dummy_vector(*dummy_vector);
-  } else {
-    set_keyed_store_dummy_vector(empty_fixed_array());
+    for (int i = 0; i < 4; i++) {
+      dummy_vector->Set(FeedbackVectorICSlot(0),
+                        *TypeFeedbackVector::MegamorphicSentinel(isolate()),
+                        SKIP_WRITE_BARRIER);
+    }
+    set_dummy_vector(*dummy_vector);
   }
 
   set_detached_contexts(empty_fixed_array());
@@ -5653,7 +5648,11 @@ intptr_t Heap::CalculateOldGenerationAllocationLimit(double factor,
 
 void Heap::SetOldGenerationAllocationLimit(intptr_t old_gen_size,
                                            double gc_speed,
-                                           double mutator_speed) {
+                                           double mutator_speed,
+                                           int freed_global_handles) {
+  const int kFreedGlobalHandlesThreshold = 700;
+  const double kMaxHeapGrowingFactorForManyFreedGlobalHandles = 1.3;
+
   double factor = HeapGrowingFactor(gc_speed, mutator_speed);
 
   if (FLAG_trace_gc_verbose) {
@@ -5669,6 +5668,10 @@ void Heap::SetOldGenerationAllocationLimit(intptr_t old_gen_size,
   if (max_old_generation_size_ <= kMaxOldSpaceSizeMediumMemoryDevice ||
       FLAG_optimize_for_size) {
     factor = Min(factor, kMaxHeapGrowingFactorMemoryConstrained);
+  }
+
+  if (freed_global_handles >= kFreedGlobalHandlesThreshold) {
+    factor = Min(factor, kMaxHeapGrowingFactorForManyFreedGlobalHandles);
   }
 
   if (FLAG_stress_compaction ||

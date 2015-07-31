@@ -9,7 +9,7 @@
 #if V8_TARGET_ARCH_MIPS
 
 #include "src/codegen.h"
-#include "src/debug.h"
+#include "src/debug/debug.h"
 #include "src/deoptimizer.h"
 #include "src/full-codegen/full-codegen.h"
 #include "src/interpreter/bytecodes.h"
@@ -1313,8 +1313,10 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     {
       FrameScope scope(masm, StackFrame::INTERNAL);
       __ sll(a0, a0, kSmiTagSize);  // Smi tagged.
-      __ Push(a0, a2);
-      __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
+      __ push(a0);
+      __ mov(a0, a2);
+      ToObjectStub stub(masm->isolate());
+      __ CallStub(&stub);
       __ mov(a2, v0);
 
       __ pop(a0);
@@ -1444,7 +1446,8 @@ static void Generate_PushAppliedArguments(MacroAssembler* masm,
   __ lw(receiver, MemOperand(fp, argumentsOffset));
 
   // Use inline caching to speed up access to arguments.
-  FeedbackVectorSpec spec(0, Code::KEYED_LOAD_IC);
+  Code::Kind kinds[] = {Code::KEYED_LOAD_IC};
+  FeedbackVectorSpec spec(0, 1, kinds);
   Handle<TypeFeedbackVector> feedback_vector =
       masm->isolate()->factory()->NewTypeFeedbackVector(&spec);
   int index = feedback_vector->GetIndex(FeedbackVectorICSlot(0));
@@ -1548,8 +1551,8 @@ static void Generate_ApplyHelper(MacroAssembler* masm, bool targetIsArgument) {
     // Convert the receiver to a regular object.
     // a0: receiver
     __ bind(&call_to_object);
-    __ push(a0);
-    __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
+    ToObjectStub stub(masm->isolate());
+    __ CallStub(&stub);
     __ mov(a0, v0);  // Put object in a0 to match other paths to push_receiver.
     __ Branch(&push_receiver);
 

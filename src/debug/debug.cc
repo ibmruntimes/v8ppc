@@ -4,6 +4,8 @@
 
 #include "src/v8.h"
 
+#include "src/debug/debug.h"
+
 #include "src/api.h"
 #include "src/arguments.h"
 #include "src/bootstrapper.h"
@@ -11,7 +13,6 @@
 #include "src/codegen.h"
 #include "src/compilation-cache.h"
 #include "src/compiler.h"
-#include "src/debug.h"
 #include "src/deoptimizer.h"
 #include "src/execution.h"
 #include "src/full-codegen/full-codegen.h"
@@ -525,7 +526,7 @@ bool Debug::Load() {
 
   // Compile the JavaScript for the debugger in the debugger context.
   bool caught_exception =
-      !CompileDebuggerScript(isolate_, Natives::GetIndex("mirror")) ||
+      !CompileDebuggerScript(isolate_, Natives::GetIndex("mirrors")) ||
       !CompileDebuggerScript(isolate_, Natives::GetIndex("debug"));
 
   if (FLAG_enable_liveedit) {
@@ -718,7 +719,7 @@ bool Debug::CheckBreakPoint(Handle<Object> break_point_object) {
   // Ignore check if break point object is not a JSObject.
   if (!break_point_object->IsJSObject()) return true;
 
-  // Get the function IsBreakPointTriggered (defined in debug-debugger.js).
+  // Get the function IsBreakPointTriggered (defined in debug.js).
   Handle<String> is_break_point_triggered_string =
       factory->InternalizeOneByteString(
           STATIC_CHAR_VECTOR("IsBreakPointTriggered"));
@@ -1311,13 +1312,10 @@ void Debug::ClearStepNext() {
 }
 
 
-// We start counting call sites from the stack check because the declaration
-// code at the start of the function may have changed on recompile.
-static void SkipToStackCheck(Isolate* isolate, RelocIterator* it) {
-  while (Code::GetCodeFromTargetAddress(it->rinfo()->target_address()) !=
-         *isolate->builtins()->StackCheck()) {
-    it->next();
-  }
+bool MatchingCodeTargets(Code* target1, Code* target2) {
+  if (target1 == target2) return true;
+  if (target1->kind() != target2->kind()) return false;
+  return target1->is_handler() || target1->is_inline_cache_stub();
 }
 
 
@@ -1328,24 +1326,42 @@ static Address ComputeNewPcForRedirect(Code* new_code, Code* old_code,
   DCHECK_EQ(old_code->kind(), Code::FUNCTION);
   DCHECK_EQ(new_code->kind(), Code::FUNCTION);
   DCHECK(new_code->has_debug_break_slots());
-  int mask = RelocInfo::kCodeTargetMask;
-  int index = 0;
+  static const int mask = RelocInfo::kCodeTargetMask;
+
+  // Find the target of the current call.
+  Code* target = NULL;
   intptr_t delta = 0;
-  Isolate* isolate = new_code->GetIsolate();
-  RelocIterator old_it(old_code, mask);
-  for (SkipToStackCheck(isolate, &old_it); !old_it.done(); old_it.next()) {
-    RelocInfo* rinfo = old_it.rinfo();
+  for (RelocIterator it(old_code, mask); !it.done(); it.next()) {
+    RelocInfo* rinfo = it.rinfo();
     Address current_pc = rinfo->pc();
     // The frame PC is behind the call instruction by the call instruction size.
     if (current_pc > old_pc) break;
-    index++;
     delta = old_pc - current_pc;
+    target = Code::GetCodeFromTargetAddress(rinfo->target_address());
   }
 
-  RelocIterator new_it(new_code, mask);
-  SkipToStackCheck(isolate, &new_it);
-  for (int i = 1; i < index; i++) new_it.next();
-  return new_it.rinfo()->pc() + delta;
+  // Count the number of calls to the same target before the current call.
+  int index = 0;
+  for (RelocIterator it(old_code, mask); !it.done(); it.next()) {
+    RelocInfo* rinfo = it.rinfo();
+    Address current_pc = rinfo->pc();
+    if (current_pc > old_pc) break;
+    Code* current = Code::GetCodeFromTargetAddress(rinfo->target_address());
+    if (MatchingCodeTargets(target, current)) index++;
+  }
+
+  DCHECK(index > 0);
+
+  // Repeat the count on the new code to find corresponding call.
+  for (RelocIterator it(new_code, mask); !it.done(); it.next()) {
+    RelocInfo* rinfo = it.rinfo();
+    Code* current = Code::GetCodeFromTargetAddress(rinfo->target_address());
+    if (MatchingCodeTargets(target, current)) index--;
+    if (index == 0) return rinfo->pc() + delta;
+  }
+
+  UNREACHABLE();
+  return NULL;
 }
 
 
@@ -2044,7 +2060,7 @@ void Debug::OnAfterCompile(Handle<Script> script) {
   // If debugging there might be script break points registered for this
   // script. Make sure that these break points are set.
 
-  // Get the function UpdateScriptBreakPoints (defined in debug-debugger.js).
+  // Get the function UpdateScriptBreakPoints (defined in debug.js).
   Handle<String> update_script_break_points_string =
       isolate_->factory()->InternalizeOneByteString(
           STATIC_CHAR_VECTOR("UpdateScriptBreakPoints"));

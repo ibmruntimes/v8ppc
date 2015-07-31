@@ -318,7 +318,8 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ jmp(code, RelocInfo::CODE_TARGET);
       } else {
         Register reg = i.InputRegister(0);
-        __ jmp(Operand(reg, Code::kHeaderSize - kHeapObjectTag));
+        __ add(reg, Immediate(Code::kHeaderSize - kHeapObjectTag));
+        __ jmp(reg);
       }
       break;
     }
@@ -1339,11 +1340,7 @@ void CodeGenerator::AssembleReturn() {
       __ bind(&return_label_);
       __ mov(esp, ebp);  // Move stack pointer back to frame pointer.
       __ pop(ebp);       // Pop caller's frame pointer.
-      int pop_count = descriptor->IsJSFunctionCall()
-                          ? static_cast<int>(descriptor->JSParameterCount())
-                          : (info()->IsStub()
-                                 ? info()->code_stub()->GetStackParameterCount()
-                                 : 0);
+      int pop_count = static_cast<int>(descriptor->StackParameterCount());
       if (pop_count == 0) {
         __ ret(0);
       } else {

@@ -7,7 +7,7 @@
 #if V8_TARGET_ARCH_ARM
 
 #include "src/codegen.h"
-#include "src/debug.h"
+#include "src/debug/debug.h"
 #include "src/deoptimizer.h"
 #include "src/full-codegen/full-codegen.h"
 #include "src/interpreter/bytecodes.h"
@@ -1319,8 +1319,9 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
       __ SmiTag(r0);
       __ push(r0);
 
-      __ push(r2);
-      __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
+      __ mov(r0, r2);
+      ToObjectStub stub(masm->isolate());
+      __ CallStub(&stub);
       __ mov(r2, r0);
 
       __ pop(r0);
@@ -1450,7 +1451,8 @@ static void Generate_PushAppliedArguments(MacroAssembler* masm,
   __ ldr(receiver, MemOperand(fp, argumentsOffset));
 
   // Use inline caching to speed up access to arguments.
-  FeedbackVectorSpec spec(0, Code::KEYED_LOAD_IC);
+  Code::Kind kinds[] = {Code::KEYED_LOAD_IC};
+  FeedbackVectorSpec spec(0, 1, kinds);
   Handle<TypeFeedbackVector> feedback_vector =
       masm->isolate()->factory()->NewTypeFeedbackVector(&spec);
   int index = feedback_vector->GetIndex(FeedbackVectorICSlot(0));
@@ -1556,8 +1558,8 @@ static void Generate_ApplyHelper(MacroAssembler* masm, bool targetIsArgument) {
     // Convert the receiver to a regular object.
     // r0: receiver
     __ bind(&call_to_object);
-    __ push(r0);
-    __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
+    ToObjectStub stub(masm->isolate());
+    __ CallStub(&stub);
     __ b(&push_receiver);
 
     __ bind(&use_global_proxy);
