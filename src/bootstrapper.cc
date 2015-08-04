@@ -241,7 +241,6 @@ class Genesis BASE_EMBEDDED {
   bool InstallExtraNatives();
   void InstallBuiltinFunctionIds();
   void InstallExperimentalBuiltinFunctionIds();
-  void InstallJSFunctionResultCaches();
   void InitializeNormalizedMapCaches();
 
   enum ExtensionTraversalState {
@@ -317,13 +316,6 @@ class Genesis BASE_EMBEDDED {
   void SetStrictFunctionInstanceDescriptor(Handle<Map> map,
                                            FunctionMode function_mode);
   void SetStrongFunctionInstanceDescriptor(Handle<Map> map);
-
-  static bool CompileBuiltin(Isolate* isolate, int index);
-  static bool CompileExperimentalBuiltin(Isolate* isolate, int index);
-  static bool CompileExtraBuiltin(Isolate* isolate, int index);
-  static bool CompileNative(Isolate* isolate, Vector<const char> name,
-                            Handle<String> source, int argc,
-                            Handle<Object> argv[]);
 
   static bool CallUtilsFunction(Isolate* isolate, const char* name);
 
@@ -1991,13 +1983,16 @@ void Genesis::InitializeGlobal_harmony_simd() {
   DCHECK(simd_object->IsJSObject());
   JSObject::AddProperty(global, name, simd_object, DONT_ENUM);
 
-  Handle<JSFunction> float32x4_function =
-      InstallFunction(simd_object, "Float32x4", JS_VALUE_TYPE, JSValue::kSize,
-                      isolate->initial_object_prototype(), Builtins::kIllegal);
-  // Set the instance class name since InstallFunction only does this when
-  // we install on the GlobalObject.
-  float32x4_function->SetInstanceClassName(*factory->Float32x4_string());
-  native_context()->set_float32x4_function(*float32x4_function);
+// Install SIMD type functions. Set the instance class names since
+// InstallFunction only does this when we install on the GlobalObject.
+#define SIMD128_INSTALL_FUNCTION(name, type, lane_count, lane_type) \
+  Handle<JSFunction> type##_function = InstallFunction(             \
+      simd_object, #name, JS_VALUE_TYPE, JSValue::kSize,            \
+      isolate->initial_object_prototype(), Builtins::kIllegal);     \
+  native_context()->set_##type##_function(*type##_function);        \
+  type##_function->SetInstanceClassName(*factory->name##_string());
+
+  SIMD128_TYPES(SIMD128_INSTALL_FUNCTION)
 }
 
 
@@ -2695,50 +2690,6 @@ void Genesis::InstallExperimentalBuiltinFunctionIds() {
 #undef INSTALL_BUILTIN_ID
 
 
-// Do not forget to update macros.py with named constant
-// of cache id.
-#define JSFUNCTION_RESULT_CACHE_LIST(F) \
-  F(16, native_context()->regexp_function())
-
-
-static FixedArray* CreateCache(int size, Handle<JSFunction> factory_function) {
-  Factory* factory = factory_function->GetIsolate()->factory();
-  // Caches are supposed to live for a long time, allocate in old space.
-  int array_size = JSFunctionResultCache::kEntriesIndex + 2 * size;
-  // Cannot use cast as object is not fully initialized yet.
-  JSFunctionResultCache* cache = reinterpret_cast<JSFunctionResultCache*>(
-      *factory->NewFixedArrayWithHoles(array_size, TENURED));
-  cache->set(JSFunctionResultCache::kFactoryIndex, *factory_function);
-  cache->MakeZeroSize();
-  return cache;
-}
-
-
-void Genesis::InstallJSFunctionResultCaches() {
-  const int kNumberOfCaches = 0 +
-#define F(size, func) + 1
-    JSFUNCTION_RESULT_CACHE_LIST(F)
-#undef F
-  ;
-
-  Handle<FixedArray> caches =
-      factory()->NewFixedArray(kNumberOfCaches, TENURED);
-
-  int index = 0;
-
-#define F(size, func) do {                                              \
-    FixedArray* cache = CreateCache((size), Handle<JSFunction>(func));  \
-    caches->set(index++, cache);                                        \
-  } while (false)
-
-  JSFUNCTION_RESULT_CACHE_LIST(F);
-
-#undef F
-
-  native_context()->set_jsfunction_result_caches(*caches);
-}
-
-
 void Genesis::InitializeNormalizedMapCaches() {
   Handle<NormalizedMapCache> cache = NormalizedMapCache::New(isolate());
   native_context()->set_normalized_map_cache(*cache);
@@ -3249,7 +3200,6 @@ Genesis::Genesis(Isolate* isolate,
         CreateNewGlobals(global_proxy_template, global_proxy);
     HookUpGlobalProxy(global_object, global_proxy);
     InitializeGlobal(global_object, empty_function, context_type);
-    InstallJSFunctionResultCaches();
     InitializeNormalizedMapCaches();
 
     if (!InstallNatives(context_type)) return;

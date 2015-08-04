@@ -522,11 +522,11 @@ class MemoryChunk {
            progress_bar();
   }
 
-  static void IncrementLiveBytesFromGC(Address address, int by) {
-    MemoryChunk::FromAddress(address)->IncrementLiveBytes(by);
+  static void IncrementLiveBytesFromGC(HeapObject* object, int by) {
+    MemoryChunk::FromAddress(object->address())->IncrementLiveBytes(by);
   }
 
-  static void IncrementLiveBytesFromMutator(Address address, int by);
+  static void IncrementLiveBytesFromMutator(HeapObject* object, int by);
 
   static const intptr_t kAlignment =
       (static_cast<uintptr_t>(1) << kPageSizeBits);
@@ -2658,8 +2658,7 @@ class NewSpace : public Space {
   HistogramInfo* allocated_histogram_;
   HistogramInfo* promoted_histogram_;
 
-  MUST_USE_RESULT AllocationResult
-  SlowAllocateRaw(int size_in_bytes, AllocationAlignment alignment);
+  bool EnsureAllocation(int size_in_bytes, AllocationAlignment alignment);
 
   friend class SemiSpaceIterator;
 };

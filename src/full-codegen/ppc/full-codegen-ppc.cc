@@ -3423,6 +3423,33 @@ void FullCodeGenerator::EmitIsSpecObject(CallRuntime* expr) {
 }
 
 
+void FullCodeGenerator::EmitIsSimdValue(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK(args->length() == 1);
+
+  VisitForAccumulatorValue(args->at(0));
+
+  Label materialize_true, materialize_false;
+  Label* if_true = NULL;
+  Label* if_false = NULL;
+  Label* fall_through = NULL;
+  context()->PrepareTest(&materialize_true, &materialize_false, &if_true,
+                         &if_false, &fall_through);
+
+  __ JumpIfSmi(r3, if_false);
+  Register map = r4;
+  Register type_reg = r5;
+  __ LoadP(map, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ lbz(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
+  __ subi(type_reg, type_reg, Operand(FIRST_SIMD_VALUE_TYPE));
+  __ cmpli(type_reg, Operand(LAST_SIMD_VALUE_TYPE - FIRST_SIMD_VALUE_TYPE));
+  PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
+  Split(le, if_true, if_false, fall_through);
+
+  context()->Plug(if_true, if_false);
+}
+
+
 void FullCodeGenerator::EmitIsUndetectableObject(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 1);
@@ -4259,56 +4286,6 @@ void FullCodeGenerator::EmitRegExpConstructResult(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitGetFromCache(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK_EQ(2, args->length());
-  DCHECK_NOT_NULL(args->at(0)->AsLiteral());
-  int cache_id = Smi::cast(*(args->at(0)->AsLiteral()->value()))->value();
-
-  Handle<FixedArray> jsfunction_result_caches(
-      isolate()->native_context()->jsfunction_result_caches());
-  if (jsfunction_result_caches->length() <= cache_id) {
-    __ Abort(kAttemptToUseUndefinedCache);
-    __ LoadRoot(r3, Heap::kUndefinedValueRootIndex);
-    context()->Plug(r3);
-    return;
-  }
-
-  VisitForAccumulatorValue(args->at(1));
-
-  Register key = r3;
-  Register cache = r4;
-  __ LoadP(cache, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-  __ LoadP(cache, FieldMemOperand(cache, GlobalObject::kNativeContextOffset));
-  __ LoadP(cache,
-           ContextOperand(cache, Context::JSFUNCTION_RESULT_CACHES_INDEX));
-  __ LoadP(cache,
-           FieldMemOperand(cache, FixedArray::OffsetOfElementAt(cache_id)), r0);
-
-  Label done, not_found;
-  __ LoadP(r5, FieldMemOperand(cache, JSFunctionResultCache::kFingerOffset));
-  // r5 now holds finger offset as a smi.
-  __ addi(r6, cache, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  // r6 now points to the start of fixed array elements.
-  __ SmiToPtrArrayOffset(r5, r5);
-  __ LoadPUX(r5, MemOperand(r6, r5));
-  // r6 now points to the key of the pair.
-  __ cmp(key, r5);
-  __ bne(&not_found);
-
-  __ LoadP(r3, MemOperand(r6, kPointerSize));
-  __ b(&done);
-
-  __ bind(&not_found);
-  // Call runtime to perform the lookup.
-  __ Push(cache, key);
-  __ CallRuntime(Runtime::kGetFromCacheRT, 2);
-
-  __ bind(&done);
-  context()->Plug(r3);
-}
-
-
 void FullCodeGenerator::EmitHasCachedArrayIndex(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   VisitForAccumulatorValue(args->at(0));
@@ -5095,6 +5072,30 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
   } else if (String::Equals(check, factory->float32x4_string())) {
     __ JumpIfSmi(r3, if_false);
     __ CompareObjectType(r3, r3, r4, FLOAT32X4_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->int32x4_string())) {
+    __ JumpIfSmi(r3, if_false);
+    __ CompareObjectType(r3, r3, r4, INT32X4_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->bool32x4_string())) {
+    __ JumpIfSmi(r3, if_false);
+    __ CompareObjectType(r3, r3, r4, BOOL32X4_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->int16x8_string())) {
+    __ JumpIfSmi(r3, if_false);
+    __ CompareObjectType(r3, r3, r4, INT16X8_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->bool16x8_string())) {
+    __ JumpIfSmi(r3, if_false);
+    __ CompareObjectType(r3, r3, r4, BOOL16X8_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->int8x16_string())) {
+    __ JumpIfSmi(r3, if_false);
+    __ CompareObjectType(r3, r3, r4, INT8X16_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->bool8x16_string())) {
+    __ JumpIfSmi(r3, if_false);
+    __ CompareObjectType(r3, r3, r4, BOOL8X16_TYPE);
     Split(eq, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->boolean_string())) {
     __ CompareRoot(r3, Heap::kTrueValueRootIndex);

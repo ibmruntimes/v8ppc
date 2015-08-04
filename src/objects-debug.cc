@@ -61,6 +61,24 @@ void HeapObject::HeapObjectVerify() {
     case FLOAT32X4_TYPE:
       Float32x4::cast(this)->Float32x4Verify();
       break;
+    case INT32X4_TYPE:
+      Int32x4::cast(this)->Int32x4Verify();
+      break;
+    case BOOL32X4_TYPE:
+      Bool32x4::cast(this)->Bool32x4Verify();
+      break;
+    case INT16X8_TYPE:
+      Int16x8::cast(this)->Int16x8Verify();
+      break;
+    case BOOL16X8_TYPE:
+      Bool16x8::cast(this)->Bool16x8Verify();
+      break;
+    case INT8X16_TYPE:
+      Int8x16::cast(this)->Int8x16Verify();
+      break;
+    case BOOL8X16_TYPE:
+      Bool8x16::cast(this)->Bool8x16Verify();
+      break;
     case FIXED_ARRAY_TYPE:
       FixedArray::cast(this)->FixedArrayVerify();
       break;
@@ -215,6 +233,24 @@ void HeapNumber::HeapNumberVerify() {
 
 
 void Float32x4::Float32x4Verify() { CHECK(IsFloat32x4()); }
+
+
+void Int32x4::Int32x4Verify() { CHECK(IsInt32x4()); }
+
+
+void Bool32x4::Bool32x4Verify() { CHECK(IsBool32x4()); }
+
+
+void Int16x8::Int16x8Verify() { CHECK(IsInt16x8()); }
+
+
+void Bool16x8::Bool16x8Verify() { CHECK(IsBool16x8()); }
+
+
+void Int8x16::Int8x16Verify() { CHECK(IsInt8x16()); }
+
+
+void Bool8x16::Bool8x16Verify() { CHECK(IsBool8x16()); }
 
 
 void ByteArray::ByteArrayVerify() {
@@ -989,32 +1025,6 @@ void Script::ScriptVerify() {
 }
 
 
-void JSFunctionResultCache::JSFunctionResultCacheVerify() {
-  JSFunction::cast(get(kFactoryIndex))->ObjectVerify();
-
-  int size = Smi::cast(get(kCacheSizeIndex))->value();
-  CHECK(kEntriesIndex <= size);
-  CHECK(size <= length());
-  CHECK_EQ(0, size % kEntrySize);
-
-  int finger = Smi::cast(get(kFingerIndex))->value();
-  CHECK(kEntriesIndex <= finger);
-  CHECK((finger < size) || (finger == kEntriesIndex && finger == size));
-  CHECK_EQ(0, finger % kEntrySize);
-
-  if (FLAG_enable_slow_asserts) {
-    for (int i = kEntriesIndex; i < size; i++) {
-      CHECK(!get(i)->IsTheHole());
-      get(i)->ObjectVerify();
-    }
-    for (int i = size; i < length(); i++) {
-      CHECK(get(i)->IsTheHole());
-      get(i)->ObjectVerify();
-    }
-  }
-}
-
-
 void NormalizedMapCache::NormalizedMapCacheVerify() {
   FixedArray::cast(this)->FixedArrayVerify();
   if (FLAG_enable_slow_asserts) {
@@ -1274,6 +1284,57 @@ void Code::VerifyEmbeddedObjects(VerifyMode mode) {
                          : it.rinfo()->target_object();
     CHECK(!CanLeak(target, heap, skip_weak_cell));
   }
+}
+
+
+// Verify that the debugger can redirect old code to the new code.
+void Code::VerifyRecompiledCode(Code* old_code, Code* new_code) {
+  if (old_code->kind() != FUNCTION) return;
+  if (new_code->kind() != FUNCTION) return;
+  static const int mask = RelocInfo::kCodeTargetMask;
+
+  Isolate* isolate = old_code->GetIsolate();
+  RelocIterator old_it(old_code, mask);
+  RelocIterator new_it(new_code, mask);
+  Code* stack_check = isolate->builtins()->builtin(Builtins::kStackCheck);
+
+  while (!old_it.done()) {
+    RelocInfo* rinfo = old_it.rinfo();
+    Code* target = Code::GetCodeFromTargetAddress(rinfo->target_address());
+    CHECK(!target->is_handler() && !target->is_inline_cache_stub());
+    if (target == stack_check) break;
+    old_it.next();
+  }
+
+  while (!new_it.done()) {
+    RelocInfo* rinfo = new_it.rinfo();
+    Code* target = Code::GetCodeFromTargetAddress(rinfo->target_address());
+    CHECK(!target->is_handler() && !target->is_inline_cache_stub());
+    if (target == stack_check) break;
+    new_it.next();
+  }
+
+  // Either both are done because there is no stack check.
+  // Or we are past the prologue for both.
+  CHECK_EQ(new_it.done(), old_it.done());
+
+  // After the prologue, each call in the old code has a corresponding call
+  // in the new code.
+  while (!old_it.done() && !new_it.done()) {
+    Code* old_target =
+        Code::GetCodeFromTargetAddress(old_it.rinfo()->target_address());
+    Code* new_target =
+        Code::GetCodeFromTargetAddress(new_it.rinfo()->target_address());
+    CHECK_EQ(old_target->kind(), new_target->kind());
+    if (!old_target->is_handler() && !old_target->is_inline_cache_stub()) {
+      CHECK_EQ(old_target, new_target);
+    }
+    old_it.next();
+    new_it.next();
+  }
+
+  // Both are done at the same time.
+  CHECK_EQ(new_it.done(), old_it.done());
 }
 
 

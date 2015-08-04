@@ -52,7 +52,7 @@ Bytecode Bytecodes::FromByte(uint8_t value) {
 
 
 // static
-const int Bytecodes::NumberOfOperands(Bytecode bytecode) {
+int Bytecodes::NumberOfOperands(Bytecode bytecode) {
   DCHECK(bytecode <= Bytecode::kLast);
   int count;
   uint8_t row = ToByte(bytecode);
@@ -66,24 +66,66 @@ const int Bytecodes::NumberOfOperands(Bytecode bytecode) {
 
 
 // static
-const OperandType Bytecodes::GetOperandType(Bytecode bytecode, int i) {
+OperandType Bytecodes::GetOperandType(Bytecode bytecode, int i) {
   DCHECK(bytecode <= Bytecode::kLast && i < NumberOfOperands(bytecode));
   return kBytecodeTable[ToByte(bytecode)][i];
 }
 
 
 // static
-const int Bytecodes::Size(Bytecode bytecode) {
+int Bytecodes::Size(Bytecode bytecode) {
   return 1 + NumberOfOperands(bytecode);
 }
 
 
 // static
-const int Bytecodes::MaximumNumberOfOperands() { return kMaxOperands; }
+int Bytecodes::MaximumNumberOfOperands() { return kMaxOperands; }
 
 
 // static
-const int Bytecodes::MaximumSize() { return 1 + kMaxOperands; }
+int Bytecodes::MaximumSize() { return 1 + kMaxOperands; }
+
+
+// static
+std::ostream& Bytecodes::Decode(std::ostream& os,
+                                const uint8_t* bytecode_start) {
+  Vector<char> buf = Vector<char>::New(50);
+
+  Bytecode bytecode = Bytecodes::FromByte(bytecode_start[0]);
+  int bytecode_size = Bytecodes::Size(bytecode);
+
+  for (int i = 0; i < bytecode_size; i++) {
+    SNPrintF(buf, "%02x ", bytecode_start[i]);
+    os << buf.start();
+  }
+  for (int i = bytecode_size; i < Bytecodes::MaximumSize(); i++) {
+    os << "   ";
+  }
+
+  os << bytecode << " ";
+
+  const uint8_t* operands_start = bytecode_start + 1;
+  int operands_size = bytecode_size - 1;
+  for (int i = 0; i < operands_size; i++) {
+    OperandType op_type = GetOperandType(bytecode, i);
+    uint8_t operand = operands_start[i];
+    switch (op_type) {
+      case interpreter::OperandType::kImm8:
+        os << "#" << static_cast<int>(operand);
+        break;
+      case interpreter::OperandType::kReg:
+        os << "r" << static_cast<int>(operand);
+        break;
+      case interpreter::OperandType::kNone:
+        UNREACHABLE();
+        break;
+    }
+    if (i != operands_size - 1) {
+      os << ", ";
+    }
+  }
+  return os;
+}
 
 
 std::ostream& operator<<(std::ostream& os, const Bytecode& bytecode) {

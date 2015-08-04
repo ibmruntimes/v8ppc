@@ -917,7 +917,7 @@ Parser::Parser(ParseInfo* info)
   set_allow_harmony_unicode(FLAG_harmony_unicode);
   set_allow_harmony_computed_property_names(
       FLAG_harmony_computed_property_names);
-  set_allow_harmony_rest_params(FLAG_harmony_rest_parameters);
+  set_allow_harmony_rest_parameters(FLAG_harmony_rest_parameters);
   set_allow_harmony_spreadcalls(FLAG_harmony_spreadcalls);
   set_allow_harmony_destructuring(FLAG_harmony_destructuring);
   set_allow_harmony_spread_arrays(FLAG_harmony_spread_arrays);
@@ -3854,7 +3854,7 @@ void ParserTraits::ParseArrowFunctionFormalParameters(
     ParserFormalParameters* parameters, Expression* expr,
     const Scanner::Location& params_loc,
     Scanner::Location* duplicate_loc, bool* ok) {
-  if (parameters->scope->num_parameters() >= Code::kMaxArguments) {
+  if (parameters->arity >= Code::kMaxArguments) {
     ReportMessageAt(params_loc, MessageTemplate::kMalformedArrowFunParamList);
     *ok = false;
     return;
@@ -3908,6 +3908,7 @@ void ParserTraits::ParseArrowFunctionFormalParameters(
     parser_->scope_->RemoveUnresolved(expr->AsVariableProxy());
   }
 
+  ++parameters->arity;
   ExpressionClassifier classifier;
   DeclareFormalParameter(parameters, expr, is_rest, &classifier);
   if (!duplicate_loc->IsValid()) {
@@ -3996,7 +3997,7 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
                      : NewScope(scope_, FUNCTION_SCOPE, kind);
   scope->SetLanguageMode(language_mode);
   ZoneList<Statement*>* body = NULL;
-  int arity = 0;
+  int arity = -1;
   int materialized_literal_count = -1;
   int expected_property_count = -1;
   DuplicateFinder duplicate_finder(scanner()->unicode_cache());
@@ -4030,7 +4031,9 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     int start_position = scanner()->location().beg_pos;
     scope_->set_start_position(start_position);
     ParserFormalParameters formals(scope);
-    arity = ParseFormalParameterList(&formals, &formals_classifier, CHECK_OK);
+    ParseFormalParameterList(&formals, &formals_classifier, CHECK_OK);
+    arity = formals.arity;
+    DCHECK(arity == formals.params.length());
     Expect(Token::RPAREN, CHECK_OK);
     int formals_end_position = scanner()->location().end_pos;
 
@@ -4038,31 +4041,6 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
                            formals.has_rest, start_position,
                            formals_end_position, CHECK_OK);
     Expect(Token::LBRACE, CHECK_OK);
-
-    // If we have a named function expression, we add a local variable
-    // declaration to the body of the function with the name of the
-    // function and let it refer to the function itself (closure).
-    // NOTE: We create a proxy and resolve it here so that in the
-    // future we can change the AST to only refer to VariableProxies
-    // instead of Variables and Proxis as is the case now.
-    Variable* fvar = NULL;
-    Token::Value fvar_init_op = Token::INIT_CONST_LEGACY;
-    if (function_type == FunctionLiteral::NAMED_EXPRESSION) {
-      bool use_strict_const = is_strict(language_mode) ||
-                              (!allow_legacy_const() && allow_harmony_sloppy());
-      if (use_strict_const) {
-        fvar_init_op = Token::INIT_CONST;
-      }
-      VariableMode fvar_mode = use_strict_const ? CONST : CONST_LEGACY;
-      DCHECK(function_name != NULL);
-      fvar = new (zone())
-          Variable(scope_, function_name, fvar_mode, Variable::NORMAL,
-                   kCreatedInitialized, kNotAssigned);
-      VariableProxy* proxy = factory()->NewVariableProxy(fvar);
-      VariableDeclaration* fvar_declaration = factory()->NewVariableDeclaration(
-          proxy, fvar_mode, scope_, RelocInfo::kNoPosition);
-      scope_->DeclareFunctionVar(fvar_declaration);
-    }
 
     // Determine if the function can be parsed lazily. Lazy parsing is different
     // from lazy compilation; we need to parse more eagerly than we compile.
@@ -4127,8 +4105,8 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
       }
     }
     if (!is_lazily_parsed) {
-      body = ParseEagerFunctionBody(function_name, pos, formals, fvar,
-                                    fvar_init_op, kind, CHECK_OK);
+      body = ParseEagerFunctionBody(function_name, pos, formals, kind,
+                                    function_type, CHECK_OK);
       materialized_literal_count = function_state.materialized_literal_count();
       expected_property_count = function_state.expected_property_count();
     }
@@ -4319,7 +4297,8 @@ Block* Parser::BuildParameterInitializationBlock(
   DCHECK(scope_->is_function_scope());
   Block* init_block =
       factory()->NewBlock(NULL, 1, true, RelocInfo::kNoPosition);
-  for (auto parameter : parameters.params) {
+  for (int i = 0; i < parameters.params.length(); ++i) {
+    auto parameter = parameters.params[i];
     if (parameter.pattern == nullptr) continue;
     DeclarationDescriptor descriptor;
     descriptor.declaration_kind = DeclarationDescriptor::PARAMETER;
@@ -4334,7 +4313,7 @@ Block* Parser::BuildParameterInitializationBlock(
     descriptor.init_op = Token::INIT_LET;
     DeclarationParsingResult::Declaration decl(
         parameter.pattern, parameter.pattern->position(),
-        factory()->NewVariableProxy(parameter.var));
+        factory()->NewVariableProxy(parameters.scope->parameter(i)));
     PatternRewriter::DeclareAndInitializeVariables(init_block, &descriptor,
                                                    &decl, nullptr, CHECK_OK);
   }
@@ -4344,23 +4323,24 @@ Block* Parser::BuildParameterInitializationBlock(
 
 ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
     const AstRawString* function_name, int pos,
-    const ParserFormalParameters& parameters, Variable* fvar,
-    Token::Value fvar_init_op, FunctionKind kind, bool* ok) {
+    const ParserFormalParameters& parameters, FunctionKind kind,
+    FunctionLiteral::FunctionType function_type, bool* ok) {
   // Everything inside an eagerly parsed function will be parsed eagerly
   // (see comment above).
   ParsingModeScope parsing_mode(this, PARSE_EAGERLY);
   ZoneList<Statement*>* result = new(zone()) ZoneList<Statement*>(8, zone());
-  if (fvar != NULL) {
-    VariableProxy* fproxy = scope_->NewUnresolved(factory(), function_name);
-    fproxy->BindTo(fvar);
-    result->Add(factory()->NewExpressionStatement(
-        factory()->NewAssignment(fvar_init_op,
-                                 fproxy,
-                                 factory()->NewThisFunction(pos),
-                                 RelocInfo::kNoPosition),
-        RelocInfo::kNoPosition), zone());
-  }
 
+  static const int kFunctionNameAssignmentIndex = 0;
+  if (function_type == FunctionLiteral::NAMED_EXPRESSION) {
+    DCHECK(function_name != NULL);
+    // If we have a named function expression, we add a local variable
+    // declaration to the body of the function with the name of the
+    // function and let it refer to the function itself (closure).
+    // Not having parsed the function body, the language mode may still change,
+    // so we reserve a spot and create the actual const assignment later.
+    DCHECK_EQ(kFunctionNameAssignmentIndex, result->length());
+    result->Add(NULL, zone());
+  }
 
   // For concise constructors, check that they are constructed,
   // not called.
@@ -4445,6 +4425,37 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
     result->Add(inner_block, zone());
   }
 
+  if (function_type == FunctionLiteral::NAMED_EXPRESSION) {
+    // Now that we know the language mode, we can create the const assignment
+    // in the previously reserved spot.
+    // NOTE: We create a proxy and resolve it here so that in the
+    // future we can change the AST to only refer to VariableProxies
+    // instead of Variables and Proxies as is the case now.
+    Token::Value fvar_init_op = Token::INIT_CONST_LEGACY;
+    bool use_strict_const = is_strict(scope_->language_mode()) ||
+                            (!allow_legacy_const() && allow_harmony_sloppy());
+    if (use_strict_const) {
+      fvar_init_op = Token::INIT_CONST;
+    }
+    VariableMode fvar_mode = use_strict_const ? CONST : CONST_LEGACY;
+    Variable* fvar = new (zone())
+        Variable(scope_, function_name, fvar_mode, Variable::NORMAL,
+                 kCreatedInitialized, kNotAssigned);
+    VariableProxy* proxy = factory()->NewVariableProxy(fvar);
+    VariableDeclaration* fvar_declaration = factory()->NewVariableDeclaration(
+        proxy, fvar_mode, scope_, RelocInfo::kNoPosition);
+    scope_->DeclareFunctionVar(fvar_declaration);
+
+    VariableProxy* fproxy = scope_->NewUnresolved(factory(), function_name);
+    fproxy->BindTo(fvar);
+    result->Set(kFunctionNameAssignmentIndex,
+                factory()->NewExpressionStatement(
+                    factory()->NewAssignment(fvar_init_op, fproxy,
+                                             factory()->NewThisFunction(pos),
+                                             RelocInfo::kNoPosition),
+                    RelocInfo::kNoPosition));
+  }
+
   return result;
 }
 
@@ -4470,7 +4481,7 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
     SET_ALLOW(harmony_sloppy_let);
     SET_ALLOW(harmony_unicode);
     SET_ALLOW(harmony_computed_property_names);
-    SET_ALLOW(harmony_rest_params);
+    SET_ALLOW(harmony_rest_parameters);
     SET_ALLOW(harmony_spreadcalls);
     SET_ALLOW(harmony_destructuring);
     SET_ALLOW(harmony_spread_arrays);

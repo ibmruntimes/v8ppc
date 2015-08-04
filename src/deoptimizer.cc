@@ -154,8 +154,11 @@ DeoptimizedFrameInfo* Deoptimizer::DebuggerInspectableFrame(
   // Always use the actual stack slots when calculating the fp to sp
   // delta adding two for the function and context.
   unsigned stack_slots = code->stack_slots();
+  unsigned arguments_stack_height =
+      Deoptimizer::ComputeOutgoingArgumentSize(code, deoptimization_index);
   unsigned fp_to_sp_delta = (stack_slots * kPointerSize) +
-      StandardFrameConstants::kFixedFrameSizeFromFp;
+                            StandardFrameConstants::kFixedFrameSizeFromFp +
+                            arguments_stack_height;
 
   Deoptimizer* deoptimizer = new Deoptimizer(isolate,
                                              function,
@@ -1770,7 +1773,8 @@ unsigned Deoptimizer::ComputeInputFrameSize() const {
                     StandardFrameConstants::kFixedFrameSizeFromFp;
   if (compiled_code_->kind() == Code::OPTIMIZED_FUNCTION) {
     unsigned stack_slots = compiled_code_->stack_slots();
-    unsigned outgoing_size = ComputeOutgoingArgumentSize();
+    unsigned outgoing_size =
+        ComputeOutgoingArgumentSize(compiled_code_, bailout_id_);
     CHECK(result == fixed_size + (stack_slots * kPointerSize) + outgoing_size);
   }
   return result;
@@ -1798,10 +1802,12 @@ unsigned Deoptimizer::ComputeIncomingArgumentSize(JSFunction* function) const {
 }
 
 
-unsigned Deoptimizer::ComputeOutgoingArgumentSize() const {
+// static
+unsigned Deoptimizer::ComputeOutgoingArgumentSize(Code* code,
+                                                  unsigned bailout_id) {
   DeoptimizationInputData* data =
-      DeoptimizationInputData::cast(compiled_code_->deoptimization_data());
-  unsigned height = data->ArgumentsStackHeight(bailout_id_)->value();
+      DeoptimizationInputData::cast(code->deoptimization_data());
+  unsigned height = data->ArgumentsStackHeight(bailout_id)->value();
   return height * kPointerSize;
 }
 
@@ -2266,7 +2272,12 @@ DeoptimizedFrameInfo::DeoptimizedFrameInfo(Deoptimizer* deoptimizer,
   source_position_ = code->SourcePosition(pc);
 
   for (int i = 0; i < expression_count_; i++) {
-    SetExpression(i, output_frame->GetExpression(i));
+    Object* value = output_frame->GetExpression(i);
+    // Replace materialization markers with the undefined value.
+    if (value == deoptimizer->isolate()->heap()->arguments_marker()) {
+      value = deoptimizer->isolate()->heap()->undefined_value();
+    }
+    SetExpression(i, value);
   }
 
   if (has_arguments_adaptor) {
@@ -2277,7 +2288,12 @@ DeoptimizedFrameInfo::DeoptimizedFrameInfo(Deoptimizer* deoptimizer,
   parameters_count_ = output_frame->ComputeParametersCount();
   parameters_ = new Object* [parameters_count_];
   for (int i = 0; i < parameters_count_; i++) {
-    SetParameter(i, output_frame->GetParameter(i));
+    Object* value = output_frame->GetParameter(i);
+    // Replace materialization markers with the undefined value.
+    if (value == deoptimizer->isolate()->heap()->arguments_marker()) {
+      value = deoptimizer->isolate()->heap()->undefined_value();
+    }
+    SetParameter(i, value);
   }
 }
 

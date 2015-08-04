@@ -3322,6 +3322,32 @@ void FullCodeGenerator::EmitIsSpecObject(CallRuntime* expr) {
 }
 
 
+void FullCodeGenerator::EmitIsSimdValue(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK(args->length() == 1);
+
+  VisitForAccumulatorValue(args->at(0));
+
+  Label materialize_true, materialize_false;
+  Label* if_true = NULL;
+  Label* if_false = NULL;
+  Label* fall_through = NULL;
+  context()->PrepareTest(&materialize_true, &materialize_false, &if_true,
+                         &if_false, &fall_through);
+
+  __ JumpIfSmi(eax, if_false);
+  Register map = ebx;
+  __ mov(map, FieldOperand(eax, HeapObject::kMapOffset));
+  __ CmpInstanceType(map, FIRST_SIMD_VALUE_TYPE);
+  __ j(less, if_false);
+  __ CmpInstanceType(map, LAST_SIMD_VALUE_TYPE);
+  PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
+  Split(less_equal, if_true, if_false, fall_through);
+
+  context()->Plug(if_true, if_false);
+}
+
+
 void FullCodeGenerator::EmitIsUndetectableObject(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 1);
@@ -4162,55 +4188,6 @@ void FullCodeGenerator::EmitRegExpConstructResult(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitGetFromCache(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK_EQ(2, args->length());
-
-  DCHECK_NOT_NULL(args->at(0)->AsLiteral());
-  int cache_id = Smi::cast(*(args->at(0)->AsLiteral()->value()))->value();
-
-  Handle<FixedArray> jsfunction_result_caches(
-      isolate()->native_context()->jsfunction_result_caches());
-  if (jsfunction_result_caches->length() <= cache_id) {
-    __ Abort(kAttemptToUseUndefinedCache);
-    __ mov(eax, isolate()->factory()->undefined_value());
-    context()->Plug(eax);
-    return;
-  }
-
-  VisitForAccumulatorValue(args->at(1));
-
-  Register key = eax;
-  Register cache = ebx;
-  Register tmp = ecx;
-  __ mov(cache, ContextOperand(esi, Context::GLOBAL_OBJECT_INDEX));
-  __ mov(cache,
-         FieldOperand(cache, GlobalObject::kNativeContextOffset));
-  __ mov(cache, ContextOperand(cache, Context::JSFUNCTION_RESULT_CACHES_INDEX));
-  __ mov(cache,
-         FieldOperand(cache, FixedArray::OffsetOfElementAt(cache_id)));
-
-  Label done, not_found;
-  STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize == 1);
-  __ mov(tmp, FieldOperand(cache, JSFunctionResultCache::kFingerOffset));
-  // tmp now holds finger offset as a smi.
-  __ cmp(key, FixedArrayElementOperand(cache, tmp));
-  __ j(not_equal, &not_found);
-
-  __ mov(eax, FixedArrayElementOperand(cache, tmp, 1));
-  __ jmp(&done);
-
-  __ bind(&not_found);
-  // Call runtime to perform the lookup.
-  __ push(cache);
-  __ push(key);
-  __ CallRuntime(Runtime::kGetFromCacheRT, 2);
-
-  __ bind(&done);
-  context()->Plug(eax);
-}
-
-
 void FullCodeGenerator::EmitHasCachedArrayIndex(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 1);
@@ -5014,6 +4991,30 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
   } else if (String::Equals(check, factory->float32x4_string())) {
     __ JumpIfSmi(eax, if_false);
     __ CmpObjectType(eax, FLOAT32X4_TYPE, edx);
+    Split(equal, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->int32x4_string())) {
+    __ JumpIfSmi(eax, if_false);
+    __ CmpObjectType(eax, INT32X4_TYPE, edx);
+    Split(equal, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->bool32x4_string())) {
+    __ JumpIfSmi(eax, if_false);
+    __ CmpObjectType(eax, BOOL32X4_TYPE, edx);
+    Split(equal, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->int16x8_string())) {
+    __ JumpIfSmi(eax, if_false);
+    __ CmpObjectType(eax, INT16X8_TYPE, edx);
+    Split(equal, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->bool16x8_string())) {
+    __ JumpIfSmi(eax, if_false);
+    __ CmpObjectType(eax, BOOL16X8_TYPE, edx);
+    Split(equal, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->int8x16_string())) {
+    __ JumpIfSmi(eax, if_false);
+    __ CmpObjectType(eax, INT8X16_TYPE, edx);
+    Split(equal, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->bool8x16_string())) {
+    __ JumpIfSmi(eax, if_false);
+    __ CmpObjectType(eax, BOOL8X16_TYPE, edx);
     Split(equal, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->boolean_string())) {
     __ cmp(eax, isolate()->factory()->true_value());

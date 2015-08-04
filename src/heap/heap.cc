@@ -109,18 +109,15 @@ Heap::Heap()
 #endif  // DEBUG
       old_generation_allocation_limit_(initial_old_generation_size_),
       old_gen_exhausted_(false),
+      optimize_for_memory_usage_(false),
       inline_allocation_disabled_(false),
       store_buffer_rebuilder_(store_buffer()),
       hidden_string_(NULL),
       gc_safe_size_of_old_object_(NULL),
       total_regexp_code_generated_(0),
       tracer_(this),
-      new_space_high_promotion_mode_active_(false),
-      gathering_lifetime_feedback_(0),
       high_survival_rate_period_length_(0),
       promoted_objects_size_(0),
-      low_survival_rate_period_length_(0),
-      survival_rate_(0),
       promotion_ratio_(0),
       semi_space_copied_object_size_(0),
       previous_semi_space_copied_object_size_(0),
@@ -129,8 +126,6 @@ Heap::Heap()
       nodes_copied_in_new_space_(0),
       nodes_promoted_(0),
       maximum_size_scavenges_(0),
-      previous_survival_rate_trend_(Heap::STABLE),
-      survival_rate_trend_(Heap::STABLE),
       max_gc_pause_(0.0),
       total_gc_time_ms_(0.0),
       max_alive_after_gc_(0),
@@ -430,7 +425,6 @@ void Heap::IncrementDeferredCount(v8::Isolate::UseCounterFeature feature) {
 void Heap::GarbageCollectionPrologue() {
   {
     AllowHeapAllocation for_the_first_part_of_prologue;
-    ClearJSFunctionResultCaches();
     gc_count_++;
     unflattened_strings_length_ = 0;
 
@@ -509,6 +503,7 @@ const char* Heap::GetSpaceName(int idx) {
 
 
 void Heap::ClearAllICsByKind(Code::Kind kind) {
+  // TODO(mvstanton): Do not iterate the heap.
   HeapObjectIterator it(code_space());
 
   for (Object* object = it.Next(); object != NULL; object = it.Next()) {
@@ -1134,29 +1129,6 @@ void Heap::EnsureFromSpaceIsCommitted() {
 }
 
 
-void Heap::ClearJSFunctionResultCaches() {
-  if (isolate_->bootstrapper()->IsActive()) return;
-
-  Object* context = native_contexts_list();
-  while (!context->IsUndefined()) {
-    // Get the caches for this context. GC can happen when the context
-    // is not fully initialized, so the caches can be undefined.
-    Object* caches_or_undefined =
-        Context::cast(context)->get(Context::JSFUNCTION_RESULT_CACHES_INDEX);
-    if (!caches_or_undefined->IsUndefined()) {
-      FixedArray* caches = FixedArray::cast(caches_or_undefined);
-      // Clear the caches:
-      int length = caches->length();
-      for (int i = 0; i < length; i++) {
-        JSFunctionResultCache::cast(caches->get(i))->Clear();
-      }
-    }
-    // Get the next context:
-    context = Context::cast(context)->get(Context::NEXT_CONTEXT_LINK);
-  }
-}
-
-
 void Heap::ClearNormalizedMapCaches() {
   if (isolate_->bootstrapper()->IsActive() &&
       !incremental_marking()->IsMarking()) {
@@ -1202,24 +1174,6 @@ void Heap::UpdateSurvivalStatistics(int start_new_space_size) {
   } else {
     high_survival_rate_period_length_ = 0;
   }
-
-  if (survival_rate < kYoungSurvivalRateLowThreshold) {
-    low_survival_rate_period_length_++;
-  } else {
-    low_survival_rate_period_length_ = 0;
-  }
-
-  double survival_rate_diff = survival_rate_ - survival_rate;
-
-  if (survival_rate_diff > kYoungSurvivalRateAllowedDeviation) {
-    set_survival_rate_trend(DECREASING);
-  } else if (survival_rate_diff < -kYoungSurvivalRateAllowedDeviation) {
-    set_survival_rate_trend(INCREASING);
-  } else {
-    set_survival_rate_trend(STABLE);
-  }
-
-  survival_rate_ = survival_rate;
 }
 
 bool Heap::PerformGarbageCollection(
@@ -1277,16 +1231,8 @@ bool Heap::PerformGarbageCollection(
     Scavenge();
   }
 
-  bool deopted = ProcessPretenuringFeedback();
+  ProcessPretenuringFeedback();
   UpdateSurvivalStatistics(start_new_space_size);
-
-  // When pretenuring is collecting new feedback, we do not shrink the new space
-  // right away.
-  if (deopted) {
-    RecordDeoptForPretenuring();
-  } else {
-    ConfigureNewGenerationSize();
-  }
   ConfigureInitialOldGenerationSize();
 
   isolate_->counters()->objs_since_last_young()->Set(0);
@@ -1512,8 +1458,7 @@ void Heap::CheckNewSpaceExpansionCriteria() {
       survived_since_last_expansion_ = 0;
     }
   } else if (new_space_.TotalCapacity() < new_space_.MaximumCapacity() &&
-             survived_since_last_expansion_ > new_space_.TotalCapacity() &&
-             !new_space_high_promotion_mode_active_) {
+             survived_since_last_expansion_ > new_space_.TotalCapacity()) {
     // Grow the size of new space if there is room to grow, and enough data
     // has survived scavenge since the last expansion.
     new_space_.Grow();
@@ -2363,7 +2308,7 @@ class ScavengingVisitor : public StaticVisitorBase {
 
     if (marks_handling == TRANSFER_MARKS) {
       if (Marking::TransferColor(source, target)) {
-        MemoryChunk::IncrementLiveBytesFromGC(target->address(), size);
+        MemoryChunk::IncrementLiveBytesFromGC(target, size);
       }
     }
   }
@@ -2689,48 +2634,6 @@ void Heap::ConfigureInitialOldGenerationSize() {
 }
 
 
-void Heap::ConfigureNewGenerationSize() {
-  bool still_gathering_lifetime_data = gathering_lifetime_feedback_ != 0;
-  if (gathering_lifetime_feedback_ != 0) gathering_lifetime_feedback_--;
-  if (!new_space_high_promotion_mode_active_ &&
-      new_space_.TotalCapacity() == new_space_.MaximumCapacity() &&
-      IsStableOrIncreasingSurvivalTrend() && IsHighSurvivalRate()) {
-    // Stable high survival rates even though young generation is at
-    // maximum capacity indicates that most objects will be promoted.
-    // To decrease scavenger pauses and final mark-sweep pauses, we
-    // have to limit maximal capacity of the young generation.
-    if (still_gathering_lifetime_data) {
-      if (FLAG_trace_gc) {
-        PrintPID(
-            "Postpone entering high promotion mode as optimized pretenuring "
-            "code is still being generated\n");
-      }
-    } else {
-      new_space_high_promotion_mode_active_ = true;
-      if (FLAG_trace_gc) {
-        PrintPID("Limited new space size due to high promotion rate: %d MB\n",
-                 new_space_.InitialTotalCapacity() / MB);
-      }
-    }
-  } else if (new_space_high_promotion_mode_active_ &&
-             IsStableOrDecreasingSurvivalTrend() && IsLowSurvivalRate()) {
-    // Decreasing low survival rates might indicate that the above high
-    // promotion mode is over and we should allow the young generation
-    // to grow again.
-    new_space_high_promotion_mode_active_ = false;
-    if (FLAG_trace_gc) {
-      PrintPID("Unlimited new space size due to low promotion rate: %d MB\n",
-               new_space_.MaximumCapacity() / MB);
-    }
-  }
-
-  if (new_space_high_promotion_mode_active_ &&
-      new_space_.TotalCapacity() > new_space_.InitialTotalCapacity()) {
-    new_space_.Shrink();
-  }
-}
-
-
 AllocationResult Heap::AllocatePartialMap(InstanceType instance_type,
                                           int instance_size) {
   Object* result = nullptr;
@@ -2973,6 +2876,12 @@ bool Heap::CreateInitialMaps() {
     ALLOCATE_MAP(MUTABLE_HEAP_NUMBER_TYPE, HeapNumber::kSize,
                  mutable_heap_number)
     ALLOCATE_MAP(FLOAT32X4_TYPE, Float32x4::kSize, float32x4)
+    ALLOCATE_MAP(INT32X4_TYPE, Int32x4::kSize, int32x4)
+    ALLOCATE_MAP(BOOL32X4_TYPE, Bool32x4::kSize, bool32x4)
+    ALLOCATE_MAP(INT16X8_TYPE, Int16x8::kSize, int16x8)
+    ALLOCATE_MAP(BOOL16X8_TYPE, Bool16x8::kSize, bool16x8)
+    ALLOCATE_MAP(INT8X16_TYPE, Int8x16::kSize, int8x16)
+    ALLOCATE_MAP(BOOL8X16_TYPE, Bool8x16::kSize, bool8x16)
     ALLOCATE_MAP(SYMBOL_TYPE, Symbol::kSize, symbol)
     ALLOCATE_MAP(FOREIGN_TYPE, Foreign::kSize, foreign)
 
@@ -3112,31 +3021,30 @@ AllocationResult Heap::AllocateHeapNumber(double value, MutableMode mode,
   return result;
 }
 
-
-AllocationResult Heap::AllocateFloat32x4(float w, float x, float y, float z,
-                                         PretenureFlag pretenure) {
-  // Statically ensure that it is safe to allocate SIMD values in paged
-  // spaces.
-  int size = Float32x4::kSize;
-  STATIC_ASSERT(Float32x4::kSize <= Page::kMaxRegularHeapObjectSize);
-
-  AllocationSpace space = SelectSpace(size, pretenure);
-
-  HeapObject* result;
-  {
-    AllocationResult allocation =
-        AllocateRaw(size, space, OLD_SPACE, kSimd128Unaligned);
-    if (!allocation.To(&result)) return allocation;
+#define SIMD_ALLOCATE_DEFINITION(type, type_name, lane_count, lane_type) \
+  AllocationResult Heap::Allocate##type(lane_type lanes[lane_count],     \
+                                        PretenureFlag pretenure) {       \
+    int size = type::kSize;                                              \
+    STATIC_ASSERT(type::kSize <= Page::kMaxRegularHeapObjectSize);       \
+                                                                         \
+    AllocationSpace space = SelectSpace(size, pretenure);                \
+                                                                         \
+    HeapObject* result;                                                  \
+    {                                                                    \
+      AllocationResult allocation =                                      \
+          AllocateRaw(size, space, OLD_SPACE, kSimd128Unaligned);        \
+      if (!allocation.To(&result)) return allocation;                    \
+    }                                                                    \
+                                                                         \
+    result->set_map_no_write_barrier(type_name##_map());                 \
+    type* instance = type::cast(result);                                 \
+    for (int i = 0; i < lane_count; i++) {                               \
+      instance->set_lane(i, lanes[i]);                                   \
+    }                                                                    \
+    return result;                                                       \
   }
 
-  result->set_map_no_write_barrier(float32x4_map());
-  Float32x4* float32x4 = Float32x4::cast(result);
-  float32x4->set_lane(0, w);
-  float32x4->set_lane(1, x);
-  float32x4->set_lane(2, y);
-  float32x4->set_lane(3, z);
-  return result;
-}
+SIMD128_TYPES(SIMD_ALLOCATE_DEFINITION)
 
 
 AllocationResult Heap::AllocateCell(Object* value) {
@@ -3816,13 +3724,13 @@ bool Heap::CanMoveObjectStart(HeapObject* object) {
 }
 
 
-void Heap::AdjustLiveBytes(Address address, int by, InvocationMode mode) {
+void Heap::AdjustLiveBytes(HeapObject* object, int by, InvocationMode mode) {
   if (incremental_marking()->IsMarking() &&
-      Marking::IsBlack(Marking::MarkBitFrom(address))) {
+      Marking::IsBlack(Marking::MarkBitFrom(object->address()))) {
     if (mode == SEQUENTIAL_TO_SWEEPER) {
-      MemoryChunk::IncrementLiveBytesFromGC(address, by);
+      MemoryChunk::IncrementLiveBytesFromGC(object, by);
     } else {
-      MemoryChunk::IncrementLiveBytesFromMutator(address, by);
+      MemoryChunk::IncrementLiveBytesFromMutator(object, by);
     }
   }
 }
@@ -3869,7 +3777,7 @@ FixedArrayBase* Heap::LeftTrimFixedArray(FixedArrayBase* object,
 
   // Maintain consistency of live bytes during incremental marking
   marking()->TransferMark(object->address(), new_start);
-  AdjustLiveBytes(new_start, -bytes_to_trim, Heap::CONCURRENT_TO_SWEEPER);
+  AdjustLiveBytes(new_object, -bytes_to_trim, Heap::CONCURRENT_TO_SWEEPER);
 
   // Notify the heap profiler of change in object layout.
   OnMoveEvent(new_object, object, new_object->Size());
@@ -3930,7 +3838,7 @@ void Heap::RightTrimFixedArray(FixedArrayBase* object, int elements_to_trim) {
   object->synchronized_set_length(len - elements_to_trim);
 
   // Maintain consistency of live bytes during incremental marking
-  AdjustLiveBytes(object->address(), -bytes_to_trim, mode);
+  AdjustLiveBytes(object, -bytes_to_trim, mode);
 
   // Notify the heap profiler of change in object layout. The array may not be
   // moved during GC, and size has to be adjusted nevertheless.
@@ -4880,6 +4788,24 @@ GCIdleTimeHandler::HeapState Heap::ComputeHeapState() {
 }
 
 
+double Heap::AdvanceIncrementalMarking(
+    intptr_t step_size_in_bytes, double deadline_in_ms,
+    IncrementalMarking::ForceCompletionAction completion) {
+  DCHECK(!incremental_marking()->IsStopped());
+  double remaining_time_in_ms = 0.0;
+  do {
+    incremental_marking()->Step(step_size_in_bytes,
+                                IncrementalMarking::NO_GC_VIA_STACK_GUARD,
+                                IncrementalMarking::FORCE_MARKING, completion);
+    remaining_time_in_ms = deadline_in_ms - MonotonicallyIncreasingTimeInMs();
+  } while (remaining_time_in_ms >=
+               2.0 * GCIdleTimeHandler::kIncrementalMarkingStepTimeInMs &&
+           !incremental_marking()->IsComplete() &&
+           !mark_compact_collector_.marking_deque()->IsEmpty());
+  return remaining_time_in_ms;
+}
+
+
 bool Heap::PerformIdleTimeAction(GCIdleTimeAction action,
                                  GCIdleTimeHandler::HeapState heap_state,
                                  double deadline_in_ms) {
@@ -4889,19 +4815,9 @@ bool Heap::PerformIdleTimeAction(GCIdleTimeAction action,
       result = true;
       break;
     case DO_INCREMENTAL_MARKING: {
-      DCHECK(!incremental_marking()->IsStopped());
-      double remaining_idle_time_in_ms = 0.0;
-      do {
-        incremental_marking()->Step(
-            action.parameter, IncrementalMarking::NO_GC_VIA_STACK_GUARD,
-            IncrementalMarking::FORCE_MARKING,
-            IncrementalMarking::DO_NOT_FORCE_COMPLETION);
-        remaining_idle_time_in_ms =
-            deadline_in_ms - MonotonicallyIncreasingTimeInMs();
-      } while (remaining_idle_time_in_ms >=
-                   2.0 * GCIdleTimeHandler::kIncrementalMarkingStepTimeInMs &&
-               !incremental_marking()->IsComplete() &&
-               !mark_compact_collector_.marking_deque()->IsEmpty());
+      const double remaining_idle_time_in_ms = AdvanceIncrementalMarking(
+          action.parameter, deadline_in_ms,
+          IncrementalMarking::DO_NOT_FORCE_COMPLETION);
       if (remaining_idle_time_in_ms > 0.0) {
         action.additional_work = TryFinalizeIdleIncrementalMarking(
             remaining_idle_time_in_ms, heap_state.size_of_objects,
@@ -4942,6 +4858,16 @@ void Heap::IdleNotificationEpilogue(GCIdleTimeAction action,
   isolate()->counters()->gc_idle_time_allotted_in_ms()->AddSample(
       static_cast<int>(idle_time_in_ms));
 
+  if (deadline_in_ms - start_ms >
+      GCIdleTimeHandler::kMaxFrameRenderingIdleTime) {
+    int committed_memory = static_cast<int>(CommittedMemory() / KB);
+    int used_memory = static_cast<int>(heap_state.size_of_objects / KB);
+    isolate()->counters()->aggregated_memory_heap_committed()->AddSample(
+        start_ms, committed_memory);
+    isolate()->counters()->aggregated_memory_heap_used()->AddSample(
+        start_ms, used_memory);
+  }
+
   if (deadline_difference >= 0) {
     if (action.type != DONE && action.type != DO_NOTHING) {
       isolate()->counters()->gc_idle_time_limit_undershot()->AddSample(
@@ -4981,6 +4907,9 @@ void Heap::CheckAndNotifyBackgroundIdleNotification(double idle_time_in_ms,
     event.can_start_incremental_gc = incremental_marking()->IsStopped() &&
                                      incremental_marking()->CanBeActivated();
     memory_reducer_.NotifyBackgroundIdleNotification(event);
+    optimize_for_memory_usage_ = true;
+  } else {
+    optimize_for_memory_usage_ = false;
   }
 }
 
@@ -5180,6 +5109,11 @@ void Heap::Verify() {
   code_space_->Verify(&no_dirty_regions_visitor);
 
   lo_space_->Verify();
+
+  mark_compact_collector_.VerifyWeakEmbeddedObjectsInCode();
+  if (FLAG_omit_map_checks_for_leaf_maps) {
+    mark_compact_collector_.VerifyOmittedMapChecks();
+  }
 }
 #endif
 
@@ -5651,7 +5585,7 @@ void Heap::SetOldGenerationAllocationLimit(intptr_t old_gen_size,
                                            double mutator_speed,
                                            int freed_global_handles) {
   const int kFreedGlobalHandlesThreshold = 700;
-  const double kMaxHeapGrowingFactorForManyFreedGlobalHandles = 1.3;
+  const double kConservativeHeapGrowingFactor = 1.3;
 
   double factor = HeapGrowingFactor(gc_speed, mutator_speed);
 
@@ -5670,8 +5604,9 @@ void Heap::SetOldGenerationAllocationLimit(intptr_t old_gen_size,
     factor = Min(factor, kMaxHeapGrowingFactorMemoryConstrained);
   }
 
-  if (freed_global_handles >= kFreedGlobalHandlesThreshold) {
-    factor = Min(factor, kMaxHeapGrowingFactorForManyFreedGlobalHandles);
+  if (freed_global_handles >= kFreedGlobalHandlesThreshold ||
+      memory_reducer_.ShouldGrowHeapSlowly() || optimize_for_memory_usage_) {
+    factor = Min(factor, kConservativeHeapGrowingFactor);
   }
 
   if (FLAG_stress_compaction ||

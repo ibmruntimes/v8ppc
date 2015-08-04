@@ -3121,6 +3121,33 @@ void FullCodeGenerator::EmitIsSpecObject(CallRuntime* expr) {
 }
 
 
+void FullCodeGenerator::EmitIsSimdValue(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK(args->length() == 1);
+
+  VisitForAccumulatorValue(args->at(0));
+
+  Label materialize_true, materialize_false;
+  Label* if_true = NULL;
+  Label* if_false = NULL;
+  Label* fall_through = NULL;
+  context()->PrepareTest(&materialize_true, &materialize_false, &if_true,
+                         &if_false, &fall_through);
+
+  __ JumpIfSmi(x0, if_false);
+  Register map = x10;
+  Register type_reg = x11;
+  __ Ldr(map, FieldMemOperand(x0, HeapObject::kMapOffset));
+  __ Ldrb(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
+  __ Sub(type_reg, type_reg, Operand(FIRST_SIMD_VALUE_TYPE));
+  __ Cmp(type_reg, Operand(LAST_SIMD_VALUE_TYPE - FIRST_SIMD_VALUE_TYPE));
+  PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
+  Split(ls, if_true, if_false, fall_through);
+
+  context()->Plug(if_true, if_false);
+}
+
+
 void FullCodeGenerator::EmitIsUndetectableObject(CallRuntime* expr) {
   ASM_LOCATION("FullCodeGenerator::EmitIsUndetectableObject");
   ZoneList<Expression*>* args = expr->arguments();
@@ -3972,54 +3999,6 @@ void FullCodeGenerator::EmitRegExpConstructResult(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitGetFromCache(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK_EQ(2, args->length());
-  DCHECK_NOT_NULL(args->at(0)->AsLiteral());
-  int cache_id = Smi::cast(*(args->at(0)->AsLiteral()->value()))->value();
-
-  Handle<FixedArray> jsfunction_result_caches(
-      isolate()->native_context()->jsfunction_result_caches());
-  if (jsfunction_result_caches->length() <= cache_id) {
-    __ Abort(kAttemptToUseUndefinedCache);
-    __ LoadRoot(x0, Heap::kUndefinedValueRootIndex);
-    context()->Plug(x0);
-    return;
-  }
-
-  VisitForAccumulatorValue(args->at(1));
-
-  Register key = x0;
-  Register cache = x1;
-  __ Ldr(cache, GlobalObjectMemOperand());
-  __ Ldr(cache, FieldMemOperand(cache, GlobalObject::kNativeContextOffset));
-  __ Ldr(cache, ContextMemOperand(cache,
-                                  Context::JSFUNCTION_RESULT_CACHES_INDEX));
-  __ Ldr(cache,
-         FieldMemOperand(cache, FixedArray::OffsetOfElementAt(cache_id)));
-
-  Label done;
-  __ Ldrsw(x2, UntagSmiFieldMemOperand(cache,
-                                       JSFunctionResultCache::kFingerOffset));
-  __ Add(x3, cache, FixedArray::kHeaderSize - kHeapObjectTag);
-  __ Add(x3, x3, Operand(x2, LSL, kPointerSizeLog2));
-
-  // Load the key and data from the cache.
-  __ Ldp(x2, x3, MemOperand(x3));
-
-  __ Cmp(key, x2);
-  __ CmovX(x0, x3, eq);
-  __ B(eq, &done);
-
-  // Call runtime to perform the lookup.
-  __ Push(cache, key);
-  __ CallRuntime(Runtime::kGetFromCacheRT, 2);
-
-  __ Bind(&done);
-  context()->Plug(x0);
-}
-
-
 void FullCodeGenerator::EmitHasCachedArrayIndex(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   VisitForAccumulatorValue(args->at(0));
@@ -4772,6 +4751,36 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
         "FullCodeGenerator::EmitLiteralCompareTypeof float32x4_string");
     __ JumpIfSmi(x0, if_false);
     __ CompareObjectType(x0, x0, x1, FLOAT32X4_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->int32x4_string())) {
+    ASM_LOCATION("FullCodeGenerator::EmitLiteralCompareTypeof int32x4_string");
+    __ JumpIfSmi(x0, if_false);
+    __ CompareObjectType(x0, x0, x1, INT32X4_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->bool32x4_string())) {
+    ASM_LOCATION("FullCodeGenerator::EmitLiteralCompareTypeof bool32x4_string");
+    __ JumpIfSmi(x0, if_false);
+    __ CompareObjectType(x0, x0, x1, BOOL32X4_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->int16x8_string())) {
+    ASM_LOCATION("FullCodeGenerator::EmitLiteralCompareTypeof int16x8_string");
+    __ JumpIfSmi(x0, if_false);
+    __ CompareObjectType(x0, x0, x1, INT16X8_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->bool16x8_string())) {
+    ASM_LOCATION("FullCodeGenerator::EmitLiteralCompareTypeof bool16x8_string");
+    __ JumpIfSmi(x0, if_false);
+    __ CompareObjectType(x0, x0, x1, BOOL16X8_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->int8x16_string())) {
+    ASM_LOCATION("FullCodeGenerator::EmitLiteralCompareTypeof int8x16_string");
+    __ JumpIfSmi(x0, if_false);
+    __ CompareObjectType(x0, x0, x1, INT8X16_TYPE);
+    Split(eq, if_true, if_false, fall_through);
+  } else if (String::Equals(check, factory->bool8x16_string())) {
+    ASM_LOCATION("FullCodeGenerator::EmitLiteralCompareTypeof bool8x16_string");
+    __ JumpIfSmi(x0, if_false);
+    __ CompareObjectType(x0, x0, x1, BOOL8X16_TYPE);
     Split(eq, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->boolean_string())) {
     ASM_LOCATION("FullCodeGenerator::EmitLiteralCompareTypeof boolean_string");

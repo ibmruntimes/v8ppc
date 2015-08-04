@@ -87,7 +87,6 @@
 //           - OrderedHashMap
 //         - Context
 //         - TypeFeedbackVector
-//         - JSFunctionResultCache
 //         - ScopeInfo
 //         - TransitionArray
 //         - ScriptContextTable
@@ -113,7 +112,14 @@
 //             - ExternalTwoByteInternalizedString
 //       - Symbol
 //     - HeapNumber
-//     - Float32x4
+//     - Simd128Value
+//       - Float32x4
+//       - Int32x4
+//       - Bool32x4
+//       - Int16x8
+//       - Bool16x8
+//       - Int8x16
+//       - Bool8x16
 //     - Cell
 //     - PropertyCell
 //     - Code
@@ -370,6 +376,12 @@ const int kStubMinorKeyBits = kSmiValueSize - kStubMajorKeyBits - 1;
                                                                 \
   V(SYMBOL_TYPE)                                                \
   V(FLOAT32X4_TYPE)                                             \
+  V(INT32X4_TYPE)                                               \
+  V(BOOL32X4_TYPE)                                              \
+  V(INT16X8_TYPE)                                               \
+  V(BOOL16X8_TYPE)                                              \
+  V(INT8X16_TYPE)                                               \
+  V(BOOL8X16_TYPE)                                              \
                                                                 \
   V(MAP_TYPE)                                                   \
   V(CODE_TYPE)                                                  \
@@ -663,12 +675,18 @@ enum InstanceType {
   // objects.
   HEAP_NUMBER_TYPE,
   MUTABLE_HEAP_NUMBER_TYPE,
-  FLOAT32X4_TYPE,  // FIRST_SIMD_TYPE, LAST_SIMD_TYPE
+  FLOAT32X4_TYPE,  // FIRST_SIMD_VALUE_TYPE
+  INT32X4_TYPE,
+  BOOL32X4_TYPE,
+  INT16X8_TYPE,
+  BOOL16X8_TYPE,
+  INT8X16_TYPE,
+  BOOL8X16_TYPE,  // LAST_SIMD_VALUE_TYPE
   FOREIGN_TYPE,
   BYTE_ARRAY_TYPE,
   BYTECODE_ARRAY_TYPE,
   FREE_SPACE_TYPE,
-  FIXED_INT8_ARRAY_TYPE,              // FIRST_FIXED_TYPED_ARRAY_TYPE
+  FIXED_INT8_ARRAY_TYPE,  // FIRST_FIXED_TYPED_ARRAY_TYPE
   FIXED_UINT8_ARRAY_TYPE,
   FIXED_INT16_ARRAY_TYPE,
   FIXED_UINT16_ARRAY_TYPE,
@@ -747,9 +765,9 @@ enum InstanceType {
   FIRST_UNIQUE_NAME_TYPE = INTERNALIZED_STRING_TYPE,
   LAST_UNIQUE_NAME_TYPE = SYMBOL_TYPE,
   FIRST_NONSTRING_TYPE = SYMBOL_TYPE,
-  // Boundaries for testing for a SIMD type.
-  FIRST_SIMD_TYPE = FLOAT32X4_TYPE,
-  LAST_SIMD_TYPE = FLOAT32X4_TYPE,
+  // Boundaries for testing for a SIMD types.
+  FIRST_SIMD_VALUE_TYPE = FLOAT32X4_TYPE,
+  LAST_SIMD_VALUE_TYPE = BOOL8X16_TYPE,
   // Boundaries for testing for a fixed typed array.
   FIRST_FIXED_TYPED_ARRAY_TYPE = FIXED_INT8_ARRAY_TYPE,
   LAST_FIXED_TYPED_ARRAY_TYPE = FIXED_UINT8_CLAMPED_ARRAY_TYPE,
@@ -882,7 +900,14 @@ template <class C> inline bool Is(Object* obj);
 #define HEAP_OBJECT_TYPE_LIST(V)   \
   V(HeapNumber)                    \
   V(MutableHeapNumber)             \
+  V(Simd128Value)                  \
   V(Float32x4)                     \
+  V(Int32x4)                       \
+  V(Bool32x4)                      \
+  V(Int16x8)                       \
+  V(Bool16x8)                      \
+  V(Int8x16)                       \
+  V(Bool8x16)                      \
   V(Name)                          \
   V(UniqueName)                    \
   V(String)                        \
@@ -960,7 +985,6 @@ template <class C> inline bool Is(Object* obj);
   V(HashTable)                     \
   V(Dictionary)                    \
   V(StringTable)                   \
-  V(JSFunctionResultCache)         \
   V(NormalizedMapCache)            \
   V(CompilationCacheTable)         \
   V(CodeCacheHashTable)            \
@@ -1578,26 +1602,50 @@ class HeapNumber: public HeapObject {
 };
 
 
-// The Float32x4 class describes heap allocated SIMD values holding 4 32-bit
-// IEEE floats.
-class Float32x4 : public HeapObject {
+// The SimdValue128 class describes heap allocated 128 bit SIMD values.
+class Simd128Value : public HeapObject {
  public:
-  inline float get_lane(int lane) const;
-  inline void set_lane(int lane, float value);
+  DECLARE_CAST(Simd128Value)
 
-  DECLARE_CAST(Float32x4)
-
-  // Dispatched behavior.
-  void Float32x4Print(std::ostream& os);  // NOLINT
-  DECLARE_VERIFIER(Float32x4)
+  // Checks that another instance is bit-wise equal.
+  bool BitwiseEquals(const Simd128Value* other) const;
+  // Computes a hash from the 128 bit value, viewed as 4 32-bit integers.
+  uint32_t Hash() const;
 
   // Layout description.
   static const int kValueOffset = HeapObject::kHeaderSize;
   static const int kSize = kValueOffset + kSimd128Size;
 
  private:
-  DISALLOW_IMPLICIT_CONSTRUCTORS(Float32x4);
+  DISALLOW_IMPLICIT_CONSTRUCTORS(Simd128Value);
 };
+
+
+#define SIMD128_TYPES(V)            \
+  V(Float32x4, float32x4, 4, float) \
+  V(Int32x4, int32x4, 4, int32_t)   \
+  V(Bool32x4, bool32x4, 4, bool)    \
+  V(Int16x8, int16x8, 8, int16_t)   \
+  V(Bool16x8, bool16x8, 8, bool)    \
+  V(Int8x16, int8x16, 16, int8_t)   \
+  V(Bool8x16, bool8x16, 16, bool)
+
+#define SIMD128_VALUE_CLASS(name, type, lane_count, lane_type) \
+  class name : public Simd128Value {                           \
+   public:                                                     \
+    inline lane_type get_lane(int lane) const;                 \
+    inline void set_lane(int lane, lane_type value);           \
+                                                               \
+    DECLARE_CAST(name)                                         \
+                                                               \
+    DECLARE_PRINTER(name)                                      \
+    DECLARE_VERIFIER(name)                                     \
+                                                               \
+   private:                                                    \
+    DISALLOW_IMPLICIT_CONSTRUCTORS(name);                      \
+  };
+
+SIMD128_TYPES(SIMD128_VALUE_CLASS)
 
 
 enum EnsureElementsMode {
@@ -3780,41 +3828,6 @@ class WeakValueHashTable : public ObjectHashTable {
 };
 
 
-// JSFunctionResultCache caches results of some JSFunction invocation.
-// It is a fixed array with fixed structure:
-//   [0]: factory function
-//   [1]: finger index
-//   [2]: current cache size
-//   [3]: dummy field.
-// The rest of array are key/value pairs.
-class JSFunctionResultCache : public FixedArray {
- public:
-  static const int kFactoryIndex = 0;
-  static const int kFingerIndex = kFactoryIndex + 1;
-  static const int kCacheSizeIndex = kFingerIndex + 1;
-  static const int kDummyIndex = kCacheSizeIndex + 1;
-  static const int kEntriesIndex = kDummyIndex + 1;
-
-  static const int kEntrySize = 2;  // key + value
-
-  static const int kFactoryOffset = kHeaderSize;
-  static const int kFingerOffset = kFactoryOffset + kPointerSize;
-  static const int kCacheSizeOffset = kFingerOffset + kPointerSize;
-
-  inline void MakeZeroSize();
-  inline void Clear();
-
-  inline int size();
-  inline void set_size(int size);
-  inline int finger_index();
-  inline void set_finger_index(int finger_index);
-
-  DECLARE_CAST(JSFunctionResultCache)
-
-  DECLARE_VERIFIER(JSFunctionResultCache)
-};
-
-
 // ScopeInfo represents information about different scopes of a source
 // program  and the allocation of the scope's variables. Scope information
 // is stored in a compressed form in ScopeInfo objects and is used
@@ -3955,12 +3968,6 @@ class ScopeInfo : public FixedArray {
 
   FunctionKind function_kind();
 
-  // Copies all the context locals into an object used to materialize a scope.
-  static void CopyContextLocalsToScopeObject(Handle<ScopeInfo> scope_info,
-                                             Handle<Context> context,
-                                             Handle<JSObject> scope_object);
-
-
   static Handle<ScopeInfo> Create(Isolate* isolate, Zone* zone, Scope* scope);
   static Handle<ScopeInfo> CreateGlobalThisBinding(Isolate* isolate);
 
@@ -4096,6 +4103,8 @@ class ScopeInfo : public FixedArray {
   class ContextLocalInitFlag:  public BitField<InitializationFlag,   3, 1> {};
   class ContextLocalMaybeAssignedFlag
       : public BitField<MaybeAssignedFlag, 4, 1> {};
+
+  friend class ScopeIterator;
 };
 
 
@@ -4992,6 +5001,7 @@ class Code: public HeapObject {
 #ifdef DEBUG
   enum VerifyMode { kNoContextSpecificPointers, kNoContextRetainingPointers };
   void VerifyEmbeddedObjects(VerifyMode mode = kNoContextRetainingPointers);
+  static void VerifyRecompiledCode(Code* old_code, Code* new_code);
 #endif  // DEBUG
 
   inline bool CanContainWeakObjects() {

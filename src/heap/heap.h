@@ -48,6 +48,12 @@ namespace internal {
   V(Map, heap_number_map, HeapNumberMap)                                       \
   V(Map, mutable_heap_number_map, MutableHeapNumberMap)                        \
   V(Map, float32x4_map, Float32x4Map)                                          \
+  V(Map, int32x4_map, Int32x4Map)                                              \
+  V(Map, bool32x4_map, Bool32x4Map)                                            \
+  V(Map, int16x8_map, Int16x8Map)                                              \
+  V(Map, bool16x8_map, Bool16x8Map)                                            \
+  V(Map, int8x16_map, Int8x16Map)                                              \
+  V(Map, bool8x16_map, Bool8x16Map)                                            \
   V(Map, native_context_map, NativeContextMap)                                 \
   V(Map, fixed_array_map, FixedArrayMap)                                       \
   V(Map, code_map, CodeMap)                                                    \
@@ -213,6 +219,18 @@ namespace internal {
   V(eval_string, "eval")                                       \
   V(float32x4_string, "float32x4")                             \
   V(Float32x4_string, "Float32x4")                             \
+  V(int32x4_string, "int32x4")                                 \
+  V(Int32x4_string, "Int32x4")                                 \
+  V(bool32x4_string, "bool32x4")                               \
+  V(Bool32x4_string, "Bool32x4")                               \
+  V(int16x8_string, "int16x8")                                 \
+  V(Int16x8_string, "Int16x8")                                 \
+  V(bool16x8_string, "bool16x8")                               \
+  V(Bool16x8_string, "Bool16x8")                               \
+  V(int8x16_string, "int8x16")                                 \
+  V(Int8x16_string, "Int8x16")                                 \
+  V(bool8x16_string, "bool8x16")                               \
+  V(Bool8x16_string, "Bool8x16")                               \
   V(function_string, "function")                               \
   V(Function_string, "Function")                               \
   V(length_string, "length")                                   \
@@ -338,6 +356,12 @@ namespace internal {
   V(HeapNumberMap)                      \
   V(MutableHeapNumberMap)               \
   V(Float32x4Map)                       \
+  V(Int32x4Map)                         \
+  V(Bool32x4Map)                        \
+  V(Int16x8Map)                         \
+  V(Bool16x8Map)                        \
+  V(Int8x16Map)                         \
+  V(Bool8x16Map)                        \
   V(NativeContextMap)                   \
   V(FixedArrayMap)                      \
   V(CodeMap)                            \
@@ -771,7 +795,7 @@ class Heap {
   enum InvocationMode { SEQUENTIAL_TO_SWEEPER, CONCURRENT_TO_SWEEPER };
 
   // Maintain consistency of live bytes during incremental marking.
-  void AdjustLiveBytes(Address address, int by, InvocationMode mode);
+  void AdjustLiveBytes(HeapObject* object, int by, InvocationMode mode);
 
   // Trim the given array from the left. Note that this relocates the object
   // start and hence is only valid if there is only a single reference to it.
@@ -1317,8 +1341,6 @@ class Heap {
   // scavenge operation.
   inline bool ShouldBePromoted(Address old_address, int object_size);
 
-  void ClearJSFunctionResultCaches();
-
   void ClearNormalizedMapCaches();
 
   GCTracer* tracer() { return &tracer_; }
@@ -1368,10 +1390,6 @@ class Heap {
   size_t PromotedSinceLastGC() {
     return PromotedSpaceSizeOfObjects() - old_generation_size_at_last_gc_;
   }
-
-  // Record the fact that we generated some optimized code since the last GC
-  // which will pretenure some previously unpretenured allocation.
-  void RecordDeoptForPretenuring() { gathering_lifetime_feedback_ = 2; }
 
   // Update GC statistics that are tracked on the Heap.
   void UpdateCumulativeGCStatistics(double duration, double spent_in_mutator,
@@ -1647,10 +1665,12 @@ class Heap {
       AllocateHeapNumber(double value, MutableMode mode = IMMUTABLE,
                          PretenureFlag pretenure = NOT_TENURED);
 
-  // Allocates a Float32x4 from the given lane values.
-  MUST_USE_RESULT AllocationResult
-  AllocateFloat32x4(float w, float x, float y, float z,
-                    PretenureFlag pretenure = NOT_TENURED);
+// Allocates SIMD values from the given lane values.
+#define SIMD_ALLOCATE_DECLARATION(type, type_name, lane_count, lane_type) \
+  AllocationResult Allocate##type(lane_type lanes[lane_count],            \
+                                  PretenureFlag pretenure = NOT_TENURED);
+
+  SIMD128_TYPES(SIMD_ALLOCATE_DECLARATION)
 
   // Allocates a byte array of the specified length
   MUST_USE_RESULT AllocationResult
@@ -1785,6 +1805,10 @@ class Heap {
   // Indicates that an allocation has failed in the old generation since the
   // last GC.
   bool old_gen_exhausted_;
+
+  // Indicates that memory usage is more important than latency.
+  // TODO(ulan): Merge it with memory reducer once chromium:490559 is fixed.
+  bool optimize_for_memory_usage_;
 
   // Indicates that inline bump-pointer allocation has been globally disabled
   // for all spaces. This is used to disable allocations in generated code.
@@ -2165,23 +2189,13 @@ class Heap {
 
   void UpdateSurvivalStatistics(int start_new_space_size);
 
-  enum SurvivalRateTrend { INCREASING, STABLE, DECREASING, FLUCTUATING };
-
   static const int kYoungSurvivalRateHighThreshold = 90;
-  static const int kYoungSurvivalRateLowThreshold = 10;
   static const int kYoungSurvivalRateAllowedDeviation = 15;
 
   static const int kOldSurvivalRateLowThreshold = 10;
 
-  bool new_space_high_promotion_mode_active_;
-  // If this is non-zero, then there is hope yet that the optimized code we
-  // have generated will solve our high promotion rate problems, so we don't
-  // need to go into high promotion mode just yet.
-  int gathering_lifetime_feedback_;
   int high_survival_rate_period_length_;
   intptr_t promoted_objects_size_;
-  int low_survival_rate_period_length_;
-  double survival_rate_;
   double promotion_ratio_;
   double promotion_rate_;
   intptr_t semi_space_copied_object_size_;
@@ -2197,58 +2211,11 @@ class Heap {
   // of the allocation site.
   unsigned int maximum_size_scavenges_;
 
-  SurvivalRateTrend previous_survival_rate_trend_;
-  SurvivalRateTrend survival_rate_trend_;
-
-  void set_survival_rate_trend(SurvivalRateTrend survival_rate_trend) {
-    DCHECK(survival_rate_trend != FLUCTUATING);
-    previous_survival_rate_trend_ = survival_rate_trend_;
-    survival_rate_trend_ = survival_rate_trend;
-  }
-
-  SurvivalRateTrend survival_rate_trend() {
-    if (survival_rate_trend_ == STABLE) {
-      return STABLE;
-    } else if (previous_survival_rate_trend_ == STABLE) {
-      return survival_rate_trend_;
-    } else if (survival_rate_trend_ != previous_survival_rate_trend_) {
-      return FLUCTUATING;
-    } else {
-      return survival_rate_trend_;
-    }
-  }
-
-  bool IsStableOrIncreasingSurvivalTrend() {
-    switch (survival_rate_trend()) {
-      case STABLE:
-      case INCREASING:
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  bool IsStableOrDecreasingSurvivalTrend() {
-    switch (survival_rate_trend()) {
-      case STABLE:
-      case DECREASING:
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  bool IsIncreasingSurvivalTrend() {
-    return survival_rate_trend() == INCREASING;
-  }
-
-  bool IsLowSurvivalRate() { return low_survival_rate_period_length_ > 0; }
-
+  // TODO(hpayer): Allocation site pretenuring may make this method obsolete.
+  // Re-visit incremental marking heuristics.
   bool IsHighSurvivalRate() { return high_survival_rate_period_length_ > 0; }
 
   void ConfigureInitialOldGenerationSize();
-
-  void ConfigureNewGenerationSize();
 
   void SelectScavengingVisitorsTable();
 
@@ -2264,6 +2231,10 @@ class Heap {
       size_t mark_compact_speed_in_bytes_per_ms);
 
   GCIdleTimeHandler::HeapState ComputeHeapState();
+
+  double AdvanceIncrementalMarking(
+      intptr_t step_size_in_bytes, double deadline_in_ms,
+      IncrementalMarking::ForceCompletionAction completion);
 
   bool PerformIdleTimeAction(GCIdleTimeAction action,
                              GCIdleTimeHandler::HeapState heap_state,

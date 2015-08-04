@@ -61,8 +61,8 @@ class Writer BASE_EMBEDDED {
 
 #if V8_PPC_PERF_ANNOTATE_SUPPORT
     Slot() { }
-#endif
 
+#endif
     T* operator-> () {
       return w_->RawSlotAt<T>(offset_);
     }
@@ -93,8 +93,8 @@ class Writer BASE_EMBEDDED {
     memcpy(RawSlotAt(position_, size), source, static_cast<size_t>(size));
     position_ += size;
   }
-#endif
 
+#endif
   template<typename T>
   Slot<T> SlotAt(uintptr_t offset) {
     Ensure(offset + sizeof(T));
@@ -179,8 +179,8 @@ class Writer BASE_EMBEDDED {
     DCHECK(offset < capacity_ && offset + size <= capacity_);
     return reinterpret_cast<void*>(&buffer_[offset]);
   }
-#endif
 
+#endif
   DebugObject* debug_object_;
   uintptr_t position_;
   uintptr_t capacity_;
@@ -435,8 +435,8 @@ class FullHeaderELFSection : public ELFSection {
   uintptr_t getOffset() {
     return offset_;
   }
-#endif
 
+#endif
  protected:
   virtual void PopulateHeader(Writer::Slot<Header> header) {
     ELFSection::PopulateHeader(header);
@@ -490,8 +490,8 @@ class ELFStringTable : public ELFSection {
   uintptr_t getSize() {
     return size_;
   }
-#endif
 
+#endif
  private:
   void WriteString(const char* str) {
     uintptr_t written = 0;
@@ -707,12 +707,12 @@ class ELF BASE_EMBEDDED {
     const uint8_t ident[16] =
         { 0x7f, 'E', 'L', 'F', 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 #elif(V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_64_BIT) || \
-     (V8_TARGET_ARCH_PPC64 && V8_TARGET_LITTLE_ENDIAN)
+    (V8_TARGET_ARCH_PPC64 && V8_TARGET_LITTLE_ENDIAN)
     const uint8_t ident[16] =
         { 0x7f, 'E', 'L', 'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 #elif V8_TARGET_ARCH_PPC64 && V8_TARGET_BIG_ENDIAN && V8_OS_LINUX
-    const uint8_t ident[16] =
-        { 0x7f, 'E', 'L', 'F', 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    const uint8_t ident[16] = {0x7f, 'E', 'L', 'F', 2, 2, 1, 0,
+                               0,    0,   0,   0,   0, 0, 0, 0};
 #else
 #error Unsupported target architecture.
 #endif
@@ -846,9 +846,9 @@ class ELF BASE_EMBEDDED {
         + sizeof(ELFSection::Header) * sections_.length()
         + strtab->getSize());
   }
+
+
 #endif
-
-
   void WriteSectionTable(Writer* w) {
     // Section headers table immediately follows file header.
     DCHECK(w->position() == sizeof(ELFHeader));
@@ -959,7 +959,7 @@ class ELFSymbol BASE_EMBEDDED {
     uint16_t section;
   };
 #elif(V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_64_BIT) || \
-      (V8_TARGET_ARCH_PPC64 && V8_OS_LINUX)
+    (V8_TARGET_ARCH_PPC64 && V8_OS_LINUX)
   struct SerializedLayout {
     SerializedLayout(uint32_t name,
                      uintptr_t value,
@@ -1320,7 +1320,7 @@ class DebugInfoSection : public DebugSection {
 #elif V8_TARGET_ARCH_MIPS64
       UNIMPLEMENTED();
 #elif V8_TARGET_ARCH_PPC64 && V8_OS_LINUX
-      w->Write<uint8_t>(DW_OP_reg31);  // The frame pointer is here on PPC64
+      w->Write<uint8_t>(DW_OP_reg31);  // The frame pointer is here on PPC64.
 #else
 #error Unsupported target architecture.
 #endif

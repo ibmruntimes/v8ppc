@@ -22,9 +22,28 @@ namespace interpreter {
   V(Reg)
 
 // The list of bytecodes which are interpreted by the interpreter.
-#define BYTECODE_LIST(V)                             \
-  V(LoadLiteral0, OperandType::kReg)                 \
-  V(LoadSmi8, OperandType::kReg, OperandType::kImm8) \
+#define BYTECODE_LIST(V)               \
+                                       \
+  /* Loading the accumulator */        \
+  V(LdaZero, OperandType::kNone)       \
+  V(LdaSmi8, OperandType::kImm8)       \
+  V(LdaUndefined, OperandType::kNone)  \
+  V(LdaNull, OperandType::kNone)       \
+  V(LdaTheHole, OperandType::kNone)    \
+  V(LdaTrue, OperandType::kNone)       \
+  V(LdaFalse, OperandType::kNone)      \
+                                       \
+  /* Register-accumulator transfers */ \
+  V(Ldar, OperandType::kReg)           \
+  V(Star, OperandType::kReg)           \
+                                       \
+  /* Binary Operators */               \
+  V(Add, OperandType::kReg)            \
+  V(Sub, OperandType::kReg)            \
+  V(Mul, OperandType::kReg)            \
+  V(Div, OperandType::kReg)            \
+                                       \
+  /* Control Flow */                   \
   V(Return, OperandType::kNone)
 
 
@@ -66,19 +85,22 @@ class Bytecodes {
   static Bytecode FromByte(uint8_t value);
 
   // Returns the number of operands expected by |bytecode|.
-  static const int NumberOfOperands(Bytecode bytecode);
+  static int NumberOfOperands(Bytecode bytecode);
 
   // Return the i-th operand of |bytecode|.
-  static const OperandType GetOperandType(Bytecode bytecode, int i);
+  static OperandType GetOperandType(Bytecode bytecode, int i);
 
-  // Returns the size of the bytecode including its arguments.
-  static const int Size(Bytecode bytecode);
+  // Returns the size of the bytecode including its operands.
+  static int Size(Bytecode bytecode);
 
   // The maximum number of operands across all bytecodes.
-  static const int MaximumNumberOfOperands();
+  static int MaximumNumberOfOperands();
 
-  // Maximum size of a bytecode and its arguments.
-  static const int MaximumSize();
+  // Maximum size of a bytecode and its operands.
+  static int MaximumSize();
+
+  // Decode a single bytecode and operands to |os|.
+  static std::ostream& Decode(std::ostream& os, const uint8_t* bytecode_start);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(Bytecodes);

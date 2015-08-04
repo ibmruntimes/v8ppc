@@ -541,10 +541,11 @@ class SingletonLogger;
 
 struct ParserFormalParameters : public PreParserFormalParameters {
   struct Parameter {
-    Parameter(Variable* var, Expression* pattern)
-        : var(var), pattern(pattern) {}
-    Variable* var;
+    Parameter(const AstRawString* name, Expression* pattern, bool is_rest)
+        : name(name), pattern(pattern), is_rest(is_rest) {}
+    const AstRawString* name;
     Expression* pattern;
+    bool is_rest;
   };
 
   explicit ParserFormalParameters(Scope* scope)
@@ -552,8 +553,10 @@ struct ParserFormalParameters : public PreParserFormalParameters {
 
   ZoneList<Parameter> params;
 
-  void AddParameter(Variable* var, Expression* pattern) {
-    params.Add(Parameter(var, pattern), scope->zone());
+  void AddParameter(
+      const AstRawString* name, Expression* pattern, bool is_rest) {
+    params.Add(Parameter(name, pattern, is_rest), scope->zone());
+    DCHECK_EQ(arity, params.length());
   }
 };
 
@@ -579,7 +582,7 @@ class ParserTraits {
     typedef ObjectLiteral::Property* ObjectLiteralProperty;
     typedef ZoneList<v8::internal::Expression*>* ExpressionList;
     typedef ZoneList<ObjectLiteral::Property*>* PropertyList;
-    typedef const v8::internal::AstRawString* FormalParameter;
+    typedef ParserFormalParameters::Parameter FormalParameter;
     typedef ParserFormalParameters FormalParameters;
     typedef ZoneList<v8::internal::Statement*>* StatementList;
 
@@ -802,8 +805,8 @@ class ParserTraits {
       Scanner::BookmarkScope* bookmark = nullptr);
   V8_INLINE ZoneList<Statement*>* ParseEagerFunctionBody(
       const AstRawString* name, int pos,
-      const ParserFormalParameters& parameters,
-      Variable* fvar, Token::Value fvar_init_op, FunctionKind kind, bool* ok);
+      const ParserFormalParameters& parameters, FunctionKind kind,
+      FunctionLiteral::FunctionType function_type, bool* ok);
 
   ClassLiteral* ParseClassLiteral(const AstRawString* name,
                                   Scanner::Location class_name_location,
@@ -1160,8 +1163,8 @@ class Parser : public ParserBase<ParserTraits> {
   // Consumes the ending }.
   ZoneList<Statement*>* ParseEagerFunctionBody(
       const AstRawString* function_name, int pos,
-      const ParserFormalParameters& parameters,
-      Variable* fvar, Token::Value fvar_init_op, FunctionKind kind, bool* ok);
+      const ParserFormalParameters& parameters, FunctionKind kind,
+      FunctionLiteral::FunctionType function_type, bool* ok);
 
   void ThrowPendingError(Isolate* isolate, Handle<Script> script);
 
@@ -1225,11 +1228,10 @@ void ParserTraits::SkipLazyFunctionBody(int* materialized_literal_count,
 
 
 ZoneList<Statement*>* ParserTraits::ParseEagerFunctionBody(
-    const AstRawString* name, int pos,
-    const ParserFormalParameters& parameters, Variable* fvar,
-    Token::Value fvar_init_op, FunctionKind kind, bool* ok) {
-  return parser_->ParseEagerFunctionBody(name, pos, parameters, fvar,
-                                         fvar_init_op, kind, ok);
+    const AstRawString* name, int pos, const ParserFormalParameters& parameters,
+    FunctionKind kind, FunctionLiteral::FunctionType function_type, bool* ok) {
+  return parser_->ParseEagerFunctionBody(name, pos, parameters, kind,
+                                         function_type, ok);
 }
 
 void ParserTraits::CheckConflictingVarDeclarations(v8::internal::Scope* scope,
@@ -1318,9 +1320,10 @@ void ParserTraits::DeclareFormalParameter(
   const AstRawString* name = is_simple
                                  ? pattern->AsVariableProxy()->raw_name()
                                  : parser_->ast_value_factory()->empty_string();
+  VariableMode mode = is_simple ? VAR : TEMPORARY;
   Variable* var =
-      parameters->scope->DeclareParameter(name, VAR, is_rest, &is_duplicate);
-  parameters->AddParameter(var, is_simple ? nullptr : pattern);
+      parameters->scope->DeclareParameter(name, mode, is_rest, &is_duplicate);
+  parameters->AddParameter(name, is_simple ? nullptr : pattern, is_rest);
   if (is_duplicate) {
     classifier->RecordDuplicateFormalParameterError(
         parser_->scanner()->location());

@@ -103,7 +103,7 @@ class ParserBase : public Traits {
         allow_harmony_sloppy_(false),
         allow_harmony_sloppy_let_(false),
         allow_harmony_computed_property_names_(false),
-        allow_harmony_rest_params_(false),
+        allow_harmony_rest_parameters_(false),
         allow_harmony_spreadcalls_(false),
         allow_harmony_destructuring_(false),
         allow_harmony_spread_arrays_(false),
@@ -121,7 +121,7 @@ class ParserBase : public Traits {
   ALLOW_ACCESSORS(harmony_sloppy);
   ALLOW_ACCESSORS(harmony_sloppy_let);
   ALLOW_ACCESSORS(harmony_computed_property_names);
-  ALLOW_ACCESSORS(harmony_rest_params);
+  ALLOW_ACCESSORS(harmony_rest_parameters);
   ALLOW_ACCESSORS(harmony_spreadcalls);
   ALLOW_ACCESSORS(harmony_destructuring);
   ALLOW_ACCESSORS(harmony_spread_arrays);
@@ -702,8 +702,8 @@ class ParserBase : public Traits {
   void ParseFormalParameter(bool is_rest,
                             FormalParametersT* parameters,
                             ExpressionClassifier* classifier, bool* ok);
-  int ParseFormalParameterList(FormalParametersT* parameters,
-                               ExpressionClassifier* classifier, bool* ok);
+  void ParseFormalParameterList(FormalParametersT* parameters,
+                                ExpressionClassifier* classifier, bool* ok);
   void CheckArityRestrictions(
       int param_count, FunctionLiteral::ArityRestriction arity_restriction,
       bool has_rest, int formals_start_pos, int formals_end_pos, bool* ok);
@@ -801,7 +801,7 @@ class ParserBase : public Traits {
   bool allow_harmony_sloppy_;
   bool allow_harmony_sloppy_let_;
   bool allow_harmony_computed_property_names_;
-  bool allow_harmony_rest_params_;
+  bool allow_harmony_rest_parameters_;
   bool allow_harmony_spreadcalls_;
   bool allow_harmony_destructuring_;
   bool allow_harmony_spread_arrays_;
@@ -1315,10 +1315,12 @@ class PreParserFactory {
 struct PreParserFormalParameters {
   explicit PreParserFormalParameters(Scope* scope)
       : scope(scope),
+        arity(0),
         has_rest(false),
         is_simple(true),
         materialized_literals_count(0) {}
   Scope* scope;
+  int arity;
   bool has_rest;
   bool is_simple;
   int materialized_literals_count;
@@ -1601,8 +1603,8 @@ class PreParserTraits {
 
   V8_INLINE PreParserStatementList ParseEagerFunctionBody(
       PreParserIdentifier function_name, int pos,
-      const PreParserFormalParameters& parameters,
-      Variable* fvar, Token::Value fvar_init_op, FunctionKind kind, bool* ok);
+      const PreParserFormalParameters& parameters, FunctionKind kind,
+      FunctionLiteral::FunctionType function_type, bool* ok);
 
   V8_INLINE void ParseArrowFunctionFormalParameters(
       PreParserFormalParameters* parameters,
@@ -1786,11 +1788,10 @@ class PreParser : public ParserBase<PreParserTraits> {
 
   V8_INLINE void SkipLazyFunctionBody(int* materialized_literal_count,
                                       int* expected_property_count, bool* ok);
-  V8_INLINE PreParserStatementList
-  ParseEagerFunctionBody(PreParserIdentifier function_name, int pos,
-                         const PreParserFormalParameters& parameters,
-                         Variable* fvar, Token::Value fvar_init_op,
-                         FunctionKind kind, bool* ok);
+  V8_INLINE PreParserStatementList ParseEagerFunctionBody(
+      PreParserIdentifier function_name, int pos,
+      const PreParserFormalParameters& parameters, FunctionKind kind,
+      FunctionLiteral::FunctionType function_type, bool* ok);
 
   Expression ParseFunctionLiteral(
       Identifier name, Scanner::Location function_name_location,
@@ -1845,8 +1846,8 @@ void PreParserTraits::ParseArrowFunctionFormalParameters(
 
 PreParserStatementList PreParser::ParseEagerFunctionBody(
     PreParserIdentifier function_name, int pos,
-    const PreParserFormalParameters& parameters,
-    Variable* fvar, Token::Value fvar_init_op, FunctionKind kind, bool* ok) {
+    const PreParserFormalParameters& parameters, FunctionKind kind,
+    FunctionLiteral::FunctionType function_type, bool* ok) {
   ParsingModeScope parsing_mode(this, PARSE_EAGERLY);
 
   ParseStatementList(Token::RBRACE, ok);
@@ -1859,10 +1860,10 @@ PreParserStatementList PreParser::ParseEagerFunctionBody(
 
 PreParserStatementList PreParserTraits::ParseEagerFunctionBody(
     PreParserIdentifier function_name, int pos,
-    const PreParserFormalParameters& parameters,
-    Variable* fvar, Token::Value fvar_init_op, FunctionKind kind, bool* ok) {
-  return pre_parser_->ParseEagerFunctionBody(
-      function_name, pos, parameters, fvar, fvar_init_op, kind, ok);
+    const PreParserFormalParameters& parameters, FunctionKind kind,
+    FunctionLiteral::FunctionType function_type, bool* ok) {
+  return pre_parser_->ParseEagerFunctionBody(function_name, pos, parameters,
+                                             kind, function_type, ok);
 }
 
 
@@ -2275,7 +2276,7 @@ ParserBase<Traits>::ParsePrimaryExpression(ExpressionClassifier* classifier,
         result = this->ParseArrowFunctionLiteral(parameters, args_classifier,
                                                  CHECK_OK);
       } else if (allow_harmony_arrow_functions() &&
-                 allow_harmony_rest_params() && Check(Token::ELLIPSIS)) {
+                 allow_harmony_rest_parameters() && Check(Token::ELLIPSIS)) {
         // (...x) => y
         Scope* scope =
             this->NewScope(scope_, ARROW_SCOPE, FunctionKind::kArrowFunction);
@@ -2387,7 +2388,7 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseExpression(
     }
     Consume(Token::COMMA);
     bool is_rest = false;
-    if (allow_harmony_rest_params() && peek() == Token::ELLIPSIS) {
+    if (allow_harmony_rest_parameters() && peek() == Token::ELLIPSIS) {
       // 'x, y, ...z' in CoverParenthesizedExpressionAndArrowParameterList only
       // as the formal parameters of'(x, y, ...z) => foo', and is not itself a
       // valid expression or binding pattern.
@@ -3646,12 +3647,13 @@ void ParserBase<Traits>::ParseFormalParameter(
     *ok = false;
     return;
   }
+  ++parameters->arity;
   Traits::DeclareFormalParameter(parameters, pattern, is_rest, classifier);
 }
 
 
 template <class Traits>
-int ParserBase<Traits>::ParseFormalParameterList(
+void ParserBase<Traits>::ParseFormalParameterList(
     FormalParametersT* parameters, ExpressionClassifier* classifier, bool* ok) {
   // FormalParameters[Yield,GeneratorParameter] :
   //   [empty]
@@ -3667,29 +3669,26 @@ int ParserBase<Traits>::ParseFormalParameterList(
   //   FormalsList[?Yield, ?GeneratorParameter] ,
   //     FormalParameter[?Yield,?GeneratorParameter]
 
-  int arity = 0;
+  DCHECK_EQ(0, parameters->arity);
 
   if (peek() != Token::RPAREN) {
     do {
-      if (++arity > Code::kMaxArguments) {
+      if (parameters->arity > Code::kMaxArguments) {
         ReportMessage(MessageTemplate::kTooManyParameters);
         *ok = false;
-        return -1;
+        return;
       }
-      bool is_rest = allow_harmony_rest_params() && Check(Token::ELLIPSIS);
+      bool is_rest = allow_harmony_rest_parameters() && Check(Token::ELLIPSIS);
       ParseFormalParameter(is_rest, parameters, classifier, ok);
-      if (!*ok) return -1;
+      if (!*ok) return;
     } while (!parameters->has_rest && Check(Token::COMMA));
 
     if (parameters->has_rest && peek() == Token::COMMA) {
       ReportMessageAt(scanner()->peek_location(),
                       MessageTemplate::kParamAfterRest);
       *ok = false;
-      return -1;
     }
   }
-
-  return arity;
 }
 
 
@@ -3768,7 +3767,7 @@ ParserBase<Traits>::ParseArrowFunctionLiteral(
       } else {
         body = this->ParseEagerFunctionBody(
             this->EmptyIdentifier(), RelocInfo::kNoPosition, formal_parameters,
-            NULL, Token::INIT_VAR, kArrowFunction, CHECK_OK);
+            kArrowFunction, FunctionLiteral::ANONYMOUS_EXPRESSION, CHECK_OK);
         materialized_literal_count =
             function_state.materialized_literal_count();
         expected_property_count = function_state.expected_property_count();

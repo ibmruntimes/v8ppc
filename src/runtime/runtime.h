@@ -321,7 +321,6 @@ namespace internal {
   F(AllocateInTargetSpace, 2, 1)              \
   F(CollectStackTrace, 2, 1)                  \
   F(RenderCallSite, 0, 1)                     \
-  F(GetFromCacheRT, 2, 1)                     \
   F(MessageGetStartPosition, 1, 1)            \
   F(MessageGetScript, 1, 1)                   \
   F(FormatMessageString, 4, 1)                \
@@ -336,7 +335,6 @@ namespace internal {
   F(CallSiteIsEvalRT, 3, 1)                   \
   F(CallSiteIsConstructorRT, 3, 1)            \
   F(IS_VAR, 1, 1)                             \
-  F(GetFromCache, 2, 1)                       \
   F(IncrementStatsCounter, 1, 1)              \
   F(Likely, 1, 1)                             \
   F(Unlikely, 1, 1)                           \
@@ -569,13 +567,42 @@ namespace internal {
   F(Arguments, 1, 1)
 
 
-#define FOR_EACH_INTRINSIC_SIMD(F) \
-  F(CreateFloat32x4, 4, 1)         \
-  F(Float32x4Check, 1, 1)          \
-  F(Float32x4ExtractLane, 2, 1)    \
-  F(Float32x4Equals, 2, 1)         \
-  F(Float32x4SameValue, 2, 1)      \
-  F(Float32x4SameValueZero, 2, 1)
+#define FOR_EACH_INTRINSIC_SIMD(F)    \
+  F(IsSimdValue, 1, 1)                \
+  F(SimdToObject, 1, 1)               \
+  F(SimdEquals, 2, 1)                 \
+  F(SimdSameValue, 2, 1)              \
+  F(SimdSameValueZero, 2, 1)          \
+  F(CreateFloat32x4, 4, 1)            \
+  F(CreateInt32x4, 4, 1)              \
+  F(CreateBool32x4, 4, 1)             \
+  F(CreateInt16x8, 8, 1)              \
+  F(CreateBool16x8, 8, 1)             \
+  F(CreateInt8x16, 16, 1)             \
+  F(CreateBool8x16, 16, 1)            \
+  F(Float32x4Check, 1, 1)             \
+  F(Int32x4Check, 1, 1)               \
+  F(Bool32x4Check, 1, 1)              \
+  F(Int16x8Check, 1, 1)               \
+  F(Bool16x8Check, 1, 1)              \
+  F(Int8x16Check, 1, 1)               \
+  F(Bool8x16Check, 1, 1)              \
+  F(Float32x4ExtractLane, 2, 1)       \
+  F(Int32x4ExtractLane, 2, 1)         \
+  F(Bool32x4ExtractLane, 2, 1)        \
+  F(Int16x8ExtractLane, 2, 1)         \
+  F(Int16x8UnsignedExtractLane, 2, 1) \
+  F(Bool16x8ExtractLane, 2, 1)        \
+  F(Int8x16ExtractLane, 2, 1)         \
+  F(Int8x16UnsignedExtractLane, 2, 1) \
+  F(Bool8x16ExtractLane, 2, 1)        \
+  F(Float32x4ReplaceLane, 3, 1)       \
+  F(Int32x4ReplaceLane, 3, 1)         \
+  F(Bool32x4ReplaceLane, 3, 1)        \
+  F(Int16x8ReplaceLane, 3, 1)         \
+  F(Bool16x8ReplaceLane, 3, 1)        \
+  F(Int8x16ReplaceLane, 3, 1)         \
+  F(Bool8x16ReplaceLane, 3, 1)
 
 
 #define FOR_EACH_INTRINSIC_STRINGS(F)           \
@@ -901,8 +928,6 @@ class Runtime : public AllStatic {
       SharedFlag shared = SharedFlag::kNotShared);
 
   static void NeuterArrayBuffer(Handle<JSArrayBuffer> array_buffer);
-
-  static int FindIndexedNonNativeFrame(JavaScriptFrameIterator* it, int index);
 
   enum TypedArrayId {
     // arrayIds below should be synchromized with typedarray.js natives.
