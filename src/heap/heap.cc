@@ -769,7 +769,8 @@ void Heap::PreprocessStackTraces() {
 void Heap::HandleGCRequest() {
   if (incremental_marking()->request_type() ==
       IncrementalMarking::COMPLETE_MARKING) {
-    CollectAllGarbage(Heap::kNoGCFlags, "GC interrupt");
+    CollectAllGarbage(Heap::kNoGCFlags, "GC interrupt",
+                      incremental_marking()->CallbackFlags());
     return;
   }
   DCHECK(FLAG_overapproximate_weak_closure);
@@ -979,7 +980,7 @@ bool Heap::CollectGarbage(GarbageCollector collector, const char* gc_reason,
   if (!mark_compact_collector()->abort_incremental_marking() &&
       incremental_marking()->IsStopped() &&
       incremental_marking()->ShouldActivateEvenWithoutIdleNotification()) {
-    incremental_marking()->Start(kNoGCFlags);
+    incremental_marking()->Start(kNoGCFlags, kNoGCCallbackFlags, "GC epilogue");
   }
 
   return next_gc_likely_to_collect_more;
@@ -1006,9 +1007,18 @@ int Heap::NotifyContextDisposed(bool dependant_context) {
 }
 
 
+void Heap::StartIncrementalMarking(int gc_flags,
+                                   const GCCallbackFlags gc_callback_flags,
+                                   const char* reason) {
+  DCHECK(incremental_marking()->IsStopped());
+  incremental_marking()->Start(gc_flags, gc_callback_flags, reason);
+}
+
+
 void Heap::StartIdleIncrementalMarking() {
   gc_idle_time_handler_.ResetNoProgressCounter();
-  incremental_marking()->Start(kReduceMemoryFootprintMask);
+  StartIncrementalMarking(kReduceMemoryFootprintMask, kNoGCCallbackFlags,
+                          "idle");
 }
 
 
@@ -1273,8 +1283,7 @@ bool Heap::PerformGarbageCollection(
     // Register the amount of external allocated memory.
     amount_of_external_allocated_memory_at_last_global_gc_ =
         amount_of_external_allocated_memory_;
-    SetOldGenerationAllocationLimit(old_gen_size, gc_speed, mutator_speed,
-                                    freed_global_handles);
+    SetOldGenerationAllocationLimit(old_gen_size, gc_speed, mutator_speed);
   } else if (HasLowYoungGenerationAllocationRate() &&
              old_generation_size_configured_) {
     DampenOldGenerationAllocationLimit(old_gen_size, gc_speed, mutator_speed);
@@ -2084,15 +2093,17 @@ Address Heap::DoScavenge(ObjectVisitor* scavenge_visitor,
             int end_of_region_offset;
             if (helper.IsTagged(offset, size, &end_of_region_offset)) {
               IterateAndMarkPointersToFromSpace(
-                  record_slots, obj_address + offset,
-                  obj_address + end_of_region_offset, &ScavengeObject);
+                  target, obj_address + offset,
+                  obj_address + end_of_region_offset, record_slots,
+                  &ScavengeObject);
             }
             offset = end_of_region_offset;
           }
         } else {
 #endif
-          IterateAndMarkPointersToFromSpace(
-              record_slots, obj_address, obj_address + size, &ScavengeObject);
+          IterateAndMarkPointersToFromSpace(target, obj_address,
+                                            obj_address + size, record_slots,
+                                            &ScavengeObject);
 #if V8_DOUBLE_FIELDS_UNBOXING
         }
 #endif
@@ -2418,7 +2429,7 @@ class ScavengingVisitor : public StaticVisitorBase {
           target->address() + JSFunction::kCodeEntryOffset;
       Code* code = Code::cast(Code::GetObjectFromEntryAddress(code_entry_slot));
       map->GetHeap()->mark_compact_collector()->RecordCodeEntrySlot(
-          code_entry_slot, code);
+          target, code_entry_slot, code);
     }
   }
 
@@ -3582,8 +3593,8 @@ void Heap::AddAllocationSiteToScratchpad(AllocationSite* site,
       // candidates are not part of the global list of old space pages and
       // releasing an evacuation candidate due to a slots buffer overflow
       // results in lost pages.
-      mark_compact_collector()->RecordSlot(slot, slot, *slot,
-                                           SlotsBuffer::IGNORE_OVERFLOW);
+      mark_compact_collector()->RecordSlot(allocation_sites_scratchpad(), slot,
+                                           *slot, SlotsBuffer::IGNORE_OVERFLOW);
     }
     allocation_sites_scratchpad_length_++;
   }
@@ -4427,7 +4438,7 @@ AllocationResult Heap::CopyAndTenureFixedCOWArray(FixedArray* src) {
   FixedArray* result = FixedArray::cast(obj);
   result->set_length(len);
 
-  // Copy the content
+  // Copy the content.
   DisallowHeapAllocation no_gc;
   WriteBarrierMode mode = result->GetWriteBarrierMode(no_gc);
   for (int i = 0; i < len; i++) result->set(i, src->get(i), mode);
@@ -4443,6 +4454,29 @@ AllocationResult Heap::CopyAndTenureFixedCOWArray(FixedArray* src) {
 AllocationResult Heap::AllocateEmptyFixedTypedArray(
     ExternalArrayType array_type) {
   return AllocateFixedTypedArray(0, array_type, false, TENURED);
+}
+
+
+AllocationResult Heap::CopyFixedArrayAndGrow(FixedArray* src, int grow_by,
+                                             PretenureFlag pretenure) {
+  int old_len = src->length();
+  int new_len = old_len + grow_by;
+  DCHECK(new_len >= old_len);
+  HeapObject* obj;
+  {
+    AllocationResult allocation = AllocateRawFixedArray(new_len, pretenure);
+    if (!allocation.To(&obj)) return allocation;
+  }
+  obj->set_map_no_write_barrier(fixed_array_map());
+  FixedArray* result = FixedArray::cast(obj);
+  result->set_length(new_len);
+
+  // Copy the content.
+  DisallowHeapAllocation no_gc;
+  WriteBarrierMode mode = result->GetWriteBarrierMode(no_gc);
+  for (int i = 0; i < old_len; i++) result->set(i, src->get(i), mode);
+  MemsetPointer(result->data_start() + old_len, undefined_value(), grow_by);
+  return result;
 }
 
 
@@ -4463,7 +4497,7 @@ AllocationResult Heap::CopyFixedArrayWithMap(FixedArray* src, Map* map) {
   FixedArray* result = FixedArray::cast(obj);
   result->set_length(len);
 
-  // Copy the content
+  // Copy the content.
   DisallowHeapAllocation no_gc;
   WriteBarrierMode mode = result->GetWriteBarrierMode(no_gc);
   for (int i = 0; i < len; i++) result->set(i, src->get(i), mode);
@@ -4651,7 +4685,9 @@ void Heap::MakeHeapIterable() {
 
 static double ComputeMutatorUtilization(double mutator_speed, double gc_speed) {
   const double kMinMutatorUtilization = 0.0;
-  if (mutator_speed == 0 || gc_speed == 0) return kMinMutatorUtilization;
+  const double kConservativeGcSpeedInBytesPerMillisecond = 200000;
+  if (mutator_speed == 0) return kMinMutatorUtilization;
+  if (gc_speed == 0) gc_speed = kConservativeGcSpeedInBytesPerMillisecond;
   // Derivation:
   // mutator_utilization = mutator_time / (mutator_time + gc_time)
   // mutator_time = 1 / mutator_speed
@@ -4729,9 +4765,28 @@ bool Heap::HasHighFragmentation(intptr_t used, intptr_t committed) {
 
 
 void Heap::ReduceNewSpaceSize() {
-  if (!FLAG_predictable && HasLowAllocationRate()) {
+  // TODO(ulan): Unify this constant with the similar constant in
+  // GCIdleTimeHandler once the change is merged to 4.5.
+  static const size_t kLowAllocationThroughput = 1000;
+  size_t allocation_throughput =
+      tracer()->CurrentAllocationThroughputInBytesPerMillisecond();
+  if (FLAG_predictable || allocation_throughput == 0) return;
+  if (allocation_throughput < kLowAllocationThroughput) {
     new_space_.Shrink();
     UncommitFromSpace();
+  }
+}
+
+
+void Heap::FinalizeIncrementalMarkingIfComplete(const char* comment) {
+  if (FLAG_overapproximate_weak_closure &&
+      (incremental_marking()->IsReadyToOverApproximateWeakClosure() ||
+       (!incremental_marking()->weak_closure_was_overapproximated() &&
+        mark_compact_collector_.marking_deque()->IsEmpty()))) {
+    OverApproximateWeakClosure(comment);
+  } else if (incremental_marking()->IsComplete() ||
+             (mark_compact_collector_.marking_deque()->IsEmpty())) {
+    CollectAllGarbage(kNoGCFlags, comment);
   }
 }
 
@@ -4790,13 +4845,21 @@ GCIdleTimeHandler::HeapState Heap::ComputeHeapState() {
 
 double Heap::AdvanceIncrementalMarking(
     intptr_t step_size_in_bytes, double deadline_in_ms,
-    IncrementalMarking::ForceCompletionAction completion) {
+    IncrementalMarking::StepActions step_actions) {
   DCHECK(!incremental_marking()->IsStopped());
+
+  if (step_size_in_bytes == 0) {
+    step_size_in_bytes = GCIdleTimeHandler::EstimateMarkingStepSize(
+        static_cast<size_t>(GCIdleTimeHandler::kIncrementalMarkingStepTimeInMs),
+        static_cast<size_t>(
+            tracer()->FinalIncrementalMarkCompactSpeedInBytesPerMillisecond()));
+  }
+
   double remaining_time_in_ms = 0.0;
   do {
-    incremental_marking()->Step(step_size_in_bytes,
-                                IncrementalMarking::NO_GC_VIA_STACK_GUARD,
-                                IncrementalMarking::FORCE_MARKING, completion);
+    incremental_marking()->Step(
+        step_size_in_bytes, step_actions.completion_action,
+        step_actions.force_marking, step_actions.force_completion);
     remaining_time_in_ms = deadline_in_ms - MonotonicallyIncreasingTimeInMs();
   } while (remaining_time_in_ms >=
                2.0 * GCIdleTimeHandler::kIncrementalMarkingStepTimeInMs &&
@@ -4815,9 +4878,9 @@ bool Heap::PerformIdleTimeAction(GCIdleTimeAction action,
       result = true;
       break;
     case DO_INCREMENTAL_MARKING: {
-      const double remaining_idle_time_in_ms = AdvanceIncrementalMarking(
-          action.parameter, deadline_in_ms,
-          IncrementalMarking::DO_NOT_FORCE_COMPLETION);
+      const double remaining_idle_time_in_ms =
+          AdvanceIncrementalMarking(action.parameter, deadline_in_ms,
+                                    IncrementalMarking::IdleStepActions());
       if (remaining_idle_time_in_ms > 0.0) {
         action.additional_work = TryFinalizeIdleIncrementalMarking(
             remaining_idle_time_in_ms, heap_state.size_of_objects,
@@ -5132,33 +5195,33 @@ void Heap::ZapFromSpace() {
 }
 
 
-void Heap::IterateAndMarkPointersToFromSpace(bool record_slots, Address start,
-                                             Address end,
+void Heap::IterateAndMarkPointersToFromSpace(HeapObject* object, Address start,
+                                             Address end, bool record_slots,
                                              ObjectSlotCallback callback) {
   Address slot_address = start;
 
   while (slot_address < end) {
     Object** slot = reinterpret_cast<Object**>(slot_address);
-    Object* object = *slot;
+    Object* target = *slot;
     // If the store buffer becomes overfull we mark pages as being exempt from
     // the store buffer.  These pages are scanned to find pointers that point
     // to the new space.  In that case we may hit newly promoted objects and
     // fix the pointers before the promotion queue gets to them.  Thus the 'if'.
-    if (object->IsHeapObject()) {
-      if (Heap::InFromSpace(object)) {
+    if (target->IsHeapObject()) {
+      if (Heap::InFromSpace(target)) {
         callback(reinterpret_cast<HeapObject**>(slot),
-                 HeapObject::cast(object));
-        Object* new_object = *slot;
-        if (InNewSpace(new_object)) {
-          SLOW_DCHECK(Heap::InToSpace(new_object));
-          SLOW_DCHECK(new_object->IsHeapObject());
+                 HeapObject::cast(target));
+        Object* new_target = *slot;
+        if (InNewSpace(new_target)) {
+          SLOW_DCHECK(Heap::InToSpace(new_target));
+          SLOW_DCHECK(new_target->IsHeapObject());
           store_buffer_.EnterDirectlyIntoStoreBuffer(
               reinterpret_cast<Address>(slot));
         }
-        SLOW_DCHECK(!MarkCompactCollector::IsOnEvacuationCandidate(new_object));
+        SLOW_DCHECK(!MarkCompactCollector::IsOnEvacuationCandidate(new_target));
       } else if (record_slots &&
-                 MarkCompactCollector::IsOnEvacuationCandidate(object)) {
-        mark_compact_collector()->RecordSlot(slot, slot, object);
+                 MarkCompactCollector::IsOnEvacuationCandidate(target)) {
+        mark_compact_collector()->RecordSlot(object, slot, target);
       }
     }
     slot_address += kPointerSize;
@@ -5582,9 +5645,7 @@ intptr_t Heap::CalculateOldGenerationAllocationLimit(double factor,
 
 void Heap::SetOldGenerationAllocationLimit(intptr_t old_gen_size,
                                            double gc_speed,
-                                           double mutator_speed,
-                                           int freed_global_handles) {
-  const int kFreedGlobalHandlesThreshold = 700;
+                                           double mutator_speed) {
   const double kConservativeHeapGrowingFactor = 1.3;
 
   double factor = HeapGrowingFactor(gc_speed, mutator_speed);
@@ -5604,8 +5665,7 @@ void Heap::SetOldGenerationAllocationLimit(intptr_t old_gen_size,
     factor = Min(factor, kMaxHeapGrowingFactorMemoryConstrained);
   }
 
-  if (freed_global_handles >= kFreedGlobalHandlesThreshold ||
-      memory_reducer_.ShouldGrowHeapSlowly() || optimize_for_memory_usage_) {
+  if (memory_reducer_.ShouldGrowHeapSlowly() || optimize_for_memory_usage_) {
     factor = Min(factor, kConservativeHeapGrowingFactor);
   }
 

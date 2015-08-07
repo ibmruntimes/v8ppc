@@ -16,22 +16,34 @@ namespace v8 {
 namespace internal {
 
 
+IncrementalMarking::StepActions IncrementalMarking::IdleStepActions() {
+  return StepActions(IncrementalMarking::NO_GC_VIA_STACK_GUARD,
+                     IncrementalMarking::FORCE_MARKING,
+                     IncrementalMarking::DO_NOT_FORCE_COMPLETION);
+}
+
+
 IncrementalMarking::IncrementalMarking(Heap* heap)
     : heap_(heap),
       state_(STOPPED),
+      is_compacting_(false),
       steps_count_(0),
       old_generation_space_available_at_start_of_incremental_(0),
       old_generation_space_used_at_start_of_incremental_(0),
+      bytes_rescanned_(0),
       should_hurry_(false),
       marking_speed_(0),
+      bytes_scanned_(0),
       allocated_(0),
+      write_barriers_invoked_since_last_step_(0),
       idle_marking_delay_counter_(0),
       no_marking_scope_depth_(0),
       unscanned_bytes_of_large_object_(0),
       was_activated_(false),
       weak_closure_was_overapproximated_(false),
       weak_closure_approximation_rounds_(0),
-      request_type_(COMPLETE_MARKING) {}
+      request_type_(COMPLETE_MARKING),
+      gc_callback_flags_(kNoGCCallbackFlags) {}
 
 
 void IncrementalMarking::RecordWriteSlow(HeapObject* obj, Object** slot,
@@ -40,8 +52,7 @@ void IncrementalMarking::RecordWriteSlow(HeapObject* obj, Object** slot,
     MarkBit obj_bit = Marking::MarkBitFrom(obj);
     if (Marking::IsBlack(obj_bit)) {
       // Object is not going to be rescanned we need to record the slot.
-      heap_->mark_compact_collector()->RecordSlot(HeapObject::RawField(obj, 0),
-                                                  slot, value);
+      heap_->mark_compact_collector()->RecordSlot(obj, slot, value);
     }
   }
 }
@@ -92,7 +103,7 @@ void IncrementalMarking::RecordWriteOfCodeEntrySlow(JSFunction* host,
   if (BaseRecordWrite(host, slot, value)) {
     DCHECK(slot != NULL);
     heap_->mark_compact_collector()->RecordCodeEntrySlot(
-        reinterpret_cast<Address>(slot), value);
+        host, reinterpret_cast<Address>(slot), value);
   }
 }
 
@@ -177,9 +188,8 @@ class IncrementalMarkingMarkingVisitor
       int already_scanned_offset = start_offset;
       bool scan_until_end = false;
       do {
-        VisitPointersWithAnchor(heap, HeapObject::RawField(object, 0),
-                                HeapObject::RawField(object, start_offset),
-                                HeapObject::RawField(object, end_offset));
+        VisitPointers(heap, object, HeapObject::RawField(object, start_offset),
+                      HeapObject::RawField(object, end_offset));
         start_offset = end_offset;
         end_offset = Min(object_size, end_offset + kProgressBarScanningChunk);
         scan_until_end =
@@ -214,31 +224,21 @@ class IncrementalMarkingMarkingVisitor
     VisitNativeContext(map, context);
   }
 
-  INLINE(static void VisitPointer(Heap* heap, Object** p)) {
-    Object* obj = *p;
-    if (obj->IsHeapObject()) {
-      heap->mark_compact_collector()->RecordSlot(p, p, obj);
-      MarkObject(heap, obj);
+  INLINE(static void VisitPointer(Heap* heap, HeapObject* object, Object** p)) {
+    Object* target = *p;
+    if (target->IsHeapObject()) {
+      heap->mark_compact_collector()->RecordSlot(object, p, target);
+      MarkObject(heap, target);
     }
   }
 
-  INLINE(static void VisitPointers(Heap* heap, Object** start, Object** end)) {
+  INLINE(static void VisitPointers(Heap* heap, HeapObject* object,
+                                   Object** start, Object** end)) {
     for (Object** p = start; p < end; p++) {
-      Object* obj = *p;
-      if (obj->IsHeapObject()) {
-        heap->mark_compact_collector()->RecordSlot(start, p, obj);
-        MarkObject(heap, obj);
-      }
-    }
-  }
-
-  INLINE(static void VisitPointersWithAnchor(Heap* heap, Object** anchor,
-                                             Object** start, Object** end)) {
-    for (Object** p = start; p < end; p++) {
-      Object* obj = *p;
-      if (obj->IsHeapObject()) {
-        heap->mark_compact_collector()->RecordSlot(anchor, p, obj);
-        MarkObject(heap, obj);
+      Object* target = *p;
+      if (target->IsHeapObject()) {
+        heap->mark_compact_collector()->RecordSlot(object, p, target);
+        MarkObject(heap, target);
       }
     }
   }
@@ -470,9 +470,12 @@ static void PatchIncrementalMarkingRecordWriteStubs(
 }
 
 
-void IncrementalMarking::Start(int mark_compact_flags) {
+void IncrementalMarking::Start(int mark_compact_flags,
+                               const GCCallbackFlags gc_callback_flags,
+                               const char* reason) {
   if (FLAG_trace_incremental_marking) {
-    PrintF("[IncrementalMarking] Start\n");
+    PrintF("[IncrementalMarking] Start (%s)\n",
+           (reason == nullptr) ? "unknown reason" : reason);
   }
   DCHECK(FLAG_incremental_marking);
   DCHECK(FLAG_incremental_marking_steps);
@@ -482,6 +485,7 @@ void IncrementalMarking::Start(int mark_compact_flags) {
 
   ResetStepCounters();
 
+  gc_callback_flags_ = gc_callback_flags;
   was_activated_ = true;
 
   if (!heap_->mark_compact_collector()->sweeping_in_progress()) {
@@ -740,10 +744,10 @@ void IncrementalMarking::Hurry() {
 }
 
 
-void IncrementalMarking::Abort() {
+void IncrementalMarking::Stop() {
   if (IsStopped()) return;
   if (FLAG_trace_incremental_marking) {
-    PrintF("[IncrementalMarking] Aborting.\n");
+    PrintF("[IncrementalMarking] Stopping.\n");
   }
   heap_->new_space()->LowerInlineAllocationLimit(0);
   IncrementalMarking::set_should_hurry(false);
@@ -824,7 +828,7 @@ void IncrementalMarking::Epilogue() {
 
 void IncrementalMarking::OldSpaceStep(intptr_t allocated) {
   if (IsStopped() && ShouldActivateEvenWithoutIdleNotification()) {
-    Start(Heap::kNoGCFlags);
+    Start(Heap::kNoGCFlags, kNoGCCallbackFlags, "old space step");
   } else {
     Step(allocated * kFastMarking / kInitialMarkingSpeed, GC_VIA_STACK_GUARD);
   }

@@ -1760,7 +1760,6 @@ Isolate::Isolate(bool enable_serializer)
       eternal_handles_(NULL),
       thread_manager_(NULL),
       has_installed_extensions_(false),
-      string_tracker_(NULL),
       regexp_stack_(NULL),
       date_cache_(NULL),
       call_descriptor_data_(NULL),
@@ -1995,9 +1994,6 @@ Isolate::~Isolate() {
   delete thread_manager_;
   thread_manager_ = NULL;
 
-  delete string_tracker_;
-  string_tracker_ = NULL;
-
   delete memory_allocator_;
   memory_allocator_ = NULL;
   delete code_range_;
@@ -2104,8 +2100,6 @@ bool Isolate::Init(Deserializer* des) {
   FOR_EACH_ISOLATE_ADDRESS_NAME(ASSIGN_ELEMENT)
 #undef ASSIGN_ELEMENT
 
-  string_tracker_ = new StringTracker();
-  string_tracker_->isolate_ = this;
   compilation_cache_ = new CompilationCache(this);
   keyed_lookup_cache_ = new KeyedLookupCache();
   context_slot_cache_ = new ContextSlotCache();
@@ -2643,7 +2637,7 @@ void Isolate::EnqueueMicrotask(Handle<Object> microtask) {
     queue = factory()->NewFixedArray(8);
     heap()->set_microtask_queue(*queue);
   } else if (num_tasks == queue->length()) {
-    queue = FixedArray::CopySize(queue, num_tasks * 2);
+    queue = factory()->CopyFixedArrayAndGrow(queue, num_tasks);
     heap()->set_microtask_queue(*queue);
   }
   DCHECK(queue->get(num_tasks)->IsUndefined());
@@ -2744,7 +2738,7 @@ void Isolate::AddDetachedContext(Handle<Context> context) {
   Handle<WeakCell> cell = factory()->NewWeakCell(context);
   Handle<FixedArray> detached_contexts(heap()->detached_contexts());
   int length = detached_contexts->length();
-  detached_contexts = FixedArray::CopySize(detached_contexts, length + 2);
+  detached_contexts = factory()->CopyFixedArrayAndGrow(detached_contexts, 2);
   detached_contexts->set(length, Smi::FromInt(0));
   detached_contexts->set(length + 1, *cell);
   heap()->set_detached_contexts(*detached_contexts);

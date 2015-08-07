@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Flags: --harmony-destructuring --harmony-computed-property-names
+// Flags: --harmony-destructuring
 // Flags: --harmony-arrow-functions --harmony-rest-parameters
 
 (function TestObjectLiteralPattern() {
@@ -806,16 +806,70 @@
   assertEquals(1, g20({a: 1, b: 2}));
   // var g21 = ({[eval('y')]: x}) => { var y = 'b'; return x; };
   // assertEquals(1, g21({a: 1, b: 2}));
+})();
+
+
+(function TestParameterTDZ() {
+  function f1({a = x}, x) { return a }
+  assertThrows(() => f1({}, 4), ReferenceError);
+  assertEquals(4, f1({a: 4}, 5));
+  // TODO(rossberg): eval in default expressions is not working yet.
+  // function f2({a = eval("x")}, x) { return a }
+  // assertThrows(() => f2({}, 4), ReferenceError);
+  // assertEquals(4, f2({a: 4}, 5));
+  // function f3({a = eval("x")}, x) { 'use strict'; return a }
+  // assertThrows(() => f3({}, 4), ReferenceError);
+  // assertEquals(4, f3({a: 4}, 5));
+  // function f4({a = eval("'use strict'; x")}, x) { return a }
+  // assertThrows(() => f4({}, 4), ReferenceError);
+  // assertEquals(4, f4({a: 4}, 5));
+
+  function f5({a = () => x}, x) { return a() }
+  assertEquals(4, f5({a: () => 4}, 5));
+  // TODO(rossberg): eval in default expressions is not working yet.
+  // function f6({a = () => eval("x")}, x) { return a() }
+  // assertEquals(4, f6({a: () => 4}, 5));
+  // function f7({a = () => eval("x")}, x) { 'use strict'; return a() }
+  // assertEquals(4, f7({a: () => 4}, 5));
+  // function f8({a = () => eval("'use strict'; x")}, x) { return a() }
+  // assertEquals(4, f8({a: () => 4}, 5));
+
+  function f11({a = b}, {b}) { return a }
+  assertThrows(() => f11({}, {b: 4}), ReferenceError);
+  assertEquals(4, f11({a: 4}, {b: 5}));
+  // function f12({a = eval("b")}, {b}) { return a }
+  // assertThrows(() => f12({}, {b: 4}), ReferenceError);
+  // assertEquals(4, f12({a: 4}, {b: 5}));
+  // function f13({a = eval("b")}, {b}) { 'use strict'; return a }
+  // assertThrows(() => f13({}, {b: 4}), ReferenceError);
+  // assertEquals(4, f13({a: 4}, {b: 5}));
+  // function f14({a = eval("'use strict'; b")}, {b}) { return a }
+  // assertThrows(() => f14({}, {b: 4}), ReferenceError);
+  // assertEquals(4, f14({a: 4}, {b: 5}));
+
+  function f15({a = () => b}, {b}) { return a() }
+  assertEquals(4, f15({a: () => 4}, {b: 5}));
+  // function f16({a = () => eval("b")}, {b}) { return a() }
+  // assertEquals(4, f16({a: () => 4}, {b: 5}));
+  // function f17({a = () => eval("b")}, {b}) { 'use strict'; return a() }
+  // assertEquals(4, f17({a: () => 4}, {b: 5}));
+  // function f18({a = () => eval("'use strict'; b")}, {b}) { return a() }
+  // assertEquals(4, f18({a: () => 4}, {b: 5}));
 
   // TODO(caitp): TDZ for rest parameters is not working yet.
-  // function f30({x = a}, ...a) {}
+  // function f30({x = a}, ...a) { return x[0] }
   // assertThrows(() => f30({}), ReferenceError);
-  // function f31({x = eval("a")}, ...a) {}
+  // assertEquals(4, f30({a: [4]}, 5));
+  // function f31({x = eval("a")}, ...a) { return x[0] }
   // assertThrows(() => f31({}), ReferenceError);
-  // function f32({x = eval("a")}, ...a) { 'use strict'; }
+  // assertEquals(4, f31({a: [4]}, 5));
+  // function f32({x = eval("a")}, ...a) { 'use strict'; return x[0] }
   // assertThrows(() => f32({}), ReferenceError);
-  // function f33({x = eval("'use strict'; a")}, ...a) {}
+  // assertEquals(4, f32({a: [4]}, 5));
+  // function f33({x = eval("'use strict'; a")}, ...a) { return x[0] }
   // assertThrows(() => f33({}), ReferenceError);
+  // assertEquals(4, f33({a: [4]}, 5));
+
   function f34({x = function() { return a }}, ...a) { return x()[0] }
   assertEquals(4, f34({}, 4));
   function f35({x = () => a}, ...a) { return x()[0] }
@@ -861,6 +915,27 @@
   assertThrows("function f({x}) { { var x; } }; f({});", SyntaxError);
   assertThrows("'use strict'; function f(x) { let x = 0; }; f({});", SyntaxError);
   assertThrows("'use strict'; function f({x}) { let x = 0; }; f({});", SyntaxError);
+}());
+
+
+(function TestArgumentsForNonSimpleParameters() {
+  function f1({}, x) { arguments[1] = 0; return x }
+  assertEquals(6, f1({}, 6));
+  function f2({}, x) { x = 2; return arguments[1] }
+  assertEquals(7, f2({}, 7));
+  function f3(x, {}) { arguments[0] = 0; return x }
+  assertEquals(6, f3(6, {}));
+  function f4(x, {}) { x = 2; return arguments[0] }
+  assertEquals(7, f4(7, {}));
+  function f5(x, ...a) { arguments[0] = 0; return x }
+  assertEquals(6, f5(6, {}));
+  function f6(x, ...a) { x = 2; return arguments[0] }
+  assertEquals(6, f6(6, {}));
+  function f7({a: x}) { x = 2; return arguments[0].a }
+  assertEquals(5, f7({a: 5}));
+  function f8(x, ...a) { a = []; return arguments[1] }
+  assertEquals(6, f8(5, 6));
+  // TODO(caitp, rossberg): add cases for default parameters.
 }());
 
 

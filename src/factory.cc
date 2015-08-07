@@ -978,6 +978,15 @@ Handle<FixedArray> Factory::CopyFixedArrayWithMap(Handle<FixedArray> array,
 }
 
 
+Handle<FixedArray> Factory::CopyFixedArrayAndGrow(Handle<FixedArray> array,
+                                                  int grow_by,
+                                                  PretenureFlag pretenure) {
+  CALL_HEAP_FUNCTION(isolate(), isolate()->heap()->CopyFixedArrayAndGrow(
+                                    *array, grow_by, pretenure),
+                     FixedArray);
+}
+
+
 Handle<FixedArray> Factory::CopyFixedArray(Handle<FixedArray> array) {
   CALL_HEAP_FUNCTION(isolate(),
                      isolate()->heap()->CopyFixedArray(*array),
@@ -2339,10 +2348,9 @@ Handle<DebugInfo> Factory::NewDebugInfo(Handle<SharedFunctionInfo> shared) {
 Handle<JSObject> Factory::NewArgumentsObject(Handle<JSFunction> callee,
                                              int length) {
   bool strict_mode_callee = is_strict(callee->shared()->language_mode()) ||
-                            !callee->is_simple_parameter_list();
+                            !callee->has_simple_parameters();
   Handle<Map> map = strict_mode_callee ? isolate()->strict_arguments_map()
                                        : isolate()->sloppy_arguments_map();
-
   AllocationSiteUsageContext context(isolate(), Handle<AllocationSite>(),
                                      false);
   DCHECK(!isolate()->has_pending_exception());

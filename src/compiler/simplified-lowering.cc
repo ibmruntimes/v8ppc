@@ -1343,7 +1343,7 @@ void SimplifiedLowering::DoStoreElement(Node* node) {
 
 Node* SimplifiedLowering::StringComparison(Node* node, bool requires_ordering) {
   Runtime::FunctionId f =
-      requires_ordering ? Runtime::kStringCompareRT : Runtime::kStringEquals;
+      requires_ordering ? Runtime::kStringCompare : Runtime::kStringEquals;
   ExternalReference ref(f, jsgraph()->isolate());
   Operator::Properties props = node->op()->properties();
   // TODO(mstarzinger): We should call StringCompareStub here instead, once an

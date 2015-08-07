@@ -397,7 +397,7 @@ static Handle<JSObject> NewSloppyArguments(Isolate* isolate,
                                            Object** parameters,
                                            int argument_count) {
   CHECK(!IsSubclassConstructor(callee->shared()->kind()));
-  DCHECK(callee->is_simple_parameter_list());
+  DCHECK(callee->has_simple_parameters());
   Handle<JSObject> result =
       isolate->factory()->NewArgumentsObject(callee, argument_count);
 
@@ -518,7 +518,7 @@ RUNTIME_FUNCTION(Runtime_NewArguments) {
   Object** parameters = reinterpret_cast<Object**>(frame->GetParameterSlot(-1));
 
   return (is_strict(callee->shared()->language_mode()) ||
-             !callee->is_simple_parameter_list())
+             !callee->has_simple_parameters())
              ? *NewStrictArguments(isolate, callee, parameters, argument_count)
              : *NewSloppyArguments(isolate, callee, parameters, argument_count);
 }
@@ -1082,7 +1082,16 @@ RUNTIME_FUNCTION(Runtime_StoreLookupSlot) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_GetArgumentsProperty) {
+RUNTIME_FUNCTION(Runtime_ArgumentsLength) {
+  SealHandleScope shs(isolate);
+  DCHECK(args.length() == 0);
+  JavaScriptFrameIterator it(isolate);
+  JavaScriptFrame* frame = it.frame();
+  return Smi::FromInt(frame->GetArgumentsLength());
+}
+
+
+RUNTIME_FUNCTION(Runtime_Arguments) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(Object, raw_key, 0);
@@ -1156,21 +1165,6 @@ RUNTIME_FUNCTION(Runtime_GetArgumentsProperty) {
       isolate, result,
       Object::GetProperty(isolate->initial_object_prototype(), key));
   return *result;
-}
-
-
-RUNTIME_FUNCTION(Runtime_ArgumentsLength) {
-  SealHandleScope shs(isolate);
-  DCHECK(args.length() == 0);
-  JavaScriptFrameIterator it(isolate);
-  JavaScriptFrame* frame = it.frame();
-  return Smi::FromInt(frame->GetArgumentsLength());
-}
-
-
-RUNTIME_FUNCTION(Runtime_Arguments) {
-  SealHandleScope shs(isolate);
-  return __RT_impl_Runtime_GetArgumentsProperty(args, isolate);
 }
 }  // namespace internal
 }  // namespace v8

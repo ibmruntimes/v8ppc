@@ -1634,6 +1634,9 @@ void HeapNumber::HeapNumberPrint(std::ostream& os) {  // NOLINT
 #define READ_INT64_FIELD(p, offset) \
   (*reinterpret_cast<const int64_t*>(FIELD_ADDR_CONST(p, offset)))
 
+#define READ_BYTE_FIELD(p, offset) \
+  (*reinterpret_cast<const byte*>(FIELD_ADDR_CONST(p, offset)))
+
 
 bool Simd128Value::BitwiseEquals(const Simd128Value* other) const {
   return READ_INT64_FIELD(this, kValueOffset) ==
@@ -1654,6 +1657,11 @@ uint32_t Simd128Value::Hash() const {
   hash = ComputeIntegerHash(
       READ_INT32_FIELD(this, kValueOffset + 3 * kInt32Size), hash * 31);
   return hash;
+}
+
+
+void Simd128Value::CopyBits(void* destination) const {
+  memcpy(destination, &READ_BYTE_FIELD(this, kValueOffset), kSimd128Size);
 }
 
 
@@ -2015,9 +2023,10 @@ void JSObject::MigrateFastToFast(Handle<JSObject> object, Handle<Map> new_map) {
     DCHECK(number_of_fields == old_number_of_fields + 1);
     // This migration is a transition from a map that has run out of property
     // space. Therefore it could be done by extending the backing store.
+    int grow_by = external - object->properties()->length();
     Handle<FixedArray> old_storage = handle(object->properties(), isolate);
     Handle<FixedArray> new_storage =
-        FixedArray::CopySize(old_storage, external);
+        isolate->factory()->CopyFixedArrayAndGrow(old_storage, grow_by);
 
     // Properly initialize newly added property.
     Handle<Object> value;
@@ -7496,10 +7505,11 @@ void CodeCache::UpdateDefaultCache(
 
   // Extend the code cache with some new entries (at least one). Must be a
   // multiple of the entry size.
-  int new_length = length + ((length >> 1)) + kCodeCacheEntrySize;
+  Isolate* isolate = cache->GetIsolate();
+  int new_length = length + (length >> 1) + kCodeCacheEntrySize;
   new_length = new_length - new_length % kCodeCacheEntrySize;
   DCHECK((new_length % kCodeCacheEntrySize) == 0);
-  cache = FixedArray::CopySize(cache, new_length);
+  cache = isolate->factory()->CopyFixedArrayAndGrow(cache, new_length - length);
 
   // Add the (name, code) pair to the new cache.
   cache->set(length + kCodeCacheEntryNameOffset, *name);
@@ -7892,27 +7902,6 @@ MaybeHandle<FixedArray> FixedArray::UnionOfKeys(Handle<FixedArray> first,
 }
 
 
-Handle<FixedArray> FixedArray::CopySize(
-    Handle<FixedArray> array, int new_length, PretenureFlag pretenure) {
-  Isolate* isolate = array->GetIsolate();
-  if (new_length == 0) return isolate->factory()->empty_fixed_array();
-  Handle<FixedArray> result =
-      isolate->factory()->NewFixedArray(new_length, pretenure);
-  // Copy the content
-  DisallowHeapAllocation no_gc;
-  int len = array->length();
-  if (new_length < len) len = new_length;
-  // We are taking the map from the old fixed array so the map is sure to
-  // be an immortal immutable object.
-  result->set_map_no_write_barrier(array->map());
-  WriteBarrierMode mode = result->GetWriteBarrierMode(no_gc);
-  for (int i = 0; i < len; i++) {
-    result->set(i, array->get(i), mode);
-  }
-  return result;
-}
-
-
 void FixedArray::CopyTo(int pos, FixedArray* dest, int dest_pos, int len) {
   DisallowHeapAllocation no_gc;
   WriteBarrierMode mode = dest->GetWriteBarrierMode(no_gc);
@@ -8097,9 +8086,12 @@ Handle<ArrayList> ArrayList::EnsureSpace(Handle<ArrayList> array, int length) {
   int capacity = array->length();
   bool empty = (capacity == 0);
   if (capacity < kFirstIndex + length) {
-    capacity = kFirstIndex + length;
-    capacity = capacity + Max(capacity / 2, 2);
-    array = Handle<ArrayList>::cast(FixedArray::CopySize(array, capacity));
+    Isolate* isolate = array->GetIsolate();
+    int new_capacity = kFirstIndex + length;
+    new_capacity = new_capacity + Max(new_capacity / 2, 2);
+    int grow_by = new_capacity - capacity;
+    array = Handle<ArrayList>::cast(
+        isolate->factory()->CopyFixedArrayAndGrow(array, grow_by));
     if (empty) array->SetLength(0);
   }
   return array;
@@ -9524,6 +9516,7 @@ void SharedFunctionInfo::AddToOptimizedCodeMap(
     Handle<FixedArray> literals,
     BailoutId osr_ast_id) {
   Isolate* isolate = shared->GetIsolate();
+  DCHECK(!shared->SearchOptimizedCodeMap(*native_context, osr_ast_id).code);
   DCHECK(code->kind() == Code::OPTIMIZED_FUNCTION);
   DCHECK(native_context->IsNativeContext());
   STATIC_ASSERT(kEntryLength == 4);
@@ -9533,20 +9526,18 @@ void SharedFunctionInfo::AddToOptimizedCodeMap(
   if (value->IsSmi()) {
     // No optimized code map.
     DCHECK_EQ(0, Smi::cast(*value)->value());
-    new_code_map = isolate->factory()->NewFixedArray(kInitialLength);
+    new_code_map = isolate->factory()->NewFixedArray(kInitialLength, TENURED);
     old_length = kEntriesStart;
   } else {
-    // Copy old map and append one new entry.
+    // Copy old optimized code map and append one new entry.
     Handle<FixedArray> old_code_map = Handle<FixedArray>::cast(value);
-    DCHECK(!shared->SearchOptimizedCodeMap(*native_context, osr_ast_id).code);
+    new_code_map = isolate->factory()->CopyFixedArrayAndGrow(
+        old_code_map, kEntryLength, TENURED);
     old_length = old_code_map->length();
-    new_code_map = FixedArray::CopySize(
-        old_code_map, old_length + kEntryLength);
-    // Zap the old map for the sake of the heap verifier.
-    if (Heap::ShouldZapGarbage()) {
-      Object** data = old_code_map->data_start();
-      MemsetPointer(data, isolate->heap()->the_hole_value(), old_length);
-    }
+    // Zap the old map to avoid any stale entries. Note that this is required
+    // for correctness because entries are being treated weakly by the GC.
+    MemsetPointer(old_code_map->data_start(), isolate->heap()->the_hole_value(),
+                  old_length);
   }
   new_code_map->set(old_length + kContextOffset, *native_context);
   new_code_map->set(old_length + kCachedCodeOffset, *code);
@@ -11929,9 +11920,10 @@ Handle<DependentCode> DependentCode::Insert(Handle<DependentCode> entries,
 
 Handle<DependentCode> DependentCode::EnsureSpace(
     Handle<DependentCode> entries) {
+  Isolate* isolate = entries->GetIsolate();
   if (entries->length() == 0) {
     entries = Handle<DependentCode>::cast(
-        FixedArray::CopySize(entries, kCodesStartIndex + 1, TENURED));
+        isolate->factory()->NewFixedArray(kCodesStartIndex + 1, TENURED));
     for (int g = 0; g < kGroupCount; g++) {
       entries->set_number_of_entries(static_cast<DependencyGroup>(g), 0);
     }
@@ -11941,8 +11933,9 @@ Handle<DependentCode> DependentCode::EnsureSpace(
   GroupStartIndexes starts(*entries);
   int capacity =
       kCodesStartIndex + DependentCode::Grow(starts.number_of_entries());
+  int grow_by = capacity - entries->length();
   return Handle<DependentCode>::cast(
-      FixedArray::CopySize(entries, capacity, TENURED));
+      isolate->factory()->CopyFixedArrayAndGrow(entries, grow_by, TENURED));
 }
 
 
@@ -13452,9 +13445,7 @@ Handle<Derived> HashTable<Derived, Shape, Key>::New(
 
   int capacity = (capacity_option == USE_CUSTOM_MINIMUM_CAPACITY)
                      ? at_least_space_for
-                     : isolate->creating_default_snapshot()
-                           ? ComputeCapacityForSerialization(at_least_space_for)
-                           : ComputeCapacity(at_least_space_for);
+                     : ComputeCapacity(at_least_space_for);
   if (capacity > HashTable::kMaxCapacity) {
     v8::internal::Heap::FatalProcessOutOfMemory("invalid table size", true);
   }

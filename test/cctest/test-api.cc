@@ -523,7 +523,7 @@ TEST(MakingExternalStringConditions) {
       String::NewFromTwoByte(env->GetIsolate(), two_byte_string);
   i::DeleteArray(two_byte_string);
 
-  // We should refuse to externalize newly created small string.
+  // We should refuse to externalize small strings.
   CHECK(!small_string->CanMakeExternal());
   // Trigger GCs so that the newly allocated string moves to old gen.
   CcTest::heap()->CollectGarbage(i::NEW_SPACE);  // in survivor space now
@@ -534,14 +534,6 @@ TEST(MakingExternalStringConditions) {
   two_byte_string = AsciiToTwoByteString("small string 2");
   small_string = String::NewFromTwoByte(env->GetIsolate(), two_byte_string);
   i::DeleteArray(two_byte_string);
-
-  // We should refuse externalizing newly created small string.
-  CHECK(!small_string->CanMakeExternal());
-  for (int i = 0; i < 100; i++) {
-    String::Value value(small_string);
-  }
-  // Frequently used strings should be accepted.
-  CHECK(small_string->CanMakeExternal());
 
   const int buf_size = 10 * 1024;
   char* buf = i::NewArray<char>(buf_size);
@@ -567,21 +559,12 @@ TEST(MakingExternalOneByteStringConditions) {
   CcTest::heap()->CollectGarbage(i::NEW_SPACE);
 
   Local<String> small_string = String::NewFromUtf8(env->GetIsolate(), "s1");
-  // We should refuse to externalize newly created small string.
+  // We should refuse to externalize small strings.
   CHECK(!small_string->CanMakeExternal());
   // Trigger GCs so that the newly allocated string moves to old gen.
   CcTest::heap()->CollectGarbage(i::NEW_SPACE);  // in survivor space now
   CcTest::heap()->CollectGarbage(i::NEW_SPACE);  // in old gen now
   // Old space strings should be accepted.
-  CHECK(small_string->CanMakeExternal());
-
-  small_string = String::NewFromUtf8(env->GetIsolate(), "small string 2");
-  // We should refuse externalizing newly created small string.
-  CHECK(!small_string->CanMakeExternal());
-  for (int i = 0; i < 100; i++) {
-    String::Value value(small_string);
-  }
-  // Frequently used strings should be accepted.
   CHECK(small_string->CanMakeExternal());
 
   const int buf_size = 10 * 1024;
@@ -12621,6 +12604,17 @@ THREADED_TEST(ExternalAllocatedMemory) {
 }
 
 
+TEST(Regress51719) {
+  i::FLAG_incremental_marking = false;
+  CcTest::InitializeVM();
+
+  const int64_t kTriggerGCSize =
+      v8::internal::Internals::kExternalAllocationLimit + 1;
+  v8::Isolate* isolate = CcTest::isolate();
+  isolate->AdjustAmountOfExternalAllocatedMemory(kTriggerGCSize);
+}
+
+
 // Regression test for issue 54, object templates with internal fields
 // but no accessors or interceptors did not get their internal field
 // count set on instances.
@@ -21668,19 +21662,19 @@ TEST(ExtrasExportsObject) {
 
   // standalone.gypi ensures we include the test-extra.js file, which should
   // export the tested functions.
-  v8::Local<v8::Object> exports = env->GetExtrasExportsObject();
+  v8::Local<v8::Object> binding = env->GetExtrasBindingObject();
 
   auto func =
-      exports->Get(v8_str("testExtraShouldReturnFive")).As<v8::Function>();
+      binding->Get(v8_str("testExtraShouldReturnFive")).As<v8::Function>();
   auto undefined = v8::Undefined(isolate);
   auto result = func->Call(undefined, 0, {}).As<v8::Number>();
   CHECK_EQ(5, result->Int32Value());
 
   v8::Handle<v8::FunctionTemplate> runtimeFunction =
       v8::FunctionTemplate::New(isolate, ExtrasExportsTestRuntimeFunction);
-  exports->Set(v8_str("runtime"), runtimeFunction->GetFunction());
+  binding->Set(v8_str("runtime"), runtimeFunction->GetFunction());
   func =
-      exports->Get(v8_str("testExtraShouldCallToRuntime")).As<v8::Function>();
+      binding->Get(v8_str("testExtraShouldCallToRuntime")).As<v8::Function>();
   result = func->Call(undefined, 0, {}).As<v8::Number>();
   CHECK_EQ(7, result->Int32Value());
 }
@@ -21856,4 +21850,12 @@ TEST(FutexInterruption) {
       "var i32a = new Int32Array(ab);"
       "Atomics.futexWait(i32a, 0, 0);");
   CHECK(try_catch.HasTerminated());
+}
+
+
+TEST(EstimatedContextSize) {
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope scope(isolate);
+  LocalContext env;
+  CHECK(50000 < env->EstimatedSize());
 }

@@ -2996,13 +2996,6 @@ int HashTableBase::ComputeCapacity(int at_least_space_for) {
 }
 
 
-int HashTableBase::ComputeCapacityForSerialization(int at_least_space_for) {
-  const int kMinCapacity = 1;
-  int capacity = base::bits::RoundUpToPowerOfTwo32(at_least_space_for);
-  return Max(capacity, kMinCapacity);
-}
-
-
 template <typename Derived, typename Shape, typename Key>
 int HashTable<Derived, Shape, Key>::FindEntry(Key key) {
   return FindEntry(GetIsolate(), key);
@@ -5417,8 +5410,8 @@ bool SharedFunctionInfo::is_compiled() {
 }
 
 
-bool SharedFunctionInfo::is_simple_parameter_list() {
-  return scope_info()->IsSimpleParameterList();
+bool SharedFunctionInfo::has_simple_parameters() {
+  return scope_info()->HasSimpleParameters();
 }
 
 
@@ -5724,8 +5717,8 @@ bool JSFunction::is_compiled() {
 }
 
 
-bool JSFunction::is_simple_parameter_list() {
-  return shared()->is_simple_parameter_list();
+bool JSFunction::has_simple_parameters() {
+  return shared()->has_simple_parameters();
 }
 
 

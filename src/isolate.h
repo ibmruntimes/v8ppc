@@ -384,7 +384,6 @@ typedef List<HeapObject*> DebugObjectCache;
   V(uint32_t, per_isolate_assert_data, 0xFFFFFFFFu)                            \
   V(PromiseRejectCallback, promise_reject_callback, NULL)                      \
   V(const v8::StartupData*, snapshot_blob, NULL)                               \
-  V(bool, creating_default_snapshot, false)                                    \
   ISOLATE_INIT_SIMULATOR_LIST(V)
 
 #define THREAD_LOCAL_TOP_ACCESSOR(type, name)                        \
@@ -908,8 +907,6 @@ class Isolate {
 
   ThreadManager* thread_manager() { return thread_manager_; }
 
-  StringTracker* string_tracker() { return string_tracker_; }
-
   unibrow::Mapping<unibrow::Ecma262UnCanonicalize>* jsregexp_uncanonicalize() {
     return &jsregexp_uncanonicalize_;
   }
@@ -1291,7 +1288,6 @@ class Isolate {
   RuntimeState runtime_state_;
   Builtins builtins_;
   bool has_installed_extensions_;
-  StringTracker* string_tracker_;
   unibrow::Mapping<unibrow::Ecma262UnCanonicalize> jsregexp_uncanonicalize_;
   unibrow::Mapping<unibrow::CanonicalizationRange> jsregexp_canonrange_;
   unibrow::Mapping<unibrow::Ecma262Canonicalize>

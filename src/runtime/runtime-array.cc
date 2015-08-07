@@ -133,7 +133,7 @@ class ArrayConcatVisitor {
   ~ArrayConcatVisitor() { clear_storage(); }
 
   void visit(uint32_t i, Handle<Object> elm) {
-    if (i > JSObject::kMaxElementCount - index_offset_) {
+    if (i >= JSObject::kMaxElementCount - index_offset_) {
       set_exceeds_array_limit(true);
       return;
     }
@@ -437,12 +437,8 @@ static void CollectElementIndices(Handle<JSObject> object, uint32_t range,
       }
     case FAST_SLOPPY_ARGUMENTS_ELEMENTS:
     case SLOW_SLOPPY_ARGUMENTS_ELEMENTS: {
-      MaybeHandle<Object> length_obj =
-          Object::GetProperty(object, isolate->factory()->length_string());
-      double length_num = length_obj.ToHandleChecked()->Number();
-      uint32_t length = static_cast<uint32_t>(DoubleToInt32(length_num));
       ElementsAccessor* accessor = object->GetElementsAccessor();
-      for (uint32_t i = 0; i < length; i++) {
+      for (uint32_t i = 0; i < range; i++) {
         if (accessor->HasElement(object, i)) {
           indices->Add(i);
         }

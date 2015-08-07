@@ -22,6 +22,7 @@
 #include "src/bootstrapper.h"
 #include "src/code-stubs.h"
 #include "src/compiler.h"
+#include "src/context-measure.h"
 #include "src/contexts.h"
 #include "src/conversions-inl.h"
 #include "src/counters.h"
@@ -367,14 +368,12 @@ StartupData V8::CreateSnapshotDataBlob(const char* custom_source) {
     base::ElapsedTimer timer;
     timer.Start();
     Isolate::Scope isolate_scope(isolate);
-    internal_isolate->set_creating_default_snapshot(true);
     internal_isolate->Init(NULL);
     Persistent<Context> context;
     i::Snapshot::Metadata metadata;
     {
       HandleScope handle_scope(isolate);
       Local<Context> new_context = Context::New(isolate);
-      internal_isolate->set_creating_default_snapshot(false);
       context.Reset(isolate, new_context);
       if (custom_source != NULL) {
         metadata.set_embeds_script(true);
@@ -775,6 +774,7 @@ static i::Handle<i::FixedArray> EmbedderDataFor(Context* context,
                                                 bool can_grow,
                                                 const char* location) {
   i::Handle<i::Context> env = Utils::OpenHandle(context);
+  i::Isolate* isolate = env->GetIsolate();
   bool ok =
       Utils::ApiCheck(env->IsNativeContext(),
                       location,
@@ -787,7 +787,8 @@ static i::Handle<i::FixedArray> EmbedderDataFor(Context* context,
     return i::Handle<i::FixedArray>();
   }
   int new_size = i::Max(index, data->length() << 1) + 1;
-  data = i::FixedArray::CopySize(data, new_size);
+  int grow_by = new_size - data->length();
+  data = isolate->factory()->CopyFixedArrayAndGrow(data, grow_by);
   env->set_embedder_data(*data);
   return data;
 }
@@ -5132,7 +5133,6 @@ static inline int WriteHelper(const String* string,
   ENTER_V8(isolate);
   DCHECK(start >= 0 && length >= -1);
   i::Handle<i::String> str = Utils::OpenHandle(string);
-  isolate->string_tracker()->RecordWrite(str);
   if (options & String::HINT_MANY_WRITES_EXPECTED) {
     // Flatten the string for efficiency.  This applies whether we are
     // using StringCharacterStream or Get(i) to access the characters.
@@ -5545,11 +5545,11 @@ void Context::DetachGlobal() {
 }
 
 
-Local<v8::Object> Context::GetExtrasExportsObject() {
+Local<v8::Object> Context::GetExtrasBindingObject() {
   i::Handle<i::Context> context = Utils::OpenHandle(this);
   i::Isolate* isolate = context->GetIsolate();
-  i::Handle<i::JSObject> exports(context->extras_exports_object(), isolate);
-  return Utils::ToLocal(exports);
+  i::Handle<i::JSObject> binding(context->extras_binding_object(), isolate);
+  return Utils::ToLocal(binding);
 }
 
 
@@ -5572,6 +5572,12 @@ void Context::SetErrorMessageForCodeGenerationFromStrings(Local<String> error) {
   i::Handle<i::Context> context = Utils::OpenHandle(this);
   i::Handle<i::String> error_handle = Utils::OpenHandle(*error);
   context->set_error_message_for_code_gen_from_strings(*error_handle);
+}
+
+
+size_t Context::EstimatedSize() {
+  return static_cast<size_t>(
+      i::ContextMeasure(*Utils::OpenHandle(this)).Size());
 }
 
 
@@ -5838,9 +5844,6 @@ bool v8::String::MakeExternal(v8::String::ExternalStringResource* resource) {
     return false;  // Already an external string.
   }
   ENTER_V8(isolate);
-  if (isolate->string_tracker()->IsFreshUnusedString(obj)) {
-    return false;
-  }
   if (isolate->heap()->IsInGCPostProcessing()) {
     return false;
   }
@@ -5865,9 +5868,6 @@ bool v8::String::MakeExternal(
     return false;  // Already an external string.
   }
   ENTER_V8(isolate);
-  if (isolate->string_tracker()->IsFreshUnusedString(obj)) {
-    return false;
-  }
   if (isolate->heap()->IsInGCPostProcessing()) {
     return false;
   }
@@ -5888,9 +5888,10 @@ bool v8::String::CanMakeExternal() {
   i::Handle<i::String> obj = Utils::OpenHandle(this);
   i::Isolate* isolate = obj->GetIsolate();
 
-  if (isolate->string_tracker()->IsFreshUnusedString(obj)) return false;
+  // Old space strings should be externalized.
+  if (!isolate->heap()->new_space()->Contains(*obj)) return true;
   int size = obj->Size();  // Byte size of the original string.
-  if (size < i::ExternalString::kShortSize) return false;
+  if (size <= i::ExternalString::kShortSize) return false;
   i::StringShape shape(*obj);
   return !shape.IsExternal();
 }
@@ -6884,8 +6885,28 @@ Local<Integer> v8::Integer::NewFromUnsigned(Isolate* isolate, uint32_t value) {
 
 
 void Isolate::CollectAllGarbage(const char* gc_reason) {
-  reinterpret_cast<i::Isolate*>(this)->heap()->CollectAllGarbage(
-      i::Heap::kNoGCFlags, gc_reason, v8::kGCCallbackFlagForced);
+  i::Heap* heap = reinterpret_cast<i::Isolate*>(this)->heap();
+  if (heap->incremental_marking()->IsStopped()) {
+    if (heap->incremental_marking()->CanBeActivated()) {
+      heap->StartIncrementalMarking(i::Heap::kNoGCFlags, kGCCallbackFlagForced,
+                                    gc_reason);
+    } else {
+      heap->CollectAllGarbage(i::Heap::kNoGCFlags, gc_reason,
+                              kGCCallbackFlagForced);
+    }
+  } else {
+    // Incremental marking is turned on an has already been started.
+
+    // TODO(mlippautz): Compute the time slice for incremental marking based on
+    // memory pressure.
+    double deadline = heap->MonotonicallyIncreasingTimeInMs() +
+                      i::FLAG_external_allocation_limit_incremental_time;
+    heap->AdvanceIncrementalMarking(
+        0, deadline, i::IncrementalMarking::StepActions(
+                         i::IncrementalMarking::GC_VIA_STACK_GUARD,
+                         i::IncrementalMarking::FORCE_MARKING,
+                         i::IncrementalMarking::FORCE_COMPLETION));
+  }
 }
 
 

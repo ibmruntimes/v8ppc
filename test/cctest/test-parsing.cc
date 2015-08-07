@@ -71,8 +71,6 @@ TEST(ScanKeywords) {
     {
       i::Utf8ToUtf16CharacterStream stream(keyword, length);
       i::Scanner scanner(&unicode_cache);
-      // The scanner should parse Harmony keywords for this test.
-      scanner.SetHarmonyModules(true);
       scanner.Initialize(&stream);
       CHECK_EQ(key_token.token, scanner.Next());
       CHECK_EQ(i::Token::EOS, scanner.Next());
@@ -1427,13 +1425,10 @@ i::Handle<i::String> FormatMessage(i::Vector<unsigned> data) {
 enum ParserFlag {
   kAllowLazy,
   kAllowNatives,
-  kAllowHarmonyModules,
   kAllowHarmonyArrowFunctions,
   kAllowHarmonyRestParameters,
   kAllowHarmonySloppy,
   kAllowHarmonySloppyLet,
-  kAllowHarmonyUnicode,
-  kAllowHarmonyComputedPropertyNames,
   kAllowHarmonySpreadCalls,
   kAllowHarmonyDestructuring,
   kAllowHarmonySpreadArrays,
@@ -1454,7 +1449,6 @@ void SetParserFlags(i::ParserBase<Traits>* parser,
                     i::EnumSet<ParserFlag> flags) {
   parser->set_allow_lazy(flags.Contains(kAllowLazy));
   parser->set_allow_natives(flags.Contains(kAllowNatives));
-  parser->set_allow_harmony_modules(flags.Contains(kAllowHarmonyModules));
   parser->set_allow_harmony_arrow_functions(
       flags.Contains(kAllowHarmonyArrowFunctions));
   parser->set_allow_harmony_rest_parameters(
@@ -1463,9 +1457,6 @@ void SetParserFlags(i::ParserBase<Traits>* parser,
       flags.Contains(kAllowHarmonySpreadCalls));
   parser->set_allow_harmony_sloppy(flags.Contains(kAllowHarmonySloppy));
   parser->set_allow_harmony_sloppy_let(flags.Contains(kAllowHarmonySloppyLet));
-  parser->set_allow_harmony_unicode(flags.Contains(kAllowHarmonyUnicode));
-  parser->set_allow_harmony_computed_property_names(
-      flags.Contains(kAllowHarmonyComputedPropertyNames));
   parser->set_allow_harmony_destructuring(
       flags.Contains(kAllowHarmonyDestructuring));
   parser->set_allow_harmony_spread_arrays(
@@ -4865,9 +4856,7 @@ TEST(InvalidUnicodeEscapes) {
     "var foob\\v{1234}r = 0;",
     "var foob\\U{1234}r = 0;",
     NULL};
-  static const ParserFlag always_flags[] = {kAllowHarmonyUnicode};
-  RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
-                    arraysize(always_flags));
+  RunParserSyncTest(context_data, data, kError);
 }
 
 
@@ -4893,9 +4882,7 @@ TEST(UnicodeEscapes) {
     // Max value for the unicode escape
     "\"\\u{10ffff}\"",
     NULL};
-  static const ParserFlag always_flags[] = {kAllowHarmonyUnicode};
-  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, always_flags,
-                    arraysize(always_flags));
+  RunParserSyncTest(context_data, data, kSuccess);
 }
 
 
@@ -5274,7 +5261,6 @@ TEST(ComputedPropertyName) {
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowHarmonyComputedPropertyNames,
     kAllowHarmonySloppy,
   };
   RunParserSyncTest(context_data, error_data, kError, NULL, 0,
@@ -5303,7 +5289,6 @@ TEST(ComputedPropertyNameShorthandError) {
     NULL};
 
   static const ParserFlag always_flags[] = {
-    kAllowHarmonyComputedPropertyNames,
     kAllowHarmonySloppy,
   };
   RunParserSyncTest(context_data, error_data, kError, NULL, 0,
@@ -5312,6 +5297,8 @@ TEST(ComputedPropertyNameShorthandError) {
 
 
 TEST(BasicImportExportParsing) {
+  i::FLAG_harmony_modules = true;
+
   const char* kSources[] = {
       "export let x = 0;",
       "export var y = 0;",
@@ -5371,7 +5358,6 @@ TEST(BasicImportExportParsing) {
       i::Zone zone;
       i::ParseInfo info(&zone, script);
       i::Parser parser(&info);
-      parser.set_allow_harmony_modules(true);
       info.set_module();
       if (!parser.Parse(&info)) {
         i::Handle<i::JSObject> exception_handle(
@@ -5397,7 +5383,6 @@ TEST(BasicImportExportParsing) {
       i::Zone zone;
       i::ParseInfo info(&zone, script);
       i::Parser parser(&info);
-      parser.set_allow_harmony_modules(true);
       info.set_global();
       CHECK(!parser.Parse(&info));
     }
@@ -5406,6 +5391,8 @@ TEST(BasicImportExportParsing) {
 
 
 TEST(ImportExportParsingErrors) {
+  i::FLAG_harmony_modules = true;
+
   const char* kErrorSources[] = {
       "export {",
       "var a; export { a",
@@ -5486,7 +5473,6 @@ TEST(ImportExportParsingErrors) {
     i::Zone zone;
     i::ParseInfo info(&zone, script);
     i::Parser parser(&info);
-    parser.set_allow_harmony_modules(true);
     info.set_module();
     CHECK(!parser.Parse(&info));
   }
@@ -5517,7 +5503,6 @@ TEST(ModuleParsingInternals) {
   i::Zone zone;
   i::ParseInfo info(&zone, script);
   i::Parser parser(&info);
-  parser.set_allow_harmony_modules(true);
   info.set_module();
   CHECK(parser.Parse(&info));
   CHECK(i::Compiler::Analyze(&info));
@@ -5596,11 +5581,7 @@ TEST(DuplicateProtoNoError) {
     NULL
   };
 
-  static const ParserFlag always_flags[] = {
-    kAllowHarmonyComputedPropertyNames,
-  };
-  RunParserSyncTest(context_data, error_data, kSuccess, NULL, 0,
-                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(context_data, error_data, kSuccess);
 }
 
 
@@ -6339,7 +6320,6 @@ TEST(StrongModeFreeVariablesNotDeclared) {
 TEST(DestructuringPositiveTests) {
   i::FLAG_harmony_destructuring = true;
   i::FLAG_harmony_arrow_functions = true;
-  i::FLAG_harmony_computed_property_names = true;
 
   const char* context_data[][2] = {{"'use strict'; let ", " = {};"},
                                    {"var ", " = {};"},
@@ -6388,8 +6368,7 @@ TEST(DestructuringPositiveTests) {
     "[a,,...rest]",
     NULL};
   // clang-format on
-  static const ParserFlag always_flags[] = {kAllowHarmonyComputedPropertyNames,
-                                            kAllowHarmonyArrowFunctions,
+  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions,
                                             kAllowHarmonyDestructuring};
   RunParserSyncTest(context_data, data, kSuccess, NULL, 0, always_flags,
                     arraysize(always_flags));
@@ -6399,9 +6378,7 @@ TEST(DestructuringPositiveTests) {
 TEST(DestructuringNegativeTests) {
   i::FLAG_harmony_destructuring = true;
   i::FLAG_harmony_arrow_functions = true;
-  i::FLAG_harmony_computed_property_names = true;
-  static const ParserFlag always_flags[] = {kAllowHarmonyComputedPropertyNames,
-                                            kAllowHarmonyArrowFunctions,
+  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions,
                                             kAllowHarmonyDestructuring};
 
   {  // All modes.
@@ -6570,9 +6547,7 @@ TEST(DestructuringDisallowPatternsInForVarIn) {
 TEST(DestructuringDuplicateParams) {
   i::FLAG_harmony_destructuring = true;
   i::FLAG_harmony_arrow_functions = true;
-  i::FLAG_harmony_computed_property_names = true;
-  static const ParserFlag always_flags[] = {kAllowHarmonyComputedPropertyNames,
-                                            kAllowHarmonyArrowFunctions,
+  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions,
                                             kAllowHarmonyDestructuring};
   const char* context_data[][2] = {{"'use strict';", ""},
                                    {"function outer() { 'use strict';", "}"},
@@ -6600,9 +6575,7 @@ TEST(DestructuringDuplicateParams) {
 TEST(DestructuringDuplicateParamsSloppy) {
   i::FLAG_harmony_destructuring = true;
   i::FLAG_harmony_arrow_functions = true;
-  i::FLAG_harmony_computed_property_names = true;
-  static const ParserFlag always_flags[] = {kAllowHarmonyComputedPropertyNames,
-                                            kAllowHarmonyArrowFunctions,
+  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions,
                                             kAllowHarmonyDestructuring};
   const char* context_data[][2] = {
       {"", ""}, {"function outer() {", "}"}, {nullptr, nullptr}};
@@ -6625,9 +6598,7 @@ TEST(DestructuringDuplicateParamsSloppy) {
 TEST(DestructuringDisallowPatternsInSingleParamArrows) {
   i::FLAG_harmony_destructuring = true;
   i::FLAG_harmony_arrow_functions = true;
-  i::FLAG_harmony_computed_property_names = true;
-  static const ParserFlag always_flags[] = {kAllowHarmonyComputedPropertyNames,
-                                            kAllowHarmonyArrowFunctions,
+  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions,
                                             kAllowHarmonyDestructuring};
   const char* context_data[][2] = {{"'use strict';", ""},
                                    {"function outer() { 'use strict';", "}"},
@@ -6650,10 +6621,9 @@ TEST(DestructuringDisallowPatternsInRestParams) {
   i::FLAG_harmony_destructuring = true;
   i::FLAG_harmony_arrow_functions = true;
   i::FLAG_harmony_rest_parameters = true;
-  i::FLAG_harmony_computed_property_names = true;
-  static const ParserFlag always_flags[] = {
-      kAllowHarmonyComputedPropertyNames, kAllowHarmonyArrowFunctions,
-      kAllowHarmonyRestParameters, kAllowHarmonyDestructuring};
+  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions,
+                                            kAllowHarmonyRestParameters,
+                                            kAllowHarmonyDestructuring};
   const char* context_data[][2] = {{"'use strict';", ""},
                                    {"function outer() { 'use strict';", "}"},
                                    {"", ""},

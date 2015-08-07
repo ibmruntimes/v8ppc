@@ -1550,8 +1550,8 @@ bool Bootstrapper::CompileExtraBuiltin(Isolate* isolate, int index) {
   Handle<String> source_code =
       isolate->bootstrapper()->SourceLookup<ExtraNatives>(index);
   Handle<Object> global = isolate->global_object();
-  Handle<Object> exports = isolate->extras_exports_object();
-  Handle<Object> args[] = {global, exports};
+  Handle<Object> binding = isolate->extras_binding_object();
+  Handle<Object> args[] = {global, binding};
   return Bootstrapper::CompileNative(
       isolate, name, Handle<JSObject>(isolate->native_context()->builtins()),
       source_code, arraysize(args), args);
@@ -1843,14 +1843,13 @@ EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_arrow_functions)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_tostring)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_sloppy)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_sloppy_let)
-EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_unicode)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_unicode_regexps)
-EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_computed_property_names)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_rest_parameters)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_reflect)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_spreadcalls)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_destructuring)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_object)
+EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_object_observe)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_spread_arrays)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_sharedarraybuffer)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_atomics)
@@ -1880,12 +1879,11 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_arrow_functions)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_proxies)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy_let)
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_unicode)
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_computed_property_names)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_rest_parameters)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_spreadcalls)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_destructuring)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_object)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_object_observe)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_spread_arrays)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_atomics)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_new_target)
@@ -2101,11 +2099,11 @@ bool Genesis::InstallNatives(ContextType context_type) {
                                 "utils container for native scripts");
   native_context()->set_natives_utils_object(*utils);
 
-  Handle<JSObject> extras_exports =
+  Handle<JSObject> extras_binding =
       factory()->NewJSObject(isolate()->object_function());
-  JSObject::NormalizeProperties(extras_exports, CLEAR_INOBJECT_PROPERTIES, 2,
-                                "container to export to extra natives");
-  native_context()->set_extras_exports_object(*extras_exports);
+  JSObject::NormalizeProperties(extras_binding, CLEAR_INOBJECT_PROPERTIES, 2,
+                                "container for binding to/from extra natives");
+  native_context()->set_extras_binding_object(*extras_binding);
 
   if (FLAG_expose_natives_as != NULL) {
     Handle<String> utils_key = factory()->NewStringFromAsciiChecked("utils");
@@ -2406,7 +2404,8 @@ bool Genesis::InstallNatives(ContextType context_type) {
   InstallNativeFunctions();
 
   auto function_cache =
-      ObjectHashTable::New(isolate(), ApiNatives::kInitialFunctionCacheSize);
+      ObjectHashTable::New(isolate(), ApiNatives::kInitialFunctionCacheSize,
+                           USE_CUSTOM_MINIMUM_CAPACITY);
   native_context()->set_function_cache(*function_cache);
 
   // Store the map for the string prototype after the natives has been compiled
@@ -2562,9 +2561,7 @@ bool Genesis::InstallExperimentalNatives() {
                                                    nullptr};
   static const char* harmony_sloppy_natives[] = {nullptr};
   static const char* harmony_sloppy_let_natives[] = {nullptr};
-  static const char* harmony_unicode_natives[] = {nullptr};
   static const char* harmony_unicode_regexps_natives[] = {nullptr};
-  static const char* harmony_computed_property_names_natives[] = {nullptr};
   static const char* harmony_rest_parameters_natives[] = {nullptr};
   static const char* harmony_reflect_natives[] = {"native harmony-reflect.js",
                                                   nullptr};
@@ -2573,6 +2570,8 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_destructuring_natives[] = {nullptr};
   static const char* harmony_object_natives[] = {"native harmony-object.js",
                                                  NULL};
+  static const char* harmony_object_observe_natives[] = {
+      "native harmony-object-observe.js", nullptr};
   static const char* harmony_spread_arrays_natives[] = {nullptr};
   static const char* harmony_sharedarraybuffer_natives[] = {
       "native harmony-sharedarraybuffer.js", NULL};

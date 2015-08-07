@@ -852,6 +852,23 @@ class Heap {
   // incremental steps.
   void StartIdleIncrementalMarking();
 
+  // Starts incremental marking assuming incremental marking is currently
+  // stopped.
+  void StartIncrementalMarking(int gc_flags,
+                               const GCCallbackFlags gc_callback_flags,
+                               const char* reason = nullptr);
+
+  // Performs incremental marking steps of step_size_in_bytes as long as
+  // deadline_ins_ms is not reached. step_size_in_bytes can be 0 to compute
+  // an estimate increment. Returns the remaining time that cannot be used
+  // for incremental marking anymore because a single step would exceed the
+  // deadline.
+  double AdvanceIncrementalMarking(
+      intptr_t step_size_in_bytes, double deadline_in_ms,
+      IncrementalMarking::StepActions step_actions);
+
+  void FinalizeIncrementalMarkingIfComplete(const char* comment);
+
   inline void increment_scan_on_scavenge_pages() {
     scan_on_scavenge_pages_++;
     if (FLAG_gc_verbose) {
@@ -952,9 +969,9 @@ class Heap {
   void IterateWeakRoots(ObjectVisitor* v, VisitMode mode);
 
   // Iterate pointers to from semispace of new space found in memory interval
-  // from start to end.
-  void IterateAndMarkPointersToFromSpace(bool record_slots, Address start,
-                                         Address end,
+  // from start to end within |object|.
+  void IterateAndMarkPointersToFromSpace(HeapObject* object, Address start,
+                                         Address end, bool record_slots,
                                          ObjectSlotCallback callback);
 
   // Returns whether the object resides in new space.
@@ -1202,8 +1219,7 @@ class Heap {
 
   // Sets the allocation limit to trigger the next full garbage collection.
   void SetOldGenerationAllocationLimit(intptr_t old_gen_size, double gc_speed,
-                                       double mutator_speed,
-                                       int freed_global_handles);
+                                       double mutator_speed);
 
   // Decrease the allocation limit if the new limit based on the given
   // parameters is lower than the current limit.
@@ -1636,6 +1652,8 @@ class Heap {
   bool HasHighFragmentation();
   bool HasHighFragmentation(intptr_t used, intptr_t committed);
 
+  bool ShouldOptimizeForMemoryUsage() { return optimize_for_memory_usage_; }
+
  protected:
   // Methods made available to tests.
 
@@ -2023,17 +2041,18 @@ class Heap {
   // Allocates an uninitialized fixed array. It must be filled by the caller.
   MUST_USE_RESULT AllocationResult AllocateUninitializedFixedArray(int length);
 
-  // Make a copy of src and return it. Returns
-  // Failure::RetryAfterGC(requested_bytes, space) if the allocation failed.
+  // Make a copy of src and return it.
   MUST_USE_RESULT inline AllocationResult CopyFixedArray(FixedArray* src);
 
-  // Make a copy of src, set the map, and return the copy. Returns
-  // Failure::RetryAfterGC(requested_bytes, space) if the allocation failed.
+  // Make a copy of src, also grow the copy, and return the copy.
+  MUST_USE_RESULT AllocationResult
+  CopyFixedArrayAndGrow(FixedArray* src, int grow_by, PretenureFlag pretenure);
+
+  // Make a copy of src, set the map, and return the copy.
   MUST_USE_RESULT AllocationResult
       CopyFixedArrayWithMap(FixedArray* src, Map* map);
 
-  // Make a copy of src and return it. Returns
-  // Failure::RetryAfterGC(requested_bytes, space) if the allocation failed.
+  // Make a copy of src and return it.
   MUST_USE_RESULT inline AllocationResult CopyFixedDoubleArray(
       FixedDoubleArray* src);
 
@@ -2231,10 +2250,6 @@ class Heap {
       size_t mark_compact_speed_in_bytes_per_ms);
 
   GCIdleTimeHandler::HeapState ComputeHeapState();
-
-  double AdvanceIncrementalMarking(
-      intptr_t step_size_in_bytes, double deadline_in_ms,
-      IncrementalMarking::ForceCompletionAction completion);
 
   bool PerformIdleTimeAction(GCIdleTimeAction action,
                              GCIdleTimeHandler::HeapState heap_state,

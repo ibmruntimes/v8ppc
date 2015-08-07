@@ -1611,6 +1611,8 @@ class Simd128Value : public HeapObject {
   bool BitwiseEquals(const Simd128Value* other) const;
   // Computes a hash from the 128 bit value, viewed as 4 32-bit integers.
   uint32_t Hash() const;
+  // Copies the 16 bytes of SIMD data to the destination address.
+  void CopyBits(void* destination) const;
 
   // Layout description.
   static const int kValueOffset = HeapObject::kHeaderSize;
@@ -2398,11 +2400,6 @@ class FixedArray: public FixedArrayBase {
   // Shrink length and insert filler objects.
   void Shrink(int length);
 
-  // Copy operation.
-  static Handle<FixedArray> CopySize(Handle<FixedArray> array,
-                                     int new_length,
-                                     PretenureFlag pretenure = NOT_TENURED);
-
   enum KeyFilter { ALL_KEYS, NON_SYMBOL_KEYS };
 
   // Add the elements of a JSArray to this FixedArray.
@@ -2954,9 +2951,6 @@ class HashTableBase : public FixedArray {
   // Computes the required capacity for a table holding the given
   // number of elements. May be more than HashTable::kMaxCapacity.
   static inline int ComputeCapacity(int at_least_space_for);
-
-  // Use a different heuristic to compute capacity when serializing.
-  static inline int ComputeCapacityForSerialization(int at_least_space_for);
 
   // Tells whether k is a real key.  The hole and undefined are not allowed
   // as keys and can be used to indicate missing or deleted elements.
@@ -3892,8 +3886,8 @@ class ScopeInfo : public FixedArray {
   // Return if this is a nested function within an asm module scope.
   bool IsAsmFunction() { return AsmFunctionField::decode(Flags()); }
 
-  bool IsSimpleParameterList() {
-    return IsSimpleParameterListField::decode(Flags());
+  bool HasSimpleParameters() {
+    return HasSimpleParametersField::decode(Flags());
   }
 
   // Return the function_name if present.
@@ -4092,10 +4086,10 @@ class ScopeInfo : public FixedArray {
   class AsmModuleField : public BitField<bool, FunctionVariableMode::kNext, 1> {
   };
   class AsmFunctionField : public BitField<bool, AsmModuleField::kNext, 1> {};
-  class IsSimpleParameterListField
+  class HasSimpleParametersField
       : public BitField<bool, AsmFunctionField::kNext, 1> {};
   class FunctionKindField
-      : public BitField<FunctionKind, IsSimpleParameterListField::kNext, 8> {};
+      : public BitField<FunctionKind, HasSimpleParametersField::kNext, 8> {};
 
   // BitFields representing the encoded information for context locals in the
   // ContextLocalInfoEntries part.
@@ -6636,7 +6630,7 @@ class SharedFunctionInfo: public HeapObject {
   // Calculate the number of in-object properties.
   int CalculateInObjectProperties();
 
-  inline bool is_simple_parameter_list();
+  inline bool has_simple_parameters();
 
   // Initialize a SharedFunctionInfo from a parsed function literal.
   static void InitFromFunctionLiteral(Handle<SharedFunctionInfo> shared_info,
@@ -7173,7 +7167,7 @@ class JSFunction: public JSObject {
   // Returns `false` if formal parameters include rest parameters, optional
   // parameters, or destructuring parameters.
   // TODO(caitp): make this a flag set during parsing
-  inline bool is_simple_parameter_list();
+  inline bool has_simple_parameters();
 
   // [next_function_link]: Links functions into various lists, e.g. the list
   // of optimized functions hanging off the native_context. The CodeFlusher

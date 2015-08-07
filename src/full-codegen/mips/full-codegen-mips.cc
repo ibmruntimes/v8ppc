@@ -337,7 +337,7 @@ void FullCodeGenerator::Generate() {
     // The stub will rewrite receiever and parameter count if the previous
     // stack frame was an arguments adapter frame.
     ArgumentsAccessStub::Type type;
-    if (is_strict(language_mode()) || !is_simple_parameter_list()) {
+    if (is_strict(language_mode()) || !has_simple_parameters()) {
       type = ArgumentsAccessStub::NEW_STRICT;
     } else if (function()->has_duplicate_parameters()) {
       type = ArgumentsAccessStub::NEW_SLOPPY_SLOW;
@@ -2565,10 +2565,7 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit,
 
   // Set both the prototype and constructor to have fast properties, and also
   // freeze them in strong mode.
-  __ CallRuntime(is_strong(language_mode())
-                     ? Runtime::kFinalizeClassDefinitionStrong
-                     : Runtime::kFinalizeClassDefinition,
-                 2);
+  __ CallRuntime(Runtime::kFinalizeClassDefinition, 2);
 }
 
 
