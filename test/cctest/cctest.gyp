@@ -76,16 +76,17 @@
         'compiler/test-run-jsexceptions.cc',
         'compiler/test-run-jsops.cc',
         'compiler/test-run-machops.cc',
+        'compiler/test-run-native-calls.cc',
         'compiler/test-run-properties.cc',
         'compiler/test-run-stackcheck.cc',
         'compiler/test-run-stubs.cc',
         'compiler/test-run-variables.cc',
         'compiler/test-simplified-lowering.cc',
         'cctest.cc',
+        'interpreter/test-interpreter.cc',
         'gay-fixed.cc',
         'gay-precision.cc',
         'gay-shortest.cc',
-        'interpreter/test-bytecode-array-builder.cc',
         'print-extension.cc',
         'profiler-extension.cc',
         'test-accessors.cc',
@@ -163,8 +164,6 @@
         'test-weakmaps.cc',
         'test-weaksets.cc',
         'trace-extension.cc',
-        '../../src/startup-data-util.h',
-        '../../src/startup-data-util.cc'
       ],
       'conditions': [
         ['v8_target_arch=="ia32"', {

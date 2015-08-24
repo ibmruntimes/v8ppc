@@ -26,13 +26,12 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_ARM64
 
 #define ARM64_DEFINE_REG_STATICS
 
 #include "src/arm64/assembler-arm64-inl.h"
+#include "src/arm64/frames-arm64.h"
 #include "src/base/bits.h"
 #include "src/base/cpu.h"
 
@@ -1624,37 +1623,6 @@ void Assembler::LoadStorePair(const CPURegister& rt,
     }
   }
   Emit(addrmodeop | memop);
-}
-
-
-void Assembler::ldnp(const CPURegister& rt,
-                     const CPURegister& rt2,
-                     const MemOperand& src) {
-  LoadStorePairNonTemporal(rt, rt2, src,
-                           LoadPairNonTemporalOpFor(rt, rt2));
-}
-
-
-void Assembler::stnp(const CPURegister& rt,
-                     const CPURegister& rt2,
-                     const MemOperand& dst) {
-  LoadStorePairNonTemporal(rt, rt2, dst,
-                           StorePairNonTemporalOpFor(rt, rt2));
-}
-
-
-void Assembler::LoadStorePairNonTemporal(const CPURegister& rt,
-                                         const CPURegister& rt2,
-                                         const MemOperand& addr,
-                                         LoadStorePairNonTemporalOp op) {
-  DCHECK(!rt.Is(rt2));
-  DCHECK(AreSameSizeAndType(rt, rt2));
-  DCHECK(addr.IsImmediateOffset());
-  LSDataSize size = CalcLSPairDataSize(
-    static_cast<LoadStorePairOp>(op & LoadStorePairMask));
-  DCHECK(IsImmLSPair(addr.offset(), size));
-  int offset = static_cast<int>(addr.offset());
-  Emit(op | Rt(rt) | Rt2(rt2) | RnSP(addr.base()) | ImmLSPair(offset, size));
 }
 
 

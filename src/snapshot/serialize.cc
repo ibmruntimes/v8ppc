@@ -570,19 +570,9 @@ void Deserializer::Deserialize(Isolate* isolate) {
   }
 
   // Update data pointers to the external strings containing natives sources.
-  for (int i = 0; i < Natives::GetBuiltinsCount(); i++) {
-    Object* source = isolate_->heap()->natives_source_cache()->get(i);
-    if (!source->IsUndefined()) {
-      ExternalOneByteString::cast(source)->update_data_cache();
-    }
-  }
-
-  for (int i = 0; i < CodeStubNatives::GetBuiltinsCount(); i++) {
-    Object* source = isolate_->heap()->code_stub_natives_source_cache()->get(i);
-    if (!source->IsUndefined()) {
-      ExternalOneByteString::cast(source)->update_data_cache();
-    }
-  }
+  Natives::UpdateSourceCache(isolate_->heap());
+  ExtraNatives::UpdateSourceCache(isolate_->heap());
+  CodeStubNatives::UpdateSourceCache(isolate_->heap());
 
   FlushICacheForNewCodeObjects();
 
@@ -1179,6 +1169,11 @@ bool Deserializer::ReadData(Object** current, Object** limit, int source_space,
       case kNativesStringResource:
         current = CopyInNativesSource(Natives::GetScriptSource(source_.Get()),
                                       current);
+        break;
+
+      case kExtraNativesStringResource:
+        current = CopyInNativesSource(
+            ExtraNatives::GetScriptSource(source_.Get()), current);
         break;
 
       case kCodeStubNativesStringResource:
@@ -1923,21 +1918,10 @@ void Serializer::ObjectSerializer::Serialize() {
   // We don't expect fillers.
   DCHECK(!object_->IsFiller());
 
-  if (object_->IsPrototypeInfo()) {
-    Object* prototype_users = PrototypeInfo::cast(object_)->prototype_users();
-    if (prototype_users->IsWeakFixedArray()) {
-      WeakFixedArray::cast(prototype_users)->Compact();
-    }
-  }
-
   if (object_->IsScript()) {
     // Clear cached line ends.
     Object* undefined = serializer_->isolate()->heap()->undefined_value();
     Script::cast(object_)->set_line_ends(undefined);
-    Object* shared_list = Script::cast(object_)->shared_function_infos();
-    if (shared_list->IsWeakFixedArray()) {
-      WeakFixedArray::cast(shared_list)->Compact();
-    }
   }
 
   if (object_->IsExternalString()) {
@@ -2170,13 +2154,19 @@ void Serializer::ObjectSerializer::VisitExternalOneByteString(
   OutputRawData(references_start);
   if (SerializeExternalNativeSourceString(
           Natives::GetBuiltinsCount(), resource_pointer,
-          serializer_->isolate()->heap()->natives_source_cache(),
+          Natives::GetSourceCache(serializer_->isolate()->heap()),
           kNativesStringResource)) {
     return;
   }
   if (SerializeExternalNativeSourceString(
+          ExtraNatives::GetBuiltinsCount(), resource_pointer,
+          ExtraNatives::GetSourceCache(serializer_->isolate()->heap()),
+          kExtraNativesStringResource)) {
+    return;
+  }
+  if (SerializeExternalNativeSourceString(
           CodeStubNatives::GetBuiltinsCount(), resource_pointer,
-          serializer_->isolate()->heap()->code_stub_natives_source_cache(),
+          CodeStubNatives::GetSourceCache(serializer_->isolate()->heap()),
           kCodeStubNativesStringResource)) {
     return;
   }

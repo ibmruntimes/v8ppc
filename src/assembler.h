@@ -35,22 +35,22 @@
 #ifndef V8_ASSEMBLER_H_
 #define V8_ASSEMBLER_H_
 
-#include "src/v8.h"
-
 #include "src/allocation.h"
 #include "src/builtins.h"
-#include "src/gdb-jit.h"
 #include "src/isolate.h"
 #include "src/runtime/runtime.h"
 #include "src/token.h"
 
 namespace v8 {
 
+// Forward declarations.
 class ApiFunction;
 
 namespace internal {
 
+// Forward declarations.
 class StatsCounter;
+
 // -----------------------------------------------------------------------------
 // Platform independent assembler base class.
 

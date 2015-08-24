@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <cmath>
 #include <cstdarg>
-#include "src/v8.h"
 
 #if V8_TARGET_ARCH_ARM64
 
@@ -1673,11 +1672,6 @@ void Simulator::VisitLoadStorePairPreIndex(Instruction* instr) {
 
 void Simulator::VisitLoadStorePairPostIndex(Instruction* instr) {
   LoadStorePairHelper(instr, PostIndex);
-}
-
-
-void Simulator::VisitLoadStorePairNonTemporal(Instruction* instr) {
-  LoadStorePairHelper(instr, Offset);
 }
 
 

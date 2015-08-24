@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #include "src/ast.h"
 #include "src/ast-numbering.h"
 #include "src/code-factory.h"
@@ -1295,13 +1293,12 @@ void FullCodeGenerator::VisitClassLiteral(ClassLiteral* lit) {
 
     VisitForStackValue(lit->constructor());
 
-    __ Push(script());
     __ Push(Smi::FromInt(lit->start_position()));
     __ Push(Smi::FromInt(lit->end_position()));
 
     __ CallRuntime(is_strong(language_mode()) ? Runtime::kDefineClassStrong
                                               : Runtime::kDefineClass,
-                   6);
+                   5);
     PrepareForBailoutForId(lit->CreateLiteralId(), TOS_REG);
 
     int store_slot_index = 0;

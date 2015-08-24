@@ -6,10 +6,9 @@
 
 #include "src/disasm.h"
 #include "src/disassembler.h"
-#include "src/heap/objects-visiting.h"
 #include "src/interpreter/bytecodes.h"
-#include "src/jsregexp.h"
 #include "src/ostreams.h"
+#include "src/regexp/jsregexp.h"
 
 namespace v8 {
 namespace internal {
@@ -61,26 +60,8 @@ void HeapObject::HeapObjectPrint(std::ostream& os) {  // NOLINT
       HeapNumber::cast(this)->HeapNumberPrint(os);
       os << ">";
       break;
-    case FLOAT32X4_TYPE:
-      Float32x4::cast(this)->Float32x4Print(os);
-      break;
-    case INT32X4_TYPE:
-      Int32x4::cast(this)->Int32x4Print(os);
-      break;
-    case BOOL32X4_TYPE:
-      Bool32x4::cast(this)->Bool32x4Print(os);
-      break;
-    case INT16X8_TYPE:
-      Int16x8::cast(this)->Int16x8Print(os);
-      break;
-    case BOOL16X8_TYPE:
-      Bool16x8::cast(this)->Bool16x8Print(os);
-      break;
-    case INT8X16_TYPE:
-      Int16x8::cast(this)->Int16x8Print(os);
-      break;
-    case BOOL8X16_TYPE:
-      Bool16x8::cast(this)->Bool16x8Print(os);
+    case SIMD128_VALUE_TYPE:
+      Simd128Value::cast(this)->Simd128ValuePrint(os);
       break;
     case FIXED_DOUBLE_ARRAY_TYPE:
       FixedDoubleArray::cast(this)->FixedDoubleArrayPrint(os);
@@ -207,6 +188,15 @@ void HeapObject::HeapObjectPrint(std::ostream& os) {  // NOLINT
       UNREACHABLE();
       break;
   }
+}
+
+
+void Simd128Value::Simd128ValuePrint(std::ostream& os) {  // NOLINT
+#define PRINT_SIMD128_VALUE(TYPE, Type, type, lane_count, lane_type) \
+  if (Is##Type()) return Type::cast(this)->Type##Print(os);
+  SIMD128_TYPES(PRINT_SIMD128_VALUE)
+#undef PRINT_SIMD128_VALUE
+  UNREACHABLE();
 }
 
 
@@ -475,7 +465,9 @@ void Map::MapPrint(std::ostream& os) {  // NOLINT
   HeapObject::PrintHeader(os, "Map");
   os << " - type: " << TypeToString(instance_type()) << "\n";
   os << " - instance size: " << instance_size() << "\n";
-  os << " - inobject properties: " << inobject_properties() << "\n";
+  if (IsJSObjectMap()) {
+    os << " - inobject properties: " << GetInObjectProperties() << "\n";
+  }
   os << " - elements kind: " << ElementsKindToString(elements_kind()) << "\n";
   os << " - unused property fields: " << unused_property_fields() << "\n";
   if (is_deprecated()) os << " - deprecated_map\n";
@@ -967,6 +959,7 @@ void Box::BoxPrint(std::ostream& os) {  // NOLINT
 void PrototypeInfo::PrototypeInfoPrint(std::ostream& os) {  // NOLINT
   HeapObject::PrintHeader(os, "PrototypeInfo");
   os << "\n - prototype users: " << Brief(prototype_users());
+  os << "\n - registry slot: " << registry_slot();
   os << "\n - validity cell: " << Brief(validity_cell());
   os << "\n - constructor name: " << Brief(constructor_name());
   os << "\n";

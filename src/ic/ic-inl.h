@@ -127,32 +127,15 @@ void IC::UpdateTarget() { target_ = handle(raw_target(), isolate_); }
 
 
 JSFunction* IC::GetRootConstructor(Map* receiver_map, Context* native_context) {
-  Isolate* isolate = receiver_map->GetIsolate();
-  if (receiver_map == isolate->heap()->boolean_map()) {
-    return native_context->boolean_function();
-  } else if (receiver_map->instance_type() == HEAP_NUMBER_TYPE) {
-    return native_context->number_function();
-  } else if (receiver_map->instance_type() < FIRST_NONSTRING_TYPE) {
-    return native_context->string_function();
-  } else if (receiver_map->instance_type() == SYMBOL_TYPE) {
-    return native_context->symbol_function();
-  } else if (receiver_map->instance_type() == FLOAT32X4_TYPE) {
-    return native_context->float32x4_function();
-  } else if (receiver_map->instance_type() == INT32X4_TYPE) {
-    return native_context->int32x4_function();
-  } else if (receiver_map->instance_type() == BOOL32X4_TYPE) {
-    return native_context->bool32x4_function();
-  } else if (receiver_map->instance_type() == INT16X8_TYPE) {
-    return native_context->int16x8_function();
-  } else if (receiver_map->instance_type() == BOOL16X8_TYPE) {
-    return native_context->bool16x8_function();
-  } else if (receiver_map->instance_type() == INT8X16_TYPE) {
-    return native_context->int8x16_function();
-  } else if (receiver_map->instance_type() == BOOL8X16_TYPE) {
-    return native_context->bool8x16_function();
-  } else {
-    return NULL;
+  DisallowHeapAllocation no_alloc;
+  if (receiver_map->IsPrimitiveMap()) {
+    int constructor_function_index =
+        receiver_map->GetConstructorFunctionIndex();
+    if (constructor_function_index != Map::kNoConstructorFunctionIndex) {
+      return JSFunction::cast(native_context->get(constructor_function_index));
+    }
   }
+  return nullptr;
 }
 
 

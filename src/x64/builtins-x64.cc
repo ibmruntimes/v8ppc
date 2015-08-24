@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_X64
 
 #include "src/code-factory.h"
@@ -225,7 +223,10 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         __ j(less, &no_inobject_slack_tracking);
 
         // Allocate object with a slack.
-        __ movzxbp(rsi, FieldOperand(rax, Map::kInObjectPropertiesOffset));
+        __ movzxbp(
+            rsi,
+            FieldOperand(
+                rax, Map::kInObjectPropertiesOrConstructorFunctionIndexOffset));
         __ movzxbp(rax, FieldOperand(rax, Map::kUnusedPropertyFieldsOffset));
         __ subp(rsi, rax);
         __ leap(rsi,

@@ -60,7 +60,10 @@ TEST(HeapMaps) {
   Heap* heap = CcTest::heap();
   CheckMap(heap->meta_map(), MAP_TYPE, Map::kSize);
   CheckMap(heap->heap_number_map(), HEAP_NUMBER_TYPE, HeapNumber::kSize);
-  CheckMap(heap->float32x4_map(), FLOAT32X4_TYPE, Float32x4::kSize);
+#define SIMD128_TYPE(TYPE, Type, type, lane_count, lane_type) \
+  CheckMap(heap->type##_map(), SIMD128_VALUE_TYPE, Type::kSize);
+  SIMD128_TYPES(SIMD128_TYPE)
+#undef SIMD128_TYPE
   CheckMap(heap->fixed_array_map(), FIXED_ARRAY_TYPE, kVariableSizeSentinel);
   CheckMap(heap->string_map(), STRING_TYPE, kVariableSizeSentinel);
 }
@@ -128,7 +131,7 @@ TEST(HandleNull) {
   Isolate* isolate = CcTest::i_isolate();
   HandleScope outer_scope(isolate);
   LocalContext context;
-  Handle<Object> n(reinterpret_cast<Object*>(NULL), isolate);
+  Handle<Object> n(static_cast<Object*>(nullptr), isolate);
   CHECK(!n.is_null());
 }
 
@@ -1141,7 +1144,7 @@ TEST(Regression39128) {
   // Step 1: prepare a map for the object.  We add 1 inobject property to it.
   // Create a map with single inobject property.
   Handle<Map> my_map = Map::Create(CcTest::i_isolate(), 1);
-  int n_properties = my_map->inobject_properties();
+  int n_properties = my_map->GetInObjectProperties();
   CHECK_GT(n_properties, 0);
 
   int object_size = my_map->instance_size();
@@ -1986,7 +1989,7 @@ TEST(TestAlignmentCalculations) {
       Heap::GetMaximumFillToAlign(kSimd128Unaligned);
   CHECK_EQ(maximum_simd128_misalignment, max_simd128_unaligned_fill);
 
-  Address base = reinterpret_cast<Address>(NULL);
+  Address base = static_cast<Address>(NULL);
   int fill = 0;
 
   // Word alignment never requires fill.
@@ -5954,7 +5957,7 @@ TEST(WeakFixedArray) {
   Handle<HeapNumber> number = CcTest::i_isolate()->factory()->NewHeapNumber(1);
   Handle<WeakFixedArray> array = WeakFixedArray::Add(Handle<Object>(), number);
   array->Remove(number);
-  array->Compact();
+  array->Compact<WeakFixedArray::NullCallback>();
   WeakFixedArray::Add(array, number);
 }
 

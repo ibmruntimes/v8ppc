@@ -5,8 +5,6 @@
 #ifndef V8_HYDROGEN_H_
 #define V8_HYDROGEN_H_
 
-#include "src/v8.h"
-
 #include "src/accessors.h"
 #include "src/allocation.h"
 #include "src/ast.h"
@@ -2197,8 +2195,8 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(TwoByteSeqStringSetChar)           \
   F(ObjectEquals)                      \
   F(IsObject)                          \
+  F(ToObject)                          \
   F(IsFunction)                        \
-  F(IsUndetectableObject)              \
   F(IsSpecObject)                      \
   F(MathPow)                           \
   F(IsMinusZero)                       \
@@ -2638,7 +2636,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
              lookup_type_ == TRANSITION_TYPE);
       DCHECK(number_ < map->NumberOfOwnDescriptors());
       int field_index = map->instance_descriptors()->GetFieldIndex(number_);
-      return field_index - map->inobject_properties();
+      return field_index - map->GetInObjectProperties();
     }
 
     void LookupDescriptor(Map* map, Name* name) {

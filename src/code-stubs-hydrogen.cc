@@ -322,7 +322,6 @@ Handle<Code> NumberToStringStub::GenerateCode() {
 
 
 // Returns the type string of a value; see ECMA-262, 11.4.3 (p 47).
-// Possible optimizations: put the type string into the oddballs.
 template <>
 HValue* CodeStubGraphBuilder<TypeofStub>::BuildCodeStub() {
   Factory* factory = isolate()->factory();
@@ -341,7 +340,6 @@ HValue* CodeStubGraphBuilder<TypeofStub>::BuildCodeStub() {
     { Push(number_string); }
     is_number.Else();
     {
-      HConstant* undefined_string = Add<HConstant>(factory->undefined_string());
       HValue* map = AddLoadMap(object, smi_check);
       HValue* instance_type = Add<HLoadNamedField>(
           map, nullptr, HObjectAccess::ForMapInstanceType());
@@ -358,24 +356,8 @@ HValue* CodeStubGraphBuilder<TypeofStub>::BuildCodeStub() {
             instance_type, Add<HConstant>(ODDBALL_TYPE), Token::EQ);
         is_oddball.Then();
         {
-          IfBuilder is_true_or_false(this);
-          is_true_or_false.If<HCompareObjectEqAndBranch>(
-              object, graph()->GetConstantTrue());
-          is_true_or_false.OrIf<HCompareObjectEqAndBranch>(
-              object, graph()->GetConstantFalse());
-          is_true_or_false.Then();
-          { Push(Add<HConstant>(factory->boolean_string())); }
-          is_true_or_false.Else();
-          {
-            IfBuilder is_null(this);
-            is_null.If<HCompareObjectEqAndBranch>(object,
-                                                  graph()->GetConstantNull());
-            is_null.Then();
-            { Push(object_string); }
-            is_null.Else();
-            { Push(undefined_string); }
-          }
-          is_true_or_false.End();
+          Push(Add<HLoadNamedField>(object, nullptr,
+                                    HObjectAccess::ForOddballTypeOf()));
         }
         is_oddball.Else();
         {
@@ -399,53 +381,50 @@ HValue* CodeStubGraphBuilder<TypeofStub>::BuildCodeStub() {
             is_function.Else();
             {
               IfBuilder is_float32x4(this);
-              is_float32x4.If<HCompareNumericAndBranch>(
-                  instance_type, Add<HConstant>(FLOAT32X4_TYPE), Token::EQ);
+              is_float32x4.If<HCompareObjectEqAndBranch>(
+                  map, Add<HConstant>(factory->float32x4_map()));
               is_float32x4.Then();
               { Push(Add<HConstant>(factory->float32x4_string())); }
               is_float32x4.Else();
               {
                 IfBuilder is_int32x4(this);
-                is_int32x4.If<HCompareNumericAndBranch>(
-                    instance_type, Add<HConstant>(INT32X4_TYPE), Token::EQ);
+                is_int32x4.If<HCompareObjectEqAndBranch>(
+                    map, Add<HConstant>(factory->int32x4_map()));
                 is_int32x4.Then();
                 { Push(Add<HConstant>(factory->int32x4_string())); }
                 is_int32x4.Else();
                 {
                   IfBuilder is_bool32x4(this);
-                  is_bool32x4.If<HCompareNumericAndBranch>(
-                      instance_type, Add<HConstant>(BOOL32X4_TYPE), Token::EQ);
+                  is_bool32x4.If<HCompareObjectEqAndBranch>(
+                      map, Add<HConstant>(factory->bool32x4_map()));
                   is_bool32x4.Then();
                   { Push(Add<HConstant>(factory->bool32x4_string())); }
                   is_bool32x4.Else();
                   {
                     IfBuilder is_int16x8(this);
-                    is_int16x8.If<HCompareNumericAndBranch>(
-                        instance_type, Add<HConstant>(INT16X8_TYPE), Token::EQ);
+                    is_int16x8.If<HCompareObjectEqAndBranch>(
+                        map, Add<HConstant>(factory->int16x8_map()));
                     is_int16x8.Then();
                     { Push(Add<HConstant>(factory->int16x8_string())); }
                     is_int16x8.Else();
                     {
                       IfBuilder is_bool16x8(this);
-                      is_bool16x8.If<HCompareNumericAndBranch>(
-                          instance_type, Add<HConstant>(BOOL16X8_TYPE),
-                          Token::EQ);
+                      is_bool16x8.If<HCompareObjectEqAndBranch>(
+                          map, Add<HConstant>(factory->bool16x8_map()));
                       is_bool16x8.Then();
                       { Push(Add<HConstant>(factory->bool16x8_string())); }
                       is_bool16x8.Else();
                       {
                         IfBuilder is_int8x16(this);
-                        is_int8x16.If<HCompareNumericAndBranch>(
-                            instance_type, Add<HConstant>(INT8X16_TYPE),
-                            Token::EQ);
+                        is_int8x16.If<HCompareObjectEqAndBranch>(
+                            map, Add<HConstant>(factory->int8x16_map()));
                         is_int8x16.Then();
                         { Push(Add<HConstant>(factory->int8x16_string())); }
                         is_int8x16.Else();
                         {
                           IfBuilder is_bool8x16(this);
-                          is_bool8x16.If<HCompareNumericAndBranch>(
-                              instance_type, Add<HConstant>(BOOL8X16_TYPE),
-                              Token::EQ);
+                          is_bool8x16.If<HCompareObjectEqAndBranch>(
+                              map, Add<HConstant>(factory->bool8x16_map()));
                           is_bool8x16.Then();
                           { Push(Add<HConstant>(factory->bool8x16_string())); }
                           is_bool8x16.Else();
@@ -457,7 +436,7 @@ HValue* CodeStubGraphBuilder<TypeofStub>::BuildCodeStub() {
                             is_undetectable.Then();
                             {
                               // typeof an undetectable object is 'undefined'.
-                              Push(undefined_string);
+                              Push(Add<HConstant>(factory->undefined_string()));
                             }
                             is_undetectable.Else();
                             {

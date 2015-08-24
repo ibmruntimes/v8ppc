@@ -10,7 +10,6 @@
 
 #include "src/allocation.h"
 #include "src/assert-scope.h"
-#include "src/counters.h"
 #include "src/globals.h"
 #include "src/heap/gc-idle-time-handler.h"
 #include "src/heap/gc-tracer.h"
@@ -21,7 +20,6 @@
 #include "src/heap/spaces.h"
 #include "src/heap/store-buffer.h"
 #include "src/list.h"
-#include "src/splay-tree-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -319,12 +317,12 @@ namespace internal {
   V(intl_impl_object_symbol)        \
   V(promise_debug_marker_symbol)    \
   V(promise_has_handler_symbol)     \
-  V(class_script_symbol)            \
   V(class_start_position_symbol)    \
   V(class_end_position_symbol)      \
   V(error_start_pos_symbol)         \
   V(error_end_pos_symbol)           \
-  V(error_script_symbol)
+  V(error_script_symbol)            \
+  V(internal_error_symbol)
 
 #define PUBLIC_SYMBOL_LIST(V)                                    \
   V(has_instance_symbol, symbolHasInstance, Symbol.hasInstance)  \
@@ -1007,13 +1005,6 @@ class Heap {
     roots_[kCodeStubsRootIndex] = value;
   }
 
-  // Support for computing object sizes for old objects during GCs. Returns
-  // a function that is guaranteed to be safe for computing object sizes in
-  // the current GC phase.
-  HeapObjectCallback GcSafeSizeOfOldObjectFunction() {
-    return gc_safe_size_of_old_object_;
-  }
-
   // Sets the non_monomorphic_cache_ (only used when expanding the dictionary).
   void public_set_non_monomorphic_cache(UnseededNumberDictionary* value) {
     roots_[kNonMonomorphicCacheRootIndex] = value;
@@ -1029,10 +1020,6 @@ class Heap {
 
   void public_set_materialized_objects(FixedArray* objects) {
     roots_[kMaterializedObjectsRootIndex] = objects;
-  }
-
-  void public_set_interpreter_table(FixedArray* table) {
-    roots_[kInterpreterTableRootIndex] = table;
   }
 
   // Generated code can embed this address to get access to the roots.
@@ -1428,8 +1415,6 @@ class Heap {
 
   StoreBuffer* store_buffer() { return &store_buffer_; }
 
-  Marking* marking() { return &marking_; }
-
   IncrementalMarking* incremental_marking() { return &incremental_marking_; }
 
   ExternalStringTable* external_string_table() {
@@ -1684,11 +1669,11 @@ class Heap {
                          PretenureFlag pretenure = NOT_TENURED);
 
 // Allocates SIMD values from the given lane values.
-#define SIMD_ALLOCATE_DECLARATION(type, type_name, lane_count, lane_type) \
-  AllocationResult Allocate##type(lane_type lanes[lane_count],            \
+#define SIMD_ALLOCATE_DECLARATION(TYPE, Type, type, lane_count, lane_type) \
+  AllocationResult Allocate##Type(lane_type lanes[lane_count],             \
                                   PretenureFlag pretenure = NOT_TENURED);
-
   SIMD128_TYPES(SIMD_ALLOCATE_DECLARATION)
+#undef SIMD_ALLOCATE_DECLARATION
 
   // Allocates a byte array of the specified length
   MUST_USE_RESULT AllocationResult
@@ -1902,16 +1887,6 @@ class Heap {
     bool pass_isolate_;
   };
   List<GCEpilogueCallbackPair> gc_epilogue_callbacks_;
-
-  // Support for computing object sizes during GC.
-  HeapObjectCallback gc_safe_size_of_old_object_;
-  static int GcSafeSizeOfOldObject(HeapObject* object);
-
-  // Update the GC state. Called from the mark-compact collector.
-  void MarkMapPointersAsEncoded(bool encoded) {
-    DCHECK(!encoded);
-    gc_safe_size_of_old_object_ = &GcSafeSizeOfOldObject;
-  }
 
   // Code that should be run before and after each GC.  Includes some
   // reporting/verification activities when compiled with DEBUG set.
@@ -2304,8 +2279,6 @@ class Heap {
 
   StoreBuffer store_buffer_;
 
-  Marking marking_;
-
   IncrementalMarking incremental_marking_;
 
   GCIdleTimeHandler gc_idle_time_handler_;
@@ -2526,7 +2499,6 @@ class PagedSpaces BASE_EMBEDDED {
 class SpaceIterator : public Malloced {
  public:
   explicit SpaceIterator(Heap* heap);
-  SpaceIterator(Heap* heap, HeapObjectCallback size_func);
   virtual ~SpaceIterator();
 
   bool has_next();
@@ -2538,7 +2510,6 @@ class SpaceIterator : public Malloced {
   Heap* heap_;
   int current_space_;         // from enum AllocationSpace.
   ObjectIterator* iterator_;  // object iterator for the current space.
-  HeapObjectCallback size_func_;
 };
 
 
@@ -2658,25 +2629,10 @@ class DescriptorLookupCache {
  public:
   // Lookup descriptor index for (map, name).
   // If absent, kAbsent is returned.
-  int Lookup(Map* source, Name* name) {
-    if (!name->IsUniqueName()) return kAbsent;
-    int index = Hash(source, name);
-    Key& key = keys_[index];
-    if ((key.source == source) && (key.name == name)) return results_[index];
-    return kAbsent;
-  }
+  inline int Lookup(Map* source, Name* name);
 
   // Update an element in the cache.
-  void Update(Map* source, Name* name, int result) {
-    DCHECK(result != kAbsent);
-    if (name->IsUniqueName()) {
-      int index = Hash(source, name);
-      Key& key = keys_[index];
-      key.source = source;
-      key.name = name;
-      results_[index] = result;
-    }
-  }
+  inline void Update(Map* source, Name* name, int result);
 
   // Clear the cache.
   void Clear();
@@ -2750,50 +2706,6 @@ class WeakObjectRetainer {
   // object has no references. Otherwise the address of the retained object
   // should be returned as in some GC situations the object has been moved.
   virtual Object* RetainAs(Object* object) = 0;
-};
-
-
-// Intrusive object marking uses least significant bit of
-// heap object's map word to mark objects.
-// Normally all map words have least significant bit set
-// because they contain tagged map pointer.
-// If the bit is not set object is marked.
-// All objects should be unmarked before resuming
-// JavaScript execution.
-class IntrusiveMarking {
- public:
-  static bool IsMarked(HeapObject* object) {
-    return (object->map_word().ToRawValue() & kNotMarkedBit) == 0;
-  }
-
-  static void ClearMark(HeapObject* object) {
-    uintptr_t map_word = object->map_word().ToRawValue();
-    object->set_map_word(MapWord::FromRawValue(map_word | kNotMarkedBit));
-    DCHECK(!IsMarked(object));
-  }
-
-  static void SetMark(HeapObject* object) {
-    uintptr_t map_word = object->map_word().ToRawValue();
-    object->set_map_word(MapWord::FromRawValue(map_word & ~kNotMarkedBit));
-    DCHECK(IsMarked(object));
-  }
-
-  static Map* MapOfMarkedObject(HeapObject* object) {
-    uintptr_t map_word = object->map_word().ToRawValue();
-    return MapWord::FromRawValue(map_word | kNotMarkedBit).ToMap();
-  }
-
-  static int SizeOfMarkedObject(HeapObject* object) {
-    return object->SizeFromMap(MapOfMarkedObject(object));
-  }
-
- private:
-#if defined(V8_PPC_TAGGING_OPT)
-  static const uintptr_t kNotMarkedBit = kHeapObjectTag;
-#else
-  static const uintptr_t kNotMarkedBit = 0x1;
-  STATIC_ASSERT((kHeapObjectTag & kNotMarkedBit) != 0);  // NOLINT
-#endif
 };
 
 

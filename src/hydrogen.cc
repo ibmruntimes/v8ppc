@@ -2047,14 +2047,8 @@ HValue* HGraphBuilder::BuildToObject(HValue* receiver) {
   receiver_is_smi.If<HIsSmiAndBranch>(receiver);
   receiver_is_smi.Then();
   {
-    // Load native context.
-    HValue* native_context = BuildGetNativeContext();
-
-    // Load global Number function.
-    HValue* constructor = Add<HLoadNamedField>(
-        native_context, nullptr,
-        HObjectAccess::ForContextSlot(Context::NUMBER_FUNCTION_INDEX));
-    Push(constructor);
+    // Use global Number function.
+    Push(Add<HConstant>(Context::NUMBER_FUNCTION_INDEX));
   }
   receiver_is_smi.Else();
   {
@@ -2071,90 +2065,23 @@ HValue* HGraphBuilder::BuildToObject(HValue* receiver) {
         Token::LT);
     receiver_is_not_spec_object.Then();
     {
-      // Load native context.
-      HValue* native_context = BuildGetNativeContext();
+      // Load the constructor function index from the {receiver} map.
+      HValue* constructor_function_index = Add<HLoadNamedField>(
+          receiver_map, nullptr,
+          HObjectAccess::ForMapInObjectPropertiesOrConstructorFunctionIndex());
 
-      IfBuilder receiver_is_heap_number(this);
-      receiver_is_heap_number.If<HCompareNumericAndBranch>(
-          receiver_instance_type, Add<HConstant>(HEAP_NUMBER_TYPE), Token::EQ);
-      receiver_is_heap_number.Then();
-      {
-        // Load global Number function.
-        HValue* constructor = Add<HLoadNamedField>(
-            native_context, nullptr,
-            HObjectAccess::ForContextSlot(Context::NUMBER_FUNCTION_INDEX));
-        Push(constructor);
-      }
-      receiver_is_heap_number.Else();
-      {
-        // Load boolean map (we cannot decide based on instance type, because
-        // it's ODDBALL_TYPE, which would also include null and undefined).
-        HValue* boolean_map = Add<HLoadRoot>(Heap::kBooleanMapRootIndex);
+      // Check if {receiver} has a constructor (null and undefined have no
+      // constructors, so we deoptimize to the runtime to throw an exception).
+      IfBuilder constructor_function_index_is_invalid(this);
+      constructor_function_index_is_invalid.If<HCompareNumericAndBranch>(
+          constructor_function_index,
+          Add<HConstant>(Map::kNoConstructorFunctionIndex), Token::EQ);
+      constructor_function_index_is_invalid.ThenDeopt(
+          Deoptimizer::kUndefinedOrNullInToObject);
+      constructor_function_index_is_invalid.End();
 
-        IfBuilder receiver_is_boolean(this);
-        receiver_is_boolean.If<HCompareObjectEqAndBranch>(receiver_map,
-                                                          boolean_map);
-        receiver_is_boolean.Then();
-        {
-          // Load global Boolean function.
-          HValue* constructor = Add<HLoadNamedField>(
-              native_context, nullptr,
-              HObjectAccess::ForContextSlot(Context::BOOLEAN_FUNCTION_INDEX));
-          Push(constructor);
-        }
-        receiver_is_boolean.Else();
-        {
-          IfBuilder receiver_is_string(this);
-          receiver_is_string.If<HCompareNumericAndBranch>(
-              receiver_instance_type, Add<HConstant>(FIRST_NONSTRING_TYPE),
-              Token::LT);
-          receiver_is_string.Then();
-          {
-            // Load global String function.
-            HValue* constructor = Add<HLoadNamedField>(
-                native_context, nullptr,
-                HObjectAccess::ForContextSlot(Context::STRING_FUNCTION_INDEX));
-            Push(constructor);
-          }
-          receiver_is_string.Else();
-          {
-            IfBuilder receiver_is_symbol(this);
-            receiver_is_symbol.If<HCompareNumericAndBranch>(
-                receiver_instance_type, Add<HConstant>(SYMBOL_TYPE), Token::EQ);
-            receiver_is_symbol.Then();
-            {
-              // Load global Symbol function.
-              HValue* constructor = Add<HLoadNamedField>(
-                  native_context, nullptr, HObjectAccess::ForContextSlot(
-                                               Context::SYMBOL_FUNCTION_INDEX));
-              Push(constructor);
-            }
-            receiver_is_symbol.Else();
-            {
-              IfBuilder receiver_is_float32x4(this);
-              receiver_is_float32x4.If<HCompareNumericAndBranch>(
-                  receiver_instance_type, Add<HConstant>(FLOAT32X4_TYPE),
-                  Token::EQ);
-              receiver_is_float32x4.Then();
-              {
-                // Load global Float32x4 function.
-                HValue* constructor = Add<HLoadNamedField>(
-                    native_context, nullptr,
-                    HObjectAccess::ForContextSlot(
-                        Context::FLOAT32X4_FUNCTION_INDEX));
-                Push(constructor);
-              }
-              receiver_is_float32x4.ElseDeopt(
-                  Deoptimizer::kUndefinedOrNullInToObject);
-              receiver_is_float32x4.JoinContinuation(&wrap);
-            }
-            receiver_is_symbol.JoinContinuation(&wrap);
-          }
-          receiver_is_string.JoinContinuation(&wrap);
-        }
-        receiver_is_boolean.JoinContinuation(&wrap);
-      }
-      receiver_is_heap_number.JoinContinuation(&wrap);
+      // Use the global constructor function.
+      Push(constructor_function_index);
     }
     receiver_is_not_spec_object.JoinContinuation(&wrap);
   }
@@ -2164,8 +2091,15 @@ HValue* HGraphBuilder::BuildToObject(HValue* receiver) {
   IfBuilder if_wrap(this, &wrap);
   if_wrap.Then();
   {
+    // Grab the constructor function index.
+    HValue* constructor_index = Pop();
+
+    // Load native context.
+    HValue* native_context = BuildGetNativeContext();
+
     // Determine the initial map for the global constructor.
-    HValue* constructor = Pop();
+    HValue* constructor = Add<HLoadKeyed>(native_context, constructor_index,
+                                          nullptr, FAST_ELEMENTS);
     HValue* constructor_initial_map = Add<HLoadNamedField>(
         constructor, nullptr, HObjectAccess::ForPrototypeOrInitialMap());
     // Allocate and initialize a JSValue wrapper.
@@ -6458,7 +6392,7 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::CanAccessMonomorphic() {
     int descriptor = transition()->LastAdded();
     int index =
         transition()->instance_descriptors()->GetFieldIndex(descriptor) -
-        map_->inobject_properties();
+        map_->GetInObjectProperties();
     PropertyDetails details =
         transition()->instance_descriptors()->GetDetails(descriptor);
     Representation representation = details.representation();
@@ -9978,9 +9912,9 @@ void HOptimizedGraphBuilder::VisitCallNew(CallNew* expr) {
 
 void HOptimizedGraphBuilder::BuildInitializeInobjectProperties(
     HValue* receiver, Handle<Map> initial_map) {
-  if (initial_map->inobject_properties() != 0) {
+  if (initial_map->GetInObjectProperties() != 0) {
     HConstant* undefined = graph()->GetConstantUndefined();
-    for (int i = 0; i < initial_map->inobject_properties(); i++) {
+    for (int i = 0; i < initial_map->GetInObjectProperties(); i++) {
       int property_offset = initial_map->GetInObjectPropertyOffset(i);
       Add<HStoreNamedField>(receiver, HObjectAccess::ForMapAndOffset(
                                           initial_map, property_offset),
@@ -10476,11 +10410,13 @@ void HOptimizedGraphBuilder::VisitDelete(UnaryOperation* expr) {
     CHECK_ALIVE(VisitForValue(prop->key()));
     HValue* key = Pop();
     HValue* obj = Pop();
-    HValue* function = AddLoadJSBuiltin(Builtins::DELETE);
-    Add<HPushArguments>(obj, key, Add<HConstant>(function_language_mode()));
-    // TODO(olivf) InvokeFunction produces a check for the parameter count,
-    // even though we are certain to pass the correct number of arguments here.
-    HInstruction* instr = New<HInvokeFunction>(function, 3);
+    Add<HPushArguments>(obj, key);
+    HInstruction* instr = New<HCallRuntime>(
+        isolate()->factory()->empty_string(),
+        Runtime::FunctionForId(is_strict(function_language_mode())
+                                   ? Runtime::kDeleteProperty_Strict
+                                   : Runtime::kDeleteProperty_Sloppy),
+        2);
     return ast_context()->ReturnInstruction(instr, expr->id());
   } else if (proxy != NULL) {
     Variable* var = proxy->var();
@@ -10969,40 +10905,43 @@ HValue* HGraphBuilder::BuildBinaryOperation(
   // Special case for string addition here.
   if (op == Token::ADD &&
       (left_type->Is(Type::String()) || right_type->Is(Type::String()))) {
-    // Validate type feedback for left argument.
-    if (left_type->Is(Type::String())) {
+    if (is_strong(strength)) {
+      // In strong mode, if the one side of an addition is a string,
+      // the other side must be a string too.
       left = BuildCheckString(left);
-    }
-
-    // Validate type feedback for right argument.
-    if (right_type->Is(Type::String())) {
       right = BuildCheckString(right);
-    }
+    } else {
+      // Validate type feedback for left argument.
+      if (left_type->Is(Type::String())) {
+        left = BuildCheckString(left);
+      }
 
-    // Convert left argument as necessary.
-    if (left_type->Is(Type::Number()) && !is_strong(strength)) {
-      DCHECK(right_type->Is(Type::String()));
-      left = BuildNumberToString(left, left_type);
-    } else if (!left_type->Is(Type::String())) {
-      DCHECK(right_type->Is(Type::String()));
-      HValue* function = AddLoadJSBuiltin(
-          is_strong(strength) ? Builtins::STRING_ADD_RIGHT_STRONG
-                              : Builtins::STRING_ADD_RIGHT);
-      Add<HPushArguments>(left, right);
-      return AddUncasted<HInvokeFunction>(function, 2);
-    }
+      // Validate type feedback for right argument.
+      if (right_type->Is(Type::String())) {
+        right = BuildCheckString(right);
+      }
 
-    // Convert right argument as necessary.
-    if (right_type->Is(Type::Number()) && !is_strong(strength)) {
-      DCHECK(left_type->Is(Type::String()));
-      right = BuildNumberToString(right, right_type);
-    } else if (!right_type->Is(Type::String())) {
-      DCHECK(left_type->Is(Type::String()));
-      HValue* function = AddLoadJSBuiltin(is_strong(strength)
-                                              ? Builtins::STRING_ADD_LEFT_STRONG
-                                              : Builtins::STRING_ADD_LEFT);
-      Add<HPushArguments>(left, right);
-      return AddUncasted<HInvokeFunction>(function, 2);
+      // Convert left argument as necessary.
+      if (left_type->Is(Type::Number())) {
+        DCHECK(right_type->Is(Type::String()));
+        left = BuildNumberToString(left, left_type);
+      } else if (!left_type->Is(Type::String())) {
+        DCHECK(right_type->Is(Type::String()));
+        HValue* function = AddLoadJSBuiltin(Builtins::STRING_ADD_RIGHT);
+        Add<HPushArguments>(left, right);
+        return AddUncasted<HInvokeFunction>(function, 2);
+      }
+
+      // Convert right argument as necessary.
+      if (right_type->Is(Type::Number())) {
+        DCHECK(left_type->Is(Type::String()));
+        right = BuildNumberToString(right, right_type);
+      } else if (!right_type->Is(Type::String())) {
+        DCHECK(left_type->Is(Type::String()));
+        HValue* function = AddLoadJSBuiltin(Builtins::STRING_ADD_LEFT);
+        Add<HPushArguments>(left, right);
+        return AddUncasted<HInvokeFunction>(function, 2);
+      }
     }
 
     // Fast paths for empty constant strings.
@@ -11793,7 +11732,7 @@ void HOptimizedGraphBuilder::BuildEmitInObjectProperties(
     }
   }
 
-  int inobject_properties = boilerplate_object->map()->inobject_properties();
+  int inobject_properties = boilerplate_object->map()->GetInObjectProperties();
   HInstruction* value_instruction =
       Add<HConstant>(isolate()->factory()->one_pointer_filler_map());
   for (int i = copied_fields; i < inobject_properties; i++) {
@@ -12100,6 +12039,15 @@ void HOptimizedGraphBuilder::GenerateIsObject(CallRuntime* call) {
 }
 
 
+void HOptimizedGraphBuilder::GenerateToObject(CallRuntime* call) {
+  DCHECK_EQ(1, call->arguments()->length());
+  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
+  HValue* value = Pop();
+  HValue* result = BuildToObject(value);
+  return ast_context()->ReturnValue(result);
+}
+
+
 void HOptimizedGraphBuilder::GenerateIsJSProxy(CallRuntime* call) {
   DCHECK(call->arguments()->length() == 1);
   CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
@@ -12149,15 +12097,6 @@ void HOptimizedGraphBuilder::GenerateHasFastPackedElements(CallRuntime* call) {
   }
   if_not_smi.JoinContinuation(&continuation);
   return ast_context()->ReturnContinuation(&continuation, call->id());
-}
-
-
-void HOptimizedGraphBuilder::GenerateIsUndetectableObject(CallRuntime* call) {
-  DCHECK(call->arguments()->length() == 1);
-  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
-  HValue* value = Pop();
-  HIsUndetectableAndBranch* result = New<HIsUndetectableAndBranch>(value);
-  return ast_context()->ReturnControl(result, call->id());
 }
 
 

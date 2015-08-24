@@ -49,10 +49,6 @@
 #include "src/v8.h"
 #endif  // !V8_SHARED
 
-#ifdef V8_USE_EXTERNAL_STARTUP_DATA
-#include "src/startup-data-util.h"
-#endif  // V8_USE_EXTERNAL_STARTUP_DATA
-
 #if !defined(_WIN32) && !defined(_WIN64)
 #include <unistd.h>  // NOLINT
 #else
@@ -1144,6 +1140,7 @@ Local<ObjectTemplate> Shell::CreateGlobalTemplate(Isolate* isolate) {
   worker_fun_template->SetClassName(
       String::NewFromUtf8(isolate, "Worker", NewStringType::kNormal)
           .ToLocalChecked());
+  worker_fun_template->ReadOnlyPrototype();
   worker_fun_template->PrototypeTemplate()->Set(
       String::NewFromUtf8(isolate, "terminate", NewStringType::kNormal)
           .ToLocalChecked(),
@@ -2356,10 +2353,12 @@ int Shell::Main(int argc, char* argv[]) {
   g_platform = v8::platform::CreateDefaultPlatform();
   v8::V8::InitializePlatform(g_platform);
   v8::V8::Initialize();
-#ifdef V8_USE_EXTERNAL_STARTUP_DATA
-  v8::StartupDataHandler startup_data(argv[0], options.natives_blob,
-                                      options.snapshot_blob);
-#endif
+  if (options.natives_blob || options.snapshot_blob) {
+    v8::V8::InitializeExternalStartupData(options.natives_blob,
+                                          options.snapshot_blob);
+  } else {
+    v8::V8::InitializeExternalStartupData(argv[0]);
+  }
   SetFlagsFromString("--trace-hydrogen-file=hydrogen.cfg");
   SetFlagsFromString("--trace-turbo-cfg-file=turbo.cfg");
   SetFlagsFromString("--redirect-code-traces-to=code.asm");

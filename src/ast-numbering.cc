@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/ast.h"
 #include "src/ast-numbering.h"
+
+#include "src/ast.h"
 #include "src/scopes.h"
 
 namespace v8 {
@@ -15,7 +16,7 @@ class AstNumberingVisitor final : public AstVisitor {
       : AstVisitor(),
         next_id_(BailoutId::FirstUsable().ToInt()),
         properties_(zone),
-        ic_slot_cache_(4),
+        ic_slot_cache_(zone),
         dont_optimize_reason_(kNoReason) {
     InitializeAstVisitor(isolate, zone);
   }

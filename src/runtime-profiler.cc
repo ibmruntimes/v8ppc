@@ -12,9 +12,9 @@
 #include "src/code-stubs.h"
 #include "src/compilation-cache.h"
 #include "src/execution.h"
+#include "src/frames-inl.h"
 #include "src/full-codegen/full-codegen.h"
 #include "src/global-handles.h"
-#include "src/heap/mark-compact.h"
 #include "src/scopeinfo.h"
 
 namespace v8 {

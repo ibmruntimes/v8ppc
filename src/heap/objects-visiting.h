@@ -6,6 +6,7 @@
 #define V8_OBJECTS_VISITING_H_
 
 #include "src/allocation.h"
+#include "src/heap/spaces.h"
 #include "src/layout-descriptor.h"
 
 // This file provides base classes and auxiliary methods for defining
@@ -110,11 +111,7 @@ class StaticVisitorBase : public AllStatic {
                                 bool has_unboxed_fields);
 
   // Determine which specialized visitor should be used for given map.
-  static VisitorId GetVisitorId(Map* map) {
-    return GetVisitorId(
-        map->instance_type(), map->instance_size(),
-        FLAG_unbox_double_fields && !map->HasFastPointerLayout());
-  }
+  static VisitorId GetVisitorId(Map* map);
 
   // For visitors that allow specialization by size calculate VisitorId based
   // on size, base visitor id and generic visitor id.

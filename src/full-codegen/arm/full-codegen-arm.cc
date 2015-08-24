@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_ARM
 
 #include "src/code-factory.h"
@@ -3442,38 +3440,9 @@ void FullCodeGenerator::EmitIsSimdValue(CallRuntime* expr) {
                          &if_false, &fall_through);
 
   __ JumpIfSmi(r0, if_false);
-  Register map = r1;
-  Register type_reg = r2;
-  __ ldr(map, FieldMemOperand(r0, HeapObject::kMapOffset));
-  __ ldrb(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
-  __ sub(type_reg, type_reg, Operand(FIRST_SIMD_VALUE_TYPE));
-  __ cmp(type_reg, Operand(LAST_SIMD_VALUE_TYPE - FIRST_SIMD_VALUE_TYPE));
+  __ CompareObjectType(r0, r1, r1, SIMD128_VALUE_TYPE);
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  Split(ls, if_true, if_false, fall_through);
-
-  context()->Plug(if_true, if_false);
-}
-
-
-void FullCodeGenerator::EmitIsUndetectableObject(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 1);
-
-  VisitForAccumulatorValue(args->at(0));
-
-  Label materialize_true, materialize_false;
-  Label* if_true = NULL;
-  Label* if_false = NULL;
-  Label* fall_through = NULL;
-  context()->PrepareTest(&materialize_true, &materialize_false,
-                         &if_true, &if_false, &fall_through);
-
-  __ JumpIfSmi(r0, if_false);
-  __ ldr(r1, FieldMemOperand(r0, HeapObject::kMapOffset));
-  __ ldrb(r1, FieldMemOperand(r1, Map::kBitFieldOffset));
-  __ tst(r1, Operand(1 << Map::kIsUndetectable));
-  PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  Split(ne, if_true, if_false, fall_through);
+  Split(eq, if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
 }
@@ -4650,9 +4619,10 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
       if (property != NULL) {
         VisitForStackValue(property->obj());
         VisitForStackValue(property->key());
-        __ mov(r1, Operand(Smi::FromInt(language_mode())));
-        __ push(r1);
-        __ InvokeBuiltin(Builtins::DELETE, CALL_FUNCTION);
+        __ CallRuntime(is_strict(language_mode())
+                           ? Runtime::kDeleteProperty_Strict
+                           : Runtime::kDeleteProperty_Sloppy,
+                       2);
         context()->Plug(r0);
       } else if (proxy != NULL) {
         Variable* var = proxy->var();
@@ -4663,9 +4633,8 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
         if (var->IsUnallocatedOrGlobalSlot()) {
           __ ldr(r2, GlobalObjectOperand());
           __ mov(r1, Operand(var->name()));
-          __ mov(r0, Operand(Smi::FromInt(SLOPPY)));
-          __ Push(r2, r1, r0);
-          __ InvokeBuiltin(Builtins::DELETE, CALL_FUNCTION);
+          __ Push(r2, r1);
+          __ CallRuntime(Runtime::kDeleteProperty_Sloppy, 2);
           context()->Plug(r0);
         } else if (var->IsStackAllocated() || var->IsContextSlot()) {
           // Result of deleting non-global, non-dynamic variables is false.
@@ -5037,43 +5006,11 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     Split(eq, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->string_string())) {
     __ JumpIfSmi(r0, if_false);
-    // Check for undetectable objects => false.
     __ CompareObjectType(r0, r0, r1, FIRST_NONSTRING_TYPE);
-    __ b(ge, if_false);
-    __ ldrb(r1, FieldMemOperand(r0, Map::kBitFieldOffset));
-    __ tst(r1, Operand(1 << Map::kIsUndetectable));
-    Split(eq, if_true, if_false, fall_through);
+    Split(lt, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->symbol_string())) {
     __ JumpIfSmi(r0, if_false);
     __ CompareObjectType(r0, r0, r1, SYMBOL_TYPE);
-    Split(eq, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->float32x4_string())) {
-    __ JumpIfSmi(r0, if_false);
-    __ CompareObjectType(r0, r0, r1, FLOAT32X4_TYPE);
-    Split(eq, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->int32x4_string())) {
-    __ JumpIfSmi(r0, if_false);
-    __ CompareObjectType(r0, r0, r1, INT32X4_TYPE);
-    Split(eq, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->bool32x4_string())) {
-    __ JumpIfSmi(r0, if_false);
-    __ CompareObjectType(r0, r0, r1, BOOL32X4_TYPE);
-    Split(eq, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->int16x8_string())) {
-    __ JumpIfSmi(r0, if_false);
-    __ CompareObjectType(r0, r0, r1, INT16X8_TYPE);
-    Split(eq, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->bool16x8_string())) {
-    __ JumpIfSmi(r0, if_false);
-    __ CompareObjectType(r0, r0, r1, BOOL16X8_TYPE);
-    Split(eq, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->int8x16_string())) {
-    __ JumpIfSmi(r0, if_false);
-    __ CompareObjectType(r0, r0, r1, INT8X16_TYPE);
-    Split(eq, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->bool8x16_string())) {
-    __ JumpIfSmi(r0, if_false);
-    __ CompareObjectType(r0, r0, r1, BOOL8X16_TYPE);
     Split(eq, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->boolean_string())) {
     __ CompareRoot(r0, Heap::kTrueValueRootIndex);
@@ -5110,6 +5047,16 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ ldrb(r1, FieldMemOperand(r0, Map::kBitFieldOffset));
     __ tst(r1, Operand(1 << Map::kIsUndetectable));
     Split(eq, if_true, if_false, fall_through);
+// clang-format off
+#define SIMD128_TYPE(TYPE, Type, type, lane_count, lane_type)   \
+  } else if (String::Equals(check, factory->type##_string())) { \
+    __ JumpIfSmi(r0, if_false);                                 \
+    __ ldr(r0, FieldMemOperand(r0, HeapObject::kMapOffset));    \
+    __ CompareRoot(r0, Heap::k##Type##MapRootIndex);            \
+    Split(eq, if_true, if_false, fall_through);
+  SIMD128_TYPES(SIMD128_TYPE)
+#undef SIMD128_TYPE
+    // clang-format on
   } else {
     if (if_false != fall_through) __ jmp(if_false);
   }

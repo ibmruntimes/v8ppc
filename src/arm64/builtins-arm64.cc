@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_ARM64
 
+#include "src/arm64/frames-arm64.h"
 #include "src/codegen.h"
 #include "src/debug/debug.h"
 #include "src/deoptimizer.h"
@@ -436,8 +435,10 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
               Map::kUnusedPropertyFieldsByte * kBitsPerByte, kBitsPerByte);
       __ Ldr(inst_sizes_or_attrs,
              FieldMemOperand(init_map, Map::kInstanceSizesOffset));
-      __ Ubfx(inobject_props, inst_sizes_or_attrs,
-              Map::kInObjectPropertiesByte * kBitsPerByte, kBitsPerByte);
+      __ Ubfx(
+          inobject_props, inst_sizes_or_attrs,
+          Map::kInObjectPropertiesOrConstructorFunctionIndexByte * kBitsPerByte,
+          kBitsPerByte);
       __ Sub(prealloc_fields, inobject_props, unused_props);
 
       // Calculate number of property fields in the object.

@@ -9,9 +9,10 @@
 #include "src/base/atomicops.h"
 #include "src/base/bits.h"
 #include "src/base/platform/mutex.h"
+#include "src/flags.h"
 #include "src/hashmap.h"
 #include "src/list.h"
-#include "src/log.h"
+#include "src/objects.h"
 #include "src/utils.h"
 
 namespace v8 {
@@ -656,7 +657,17 @@ class MemoryChunk {
   // Approximate amount of physical memory committed for this chunk.
   size_t CommittedPhysicalMemory() { return high_water_mark_; }
 
-  static inline void UpdateHighWaterMark(Address mark);
+  static inline void UpdateHighWaterMark(Address mark) {
+    if (mark == NULL) return;
+    // Need to subtract one from the mark because when a chunk is full the
+    // top points to the next address after the chunk, which effectively belongs
+    // to another chunk. See the comment to Page::FromAllocationTop.
+    MemoryChunk* chunk = MemoryChunk::FromAddress(mark - 1);
+    int new_mark = static_cast<int>(mark - chunk->address());
+    if (new_mark > chunk->high_water_mark_) {
+      chunk->high_water_mark_ = new_mark;
+    }
+  }
 
  protected:
   size_t size_;
@@ -741,8 +752,14 @@ class Page : public MemoryChunk {
   }
 
   // Returns the next page in the chain of pages owned by a space.
-  inline Page* next_page();
-  inline Page* prev_page();
+  inline Page* next_page() {
+    DCHECK(next_chunk()->owner() == owner());
+    return static_cast<Page*>(next_chunk());
+  }
+  inline Page* prev_page() {
+    DCHECK(prev_chunk()->owner() == owner());
+    return static_cast<Page*>(prev_chunk());
+  }
   inline void set_next_page(Page* page);
   inline void set_prev_page(Page* page);
 
@@ -1240,31 +1257,20 @@ class ObjectIterator : public Malloced {
 class HeapObjectIterator : public ObjectIterator {
  public:
   // Creates a new object iterator in a given space.
-  // If the size function is not given, the iterator calls the default
-  // Object::Size().
   explicit HeapObjectIterator(PagedSpace* space);
-  HeapObjectIterator(PagedSpace* space, HeapObjectCallback size_func);
-  HeapObjectIterator(Page* page, HeapObjectCallback size_func);
+  explicit HeapObjectIterator(Page* page);
 
   // Advance to the next object, skipping free spaces and other fillers and
   // skipping the special garbage section of which there is one per space.
   // Returns NULL when the iteration has ended.
-  inline HeapObject* Next() {
-    do {
-      HeapObject* next_obj = FromCurrentPage();
-      if (next_obj != NULL) return next_obj;
-    } while (AdvanceToNextPage());
-    return NULL;
-  }
-
-  virtual HeapObject* next_object() { return Next(); }
+  inline HeapObject* Next();
+  virtual inline HeapObject* next_object();
 
  private:
   enum PageMode { kOnePageOnly, kAllPagesInSpace };
 
   Address cur_addr_;              // Current iteration point.
   Address cur_end_;               // End iteration point.
-  HeapObjectCallback size_func_;  // Size function or NULL.
   PagedSpace* space_;
   PageMode page_mode_;
 
@@ -1277,7 +1283,7 @@ class HeapObjectIterator : public ObjectIterator {
 
   // Initializes fields.
   inline void Initialize(PagedSpace* owner, Address start, Address end,
-                         PageMode mode, HeapObjectCallback size_func);
+                         PageMode mode);
 };
 
 
@@ -1649,10 +1655,7 @@ class AllocationResult {
     return object_;
   }
 
-  AllocationSpace RetrySpace() {
-    DCHECK(IsRetry());
-    return static_cast<AllocationSpace>(Smi::cast(object_)->value());
-  }
+  inline AllocationSpace RetrySpace();
 
  private:
   explicit AllocationResult(AllocationSpace space)
@@ -1667,9 +1670,8 @@ STATIC_ASSERT(sizeof(AllocationResult) == kPointerSize);
 
 class PagedSpace : public Space {
  public:
-  // Creates a space with a maximum capacity, and an id.
-  PagedSpace(Heap* heap, intptr_t max_capacity, AllocationSpace id,
-             Executability executable);
+  // Creates a space with an id.
+  PagedSpace(Heap* heap, AllocationSpace id, Executability executable);
 
   virtual ~PagedSpace() {}
 
@@ -1689,7 +1691,7 @@ class PagedSpace : public Space {
 
   // Checks whether an object/address is in this space.
   inline bool Contains(Address a);
-  bool Contains(HeapObject* o) { return Contains(o->address()); }
+  inline bool Contains(HeapObject* o);
   // Unlike Contains() methods it is safe to call this one even for addresses
   // of unmapped memory.
   bool ContainsSafe(Address addr);
@@ -1905,9 +1907,6 @@ class PagedSpace : public Space {
   FreeList* free_list() { return &free_list_; }
 
   int area_size_;
-
-  // Maximum capacity of this space.
-  intptr_t max_capacity_;
 
   // Accounting information for this space.
   AllocationStats accounting_stats_;
@@ -2278,49 +2277,21 @@ class SemiSpace : public Space {
 // iterator is created are not iterated.
 class SemiSpaceIterator : public ObjectIterator {
  public:
-  // Create an iterator over the objects in the given space.  If no start
-  // address is given, the iterator starts from the bottom of the space.  If
-  // no size function is given, the iterator calls Object::Size().
-
-  // Iterate over all of allocated to-space.
+  // Create an iterator over the allocated objects in the given to-space.
   explicit SemiSpaceIterator(NewSpace* space);
-  // Iterate over all of allocated to-space, with a custome size function.
-  SemiSpaceIterator(NewSpace* space, HeapObjectCallback size_func);
-  // Iterate over part of allocated to-space, from start to the end
-  // of allocation.
-  SemiSpaceIterator(NewSpace* space, Address start);
-  // Iterate from one address to another in the same semi-space.
-  SemiSpaceIterator(Address from, Address to);
 
-  HeapObject* Next() {
-    if (current_ == limit_) return NULL;
-    if (NewSpacePage::IsAtEnd(current_)) {
-      NewSpacePage* page = NewSpacePage::FromLimit(current_);
-      page = page->next_page();
-      DCHECK(!page->is_anchor());
-      current_ = page->area_start();
-      if (current_ == limit_) return NULL;
-    }
-
-    HeapObject* object = HeapObject::FromAddress(current_);
-    int size = (size_func_ == NULL) ? object->Size() : size_func_(object);
-
-    current_ += size;
-    return object;
-  }
+  inline HeapObject* Next();
 
   // Implementation of the ObjectIterator functions.
-  virtual HeapObject* next_object() { return Next(); }
+  virtual inline HeapObject* next_object();
 
  private:
-  void Initialize(Address start, Address end, HeapObjectCallback size_func);
+  void Initialize(Address start, Address end);
 
   // The current iteration point.
   Address current_;
   // The end of iteration.
   Address limit_;
-  // The callback function.
-  HeapObjectCallback size_func_;
 };
 
 
@@ -2669,11 +2640,10 @@ class NewSpace : public Space {
 
 class OldSpace : public PagedSpace {
  public:
-  // Creates an old space object with a given maximum capacity.
-  // The constructor does not allocate pages from OS.
-  OldSpace(Heap* heap, intptr_t max_capacity, AllocationSpace id,
-           Executability executable)
-      : PagedSpace(heap, max_capacity, id, executable) {}
+  // Creates an old space object. The constructor does not allocate pages
+  // from OS.
+  OldSpace(Heap* heap, AllocationSpace id, Executability executable)
+      : PagedSpace(heap, id, executable) {}
 };
 
 
@@ -2690,9 +2660,9 @@ class OldSpace : public PagedSpace {
 
 class MapSpace : public PagedSpace {
  public:
-  // Creates a map space object with a maximum capacity.
-  MapSpace(Heap* heap, intptr_t max_capacity, AllocationSpace id)
-      : PagedSpace(heap, max_capacity, id, NOT_EXECUTABLE),
+  // Creates a map space object.
+  MapSpace(Heap* heap, AllocationSpace id)
+      : PagedSpace(heap, id, NOT_EXECUTABLE),
         max_map_space_pages_(kMaxMapPageIndex - 1) {}
 
   // Given an index, returns the page address.
@@ -2731,7 +2701,7 @@ class MapSpace : public PagedSpace {
 
 class LargeObjectSpace : public Space {
  public:
-  LargeObjectSpace(Heap* heap, intptr_t max_capacity, AllocationSpace id);
+  LargeObjectSpace(Heap* heap, AllocationSpace id);
   virtual ~LargeObjectSpace() {}
 
   // Initializes internal data structures.
@@ -2749,8 +2719,6 @@ class LargeObjectSpace : public Space {
   // AllocateRawFixedArray.
   MUST_USE_RESULT AllocationResult
       AllocateRaw(int object_size, Executability executable);
-
-  bool CanAllocateSize(int size) { return Size() + size <= max_capacity_; }
 
   // Available bytes for objects in this space.
   inline intptr_t Available() override;
@@ -2801,7 +2769,6 @@ class LargeObjectSpace : public Space {
   bool SlowContains(Address addr) { return FindObject(addr)->IsHeapObject(); }
 
  private:
-  intptr_t max_capacity_;
   intptr_t maximum_committed_;
   // The head of the linked list of large object chunks.
   LargePage* first_page_;
@@ -2818,7 +2785,6 @@ class LargeObjectSpace : public Space {
 class LargeObjectIterator : public ObjectIterator {
  public:
   explicit LargeObjectIterator(LargeObjectSpace* space);
-  LargeObjectIterator(LargeObjectSpace* space, HeapObjectCallback size_func);
 
   HeapObject* Next();
 
@@ -2827,7 +2793,6 @@ class LargeObjectIterator : public ObjectIterator {
 
  private:
   LargePage* current_;
-  HeapObjectCallback size_func_;
 };
 
 
@@ -2838,45 +2803,7 @@ class PointerChunkIterator BASE_EMBEDDED {
   inline explicit PointerChunkIterator(Heap* heap);
 
   // Return NULL when the iterator is done.
-  MemoryChunk* next() {
-    switch (state_) {
-      case kOldSpaceState: {
-        if (old_iterator_.has_next()) {
-          return old_iterator_.next();
-        }
-        state_ = kMapState;
-        // Fall through.
-      }
-      case kMapState: {
-        if (map_iterator_.has_next()) {
-          return map_iterator_.next();
-        }
-        state_ = kLargeObjectState;
-        // Fall through.
-      }
-      case kLargeObjectState: {
-        HeapObject* heap_object;
-        do {
-          heap_object = lo_iterator_.Next();
-          if (heap_object == NULL) {
-            state_ = kFinishedState;
-            return NULL;
-          }
-          // Fixed arrays are the only pointer-containing objects in large
-          // object space.
-        } while (!heap_object->IsFixedArray());
-        MemoryChunk* answer = MemoryChunk::FromAddress(heap_object->address());
-        return answer;
-      }
-      case kFinishedState:
-        return NULL;
-      default:
-        break;
-    }
-    UNREACHABLE();
-    return NULL;
-  }
-
+  inline MemoryChunk* next();
 
  private:
   enum State { kOldSpaceState, kMapState, kLargeObjectState, kFinishedState };

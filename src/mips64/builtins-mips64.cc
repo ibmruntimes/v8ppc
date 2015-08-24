@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
-
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_MIPS64
 
 #include "src/codegen.h"
@@ -439,7 +435,10 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
                   Operand(static_cast<int64_t>(Map::kSlackTrackingCounterEnd)));
 
         // Allocate object with a slack.
-        __ lbu(a0, FieldMemOperand(a2, Map::kInObjectPropertiesOffset));
+        __ lbu(
+            a0,
+            FieldMemOperand(
+                a2, Map::kInObjectPropertiesOrConstructorFunctionIndexOffset));
         __ lbu(a2, FieldMemOperand(a2, Map::kUnusedPropertyFieldsOffset));
         __ dsubu(a0, a0, a2);
         __ dsll(at, a0, kPointerSizeLog2);
@@ -901,8 +900,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
 
   // Allocate the local and temporary register file on the stack.
   {
-    // Load frame size from the BytecodeArray object.
-    __ ld(a4, FieldMemOperand(kInterpreterBytecodeArrayRegister,
+    // Load frame size (word) from the BytecodeArray object.
+    __ lw(a4, FieldMemOperand(kInterpreterBytecodeArrayRegister,
                               BytecodeArray::kFrameSizeOffset));
 
     // Do a stack check to ensure we don't go over the limit.

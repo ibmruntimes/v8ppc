@@ -82,8 +82,8 @@ namespace internal {
   F(ThrowIfStaticPrototype, 1, 1)             \
   F(ToMethod, 2, 1)                           \
   F(HomeObjectSymbol, 0, 1)                   \
-  F(DefineClass, 6, 1)                        \
-  F(DefineClassStrong, 6, 1)                  \
+  F(DefineClass, 5, 1)                        \
+  F(DefineClassStrong, 5, 1)                  \
   F(FinalizeClassDefinition, 2, 1)            \
   F(DefineClassMethod, 3, 1)                  \
   F(ClassGetSourceCode, 1, 1)                 \
@@ -301,6 +301,8 @@ namespace internal {
 
 #define FOR_EACH_INTRINSIC_INTERNAL(F)        \
   F(CheckIsBootstrapping, 0, 1)               \
+  F(ImportToRuntime, 1, 1)                    \
+  F(ImportExperimentalToRuntime, 1, 1)        \
   F(Throw, 1, 1)                              \
   F(ReThrow, 1, 1)                            \
   F(UnwindAndFindExceptionHandler, 0, 1)      \
@@ -322,6 +324,7 @@ namespace internal {
   F(RenderCallSite, 0, 1)                     \
   F(MessageGetStartPosition, 1, 1)            \
   F(MessageGetScript, 1, 1)                   \
+  F(ErrorToStringRT, 1, 1)                    \
   F(FormatMessageString, 4, 1)                \
   F(CallSiteGetFileNameRT, 3, 1)              \
   F(CallSiteGetFunctionNameRT, 3, 1)          \
@@ -404,8 +407,6 @@ namespace internal {
   F(NumberToStringSkipCache, 1, 1)     \
   F(NumberToInteger, 1, 1)             \
   F(NumberToIntegerMapMinusZero, 1, 1) \
-  F(NumberToJSUint32, 1, 1)            \
-  F(NumberToJSInt32, 1, 1)             \
   F(NumberToSmi, 1, 1)                 \
   F(NumberAdd, 2, 1)                   \
   F(NumberSub, 2, 1)                   \
@@ -451,12 +452,12 @@ namespace internal {
   F(SetProperty, 4, 1)                               \
   F(AddElement, 3, 1)                                \
   F(AppendElement, 2, 1)                             \
-  F(DeleteProperty, 3, 1)                            \
+  F(DeleteProperty_Sloppy, 2, 1)                     \
+  F(DeleteProperty_Strict, 2, 1)                     \
   F(HasOwnProperty, 2, 1)                            \
   F(HasProperty, 2, 1)                               \
   F(HasElement, 2, 1)                                \
   F(IsPropertyEnumerable, 2, 1)                      \
-  F(GetPropertyNames, 1, 1)                          \
   F(GetPropertyNamesFast, 1, 1)                      \
   F(GetOwnPropertyNames, 2, 1)                       \
   F(GetOwnElementNames, 1, 1)                        \
@@ -465,7 +466,6 @@ namespace internal {
   F(GetIndexedInterceptorElementNames, 1, 1)         \
   F(OwnKeys, 1, 1)                                   \
   F(ToFastProperties, 1, 1)                          \
-  F(ToBool, 1, 1)                                    \
   F(NewStringWrapper, 1, 1)                          \
   F(AllocateHeapNumber, 0, 1)                        \
   F(NewObject, 2, 1)                                 \
@@ -487,13 +487,13 @@ namespace internal {
   F(MapGetInstanceType, 1, 1)                        \
   F(ObjectEquals, 2, 1)                              \
   F(IsObject, 1, 1)                                  \
-  F(IsUndetectableObject, 1, 1)                      \
   F(IsSpecObject, 1, 1)                              \
   F(IsStrong, 1, 1)                                  \
   F(ClassOf, 1, 1)                                   \
   F(DefineGetterPropertyUnchecked, 4, 1)             \
   F(DefineSetterPropertyUnchecked, 4, 1)             \
-  F(ToObject, 1, 1)
+  F(ToObject, 1, 1)                                  \
+  F(StrictEquals, 2, 1)
 
 
 #define FOR_EACH_INTRINSIC_OBSERVE(F)            \

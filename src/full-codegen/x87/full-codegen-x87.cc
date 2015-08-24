@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_X87
 
 #include "src/code-factory.h"
@@ -15,6 +13,7 @@
 #include "src/ic/ic.h"
 #include "src/parser.h"
 #include "src/scopes.h"
+#include "src/x87/frames-x87.h"
 
 namespace v8 {
 namespace internal {
@@ -3336,30 +3335,6 @@ void FullCodeGenerator::EmitIsSimdValue(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitIsUndetectableObject(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 1);
-
-  VisitForAccumulatorValue(args->at(0));
-
-  Label materialize_true, materialize_false;
-  Label* if_true = NULL;
-  Label* if_false = NULL;
-  Label* fall_through = NULL;
-  context()->PrepareTest(&materialize_true, &materialize_false,
-                         &if_true, &if_false, &fall_through);
-
-  __ JumpIfSmi(eax, if_false);
-  __ mov(ebx, FieldOperand(eax, HeapObject::kMapOffset));
-  __ movzx_b(ebx, FieldOperand(ebx, Map::kBitFieldOffset));
-  __ test(ebx, Immediate(1 << Map::kIsUndetectable));
-  PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  Split(not_zero, if_true, if_false, fall_through);
-
-  context()->Plug(if_true, if_false);
-}
-
-
 void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
     CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
@@ -4574,8 +4549,10 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
       if (property != NULL) {
         VisitForStackValue(property->obj());
         VisitForStackValue(property->key());
-        __ push(Immediate(Smi::FromInt(language_mode())));
-        __ InvokeBuiltin(Builtins::DELETE, CALL_FUNCTION);
+        __ CallRuntime(is_strict(language_mode())
+                           ? Runtime::kDeleteProperty_Strict
+                           : Runtime::kDeleteProperty_Sloppy,
+                       2);
         context()->Plug(eax);
       } else if (proxy != NULL) {
         Variable* var = proxy->var();
@@ -4586,8 +4563,7 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
         if (var->IsUnallocatedOrGlobalSlot()) {
           __ push(GlobalObjectOperand());
           __ push(Immediate(var->name()));
-          __ push(Immediate(Smi::FromInt(SLOPPY)));
-          __ InvokeBuiltin(Builtins::DELETE, CALL_FUNCTION);
+          __ CallRuntime(Runtime::kDeleteProperty_Sloppy, 2);
           context()->Plug(eax);
         } else if (var->IsStackAllocated() || var->IsContextSlot()) {
           // Result of deleting non-global variables is false.  'this' is
@@ -4967,11 +4943,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
   } else if (String::Equals(check, factory->string_string())) {
     __ JumpIfSmi(eax, if_false);
     __ CmpObjectType(eax, FIRST_NONSTRING_TYPE, edx);
-    __ j(above_equal, if_false);
-    // Check for undetectable objects => false.
-    __ test_b(FieldOperand(edx, Map::kBitFieldOffset),
-              1 << Map::kIsUndetectable);
-    Split(zero, if_true, if_false, fall_through);
+    Split(below, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->symbol_string())) {
     __ JumpIfSmi(eax, if_false);
     __ CmpObjectType(eax, SYMBOL_TYPE, edx);

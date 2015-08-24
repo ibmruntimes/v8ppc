@@ -8,8 +8,6 @@
 #include <cstring>
 #include <iosfwd>
 
-#include "src/v8.h"
-
 #include "src/allocation.h"
 #include "src/base/bits.h"
 #include "src/bit-vector.h"
@@ -5989,6 +5987,11 @@ class HObjectAccess final {
                          Representation::Integer32());
   }
 
+  static HObjectAccess ForOddballTypeOf() {
+    return HObjectAccess(kInobject, Oddball::kTypeOfOffset,
+                         Representation::HeapObject());
+  }
+
   static HObjectAccess ForElementsPointer() {
     return HObjectAccess(kElementsPointer, JSObject::kElementsOffset);
   }
@@ -6103,10 +6106,10 @@ class HObjectAccess final {
                          Representation::Integer32());
   }
 
-  static HObjectAccess ForMapInObjectProperties() {
-    return HObjectAccess(kInobject,
-                         Map::kInObjectPropertiesOffset,
-                         Representation::UInteger8());
+  static HObjectAccess ForMapInObjectPropertiesOrConstructorFunctionIndex() {
+    return HObjectAccess(
+        kInobject, Map::kInObjectPropertiesOrConstructorFunctionIndexOffset,
+        Representation::UInteger8());
   }
 
   static HObjectAccess ForMapInstanceType() {

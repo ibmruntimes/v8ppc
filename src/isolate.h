@@ -23,8 +23,9 @@
 #include "src/handles.h"
 #include "src/hashmap.h"
 #include "src/heap/heap.h"
+#include "src/messages.h"
 #include "src/optimizing-compile-dispatcher.h"
-#include "src/regexp-stack.h"
+#include "src/regexp/regexp-stack.h"
 #include "src/runtime/runtime.h"
 #include "src/runtime-profiler.h"
 #include "src/zone.h"
@@ -63,10 +64,12 @@ class HStatistics;
 class HTracer;
 class InlineRuntimeFunctionsTable;
 class InnerPointerToCodeCache;
+class Logger;
 class MaterializedObjectStore;
 class CodeAgingHelper;
 class RegExpStack;
 class SaveContext;
+class StatsTable;
 class StringTracker;
 class StubCache;
 class SweeperThread;
@@ -994,6 +997,10 @@ class Isolate {
     date_cache_ = date_cache;
   }
 
+  ErrorToStringHelper* error_tostring_helper() {
+    return &error_tostring_helper_;
+  }
+
   Map* get_initial_js_array_map(ElementsKind kind,
                                 Strength strength = Strength::WEAK);
 
@@ -1137,6 +1144,8 @@ class Isolate {
 
   void RegisterCancelableTask(Cancelable* task);
   void RemoveCancelableTask(Cancelable* task);
+
+  interpreter::Interpreter* interpreter() const { return interpreter_; }
 
  protected:
   explicit Isolate(bool enable_serializer);
@@ -1294,6 +1303,7 @@ class Isolate {
       regexp_macro_assembler_canonicalize_;
   RegExpStack* regexp_stack_;
   DateCache* date_cache_;
+  ErrorToStringHelper error_tostring_helper_;
   unibrow::Mapping<unibrow::Ecma262Canonicalize> interp_canonicalize_mapping_;
   CallInterfaceDescriptorData* call_descriptor_data_;
   base::RandomNumberGenerator* random_number_generator_;

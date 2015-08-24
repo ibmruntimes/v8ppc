@@ -18,33 +18,48 @@ using compiler::Node;
 #define __ assembler->
 
 
-Interpreter::Interpreter(Isolate* isolate) : isolate_(isolate) {}
+Interpreter::Interpreter(Isolate* isolate)
+    : isolate_(isolate) {}
 
 
-void Interpreter::Initialize(bool create_heap_objects) {
+// static
+Handle<FixedArray> Interpreter::CreateUninitializedInterpreterTable(
+    Isolate* isolate) {
+  Handle<FixedArray> handler_table = isolate->factory()->NewFixedArray(
+      static_cast<int>(Bytecode::kLast) + 1, TENURED);
+  // We rely on the interpreter handler table being immovable, so check that
+  // it was allocated on the first page (which is always immovable).
+  DCHECK(isolate->heap()->old_space()->FirstPage()->Contains(
+      handler_table->address()));
+  return handler_table;
+}
+
+
+void Interpreter::Initialize() {
   DCHECK(FLAG_ignition);
-  if (create_heap_objects) {
+  Handle<FixedArray> handler_table = isolate_->factory()->interpreter_table();
+  if (!IsInterpreterTableInitialized(handler_table)) {
     Zone zone;
     HandleScope scope(isolate_);
-    Handle<FixedArray> handler_table = isolate_->factory()->NewFixedArray(
-        static_cast<int>(Bytecode::kLast) + 1, TENURED);
-    // We rely on the interpreter handler table being immovable, so check that
-    // it was allocated on the first page (which is always immovable).
-    DCHECK(isolate_->heap()->old_space()->FirstPage()->Contains(
-        handler_table->address()));
-    isolate_->heap()->public_set_interpreter_table(*handler_table);
 
-#define GENERATE_CODE(Name, ...)                                    \
-  {                                                                 \
-    compiler::InterpreterAssembler assembler(isolate_, &zone,       \
-                                             Bytecode::k##Name);    \
-    Do##Name(&assembler);                                           \
-    Handle<Code> code = assembler.GenerateCode();                   \
-    handler_table->set(static_cast<int>(Bytecode::k##Name), *code); \
-  }
+#define GENERATE_CODE(Name, ...)                                      \
+    {                                                                 \
+      compiler::InterpreterAssembler assembler(isolate_, &zone,       \
+                                               Bytecode::k##Name);    \
+      Do##Name(&assembler);                                           \
+      Handle<Code> code = assembler.GenerateCode();                   \
+      handler_table->set(static_cast<int>(Bytecode::k##Name), *code); \
+    }
     BYTECODE_LIST(GENERATE_CODE)
 #undef GENERATE_CODE
   }
+}
+
+
+bool Interpreter::IsInterpreterTableInitialized(
+    Handle<FixedArray> handler_table) {
+  DCHECK(handler_table->length() == static_cast<int>(Bytecode::kLast) + 1);
+  return handler_table->get(0) != isolate_->heap()->undefined_value();
 }
 
 
@@ -53,6 +68,7 @@ void Interpreter::Initialize(bool create_heap_objects) {
 // Load literal '0' into the accumulator.
 void Interpreter::DoLdaZero(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement.
+  __ Dispatch();
 }
 
 
@@ -61,6 +77,7 @@ void Interpreter::DoLdaZero(compiler::InterpreterAssembler* assembler) {
 // Load an 8-bit integer literal into the accumulator as a Smi.
 void Interpreter::DoLdaSmi8(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement 8-bit integer to SMI promotion.
+  __ Dispatch();
 }
 
 
@@ -69,6 +86,7 @@ void Interpreter::DoLdaSmi8(compiler::InterpreterAssembler* assembler) {
 // Load Undefined into the accumulator.
 void Interpreter::DoLdaUndefined(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement.
+  __ Dispatch();
 }
 
 
@@ -77,6 +95,7 @@ void Interpreter::DoLdaUndefined(compiler::InterpreterAssembler* assembler) {
 // Load Null into the accumulator.
 void Interpreter::DoLdaNull(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement.
+  __ Dispatch();
 }
 
 
@@ -85,6 +104,7 @@ void Interpreter::DoLdaNull(compiler::InterpreterAssembler* assembler) {
 // Load TheHole into the accumulator.
 void Interpreter::DoLdaTheHole(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement.
+  __ Dispatch();
 }
 
 
@@ -93,6 +113,7 @@ void Interpreter::DoLdaTheHole(compiler::InterpreterAssembler* assembler) {
 // Load True into the accumulator.
 void Interpreter::DoLdaTrue(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement.
+  __ Dispatch();
 }
 
 
@@ -101,6 +122,7 @@ void Interpreter::DoLdaTrue(compiler::InterpreterAssembler* assembler) {
 // Load False into the accumulator.
 void Interpreter::DoLdaFalse(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement.
+  __ Dispatch();
 }
 
 
@@ -109,6 +131,7 @@ void Interpreter::DoLdaFalse(compiler::InterpreterAssembler* assembler) {
 // Load accumulator with value from register <src>.
 void Interpreter::DoLdar(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement.
+  __ Dispatch();
 }
 
 
@@ -117,6 +140,7 @@ void Interpreter::DoLdar(compiler::InterpreterAssembler* assembler) {
 // Store accumulator to register <dst>.
 void Interpreter::DoStar(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement.
+  __ Dispatch();
 }
 
 
@@ -125,6 +149,7 @@ void Interpreter::DoStar(compiler::InterpreterAssembler* assembler) {
 // Add register <src> to accumulator.
 void Interpreter::DoAdd(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement.
+  __ Dispatch();
 }
 
 
@@ -133,6 +158,7 @@ void Interpreter::DoAdd(compiler::InterpreterAssembler* assembler) {
 // Subtract register <src> from accumulator.
 void Interpreter::DoSub(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement.
+  __ Dispatch();
 }
 
 
@@ -141,6 +167,7 @@ void Interpreter::DoSub(compiler::InterpreterAssembler* assembler) {
 // Multiply accumulator by register <src>.
 void Interpreter::DoMul(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement add register to accumulator.
+  __ Dispatch();
 }
 
 
@@ -149,6 +176,7 @@ void Interpreter::DoMul(compiler::InterpreterAssembler* assembler) {
 // Divide register <src> by accumulator.
 void Interpreter::DoDiv(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy) Implement.
+  __ Dispatch();
 }
 
 

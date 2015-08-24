@@ -94,6 +94,7 @@
         'compiler/value-numbering-reducer-unittest.cc',
         'compiler/zone-pool-unittest.cc',
         'counters-unittest.cc',
+        'interpreter/bytecode-array-builder-unittest.cc',
         'libplatform/default-platform-unittest.cc',
         'libplatform/task-queue-unittest.cc',
         'libplatform/worker-thread-unittest.cc',
@@ -103,8 +104,6 @@
         'run-all-unittests.cc',
         'test-utils.h',
         'test-utils.cc',
-        '../../src/startup-data-util.h',
-        '../../src/startup-data-util.cc'
       ],
       'conditions': [
         ['v8_target_arch=="arm"', {

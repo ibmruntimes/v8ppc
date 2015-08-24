@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/ic/handler-compiler.h"
 
 #include "src/cpu-profiler.h"
 #include "src/ic/call-optimization.h"
-#include "src/ic/handler-compiler.h"
 #include "src/ic/ic.h"
 #include "src/ic/ic-inl.h"
 
@@ -99,35 +98,11 @@ Register NamedLoadHandlerCompiler::FrontendHeader(Register object_reg,
                                                   Handle<Name> name,
                                                   Label* miss,
                                                   ReturnHolder return_what) {
-  PrototypeCheckType check_type = CHECK_ALL_MAPS;
-  int function_index = -1;
-  if (map()->instance_type() < FIRST_NONSTRING_TYPE) {
-    function_index = Context::STRING_FUNCTION_INDEX;
-  } else if (map()->instance_type() == SYMBOL_TYPE) {
-    function_index = Context::SYMBOL_FUNCTION_INDEX;
-  } else if (map()->instance_type() == HEAP_NUMBER_TYPE) {
-    function_index = Context::NUMBER_FUNCTION_INDEX;
-  } else if (map()->instance_type() == FLOAT32X4_TYPE) {
-    function_index = Context::FLOAT32X4_FUNCTION_INDEX;
-  } else if (map()->instance_type() == INT32X4_TYPE) {
-    function_index = Context::INT32X4_FUNCTION_INDEX;
-  } else if (map()->instance_type() == BOOL32X4_TYPE) {
-    function_index = Context::BOOL32X4_FUNCTION_INDEX;
-  } else if (map()->instance_type() == INT16X8_TYPE) {
-    function_index = Context::INT16X8_FUNCTION_INDEX;
-  } else if (map()->instance_type() == BOOL16X8_TYPE) {
-    function_index = Context::BOOL16X8_FUNCTION_INDEX;
-  } else if (map()->instance_type() == INT8X16_TYPE) {
-    function_index = Context::INT8X16_FUNCTION_INDEX;
-  } else if (map()->instance_type() == BOOL8X16_TYPE) {
-    function_index = Context::BOOL8X16_FUNCTION_INDEX;
-  } else if (*map() == isolate()->heap()->boolean_map()) {
-    function_index = Context::BOOLEAN_FUNCTION_INDEX;
-  } else {
-    check_type = SKIP_RECEIVER;
-  }
-
-  if (check_type == CHECK_ALL_MAPS) {
+  PrototypeCheckType check_type = SKIP_RECEIVER;
+  int function_index = map()->IsPrimitiveMap()
+                           ? map()->GetConstructorFunctionIndex()
+                           : Map::kNoConstructorFunctionIndex;
+  if (function_index != Map::kNoConstructorFunctionIndex) {
     GenerateDirectLoadGlobalFunctionPrototype(masm(), function_index,
                                               scratch1(), miss);
     Object* function = isolate()->native_context()->get(function_index);
@@ -135,6 +110,7 @@ Register NamedLoadHandlerCompiler::FrontendHeader(Register object_reg,
     Handle<Map> map(JSObject::cast(prototype)->map());
     set_map(map);
     object_reg = scratch1();
+    check_type = CHECK_ALL_MAPS;
   }
 
   // Check that the maps starting from the prototype haven't changed.

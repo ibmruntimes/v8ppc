@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_X64
 
 #include "src/code-factory.h"
@@ -3326,37 +3324,9 @@ void FullCodeGenerator::EmitIsSimdValue(CallRuntime* expr) {
                          &if_false, &fall_through);
 
   __ JumpIfSmi(rax, if_false);
-  Register map = rbx;
-  __ movp(map, FieldOperand(rax, HeapObject::kMapOffset));
-  __ CmpInstanceType(map, FIRST_SIMD_VALUE_TYPE);
-  __ j(less, if_false);
-  __ CmpInstanceType(map, LAST_SIMD_VALUE_TYPE);
+  __ CmpObjectType(rax, SIMD128_VALUE_TYPE, rbx);
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  Split(less_equal, if_true, if_false, fall_through);
-
-  context()->Plug(if_true, if_false);
-}
-
-
-void FullCodeGenerator::EmitIsUndetectableObject(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 1);
-
-  VisitForAccumulatorValue(args->at(0));
-
-  Label materialize_true, materialize_false;
-  Label* if_true = NULL;
-  Label* if_false = NULL;
-  Label* fall_through = NULL;
-  context()->PrepareTest(&materialize_true, &materialize_false,
-                         &if_true, &if_false, &fall_through);
-
-  __ JumpIfSmi(rax, if_false);
-  __ movp(rbx, FieldOperand(rax, HeapObject::kMapOffset));
-  __ testb(FieldOperand(rbx, Map::kBitFieldOffset),
-           Immediate(1 << Map::kIsUndetectable));
-  PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  Split(not_zero, if_true, if_false, fall_through);
+  Split(equal, if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
 }
@@ -4596,8 +4566,10 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
       if (property != NULL) {
         VisitForStackValue(property->obj());
         VisitForStackValue(property->key());
-        __ Push(Smi::FromInt(language_mode()));
-        __ InvokeBuiltin(Builtins::DELETE, CALL_FUNCTION);
+        __ CallRuntime(is_strict(language_mode())
+                           ? Runtime::kDeleteProperty_Strict
+                           : Runtime::kDeleteProperty_Sloppy,
+                       2);
         context()->Plug(rax);
       } else if (proxy != NULL) {
         Variable* var = proxy->var();
@@ -4608,8 +4580,7 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
         if (var->IsUnallocatedOrGlobalSlot()) {
           __ Push(GlobalObjectOperand());
           __ Push(var->name());
-          __ Push(Smi::FromInt(SLOPPY));
-          __ InvokeBuiltin(Builtins::DELETE, CALL_FUNCTION);
+          __ CallRuntime(Runtime::kDeleteProperty_Sloppy, 2);
           context()->Plug(rax);
         } else if (var->IsStackAllocated() || var->IsContextSlot()) {
           // Result of deleting non-global variables is false.  'this' is
@@ -4985,43 +4956,11 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     Split(equal, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->string_string())) {
     __ JumpIfSmi(rax, if_false);
-    // Check for undetectable objects => false.
     __ CmpObjectType(rax, FIRST_NONSTRING_TYPE, rdx);
-    __ j(above_equal, if_false);
-    __ testb(FieldOperand(rdx, Map::kBitFieldOffset),
-             Immediate(1 << Map::kIsUndetectable));
-    Split(zero, if_true, if_false, fall_through);
+    Split(below, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->symbol_string())) {
     __ JumpIfSmi(rax, if_false);
     __ CmpObjectType(rax, SYMBOL_TYPE, rdx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->float32x4_string())) {
-    __ JumpIfSmi(rax, if_false);
-    __ CmpObjectType(rax, FLOAT32X4_TYPE, rdx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->int32x4_string())) {
-    __ JumpIfSmi(rax, if_false);
-    __ CmpObjectType(rax, INT32X4_TYPE, rdx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->bool32x4_string())) {
-    __ JumpIfSmi(rax, if_false);
-    __ CmpObjectType(rax, BOOL32X4_TYPE, rdx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->int16x8_string())) {
-    __ JumpIfSmi(rax, if_false);
-    __ CmpObjectType(rax, INT16X8_TYPE, rdx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->bool16x8_string())) {
-    __ JumpIfSmi(rax, if_false);
-    __ CmpObjectType(rax, BOOL16X8_TYPE, rdx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->int8x16_string())) {
-    __ JumpIfSmi(rax, if_false);
-    __ CmpObjectType(rax, INT8X16_TYPE, rdx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->bool8x16_string())) {
-    __ JumpIfSmi(rax, if_false);
-    __ CmpObjectType(rax, BOOL8X16_TYPE, rdx);
     Split(equal, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->boolean_string())) {
     __ CompareRoot(rax, Heap::kTrueValueRootIndex);
@@ -5056,6 +4995,16 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ testb(FieldOperand(rdx, Map::kBitFieldOffset),
              Immediate(1 << Map::kIsUndetectable));
     Split(zero, if_true, if_false, fall_through);
+// clang-format off
+#define SIMD128_TYPE(TYPE, Type, type, lane_count, lane_type)   \
+  } else if (String::Equals(check, factory->type##_string())) { \
+    __ JumpIfSmi(rax, if_false);                                \
+    __ movp(rax, FieldOperand(rax, HeapObject::kMapOffset));    \
+    __ CompareRoot(rax, Heap::k##Type##MapRootIndex);           \
+    Split(equal, if_true, if_false, fall_through);
+  SIMD128_TYPES(SIMD128_TYPE)
+#undef SIMD128_TYPE
+    // clang-format on
   } else {
     if (if_false != fall_through) __ jmp(if_false);
   }

@@ -6,6 +6,8 @@
 #define V8_OBJECTS_VISITING_INL_H_
 
 #include "src/heap/objects-visiting.h"
+#include "src/ic/ic-state.h"
+#include "src/macro-assembler.h"
 
 namespace v8 {
 namespace internal {
@@ -495,7 +497,7 @@ template <typename StaticVisitor>
 void StaticMarkingVisitor<StaticVisitor>::VisitJSRegExp(Map* map,
                                                         HeapObject* object) {
   int last_property_offset =
-      JSRegExp::kSize + kPointerSize * map->inobject_properties();
+      JSRegExp::kSize + kPointerSize * map->GetInObjectProperties();
   StaticVisitor::VisitPointers(
       map->GetHeap(), object,
       HeapObject::RawField(object, JSRegExp::kPropertiesOffset),

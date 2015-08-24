@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_X87
 
 #include "src/base/bits.h"
@@ -14,9 +12,10 @@
 #include "src/ic/ic.h"
 #include "src/ic/stub-cache.h"
 #include "src/isolate.h"
-#include "src/jsregexp.h"
-#include "src/regexp-macro-assembler.h"
+#include "src/regexp/jsregexp.h"
+#include "src/regexp/regexp-macro-assembler.h"
 #include "src/runtime/runtime.h"
+#include "src/x87/frames-x87.h"
 
 namespace v8 {
 namespace internal {
@@ -1604,21 +1603,26 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
   __ push(eax);
 
   // Figure out which native to call and setup the arguments.
-  Builtins::JavaScript builtin;
-  if (cc == equal) {
-    builtin = strict() ? Builtins::STRICT_EQUALS : Builtins::EQUALS;
+  if (cc == equal && strict()) {
+    __ push(ecx);
+    __ TailCallRuntime(Runtime::kStrictEquals, 2, 1);
   } else {
-    builtin =
-        is_strong(strength()) ? Builtins::COMPARE_STRONG : Builtins::COMPARE;
-    __ push(Immediate(Smi::FromInt(NegativeComparisonResult(cc))));
+    Builtins::JavaScript builtin;
+    if (cc == equal) {
+      builtin = Builtins::EQUALS;
+    } else {
+      builtin =
+          is_strong(strength()) ? Builtins::COMPARE_STRONG : Builtins::COMPARE;
+      __ push(Immediate(Smi::FromInt(NegativeComparisonResult(cc))));
+    }
+
+    // Restore return address on the stack.
+    __ push(ecx);
+
+    // Call the native; it returns -1 (less), 0 (equal), or 1 (greater)
+    // tagged as a small integer.
+    __ InvokeBuiltin(builtin, JUMP_FUNCTION);
   }
-
-  // Restore return address on the stack.
-  __ push(ecx);
-
-  // Call the native; it returns -1 (less), 0 (equal), or 1 (greater)
-  // tagged as a small integer.
-  __ InvokeBuiltin(builtin, JUMP_FUNCTION);
 
   __ bind(&miss);
   GenerateMiss(masm);

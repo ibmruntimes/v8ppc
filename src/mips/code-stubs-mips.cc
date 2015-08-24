@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_MIPS
 
 #include "src/base/bits.h"
@@ -14,8 +12,8 @@
 #include "src/ic/ic.h"
 #include "src/ic/stub-cache.h"
 #include "src/isolate.h"
-#include "src/jsregexp.h"
-#include "src/regexp-macro-assembler.h"
+#include "src/regexp/jsregexp.h"
+#include "src/regexp/regexp-macro-assembler.h"
 #include "src/runtime/runtime.h"
 
 namespace v8 {
@@ -291,15 +289,12 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm, Label* slow,
   // Smis. If it's not a heap number, then return equal.
   __ GetObjectType(a0, t4, t4);
   if (cc == less || cc == greater) {
-    Label not_simd;
     // Call runtime on identical JSObjects.
     __ Branch(slow, greater, t4, Operand(FIRST_SPEC_OBJECT_TYPE));
     // Call runtime on identical symbols since we need to throw a TypeError.
     __ Branch(slow, eq, t4, Operand(SYMBOL_TYPE));
     // Call runtime on identical SIMD values since we must throw a TypeError.
-    __ Branch(&not_simd, lt, t4, Operand(FIRST_SIMD_VALUE_TYPE));
-    __ Branch(slow, le, t4, Operand(LAST_SIMD_VALUE_TYPE));
-    __ bind(&not_simd);
+    __ Branch(slow, eq, t4, Operand(SIMD128_VALUE_TYPE));
     if (is_strong(strength)) {
       // Call the runtime on anything that is converted in the semantics, since
       // we need to throw a TypeError. Smis have already been ruled out.
@@ -308,7 +303,6 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm, Label* slow,
       __ Branch(slow, ne, t4, Operand(zero_reg));
     }
   } else {
-    Label not_simd;
     __ Branch(&heap_number, eq, t4, Operand(HEAP_NUMBER_TYPE));
     // Comparing JS objects with <=, >= is complicated.
     if (cc != eq) {
@@ -316,9 +310,7 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm, Label* slow,
     // Call runtime on identical symbols since we need to throw a TypeError.
     __ Branch(slow, eq, t4, Operand(SYMBOL_TYPE));
     // Call runtime on identical SIMD values since we must throw a TypeError.
-    __ Branch(&not_simd, lt, t4, Operand(FIRST_SIMD_VALUE_TYPE));
-    __ Branch(slow, le, t4, Operand(LAST_SIMD_VALUE_TYPE));
-    __ bind(&not_simd);
+    __ Branch(slow, eq, t4, Operand(SIMD128_VALUE_TYPE));
     if (is_strong(strength)) {
       // Call the runtime on anything that is converted in the semantics,
       // since we need to throw a TypeError. Smis and heap numbers have
@@ -734,26 +726,30 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
   // a1 (rhs) second.
   __ Push(lhs, rhs);
   // Figure out which native to call and setup the arguments.
-  Builtins::JavaScript native;
-  if (cc == eq) {
-    native = strict() ? Builtins::STRICT_EQUALS : Builtins::EQUALS;
+  if (cc == eq && strict()) {
+    __ TailCallRuntime(Runtime::kStrictEquals, 2, 1);
   } else {
-    native =
-        is_strong(strength()) ? Builtins::COMPARE_STRONG : Builtins::COMPARE;
-    int ncr;  // NaN compare result.
-    if (cc == lt || cc == le) {
-      ncr = GREATER;
+    Builtins::JavaScript native;
+    if (cc == eq) {
+      native = Builtins::EQUALS;
     } else {
-      DCHECK(cc == gt || cc == ge);  // Remaining cases.
-      ncr = LESS;
+      native =
+          is_strong(strength()) ? Builtins::COMPARE_STRONG : Builtins::COMPARE;
+      int ncr;  // NaN compare result.
+      if (cc == lt || cc == le) {
+        ncr = GREATER;
+      } else {
+        DCHECK(cc == gt || cc == ge);  // Remaining cases.
+        ncr = LESS;
+      }
+      __ li(a0, Operand(Smi::FromInt(ncr)));
+      __ push(a0);
     }
-    __ li(a0, Operand(Smi::FromInt(ncr)));
-    __ push(a0);
-  }
 
-  // Call the native; it returns -1 (less), 0 (equal), or 1 (greater)
-  // tagged as a small integer.
-  __ InvokeBuiltin(native, JUMP_FUNCTION);
+    // Call the native; it returns -1 (less), 0 (equal), or 1 (greater)
+    // tagged as a small integer.
+    __ InvokeBuiltin(native, JUMP_FUNCTION);
+  }
 
   __ bind(&miss);
   GenerateMiss(masm);

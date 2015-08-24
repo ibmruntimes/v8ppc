@@ -3,10 +3,8 @@
 // found in the LICENSE file.
 
 var $functionSourceString;
-var $globalEval;
 var $objectDefineOwnProperty;
 var $objectGetOwnPropertyDescriptor;
-var $toCompletePropertyDescriptor;
 
 (function(global, utils) {
 
@@ -139,7 +137,7 @@ utils.InstallFunctions(global, DONT_ENUM, [
 
 // ECMA-262 - 15.2.4.2
 function ObjectToString() {
-  if (IS_UNDEFINED(this) && !IS_UNDETECTABLE(this)) return "[object Undefined]";
+  if (IS_UNDEFINED(this)) return "[object Undefined]";
   if (IS_NULL(this)) return "[object Null]";
   var O = TO_OBJECT(this);
   var builtinTag = %_ClassOf(O);
@@ -213,7 +211,7 @@ function ObjectPropertyIsEnumerable(V) {
 // Extensions for providing property getters and setters.
 function ObjectDefineGetter(name, fun) {
   var receiver = this;
-  if (receiver == null && !IS_UNDETECTABLE(receiver)) {
+  if (IS_NULL(receiver) || IS_UNDEFINED(receiver)) {
     receiver = %GlobalProxy(ObjectDefineGetter);
   }
   if (!IS_SPEC_FUNCTION(fun)) {
@@ -229,7 +227,7 @@ function ObjectDefineGetter(name, fun) {
 
 function ObjectLookupGetter(name) {
   var receiver = this;
-  if (receiver == null && !IS_UNDETECTABLE(receiver)) {
+  if (IS_NULL(receiver) || IS_UNDEFINED(receiver)) {
     receiver = %GlobalProxy(ObjectLookupGetter);
   }
   return %LookupAccessor(TO_OBJECT(receiver), $toName(name), GETTER);
@@ -238,7 +236,7 @@ function ObjectLookupGetter(name) {
 
 function ObjectDefineSetter(name, fun) {
   var receiver = this;
-  if (receiver == null && !IS_UNDETECTABLE(receiver)) {
+  if (IS_NULL(receiver) || IS_UNDEFINED(receiver)) {
     receiver = %GlobalProxy(ObjectDefineSetter);
   }
   if (!IS_SPEC_FUNCTION(fun)) {
@@ -254,7 +252,7 @@ function ObjectDefineSetter(name, fun) {
 
 function ObjectLookupSetter(name) {
   var receiver = this;
-  if (receiver == null && !IS_UNDETECTABLE(receiver)) {
+  if (IS_NULL(receiver) || IS_UNDEFINED(receiver)) {
     receiver = %GlobalProxy(ObjectLookupSetter);
   }
   return %LookupAccessor(TO_OBJECT(receiver), $toName(name), SETTER);
@@ -590,7 +588,7 @@ function Delete(obj, p, should_throw) {
   var desc = GetOwnPropertyJS(obj, p);
   if (IS_UNDEFINED(desc)) return true;
   if (desc.isConfigurable()) {
-    %DeleteProperty(obj, p, 0);
+    %DeleteProperty_Sloppy(obj, p);
     return true;
   } else if (should_throw) {
     throw MakeTypeError(kDefineDisallowed, p);
@@ -803,7 +801,7 @@ function DefineObjectProperty(obj, p, desc, should_throw) {
 function DefineArrayProperty(obj, p, desc, should_throw) {
   // Step 3 - Special handling for array index.
   if (!IS_SYMBOL(p)) {
-    var index = $toUint32(p);
+    var index = TO_UINT32(p);
     var emit_splice = false;
     if ($toString(index) == p && index != 4294967295) {
       var length = obj.length;
@@ -899,7 +897,7 @@ function ToNameArray(obj, trap, includeSymbols) {
   if (!IS_SPEC_OBJECT(obj)) {
     throw MakeTypeError(kProxyNonObjectPropNames, trap, obj);
   }
-  var n = $toUint32(obj.length);
+  var n = TO_UINT32(obj.length);
   var array = new GlobalArray(n);
   var realLength = 0;
   var names = { __proto__: null };  // TODO(rossberg): use sets once ready.
@@ -1787,10 +1785,8 @@ function GetIterator(obj, method) {
 // Exports
 
 $functionSourceString = FunctionSourceString;
-$globalEval = GlobalEval;
 $objectDefineOwnProperty = DefineOwnPropertyFromAPI;
 $objectGetOwnPropertyDescriptor = ObjectGetOwnPropertyDescriptor;
-$toCompletePropertyDescriptor = ToCompletePropertyDescriptor;
 
 utils.ObjectDefineProperties = ObjectDefineProperties;
 utils.ObjectDefineProperty = ObjectDefineProperty;
@@ -1812,6 +1808,11 @@ utils.Export(function(to) {
   to.ObjectToString = ObjectToString;
   to.OwnPropertyKeys = OwnPropertyKeys;
   to.ToNameArray = ToNameArray;
+});
+
+utils.ExportToRuntime(function(to) {
+  to.GlobalEval = GlobalEval;
+  to.ToCompletePropertyDescriptor = ToCompletePropertyDescriptor;
 });
 
 })

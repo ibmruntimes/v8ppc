@@ -7,6 +7,7 @@
 #include "src/compiler/code-generator-impl.h"
 #include "src/compiler/linkage.h"
 #include "src/compiler/pipeline.h"
+#include "src/frames-inl.h"
 #include "src/snapshot/serialize.h"  // TODO(turbofan): RootIndexMap
 
 namespace v8 {
@@ -231,7 +232,8 @@ void CodeGenerator::RecordSafepoint(ReferenceMap* references,
 bool CodeGenerator::IsMaterializableFromFrame(Handle<HeapObject> object,
                                               int* offset_return) {
   if (linkage()->GetIncomingDescriptor()->IsJSFunctionCall()) {
-    if (object.is_identical_to(info()->context()) && !info()->is_osr()) {
+    if (info()->has_context() && object.is_identical_to(info()->context()) &&
+        !info()->is_osr()) {
       *offset_return = StandardFrameConstants::kContextOffset;
       return true;
     } else if (object.is_identical_to(info()->closure())) {
@@ -530,6 +532,7 @@ void CodeGenerator::BuildTranslationForFrameStateDescriptor(
 
   Handle<SharedFunctionInfo> shared_info;
   if (!descriptor->shared_info().ToHandle(&shared_info)) {
+    if (!info()->has_shared_info()) return;  // Stub with no SharedFunctionInfo.
     shared_info = info()->shared_info();
   }
   int shared_info_id = DefineDeoptimizationLiteral(shared_info);
@@ -653,61 +656,6 @@ void CodeGenerator::AddTranslationForOperand(Translation* translation,
 void CodeGenerator::MarkLazyDeoptSite() {
   last_lazy_deopt_pc_ = masm()->pc_offset();
 }
-
-#if !V8_TURBOFAN_BACKEND
-
-void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
-  UNIMPLEMENTED();
-}
-
-
-void CodeGenerator::AssembleArchBranch(Instruction* instr,
-                                       BranchInfo* branch) {
-  UNIMPLEMENTED();
-}
-
-
-void CodeGenerator::AssembleArchBoolean(Instruction* instr,
-                                        FlagsCondition condition) {
-  UNIMPLEMENTED();
-}
-
-
-void CodeGenerator::AssembleArchJump(RpoNumber target) { UNIMPLEMENTED(); }
-
-
-void CodeGenerator::AssembleDeoptimizerCall(
-    int deoptimization_id, Deoptimizer::BailoutType bailout_type) {
-  UNIMPLEMENTED();
-}
-
-
-void CodeGenerator::AssemblePrologue() { UNIMPLEMENTED(); }
-
-
-void CodeGenerator::AssembleReturn() { UNIMPLEMENTED(); }
-
-
-void CodeGenerator::AssembleMove(InstructionOperand* source,
-                                 InstructionOperand* destination) {
-  UNIMPLEMENTED();
-}
-
-
-void CodeGenerator::AssembleSwap(InstructionOperand* source,
-                                 InstructionOperand* destination) {
-  UNIMPLEMENTED();
-}
-
-
-void CodeGenerator::AddNopForSmiCodeInlining() { UNIMPLEMENTED(); }
-
-
-void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
-  UNIMPLEMENTED();
-}
-
-#endif  // !V8_TURBOFAN_BACKEND
 
 
 OutOfLineCode::OutOfLineCode(CodeGenerator* gen)

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/parser.h"
 
 #include "src/api.h"
 #include "src/ast.h"
@@ -14,7 +14,6 @@
 #include "src/codegen.h"
 #include "src/compiler.h"
 #include "src/messages.h"
-#include "src/parser.h"
 #include "src/preparser.h"
 #include "src/runtime/runtime.h"
 #include "src/scanner-character-streams.h"
@@ -789,9 +788,11 @@ Expression* ParserTraits::NewTargetExpression(Scope* scope,
                                               AstNodeFactory* factory,
                                               int pos) {
   static const int kNewTargetStringLength = 10;
-  return scope->NewUnresolved(
+  auto proxy = scope->NewUnresolved(
       factory, parser_->ast_value_factory()->new_target_string(),
       Variable::NORMAL, pos, pos + kNewTargetStringLength);
+  proxy->set_is_new_target();
+  return proxy;
 }
 
 
@@ -912,8 +913,10 @@ Parser::Parser(ParseInfo* info)
   set_allow_natives(FLAG_allow_natives_syntax || info->is_native());
   set_allow_harmony_arrow_functions(FLAG_harmony_arrow_functions);
   set_allow_harmony_sloppy(FLAG_harmony_sloppy);
+  set_allow_harmony_sloppy_function(FLAG_harmony_sloppy_function);
   set_allow_harmony_sloppy_let(FLAG_harmony_sloppy_let);
   set_allow_harmony_rest_parameters(FLAG_harmony_rest_parameters);
+  set_allow_harmony_default_parameters(FLAG_harmony_default_parameters);
   set_allow_harmony_spreadcalls(FLAG_harmony_spreadcalls);
   set_allow_harmony_destructuring(FLAG_harmony_destructuring);
   set_allow_harmony_spread_arrays(FLAG_harmony_spread_arrays);
@@ -1196,8 +1199,7 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info,
           if (ok) ok = Check(Token::RPAREN);
         } else {
           // BindingIdentifier
-          const bool is_rest = false;
-          ParseFormalParameter(is_rest, &formals, &formals_classifier, &ok);
+          ParseFormalParameter(&formals, &formals_classifier, &ok);
           if (ok) {
             DeclareFormalParameter(
                 formals.scope, formals.at(0), formals.is_simple,
@@ -1337,10 +1339,7 @@ void* Parser::ParseStatementList(ZoneList<Statement*>* body, int end_token,
           // Because declarations in strict eval code don't leak into the scope
           // of the eval call, it is likely that functions declared in strict
           // eval code will be used within the eval code, so lazy parsing is
-          // probably not a win.  Also, resolution of "var" bindings defined in
-          // strict eval code from within nested functions is currently broken
-          // with the pre-parser; lazy parsing of strict eval code causes
-          // regress/regress-crbug-135066.js to fail.
+          // probably not a win.
           if (scope_->is_eval_scope()) mode_ = PARSE_EAGERLY;
         } else if (literal->raw_value()->AsString() ==
                        ast_value_factory()->use_asm_string() &&
@@ -2011,15 +2010,17 @@ Variable* Parser::Declare(Declaration* declaration,
   // variable and also set its mode. In any case, a Declaration node
   // will be added to the scope so that the declaration can be added
   // to the corresponding activation frame at runtime if necessary.
-  // For instance declarations inside an eval scope need to be added
-  // to the calling function context.
-  // Similarly, strict mode eval scope does not leak variable declarations to
-  // the caller's scope so we declare all locals, too.
+  // For instance, var declarations inside a sloppy eval scope need
+  // to be added to the calling function context. Similarly, strict
+  // mode eval scope and lexical eval bindings do not leak variable
+  // declarations to the caller's scope so we declare all locals, too.
   if (declaration_scope->is_function_scope() ||
-      declaration_scope->is_strict_eval_scope() ||
       declaration_scope->is_block_scope() ||
       declaration_scope->is_module_scope() ||
-      declaration_scope->is_script_scope()) {
+      declaration_scope->is_script_scope() ||
+      (declaration_scope->is_eval_scope() &&
+       (is_strict(declaration_scope->language_mode()) ||
+        IsLexicalVariableMode(mode)))) {
     // Declare the variable in the declaration scope.
     var = declaration_scope->LookupLocal(name);
     if (var == NULL) {
@@ -2072,7 +2073,21 @@ Variable* Parser::Declare(Declaration* declaration,
     } else if (mode == VAR) {
       var->set_maybe_assigned();
     }
+  } else if (declaration_scope->is_eval_scope() &&
+             is_sloppy(declaration_scope->language_mode()) &&
+             !IsLexicalVariableMode(mode)) {
+    // In a var binding in a sloppy direct eval, pollute the enclosing scope
+    // with this new binding by doing the following:
+    // The proxy is bound to a lookup variable to force a dynamic declaration
+    // using the DeclareLookupSlot runtime function.
+    Variable::Kind kind = Variable::NORMAL;
+    // TODO(sigurds) figure out if kNotAssigned is OK here
+    var = new (zone()) Variable(declaration_scope, name, mode, kind,
+                                declaration->initialization(), kNotAssigned);
+    var->AllocateTo(VariableLocation::LOOKUP, -1);
+    resolve = true;
   }
+
 
   // We add a declaration node for every declaration. The compiler
   // will only generate code if necessary. In particular, declarations
@@ -2098,17 +2113,6 @@ Variable* Parser::Declare(Declaration* declaration,
     Variable::Kind kind = Variable::NORMAL;
     var = new (zone()) Variable(declaration_scope, name, mode, kind,
                                 kNeedsInitialization, kNotAssigned);
-  } else if (declaration_scope->is_eval_scope() &&
-             is_sloppy(declaration_scope->language_mode())) {
-    // For variable declarations in a sloppy eval scope the proxy is bound
-    // to a lookup variable to force a dynamic declaration using the
-    // DeclareLookupSlot runtime function.
-    Variable::Kind kind = Variable::NORMAL;
-    // TODO(sigurds) figure out if kNotAssigned is OK here
-    var = new (zone()) Variable(declaration_scope, name, mode, kind,
-                                declaration->initialization(), kNotAssigned);
-    var->AllocateTo(VariableLocation::LOOKUP, -1);
-    resolve = true;
   }
 
   // If requested and we have a local variable, bind the proxy to the variable
@@ -2222,8 +2226,10 @@ Statement* Parser::ParseFunctionDeclaration(
   VariableMode mode =
       is_strong(language_mode())
           ? CONST
-          : (is_strict(language_mode()) || allow_harmony_sloppy()) &&
-              !scope_->is_declaration_scope() ? LET : VAR;
+          : (is_strict(language_mode()) || allow_harmony_sloppy_function()) &&
+                    !scope_->is_declaration_scope()
+                ? LET
+                : VAR;
   VariableProxy* proxy = NewUnresolved(name, mode);
   Declaration* declaration =
       factory()->NewFunctionDeclaration(proxy, mode, fun, scope_, pos);
@@ -3674,8 +3680,9 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
             CHECK_OK);
       }
     } else {
-      Scanner::Location lhs_location = scanner()->peek_location();
+      int lhs_beg_pos = peek_position();
       Expression* expression = ParseExpression(false, CHECK_OK);
+      int lhs_end_pos = scanner()->location().end_pos;
       ForEachStatement::VisitMode mode;
       bool accept_OF = expression->IsVariableProxy();
       is_let_identifier_expression =
@@ -3686,8 +3693,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
       if (CheckInOrOf(accept_OF, &mode, ok)) {
         if (!*ok) return nullptr;
         expression = this->CheckAndRewriteReferenceExpression(
-            expression, lhs_location, MessageTemplate::kInvalidLhsInFor,
-            CHECK_OK);
+            expression, lhs_beg_pos, lhs_end_pos,
+            MessageTemplate::kInvalidLhsInFor, kSyntaxError, CHECK_OK);
 
         ForEachStatement* loop =
             factory()->NewForEachStatement(mode, labels, stmt_pos);
@@ -3706,8 +3713,7 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         return loop;
 
       } else {
-        init =
-            factory()->NewExpressionStatement(expression, lhs_location.beg_pos);
+        init = factory()->NewExpressionStatement(expression, lhs_beg_pos);
       }
     }
   }
@@ -3905,7 +3911,19 @@ void ParserTraits::ParseArrowFunctionFormalParameters(
     parser_->scope_->RemoveUnresolved(expr->AsVariableProxy());
   }
 
-  AddFormalParameter(parameters, expr, is_rest);
+  Expression* initializer = nullptr;
+  if (!is_rest && parser_->allow_harmony_default_parameters() &&
+      parser_->Check(Token::ASSIGN)) {
+    ExpressionClassifier init_classifier;
+    initializer =
+        parser_->ParseAssignmentExpression(true, &init_classifier, ok);
+    if (!*ok) return;
+    parser_->ValidateExpression(&init_classifier, ok);
+    if (!*ok) return;
+    parameters->is_simple = false;
+  }
+
+  AddFormalParameter(parameters, expr, initializer, is_rest);
 }
 
 
@@ -4324,9 +4342,22 @@ Block* Parser::BuildParameterInitializationBlock(
     descriptor.declaration_pos = parameter.pattern->position();
     descriptor.initialization_pos = parameter.pattern->position();
     descriptor.init_op = Token::INIT_LET;
+    Expression* initial_value =
+        factory()->NewVariableProxy(parameters.scope->parameter(i));
+    if (parameter.initializer != nullptr) {
+      // IS_UNDEFINED($param) ? initializer : $param
+      auto condition = factory()->NewCompareOperation(
+          Token::EQ_STRICT,
+          factory()->NewVariableProxy(parameters.scope->parameter(i)),
+          factory()->NewUndefinedLiteral(RelocInfo::kNoPosition),
+          RelocInfo::kNoPosition);
+      initial_value = factory()->NewConditional(
+          condition, parameter.initializer, initial_value,
+          RelocInfo::kNoPosition);
+      descriptor.initialization_pos = parameter.initializer->position();
+    }
     DeclarationParsingResult::Declaration decl(
-        parameter.pattern, parameter.pattern->position(),
-        factory()->NewVariableProxy(parameters.scope->parameter(i)));
+        parameter.pattern, parameter.pattern->position(), initial_value);
     PatternRewriter::DeclareAndInitializeVariables(init_block, &descriptor,
                                                    &decl, nullptr, CHECK_OK);
   }
@@ -4492,6 +4523,7 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
     SET_ALLOW(harmony_sloppy);
     SET_ALLOW(harmony_sloppy_let);
     SET_ALLOW(harmony_rest_parameters);
+    SET_ALLOW(harmony_default_parameters);
     SET_ALLOW(harmony_spreadcalls);
     SET_ALLOW(harmony_destructuring);
     SET_ALLOW(harmony_spread_arrays);

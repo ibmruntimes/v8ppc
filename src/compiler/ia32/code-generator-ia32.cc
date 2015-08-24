@@ -8,6 +8,7 @@
 #include "src/compiler/gap-resolver.h"
 #include "src/compiler/node-matchers.h"
 #include "src/ia32/assembler-ia32.h"
+#include "src/ia32/frames-ia32.h"
 #include "src/ia32/macro-assembler-ia32.h"
 #include "src/scopes.h"
 
@@ -46,10 +47,10 @@ class IA32OperandConverter : public InstructionOperandConverter {
       return Operand(ToDoubleRegister(op));
     }
     DCHECK(op->IsStackSlot() || op->IsDoubleStackSlot());
-    // The linkage computes where all spill slots are located.
-    FrameOffset offset = linkage()->GetFrameOffset(
-        AllocatedOperand::cast(op)->index(), frame(), extra);
-    return Operand(offset.from_stack_pointer() ? esp : ebp, offset.offset());
+    FrameOffset offset =
+        linkage()->GetFrameOffset(AllocatedOperand::cast(op)->index(), frame());
+    return Operand(offset.from_stack_pointer() ? esp : ebp,
+                   offset.offset() + extra);
   }
 
   Operand HighOperand(InstructionOperand* op) {
@@ -874,7 +875,10 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     }
     case kIA32Push:
-      if (HasImmediateInput(instr, 0)) {
+      if (instr->InputAt(0)->IsDoubleRegister()) {
+        __ sub(esp, Immediate(kDoubleSize));
+        __ movsd(Operand(esp, 0), i.InputDoubleRegister(0));
+      } else if (HasImmediateInput(instr, 0)) {
         __ push(i.InputImmediate(0));
       } else {
         __ push(i.InputOperand(0));
@@ -1325,31 +1329,26 @@ void CodeGenerator::AssembleReturn() {
         }
       }
       __ pop(ebp);  // Pop caller's frame pointer.
-      __ ret(0);
     } else {
       // No saved registers.
       __ mov(esp, ebp);  // Move stack pointer back to frame pointer.
       __ pop(ebp);       // Pop caller's frame pointer.
-      __ ret(0);
     }
   } else if (descriptor->IsJSFunctionCall() || needs_frame_) {
     // Canonicalize JSFunction return sites for now.
     if (return_label_.is_bound()) {
       __ jmp(&return_label_);
+      return;
     } else {
       __ bind(&return_label_);
       __ mov(esp, ebp);  // Move stack pointer back to frame pointer.
       __ pop(ebp);       // Pop caller's frame pointer.
-      int pop_count = static_cast<int>(descriptor->StackParameterCount());
-      if (pop_count == 0) {
-        __ ret(0);
-      } else {
-        __ Ret(pop_count * kPointerSize, ebx);
-      }
     }
-  } else {
-    __ ret(0);
   }
+  size_t pop_size = descriptor->StackParameterCount() * kPointerSize;
+  // Might need ecx for scratch if pop_size is too big.
+  DCHECK_EQ(0, descriptor->CalleeSavedRegisters() & ecx.bit());
+  __ Ret(static_cast<int>(pop_size), ecx);
 }
 
 

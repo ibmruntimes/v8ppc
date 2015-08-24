@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_X87
 
 #include "src/base/bits.h"
@@ -15,6 +13,7 @@
 #include "src/hydrogen-osr.h"
 #include "src/ic/ic.h"
 #include "src/ic/stub-cache.h"
+#include "src/x87/frames-x87.h"
 #include "src/x87/lithium-codegen-x87.h"
 
 namespace v8 {
@@ -6107,10 +6106,7 @@ Condition LCodeGen::EmitTypeofIs(LTypeofIsAndBranch* instr, Register input) {
   } else if (String::Equals(type_name, factory()->string_string())) {
     __ JumpIfSmi(input, false_label, false_distance);
     __ CmpObjectType(input, FIRST_NONSTRING_TYPE, input);
-    __ j(above_equal, false_label, false_distance);
-    __ test_b(FieldOperand(input, Map::kBitFieldOffset),
-              1 << Map::kIsUndetectable);
-    final_branch_condition = zero;
+    final_branch_condition = below;
 
   } else if (String::Equals(type_name, factory()->symbol_string())) {
     __ JumpIfSmi(input, false_label, false_distance);

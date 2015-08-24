@@ -20,6 +20,7 @@
 #include "src/base/platform/time.h"
 #include "src/base/utils/random-number-generator.h"
 #include "src/bootstrapper.h"
+#include "src/char-predicates-inl.h"
 #include "src/code-stubs.h"
 #include "src/compiler.h"
 #include "src/context-measure.h"
@@ -31,7 +32,6 @@
 #include "src/deoptimizer.h"
 #include "src/execution.h"
 #include "src/global-handles.h"
-#include "src/heap/spaces.h"
 #include "src/heap-profiler.h"
 #include "src/heap-snapshot-generator-inl.h"
 #include "src/icu_util.h"
@@ -50,7 +50,9 @@
 #include "src/simulator.h"
 #include "src/snapshot/natives.h"
 #include "src/snapshot/snapshot.h"
+#include "src/startup-data-util.h"
 #include "src/unicode-inl.h"
+#include "src/v8.h"
 #include "src/v8threads.h"
 #include "src/version.h"
 #include "src/vm-state-inl.h"
@@ -382,16 +384,31 @@ StartupData V8::CreateSnapshotDataBlob(const char* custom_source) {
       }
     }
     if (!context.IsEmpty()) {
-      // Make sure all builtin scripts are cached.
-      {
-        HandleScope scope(isolate);
-        for (int i = 0; i < i::Natives::GetBuiltinsCount(); i++) {
-          internal_isolate->bootstrapper()->SourceLookup<i::Natives>(i);
-        }
-      }
       // If we don't do this then we end up with a stray root pointing at the
       // context even after we have disposed of the context.
       internal_isolate->heap()->CollectAllAvailableGarbage("mksnapshot");
+
+      // GC may have cleared weak cells, so compact any WeakFixedArrays
+      // found on the heap.
+      i::HeapIterator iterator(internal_isolate->heap(),
+                               i::HeapIterator::kFilterUnreachable);
+      for (i::HeapObject* o = iterator.next(); o != NULL; o = iterator.next()) {
+        if (o->IsPrototypeInfo()) {
+          i::Object* prototype_users =
+              i::PrototypeInfo::cast(o)->prototype_users();
+          if (prototype_users->IsWeakFixedArray()) {
+            i::WeakFixedArray* array = i::WeakFixedArray::cast(prototype_users);
+            array->Compact<i::JSObject::PrototypeRegistryCompactionCallback>();
+          }
+        } else if (o->IsScript()) {
+          i::Object* shared_list = i::Script::cast(o)->shared_function_infos();
+          if (shared_list->IsWeakFixedArray()) {
+            i::WeakFixedArray* array = i::WeakFixedArray::cast(shared_list);
+            array->Compact<i::WeakFixedArray::NullCallback>();
+          }
+        }
+      }
+
       i::Object* raw_context = *v8::Utils::OpenPersistent(context);
       context.Reset();
 
@@ -1806,13 +1823,6 @@ MaybeLocal<Script> ScriptCompiler::CompileModule(Local<Context> context,
 }
 
 
-Local<Script> ScriptCompiler::CompileModule(Isolate* v8_isolate, Source* source,
-                                            CompileOptions options) {
-  auto context = v8_isolate->GetCurrentContext();
-  RETURN_TO_LOCAL_UNCHECKED(CompileModule(context, source, options), Script);
-}
-
-
 class IsIdentifierHelper {
  public:
   IsIdentifierHelper() : is_identifier_(false), first_char_(true) {}
@@ -2796,34 +2806,23 @@ bool Value::IsUint32() const {
 }
 
 
-static bool CheckConstructor(i::Isolate* isolate,
-                             i::Handle<i::JSObject> obj,
-                             const char* class_name) {
-  i::Handle<i::Object> constr(obj->map()->GetConstructor(), isolate);
-  if (!constr->IsJSFunction()) return false;
-  i::Handle<i::JSFunction> func = i::Handle<i::JSFunction>::cast(constr);
-  return func->shared()->native() && constr.is_identical_to(
-      i::Object::GetProperty(isolate,
-                             isolate->js_builtins_object(),
-                             class_name).ToHandleChecked());
-}
-
-
 bool Value::IsNativeError() const {
   i::Handle<i::Object> obj = Utils::OpenHandle(this);
-  if (obj->IsJSObject()) {
-    i::Handle<i::JSObject> js_obj(i::JSObject::cast(*obj));
-    i::Isolate* isolate = js_obj->GetIsolate();
-    return CheckConstructor(isolate, js_obj, "$Error") ||
-        CheckConstructor(isolate, js_obj, "$EvalError") ||
-        CheckConstructor(isolate, js_obj, "$RangeError") ||
-        CheckConstructor(isolate, js_obj, "$ReferenceError") ||
-        CheckConstructor(isolate, js_obj, "$SyntaxError") ||
-        CheckConstructor(isolate, js_obj, "$TypeError") ||
-        CheckConstructor(isolate, js_obj, "$URIError");
-  } else {
-    return false;
-  }
+  if (!obj->IsJSObject()) return false;
+  i::Handle<i::JSObject> js_obj = i::Handle<i::JSObject>::cast(obj);
+  i::Isolate* isolate = js_obj->GetIsolate();
+  i::Handle<i::Object> constructor(js_obj->map()->GetConstructor(), isolate);
+  if (!constructor->IsJSFunction()) return false;
+  i::Handle<i::JSFunction> function =
+      i::Handle<i::JSFunction>::cast(constructor);
+  if (!function->shared()->native()) return false;
+  return function.is_identical_to(isolate->error_function()) ||
+         function.is_identical_to(isolate->eval_error_function()) ||
+         function.is_identical_to(isolate->range_error_function()) ||
+         function.is_identical_to(isolate->reference_error_function()) ||
+         function.is_identical_to(isolate->syntax_error_function()) ||
+         function.is_identical_to(isolate->type_error_function()) ||
+         function.is_identical_to(isolate->uri_error_function());
 }
 
 
@@ -3406,33 +3405,9 @@ bool Value::Equals(Local<Value> that) const {
 
 
 bool Value::StrictEquals(Local<Value> that) const {
-  i::Handle<i::Object> obj = Utils::OpenHandle(this);
-  i::Handle<i::Object> other = Utils::OpenHandle(*that);
-  if (obj->IsSmi()) {
-    return other->IsNumber() && obj->Number() == other->Number();
-  }
-  i::Isolate* isolate = i::HeapObject::cast(*obj)->GetIsolate();
-  LOG_API(isolate, "StrictEquals");
-  // Must check HeapNumber first, since NaN !== NaN.
-  if (obj->IsHeapNumber()) {
-    if (!other->IsNumber()) return false;
-    double x = obj->Number();
-    double y = other->Number();
-    // Must check explicitly for NaN:s on Windows, but -0 works fine.
-    return x == y && !std::isnan(x) && !std::isnan(y);
-  } else if (*obj == *other) {  // Also covers Booleans.
-    return true;
-  } else if (obj->IsSmi()) {
-    return other->IsNumber() && obj->Number() == other->Number();
-  } else if (obj->IsString()) {
-    return other->IsString() &&
-        i::String::Equals(i::Handle<i::String>::cast(obj),
-                          i::Handle<i::String>::cast(other));
-  } else if (obj->IsUndefined() || obj->IsUndetectableObject()) {
-    return other->IsUndefined() || other->IsUndetectableObject();
-  } else {
-    return false;
-  }
+  auto self = Utils::OpenHandle(this);
+  auto other = Utils::OpenHandle(*that);
+  return self->StrictEquals(*other);
 }
 
 
@@ -5399,8 +5374,20 @@ HeapObjectStatistics::HeapObjectStatistics()
       object_count_(0),
       object_size_(0) {}
 
+
 bool v8::V8::InitializeICU(const char* icu_data_file) {
   return i::InitializeICU(icu_data_file);
+}
+
+
+void v8::V8::InitializeExternalStartupData(const char* directory_path) {
+  i::InitializeExternalStartupData(directory_path);
+}
+
+
+void v8::V8::InitializeExternalStartupData(const char* natives_blob,
+                                           const char* snapshot_blob) {
+  i::InitializeExternalStartupData(natives_blob, snapshot_blob);
 }
 
 
@@ -6888,11 +6875,13 @@ void Isolate::CollectAllGarbage(const char* gc_reason) {
   i::Heap* heap = reinterpret_cast<i::Isolate*>(this)->heap();
   if (heap->incremental_marking()->IsStopped()) {
     if (heap->incremental_marking()->CanBeActivated()) {
-      heap->StartIncrementalMarking(i::Heap::kNoGCFlags, kGCCallbackFlagForced,
-                                    gc_reason);
+      heap->StartIncrementalMarking(
+          i::Heap::kNoGCFlags,
+          kGCCallbackFlagSynchronousPhantomCallbackProcessing, gc_reason);
     } else {
-      heap->CollectAllGarbage(i::Heap::kNoGCFlags, gc_reason,
-                              kGCCallbackFlagForced);
+      heap->CollectAllGarbage(
+          i::Heap::kNoGCFlags, gc_reason,
+          kGCCallbackFlagSynchronousPhantomCallbackProcessing);
     }
   } else {
     // Incremental marking is turned on an has already been started.
@@ -7609,26 +7598,27 @@ String::Value::~Value() {
 }
 
 
-#define DEFINE_ERROR(NAME)                                            \
-  Local<Value> Exception::NAME(v8::Local<v8::String> raw_message) {   \
-    i::Isolate* isolate = i::Isolate::Current();                      \
-    LOG_API(isolate, #NAME);                                          \
-    ENTER_V8(isolate);                                                \
-    i::Object* error;                                                 \
-    {                                                                 \
-      i::HandleScope scope(isolate);                                  \
-      i::Handle<i::String> message = Utils::OpenHandle(*raw_message); \
-      error = *isolate->factory()->NewError("$" #NAME, message);      \
-    }                                                                 \
-    i::Handle<i::Object> result(error, isolate);                      \
-    return Utils::ToLocal(result);                                    \
+#define DEFINE_ERROR(NAME, name)                                         \
+  Local<Value> Exception::NAME(v8::Local<v8::String> raw_message) {      \
+    i::Isolate* isolate = i::Isolate::Current();                         \
+    LOG_API(isolate, #NAME);                                             \
+    ENTER_V8(isolate);                                                   \
+    i::Object* error;                                                    \
+    {                                                                    \
+      i::HandleScope scope(isolate);                                     \
+      i::Handle<i::String> message = Utils::OpenHandle(*raw_message);    \
+      i::Handle<i::JSFunction> constructor = isolate->name##_function(); \
+      error = *isolate->factory()->NewError(constructor, message);       \
+    }                                                                    \
+    i::Handle<i::Object> result(error, isolate);                         \
+    return Utils::ToLocal(result);                                       \
   }
 
-DEFINE_ERROR(RangeError)
-DEFINE_ERROR(ReferenceError)
-DEFINE_ERROR(SyntaxError)
-DEFINE_ERROR(TypeError)
-DEFINE_ERROR(Error)
+DEFINE_ERROR(RangeError, range_error)
+DEFINE_ERROR(ReferenceError, reference_error)
+DEFINE_ERROR(SyntaxError, syntax_error)
+DEFINE_ERROR(TypeError, type_error)
+DEFINE_ERROR(Error, error)
 
 #undef DEFINE_ERROR
 

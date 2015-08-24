@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_IA32
 
 #include "src/code-factory.h"
 #include "src/codegen.h"
 #include "src/deoptimizer.h"
 #include "src/full-codegen/full-codegen.h"
+#include "src/ia32/frames-ia32.h"
 
 namespace v8 {
 namespace internal {
@@ -224,7 +223,10 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         __ j(less, &no_inobject_slack_tracking);
 
         // Allocate object with a slack.
-        __ movzx_b(esi, FieldOperand(eax, Map::kInObjectPropertiesOffset));
+        __ movzx_b(
+            esi,
+            FieldOperand(
+                eax, Map::kInObjectPropertiesOrConstructorFunctionIndexOffset));
         __ movzx_b(eax, FieldOperand(eax, Map::kUnusedPropertyFieldsOffset));
         __ sub(esi, eax);
         __ lea(esi,

@@ -6,14 +6,11 @@
 
 #include <sstream>
 
-#include "src/v8.h"
-
 #include "src/ast.h"
 #include "src/base/bits.h"
 #include "src/deoptimizer.h"
 #include "src/frames-inl.h"
 #include "src/full-codegen/full-codegen.h"
-#include "src/heap/mark-compact.h"
 #include "src/safepoint-table.h"
 #include "src/scopeinfo.h"
 #include "src/string-stream.h"

@@ -108,6 +108,7 @@ class CcTest {
   typedef void (TestFunction)();
   CcTest(TestFunction* callback, const char* file, const char* name,
          const char* dependency, bool enabled, bool initialize);
+  ~CcTest() { i::DeleteArray(file_); }
   void Run();
   static CcTest* last() { return last_; }
   CcTest* prev() { return prev_; }
@@ -406,14 +407,6 @@ static inline v8::MaybeLocal<v8::Value> CompileRun(
 }
 
 
-// Compiles source as an ES6 module.
-static inline v8::Local<v8::Value> CompileRunModule(const char* source) {
-  v8::ScriptCompiler::Source script_source(v8_str(source));
-  return v8::ScriptCompiler::CompileModule(v8::Isolate::GetCurrent(),
-                                           &script_source)->Run();
-}
-
-
 static inline v8::Local<v8::Value> CompileRun(v8::Local<v8::String> source) {
   return v8::Script::Compile(source)->Run();
 }
@@ -600,28 +593,6 @@ static inline void EmptyMessageQueues(v8::Isolate* isolate) {
                                        isolate))
     ;
 }
-
-
-// Helper class for new allocations tracking and checking.
-// To use checking of JS allocations tracking in a test,
-// just create an instance of this class.
-class HeapObjectsTracker {
- public:
-  HeapObjectsTracker() {
-    heap_profiler_ = i::Isolate::Current()->heap_profiler();
-    CHECK_NOT_NULL(heap_profiler_);
-    heap_profiler_->StartHeapObjectsTracking(true);
-  }
-
-  ~HeapObjectsTracker() {
-    i::Isolate::Current()->heap()->CollectAllAvailableGarbage();
-    CHECK_EQ(0, heap_profiler_->heap_object_map()->FindUntrackedObjects());
-    heap_profiler_->StopHeapObjectsTracking();
-  }
-
- private:
-  i::HeapProfiler* heap_profiler_;
-};
 
 
 class InitializedHandleScope {

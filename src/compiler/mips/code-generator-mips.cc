@@ -106,12 +106,9 @@ class MipsOperandConverter final : public InstructionOperandConverter {
 
   MemOperand ToMemOperand(InstructionOperand* op) const {
     DCHECK(op != NULL);
-    DCHECK(!op->IsRegister());
-    DCHECK(!op->IsDoubleRegister());
     DCHECK(op->IsStackSlot() || op->IsDoubleStackSlot());
-    // The linkage computes where all spill slots are located.
-    FrameOffset offset = linkage()->GetFrameOffset(
-        AllocatedOperand::cast(op)->index(), frame(), 0);
+    FrameOffset offset =
+        linkage()->GetFrameOffset(AllocatedOperand::cast(op)->index(), frame());
     return MemOperand(offset.from_stack_pointer() ? sp : fp, offset.offset());
   }
 };
@@ -793,14 +790,23 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ sdc1(i.InputDoubleRegister(2), i.MemoryOperand());
       break;
     case kMipsPush:
-      __ Push(i.InputRegister(0));
+      if (instr->InputAt(0)->IsDoubleRegister()) {
+        __ sdc1(i.InputDoubleRegister(0), MemOperand(sp, -kDoubleSize));
+        __ Subu(sp, sp, Operand(kDoubleSize));
+      } else {
+        __ Push(i.InputRegister(0));
+      }
       break;
     case kMipsStackClaim: {
       __ Subu(sp, sp, Operand(i.InputInt32(0)));
       break;
     }
     case kMipsStoreToStackSlot: {
-      __ sw(i.InputRegister(0), MemOperand(sp, i.InputInt32(1)));
+      if (instr->InputAt(0)->IsDoubleRegister()) {
+        __ sdc1(i.InputDoubleRegister(0), MemOperand(sp, i.InputInt32(1)));
+      } else {
+        __ sw(i.InputRegister(0), MemOperand(sp, i.InputInt32(1)));
+      }
       break;
     }
     case kMipsStoreWriteBarrier: {
@@ -1082,13 +1088,14 @@ void CodeGenerator::AssemblePrologue() {
     // kNumCalleeSaved includes the fp register, but the fp register
     // is saved separately in TF.
     DCHECK(kNumCalleeSaved == base::bits::CountPopulation32(saves) + 1);
-    int register_save_area_size = kNumCalleeSaved * kPointerSize;
+    int register_save_area_size =
+        base::bits::CountPopulation32(saves) * kPointerSize;
 
     const RegList saves_fpu = descriptor->CalleeSavedFPRegisters();
     // Save callee-saved FPU registers.
     __ MultiPushFPU(saves_fpu);
     DCHECK(kNumCalleeSavedFPU == base::bits::CountPopulation32(saves_fpu));
-    register_save_area_size += kNumCalleeSavedFPU * kDoubleSize * kPointerSize;
+    register_save_area_size += kNumCalleeSavedFPU * kDoubleSize;
 
     frame()->SetRegisterSaveAreaSize(register_save_area_size);
   } else if (descriptor->IsJSFunctionCall()) {
@@ -1100,6 +1107,8 @@ void CodeGenerator::AssemblePrologue() {
     __ StubPrologue();
     frame()->SetRegisterSaveAreaSize(
         StandardFrameConstants::kFixedFrameSizeFromFp);
+  } else {
+    frame()->SetPCOnStack(false);
   }
 
   if (info()->is_osr()) {
@@ -1127,6 +1136,7 @@ void CodeGenerator::AssemblePrologue() {
 void CodeGenerator::AssembleReturn() {
   CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
   int stack_slots = frame()->GetSpillSlotCount();
+  int pop_count = static_cast<int>(descriptor->StackParameterCount());
   if (descriptor->kind() == CallDescriptor::kCallAddress) {
     if (frame()->GetRegisterSaveAreaSize() > 0) {
       // Remove this frame's spill slots first.
@@ -1143,22 +1153,19 @@ void CodeGenerator::AssembleReturn() {
     }
     __ mov(sp, fp);
     __ Pop(ra, fp);
-    __ Ret();
   } else if (descriptor->IsJSFunctionCall() || needs_frame_) {
     // Canonicalize JSFunction return sites for now.
     if (return_label_.is_bound()) {
       __ Branch(&return_label_);
+      return;
     } else {
       __ bind(&return_label_);
       __ mov(sp, fp);
       __ Pop(ra, fp);
-      int pop_count = static_cast<int>(descriptor->StackParameterCount());
-      if (pop_count != 0) {
-        __ DropAndRet(pop_count);
-      } else {
-        __ Ret();
-      }
     }
+  }
+  if (pop_count != 0) {
+    __ DropAndRet(pop_count);
   } else {
     __ Ret();
   }

@@ -30,29 +30,6 @@
 # define V8_INFINITY INFINITY
 #endif
 
-#if V8_TARGET_ARCH_IA32 || (V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_32_BIT) || \
-    V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_MIPS ||     \
-    V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_PPC || V8_TARGET_ARCH_X87
-
-#define V8_TURBOFAN_BACKEND 1
-#if V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_MIPS64 || \
-    V8_TARGET_ARCH_PPC64
-// 64-bit TurboFan backends support 64-bit integer arithmetic.
-#define V8_TURBOFAN_BACKEND_64 1
-#else
-#define V8_TURBOFAN_BACKEND_64 0
-#endif
-
-#else
-#define V8_TURBOFAN_BACKEND 0
-#endif
-
-#if V8_TURBOFAN_BACKEND
-#define V8_TURBOFAN_TARGET 1
-#else
-#define V8_TURBOFAN_TARGET 0
-#endif
-
 namespace v8 {
 
 namespace base {
@@ -538,6 +515,8 @@ enum VisitMode {
 // Flag indicating whether code is built into the VM (one of the natives files).
 enum NativesFlag { NOT_NATIVES_CODE, NATIVES_CODE };
 
+// JavaScript defines two kinds of 'nil'.
+enum NilValue { kNullValue, kUndefinedValue };
 
 // ParseRestriction is used to restrict the set of valid statements in a
 // unit of compilation.  Restriction violations cause a syntax error.
@@ -570,11 +549,6 @@ struct CodeDesc {
   int constant_pool_size;
   Assembler* origin;
 };
-
-
-// Callback function used for iterating objects in heap spaces,
-// for example, scanning heap objects.
-typedef int (*HeapObjectCallback)(HeapObject* obj);
 
 
 // Callback function used for checking constraints when copying/relocating

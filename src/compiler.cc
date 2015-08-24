@@ -19,6 +19,7 @@
 #include "src/gdb-jit.h"
 #include "src/hydrogen.h"
 #include "src/lithium.h"
+#include "src/log-inl.h"
 #include "src/messages.h"
 #include "src/parser.h"
 #include "src/prettyprinter.h"
@@ -98,6 +99,11 @@ class CompilationInfoWithZone : public CompilationInfo {
 
 bool CompilationInfo::has_shared_info() const {
   return parse_info_ && !parse_info_->shared_info().is_null();
+}
+
+
+bool CompilationInfo::has_context() const {
+  return parse_info_ && !parse_info_->context().is_null();
 }
 
 
@@ -1016,11 +1022,16 @@ bool CompileForDebugging(CompilationInfo* info) {
 }
 
 
+static inline bool IsEvalToplevel(Handle<SharedFunctionInfo> shared) {
+  return shared->is_toplevel() && shared->script()->IsScript() &&
+         Script::cast(shared->script())->compilation_type() ==
+             Script::COMPILATION_TYPE_EVAL;
+}
+
+
 bool Compiler::CompileDebugCode(Handle<JSFunction> function) {
   Handle<SharedFunctionInfo> shared(function->shared());
-  if (shared->is_toplevel() && shared->script()->IsScript() &&
-      Script::cast(shared->script())->compilation_type() ==
-          Script::COMPILATION_TYPE_EVAL) {
+  if (IsEvalToplevel(shared)) {
     return CompileEvalForDebugging(function, shared);
   } else {
     CompilationInfoWithZone info(function);
@@ -1031,6 +1042,7 @@ bool Compiler::CompileDebugCode(Handle<JSFunction> function) {
 
 bool Compiler::CompileDebugCode(Handle<SharedFunctionInfo> shared) {
   DCHECK(shared->allows_lazy_compilation_without_context());
+  DCHECK(!IsEvalToplevel(shared));
   Zone zone;
   ParseInfo parse_info(&zone, shared);
   CompilationInfo info(&parse_info);
@@ -1141,6 +1153,10 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
     SharedFunctionInfo::InitFromFunctionLiteral(result, lit);
     SharedFunctionInfo::SetScript(result, script);
     result->set_is_toplevel(true);
+    if (info->is_eval()) {
+      // Eval scripts cannot be (re-)compiled without context.
+      result->set_allows_lazy_compilation_without_context(false);
+    }
 
     Handle<String> script_name = script->name()->IsString()
         ? Handle<String>(String::cast(script->name()))

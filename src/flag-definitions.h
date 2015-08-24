@@ -185,33 +185,35 @@ DEFINE_IMPLICATION(es_staging, harmony)
 DEFINE_BOOL(legacy_const, true, "legacy semantics for const in sloppy mode")
 
 // Features that are still work in progress (behind individual flags).
-#define HARMONY_INPROGRESS(V)                                   \
-  V(harmony_modules, "harmony modules")                         \
-  V(harmony_array_includes, "harmony Array.prototype.includes") \
-  V(harmony_regexps, "harmony regular expression extensions")   \
-  V(harmony_proxies, "harmony proxies")                         \
-  V(harmony_sloppy, "harmony features in sloppy mode")          \
-  V(harmony_sloppy_let, "harmony let in sloppy mode")           \
-  V(harmony_unicode_regexps, "harmony unicode regexps")         \
-  V(harmony_reflect, "harmony Reflect API")                     \
-  V(harmony_destructuring, "harmony destructuring")             \
-  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")     \
-  V(harmony_atomics, "harmony atomics")                         \
+#define HARMONY_INPROGRESS(V)                                         \
+  V(harmony_modules, "harmony modules")                               \
+  V(harmony_regexps, "harmony regular expression extensions")         \
+  V(harmony_proxies, "harmony proxies")                               \
+  V(harmony_sloppy_function, "harmony sloppy function block scoping") \
+  V(harmony_sloppy_let, "harmony let in sloppy mode")                 \
+  V(harmony_unicode_regexps, "harmony unicode regexps")               \
+  V(harmony_reflect, "harmony Reflect API")                           \
+  V(harmony_destructuring, "harmony destructuring")                   \
+  V(harmony_default_parameters, "harmony default parameters")         \
+  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")           \
+  V(harmony_atomics, "harmony atomics")                               \
   V(harmony_simd, "harmony simd")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
-#define HARMONY_STAGED(V)                                    \
-  V(harmony_tostring, "harmony toString")                    \
-  V(harmony_concat_spreadable, "harmony isConcatSpreadable") \
-  V(harmony_rest_parameters, "harmony rest parameters")
+#define HARMONY_STAGED(V)                                       \
+  V(harmony_array_includes, "harmony Array.prototype.includes") \
+  V(harmony_tostring, "harmony toString")                       \
+  V(harmony_concat_spreadable, "harmony isConcatSpreadable")    \
+  V(harmony_rest_parameters, "harmony rest parameters")         \
+  V(harmony_sloppy, "harmony features in sloppy mode")
 
 // Features that are shipping (turned on by default, but internal flag remains).
-#define HARMONY_SHIPPING(V)                                             \
-  V(harmony_arrow_functions, "harmony arrow functions")                 \
-  V(harmony_new_target, "harmony new.target")                           \
-  V(harmony_object_observe, "harmony Object.observe")                   \
-  V(harmony_spreadcalls, "harmony spread-calls")                        \
-  V(harmony_spread_arrays, "harmony spread in array literals")          \
+#define HARMONY_SHIPPING(V)                                    \
+  V(harmony_arrow_functions, "harmony arrow functions")        \
+  V(harmony_new_target, "harmony new.target")                  \
+  V(harmony_object_observe, "harmony Object.observe")          \
+  V(harmony_spreadcalls, "harmony spread-calls")               \
+  V(harmony_spread_arrays, "harmony spread in array literals") \
   V(harmony_object, "harmony Object methods")
 
 // Once a shipping feature has proved stable in the wild, it will be dropped
@@ -636,7 +638,6 @@ DEFINE_BOOL(age_code, true,
             "track un-executed functions to age code and flush only "
             "old code (required for code flushing)")
 DEFINE_BOOL(incremental_marking, true, "use incremental marking")
-DEFINE_BOOL(incremental_marking_steps, true, "do incremental marking steps")
 DEFINE_BOOL(overapproximate_weak_closure, true,
             "overapproximate weak closer to reduce atomic pause time")
 DEFINE_INT(min_progress_during_object_groups_marking, 128,
@@ -678,7 +679,7 @@ DEFINE_BOOL(use_idle_notification, true,
 DEFINE_BOOL(use_ic, true, "use inline caching")
 DEFINE_BOOL(trace_ic, false, "trace inline cache state transitions")
 DEFINE_BOOL(vector_stores, false, "use vectors for store ics")
-DEFINE_BOOL(global_var_shortcuts, true, "use ic-less global loads and stores")
+DEFINE_BOOL(global_var_shortcuts, false, "use ic-less global loads and stores")
 
 // macro-assembler-ia32.cc
 DEFINE_BOOL(native_code_counters, false,
@@ -943,6 +944,9 @@ DEFINE_BOOL(ll_prof, false, "Enable low-level linux profiler.")
 DEFINE_BOOL(perf_basic_prof, false,
             "Enable perf linux profiler (basic support).")
 DEFINE_NEG_IMPLICATION(perf_basic_prof, compact_code_space)
+DEFINE_BOOL(perf_basic_prof_only_functions, false,
+            "Only report function code ranges to perf (i.e. no stubs).")
+DEFINE_IMPLICATION(perf_basic_prof_only_functions, perf_basic_prof)
 DEFINE_STRING(gc_fake_mmap, "/tmp/__v8_gc__",
               "Specify the name of the file for fake gc mmap used in ll_prof")
 DEFINE_BOOL(log_internal_timer_events, false, "Time internal events.")

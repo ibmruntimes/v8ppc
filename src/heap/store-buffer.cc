@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <algorithm>
+#include "src/heap/store-buffer.h"
 
-#include "src/v8.h"
+#include <algorithm>
 
 #include "src/counters.h"
 #include "src/heap/store-buffer-inl.h"
+#include "src/v8.h"
 
 namespace v8 {
 namespace internal {
@@ -455,7 +456,7 @@ void StoreBuffer::IteratePointersToNewSpace(ObjectSlotCallback slot_callback) {
           PagedSpace* owner = reinterpret_cast<PagedSpace*>(page->owner());
           if (owner == heap_->map_space()) {
             DCHECK(page->WasSwept());
-            HeapObjectIterator iterator(page, NULL);
+            HeapObjectIterator iterator(page);
             for (HeapObject* heap_object = iterator.Next(); heap_object != NULL;
                  heap_object = iterator.Next()) {
               // We skip free space objects.
@@ -470,7 +471,7 @@ void StoreBuffer::IteratePointersToNewSpace(ObjectSlotCallback slot_callback) {
           } else {
             heap_->mark_compact_collector()->SweepOrWaitUntilSweepingCompleted(
                 page);
-            HeapObjectIterator iterator(page, NULL);
+            HeapObjectIterator iterator(page);
             for (HeapObject* heap_object = iterator.Next(); heap_object != NULL;
                  heap_object = iterator.Next()) {
               // We iterate over objects that contain new space pointers only.

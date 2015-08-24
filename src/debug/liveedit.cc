@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
-#include "src/v8.h"
-
 #include "src/debug/liveedit.h"
 
 #include "src/code-stubs.h"
@@ -12,11 +9,13 @@
 #include "src/compiler.h"
 #include "src/debug/debug.h"
 #include "src/deoptimizer.h"
+#include "src/frames-inl.h"
 #include "src/global-handles.h"
 #include "src/messages.h"
 #include "src/parser.h"
 #include "src/scopeinfo.h"
 #include "src/scopes.h"
+#include "src/v8.h"
 #include "src/v8memory.h"
 
 namespace v8 {
@@ -897,23 +896,6 @@ MaybeHandle<JSArray> LiveEdit::GatherCompileInfo(Handle<Script> script,
     return listener.GetResult();
   } else {
     return isolate->Throw<JSArray>(rethrow_exception);
-  }
-}
-
-
-void LiveEdit::WrapSharedFunctionInfos(Handle<JSArray> array) {
-  Isolate* isolate = array->GetIsolate();
-  HandleScope scope(isolate);
-  int len = GetArrayLength(array);
-  for (int i = 0; i < len; i++) {
-    Handle<SharedFunctionInfo> info(
-        SharedFunctionInfo::cast(
-            *Object::GetElement(isolate, array, i).ToHandleChecked()));
-    SharedInfoWrapper info_wrapper = SharedInfoWrapper::Create(isolate);
-    Handle<String> name_handle(String::cast(info->name()));
-    info_wrapper.SetProperties(name_handle, info->start_position(),
-                               info->end_position(), info);
-    SetElementSloppy(array, i, info_wrapper.GetJSArray());
   }
 }
 

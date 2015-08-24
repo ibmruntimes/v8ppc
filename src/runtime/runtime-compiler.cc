@@ -7,7 +7,7 @@
 #include "src/arguments.h"
 #include "src/compiler.h"
 #include "src/deoptimizer.h"
-#include "src/frames.h"
+#include "src/frames-inl.h"
 #include "src/full-codegen/full-codegen.h"
 #include "src/messages.h"
 #include "src/runtime/runtime-utils.h"
@@ -132,9 +132,7 @@ RUNTIME_FUNCTION(Runtime_NotifyDeoptimized) {
   RUNTIME_ASSERT(frame->function()->IsJSFunction());
   DCHECK(frame->function() == *function);
 
-  // Avoid doing too much work when running with --always-opt and keep
-  // the optimized code around.
-  if (FLAG_always_opt || type == Deoptimizer::LAZY) {
+  if (type == Deoptimizer::LAZY) {
     return isolate->heap()->undefined_value();
   }
 

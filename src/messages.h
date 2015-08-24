@@ -10,33 +10,15 @@
 #ifndef V8_MESSAGES_H_
 #define V8_MESSAGES_H_
 
-// Forward declaration of MessageLocation.
-namespace v8 {
-namespace internal {
-class MessageLocation;
-} }  // namespace v8::internal
-
-
-class V8Message {
- public:
-  V8Message(char* type,
-            v8::internal::Handle<v8::internal::JSArray> args,
-            const v8::internal::MessageLocation* loc) :
-      type_(type), args_(args), loc_(loc) { }
-  char* type() const { return type_; }
-  v8::internal::Handle<v8::internal::JSArray> args() const { return args_; }
-  const v8::internal::MessageLocation* loc() const { return loc_; }
- private:
-  char* type_;
-  v8::internal::Handle<v8::internal::JSArray> const args_;
-  const v8::internal::MessageLocation* loc_;
-};
-
+#include "src/base/smart-pointers.h"
+#include "src/list.h"
 
 namespace v8 {
 namespace internal {
 
-struct Language;
+// Forward declarations.
+class JSMessageObject;
+class LookupIterator;
 class SourceInfo;
 
 class MessageLocation {
@@ -91,6 +73,7 @@ class CallSite {
   /* Error */                                                                  \
   T(None, "")                                                                  \
   T(CyclicProto, "Cyclic __proto__ value")                                     \
+  T(Debugger, "Debugger: %")                                                   \
   T(DebuggerLoading, "Error loading debugger")                                 \
   T(DefaultOptionsMissing, "Internal % error. Default options are missing.")   \
   T(UncaughtException, "Uncaught %")                                           \
@@ -119,6 +102,8 @@ class CallSite {
   T(DataViewNotArrayBuffer,                                                    \
     "First argument to DataView constructor must be an ArrayBuffer")           \
   T(DateType, "this is not a Date object.")                                    \
+  T(DebuggerFrame, "Debugger: Invalid frame index.")                           \
+  T(DebuggerType, "Debugger: Parameters have wrong types.")                    \
   T(DefineDisallowed, "Cannot define property:%, object is not extensible.")   \
   T(DuplicateTemplateProperty, "Object template has duplicate property '%'")   \
   T(ExtendsValueGenerator,                                                     \
@@ -428,6 +413,8 @@ class MessageTemplate {
         kLastMessage
   };
 
+  static const char* TemplateString(int template_index);
+
   static MaybeHandle<String> FormatMessage(int template_index,
                                            Handle<String> arg0,
                                            Handle<String> arg1,
@@ -456,6 +443,46 @@ class MessageHandler {
   static Handle<String> GetMessage(Isolate* isolate, Handle<Object> data);
   static base::SmartArrayPointer<char> GetLocalizedMessage(Isolate* isolate,
                                                            Handle<Object> data);
+};
+
+
+class ErrorToStringHelper {
+ public:
+  ErrorToStringHelper() : visited_(0) {}
+
+  MUST_USE_RESULT MaybeHandle<String> Stringify(Isolate* isolate,
+                                                Handle<JSObject> error);
+
+ private:
+  class VisitedScope {
+   public:
+    VisitedScope(ErrorToStringHelper* helper, Handle<JSObject> error)
+        : helper_(helper), has_visited_(false) {
+      for (const Handle<JSObject>& visited : helper->visited_) {
+        if (visited.is_identical_to(error)) {
+          has_visited_ = true;
+          break;
+        }
+      }
+      helper->visited_.Add(error);
+    }
+    ~VisitedScope() { helper_->visited_.RemoveLast(); }
+    bool has_visited() { return has_visited_; }
+
+   private:
+    ErrorToStringHelper* helper_;
+    bool has_visited_;
+  };
+
+  static bool ShadowsInternalError(Isolate* isolate,
+                                   LookupIterator* property_lookup,
+                                   LookupIterator* internal_error_lookup);
+
+  static MUST_USE_RESULT MaybeHandle<String> GetStringifiedProperty(
+      Isolate* isolate, LookupIterator* property_lookup,
+      Handle<String> default_value);
+
+  List<Handle<JSObject> > visited_;
 };
 } }  // namespace v8::internal
 

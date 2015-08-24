@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/heap/heap.h"
 
 #include "src/accessors.h"
 #include "src/api.h"
@@ -19,36 +19,39 @@
 #include "src/global-handles.h"
 #include "src/heap/gc-idle-time-handler.h"
 #include "src/heap/incremental-marking.h"
+#include "src/heap/mark-compact-inl.h"
 #include "src/heap/mark-compact.h"
 #include "src/heap/memory-reducer.h"
 #include "src/heap/objects-visiting-inl.h"
 #include "src/heap/objects-visiting.h"
 #include "src/heap/store-buffer.h"
 #include "src/heap-profiler.h"
+#include "src/interpreter/interpreter.h"
 #include "src/runtime-profiler.h"
 #include "src/scopeinfo.h"
 #include "src/snapshot/natives.h"
 #include "src/snapshot/serialize.h"
 #include "src/snapshot/snapshot.h"
 #include "src/utils.h"
+#include "src/v8.h"
 #include "src/v8threads.h"
 #include "src/vm-state-inl.h"
 
 #if V8_TARGET_ARCH_PPC && !V8_INTERPRETED_REGEXP
-#include "src/regexp-macro-assembler.h"          // NOLINT
-#include "src/ppc/regexp-macro-assembler-ppc.h"  // NOLINT
+#include "src/regexp/ppc/regexp-macro-assembler-ppc.h"
+#include "src/regexp/regexp-macro-assembler.h"
 #endif
 #if V8_TARGET_ARCH_ARM && !V8_INTERPRETED_REGEXP
-#include "src/regexp-macro-assembler.h"          // NOLINT
-#include "src/arm/regexp-macro-assembler-arm.h"  // NOLINT
+#include "src/regexp/arm/regexp-macro-assembler-arm.h"
+#include "src/regexp/regexp-macro-assembler.h"
 #endif
 #if V8_TARGET_ARCH_MIPS && !V8_INTERPRETED_REGEXP
-#include "src/regexp-macro-assembler.h"            // NOLINT
-#include "src/mips/regexp-macro-assembler-mips.h"  // NOLINT
+#include "src/regexp/mips/regexp-macro-assembler-mips.h"
+#include "src/regexp/regexp-macro-assembler.h"
 #endif
 #if V8_TARGET_ARCH_MIPS64 && !V8_INTERPRETED_REGEXP
-#include "src/regexp-macro-assembler.h"
-#include "src/mips64/regexp-macro-assembler-mips64.h"
+#include "src/regexp/mips64/regexp-macro-assembler-mips64.h"
+#include "src/regexp/regexp-macro-assembler.h"
 #endif
 
 namespace v8 {
@@ -113,7 +116,6 @@ Heap::Heap()
       inline_allocation_disabled_(false),
       store_buffer_rebuilder_(store_buffer()),
       hidden_string_(NULL),
-      gc_safe_size_of_old_object_(NULL),
       total_regexp_code_generated_(0),
       tracer_(this),
       high_survival_rate_period_length_(0),
@@ -136,7 +138,6 @@ Heap::Heap()
       last_gc_time_(0.0),
       mark_compact_collector_(this),
       store_buffer_(this),
-      marking_(this),
       incremental_marking_(this),
       memory_reducer_(this),
       full_codegen_bytes_generated_(0),
@@ -245,14 +246,6 @@ intptr_t Heap::Available() {
 bool Heap::HasBeenSetUp() {
   return old_space_ != NULL && code_space_ != NULL && map_space_ != NULL &&
          lo_space_ != NULL;
-}
-
-
-int Heap::GcSafeSizeOfOldObject(HeapObject* object) {
-  if (IntrusiveMarking::IsMarked(object)) {
-    return IntrusiveMarking::SizeOfMarkedObject(object);
-  }
-  return object->SizeFromMap(object->map());
 }
 
 
@@ -906,8 +899,7 @@ bool Heap::CollectGarbage(GarbageCollector collector, const char* gc_reason,
       !mark_compact_collector()->finalize_incremental_marking() &&
       !mark_compact_collector()->abort_incremental_marking() &&
       !incremental_marking()->IsStopped() &&
-      !incremental_marking()->should_hurry() &&
-      FLAG_incremental_marking_steps) {
+      !incremental_marking()->should_hurry() && FLAG_incremental_marking) {
     // Make progress in incremental marking.
     const intptr_t kStepSizeWhenDelayedByScavenge = 1 * MB;
     incremental_marking()->Step(kStepSizeWhenDelayedByScavenge,
@@ -1078,7 +1070,7 @@ bool Heap::ReserveSpace(Reservation* reservations) {
       bool perform_gc = false;
       if (space == LO_SPACE) {
         DCHECK_EQ(1, reservation->length());
-        perform_gc = !lo_space()->CanAllocateSize(reservation->at(0).size);
+        perform_gc = !CanExpandOldGeneration(reservation->at(0).size);
       } else {
         for (auto& chunk : *reservation) {
           AllocationResult allocation;
@@ -2663,7 +2655,8 @@ AllocationResult Heap::AllocatePartialMap(InstanceType instance_type,
         ->set_layout_descriptor(LayoutDescriptor::FastPointerLayout());
   }
   reinterpret_cast<Map*>(result)->clear_unused();
-  reinterpret_cast<Map*>(result)->set_inobject_properties(0);
+  reinterpret_cast<Map*>(result)
+      ->set_inobject_properties_or_constructor_function_index(0);
   reinterpret_cast<Map*>(result)->set_unused_property_fields(0);
   reinterpret_cast<Map*>(result)->set_bit_field(0);
   reinterpret_cast<Map*>(result)->set_bit_field2(0);
@@ -2690,7 +2683,7 @@ AllocationResult Heap::AllocateMap(InstanceType instance_type,
   map->set_constructor_or_backpointer(null_value(), SKIP_WRITE_BARRIER);
   map->set_instance_size(instance_size);
   map->clear_unused();
-  map->set_inobject_properties(0);
+  map->set_inobject_properties_or_constructor_function_index(0);
   map->set_code_cache(empty_fixed_array(), SKIP_WRITE_BARRIER);
   map->set_dependent_code(DependentCode::cast(empty_fixed_array()),
                           SKIP_WRITE_BARRIER);
@@ -2879,25 +2872,34 @@ bool Heap::CreateInitialMaps() {
 #define ALLOCATE_VARSIZE_MAP(instance_type, field_name) \
   ALLOCATE_MAP(instance_type, kVariableSizeSentinel, field_name)
 
+#define ALLOCATE_PRIMITIVE_MAP(instance_type, size, field_name, \
+                               constructor_function_index)      \
+  {                                                             \
+    ALLOCATE_MAP((instance_type), (size), field_name);          \
+    field_name##_map()->SetConstructorFunctionIndex(            \
+        (constructor_function_index));                          \
+  }
+
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, fixed_cow_array)
     DCHECK(fixed_array_map() != fixed_cow_array_map());
 
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, scope_info)
-    ALLOCATE_MAP(HEAP_NUMBER_TYPE, HeapNumber::kSize, heap_number)
+    ALLOCATE_PRIMITIVE_MAP(HEAP_NUMBER_TYPE, HeapNumber::kSize, heap_number,
+                           Context::NUMBER_FUNCTION_INDEX)
     ALLOCATE_MAP(MUTABLE_HEAP_NUMBER_TYPE, HeapNumber::kSize,
                  mutable_heap_number)
-    ALLOCATE_MAP(FLOAT32X4_TYPE, Float32x4::kSize, float32x4)
-    ALLOCATE_MAP(INT32X4_TYPE, Int32x4::kSize, int32x4)
-    ALLOCATE_MAP(BOOL32X4_TYPE, Bool32x4::kSize, bool32x4)
-    ALLOCATE_MAP(INT16X8_TYPE, Int16x8::kSize, int16x8)
-    ALLOCATE_MAP(BOOL16X8_TYPE, Bool16x8::kSize, bool16x8)
-    ALLOCATE_MAP(INT8X16_TYPE, Int8x16::kSize, int8x16)
-    ALLOCATE_MAP(BOOL8X16_TYPE, Bool8x16::kSize, bool8x16)
-    ALLOCATE_MAP(SYMBOL_TYPE, Symbol::kSize, symbol)
+    ALLOCATE_PRIMITIVE_MAP(SYMBOL_TYPE, Symbol::kSize, symbol,
+                           Context::SYMBOL_FUNCTION_INDEX)
+#define ALLOCATE_SIMD128_MAP(TYPE, Type, type, lane_count, lane_type) \
+  ALLOCATE_PRIMITIVE_MAP(SIMD128_VALUE_TYPE, Type::kSize, type,       \
+                         Context::TYPE##_FUNCTION_INDEX)
+    SIMD128_TYPES(ALLOCATE_SIMD128_MAP)
+#undef ALLOCATE_SIMD128_MAP
     ALLOCATE_MAP(FOREIGN_TYPE, Foreign::kSize, foreign)
 
     ALLOCATE_MAP(ODDBALL_TYPE, Oddball::kSize, the_hole);
-    ALLOCATE_MAP(ODDBALL_TYPE, Oddball::kSize, boolean);
+    ALLOCATE_PRIMITIVE_MAP(ODDBALL_TYPE, Oddball::kSize, boolean,
+                           Context::BOOLEAN_FUNCTION_INDEX);
     ALLOCATE_MAP(ODDBALL_TYPE, Oddball::kSize, uninitialized);
     ALLOCATE_MAP(ODDBALL_TYPE, Oddball::kSize, arguments_marker);
     ALLOCATE_MAP(ODDBALL_TYPE, Oddball::kSize, no_interceptor_result_sentinel);
@@ -2910,9 +2912,10 @@ bool Heap::CreateInitialMaps() {
         AllocationResult allocation = AllocateMap(entry.type, entry.size);
         if (!allocation.To(&obj)) return false;
       }
+      Map* map = Map::cast(obj);
+      map->SetConstructorFunctionIndex(Context::STRING_FUNCTION_INDEX);
       // Mark cons string maps as unstable, because their objects can change
       // maps during GC.
-      Map* map = Map::cast(obj);
       if (StringShape(entry.type).IsCons()) map->mark_unstable();
       roots_[entry.index] = map;
     }
@@ -2921,7 +2924,9 @@ bool Heap::CreateInitialMaps() {
       AllocationResult allocation = AllocateMap(EXTERNAL_ONE_BYTE_STRING_TYPE,
                                                 ExternalOneByteString::kSize);
       if (!allocation.To(&obj)) return false;
-      set_native_source_string_map(Map::cast(obj));
+      Map* map = Map::cast(obj);
+      map->SetConstructorFunctionIndex(Context::STRING_FUNCTION_INDEX);
+      set_native_source_string_map(map);
     }
 
     ALLOCATE_VARSIZE_MAP(FIXED_DOUBLE_ARRAY_TYPE, fixed_double_array)
@@ -2975,6 +2980,7 @@ bool Heap::CreateInitialMaps() {
     ALLOCATE_MAP(JS_MESSAGE_OBJECT_TYPE, JSMessageObject::kSize, message_object)
     ALLOCATE_MAP(JS_OBJECT_TYPE, JSObject::kHeaderSize + kPointerSize, external)
     external_map()->set_is_extensible(false);
+#undef ALLOCATE_PRIMITIVE_MAP
 #undef ALLOCATE_VARSIZE_MAP
 #undef ALLOCATE_MAP
   }
@@ -3032,30 +3038,30 @@ AllocationResult Heap::AllocateHeapNumber(double value, MutableMode mode,
   return result;
 }
 
-#define SIMD_ALLOCATE_DEFINITION(type, type_name, lane_count, lane_type) \
-  AllocationResult Heap::Allocate##type(lane_type lanes[lane_count],     \
-                                        PretenureFlag pretenure) {       \
-    int size = type::kSize;                                              \
-    STATIC_ASSERT(type::kSize <= Page::kMaxRegularHeapObjectSize);       \
-                                                                         \
-    AllocationSpace space = SelectSpace(size, pretenure);                \
-                                                                         \
-    HeapObject* result;                                                  \
-    {                                                                    \
-      AllocationResult allocation =                                      \
-          AllocateRaw(size, space, OLD_SPACE, kSimd128Unaligned);        \
-      if (!allocation.To(&result)) return allocation;                    \
-    }                                                                    \
-                                                                         \
-    result->set_map_no_write_barrier(type_name##_map());                 \
-    type* instance = type::cast(result);                                 \
-    for (int i = 0; i < lane_count; i++) {                               \
-      instance->set_lane(i, lanes[i]);                                   \
-    }                                                                    \
-    return result;                                                       \
+#define SIMD_ALLOCATE_DEFINITION(TYPE, Type, type, lane_count, lane_type) \
+  AllocationResult Heap::Allocate##Type(lane_type lanes[lane_count],      \
+                                        PretenureFlag pretenure) {        \
+    int size = Type::kSize;                                               \
+    STATIC_ASSERT(Type::kSize <= Page::kMaxRegularHeapObjectSize);        \
+                                                                          \
+    AllocationSpace space = SelectSpace(size, pretenure);                 \
+                                                                          \
+    HeapObject* result;                                                   \
+    {                                                                     \
+      AllocationResult allocation =                                       \
+          AllocateRaw(size, space, OLD_SPACE, kSimd128Unaligned);         \
+      if (!allocation.To(&result)) return allocation;                     \
+    }                                                                     \
+                                                                          \
+    result->set_map_no_write_barrier(type##_map());                       \
+    Type* instance = Type::cast(result);                                  \
+    for (int i = 0; i < lane_count; i++) {                                \
+      instance->set_lane(i, lanes[i]);                                    \
+    }                                                                     \
+    return result;                                                        \
   }
-
 SIMD128_TYPES(SIMD_ALLOCATE_DEFINITION)
+#undef SIMD_ALLOCATE_DEFINITION
 
 
 AllocationResult Heap::AllocateCell(Object* value) {
@@ -3192,44 +3198,47 @@ void Heap::CreateInitialObjects() {
 
   // Finish initializing oddballs after creating the string table.
   Oddball::Initialize(isolate(), factory->undefined_value(), "undefined",
-                      factory->nan_value(), Oddball::kUndefined);
+                      factory->nan_value(), "undefined", Oddball::kUndefined);
 
   // Initialize the null_value.
   Oddball::Initialize(isolate(), factory->null_value(), "null",
-                      handle(Smi::FromInt(0), isolate()), Oddball::kNull);
+                      handle(Smi::FromInt(0), isolate()), "object",
+                      Oddball::kNull);
 
   set_true_value(*factory->NewOddball(factory->boolean_map(), "true",
                                       handle(Smi::FromInt(1), isolate()),
-                                      Oddball::kTrue));
+                                      "boolean", Oddball::kTrue));
 
   set_false_value(*factory->NewOddball(factory->boolean_map(), "false",
                                        handle(Smi::FromInt(0), isolate()),
-                                       Oddball::kFalse));
+                                       "boolean", Oddball::kFalse));
 
   set_the_hole_value(*factory->NewOddball(factory->the_hole_map(), "hole",
                                           handle(Smi::FromInt(-1), isolate()),
-                                          Oddball::kTheHole));
+                                          "undefined", Oddball::kTheHole));
 
-  set_uninitialized_value(*factory->NewOddball(
-      factory->uninitialized_map(), "uninitialized",
-      handle(Smi::FromInt(-1), isolate()), Oddball::kUninitialized));
+  set_uninitialized_value(
+      *factory->NewOddball(factory->uninitialized_map(), "uninitialized",
+                           handle(Smi::FromInt(-1), isolate()), "undefined",
+                           Oddball::kUninitialized));
 
-  set_arguments_marker(*factory->NewOddball(
-      factory->arguments_marker_map(), "arguments_marker",
-      handle(Smi::FromInt(-4), isolate()), Oddball::kArgumentMarker));
+  set_arguments_marker(
+      *factory->NewOddball(factory->arguments_marker_map(), "arguments_marker",
+                           handle(Smi::FromInt(-4), isolate()), "undefined",
+                           Oddball::kArgumentMarker));
 
   set_no_interceptor_result_sentinel(*factory->NewOddball(
       factory->no_interceptor_result_sentinel_map(),
       "no_interceptor_result_sentinel", handle(Smi::FromInt(-2), isolate()),
-      Oddball::kOther));
+      "undefined", Oddball::kOther));
 
   set_termination_exception(*factory->NewOddball(
       factory->termination_exception_map(), "termination_exception",
-      handle(Smi::FromInt(-3), isolate()), Oddball::kOther));
+      handle(Smi::FromInt(-3), isolate()), "undefined", Oddball::kOther));
 
   set_exception(*factory->NewOddball(factory->exception_map(), "exception",
                                      handle(Smi::FromInt(-5), isolate()),
-                                     Oddball::kException));
+                                     "undefined", Oddball::kException));
 
   for (unsigned i = 0; i < arraysize(constant_string_table); i++) {
     Handle<String> str =
@@ -3373,7 +3382,9 @@ void Heap::CreateInitialObjects() {
   set_weak_stack_trace_list(Smi::FromInt(0));
 
   // Will be filled in by Interpreter::Initialize().
-  set_interpreter_table(empty_fixed_array());
+  set_interpreter_table(
+      *interpreter::Interpreter::CreateUninitializedInterpreterTable(
+          isolate()));
 
   set_allocation_sites_scratchpad(
       *factory->NewFixedArray(kAllocationSiteScratchpadSize, TENURED));
@@ -3425,7 +3436,6 @@ bool Heap::RootCanBeWrittenAfterInitialization(Heap::RootListIndex root_index) {
     case kWeakObjectToCodeTableRootIndex:
     case kRetainedMapsRootIndex:
     case kWeakStackTraceListRootIndex:
-    case kInterpreterTableRootIndex:
 // Smi values
 #define SMI_ENTRY(type, name, Name) case k##Name##RootIndex:
       SMI_ROOT_LIST(SMI_ENTRY)
@@ -3787,7 +3797,7 @@ FixedArrayBase* Heap::LeftTrimFixedArray(FixedArrayBase* object,
       FixedArrayBase::cast(HeapObject::FromAddress(new_start));
 
   // Maintain consistency of live bytes during incremental marking
-  marking()->TransferMark(object->address(), new_start);
+  Marking::TransferMark(this, object->address(), new_start);
   AdjustLiveBytes(new_object, -bytes_to_trim, Heap::CONCURRENT_TO_SWEEPER);
 
   // Notify the heap profiler of change in object layout.
@@ -5760,8 +5770,6 @@ bool Heap::SetUp() {
 
   base::CallOnce(&initialize_gc_once, &InitializeGCOnce);
 
-  MarkMapPointersAsEncoded(false);
-
   // Set up memory allocator.
   if (!isolate_->memory_allocator()->SetUp(MaxReserved(), MaxExecutableSize()))
     return false;
@@ -5773,8 +5781,7 @@ bool Heap::SetUp() {
   new_space_top_after_last_gc_ = new_space()->top();
 
   // Initialize old space.
-  old_space_ =
-      new OldSpace(this, max_old_generation_size_, OLD_SPACE, NOT_EXECUTABLE);
+  old_space_ = new OldSpace(this, OLD_SPACE, NOT_EXECUTABLE);
   if (old_space_ == NULL) return false;
   if (!old_space_->SetUp()) return false;
 
@@ -5782,20 +5789,19 @@ bool Heap::SetUp() {
 
   // Initialize the code space, set its maximum capacity to the old
   // generation size. It needs executable memory.
-  code_space_ =
-      new OldSpace(this, max_old_generation_size_, CODE_SPACE, EXECUTABLE);
+  code_space_ = new OldSpace(this, CODE_SPACE, EXECUTABLE);
   if (code_space_ == NULL) return false;
   if (!code_space_->SetUp()) return false;
 
   // Initialize map space.
-  map_space_ = new MapSpace(this, max_old_generation_size_, MAP_SPACE);
+  map_space_ = new MapSpace(this, MAP_SPACE);
   if (map_space_ == NULL) return false;
   if (!map_space_->SetUp()) return false;
 
   // The large object code space may contain code or data.  We set the memory
   // to be non-executable here for safety, but this means we need to enable it
   // explicitly when allocating large code objects.
-  lo_space_ = new LargeObjectSpace(this, max_old_generation_size_, LO_SPACE);
+  lo_space_ = new LargeObjectSpace(this, LO_SPACE);
   if (lo_space_ == NULL) return false;
   if (!lo_space_->SetUp()) return false;
 
@@ -6127,17 +6133,7 @@ OldSpace* OldSpaces::next() {
 
 
 SpaceIterator::SpaceIterator(Heap* heap)
-    : heap_(heap),
-      current_space_(FIRST_SPACE),
-      iterator_(NULL),
-      size_func_(NULL) {}
-
-
-SpaceIterator::SpaceIterator(Heap* heap, HeapObjectCallback size_func)
-    : heap_(heap),
-      current_space_(FIRST_SPACE),
-      iterator_(NULL),
-      size_func_(size_func) {}
+    : heap_(heap), current_space_(FIRST_SPACE), iterator_(NULL) {}
 
 
 SpaceIterator::~SpaceIterator() {
@@ -6174,19 +6170,19 @@ ObjectIterator* SpaceIterator::CreateIterator() {
 
   switch (current_space_) {
     case NEW_SPACE:
-      iterator_ = new SemiSpaceIterator(heap_->new_space(), size_func_);
+      iterator_ = new SemiSpaceIterator(heap_->new_space());
       break;
     case OLD_SPACE:
-      iterator_ = new HeapObjectIterator(heap_->old_space(), size_func_);
+      iterator_ = new HeapObjectIterator(heap_->old_space());
       break;
     case CODE_SPACE:
-      iterator_ = new HeapObjectIterator(heap_->code_space(), size_func_);
+      iterator_ = new HeapObjectIterator(heap_->code_space());
       break;
     case MAP_SPACE:
-      iterator_ = new HeapObjectIterator(heap_->map_space(), size_func_);
+      iterator_ = new HeapObjectIterator(heap_->map_space());
       break;
     case LO_SPACE:
-      iterator_ = new LargeObjectIterator(heap_->lo_space(), size_func_);
+      iterator_ = new LargeObjectIterator(heap_->lo_space());
       break;
   }
 

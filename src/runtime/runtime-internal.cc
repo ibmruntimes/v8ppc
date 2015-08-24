@@ -7,6 +7,7 @@
 #include "src/arguments.h"
 #include "src/bootstrapper.h"
 #include "src/debug/debug.h"
+#include "src/frames-inl.h"
 #include "src/messages.h"
 #include "src/parser.h"
 #include "src/prettyprinter.h"
@@ -19,6 +20,26 @@ RUNTIME_FUNCTION(Runtime_CheckIsBootstrapping) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 0);
   RUNTIME_ASSERT(isolate->bootstrapper()->IsActive());
+  return isolate->heap()->undefined_value();
+}
+
+
+RUNTIME_FUNCTION(Runtime_ImportToRuntime) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, container, 0);
+  RUNTIME_ASSERT(isolate->bootstrapper()->IsActive());
+  Bootstrapper::ImportNatives(isolate, container);
+  return isolate->heap()->undefined_value();
+}
+
+
+RUNTIME_FUNCTION(Runtime_ImportExperimentalToRuntime) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, container, 0);
+  RUNTIME_ASSERT(isolate->bootstrapper()->IsActive());
+  Bootstrapper::ImportExperimentalNatives(isolate, container);
   return isolate->heap()->undefined_value();
 }
 
@@ -250,6 +271,18 @@ RUNTIME_FUNCTION(Runtime_MessageGetScript) {
   DCHECK(args.length() == 1);
   CONVERT_ARG_CHECKED(JSMessageObject, message, 0);
   return message->script();
+}
+
+
+RUNTIME_FUNCTION(Runtime_ErrorToStringRT) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, error, 0);
+  Handle<String> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result,
+      isolate->error_tostring_helper()->Stringify(isolate, error));
+  return *result;
 }
 
 

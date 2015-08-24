@@ -14,7 +14,7 @@
 #include "src/execution.h"
 #include "src/factory.h"
 #include "src/flags.h"
-#include "src/frames-inl.h"
+#include "src/frames.h"
 #include "src/hashmap.h"
 #include "src/runtime/runtime.h"
 #include "src/string-stream.h"
@@ -494,6 +494,7 @@ class Debug {
         base::NoBarrier_Load(&thread_local_.current_debug_scope_));
   }
   inline Handle<Context> debug_context() { return debug_context_; }
+
   void set_live_edit_enabled(bool v) { live_edit_enabled_ = v; }
   bool live_edit_enabled() const {
     return FLAG_enable_liveedit && live_edit_enabled_ ;
@@ -548,10 +549,6 @@ class Debug {
   void OnException(Handle<Object> exception, Handle<Object> promise);
 
   // Constructors for debug event objects.
-  MUST_USE_RESULT MaybeHandle<Object> MakeJSObject(
-      const char* constructor_name,
-      int argc,
-      Handle<Object> argv[]);
   MUST_USE_RESULT MaybeHandle<Object> MakeExecutionState();
   MUST_USE_RESULT MaybeHandle<Object> MakeBreakEvent(
       Handle<Object> break_points_hit);
@@ -587,7 +584,6 @@ class Debug {
                             bool auto_continue);
   void InvokeMessageHandler(MessageImpl message);
 
-  static bool CompileDebuggerScript(Isolate* isolate, int index);
   void ClearOneShot();
   void ActivateStepIn(StackFrame* frame);
   void ClearStepIn();
@@ -596,6 +592,8 @@ class Debug {
   void RemoveDebugInfoAndClearFromShared(Handle<DebugInfo> debug_info);
   Handle<Object> CheckBreakPoints(Handle<Object> break_point);
   bool CheckBreakPoint(Handle<Object> break_point_object);
+  MaybeHandle<Object> CallFunction(const char* name, int argc,
+                                   Handle<Object> args[]);
 
   inline void AssertDebugContext() {
     DCHECK(isolate_->context() == *debug_context());

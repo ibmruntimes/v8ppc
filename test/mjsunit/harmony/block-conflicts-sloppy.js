@@ -4,7 +4,7 @@
 
 // Test for conflicting variable bindings.
 
-// Flags: --no-legacy-const --harmony-sloppy --harmony-sloppy-let
+// Flags: --no-legacy-const --harmony-sloppy --harmony-sloppy-let --harmony-sloppy-function
 
 function CheckException(e) {
   var string = e.toString();
@@ -44,12 +44,10 @@ function TestAll(expected,s,opt_e) {
   var e = "";
   var msg = s;
   if (opt_e) { e = opt_e; msg += opt_e; }
-  // TODO(littledan): https://code.google.com/p/v8/issues/detail?id=4288
-  // It is also not clear whether these tests makes sense in sloppy mode.
   // TODO(littledan): Add tests using Realm.eval to ensure that global eval
   // works as expected.
-  // assertEquals(expected === 'LocalConflict' ? 'NoConflict' : expected,
-  //     TestGlobal(s,e), "global:'" + msg + "'");
+  assertEquals(expected === 'LocalConflict' ? 'NoConflict' : expected,
+      TestGlobal(s,e), "global:'" + msg + "'");
   assertEquals(expected === 'LocalConflict' ? 'NoConflict' : expected,
       TestFunction(s,e), "function:'" + msg + "'");
   assertEquals(expected === 'LocalConflict' ? 'Conflict' : expected,
@@ -59,22 +57,17 @@ function TestAll(expected,s,opt_e) {
 
 function TestConflict(s) {
   TestAll('Conflict', s);
-  // TODO(littledan): https://code.google.com/p/v8/issues/detail?id=4288
-  // It is also not clear whether these tests makes sense in sloppy mode.
-  // TestAll('Conflict', 'eval("' + s + '");');
+  TestAll('Conflict', 'eval("' + s + '");');
 }
 
 function TestNoConflict(s) {
   TestAll('NoConflict', s, "'NoConflict'");
-  // TODO(littledan): https://code.google.com/p/v8/issues/detail?id=4288
-  // TestAll('NoConflict', 'eval("' + s + '");', "'NoConflict'");
+  TestAll('NoConflict', 'eval("' + s + '");', "'NoConflict'");
 }
 
 function TestLocalConflict(s) {
   TestAll('LocalConflict', s, "'NoConflict'");
-  // TODO(littledan): https://code.google.com/p/v8/issues/detail?id=4288
-  // It is also not clear whether these tests makes sense in sloppy mode.
-  // TestAll('NoConflict', 'eval("' + s + '");', "'NoConflict'");
+  TestAll('NoConflict', 'eval("' + s + '");', "'NoConflict'");
 }
 
 var letbinds = [ "let x;",
@@ -88,7 +81,11 @@ var letbinds = [ "let x;",
                  "const x = function() {};",
                  "const x = 2, y = 3;",
                  "const y = 4, x = 5;",
+                 "class x { }",
                  ];
+function forCompatible(bind) {
+  return !bind.startsWith('class');
+}
 var varbinds = [ "var x;",
                  "var x = 0;",
                  "var x = undefined;",
@@ -110,7 +107,9 @@ for (var l = 0; l < letbinds.length; ++l) {
     TestNoConflict(varbinds[v] + '{' + letbinds[l] + '}');
     TestNoConflict('{' + letbinds[l] + '}' + varbinds[v]);
     // For loop.
-    TestConflict('for (' + letbinds[l] + '0;) {' + varbinds[v] + '}');
+    if (forCompatible(letbinds[l])) {
+      TestConflict('for (' + letbinds[l] + '0;) {' + varbinds[v] + '}');
+    }
     TestNoConflict('for (' + varbinds[v] + '0;) {' + letbinds[l] + '}');
   }
 
@@ -123,8 +122,12 @@ for (var l = 0; l < letbinds.length; ++l) {
     TestNoConflict(letbinds[l] + '{ ' + letbinds[k] + '}');
     TestNoConflict('{' + letbinds[k] +'} ' + letbinds[l]);
     // For loop.
-    TestNoConflict('for (' + letbinds[l] + '0;) {' + letbinds[k] + '}');
-    TestNoConflict('for (' + letbinds[k] + '0;) {' + letbinds[l] + '}');
+    if (forCompatible(letbinds[l])) {
+      TestNoConflict('for (' + letbinds[l] + '0;) {' + letbinds[k] + '}');
+    }
+    if (forCompatible(letbinds[k])) {
+      TestNoConflict('for (' + letbinds[k] + '0;) {' + letbinds[l] + '}');
+    }
   }
 
   // Test conflicting function/let bindings.
@@ -137,7 +140,9 @@ for (var l = 0; l < letbinds.length; ++l) {
   TestNoConflict(funbind + '{' + letbinds[l] + '}');
   TestNoConflict('{' + letbinds[l] + '}' + funbind);
   // For loop.
-  TestNoConflict('for (' + letbinds[l] + '0;) {' + funbind + '}');
+  if (forCompatible(letbinds[l])) {
+    TestNoConflict('for (' + letbinds[l] + '0;) {' + funbind + '}');
+  }
 
   // Test conflicting parameter/let bindings.
   TestConflict('(function(x) {' + letbinds[l] + '})();');

@@ -23,9 +23,7 @@ var COMPARE_STRONG;
 var ADD;
 var ADD_STRONG;
 var STRING_ADD_LEFT;
-var STRING_ADD_LEFT_STRONG;
 var STRING_ADD_RIGHT;
-var STRING_ADD_RIGHT_STRONG;
 var SUB;
 var SUB_STRONG;
 var MUL;
@@ -46,7 +44,6 @@ var SAR;
 var SAR_STRONG;
 var SHR;
 var SHR_STRONG;
-var DELETE;
 var IN;
 var INSTANCE_OF;
 var CALL_NON_FUNCTION;
@@ -70,7 +67,6 @@ var $nonStringToString;
 var $sameValue;
 var $sameValueZero;
 var $toBoolean;
-var $toInt32;
 var $toInteger;
 var $toLength;
 var $toName;
@@ -78,7 +74,6 @@ var $toNumber;
 var $toPositiveInteger;
 var $toPrimitive;
 var $toString;
-var $toUint32;
 
 (function(global, utils) {
 
@@ -132,6 +127,7 @@ EQUALS = function EQUALS(y) {
     } else if (IS_NULL_OR_UNDEFINED(x)) {
       return IS_NULL_OR_UNDEFINED(y) ? 0 : 1;
     } else if (IS_SIMD_VALUE(x)) {
+      if (!IS_SIMD_VALUE(y)) return 1;  // not equal
        return %SimdEquals(x, y);
     } else {
       // x is an object.
@@ -145,26 +141,6 @@ EQUALS = function EQUALS(y) {
       x = %$toPrimitive(x, NO_HINT);
     }
   }
-}
-
-// ECMA-262, section 11.9.4, page 56.
-STRICT_EQUALS = function STRICT_EQUALS(x) {
-  if (IS_STRING(this)) {
-    if (!IS_STRING(x)) return 1;  // not equal
-    return %StringEquals(this, x);
-  }
-
-  if (IS_NUMBER(this)) {
-    if (!IS_NUMBER(x)) return 1;  // not equal
-    return %NumberEquals(this, x);
-  }
-
-  if (IS_SIMD_VALUE(this)) return %SimdEquals(this, x);
-
-  // If anything else gets here, we just do simple identity check.
-  // Objects (including functions), null, undefined and booleans were
-  // checked in the CompareStub, so there should be nothing left.
-  return %_ObjectEquals(this, x) ? 0 : 1;
 }
 
 
@@ -264,15 +240,6 @@ STRING_ADD_LEFT = function STRING_ADD_LEFT(y) {
 }
 
 
-// Left operand (this) is already a string.
-STRING_ADD_LEFT_STRONG = function STRING_ADD_LEFT_STRONG(y) {
-  if (IS_STRING(y)) {
-    return %_StringAdd(this, y);
-  }
-  throw %MakeTypeError(kStrongImplicitConversion);
-}
-
-
 // Right operand (y) is already a string.
 STRING_ADD_RIGHT = function STRING_ADD_RIGHT(y) {
   var x = this;
@@ -286,15 +253,6 @@ STRING_ADD_RIGHT = function STRING_ADD_RIGHT(y) {
     }
   }
   return %_StringAdd(x, y);
-}
-
-
-// Right operand (y) is already a string.
-STRING_ADD_RIGHT_STRONG = function STRING_ADD_RIGHT_STRONG(y) {
-  if (IS_STRING(this)) {
-    return %_StringAdd(this, y);
-  }
-  throw %MakeTypeError(kStrongImplicitConversion);
 }
 
 
@@ -506,12 +464,6 @@ SHR_STRONG = function SHR_STRONG(y) {
    -----------------------------
 */
 
-// ECMA-262, section 11.4.1, page 46.
-DELETE = function DELETE(key, language_mode) {
-  return %DeleteProperty(TO_OBJECT(this), key, language_mode);
-}
-
-
 // ECMA-262, section 11.8.7, page 54.
 IN = function IN(x) {
   if (!IS_SPEC_OBJECT(x)) {
@@ -610,7 +562,7 @@ APPLY_PREPARE = function APPLY_PREPARE(args) {
     }
   }
 
-  length = (args == null) ? 0 : %$toUint32(args.length);
+  length = (args == null) ? 0 : TO_UINT32(args.length);
 
   // We can handle any number of apply arguments if the stack is
   // big enough, but sanity check the value to avoid overflow when
@@ -752,11 +704,7 @@ TO_NAME = function TO_NAME() {
 // ECMA-262, section 9.1, page 30. Use null/undefined for no hint,
 // (1) for number hint, and (2) for string hint.
 function ToPrimitive(x, hint) {
-  // Fast case check.
-  if (IS_STRING(x)) return x;
-  // Normal behavior.
   if (!IS_SPEC_OBJECT(x)) return x;
-  if (IS_SIMD_VALUE(x)) return x;
   if (hint == NO_HINT) hint = (IS_DATE(x)) ? STRING_HINT : NUMBER_HINT;
   return (hint == NUMBER_HINT) ? DefaultNumber(x) : DefaultString(x);
 }
@@ -835,20 +783,6 @@ function ToLength(arg) {
   if (arg < 0) return 0;
   return arg < GlobalNumber.MAX_SAFE_INTEGER ? arg
                                              : GlobalNumber.MAX_SAFE_INTEGER;
-}
-
-
-// ECMA-262, section 9.6, page 34.
-function ToUint32(x) {
-  if (%_IsSmi(x) && x >= 0) return x;
-  return %NumberToJSUint32(ToNumber(x));
-}
-
-
-// ECMA-262, section 9.5, page 34
-function ToInt32(x) {
-  if (%_IsSmi(x)) return x;
-  return %NumberToJSInt32(ToNumber(x));
 }
 
 
@@ -962,7 +896,7 @@ function ToPositiveInteger(x, rangeErrorIndex) {
 // boilerplate gets the right prototype.
 %FunctionSetPrototype(GlobalArray, new GlobalArray(0));
 
-//----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
 
 $concatIterableToArray = ConcatIterableToArray;
 $defaultNumber = DefaultNumber;
@@ -973,7 +907,6 @@ $nonStringToString = NonStringToString;
 $sameValue = SameValue;
 $sameValueZero = SameValueZero;
 $toBoolean = ToBoolean;
-$toInt32 = ToInt32;
 $toInteger = ToInteger;
 $toLength = ToLength;
 $toName = ToName;
@@ -981,6 +914,5 @@ $toNumber = ToNumber;
 $toPositiveInteger = ToPositiveInteger;
 $toPrimitive = ToPrimitive;
 $toString = ToString;
-$toUint32 = ToUint32;
 
 })

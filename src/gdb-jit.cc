@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/gdb-jit.h"
 
 #include "src/base/bits.h"
 #include "src/base/platform/platform.h"
@@ -10,12 +10,12 @@
 #include "src/compiler.h"
 #include "src/frames-inl.h"
 #include "src/frames.h"
-#include "src/gdb-jit.h"
 #include "src/global-handles.h"
 #include "src/messages.h"
 #include "src/objects.h"
 #include "src/ostreams.h"
 #include "src/snapshot/natives.h"
+#include "src/splay-tree-inl.h"
 
 namespace v8 {
 namespace internal {

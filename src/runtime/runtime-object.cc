@@ -264,17 +264,12 @@ RUNTIME_FUNCTION(Runtime_SetPrototype) {
 
 
 RUNTIME_FUNCTION(Runtime_IsInPrototypeChain) {
-  HandleScope shs(isolate);
+  SealHandleScope shs(isolate);
   DCHECK(args.length() == 2);
   // See ECMA-262, section 15.3.5.3, page 88 (steps 5 - 8).
-  CONVERT_ARG_HANDLE_CHECKED(Object, O, 0);
-  CONVERT_ARG_HANDLE_CHECKED(Object, V, 1);
-  PrototypeIterator iter(isolate, V, PrototypeIterator::START_AT_RECEIVER);
-  while (true) {
-    iter.AdvanceIgnoringProxies();
-    if (iter.IsAtEnd()) return isolate->heap()->false_value();
-    if (iter.IsAtEnd(O)) return isolate->heap()->true_value();
-  }
+  CONVERT_ARG_CHECKED(Object, O, 0);
+  CONVERT_ARG_CHECKED(Object, V, 1);
+  return isolate->heap()->ToBoolean(V->HasInPrototypeChain(isolate, O));
 }
 
 
@@ -671,17 +666,41 @@ RUNTIME_FUNCTION(Runtime_SetProperty) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_DeleteProperty) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 3);
-  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, receiver, 0);
-  CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
-  CONVERT_LANGUAGE_MODE_ARG_CHECKED(language_mode, 2);
+namespace {
+
+// ES6 section 12.5.4.
+Object* DeleteProperty(Isolate* isolate, Handle<Object> object,
+                       Handle<Object> key, LanguageMode language_mode) {
+  Handle<JSReceiver> receiver;
+  if (!JSReceiver::ToObject(isolate, object).ToHandle(&receiver)) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kUndefinedOrNullToObject));
+  }
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
       Runtime::DeleteObjectProperty(isolate, receiver, key, language_mode));
   return *result;
+}
+
+}  // namespace
+
+
+RUNTIME_FUNCTION(Runtime_DeleteProperty_Sloppy) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
+  return DeleteProperty(isolate, object, key, SLOPPY);
+}
+
+
+RUNTIME_FUNCTION(Runtime_DeleteProperty_Strict) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
+  return DeleteProperty(isolate, object, key, STRICT);
 }
 
 
@@ -794,26 +813,10 @@ RUNTIME_FUNCTION(Runtime_IsPropertyEnumerable) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_GetPropertyNames) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 1);
-  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, object, 0);
-  Handle<JSArray> result;
-
-  isolate->counters()->for_in()->Increment();
-  Handle<FixedArray> elements;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, elements,
-      JSReceiver::GetKeys(object, JSReceiver::INCLUDE_PROTOS));
-  return *isolate->factory()->NewJSArrayWithElements(elements);
-}
-
-
-// Returns either a FixedArray as Runtime_GetPropertyNames,
-// or, if the given object has an enum cache that contains
-// all enumerable properties of the object and its prototypes
-// have none, the map of the object. This is used to speed up
-// the check for deletions during a for-in.
+// Returns either a FixedArray or, if the given object has an enum cache that
+// contains all enumerable properties of the object and its prototypes have
+// none, the map of the object. This is used to speed up the check for
+// deletions during a for-in.
 RUNTIME_FUNCTION(Runtime_GetPropertyNamesFast) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 1);
@@ -1048,15 +1051,6 @@ RUNTIME_FUNCTION(Runtime_ToFastProperties) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_ToBool) {
-  SealHandleScope shs(isolate);
-  DCHECK(args.length() == 1);
-  CONVERT_ARG_CHECKED(Object, object, 0);
-
-  return isolate->heap()->ToBoolean(object->BooleanValue());
-}
-
-
 RUNTIME_FUNCTION(Runtime_NewStringWrapper) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 1);
@@ -1218,7 +1212,7 @@ RUNTIME_FUNCTION(Runtime_LoadMutableDouble) {
       FieldIndex::ForLoadByFieldIndex(object->map(), index->value());
   if (field_index.is_inobject()) {
     RUNTIME_ASSERT(field_index.property_index() <
-                   object->map()->inobject_properties());
+                   object->map()->GetInObjectProperties());
   } else {
     RUNTIME_ASSERT(field_index.outobject_array_index() <
                    object->properties()->length());
@@ -1397,14 +1391,6 @@ RUNTIME_FUNCTION(Runtime_IsObject) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_IsUndetectableObject) {
-  SealHandleScope shs(isolate);
-  DCHECK(args.length() == 1);
-  CONVERT_ARG_CHECKED(Object, obj, 0);
-  return isolate->heap()->ToBoolean(obj->IsUndetectableObject());
-}
-
-
 RUNTIME_FUNCTION(Runtime_IsSpecObject) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 1);
@@ -1473,6 +1459,16 @@ RUNTIME_FUNCTION(Runtime_ToObject) {
   }
   THROW_NEW_ERROR_RETURN_FAILURE(
       isolate, NewTypeError(MessageTemplate::kUndefinedOrNullToObject));
+}
+
+
+RUNTIME_FUNCTION(Runtime_StrictEquals) {
+  SealHandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  CONVERT_ARG_CHECKED(Object, x, 0);
+  CONVERT_ARG_CHECKED(Object, y, 1);
+  // TODO(bmeurer): Change this at some point to return true/false instead.
+  return Smi::FromInt(x->StrictEquals(y) ? EQUAL : NOT_EQUAL);
 }
 
 }  // namespace internal

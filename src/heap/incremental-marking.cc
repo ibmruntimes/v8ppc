@@ -2,13 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #include "src/heap/incremental-marking.h"
 
 #include "src/code-stubs.h"
 #include "src/compilation-cache.h"
 #include "src/conversions.h"
+#include "src/heap/mark-compact-inl.h"
 #include "src/heap/objects-visiting.h"
 #include "src/heap/objects-visiting-inl.h"
 
@@ -198,10 +197,10 @@ class IncrementalMarkingMarkingVisitor
       chunk->set_progress_bar(start_offset);
       if (start_offset < object_size) {
         if (Marking::IsGrey(Marking::MarkBitFrom(object))) {
-          heap->mark_compact_collector()->marking_deque()->UnshiftGrey(object);
+          heap->mark_compact_collector()->marking_deque()->Unshift(object);
         } else {
           DCHECK(Marking::IsBlack(Marking::MarkBitFrom(object)));
-          heap->mark_compact_collector()->marking_deque()->UnshiftBlack(object);
+          heap->mark_compact_collector()->UnshiftBlack(object);
         }
         heap->incremental_marking()->NotifyIncompleteScanOfObject(
             object_size - (start_offset - already_scanned_offset));
@@ -411,8 +410,7 @@ bool IncrementalMarking::CanBeActivated() {
   // marking is turned on, 2) when we are currently not in a GC, and
   // 3) when we are currently not serializing or deserializing the heap.
   // Don't switch on for very small heaps.
-  return FLAG_incremental_marking && FLAG_incremental_marking_steps &&
-         heap_->gc_state() == Heap::NOT_IN_GC &&
+  return FLAG_incremental_marking && heap_->gc_state() == Heap::NOT_IN_GC &&
          heap_->deserialization_complete() &&
          !heap_->isolate()->serializer_enabled() &&
          heap_->PromotedSpaceSizeOfObjects() > kActivationThreshold;
@@ -478,7 +476,6 @@ void IncrementalMarking::Start(int mark_compact_flags,
            (reason == nullptr) ? "unknown reason" : reason);
   }
   DCHECK(FLAG_incremental_marking);
-  DCHECK(FLAG_incremental_marking_steps);
   DCHECK(state_ == STOPPED);
   DCHECK(heap_->gc_state() == Heap::NOT_IN_GC);
   DCHECK(!heap_->isolate()->serializer_enabled());
@@ -912,7 +909,6 @@ intptr_t IncrementalMarking::Step(intptr_t allocated_bytes,
                                   ForceMarkingAction marking,
                                   ForceCompletionAction completion) {
   if (heap_->gc_state() != Heap::NOT_IN_GC || !FLAG_incremental_marking ||
-      !FLAG_incremental_marking_steps ||
       (state_ != SWEEPING && state_ != MARKING)) {
     return 0;
   }

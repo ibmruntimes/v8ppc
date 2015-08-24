@@ -2,20 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #if V8_TARGET_ARCH_IA32
 
 #include "src/base/bits.h"
 #include "src/bootstrapper.h"
 #include "src/code-stubs.h"
 #include "src/codegen.h"
+#include "src/ia32/frames-ia32.h"
 #include "src/ic/handler-compiler.h"
 #include "src/ic/ic.h"
 #include "src/ic/stub-cache.h"
 #include "src/isolate.h"
-#include "src/jsregexp.h"
-#include "src/regexp-macro-assembler.h"
+#include "src/regexp/jsregexp.h"
+#include "src/regexp/regexp-macro-assembler.h"
 #include "src/runtime/runtime.h"
 
 namespace v8 {
@@ -1689,12 +1688,11 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
     }
 
     // Test for NaN. Compare heap numbers in a general way,
-    // to hanlde NaNs correctly.
+    // to handle NaNs correctly.
     __ cmp(FieldOperand(edx, HeapObject::kMapOffset),
            Immediate(isolate()->factory()->heap_number_map()));
     __ j(equal, &generic_heap_number_comparison, Label::kNear);
     if (cc != equal) {
-      Label not_simd;
       __ mov(ecx, FieldOperand(eax, HeapObject::kMapOffset));
       __ movzx_b(ecx, FieldOperand(ecx, Map::kInstanceTypeOffset));
       // Call runtime on identical JSObjects.  Otherwise return equal.
@@ -1704,11 +1702,8 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
       __ cmpb(ecx, static_cast<uint8_t>(SYMBOL_TYPE));
       __ j(equal, &runtime_call, Label::kFar);
       // Call runtime on identical SIMD values since we must throw a TypeError.
-      __ cmpb(ecx, static_cast<uint8_t>(FIRST_SIMD_VALUE_TYPE));
-      __ j(less, &not_simd, Label::kFar);
-      __ cmpb(ecx, static_cast<uint8_t>(LAST_SIMD_VALUE_TYPE));
-      __ j(less_equal, &runtime_call, Label::kFar);
-      __ bind(&not_simd);
+      __ cmpb(ecx, static_cast<uint8_t>(SIMD128_VALUE_TYPE));
+      __ j(equal, &runtime_call, Label::kFar);
       if (is_strong(strength())) {
         // We have already tested for smis and heap numbers, so if both
         // arguments are not strings we must proceed to the slow case.
@@ -1897,21 +1892,26 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
   __ push(eax);
 
   // Figure out which native to call and setup the arguments.
-  Builtins::JavaScript builtin;
-  if (cc == equal) {
-    builtin = strict() ? Builtins::STRICT_EQUALS : Builtins::EQUALS;
+  if (cc == equal && strict()) {
+    __ push(ecx);
+    __ TailCallRuntime(Runtime::kStrictEquals, 2, 1);
   } else {
-    builtin =
-        is_strong(strength()) ? Builtins::COMPARE_STRONG : Builtins::COMPARE;
-    __ push(Immediate(Smi::FromInt(NegativeComparisonResult(cc))));
+    Builtins::JavaScript builtin;
+    if (cc == equal) {
+      builtin = Builtins::EQUALS;
+    } else {
+      builtin =
+          is_strong(strength()) ? Builtins::COMPARE_STRONG : Builtins::COMPARE;
+      __ push(Immediate(Smi::FromInt(NegativeComparisonResult(cc))));
+    }
+
+    // Restore return address on the stack.
+    __ push(ecx);
+
+    // Call the native; it returns -1 (less), 0 (equal), or 1 (greater)
+    // tagged as a small integer.
+    __ InvokeBuiltin(builtin, JUMP_FUNCTION);
   }
-
-  // Restore return address on the stack.
-  __ push(ecx);
-
-  // Call the native; it returns -1 (less), 0 (equal), or 1 (greater)
-  // tagged as a small integer.
-  __ InvokeBuiltin(builtin, JUMP_FUNCTION);
 
   __ bind(&miss);
   GenerateMiss(masm);

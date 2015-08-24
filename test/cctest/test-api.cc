@@ -19323,8 +19323,10 @@ TEST(AccessCheckThrows) {
   CheckCorrectThrow("%GetProperty(other, 'x')");
   CheckCorrectThrow("%SetProperty(other, 'x', 'foo', 0)");
   CheckCorrectThrow("%AddNamedProperty(other, 'x', 'foo', 1)");
-  CheckCorrectThrow("%DeleteProperty(other, 'x', 0)");
-  CheckCorrectThrow("%DeleteProperty(other, '1', 0)");
+  CheckCorrectThrow("%DeleteProperty_Sloppy(other, 'x')");
+  CheckCorrectThrow("%DeleteProperty_Strict(other, 'x')");
+  CheckCorrectThrow("%DeleteProperty_Sloppy(other, '1')");
+  CheckCorrectThrow("%DeleteProperty_Strict(other, '1')");
   CheckCorrectThrow("%HasOwnProperty(other, 'x')");
   CheckCorrectThrow("%HasProperty(other, 'x')");
   CheckCorrectThrow("%HasElement(other, 1)");
@@ -21208,11 +21210,7 @@ TEST(TurboAsmDisablesNeuter) {
   v8::V8::Initialize();
   v8::HandleScope scope(CcTest::isolate());
   LocalContext context;
-#if V8_TURBOFAN_TARGET
   bool should_be_neuterable = !i::FLAG_turbo_asm;
-#else
-  bool should_be_neuterable = true;
-#endif
   const char* load =
       "function Module(stdlib, foreign, heap) {"
       "  'use asm';"

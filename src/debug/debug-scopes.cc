@@ -5,6 +5,7 @@
 #include "src/debug/debug-scopes.h"
 
 #include "src/debug/debug.h"
+#include "src/frames-inl.h"
 #include "src/globals.h"
 #include "src/parser.h"
 #include "src/scopes.h"
@@ -83,7 +84,6 @@ ScopeIterator::ScopeIterator(Isolate* isolate, FrameInspector* frame_inspector,
     Scope* scope = NULL;
 
     // Check whether we are in global, eval or function code.
-    Handle<ScopeInfo> scope_info(shared_info->scope_info());
     Zone zone;
     if (scope_info->scope_type() != FUNCTION_SCOPE &&
         scope_info->scope_type() != ARROW_SCOPE) {
@@ -228,7 +228,7 @@ MaybeHandle<JSObject> ScopeIterator::ScopeObject() {
   DCHECK(!failed_);
   switch (Type()) {
     case ScopeIterator::ScopeTypeGlobal:
-      return Handle<JSObject>(CurrentContext()->global_object());
+      return Handle<JSObject>(CurrentContext()->global_proxy());
     case ScopeIterator::ScopeTypeScript:
       return MaterializeScriptScope();
     case ScopeIterator::ScopeTypeLocal:
