@@ -414,8 +414,8 @@ class FullHeaderELFSection : public ELFSection {
         offset_(offset),
         size_(size),
         flags_(flags) { }
-
 #if V8_PPC_PERF_ANNOTATE_SUPPORT
+
   bool WriteBodyInternal(Writer* w) {
     byte* pc = reinterpret_cast<byte*>(addr_);
     uintptr_t start = w->position();
@@ -435,8 +435,8 @@ class FullHeaderELFSection : public ELFSection {
   uintptr_t getOffset() {
     return offset_;
   }
-
 #endif
+
  protected:
   virtual void PopulateHeader(Writer::Slot<Header> header) {
     ELFSection::PopulateHeader(header);
@@ -485,13 +485,13 @@ class ELFStringTable : public ELFSection {
     header->offset = offset_;
     header->size = size_;
   }
-
 # if V8_PPC_PERF_ANNOTATE_SUPPORT
+
   uintptr_t getSize() {
     return size_;
   }
-
 #endif
+
  private:
   void WriteString(const char* str) {
     uintptr_t written = 0;
