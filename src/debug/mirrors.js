@@ -8,10 +8,21 @@
 // ----------------------------------------------------------------------------
 // Imports
 
+var FunctionSourceString;
 var GlobalArray = global.Array;
 var IsNaN = global.isNaN;
 var JSONStringify = global.JSON.stringify;
 var MathMin = global.Math.min;
+var promiseStatusSymbol = utils.GetPrivateSymbol("promise_status_symbol");
+var promiseValueSymbol = utils.GetPrivateSymbol("promise_value_symbol");
+var ToBoolean;
+var ToString;
+
+utils.Import(function(from) {
+  FunctionSourceString = from.FunctionSourceString;
+  ToBoolean = from.ToBoolean;
+  ToString = from.ToString;
+});
 
 // ----------------------------------------------------------------------------
 
@@ -100,7 +111,7 @@ function ClearMirrorCache(value) {
 function ObjectIsPromise(value) {
   try {
     return IS_SPEC_OBJECT(value) &&
-           !IS_UNDEFINED(%DebugGetProperty(value, builtins.$promiseStatus));
+           !IS_UNDEFINED(%DebugGetProperty(value, promiseStatusSymbol));
   } catch (e) {
     return false;
   }
@@ -990,7 +1001,7 @@ FunctionMirror.prototype.source = function() {
   // Return source if function is resolved. Otherwise just fall through to
   // return undefined.
   if (this.resolved()) {
-    return builtins.$functionSourceString(this.value_);
+    return FunctionSourceString(this.value_);
   }
 };
 
@@ -1168,7 +1179,7 @@ ArrayMirror.prototype.indexedPropertiesFromRange = function(opt_from_index,
   if (from_index > to_index) return new GlobalArray();
   var values = new GlobalArray(to_index - from_index + 1);
   for (var i = from_index; i <= to_index; i++) {
-    var details = %DebugGetPropertyDetails(this.value_, builtins.$toString(i));
+    var details = %DebugGetPropertyDetails(this.value_, ToString(i));
     var value;
     if (details) {
       value = new PropertyMirror(this, i, details);
@@ -1317,7 +1328,7 @@ inherits(PromiseMirror, ObjectMirror);
 
 
 function PromiseGetStatus_(value) {
-  var status = %DebugGetProperty(value, builtins.$promiseStatus);
+  var status = %DebugGetProperty(value, promiseStatusSymbol);
   if (status == 0) return "pending";
   if (status == 1) return "resolved";
   return "rejected";
@@ -1325,7 +1336,7 @@ function PromiseGetStatus_(value) {
 
 
 function PromiseGetValue_(value) {
-  return %DebugGetProperty(value, builtins.$promiseValue);
+  return %DebugGetProperty(value, promiseValueSymbol);
 }
 
 
@@ -2068,7 +2079,7 @@ FrameMirror.prototype.evaluate = function(source, disable_break,
                                    this.details_.frameId(),
                                    this.details_.inlinedFrameIndex(),
                                    source,
-                                   $toBoolean(disable_break),
+                                   ToBoolean(disable_break),
                                    opt_context_object));
 };
 

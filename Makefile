@@ -221,6 +221,12 @@ ifeq ($(simulator), on)
   GYPFLAGS += -Dv8_use_simulator=true
 endif
 
+# Optionally enable wasm prototype.
+# Assume you've placed a link to v8-native-prototype in third_party/wasm.
+ifeq ($(wasm), on)
+  GYPFLAGS += -Dv8_wasm=1
+endif
+
 # ----------------- available targets: --------------------
 # - "grokdump": rebuilds heap constants lists used by grokdump
 # - any arch listed in ARCHES (see below)

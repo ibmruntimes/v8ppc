@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/objects.h"
+
 #include <iomanip>
 #include <sstream>
-
-#include "src/v8.h"
 
 #include "src/accessors.h"
 #include "src/allocation-site-scopes.h"
@@ -139,7 +139,7 @@ bool Object::IsPromise(Handle<Object> object) {
   auto isolate = js_object->GetIsolate();
   // TODO(dcarney): this should just be read from the symbol registry so as not
   // to be context dependent.
-  auto key = isolate->promise_status();
+  auto key = isolate->factory()->promise_status_symbol();
   // Shouldn't be possible to throw here.
   return JSObject::HasRealNamedProperty(js_object, key).FromJust();
 }
@@ -5364,13 +5364,13 @@ bool JSObject::ReferencesObject(Object* obj) {
 
     // Check the context extension (if any) if it can have references.
     if (context->has_extension() && !context->IsCatchContext()) {
-      // With harmony scoping, a JSFunction may have a global context.
+      // With harmony scoping, a JSFunction may have a script context.
       // TODO(mvstanton): walk into the ScopeInfo.
       if (context->IsScriptContext()) {
         return false;
       }
 
-      return JSObject::cast(context->extension())->ReferencesObject(obj);
+      return context->extension_object()->ReferencesObject(obj);
     }
   }
 
@@ -7816,6 +7816,17 @@ void WeakFixedArray::Compact() {
 }
 
 
+void WeakFixedArray::Iterator::Reset(Object* maybe_array) {
+  if (maybe_array->IsWeakFixedArray()) {
+    list_ = WeakFixedArray::cast(maybe_array);
+    index_ = 0;
+#ifdef DEBUG
+    last_used_index_ = list_->last_used_index();
+#endif  // DEBUG
+  }
+}
+
+
 void JSObject::PrototypeRegistryCompactionCallback::Callback(Object* value,
                                                              int old_index,
                                                              int new_index) {
@@ -7856,28 +7867,22 @@ Handle<WeakFixedArray> WeakFixedArray::Allocate(
   DCHECK(0 <= size);
   Handle<FixedArray> result =
       isolate->factory()->NewUninitializedFixedArray(size + kFirstIndex);
-  Handle<WeakFixedArray> casted_result = Handle<WeakFixedArray>::cast(result);
-  if (initialize_from.is_null()) {
-    for (int i = 0; i < result->length(); ++i) {
-      result->set(i, Smi::FromInt(0));
-    }
-  } else {
+  int index = 0;
+  if (!initialize_from.is_null()) {
     DCHECK(initialize_from->Length() <= size);
     Handle<FixedArray> raw_source = Handle<FixedArray>::cast(initialize_from);
-    int target_index = kFirstIndex;
-    for (int source_index = kFirstIndex; source_index < raw_source->length();
-         ++source_index) {
-      // The act of allocating might have caused entries in the source array
-      // to be cleared. Copy only what's needed.
-      if (initialize_from->IsEmptySlot(source_index - kFirstIndex)) continue;
-      result->set(target_index++, raw_source->get(source_index));
-    }
-    casted_result->set_last_used_index(target_index - 1 - kFirstIndex);
-    for (; target_index < result->length(); ++target_index) {
-      result->set(target_index, Smi::FromInt(0));
+    // Copy the entries without compacting, since the PrototypeInfo relies on
+    // the index of the entries not to change.
+    while (index < raw_source->length()) {
+      result->set(index, raw_source->get(index));
+      index++;
     }
   }
-  return casted_result;
+  while (index < result->length()) {
+    result->set(index, Smi::FromInt(0));
+    index++;
+  }
+  return Handle<WeakFixedArray>::cast(result);
 }
 
 
@@ -9672,16 +9677,10 @@ static void InvalidatePrototypeChainsInternal(Map* map) {
     cell->set_value(Smi::FromInt(Map::kPrototypeChainInvalid));
   }
 
-  Object* maybe_array = proto_info->prototype_users();
-  if (!maybe_array->IsWeakFixedArray()) return;
-
-  WeakFixedArray* users = WeakFixedArray::cast(maybe_array);
-  for (int i = 0; i < users->Length(); ++i) {
-    Object* maybe_user = users->Get(i);
-    if (maybe_user->IsSmi()) continue;
-
-    // For now, only maps register themselves as users.
-    Map* user = Map::cast(maybe_user);
+  WeakFixedArray::Iterator iterator(proto_info->prototype_users());
+  // For now, only maps register themselves as users.
+  Map* user;
+  while ((user = iterator.Next<Map>())) {
     // Walk the prototype chain (backwards, towards leaf objects) if necessary.
     InvalidatePrototypeChainsInternal(user);
   }
@@ -10185,19 +10184,45 @@ Handle<JSObject> Script::GetWrapper(Handle<Script> script) {
 
 MaybeHandle<SharedFunctionInfo> Script::FindSharedFunctionInfo(
     FunctionLiteral* fun) {
-  if (shared_function_infos()->IsWeakFixedArray()) {
-    WeakFixedArray* array = WeakFixedArray::cast(shared_function_infos());
-    for (int i = 0; i < array->Length(); i++) {
-      Object* obj = array->Get(i);
-      if (!obj->IsSharedFunctionInfo()) continue;
-      SharedFunctionInfo* shared = SharedFunctionInfo::cast(obj);
-      if (fun->function_token_position() == shared->function_token_position() &&
-          fun->start_position() == shared->start_position()) {
-        return Handle<SharedFunctionInfo>(shared);
-      }
+  WeakFixedArray::Iterator iterator(shared_function_infos());
+  SharedFunctionInfo* shared;
+  while ((shared = iterator.Next<SharedFunctionInfo>())) {
+    if (fun->function_token_position() == shared->function_token_position() &&
+        fun->start_position() == shared->start_position()) {
+      return Handle<SharedFunctionInfo>(shared);
     }
   }
   return MaybeHandle<SharedFunctionInfo>();
+}
+
+
+Script::Iterator::Iterator(Isolate* isolate)
+    : iterator_(isolate->heap()->script_list()) {}
+
+
+Script* Script::Iterator::Next() { return iterator_.Next<Script>(); }
+
+
+SharedFunctionInfo::Iterator::Iterator(Isolate* isolate)
+    : script_iterator_(isolate), sfi_iterator_(NULL) {
+  NextScript();
+}
+
+
+bool SharedFunctionInfo::Iterator::NextScript() {
+  Script* script = script_iterator_.Next();
+  if (script == NULL) return false;
+  sfi_iterator_.Reset(script->shared_function_infos());
+  return true;
+}
+
+
+SharedFunctionInfo* SharedFunctionInfo::Iterator::Next() {
+  do {
+    SharedFunctionInfo* next = sfi_iterator_.Next<SharedFunctionInfo>();
+    if (next != NULL) return next;
+  } while (NextScript());
+  return NULL;
 }
 
 
@@ -10218,10 +10243,11 @@ void SharedFunctionInfo::SetScript(Handle<SharedFunctionInfo> shared,
     Handle<Script> script = Handle<Script>::cast(script_object);
     Handle<Object> list(script->shared_function_infos(), shared->GetIsolate());
 #ifdef DEBUG
-    if (list->IsWeakFixedArray()) {
-      Handle<WeakFixedArray> array = Handle<WeakFixedArray>::cast(list);
-      for (int i = 0; i < array->Length(); ++i) {
-        DCHECK(array->Get(i) != *shared);
+    {
+      WeakFixedArray::Iterator iterator(*list);
+      SharedFunctionInfo* next;
+      while ((next = iterator.Next<SharedFunctionInfo>())) {
+        DCHECK_NE(next, *shared);
       }
     }
 #endif  // DEBUG
@@ -11412,7 +11438,7 @@ void Code::PrintExtraICState(std::ostream& os,  // NOLINT
 void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
   os << "kind = " << Kind2String(kind()) << "\n";
   if (IsCodeStubOrIC()) {
-    const char* n = CodeStub::MajorName(CodeStub::GetMajorKey(this), true);
+    const char* n = CodeStub::MajorName(CodeStub::GetMajorKey(this));
     os << "major_key = " << (n == NULL ? "null" : n) << "\n";
   }
   if (is_inline_cache_stub()) {
@@ -14840,49 +14866,6 @@ void WeakHashTable::AddEntry(int entry, Handle<WeakCell> key_cell,
   set(EntryToIndex(entry), *key_cell);
   set(EntryToValueIndex(entry), *value);
   ElementAdded();
-}
-
-
-#ifdef DEBUG
-Object* WeakValueHashTable::LookupWeak(Handle<Object> key) {
-  Object* value = Lookup(key);
-  if (value->IsWeakCell() && !WeakCell::cast(value)->cleared()) {
-    value = WeakCell::cast(value)->value();
-  }
-  return value;
-}
-#endif  // DEBUG
-
-
-Handle<WeakValueHashTable> WeakValueHashTable::PutWeak(
-    Handle<WeakValueHashTable> table, Handle<Object> key,
-    Handle<HeapObject> value) {
-  Handle<WeakCell> cell = value->GetIsolate()->factory()->NewWeakCell(value);
-  return Handle<WeakValueHashTable>::cast(
-      Put(Handle<ObjectHashTable>::cast(table), key, cell));
-}
-
-
-Handle<FixedArray> WeakValueHashTable::GetWeakValues(
-    Handle<WeakValueHashTable> table) {
-  Isolate* isolate = table->GetIsolate();
-  uint32_t capacity = table->Capacity();
-  Handle<FixedArray> results = isolate->factory()->NewFixedArray(capacity);
-  int length = 0;
-  for (uint32_t i = 0; i < capacity; i++) {
-    uint32_t key_index = table->EntryToIndex(i);
-    Object* key = table->get(key_index);
-    if (!table->IsKey(key)) continue;
-    uint32_t value_index = table->EntryToValueIndex(i);
-    WeakCell* value_cell = WeakCell::cast(table->get(value_index));
-    if (value_cell->cleared()) {
-      table->RemoveEntry(i);
-    } else {
-      results->set(length++, value_cell->value());
-    }
-  }
-  results->Shrink(length);
-  return results;
 }
 
 

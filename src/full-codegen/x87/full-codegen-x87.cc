@@ -94,14 +94,14 @@ void FullCodeGenerator::Generate() {
   CompilationInfo* info = info_;
   profiling_counter_ = isolate()->factory()->NewCell(
       Handle<Smi>(Smi::FromInt(FLAG_interrupt_budget), isolate()));
-  SetFunctionPosition(function());
+  SetFunctionPosition(literal());
   Comment cmnt(masm_, "[ function compiled by full code generator");
 
   ProfileEntryHookStub::MaybeCallEntryHook(masm_);
 
 #ifdef DEBUG
   if (strlen(FLAG_stop_at) > 0 &&
-      info->function()->name()->IsUtf8EqualTo(CStrVector(FLAG_stop_at))) {
+      literal()->name()->IsUtf8EqualTo(CStrVector(FLAG_stop_at))) {
     __ int3();
   }
 #endif
@@ -139,7 +139,7 @@ void FullCodeGenerator::Generate() {
   { Comment cmnt(masm_, "[ Allocate locals");
     int locals_count = info->scope()->num_stack_slots();
     // Generators allocate locals, if any, in context slots.
-    DCHECK(!IsGeneratorFunction(info->function()->kind()) || locals_count == 0);
+    DCHECK(!IsGeneratorFunction(literal()->kind()) || locals_count == 0);
     if (locals_count == 1) {
       __ push(Immediate(isolate()->factory()->undefined_value()));
     } else if (locals_count > 1) {
@@ -318,7 +318,7 @@ void FullCodeGenerator::Generate() {
     ArgumentsAccessStub::Type type;
     if (is_strict(language_mode()) || !has_simple_parameters()) {
       type = ArgumentsAccessStub::NEW_STRICT;
-    } else if (function()->has_duplicate_parameters()) {
+    } else if (literal()->has_duplicate_parameters()) {
       type = ArgumentsAccessStub::NEW_SLOPPY_SLOW;
     } else {
       type = ArgumentsAccessStub::NEW_SLOPPY_FAST;
@@ -364,7 +364,7 @@ void FullCodeGenerator::Generate() {
 
     { Comment cmnt(masm_, "[ Body");
       DCHECK(loop_depth() == 0);
-      VisitStatements(function()->body());
+      VisitStatements(literal()->body());
       DCHECK(loop_depth() == 0);
     }
   }
@@ -457,7 +457,7 @@ void FullCodeGenerator::EmitReturnSequence() {
     EmitProfilingCounterReset();
     __ bind(&ok);
 
-    SetReturnPosition(function());
+    SetReturnPosition(literal());
     int no_frame_start = masm_->pc_offset();
     __ leave();
 
@@ -743,7 +743,7 @@ void FullCodeGenerator::PrepareForBailoutBeforeSplit(Expression* expr,
   // Only prepare for bailouts before splits if we're in a test
   // context. Otherwise, we let the Visit function deal with the
   // preparation to avoid preparing with the same AST id twice.
-  if (!context()->IsTest() || !info_->IsOptimizable()) return;
+  if (!context()->IsTest()) return;
 
   Label skip;
   if (should_normalize) __ jmp(&skip, Label::kNear);
@@ -1405,8 +1405,8 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy,
         if (var->scope()->DeclarationScope() != scope()->DeclarationScope()) {
           skip_init_check = false;
         } else if (var->is_this()) {
-          CHECK(info_->function() != nullptr &&
-                (info_->function()->kind() & kSubclassConstructor) != 0);
+          CHECK(info_->has_literal() &&
+                (info_->literal()->kind() & kSubclassConstructor) != 0);
           // TODO(dslomov): implement 'this' hole check elimination.
           skip_init_check = false;
         } else {
@@ -3323,13 +3323,9 @@ void FullCodeGenerator::EmitIsSimdValue(CallRuntime* expr) {
                          &if_false, &fall_through);
 
   __ JumpIfSmi(eax, if_false);
-  Register map = ebx;
-  __ mov(map, FieldOperand(eax, HeapObject::kMapOffset));
-  __ CmpInstanceType(map, FIRST_SIMD_VALUE_TYPE);
-  __ j(less, if_false);
-  __ CmpInstanceType(map, LAST_SIMD_VALUE_TYPE);
+  __ CmpObjectType(eax, SIMD128_VALUE_TYPE, ebx);
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  Split(less_equal, if_true, if_false, fall_through);
+  Split(equal, if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
 }
@@ -4948,34 +4944,6 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ JumpIfSmi(eax, if_false);
     __ CmpObjectType(eax, SYMBOL_TYPE, edx);
     Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->float32x4_string())) {
-    __ JumpIfSmi(eax, if_false);
-    __ CmpObjectType(eax, FLOAT32X4_TYPE, edx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->int32x4_string())) {
-    __ JumpIfSmi(eax, if_false);
-    __ CmpObjectType(eax, INT32X4_TYPE, edx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->bool32x4_string())) {
-    __ JumpIfSmi(eax, if_false);
-    __ CmpObjectType(eax, BOOL32X4_TYPE, edx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->int16x8_string())) {
-    __ JumpIfSmi(eax, if_false);
-    __ CmpObjectType(eax, INT16X8_TYPE, edx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->bool16x8_string())) {
-    __ JumpIfSmi(eax, if_false);
-    __ CmpObjectType(eax, BOOL16X8_TYPE, edx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->int8x16_string())) {
-    __ JumpIfSmi(eax, if_false);
-    __ CmpObjectType(eax, INT8X16_TYPE, edx);
-    Split(equal, if_true, if_false, fall_through);
-  } else if (String::Equals(check, factory->bool8x16_string())) {
-    __ JumpIfSmi(eax, if_false);
-    __ CmpObjectType(eax, BOOL8X16_TYPE, edx);
-    Split(equal, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->boolean_string())) {
     __ cmp(eax, isolate()->factory()->true_value());
     __ j(equal, if_true);
@@ -5009,6 +4977,16 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ test_b(FieldOperand(edx, Map::kBitFieldOffset),
               1 << Map::kIsUndetectable);
     Split(zero, if_true, if_false, fall_through);
+// clang-format off
+#define SIMD128_TYPE(TYPE, Type, type, lane_count, lane_type)   \
+  } else if (String::Equals(check, factory->type##_string())) { \
+    __ JumpIfSmi(eax, if_false);                                \
+    __ cmp(FieldOperand(eax, HeapObject::kMapOffset),           \
+           isolate()->factory()->type##_map());                 \
+    Split(equal, if_true, if_false, fall_through);
+  SIMD128_TYPES(SIMD128_TYPE)
+#undef SIMD128_TYPE
+    // clang-format on
   } else {
     if (if_false != fall_through) __ jmp(if_false);
   }

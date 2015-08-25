@@ -2,15 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
-#include "src/heap-snapshot-generator-inl.h"
+#include "src/heap-snapshot-generator.h"
 
 #include "src/allocation-tracker.h"
 #include "src/code-stubs.h"
 #include "src/conversions.h"
 #include "src/debug/debug.h"
 #include "src/heap-profiler.h"
+#include "src/heap-snapshot-generator-inl.h"
 #include "src/types.h"
 
 namespace v8 {
@@ -1266,7 +1265,7 @@ void V8HeapExplorer::ExtractContextReferences(int entry, Context* context) {
     TagObject(context->normalized_map_cache(), "(context norm. map cache)");
     TagObject(context->runtime_context(), "(runtime context)");
     TagObject(context->embedder_data(), "(context data)");
-    NATIVE_CONTEXT_FIELDS(EXTRACT_CONTEXT_FIELD);
+    NATIVE_CONTEXT_FIELDS(EXTRACT_CONTEXT_FIELD)
     EXTRACT_CONTEXT_FIELD(OPTIMIZED_FUNCTIONS_LIST, unused,
                           optimized_functions_list);
     EXTRACT_CONTEXT_FIELD(OPTIMIZED_CODE_LIST, unused, optimized_code_list);
@@ -1473,8 +1472,8 @@ void V8HeapExplorer::TagBuiltinCodeObject(Code* code, const char* name) {
 void V8HeapExplorer::TagCodeObject(Code* code) {
   if (code->kind() == Code::STUB) {
     TagObject(code, names_->GetFormatted(
-                        "(%s code)", CodeStub::MajorName(
-                                         CodeStub::GetMajorKey(code), true)));
+                        "(%s code)",
+                        CodeStub::MajorName(CodeStub::GetMajorKey(code))));
   }
 }
 

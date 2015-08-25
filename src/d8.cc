@@ -49,6 +49,10 @@
 #include "src/v8.h"
 #endif  // !V8_SHARED
 
+#if defined(V8_WASM)
+#include "src/wasm/wasm-js.h"
+#endif
+
 #if !defined(_WIN32) && !defined(_WIN64)
 #include <unistd.h>  // NOLINT
 #else
@@ -71,6 +75,9 @@ namespace v8 {
 namespace {
 
 const int MB = 1024 * 1024;
+#ifndef V8_SHARED
+const int kMaxWorkers = 50;
+#endif
 
 
 class ShellArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
@@ -702,6 +709,11 @@ void Shell::WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args) {
 
   {
     base::LockGuard<base::Mutex> lock_guard(workers_mutex_.Pointer());
+    if (workers_.length() >= kMaxWorkers) {
+      Throw(args.GetIsolate(), "Too many workers, I won't let you create more");
+      return;
+    }
+
     // Initialize the internal field to NULL; if we return early without
     // creating a new Worker (because the main thread is terminating) we can
     // early-out from the instance calls.
@@ -814,7 +826,7 @@ void Shell::QuitOnce(v8::FunctionCallbackInfo<v8::Value>* args) {
   CleanupWorkers();
 #endif  // !V8_SHARED
   OnExit(args->GetIsolate());
-  exit(exit_code);
+  Exit(exit_code);
 }
 
 
@@ -1169,6 +1181,11 @@ Local<ObjectTemplate> Shell::CreateGlobalTemplate(Isolate* isolate) {
       String::NewFromUtf8(isolate, "os", NewStringType::kNormal)
           .ToLocalChecked(),
       os_templ);
+
+#if defined(V8_WASM)
+  // Install WASM API.
+  WasmJs::Install(isolate, global_template);
+#endif
 
   return global_template;
 }

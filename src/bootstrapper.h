@@ -115,12 +115,16 @@ class Bootstrapper final {
   static bool CompileBuiltin(Isolate* isolate, int index);
   static bool CompileExperimentalBuiltin(Isolate* isolate, int index);
   static bool CompileExtraBuiltin(Isolate* isolate, int index);
+  static bool CompileExperimentalExtraBuiltin(Isolate* isolate, int index);
   static bool CompileCodeStubBuiltin(Isolate* isolate, int index);
   static bool InstallCodeStubNatives(Isolate* isolate);
 
   static void ImportNatives(Isolate* isolate, Handle<JSObject> container);
   static void ImportExperimentalNatives(Isolate* isolate,
                                         Handle<JSObject> container);
+  static bool InstallJSBuiltins(Isolate* isolate, Handle<JSObject> container);
+  static void ExportPrivateSymbols(Isolate* isolate,
+                                   Handle<JSObject> container);
 
  private:
   Isolate* isolate_;

@@ -2,13 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/runtime/runtime-utils.h"
 
 #include "src/arguments.h"
 #include "src/deoptimizer.h"
 #include "src/frames-inl.h"
 #include "src/full-codegen/full-codegen.h"
-#include "src/runtime/runtime-utils.h"
 #include "src/snapshot/natives.h"
 
 namespace v8 {
@@ -401,7 +400,7 @@ RUNTIME_FUNCTION(Runtime_DisassembleFunction) {
   DCHECK(args.length() == 1);
   // Get the function and make sure it is compiled.
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, func, 0);
-  if (!Compiler::EnsureCompiled(func, KEEP_EXCEPTION)) {
+  if (!Compiler::Compile(func, KEEP_EXCEPTION)) {
     return isolate->heap()->exception();
   }
   OFStream os(stdout);

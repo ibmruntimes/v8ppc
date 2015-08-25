@@ -365,7 +365,7 @@ class ArgsBuffer {
 template <>
 void ArgsBuffer<int32_t>::Mutate() {
   uint32_t base = 1111111111u * seed_;
-  for (int j = 0; j < count_; j++) {
+  for (int j = 0; j < count_ && j < kMaxParamCount; j++) {
     input[j] = static_cast<int32_t>(256 + base + j + seed_ * 13);
   }
   output = -1;
@@ -376,7 +376,7 @@ void ArgsBuffer<int32_t>::Mutate() {
 template <>
 void ArgsBuffer<int64_t>::Mutate() {
   uint64_t base = 11111111111111111ull * seed_;
-  for (int j = 0; j < count_; j++) {
+  for (int j = 0; j < count_ && j < kMaxParamCount; j++) {
     input[j] = static_cast<int64_t>(256 + base + j + seed_ * 13);
   }
   output = -1;
@@ -387,7 +387,7 @@ void ArgsBuffer<int64_t>::Mutate() {
 template <>
 void ArgsBuffer<float32>::Mutate() {
   float64 base = -33.25 * seed_;
-  for (int j = 0; j < count_; j++) {
+  for (int j = 0; j < count_ && j < kMaxParamCount; j++) {
     input[j] = 256 + base + j + seed_ * 13;
   }
   output = std::numeric_limits<float32>::quiet_NaN();
@@ -398,7 +398,7 @@ void ArgsBuffer<float32>::Mutate() {
 template <>
 void ArgsBuffer<float64>::Mutate() {
   float64 base = -111.25 * seed_;
-  for (int j = 0; j < count_; j++) {
+  for (int j = 0; j < count_ && j < kMaxParamCount; j++) {
     input[j] = 256 + base + j + seed_ * 13;
   }
   output = std::numeric_limits<float64>::quiet_NaN();
@@ -447,7 +447,7 @@ class Computer {
         Unique<HeapObject> unique =
             Unique<HeapObject>::CreateUninitialized(inner);
         Node* target = raw.HeapConstant(unique);
-        Node** args = zone.NewArray<Node*>(kMaxParamCount);
+        Node** args = zone.NewArray<Node*>(num_params);
         for (int i = 0; i < num_params; i++) {
           args[i] = io.MakeConstant(raw, io.input[i]);
         }
@@ -847,7 +847,7 @@ TEST(Int64Select_registers) {
 
 
 TEST(Float32Select_registers) {
-  if (DoubleRegister::kMaxNumAllocatableRegisters < 2) return;
+  if (RegisterConfiguration::ArchDefault()->num_double_registers() < 2) return;
 
   int rarray[] = {0};
   ArgsBuffer<float32>::Sig sig(2);
@@ -869,7 +869,7 @@ TEST(Float32Select_registers) {
 
 
 TEST(Float64Select_registers) {
-  if (DoubleRegister::kMaxNumAllocatableRegisters < 2) return;
+  if (RegisterConfiguration::ArchDefault()->num_double_registers() < 2) return;
 
   int rarray[] = {0};
   ArgsBuffer<float64>::Sig sig(2);
@@ -929,4 +929,57 @@ TEST(Float64Select_stack_params_return_reg) {
     RunSelect<float64, 4>(desc);
     RunSelect<float64, 5>(desc);
   }
+}
+
+
+template <typename CType, int which>
+static void Build_Select_With_Call(CallDescriptor* desc,
+                                   RawMachineAssembler& raw) {
+  Handle<Code> inner = Handle<Code>::null();
+  int num_params = ParamCount(desc);
+  CHECK_LE(num_params, kMaxParamCount);
+  {
+    Isolate* isolate = CcTest::InitIsolateOnce();
+    // Build the actual select.
+    Zone zone;
+    Graph graph(&zone);
+    RawMachineAssembler raw(isolate, &graph, desc);
+    raw.Return(raw.Parameter(which));
+    inner = CompileGraph("Select-indirection", desc, &graph, raw.Export());
+    CHECK(!inner.is_null());
+    CHECK(inner->IsCode());
+  }
+
+  {
+    // Build a call to the function that does the select.
+    Unique<HeapObject> unique = Unique<HeapObject>::CreateUninitialized(inner);
+    Node* target = raw.HeapConstant(unique);
+    Node** args = raw.zone()->NewArray<Node*>(num_params);
+    for (int i = 0; i < num_params; i++) {
+      args[i] = raw.Parameter(i);
+    }
+
+    Node* call = raw.CallN(desc, target, args);
+    raw.Return(call);
+  }
+}
+
+
+TEST(Float64StackParamsToStackParams) {
+  if (DISABLE_NATIVE_STACK_PARAMS) return;
+
+  int rarray[] = {0};
+  Allocator params(nullptr, 0, nullptr, 0);
+  Allocator rets(nullptr, 0, rarray, 1);
+
+  Zone zone;
+  ArgsBuffer<float64>::Sig sig(2);
+  RegisterConfig config(params, rets);
+  CallDescriptor* desc = config.Create(&zone, &sig);
+
+  Run_Computation<float64>(desc, Build_Select_With_Call<float64, 0>,
+                           Compute_Select<float64, 0>, 1098);
+
+  Run_Computation<float64>(desc, Build_Select_With_Call<float64, 1>,
+                           Compute_Select<float64, 1>, 1099);
 }

@@ -147,7 +147,7 @@ Handle<Code> CodeGenerator::GenerateCode() {
   }
 
   // Ensure there is space for lazy deoptimization in the code.
-  if (!info->IsStub()) {
+  if (info->ShouldEnsureSpaceForLazyDeopt()) {
     int target_offset = masm()->pc_offset() + Deoptimizer::patch_size();
     while (masm()->pc_offset() < target_offset) {
       masm()->nop();
@@ -167,8 +167,8 @@ Handle<Code> CodeGenerator::GenerateCode() {
 
   safepoints()->Emit(masm(), frame()->GetSpillSlotCount());
 
-  Handle<Code> result = v8::internal::CodeGenerator::MakeCodeEpilogue(
-      masm(), info->flags(), info);
+  Handle<Code> result =
+      v8::internal::CodeGenerator::MakeCodeEpilogue(masm(), info);
   result->set_is_turbofanned(true);
   result->set_stack_slots(frame()->GetSpillSlotCount());
   result->set_safepoint_table_offset(safepoints()->GetCodeOffset());
@@ -193,7 +193,7 @@ Handle<Code> CodeGenerator::GenerateCode() {
   PopulateDeoptimizationData(result);
 
   // Ensure there is space for lazy deoptimization in the relocation info.
-  if (!info->IsStub()) {
+  if (!info->ShouldEnsureSpaceForLazyDeopt()) {
     Deoptimizer::EnsureRelocSpaceForLazyDeoptimization(result);
   }
 
@@ -216,10 +216,16 @@ void CodeGenerator::RecordSafepoint(ReferenceMap* references,
                                     Safepoint::DeoptMode deopt_mode) {
   Safepoint safepoint =
       safepoints()->DefineSafepoint(masm(), kind, arguments, deopt_mode);
+  int stackSlotToSpillSlotDelta =
+      frame()->GetTotalFrameSlotCount() - frame()->GetSpillSlotCount();
   for (auto& operand : references->reference_operands()) {
     if (operand.IsStackSlot()) {
-      safepoint.DefinePointerSlot(StackSlotOperand::cast(operand).index(),
-                                  zone());
+      int index = StackSlotOperand::cast(operand).index();
+      DCHECK(index >= 0);
+      // Safepoint table indices are 0-based from the beginning of the spill
+      // slot area, adjust appropriately.
+      index -= stackSlotToSpillSlotDelta;
+      safepoint.DefinePointerSlot(index, zone());
     } else if (operand.IsRegister() && (kind & Safepoint::kWithRegisters)) {
       Register reg =
           Register::FromAllocationIndex(RegisterOperand::cast(operand).index());

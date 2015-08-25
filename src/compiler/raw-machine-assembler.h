@@ -508,6 +508,10 @@ class RawMachineAssembler {
                        MachineType arg7_type, Node* function, Node* arg0,
                        Node* arg1, Node* arg2, Node* arg3, Node* arg4,
                        Node* arg5, Node* arg6, Node* arg7);
+  Node* TailCallInterpreterDispatch(const CallDescriptor* call_descriptor,
+                                    Node* target, Node* arg1, Node* arg2,
+                                    Node* arg3, Node* arg4, Node* arg5,
+                                    Node* arg6);
 
   // ===========================================================================
   // The following utility methods deal with control flow, hence might switch

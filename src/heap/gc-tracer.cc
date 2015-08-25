@@ -429,8 +429,6 @@ void GCTracer::PrintNVP() const {
       PrintF("sweepcode=%.2f ", current_.scopes[Scope::MC_SWEEP_CODE]);
       PrintF("sweepcell=%.2f ", current_.scopes[Scope::MC_SWEEP_CELL]);
       PrintF("sweepmap=%.2f ", current_.scopes[Scope::MC_SWEEP_MAP]);
-      PrintF("rescan_lo=%.2f ",
-             current_.scopes[Scope::MC_RESCAN_LARGE_OBJECTS]);
       PrintF("evacuate=%.1f ", current_.scopes[Scope::MC_EVACUATE_PAGES]);
       PrintF("new_new=%.1f ",
              current_.scopes[Scope::MC_UPDATE_NEW_TO_NEW_POINTERS]);
@@ -474,9 +472,9 @@ void GCTracer::PrintNVP() const {
   intptr_t allocated_since_last_gc =
       current_.start_object_size - previous_.end_object_size;
   PrintF("allocated=%" V8_PTR_PREFIX "d ", allocated_since_last_gc);
-  PrintF("promoted=%" V8_PTR_PREFIX "d ", heap_->promoted_objects_size_);
+  PrintF("promoted=%" V8_PTR_PREFIX "d ", heap_->promoted_objects_size());
   PrintF("semi_space_copied=%" V8_PTR_PREFIX "d ",
-         heap_->semi_space_copied_object_size_);
+         heap_->semi_space_copied_object_size());
   PrintF("nodes_died_in_new=%d ", heap_->nodes_died_in_new_space_);
   PrintF("nodes_copied_in_new=%d ", heap_->nodes_copied_in_new_space_);
   PrintF("nodes_promoted=%d ", heap_->nodes_promoted_);

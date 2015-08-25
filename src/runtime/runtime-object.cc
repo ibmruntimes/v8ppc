@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/runtime/runtime-utils.h"
 
 #include "src/arguments.h"
 #include "src/bootstrapper.h"
 #include "src/debug/debug.h"
 #include "src/messages.h"
 #include "src/runtime/runtime.h"
-#include "src/runtime/runtime-utils.h"
 
 namespace v8 {
 namespace internal {
@@ -424,8 +423,7 @@ RUNTIME_FUNCTION(Runtime_LoadGlobalViaContext) {
   DCHECK(script_context->get(slot)->IsPropertyCell());
 
   // Lookup the named property on the global object.
-  Handle<ScopeInfo> scope_info(ScopeInfo::cast(script_context->extension()),
-                               isolate);
+  Handle<ScopeInfo> scope_info(script_context->scope_info(), isolate);
   Handle<Name> name(scope_info->ContextSlotName(slot), isolate);
   Handle<GlobalObject> global_object(script_context->global_object(), isolate);
   LookupIterator it(global_object, name, LookupIterator::HIDDEN);
@@ -459,8 +457,7 @@ Object* StoreGlobalViaContext(Isolate* isolate, int slot, Handle<Object> value,
   DCHECK(script_context->get(slot)->IsPropertyCell());
 
   // Lookup the named property on the global object.
-  Handle<ScopeInfo> scope_info(ScopeInfo::cast(script_context->extension()),
-                               isolate);
+  Handle<ScopeInfo> scope_info(script_context->scope_info(), isolate);
   Handle<Name> name(scope_info->ContextSlotName(slot), isolate);
   Handle<GlobalObject> global_object(script_context->global_object(), isolate);
   LookupIterator it(global_object, name, LookupIterator::HIDDEN);
@@ -1113,7 +1110,7 @@ static Object* Runtime_NewObjectHelper(Isolate* isolate,
 
   // The function should be compiled for the optimization hints to be
   // available.
-  Compiler::EnsureCompiled(function, CLEAR_EXCEPTION);
+  Compiler::Compile(function, CLEAR_EXCEPTION);
 
   Handle<JSObject> result;
   if (site.is_null()) {

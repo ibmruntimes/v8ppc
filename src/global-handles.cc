@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
-#include "src/api.h"
 #include "src/global-handles.h"
 
+#include "src/api.h"
+#include "src/v8.h"
 #include "src/vm-state-inl.h"
 
 namespace v8 {
@@ -507,7 +506,11 @@ class GlobalHandles::PendingPhantomCallbacksSecondPassTask
   }
 
   void RunInternal() override {
+    isolate_->heap()->CallGCPrologueCallbacks(
+        GCType::kGCTypeProcessWeakCallbacks, kNoGCCallbackFlags);
     InvokeSecondPassPhantomCallbacks(&pending_phantom_callbacks_, isolate_);
+    isolate_->heap()->CallGCEpilogueCallbacks(
+        GCType::kGCTypeProcessWeakCallbacks, kNoGCCallbackFlags);
   }
 
  private:
@@ -841,7 +844,11 @@ int GlobalHandles::DispatchPendingPhantomCallbacks(
   }
   if (pending_phantom_callbacks_.length() > 0) {
     if (FLAG_optimize_for_size || FLAG_predictable || synchronous_second_pass) {
+      isolate()->heap()->CallGCPrologueCallbacks(
+          GCType::kGCTypeProcessWeakCallbacks, kNoGCCallbackFlags);
       InvokeSecondPassPhantomCallbacks(&pending_phantom_callbacks_, isolate());
+      isolate()->heap()->CallGCEpilogueCallbacks(
+          GCType::kGCTypeProcessWeakCallbacks, kNoGCCallbackFlags);
     } else {
       auto task = new PendingPhantomCallbacksSecondPassTask(
           &pending_phantom_callbacks_, isolate());

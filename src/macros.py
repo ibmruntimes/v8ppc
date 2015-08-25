@@ -145,9 +145,9 @@ define kBoundArgumentsStartIndex = 2;
 # Inline macros. Use %IS_VAR to make sure arg is evaluated only once.
 macro NUMBER_IS_NAN(arg) = (!%_IsSmi(%IS_VAR(arg)) && !(arg == arg));
 macro NUMBER_IS_FINITE(arg) = (%_IsSmi(%IS_VAR(arg)) || ((arg == arg) && (arg != 1/0) && (arg != -1/0)));
-macro TO_INTEGER(arg) = (%_IsSmi(%IS_VAR(arg)) ? arg : %NumberToInteger($toNumber(arg)));
-macro TO_INTEGER_FOR_SIDE_EFFECT(arg) = (%_IsSmi(%IS_VAR(arg)) ? arg : $toNumber(arg));
-macro TO_INTEGER_MAP_MINUS_ZERO(arg) = (%_IsSmi(%IS_VAR(arg)) ? arg : %NumberToIntegerMapMinusZero($toNumber(arg)));
+macro TO_INTEGER(arg) = (%_IsSmi(%IS_VAR(arg)) ? arg : %NumberToInteger(ToNumber(arg)));
+macro TO_INTEGER_FOR_SIDE_EFFECT(arg) = (%_IsSmi(%IS_VAR(arg)) ? arg : ToNumber(arg));
+macro TO_INTEGER_MAP_MINUS_ZERO(arg) = (%_IsSmi(%IS_VAR(arg)) ? arg : %NumberToIntegerMapMinusZero(ToNumber(arg)));
 macro TO_INT32(arg) = (arg | 0);
 macro TO_UINT32(arg) = (arg >>> 0);
 macro TO_STRING_INLINE(arg) = (IS_STRING(%IS_VAR(arg)) ? arg : $nonStringToString(arg));
@@ -159,14 +159,11 @@ macro SHOULD_CREATE_WRAPPER(functionName, receiver) = (!IS_SPEC_OBJECT(receiver)
 macro HAS_INDEX(array, index, is_array) = ((is_array && %_HasFastPackedElements(%IS_VAR(array))) ? (index < array.length) : (index in array));
 
 # Private names.
-macro GLOBAL_PRIVATE(name) = (%CreateGlobalPrivateSymbol(name));
-macro NEW_PRIVATE(name) = (%CreatePrivateSymbol(name));
 macro IS_PRIVATE(sym) = (%SymbolIsPrivate(sym));
 macro HAS_PRIVATE(obj, sym) = (%HasOwnProperty(obj, sym));
 macro HAS_DEFINED_PRIVATE(obj, sym) = (!IS_UNDEFINED(obj[sym]));
 macro GET_PRIVATE(obj, sym) = (obj[sym]);
 macro SET_PRIVATE(obj, sym, val) = (obj[sym] = val);
-macro DELETE_PRIVATE(obj, sym) = (delete obj[sym]);
 
 # Constants.  The compiler constant folds them.
 define NAN = $NaN;

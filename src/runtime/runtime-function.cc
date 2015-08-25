@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/runtime/runtime-utils.h"
 
 #include "src/accessors.h"
 #include "src/arguments.h"
@@ -11,7 +11,6 @@
 #include "src/deoptimizer.h"
 #include "src/frames-inl.h"
 #include "src/messages.h"
-#include "src/runtime/runtime-utils.h"
 
 namespace v8 {
 namespace internal {
@@ -193,12 +192,15 @@ RUNTIME_FUNCTION(Runtime_FunctionIsAPIFunction) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_FunctionIsBuiltin) {
+RUNTIME_FUNCTION(Runtime_FunctionHidesSource) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 1);
-
   CONVERT_ARG_CHECKED(JSFunction, f, 0);
-  return isolate->heap()->ToBoolean(f->IsBuiltin());
+
+  SharedFunctionInfo* shared = f->shared();
+  bool hide_source = !shared->script()->IsScript() ||
+                     Script::cast(shared->script())->hide_source();
+  return isolate->heap()->ToBoolean(hide_source);
 }
 
 
@@ -213,7 +215,7 @@ RUNTIME_FUNCTION(Runtime_SetCode) {
   Handle<SharedFunctionInfo> source_shared(source->shared());
   RUNTIME_ASSERT(!source_shared->bound());
 
-  if (!Compiler::EnsureCompiled(source, KEEP_EXCEPTION)) {
+  if (!Compiler::Compile(source, KEEP_EXCEPTION)) {
     return isolate->heap()->exception();
   }
 

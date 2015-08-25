@@ -10,7 +10,7 @@ deps = {
   "v8/build/gyp":
     Var("git_url") + "/external/gyp.git" + "@" + "6ee91ad8659871916f9aa840d42e1513befdf638",
   "v8/third_party/icu":
-    Var("git_url") + "/chromium/deps/icu.git" + "@" + "bbb24c53b4f46025e87a5973c39fa722c8757595",
+    Var("git_url") + "/chromium/deps/icu.git" + "@" + "89dcdec16381883782b9cc9cff38e00f047a0f46",
   "v8/buildtools":
     Var("git_url") + "/chromium/buildtools.git" + "@" + "565d04e8741429fb1b4f26d102f2c6c3b849edeb",
   "v8/testing/gtest":
@@ -18,13 +18,13 @@ deps = {
   "v8/testing/gmock":
     Var("git_url") + "/external/googlemock.git" + "@" + "0421b6f358139f02e102c9c332ce19a33faf75be",
   "v8/tools/clang":
-    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "b66ad18bb147f02b74b207358140371382b0ef35",
+    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "5439585778385813bc7711f3d6b7035b9eb78572",
 }
 
 deps_os = {
   "android": {
     "v8/third_party/android_tools":
-      Var("git_url") + "/android_tools.git" + "@" + "5722f90e94d02a8dc17b6edb93ead6839d5afcee",
+      Var("git_url") + "/android_tools.git" + "@" + "4238a28593b7e6178c95431f91ca8c24e45fa7eb",
   },
   "win": {
     "v8/third_party/cygwin":

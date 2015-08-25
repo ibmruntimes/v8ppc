@@ -13,6 +13,7 @@
 #include "src/extensions/gc-extension.h"
 #include "src/extensions/statistics-extension.h"
 #include "src/extensions/trigger-failure-extension.h"
+#include "src/heap/heap.h"
 #include "src/snapshot/natives.h"
 #include "src/snapshot/snapshot.h"
 #include "third_party/fdlibm/fdlibm.h"
@@ -50,6 +51,8 @@ Handle<String> Bootstrapper::SourceLookup(int index) {
 
 template Handle<String> Bootstrapper::SourceLookup<Natives>(int index);
 template Handle<String> Bootstrapper::SourceLookup<ExperimentalNatives>(
+    int index);
+template Handle<String> Bootstrapper::SourceLookup<ExperimentalExtraNatives>(
     int index);
 template Handle<String> Bootstrapper::SourceLookup<ExtraNatives>(int index);
 template Handle<String> Bootstrapper::SourceLookup<CodeStubNatives>(int index);
@@ -121,7 +124,10 @@ void Bootstrapper::TearDown() {
   DeleteNativeSources(Natives::GetSourceCache(isolate_->heap()));
   DeleteNativeSources(ExperimentalNatives::GetSourceCache(isolate_->heap()));
   DeleteNativeSources(ExtraNatives::GetSourceCache(isolate_->heap()));
+  DeleteNativeSources(
+      ExperimentalExtraNatives::GetSourceCache(isolate_->heap()));
   DeleteNativeSources(CodeStubNatives::GetSourceCache(isolate_->heap()));
+
   extensions_cache_.Initialize(isolate_, false);  // Yes, symmetrical
 }
 
@@ -206,6 +212,7 @@ class Genesis BASE_EMBEDDED {
                          Handle<JSFunction>* fun);
   bool InstallExperimentalNatives();
   bool InstallExtraNatives();
+  bool InstallExperimentalExtraNatives();
   bool InstallDebuggerNatives();
   void InstallBuiltinFunctionIds();
   void InstallExperimentalBuiltinFunctionIds();
@@ -242,7 +249,6 @@ class Genesis BASE_EMBEDDED {
                                v8::RegisteredExtension* current,
                                ExtensionStates* extension_states);
   static bool InstallSpecialObjects(Handle<Context> native_context);
-  bool InstallJSBuiltins(Handle<JSBuiltinsObject> builtins);
   bool ConfigureApiObject(Handle<JSObject> object,
                           Handle<ObjectTemplateInfo> object_template);
   bool ConfigureGlobalObjects(
@@ -837,7 +843,7 @@ void Genesis::HookUpGlobalThisBinding(Handle<FixedArray> outdated_contexts) {
   for (int i = 0; i < outdated_contexts->length(); ++i) {
     Context* context = Context::cast(outdated_contexts->get(i));
     if (context->IsScriptContext()) {
-      ScopeInfo* scope_info = ScopeInfo::cast(context->extension());
+      ScopeInfo* scope_info = context->scope_info();
       int slot = scope_info->ReceiverContextSlotIndex();
       if (slot >= 0) {
         DCHECK_EQ(slot, Context::MIN_CONTEXT_SLOTS);
@@ -1533,6 +1539,21 @@ bool Bootstrapper::CompileExtraBuiltin(Isolate* isolate, int index) {
 }
 
 
+bool Bootstrapper::CompileExperimentalExtraBuiltin(Isolate* isolate,
+                                                   int index) {
+  HandleScope scope(isolate);
+  Vector<const char> name = ExperimentalExtraNatives::GetScriptName(index);
+  Handle<String> source_code =
+      isolate->bootstrapper()->SourceLookup<ExperimentalExtraNatives>(index);
+  Handle<Object> global = isolate->global_object();
+  Handle<Object> binding = isolate->extras_binding_object();
+  Handle<Object> args[] = {global, binding};
+  return Bootstrapper::CompileNative(
+      isolate, name, Handle<JSObject>(isolate->native_context()->builtins()),
+      source_code, arraysize(args), args);
+}
+
+
 bool Bootstrapper::CompileCodeStubBuiltin(Isolate* isolate, int index) {
   HandleScope scope(isolate);
   Vector<const char> name = CodeStubNatives::GetScriptName(index);
@@ -1731,75 +1752,18 @@ void Genesis::InitializeBuiltinTypedArrays() {
 }
 
 
-#define INSTALL_NATIVE(Type, name, var)                                        \
-  Handle<Object> var##_native =                                                \
-      Object::GetProperty(isolate, container, name, STRICT).ToHandleChecked(); \
-  DCHECK(var##_native->Is##Type());                                            \
-  native_context->set_##var(Type::cast(*var##_native));
+#define INSTALL_NATIVE(index, Type, name)                    \
+  Handle<Object> name##_native =                             \
+      Object::GetProperty(isolate, container, #name, STRICT) \
+          .ToHandleChecked();                                \
+  DCHECK(name##_native->Is##Type());                         \
+  native_context->set_##name(Type::cast(*name##_native));
 
 
 void Bootstrapper::ImportNatives(Isolate* isolate, Handle<JSObject> container) {
   HandleScope scope(isolate);
   Handle<Context> native_context = isolate->native_context();
-  INSTALL_NATIVE(JSFunction, "CreateDate", create_date_fun);
-  INSTALL_NATIVE(JSFunction, "ToNumber", to_number_fun);
-  INSTALL_NATIVE(JSFunction, "ToString", to_string_fun);
-  INSTALL_NATIVE(JSFunction, "ToDetailString", to_detail_string_fun);
-  INSTALL_NATIVE(JSFunction, "NoSideEffectToString",
-                 no_side_effect_to_string_fun);
-  INSTALL_NATIVE(JSFunction, "ToInteger", to_integer_fun);
-  INSTALL_NATIVE(JSFunction, "ToLength", to_length_fun);
-
-  INSTALL_NATIVE(JSFunction, "GlobalEval", global_eval_fun);
-  INSTALL_NATIVE(JSFunction, "GetStackTraceLine", get_stack_trace_line_fun);
-  INSTALL_NATIVE(JSFunction, "ToCompletePropertyDescriptor",
-                 to_complete_property_descriptor);
-  INSTALL_NATIVE(JSFunction, "JsonSerializeAdapter", json_serialize_adapter);
-
-  INSTALL_NATIVE(JSFunction, "Error", error_function);
-  INSTALL_NATIVE(JSFunction, "EvalError", eval_error_function);
-  INSTALL_NATIVE(JSFunction, "RangeError", range_error_function);
-  INSTALL_NATIVE(JSFunction, "ReferenceError", reference_error_function);
-  INSTALL_NATIVE(JSFunction, "SyntaxError", syntax_error_function);
-  INSTALL_NATIVE(JSFunction, "TypeError", type_error_function);
-  INSTALL_NATIVE(JSFunction, "URIError", uri_error_function);
-  INSTALL_NATIVE(JSFunction, "MakeError", make_error_function);
-
-  INSTALL_NATIVE(Symbol, "promiseStatus", promise_status);
-  INSTALL_NATIVE(Symbol, "promiseValue", promise_value);
-  INSTALL_NATIVE(JSFunction, "PromiseCreate", promise_create);
-  INSTALL_NATIVE(JSFunction, "PromiseResolve", promise_resolve);
-  INSTALL_NATIVE(JSFunction, "PromiseReject", promise_reject);
-  INSTALL_NATIVE(JSFunction, "PromiseChain", promise_chain);
-  INSTALL_NATIVE(JSFunction, "PromiseCatch", promise_catch);
-  INSTALL_NATIVE(JSFunction, "PromiseThen", promise_then);
-  INSTALL_NATIVE(JSFunction, "PromiseHasUserDefinedRejectHandler",
-                 promise_has_user_defined_reject_handler);
-
-  INSTALL_NATIVE(JSFunction, "ObserveNotifyChange", observers_notify_change);
-  INSTALL_NATIVE(JSFunction, "ObserveEnqueueSpliceRecord",
-                 observers_enqueue_splice);
-  INSTALL_NATIVE(JSFunction, "ObserveBeginPerformSplice",
-                 observers_begin_perform_splice);
-  INSTALL_NATIVE(JSFunction, "ObserveEndPerformSplice",
-                 observers_end_perform_splice);
-  INSTALL_NATIVE(JSFunction, "ObserveNativeObjectObserve",
-                 native_object_observe);
-  INSTALL_NATIVE(JSFunction, "ObserveNativeObjectGetNotifier",
-                 native_object_get_notifier);
-  INSTALL_NATIVE(JSFunction, "ObserveNativeObjectNotifierPerformChange",
-                 native_object_notifier_perform_change);
-
-  INSTALL_NATIVE(JSFunction, "ArrayValues", array_values_iterator);
-  INSTALL_NATIVE(JSFunction, "MapGet", map_get);
-  INSTALL_NATIVE(JSFunction, "MapSet", map_set);
-  INSTALL_NATIVE(JSFunction, "MapHas", map_has);
-  INSTALL_NATIVE(JSFunction, "MapDelete", map_delete);
-  INSTALL_NATIVE(JSFunction, "SetAdd", set_add);
-  INSTALL_NATIVE(JSFunction, "SetHas", set_has);
-  INSTALL_NATIVE(JSFunction, "SetDelete", set_delete);
-  INSTALL_NATIVE(JSFunction, "MapFromArray", map_from_array);
-  INSTALL_NATIVE(JSFunction, "SetFromArray", set_from_array);
+  NATIVE_CONTEXT_IMPORTED_FIELDS(INSTALL_NATIVE)
 }
 
 
@@ -1836,10 +1800,7 @@ static void InstallExperimentalNatives_harmony_proxies(
     Isolate* isolate, Handle<Context> native_context,
     Handle<JSObject> container) {
   if (FLAG_harmony_proxies) {
-    INSTALL_NATIVE(JSFunction, "ProxyDerivedGetTrap", derived_get_trap);
-    INSTALL_NATIVE(JSFunction, "ProxyDerivedHasTrap", derived_has_trap);
-    INSTALL_NATIVE(JSFunction, "ProxyDerivedSetTrap", derived_set_trap);
-    INSTALL_NATIVE(JSFunction, "ProxyEnumerate", proxy_enumerate);
+    NATIVE_CONTEXT_IMPORTED_FIELDS_FOR_PROXY(INSTALL_NATIVE)
   }
 }
 
@@ -1858,6 +1819,39 @@ void Bootstrapper::ImportExperimentalNatives(Isolate* isolate,
 }
 
 #undef INSTALL_NATIVE
+
+
+bool Bootstrapper::InstallJSBuiltins(Isolate* isolate,
+                                     Handle<JSObject> container) {
+  HandleScope scope(isolate);
+  Handle<JSBuiltinsObject> builtins = isolate->js_builtins_object();
+  for (int i = 0; i < Builtins::NumberOfJavaScriptBuiltins(); i++) {
+    Builtins::JavaScript id = static_cast<Builtins::JavaScript>(i);
+    Handle<Object> function_object =
+        Object::GetProperty(isolate, container, Builtins::GetName(id))
+            .ToHandleChecked();
+    DCHECK(function_object->IsJSFunction());
+    Handle<JSFunction> function = Handle<JSFunction>::cast(function_object);
+    builtins->set_javascript_builtin(id, *function);
+  }
+  return true;
+}
+
+
+void Bootstrapper::ExportPrivateSymbols(Isolate* isolate,
+                                        Handle<JSObject> container) {
+  HandleScope scope(isolate);
+#define EXPORT_PRIVATE_SYMBOL(NAME)                                         \
+  Handle<String> NAME##_name =                                              \
+      isolate->factory()->NewStringFromAsciiChecked(#NAME);                 \
+  JSObject::AddProperty(container, NAME##_name, isolate->factory()->NAME(), \
+                        NONE);
+
+  PRIVATE_SYMBOL_LIST(EXPORT_PRIVATE_SYMBOL)
+
+#undef EXPORT_PRIVATE_SYMBOL
+}
+
 
 #define EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(id) \
   void Genesis::InitializeGlobal_##id() {}
@@ -2076,19 +2070,21 @@ bool Genesis::InstallNatives(ContextType context_type) {
 
   native_context()->set_runtime_context(*context);
 
-  if (context_type == THIN_CONTEXT) {
-    int js_builtins_script_index = Natives::GetDebuggerCount();
-    if (!Bootstrapper::CompileBuiltin(isolate(), js_builtins_script_index))
-      return false;
-    if (!InstallJSBuiltins(builtins)) return false;
-    return true;
-  }
-
   // Set up the utils object as shared container between native scripts.
   Handle<JSObject> utils = factory()->NewJSObject(isolate()->object_function());
   JSObject::NormalizeProperties(utils, CLEAR_INOBJECT_PROPERTIES, 16,
                                 "utils container for native scripts");
   native_context()->set_natives_utils_object(*utils);
+
+  int builtin_index = Natives::GetDebuggerCount();
+  // Only run prologue.js and runtime.js at this point.
+  DCHECK_EQ(builtin_index, Natives::GetIndex("prologue"));
+  if (!Bootstrapper::CompileBuiltin(isolate(), builtin_index++)) return false;
+  DCHECK_EQ(builtin_index, Natives::GetIndex("runtime"));
+  if (!Bootstrapper::CompileBuiltin(isolate(), builtin_index++)) return false;
+
+  // A thin context is ready at this point.
+  if (context_type == THIN_CONTEXT) return true;
 
   if (FLAG_expose_natives_as != NULL) {
     Handle<String> utils_key = factory()->NewStringFromAsciiChecked("utils");
@@ -2375,13 +2371,9 @@ bool Genesis::InstallNatives(ContextType context_type) {
 #undef INSTALL_PUBLIC_SYMBOL
   }
 
-  int i = Natives::GetDebuggerCount();
-  if (!Bootstrapper::CompileBuiltin(isolate(), i)) return false;
-
-  if (!InstallJSBuiltins(builtins)) return false;
-
-  for (++i; i < Natives::GetBuiltinsCount(); ++i) {
-    if (!Bootstrapper::CompileBuiltin(isolate(), i)) return false;
+  // Run the rest of the native scripts.
+  while (builtin_index < Natives::GetBuiltinsCount()) {
+    if (!Bootstrapper::CompileBuiltin(isolate(), builtin_index++)) return false;
   }
 
   if (!CallUtilsFunction(isolate(), "PostNatives")) return false;
@@ -2613,6 +2605,17 @@ bool Genesis::InstallExtraNatives() {
 }
 
 
+bool Genesis::InstallExperimentalExtraNatives() {
+  for (int i = ExperimentalExtraNatives::GetDebuggerCount();
+       i < ExperimentalExtraNatives::GetBuiltinsCount(); i++) {
+    if (!Bootstrapper::CompileExperimentalExtraBuiltin(isolate(), i))
+      return false;
+  }
+
+  return true;
+}
+
+
 bool Genesis::InstallDebuggerNatives() {
   for (int i = 0; i < Natives::GetDebuggerCount(); ++i) {
     if (!Bootstrapper::CompileBuiltin(isolate(), i)) return false;
@@ -2731,24 +2734,6 @@ bool Genesis::InstallSpecialObjects(Handle<Context> native_context) {
     Handle<JSBuiltinsObject> natives(global->builtins());
     JSObject::AddProperty(global, natives_key, natives, DONT_ENUM);
   }
-
-  // Expose the stack trace symbol to native JS.
-  RETURN_ON_EXCEPTION_VALUE(isolate,
-                            JSObject::SetOwnPropertyIgnoreAttributes(
-                                handle(native_context->builtins(), isolate),
-                                factory->InternalizeOneByteString(
-                                    STATIC_CHAR_VECTOR("$stackTraceSymbol")),
-                                factory->stack_trace_symbol(), NONE),
-                            false);
-
-  // Expose the internal error symbol to native JS
-  RETURN_ON_EXCEPTION_VALUE(isolate,
-                            JSObject::SetOwnPropertyIgnoreAttributes(
-                                handle(native_context->builtins(), isolate),
-                                factory->InternalizeOneByteString(
-                                    STATIC_CHAR_VECTOR("$internalErrorSymbol")),
-                                factory->internal_error_symbol(), NONE),
-                            false);
 
   // Expose the debug global object in global if a name for it is specified.
   if (FLAG_expose_debug_as != NULL && strlen(FLAG_expose_debug_as) != 0) {
@@ -2896,19 +2881,6 @@ bool Genesis::InstallExtension(Isolate* isolate,
   extension_states->set_state(current, INSTALLED);
   isolate->NotifyExtensionInstalled();
   return result;
-}
-
-
-bool Genesis::InstallJSBuiltins(Handle<JSBuiltinsObject> builtins) {
-  HandleScope scope(isolate());
-  for (int i = 0; i < Builtins::NumberOfJavaScriptBuiltins(); i++) {
-    Builtins::JavaScript id = static_cast<Builtins::JavaScript>(i);
-    Handle<Object> function_object = Object::GetProperty(
-        isolate(), builtins, Builtins::GetName(id)).ToHandleChecked();
-    Handle<JSFunction> function = Handle<JSFunction>::cast(function_object);
-    builtins->set_javascript_builtin(id, *function);
-  }
-  return true;
 }
 
 
@@ -3225,6 +3197,11 @@ Genesis::Genesis(Isolate* isolate,
     if (!isolate->serializer_enabled()) {
       InitializeExperimentalGlobal();
       if (!InstallExperimentalNatives()) return;
+
+      if (FLAG_experimental_extras) {
+        if (!InstallExperimentalExtraNatives()) return;
+      }
+
       // By now the utils object is useless and can be removed.
       native_context()->set_natives_utils_object(
           isolate->heap()->undefined_value());

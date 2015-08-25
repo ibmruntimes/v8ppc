@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/hydrogen-instructions.h"
 
 #include "src/base/bits.h"
 #include "src/double.h"
@@ -1746,7 +1746,7 @@ std::ostream& HCheckInstanceType::PrintDataTo(
 
 
 std::ostream& HCallStub::PrintDataTo(std::ostream& os) const {  // NOLINT
-  os << CodeStub::MajorName(major_key_, false) << " ";
+  os << CodeStub::MajorName(major_key_) << " ";
   return HUnaryCall::PrintDataTo(os);
 }
 

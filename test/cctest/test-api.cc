@@ -50,6 +50,7 @@
 #include "src/unicode-inl.h"
 #include "src/utils.h"
 #include "src/vm-state.h"
+#include "test/cctest/heap-tester.h"
 
 static const bool kLogThreading = false;
 
@@ -6716,7 +6717,11 @@ static void ResetUseValueAndSetFlag(
 }
 
 
-static void ResetWeakHandle(bool global_gc) {
+void v8::internal::HeapTester::ResetWeakHandle(bool global_gc) {
+  using v8::Context;
+  using v8::Local;
+  using v8::Object;
+
   v8::Isolate* iso = CcTest::isolate();
   v8::HandleScope scope(iso);
   v8::Handle<Context> context = Context::New(iso);
@@ -6731,8 +6736,7 @@ static void ResetWeakHandle(bool global_gc) {
     object_a.handle.Reset(iso, a);
     object_b.handle.Reset(iso, b);
     if (global_gc) {
-      CcTest::heap()->CollectAllGarbage(
-          TestHeap::Heap::kAbortIncrementalMarkingMask);
+      CcTest::heap()->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask);
     } else {
       CcTest::heap()->CollectGarbage(i::NEW_SPACE);
     }
@@ -6750,8 +6754,7 @@ static void ResetWeakHandle(bool global_gc) {
     CHECK(object_b.handle.IsIndependent());
   }
   if (global_gc) {
-    CcTest::heap()->CollectAllGarbage(
-        TestHeap::Heap::kAbortIncrementalMarkingMask);
+    CcTest::heap()->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask);
   } else {
     CcTest::heap()->CollectGarbage(i::NEW_SPACE);
   }
@@ -6760,9 +6763,9 @@ static void ResetWeakHandle(bool global_gc) {
 }
 
 
-THREADED_TEST(ResetWeakHandle) {
-  ResetWeakHandle(false);
-  ResetWeakHandle(true);
+THREADED_HEAP_TEST(ResetWeakHandle) {
+  v8::internal::HeapTester::ResetWeakHandle(false);
+  v8::internal::HeapTester::ResetWeakHandle(true);
 }
 
 
@@ -21646,14 +21649,14 @@ TEST(StrongObjectDelete) {
 }
 
 
-static void ExtrasExportsTestRuntimeFunction(
+static void ExtrasBindingTestRuntimeFunction(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
   CHECK_EQ(3, args[0]->Int32Value());
   args.GetReturnValue().Set(v8_num(7));
 }
 
 
-TEST(ExtrasExportsObject) {
+TEST(ExtrasBindingObject) {
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope handle_scope(isolate);
   LocalContext env;
@@ -21669,10 +21672,37 @@ TEST(ExtrasExportsObject) {
   CHECK_EQ(5, result->Int32Value());
 
   v8::Handle<v8::FunctionTemplate> runtimeFunction =
-      v8::FunctionTemplate::New(isolate, ExtrasExportsTestRuntimeFunction);
+      v8::FunctionTemplate::New(isolate, ExtrasBindingTestRuntimeFunction);
   binding->Set(v8_str("runtime"), runtimeFunction->GetFunction());
   func =
       binding->Get(v8_str("testExtraShouldCallToRuntime")).As<v8::Function>();
+  result = func->Call(undefined, 0, {}).As<v8::Number>();
+  CHECK_EQ(7, result->Int32Value());
+}
+
+
+TEST(ExperimentalExtras) {
+  i::FLAG_experimental_extras = true;
+
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope handle_scope(isolate);
+  LocalContext env;
+
+  // standalone.gypi ensures we include the test-experimental-extra.js file,
+  // which should export the tested functions.
+  v8::Local<v8::Object> binding = env->GetExtrasBindingObject();
+
+  auto func = binding->Get(v8_str("testExperimentalExtraShouldReturnTen"))
+                  .As<v8::Function>();
+  auto undefined = v8::Undefined(isolate);
+  auto result = func->Call(undefined, 0, {}).As<v8::Number>();
+  CHECK_EQ(10, result->Int32Value());
+
+  v8::Handle<v8::FunctionTemplate> runtimeFunction =
+      v8::FunctionTemplate::New(isolate, ExtrasBindingTestRuntimeFunction);
+  binding->Set(v8_str("runtime"), runtimeFunction->GetFunction());
+  func = binding->Get(v8_str("testExperimentalExtraShouldCallToRuntime"))
+             .As<v8::Function>();
   result = func->Call(undefined, 0, {}).As<v8::Number>();
   CHECK_EQ(7, result->Int32Value());
 }
@@ -21848,6 +21878,7 @@ TEST(FutexInterruption) {
       "var i32a = new Int32Array(ab);"
       "Atomics.futexWait(i32a, 0, 0);");
   CHECK(try_catch.HasTerminated());
+  timeout_thread.Join();
 }
 
 

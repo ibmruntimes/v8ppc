@@ -9,56 +9,8 @@
 // ALL CAPS. The compiled code passes the first argument in 'this'.
 
 
-/* -----------------------------------
-   - - -   C o m p a r i s o n   - - -
-   -----------------------------------
-*/
-
 // The following declarations are shared with other native JS files.
 // They are all declared at this one spot to avoid redeclaration errors.
-var EQUALS;
-var STRICT_EQUALS;
-var COMPARE;
-var COMPARE_STRONG;
-var ADD;
-var ADD_STRONG;
-var STRING_ADD_LEFT;
-var STRING_ADD_RIGHT;
-var SUB;
-var SUB_STRONG;
-var MUL;
-var MUL_STRONG;
-var DIV;
-var DIV_STRONG;
-var MOD;
-var MOD_STRONG;
-var BIT_OR;
-var BIT_OR_STRONG;
-var BIT_AND;
-var BIT_AND_STRONG;
-var BIT_XOR;
-var BIT_XOR_STRONG;
-var SHL;
-var SHL_STRONG;
-var SAR;
-var SAR_STRONG;
-var SHR;
-var SHR_STRONG;
-var IN;
-var INSTANCE_OF;
-var CALL_NON_FUNCTION;
-var CALL_NON_FUNCTION_AS_CONSTRUCTOR;
-var CALL_FUNCTION_PROXY;
-var CALL_FUNCTION_PROXY_AS_CONSTRUCTOR;
-var CONCAT_ITERABLE_TO_ARRAY;
-var APPLY_PREPARE;
-var REFLECT_APPLY_PREPARE;
-var REFLECT_CONSTRUCT_PREPARE;
-var STACK_OVERFLOW;
-var TO_NUMBER;
-var TO_STRING;
-var TO_NAME;
-
 var $defaultNumber;
 var $defaultString;
 var $NaN;
@@ -66,7 +18,6 @@ var $nonNumberToNumber;
 var $nonStringToString;
 var $sameValue;
 var $sameValueZero;
-var $toBoolean;
 var $toInteger;
 var $toLength;
 var $toName;
@@ -86,8 +37,13 @@ var GlobalNumber = global.Number;
 
 // ----------------------------------------------------------------------------
 
+/* -----------------------------------
+- - -   C o m p a r i s o n   - - -
+-----------------------------------
+*/
+
 // ECMA-262 Section 11.9.3.
-EQUALS = function EQUALS(y) {
+function EQUALS(y) {
   if (IS_STRING(this) && IS_STRING(y)) return %StringEquals(this, y);
   var x = this;
 
@@ -146,7 +102,7 @@ EQUALS = function EQUALS(y) {
 
 // ECMA-262, section 11.8.5, page 53. The 'ncr' parameter is used as
 // the result when either (or both) the operands are NaN.
-COMPARE = function COMPARE(x, ncr) {
+function COMPARE(x, ncr) {
   var left;
   var right;
   // Fast cases for string, numbers and undefined compares.
@@ -182,7 +138,7 @@ COMPARE = function COMPARE(x, ncr) {
 }
 
 // Strong mode COMPARE throws if an implicit conversion would be performed
-COMPARE_STRONG = function COMPARE_STRONG(x, ncr) {
+function COMPARE_STRONG(x, ncr) {
   if (IS_STRING(this) && IS_STRING(x)) return %_StringCompare(this, x);
   if (IS_NUMBER(this) && IS_NUMBER(x)) return %NumberCompare(this, x, ncr);
 
@@ -197,7 +153,7 @@ COMPARE_STRONG = function COMPARE_STRONG(x, ncr) {
 */
 
 // ECMA-262, section 11.6.1, page 50.
-ADD = function ADD(x) {
+function ADD(x) {
   // Fast case: Check for number operands and do the addition.
   if (IS_NUMBER(this) && IS_NUMBER(x)) return %NumberAdd(this, x);
   if (IS_STRING(this) && IS_STRING(x)) return %_StringAdd(this, x);
@@ -217,7 +173,7 @@ ADD = function ADD(x) {
 
 
 // Strong mode ADD throws if an implicit conversion would be performed
-ADD_STRONG = function ADD_STRONG(x) {
+function ADD_STRONG(x) {
   if (IS_NUMBER(this) && IS_NUMBER(x)) return %NumberAdd(this, x);
   if (IS_STRING(this) && IS_STRING(x)) return %_StringAdd(this, x);
 
@@ -226,7 +182,7 @@ ADD_STRONG = function ADD_STRONG(x) {
 
 
 // Left operand (this) is already a string.
-STRING_ADD_LEFT = function STRING_ADD_LEFT(y) {
+function STRING_ADD_LEFT(y) {
   if (!IS_STRING(y)) {
     if (IS_STRING_WRAPPER(y) && %_IsStringWrapperSafeForDefaultValueOf(y)) {
       y = %_ValueOf(y);
@@ -241,7 +197,7 @@ STRING_ADD_LEFT = function STRING_ADD_LEFT(y) {
 
 
 // Right operand (y) is already a string.
-STRING_ADD_RIGHT = function STRING_ADD_RIGHT(y) {
+function STRING_ADD_RIGHT(y) {
   var x = this;
   if (!IS_STRING(x)) {
     if (IS_STRING_WRAPPER(x) && %_IsStringWrapperSafeForDefaultValueOf(x)) {
@@ -257,7 +213,7 @@ STRING_ADD_RIGHT = function STRING_ADD_RIGHT(y) {
 
 
 // ECMA-262, section 11.6.2, page 50.
-SUB = function SUB(y) {
+function SUB(y) {
   var x = IS_NUMBER(this) ? this : %$nonNumberToNumber(this);
   if (!IS_NUMBER(y)) y = %$nonNumberToNumber(y);
   return %NumberSub(x, y);
@@ -265,7 +221,7 @@ SUB = function SUB(y) {
 
 
 // Strong mode SUB throws if an implicit conversion would be performed
-SUB_STRONG = function SUB_STRONG(y) {
+function SUB_STRONG(y) {
   if (IS_NUMBER(this) && IS_NUMBER(y)) {
     return %NumberSub(this, y);
   }
@@ -274,7 +230,7 @@ SUB_STRONG = function SUB_STRONG(y) {
 
 
 // ECMA-262, section 11.5.1, page 48.
-MUL = function MUL(y) {
+function MUL(y) {
   var x = IS_NUMBER(this) ? this : %$nonNumberToNumber(this);
   if (!IS_NUMBER(y)) y = %$nonNumberToNumber(y);
   return %NumberMul(x, y);
@@ -282,7 +238,7 @@ MUL = function MUL(y) {
 
 
 // Strong mode MUL throws if an implicit conversion would be performed
-MUL_STRONG = function MUL_STRONG(y) {
+function MUL_STRONG(y) {
   if (IS_NUMBER(this) && IS_NUMBER(y)) {
     return %NumberMul(this, y);
   }
@@ -291,7 +247,7 @@ MUL_STRONG = function MUL_STRONG(y) {
 
 
 // ECMA-262, section 11.5.2, page 49.
-DIV = function DIV(y) {
+function DIV(y) {
   var x = IS_NUMBER(this) ? this : %$nonNumberToNumber(this);
   if (!IS_NUMBER(y)) y = %$nonNumberToNumber(y);
   return %NumberDiv(x, y);
@@ -299,7 +255,7 @@ DIV = function DIV(y) {
 
 
 // Strong mode DIV throws if an implicit conversion would be performed
-DIV_STRONG = function DIV_STRONG(y) {
+function DIV_STRONG(y) {
   if (IS_NUMBER(this) && IS_NUMBER(y)) {
     return %NumberDiv(this, y);
   }
@@ -308,7 +264,7 @@ DIV_STRONG = function DIV_STRONG(y) {
 
 
 // ECMA-262, section 11.5.3, page 49.
-MOD = function MOD(y) {
+function MOD(y) {
   var x = IS_NUMBER(this) ? this : %$nonNumberToNumber(this);
   if (!IS_NUMBER(y)) y = %$nonNumberToNumber(y);
   return %NumberMod(x, y);
@@ -316,7 +272,7 @@ MOD = function MOD(y) {
 
 
 // Strong mode MOD throws if an implicit conversion would be performed
-MOD_STRONG = function MOD_STRONG(y) {
+function MOD_STRONG(y) {
   if (IS_NUMBER(this) && IS_NUMBER(y)) {
     return %NumberMod(this, y);
   }
@@ -330,7 +286,7 @@ MOD_STRONG = function MOD_STRONG(y) {
 */
 
 // ECMA-262, section 11.10, page 57.
-BIT_OR = function BIT_OR(y) {
+function BIT_OR(y) {
   var x = IS_NUMBER(this) ? this : %$nonNumberToNumber(this);
   if (!IS_NUMBER(y)) y = %$nonNumberToNumber(y);
   return %NumberOr(x, y);
@@ -338,7 +294,7 @@ BIT_OR = function BIT_OR(y) {
 
 
 // Strong mode BIT_OR throws if an implicit conversion would be performed
-BIT_OR_STRONG = function BIT_OR_STRONG(y) {
+function BIT_OR_STRONG(y) {
   if (IS_NUMBER(this) && IS_NUMBER(y)) {
     return %NumberOr(this, y);
   }
@@ -347,7 +303,7 @@ BIT_OR_STRONG = function BIT_OR_STRONG(y) {
 
 
 // ECMA-262, section 11.10, page 57.
-BIT_AND = function BIT_AND(y) {
+function BIT_AND(y) {
   var x;
   if (IS_NUMBER(this)) {
     x = this;
@@ -369,7 +325,7 @@ BIT_AND = function BIT_AND(y) {
 
 
 // Strong mode BIT_AND throws if an implicit conversion would be performed
-BIT_AND_STRONG = function BIT_AND_STRONG(y) {
+function BIT_AND_STRONG(y) {
   if (IS_NUMBER(this) && IS_NUMBER(y)) {
     return %NumberAnd(this, y);
   }
@@ -378,7 +334,7 @@ BIT_AND_STRONG = function BIT_AND_STRONG(y) {
 
 
 // ECMA-262, section 11.10, page 57.
-BIT_XOR = function BIT_XOR(y) {
+function BIT_XOR(y) {
   var x = IS_NUMBER(this) ? this : %$nonNumberToNumber(this);
   if (!IS_NUMBER(y)) y = %$nonNumberToNumber(y);
   return %NumberXor(x, y);
@@ -386,7 +342,7 @@ BIT_XOR = function BIT_XOR(y) {
 
 
 // Strong mode BIT_XOR throws if an implicit conversion would be performed
-BIT_XOR_STRONG = function BIT_XOR_STRONG(y) {
+function BIT_XOR_STRONG(y) {
   if (IS_NUMBER(this) && IS_NUMBER(y)) {
     return %NumberXor(this, y);
   }
@@ -395,7 +351,7 @@ BIT_XOR_STRONG = function BIT_XOR_STRONG(y) {
 
 
 // ECMA-262, section 11.7.1, page 51.
-SHL = function SHL(y) {
+function SHL(y) {
   var x = IS_NUMBER(this) ? this : %$nonNumberToNumber(this);
   if (!IS_NUMBER(y)) y = %$nonNumberToNumber(y);
   return %NumberShl(x, y);
@@ -403,7 +359,7 @@ SHL = function SHL(y) {
 
 
 // Strong mode SHL throws if an implicit conversion would be performed
-SHL_STRONG = function SHL_STRONG(y) {
+function SHL_STRONG(y) {
   if (IS_NUMBER(this) && IS_NUMBER(y)) {
     return %NumberShl(this, y);
   }
@@ -412,7 +368,7 @@ SHL_STRONG = function SHL_STRONG(y) {
 
 
 // ECMA-262, section 11.7.2, page 51.
-SAR = function SAR(y) {
+function SAR(y) {
   var x;
   if (IS_NUMBER(this)) {
     x = this;
@@ -434,7 +390,7 @@ SAR = function SAR(y) {
 
 
 // Strong mode SAR throws if an implicit conversion would be performed
-SAR_STRONG = function SAR_STRONG(y) {
+function SAR_STRONG(y) {
   if (IS_NUMBER(this) && IS_NUMBER(y)) {
     return %NumberSar(this, y);
   }
@@ -443,7 +399,7 @@ SAR_STRONG = function SAR_STRONG(y) {
 
 
 // ECMA-262, section 11.7.3, page 52.
-SHR = function SHR(y) {
+function SHR(y) {
   var x = IS_NUMBER(this) ? this : %$nonNumberToNumber(this);
   if (!IS_NUMBER(y)) y = %$nonNumberToNumber(y);
   return %NumberShr(x, y);
@@ -451,7 +407,7 @@ SHR = function SHR(y) {
 
 
 // Strong mode SHR throws if an implicit conversion would be performed
-SHR_STRONG = function SHR_STRONG(y) {
+function SHR_STRONG(y) {
   if (IS_NUMBER(this) && IS_NUMBER(y)) {
     return %NumberShr(this, y);
   }
@@ -465,7 +421,7 @@ SHR_STRONG = function SHR_STRONG(y) {
 */
 
 // ECMA-262, section 11.8.7, page 54.
-IN = function IN(x) {
+function IN(x) {
   if (!IS_SPEC_OBJECT(x)) {
     throw %MakeTypeError(kInvalidInOperatorUse, this, x);
   }
@@ -483,7 +439,7 @@ IN = function IN(x) {
 // efficient, the return value should be zero if the 'this' is an
 // instance of F, and non-zero if not. This makes it possible to avoid
 // an expensive ToBoolean conversion in the generated code.
-INSTANCE_OF = function INSTANCE_OF(F) {
+function INSTANCE_OF(F) {
   var V = this;
   if (!IS_SPEC_FUNCTION(F)) {
     throw %MakeTypeError(kInstanceofFunctionExpected, F);
@@ -511,7 +467,7 @@ INSTANCE_OF = function INSTANCE_OF(F) {
 }
 
 
-CALL_NON_FUNCTION = function CALL_NON_FUNCTION() {
+function CALL_NON_FUNCTION() {
   var delegate = %GetFunctionDelegate(this);
   if (!IS_FUNCTION(delegate)) {
     var callsite = %RenderCallSite();
@@ -522,7 +478,7 @@ CALL_NON_FUNCTION = function CALL_NON_FUNCTION() {
 }
 
 
-CALL_NON_FUNCTION_AS_CONSTRUCTOR = function CALL_NON_FUNCTION_AS_CONSTRUCTOR() {
+function CALL_NON_FUNCTION_AS_CONSTRUCTOR() {
   var delegate = %GetConstructorDelegate(this);
   if (!IS_FUNCTION(delegate)) {
     var callsite = %RenderCallSite();
@@ -533,7 +489,7 @@ CALL_NON_FUNCTION_AS_CONSTRUCTOR = function CALL_NON_FUNCTION_AS_CONSTRUCTOR() {
 }
 
 
-CALL_FUNCTION_PROXY = function CALL_FUNCTION_PROXY() {
+function CALL_FUNCTION_PROXY() {
   var arity = %_ArgumentsLength() - 1;
   var proxy = %_Arguments(arity);  // The proxy comes in as an additional arg.
   var trap = %GetCallTrap(proxy);
@@ -541,15 +497,14 @@ CALL_FUNCTION_PROXY = function CALL_FUNCTION_PROXY() {
 }
 
 
-CALL_FUNCTION_PROXY_AS_CONSTRUCTOR =
-    function CALL_FUNCTION_PROXY_AS_CONSTRUCTOR () {
+function CALL_FUNCTION_PROXY_AS_CONSTRUCTOR () {
   var proxy = this;
   var trap = %GetConstructTrap(proxy);
   return %Apply(trap, this, arguments, 0, %_ArgumentsLength());
 }
 
 
-APPLY_PREPARE = function APPLY_PREPARE(args) {
+function APPLY_PREPARE(args) {
   var length;
   // First check whether length is a positive Smi and args is an
   // array. This is the fast case. If this fails, we do the slow case
@@ -584,7 +539,7 @@ APPLY_PREPARE = function APPLY_PREPARE(args) {
 }
 
 
-REFLECT_APPLY_PREPARE = function REFLECT_APPLY_PREPARE(args) {
+function REFLECT_APPLY_PREPARE(args) {
   var length;
   // First check whether length is a positive Smi and args is an
   // array. This is the fast case. If this fails, we do the slow case
@@ -618,7 +573,7 @@ REFLECT_APPLY_PREPARE = function REFLECT_APPLY_PREPARE(args) {
 }
 
 
-REFLECT_CONSTRUCT_PREPARE = function REFLECT_CONSTRUCT_PREPARE(
+function REFLECT_CONSTRUCT_PREPARE(
     args, newTarget) {
   var length;
   var ctorOk = IS_SPEC_FUNCTION(this) && %IsConstructor(this);
@@ -668,30 +623,30 @@ REFLECT_CONSTRUCT_PREPARE = function REFLECT_CONSTRUCT_PREPARE(
 }
 
 
-CONCAT_ITERABLE_TO_ARRAY = function CONCAT_ITERABLE_TO_ARRAY(iterable) {
+function CONCAT_ITERABLE_TO_ARRAY(iterable) {
   return %$concatIterableToArray(this, iterable);
 };
 
 
-STACK_OVERFLOW = function STACK_OVERFLOW(length) {
+function STACK_OVERFLOW(length) {
   throw %MakeRangeError(kStackOverflow);
 }
 
 
 // Convert the receiver to a number - forward to ToNumber.
-TO_NUMBER = function TO_NUMBER() {
+function TO_NUMBER() {
   return %$toNumber(this);
 }
 
 
 // Convert the receiver to a string - forward to ToString.
-TO_STRING = function TO_STRING() {
+function TO_STRING() {
   return %$toString(this);
 }
 
 
 // Convert the receiver to a string or symbol - forward to ToName.
-TO_NAME = function TO_NAME() {
+function TO_NAME() {
   return %$toName(this);
 }
 
@@ -897,6 +852,7 @@ function ToPositiveInteger(x, rangeErrorIndex) {
 %FunctionSetPrototype(GlobalArray, new GlobalArray(0));
 
 // ----------------------------------------------------------------------------
+// Exports
 
 $concatIterableToArray = ConcatIterableToArray;
 $defaultNumber = DefaultNumber;
@@ -906,7 +862,6 @@ $nonNumberToNumber = NonNumberToNumber;
 $nonStringToString = NonStringToString;
 $sameValue = SameValue;
 $sameValueZero = SameValueZero;
-$toBoolean = ToBoolean;
 $toInteger = ToInteger;
 $toLength = ToLength;
 $toName = ToName;
@@ -914,5 +869,62 @@ $toNumber = ToNumber;
 $toPositiveInteger = ToPositiveInteger;
 $toPrimitive = ToPrimitive;
 $toString = ToString;
+
+%InstallJSBuiltins({
+  EQUALS,
+  COMPARE,
+  COMPARE_STRONG,
+  ADD,
+  ADD_STRONG,
+  STRING_ADD_LEFT,
+  STRING_ADD_RIGHT,
+  SUB,
+  SUB_STRONG,
+  MUL,
+  MUL_STRONG,
+  DIV,
+  DIV_STRONG,
+  MOD,
+  MOD_STRONG,
+  BIT_OR,
+  BIT_OR_STRONG,
+  BIT_AND,
+  BIT_AND_STRONG,
+  BIT_XOR,
+  BIT_XOR_STRONG,
+  SHL,
+  SHL_STRONG,
+  SAR,
+  SAR_STRONG,
+  SHR,
+  SHR_STRONG,
+  IN,
+  INSTANCE_OF,
+  CALL_NON_FUNCTION,
+  CALL_NON_FUNCTION_AS_CONSTRUCTOR,
+  CALL_FUNCTION_PROXY,
+  CALL_FUNCTION_PROXY_AS_CONSTRUCTOR,
+  CONCAT_ITERABLE_TO_ARRAY,
+  APPLY_PREPARE,
+  REFLECT_APPLY_PREPARE,
+  REFLECT_CONSTRUCT_PREPARE,
+  STACK_OVERFLOW,
+  TO_NUMBER,
+  TO_STRING,
+  TO_NAME,
+});
+
+utils.ExportToRuntime(function(to) {
+  to["to_integer_fun"] = ToInteger;
+  to["to_length_fun"] = ToLength;
+  to["to_number_fun"] = ToNumber;
+  to["to_string_fun"] = ToString;
+});
+
+utils.Export(function(to) {
+  to.ToBoolean = ToBoolean;
+  to.ToNumber = ToNumber;
+  to.ToString = ToString;
+})
 
 })

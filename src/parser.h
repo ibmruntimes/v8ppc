@@ -104,9 +104,6 @@ class ParseInfo {
     ast_value_factory_ = ast_value_factory;
   }
 
-  FunctionLiteral* function() {  // TODO(titzer): temporary name adapter
-    return literal_;
-  }
   FunctionLiteral* literal() { return literal_; }
   void set_literal(FunctionLiteral* literal) { literal_ = literal; }
 
@@ -977,6 +974,7 @@ class Parser : public ParserBase<ParserTraits> {
     Parser* parser;
     Scope* declaration_scope;
     Scope* scope;
+    Scope* hoist_scope;
     VariableMode mode;
     bool is_const;
     bool needs_init;
@@ -1137,7 +1135,7 @@ class Parser : public ParserBase<ParserTraits> {
   VariableProxy* NewUnresolved(const AstRawString* name, VariableMode mode);
   Variable* Declare(Declaration* declaration,
                     DeclarationDescriptor::Kind declaration_kind, bool resolve,
-                    bool* ok);
+                    bool* ok, Scope* declaration_scope = nullptr);
 
   bool TargetStackContainsLabel(const AstRawString* label);
   BreakableStatement* LookupBreakTarget(const AstRawString* label, bool* ok);

@@ -28,21 +28,23 @@
 #include <stdlib.h>
 #include <utility>
 
-#include "src/v8.h"
-
 #include "src/compilation-cache.h"
 #include "src/context-measure.h"
 #include "src/deoptimizer.h"
 #include "src/execution.h"
 #include "src/factory.h"
 #include "src/global-handles.h"
+#include "src/heap/gc-tracer.h"
 #include "src/ic/ic.h"
 #include "src/macro-assembler.h"
 #include "src/snapshot/snapshot.h"
 #include "test/cctest/cctest.h"
+#include "test/cctest/heap-tester.h"
 
-using namespace v8::internal;
 using v8::Just;
+
+namespace v8 {
+namespace internal {
 
 static void CheckMap(Map* map, int type, int instance_size) {
   CHECK(map->IsHeapObject());
@@ -1126,11 +1128,11 @@ static int LenFromSize(int size) {
 }
 
 
-TEST(Regression39128) {
+HEAP_TEST(Regression39128) {
   // Test case for crbug.com/39128.
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
-  TestHeap* heap = CcTest::test_heap();
+  Heap* heap = CcTest::heap();
 
   // Increase the chance of 'bump-the-pointer' allocation in old space.
   heap->CollectAllGarbage();
@@ -1930,7 +1932,7 @@ TEST(TestSizeOfRegExpCode) {
 }
 
 
-TEST(TestSizeOfObjects) {
+HEAP_TEST(TestSizeOfObjects) {
   v8::V8::Initialize();
 
   // Get initial heap size after several full GCs, which will stabilize
@@ -1953,7 +1955,7 @@ TEST(TestSizeOfObjects) {
     AlwaysAllocateScope always_allocate(CcTest::i_isolate());
     int filler_size = static_cast<int>(FixedArray::SizeFor(8192));
     for (int i = 1; i <= 100; i++) {
-      CcTest::test_heap()->AllocateFixedArray(8192, TENURED).ToObjectChecked();
+      CcTest::heap()->AllocateFixedArray(8192, TENURED).ToObjectChecked();
       CHECK_EQ(initial_size + i * filler_size,
                static_cast<int>(CcTest::heap()->SizeOfObjects()));
     }
@@ -2765,6 +2767,37 @@ TEST(ResetSharedFunctionInfoCountersDuringMarkSweep) {
   CHECK_EQ(CcTest::heap()->global_ic_age(), f->shared()->ic_age());
   CHECK_EQ(0, f->shared()->opt_count());
   CHECK_EQ(0, f->shared()->code()->profiler_ticks());
+}
+
+
+HEAP_TEST(GCFlags) {
+  CcTest::InitializeVM();
+  Heap* heap = CcTest::heap();
+
+  heap->set_current_gc_flags(Heap::kNoGCFlags);
+  CHECK_EQ(Heap::kNoGCFlags, heap->current_gc_flags());
+
+  // Set the flags to check whether we appropriately resets them after the GC.
+  heap->set_current_gc_flags(Heap::kAbortIncrementalMarkingMask);
+  heap->CollectAllGarbage(Heap::kReduceMemoryFootprintMask);
+  CHECK_EQ(Heap::kNoGCFlags, heap->current_gc_flags());
+
+  MarkCompactCollector* collector = heap->mark_compact_collector();
+  if (collector->sweeping_in_progress()) {
+    collector->EnsureSweepingCompleted();
+  }
+
+  IncrementalMarking* marking = heap->incremental_marking();
+  marking->Stop();
+  marking->Start(Heap::kReduceMemoryFootprintMask);
+  CHECK_NE(0, heap->current_gc_flags() & Heap::kReduceMemoryFootprintMask);
+
+  heap->CollectGarbage(NEW_SPACE);
+  // NewSpace scavenges should not overwrite the flags.
+  CHECK_NE(0, heap->current_gc_flags() & Heap::kReduceMemoryFootprintMask);
+
+  heap->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask);
+  CHECK_EQ(Heap::kNoGCFlags, heap->current_gc_flags());
 }
 
 
@@ -4648,6 +4681,49 @@ TEST(Regress514122) {
 }
 
 
+TEST(LargeObjectSlotRecording) {
+  FLAG_manual_evacuation_candidates_selection = true;
+  CcTest::InitializeVM();
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  HandleScope scope(isolate);
+
+  // Create an object on an evacuation candidate.
+  SimulateFullSpace(heap->old_space());
+  Handle<FixedArray> lit = isolate->factory()->NewFixedArray(4, TENURED);
+  Page* evac_page = Page::FromAddress(lit->address());
+  evac_page->SetFlag(MemoryChunk::FORCE_EVACUATION_CANDIDATE_FOR_TESTING);
+  FixedArray* old_location = *lit;
+
+  // Allocate a large object.
+  const int kSize = 1000000;
+  Handle<FixedArray> lo = isolate->factory()->NewFixedArray(kSize, TENURED);
+  CHECK(heap->lo_space()->Contains(*lo));
+
+  // Start incremental marking to active write barrier.
+  SimulateIncrementalMarking(heap, false);
+  heap->AdvanceIncrementalMarking(10000000, 10000000,
+                                  IncrementalMarking::IdleStepActions());
+
+  // Create references from the large object to the object on the evacuation
+  // candidate.
+  const int kStep = kSize / 10;
+  for (int i = 0; i < kSize; i += kStep) {
+    lo->set(i, *lit);
+    CHECK(lo->get(i) == old_location);
+  }
+
+  // Move the evaucation candidate object.
+  CcTest::heap()->CollectAllGarbage();
+
+  // Verify that the pointers in the large object got updated.
+  for (int i = 0; i < kSize; i += kStep) {
+    CHECK_EQ(lo->get(i), *lit);
+    CHECK(lo->get(i) != old_location);
+  }
+}
+
+
 class DummyVisitor : public ObjectVisitor {
  public:
   void VisitPointers(Object** start, Object** end) { }
@@ -5771,13 +5847,13 @@ TEST(Regress442710) {
 }
 
 
-TEST(NumberStringCacheSize) {
+HEAP_TEST(NumberStringCacheSize) {
   // Test that the number-string cache has not been resized in the snapshot.
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
   if (!isolate->snapshot_available()) return;
   Heap* heap = isolate->heap();
-  CHECK_EQ(TestHeap::kInitialNumberStringCacheSize * 2,
+  CHECK_EQ(Heap::kInitialNumberStringCacheSize * 2,
            heap->number_string_cache()->length());
 }
 
@@ -6387,3 +6463,68 @@ TEST(ContextMeasure) {
   CHECK_LE(measure.Count(), count_upper_limit);
   CHECK_LE(measure.Size(), size_upper_limit);
 }
+
+
+TEST(ScriptIterator) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = CcTest::heap();
+  LocalContext context;
+
+  heap->CollectAllGarbage();
+
+  int script_count = 0;
+  {
+    HeapIterator it(heap);
+    for (HeapObject* obj = it.next(); obj != NULL; obj = it.next()) {
+      if (obj->IsScript()) script_count++;
+    }
+  }
+
+  {
+    Script::Iterator iterator(isolate);
+    while (iterator.Next()) script_count--;
+  }
+
+  CHECK_EQ(0, script_count);
+}
+
+
+TEST(SharedFunctionInfoIterator) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = CcTest::heap();
+  LocalContext context;
+
+  heap->CollectAllGarbage();
+  heap->CollectAllGarbage();
+
+  int sfi_count = 0;
+  {
+    HeapIterator it(heap);
+    for (HeapObject* obj = it.next(); obj != NULL; obj = it.next()) {
+      if (!obj->IsSharedFunctionInfo()) continue;
+      // Shared function infos without a script (API functions or C++ builtins)
+      // are not returned by the iterator because they are not created from a
+      // script. They are not interesting for type feedback vector anyways.
+      SharedFunctionInfo* shared = SharedFunctionInfo::cast(obj);
+      if (shared->script()->IsUndefined()) {
+        CHECK_EQ(0, shared->feedback_vector()->ICSlots());
+      } else {
+        sfi_count++;
+      }
+    }
+  }
+
+  {
+    SharedFunctionInfo::Iterator iterator(isolate);
+    while (iterator.Next()) sfi_count--;
+  }
+
+  CHECK_EQ(0, sfi_count);
+}
+
+}  // namespace internal
+}  // namespace v8

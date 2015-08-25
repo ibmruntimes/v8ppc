@@ -877,9 +877,6 @@ bool Object::IsWeakHashTable() const {
 }
 
 
-bool Object::IsWeakValueHashTable() const { return IsHashTable(); }
-
-
 bool Object::IsDictionary() const {
   return IsHashTable() &&
       this != HeapObject::cast(this)->GetHeap()->string_table();
@@ -1258,6 +1255,18 @@ MaybeHandle<Object> Object::GetProperty(Isolate* isolate, Handle<Object> object,
 #define WRITE_INTPTR_FIELD(p, offset, value) \
   (*reinterpret_cast<intptr_t*>(FIELD_ADDR(p, offset)) = value)
 
+#define READ_UINT8_FIELD(p, offset) \
+  (*reinterpret_cast<const uint8_t*>(FIELD_ADDR_CONST(p, offset)))
+
+#define WRITE_UINT8_FIELD(p, offset, value) \
+  (*reinterpret_cast<uint8_t*>(FIELD_ADDR(p, offset)) = value)
+
+#define READ_INT8_FIELD(p, offset) \
+  (*reinterpret_cast<const int8_t*>(FIELD_ADDR_CONST(p, offset)))
+
+#define WRITE_INT8_FIELD(p, offset, value) \
+  (*reinterpret_cast<int8_t*>(FIELD_ADDR(p, offset)) = value)
+
 #define READ_UINT16_FIELD(p, offset) \
   (*reinterpret_cast<const uint16_t*>(FIELD_ADDR_CONST(p, offset)))
 
@@ -1544,184 +1553,71 @@ SIMD128_TYPES(SIMD128_VALUE_EQUALS)
 #undef SIMD128_VALUE_EQUALS
 
 
-float Float32x4::get_lane(int lane) const {
-  DCHECK(lane < 4 && lane >= 0);
 #if defined(V8_TARGET_LITTLE_ENDIAN)
-  return READ_FLOAT_FIELD(this, kValueOffset + lane * kFloatSize);
+#define SIMD128_READ_LANE(lane_type, lane_count, field_type, field_size) \
+  lane_type value =                                                      \
+      READ_##field_type##_FIELD(this, kValueOffset + lane * field_size);
 #elif defined(V8_TARGET_BIG_ENDIAN)
-  return READ_FLOAT_FIELD(this, kValueOffset + (3 - lane) * kFloatSize);
+#define SIMD128_READ_LANE(lane_type, lane_count, field_type, field_size) \
+  lane_type value = READ_##field_type##_FIELD(                           \
+      this, kValueOffset + (lane_count - lane - 1) * field_size);
 #else
 #error Unknown byte ordering
 #endif
-}
 
-
-void Float32x4::set_lane(int lane, float value) {
-  DCHECK(lane < 4 && lane >= 0);
 #if defined(V8_TARGET_LITTLE_ENDIAN)
-  WRITE_FLOAT_FIELD(this, kValueOffset + lane * kFloatSize, value);
+#define SIMD128_WRITE_LANE(lane_count, field_type, field_size, value) \
+  WRITE_##field_type##_FIELD(this, kValueOffset + lane * field_size, value);
 #elif defined(V8_TARGET_BIG_ENDIAN)
-  WRITE_FLOAT_FIELD(this, kValueOffset + (3 - lane) * kFloatSize, value);
+#define SIMD128_WRITE_LANE(lane_count, field_type, field_size, value) \
+  WRITE_##field_type##_FIELD(                                         \
+      this, kValueOffset + (lane_count - lane - 1) * field_size, value);
 #else
 #error Unknown byte ordering
 #endif
-}
+
+#define SIMD128_NUMERIC_LANE_FNS(type, lane_type, lane_count, field_type, \
+                                 field_size)                              \
+  lane_type type::get_lane(int lane) const {                              \
+    DCHECK(lane < lane_count && lane >= 0);                               \
+    SIMD128_READ_LANE(lane_type, lane_count, field_type, field_size)      \
+    return value;                                                         \
+  }                                                                       \
+                                                                          \
+  void type::set_lane(int lane, lane_type value) {                        \
+    DCHECK(lane < lane_count && lane >= 0);                               \
+    SIMD128_WRITE_LANE(lane_count, field_type, field_size, value)         \
+  }
+
+SIMD128_NUMERIC_LANE_FNS(Float32x4, float, 4, FLOAT, kFloatSize)
+SIMD128_NUMERIC_LANE_FNS(Int32x4, int32_t, 4, INT32, kInt32Size)
+SIMD128_NUMERIC_LANE_FNS(Int16x8, int16_t, 8, INT16, kShortSize)
+SIMD128_NUMERIC_LANE_FNS(Int8x16, int8_t, 16, INT8, kCharSize)
+#undef SIMD128_NUMERIC_LANE_FNS
 
 
-int32_t Int32x4::get_lane(int lane) const {
-  DCHECK(lane < 4 && lane >= 0);
-#if defined(V8_TARGET_LITTLE_ENDIAN)
-  return READ_INT32_FIELD(this, kValueOffset + lane * kInt32Size);
-#elif defined(V8_TARGET_BIG_ENDIAN)
-  return READ_INT32_FIELD(this, kValueOffset + (3 - lane) * kInt32Size);
-#else
-#error Unknown byte ordering
-#endif
-}
+#define SIMD128_BOOLEAN_LANE_FNS(type, lane_type, lane_count, field_type, \
+                                 field_size)                              \
+  bool type::get_lane(int lane) const {                                   \
+    DCHECK(lane < lane_count && lane >= 0);                               \
+    SIMD128_READ_LANE(lane_type, lane_count, field_type, field_size)      \
+    DCHECK(value == 0 || value == -1);                                    \
+    return value != 0;                                                    \
+  }                                                                       \
+                                                                          \
+  void type::set_lane(int lane, bool value) {                             \
+    DCHECK(lane < lane_count && lane >= 0);                               \
+    int32_t int_val = value ? -1 : 0;                                     \
+    SIMD128_WRITE_LANE(lane_count, field_type, field_size, int_val)       \
+  }
 
+SIMD128_BOOLEAN_LANE_FNS(Bool32x4, int32_t, 4, INT32, kInt32Size)
+SIMD128_BOOLEAN_LANE_FNS(Bool16x8, int16_t, 8, INT16, kShortSize)
+SIMD128_BOOLEAN_LANE_FNS(Bool8x16, int8_t, 16, INT8, kCharSize)
+#undef SIMD128_BOOLEAN_LANE_FNS
 
-void Int32x4::set_lane(int lane, int32_t value) {
-  DCHECK(lane < 4 && lane >= 0);
-#if defined(V8_TARGET_LITTLE_ENDIAN)
-  WRITE_INT32_FIELD(this, kValueOffset + lane * kInt32Size, value);
-#elif defined(V8_TARGET_BIG_ENDIAN)
-  WRITE_INT32_FIELD(this, kValueOffset + (3 - lane) * kInt32Size, value);
-#else
-#error Unknown byte ordering
-#endif
-}
-
-
-bool Bool32x4::get_lane(int lane) const {
-  DCHECK(lane < 4 && lane >= 0);
-  int32_t value;
-#if defined(V8_TARGET_LITTLE_ENDIAN)
-  value = READ_INT32_FIELD(this, kValueOffset + lane * kInt32Size);
-#elif defined(V8_TARGET_BIG_ENDIAN)
-  value = READ_INT32_FIELD(this, kValueOffset + (3 - lane) * kInt32Size);
-#else
-#error Unknown byte ordering
-#endif
-  DCHECK(value == 0 || value == -1);
-  return value != 0;
-}
-
-
-void Bool32x4::set_lane(int lane, bool value) {
-  DCHECK(lane < 4 && lane >= 0);
-  int32_t int_val = value ? -1 : 0;
-#if defined(V8_TARGET_LITTLE_ENDIAN)
-  WRITE_INT32_FIELD(this, kValueOffset + lane * kInt32Size, int_val);
-#elif defined(V8_TARGET_BIG_ENDIAN)
-  WRITE_INT32_FIELD(this, kValueOffset + (3 - lane) * kInt32Size, int_val);
-#else
-#error Unknown byte ordering
-#endif
-}
-
-
-int16_t Int16x8::get_lane(int lane) const {
-  DCHECK(lane < 8 && lane >= 0);
-#if defined(V8_TARGET_LITTLE_ENDIAN)
-  return READ_INT16_FIELD(this, kValueOffset + lane * kShortSize);
-#elif defined(V8_TARGET_BIG_ENDIAN)
-  return READ_INT16_FIELD(this, kValueOffset + (7 - lane) * kShortSize);
-#else
-#error Unknown byte ordering
-#endif
-}
-
-
-void Int16x8::set_lane(int lane, int16_t value) {
-  DCHECK(lane < 8 && lane >= 0);
-#if defined(V8_TARGET_LITTLE_ENDIAN)
-  WRITE_INT16_FIELD(this, kValueOffset + lane * kShortSize, value);
-#elif defined(V8_TARGET_BIG_ENDIAN)
-  WRITE_INT16_FIELD(this, kValueOffset + (7 - lane) * kShortSize, value);
-#else
-#error Unknown byte ordering
-#endif
-}
-
-
-bool Bool16x8::get_lane(int lane) const {
-  DCHECK(lane < 8 && lane >= 0);
-  int16_t value;
-#if defined(V8_TARGET_LITTLE_ENDIAN)
-  return READ_INT16_FIELD(this, kValueOffset + lane * kShortSize);
-#elif defined(V8_TARGET_BIG_ENDIAN)
-  return READ_INT16_FIELD(this, kValueOffset + (7 - lane) * kShortSize);
-#else
-#error Unknown byte ordering
-#endif
-  DCHECK(value == 0 || value == -1);
-  return value != 0;
-}
-
-
-void Bool16x8::set_lane(int lane, bool value) {
-  DCHECK(lane < 8 && lane >= 0);
-  int16_t int_val = value ? -1 : 0;
-#if defined(V8_TARGET_LITTLE_ENDIAN)
-  WRITE_INT16_FIELD(this, kValueOffset + lane * kShortSize, int_val);
-#elif defined(V8_TARGET_BIG_ENDIAN)
-  WRITE_INT16_FIELD(this, kValueOffset + (7 - lane) * kShortSize, int_val);
-#else
-#error Unknown byte ordering
-#endif
-}
-
-
-int8_t Int8x16::get_lane(int lane) const {
-  DCHECK(lane < 16 && lane >= 0);
-#if defined(V8_TARGET_LITTLE_ENDIAN)
-  return READ_BYTE_FIELD(this, kValueOffset + lane * kCharSize);
-#elif defined(V8_TARGET_BIG_ENDIAN)
-  return READ_BYTE_FIELD(this, kValueOffset + (15 - lane) * kCharSize);
-#else
-#error Unknown byte ordering
-#endif
-}
-
-
-void Int8x16::set_lane(int lane, int8_t value) {
-  DCHECK(lane < 16 && lane >= 0);
-#if defined(V8_TARGET_LITTLE_ENDIAN)
-  WRITE_BYTE_FIELD(this, kValueOffset + lane * kCharSize, value);
-#elif defined(V8_TARGET_BIG_ENDIAN)
-  WRITE_BYTE_FIELD(this, kValueOffset + (15 - lane) * kCharSize, value);
-#else
-#error Unknown byte ordering
-#endif
-}
-
-
-bool Bool8x16::get_lane(int lane) const {
-  DCHECK(lane < 16 && lane >= 0);
-  int8_t value;
-#if defined(V8_TARGET_LITTLE_ENDIAN)
-  value = READ_BYTE_FIELD(this, kValueOffset + lane * kCharSize);
-#elif defined(V8_TARGET_BIG_ENDIAN)
-  value = READ_BYTE_FIELD(this, kValueOffset + (15 - lane) * kCharSize);
-#else
-#error Unknown byte ordering
-#endif
-  DCHECK(value == 0 || value == -1);
-  return value != 0;
-}
-
-
-void Bool8x16::set_lane(int lane, bool value) {
-  DCHECK(lane < 16 && lane >= 0);
-  int8_t int_val = value ? -1 : 0;
-#if defined(V8_TARGET_LITTLE_ENDIAN)
-  WRITE_BYTE_FIELD(this, kValueOffset + lane * kCharSize, int_val);
-#elif defined(V8_TARGET_BIG_ENDIAN)
-  WRITE_BYTE_FIELD(this, kValueOffset + (15 - lane) * kCharSize, int_val);
-#else
-#error Unknown byte ordering
-#endif
-}
+#undef SIMD128_READ_LANE
+#undef SIMD128_WRITE_LANE
 
 
 ACCESSORS(JSObject, properties, FixedArray, kPropertiesOffset)
@@ -2627,6 +2523,21 @@ void WeakFixedArray::set_last_used_index(int index) {
 }
 
 
+template <class T>
+T* WeakFixedArray::Iterator::Next() {
+  if (list_ != NULL) {
+    // Assert that list did not change during iteration.
+    DCHECK_EQ(last_used_index_, list_->last_used_index());
+    while (index_ < list_->Length()) {
+      Object* item = list_->Get(index_++);
+      if (item != Empty()) return T::cast(item);
+    }
+    list_ = NULL;
+  }
+  return NULL;
+}
+
+
 int ArrayList::Length() {
   if (FixedArray::cast(this)->length() == 0) return 0;
   return Smi::cast(FixedArray::cast(this)->get(kLengthIndex))->value();
@@ -3420,7 +3331,6 @@ CAST_ACCESSOR(UnseededNumberDictionary)
 CAST_ACCESSOR(WeakCell)
 CAST_ACCESSOR(WeakFixedArray)
 CAST_ACCESSOR(WeakHashTable)
-CAST_ACCESSOR(WeakValueHashTable)
 
 
 // static
@@ -4903,6 +4813,16 @@ bool Code::IsCodeStubOrIC() {
 }
 
 
+bool Code::IsJavaScriptCode() {
+  if (kind() == FUNCTION || kind() == OPTIMIZED_FUNCTION) {
+    return true;
+  }
+  Handle<Code> interpreter_entry =
+      GetIsolate()->builtins()->InterpreterEntryTrampoline();
+  return interpreter_entry.location() != nullptr && *interpreter_entry == this;
+}
+
+
 InlineCacheState Code::ic_state() {
   InlineCacheState result = ExtractICStateFromFlags(flags());
   // Only allow uninitialized or debugger states for non-IC code
@@ -5545,6 +5465,11 @@ SMI_ACCESSORS(PrototypeInfo, registry_slot, kRegistrySlotOffset)
 ACCESSORS(PrototypeInfo, validity_cell, Object, kValidityCellOffset)
 ACCESSORS(PrototypeInfo, constructor_name, Object, kConstructorNameOffset)
 
+ACCESSORS(SloppyBlockWithEvalContextExtension, scope_info, ScopeInfo,
+          kScopeInfoOffset)
+ACCESSORS(SloppyBlockWithEvalContextExtension, extension, JSObject,
+          kExtensionOffset)
+
 ACCESSORS(AccessorPair, getter, Object, kGetterOffset)
 ACCESSORS(AccessorPair, setter, Object, kSetterOffset)
 
@@ -5631,6 +5556,10 @@ Script::CompilationType Script::compilation_type() {
 void Script::set_compilation_type(CompilationType type) {
   set_flags(BooleanBit::set(flags(), kCompilationTypeBit,
       type == COMPILATION_TYPE_EVAL));
+}
+bool Script::hide_source() { return BooleanBit::get(flags(), kHideSourceBit); }
+void Script::set_hide_source(bool value) {
+  set_flags(BooleanBit::set(flags(), kHideSourceBit, value));
 }
 Script::CompilationState Script::compilation_state() {
   return BooleanBit::get(flags(), kCompilationStateBit) ?
@@ -5959,6 +5888,9 @@ void SharedFunctionInfo::ReplaceCode(Code* value) {
   }
 
   DCHECK(code()->gc_metadata() == NULL && value->gc_metadata() == NULL);
+#ifdef DEBUG
+  Code::VerifyRecompiledCode(code(), value);
+#endif  // DEBUG
 
   set_code(value);
 
@@ -6126,18 +6058,19 @@ void SharedFunctionInfo::set_disable_optimization_reason(BailoutReason reason) {
 }
 
 
-bool SharedFunctionInfo::IsSubjectToDebugging() {
+bool SharedFunctionInfo::IsBuiltin() {
   Object* script_obj = script();
-  if (script_obj->IsUndefined()) return false;
+  if (script_obj->IsUndefined()) return true;
   Script* script = Script::cast(script_obj);
   Script::Type type = static_cast<Script::Type>(script->type()->value());
-  return type == Script::TYPE_NORMAL;
+  return type != Script::TYPE_NORMAL;
 }
 
 
-bool JSFunction::IsBuiltin() {
-  return context()->global_object()->IsJSBuiltinsObject();
-}
+bool SharedFunctionInfo::IsSubjectToDebugging() { return !IsBuiltin(); }
+
+
+bool JSFunction::IsBuiltin() { return shared()->IsBuiltin(); }
 
 
 bool JSFunction::IsSubjectToDebugging() {
@@ -7954,6 +7887,10 @@ String::SubStringRange::iterator String::SubStringRange::end() {
 #undef WRITE_INT_FIELD
 #undef READ_INTPTR_FIELD
 #undef WRITE_INTPTR_FIELD
+#undef READ_UINT8_FIELD
+#undef WRITE_UINT8_FIELD
+#undef READ_INT8_FIELD
+#undef WRITE_INT8_FIELD
 #undef READ_UINT16_FIELD
 #undef WRITE_UINT16_FIELD
 #undef READ_INT16_FIELD

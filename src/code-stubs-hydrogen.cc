@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/code-stubs.h"
 
 #include "src/bailout-reason.h"
-#include "src/code-stubs.h"
 #include "src/field-index.h"
 #include "src/hydrogen.h"
 #include "src/ic/ic.h"
@@ -132,7 +131,7 @@ bool CodeStubGraphBuilderBase::BuildGraph() {
   isolate()->counters()->code_stubs()->Increment();
 
   if (FLAG_trace_hydrogen_stubs) {
-    const char* name = CodeStub::MajorName(stub()->MajorKey(), false);
+    const char* name = CodeStub::MajorName(stub()->MajorKey());
     PrintF("-----------------------------------------------------------\n");
     PrintF("Compiling stub %s using hydrogen\n", name);
     isolate()->GetHTracer()->TraceCompilation(info());
@@ -156,8 +155,8 @@ bool CodeStubGraphBuilderBase::BuildGraph() {
                               HParameter::STACK_PARAMETER, r);
     } else {
       param = Add<HParameter>(i, HParameter::REGISTER_PARAMETER, r);
+      start_environment->Bind(i, param);
     }
-    start_environment->Bind(i, param);
     parameters_[i] = param;
     if (i < register_param_count && IsParameterCountRegister(i)) {
       param->set_type(HType::Smi());
@@ -380,78 +379,32 @@ HValue* CodeStubGraphBuilder<TypeofStub>::BuildCodeStub() {
             { Push(Add<HConstant>(factory->function_string())); }
             is_function.Else();
             {
-              IfBuilder is_float32x4(this);
-              is_float32x4.If<HCompareObjectEqAndBranch>(
-                  map, Add<HConstant>(factory->float32x4_map()));
-              is_float32x4.Then();
-              { Push(Add<HConstant>(factory->float32x4_string())); }
-              is_float32x4.Else();
+#define SIMD128_BUILDER_OPEN(TYPE, Type, type, lane_count, lane_type) \
+  IfBuilder is_##type(this);                                          \
+  is_##type.If<HCompareObjectEqAndBranch>(                            \
+      map, Add<HConstant>(factory->type##_map()));                    \
+  is_##type.Then();                                                   \
+  { Push(Add<HConstant>(factory->type##_string())); }                 \
+  is_##type.Else(); {
+              SIMD128_TYPES(SIMD128_BUILDER_OPEN)
+#undef SIMD128_BUILDER_OPEN
+              // Is it an undetectable object?
+              IfBuilder is_undetectable(this);
+              is_undetectable.If<HIsUndetectableAndBranch>(object);
+              is_undetectable.Then();
               {
-                IfBuilder is_int32x4(this);
-                is_int32x4.If<HCompareObjectEqAndBranch>(
-                    map, Add<HConstant>(factory->int32x4_map()));
-                is_int32x4.Then();
-                { Push(Add<HConstant>(factory->int32x4_string())); }
-                is_int32x4.Else();
-                {
-                  IfBuilder is_bool32x4(this);
-                  is_bool32x4.If<HCompareObjectEqAndBranch>(
-                      map, Add<HConstant>(factory->bool32x4_map()));
-                  is_bool32x4.Then();
-                  { Push(Add<HConstant>(factory->bool32x4_string())); }
-                  is_bool32x4.Else();
-                  {
-                    IfBuilder is_int16x8(this);
-                    is_int16x8.If<HCompareObjectEqAndBranch>(
-                        map, Add<HConstant>(factory->int16x8_map()));
-                    is_int16x8.Then();
-                    { Push(Add<HConstant>(factory->int16x8_string())); }
-                    is_int16x8.Else();
-                    {
-                      IfBuilder is_bool16x8(this);
-                      is_bool16x8.If<HCompareObjectEqAndBranch>(
-                          map, Add<HConstant>(factory->bool16x8_map()));
-                      is_bool16x8.Then();
-                      { Push(Add<HConstant>(factory->bool16x8_string())); }
-                      is_bool16x8.Else();
-                      {
-                        IfBuilder is_int8x16(this);
-                        is_int8x16.If<HCompareObjectEqAndBranch>(
-                            map, Add<HConstant>(factory->int8x16_map()));
-                        is_int8x16.Then();
-                        { Push(Add<HConstant>(factory->int8x16_string())); }
-                        is_int8x16.Else();
-                        {
-                          IfBuilder is_bool8x16(this);
-                          is_bool8x16.If<HCompareObjectEqAndBranch>(
-                              map, Add<HConstant>(factory->bool8x16_map()));
-                          is_bool8x16.Then();
-                          { Push(Add<HConstant>(factory->bool8x16_string())); }
-                          is_bool8x16.Else();
-                          {
-                            // Is it an undetectable object?
-                            IfBuilder is_undetectable(this);
-                            is_undetectable.If<HIsUndetectableAndBranch>(
-                                object);
-                            is_undetectable.Then();
-                            {
-                              // typeof an undetectable object is 'undefined'.
-                              Push(Add<HConstant>(factory->undefined_string()));
-                            }
-                            is_undetectable.Else();
-                            {
-                              // For any kind of object not handled above, the
-                              // spec rule for host objects gives that it is
-                              // okay to return "object".
-                              Push(object_string);
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
+                // typeof an undetectable object is 'undefined'.
+                Push(Add<HConstant>(factory->undefined_string()));
               }
+              is_undetectable.Else();
+              {
+                // For any kind of object not handled above, the spec rule for
+                // host objects gives that it is okay to return "object".
+                Push(object_string);
+              }
+#define SIMD128_BUILDER_CLOSE(TYPE, Type, type, lane_count, lane_type) }
+              SIMD128_TYPES(SIMD128_BUILDER_CLOSE)
+#undef SIMD128_BUILDER_CLOSE
             }
             is_function.End();
           }
@@ -1062,7 +1015,7 @@ Handle<Code> StoreFieldStub::GenerateCode() { return DoGenerateCode(this); }
 
 template <>
 HValue* CodeStubGraphBuilder<StoreTransitionStub>::BuildCodeStub() {
-  HValue* object = GetParameter(StoreTransitionDescriptor::kReceiverIndex);
+  HValue* object = GetParameter(StoreTransitionHelper::ReceiverIndex());
 
   switch (casted_stub()->store_mode()) {
     case StoreTransitionStub::ExtendStorageAndStoreMapAndValue: {
@@ -1093,17 +1046,17 @@ HValue* CodeStubGraphBuilder<StoreTransitionStub>::BuildCodeStub() {
     case StoreTransitionStub::StoreMapAndValue:
       // Store the new value into the "extended" object.
       BuildStoreNamedField(
-          object, GetParameter(StoreTransitionDescriptor::kValueIndex),
+          object, GetParameter(StoreTransitionHelper::ValueIndex()),
           casted_stub()->index(), casted_stub()->representation(), true);
     // Fall through.
 
     case StoreTransitionStub::StoreMapOnly:
       // And finally update the map.
       Add<HStoreNamedField>(object, HObjectAccess::ForMap(),
-                            GetParameter(StoreTransitionDescriptor::kMapIndex));
+                            GetParameter(StoreTransitionHelper::MapIndex()));
       break;
   }
-  return GetParameter(StoreTransitionDescriptor::kValueIndex);
+  return GetParameter(StoreTransitionHelper::ValueIndex());
 }
 
 
@@ -1656,10 +1609,10 @@ Handle<Code> StoreGlobalStub::GenerateCode() {
 
 template <>
 HValue* CodeStubGraphBuilder<ElementsTransitionAndStoreStub>::BuildCodeStub() {
-  HValue* object = GetParameter(StoreTransitionDescriptor::kReceiverIndex);
-  HValue* key = GetParameter(StoreTransitionDescriptor::kNameIndex);
-  HValue* value = GetParameter(StoreTransitionDescriptor::kValueIndex);
-  HValue* map = GetParameter(StoreTransitionDescriptor::kMapIndex);
+  HValue* object = GetParameter(StoreTransitionHelper::ReceiverIndex());
+  HValue* key = GetParameter(StoreTransitionHelper::NameIndex());
+  HValue* value = GetParameter(StoreTransitionHelper::ValueIndex());
+  HValue* map = GetParameter(StoreTransitionHelper::MapIndex());
 
   if (FLAG_trace_elements_transitions) {
     // Tracing elements transitions is the job of the runtime.

@@ -31,6 +31,8 @@ InterpreterAssembler::InterpreterAssembler(Isolate* isolate, Zone* zone,
           Linkage::GetInterpreterDispatchDescriptor(zone), kMachPtr,
           InstructionSelector::SupportedMachineOperatorFlags())),
       end_node_(nullptr),
+      accumulator_(
+          raw_assembler_->Parameter(Linkage::kInterpreterAccumulatorParameter)),
       code_generated_(false) {}
 
 
@@ -60,7 +62,27 @@ Handle<Code> InterpreterAssembler::GenerateCode() {
 }
 
 
-Node* InterpreterAssembler::BytecodeArrayPointer() {
+Node* InterpreterAssembler::GetAccumulator() {
+  return accumulator_;
+}
+
+
+void InterpreterAssembler::SetAccumulator(Node* value) {
+  accumulator_ = value;
+}
+
+
+Node* InterpreterAssembler::ContextTaggedPointer() {
+  return raw_assembler_->Parameter(Linkage::kInterpreterContextParameter);
+}
+
+
+Node* InterpreterAssembler::RegisterFileRawPointer() {
+  return raw_assembler_->Parameter(Linkage::kInterpreterRegisterFileParameter);
+}
+
+
+Node* InterpreterAssembler::BytecodeArrayTaggedPointer() {
   return raw_assembler_->Parameter(Linkage::kInterpreterBytecodeArrayParameter);
 }
 
@@ -71,59 +93,103 @@ Node* InterpreterAssembler::BytecodeOffset() {
 }
 
 
-Node* InterpreterAssembler::DispatchTablePointer() {
+Node* InterpreterAssembler::DispatchTableRawPointer() {
   return raw_assembler_->Parameter(Linkage::kInterpreterDispatchTableParameter);
 }
 
 
-Node* InterpreterAssembler::FramePointer() {
-  return raw_assembler_->LoadFramePointer();
-}
-
-
-Node* InterpreterAssembler::RegisterFrameOffset(int index) {
-  DCHECK_LE(index, kMaxRegisterIndex);
-  return Int32Constant(kFirstRegisterOffsetFromFp -
-                       (index << kPointerSizeLog2));
-}
-
-
 Node* InterpreterAssembler::RegisterFrameOffset(Node* index) {
-  return raw_assembler_->IntPtrSub(
-      Int32Constant(kFirstRegisterOffsetFromFp),
-      raw_assembler_->WordShl(index, Int32Constant(kPointerSizeLog2)));
+  return raw_assembler_->WordShl(index, Int32Constant(kPointerSizeLog2));
 }
 
 
-Node* InterpreterAssembler::BytecodeOperand(int delta) {
-  DCHECK_LT(delta, interpreter::Bytecodes::NumberOfOperands(bytecode_));
+Node* InterpreterAssembler::LoadRegister(Node* reg_index) {
+  return raw_assembler_->Load(kMachAnyTagged, RegisterFileRawPointer(),
+                              RegisterFrameOffset(reg_index));
+}
+
+
+Node* InterpreterAssembler::StoreRegister(Node* value, Node* reg_index) {
+  return raw_assembler_->Store(kMachAnyTagged, RegisterFileRawPointer(),
+                               RegisterFrameOffset(reg_index), value);
+}
+
+
+Node* InterpreterAssembler::BytecodeOperand(int operand_index) {
+  DCHECK_LT(operand_index, interpreter::Bytecodes::NumberOfOperands(bytecode_));
   return raw_assembler_->Load(
-      kMachUint8, BytecodeArrayPointer(),
-      raw_assembler_->IntPtrAdd(BytecodeOffset(), Int32Constant(1 + delta)));
+      kMachUint8, BytecodeArrayTaggedPointer(),
+      raw_assembler_->IntPtrAdd(BytecodeOffset(),
+                                Int32Constant(1 + operand_index)));
 }
 
 
-Node* InterpreterAssembler::LoadRegister(int index) {
-  return raw_assembler_->Load(kMachPtr, FramePointer(),
-                              RegisterFrameOffset(index));
+Node* InterpreterAssembler::BytecodeOperandSignExtended(int operand_index) {
+  DCHECK_LT(operand_index, interpreter::Bytecodes::NumberOfOperands(bytecode_));
+  Node* load = raw_assembler_->Load(
+      kMachInt8, BytecodeArrayTaggedPointer(),
+      raw_assembler_->IntPtrAdd(BytecodeOffset(),
+                                Int32Constant(1 + operand_index)));
+  // Ensure that we sign extend to full pointer size
+  if (kPointerSize == 8) {
+    load = raw_assembler_->ChangeInt32ToInt64(load);
+  }
+  return load;
 }
 
 
-Node* InterpreterAssembler::LoadRegister(Node* index) {
-  return raw_assembler_->Load(kMachPtr, FramePointer(),
-                              RegisterFrameOffset(index));
+Node* InterpreterAssembler::BytecodeOperandImm8(int operand_index) {
+  DCHECK_EQ(interpreter::OperandType::kImm8,
+            interpreter::Bytecodes::GetOperandType(bytecode_, operand_index));
+  return BytecodeOperandSignExtended(operand_index);
 }
 
 
-Node* InterpreterAssembler::StoreRegister(Node* value, int index) {
-  return raw_assembler_->Store(kMachPtr, FramePointer(),
-                               RegisterFrameOffset(index), value);
+Node* InterpreterAssembler::BytecodeOperandReg(int operand_index) {
+  DCHECK_EQ(interpreter::OperandType::kReg,
+            interpreter::Bytecodes::GetOperandType(bytecode_, operand_index));
+  return BytecodeOperandSignExtended(operand_index);
 }
 
 
-Node* InterpreterAssembler::StoreRegister(Node* value, Node* index) {
-  return raw_assembler_->Store(kMachPtr, FramePointer(),
-                               RegisterFrameOffset(index), value);
+Node* InterpreterAssembler::Int32Constant(int value) {
+  return raw_assembler_->Int32Constant(value);
+}
+
+
+Node* InterpreterAssembler::IntPtrConstant(intptr_t value) {
+  return raw_assembler_->IntPtrConstant(value);
+}
+
+
+Node* InterpreterAssembler::NumberConstant(double value) {
+  return raw_assembler_->NumberConstant(value);
+}
+
+
+Node* InterpreterAssembler::HeapConstant(Unique<HeapObject> object) {
+  return raw_assembler_->HeapConstant(object);
+}
+
+
+Node* InterpreterAssembler::SmiShiftBitsConstant() {
+  return Int32Constant(kSmiShiftSize + kSmiTagSize);
+}
+
+
+Node* InterpreterAssembler::SmiTag(Node* value) {
+  return raw_assembler_->WordShl(value, SmiShiftBitsConstant());
+}
+
+
+Node* InterpreterAssembler::SmiUntag(Node* value) {
+  return raw_assembler_->WordSar(value, SmiShiftBitsConstant());
+}
+
+
+Node* InterpreterAssembler::LoadContextSlot(int slot_index) {
+  return raw_assembler_->Load(kMachAnyTagged, ContextTaggedPointer(),
+                              IntPtrConstant(Context::SlotOffset(slot_index)));
 }
 
 
@@ -132,14 +198,16 @@ void InterpreterAssembler::Return() {
       HeapConstant(Unique<HeapObject>::CreateImmovable(
           isolate()->builtins()->InterpreterExitTrampoline()));
   // If the order of the parameters you need to change the call signature below.
-  STATIC_ASSERT(0 == Linkage::kInterpreterBytecodeOffsetParameter);
-  STATIC_ASSERT(1 == Linkage::kInterpreterBytecodeArrayParameter);
-  STATIC_ASSERT(2 == Linkage::kInterpreterDispatchTableParameter);
-  Node* tail_call = graph()->NewNode(
-      common()->TailCall(call_descriptor()), exit_trampoline_code_object,
-      BytecodeOffset(), BytecodeArrayPointer(), DispatchTablePointer(),
-      graph()->start(), graph()->start());
-  schedule()->AddTailCall(raw_assembler_->CurrentBlock(), tail_call);
+  STATIC_ASSERT(0 == Linkage::kInterpreterAccumulatorParameter);
+  STATIC_ASSERT(1 == Linkage::kInterpreterRegisterFileParameter);
+  STATIC_ASSERT(2 == Linkage::kInterpreterBytecodeOffsetParameter);
+  STATIC_ASSERT(3 == Linkage::kInterpreterBytecodeArrayParameter);
+  STATIC_ASSERT(4 == Linkage::kInterpreterDispatchTableParameter);
+  STATIC_ASSERT(5 == Linkage::kInterpreterContextParameter);
+  Node* tail_call = raw_assembler_->TailCallInterpreterDispatch(
+      call_descriptor(), exit_trampoline_code_object, GetAccumulator(),
+      RegisterFileRawPointer(), BytecodeOffset(), BytecodeArrayTaggedPointer(),
+      DispatchTableRawPointer(), ContextTaggedPointer());
   // This should always be the end node.
   SetEndInput(tail_call);
 }
@@ -153,24 +221,27 @@ Node* InterpreterAssembler::Advance(int delta) {
 void InterpreterAssembler::Dispatch() {
   Node* new_bytecode_offset = Advance(interpreter::Bytecodes::Size(bytecode_));
   Node* target_bytecode = raw_assembler_->Load(
-      kMachUint8, BytecodeArrayPointer(), new_bytecode_offset);
+      kMachUint8, BytecodeArrayTaggedPointer(), new_bytecode_offset);
 
   // TODO(rmcilroy): Create a code target dispatch table to avoid conversion
   // from code object on every dispatch.
   Node* target_code_object = raw_assembler_->Load(
-      kMachPtr, DispatchTablePointer(),
+      kMachPtr, DispatchTableRawPointer(),
       raw_assembler_->Word32Shl(target_bytecode,
                                 Int32Constant(kPointerSizeLog2)));
 
   // If the order of the parameters you need to change the call signature below.
-  STATIC_ASSERT(0 == Linkage::kInterpreterBytecodeOffsetParameter);
-  STATIC_ASSERT(1 == Linkage::kInterpreterBytecodeArrayParameter);
-  STATIC_ASSERT(2 == Linkage::kInterpreterDispatchTableParameter);
-  Node* tail_call = graph()->NewNode(
-      common()->TailCall(call_descriptor()), target_code_object,
-      new_bytecode_offset, BytecodeArrayPointer(), DispatchTablePointer(),
-      graph()->start(), graph()->start());
-  schedule()->AddTailCall(raw_assembler_->CurrentBlock(), tail_call);
+  STATIC_ASSERT(0 == Linkage::kInterpreterAccumulatorParameter);
+  STATIC_ASSERT(1 == Linkage::kInterpreterRegisterFileParameter);
+  STATIC_ASSERT(2 == Linkage::kInterpreterBytecodeOffsetParameter);
+  STATIC_ASSERT(3 == Linkage::kInterpreterBytecodeArrayParameter);
+  STATIC_ASSERT(4 == Linkage::kInterpreterDispatchTableParameter);
+  STATIC_ASSERT(5 == Linkage::kInterpreterContextParameter);
+  Node* tail_call = raw_assembler_->TailCallInterpreterDispatch(
+      call_descriptor(), target_code_object, GetAccumulator(),
+      RegisterFileRawPointer(), new_bytecode_offset,
+      BytecodeArrayTaggedPointer(), DispatchTableRawPointer(),
+      ContextTaggedPointer());
   // This should always be the end node.
   SetEndInput(tail_call);
 }
@@ -185,7 +256,7 @@ void InterpreterAssembler::SetEndInput(Node* input) {
 void InterpreterAssembler::End() {
   DCHECK(end_node_);
   // TODO(rmcilroy): Support more than 1 end input.
-  Node* end = graph()->NewNode(common()->End(1), end_node_);
+  Node* end = graph()->NewNode(raw_assembler_->common()->End(1), end_node_);
   graph()->SetEnd(end);
 }
 
@@ -206,30 +277,6 @@ Schedule* InterpreterAssembler::schedule() {
   return raw_assembler_->schedule();
 }
 
-
-MachineOperatorBuilder* InterpreterAssembler::machine() {
-  return raw_assembler_->machine();
-}
-
-
-CommonOperatorBuilder* InterpreterAssembler::common() {
-  return raw_assembler_->common();
-}
-
-
-Node* InterpreterAssembler::Int32Constant(int value) {
-  return raw_assembler_->Int32Constant(value);
-}
-
-
-Node* InterpreterAssembler::NumberConstant(double value) {
-  return raw_assembler_->NumberConstant(value);
-}
-
-
-Node* InterpreterAssembler::HeapConstant(Unique<HeapObject> object) {
-  return raw_assembler_->HeapConstant(object);
-}
 
 
 }  // namespace interpreter

@@ -32,6 +32,7 @@
     'v8_random_seed%': 314159265,
     'embed_script%': "",
     'v8_extra_library_files%': [],
+    'v8_experimental_extra_library_files%': [],
     'mksnapshot_exec': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mksnapshot<(EXECUTABLE_SUFFIX)',
   },
   'includes': ['../../build/toolchain.gypi', '../../build/features.gypi'],
@@ -182,6 +183,7 @@
         '<(SHARED_INTERMEDIATE_DIR)/code-stub-libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
+        '<(SHARED_INTERMEDIATE_DIR)/experimental-extras-libraries.cc',
         '<(INTERMEDIATE_DIR)/snapshot.cc',
       ],
       'actions': [
@@ -228,6 +230,7 @@
         '<(SHARED_INTERMEDIATE_DIR)/code-stub-libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
+        '<(SHARED_INTERMEDIATE_DIR)/experimental-extras-libraries.cc',
         '../../src/snapshot/snapshot-empty.cc',
       ],
       'conditions': [
@@ -436,7 +439,6 @@
         '../../src/code-stubs.cc',
         '../../src/code-stubs.h',
         '../../src/code-stubs-hydrogen.cc',
-        '../../src/code.h',
         '../../src/codegen.cc',
         '../../src/codegen.h',
         '../../src/compilation-cache.cc',
@@ -478,6 +480,7 @@
         '../../src/compiler/dead-code-elimination.cc',
         '../../src/compiler/dead-code-elimination.h',
         '../../src/compiler/diamond.h',
+        '../../src/compiler/frame.cc',
         '../../src/compiler/frame.h',
         '../../src/compiler/frame-elider.cc',
         '../../src/compiler/frame-elider.h',
@@ -799,6 +802,8 @@
         '../../src/interface-descriptors.h',
         '../../src/interpreter/bytecodes.cc',
         '../../src/interpreter/bytecodes.h',
+        '../../src/interpreter/bytecode-generator.cc',
+        '../../src/interpreter/bytecode-generator.h',
         '../../src/interpreter/bytecode-array-builder.cc',
         '../../src/interpreter/bytecode-array-builder.h',
         '../../src/interpreter/interpreter.cc',
@@ -929,6 +934,7 @@
         '../../src/simulator.h',
         '../../src/small-pointer-list.h',
         '../../src/snapshot/natives.h',
+        '../../src/snapshot/natives-common.cc',
         '../../src/snapshot/serialize.cc',
         '../../src/snapshot/serialize.h',
         '../../src/snapshot/snapshot.h',
@@ -941,7 +947,6 @@
         '../../src/startup-data-util.h',
         '../../src/string-builder.cc',
         '../../src/string-builder.h',
-        '../../src/string-search.cc',
         '../../src/string-search.h',
         '../../src/string-stream.cc',
         '../../src/string-stream.h',
@@ -971,6 +976,8 @@
         '../../src/unicode-inl.h',
         '../../src/unicode.cc',
         '../../src/unicode.h',
+        '../../src/unicode-cache-inl.h',
+        '../../src/unicode-cache.h',
         '../../src/unicode-decoder.cc',
         '../../src/unicode-decoder.h',
         '../../src/unique.h',
@@ -1393,6 +1400,9 @@
             }],
           ],
         }],
+        ['v8_wasm!=0', {
+          'dependencies': ['../../third_party/wasm/src/wasm/wasm.gyp:wasm'],
+        }],
       ],
     },
     {
@@ -1708,6 +1718,7 @@
               '<(SHARED_INTERMEDIATE_DIR)/libraries-code-stub.bin',
               '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental.bin',
               '<(SHARED_INTERMEDIATE_DIR)/libraries-extras.bin',
+              '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental-extras.bin',
             ],
             'conditions': [
               ['want_separate_host_toolset==1', {
@@ -1771,8 +1782,8 @@
         'library_files': [
           '../../src/macros.py',
           '../../src/messages.h',
-          '../../src/runtime.js',
           '../../src/prologue.js',
+          '../../src/runtime.js',
           '../../src/v8natives.js',
           '../../src/symbol.js',
           '../../src/array.js',
@@ -1828,6 +1839,7 @@
         'libraries_code_stub_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-code-stub.bin',
         'libraries_experimental_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental.bin',
         'libraries_extras_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-extras.bin',
+        'libraries_experimental_extras_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental-extras.bin',
       },
       'actions': [
         {
@@ -1928,6 +1940,31 @@
               'outputs': ['<@(libraries_extras_bin_file)'],
               'action': [
                 '--startup_blob', '<@(libraries_extras_bin_file)',
+              ],
+            }],
+          ],
+        },
+        {
+          'action_name': 'js2c_experimental_extras',
+          'inputs': [
+            '../../tools/js2c.py',
+            '<@(v8_experimental_extra_library_files)',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/experimental-extras-libraries.cc',
+          ],
+          'action': [
+            'python',
+            '../../tools/js2c.py',
+            '<(SHARED_INTERMEDIATE_DIR)/experimental-extras-libraries.cc',
+            'EXPERIMENTAL_EXTRAS',
+            '<@(v8_experimental_extra_library_files)',
+          ],
+          'conditions': [
+            [ 'v8_use_external_startup_data==1', {
+              'outputs': ['<@(libraries_experimental_extras_bin_file)'],
+              'action': [
+                '--startup_blob', '<@(libraries_experimental_extras_bin_file)',
               ],
             }],
           ],

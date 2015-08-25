@@ -6,8 +6,6 @@
 
 #include <sstream>
 
-#include "src/v8.h"
-
 #include "src/allocation-site-scopes.h"
 #include "src/ast-numbering.h"
 #include "src/full-codegen/full-codegen.h"
@@ -4411,7 +4409,7 @@ void HOptimizedGraphBuilder::VisitExpressions(ZoneList<Expression*>* exprs,
 
 
 bool HOptimizedGraphBuilder::BuildGraph() {
-  if (IsSubclassConstructor(current_info()->function()->kind())) {
+  if (IsSubclassConstructor(current_info()->literal()->kind())) {
     Bailout(kSuperReference);
     return false;
   }
@@ -4451,7 +4449,7 @@ bool HOptimizedGraphBuilder::BuildGraph() {
 
   Add<HStackCheck>(HStackCheck::kFunctionEntry);
 
-  VisitStatements(current_info()->function()->body());
+  VisitStatements(current_info()->literal()->body());
   if (HasStackOverflow()) return false;
 
   if (current_block() != NULL) {
@@ -4690,7 +4688,7 @@ void HOptimizedGraphBuilder::VisitBlock(Block* stmt) {
 
   { BreakAndContinueScope push(&break_info, this);
     if (scope != NULL) {
-      if (scope->ContextLocalCount() > 0) {
+      if (scope->NeedsContext()) {
         // Load the function object.
         Scope* declaration_scope = scope->DeclarationScope();
         HInstruction* function;
@@ -8281,7 +8279,7 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
     TraceInline(target, caller, "target has context-allocated variables");
     return false;
   }
-  FunctionLiteral* function = target_info.function();
+  FunctionLiteral* function = target_info.literal();
 
   // The following conditions must be checked again after re-parsing, because
   // earlier the information might not have been complete due to lazy parsing.
@@ -8337,7 +8335,7 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
 
   // Type-check the inlined function.
   DCHECK(target_shared->has_deoptimization_support());
-  AstTyper::Run(&target_info);
+  AstTyper(&target_info).Run();
 
   int inlining_id = 0;
   if (top_info()->is_tracking_positions()) {
@@ -13110,16 +13108,13 @@ std::ostream& operator<<(std::ostream& os, const HEnvironment& env) {
 
 void HTracer::TraceCompilation(CompilationInfo* info) {
   Tag tag(this, "compilation");
+  base::SmartArrayPointer<char> name = info->GetDebugName();
   if (info->IsOptimizing()) {
-    Handle<String> name = info->function()->debug_name();
-    PrintStringProperty("name", name->ToCString().get());
+    PrintStringProperty("name", name.get());
     PrintIndent();
-    trace_.Add("method \"%s:%d\"\n",
-               name->ToCString().get(),
-               info->optimization_id());
+    trace_.Add("method \"%s:%d\"\n", name.get(), info->optimization_id());
   } else {
-    CodeStub::Major major_key = info->code_stub()->MajorKey();
-    PrintStringProperty("name", CodeStub::MajorName(major_key, false));
+    PrintStringProperty("name", name.get());
     PrintStringProperty("method", "stub");
   }
   PrintLongProperty("date",

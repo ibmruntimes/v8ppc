@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
-
 #include "src/interface-descriptors.h"
 
 namespace v8 {
@@ -96,6 +94,15 @@ void LoadDescriptor::InitializePlatformSpecific(
 void StoreDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {ReceiverRegister(), NameRegister(), ValueRegister()};
+  data->InitializePlatformSpecific(arraysize(registers), registers);
+}
+
+
+void StoreTransitionDescriptor::InitializePlatformSpecific(
+    CallInterfaceDescriptorData* data) {
+  Register registers[] = {ReceiverRegister(), NameRegister(), ValueRegister(),
+                          MapRegister()};
+
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
 
@@ -194,6 +201,21 @@ void LoadWithVectorDescriptor::InitializePlatformSpecific(
   Register registers[] = {ReceiverRegister(), NameRegister(), SlotRegister(),
                           VectorRegister()};
   data->InitializePlatformSpecific(arraysize(registers), registers);
+}
+
+
+Type::FunctionType*
+VectorStoreTransitionDescriptor::BuildCallInterfaceDescriptorFunctionType(
+    Isolate* isolate, int paramater_count) {
+  Type::FunctionType* function = Type::FunctionType::New(
+      AnyTagged(), Type::Undefined(), 6, isolate->interface_descriptor_zone());
+  function->InitParameter(0, AnyTagged());  // receiver
+  function->InitParameter(1, AnyTagged());  // name
+  function->InitParameter(2, AnyTagged());  // value
+  function->InitParameter(3, SmiType());    // slot
+  function->InitParameter(4, AnyTagged());  // vector
+  function->InitParameter(5, AnyTagged());  // map
+  return function;
 }
 
 

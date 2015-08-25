@@ -14,6 +14,7 @@
 #include "src/frames-inl.h"
 #include "src/gdb-jit.h"
 #include "src/global-handles.h"
+#include "src/heap/gc-tracer.h"
 #include "src/heap/incremental-marking.h"
 #include "src/heap/mark-compact-inl.h"
 #include "src/heap/objects-visiting.h"
@@ -42,9 +43,6 @@ MarkCompactCollector::MarkCompactCollector(Heap* heap)
 #ifdef DEBUG
       state_(IDLE),
 #endif
-      reduce_memory_footprint_(false),
-      abort_incremental_marking_(false),
-      finalize_incremental_marking_(false),
       marking_parity_(ODD_MARKING_PARITY),
       compacting_(false),
       was_marked_incrementally_(false),
@@ -284,26 +282,13 @@ bool MarkCompactCollector::StartCompaction(CompactionMode mode) {
 }
 
 
-void MarkCompactCollector::ClearInvalidSlotsBufferEntries(PagedSpace* space) {
-  PageIterator it(space);
-  while (it.has_next()) {
-    Page* p = it.next();
-    SlotsBuffer::RemoveInvalidSlots(heap_, p->slots_buffer());
-  }
-}
-
-
 void MarkCompactCollector::ClearInvalidStoreAndSlotsBufferEntries() {
   heap_->store_buffer()->ClearInvalidStoreBufferEntries();
 
-  ClearInvalidSlotsBufferEntries(heap_->old_space());
-  ClearInvalidSlotsBufferEntries(heap_->code_space());
-  ClearInvalidSlotsBufferEntries(heap_->map_space());
-
-  LargeObjectIterator it(heap_->lo_space());
-  for (HeapObject* object = it.Next(); object != NULL; object = it.Next()) {
-    MemoryChunk* chunk = MemoryChunk::FromAddress(object->address());
-    SlotsBuffer::RemoveInvalidSlots(heap_, chunk->slots_buffer());
+  int number_of_pages = evacuation_candidates_.length();
+  for (int i = 0; i < number_of_pages; i++) {
+    Page* p = evacuation_candidates_[i];
+    SlotsBuffer::RemoveInvalidSlots(heap_, p->slots_buffer());
   }
 }
 
@@ -679,7 +664,7 @@ void MarkCompactCollector::CollectEvacuationCandidates(PagedSpace* space) {
   int total_live_bytes = 0;
 
   bool reduce_memory =
-      reduce_memory_footprint_ || heap()->HasLowAllocationRate();
+      heap()->ShouldReduceMemory() || heap()->HasLowAllocationRate();
   if (FLAG_manual_evacuation_candidates_selection) {
     for (size_t i = 0; i < pages.size(); i++) {
       Page* p = pages[i].second;
@@ -801,7 +786,7 @@ void MarkCompactCollector::Prepare() {
   }
 
   // Clear marking bits if incremental marking is aborted.
-  if (was_marked_incrementally_ && abort_incremental_marking_) {
+  if (was_marked_incrementally_ && heap_->ShouldAbortIncrementalMarking()) {
     heap()->incremental_marking()->Stop();
     ClearMarkbits();
     AbortWeakCollections();
@@ -1350,7 +1335,7 @@ class MarkCompactMarkingVisitor
 
       // Set a number in the 0-255 range to guarantee no smi overflow.
       re->SetDataAt(JSRegExp::code_index(is_one_byte),
-                    Smi::FromInt(heap->sweep_generation() & 0xff));
+                    Smi::FromInt(heap->ms_count() & 0xff));
     } else if (code->IsSmi()) {
       int value = Smi::cast(code)->value();
       // The regexp has not been compiled yet or there was a compilation error.
@@ -1360,7 +1345,7 @@ class MarkCompactMarkingVisitor
       }
 
       // Check if we should flush now.
-      if (value == ((heap->sweep_generation() - kRegExpCodeThreshold) & 0xff)) {
+      if (value == ((heap->ms_count() - kRegExpCodeThreshold) & 0xff)) {
         re->SetDataAt(JSRegExp::code_index(is_one_byte),
                       Smi::FromInt(JSRegExp::kUninitializedValue));
         re->SetDataAt(JSRegExp::saved_code_index(is_one_byte),
@@ -2073,7 +2058,7 @@ void MarkCompactCollector::ProcessTopOptimizedFrame(ObjectVisitor* visitor) {
 
 
 void MarkCompactCollector::RetainMaps() {
-  if (reduce_memory_footprint_ || abort_incremental_marking_ ||
+  if (heap()->ShouldReduceMemory() || heap()->ShouldAbortIncrementalMarking() ||
       FLAG_retain_maps_for_n_gc == 0) {
     // Do not retain dead maps if flag disables it or there is
     // - memory pressure (reduce_memory_footprint_),
@@ -3649,24 +3634,6 @@ void MarkCompactCollector::EvacuateNewSpaceAndCandidates() {
       PrintF("  migration slots buffer: %d\n",
              SlotsBuffer::SizeOfChain(migration_slots_buffer_));
     }
-
-    if (compacting_ && was_marked_incrementally_) {
-      GCTracer::Scope gc_scope(heap()->tracer(),
-                               GCTracer::Scope::MC_RESCAN_LARGE_OBJECTS);
-      // It's difficult to filter out slots recorded for large objects.
-      LargeObjectIterator it(heap_->lo_space());
-      for (HeapObject* obj = it.Next(); obj != NULL; obj = it.Next()) {
-        // LargeObjectSpace is not swept yet thus we have to skip
-        // dead objects explicitly.
-        if (!IsMarked(obj)) continue;
-
-        Page* p = Page::FromAddress(obj->address());
-        if (p->IsFlagSet(Page::RESCAN_ON_EVACUATION)) {
-          obj->Iterate(&updating_visitor);
-          p->ClearFlag(Page::RESCAN_ON_EVACUATION);
-        }
-      }
-    }
   }
 
   int npages = evacuation_candidates_.length();
@@ -3773,6 +3740,7 @@ void MarkCompactCollector::ReleaseEvacuationCandidates() {
   }
   evacuation_candidates_.Rewind(0);
   compacting_ = false;
+  heap()->FilterStoreBufferEntriesOnAboutToBeFreedPages();
   heap()->FreeQueuedChunks();
 }
 
@@ -4325,9 +4293,6 @@ void MarkCompactCollector::SweepSpace(PagedSpace* space, SweeperType sweeper) {
     PrintF("SweepSpace: %s (%d pages swept)\n",
            AllocationSpaceName(space->identity()), pages_swept);
   }
-
-  // Give pages that are queued to be freed back to the OS.
-  heap()->FreeQueuedChunks();
 }
 
 
@@ -4344,11 +4309,6 @@ void MarkCompactCollector::SweepSpaces() {
 
   MoveEvacuationCandidatesToEndOfPagesList();
 
-  // Noncompacting collections simply sweep the spaces to clear the mark
-  // bits and free the nonlive blocks (for old and map spaces).  We sweep
-  // the map space last because freeing non-live maps overwrites them and
-  // the other spaces rely on possibly non-live maps to get the sizes for
-  // non-live objects.
   {
     {
       GCTracer::Scope sweep_scope(heap()->tracer(),
@@ -4371,12 +4331,19 @@ void MarkCompactCollector::SweepSpaces() {
     }
   }
 
-  EvacuateNewSpaceAndCandidates();
+  // Deallocate unmarked large objects.
+  heap_->lo_space()->FreeUnmarkedObjects();
+
+  // Give pages that are queued to be freed back to the OS. Invalid store
+  // buffer entries are already filter out. We can just release the memory.
+  heap()->FreeQueuedChunks();
 
   heap()->FreeDeadArrayBuffers(false);
 
-  // Deallocate unmarked objects and clear marked bits for marked objects.
-  heap_->lo_space()->FreeUnmarkedObjects();
+  EvacuateNewSpaceAndCandidates();
+
+  // Clear the marking state of live large objects.
+  heap_->lo_space()->ClearMarkingStateOfLiveObjects();
 
   // Deallocate evacuated candidate pages.
   ReleaseEvacuationCandidates();

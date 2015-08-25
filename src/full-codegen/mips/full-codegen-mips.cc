@@ -113,14 +113,14 @@ void FullCodeGenerator::Generate() {
   CompilationInfo* info = info_;
   profiling_counter_ = isolate()->factory()->NewCell(
       Handle<Smi>(Smi::FromInt(FLAG_interrupt_budget), isolate()));
-  SetFunctionPosition(function());
+  SetFunctionPosition(literal());
   Comment cmnt(masm_, "[ function compiled by full code generator");
 
   ProfileEntryHookStub::MaybeCallEntryHook(masm_);
 
 #ifdef DEBUG
   if (strlen(FLAG_stop_at) > 0 &&
-      info->function()->name()->IsUtf8EqualTo(CStrVector(FLAG_stop_at))) {
+      info->literal()->name()->IsUtf8EqualTo(CStrVector(FLAG_stop_at))) {
     __ stop("stop-at");
   }
 #endif
@@ -156,7 +156,7 @@ void FullCodeGenerator::Generate() {
   { Comment cmnt(masm_, "[ Allocate locals");
     int locals_count = info->scope()->num_stack_slots();
     // Generators allocate locals, if any, in context slots.
-    DCHECK(!IsGeneratorFunction(info->function()->kind()) || locals_count == 0);
+    DCHECK(!IsGeneratorFunction(info->literal()->kind()) || locals_count == 0);
     if (locals_count > 0) {
       if (locals_count >= 128) {
         Label ok;
@@ -337,7 +337,7 @@ void FullCodeGenerator::Generate() {
     ArgumentsAccessStub::Type type;
     if (is_strict(language_mode()) || !has_simple_parameters()) {
       type = ArgumentsAccessStub::NEW_STRICT;
-    } else if (function()->has_duplicate_parameters()) {
+    } else if (literal()->has_duplicate_parameters()) {
       type = ArgumentsAccessStub::NEW_SLOPPY_SLOW;
     } else {
       type = ArgumentsAccessStub::NEW_SLOPPY_FAST;
@@ -383,7 +383,7 @@ void FullCodeGenerator::Generate() {
 
     { Comment cmnt(masm_, "[ Body");
       DCHECK(loop_depth() == 0);
-      VisitStatements(function()->body());
+      VisitStatements(literal()->body());
       DCHECK(loop_depth() == 0);
     }
   }
@@ -495,7 +495,7 @@ void FullCodeGenerator::EmitReturnSequence() {
       // tool from instrumenting as we rely on the code size here.
       int32_t arg_count = info_->scope()->num_parameters() + 1;
       int32_t sp_delta = arg_count * kPointerSize;
-      SetReturnPosition(function());
+      SetReturnPosition(literal());
       masm_->mov(sp, fp);
       int no_frame_start = masm_->pc_offset();
       masm_->MultiPop(static_cast<RegList>(fp.bit() | ra.bit()));
@@ -793,7 +793,7 @@ void FullCodeGenerator::PrepareForBailoutBeforeSplit(Expression* expr,
   // Only prepare for bailouts before splits if we're in a test
   // context. Otherwise, we let the Visit function deal with the
   // preparation to avoid preparing with the same AST id twice.
-  if (!context()->IsTest() || !info_->IsOptimizable()) return;
+  if (!context()->IsTest()) return;
 
   Label skip;
   if (should_normalize) __ Branch(&skip);
@@ -1479,8 +1479,8 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy,
         if (var->scope()->DeclarationScope() != scope()->DeclarationScope()) {
           skip_init_check = false;
         } else if (var->is_this()) {
-          CHECK(info_->function() != nullptr &&
-                (info_->function()->kind() & kSubclassConstructor) != 0);
+          CHECK(info_->has_literal() &&
+                (info_->literal()->kind() & kSubclassConstructor) != 0);
           // TODO(dslomov): implement 'this' hole check elimination.
           skip_init_check = false;
         } else {

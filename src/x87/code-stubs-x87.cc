@@ -1388,7 +1388,6 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
            Immediate(isolate()->factory()->heap_number_map()));
     __ j(equal, &generic_heap_number_comparison, Label::kNear);
     if (cc != equal) {
-      Label not_simd;
       __ mov(ecx, FieldOperand(eax, HeapObject::kMapOffset));
       __ movzx_b(ecx, FieldOperand(ecx, Map::kInstanceTypeOffset));
       // Call runtime on identical JSObjects.  Otherwise return equal.
@@ -1398,11 +1397,8 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
       __ cmpb(ecx, static_cast<uint8_t>(SYMBOL_TYPE));
       __ j(equal, &runtime_call, Label::kFar);
       // Call runtime on identical SIMD values since we must throw a TypeError.
-      __ cmpb(ecx, static_cast<uint8_t>(FIRST_SIMD_VALUE_TYPE));
-      __ j(less, &not_simd, Label::kFar);
-      __ cmpb(ecx, static_cast<uint8_t>(LAST_SIMD_VALUE_TYPE));
-      __ j(less_equal, &runtime_call, Label::kFar);
-      __ bind(&not_simd);
+      __ cmpb(ecx, static_cast<uint8_t>(SIMD128_VALUE_TYPE));
+      __ j(equal, &runtime_call, Label::kFar);
       if (is_strong(strength())) {
         // We have already tested for smis and heap numbers, so if both
         // arguments are not strings we must proceed to the slow case.
@@ -4293,8 +4289,8 @@ void LoadICStub::GenerateImpl(MacroAssembler* masm, bool in_frame) {
   __ push(vector);
   Code::Flags code_flags = Code::RemoveTypeAndHolderFromFlags(
       Code::ComputeHandlerFlags(Code::LOAD_IC));
-  masm->isolate()->stub_cache()->GenerateProbe(
-      masm, Code::LOAD_IC, code_flags, false, receiver, name, vector, scratch);
+  masm->isolate()->stub_cache()->GenerateProbe(masm, Code::LOAD_IC, code_flags,
+                                               receiver, name, vector, scratch);
   __ pop(vector);
   __ pop(slot);
 

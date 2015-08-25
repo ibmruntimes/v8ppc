@@ -16,6 +16,7 @@ var $getExistingHash;
 var GlobalMap = global.Map;
 var GlobalObject = global.Object;
 var GlobalSet = global.Set;
+var hashCodeSymbol = utils.GetPrivateSymbol("hash_code_symbol");
 var IntRandom;
 
 utils.Import(function(from) {
@@ -89,8 +90,6 @@ function ComputeIntegerHash(key, seed) {
   return hash & 0x3fffffff;
 }
 %SetForceInlineFlag(ComputeIntegerHash);
-
-var hashCodeSymbol = GLOBAL_PRIVATE("hash_code_symbol");
 
 function GetExistingHash(key) {
   if (%_IsSmi(key)) {
@@ -504,15 +503,15 @@ function SetFromArray(array) {
 // Exports
 
 utils.ExportToRuntime(function(to) {
-  to.MapGet = MapGet;
-  to.MapSet = MapSet;
-  to.MapHas = MapHas;
-  to.MapDelete = MapDelete;
-  to.SetAdd = SetAdd;
-  to.SetHas = SetHas;
-  to.SetDelete = SetDelete;
-  to.MapFromArray = MapFromArray;
-  to.SetFromArray = SetFromArray;
+  to["map_get"] = MapGet;
+  to["map_set"] = MapSet;
+  to["map_has"] = MapHas;
+  to["map_delete"] = MapDelete;
+  to["set_add"] = SetAdd;
+  to["set_has"] = SetHas;
+  to["set_delete"] = SetDelete;
+  to["map_from_array"] = MapFromArray;
+  to["set_from_array"]= SetFromArray;
 });
 
 })

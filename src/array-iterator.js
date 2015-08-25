@@ -10,6 +10,15 @@ var $arrayValues;
 
 %CheckIsBootstrapping();
 
+// -----------------------------------------------------------------------
+// Imports
+
+var arrayIterationKindSymbol =
+    utils.GetPrivateSymbol("array_iteration_kind_symbol");
+var arrayIteratorNextIndexSymbol =
+    utils.GetPrivateSymbol("array_iterator_next_symbol");
+var arrayIteratorObjectSymbol =
+    utils.GetPrivateSymbol("array_iterator_object_symbol");
 var GlobalArray = global.Array;
 
 macro TYPED_ARRAYS(FUNCTION)
@@ -30,10 +39,7 @@ endmacro
 
 TYPED_ARRAYS(COPY_FROM_GLOBAL)
 
-var arrayIteratorObjectSymbol = GLOBAL_PRIVATE("ArrayIterator#object");
-var arrayIteratorNextIndexSymbol = GLOBAL_PRIVATE("ArrayIterator#next");
-var arrayIterationKindSymbol = GLOBAL_PRIVATE("ArrayIterator#kind");
-
+// -----------------------------------------------------------------------
 
 function ArrayIterator() {}
 
@@ -165,7 +171,7 @@ utils.Export(function(to) {
 $arrayValues = ArrayValues;
 
 utils.ExportToRuntime(function(to) {
-  to.ArrayValues = ArrayValues;
+  to["array_values_iterator"] = ArrayValues;
 });
 
 })

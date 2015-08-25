@@ -105,7 +105,6 @@ class GCTracer {
       MC_SWEEP_CODE,
       MC_SWEEP_CELL,
       MC_SWEEP_MAP,
-      MC_RESCAN_LARGE_OBJECTS,
       MC_EVACUATE_PAGES,
       MC_UPDATE_NEW_TO_NEW_POINTERS,
       MC_UPDATE_ROOT_TO_NEW_POINTERS,
@@ -419,13 +418,13 @@ class GCTracer {
   // Returns 0 if no allocation events have been recorded.
   size_t AllocationThroughputInBytesPerMillisecond(double time_ms) const;
 
-  // Allocation throughput in heap in bytes/milliseconds in
-  // the last five seconds.
+  // Allocation throughput in heap in bytes/milliseconds in the last
+  // kThroughputTimeFrameMs seconds.
   // Returns 0 if no allocation events have been recorded.
   size_t CurrentAllocationThroughputInBytesPerMillisecond() const;
 
-  // Allocation throughput in old generation in bytes/milliseconds in
-  // the last five seconds.
+  // Allocation throughput in old generation in bytes/milliseconds in the last
+  // kThroughputTimeFrameMs seconds.
   // Returns 0 if no allocation events have been recorded.
   size_t CurrentOldGenerationAllocationThroughputInBytesPerMillisecond() const;
 

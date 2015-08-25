@@ -259,10 +259,17 @@ class PipelineData {
   }
 
   void InitializeRegisterAllocationData(const RegisterConfiguration* config,
+                                        CallDescriptor* descriptor,
                                         const char* debug_name) {
     DCHECK(frame_ == nullptr);
     DCHECK(register_allocation_data_ == nullptr);
-    frame_ = new (instruction_zone()) Frame();
+    int fixed_frame_size = 0;
+    if (descriptor != nullptr) {
+      fixed_frame_size = (descriptor->kind() == CallDescriptor::kCallAddress)
+                             ? StandardFrameConstants::kFixedSlotCountAboveFp
+                             : StandardFrameConstants::kFixedSlotCount;
+    }
+    frame_ = new (instruction_zone()) Frame(fixed_frame_size);
     register_allocation_data_ = new (register_allocation_zone())
         RegisterAllocationData(config, register_allocation_zone(), frame(),
                                sequence(), debug_name);
@@ -339,21 +346,6 @@ void TraceSchedule(CompilationInfo* info, Schedule* schedule) {
   if (!FLAG_trace_turbo_graph && !FLAG_trace_turbo_scheduler) return;
   OFStream os(stdout);
   os << "-- Schedule --------------------------------------\n" << *schedule;
-}
-
-
-base::SmartArrayPointer<char> GetDebugName(CompilationInfo* info) {
-  if (info->code_stub() != NULL) {
-    CodeStub::Major major_key = info->code_stub()->MajorKey();
-    const char* major_name = CodeStub::MajorName(major_key, false);
-    size_t len = strlen(major_name) + 1;
-    base::SmartArrayPointer<char> name(new char[len]);
-    memcpy(name.get(), major_name, len);
-    return name;
-  } else {
-    AllowHandleDereference allow_deref;
-    return info->function()->debug_name()->ToCString();
-  }
 }
 
 
@@ -1007,9 +999,8 @@ Handle<Code> Pipeline::GenerateCode() {
     if (json_file != nullptr) {
       OFStream json_of(json_file);
       Handle<Script> script = info()->script();
-      FunctionLiteral* function = info()->function();
-      base::SmartArrayPointer<char> function_name =
-          info()->shared_info()->DebugName()->ToCString();
+      FunctionLiteral* function = info()->literal();
+      base::SmartArrayPointer<char> function_name = info()->GetDebugName();
       int pos = info()->shared_info()->start_position();
       json_of << "{\"function\":\"" << function_name.get()
               << "\", \"sourcePosition\":" << pos << ", \"source\":\"";
@@ -1041,7 +1032,7 @@ Handle<Code> Pipeline::GenerateCode() {
   if (FLAG_trace_turbo) {
     OFStream os(stdout);
     os << "---------------------------------------------------\n"
-       << "Begin compiling method " << GetDebugName(info()).get()
+       << "Begin compiling method " << info()->GetDebugName().get()
        << " using Turbofan" << std::endl;
     TurboCfgFile tcf(isolate());
     tcf << AsC1VCompilation(info());
@@ -1151,8 +1142,7 @@ Handle<Code> Pipeline::GenerateCodeForTesting(Isolate* isolate,
                                               CallDescriptor* call_descriptor,
                                               Graph* graph,
                                               Schedule* schedule) {
-  FakeStubForTesting stub(isolate);
-  CompilationInfo info(&stub, isolate, graph->zone());
+  CompilationInfo info("testing", isolate, graph->zone());
   return GenerateCodeForTesting(&info, call_descriptor, graph, schedule);
 }
 
@@ -1184,13 +1174,12 @@ Handle<Code> Pipeline::GenerateCodeForTesting(CompilationInfo* info,
 bool Pipeline::AllocateRegistersForTesting(const RegisterConfiguration* config,
                                            InstructionSequence* sequence,
                                            bool run_verifier) {
-  FakeStubForTesting stub(sequence->isolate());
-  CompilationInfo info(&stub, sequence->isolate(), sequence->zone());
+  CompilationInfo info("testing", sequence->isolate(), sequence->zone());
   ZonePool zone_pool;
   PipelineData data(&zone_pool, &info, sequence);
   Pipeline pipeline(&info);
   pipeline.data_ = &data;
-  pipeline.AllocateRegisters(config, run_verifier);
+  pipeline.AllocateRegisters(config, nullptr, run_verifier);
   return !data.compilation_failed();
 }
 
@@ -1234,7 +1223,8 @@ Handle<Code> Pipeline::ScheduleAndGenerateCode(
 
   bool run_verifier = FLAG_turbo_verify_allocation;
   // Allocate registers.
-  AllocateRegisters(RegisterConfiguration::ArchDefault(), run_verifier);
+  AllocateRegisters(RegisterConfiguration::ArchDefault(), call_descriptor,
+                    run_verifier);
   if (data->compilation_failed()) {
     info()->AbortOptimization(kNotEnoughVirtualRegistersRegalloc);
     return Handle<Code>();
@@ -1284,7 +1274,7 @@ Handle<Code> Pipeline::ScheduleAndGenerateCode(
     }
     OFStream os(stdout);
     os << "---------------------------------------------------\n"
-       << "Finished compiling method " << GetDebugName(info()).get()
+       << "Finished compiling method " << info()->GetDebugName().get()
        << " using Turbofan" << std::endl;
   }
 
@@ -1293,6 +1283,7 @@ Handle<Code> Pipeline::ScheduleAndGenerateCode(
 
 
 void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
+                                 CallDescriptor* descriptor,
                                  bool run_verifier) {
   PipelineData* data = this->data_;
 
@@ -1307,10 +1298,10 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
 
   base::SmartArrayPointer<char> debug_name;
 #ifdef DEBUG
-  debug_name = GetDebugName(data->info());
+  debug_name = info()->GetDebugName();
 #endif
 
-  data->InitializeRegisterAllocationData(config, debug_name.get());
+  data->InitializeRegisterAllocationData(config, descriptor, debug_name.get());
   if (info()->is_osr()) {
     OsrHelper osr_helper(info());
     osr_helper.SetupFrame(data->frame());

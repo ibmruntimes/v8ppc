@@ -135,6 +135,8 @@ class CompilationInfo {
 
   explicit CompilationInfo(ParseInfo* parse_info);
   CompilationInfo(CodeStub* stub, Isolate* isolate, Zone* zone);
+  CompilationInfo(const char* code_stub_debug_name, Isolate* isolate,
+                  Zone* zone);
   virtual ~CompilationInfo();
 
   ParseInfo* parse_info() const { return parse_info_; }
@@ -148,13 +150,15 @@ class CompilationInfo {
   bool is_module() const;
   LanguageMode language_mode() const;
   Handle<JSFunction> closure() const;
-  FunctionLiteral* function() const;
+  FunctionLiteral* literal() const;
   Scope* scope() const;
   bool MayUseThis() const;
   Handle<Context> context() const;
   Handle<SharedFunctionInfo> shared_info() const;
   bool has_shared_info() const;
   bool has_context() const;
+  bool has_literal() const;
+  bool has_scope() const;
   // -----------------------------------------------------------
 
   Isolate* isolate() const {
@@ -171,8 +175,6 @@ class CompilationInfo {
   int num_parameters_including_this() const;
   bool is_this_defined() const;
   int num_heap_slots() const;
-  Code::Flags flags() const;
-  bool has_scope() const { return scope() != nullptr; }
 
   void set_parameter_count(int parameter_count) {
     DCHECK(IsStub());
@@ -292,7 +294,6 @@ class CompilationInfo {
 
   // Accessors for the different compilation modes.
   bool IsOptimizing() const { return mode_ == OPTIMIZE; }
-  bool IsOptimizable() const { return mode_ == BASE; }
   bool IsStub() const { return mode_ == STUB; }
   void SetOptimizing(BailoutId osr_ast_id, Handle<Code> unoptimized) {
     DCHECK(!shared_info().is_null());
@@ -307,19 +308,17 @@ class CompilationInfo {
   }
   Type::FunctionType* function_type() const { return function_type_; }
 
-  void SetStub(CodeStub* code_stub) {
-    SetMode(STUB);
-    code_stub_ = code_stub;
-  }
+  void SetStub(CodeStub* code_stub);
 
   // Deoptimization support.
   bool HasDeoptimizationSupport() const {
     return GetFlag(kDeoptimizationSupport);
   }
   void EnableDeoptimizationSupport() {
-    DCHECK(IsOptimizable());
+    DCHECK_EQ(BASE, mode_);
     SetFlag(kDeoptimizationSupport);
   }
+  bool ShouldEnsureSpaceForLazyDeopt() { return !IsStub(); }
 
   // Determines whether or not to insert a self-optimization header.
   bool ShouldSelfOptimize();
@@ -403,8 +402,6 @@ class CompilationInfo {
 
   bool has_simple_parameters();
 
-  Handle<Code> GenerateCodeStub();
-
   typedef std::vector<Handle<SharedFunctionInfo>> InlinedFunctionList;
   InlinedFunctionList const& inlined_functions() const {
     return inlined_functions_;
@@ -412,6 +409,8 @@ class CompilationInfo {
   void AddInlinedFunction(Handle<SharedFunctionInfo> inlined_function) {
     inlined_functions_.push_back(inlined_function);
   }
+
+  base::SmartArrayPointer<char> GetDebugName() const;
 
  protected:
   ParseInfo* parse_info_;
@@ -432,8 +431,9 @@ class CompilationInfo {
     STUB
   };
 
-  CompilationInfo(ParseInfo* parse_info, CodeStub* code_stub, Mode mode,
-                  Isolate* isolate, Zone* zone);
+  CompilationInfo(ParseInfo* parse_info, CodeStub* code_stub,
+                  const char* code_stub_debug_name, Mode mode, Isolate* isolate,
+                  Zone* zone);
 
   Isolate* isolate_;
 
@@ -501,6 +501,8 @@ class CompilationInfo {
   JavaScriptFrame* osr_frame_ = nullptr;
 
   Type::FunctionType* function_type_;
+
+  const char* code_stub_debug_name_;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationInfo);
 };
@@ -624,9 +626,13 @@ class Compiler : public AllStatic {
       Handle<JSFunction> function);
   MUST_USE_RESULT static MaybeHandle<Code> GetLazyCode(
       Handle<JSFunction> function);
+  MUST_USE_RESULT static MaybeHandle<Code> GetStubCode(
+      Handle<JSFunction> function, CodeStub* stub);
 
+  static bool Compile(Handle<JSFunction> function, ClearExceptionFlag flag);
   static bool CompileDebugCode(Handle<JSFunction> function);
   static bool CompileDebugCode(Handle<SharedFunctionInfo> shared);
+  static void CompileForLiveEdit(Handle<Script> script);
 
   // Parser::Parse, then Compiler::Analyze.
   static bool ParseAndAnalyze(ParseInfo* info);
@@ -634,11 +640,6 @@ class Compiler : public AllStatic {
   static bool Analyze(ParseInfo* info);
   // Adds deoptimization support, requires ParseAndAnalyze.
   static bool EnsureDeoptimizationSupport(CompilationInfo* info);
-
-  static bool EnsureCompiled(Handle<JSFunction> function,
-                             ClearExceptionFlag flag);
-
-  static void CompileForLiveEdit(Handle<Script> script);
 
   // Compile a String source within a context for eval.
   MUST_USE_RESULT static MaybeHandle<JSFunction> GetFunctionFromEval(

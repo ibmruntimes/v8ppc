@@ -54,6 +54,11 @@ class Factory final {
   // Create a new PrototypeInfo struct.
   Handle<PrototypeInfo> NewPrototypeInfo();
 
+  // Create a new SloppyBlockWithEvalContextExtension struct.
+  Handle<SloppyBlockWithEvalContextExtension>
+  NewSloppyBlockWithEvalContextExtension(Handle<ScopeInfo> scope_info,
+                                         Handle<JSObject> extension);
+
   // Create a pre-tenured empty AccessorPair.
   Handle<AccessorPair> NewAccessorPair();
 
@@ -354,20 +359,12 @@ class Factory final {
   Handle<HeapNumber> NewHeapNumber(double value,
                                    MutableMode mode = IMMUTABLE,
                                    PretenureFlag pretenure = NOT_TENURED);
-  Handle<Float32x4> NewFloat32x4(float lanes[4],
-                                 PretenureFlag pretenure = NOT_TENURED);
-  Handle<Int32x4> NewInt32x4(int32_t lanes[4],
-                             PretenureFlag pretenure = NOT_TENURED);
-  Handle<Bool32x4> NewBool32x4(bool lanes[4],
-                               PretenureFlag pretenure = NOT_TENURED);
-  Handle<Int16x8> NewInt16x8(int16_t lanes[8],
-                             PretenureFlag pretenure = NOT_TENURED);
-  Handle<Bool16x8> NewBool16x8(bool lanes[8],
-                               PretenureFlag pretenure = NOT_TENURED);
-  Handle<Int8x16> NewInt8x16(int8_t lanes[16],
-                             PretenureFlag pretenure = NOT_TENURED);
-  Handle<Bool8x16> NewBool8x16(bool lanes[16],
-                               PretenureFlag pretenure = NOT_TENURED);
+
+#define SIMD128_NEW_DECL(TYPE, Type, type, lane_count, lane_type) \
+  Handle<Type> New##Type(lane_type lanes[lane_count],             \
+                         PretenureFlag pretenure = NOT_TENURED);
+  SIMD128_TYPES(SIMD128_NEW_DECL)
+#undef SIMD128_NEW_DECL
 
   // These objects are used by the api to create env-independent data
   // structures in the heap.
@@ -631,10 +628,6 @@ class Factory final {
 
   inline void set_weak_stack_trace_list(Handle<WeakFixedArray> list) {
     isolate()->heap()->set_weak_stack_trace_list(*list);
-  }
-
-  Handle<String> hidden_string() {
-    return Handle<String>(&isolate()->heap()->hidden_string_);
   }
 
   // Allocates a new SharedFunctionInfo object.

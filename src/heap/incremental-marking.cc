@@ -7,6 +7,7 @@
 #include "src/code-stubs.h"
 #include "src/compilation-cache.h"
 #include "src/conversions.h"
+#include "src/heap/gc-tracer.h"
 #include "src/heap/mark-compact-inl.h"
 #include "src/heap/objects-visiting.h"
 #include "src/heap/objects-visiting-inl.h"
@@ -297,12 +298,6 @@ void IncrementalMarking::SetOldSpacePageFlags(MemoryChunk* chunk,
   if (is_marking) {
     chunk->SetFlag(MemoryChunk::POINTERS_TO_HERE_ARE_INTERESTING);
     chunk->SetFlag(MemoryChunk::POINTERS_FROM_HERE_ARE_INTERESTING);
-
-    // It's difficult to filter out slots recorded for large objects.
-    if (chunk->owner()->identity() == LO_SPACE &&
-        chunk->size() > static_cast<size_t>(Page::kPageSize) && is_compacting) {
-      chunk->SetFlag(MemoryChunk::RESCAN_ON_EVACUATION);
-    }
   } else {
     chunk->ClearFlag(MemoryChunk::POINTERS_TO_HERE_ARE_INTERESTING);
     chunk->SetFlag(MemoryChunk::POINTERS_FROM_HERE_ARE_INTERESTING);
@@ -468,7 +463,7 @@ static void PatchIncrementalMarkingRecordWriteStubs(
 }
 
 
-void IncrementalMarking::Start(int mark_compact_flags,
+void IncrementalMarking::Start(int flags,
                                const GCCallbackFlags gc_callback_flags,
                                const char* reason) {
   if (FLAG_trace_incremental_marking) {
@@ -486,9 +481,8 @@ void IncrementalMarking::Start(int mark_compact_flags,
   was_activated_ = true;
 
   if (!heap_->mark_compact_collector()->sweeping_in_progress()) {
-    heap_->mark_compact_collector()->SetFlags(mark_compact_flags);
+    heap_->set_current_gc_flags(flags);
     StartMarking();
-    heap_->mark_compact_collector()->SetFlags(Heap::kNoGCFlags);
   } else {
     if (FLAG_trace_incremental_marking) {
       PrintF("[IncrementalMarking] Start sweeping.\n");

@@ -62,6 +62,19 @@ Handle<PrototypeInfo> Factory::NewPrototypeInfo() {
 }
 
 
+Handle<SloppyBlockWithEvalContextExtension>
+Factory::NewSloppyBlockWithEvalContextExtension(
+    Handle<ScopeInfo> scope_info, Handle<JSObject> extension) {
+  DCHECK(scope_info->is_declaration_scope());
+  Handle<SloppyBlockWithEvalContextExtension> result =
+      Handle<SloppyBlockWithEvalContextExtension>::cast(
+          NewStruct(SLOPPY_BLOCK_WITH_EVAL_CONTEXT_EXTENSION_TYPE));
+  result->set_scope_info(*scope_info);
+  result->set_extension(*extension);
+  return result;
+}
+
+
 Handle<Oddball> Factory::NewOddball(Handle<Map> map, const char* to_string,
                                     Handle<Object> to_number,
                                     const char* type_of, byte kind) {
@@ -848,6 +861,7 @@ Handle<Script> Factory::NewScript(Handle<String> source) {
   script->set_shared_function_infos(Smi::FromInt(0));
   script->set_flags(Smi::FromInt(0));
 
+  heap->set_script_list(*WeakFixedArray::Add(script_list(), script));
   return script;
 }
 
@@ -1056,51 +1070,14 @@ Handle<HeapNumber> Factory::NewHeapNumber(double value,
 }
 
 
-Handle<Float32x4> Factory::NewFloat32x4(float lanes[4],
-                                        PretenureFlag pretenure) {
-  CALL_HEAP_FUNCTION(isolate(),
-                     isolate()->heap()->AllocateFloat32x4(lanes, pretenure),
-                     Float32x4);
-}
-
-
-Handle<Int32x4> Factory::NewInt32x4(int32_t lanes[4], PretenureFlag pretenure) {
-  CALL_HEAP_FUNCTION(
-      isolate(), isolate()->heap()->AllocateInt32x4(lanes, pretenure), Int32x4);
-}
-
-
-Handle<Bool32x4> Factory::NewBool32x4(bool lanes[4], PretenureFlag pretenure) {
-  CALL_HEAP_FUNCTION(isolate(),
-                     isolate()->heap()->AllocateBool32x4(lanes, pretenure),
-                     Bool32x4);
-}
-
-
-Handle<Int16x8> Factory::NewInt16x8(int16_t lanes[8], PretenureFlag pretenure) {
-  CALL_HEAP_FUNCTION(
-      isolate(), isolate()->heap()->AllocateInt16x8(lanes, pretenure), Int16x8);
-}
-
-
-Handle<Bool16x8> Factory::NewBool16x8(bool lanes[8], PretenureFlag pretenure) {
-  CALL_HEAP_FUNCTION(isolate(),
-                     isolate()->heap()->AllocateBool16x8(lanes, pretenure),
-                     Bool16x8);
-}
-
-
-Handle<Int8x16> Factory::NewInt8x16(int8_t lanes[16], PretenureFlag pretenure) {
-  CALL_HEAP_FUNCTION(
-      isolate(), isolate()->heap()->AllocateInt8x16(lanes, pretenure), Int8x16);
-}
-
-
-Handle<Bool8x16> Factory::NewBool8x16(bool lanes[16], PretenureFlag pretenure) {
-  CALL_HEAP_FUNCTION(isolate(),
-                     isolate()->heap()->AllocateBool8x16(lanes, pretenure),
-                     Bool8x16);
-}
+#define SIMD128_NEW_DEF(TYPE, Type, type, lane_count, lane_type)               \
+  Handle<Type> Factory::New##Type(lane_type lanes[lane_count],                 \
+                                  PretenureFlag pretenure) {                   \
+    CALL_HEAP_FUNCTION(                                                        \
+        isolate(), isolate()->heap()->Allocate##Type(lanes, pretenure), Type); \
+  }
+SIMD128_TYPES(SIMD128_NEW_DEF)
+#undef SIMD128_NEW_DEF
 
 
 Handle<Object> Factory::NewError(Handle<JSFunction> constructor,

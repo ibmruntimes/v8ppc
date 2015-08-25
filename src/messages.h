@@ -11,6 +11,7 @@
 #define V8_MESSAGES_H_
 
 #include "src/base/smart-pointers.h"
+#include "src/handles.h"
 #include "src/list.h"
 
 namespace v8 {
@@ -46,23 +47,23 @@ class MessageLocation {
 
 class CallSite {
  public:
-  CallSite(Handle<Object> receiver, Handle<JSFunction> fun, int pos)
-      : receiver_(receiver), fun_(fun), pos_(pos) {}
+  CallSite(Isolate* isolate, Handle<JSObject> call_site_obj);
 
-  Handle<Object> GetFileName(Isolate* isolate);
-  Handle<Object> GetFunctionName(Isolate* isolate);
-  Handle<Object> GetScriptNameOrSourceUrl(Isolate* isolate);
-  Handle<Object> GetMethodName(Isolate* isolate);
+  Handle<Object> GetFileName();
+  Handle<Object> GetFunctionName();
+  Handle<Object> GetScriptNameOrSourceUrl();
+  Handle<Object> GetMethodName();
   // Return 1-based line number, including line offset.
-  int GetLineNumber(Isolate* isolate);
+  int GetLineNumber();
   // Return 1-based column number, including column offset if first line.
-  int GetColumnNumber(Isolate* isolate);
-  bool IsNative(Isolate* isolate);
-  bool IsToplevel(Isolate* isolate);
-  bool IsEval(Isolate* isolate);
-  bool IsConstructor(Isolate* isolate);
+  int GetColumnNumber();
+  bool IsNative();
+  bool IsToplevel();
+  bool IsEval();
+  bool IsConstructor();
 
  private:
+  Isolate* isolate_;
   Handle<Object> receiver_;
   Handle<JSFunction> fun_;
   int pos_;
@@ -431,8 +432,9 @@ class MessageHandler {
  public:
   // Returns a message object for the API to use.
   static Handle<JSMessageObject> MakeMessageObject(
-      Isolate* isolate, MessageTemplate::Template type, MessageLocation* loc,
-      Handle<Object> argument, Handle<JSArray> stack_frames);
+      Isolate* isolate, MessageTemplate::Template type,
+      MessageLocation* location, Handle<Object> argument,
+      Handle<JSArray> stack_frames);
 
   // Report a formatted message (needs JS allocation).
   static void ReportMessage(Isolate* isolate, MessageLocation* loc,

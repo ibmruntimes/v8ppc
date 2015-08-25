@@ -83,10 +83,12 @@
         'compiler/test-run-variables.cc',
         'compiler/test-simplified-lowering.cc',
         'cctest.cc',
+        'interpreter/test-bytecode-generator.cc',
         'interpreter/test-interpreter.cc',
         'gay-fixed.cc',
         'gay-precision.cc',
         'gay-shortest.cc',
+        'heap-tester.h',
         'print-extension.cc',
         'profiler-extension.cc',
         'test-accessors.cc',
@@ -274,6 +276,11 @@
           'dependencies': ['../../tools/gyp/v8.gyp:v8_maybe_snapshot'],
         }, {
           'dependencies': ['../../tools/gyp/v8.gyp:v8'],
+        }],
+        ['v8_wasm!=0', {
+          'dependencies': [
+            '../../third_party/wasm/test/cctest/wasm/wasm.gyp:wasm_cctest'
+          ],
         }],
       ],
     },

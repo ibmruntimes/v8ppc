@@ -7,8 +7,6 @@
 #include <cstdarg>
 #include <sstream>
 
-#include "src/v8.h"
-
 #include "src/bailout-reason.h"
 #include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"
@@ -1608,8 +1606,7 @@ void Logger::LogCodeObject(Object* object) {
     case Code::COMPARE_NIL_IC:   // fall through
     case Code::TO_BOOLEAN_IC:  // fall through
     case Code::STUB:
-      description =
-          CodeStub::MajorName(CodeStub::GetMajorKey(code_object), true);
+      description = CodeStub::MajorName(CodeStub::GetMajorKey(code_object));
       if (description == NULL)
         description = "A stub from the snapshot";
       tag = Logger::STUB_TAG;

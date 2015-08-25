@@ -50,8 +50,7 @@ bool FullCodeGenerator::MakeCode(CompilationInfo* info) {
   }
   unsigned table_offset = cgen.EmitBackEdgeTable();
 
-  Code::Flags flags = Code::ComputeFlags(Code::FUNCTION);
-  Handle<Code> code = CodeGenerator::MakeCodeEpilogue(&masm, flags, info);
+  Handle<Code> code = CodeGenerator::MakeCodeEpilogue(&masm, info);
   cgen.PopulateDeoptimizationData(code);
   cgen.PopulateTypeFeedbackInfo(code);
   cgen.PopulateHandlerTable(code);
@@ -1548,7 +1547,7 @@ FullCodeGenerator::EnterBlockScopeIfNeeded::EnterBlockScopeIfNeeded(
     codegen_->PrepareForBailoutForId(entry_id, NO_REGISTERS);
     needs_block_context_ = false;
   } else {
-    needs_block_context_ = scope->ContextLocalCount() > 0;
+    needs_block_context_ = scope->NeedsContext();
     codegen_->scope_ = scope;
     {
       if (needs_block_context_) {

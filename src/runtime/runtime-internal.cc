@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/runtime/runtime-utils.h"
 
 #include "src/arguments.h"
 #include "src/bootstrapper.h"
+#include "src/conversions.h"
 #include "src/debug/debug.h"
 #include "src/frames-inl.h"
 #include "src/messages.h"
 #include "src/parser.h"
 #include "src/prettyprinter.h"
-#include "src/runtime/runtime-utils.h"
 
 namespace v8 {
 namespace internal {
@@ -21,6 +21,19 @@ RUNTIME_FUNCTION(Runtime_CheckIsBootstrapping) {
   DCHECK(args.length() == 0);
   RUNTIME_ASSERT(isolate->bootstrapper()->IsActive());
   return isolate->heap()->undefined_value();
+}
+
+
+RUNTIME_FUNCTION(Runtime_ExportPrivateSymbols) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, container, 0);
+  RUNTIME_ASSERT(isolate->bootstrapper()->IsActive());
+  JSObject::NormalizeProperties(container, KEEP_INOBJECT_PROPERTIES, 10,
+                                "ExportPrivateSymbols");
+  Bootstrapper::ExportPrivateSymbols(isolate, container);
+  JSObject::MigrateSlowToFast(container, 0, "ExportPrivateSymbols");
+  return *container;
 }
 
 
@@ -40,6 +53,16 @@ RUNTIME_FUNCTION(Runtime_ImportExperimentalToRuntime) {
   CONVERT_ARG_HANDLE_CHECKED(JSObject, container, 0);
   RUNTIME_ASSERT(isolate->bootstrapper()->IsActive());
   Bootstrapper::ImportExperimentalNatives(isolate, container);
+  return isolate->heap()->undefined_value();
+}
+
+
+RUNTIME_FUNCTION(Runtime_InstallJSBuiltins) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, container, 0);
+  RUNTIME_ASSERT(isolate->bootstrapper()->IsActive());
+  Bootstrapper::InstallJSBuiltins(isolate, container);
   return isolate->heap()->undefined_value();
 }
 
@@ -162,12 +185,6 @@ RUNTIME_FUNCTION(Runtime_PromiseRevokeReject) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_PromiseHasHandlerSymbol) {
-  DCHECK(args.length() == 0);
-  return isolate->heap()->promise_has_handler_symbol();
-}
-
-
 RUNTIME_FUNCTION(Runtime_StackGuard) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 0);
@@ -239,8 +256,9 @@ RUNTIME_FUNCTION(Runtime_RenderCallSite) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 0);
   MessageLocation location;
-  isolate->ComputeLocation(&location);
-  if (location.start_pos() == -1) return isolate->heap()->empty_string();
+  if (!isolate->ComputeLocation(&location)) {
+    return isolate->heap()->empty_string();
+  }
 
   Zone zone;
   base::SmartPointer<ParseInfo> info(
@@ -253,7 +271,7 @@ RUNTIME_FUNCTION(Runtime_RenderCallSite) {
     return isolate->heap()->empty_string();
   }
   CallPrinter printer(isolate, &zone);
-  const char* string = printer.Print(info->function(), location.start_pos());
+  const char* string = printer.Print(info->literal(), location.start_pos());
   return *isolate->factory()->NewStringFromAsciiChecked(string);
 }
 
@@ -301,16 +319,14 @@ RUNTIME_FUNCTION(Runtime_FormatMessageString) {
 }
 
 
-#define CALLSITE_GET(NAME, RETURN)                   \
-  RUNTIME_FUNCTION(Runtime_CallSite##NAME##RT) {     \
-    HandleScope scope(isolate);                      \
-    DCHECK(args.length() == 3);                      \
-    CONVERT_ARG_HANDLE_CHECKED(Object, receiver, 0); \
-    CONVERT_ARG_HANDLE_CHECKED(JSFunction, fun, 1);  \
-    CONVERT_INT32_ARG_CHECKED(pos, 2);               \
-    Handle<String> result;                           \
-    CallSite call_site(receiver, fun, pos);          \
-    return RETURN(call_site.NAME(isolate), isolate); \
+#define CALLSITE_GET(NAME, RETURN)                          \
+  RUNTIME_FUNCTION(Runtime_CallSite##NAME##RT) {            \
+    HandleScope scope(isolate);                             \
+    DCHECK(args.length() == 1);                             \
+    CONVERT_ARG_HANDLE_CHECKED(JSObject, call_site_obj, 0); \
+    Handle<String> result;                                  \
+    CallSite call_site(isolate, call_site_obj);             \
+    return RETURN(call_site.NAME(), isolate);               \
   }
 
 static inline Object* ReturnDereferencedHandle(Handle<Object> obj,

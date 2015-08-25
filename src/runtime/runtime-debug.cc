@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+#include "src/runtime/runtime-utils.h"
 
 #include "src/arguments.h"
 #include "src/debug/debug.h"
@@ -11,7 +11,6 @@
 #include "src/debug/debug-scopes.h"
 #include "src/frames-inl.h"
 #include "src/runtime/runtime.h"
-#include "src/runtime/runtime-utils.h"
 
 namespace v8 {
 namespace internal {
@@ -222,7 +221,7 @@ MaybeHandle<JSArray> Runtime::GetInternalProperties(Isolate* isolate,
     Handle<JSObject> promise = Handle<JSObject>::cast(object);
 
     Handle<Object> status_obj =
-        DebugGetProperty(promise, isolate->promise_status());
+        DebugGetProperty(promise, isolate->factory()->promise_status_symbol());
     RUNTIME_ASSERT_HANDLIFIED(status_obj->IsSmi(), JSArray);
     const char* status = "rejected";
     int status_val = Handle<Smi>::cast(status_obj)->value();
@@ -245,7 +244,7 @@ MaybeHandle<JSArray> Runtime::GetInternalProperties(Isolate* isolate,
     result->set(1, *status_str);
 
     Handle<Object> value_obj =
-        DebugGetProperty(promise, isolate->promise_value());
+        DebugGetProperty(promise, isolate->factory()->promise_value_symbol());
     Handle<String> promise_value =
         factory->NewStringFromAsciiChecked("[[PromiseValue]]");
     result->set(2, *promise_value);
@@ -534,6 +533,7 @@ RUNTIME_FUNCTION(Runtime_GetFrameDetails) {
 
   // Get scope info and read from it for local variable information.
   Handle<JSFunction> function(JSFunction::cast(frame_inspector.GetFunction()));
+  RUNTIME_ASSERT(function->IsSubjectToDebugging());
   Handle<SharedFunctionInfo> shared(function->shared());
   Handle<ScopeInfo> scope_info(shared->scope_info());
   DCHECK(*scope_info != ScopeInfo::Empty(isolate));
@@ -713,8 +713,8 @@ RUNTIME_FUNCTION(Runtime_GetFrameDetails) {
   // THIS MUST BE DONE LAST SINCE WE MIGHT ADVANCE
   // THE FRAME ITERATOR TO WRAP THE RECEIVER.
   Handle<Object> receiver(it.frame()->receiver(), isolate);
-  if (!receiver->IsJSObject() && is_sloppy(shared->language_mode()) &&
-      !function->IsBuiltin()) {
+  DCHECK(!function->IsBuiltin());
+  if (!receiver->IsJSObject() && is_sloppy(shared->language_mode())) {
     // If the receiver is not a JSObject and the function is not a
     // builtin or strict-mode we have hit an optimization where a
     // value object is not converted into a wrapped JS objects. To
@@ -1603,13 +1603,10 @@ RUNTIME_FUNCTION(Runtime_GetScript) {
   CONVERT_ARG_HANDLE_CHECKED(String, script_name, 0);
 
   Handle<Script> found;
-  Heap* heap = isolate->heap();
   {
-    HeapIterator iterator(heap);
-    HeapObject* obj = NULL;
-    while ((obj = iterator.next()) != NULL) {
-      if (!obj->IsScript()) continue;
-      Script* script = Script::cast(obj);
+    Script::Iterator iterator(isolate);
+    Script* script = NULL;
+    while ((script = iterator.Next()) != NULL) {
       if (!script->name()->IsString()) continue;
       String* name = String::cast(script->name());
       if (name->Equals(*script_name)) {
@@ -1619,7 +1616,7 @@ RUNTIME_FUNCTION(Runtime_GetScript) {
     }
   }
 
-  if (found.is_null()) return heap->undefined_value();
+  if (found.is_null()) return isolate->heap()->undefined_value();
   return *Script::GetWrapper(found);
 }
 
@@ -1638,7 +1635,7 @@ RUNTIME_FUNCTION(Runtime_DebugCallbackSupportsStepping) {
   // or not even a function.
   return isolate->heap()->ToBoolean(
       callback->IsJSFunction() &&
-      (!JSFunction::cast(callback)->IsBuiltin() ||
+      (JSFunction::cast(callback)->IsSubjectToDebugging() ||
        JSFunction::cast(callback)->shared()->bound()));
 }
 

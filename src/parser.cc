@@ -1998,12 +1998,14 @@ VariableProxy* Parser::NewUnresolved(const AstRawString* name,
 
 Variable* Parser::Declare(Declaration* declaration,
                           DeclarationDescriptor::Kind declaration_kind,
-                          bool resolve, bool* ok) {
+                          bool resolve, bool* ok, Scope* scope) {
   VariableProxy* proxy = declaration->proxy();
   DCHECK(proxy->raw_name() != NULL);
   const AstRawString* name = proxy->raw_name();
   VariableMode mode = declaration->mode();
-  Scope* declaration_scope = DeclarationScope(mode);
+  if (scope == nullptr) scope = scope_;
+  Scope* declaration_scope =
+      IsLexicalVariableMode(mode) ? scope : scope->DeclarationScope();
   Variable* var = NULL;
 
   // If a suitable scope exists, then we can statically declare this
@@ -2477,6 +2479,7 @@ void Parser::ParseVariableDeclarations(VariableDeclarationContext var_context,
   parsing_result->descriptor.declaration_scope =
       DeclarationScope(parsing_result->descriptor.mode);
   parsing_result->descriptor.scope = scope_;
+  parsing_result->descriptor.hoist_scope = nullptr;
 
 
   bool first_declaration = true;
@@ -3749,9 +3752,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
 
   Statement* next = NULL;
   if (peek() != Token::RPAREN) {
-    int next_pos = position();
     Expression* exp = ParseExpression(true, CHECK_OK);
-    next = factory()->NewExpressionStatement(exp, next_pos);
+    next = factory()->NewExpressionStatement(exp, exp->position());
   }
   Expect(Token::RPAREN, CHECK_OK);
 
@@ -4021,7 +4023,8 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
   Scope* declaration_scope = scope_->DeclarationScope();
   Scope* original_declaration_scope = original_scope_->DeclarationScope();
   Scope* scope = function_type == FunctionLiteral::DECLARATION &&
-                         is_sloppy(language_mode) && !allow_harmony_sloppy() &&
+                         is_sloppy(language_mode) &&
+                         !allow_harmony_sloppy_function() &&
                          (original_scope_ == original_declaration_scope ||
                           declaration_scope != original_declaration_scope)
                      ? NewScope(declaration_scope, FUNCTION_SCOPE, kind)
@@ -4336,6 +4339,7 @@ Block* Parser::BuildParameterInitializationBlock(
     descriptor.parser = this;
     descriptor.declaration_scope = scope_;
     descriptor.scope = scope_;
+    descriptor.hoist_scope = nullptr;
     descriptor.mode = LET;
     descriptor.is_const = false;
     descriptor.needs_init = true;
@@ -4356,10 +4360,35 @@ Block* Parser::BuildParameterInitializationBlock(
           RelocInfo::kNoPosition);
       descriptor.initialization_pos = parameter.initializer->position();
     }
-    DeclarationParsingResult::Declaration decl(
-        parameter.pattern, parameter.pattern->position(), initial_value);
-    PatternRewriter::DeclareAndInitializeVariables(init_block, &descriptor,
-                                                   &decl, nullptr, CHECK_OK);
+
+    Scope* param_scope = scope_;
+    Block* param_block = init_block;
+    if (parameter.initializer != nullptr && scope_->calls_sloppy_eval()) {
+      param_scope = NewScope(scope_, BLOCK_SCOPE);
+      param_scope->set_is_declaration_scope();
+      param_scope->set_start_position(parameter.pattern->position());
+      param_scope->set_end_position(RelocInfo::kNoPosition);
+      param_scope->RecordEvalCall();
+      param_block = factory()->NewBlock(NULL, 8, true, RelocInfo::kNoPosition);
+      param_block->set_scope(param_scope);
+      descriptor.hoist_scope = scope_;
+    }
+
+    {
+      BlockState block_state(&scope_, param_scope);
+      DeclarationParsingResult::Declaration decl(
+          parameter.pattern, parameter.pattern->position(), initial_value);
+      PatternRewriter::DeclareAndInitializeVariables(param_block, &descriptor,
+                                                     &decl, nullptr, CHECK_OK);
+    }
+
+    if (parameter.initializer != nullptr && scope_->calls_sloppy_eval()) {
+      param_scope = param_scope->FinalizeBlockScope();
+      if (param_scope != nullptr) {
+        CheckConflictingVarDeclarations(param_scope, CHECK_OK);
+      }
+      init_block->AddStatement(param_block, zone());
+    }
   }
   return init_block;
 }
@@ -4393,7 +4422,7 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
   }
 
   ZoneList<Statement*>* body = result;
-  Scope* inner_scope = nullptr;
+  Scope* inner_scope = scope_;
   Block* inner_block = nullptr;
   if (!parameters.is_simple) {
     inner_scope = NewScope(scope_, BLOCK_SCOPE);
@@ -4405,7 +4434,7 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
   }
 
   {
-    BlockState block_state(&scope_, inner_scope ? inner_scope : scope_);
+    BlockState block_state(&scope_, inner_scope);
 
     // For generators, allocate and yield an iterator on function entry.
     if (IsGeneratorFunction(kind)) {
@@ -5727,7 +5756,7 @@ bool RegExpParser::ParseRegExp(Isolate* isolate, Zone* zone,
 bool Parser::ParseStatic(ParseInfo* info) {
   Parser parser(info);
   if (parser.Parse(info)) {
-    info->set_language_mode(info->function()->language_mode());
+    info->set_language_mode(info->literal()->language_mode());
     return true;
   }
   return false;
@@ -5735,7 +5764,7 @@ bool Parser::ParseStatic(ParseInfo* info) {
 
 
 bool Parser::Parse(ParseInfo* info) {
-  DCHECK(info->function() == NULL);
+  DCHECK(info->literal() == NULL);
   FunctionLiteral* result = NULL;
   // Ok to use Isolate here; this function is only called in the main thread.
   DCHECK(parsing_on_main_thread_);
@@ -5770,7 +5799,7 @@ bool Parser::Parse(ParseInfo* info) {
 void Parser::ParseOnBackground(ParseInfo* info) {
   parsing_on_main_thread_ = false;
 
-  DCHECK(info->function() == NULL);
+  DCHECK(info->literal() == NULL);
   FunctionLiteral* result = NULL;
   fni_ = new (zone()) FuncNameInferrer(ast_value_factory(), zone());
 

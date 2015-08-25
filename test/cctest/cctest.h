@@ -29,6 +29,7 @@
 #define CCTEST_H_
 
 #include "include/libplatform/libplatform.h"
+#include "src/objects-inl.h"  // TODO(everyone): Make cctest IWYU.
 #include "src/v8.h"
 
 #ifndef TEST
@@ -88,21 +89,6 @@ typedef v8::internal::EnumSet<CcTestExtensionIds> CcTestExtensionFlags;
 #undef DEFINE_EXTENSION_FLAG
 
 
-// Use this to expose protected methods in i::Heap.
-class TestHeap : public i::Heap {
- public:
-  using i::Heap::AllocateByteArray;
-  using i::Heap::AllocateFixedArray;
-  using i::Heap::AllocateHeapNumber;
-  using i::Heap::AllocateFloat32x4;
-  using i::Heap::AllocateJSObject;
-  using i::Heap::AllocateJSObjectFromMap;
-  using i::Heap::AllocateMap;
-  using i::Heap::CopyCode;
-  using i::Heap::kInitialNumberStringCacheSize;
-};
-
-
 class CcTest {
  public:
   typedef void (TestFunction)();
@@ -134,10 +120,6 @@ class CcTest {
 
   static i::Heap* heap() {
     return i_isolate()->heap();
-  }
-
-  static TestHeap* test_heap() {
-    return reinterpret_cast<TestHeap*>(i_isolate()->heap());
   }
 
   static v8::base::RandomNumberGenerator* random_number_generator() {
@@ -555,7 +537,8 @@ static inline void SimulateFullSpace(v8::internal::PagedSpace* space) {
 
 // Helper function that simulates many incremental marking steps until
 // marking is completed.
-static inline void SimulateIncrementalMarking(i::Heap* heap) {
+static inline void SimulateIncrementalMarking(i::Heap* heap,
+                                              bool force_completion = true) {
   i::MarkCompactCollector* collector = heap->mark_compact_collector();
   i::IncrementalMarking* marking = heap->incremental_marking();
   if (collector->sweeping_in_progress()) {
@@ -566,6 +549,8 @@ static inline void SimulateIncrementalMarking(i::Heap* heap) {
     marking->Start(i::Heap::kNoGCFlags);
   }
   CHECK(marking->IsMarking());
+  if (!force_completion) return;
+
   while (!marking->IsComplete()) {
     marking->Step(i::MB, i::IncrementalMarking::NO_GC_VIA_STACK_GUARD);
     if (marking->IsReadyToOverApproximateWeakClosure()) {

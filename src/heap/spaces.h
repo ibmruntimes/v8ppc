@@ -2702,7 +2702,7 @@ class MapSpace : public PagedSpace {
 class LargeObjectSpace : public Space {
  public:
   LargeObjectSpace(Heap* heap, AllocationSpace id);
-  virtual ~LargeObjectSpace() {}
+  virtual ~LargeObjectSpace();
 
   // Initializes internal data structures.
   bool SetUp();
@@ -2743,6 +2743,9 @@ class LargeObjectSpace : public Space {
   // Finds a large object page containing the given address, returns NULL
   // if such a page doesn't exist.
   LargePage* FindPage(Address a);
+
+  // Clears the marking state of live objects.
+  void ClearMarkingStateOfLiveObjects();
 
   // Frees unmarked objects.
   void FreeUnmarkedObjects();
