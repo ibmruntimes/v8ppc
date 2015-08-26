@@ -115,10 +115,13 @@
 //     - Simd128Value
 //       - Float32x4
 //       - Int32x4
+//       - Uint32x4
 //       - Bool32x4
 //       - Int16x8
+//       - Uint16x8
 //       - Bool16x8
 //       - Int8x16
+//       - Uint8x16
 //       - Bool8x16
 //     - Cell
 //     - PropertyCell
@@ -866,10 +869,13 @@ template <class C> inline bool Is(Object* obj);
   V(Simd128Value)                  \
   V(Float32x4)                     \
   V(Int32x4)                       \
+  V(Uint32x4)                      \
   V(Bool32x4)                      \
   V(Int16x8)                       \
+  V(Uint16x8)                      \
   V(Bool16x8)                      \
   V(Int8x16)                       \
+  V(Uint8x16)                      \
   V(Bool8x16)                      \
   V(Name)                          \
   V(UniqueName)                    \
@@ -1592,10 +1598,13 @@ class Simd128Value : public HeapObject {
 #define SIMD128_TYPES(V)                       \
   V(FLOAT32X4, Float32x4, float32x4, 4, float) \
   V(INT32X4, Int32x4, int32x4, 4, int32_t)     \
+  V(UINT32X4, Uint32x4, uint32x4, 4, uint32_t) \
   V(BOOL32X4, Bool32x4, bool32x4, 4, bool)     \
   V(INT16X8, Int16x8, int16x8, 8, int16_t)     \
+  V(UINT16X8, Uint16x8, uint16x8, 8, uint16_t) \
   V(BOOL16X8, Bool16x8, bool16x8, 8, bool)     \
   V(INT8X16, Int8x16, int8x16, 16, int8_t)     \
+  V(UINT8X16, Uint8x16, uint8x16, 16, uint8_t) \
   V(BOOL8X16, Bool8x16, bool8x16, 16, bool)
 
 #define SIMD128_VALUE_CLASS(TYPE, Type, type, lane_count, lane_type) \
@@ -4461,7 +4470,8 @@ class Code: public HeapObject {
   V(STUB)                   \
   V(HANDLER)                \
   V(BUILTIN)                \
-  V(REGEXP)
+  V(REGEXP)                 \
+  V(PLACEHOLDER)
 
 #define IC_KIND_LIST(V) \
   V(LOAD_IC)            \
@@ -6722,6 +6732,9 @@ class SharedFunctionInfo: public HeapObject {
   static const int kNativeBitWithinByte =
       (kNative + kCompilerHintsSmiTagSize) % kBitsPerByte;
 
+  static const int kBoundBitWithinByte =
+      (kBoundFunction + kCompilerHintsSmiTagSize) % kBitsPerByte;
+
 #if defined(V8_TARGET_LITTLE_ENDIAN)
   static const int kStrictModeByteOffset = kCompilerHintsOffset +
       (kStrictModeFunction + kCompilerHintsSmiTagSize) / kBitsPerByte;
@@ -6730,6 +6743,9 @@ class SharedFunctionInfo: public HeapObject {
       (kStrongModeFunction + kCompilerHintsSmiTagSize) / kBitsPerByte;
   static const int kNativeByteOffset = kCompilerHintsOffset +
       (kNative + kCompilerHintsSmiTagSize) / kBitsPerByte;
+  static const int kBoundByteOffset =
+      kCompilerHintsOffset +
+      (kBoundFunction + kCompilerHintsSmiTagSize) / kBitsPerByte;
 #elif defined(V8_TARGET_BIG_ENDIAN)
   static const int kStrictModeByteOffset = kCompilerHintsOffset +
       (kCompilerHintsSize - 1) -
@@ -6740,6 +6756,9 @@ class SharedFunctionInfo: public HeapObject {
   static const int kNativeByteOffset = kCompilerHintsOffset +
       (kCompilerHintsSize - 1) -
       ((kNative + kCompilerHintsSmiTagSize) / kBitsPerByte);
+  static const int kBoundByteOffset =
+      kCompilerHintsOffset + (kCompilerHintsSize - 1) -
+      ((kBoundFunction + kCompilerHintsSmiTagSize) / kBitsPerByte);
 #else
 #error Unknown byte ordering
 #endif
@@ -9304,6 +9323,9 @@ class JSSet : public JSCollection {
  public:
   DECLARE_CAST(JSSet)
 
+  static void Initialize(Handle<JSSet> set, Isolate* isolate);
+  static void Clear(Handle<JSSet> set);
+
   // Dispatched behavior.
   DECLARE_PRINTER(JSSet)
   DECLARE_VERIFIER(JSSet)
@@ -9317,6 +9339,9 @@ class JSSet : public JSCollection {
 class JSMap : public JSCollection {
  public:
   DECLARE_CAST(JSMap)
+
+  static void Initialize(Handle<JSMap> map, Isolate* isolate);
+  static void Clear(Handle<JSMap> map);
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSMap)
@@ -9442,6 +9467,12 @@ class JSWeakCollection: public JSObject {
   // [next]: linked list of encountered weak maps during GC.
   DECL_ACCESSORS(next, Object)
 
+  static void Initialize(Handle<JSWeakCollection> collection, Isolate* isolate);
+  static void Set(Handle<JSWeakCollection> collection, Handle<Object> key,
+                  Handle<Object> value, int32_t hash);
+  static bool Delete(Handle<JSWeakCollection> collection, Handle<Object> key,
+                     int32_t hash);
+
   static const int kTableOffset = JSObject::kHeaderSize;
   static const int kNextOffset = kTableOffset + kPointerSize;
   static const int kSize = kNextOffset + kPointerSize;
@@ -9509,6 +9540,15 @@ class JSArrayBuffer: public JSObject {
   DECLARE_CAST(JSArrayBuffer)
 
   void Neuter();
+
+  static void Setup(Handle<JSArrayBuffer> array_buffer, Isolate* isolate,
+                    bool is_external, void* data, size_t allocated_length,
+                    SharedFlag shared = SharedFlag::kNotShared);
+
+  static bool SetupAllocatingData(Handle<JSArrayBuffer> array_buffer,
+                                  Isolate* isolate, size_t allocated_length,
+                                  bool initialize = true,
+                                  SharedFlag shared = SharedFlag::kNotShared);
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSArrayBuffer)

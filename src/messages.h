@@ -296,6 +296,8 @@ class CallSite {
   T(IllegalAccess, "Illegal access")                                           \
   T(IllegalBreak, "Illegal break statement")                                   \
   T(IllegalContinue, "Illegal continue statement")                             \
+  T(IllegalLanguageModeDirective,                                              \
+    "Illegal '%' directive in function with non-simple parameter list")        \
   T(IllegalReturn, "Illegal return statement")                                 \
   T(InvalidLhsInAssignment, "Invalid left-hand side in assignment")            \
   T(InvalidLhsInFor, "Invalid left-hand side in for-loop")                     \
@@ -308,8 +310,6 @@ class CallSite {
   T(MalformedArrowFunParamList, "Malformed arrow function parameter list")     \
   T(MalformedRegExp, "Invalid regular expression: /%/: %")                     \
   T(MalformedRegExpFlags, "Invalid regular expression flags")                  \
-  T(MissingArrow,                                                              \
-    "Expected () to start arrow function, but got '%' instead of '=>'")        \
   T(ModuleExportUndefined, "Export '%' is not defined in module")              \
   T(MultipleDefaultsInSwitch,                                                  \
     "More than one default clause in switch statement")                        \

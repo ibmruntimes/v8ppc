@@ -1776,6 +1776,8 @@ void JSObject::MigrateToMap(Handle<JSObject> object, Handle<Map> new_map,
     if (!new_map->is_dictionary_map()) {
       MigrateFastToFast(object, new_map);
       if (old_map->is_prototype_map()) {
+        DCHECK(!old_map->is_stable());
+        DCHECK(new_map->is_stable());
         // Clear out the old descriptor array to avoid problems to sharing
         // the descriptor array without using an explicit.
         old_map->InitializeDescriptors(
@@ -15125,6 +15127,75 @@ template void
 OrderedHashTableIterator<JSMapIterator, OrderedHashMap>::Transition();
 
 
+void JSSet::Initialize(Handle<JSSet> set, Isolate* isolate) {
+  Handle<OrderedHashSet> table = isolate->factory()->NewOrderedHashSet();
+  set->set_table(*table);
+}
+
+
+void JSSet::Clear(Handle<JSSet> set) {
+  Handle<OrderedHashSet> table(OrderedHashSet::cast(set->table()));
+  table = OrderedHashSet::Clear(table);
+  set->set_table(*table);
+}
+
+
+void JSMap::Initialize(Handle<JSMap> map, Isolate* isolate) {
+  Handle<OrderedHashMap> table = isolate->factory()->NewOrderedHashMap();
+  map->set_table(*table);
+}
+
+
+void JSMap::Clear(Handle<JSMap> map) {
+  Handle<OrderedHashMap> table(OrderedHashMap::cast(map->table()));
+  table = OrderedHashMap::Clear(table);
+  map->set_table(*table);
+}
+
+
+void JSWeakCollection::Initialize(Handle<JSWeakCollection> weak_collection,
+                                  Isolate* isolate) {
+  DCHECK_EQ(0, weak_collection->map()->GetInObjectProperties());
+  Handle<ObjectHashTable> table = ObjectHashTable::New(isolate, 0);
+  weak_collection->set_table(*table);
+}
+
+
+void JSWeakCollection::Set(Handle<JSWeakCollection> weak_collection,
+                           Handle<Object> key, Handle<Object> value,
+                           int32_t hash) {
+  DCHECK(key->IsJSReceiver() || key->IsSymbol());
+  Handle<ObjectHashTable> table(
+      ObjectHashTable::cast(weak_collection->table()));
+  DCHECK(table->IsKey(*key));
+  Handle<ObjectHashTable> new_table =
+      ObjectHashTable::Put(table, key, value, hash);
+  weak_collection->set_table(*new_table);
+  if (*table != *new_table) {
+    // Zap the old table since we didn't record slots for its elements.
+    table->FillWithHoles(0, table->length());
+  }
+}
+
+
+bool JSWeakCollection::Delete(Handle<JSWeakCollection> weak_collection,
+                              Handle<Object> key, int32_t hash) {
+  DCHECK(key->IsJSReceiver() || key->IsSymbol());
+  Handle<ObjectHashTable> table(
+      ObjectHashTable::cast(weak_collection->table()));
+  DCHECK(table->IsKey(*key));
+  bool was_present = false;
+  Handle<ObjectHashTable> new_table =
+      ObjectHashTable::Remove(table, key, &was_present, hash);
+  weak_collection->set_table(*new_table);
+  if (*table != *new_table) {
+    // Zap the old table since we didn't record slots for its elements.
+    table->FillWithHoles(0, table->length());
+  }
+  return was_present;
+}
+
+
 // Check if there is a break point at this code position.
 bool DebugInfo::HasBreakPoint(int code_position) {
   // Get the break point info object for this code position.
@@ -15518,6 +15589,58 @@ void JSArrayBuffer::Neuter() {
   set_backing_store(NULL);
   set_byte_length(Smi::FromInt(0));
   set_was_neutered(true);
+}
+
+
+void JSArrayBuffer::Setup(Handle<JSArrayBuffer> array_buffer, Isolate* isolate,
+                          bool is_external, void* data, size_t allocated_length,
+                          SharedFlag shared) {
+  DCHECK(array_buffer->GetInternalFieldCount() ==
+         v8::ArrayBuffer::kInternalFieldCount);
+  for (int i = 0; i < v8::ArrayBuffer::kInternalFieldCount; i++) {
+    array_buffer->SetInternalField(i, Smi::FromInt(0));
+  }
+  array_buffer->set_backing_store(data);
+  array_buffer->set_bit_field(0);
+  array_buffer->set_is_external(is_external);
+  array_buffer->set_is_neuterable(shared == SharedFlag::kNotShared);
+  array_buffer->set_is_shared(shared == SharedFlag::kShared);
+
+  if (data && !is_external) {
+    isolate->heap()->RegisterNewArrayBuffer(
+        isolate->heap()->InNewSpace(*array_buffer), data, allocated_length);
+  }
+
+  Handle<Object> byte_length =
+      isolate->factory()->NewNumberFromSize(allocated_length);
+  CHECK(byte_length->IsSmi() || byte_length->IsHeapNumber());
+  array_buffer->set_byte_length(*byte_length);
+}
+
+
+bool JSArrayBuffer::SetupAllocatingData(Handle<JSArrayBuffer> array_buffer,
+                                        Isolate* isolate,
+                                        size_t allocated_length,
+                                        bool initialize, SharedFlag shared) {
+  void* data;
+  CHECK(isolate->array_buffer_allocator() != NULL);
+  // Prevent creating array buffers when serializing.
+  DCHECK(!isolate->serializer_enabled());
+  if (allocated_length != 0) {
+    if (initialize) {
+      data = isolate->array_buffer_allocator()->Allocate(allocated_length);
+    } else {
+      data = isolate->array_buffer_allocator()->AllocateUninitialized(
+          allocated_length);
+    }
+    if (data == NULL) return false;
+  } else {
+    data = NULL;
+  }
+
+  JSArrayBuffer::Setup(array_buffer, isolate, false, data, allocated_length,
+                       shared);
+  return true;
 }
 
 

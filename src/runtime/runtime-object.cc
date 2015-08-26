@@ -262,16 +262,6 @@ RUNTIME_FUNCTION(Runtime_SetPrototype) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_IsInPrototypeChain) {
-  SealHandleScope shs(isolate);
-  DCHECK(args.length() == 2);
-  // See ECMA-262, section 15.3.5.3, page 88 (steps 5 - 8).
-  CONVERT_ARG_CHECKED(Object, O, 0);
-  CONVERT_ARG_CHECKED(Object, V, 1);
-  return isolate->heap()->ToBoolean(V->HasInPrototypeChain(isolate, O));
-}
-
-
 // Enumerator used as indices into the array returned from GetOwnProperty
 enum PropertyDescriptorIndices {
   IS_ACCESSOR_INDEX,
@@ -1373,21 +1363,6 @@ RUNTIME_FUNCTION(Runtime_ObjectEquals) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_IsObject) {
-  SealHandleScope shs(isolate);
-  DCHECK(args.length() == 1);
-  CONVERT_ARG_CHECKED(Object, obj, 0);
-  if (!obj->IsHeapObject()) return isolate->heap()->false_value();
-  if (obj->IsNull()) return isolate->heap()->true_value();
-  if (obj->IsUndetectableObject()) return isolate->heap()->false_value();
-  Map* map = HeapObject::cast(obj)->map();
-  bool is_non_callable_spec_object =
-      map->instance_type() >= FIRST_NONCALLABLE_SPEC_OBJECT_TYPE &&
-      map->instance_type() <= LAST_NONCALLABLE_SPEC_OBJECT_TYPE;
-  return isolate->heap()->ToBoolean(is_non_callable_spec_object);
-}
-
-
 RUNTIME_FUNCTION(Runtime_IsSpecObject) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 1);
@@ -1466,6 +1441,60 @@ RUNTIME_FUNCTION(Runtime_StrictEquals) {
   CONVERT_ARG_CHECKED(Object, y, 1);
   // TODO(bmeurer): Change this at some point to return true/false instead.
   return Smi::FromInt(x->StrictEquals(y) ? EQUAL : NOT_EQUAL);
+}
+
+
+RUNTIME_FUNCTION(Runtime_InstanceOf) {
+  // ECMA-262, section 11.8.6, page 54.
+  HandleScope shs(isolate);
+  DCHECK_EQ(2, args.length());
+  DCHECK(args.length() == 2);
+  CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, callable, 1);
+  // {callable} must have a [[Call]] internal method.
+  if (!callable->IsCallable()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate,
+        NewTypeError(MessageTemplate::kInstanceofFunctionExpected, callable));
+  }
+  // If {object} is not a receiver, return false.
+  if (!object->IsJSReceiver()) {
+    return isolate->heap()->false_value();
+  }
+  // Check if {callable} is bound, if so, get [[BoundFunction]] from it and use
+  // that instead of {callable}.
+  if (callable->IsJSFunction()) {
+    Handle<JSFunction> function = Handle<JSFunction>::cast(callable);
+    if (function->shared()->bound()) {
+      Handle<FixedArray> bindings(function->function_bindings(), isolate);
+      callable =
+          handle(bindings->get(JSFunction::kBoundFunctionIndex), isolate);
+    }
+  }
+  DCHECK(callable->IsCallable());
+  // Get the "prototype" of {callable}; raise an error if it's not a receiver.
+  Handle<Object> prototype;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, prototype,
+      Object::GetProperty(callable, isolate->factory()->prototype_string()));
+  if (!prototype->IsJSReceiver()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate,
+        NewTypeError(MessageTemplate::kInstanceofNonobjectProto, prototype));
+  }
+  // Return whether or not {prototype} is in the prototype chain of {object}.
+  return isolate->heap()->ToBoolean(
+      object->HasInPrototypeChain(isolate, *prototype));
+}
+
+
+RUNTIME_FUNCTION(Runtime_HasInPrototypeChain) {
+  SealHandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  CONVERT_ARG_CHECKED(Object, object, 0);
+  CONVERT_ARG_CHECKED(Object, prototype, 1);
+  return isolate->heap()->ToBoolean(
+      object->HasInPrototypeChain(isolate, prototype));
 }
 
 }  // namespace internal

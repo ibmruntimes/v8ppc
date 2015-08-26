@@ -3363,37 +3363,6 @@ void FullCodeGenerator::EmitIsNonNegativeSmi(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitIsObject(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 1);
-
-  VisitForAccumulatorValue(args->at(0));
-
-  Label materialize_true, materialize_false;
-  Label* if_true = NULL;
-  Label* if_false = NULL;
-  Label* fall_through = NULL;
-  context()->PrepareTest(&materialize_true, &materialize_false,
-                         &if_true, &if_false, &fall_through);
-
-  __ JumpIfSmi(v0, if_false);
-  __ LoadRoot(at, Heap::kNullValueRootIndex);
-  __ Branch(if_true, eq, v0, Operand(at));
-  __ ld(a2, FieldMemOperand(v0, HeapObject::kMapOffset));
-  // Undetectable objects behave like undefined when tested with typeof.
-  __ lbu(a1, FieldMemOperand(a2, Map::kBitFieldOffset));
-  __ And(at, a1, Operand(1 << Map::kIsUndetectable));
-  __ Branch(if_false, ne, at, Operand(zero_reg));
-  __ lbu(a1, FieldMemOperand(a2, Map::kInstanceTypeOffset));
-  __ Branch(if_false, lt, a1, Operand(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
-  PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  Split(le, a1, Operand(LAST_NONCALLABLE_SPEC_OBJECT_TYPE),
-        if_true, if_false, fall_through);
-
-  context()->Plug(if_true, if_false);
-}
-
-
 void FullCodeGenerator::EmitIsSpecObject(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 1);
@@ -4556,17 +4525,13 @@ void FullCodeGenerator::EmitDebugIsActive(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitLoadJSRuntimeFunction(CallRuntime* expr) {
-  // Push the builtins object as the receiver.
-  Register receiver = LoadDescriptor::ReceiverRegister();
-  __ ld(receiver, GlobalObjectOperand());
-  __ ld(receiver, FieldMemOperand(receiver, GlobalObject::kBuiltinsOffset));
-  __ push(receiver);
+  // Push undefined as the receiver.
+  __ LoadRoot(v0, Heap::kUndefinedValueRootIndex);
+  __ push(v0);
 
-  // Load the function from the receiver.
-  __ li(LoadDescriptor::NameRegister(), Operand(expr->name()));
-  __ li(LoadDescriptor::SlotRegister(),
-        Operand(SmiFromSlot(expr->CallRuntimeFeedbackSlot())));
-  CallLoadIC(NOT_INSIDE_TYPEOF);
+  __ ld(v0, GlobalObjectOperand());
+  __ ld(v0, FieldMemOperand(v0, GlobalObject::kNativeContextOffset));
+  __ ld(v0, ContextOperand(v0, expr->context_index()));
 }
 
 
@@ -5120,12 +5085,14 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
       break;
 
     case Token::INSTANCEOF: {
-      VisitForStackValue(expr->right());
-      InstanceofStub stub(isolate(), InstanceofStub::kNoFlags);
+      VisitForAccumulatorValue(expr->right());
+      __ mov(a0, result_register());
+      __ pop(a1);
+      InstanceOfStub stub(isolate());
       __ CallStub(&stub);
-      PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-      // The stub returns 0 for true.
-      Split(eq, v0, Operand(zero_reg), if_true, if_false, fall_through);
+      PrepareForBailoutBeforeSplit(expr, false, NULL, NULL);
+      __ LoadRoot(a4, Heap::kTrueValueRootIndex);
+      Split(eq, v0, Operand(a4), if_true, if_false, fall_through);
       break;
     }
 

@@ -193,8 +193,8 @@ function ObjectHasOwnProperty(value) {
 // ECMA-262 - 15.2.4.6
 function ObjectIsPrototypeOf(V) {
   if (!IS_SPEC_OBJECT(V)) return false;
-  CHECK_OBJECT_COERCIBLE(this, "Object.prototype.isPrototypeOf");
-  return %IsInPrototypeChain(this, V);
+  var O = TO_OBJECT(this);
+  return %_HasInPrototypeChain(V, O);
 }
 
 
@@ -1809,11 +1809,11 @@ utils.Export(function(to) {
   to.ToNameArray = ToNameArray;
 });
 
-utils.ExportToRuntime(function(to) {
-  to["global_eval_fun"] = GlobalEval;
-  to["object_define_own_property"] = DefineOwnPropertyFromAPI;
-  to["object_get_own_property_descriptor"] = ObjectGetOwnPropertyDescriptor;
-  to["to_complete_property_descriptor"] = ToCompletePropertyDescriptor;
-});
+%InstallToContext([
+  "global_eval_fun", GlobalEval,
+  "object_define_own_property", DefineOwnPropertyFromAPI,
+  "object_get_own_property_descriptor", ObjectGetOwnPropertyDescriptor,
+  "to_complete_property_descriptor", ToCompletePropertyDescriptor,
+]);
 
 })

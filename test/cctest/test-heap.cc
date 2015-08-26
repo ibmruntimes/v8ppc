@@ -288,7 +288,7 @@ TEST(SimdObjects) {
   }
   // Int32x4
   {
-    int32_t lanes[4] = {-1, 0, 1, 2};
+    int32_t lanes[4] = {1, 2, 3, 4};
 
     Handle<Int32x4> value = factory->NewInt32x4(lanes);
     CHECK(value->IsInt32x4());
@@ -297,12 +297,26 @@ TEST(SimdObjects) {
 #ifdef OBJECT_PRINT
     std::ostringstream os;
     value->Int32x4Print(os);
-    CHECK_EQ("-1, 0, 1, 2", os.str());
+    CHECK_EQ("1, 2, 3, 4", os.str());
+#endif  // OBJECT_PRINT
+  }
+  // Uint32x4
+  {
+    uint32_t lanes[4] = {1, 2, 3, 4};
+
+    Handle<Uint32x4> value = factory->NewUint32x4(lanes);
+    CHECK(value->IsUint32x4());
+    CheckSimdValue<Uint32x4, uint32_t, 4>(*value, lanes, 3);
+
+#ifdef OBJECT_PRINT
+    std::ostringstream os;
+    value->Uint32x4Print(os);
+    CHECK_EQ("1, 2, 3, 4", os.str());
 #endif  // OBJECT_PRINT
   }
   // Bool32x4
   {
-    bool lanes[4] = {true, true, true, false};
+    bool lanes[4] = {true, false, true, false};
 
     Handle<Bool32x4> value = factory->NewBool32x4(lanes);
     CHECK(value->IsBool32x4());
@@ -311,12 +325,12 @@ TEST(SimdObjects) {
 #ifdef OBJECT_PRINT
     std::ostringstream os;
     value->Bool32x4Print(os);
-    CHECK_EQ("true, true, true, false", os.str());
+    CHECK_EQ("true, false, true, false", os.str());
 #endif  // OBJECT_PRINT
   }
   // Int16x8
   {
-    int16_t lanes[8] = {-1, 0, 1, 2, 3, 4, 5, -32768};
+    int16_t lanes[8] = {1, 2, 3, 4, 5, 6, 7, 8};
 
     Handle<Int16x8> value = factory->NewInt16x8(lanes);
     CHECK(value->IsInt16x8());
@@ -325,12 +339,26 @@ TEST(SimdObjects) {
 #ifdef OBJECT_PRINT
     std::ostringstream os;
     value->Int16x8Print(os);
-    CHECK_EQ("-1, 0, 1, 2, 3, 4, 5, -32768", os.str());
+    CHECK_EQ("1, 2, 3, 4, 5, 6, 7, 8", os.str());
+#endif  // OBJECT_PRINT
+  }
+  // Uint16x8
+  {
+    uint16_t lanes[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+
+    Handle<Uint16x8> value = factory->NewUint16x8(lanes);
+    CHECK(value->IsUint16x8());
+    CheckSimdValue<Uint16x8, uint16_t, 8>(*value, lanes, 32767);
+
+#ifdef OBJECT_PRINT
+    std::ostringstream os;
+    value->Uint16x8Print(os);
+    CHECK_EQ("1, 2, 3, 4, 5, 6, 7, 8", os.str());
 #endif  // OBJECT_PRINT
   }
   // Bool16x8
   {
-    bool lanes[8] = {true, true, true, true, true, true, true, false};
+    bool lanes[8] = {true, false, true, false, true, false, true, false};
 
     Handle<Bool16x8> value = factory->NewBool16x8(lanes);
     CHECK(value->IsBool16x8());
@@ -339,12 +367,12 @@ TEST(SimdObjects) {
 #ifdef OBJECT_PRINT
     std::ostringstream os;
     value->Bool16x8Print(os);
-    CHECK_EQ("true, true, true, true, true, true, true, false", os.str());
+    CHECK_EQ("true, false, true, false, true, false, true, false", os.str());
 #endif  // OBJECT_PRINT
   }
   // Int8x16
   {
-    int8_t lanes[16] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, -128};
+    int8_t lanes[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
     Handle<Int8x16> value = factory->NewInt8x16(lanes);
     CHECK(value->IsInt8x16());
@@ -353,14 +381,27 @@ TEST(SimdObjects) {
 #ifdef OBJECT_PRINT
     std::ostringstream os;
     value->Int8x16Print(os);
-    CHECK_EQ("-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, -128",
-             os.str());
+    CHECK_EQ("1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16", os.str());
+#endif  // OBJECT_PRINT
+  }
+  // Uint8x16
+  {
+    uint8_t lanes[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+
+    Handle<Uint8x16> value = factory->NewUint8x16(lanes);
+    CHECK(value->IsUint8x16());
+    CheckSimdValue<Uint8x16, uint8_t, 16>(*value, lanes, 127);
+
+#ifdef OBJECT_PRINT
+    std::ostringstream os;
+    value->Uint8x16Print(os);
+    CHECK_EQ("1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16", os.str());
 #endif  // OBJECT_PRINT
   }
   // Bool8x16
   {
-    bool lanes[16] = {true, true, true, true, true, true, true, false,
-                      true, true, true, true, true, true, true, false};
+    bool lanes[16] = {true, false, true, false, true, false, true, false,
+                      true, false, true, false, true, false, true, false};
 
     Handle<Bool8x16> value = factory->NewBool8x16(lanes);
     CHECK(value->IsBool8x16());
@@ -370,8 +411,8 @@ TEST(SimdObjects) {
     std::ostringstream os;
     value->Bool8x16Print(os);
     CHECK_EQ(
-        "true, true, true, true, true, true, true, false, true, true, true, "
-        "true, true, true, true, false",
+        "true, false, true, false, true, false, true, false, true, false, "
+        "true, false, true, false, true, false",
         os.str());
 #endif  // OBJECT_PRINT
   }
@@ -2590,7 +2631,7 @@ TEST(InstanceOfStubWriteBarrier) {
 
   IncrementalMarking* marking = CcTest::heap()->incremental_marking();
   marking->Stop();
-  marking->Start(Heap::kNoGCFlags);
+  CcTest::heap()->StartIncrementalMarking();
 
   Handle<JSFunction> f =
       v8::Utils::OpenHandle(
@@ -2718,7 +2759,7 @@ TEST(ResetSharedFunctionInfoCountersDuringIncrementalMarking) {
 
   IncrementalMarking* marking = CcTest::heap()->incremental_marking();
   marking->Stop();
-  marking->Start(Heap::kNoGCFlags);
+  CcTest::heap()->StartIncrementalMarking();
   // The following calls will increment CcTest::heap()->global_ic_age().
   CcTest::isolate()->ContextDisposedNotification();
   SimulateIncrementalMarking(CcTest::heap());
@@ -2775,12 +2816,12 @@ HEAP_TEST(GCFlags) {
   Heap* heap = CcTest::heap();
 
   heap->set_current_gc_flags(Heap::kNoGCFlags);
-  CHECK_EQ(Heap::kNoGCFlags, heap->current_gc_flags());
+  CHECK_EQ(Heap::kNoGCFlags, heap->current_gc_flags_);
 
   // Set the flags to check whether we appropriately resets them after the GC.
   heap->set_current_gc_flags(Heap::kAbortIncrementalMarkingMask);
   heap->CollectAllGarbage(Heap::kReduceMemoryFootprintMask);
-  CHECK_EQ(Heap::kNoGCFlags, heap->current_gc_flags());
+  CHECK_EQ(Heap::kNoGCFlags, heap->current_gc_flags_);
 
   MarkCompactCollector* collector = heap->mark_compact_collector();
   if (collector->sweeping_in_progress()) {
@@ -2789,15 +2830,15 @@ HEAP_TEST(GCFlags) {
 
   IncrementalMarking* marking = heap->incremental_marking();
   marking->Stop();
-  marking->Start(Heap::kReduceMemoryFootprintMask);
-  CHECK_NE(0, heap->current_gc_flags() & Heap::kReduceMemoryFootprintMask);
+  heap->StartIncrementalMarking(Heap::kReduceMemoryFootprintMask);
+  CHECK_NE(0, heap->current_gc_flags_ & Heap::kReduceMemoryFootprintMask);
 
   heap->CollectGarbage(NEW_SPACE);
   // NewSpace scavenges should not overwrite the flags.
-  CHECK_NE(0, heap->current_gc_flags() & Heap::kReduceMemoryFootprintMask);
+  CHECK_NE(0, heap->current_gc_flags_ & Heap::kReduceMemoryFootprintMask);
 
   heap->CollectAllGarbage(Heap::kAbortIncrementalMarkingMask);
-  CHECK_EQ(Heap::kNoGCFlags, heap->current_gc_flags());
+  CHECK_EQ(Heap::kNoGCFlags, heap->current_gc_flags_);
 }
 
 
@@ -2807,7 +2848,7 @@ TEST(IdleNotificationFinishMarking) {
   SimulateFullSpace(CcTest::heap()->old_space());
   IncrementalMarking* marking = CcTest::heap()->incremental_marking();
   marking->Stop();
-  marking->Start(Heap::kNoGCFlags);
+  CcTest::heap()->StartIncrementalMarking();
 
   CHECK_EQ(CcTest::heap()->gc_count(), 0);
 
@@ -4760,7 +4801,9 @@ TEST(IncrementalMarkingStepMakesBigProgressWithLargeObjects) {
              "};"
              "f(10 * 1024 * 1024);");
   IncrementalMarking* marking = CcTest::heap()->incremental_marking();
-  if (marking->IsStopped()) marking->Start(Heap::kNoGCFlags);
+  if (marking->IsStopped()) {
+    CcTest::heap()->StartIncrementalMarking();
+  }
   // This big step should be sufficient to mark the whole array.
   marking->Step(100 * MB, IncrementalMarking::NO_GC_VIA_STACK_GUARD);
   DCHECK(marking->IsComplete() ||
@@ -5488,7 +5531,9 @@ TEST(WeakCellsWithIncrementalMarking) {
     Handle<WeakCell> weak_cell = factory->NewWeakCell(value);
     CHECK(weak_cell->value()->IsFixedArray());
     IncrementalMarking* marking = heap->incremental_marking();
-    if (marking->IsStopped()) marking->Start(Heap::kNoGCFlags);
+    if (marking->IsStopped()) {
+      heap->StartIncrementalMarking();
+    }
     marking->Step(128, IncrementalMarking::NO_GC_VIA_STACK_GUARD);
     heap->CollectGarbage(NEW_SPACE);
     CHECK(weak_cell->value()->IsFixedArray());
@@ -5781,7 +5826,7 @@ TEST(Regress388880) {
   // that would cause crash.
   IncrementalMarking* marking = CcTest::heap()->incremental_marking();
   marking->Stop();
-  marking->Start(Heap::kNoGCFlags);
+  CcTest::heap()->StartIncrementalMarking();
   CHECK(marking->IsMarking());
 
   // Now everything is set up for crashing in JSObject::MigrateFastToFast()
@@ -5807,7 +5852,7 @@ TEST(Regress3631) {
       "}"
       "weak_map");
   if (marking->IsStopped()) {
-    marking->Start(Heap::kNoGCFlags);
+    CcTest::heap()->StartIncrementalMarking();
   }
   // Incrementally mark the backing store.
   Handle<JSObject> obj =

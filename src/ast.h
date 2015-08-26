@@ -88,7 +88,8 @@ namespace internal {
   V(ThisFunction)               \
   V(SuperPropertyReference)     \
   V(SuperCallReference)         \
-  V(CaseClause)
+  V(CaseClause)                 \
+  V(EmptyParentheses)
 
 #define AST_NODE_LIST(V)                        \
   DECLARATION_NODE_LIST(V)                      \
@@ -2031,51 +2032,45 @@ class CallRuntime final : public Expression {
  public:
   DECLARE_NODE_TYPE(CallRuntime)
 
-  Handle<String> name() const { return raw_name_->string(); }
-  const AstRawString* raw_name() const { return raw_name_; }
-  const Runtime::Function* function() const { return function_; }
   ZoneList<Expression*>* arguments() const { return arguments_; }
   bool is_jsruntime() const { return function_ == NULL; }
 
-  // Type feedback information.
-  bool HasCallRuntimeFeedbackSlot() const { return is_jsruntime(); }
-  virtual FeedbackVectorRequirements ComputeFeedbackRequirements(
-      Isolate* isolate, const ICSlotCache* cache) override {
-    return FeedbackVectorRequirements(0, HasCallRuntimeFeedbackSlot() ? 1 : 0);
+  int context_index() const {
+    DCHECK(is_jsruntime());
+    return context_index_;
   }
-  void SetFirstFeedbackICSlot(FeedbackVectorICSlot slot,
-                              ICSlotCache* cache) override {
-    callruntime_feedback_slot_ = slot;
-  }
-  Code::Kind FeedbackICSlotKind(int index) override { return Code::LOAD_IC; }
-
-  FeedbackVectorICSlot CallRuntimeFeedbackSlot() {
-    DCHECK(!HasCallRuntimeFeedbackSlot() ||
-           !callruntime_feedback_slot_.IsInvalid());
-    return callruntime_feedback_slot_;
+  const Runtime::Function* function() const {
+    DCHECK(!is_jsruntime());
+    return function_;
   }
 
   static int num_ids() { return parent_num_ids() + 1; }
   BailoutId CallId() { return BailoutId(local_id(0)); }
 
+  const char* debug_name() {
+    return is_jsruntime() ? "(context function)" : function_->name;
+  }
+
  protected:
-  CallRuntime(Zone* zone, const AstRawString* name,
-              const Runtime::Function* function,
+  CallRuntime(Zone* zone, const Runtime::Function* function,
               ZoneList<Expression*>* arguments, int pos)
+      : Expression(zone, pos), function_(function), arguments_(arguments) {}
+
+  CallRuntime(Zone* zone, int context_index, ZoneList<Expression*>* arguments,
+              int pos)
       : Expression(zone, pos),
-        raw_name_(name),
-        function_(function),
-        arguments_(arguments),
-        callruntime_feedback_slot_(FeedbackVectorICSlot::Invalid()) {}
+        function_(NULL),
+        context_index_(context_index),
+        arguments_(arguments) {}
+
   static int parent_num_ids() { return Expression::num_ids(); }
 
  private:
   int local_id(int n) const { return base_id() + parent_num_ids() + n; }
 
-  const AstRawString* raw_name_;
   const Runtime::Function* function_;
+  int context_index_;
   ZoneList<Expression*>* arguments_;
-  FeedbackVectorICSlot callruntime_feedback_slot_;
 };
 
 
@@ -2233,8 +2228,8 @@ class CountOperation final : public Expression {
 
   class IsPrefixField : public BitField16<bool, 0, 1> {};
   class KeyTypeField : public BitField16<IcCheckType, 1, 1> {};
-  class StoreModeField : public BitField16<KeyedAccessStoreMode, 2, 4> {};
-  class TokenField : public BitField16<Token::Value, 6, 8> {};
+  class StoreModeField : public BitField16<KeyedAccessStoreMode, 2, 3> {};
+  class TokenField : public BitField16<Token::Value, 5, 8> {};
 
   // Starts with 16-bit field, which should get packed together with
   // Expression's trailing 16-bit field.
@@ -2404,8 +2399,8 @@ class Assignment final : public Expression {
 
   class IsUninitializedField : public BitField16<bool, 0, 1> {};
   class KeyTypeField : public BitField16<IcCheckType, 1, 1> {};
-  class StoreModeField : public BitField16<KeyedAccessStoreMode, 2, 4> {};
-  class TokenField : public BitField16<Token::Value, 6, 8> {};
+  class StoreModeField : public BitField16<KeyedAccessStoreMode, 2, 3> {};
+  class TokenField : public BitField16<Token::Value, 5, 8> {};
 
   // Starts with 16-bit field, which should get packed together with
   // Expression's trailing 16-bit field.
@@ -2845,6 +2840,17 @@ class SuperCallReference final : public Expression {
   VariableProxy* this_var_;
   VariableProxy* new_target_var_;
   VariableProxy* this_function_var_;
+};
+
+
+// This class is produced when parsing the () in arrow functions without any
+// arguments and is not actually a valid expression.
+class EmptyParentheses final : public Expression {
+ public:
+  DECLARE_NODE_TYPE(EmptyParentheses)
+
+ private:
+  EmptyParentheses(Zone* zone, int pos) : Expression(zone, pos) {}
 };
 
 
@@ -3509,11 +3515,20 @@ class AstNodeFactory final BASE_EMBEDDED {
     return new (zone_) CallNew(zone_, expression, arguments, pos);
   }
 
-  CallRuntime* NewCallRuntime(const AstRawString* name,
-                              const Runtime::Function* function,
-                              ZoneList<Expression*>* arguments,
-                              int pos) {
-    return new (zone_) CallRuntime(zone_, name, function, arguments, pos);
+  CallRuntime* NewCallRuntime(Runtime::FunctionId id,
+                              ZoneList<Expression*>* arguments, int pos) {
+    return new (zone_)
+        CallRuntime(zone_, Runtime::FunctionForId(id), arguments, pos);
+  }
+
+  CallRuntime* NewCallRuntime(const Runtime::Function* function,
+                              ZoneList<Expression*>* arguments, int pos) {
+    return new (zone_) CallRuntime(zone_, function, arguments, pos);
+  }
+
+  CallRuntime* NewCallRuntime(int context_index,
+                              ZoneList<Expression*>* arguments, int pos) {
+    return new (zone_) CallRuntime(zone_, context_index, arguments, pos);
   }
 
   UnaryOperation* NewUnaryOperation(Token::Value op,
@@ -3631,6 +3646,10 @@ class AstNodeFactory final BASE_EMBEDDED {
                                             int pos) {
     return new (zone_) SuperCallReference(zone_, this_var, new_target_var,
                                           this_function_var, pos);
+  }
+
+  EmptyParentheses* NewEmptyParentheses(int pos) {
+    return new (zone_) EmptyParentheses(zone_, pos);
   }
 
  private:

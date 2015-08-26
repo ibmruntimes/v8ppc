@@ -360,6 +360,11 @@ void CallPrinter::VisitSpread(Spread* node) {
 }
 
 
+void CallPrinter::VisitEmptyParentheses(EmptyParentheses* node) {
+  UNREACHABLE();
+}
+
+
 void CallPrinter::VisitThisFunction(ThisFunction* node) {}
 
 
@@ -795,8 +800,7 @@ void PrettyPrinter::VisitCallNew(CallNew* node) {
 
 
 void PrettyPrinter::VisitCallRuntime(CallRuntime* node) {
-  Print("%%");
-  PrintLiteral(node->name(), false);
+  Print("%%%s\n", node->debug_name());
   PrintArguments(node->arguments());
 }
 
@@ -842,6 +846,11 @@ void PrettyPrinter::VisitSpread(Spread* node) {
   Print("(...");
   Visit(node->expression());
   Print(")");
+}
+
+
+void PrettyPrinter::VisitEmptyParentheses(EmptyParentheses* node) {
+  Print("()");
 }
 
 
@@ -1523,9 +1532,8 @@ void AstPrinter::VisitCallNew(CallNew* node) {
 
 void AstPrinter::VisitCallRuntime(CallRuntime* node) {
   EmbeddedVector<char, 128> buf;
-  FormatICSlotNode(&buf, node, "CALL RUNTIME", node->CallRuntimeFeedbackSlot());
   IndentedScope indent(this, buf.start());
-  PrintLiteralIndented("NAME", node->name(), false);
+  Print("NAME %s\n", node->debug_name());
   PrintArguments(node->arguments());
 }
 
@@ -1562,6 +1570,11 @@ void AstPrinter::VisitCompareOperation(CompareOperation* node) {
 void AstPrinter::VisitSpread(Spread* node) {
   IndentedScope indent(this, "...");
   Visit(node->expression());
+}
+
+
+void AstPrinter::VisitEmptyParentheses(EmptyParentheses* node) {
+  IndentedScope indent(this, "()");
 }
 
 

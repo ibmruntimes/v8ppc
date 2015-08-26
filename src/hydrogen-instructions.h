@@ -105,10 +105,9 @@ class LChunkBuilder;
   V(HasInstanceTypeAndBranch)                 \
   V(InnerAllocatedObject)                     \
   V(InstanceOf)                               \
-  V(InstanceOfKnownGlobal)                    \
   V(InvokeFunction)                           \
   V(IsConstructCallAndBranch)                 \
-  V(IsObjectAndBranch)                        \
+  V(HasInPrototypeChainAndBranch)             \
   V(IsStringAndBranch)                        \
   V(IsSmiAndBranch)                           \
   V(IsUndetectableAndBranch)                  \
@@ -2473,16 +2472,13 @@ class HCallNewArray final : public HBinaryCall {
 
 class HCallRuntime final : public HCall<1> {
  public:
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P3(HCallRuntime,
-                                              Handle<String>,
-                                              const Runtime::Function*,
-                                              int);
+  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P2(HCallRuntime,
+                                              const Runtime::Function*, int);
 
   std::ostream& PrintDataTo(std::ostream& os) const override;  // NOLINT
 
   HValue* context() { return OperandAt(0); }
   const Runtime::Function* function() const { return c_function_; }
-  Handle<String> name() const { return name_; }
   SaveFPRegsMode save_doubles() const { return save_doubles_; }
   void set_save_doubles(SaveFPRegsMode save_doubles) {
     save_doubles_ = save_doubles;
@@ -2495,17 +2491,15 @@ class HCallRuntime final : public HCall<1> {
   DECLARE_CONCRETE_INSTRUCTION(CallRuntime)
 
  private:
-  HCallRuntime(HValue* context,
-               Handle<String> name,
-               const Runtime::Function* c_function,
+  HCallRuntime(HValue* context, const Runtime::Function* c_function,
                int argument_count)
-      : HCall<1>(argument_count), c_function_(c_function), name_(name),
+      : HCall<1>(argument_count),
+        c_function_(c_function),
         save_doubles_(kDontSaveFPRegs) {
     SetOperandAt(0, context);
   }
 
   const Runtime::Function* c_function_;
-  Handle<String> name_;
   SaveFPRegsMode save_doubles_;
 };
 
@@ -2635,7 +2629,12 @@ class HUnaryMathOperation final : public HTemplateInstruction<2> {
     SetFlag(kAllowUndefinedAsNaN);
   }
 
-  bool IsDeletable() const override { return true; }
+  bool IsDeletable() const override {
+    // TODO(crankshaft): This should be true, however the semantics of this
+    // instruction also include the ToNumber conversion that is mentioned in the
+    // spec, which is of course observable.
+    return false;
+  }
 
   HValue* SimplifiedDividendForMathFloorOfDiv(HDiv* hdiv);
   HValue* SimplifiedDivisorForMathFloorOfDiv(HDiv* hdiv);
@@ -4454,28 +4453,6 @@ class HCompareObjectEqAndBranch : public HTemplateControlInstruction<2, 2> {
 };
 
 
-class HIsObjectAndBranch final : public HUnaryControlInstruction {
- public:
-  DECLARE_INSTRUCTION_FACTORY_P1(HIsObjectAndBranch, HValue*);
-  DECLARE_INSTRUCTION_FACTORY_P3(HIsObjectAndBranch, HValue*,
-                                 HBasicBlock*, HBasicBlock*);
-
-  Representation RequiredInputRepresentation(int index) override {
-    return Representation::Tagged();
-  }
-
-  bool KnownSuccessorBlock(HBasicBlock** block) override;
-
-  DECLARE_CONCRETE_INSTRUCTION(IsObjectAndBranch)
-
- private:
-  HIsObjectAndBranch(HValue* value,
-                     HBasicBlock* true_target = NULL,
-                     HBasicBlock* false_target = NULL)
-    : HUnaryControlInstruction(value, true_target, false_target) {}
-};
-
-
 class HIsStringAndBranch final : public HUnaryControlInstruction {
  public:
   DECLARE_INSTRUCTION_FACTORY_P1(HIsStringAndBranch, HValue*);
@@ -4760,34 +4737,32 @@ class HInstanceOf final : public HBinaryOperation {
 };
 
 
-class HInstanceOfKnownGlobal final : public HTemplateInstruction<2> {
+class HHasInPrototypeChainAndBranch final
+    : public HTemplateControlInstruction<2, 2> {
  public:
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P2(HInstanceOfKnownGlobal,
-                                              HValue*,
-                                              Handle<JSFunction>);
+  DECLARE_INSTRUCTION_FACTORY_P2(HHasInPrototypeChainAndBranch, HValue*,
+                                 HValue*);
 
-  HValue* context() { return OperandAt(0); }
-  HValue* left() { return OperandAt(1); }
-  Handle<JSFunction> function() { return function_; }
+  HValue* object() const { return OperandAt(0); }
+  HValue* prototype() const { return OperandAt(1); }
 
   Representation RequiredInputRepresentation(int index) override {
     return Representation::Tagged();
   }
 
-  DECLARE_CONCRETE_INSTRUCTION(InstanceOfKnownGlobal)
-
- private:
-  HInstanceOfKnownGlobal(HValue* context,
-                         HValue* left,
-                         Handle<JSFunction> right)
-      : HTemplateInstruction<2>(HType::Boolean()), function_(right) {
-    SetOperandAt(0, context);
-    SetOperandAt(1, left);
-    set_representation(Representation::Tagged());
-    SetAllSideEffects();
+  bool ObjectNeedsSmiCheck() const {
+    return !object()->type().IsHeapObject() &&
+           !object()->representation().IsHeapObject();
   }
 
-  Handle<JSFunction> function_;
+  DECLARE_CONCRETE_INSTRUCTION(HasInPrototypeChainAndBranch)
+
+ private:
+  HHasInPrototypeChainAndBranch(HValue* object, HValue* prototype) {
+    SetOperandAt(0, object);
+    SetOperandAt(1, prototype);
+    SetDependsOnFlag(kCalls);
+  }
 };
 
 

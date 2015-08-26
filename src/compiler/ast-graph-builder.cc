@@ -2538,18 +2538,17 @@ void AstGraphBuilder::VisitCallNew(CallNew* expr) {
 
 
 void AstGraphBuilder::VisitCallJSRuntime(CallRuntime* expr) {
-  Handle<String> name = expr->name();
-
   // The callee and the receiver both have to be pushed onto the operand stack
   // before arguments are being evaluated.
   CallFunctionFlags flags = NO_CALL_FUNCTION_FLAGS;
-  Node* receiver_value = BuildLoadBuiltinsObject();
-  VectorSlotPair pair = CreateVectorSlotPair(expr->CallRuntimeFeedbackSlot());
-  // TODO(jarin): bailout ids for runtime calls.
-  FrameStateBeforeAndAfter states(this, BailoutId::None());
-  Node* callee_value = BuildNamedLoad(receiver_value, name, pair);
-  states.AddToNode(callee_value, BailoutId::None(),
-                   OutputFrameStateCombine::Push());
+  Node* global = BuildLoadGlobalObject();
+  Node* native_context =
+      BuildLoadObjectField(global, GlobalObject::kNativeContextOffset);
+  Node* callee_value =
+      NewNode(javascript()->LoadContext(0, expr->context_index(), true),
+              native_context);
+  Node* receiver_value = jsgraph()->UndefinedConstant();
+
   environment()->Push(callee_value);
   environment()->Push(receiver_value);
 
@@ -2567,14 +2566,13 @@ void AstGraphBuilder::VisitCallJSRuntime(CallRuntime* expr) {
 
 
 void AstGraphBuilder::VisitCallRuntime(CallRuntime* expr) {
-  const Runtime::Function* function = expr->function();
-
   // Handle calls to runtime functions implemented in JavaScript separately as
   // the call follows JavaScript ABI and the callee is statically unknown.
   if (expr->is_jsruntime()) {
-    DCHECK(function == NULL && expr->name()->length() > 0);
     return VisitCallJSRuntime(expr);
   }
+
+  const Runtime::Function* function = expr->function();
 
   // TODO(mstarzinger): This bailout is a gigantic hack, the owner is ashamed.
   if (function->function_id == Runtime::kInlineGeneratorNext ||
@@ -2867,6 +2865,12 @@ void AstGraphBuilder::VisitSpread(Spread* expr) {
 }
 
 
+void AstGraphBuilder::VisitEmptyParentheses(EmptyParentheses* expr) {
+  // Handled entirely by the parser itself.
+  UNREACHABLE();
+}
+
+
 void AstGraphBuilder::VisitThisFunction(ThisFunction* expr) {
   Node* value = GetFunctionClosure();
   ast_context()->ProduceValue(value);
@@ -2928,9 +2932,7 @@ void AstGraphBuilder::VisitInScope(Statement* stmt, Scope* s, Node* context) {
 void AstGraphBuilder::VisitIterationBody(IterationStatement* stmt,
                                          LoopBuilder* loop) {
   ControlScopeForIteration scope(this, stmt, loop);
-  // TODO(mstarzinger): For now we only allow to interrupt non-asm.js code,
-  // which is a gigantic hack and should be extended to all code at some point.
-  if (!info()->shared_info()->asm_function()) {
+  if (FLAG_turbo_loop_stackcheck) {
     Node* node = NewNode(javascript()->StackCheck());
     PrepareFrameState(node, stmt->StackCheckId());
   }
@@ -3507,13 +3509,10 @@ Node* AstGraphBuilder::BuildVariableAssignment(
         return value;
       } else if (mode == LET && op != Token::INIT_LET) {
         // Perform an initialization check for let declared variables.
-        // Also note that the dynamic hole-check is only done to ensure that
-        // this does not break in the presence of do-expressions within the
-        // temporal dead zone of a let declared variable.
         Node* current = environment()->Lookup(variable);
         if (current->op() == the_hole->op()) {
           value = BuildThrowReferenceError(variable, bailout_id);
-        } else if (value->opcode() == IrOpcode::kPhi) {
+        } else if (current->opcode() == IrOpcode::kPhi) {
           value = BuildHoleCheckThenThrow(current, variable, value, bailout_id);
         }
       } else if (mode == CONST && op == Token::INIT_CONST) {
@@ -3529,7 +3528,7 @@ Node* AstGraphBuilder::BuildVariableAssignment(
         Node* current = environment()->Lookup(variable);
         if (current->op() == the_hole->op()) {
           return BuildThrowReferenceError(variable, bailout_id);
-        } else if (value->opcode() == IrOpcode::kPhi) {
+        } else if (current->opcode() == IrOpcode::kPhi) {
           BuildHoleCheckThenThrow(current, variable, value, bailout_id);
         }
         return BuildThrowConstAssignError(bailout_id);

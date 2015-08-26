@@ -354,10 +354,9 @@ RootIndexMap::RootIndexMap(Isolate* isolate) {
   map_ = isolate->root_index_map();
   if (map_ != NULL) return;
   map_ = new HashMap(HashMap::PointersMatch);
-  Object** root_array = isolate->heap()->roots_array_start();
   for (uint32_t i = 0; i < Heap::kStrongRootListLength; i++) {
     Heap::RootListIndex root_index = static_cast<Heap::RootListIndex>(i);
-    Object* root = root_array[root_index];
+    Object* root = isolate->heap()->root(root_index);
     // Omit root entries that can be written after initialization. They must
     // not be referenced through the root list in the snapshot.
     if (root->IsHeapObject() &&
@@ -500,16 +499,19 @@ void Deserializer::DecodeReservation(
 }
 
 
-void Deserializer::FlushICacheForNewCodeObjects() {
-  if (!deserializing_user_code_) {
-    // The entire isolate is newly deserialized. Simply flush all code pages.
-    PageIterator it(isolate_->heap()->code_space());
-    while (it.has_next()) {
-      Page* p = it.next();
-      CpuFeatures::FlushICache(p->area_start(),
-                               p->area_end() - p->area_start());
-    }
+void Deserializer::FlushICacheForNewIsolate() {
+  DCHECK(!deserializing_user_code_);
+  // The entire isolate is newly deserialized. Simply flush all code pages.
+  PageIterator it(isolate_->heap()->code_space());
+  while (it.has_next()) {
+    Page* p = it.next();
+    CpuFeatures::FlushICache(p->area_start(), p->area_end() - p->area_start());
   }
+}
+
+
+void Deserializer::FlushICacheForNewCodeObjects() {
+  DCHECK(deserializing_user_code_);
   for (Code* code : new_code_objects_) {
     CpuFeatures::FlushICache(code->instruction_start(),
                              code->instruction_size());
@@ -557,6 +559,7 @@ void Deserializer::Deserialize(Isolate* isolate) {
     isolate_->heap()->RepairFreeListsAfterDeserialization();
     isolate_->heap()->IterateWeakRoots(this, VISIT_ALL);
     DeserializeDeferredObjects();
+    FlushICacheForNewIsolate();
   }
 
   isolate_->heap()->set_native_contexts_list(
@@ -573,8 +576,6 @@ void Deserializer::Deserialize(Isolate* isolate) {
   Natives::UpdateSourceCache(isolate_->heap());
   ExtraNatives::UpdateSourceCache(isolate_->heap());
   CodeStubNatives::UpdateSourceCache(isolate_->heap());
-
-  FlushICacheForNewCodeObjects();
 
   // Issue code events for newly deserialized code objects.
   LOG_CODE_EVENT(isolate_, LogCodeObjects());
@@ -631,6 +632,7 @@ MaybeHandle<SharedFunctionInfo> Deserializer::DeserializeCode(
       Object* root;
       VisitPointer(&root);
       DeserializeDeferredObjects();
+      FlushICacheForNewCodeObjects();
       result = Handle<SharedFunctionInfo>(SharedFunctionInfo::cast(root));
     }
     CommitPostProcessedObjects(isolate);
@@ -951,8 +953,9 @@ bool Deserializer::ReadData(Object** current, Object** limit, int source_space,
         emit_write_barrier = (space_number == NEW_SPACE);                      \
         new_object = GetBackReferencedObject(data & kSpaceMask);               \
       } else if (where == kRootArray) {                                        \
-        int root_id = source_.GetInt();                                        \
-        new_object = isolate->heap()->roots_array_start()[root_id];            \
+        int id = source_.GetInt();                                             \
+        Heap::RootListIndex root_index = static_cast<Heap::RootListIndex>(id); \
+        new_object = isolate->heap()->root(root_index);                        \
         emit_write_barrier = isolate->heap()->InNewSpace(new_object);          \
       } else if (where == kPartialSnapshotCache) {                             \
         int cache_index = source_.GetInt();                                    \
@@ -1226,8 +1229,9 @@ bool Deserializer::ReadData(Object** current, Object** limit, int source_space,
 
       SIXTEEN_CASES(kRootArrayConstants)
       SIXTEEN_CASES(kRootArrayConstants + 16) {
-        int root_id = data & kRootArrayConstantsMask;
-        Object* object = isolate->heap()->roots_array_start()[root_id];
+        int id = data & kRootArrayConstantsMask;
+        Heap::RootListIndex root_index = static_cast<Heap::RootListIndex>(id);
+        Object* object = isolate->heap()->root(root_index);
         DCHECK(!isolate->heap()->InNewSpace(object));
         UnalignedCopy(current++, &object);
         break;
@@ -2475,6 +2479,8 @@ void CodeSerializer::SerializeObject(HeapObject* obj, HowToCode how_to_code,
           SerializeGeneric(code_object, how_to_code, where_to_point);
         }
         return;
+      case Code::PLACEHOLDER:
+        UNREACHABLE();
     }
     UNREACHABLE();
   }
@@ -2625,7 +2631,6 @@ MaybeHandle<SharedFunctionInfo> CodeSerializer::Deserialize(
     if (FLAG_profile_deserialization) PrintF("[Deserializing failed]\n");
     return MaybeHandle<SharedFunctionInfo>();
   }
-  deserializer.FlushICacheForNewCodeObjects();
 
   if (FLAG_profile_deserialization) {
     double ms = timer.Elapsed().InMillisecondsF();

@@ -47,7 +47,9 @@ MarkCompactCollector::MarkCompactCollector(Heap* heap)
       compacting_(false),
       was_marked_incrementally_(false),
       sweeping_in_progress_(false),
+      parallel_compaction_in_progress_(false),
       pending_sweeper_jobs_semaphore_(0),
+      pending_compaction_jobs_semaphore_(0),
       evacuation_(false),
       migration_slots_buffer_(NULL),
       heap_(heap),
@@ -303,17 +305,17 @@ static void VerifyValidSlotsBufferEntries(Heap* heap, PagedSpace* space) {
 }
 
 
-static void VerifyValidStoreAndSlotsBufferEntries(Heap* heap) {
-  heap->store_buffer()->VerifyValidStoreBufferEntries();
+void MarkCompactCollector::VerifyValidStoreAndSlotsBufferEntries() {
+  heap()->store_buffer()->VerifyValidStoreBufferEntries();
 
-  VerifyValidSlotsBufferEntries(heap, heap->old_space());
-  VerifyValidSlotsBufferEntries(heap, heap->code_space());
-  VerifyValidSlotsBufferEntries(heap, heap->map_space());
+  VerifyValidSlotsBufferEntries(heap(), heap()->old_space());
+  VerifyValidSlotsBufferEntries(heap(), heap()->code_space());
+  VerifyValidSlotsBufferEntries(heap(), heap()->map_space());
 
-  LargeObjectIterator it(heap->lo_space());
+  LargeObjectIterator it(heap()->lo_space());
   for (HeapObject* object = it.Next(); object != NULL; object = it.Next()) {
     MemoryChunk* chunk = MemoryChunk::FromAddress(object->address());
-    SlotsBuffer::VerifySlots(heap, chunk->slots_buffer());
+    SlotsBuffer::VerifySlots(heap(), chunk->slots_buffer());
   }
 }
 #endif
@@ -349,7 +351,7 @@ void MarkCompactCollector::CollectGarbage() {
 
 #ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
-    VerifyValidStoreAndSlotsBufferEntries(heap_);
+    VerifyValidStoreAndSlotsBufferEntries();
   }
 #endif
 
@@ -459,6 +461,28 @@ void MarkCompactCollector::ClearMarkbits() {
 }
 
 
+class MarkCompactCollector::CompactionTask : public v8::Task {
+ public:
+  explicit CompactionTask(Heap* heap) : heap_(heap) {}
+
+  virtual ~CompactionTask() {}
+
+ private:
+  // v8::Task overrides.
+  void Run() override {
+    // TODO(mlippautz, hpayer): EvacuatePages is not thread-safe and can just be
+    // called by one thread concurrently.
+    heap_->mark_compact_collector()->EvacuatePages();
+    heap_->mark_compact_collector()
+        ->pending_compaction_jobs_semaphore_.Signal();
+  }
+
+  Heap* heap_;
+
+  DISALLOW_COPY_AND_ASSIGN(CompactionTask);
+};
+
+
 class MarkCompactCollector::SweeperTask : public v8::Task {
  public:
   SweeperTask(Heap* heap, PagedSpace* space) : heap_(heap), space_(space) {}
@@ -519,12 +543,15 @@ void MarkCompactCollector::EnsureSweepingCompleted() {
     SweepInParallel(heap()->paged_space(CODE_SPACE), 0);
     SweepInParallel(heap()->paged_space(MAP_SPACE), 0);
   }
-  // Wait twice for both jobs.
+
   if (heap()->concurrent_sweeping_enabled()) {
     pending_sweeper_jobs_semaphore_.Wait();
     pending_sweeper_jobs_semaphore_.Wait();
     pending_sweeper_jobs_semaphore_.Wait();
   }
+
+  heap()->WaitUntilUnmappingOfFreeChunksCompleted();
+
   ParallelSweepSpacesComplete();
   sweeping_in_progress_ = false;
   RefillFreeList(heap()->paged_space(OLD_SPACE));
@@ -2664,7 +2691,11 @@ void MarkCompactCollector::AbortWeakCells() {
 
 void MarkCompactCollector::RecordMigratedSlot(Object* value, Address slot) {
   if (heap_->InNewSpace(value)) {
-    heap_->store_buffer()->Mark(slot);
+    if (parallel_compaction_in_progress_) {
+      heap_->store_buffer()->MarkSynchronized(slot);
+    } else {
+      heap_->store_buffer()->Mark(slot);
+    }
   } else if (value->IsHeapObject() && IsOnEvacuationCandidate(value)) {
     SlotsBuffer::AddTo(&slots_buffer_allocator_, &migration_slots_buffer_,
                        reinterpret_cast<Object**>(slot),
@@ -3286,6 +3317,19 @@ void MarkCompactCollector::EvacuateLiveObjectsFromPage(Page* p) {
 }
 
 
+void MarkCompactCollector::EvacuatePagesInParallel() {
+  parallel_compaction_in_progress_ = true;
+  V8::GetCurrentPlatform()->CallOnBackgroundThread(
+      new CompactionTask(heap()), v8::Platform::kShortRunningTask);
+}
+
+
+void MarkCompactCollector::WaitUntilCompactionCompleted() {
+  pending_compaction_jobs_semaphore_.Wait();
+  parallel_compaction_in_progress_ = false;
+}
+
+
 void MarkCompactCollector::EvacuatePages() {
   int npages = evacuation_candidates_.length();
   int abandoned_pages = 0;
@@ -3592,7 +3636,12 @@ void MarkCompactCollector::EvacuateNewSpaceAndCandidates() {
     GCTracer::Scope gc_scope(heap()->tracer(),
                              GCTracer::Scope::MC_EVACUATE_PAGES);
     EvacuationScope evacuation_scope(this);
-    EvacuatePages();
+    if (FLAG_parallel_compaction) {
+      EvacuatePagesInParallel();
+      WaitUntilCompactionCompleted();
+    } else {
+      EvacuatePages();
+    }
   }
 
   // Second pass: find pointers to new space and update them.

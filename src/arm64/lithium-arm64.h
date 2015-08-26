@@ -86,15 +86,14 @@ class LCodeGen;
   V(GetCachedArrayIndex)                     \
   V(Goto)                                    \
   V(HasCachedArrayIndexAndBranch)            \
+  V(HasInPrototypeChainAndBranch)            \
   V(HasInstanceTypeAndBranch)                \
   V(InnerAllocatedObject)                    \
   V(InstanceOf)                              \
-  V(InstanceOfKnownGlobal)                   \
   V(InstructionGap)                          \
   V(Integer32ToDouble)                       \
   V(InvokeFunction)                          \
   V(IsConstructCallAndBranch)                \
-  V(IsObjectAndBranch)                       \
   V(IsSmiAndBranch)                          \
   V(IsStringAndBranch)                       \
   V(IsUndetectableAndBranch)                 \
@@ -245,8 +244,6 @@ class LInstruction : public ZoneObject {
 
   void set_hydrogen_value(HValue* value) { hydrogen_value_ = value; }
   HValue* hydrogen_value() const { return hydrogen_value_; }
-
-  virtual void SetDeferredLazyDeoptimizationEnvironment(LEnvironment* env) { }
 
   void MarkAsCall() { bit_field_ = IsCallBits::update(bit_field_, true); }
   bool IsCall() const { return IsCallBits::decode(bit_field_); }
@@ -1481,39 +1478,30 @@ class LInstanceOf final : public LTemplateInstruction<1, 3, 0> {
     inputs_[2] = right;
   }
 
-  LOperand* context() { return inputs_[0]; }
-  LOperand* left() { return inputs_[1]; }
-  LOperand* right() { return inputs_[2]; }
+  LOperand* context() const { return inputs_[0]; }
+  LOperand* left() const { return inputs_[1]; }
+  LOperand* right() const { return inputs_[2]; }
 
   DECLARE_CONCRETE_INSTRUCTION(InstanceOf, "instance-of")
 };
 
 
-class LInstanceOfKnownGlobal final : public LTemplateInstruction<1, 2, 0> {
+class LHasInPrototypeChainAndBranch final : public LControlInstruction<2, 1> {
  public:
-  LInstanceOfKnownGlobal(LOperand* context, LOperand* value) {
-    inputs_[0] = context;
-    inputs_[1] = value;
+  LHasInPrototypeChainAndBranch(LOperand* object, LOperand* prototype,
+                                LOperand* scratch) {
+    inputs_[0] = object;
+    inputs_[1] = prototype;
+    temps_[0] = scratch;
   }
 
-  LOperand* context() { return inputs_[0]; }
-  LOperand* value() { return inputs_[1]; }
+  LOperand* object() const { return inputs_[0]; }
+  LOperand* prototype() const { return inputs_[1]; }
+  LOperand* scratch() const { return temps_[0]; }
 
-  DECLARE_CONCRETE_INSTRUCTION(InstanceOfKnownGlobal,
-                               "instance-of-known-global")
-  DECLARE_HYDROGEN_ACCESSOR(InstanceOfKnownGlobal)
-
-  Handle<JSFunction> function() const { return hydrogen()->function(); }
-  LEnvironment* GetDeferredLazyDeoptimizationEnvironment() {
-    return lazy_deopt_env_;
-  }
-  virtual void SetDeferredLazyDeoptimizationEnvironment(
-      LEnvironment* env) override {
-    lazy_deopt_env_ = env;
-  }
-
- private:
-  LEnvironment* lazy_deopt_env_;
+  DECLARE_CONCRETE_INSTRUCTION(HasInPrototypeChainAndBranch,
+                               "has-in-prototype-chain-and-branch")
+  DECLARE_HYDROGEN_ACCESSOR(HasInPrototypeChainAndBranch)
 };
 
 
@@ -1603,25 +1591,6 @@ class LIsConstructCallAndBranch final : public LControlInstruction<0, 2> {
 
   DECLARE_CONCRETE_INSTRUCTION(IsConstructCallAndBranch,
                                "is-construct-call-and-branch")
-};
-
-
-class LIsObjectAndBranch final : public LControlInstruction<1, 2> {
- public:
-  LIsObjectAndBranch(LOperand* value, LOperand* temp1, LOperand* temp2) {
-    inputs_[0] = value;
-    temps_[0] = temp1;
-    temps_[1] = temp2;
-  }
-
-  LOperand* value() { return inputs_[0]; }
-  LOperand* temp1() { return temps_[0]; }
-  LOperand* temp2() { return temps_[1]; }
-
-  DECLARE_CONCRETE_INSTRUCTION(IsObjectAndBranch, "is-object-and-branch")
-  DECLARE_HYDROGEN_ACCESSOR(IsObjectAndBranch)
-
-  void PrintDataTo(StringStream* stream) override;
 };
 
 

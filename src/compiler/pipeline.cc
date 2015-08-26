@@ -35,6 +35,7 @@
 #include "src/compiler/js-type-feedback-lowering.h"
 #include "src/compiler/js-typed-lowering.h"
 #include "src/compiler/jump-threading.h"
+#include "src/compiler/live-range-separator.h"
 #include "src/compiler/load-elimination.h"
 #include "src/compiler/loop-analysis.h"
 #include "src/compiler/loop-peeling.h"
@@ -42,7 +43,6 @@
 #include "src/compiler/move-optimizer.h"
 #include "src/compiler/osr.h"
 #include "src/compiler/pipeline-statistics.h"
-#include "src/compiler/preprocess-live-ranges.h"
 #include "src/compiler/register-allocator.h"
 #include "src/compiler/register-allocator-verifier.h"
 #include "src/compiler/schedule.h"
@@ -778,13 +778,13 @@ struct BuildLiveRangesPhase {
 };
 
 
-struct PreprocessLiveRangesPhase {
-  static const char* phase_name() { return "preprocess live ranges"; }
+struct SplinterLiveRangesPhase {
+  static const char* phase_name() { return "splinter live ranges"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    PreprocessLiveRanges live_range_preprocessor(
-        data->register_allocation_data(), temp_zone);
-    live_range_preprocessor.PreprocessRanges();
+    LiveRangeSeparator live_range_splinterer(data->register_allocation_data(),
+                                             temp_zone);
+    live_range_splinterer.Splinter();
   }
 };
 
@@ -809,6 +809,16 @@ struct AllocateDoubleRegistersPhase {
     RegAllocator allocator(data->register_allocation_data(), DOUBLE_REGISTERS,
                            temp_zone);
     allocator.AllocateRegisters();
+  }
+};
+
+
+struct MergeSplintersPhase {
+  static const char* phase_name() { return "merge splintered ranges"; }
+  void Run(PipelineData* pipeline_data, Zone* temp_zone) {
+    RegisterAllocationData* data = pipeline_data->register_allocation_data();
+    LiveRangeMerger live_range_merger(data, temp_zone);
+    live_range_merger.Merge();
   }
 };
 
@@ -1129,6 +1139,36 @@ Handle<Code> Pipeline::GenerateCode() {
 }
 
 
+Handle<Code> Pipeline::GenerateCodeForInterpreter(
+    Isolate* isolate, CallDescriptor* call_descriptor, Graph* graph,
+    Schedule* schedule, const char* bytecode_name) {
+  CompilationInfo info(bytecode_name, isolate, graph->zone());
+
+  // Construct a pipeline for scheduling and code generation.
+  ZonePool zone_pool;
+  PipelineData data(&zone_pool, &info, graph, schedule);
+  base::SmartPointer<PipelineStatistics> pipeline_statistics;
+  if (FLAG_turbo_stats) {
+    pipeline_statistics.Reset(new PipelineStatistics(&info, &zone_pool));
+    pipeline_statistics->BeginPhaseKind("interpreter handler codegen");
+  }
+  if (FLAG_trace_turbo) {
+    FILE* json_file = OpenVisualizerLogFile(&info, NULL, "json", "w+");
+    if (json_file != nullptr) {
+      OFStream json_of(json_file);
+      json_of << "{\"function\":\"" << info.GetDebugName().get()
+              << "\", \"source\":\"\",\n\"phases\":[";
+      fclose(json_file);
+    }
+  }
+
+  Pipeline pipeline(&info);
+  pipeline.data_ = &data;
+  pipeline.RunPrintAndVerify("Machine", true);
+  return pipeline.ScheduleAndGenerateCode(call_descriptor);
+}
+
+
 Handle<Code> Pipeline::GenerateCodeForTesting(CompilationInfo* info,
                                               Graph* graph,
                                               Schedule* schedule) {
@@ -1320,13 +1360,13 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
     CHECK(!data->register_allocation_data()->ExistsUseWithoutDefinition());
   }
 
-  if (FLAG_turbo_preprocess_ranges) {
-    Run<PreprocessLiveRangesPhase>();
-  }
+  Run<SplinterLiveRangesPhase>();
 
   // TODO(mtrofin): re-enable greedy once we have bots for range preprocessing.
   Run<AllocateGeneralRegistersPhase<LinearScanAllocator>>();
   Run<AllocateDoubleRegistersPhase<LinearScanAllocator>>();
+
+  Run<MergeSplintersPhase>();
 
   if (FLAG_turbo_frame_elision) {
     Run<LocateSpillSlotsPhase>();

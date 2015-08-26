@@ -1426,6 +1426,7 @@ enum ParserFlag {
   kAllowLazy,
   kAllowNatives,
   kAllowHarmonyArrowFunctions,
+  kAllowHarmonyDefaultParameters,
   kAllowHarmonyRestParameters,
   kAllowHarmonySloppy,
   kAllowHarmonySloppyLet,
@@ -1451,6 +1452,8 @@ void SetParserFlags(i::ParserBase<Traits>* parser,
   parser->set_allow_natives(flags.Contains(kAllowNatives));
   parser->set_allow_harmony_arrow_functions(
       flags.Contains(kAllowHarmonyArrowFunctions));
+  parser->set_allow_harmony_default_parameters(
+      flags.Contains(kAllowHarmonyDefaultParameters));
   parser->set_allow_harmony_rest_parameters(
       flags.Contains(kAllowHarmonyRestParameters));
   parser->set_allow_harmony_spreadcalls(
@@ -2718,27 +2721,6 @@ TEST(NoErrorsRegexpLiteral) {
 }
 
 
-TEST(Intrinsics) {
-  const char* context_data[][2] = {
-    {"", ""},
-    { NULL, NULL }
-  };
-
-  const char* statement_data[] = {
-    "%someintrinsic(arg)",
-    NULL
-  };
-
-  // This test requires kAllowNatives to succeed.
-  static const ParserFlag always_true_flags[] = {
-    kAllowNatives
-  };
-
-  RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
-                    always_true_flags, 1);
-}
-
-
 TEST(NoErrorsNewExpression) {
   const char* context_data[][2] = {
     {"", ""},
@@ -3730,10 +3712,30 @@ TEST(NoErrorsArrowFunctions) {
 
     // Arrow has more precedence, this is the same as: foo ? bar : (baz = {})
     "foo ? bar : baz => {}",
+
+    // Arrows with non-simple parameters.
+    "({a}) => {}",
+    "(x = 9) => {}",
+    "(x, y = 9) => {}",
+    "(x = 9, y) => {}",
+    "(x, y = 9, z) => {}",
+    "(x, y = 9, z = 8) => {}",
+    "(...a) => {}",
+    "(x, ...a) => {}",
+    "(x = 9, ...a) => {}",
+    "(x, y = 9, ...a) => {}",
+    "(x, y = 9, {b}, z = 8, ...a) => {}",
+    // TODO(wingo, rossberg): This is not accepted right now.
+    // "({a} = {}) => {}",
+    // "([x] = []) => {}",
+    "({a = 42}) => {}",
+    "([x = 0]) => {}",
     NULL
   };
 
-  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions};
+  static const ParserFlag always_flags[] = {
+      kAllowHarmonyArrowFunctions, kAllowHarmonyDefaultParameters,
+      kAllowHarmonyRestParameters, kAllowHarmonyDestructuring};
   RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
                     always_flags, arraysize(always_flags));
 }
@@ -3795,6 +3797,50 @@ TEST(ArrowFunctionsSloppyParameterNames) {
   RunParserSyncTest(strict_context_data, statement_data, kError, NULL, 0,
                     always_flags, arraysize(always_flags));
   RunParserSyncTest(sloppy_context_data, statement_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+}
+
+
+TEST(ArrowFunctionsYieldParameterNameInGenerator) {
+  const char* sloppy_function_context_data[][2] = {
+    {"(function f() { (", "); });"},
+    {NULL, NULL}
+  };
+
+  const char* strict_function_context_data[][2] = {
+    {"(function f() {'use strong'; (", "); });"},
+    {"(function f() {'use strict'; (", "); });"},
+    {NULL, NULL}
+  };
+
+  const char* generator_context_data[][2] = {
+    {"(function *g() {'use strong'; (", "); });"},
+    {"(function *g() {'use strict'; (", "); });"},
+    {"(function *g() { (", "); });"},
+    {NULL, NULL}
+  };
+
+  const char* arrow_data[] = {
+    "yield => {}",
+    "(yield) => {}",
+    "(a, yield) => {}",
+    "(yield, a) => {}",
+    "(yield, ...a) => {}",
+    "(a, ...yield) => {}",
+    "({yield}) => {}",
+    "([yield]) => {}",
+    NULL
+  };
+
+  static const ParserFlag always_flags[] = { kAllowHarmonyDestructuring,
+                                             kAllowHarmonyRestParameters,
+                                             kAllowHarmonyArrowFunctions,
+                                             kAllowStrongMode};
+  RunParserSyncTest(sloppy_function_context_data, arrow_data, kSuccess, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(strict_function_context_data, arrow_data, kError, NULL, 0,
+                    always_flags, arraysize(always_flags));
+  RunParserSyncTest(generator_context_data, arrow_data, kError, NULL, 0,
                     always_flags, arraysize(always_flags));
 }
 
@@ -6877,5 +6923,92 @@ TEST(LetSloppy) {
   static const ParserFlag always_flags[] = {kAllowHarmonySloppy,
                                             kAllowHarmonySloppyLet};
   RunParserSyncTest(context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(LanguageModeDirectivesNonSimpleParameterListErrors) {
+  // TC39 deemed "use strict" directives to be an error when occurring in the
+  // body of a function with non-simple parameter list, on 29/7/2015.
+  // https://goo.gl/ueA7Ln
+  //
+  // In V8, this also applies to "use strong " directives.
+  const char* context_data[][2] = {
+      {"function f(", ") { 'use strict'; }"},
+      {"function f(", ") { 'use strong'; }"},
+      {"function* g(", ") { 'use strict'; }"},
+      {"function* g(", ") { 'use strong'; }"},
+      {"class c { foo(", ") { 'use strict' }"},
+      {"class c { foo(", ") { 'use strong' }"},
+      {"var a = (", ") => { 'use strict'; }"},
+      {"var a = (", ") => { 'use strong'; }"},
+      {"var o = { m(", ") { 'use strict'; }"},
+      {"var o = { m(", ") { 'use strong'; }"},
+      {"var o = { *gm(", ") { 'use strict'; }"},
+      {"var o = { *gm(", ") { 'use strong'; }"},
+      {"var c = { m(", ") { 'use strict'; }"},
+      {"var c = { m(", ") { 'use strong'; }"},
+      {"var c = { *gm(", ") { 'use strict'; }"},
+      {"var c = { *gm(", ") { 'use strong'; }"},
+
+      {"'use strict'; function f(", ") { 'use strict'; }"},
+      {"'use strict'; function f(", ") { 'use strong'; }"},
+      {"'use strict'; function* g(", ") { 'use strict'; }"},
+      {"'use strict'; function* g(", ") { 'use strong'; }"},
+      {"'use strict'; class c { foo(", ") { 'use strict' }"},
+      {"'use strict'; class c { foo(", ") { 'use strong' }"},
+      {"'use strict'; var a = (", ") => { 'use strict'; }"},
+      {"'use strict'; var a = (", ") => { 'use strong'; }"},
+      {"'use strict'; var o = { m(", ") { 'use strict'; }"},
+      {"'use strict'; var o = { m(", ") { 'use strong'; }"},
+      {"'use strict'; var o = { *gm(", ") { 'use strict'; }"},
+      {"'use strict'; var o = { *gm(", ") { 'use strong'; }"},
+      {"'use strict'; var c = { m(", ") { 'use strict'; }"},
+      {"'use strict'; var c = { m(", ") { 'use strong'; }"},
+      {"'use strict'; var c = { *gm(", ") { 'use strict'; }"},
+      {"'use strict'; var c = { *gm(", ") { 'use strong'; }"},
+
+      {"'use strong'; function f(", ") { 'use strict'; }"},
+      {"'use strong'; function f(", ") { 'use strong'; }"},
+      {"'use strong'; function* g(", ") { 'use strict'; }"},
+      {"'use strong'; function* g(", ") { 'use strong'; }"},
+      {"'use strong'; class c { foo(", ") { 'use strict' }"},
+      {"'use strong'; class c { foo(", ") { 'use strong' }"},
+      {"'use strong'; var a = (", ") => { 'use strict'; }"},
+      {"'use strong'; var a = (", ") => { 'use strong'; }"},
+      {"'use strong'; var o = { m(", ") { 'use strict'; }"},
+      {"'use strong'; var o = { m(", ") { 'use strong'; }"},
+      {"'use strong'; var o = { *gm(", ") { 'use strict'; }"},
+      {"'use strong'; var o = { *gm(", ") { 'use strong'; }"},
+      {"'use strong'; var c = { m(", ") { 'use strict'; }"},
+      {"'use strong'; var c = { m(", ") { 'use strong'; }"},
+      {"'use strong'; var c = { *gm(", ") { 'use strict'; }"},
+      {"'use strong'; var c = { *gm(", ") { 'use strong'; }"},
+
+      {NULL, NULL}};
+
+  const char* data[] = {
+      // TODO(@caitp): support formal parameter initializers
+      "{}",
+      "[]",
+      "[{}]",
+      "{a}",
+      "a, {b}",
+      "a, b, {c, d, e}",
+      "initializer = true",
+      "a, b, c = 1",
+      "...args",
+      "a, b, ...rest",
+      "[a, b, ...rest]",
+      "{ bindingPattern = {} }",
+      "{ initializedBindingPattern } = { initializedBindingPattern: true }",
+      NULL};
+
+  static const ParserFlag always_flags[] = {
+      kAllowHarmonyArrowFunctions, kAllowHarmonyDefaultParameters,
+      kAllowHarmonyDestructuring, kAllowHarmonyRestParameters,
+      kAllowHarmonySloppy, kAllowStrongMode
+  };
+  RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
                     arraysize(always_flags));
 }

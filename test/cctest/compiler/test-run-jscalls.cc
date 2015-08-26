@@ -144,7 +144,7 @@ TEST(RuntimeCallCPP2) {
 
 TEST(RuntimeCallJS) {
   FLAG_allow_natives_syntax = true;
-  FunctionTester T("(function(a) { return %$toString(a); })");
+  FunctionTester T("(function(a) { return %to_string_fun(a); })");
 
   T.CheckCall(T.Val("23"), T.Val(23), T.undefined());
   T.CheckCall(T.Val("4.2"), T.Val(4.2), T.undefined());
@@ -157,7 +157,7 @@ TEST(RuntimeCallJS) {
 
 TEST(RuntimeCallInline) {
   FLAG_allow_natives_syntax = true;
-  FunctionTester T("(function(a) { return %_IsObject(a); })");
+  FunctionTester T("(function(a) { return %_IsSpecObject(a); })");
 
   T.CheckCall(T.false_value(), T.Val(23), T.undefined());
   T.CheckCall(T.false_value(), T.Val(4.2), T.undefined());

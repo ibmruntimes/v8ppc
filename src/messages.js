@@ -48,6 +48,9 @@ var StringCharAt;
 var StringIndexOf;
 var StringSubstring;
 var ToString;
+var Uint16x8ToString;
+var Uint32x4ToString;
+var Uint8x16ToString;
 
 utils.Import(function(from) {
   ArrayJoin = from.ArrayJoin;
@@ -64,6 +67,9 @@ utils.Import(function(from) {
   StringCharAt = from.StringCharAt;
   StringIndexOf = from.StringIndexOf;
   StringSubstring = from.StringSubstring;
+  Uint16x8ToString = from.Uint16x8ToString;
+  Uint32x4ToString = from.Uint32x4ToString;
+  Uint8x16ToString = from.Uint8x16ToString;
 });
 
 utils.ImportNow(function(from) {
@@ -107,11 +113,14 @@ function NoSideEffectToString(obj) {
     switch (typeof(obj)) {
       case 'float32x4': return %_CallFunction(obj, Float32x4ToString);
       case 'int32x4':   return %_CallFunction(obj, Int32x4ToString);
+      case 'int16x8':   return %_CallFunction(obj, Int16x8ToString);
+      case 'int8x16':   return %_CallFunction(obj, Int8x16ToString);
+      case 'uint32x4':   return %_CallFunction(obj, Uint32x4ToString);
+      case 'uint16x8':   return %_CallFunction(obj, Uint16x8ToString);
+      case 'uint8x16':   return %_CallFunction(obj, Uint8x16ToString);
       case 'bool32x4':  return %_CallFunction(obj, Bool32x4ToString);
-      case 'int16x8':   return %_CallFunction(obj, Int16x8ToString);
       case 'bool16x8':  return %_CallFunction(obj, Bool16x8ToString);
-      case 'int16x8':   return %_CallFunction(obj, Int16x8ToString);
-      case 'bool16x8':  return %_CallFunction(obj, Bool16x8ToString);
+      case 'bool8x16':  return %_CallFunction(obj, Bool8x16ToString);
     }
   }
   if (IS_OBJECT(obj)
@@ -1016,22 +1025,24 @@ captureStackTrace = function captureStackTrace(obj, cons_opt) {
 
 GlobalError.captureStackTrace = captureStackTrace;
 
-utils.ExportToRuntime(function(to) {
-  to["error_function"] = GlobalError;
-  to["eval_error_function"] = GlobalEvalError;
-  to["get_stack_trace_line_fun"] = GetStackTraceLine;
-  to["make_error_function"] = MakeGenericError;
-  to["message_get_column_number"] = GetColumnNumber;
-  to["message_get_line_number"] = GetLineNumber;
-  to["message_get_source_line"] = GetSourceLine;
-  to["no_side_effect_to_string_fun"] = NoSideEffectToString;
-  to["range_error_function"] = GlobalRangeError;
-  to["reference_error_function"] = GlobalReferenceError;
-  to["stack_overflow_boilerplate"] = StackOverflowBoilerplate;
-  to["syntax_error_function"] = GlobalSyntaxError;
-  to["to_detail_string_fun"] = ToDetailString;
-  to["type_error_function"] = GlobalTypeError;
-  to["uri_error_function"] = GlobalURIError;
-});
+%InstallToContext([
+  "error_function", GlobalError,
+  "eval_error_function", GlobalEvalError,
+  "get_stack_trace_line_fun", GetStackTraceLine,
+  "make_error_function", MakeGenericError,
+  "make_range_error", MakeRangeError,
+  "make_type_error", MakeTypeError,
+  "message_get_column_number", GetColumnNumber,
+  "message_get_line_number", GetLineNumber,
+  "message_get_source_line", GetSourceLine,
+  "no_side_effect_to_string_fun", NoSideEffectToString,
+  "range_error_function", GlobalRangeError,
+  "reference_error_function", GlobalReferenceError,
+  "stack_overflow_boilerplate", StackOverflowBoilerplate,
+  "syntax_error_function", GlobalSyntaxError,
+  "to_detail_string_fun", ToDetailString,
+  "type_error_function", GlobalTypeError,
+  "uri_error_function", GlobalURIError,
+]);
 
 });

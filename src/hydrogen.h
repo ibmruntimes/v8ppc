@@ -1889,6 +1889,9 @@ class HGraphBuilder {
   // the SourcePosition assuming that this position corresponds to the
   // same function as current position_.
   SourcePosition ScriptPositionToSourcePosition(int position) {
+    if (position == RelocInfo::kNoPosition) {
+      return SourcePosition::Unknown();
+    }
     SourcePosition pos = position_;
     pos.set_position(position - start_position_);
     return pos;
@@ -2000,10 +2003,9 @@ inline HInstruction* HGraphBuilder::AddUncasted<HReturn>(HConstant* value) {
 
 template<>
 inline HCallRuntime* HGraphBuilder::Add<HCallRuntime>(
-    Handle<String> name,
     const Runtime::Function* c_function,
     int argument_count) {
-  HCallRuntime* instr = New<HCallRuntime>(name, c_function, argument_count);
+  HCallRuntime* instr = New<HCallRuntime>(c_function, argument_count);
   if (graph()->info()->IsStub()) {
     // When compiling code stubs, we don't want to save all double registers
     // upon entry to the stub, but instead have the call runtime instruction
@@ -2020,7 +2022,7 @@ inline HInstruction* HGraphBuilder::AddUncasted<HCallRuntime>(
     Handle<String> name,
     const Runtime::Function* c_function,
     int argument_count) {
-  return Add<HCallRuntime>(name, c_function, argument_count);
+  return Add<HCallRuntime>(c_function, argument_count);
 }
 
 
@@ -2194,7 +2196,6 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(OneByteSeqStringSetChar)           \
   F(TwoByteSeqStringSetChar)           \
   F(ObjectEquals)                      \
-  F(IsObject)                          \
   F(ToObject)                          \
   F(IsFunction)                        \
   F(IsSpecObject)                      \
@@ -2214,6 +2215,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(DebugIsActive)                     \
   F(Likely)                            \
   F(Unlikely)                          \
+  F(HasInPrototypeChain)               \
   /* Typed Arrays */                   \
   F(TypedArrayInitialize)              \
   F(DataViewInitialize)                \

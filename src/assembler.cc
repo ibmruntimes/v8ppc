@@ -980,25 +980,24 @@ ExternalReference::ExternalReference(Builtins::Name name, Isolate* isolate)
   : address_(isolate->builtins()->builtin_address(name)) {}
 
 
-ExternalReference::ExternalReference(Runtime::FunctionId id,
-                                     Isolate* isolate)
+ExternalReference::ExternalReference(Runtime::FunctionId id, Isolate* isolate)
 #if defined(V8_PPC_SIMULATOR)
-  : address_(Redirect(isolate, Runtime::FunctionForId(id)->entry,
-                      (Runtime::FunctionForId(id)->result_size == 2) ?
-                      BUILTIN_OBJECTPAIR_CALL : BUILTIN_CALL)) {}
+    : address_(Redirect(isolate, Runtime::FunctionForId(id)->entry,
+                        (Runtime::FunctionForId(id)->result_size == 2) ?
+                        BUILTIN_OBJECTPAIR_CALL : BUILTIN_CALL)) {}
 #else
-  : address_(Redirect(isolate, Runtime::FunctionForId(id)->entry)) {}
+    : address_(Redirect(isolate, Runtime::FunctionForId(id)->entry)) {}
 #endif
 
 
 ExternalReference::ExternalReference(const Runtime::Function* f,
                                      Isolate* isolate)
 #if defined(V8_PPC_SIMULATOR)
-  : address_(Redirect(isolate, f->entry,
-                      ((f->result_size == 2) ?
-                       BUILTIN_OBJECTPAIR_CALL : BUILTIN_CALL))) {}
+    : address_(Redirect(isolate, f->entry,
+                        ((f->result_size == 2) ?
+                         BUILTIN_OBJECTPAIR_CALL : BUILTIN_CALL))) {}
 #else
-  : address_(Redirect(isolate, f->entry)) {}
+    : address_(Redirect(isolate, f->entry)) {}
 #endif
 
 
@@ -1153,7 +1152,7 @@ ExternalReference ExternalReference::new_space_start(Isolate* isolate) {
 
 
 ExternalReference ExternalReference::store_buffer_top(Isolate* isolate) {
-  return ExternalReference(isolate->heap()->store_buffer()->TopAddress());
+  return ExternalReference(isolate->heap()->store_buffer_top_address());
 }
 
 
