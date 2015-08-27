@@ -550,8 +550,6 @@ void MarkCompactCollector::EnsureSweepingCompleted() {
     pending_sweeper_jobs_semaphore_.Wait();
   }
 
-  heap()->WaitUntilUnmappingOfFreeChunksCompleted();
-
   ParallelSweepSpacesComplete();
   sweeping_in_progress_ = false;
   RefillFreeList(heap()->paged_space(OLD_SPACE));
@@ -811,6 +809,10 @@ void MarkCompactCollector::Prepare() {
     // Instead of waiting we could also abort the sweeper threads here.
     EnsureSweepingCompleted();
   }
+
+  // If concurrent unmapping tasks are still running, we should wait for
+  // them here.
+  heap()->WaitUntilUnmappingOfFreeChunksCompleted();
 
   // Clear marking bits if incremental marking is aborted.
   if (was_marked_incrementally_ && heap_->ShouldAbortIncrementalMarking()) {
@@ -2787,6 +2789,12 @@ void MarkCompactCollector::MigrateObjectMixed(HeapObject* dst, HeapObject* src,
     Address base_pointer_slot =
         dst->address() + FixedTypedArrayBase::kBasePointerOffset;
     RecordMigratedSlot(Memory::Object_at(base_pointer_slot), base_pointer_slot);
+  } else if (src->IsBytecodeArray()) {
+    heap()->MoveBlock(dst->address(), src->address(), size);
+    Address constant_pool_slot =
+        dst->address() + BytecodeArray::kConstantPoolOffset;
+    RecordMigratedSlot(Memory::Object_at(constant_pool_slot),
+                       constant_pool_slot);
   } else if (FLAG_unbox_double_fields) {
     Address dst_addr = dst->address();
     Address src_addr = src->address();
@@ -3210,6 +3218,9 @@ bool MarkCompactCollector::IsSlotInLiveObject(Address slot) {
         if (object->IsFixedTypedArrayBase()) {
           return static_cast<int>(slot - object->address()) ==
                  FixedTypedArrayBase::kBasePointerOffset;
+        } else if (object->IsBytecodeArray()) {
+          return static_cast<int>(slot - object->address()) ==
+                 BytecodeArray::kConstantPoolOffset;
         } else if (FLAG_unbox_double_fields) {
           // Filter out slots that happen to point to unboxed double fields.
           LayoutDescriptorHelper helper(object->map());
@@ -4513,9 +4524,18 @@ void SlotsBuffer::RemoveInvalidSlots(Heap* heap, SlotsBuffer* buffer) {
       ObjectSlot slot = slots[slot_idx];
       if (!IsTypedSlot(slot)) {
         Object* object = *slot;
-        if ((object->IsHeapObject() && heap->InNewSpace(object)) ||
+        // Slots are invalid when they currently:
+        // - do not point to a heap object (SMI)
+        // - point to a heap object in new space
+        // - are not within a live heap object on a valid pointer slot
+        // - point to a heap object not on an evacuation candidate
+        if (!object->IsHeapObject() || heap->InNewSpace(object) ||
             !heap->mark_compact_collector()->IsSlotInLiveObject(
-                reinterpret_cast<Address>(slot))) {
+                reinterpret_cast<Address>(slot)) ||
+            !Page::FromAddress(reinterpret_cast<Address>(object))
+                 ->IsEvacuationCandidate()) {
+          // TODO(hpayer): Instead of replacing slots with kRemovedEntry we
+          // could shrink the slots buffer in-place.
           slots[slot_idx] = kRemovedEntry;
         }
       } else {
@@ -4547,6 +4567,8 @@ void SlotsBuffer::RemoveObjectSlots(Heap* heap, SlotsBuffer* buffer,
       if (!IsTypedSlot(slot)) {
         Address slot_address = reinterpret_cast<Address>(slot);
         if (slot_address >= start_slot && slot_address < end_slot) {
+          // TODO(hpayer): Instead of replacing slots with kRemovedEntry we
+          // could shrink the slots buffer in-place.
           slots[slot_idx] = kRemovedEntry;
           if (is_typed_slot) {
             slots[slot_idx - 1] = kRemovedEntry;

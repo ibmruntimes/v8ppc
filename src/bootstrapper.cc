@@ -18,6 +18,10 @@
 #include "src/snapshot/snapshot.h"
 #include "third_party/fdlibm/fdlibm.h"
 
+#if defined(V8_WASM)
+#include "src/wasm/wasm-js.h"
+#endif
+
 namespace v8 {
 namespace internal {
 
@@ -344,13 +348,13 @@ bool Bootstrapper::CreateCodeStubContext(Isolate* isolate) {
   Handle<Context> native_context = CreateEnvironment(
       MaybeHandle<JSGlobalProxy>(), v8::Local<v8::ObjectTemplate>(),
       &no_extensions, THIN_CONTEXT);
-  isolate->heap()->set_code_stub_context(*native_context);
+  isolate->heap()->SetRootCodeStubContext(*native_context);
   isolate->set_context(*native_context);
   Handle<JSObject> code_stub_exports =
       isolate->factory()->NewJSObject(isolate->object_function());
   JSObject::NormalizeProperties(code_stub_exports, CLEAR_INOBJECT_PROPERTIES, 2,
                                 "container to export to extra natives");
-  isolate->heap()->set_code_stub_exports_object(*code_stub_exports);
+  isolate->heap()->SetRootCodeStubExportsObject(*code_stub_exports);
   return InstallCodeStubNatives(isolate);
 }
 
@@ -1752,23 +1756,6 @@ void Genesis::InitializeBuiltinTypedArrays() {
 }
 
 
-bool Bootstrapper::InstallJSBuiltins(Isolate* isolate,
-                                     Handle<JSObject> container) {
-  HandleScope scope(isolate);
-  Handle<JSBuiltinsObject> builtins = isolate->js_builtins_object();
-  for (int i = 0; i < Builtins::NumberOfJavaScriptBuiltins(); i++) {
-    Builtins::JavaScript id = static_cast<Builtins::JavaScript>(i);
-    Handle<Object> function_object =
-        Object::GetProperty(isolate, container, Builtins::GetName(id))
-            .ToHandleChecked();
-    DCHECK(function_object->IsJSFunction());
-    Handle<JSFunction> function = Handle<JSFunction>::cast(function_object);
-    builtins->set_javascript_builtin(id, *function);
-  }
-  return true;
-}
-
-
 void Bootstrapper::ExportPrivateSymbols(Isolate* isolate,
                                         Handle<JSObject> container) {
   HandleScope scope(isolate);
@@ -2173,11 +2160,6 @@ bool Genesis::InstallNatives(ContextType context_type) {
           script_is_embedder_debug_script, attribs);
       script_map->AppendDescriptor(&d);
     }
-
-    // Allocate the empty script.
-    Handle<Script> script = factory()->NewScript(factory()->empty_string());
-    script->set_type(Smi::FromInt(Script::TYPE_NATIVE));
-    heap()->public_set_empty_script(*script);
   }
   {
     // Builtin function for OpaqueReference -- a JSValue-based object,
@@ -2688,6 +2670,11 @@ bool Genesis::InstallSpecialObjects(Handle<Context> native_context) {
     Handle<Object> global_proxy(debug_context->global_proxy(), isolate);
     JSObject::AddProperty(global, debug_string, global_proxy, DONT_ENUM);
   }
+
+#if defined(V8_WASM)
+  WasmJs::Install(isolate, global);
+#endif
+
   return true;
 }
 

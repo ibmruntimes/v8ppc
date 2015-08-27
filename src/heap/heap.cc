@@ -33,6 +33,7 @@
 #include "src/snapshot/natives.h"
 #include "src/snapshot/serialize.h"
 #include "src/snapshot/snapshot.h"
+#include "src/type-feedback-vector.h"
 #include "src/utils.h"
 #include "src/v8.h"
 #include "src/v8threads.h"
@@ -136,7 +137,8 @@ Heap::Heap()
       current_gc_callback_flags_(GCCallbackFlags::kNoGCCallbackFlags),
       external_string_table_(this),
       chunks_queued_for_free_(NULL),
-      pending_unmap_job_semaphore_(0),
+      concurrent_unmapping_tasks_active_(0),
+      pending_unmapping_tasks_semaphore_(0),
       gc_callbacks_depth_(0),
       deserialization_complete_(false),
       concurrent_sweeping_enabled_(false),
@@ -478,8 +480,14 @@ const char* Heap::GetSpaceName(int idx) {
 }
 
 
-void Heap::ClearAllICsByKind(Code::Kind kind) {
-  // TODO(mvstanton): Do not iterate the heap.
+void Heap::ClearAllKeyedStoreICs() {
+  if (FLAG_vector_stores) {
+    TypeFeedbackVector::ClearAllKeyedStoreICs(isolate_);
+    return;
+  }
+
+  // TODO(mvstanton): Remove this function when FLAG_vector_stores is turned on
+  // permanently, and divert all callers to KeyedStoreIC::ClearAllKeyedStoreICs.
   HeapObjectIterator it(code_space());
 
   for (Object* object = it.Next(); object != NULL; object = it.Next()) {
@@ -487,7 +495,7 @@ void Heap::ClearAllICsByKind(Code::Kind kind) {
     Code::Kind current_kind = code->kind();
     if (current_kind == Code::FUNCTION ||
         current_kind == Code::OPTIMIZED_FUNCTION) {
-      code->ClearInlineCaches(kind);
+      code->ClearInlineCaches(Code::KEYED_STORE_IC);
     }
   }
 }
@@ -2569,7 +2577,8 @@ AllocationResult Heap::AllocatePartialMap(InstanceType instance_type,
   if (!allocation.To(&result)) return allocation;
 
   // Map::cast cannot be used due to uninitialized map field.
-  reinterpret_cast<Map*>(result)->set_map(raw_unchecked_meta_map());
+  reinterpret_cast<Map*>(result)->set_map(
+      reinterpret_cast<Map*>(root(kMetaMapRootIndex)));
   reinterpret_cast<Map*>(result)->set_instance_type(instance_type);
   reinterpret_cast<Map*>(result)->set_instance_size(instance_size);
   // Initialize to only containing tagged fields.
@@ -2918,7 +2927,7 @@ bool Heap::CreateInitialMaps() {
 
       BytecodeArray* bytecode_array;
       AllocationResult allocation =
-          AllocateBytecodeArray(0, nullptr, kPointerSize);
+          AllocateBytecodeArray(0, nullptr, 0, 0, empty_fixed_array());
       if (!allocation.To(&bytecode_array)) {
         return false;
       }
@@ -3303,6 +3312,11 @@ void Heap::CreateInitialObjects() {
   // Handling of script id generation is in Factory::NewScript.
   set_last_script_id(Smi::FromInt(v8::UnboundScript::kNoScriptId));
 
+  // Allocate the empty script.
+  Handle<Script> script = factory->NewScript(factory->empty_string());
+  script->set_type(Smi::FromInt(Script::TYPE_NATIVE));
+  set_empty_script(*script);
+
   Handle<PropertyCell> cell = factory->NewPropertyCell();
   cell->set_value(Smi::FromInt(Isolate::kArrayProtectorValid));
   set_array_protector(*cell);
@@ -3517,10 +3531,14 @@ AllocationResult Heap::AllocateByteArray(int length, PretenureFlag pretenure) {
 
 AllocationResult Heap::AllocateBytecodeArray(int length,
                                              const byte* const raw_bytecodes,
-                                             int frame_size) {
+                                             int frame_size,
+                                             int parameter_count,
+                                             FixedArray* constant_pool) {
   if (length < 0 || length > BytecodeArray::kMaxLength) {
     v8::internal::Heap::FatalProcessOutOfMemory("invalid array length", true);
   }
+  // Bytecode array is pretenured, so constant pool array should be to.
+  DCHECK(!InNewSpace(constant_pool));
 
   int size = BytecodeArray::SizeFor(length);
   HeapObject* result;
@@ -3533,6 +3551,8 @@ AllocationResult Heap::AllocateBytecodeArray(int length,
   BytecodeArray* instance = BytecodeArray::cast(result);
   instance->set_length(length);
   instance->set_frame_size(frame_size);
+  instance->set_parameter_count(parameter_count);
+  instance->set_constant_pool(constant_pool);
   CopyBytes(instance->GetFirstBytecodeAddress(), raw_bytecodes, length);
 
   return result;
@@ -3543,11 +3563,14 @@ void Heap::CreateFillerObjectAt(Address addr, int size) {
   if (size == 0) return;
   HeapObject* filler = HeapObject::FromAddress(addr);
   if (size == kPointerSize) {
-    filler->set_map_no_write_barrier(raw_unchecked_one_pointer_filler_map());
+    filler->set_map_no_write_barrier(
+        reinterpret_cast<Map*>(root(kOnePointerFillerMapRootIndex)));
   } else if (size == 2 * kPointerSize) {
-    filler->set_map_no_write_barrier(raw_unchecked_two_pointer_filler_map());
+    filler->set_map_no_write_barrier(
+        reinterpret_cast<Map*>(root(kTwoPointerFillerMapRootIndex)));
   } else {
-    filler->set_map_no_write_barrier(raw_unchecked_free_space_map());
+    filler->set_map_no_write_barrier(
+        reinterpret_cast<Map*>(root(kFreeSpaceMapRootIndex)));
     FreeSpace::cast(filler)->nobarrier_set_size(size);
   }
   // At this point, we may be deserializing the heap from a snapshot, and
@@ -5753,6 +5776,8 @@ void Heap::TearDown() {
     memory_reducer_ = nullptr;
   }
 
+  WaitUntilUnmappingOfFreeChunksCompleted();
+
   TearDownArrayBuffers();
 
   isolate_->global_handles()->TearDown();
@@ -5767,19 +5792,16 @@ void Heap::TearDown() {
   new_space_.TearDown();
 
   if (old_space_ != NULL) {
-    old_space_->TearDown();
     delete old_space_;
     old_space_ = NULL;
   }
 
   if (code_space_ != NULL) {
-    code_space_->TearDown();
     delete code_space_;
     code_space_ = NULL;
   }
 
   if (map_space_ != NULL) {
-    map_space_->TearDown();
     delete map_space_;
     map_space_ = NULL;
   }
@@ -6089,31 +6111,15 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
 };
 
 
-HeapIterator::HeapIterator(Heap* heap)
-    : make_heap_iterable_helper_(heap),
-      no_heap_allocation_(),
-      heap_(heap),
-      filtering_(HeapIterator::kNoFiltering),
-      filter_(NULL) {
-  Init();
-}
-
-
 HeapIterator::HeapIterator(Heap* heap,
                            HeapIterator::HeapObjectsFiltering filtering)
     : make_heap_iterable_helper_(heap),
       no_heap_allocation_(),
       heap_(heap),
       filtering_(filtering),
-      filter_(NULL) {
-  Init();
-}
-
-
-HeapIterator::~HeapIterator() { Shutdown(); }
-
-
-void HeapIterator::Init() {
+      filter_(nullptr),
+      space_iterator_(nullptr),
+      object_iterator_(nullptr) {
   // Start the iteration.
   space_iterator_ = new SpaceIterator(heap_);
   switch (filtering_) {
@@ -6127,35 +6133,33 @@ void HeapIterator::Init() {
 }
 
 
-void HeapIterator::Shutdown() {
+HeapIterator::~HeapIterator() {
 #ifdef DEBUG
   // Assert that in filtering mode we have iterated through all
   // objects. Otherwise, heap will be left in an inconsistent state.
   if (filtering_ != kNoFiltering) {
-    DCHECK(object_iterator_ == NULL);
+    DCHECK(object_iterator_ == nullptr);
   }
 #endif
   // Make sure the last iterator is deallocated.
+  delete object_iterator_;
   delete space_iterator_;
-  space_iterator_ = NULL;
-  object_iterator_ = NULL;
   delete filter_;
-  filter_ = NULL;
 }
 
 
 HeapObject* HeapIterator::next() {
-  if (filter_ == NULL) return NextObject();
+  if (filter_ == nullptr) return NextObject();
 
   HeapObject* obj = NextObject();
-  while (obj != NULL && filter_->SkipObject(obj)) obj = NextObject();
+  while ((obj != nullptr) && (filter_->SkipObject(obj))) obj = NextObject();
   return obj;
 }
 
 
 HeapObject* HeapIterator::NextObject() {
   // No iterator means we are done.
-  if (object_iterator_ == NULL) return NULL;
+  if (object_iterator_ == nullptr) return nullptr;
 
   if (HeapObject* obj = object_iterator_->next_object()) {
     // If the current iterator has more objects we are fine.
@@ -6170,15 +6174,8 @@ HeapObject* HeapIterator::NextObject() {
     }
   }
   // Done with the last space.
-  object_iterator_ = NULL;
-  return NULL;
-}
-
-
-void HeapIterator::reset() {
-  // Restart the iterator.
-  Shutdown();
-  Init();
+  object_iterator_ = nullptr;
+  return nullptr;
 }
 
 
@@ -6251,7 +6248,7 @@ void PathTracer::TracePathFrom(Object** root) {
 
 
 static bool SafeIsNativeContext(HeapObject* obj) {
-  return obj->map() == obj->GetHeap()->raw_unchecked_native_context_map();
+  return obj->map() == obj->GetHeap()->root(Heap::kNativeContextMapRootIndex);
 }
 
 
@@ -6517,7 +6514,7 @@ class Heap::UnmapFreeMemoryTask : public v8::Task {
   // v8::Task overrides.
   void Run() override {
     heap_->FreeQueuedChunks(head_);
-    heap_->pending_unmap_job_semaphore_.Signal();
+    heap_->pending_unmapping_tasks_semaphore_.Signal();
   }
 
   Heap* heap_;
@@ -6528,9 +6525,10 @@ class Heap::UnmapFreeMemoryTask : public v8::Task {
 
 
 void Heap::WaitUntilUnmappingOfFreeChunksCompleted() {
-  // We start an unmap job after sweeping and after compaction.
-  pending_unmap_job_semaphore_.Wait();
-  pending_unmap_job_semaphore_.Wait();
+  while (concurrent_unmapping_tasks_active_ > 0) {
+    pending_unmapping_tasks_semaphore_.Wait();
+    concurrent_unmapping_tasks_active_--;
+  }
 }
 
 
@@ -6567,8 +6565,9 @@ void Heap::FreeQueuedChunks() {
   } else {
     // If we do not have anything to unmap, we just signal the semaphore
     // that we are done.
-    pending_unmap_job_semaphore_.Signal();
+    pending_unmapping_tasks_semaphore_.Signal();
   }
+  concurrent_unmapping_tasks_active_++;
 }
 
 

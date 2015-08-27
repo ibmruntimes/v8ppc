@@ -90,6 +90,18 @@ MaybeHandle<JSReceiver> Object::ToObject(Isolate* isolate,
 }
 
 
+MaybeHandle<Name> Object::ToName(Isolate* isolate, Handle<Object> object) {
+  if (object->IsName()) {
+    return Handle<Name>::cast(object);
+  } else {
+    Handle<Object> converted;
+    ASSIGN_RETURN_ON_EXCEPTION(isolate, converted,
+                               Execution::ToString(isolate, object), Name);
+    return Handle<Name>::cast(converted);
+  }
+}
+
+
 bool Object::BooleanValue() {
   if (IsBoolean()) return IsTrue();
   if (IsSmi()) return Smi::cast(this)->value() != 0;
@@ -4765,7 +4777,7 @@ void JSObject::RequireSlowElements(SeededNumberDictionary* dictionary) {
   dictionary->set_requires_slow_elements();
   // TODO(verwaest): Remove this hack.
   if (map()->is_prototype_map()) {
-    GetHeap()->ClearAllICsByKind(Code::KEYED_STORE_IC);
+    GetHeap()->ClearAllKeyedStoreICs();
   }
 }
 
@@ -11585,6 +11597,7 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
 
 
 void BytecodeArray::Disassemble(std::ostream& os) {
+  os << "Parameter count " << parameter_count() << "\n";
   os << "Frame size " << frame_size() << "\n";
   Vector<char> buf = Vector<char>::New(50);
 
@@ -11601,6 +11614,9 @@ void BytecodeArray::Disassemble(std::ostream& os) {
     interpreter::Bytecodes::Decode(os, bytecode_start);
     os << "\n";
   }
+
+  os << "Constant pool (size = " << constant_pool()->length() << ")\n";
+  constant_pool()->Print();
 }
 
 
@@ -12108,7 +12124,7 @@ MaybeHandle<Object> JSObject::SetPrototype(Handle<JSObject> object,
     // If the prototype chain didn't previously have element callbacks, then
     // KeyedStoreICs need to be cleared to ensure any that involve this
     // map go generic.
-    object->GetHeap()->ClearAllICsByKind(Code::KEYED_STORE_IC);
+    object->GetHeap()->ClearAllKeyedStoreICs();
   }
 
   heap->ClearInstanceofCache();
@@ -14107,7 +14123,7 @@ void StringTable::EnsureCapacityForDeserialization(Isolate* isolate,
   // We need a key instance for the virtual hash function.
   InternalizedStringKey dummy_key(Handle<String>::null());
   table = StringTable::EnsureCapacity(table, expected, &dummy_key);
-  isolate->factory()->set_string_table(table);
+  isolate->heap()->SetRootStringTable(*table);
 }
 
 
@@ -14141,7 +14157,7 @@ Handle<String> StringTable::LookupKey(Isolate* isolate, HashTableKey* key) {
   table->set(EntryToIndex(entry), *string);
   table->ElementAdded();
 
-  isolate->factory()->set_string_table(table);
+  isolate->heap()->SetRootStringTable(*table);
   return Handle<String>::cast(string);
 }
 
@@ -14522,7 +14538,7 @@ void SeededNumberDictionary::UpdateMaxNumberKey(uint32_t key,
   if (key > kRequiresSlowElementsLimit) {
     if (used_as_prototype) {
       // TODO(verwaest): Remove this hack.
-      GetHeap()->ClearAllICsByKind(Code::KEYED_STORE_IC);
+      GetHeap()->ClearAllKeyedStoreICs();
     }
     set_requires_slow_elements();
     return;

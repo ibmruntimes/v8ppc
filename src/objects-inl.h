@@ -1477,6 +1477,8 @@ HeapObjectContents HeapObject::ContentType() {
   } else if (type == JS_FUNCTION_TYPE) {
     return HeapObjectContents::kMixedValues;
 #endif
+  } else if (type == BYTECODE_ARRAY_TYPE) {
+    return HeapObjectContents::kMixedValues;
   } else if (type >= FIRST_FIXED_TYPED_ARRAY_TYPE &&
              type <= LAST_FIXED_TYPED_ARRAY_TYPE) {
     return HeapObjectContents::kMixedValues;
@@ -3213,8 +3215,8 @@ int HashTable<Derived, Shape, Key>::FindEntry(Isolate* isolate, Key key,
     Object* element = KeyAt(entry);
     // Empty entry. Uses raw unchecked accessors because it is called by the
     // string table during bootstrapping.
-    if (element == isolate->heap()->raw_unchecked_undefined_value()) break;
-    if (element != isolate->heap()->raw_unchecked_the_hole_value() &&
+    if (element == isolate->heap()->root(Heap::kUndefinedValueRootIndex)) break;
+    if (element != isolate->heap()->root(Heap::kTheHoleValueRootIndex) &&
         Shape::IsMatch(key, element)) return entry;
     entry = NextProbe(entry, count++, capacity);
   }
@@ -3509,7 +3511,7 @@ int FreeSpace::Size() { return size(); }
 
 
 FreeSpace* FreeSpace::next() {
-  DCHECK(map() == GetHeap()->raw_unchecked_free_space_map() ||
+  DCHECK(map() == GetHeap()->root(Heap::kFreeSpaceMapRootIndex) ||
          (!GetHeap()->deserialization_complete() && map() == NULL));
   DCHECK_LE(kNextOffset + kPointerSize, nobarrier_size());
   return reinterpret_cast<FreeSpace*>(
@@ -3518,7 +3520,7 @@ FreeSpace* FreeSpace::next() {
 
 
 FreeSpace** FreeSpace::next_address() {
-  DCHECK(map() == GetHeap()->raw_unchecked_free_space_map() ||
+  DCHECK(map() == GetHeap()->root(Heap::kFreeSpaceMapRootIndex) ||
          (!GetHeap()->deserialization_complete() && map() == NULL));
   DCHECK_LE(kNextOffset + kPointerSize, nobarrier_size());
   return reinterpret_cast<FreeSpace**>(address() + kNextOffset);
@@ -3526,7 +3528,7 @@ FreeSpace** FreeSpace::next_address() {
 
 
 void FreeSpace::set_next(FreeSpace* next) {
-  DCHECK(map() == GetHeap()->raw_unchecked_free_space_map() ||
+  DCHECK(map() == GetHeap()->root(Heap::kFreeSpaceMapRootIndex) ||
          (!GetHeap()->deserialization_complete() && map() == NULL));
   DCHECK_LE(kNextOffset + kPointerSize, nobarrier_size());
   base::NoBarrier_Store(
@@ -4034,6 +4036,11 @@ Address ByteArray::GetDataStartAddress() {
 }
 
 
+void BytecodeArray::BytecodeArrayIterateBody(ObjectVisitor* v) {
+  IteratePointer(v, kConstantPoolOffset);
+}
+
+
 byte BytecodeArray::get(int index) {
   DCHECK(index >= 0 && index < this->length());
   return READ_BYTE_FIELD(this, kHeaderSize + index * kCharSize);
@@ -4056,6 +4063,25 @@ void BytecodeArray::set_frame_size(int frame_size) {
 int BytecodeArray::frame_size() const {
   return READ_INT_FIELD(this, kFrameSizeOffset);
 }
+
+
+void BytecodeArray::set_parameter_count(int number_of_parameters) {
+  DCHECK_GE(number_of_parameters, 0);
+  // Parameter count is stored as the size on stack of the parameters to allow
+  // it to be used directly by generated code.
+  WRITE_INT_FIELD(this, kParameterSizeOffset,
+                  (number_of_parameters << kPointerSizeLog2));
+}
+
+
+int BytecodeArray::parameter_count() const {
+  // Parameter count is stored as the size on stack of the parameters to allow
+  // it to be used directly by generated code.
+  return READ_INT_FIELD(this, kParameterSizeOffset) >> kPointerSizeLog2;
+}
+
+
+ACCESSORS(BytecodeArray, constant_pool, FixedArray, kConstantPoolOffset)
 
 
 Address BytecodeArray::GetFirstBytecodeAddress() {
@@ -6278,20 +6304,6 @@ void JSFunction::set_function_bindings(FixedArray* bindings) {
 int JSFunction::NumberOfLiterals() {
   DCHECK(!shared()->bound());
   return literals()->length();
-}
-
-
-Object* JSBuiltinsObject::javascript_builtin(Builtins::JavaScript id) {
-  DCHECK(id < kJSBuiltinsCount);  // id is unsigned.
-  return READ_FIELD(this, OffsetOfFunctionWithId(id));
-}
-
-
-void JSBuiltinsObject::set_javascript_builtin(Builtins::JavaScript id,
-                                              Object* value) {
-  DCHECK(id < kJSBuiltinsCount);  // id is unsigned.
-  WRITE_FIELD(this, OffsetOfFunctionWithId(id), value);
-  WRITE_BARRIER(GetHeap(), this, OffsetOfFunctionWithId(id), value);
 }
 
 

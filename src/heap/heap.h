@@ -817,8 +817,8 @@ class Heap {
   // Clear the Instanceof cache (used when a prototype changes).
   inline void ClearInstanceofCache();
 
-  // Iterates the whole code space to clear all ICs of the given kind.
-  void ClearAllICsByKind(Code::Kind kind);
+  // Iterates the whole code space to clear all keyed store ICs.
+  void ClearAllKeyedStoreICs();
 
   // FreeSpace objects have a null map after deserialization. Update the map.
   void RepairFreeListsAfterDeserialization();
@@ -1177,15 +1177,8 @@ class Heap {
   // Root set access. ==========================================================
   // ===========================================================================
 
-  // Heap root getters.  We have versions with and without type::cast() here.
-  // You can't use type::cast during GC because the assert fails.
-  // TODO(1490): Try removing the unchecked accessors, now that GC marking does
-  // not corrupt the map.
-#define ROOT_ACCESSOR(type, name, camel_name)                         \
-  inline type* name();                                                \
-  type* raw_unchecked_##name() {                                      \
-    return reinterpret_cast<type*>(roots_[k##camel_name##RootIndex]); \
-  }
+  // Heap root getters.
+#define ROOT_ACCESSOR(type, name, camel_name) inline type* name();
   ROOT_LIST(ROOT_ACCESSOR)
 #undef ROOT_ACCESSOR
 
@@ -1215,21 +1208,33 @@ class Heap {
   Object** roots_array_start() { return roots_; }
 
   // Sets the stub_cache_ (only used when expanding the dictionary).
-  void public_set_code_stubs(UnseededNumberDictionary* value) {
+  void SetRootCodeStubs(UnseededNumberDictionary* value) {
     roots_[kCodeStubsRootIndex] = value;
   }
 
   // Sets the non_monomorphic_cache_ (only used when expanding the dictionary).
-  void public_set_non_monomorphic_cache(UnseededNumberDictionary* value) {
+  void SetRootNonMonomorphicCache(UnseededNumberDictionary* value) {
     roots_[kNonMonomorphicCacheRootIndex] = value;
   }
 
-  void public_set_empty_script(Script* script) {
-    roots_[kEmptyScriptRootIndex] = script;
+  void SetRootMaterializedObjects(FixedArray* objects) {
+    roots_[kMaterializedObjectsRootIndex] = objects;
   }
 
-  void public_set_materialized_objects(FixedArray* objects) {
-    roots_[kMaterializedObjectsRootIndex] = objects;
+  void SetRootCodeStubContext(Object* value) {
+    roots_[kCodeStubContextRootIndex] = value;
+  }
+
+  void SetRootCodeStubExportsObject(JSObject* value) {
+    roots_[kCodeStubExportsObjectRootIndex] = value;
+  }
+
+  void SetRootScriptList(Object* value) {
+    roots_[kScriptListRootIndex] = value;
+  }
+
+  void SetRootStringTable(StringTable* value) {
+    roots_[kStringTableRootIndex] = value;
   }
 
   // Set the stack limit in the roots_ array.  Some architectures generate
@@ -1996,7 +2001,8 @@ class Heap {
 
   // Allocates a bytecode array with given contents.
   MUST_USE_RESULT AllocationResult
-  AllocateBytecodeArray(int length, const byte* raw_bytecodes, int frame_size);
+  AllocateBytecodeArray(int length, const byte* raw_bytecodes, int frame_size,
+                        int parameter_count, FixedArray* constant_pool);
 
   // Copy the code and scope info part of the code object, but insert
   // the provided data as the relocation information.
@@ -2376,7 +2382,9 @@ class Heap {
 
   MemoryChunk* chunks_queued_for_free_;
 
-  base::Semaphore pending_unmap_job_semaphore_;
+  size_t concurrent_unmapping_tasks_active_;
+
+  base::Semaphore pending_unmapping_tasks_semaphore_;
 
   base::Mutex relocation_mutex_;
 
@@ -2407,20 +2415,22 @@ class Heap {
 
   StrongRootsList* strong_roots_list_;
 
+  // Classes in "heap" can be friends.
   friend class AlwaysAllocateScope;
-  friend class Bootstrapper;
-  friend class Deserializer;
-  friend class Factory;
   friend class GCCallbacksScope;
   friend class GCTracer;
   friend class HeapIterator;
   friend class IncrementalMarking;
-  friend class Isolate;
   friend class MarkCompactCollector;
   friend class MarkCompactMarkingVisitor;
-  friend class MapCompact;
   friend class Page;
   friend class StoreBuffer;
+
+  // The allocator interface.
+  friend class Factory;
+
+  // The Isolate constructs us.
+  friend class Isolate;
 
   // Used in cctest.
   friend class HeapTester;
@@ -2578,26 +2588,26 @@ class HeapIterator BASE_EMBEDDED {
  public:
   enum HeapObjectsFiltering { kNoFiltering, kFilterUnreachable };
 
-  explicit HeapIterator(Heap* heap);
-  HeapIterator(Heap* heap, HeapObjectsFiltering filtering);
+  explicit HeapIterator(Heap* heap,
+                        HeapObjectsFiltering filtering = kNoFiltering);
   ~HeapIterator();
 
   HeapObject* next();
-  void reset();
 
  private:
   struct MakeHeapIterableHelper {
     explicit MakeHeapIterableHelper(Heap* heap) { heap->MakeHeapIterable(); }
   };
 
-  // Perform the initialization.
-  void Init();
-  // Perform all necessary shutdown (destruction) work.
-  void Shutdown();
   HeapObject* NextObject();
 
+  // The following two fields need to be declared in this order. Initialization
+  // order guarantees that we first make the heap iterable (which may involve
+  // allocations) and only then lock it down by not allowing further
+  // allocations.
   MakeHeapIterableHelper make_heap_iterable_helper_;
   DisallowHeapAllocation no_heap_allocation_;
+
   Heap* heap_;
   HeapObjectsFiltering filtering_;
   HeapObjectsFilter* filter_;

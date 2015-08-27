@@ -3373,8 +3373,7 @@ Maybe<bool> Value::Equals(Local<Context> context, Local<Value> that) const {
   }
   PREPARE_FOR_EXECUTION_PRIMITIVE(context, "v8::Value::Equals()", bool);
   i::Handle<i::Object> args[] = { other };
-  i::Handle<i::JSFunction> fun(i::JSFunction::cast(
-      isolate->js_builtins_object()->javascript_builtin(i::Builtins::EQUALS)));
+  i::Handle<i::JSFunction> fun = isolate->equals_builtin();
   i::Handle<i::Object> result;
   has_pending_exception =
       !i::Execution::Call(isolate, fun, self, arraysize(args), args)
@@ -3532,7 +3531,7 @@ static i::MaybeHandle<i::Object> DefineObjectProperty(
 
   i::Handle<i::Name> name;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, name,
-                                   i::Runtime::ToName(isolate, key),
+                                   i::Object::ToName(isolate, key),
                                    i::MaybeHandle<i::Object>());
 
   return i::JSObject::DefinePropertyOrElementIgnoreAttributes(js_object, name,
@@ -3856,7 +3855,7 @@ Maybe<bool> v8::Object::Has(Local<Context> context, Local<Value> key) {
   } else {
     // Convert the key to a name - possibly by calling back into JavaScript.
     i::Handle<i::Name> name;
-    if (i::Runtime::ToName(isolate, key_obj).ToHandle(&name)) {
+    if (i::Object::ToName(isolate, key_obj).ToHandle(&name)) {
       maybe = i::JSReceiver::HasProperty(self, name);
     }
   }

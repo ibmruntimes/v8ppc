@@ -990,10 +990,8 @@ Handle<Code> Pipeline::GenerateCode() {
   // TODO(mstarzinger): This is just a temporary hack to make TurboFan work,
   // the correct solution is to restore the context register after invoking
   // builtins from full-codegen.
-  for (int i = 0; i < Builtins::NumberOfJavaScriptBuiltins(); i++) {
-    Builtins::JavaScript id = static_cast<Builtins::JavaScript>(i);
-    Object* builtin = isolate()->js_builtins_object()->javascript_builtin(id);
-    if (*info()->closure() == builtin) return Handle<Code>::null();
+  if (Context::IsJSBuiltin(isolate()->native_context(), info()->closure())) {
+    return Handle<Code>::null();
   }
 
   ZonePool zone_pool;
@@ -1360,13 +1358,17 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
     CHECK(!data->register_allocation_data()->ExistsUseWithoutDefinition());
   }
 
-  Run<SplinterLiveRangesPhase>();
+  if (FLAG_turbo_preprocess_ranges) {
+    Run<SplinterLiveRangesPhase>();
+  }
 
   // TODO(mtrofin): re-enable greedy once we have bots for range preprocessing.
   Run<AllocateGeneralRegistersPhase<LinearScanAllocator>>();
   Run<AllocateDoubleRegistersPhase<LinearScanAllocator>>();
 
-  Run<MergeSplintersPhase>();
+  if (FLAG_turbo_preprocess_ranges) {
+    Run<MergeSplintersPhase>();
+  }
 
   if (FLAG_turbo_frame_elision) {
     Run<LocateSpillSlotsPhase>();

@@ -304,7 +304,6 @@ namespace internal {
   F(CheckIsBootstrapping, 0, 1)               \
   F(ExportPrivateSymbols, 1, 1)               \
   F(InstallToContext, 1, 1)                   \
-  F(InstallJSBuiltins, 1, 1)                  \
   F(Throw, 1, 1)                              \
   F(ReThrow, 1, 1)                            \
   F(UnwindAndFindExceptionHandler, 0, 1)      \
@@ -1149,9 +1148,6 @@ class Runtime : public AllStatic {
 
   MUST_USE_RESULT static MaybeHandle<Object> GetPrototype(
       Isolate* isolate, Handle<Object> object);
-
-  MUST_USE_RESULT static MaybeHandle<Name> ToName(Isolate* isolate,
-                                                  Handle<Object> key);
 
   enum TypedArrayId {
     // arrayIds below should be synchronized with typedarray.js natives.

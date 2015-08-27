@@ -1074,9 +1074,12 @@ class Object {
   // native_context is used when creating wrapper object.
   static inline MaybeHandle<JSReceiver> ToObject(Isolate* isolate,
                                                  Handle<Object> object);
-  static MaybeHandle<JSReceiver> ToObject(Isolate* isolate,
-                                          Handle<Object> object,
-                                          Handle<Context> context);
+  MUST_USE_RESULT static MaybeHandle<JSReceiver> ToObject(
+      Isolate* isolate, Handle<Object> object, Handle<Context> context);
+
+  // Convert to a Name if needed.
+  MUST_USE_RESULT static MaybeHandle<Name> ToName(Isolate* isolate,
+                                                  Handle<Object> object);
 
   MUST_USE_RESULT static MaybeHandle<Object> GetProperty(
       LookupIterator* it, LanguageMode language_mode = SLOPPY);
@@ -4112,14 +4115,22 @@ class BytecodeArray : public FixedArrayBase {
   // Returns data start address.
   inline Address GetFirstBytecodeAddress();
 
-  // Accessors for frame size and the number of locals
+  // Accessors for frame size.
   inline int frame_size() const;
-  inline void set_frame_size(int value);
+  inline void set_frame_size(int frame_size);
+
+  // Accessors for parameter count (including implicit 'this' receiver).
+  inline int parameter_count() const;
+  inline void set_parameter_count(int number_of_parameters);
+
+  // Accessors for the constant pool.
+  DECL_ACCESSORS(constant_pool, FixedArray)
 
   DECLARE_CAST(BytecodeArray)
 
   // Dispatched behavior.
   inline int BytecodeArraySize();
+  inline void BytecodeArrayIterateBody(ObjectVisitor* v);
 
   DECLARE_PRINTER(BytecodeArray)
   DECLARE_VERIFIER(BytecodeArray)
@@ -4128,7 +4139,9 @@ class BytecodeArray : public FixedArrayBase {
 
   // Layout description.
   static const int kFrameSizeOffset = FixedArrayBase::kHeaderSize;
-  static const int kHeaderSize = kFrameSizeOffset + kIntSize;
+  static const int kParameterSizeOffset = kFrameSizeOffset + kIntSize;
+  static const int kConstantPoolOffset = kParameterSizeOffset + kIntSize;
+  static const int kHeaderSize = kConstantPoolOffset + kPointerSize;
 
   static const int kAlignedSize = OBJECT_POINTER_ALIGN(kHeaderSize);
 
@@ -7173,27 +7186,14 @@ class JSGlobalObject: public GlobalObject {
 // JavaScript.
 class JSBuiltinsObject: public GlobalObject {
  public:
-  // Accessors for the runtime routines written in JavaScript.
-  inline Object* javascript_builtin(Builtins::JavaScript id);
-  inline void set_javascript_builtin(Builtins::JavaScript id, Object* value);
-
   DECLARE_CAST(JSBuiltinsObject)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSBuiltinsObject)
   DECLARE_VERIFIER(JSBuiltinsObject)
 
-  // Layout description.  The size of the builtins object includes
-  // room for two pointers per runtime routine written in javascript
-  // (function and code object).
-  static const int kJSBuiltinsCount = Builtins::id_count;
-  static const int kJSBuiltinsOffset = GlobalObject::kHeaderSize;
-  static const int kSize =
-      GlobalObject::kHeaderSize + (kJSBuiltinsCount * kPointerSize);
-
-  static int OffsetOfFunctionWithId(Builtins::JavaScript id) {
-    return kJSBuiltinsOffset + id * kPointerSize;
-  }
+  // Layout description.
+  static const int kSize = GlobalObject::kHeaderSize;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSBuiltinsObject);

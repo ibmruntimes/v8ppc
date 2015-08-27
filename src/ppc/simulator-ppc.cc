@@ -3752,7 +3752,7 @@ void Simulator::CallInternal(byte* entry) {
   // Adjust JS-based stack limit to C-based stack limit.
   isolate_->stack_guard()->AdjustStackLimitForSimulator();
 
-  // Prepare to execute the code at entry
+// Prepare to execute the code at entry
 #if ABI_USES_FUNCTION_DESCRIPTORS
   // entry is the function descriptor
   set_pc(*(reinterpret_cast<intptr_t*>(entry)));

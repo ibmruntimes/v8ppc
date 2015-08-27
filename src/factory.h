@@ -288,7 +288,8 @@ class Factory final {
                                  PretenureFlag pretenure = NOT_TENURED);
 
   Handle<BytecodeArray> NewBytecodeArray(int length, const byte* raw_bytecodes,
-                                         int frame_size);
+                                         int frame_size, int parameter_count,
+                                         Handle<FixedArray> constant_pool);
 
   Handle<FixedTypedArrayBase> NewFixedTypedArrayWithExternalPointer(
       int length, ExternalArrayType array_type, void* external_pointer,
@@ -621,14 +622,6 @@ class Factory final {
   }
   PUBLIC_SYMBOL_LIST(SYMBOL_ACCESSOR)
 #undef SYMBOL_ACCESSOR
-
-  inline void set_string_table(Handle<StringTable> table) {
-    isolate()->heap()->set_string_table(*table);
-  }
-
-  inline void set_weak_stack_trace_list(Handle<WeakFixedArray> list) {
-    isolate()->heap()->set_weak_stack_trace_list(*list);
-  }
 
   // Allocates a new SharedFunctionInfo object.
   Handle<SharedFunctionInfo> NewSharedFunctionInfo(

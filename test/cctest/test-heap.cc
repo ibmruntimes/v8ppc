@@ -711,20 +711,31 @@ TEST(BytecodeArray) {
   static const uint8_t kRawBytes[] = {0xc3, 0x7e, 0xa5, 0x5a};
   static const int kRawBytesSize = sizeof(kRawBytes);
   static const int kFrameSize = 32;
+  static const int kParameterCount = 2;
 
+  i::FLAG_manual_evacuation_candidates_selection = true;
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
   Heap* heap = isolate->heap();
   Factory* factory = isolate->factory();
   HandleScope scope(isolate);
 
+  SimulateFullSpace(heap->old_space());
+  Handle<FixedArray> constant_pool = factory->NewFixedArray(5, TENURED);
+  for (int i = 0; i < 5; i++) {
+    Handle<Object> number = factory->NewHeapNumber(i);
+    constant_pool->set(i, *number);
+  }
+
   // Allocate and initialize BytecodeArray
-  Handle<BytecodeArray> array =
-      factory->NewBytecodeArray(kRawBytesSize, kRawBytes, kFrameSize);
+  Handle<BytecodeArray> array = factory->NewBytecodeArray(
+      kRawBytesSize, kRawBytes, kFrameSize, kParameterCount, constant_pool);
 
   CHECK(array->IsBytecodeArray());
   CHECK_EQ(array->length(), (int)sizeof(kRawBytes));
   CHECK_EQ(array->frame_size(), kFrameSize);
+  CHECK_EQ(array->parameter_count(), kParameterCount);
+  CHECK_EQ(array->constant_pool(), *constant_pool);
   CHECK_LE(array->address(), array->GetFirstBytecodeAddress());
   CHECK_GE(array->address() + array->BytecodeArraySize(),
            array->GetFirstBytecodeAddress() + array->length());
@@ -733,17 +744,25 @@ TEST(BytecodeArray) {
     CHECK_EQ(array->get(i), kRawBytes[i]);
   }
 
-  // Full garbage collection
+  FixedArray* old_constant_pool_address = *constant_pool;
+
+  // Perform a full garbage collection and force the constant pool to be on an
+  // evacuation candidate.
+  Page* evac_page = Page::FromAddress(constant_pool->address());
+  evac_page->SetFlag(MemoryChunk::FORCE_EVACUATION_CANDIDATE_FOR_TESTING);
   heap->CollectAllGarbage();
 
-  // BytecodeArray should survive
+  // BytecodeArray should survive.
   CHECK_EQ(array->length(), kRawBytesSize);
   CHECK_EQ(array->frame_size(), kFrameSize);
-
   for (int i = 0; i < kRawBytesSize; i++) {
     CHECK_EQ(array->get(i), kRawBytes[i]);
     CHECK_EQ(array->GetFirstBytecodeAddress()[i], kRawBytes[i]);
   }
+
+  // Constant pool should have been migrated.
+  CHECK_EQ(array->constant_pool(), *constant_pool);
+  CHECK_NE(array->constant_pool(), old_constant_pool_address);
 }
 
 
@@ -6479,6 +6498,81 @@ TEST(SlotsBufferObjectSlotsRemoval) {
   CHECK(reinterpret_cast<void*>(buffer->Get(2)) ==
         HeapObject::RawField(heap->empty_fixed_array(),
                              FixedArrayBase::kLengthOffset));
+  delete buffer;
+}
+
+
+TEST(FilterInvalidSlotsBufferEntries) {
+  FLAG_manual_evacuation_candidates_selection = true;
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Isolate* isolate = CcTest::i_isolate();
+  Heap* heap = isolate->heap();
+  Factory* factory = isolate->factory();
+  SlotsBuffer* buffer = new SlotsBuffer(NULL);
+
+  // Set up a fake black object that will contain a recorded SMI, a recorded
+  // pointer to a new space object, and a recorded pointer to a non-evacuation
+  // candidate object. These object should be filtered out. Additionally,
+  // we point to an evacuation candidate object which should not be filtered
+  // out.
+
+  // Create fake object and mark it black.
+  Handle<FixedArray> fake_object = factory->NewFixedArray(23, TENURED);
+  MarkBit mark_bit = Marking::MarkBitFrom(*fake_object);
+  Marking::MarkBlack(mark_bit);
+
+  // Write a SMI into field one and record its address;
+  Object** field_smi = fake_object->RawFieldOfElementAt(0);
+  *field_smi = Smi::FromInt(100);
+  buffer->Add(field_smi);
+
+  // Write a new space reference into field 2 and record its address;
+  Handle<FixedArray> new_space_object = factory->NewFixedArray(23);
+  mark_bit = Marking::MarkBitFrom(*new_space_object);
+  Marking::MarkBlack(mark_bit);
+  Object** field_new_space = fake_object->RawFieldOfElementAt(1);
+  *field_new_space = *new_space_object;
+  buffer->Add(field_new_space);
+
+  // Write an old space reference into field 3 which points to an object not on
+  // an evacuation candidate.
+  Handle<FixedArray> old_space_object_non_evacuation =
+      factory->NewFixedArray(23, TENURED);
+  mark_bit = Marking::MarkBitFrom(*old_space_object_non_evacuation);
+  Marking::MarkBlack(mark_bit);
+  Object** field_old_space_object_non_evacuation =
+      fake_object->RawFieldOfElementAt(2);
+  *field_old_space_object_non_evacuation = *old_space_object_non_evacuation;
+  buffer->Add(field_old_space_object_non_evacuation);
+
+  // Write an old space reference into field 4 which points to an object on an
+  // evacuation candidate.
+  SimulateFullSpace(heap->old_space());
+  Handle<FixedArray> valid_object =
+      isolate->factory()->NewFixedArray(23, TENURED);
+  Page* page = Page::FromAddress(valid_object->address());
+  page->SetFlag(MemoryChunk::EVACUATION_CANDIDATE);
+  Object** valid_field = fake_object->RawFieldOfElementAt(3);
+  *valid_field = *valid_object;
+  buffer->Add(valid_field);
+
+  SlotsBuffer::RemoveInvalidSlots(heap, buffer);
+  Object** kRemovedEntry = HeapObject::RawField(heap->empty_fixed_array(),
+                                                FixedArrayBase::kLengthOffset);
+  CHECK_EQ(buffer->Get(0), kRemovedEntry);
+  CHECK_EQ(buffer->Get(1), kRemovedEntry);
+  CHECK_EQ(buffer->Get(2), kRemovedEntry);
+  CHECK_EQ(buffer->Get(3), valid_field);
+
+  // Clean-up to make verify heap happy.
+  mark_bit = Marking::MarkBitFrom(*fake_object);
+  Marking::MarkWhite(mark_bit);
+  mark_bit = Marking::MarkBitFrom(*new_space_object);
+  Marking::MarkWhite(mark_bit);
+  mark_bit = Marking::MarkBitFrom(*old_space_object_non_evacuation);
+  Marking::MarkWhite(mark_bit);
+
   delete buffer;
 }
 
