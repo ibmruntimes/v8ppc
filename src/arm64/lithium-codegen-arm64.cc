@@ -630,8 +630,7 @@ bool LCodeGen::GeneratePrologue() {
     // Sloppy mode functions and builtins need to replace the receiver with the
     // global proxy when called as functions (without an explicit receiver
     // object).
-    if (is_sloppy(info_->language_mode()) && info()->MayUseThis() &&
-        !info()->is_native() && info()->scope()->has_this_declaration()) {
+    if (info()->MustReplaceUndefinedReceiverWithGlobalProxy()) {
       Label ok;
       int receiver_offset = info_->scope()->num_parameters() * kXRegSize;
       __ Peek(x10, receiver_offset);
@@ -981,7 +980,6 @@ void LCodeGen::DeoptimizeBranch(
   }
 
   DCHECK(environment->HasBeenRegistered());
-  DCHECK(info()->IsOptimizing() || info()->IsStub());
   int id = environment->deoptimization_index();
   Address entry =
       Deoptimizer::GetDeoptimizationEntry(isolate(), id, bailout_type);
@@ -1132,7 +1130,7 @@ void LCodeGen::DeoptimizeIfBitClear(Register rt, int bit, LInstruction* instr,
 
 
 void LCodeGen::EnsureSpaceForLazyDeopt(int space_needed) {
-  if (!info()->IsStub()) {
+  if (info()->ShouldEnsureSpaceForLazyDeopt()) {
     // Ensure that we have enough space after the previous lazy-bailout
     // instruction for patching the code here.
     intptr_t current_pc = masm()->pc_offset();

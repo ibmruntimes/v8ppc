@@ -119,8 +119,7 @@ void FullCodeGenerator::Generate() {
   // Sloppy mode functions and builtins need to replace the receiver with the
   // global proxy when called as functions (without an explicit receiver
   // object).
-  if (is_sloppy(info->language_mode()) && !info->is_native() &&
-      info->MayUseThis() && info->scope()->has_this_declaration()) {
+  if (info->MustReplaceUndefinedReceiverWithGlobalProxy()) {
     Label ok;
     int receiver_offset = info->scope()->num_parameters() * kXRegSize;
     __ Peek(x10, receiver_offset);
@@ -3170,7 +3169,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   // string "valueOf" the result is false.
   Register valueof_string = x1;
   int descriptor_size = DescriptorArray::kDescriptorSize * kPointerSize;
-  __ Mov(valueof_string, Operand(isolate()->factory()->value_of_string()));
+  __ LoadRoot(valueof_string, Heap::kvalueOf_stringRootIndex);
   __ Bind(&loop);
   __ Ldr(x15, MemOperand(descriptors, descriptor_size, PostIndex));
   __ Cmp(x15, valueof_string);
@@ -3686,6 +3685,38 @@ void FullCodeGenerator::EmitNumberToString(CallRuntime* expr) {
 
   NumberToStringStub stub(isolate());
   __ CallStub(&stub);
+  context()->Plug(x0);
+}
+
+
+void FullCodeGenerator::EmitToString(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK_EQ(1, args->length());
+
+  // Load the argument into x0 and convert it.
+  VisitForAccumulatorValue(args->at(0));
+
+  ToStringStub stub(isolate());
+  __ CallStub(&stub);
+  context()->Plug(x0);
+}
+
+
+void FullCodeGenerator::EmitToName(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK_EQ(1, args->length());
+
+  // Load the argument into x0 and convert it.
+  VisitForAccumulatorValue(args->at(0));
+
+  Label convert, done_convert;
+  __ JumpIfSmi(x0, &convert);
+  STATIC_ASSERT(FIRST_NAME_TYPE == FIRST_TYPE);
+  __ JumpIfObjectType(x0, x1, x1, LAST_NAME_TYPE, &done_convert, ls);
+  __ Bind(&convert);
+  ToStringStub stub(isolate());
+  __ CallStub(&stub);
+  __ Bind(&done_convert);
   context()->Plug(x0);
 }
 

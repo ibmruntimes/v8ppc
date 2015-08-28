@@ -11,7 +11,6 @@
 
 // The following declarations are shared with other native JS files.
 // They are all declared at this one spot to avoid redeclaration errors.
-var $defaultNumber;
 var $defaultString;
 var $NaN;
 var $nonNumberToNumber;
@@ -20,7 +19,6 @@ var $sameValue;
 var $sameValueZero;
 var $toInteger;
 var $toLength;
-var $toName;
 var $toNumber;
 var $toPositiveInteger;
 var $toPrimitive;
@@ -34,6 +32,8 @@ var GlobalArray = global.Array;
 var GlobalBoolean = global.Boolean;
 var GlobalString = global.String;
 var GlobalNumber = global.Number;
+var isConcatSpreadableSymbol =
+    utils.ImportNow("is_concat_spreadable_symbol");
 
 // ----------------------------------------------------------------------------
 
@@ -435,7 +435,7 @@ function IN(x) {
     }
     return %HasElement(x, this);
   }
-  return %HasProperty(x, %to_name(this));
+  return %HasProperty(x, this);
 }
 
 
@@ -617,12 +617,6 @@ function TO_STRING() {
 }
 
 
-// Convert the receiver to a string or symbol - forward to ToName.
-function TO_NAME() {
-  return %to_name(this);
-}
-
-
 /* -------------------------------------
    - - -   C o n v e r s i o n s   - - -
    -------------------------------------
@@ -688,12 +682,6 @@ function NonStringToString(x) {
   if (IS_UNDEFINED(x)) return 'undefined';
   // Types that can't be converted to string are caught in DefaultString.
   return (IS_NULL(x)) ? 'null' : ToString(DefaultString(x));
-}
-
-
-// ES6 symbols
-function ToName(x) {
-  return IS_SYMBOL(x) ? x : ToString(x);
 }
 
 
@@ -766,7 +754,7 @@ function IsPrimitive(x) {
 // ES6, draft 10-14-14, section 22.1.3.1.1
 function IsConcatSpreadable(O) {
   if (!IS_SPEC_OBJECT(O)) return false;
-  var spreadable = O[symbolIsConcatSpreadable];
+  var spreadable = O[isConcatSpreadableSymbol];
   if (IS_UNDEFINED(spreadable)) return IS_ARRAY(O);
   return ToBoolean(spreadable);
 }
@@ -826,7 +814,6 @@ function ToPositiveInteger(x, rangeErrorIndex) {
 // ----------------------------------------------------------------------------
 // Exports
 
-$defaultNumber = DefaultNumber;
 $defaultString = DefaultString;
 $NaN = %GetRootNaN();
 $nonNumberToNumber = NonNumberToNumber;
@@ -835,7 +822,6 @@ $sameValue = SameValue;
 $sameValueZero = SameValueZero;
 $toInteger = ToInteger;
 $toLength = ToLength;
-$toName = ToName;
 $toNumber = ToNumber;
 $toPositiveInteger = ToPositiveInteger;
 $toPrimitive = ToPrimitive;
@@ -879,9 +865,6 @@ $toString = ToString;
   "string_add_right_builtin", STRING_ADD_RIGHT,
   "sub_builtin", SUB,
   "sub_strong_builtin", SUB_STRONG,
-  "to_name_builtin", TO_NAME,
-  "to_number_builtin", TO_NUMBER,
-  "to_string_builtin", TO_STRING,
 ]);
 
 %InstallToContext([
@@ -890,7 +873,6 @@ $toString = ToString;
   "non_string_to_string", NonStringToString,
   "to_integer_fun", ToInteger,
   "to_length_fun", ToLength,
-  "to_name", ToName,
   "to_number_fun", ToNumber,
   "to_primitive", ToPrimitive,
   "to_string_fun", ToString,
@@ -899,7 +881,6 @@ $toString = ToString;
 utils.Export(function(to) {
   to.ToBoolean = ToBoolean;
   to.ToLength = ToLength;
-  to.ToName = ToName;
   to.ToNumber = ToNumber;
   to.ToPrimitive = ToPrimitive;
   to.ToString = ToString;

@@ -296,12 +296,14 @@ void JSGenericLowering::LowerJSToNumber(Node* node) {
 
 
 void JSGenericLowering::LowerJSToString(Node* node) {
-  ReplaceWithBuiltinCall(node, Context::TO_STRING_BUILTIN_INDEX, 1);
+  CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
+  Callable callable = CodeFactory::ToString(isolate());
+  ReplaceWithStubCall(node, callable, flags);
 }
 
 
 void JSGenericLowering::LowerJSToName(Node* node) {
-  ReplaceWithBuiltinCall(node, Context::TO_NAME_BUILTIN_INDEX, 1);
+  ReplaceWithRuntimeCall(node, Runtime::kToName);
 }
 
 

@@ -135,8 +135,7 @@ class CompilationInfo {
 
   explicit CompilationInfo(ParseInfo* parse_info);
   CompilationInfo(CodeStub* stub, Isolate* isolate, Zone* zone);
-  CompilationInfo(const char* code_stub_debug_name, Isolate* isolate,
-                  Zone* zone);
+  CompilationInfo(const char* debug_name, Isolate* isolate, Zone* zone);
   virtual ~CompilationInfo();
 
   ParseInfo* parse_info() const { return parse_info_; }
@@ -152,7 +151,6 @@ class CompilationInfo {
   Handle<JSFunction> closure() const;
   FunctionLiteral* literal() const;
   Scope* scope() const;
-  bool MayUseThis() const;
   Handle<Context> context() const;
   Handle<SharedFunctionInfo> shared_info() const;
   bool has_shared_info() const;
@@ -320,6 +318,8 @@ class CompilationInfo {
   }
   bool ShouldEnsureSpaceForLazyDeopt() { return !IsStub(); }
 
+  bool MustReplaceUndefinedReceiverWithGlobalProxy();
+
   // Determines whether or not to insert a self-optimization header.
   bool ShouldSelfOptimize();
 
@@ -432,7 +432,7 @@ class CompilationInfo {
   };
 
   CompilationInfo(ParseInfo* parse_info, CodeStub* code_stub,
-                  const char* code_stub_debug_name, Mode mode, Isolate* isolate,
+                  const char* debug_name, Mode mode, Isolate* isolate,
                   Zone* zone);
 
   Isolate* isolate_;
@@ -502,7 +502,7 @@ class CompilationInfo {
 
   Type::FunctionType* function_type_;
 
-  const char* code_stub_debug_name_;
+  const char* debug_name_;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationInfo);
 };

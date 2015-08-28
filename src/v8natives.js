@@ -9,20 +9,23 @@
 // ----------------------------------------------------------------------------
 // Imports
 
+var FLAG_harmony_tostring;
 var GlobalArray = global.Array;
 var GlobalBoolean = global.Boolean;
 var GlobalFunction = global.Function;
 var GlobalNumber = global.Number;
 var GlobalObject = global.Object;
 var InternalArray = utils.InternalArray;
+var iteratorSymbol = utils.ImportNow("iterator_symbol");
 var MathAbs;
 var ProxyDelegateCallAndConstruct;
 var ProxyDerivedHasOwnTrap;
 var ProxyDerivedKeysTrap;
 var StringIndexOf;
-var ToBoolean;
-var ToNumber;
+var ToBoolean = utils.ImportNow("ToBoolean");
+var ToNumber = utils.ImportNow("ToNumber");
 var ToString;
+var toStringTagSymbol = utils.ImportNow("to_string_tag_symbol");
 
 utils.Import(function(from) {
   MathAbs = from.MathAbs;
@@ -30,12 +33,8 @@ utils.Import(function(from) {
   ToString = from.ToString;
 });
 
-utils.ImportNow(function(from) {
-  ToBoolean = from.ToBoolean;
-  ToNumber = from.ToNumber;
-});
-
 utils.ImportFromExperimental(function(from) {
+  FLAG_harmony_tostring = from.FLAG_harmony_tostring;
   ProxyDelegateCallAndConstruct = from.ProxyDelegateCallAndConstruct;
   ProxyDerivedHasOwnTrap = from.ProxyDerivedHasOwnTrap;
   ProxyDerivedKeysTrap = from.ProxyDerivedKeysTrap;
@@ -148,8 +147,8 @@ function ObjectToString() {
   var tag;
 
   // TODO(caitp): cannot wait to get rid of this flag :>
-  if (harmony_tostring) {
-    tag = O[symbolToStringTag];
+  if (FLAG_harmony_tostring) {
+    tag = O[toStringTagSymbol];
     if (!IS_STRING(tag)) {
       tag = builtinTag;
     }
@@ -176,7 +175,7 @@ function ObjectValueOf() {
 
 // ECMA-262 - 15.2.4.5
 function ObjectHasOwnProperty(value) {
-  var name = $toName(value);
+  var name = TO_NAME(value);
   var object = TO_OBJECT(this);
 
   if (%_IsJSProxy(object)) {
@@ -200,7 +199,7 @@ function ObjectIsPrototypeOf(V) {
 
 // ECMA-262 - 15.2.4.6
 function ObjectPropertyIsEnumerable(V) {
-  var P = $toName(V);
+  var P = TO_NAME(V);
   if (%_IsJSProxy(this)) {
     // TODO(rossberg): adjust once there is a story for symbols vs proxies.
     if (IS_SYMBOL(V)) return false;
@@ -225,7 +224,7 @@ function ObjectDefineGetter(name, fun) {
   desc.setGet(fun);
   desc.setEnumerable(true);
   desc.setConfigurable(true);
-  DefineOwnProperty(TO_OBJECT(receiver), $toName(name), desc, false);
+  DefineOwnProperty(TO_OBJECT(receiver), TO_NAME(name), desc, false);
 }
 
 
@@ -234,7 +233,7 @@ function ObjectLookupGetter(name) {
   if (IS_NULL(receiver) || IS_UNDEFINED(receiver)) {
     receiver = %GlobalProxy(ObjectLookupGetter);
   }
-  return %LookupAccessor(TO_OBJECT(receiver), $toName(name), GETTER);
+  return %LookupAccessor(TO_OBJECT(receiver), TO_NAME(name), GETTER);
 }
 
 
@@ -250,7 +249,7 @@ function ObjectDefineSetter(name, fun) {
   desc.setSet(fun);
   desc.setEnumerable(true);
   desc.setConfigurable(true);
-  DefineOwnProperty(TO_OBJECT(receiver), $toName(name), desc, false);
+  DefineOwnProperty(TO_OBJECT(receiver), TO_NAME(name), desc, false);
 }
 
 
@@ -259,7 +258,7 @@ function ObjectLookupSetter(name) {
   if (IS_NULL(receiver) || IS_UNDEFINED(receiver)) {
     receiver = %GlobalProxy(ObjectLookupSetter);
   }
-  return %LookupAccessor(TO_OBJECT(receiver), $toName(name), SETTER);
+  return %LookupAccessor(TO_OBJECT(receiver), TO_NAME(name), SETTER);
 }
 
 
@@ -561,7 +560,7 @@ function CallTrap2(handler, name, defaultTrap, x, y) {
 
 // ES5 section 8.12.1.
 function GetOwnPropertyJS(obj, v) {
-  var p = $toName(v);
+  var p = TO_NAME(v);
   if (%_IsJSProxy(obj)) {
     // TODO(rossberg): adjust once there is a story for symbols vs proxies.
     if (IS_SYMBOL(v)) return UNDEFINED;
@@ -632,7 +631,7 @@ function DefineProxyProperty(obj, p, attributes, should_throw) {
 
 // ES5 8.12.9.
 function DefineObjectProperty(obj, p, desc, should_throw) {
-  var current_array = %GetOwnProperty(obj, $toName(p));
+  var current_array = %GetOwnProperty(obj, TO_NAME(p));
   var current = ConvertDescriptorArrayToDescriptor(current_array);
   var extensible = %IsExtensible(obj);
 
@@ -906,7 +905,7 @@ function ToNameArray(obj, trap, includeSymbols) {
   var realLength = 0;
   var names = { __proto__: null };  // TODO(rossberg): use sets once ready.
   for (var index = 0; index < n; index++) {
-    var s = $toName(obj[index]);
+    var s = TO_NAME(obj[index]);
     // TODO(rossberg): adjust once there is a story for symbols vs proxies.
     if (IS_SYMBOL(s) && !includeSymbols) continue;
     if (%HasOwnProperty(names, s)) {
@@ -1032,7 +1031,7 @@ function ObjectDefineProperty(obj, p, attributes) {
   if (!IS_SPEC_OBJECT(obj)) {
     throw MakeTypeError(kCalledOnNonObject, "Object.defineProperty");
   }
-  var name = $toName(p);
+  var name = TO_NAME(p);
   if (%_IsJSProxy(obj)) {
     // Clone the attributes object for protection.
     // TODO(rossberg): not spec'ed yet, so not sure if this should involve
@@ -1773,7 +1772,7 @@ utils.InstallFunctions(GlobalFunction.prototype, DONT_ENUM, [
 // 7.4.1 GetIterator ( obj, method )
 function GetIterator(obj, method) {
   if (IS_UNDEFINED(method)) {
-    method = obj[symbolIterator];
+    method = obj[iteratorSymbol];
   }
   if (!IS_SPEC_FUNCTION(method)) {
     throw MakeTypeError(kNotIterable, obj);

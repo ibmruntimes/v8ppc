@@ -302,7 +302,8 @@ namespace internal {
 
 #define FOR_EACH_INTRINSIC_INTERNAL(F)        \
   F(CheckIsBootstrapping, 0, 1)               \
-  F(ExportPrivateSymbols, 1, 1)               \
+  F(ExportFromRuntime, 1, 1)                  \
+  F(ExportExperimentalFromRuntime, 1, 1)      \
   F(InstallToContext, 1, 1)                   \
   F(Throw, 1, 1)                              \
   F(ReThrow, 1, 1)                            \
@@ -491,6 +492,13 @@ namespace internal {
   F(DefineGetterPropertyUnchecked, 4, 1)             \
   F(DefineSetterPropertyUnchecked, 4, 1)             \
   F(ToObject, 1, 1)                                  \
+  F(ToPrimitive, 1, 1)                               \
+  F(ToPrimitive_Number, 1, 1)                        \
+  F(ToPrimitive_String, 1, 1)                        \
+  F(OrdinaryToPrimitive, 2, 1)                       \
+  F(ToNumber, 1, 1)                                  \
+  F(ToString, 1, 1)                                  \
+  F(ToName, 1, 1)                                    \
   F(StrictEquals, 2, 1)                              \
   F(InstanceOf, 2, 1)                                \
   F(HasInPrototypeChain, 2, 1)
@@ -611,6 +619,14 @@ namespace internal {
   F(Float32x4FromUint16x8Bits, 1, 1)           \
   F(Float32x4FromInt8x16Bits, 1, 1)            \
   F(Float32x4FromUint8x16Bits, 1, 1)           \
+  F(Float32x4Load, 2, 1)                       \
+  F(Float32x4Load1, 2, 1)                      \
+  F(Float32x4Load2, 2, 1)                      \
+  F(Float32x4Load3, 2, 1)                      \
+  F(Float32x4Store, 3, 1)                      \
+  F(Float32x4Store1, 3, 1)                     \
+  F(Float32x4Store2, 3, 1)                     \
+  F(Float32x4Store3, 3, 1)                     \
   F(Int32x4Check, 1, 1)                        \
   F(Int32x4ExtractLane, 2, 1)                  \
   F(Int32x4ReplaceLane, 3, 1)                  \
@@ -643,6 +659,14 @@ namespace internal {
   F(Int32x4FromUint16x8Bits, 1, 1)             \
   F(Int32x4FromInt8x16Bits, 1, 1)              \
   F(Int32x4FromUint8x16Bits, 1, 1)             \
+  F(Int32x4Load, 2, 1)                         \
+  F(Int32x4Load1, 2, 1)                        \
+  F(Int32x4Load2, 2, 1)                        \
+  F(Int32x4Load3, 2, 1)                        \
+  F(Int32x4Store, 3, 1)                        \
+  F(Int32x4Store1, 3, 1)                       \
+  F(Int32x4Store2, 3, 1)                       \
+  F(Int32x4Store3, 3, 1)                       \
   F(Uint32x4Check, 1, 1)                       \
   F(Uint32x4ExtractLane, 2, 1)                 \
   F(Uint32x4ReplaceLane, 3, 1)                 \
@@ -675,6 +699,14 @@ namespace internal {
   F(Uint32x4FromUint16x8Bits, 1, 1)            \
   F(Uint32x4FromInt8x16Bits, 1, 1)             \
   F(Uint32x4FromUint8x16Bits, 1, 1)            \
+  F(Uint32x4Load, 2, 1)                        \
+  F(Uint32x4Load1, 2, 1)                       \
+  F(Uint32x4Load2, 2, 1)                       \
+  F(Uint32x4Load3, 2, 1)                       \
+  F(Uint32x4Store, 3, 1)                       \
+  F(Uint32x4Store1, 3, 1)                      \
+  F(Uint32x4Store2, 3, 1)                      \
+  F(Uint32x4Store3, 3, 1)                      \
   F(Bool32x4Check, 1, 1)                       \
   F(Bool32x4ExtractLane, 2, 1)                 \
   F(Bool32x4ReplaceLane, 3, 1)                 \
@@ -719,6 +751,8 @@ namespace internal {
   F(Int16x8FromUint16x8Bits, 1, 1)             \
   F(Int16x8FromInt8x16Bits, 1, 1)              \
   F(Int16x8FromUint8x16Bits, 1, 1)             \
+  F(Int16x8Load, 2, 1)                         \
+  F(Int16x8Store, 3, 1)                        \
   F(Uint16x8Check, 1, 1)                       \
   F(Uint16x8ExtractLane, 2, 1)                 \
   F(Uint16x8ReplaceLane, 3, 1)                 \
@@ -754,6 +788,8 @@ namespace internal {
   F(Uint16x8FromInt16x8Bits, 1, 1)             \
   F(Uint16x8FromInt8x16Bits, 1, 1)             \
   F(Uint16x8FromUint8x16Bits, 1, 1)            \
+  F(Uint16x8Load, 2, 1)                        \
+  F(Uint16x8Store, 3, 1)                       \
   F(Bool16x8Check, 1, 1)                       \
   F(Bool16x8ExtractLane, 2, 1)                 \
   F(Bool16x8ReplaceLane, 3, 1)                 \
@@ -798,6 +834,8 @@ namespace internal {
   F(Int8x16FromInt16x8Bits, 1, 1)              \
   F(Int8x16FromUint16x8Bits, 1, 1)             \
   F(Int8x16FromUint8x16Bits, 1, 1)             \
+  F(Int8x16Load, 2, 1)                         \
+  F(Int8x16Store, 3, 1)                        \
   F(Uint8x16Check, 1, 1)                       \
   F(Uint8x16ExtractLane, 2, 1)                 \
   F(Uint8x16ReplaceLane, 3, 1)                 \
@@ -833,6 +871,8 @@ namespace internal {
   F(Uint8x16FromInt16x8Bits, 1, 1)             \
   F(Uint8x16FromUint16x8Bits, 1, 1)            \
   F(Uint8x16FromInt8x16Bits, 1, 1)             \
+  F(Uint8x16Load, 2, 1)                        \
+  F(Uint8x16Store, 3, 1)                       \
   F(Bool8x16Check, 1, 1)                       \
   F(Bool8x16ExtractLane, 2, 1)                 \
   F(Bool8x16ReplaceLane, 3, 1)                 \

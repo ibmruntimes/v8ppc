@@ -3995,7 +3995,39 @@ void ToNumberStub::Generate(MacroAssembler* masm) {
   __ Bind(&not_oddball);
 
   __ Push(x0);  // Push argument.
-  __ InvokeBuiltin(Context::TO_NUMBER_BUILTIN_INDEX, JUMP_FUNCTION);
+  __ TailCallRuntime(Runtime::kToNumber, 1, 1);
+}
+
+
+void ToStringStub::Generate(MacroAssembler* masm) {
+  // The ToString stub takes one argument in x0.
+  Label is_number;
+  __ JumpIfSmi(x0, &is_number);
+
+  Label not_string;
+  __ JumpIfObjectType(x0, x1, x1, FIRST_NONSTRING_TYPE, &not_string, hs);
+  // x0: receiver
+  // x1: receiver instance type
+  __ Ret();
+  __ Bind(&not_string);
+
+  Label not_heap_number;
+  __ Cmp(x1, HEAP_NUMBER_TYPE);
+  __ B(ne, &not_heap_number);
+  __ Bind(&is_number);
+  NumberToStringStub stub(isolate());
+  __ TailCallStub(&stub);
+  __ Bind(&not_heap_number);
+
+  Label not_oddball;
+  __ Cmp(x1, ODDBALL_TYPE);
+  __ B(ne, &not_oddball);
+  __ Ldr(x0, FieldMemOperand(x0, Oddball::kToStringOffset));
+  __ Ret();
+  __ Bind(&not_oddball);
+
+  __ Push(x0);  // Push argument.
+  __ TailCallRuntime(Runtime::kToString, 1, 1);
 }
 
 

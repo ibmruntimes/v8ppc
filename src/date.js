@@ -21,6 +21,7 @@ var IsFinite;
 var MathAbs;
 var MathFloor;
 var ToNumber;
+var toPrimitiveSymbol = utils.ImportNow("to_primitive_symbol");
 var ToString;
 
 utils.Import(function(from) {
@@ -361,6 +362,21 @@ function DateToLocaleTimeString() {
   var t = UTC_DATE_VALUE(this);
   if (NUMBER_IS_NAN(t)) return kInvalidDate;
   return TimeString(this);
+}
+
+
+// 20.3.4.45 Date.prototype [ @@toPrimitive ] ( hint )
+function DateToPrimitive(hint) {
+  if (!IS_SPEC_OBJECT(this)) {
+    throw MakeTypeError(kIncompatibleMethodReceiver,
+                        "Date.prototype [ @@toPrimitive ]", this);
+  }
+  if (hint === "default") {
+    hint = "string";
+  } else if (hint !== "number" && hint !== "string") {
+    throw MakeTypeError(kInvalidHint, hint);
+  }
+  return %OrdinaryToPrimitive(this, hint);
 }
 
 
@@ -777,9 +793,10 @@ function DateToISOString() {
 }
 
 
+// 20.3.4.37 Date.prototype.toJSON ( key )
 function DateToJSON(key) {
   var o = TO_OBJECT(this);
-  var tv = $defaultNumber(o);
+  var tv = TO_PRIMITIVE_NUMBER(o);
   if (IS_NUMBER(tv) && !NUMBER_IS_FINITE(tv)) {
     return null;
   }
@@ -831,6 +848,9 @@ utils.InstallFunctions(GlobalDate, DONT_ENUM, [
 
 // Set up non-enumerable constructor property of the Date prototype object.
 %AddNamedProperty(GlobalDate.prototype, "constructor", GlobalDate, DONT_ENUM);
+utils.SetFunctionName(DateToPrimitive, toPrimitiveSymbol);
+%AddNamedProperty(GlobalDate.prototype, toPrimitiveSymbol, DateToPrimitive,
+                  DONT_ENUM | READ_ONLY);
 
 // Set up non-enumerable functions of the Date prototype object and
 // set their names.
