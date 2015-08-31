@@ -437,6 +437,7 @@ LiveRange* LiveRange::SplitAt(LifetimePosition position, Zone* zone) {
 void LiveRange::DetachAt(LifetimePosition position, LiveRange* result,
                          Zone* zone) {
   DCHECK(Start() < position);
+  DCHECK(End() > position);
   DCHECK(result->IsEmpty());
   // Find the last interval that ends before the position. If the
   // position is contained in one of the intervals in the chain, we
@@ -825,6 +826,12 @@ void TopLevelLiveRange::Splinter(LifetimePosition start, LifetimePosition end,
   result->set_spill_type(spill_type());
 
   if (start <= Start()) {
+    // TODO(mtrofin): here, the TopLevel part is in the deferred range, so we
+    // may want to continue processing the splinter. However, if the value is
+    // defined in a cold block, and then used in a hot block, it follows that
+    // it should terminate on the RHS of a phi, defined on the hot path. We
+    // should check this, however, this may not be the place, because we don't
+    // have access to the instruction sequence.
     DCHECK(end < End());
     DetachAt(end, result, zone);
     next_ = nullptr;
@@ -844,6 +851,10 @@ void TopLevelLiveRange::Splinter(LifetimePosition start, LifetimePosition end,
 
     next_ = end_part.next_;
     last_interval_->set_next(end_part.first_interval_);
+    // The next splinter will happen either at or after the current interval.
+    // We can optimize DetachAt by setting current_interval_ accordingly,
+    // which will then be picked up by FirstSearchIntervalForPosition.
+    current_interval_ = last_interval_;
     last_interval_ = end_part.last_interval_;
 
 
@@ -868,7 +879,7 @@ void TopLevelLiveRange::SetSplinteredFrom(TopLevelLiveRange* splinter_parent) {
   DCHECK(splinter_parent->Start() < Start());
 
   splintered_from_ = splinter_parent;
-  if (!HasSpillOperand()) {
+  if (!HasSpillOperand() && splinter_parent->spill_range_ != nullptr) {
     SetSpillRange(splinter_parent->spill_range_);
   }
 }
@@ -887,12 +898,9 @@ void TopLevelLiveRange::UpdateSpillRangePostMerge(TopLevelLiveRange* merged) {
 }
 
 
-void TopLevelLiveRange::Merge(TopLevelLiveRange* other,
-                              RegisterAllocationData* data) {
+void TopLevelLiveRange::Merge(TopLevelLiveRange* other, Zone* zone) {
   DCHECK(Start() < other->Start());
   DCHECK(other->splintered_from() == this);
-
-  data->live_ranges()[other->vreg()] = nullptr;
 
   LiveRange* last_other = other->last_child();
   LiveRange* last_me = last_child();
@@ -919,8 +927,7 @@ void TopLevelLiveRange::Merge(TopLevelLiveRange* other,
   // register allocation splitting.
   LiveRange* after = last_insertion_point_->next();
   if (last_insertion_point_->End() > other->Start()) {
-    LiveRange* new_after =
-        last_insertion_point_->SplitAt(other->Start(), data->allocation_zone());
+    LiveRange* new_after = last_insertion_point_->SplitAt(other->Start(), zone);
     new_after->set_spilled(last_insertion_point_->spilled());
     if (!new_after->spilled())
       new_after->set_assigned_register(

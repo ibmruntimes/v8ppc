@@ -154,9 +154,8 @@ TARGET_TEST_F(InterpreterAssemblerTest, Return) {
 
     EXPECT_EQ(CallDescriptor::kCallCodeObject, m.call_descriptor()->kind());
     EXPECT_TRUE(m.call_descriptor()->flags() & CallDescriptor::kCanUseRoots);
-    Matcher<Unique<HeapObject>> exit_trampoline(
-        Unique<HeapObject>::CreateImmovable(
-            isolate()->builtins()->InterpreterExitTrampoline()));
+    Handle<HeapObject> exit_trampoline =
+        isolate()->builtins()->InterpreterExitTrampoline();
     EXPECT_THAT(
         tail_call_node,
         IsTailCall(m.call_descriptor(), IsHeapConstant(exit_trampoline),
@@ -177,6 +176,9 @@ TARGET_TEST_F(InterpreterAssemblerTest, BytecodeOperand) {
     int number_of_operands = interpreter::Bytecodes::NumberOfOperands(bytecode);
     for (int i = 0; i < number_of_operands; i++) {
       switch (interpreter::Bytecodes::GetOperandType(bytecode, i)) {
+        case interpreter::OperandType::kIdx:
+          EXPECT_THAT(m.BytecodeOperandIdx(i), m.IsBytecodeOperand(i));
+          break;
         case interpreter::OperandType::kImm8:
           EXPECT_THAT(m.BytecodeOperandImm8(i),
                       m.IsBytecodeOperandSignExtended(i));
@@ -262,6 +264,25 @@ TARGET_TEST_F(InterpreterAssemblerTest, SmiTag) {
                 IsWordShl(value, IsInt32Constant(kSmiShiftSize + kSmiTagSize)));
     EXPECT_THAT(m.SmiUntag(value),
                 IsWordSar(value, IsInt32Constant(kSmiShiftSize + kSmiTagSize)));
+  }
+}
+
+
+TARGET_TEST_F(InterpreterAssemblerTest, LoadConstantPoolEntry) {
+  TRACED_FOREACH(interpreter::Bytecode, bytecode, kBytecodes) {
+    InterpreterAssemblerForTest m(this, bytecode);
+    Node* index = m.Int32Constant(2);
+    Node* load_constant = m.LoadConstantPoolEntry(index);
+    Matcher<Node*> constant_pool_matcher = m.IsLoad(
+        kMachAnyTagged,
+        IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
+        IsIntPtrConstant(BytecodeArray::kConstantPoolOffset - kHeapObjectTag));
+    EXPECT_THAT(
+        load_constant,
+        m.IsLoad(kMachAnyTagged, constant_pool_matcher,
+                 IsIntPtrAdd(
+                     IsIntPtrConstant(FixedArray::kHeaderSize - kHeapObjectTag),
+                     IsWordShl(index, IsInt32Constant(kPointerSizeLog2)))));
   }
 }
 

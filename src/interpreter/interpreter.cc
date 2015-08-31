@@ -106,12 +106,23 @@ void Interpreter::DoLdaSmi8(compiler::InterpreterAssembler* assembler) {
 }
 
 
+// LdaConstant <idx>
+//
+// Load constant literal at |idx| in the constant pool into the accumulator.
+void Interpreter::DoLdaConstant(compiler::InterpreterAssembler* assembler) {
+  Node* index = __ BytecodeOperandIdx(0);
+  Node* constant = __ LoadConstantPoolEntry(index);
+  __ SetAccumulator(constant);
+  __ Dispatch();
+}
+
+
 // LdaUndefined
 //
 // Load Undefined into the accumulator.
 void Interpreter::DoLdaUndefined(compiler::InterpreterAssembler* assembler) {
-  Node* undefined_value = __ HeapConstant(Unique<HeapObject>::CreateImmovable(
-      isolate_->factory()->undefined_value()));
+  Node* undefined_value =
+      __ HeapConstant(isolate_->factory()->undefined_value());
   __ SetAccumulator(undefined_value);
   __ Dispatch();
 }
@@ -121,8 +132,7 @@ void Interpreter::DoLdaUndefined(compiler::InterpreterAssembler* assembler) {
 //
 // Load Null into the accumulator.
 void Interpreter::DoLdaNull(compiler::InterpreterAssembler* assembler) {
-  Node* null_value = __ HeapConstant(
-      Unique<HeapObject>::CreateImmovable(isolate_->factory()->null_value()));
+  Node* null_value = __ HeapConstant(isolate_->factory()->null_value());
   __ SetAccumulator(null_value);
   __ Dispatch();
 }
@@ -132,8 +142,7 @@ void Interpreter::DoLdaNull(compiler::InterpreterAssembler* assembler) {
 //
 // Load TheHole into the accumulator.
 void Interpreter::DoLdaTheHole(compiler::InterpreterAssembler* assembler) {
-  Node* the_hole_value = __ HeapConstant(Unique<HeapObject>::CreateImmovable(
-      isolate_->factory()->the_hole_value()));
+  Node* the_hole_value = __ HeapConstant(isolate_->factory()->the_hole_value());
   __ SetAccumulator(the_hole_value);
   __ Dispatch();
 }
@@ -143,8 +152,7 @@ void Interpreter::DoLdaTheHole(compiler::InterpreterAssembler* assembler) {
 //
 // Load True into the accumulator.
 void Interpreter::DoLdaTrue(compiler::InterpreterAssembler* assembler) {
-  Node* true_value = __ HeapConstant(
-      Unique<HeapObject>::CreateImmovable(isolate_->factory()->true_value()));
+  Node* true_value = __ HeapConstant(isolate_->factory()->true_value());
   __ SetAccumulator(true_value);
   __ Dispatch();
 }
@@ -154,8 +162,7 @@ void Interpreter::DoLdaTrue(compiler::InterpreterAssembler* assembler) {
 //
 // Load False into the accumulator.
 void Interpreter::DoLdaFalse(compiler::InterpreterAssembler* assembler) {
-  Node* false_value = __ HeapConstant(
-      Unique<HeapObject>::CreateImmovable(isolate_->factory()->false_value()));
+  Node* false_value = __ HeapConstant(isolate_->factory()->false_value());
   __ SetAccumulator(false_value);
   __ Dispatch();
 }
