@@ -14,6 +14,7 @@
 #include "src/extensions/statistics-extension.h"
 #include "src/extensions/trigger-failure-extension.h"
 #include "src/heap/heap.h"
+#include "src/isolate-inl.h"
 #include "src/snapshot/natives.h"
 #include "src/snapshot/snapshot.h"
 #include "third_party/fdlibm/fdlibm.h"
@@ -3161,7 +3162,9 @@ Genesis::Genesis(Isolate* isolate,
 
   // Check that the script context table is empty except for the 'this' binding.
   // We do not need script contexts for native scripts.
-  DCHECK_EQ(1, native_context()->script_context_table()->used());
+  if (!FLAG_global_var_shortcuts) {
+    DCHECK_EQ(1, native_context()->script_context_table()->used());
+  }
 
   result_ = native_context();
 }

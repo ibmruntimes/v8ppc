@@ -11,7 +11,6 @@
 #include "src/assembler.h"
 #include "src/compiler/node.h"
 #include "src/compiler/operator.h"
-#include "src/unique.h"
 
 namespace v8 {
 namespace internal {
@@ -69,6 +68,18 @@ struct ValueMatcher : public NodeMatcher {
 
 
 template <>
+inline ValueMatcher<uint32_t, IrOpcode::kInt32Constant>::ValueMatcher(
+    Node* node)
+    : NodeMatcher(node),
+      value_(),
+      has_value_(opcode() == IrOpcode::kInt32Constant) {
+  if (has_value_) {
+    value_ = static_cast<uint32_t>(OpParameter<int32_t>(node));
+  }
+}
+
+
+template <>
 inline ValueMatcher<int64_t, IrOpcode::kInt64Constant>::ValueMatcher(Node* node)
     : NodeMatcher(node), value_(), has_value_(false) {
   if (opcode() == IrOpcode::kInt32Constant) {
@@ -86,10 +97,10 @@ inline ValueMatcher<uint64_t, IrOpcode::kInt64Constant>::ValueMatcher(
     Node* node)
     : NodeMatcher(node), value_(), has_value_(false) {
   if (opcode() == IrOpcode::kInt32Constant) {
-    value_ = OpParameter<uint32_t>(node);
+    value_ = static_cast<uint32_t>(OpParameter<int32_t>(node));
     has_value_ = true;
   } else if (opcode() == IrOpcode::kInt64Constant) {
-    value_ = OpParameter<uint64_t>(node);
+    value_ = static_cast<uint64_t>(OpParameter<int64_t>(node));
     has_value_ = true;
   }
 }
