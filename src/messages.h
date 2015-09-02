@@ -225,6 +225,7 @@ class CallSite {
     "to be non-writable is deprecated")                                        \
   T(StrongSetProto,                                                            \
     "On strong object %, redefining the internal prototype is deprecated")     \
+  T(StrongWeakExtend, "Non-strong class % cannot extend a strong object")      \
   T(SymbolKeyFor, "% is not a symbol")                                         \
   T(SymbolToNumber, "Cannot convert a Symbol value to a number")               \
   T(SymbolToString, "Cannot convert a Symbol value to a string")               \
@@ -335,6 +336,8 @@ class CallSite {
   T(StrictWith, "Strict mode code may not include a with statement")           \
   T(StrongArguments,                                                           \
     "In strong mode, 'arguments' is deprecated, use '...args' instead")        \
+  T(StrongConstructorDirective,                                                \
+    "\"use strong\" directive is disallowed in class constructor body")        \
   T(StrongConstructorReturnMisplaced,                                          \
     "In strong mode, returning from a constructor before its super "           \
     "constructor invocation or all assignments to 'this' is deprecated")       \

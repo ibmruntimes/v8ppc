@@ -202,7 +202,10 @@ bool CodeRange::GetNextAllocationBlock(size_t requested) {
 Address CodeRange::AllocateRawMemory(const size_t requested_size,
                                      const size_t commit_size,
                                      size_t* allocated) {
-  DCHECK(commit_size <= requested_size);
+  // request_size includes guards while committed_size does not. Make sure
+  // callers know about the invariant.
+  CHECK_LE(commit_size,
+           requested_size - 2 * MemoryAllocator::CodePageGuardSize());
   FreeBlock current;
   if (!ReserveBlock(requested_size, &current)) {
     *allocated = 0;
@@ -636,7 +639,7 @@ MemoryChunk* MemoryAllocator::AllocateChunk(intptr_t reserve_area_size,
                  CodePageGuardSize();
 
     // Check executable memory limit.
-    if (size_executable_ + chunk_size > capacity_executable_) {
+    if ((size_executable_ + chunk_size) > capacity_executable_) {
       LOG(isolate_, StringEvent("MemoryAllocator::AllocateRawMemory",
                                 "V8 Executable Allocation capacity exceeded"));
       return NULL;
@@ -1079,27 +1082,26 @@ Object* PagedSpace::FindObject(Address addr) {
 }
 
 
-bool PagedSpace::CanExpand() {
+bool PagedSpace::CanExpand(size_t size) {
   DCHECK(heap()->mark_compact_collector()->is_compacting() ||
          Capacity() <= heap()->MaxOldGenerationSize());
-  DCHECK(heap()->CommittedOldGenerationMemory() <=
-         heap()->MaxOldGenerationSize() +
-             PagedSpace::MaxEmergencyMemoryAllocated());
 
-  // Are we going to exceed capacity for this space?
-  if (!heap()->CanExpandOldGeneration(Page::kPageSize)) return false;
+  // Are we going to exceed capacity for this space? At this point we can be
+  // way over the maximum size because of AlwaysAllocate scopes and large
+  // objects.
+  if (!heap()->CanExpandOldGeneration(static_cast<int>(size))) return false;
 
   return true;
 }
 
 
 bool PagedSpace::Expand() {
-  if (!CanExpand()) return false;
-
   intptr_t size = AreaSize();
   if (snapshotable() && !HasPages()) {
     size = Snapshot::SizeOfFirstPage(heap()->isolate(), identity());
   }
+
+  if (!CanExpand(size)) return false;
 
   Page* p = heap()->isolate()->memory_allocator()->AllocatePage(size, this,
                                                                 executable());
