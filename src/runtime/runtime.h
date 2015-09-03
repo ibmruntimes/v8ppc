@@ -321,7 +321,6 @@ namespace internal {
   F(AllocateInNewSpace, 1, 1)                 \
   F(AllocateInTargetSpace, 2, 1)              \
   F(CollectStackTrace, 2, 1)                  \
-  F(RenderCallSite, 0, 1)                     \
   F(MessageGetStartPosition, 1, 1)            \
   F(MessageGetScript, 1, 1)                   \
   F(ErrorToStringRT, 1, 1)                    \
@@ -499,7 +498,8 @@ namespace internal {
   F(ToName, 1, 1)                                    \
   F(StrictEquals, 2, 1)                              \
   F(InstanceOf, 2, 1)                                \
-  F(HasInPrototypeChain, 2, 1)
+  F(HasInPrototypeChain, 2, 1)                       \
+  F(CreateIterResultObject, 2, 1)
 
 
 #define FOR_EACH_INTRINSIC_OBSERVE(F)            \
@@ -550,8 +550,6 @@ namespace internal {
   F(NewArguments, 1, 1) /* TODO(turbofan): Only temporary */ \
   F(NewSloppyArguments, 3, 1)                                \
   F(NewStrictArguments, 3, 1)                                \
-  F(NewRestParam, 4, 1)                                      \
-  F(NewRestParamSlow, 2, 1)                                  \
   F(NewClosureFromStubFailure, 1, 1)                         \
   F(NewClosure, 3, 1)                                        \
   F(NewScriptContext, 2, 1)                                  \

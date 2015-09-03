@@ -431,6 +431,7 @@ const int kStubMinorKeyBits = kSmiValueSize - kStubMajorKeyBits - 1;
   V(JS_MAP_TYPE)                                                \
   V(JS_SET_ITERATOR_TYPE)                                       \
   V(JS_MAP_ITERATOR_TYPE)                                       \
+  V(JS_ITERATOR_RESULT_TYPE)                                    \
   V(JS_WEAK_MAP_TYPE)                                           \
   V(JS_WEAK_SET_TYPE)                                           \
   V(JS_REGEXP_TYPE)                                             \
@@ -729,6 +730,7 @@ enum InstanceType {
   JS_MAP_TYPE,
   JS_SET_ITERATOR_TYPE,
   JS_MAP_ITERATOR_TYPE,
+  JS_ITERATOR_RESULT_TYPE,
   JS_WEAK_MAP_TYPE,
   JS_WEAK_SET_TYPE,
   JS_REGEXP_TYPE,
@@ -957,6 +959,7 @@ template <class C> inline bool Is(Object* obj);
   V(JSMap)                         \
   V(JSSetIterator)                 \
   V(JSMapIterator)                 \
+  V(JSIteratorResult)              \
   V(JSWeakCollection)              \
   V(JSWeakMap)                     \
   V(JSWeakSet)                     \
@@ -1016,7 +1019,11 @@ class Object {
   STRUCT_LIST(DECLARE_STRUCT_PREDICATE)
 #undef DECLARE_STRUCT_PREDICATE
 
+  // ES6, section 7.2.3 IsCallable.
+  INLINE(bool IsCallable() const);
+
   INLINE(bool IsSpecObject()) const;
+  // TODO(rossberg): IsSpecFunction should be removed in favor of IsCallable.
   INLINE(bool IsSpecFunction()) const;
   INLINE(bool IsTemplateInfo()) const;
   INLINE(bool IsNameDictionary() const);
@@ -1025,7 +1032,6 @@ class Object {
   INLINE(bool IsUnseededNumberDictionary() const);
   INLINE(bool IsOrderedHashSet() const);
   INLINE(bool IsOrderedHashMap() const);
-  bool IsCallable() const;
   static bool IsPromise(Handle<Object> object);
 
   // Oddball testing.
@@ -1106,6 +1112,9 @@ class Object {
   // ES6 section 7.3.9 GetMethod
   MUST_USE_RESULT static MaybeHandle<Object> GetMethod(
       Handle<JSReceiver> receiver, Handle<Name> name);
+
+  // ES6 section 12.5.6 The typeof Operator
+  static Handle<String> TypeOf(Isolate* isolate, Handle<Object> object);
 
   MUST_USE_RESULT static MaybeHandle<Object> GetProperty(
       LookupIterator* it, LanguageMode language_mode = SLOPPY);
@@ -5233,7 +5242,7 @@ class Map: public HeapObject {
   STATIC_ASSERT(kDescriptorIndexBitCount + kDescriptorIndexBitCount == 20);
   class DictionaryMap : public BitField<bool, 20, 1> {};
   class OwnsDescriptors : public BitField<bool, 21, 1> {};
-  class HasInstanceCallHandler : public BitField<bool, 22, 1> {};
+  class IsHiddenPrototype : public BitField<bool, 22, 1> {};
   class Deprecated : public BitField<bool, 23, 1> {};
   class IsUnstable : public BitField<bool, 24, 1> {};
   class IsMigrationTarget : public BitField<bool, 25, 1> {};
@@ -5268,7 +5277,7 @@ class Map: public HeapObject {
   // Tells whether the instance with this map should be ignored by the
   // Object.getPrototypeOf() function and the __proto__ accessor.
   inline void set_is_hidden_prototype();
-  inline bool is_hidden_prototype();
+  inline bool is_hidden_prototype() const;
 
   // Records and queries whether the instance has a named interceptor.
   inline void set_has_named_interceptor();
@@ -5290,6 +5299,11 @@ class Map: public HeapObject {
   // Tells whether the instance has a call-as-function handler.
   inline void set_is_observed();
   inline bool is_observed();
+
+  // Tells whether the instance has a [[Call]] internal field.
+  // This property is implemented according to ES6, section 7.2.3.
+  inline void set_is_callable();
+  inline bool is_callable() const;
 
   inline void set_is_strong();
   inline bool is_strong();
@@ -5466,8 +5480,6 @@ class Map: public HeapObject {
 
   inline bool owns_descriptors();
   inline void set_owns_descriptors(bool owns_descriptors);
-  inline bool has_instance_call_handler();
-  inline void set_has_instance_call_handler();
   inline void mark_unstable();
   inline bool is_stable();
   inline void set_migration_target(bool value);
@@ -5716,7 +5728,7 @@ class Map: public HeapObject {
 
   // Bit positions for bit field.
   static const int kHasNonInstancePrototype = 0;
-  static const int kIsHiddenPrototype = 1;
+  static const int kIsCallable = 1;
   static const int kHasNamedInterceptor = 2;
   static const int kHasIndexedInterceptor = 3;
   static const int kIsUndetectable = 4;
@@ -6872,17 +6884,6 @@ class JSGeneratorObject: public JSObject {
 
   // Resume mode, for use by runtime functions.
   enum ResumeMode { NEXT, THROW };
-
-  // Yielding from a generator returns an object with the following inobject
-  // properties.  See Context::iterator_result_map() for the map.
-  static const int kResultValuePropertyIndex = 0;
-  static const int kResultDonePropertyIndex = 1;
-  static const int kResultPropertyCount = 2;
-
-  static const int kResultValuePropertyOffset = JSObject::kHeaderSize;
-  static const int kResultDonePropertyOffset =
-      kResultValuePropertyOffset + kPointerSize;
-  static const int kResultSize = kResultDonePropertyOffset + kPointerSize;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSGeneratorObject);
@@ -9320,7 +9321,7 @@ class JSProxy: public JSReceiver {
 class JSFunctionProxy: public JSProxy {
  public:
   // [call_trap]: The call trap.
-  DECL_ACCESSORS(call_trap, Object)
+  DECL_ACCESSORS(call_trap, JSReceiver)
 
   // [construct_trap]: The construct trap.
   DECL_ACCESSORS(construct_trap, Object)
@@ -9499,6 +9500,40 @@ class JSMapIterator: public OrderedHashTableIterator<JSMapIterator,
   inline Object* CurrentValue();
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSMapIterator);
+};
+
+
+// ES6 section 25.1.1.3 The IteratorResult Interface
+class JSIteratorResult final : public JSObject {
+ public:
+  // [done]: This is the result status of an iterator next method call.  If the
+  // end of the iterator was reached done is true.  If the end was not reached
+  // done is false and a [value] is available.
+  DECL_ACCESSORS(done, Object)
+
+  // [value]: If [done] is false, this is the current iteration element value.
+  // If [done] is true, this is the return value of the iterator, if it supplied
+  // one.  If the iterator does not have a return value, value is undefined.
+  // In that case, the value property may be absent from the conforming object
+  // if it does not inherit an explicit value property.
+  DECL_ACCESSORS(value, Object)
+
+  // Dispatched behavior.
+  DECLARE_PRINTER(JSIteratorResult)
+  DECLARE_VERIFIER(JSIteratorResult)
+
+  DECLARE_CAST(JSIteratorResult)
+
+  static const int kValueOffset = JSObject::kHeaderSize;
+  static const int kDoneOffset = kValueOffset + kPointerSize;
+  static const int kSize = kDoneOffset + kPointerSize;
+
+  // Indices of in-object properties.
+  static const int kValueIndex = 0;
+  static const int kDoneIndex = 1;
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(JSIteratorResult);
 };
 
 

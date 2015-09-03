@@ -475,12 +475,17 @@ class Factory final {
   Handle<JSMapIterator> NewJSMapIterator();
   Handle<JSSetIterator> NewJSSetIterator();
 
+  // Creates a new JSIteratorResult object with the arguments {value} and
+  // {done}.  Implemented according to ES6 section 7.4.7 CreateIterResultObject.
+  Handle<JSIteratorResult> NewJSIteratorResult(Handle<Object> value,
+                                               Handle<Object> done);
+
   // Allocates a Harmony proxy.
   Handle<JSProxy> NewJSProxy(Handle<Object> handler, Handle<Object> prototype);
 
   // Allocates a Harmony function proxy.
   Handle<JSProxy> NewJSFunctionProxy(Handle<Object> handler,
-                                     Handle<Object> call_trap,
+                                     Handle<JSReceiver> call_trap,
                                      Handle<Object> construct_trap,
                                      Handle<Object> prototype);
 

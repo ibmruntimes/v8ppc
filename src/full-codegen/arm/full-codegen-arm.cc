@@ -277,28 +277,6 @@ void FullCodeGenerator::Generate() {
     SetVar(new_target_var, r0, r2, r3);
   }
 
-  // Possibly allocate RestParameters
-  int rest_index;
-  Variable* rest_param = scope()->rest_parameter(&rest_index);
-  if (rest_param) {
-    Comment cmnt(masm_, "[ Allocate rest parameter array");
-
-    int num_parameters = info->scope()->num_parameters();
-    int offset = num_parameters * kPointerSize;
-
-    __ add(r3, fp, Operand(StandardFrameConstants::kCallerSPOffset + offset));
-    __ mov(r2, Operand(Smi::FromInt(num_parameters)));
-    __ mov(r1, Operand(Smi::FromInt(rest_index)));
-    __ mov(r0, Operand(Smi::FromInt(language_mode())));
-    __ Push(r3, r2, r1, r0);
-    function_in_register_r1 = false;
-
-    RestParamAccessStub stub(isolate());
-    __ CallStub(&stub);
-
-    SetVar(rest_param, r0, r1, r2);
-  }
-
   Variable* arguments = scope()->arguments();
   if (arguments != NULL) {
     // Function uses arguments object.
@@ -2297,41 +2275,28 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
 
 
 void FullCodeGenerator::EmitCreateIteratorResult(bool done) {
-  Label gc_required;
-  Label allocated;
+  Label allocate, done_allocate;
 
-  const int instance_size = 5 * kPointerSize;
-  DCHECK_EQ(isolate()->native_context()->iterator_result_map()->instance_size(),
-            instance_size);
+  __ Allocate(JSIteratorResult::kSize, r0, r2, r3, &allocate, TAG_OBJECT);
+  __ b(&done_allocate);
 
-  __ Allocate(instance_size, r0, r2, r3, &gc_required, TAG_OBJECT);
-  __ jmp(&allocated);
-
-  __ bind(&gc_required);
-  __ Push(Smi::FromInt(instance_size));
+  __ bind(&allocate);
+  __ Push(Smi::FromInt(JSIteratorResult::kSize));
   __ CallRuntime(Runtime::kAllocateInNewSpace, 1);
-  __ ldr(context_register(),
-         MemOperand(fp, StandardFrameConstants::kContextOffset));
 
-  __ bind(&allocated);
+  __ bind(&done_allocate);
   __ ldr(r1, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
   __ ldr(r1, FieldMemOperand(r1, GlobalObject::kNativeContextOffset));
   __ ldr(r1, ContextOperand(r1, Context::ITERATOR_RESULT_MAP_INDEX));
   __ pop(r2);
-  __ mov(r3, Operand(isolate()->factory()->ToBoolean(done)));
-  __ mov(r4, Operand(isolate()->factory()->empty_fixed_array()));
+  __ LoadRoot(r3,
+              done ? Heap::kTrueValueRootIndex : Heap::kFalseValueRootIndex);
+  __ LoadRoot(r4, Heap::kEmptyFixedArrayRootIndex);
   __ str(r1, FieldMemOperand(r0, HeapObject::kMapOffset));
   __ str(r4, FieldMemOperand(r0, JSObject::kPropertiesOffset));
   __ str(r4, FieldMemOperand(r0, JSObject::kElementsOffset));
-  __ str(r2,
-         FieldMemOperand(r0, JSGeneratorObject::kResultValuePropertyOffset));
-  __ str(r3,
-         FieldMemOperand(r0, JSGeneratorObject::kResultDonePropertyOffset));
-
-  // Only the value field needs a write barrier, as the other values are in the
-  // root set.
-  __ RecordWriteField(r0, JSGeneratorObject::kResultValuePropertyOffset,
-                      r2, r3, kLRHasBeenSaved, kDontSaveFPRegs);
+  __ str(r2, FieldMemOperand(r0, JSIteratorResult::kValueOffset));
+  __ str(r3, FieldMemOperand(r0, JSIteratorResult::kDoneOffset));
 }
 
 
@@ -4495,6 +4460,37 @@ void FullCodeGenerator::EmitDebugIsActive(CallRuntime* expr) {
 }
 
 
+void FullCodeGenerator::EmitCreateIterResultObject(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK_EQ(2, args->length());
+  VisitForStackValue(args->at(0));
+  VisitForStackValue(args->at(1));
+
+  Label runtime, done;
+
+  __ Allocate(JSIteratorResult::kSize, r0, r2, r3, &runtime, TAG_OBJECT);
+  __ ldr(r1, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
+  __ ldr(r1, FieldMemOperand(r1, GlobalObject::kNativeContextOffset));
+  __ ldr(r1, ContextOperand(r1, Context::ITERATOR_RESULT_MAP_INDEX));
+  __ pop(r3);
+  __ pop(r2);
+  __ LoadRoot(r4, Heap::kEmptyFixedArrayRootIndex);
+  __ str(r1, FieldMemOperand(r0, HeapObject::kMapOffset));
+  __ str(r4, FieldMemOperand(r0, JSObject::kPropertiesOffset));
+  __ str(r4, FieldMemOperand(r0, JSObject::kElementsOffset));
+  __ str(r2, FieldMemOperand(r0, JSIteratorResult::kValueOffset));
+  __ str(r3, FieldMemOperand(r0, JSIteratorResult::kDoneOffset));
+  STATIC_ASSERT(JSIteratorResult::kSize == 5 * kPointerSize);
+  __ b(&done);
+
+  __ bind(&runtime);
+  __ CallRuntime(Runtime::kCreateIterResultObject, 2);
+
+  __ bind(&done);
+  context()->Plug(r0);
+}
+
+
 void FullCodeGenerator::EmitLoadJSRuntimeFunction(CallRuntime* expr) {
   // Push undefined as the receiver.
   __ LoadRoot(r0, Heap::kUndefinedValueRootIndex);
@@ -4990,23 +4986,22 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
 
   } else if (String::Equals(check, factory->function_string())) {
     __ JumpIfSmi(r0, if_false);
-    STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
-    __ CompareObjectType(r0, r0, r1, JS_FUNCTION_TYPE);
-    __ b(eq, if_true);
-    __ cmp(r1, Operand(JS_FUNCTION_PROXY_TYPE));
+    __ ldr(r0, FieldMemOperand(r0, HeapObject::kMapOffset));
+    __ ldrb(r1, FieldMemOperand(r0, Map::kBitFieldOffset));
+    __ and_(r1, r1,
+            Operand((1 << Map::kIsCallable) | (1 << Map::kIsUndetectable)));
+    __ cmp(r1, Operand(1 << Map::kIsCallable));
     Split(eq, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->object_string())) {
     __ JumpIfSmi(r0, if_false);
     __ CompareRoot(r0, Heap::kNullValueRootIndex);
     __ b(eq, if_true);
-    // Check for JS objects => true.
-    __ CompareObjectType(r0, r0, r1, FIRST_NONCALLABLE_SPEC_OBJECT_TYPE);
+    STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
+    __ CompareObjectType(r0, r0, r1, FIRST_SPEC_OBJECT_TYPE);
     __ b(lt, if_false);
-    __ CompareInstanceType(r0, r1, LAST_NONCALLABLE_SPEC_OBJECT_TYPE);
-    __ b(gt, if_false);
-    // Check for undetectable objects => false.
+    // Check for callable or undetectable objects => false.
     __ ldrb(r1, FieldMemOperand(r0, Map::kBitFieldOffset));
-    __ tst(r1, Operand(1 << Map::kIsUndetectable));
+    __ tst(r1, Operand((1 << Map::kIsCallable) | (1 << Map::kIsUndetectable)));
     Split(eq, if_true, if_false, fall_through);
 // clang-format off
 #define SIMD128_TYPE(TYPE, Type, type, lane_count, lane_type)   \

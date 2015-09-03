@@ -36,6 +36,7 @@ void Object::VerifyPointer(Object* p) {
 
 void Smi::SmiVerify() {
   CHECK(IsSmi());
+  CHECK(!IsCallable());
 }
 
 
@@ -142,6 +143,9 @@ void HeapObject::HeapObjectVerify() {
       break;
     case JS_MAP_ITERATOR_TYPE:
       JSMapIterator::cast(this)->JSMapIteratorVerify();
+      break;
+    case JS_ITERATOR_RESULT_TYPE:
+      JSIteratorResult::cast(this)->JSIteratorResultVerify();
       break;
     case JS_WEAK_MAP_TYPE:
       JSWeakMap::cast(this)->JSWeakMapVerify();
@@ -533,6 +537,7 @@ void JSFunction::JSFunctionVerify() {
   CHECK(next_function_link() == NULL ||
         next_function_link()->IsUndefined() ||
         next_function_link()->IsJSFunction());
+  CHECK(map()->is_callable());
 }
 
 
@@ -739,6 +744,14 @@ void JSMapIterator::JSMapIteratorVerify() {
 }
 
 
+void JSIteratorResult::JSIteratorResultVerify() {
+  CHECK(IsJSIteratorResult());
+  JSObjectVerify();
+  VerifyPointer(done());
+  VerifyPointer(value());
+}
+
+
 void JSWeakMap::JSWeakMapVerify() {
   CHECK(IsJSWeakMap());
   JSObjectVerify();
@@ -811,6 +824,7 @@ void JSFunctionProxy::JSFunctionProxyVerify() {
   JSProxyVerify();
   VerifyPointer(call_trap());
   VerifyPointer(construct_trap());
+  CHECK(map()->is_callable());
 }
 
 

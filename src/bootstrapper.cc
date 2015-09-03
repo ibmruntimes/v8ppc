@@ -488,6 +488,7 @@ Handle<Map> Genesis::CreateSloppyFunctionMap(FunctionMode function_mode) {
   Handle<Map> map = factory()->NewMap(JS_FUNCTION_TYPE, JSFunction::kSize);
   SetFunctionInstanceDescriptor(map, function_mode);
   map->set_function_with_prototype(IsFunctionModeWithPrototype(function_mode));
+  map->set_is_callable();
   return map;
 }
 
@@ -727,6 +728,7 @@ Handle<Map> Genesis::CreateStrictFunctionMap(
   Handle<Map> map = factory()->NewMap(JS_FUNCTION_TYPE, JSFunction::kSize);
   SetStrictFunctionInstanceDescriptor(map, function_mode);
   map->set_function_with_prototype(IsFunctionModeWithPrototype(function_mode));
+  map->set_is_callable();
   Map::SetPrototype(map, empty_function);
   return map;
 }
@@ -738,6 +740,7 @@ Handle<Map> Genesis::CreateStrongFunctionMap(
   SetStrongFunctionInstanceDescriptor(map);
   map->set_function_with_prototype(is_constructor);
   Map::SetPrototype(map, empty_function);
+  map->set_is_callable();
   map->set_is_extensible(is_constructor);
   map->set_is_strong();
   return map;
@@ -1044,8 +1047,10 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> global_object,
   Handle<JSObject> global(native_context()->global_object());
 
   // Install global Function object
-  InstallFunction(global, "Function", JS_FUNCTION_TYPE, JSFunction::kSize,
-                  empty_function, Builtins::kIllegal);
+  Handle<JSFunction> function_function =
+      InstallFunction(global, "Function", JS_FUNCTION_TYPE, JSFunction::kSize,
+                      empty_function, Builtins::kIllegal);
+  function_function->initial_map()->set_is_callable();
 
   {  // --- A r r a y ---
     Handle<JSFunction> array_function =
@@ -1307,32 +1312,26 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> global_object,
     native_context()->set_js_set_fun(*js_set_fun);
   }
 
-  {  // Set up the iterator result object
-    STATIC_ASSERT(JSGeneratorObject::kResultPropertyCount == 2);
-    Handle<JSFunction> object_function(native_context()->object_function());
-    Handle<Map> iterator_result_map =
-        Map::Create(isolate, JSGeneratorObject::kResultPropertyCount);
-    DCHECK_EQ(JSGeneratorObject::kResultSize,
-              iterator_result_map->instance_size());
-    DCHECK_EQ(JSGeneratorObject::kResultPropertyCount,
-              iterator_result_map->GetInObjectProperties());
-    Map::EnsureDescriptorSlack(iterator_result_map,
-                               JSGeneratorObject::kResultPropertyCount);
+  {  // -- I t e r a t o r R e s u l t
+    Handle<Map> map =
+        factory->NewMap(JS_ITERATOR_RESULT_TYPE, JSIteratorResult::kSize);
+    Map::SetPrototype(map, isolate->initial_object_prototype());
+    Map::EnsureDescriptorSlack(map, 2);
 
-    DataDescriptor value_descr(factory->value_string(),
-                               JSGeneratorObject::kResultValuePropertyIndex,
-                               NONE, Representation::Tagged());
-    iterator_result_map->AppendDescriptor(&value_descr);
+    {  // value
+      DataDescriptor d(factory->value_string(), JSIteratorResult::kValueIndex,
+                       NONE, Representation::Tagged());
+      map->AppendDescriptor(&d);
+    }
 
-    DataDescriptor done_descr(factory->done_string(),
-                              JSGeneratorObject::kResultDonePropertyIndex, NONE,
-                              Representation::Tagged());
-    iterator_result_map->AppendDescriptor(&done_descr);
+    {  // done
+      DataDescriptor d(factory->done_string(), JSIteratorResult::kDoneIndex,
+                       NONE, Representation::Tagged());
+      map->AppendDescriptor(&d);
+    }
 
-    iterator_result_map->set_unused_property_fields(0);
-    DCHECK_EQ(JSGeneratorObject::kResultSize,
-              iterator_result_map->instance_size());
-    native_context()->set_iterator_result_map(*iterator_result_map);
+    map->SetInObjectProperties(2);
+    native_context()->set_iterator_result_map(*map);
   }
 
   // -- W e a k M a p
@@ -2242,9 +2241,11 @@ bool Genesis::InstallNatives(ContextType context_type) {
         static_cast<PropertyAttributes>(DONT_ENUM | READ_ONLY));
 
     static const bool kUseStrictFunctionMap = true;
-    InstallFunction(builtins, "GeneratorFunction", JS_FUNCTION_TYPE,
-                    JSFunction::kSize, generator_function_prototype,
-                    Builtins::kIllegal, kUseStrictFunctionMap);
+    Handle<JSFunction> generator_function_function =
+        InstallFunction(builtins, "GeneratorFunction", JS_FUNCTION_TYPE,
+                        JSFunction::kSize, generator_function_prototype,
+                        Builtins::kIllegal, kUseStrictFunctionMap);
+    generator_function_function->initial_map()->set_is_callable();
 
     // Create maps for generator functions and their prototypes.  Store those
     // maps in the native context. The "prototype" property descriptor is

@@ -8,6 +8,7 @@
 #include "src/bootstrapper.h"
 #include "src/code-stubs.h"
 #include "src/codegen.h"
+#include "src/ia32/code-stubs-ia32.h"
 #include "src/ia32/frames-ia32.h"
 #include "src/ic/handler-compiler.h"
 #include "src/ic/ic.h"
@@ -1137,32 +1138,6 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   // Do the runtime call to allocate the arguments object.
   __ bind(&runtime);
   __ TailCallRuntime(Runtime::kNewStrictArguments, 3, 1);
-}
-
-
-void RestParamAccessStub::GenerateNew(MacroAssembler* masm) {
-  // esp[0] : return address
-  // esp[4] : language mode
-  // esp[8] : index of rest parameter
-  // esp[12] : number of parameters
-  // esp[16] : receiver displacement
-
-  // Check if the calling frame is an arguments adaptor frame.
-  Label runtime;
-  __ mov(edx, Operand(ebp, StandardFrameConstants::kCallerFPOffset));
-  __ mov(ecx, Operand(edx, StandardFrameConstants::kContextOffset));
-  __ cmp(ecx, Immediate(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
-  __ j(not_equal, &runtime);
-
-  // Patch the arguments.length and the parameters pointer.
-  __ mov(ecx, Operand(edx, ArgumentsAdaptorFrameConstants::kLengthOffset));
-  __ mov(Operand(esp, 3 * kPointerSize), ecx);
-  __ lea(edx, Operand(edx, ecx, times_2,
-                      StandardFrameConstants::kCallerSPOffset));
-  __ mov(Operand(esp, 4 * kPointerSize), edx);
-
-  __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kNewRestParam, 4, 1);
 }
 
 

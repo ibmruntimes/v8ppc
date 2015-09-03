@@ -12,6 +12,7 @@
 #include "src/ic/ic.h"
 #include "src/ic/stub-cache.h"
 #include "src/isolate.h"
+#include "src/mips/code-stubs-mips.h"
 #include "src/regexp/jsregexp.h"
 #include "src/regexp/regexp-macro-assembler.h"
 #include "src/runtime/runtime.h"
@@ -1955,34 +1956,6 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   // Do the runtime call to allocate the arguments object.
   __ bind(&runtime);
   __ TailCallRuntime(Runtime::kNewStrictArguments, 3, 1);
-}
-
-
-void RestParamAccessStub::GenerateNew(MacroAssembler* masm) {
-  // sp[0] : language mode
-  // sp[4] : index of rest parameter
-  // sp[8] : number of parameters
-  // sp[12] : receiver displacement
-  // Check if the calling frame is an arguments adaptor frame.
-
-  Label runtime;
-  __ lw(a2, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
-  __ lw(a3, MemOperand(a2, StandardFrameConstants::kContextOffset));
-  __ Branch(&runtime, ne, a3,
-            Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
-
-  // Patch the arguments.length and the parameters pointer.
-  __ lw(a1, MemOperand(a2, ArgumentsAdaptorFrameConstants::kLengthOffset));
-  __ sw(a1, MemOperand(sp, 2 * kPointerSize));
-  __ sll(at, a1, kPointerSizeLog2 - kSmiTagSize);
-  __ Addu(a3, a2, Operand(at));
-
-  __ Addu(a3, a3, Operand(StandardFrameConstants::kCallerSPOffset));
-  __ sw(a3, MemOperand(sp, 3 * kPointerSize));
-
-  // Do the runtime call to allocate the arguments object.
-  __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kNewRestParam, 4, 1);
 }
 
 

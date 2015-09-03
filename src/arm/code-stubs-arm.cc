@@ -16,6 +16,8 @@
 #include "src/regexp/regexp-macro-assembler.h"
 #include "src/runtime/runtime.h"
 
+#include "src/arm/code-stubs-arm.h"
+
 namespace v8 {
 namespace internal {
 
@@ -1841,31 +1843,6 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   // Do the runtime call to allocate the arguments object.
   __ bind(&runtime);
   __ TailCallRuntime(Runtime::kNewStrictArguments, 3, 1);
-}
-
-
-void RestParamAccessStub::GenerateNew(MacroAssembler* masm) {
-  // Stack layout on entry.
-  //  sp[0] : language mode
-  //  sp[4] : index of rest parameter
-  //  sp[8] : number of parameters
-  //  sp[12] : receiver displacement
-
-  Label runtime;
-  __ ldr(r2, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
-  __ ldr(r3, MemOperand(r2, StandardFrameConstants::kContextOffset));
-  __ cmp(r3, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
-  __ b(ne, &runtime);
-
-  // Patch the arguments.length and the parameters pointer.
-  __ ldr(r1, MemOperand(r2, ArgumentsAdaptorFrameConstants::kLengthOffset));
-  __ str(r1, MemOperand(sp, 2 * kPointerSize));
-  __ add(r3, r2, Operand::PointerOffsetFromSmiKey(r1));
-  __ add(r3, r3, Operand(StandardFrameConstants::kCallerSPOffset));
-  __ str(r3, MemOperand(sp, 3 * kPointerSize));
-
-  __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kNewRestParam, 4, 1);
 }
 
 

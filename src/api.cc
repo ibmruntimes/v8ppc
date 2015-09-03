@@ -4264,11 +4264,9 @@ MaybeLocal<Value> Object::CallAsFunction(Local<Context> context,
   if (self->IsJSFunction()) {
     fun = i::Handle<i::JSFunction>::cast(self);
   } else {
-    i::Handle<i::Object> delegate;
-    has_pending_exception = !i::Execution::TryGetFunctionDelegate(isolate, self)
-                                 .ToHandle(&delegate);
+    has_pending_exception =
+        !i::Execution::GetFunctionDelegate(isolate, self).ToHandle(&fun);
     RETURN_ON_FAILED_EXECUTION(Value);
-    fun = i::Handle<i::JSFunction>::cast(delegate);
     recv_obj = self;
   }
   Local<Value> result;
@@ -4306,21 +4304,15 @@ MaybeLocal<Value> Object::CallAsConstructor(Local<Context> context, int argc,
     RETURN_ON_FAILED_EXECUTION(Value);
     RETURN_ESCAPED(result);
   }
-  i::Handle<i::Object> delegate;
-  has_pending_exception = !i::Execution::TryGetConstructorDelegate(
-                               isolate, self).ToHandle(&delegate);
+  i::Handle<i::JSFunction> fun;
+  has_pending_exception =
+      !i::Execution::GetConstructorDelegate(isolate, self).ToHandle(&fun);
   RETURN_ON_FAILED_EXECUTION(Value);
-  if (!delegate->IsUndefined()) {
-    auto fun = i::Handle<i::JSFunction>::cast(delegate);
-    Local<Value> result;
-    has_pending_exception =
-        !ToLocal<Value>(i::Execution::Call(isolate, fun, self, argc, args),
-                        &result);
-    RETURN_ON_FAILED_EXECUTION(Value);
-    DCHECK(!delegate->IsUndefined());
-    RETURN_ESCAPED(result);
-  }
-  return MaybeLocal<Value>();
+  Local<Value> result;
+  has_pending_exception = !ToLocal<Value>(
+      i::Execution::Call(isolate, fun, self, argc, args), &result);
+  RETURN_ON_FAILED_EXECUTION(Value);
+  RETURN_ESCAPED(result);
 }
 
 
@@ -7252,22 +7244,25 @@ bool Isolate::GetHeapSpaceStatistics(HeapSpaceStatistics* space_statistics,
 
 
 size_t Isolate::NumberOfTrackedHeapObjectTypes() {
-  return i::Heap::OBJECT_STATS_COUNT;
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  i::Heap* heap = isolate->heap();
+  return heap->NumberOfTrackedHeapObjectTypes();
 }
 
 
 bool Isolate::GetHeapObjectStatisticsAtLastGC(
     HeapObjectStatistics* object_statistics, size_t type_index) {
   if (!object_statistics) return false;
-  if (type_index >= i::Heap::OBJECT_STATS_COUNT) return false;
   if (!i::FLAG_track_gc_object_stats) return false;
 
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
   i::Heap* heap = isolate->heap();
+  if (type_index >= heap->NumberOfTrackedHeapObjectTypes()) return false;
+
   const char* object_type;
   const char* object_sub_type;
-  size_t object_count = heap->object_count_last_gc(type_index);
-  size_t object_size = heap->object_size_last_gc(type_index);
+  size_t object_count = heap->ObjectCountAtLastGC(type_index);
+  size_t object_size = heap->ObjectSizeAtLastGC(type_index);
   if (!heap->GetObjectTypeName(type_index, &object_type, &object_sub_type)) {
     // There should be no objects counted when the type is unknown.
     DCHECK_EQ(object_count, 0U);

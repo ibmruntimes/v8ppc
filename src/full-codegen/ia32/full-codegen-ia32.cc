@@ -279,29 +279,6 @@ void FullCodeGenerator::Generate() {
     SetVar(new_target_var, eax, ebx, edx);
   }
 
-
-  // Possibly allocate RestParameters
-  int rest_index;
-  Variable* rest_param = scope()->rest_parameter(&rest_index);
-  if (rest_param) {
-    Comment cmnt(masm_, "[ Allocate rest parameter array");
-
-    int num_parameters = info->scope()->num_parameters();
-    int offset = num_parameters * kPointerSize;
-
-    __ lea(edx,
-           Operand(ebp, StandardFrameConstants::kCallerSPOffset + offset));
-    __ push(edx);
-    __ push(Immediate(Smi::FromInt(num_parameters)));
-    __ push(Immediate(Smi::FromInt(rest_index)));
-    __ push(Immediate(Smi::FromInt(language_mode())));
-
-    RestParamAccessStub stub(isolate());
-    __ CallStub(&stub);
-
-    SetVar(rest_param, eax, ebx, edx);
-  }
-
   Variable* arguments = scope()->arguments();
   if (arguments != NULL) {
     // Function uses arguments object.
@@ -2216,40 +2193,28 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
 
 
 void FullCodeGenerator::EmitCreateIteratorResult(bool done) {
-  Label gc_required;
-  Label allocated;
+  Label allocate, done_allocate;
 
-  const int instance_size = 5 * kPointerSize;
-  DCHECK_EQ(isolate()->native_context()->iterator_result_map()->instance_size(),
-            instance_size);
+  __ Allocate(JSIteratorResult::kSize, eax, ecx, edx, &allocate, TAG_OBJECT);
+  __ jmp(&done_allocate, Label::kNear);
 
-  __ Allocate(instance_size, eax, ecx, edx, &gc_required, TAG_OBJECT);
-  __ jmp(&allocated);
-
-  __ bind(&gc_required);
-  __ Push(Smi::FromInt(instance_size));
+  __ bind(&allocate);
+  __ Push(Smi::FromInt(JSIteratorResult::kSize));
   __ CallRuntime(Runtime::kAllocateInNewSpace, 1);
-  __ mov(context_register(),
-         Operand(ebp, StandardFrameConstants::kContextOffset));
 
-  __ bind(&allocated);
-  __ mov(ebx, Operand(esi, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  __ bind(&done_allocate);
+  __ mov(ebx, GlobalObjectOperand());
   __ mov(ebx, FieldOperand(ebx, GlobalObject::kNativeContextOffset));
   __ mov(ebx, ContextOperand(ebx, Context::ITERATOR_RESULT_MAP_INDEX));
-  __ pop(ecx);
-  __ mov(edx, isolate()->factory()->ToBoolean(done));
   __ mov(FieldOperand(eax, HeapObject::kMapOffset), ebx);
   __ mov(FieldOperand(eax, JSObject::kPropertiesOffset),
          isolate()->factory()->empty_fixed_array());
   __ mov(FieldOperand(eax, JSObject::kElementsOffset),
          isolate()->factory()->empty_fixed_array());
-  __ mov(FieldOperand(eax, JSGeneratorObject::kResultValuePropertyOffset), ecx);
-  __ mov(FieldOperand(eax, JSGeneratorObject::kResultDonePropertyOffset), edx);
-
-  // Only the value field needs a write barrier, as the other values are in the
-  // root set.
-  __ RecordWriteField(eax, JSGeneratorObject::kResultValuePropertyOffset,
-                      ecx, edx, kDontSaveFPRegs);
+  __ pop(FieldOperand(eax, JSIteratorResult::kValueOffset));
+  __ mov(FieldOperand(eax, JSIteratorResult::kDoneOffset),
+         isolate()->factory()->ToBoolean(done));
+  STATIC_ASSERT(JSIteratorResult::kSize == 5 * kPointerSize);
 }
 
 
@@ -4435,6 +4400,36 @@ void FullCodeGenerator::EmitDebugIsActive(CallRuntime* expr) {
 }
 
 
+void FullCodeGenerator::EmitCreateIterResultObject(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK_EQ(2, args->length());
+  VisitForStackValue(args->at(0));
+  VisitForStackValue(args->at(1));
+
+  Label runtime, done;
+
+  __ Allocate(JSIteratorResult::kSize, eax, ecx, edx, &runtime, TAG_OBJECT);
+  __ mov(ebx, GlobalObjectOperand());
+  __ mov(ebx, FieldOperand(ebx, GlobalObject::kNativeContextOffset));
+  __ mov(ebx, ContextOperand(ebx, Context::ITERATOR_RESULT_MAP_INDEX));
+  __ mov(FieldOperand(eax, HeapObject::kMapOffset), ebx);
+  __ mov(FieldOperand(eax, JSObject::kPropertiesOffset),
+         isolate()->factory()->empty_fixed_array());
+  __ mov(FieldOperand(eax, JSObject::kElementsOffset),
+         isolate()->factory()->empty_fixed_array());
+  __ pop(FieldOperand(eax, JSIteratorResult::kDoneOffset));
+  __ pop(FieldOperand(eax, JSIteratorResult::kValueOffset));
+  STATIC_ASSERT(JSIteratorResult::kSize == 5 * kPointerSize);
+  __ jmp(&done, Label::kNear);
+
+  __ bind(&runtime);
+  __ CallRuntime(Runtime::kCreateIterResultObject, 2);
+
+  __ bind(&done);
+  context()->Plug(eax);
+}
+
+
 void FullCodeGenerator::EmitLoadJSRuntimeFunction(CallRuntime* expr) {
   // Push undefined as receiver.
   __ push(Immediate(isolate()->factory()->undefined_value()));
@@ -4927,27 +4922,27 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ JumpIfSmi(eax, if_false);
     // Check for undetectable objects => true.
     __ mov(edx, FieldOperand(eax, HeapObject::kMapOffset));
-    __ movzx_b(ecx, FieldOperand(edx, Map::kBitFieldOffset));
-    __ test(ecx, Immediate(1 << Map::kIsUndetectable));
+    __ test_b(FieldOperand(edx, Map::kBitFieldOffset),
+              1 << Map::kIsUndetectable);
     Split(not_zero, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->function_string())) {
     __ JumpIfSmi(eax, if_false);
-    STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
-    __ CmpObjectType(eax, JS_FUNCTION_TYPE, edx);
-    __ j(equal, if_true);
-    __ CmpInstanceType(edx, JS_FUNCTION_PROXY_TYPE);
+    // Check for callable and not undetectable objects => true.
+    __ mov(edx, FieldOperand(eax, HeapObject::kMapOffset));
+    __ movzx_b(ecx, FieldOperand(edx, Map::kBitFieldOffset));
+    __ and_(ecx, (1 << Map::kIsCallable) | (1 << Map::kIsUndetectable));
+    __ cmp(ecx, 1 << Map::kIsCallable);
     Split(equal, if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->object_string())) {
     __ JumpIfSmi(eax, if_false);
     __ cmp(eax, isolate()->factory()->null_value());
     __ j(equal, if_true);
-    __ CmpObjectType(eax, FIRST_NONCALLABLE_SPEC_OBJECT_TYPE, edx);
+    STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
+    __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, edx);
     __ j(below, if_false);
-    __ CmpInstanceType(edx, LAST_NONCALLABLE_SPEC_OBJECT_TYPE);
-    __ j(above, if_false);
-    // Check for undetectable objects => false.
+    // Check for callable or undetectable objects => false.
     __ test_b(FieldOperand(edx, Map::kBitFieldOffset),
-              1 << Map::kIsUndetectable);
+              (1 << Map::kIsCallable) | (1 << Map::kIsUndetectable));
     Split(zero, if_true, if_false, fall_through);
 // clang-format off
 #define SIMD128_TYPE(TYPE, Type, type, lane_count, lane_type)   \

@@ -144,6 +144,9 @@ void HeapObject::HeapObjectPrint(std::ostream& os) {  // NOLINT
     case JS_MAP_ITERATOR_TYPE:
       JSMapIterator::cast(this)->JSMapIteratorPrint(os);
       break;
+    case JS_ITERATOR_RESULT_TYPE:
+      JSIteratorResult::cast(this)->JSIteratorResultPrint(os);
+      break;
     case JS_WEAK_MAP_TYPE:
       JSWeakMap::cast(this)->JSWeakMapPrint(os);
       break;
@@ -453,7 +456,7 @@ void Map::MapPrint(std::ostream& os) {  // NOLINT
   if (has_named_interceptor()) os << " - named_interceptor\n";
   if (has_indexed_interceptor()) os << " - indexed_interceptor\n";
   if (is_undetectable()) os << " - undetectable\n";
-  if (has_instance_call_handler()) os << " - instance_call_handler\n";
+  if (is_callable()) os << " - callable\n";
   if (is_access_check_needed()) os << " - access_check_needed\n";
   if (!is_extensible()) os << " - non-extensible\n";
   if (is_observed()) os << " - observed\n";
@@ -753,6 +756,15 @@ void JSSetIterator::JSSetIteratorPrint(std::ostream& os) {  // NOLINT
 void JSMapIterator::JSMapIteratorPrint(std::ostream& os) {  // NOLINT
   HeapObject::PrintHeader(os, "JSMapIterator");
   OrderedHashTableIteratorPrint(os);
+}
+
+
+void JSIteratorResult::JSIteratorResultPrint(std::ostream& os) {  // NOLINT
+  HeapObject::PrintHeader(os, "JSIteratorResult");
+  os << " - map = " << reinterpret_cast<void*>(map()) << "\n";
+  os << " - done = " << Brief(done()) << "\n";
+  os << " - value = " << Brief(value()) << "\n";
+  os << "\n";
 }
 
 

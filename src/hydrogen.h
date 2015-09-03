@@ -1358,6 +1358,9 @@ class HGraphBuilder {
                                               HValue* hash,
                                               LanguageMode language_mode);
 
+  // ES6 section 7.4.7 CreateIterResultObject ( value, done )
+  HValue* BuildCreateIterResultObject(HValue* value, HValue* done);
+
   HValue* BuildRegExpConstructResult(HValue* length,
                                      HValue* index,
                                      HValue* input);
@@ -2267,9 +2270,10 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(JSCollectionGetTable)              \
   F(StringGetRawHashField)             \
   F(TheHole)                           \
+  /* ES6 Iterators */                  \
+  F(CreateIterResultObject)            \
   /* Arrays */                         \
   F(HasFastPackedElements)             \
-  F(GetPrototype)                      \
   /* Strings */                        \
   F(StringGetLength)                   \
   /* JSValue */                        \
