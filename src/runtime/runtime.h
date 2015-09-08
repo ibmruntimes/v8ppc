@@ -35,7 +35,6 @@ namespace internal {
   F(SpecialArrayFunctions, 0, 1)            \
   F(TransitionElementsKind, 2, 1)           \
   F(PushIfAbsent, 2, 1)                     \
-  F(ArrayConcat, 1, 1)                      \
   F(RemoveArrayHoles, 2, 1)                 \
   F(MoveArrayContents, 2, 1)                \
   F(EstimateNumberOfElements, 1, 1)         \
@@ -219,7 +218,6 @@ namespace internal {
 
 
 #define FOR_EACH_INTRINSIC_FUNCTION(F)                      \
-  F(IsSloppyModeFunction, 1, 1)                             \
   F(FunctionGetName, 1, 1)                                  \
   F(FunctionSetName, 2, 1)                                  \
   F(FunctionNameShouldPrintAsAnonymous, 1, 1)               \
@@ -425,7 +423,6 @@ namespace internal {
   F(SmiLexicographicCompare, 2, 1)     \
   F(MaxSmi, 0, 1)                      \
   F(IsSmi, 1, 1)                       \
-  F(IsNonNegativeSmi, 1, 1)            \
   F(GetRootNaN, 0, 1)
 
 
@@ -454,7 +451,6 @@ namespace internal {
   F(DeleteProperty_Strict, 2, 1)                     \
   F(HasOwnProperty, 2, 1)                            \
   F(HasProperty, 2, 1)                               \
-  F(HasElement, 2, 1)                                \
   F(IsPropertyEnumerable, 2, 1)                      \
   F(GetPropertyNamesFast, 1, 1)                      \
   F(GetOwnPropertyNames, 2, 1)                       \

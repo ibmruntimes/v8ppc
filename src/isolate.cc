@@ -1266,9 +1266,14 @@ bool Isolate::ComputeLocation(MessageLocation* target) {
     Object* script = fun->shared()->script();
     if (script->IsScript() &&
         !(Script::cast(script)->source()->IsUndefined())) {
-      int pos = frame->LookupCode()->SourcePosition(frame->pc());
-      // Compute the location from the function and the reloc info.
       Handle<Script> casted_script(Script::cast(script));
+      // Compute the location from the function and the relocation info of the
+      // baseline code. For optimized code this will use the deoptimization
+      // information to get canonical location information.
+      List<FrameSummary> frames(FLAG_max_inlining_levels + 1);
+      it.frame()->Summarize(&frames);
+      FrameSummary& summary = frames.last();
+      int pos = summary.code()->SourcePosition(summary.pc());
       *target = MessageLocation(casted_script, pos, pos + 1, handle(fun));
       return true;
     }
@@ -2069,7 +2074,7 @@ bool Isolate::Init(Deserializer* des) {
   }
 
   // The initialization process does not handle memory exhaustion.
-  DisallowAllocationFailure disallow_allocation_failure(this);
+  AlwaysAllocateScope always_allocate(this);
 
   memory_allocator_ = new MemoryAllocator(this);
   code_range_ = new CodeRange(this);

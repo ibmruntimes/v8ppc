@@ -11394,11 +11394,9 @@ void HOptimizedGraphBuilder::VisitCompareOperation(CompareOperation* expr) {
     return ast_context()->ReturnInstruction(result, expr->id());
 
   } else if (op == Token::IN) {
-    HValue* function = AddLoadJSBuiltin(Context::IN_BUILTIN_INDEX);
     Add<HPushArguments>(left, right);
-    // TODO(olivf) InvokeFunction produces a check for the parameter count,
-    // even though we are certain to pass the correct number of arguments here.
-    HInstruction* result = New<HInvokeFunction>(function, 2);
+    HInstruction* result =
+        New<HCallRuntime>(Runtime::FunctionForId(Runtime::kHasProperty), 2);
     return ast_context()->ReturnInstruction(result, expr->id());
   }
 
@@ -12476,6 +12474,23 @@ void HOptimizedGraphBuilder::GenerateNumberToString(CallRuntime* call) {
   HValue* number = Pop();
   HValue* result = BuildNumberToString(number, Type::Any(zone()));
   return ast_context()->ReturnValue(result);
+}
+
+
+// Fast support for calls.
+void HOptimizedGraphBuilder::GenerateCall(CallRuntime* call) {
+  DCHECK_LE(2, call->arguments()->length());
+  CHECK_ALIVE(VisitExpressions(call->arguments()));
+  CallTrampolineDescriptor descriptor(isolate());
+  PushArgumentsFromEnvironment(call->arguments()->length() - 1);
+  HValue* trampoline = Add<HConstant>(isolate()->builtins()->Call());
+  HValue* target = Pop();
+  HValue* values[] = {context(), target,
+                      Add<HConstant>(call->arguments()->length() - 2)};
+  HInstruction* result = New<HCallWithDescriptor>(
+      trampoline, call->arguments()->length() - 1, descriptor,
+      Vector<HValue*>(values, arraysize(values)));
+  return ast_context()->ReturnInstruction(result, call->id());
 }
 
 

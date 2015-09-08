@@ -424,38 +424,9 @@ function SHR_STRONG(y) {
    -----------------------------
 */
 
-// ECMA-262, section 11.8.7, page 54.
-function IN(x) {
-  if (!IS_SPEC_OBJECT(x)) {
-    throw %make_type_error(kInvalidInOperatorUse, this, x);
-  }
-  if (%_IsNonNegativeSmi(this)) {
-    if (IS_ARRAY(x) && %_HasFastPackedElements(x)) {
-      return this < x.length;
-    }
-    return %HasElement(x, this);
-  }
-  return %HasProperty(x, this);
-}
-
-
-function CALL_NON_FUNCTION() {
-  var delegate = %GetFunctionDelegate(this);
-  return %Apply(delegate, this, arguments, 0, %_ArgumentsLength());
-}
-
-
 function CALL_NON_FUNCTION_AS_CONSTRUCTOR() {
   var delegate = %GetConstructorDelegate(this);
   return %Apply(delegate, this, arguments, 0, %_ArgumentsLength());
-}
-
-
-function CALL_FUNCTION_PROXY() {
-  var arity = %_ArgumentsLength() - 1;
-  var proxy = %_Arguments(arity);  // The proxy comes in as an additional arg.
-  var trap = %GetCallTrap(proxy);
-  return %Apply(trap, this, arguments, 0, arity);
 }
 
 
@@ -468,13 +439,19 @@ function CALL_FUNCTION_PROXY_AS_CONSTRUCTOR () {
 
 function APPLY_PREPARE(args) {
   var length;
+
+  // First check that the receiver is callable.
+  if (!IS_CALLABLE(this)) {
+    throw %make_type_error(kApplyNonFunction, %to_string_fun(this),
+                           typeof this);
+  }
+
   // First check whether length is a positive Smi and args is an
   // array. This is the fast case. If this fails, we do the slow case
   // that takes care of more eventualities.
   if (IS_ARRAY(args)) {
     length = args.length;
-    if (%_IsSmi(length) && length >= 0 && length < kSafeArgumentsLength &&
-        IS_CALLABLE(this)) {
+    if (%_IsSmi(length) && length >= 0 && length < kSafeArgumentsLength) {
       return length;
     }
   }
@@ -485,11 +462,6 @@ function APPLY_PREPARE(args) {
   // big enough, but sanity check the value to avoid overflow when
   // multiplying with pointer size.
   if (length > kSafeArgumentsLength) throw %make_range_error(kStackOverflow);
-
-  if (!IS_CALLABLE(this)) {
-    throw %make_type_error(kApplyNonFunction, %to_string_fun(this),
-                           typeof this);
-  }
 
   // Make sure the arguments list has the right type.
   if (args != null && !IS_SPEC_OBJECT(args)) {
@@ -504,19 +476,21 @@ function APPLY_PREPARE(args) {
 
 function REFLECT_APPLY_PREPARE(args) {
   var length;
+
+  // First check that the receiver is callable.
+  if (!IS_CALLABLE(this)) {
+    throw %make_type_error(kApplyNonFunction, %to_string_fun(this),
+                           typeof this);
+  }
+
   // First check whether length is a positive Smi and args is an
   // array. This is the fast case. If this fails, we do the slow case
   // that takes care of more eventualities.
   if (IS_ARRAY(args)) {
     length = args.length;
-    if (%_IsSmi(length) && length >= 0 && length < kSafeArgumentsLength &&
-        IS_CALLABLE(this)) {
+    if (%_IsSmi(length) && length >= 0 && length < kSafeArgumentsLength) {
       return length;
     }
-  }
-
-  if (!IS_CALLABLE(this)) {
-    throw %make_type_error(kCalledNonCallable, %to_string_fun(this));
   }
 
   if (!IS_SPEC_OBJECT(args)) {
@@ -743,14 +717,14 @@ function IsConcatSpreadable(O) {
 function DefaultNumber(x) {
   var valueOf = x.valueOf;
   if (IS_CALLABLE(valueOf)) {
-    var v = %_CallFunction(x, valueOf);
+    var v = %_Call(valueOf, x);
     if (IS_SYMBOL(v)) throw MakeTypeError(kSymbolToNumber);
     if (IS_SIMD_VALUE(x)) throw MakeTypeError(kSimdToNumber);
     if (IsPrimitive(v)) return v;
   }
   var toString = x.toString;
   if (IS_CALLABLE(toString)) {
-    var s = %_CallFunction(x, toString);
+    var s = %_Call(toString, x);
     if (IsPrimitive(s)) return s;
   }
   throw MakeTypeError(kCannotConvertToPrimitive);
@@ -762,13 +736,13 @@ function DefaultString(x) {
     if (IS_SYMBOL(x)) throw MakeTypeError(kSymbolToString);
     var toString = x.toString;
     if (IS_CALLABLE(toString)) {
-      var s = %_CallFunction(x, toString);
+      var s = %_Call(toString, x);
       if (IsPrimitive(s)) return s;
     }
 
     var valueOf = x.valueOf;
     if (IS_CALLABLE(valueOf)) {
-      var v = %_CallFunction(x, valueOf);
+      var v = %_Call(valueOf, x);
       if (IsPrimitive(v)) return v;
     }
   }
@@ -817,16 +791,13 @@ $toString = ToString;
   "bit_xor_builtin", BIT_XOR,
   "bit_xor_strong_builtin", BIT_XOR_STRONG,
   "call_function_proxy_as_constructor_builtin", CALL_FUNCTION_PROXY_AS_CONSTRUCTOR,
-  "call_function_proxy_builtin", CALL_FUNCTION_PROXY,
   "call_non_function_as_constructor_builtin", CALL_NON_FUNCTION_AS_CONSTRUCTOR,
-  "call_non_function_builtin", CALL_NON_FUNCTION,
   "compare_builtin", COMPARE,
   "compare_strong_builtin", COMPARE_STRONG,
   "concat_iterable_to_array_builtin", CONCAT_ITERABLE_TO_ARRAY,
   "div_builtin", DIV,
   "div_strong_builtin", DIV_STRONG,
   "equals_builtin", EQUALS,
-  "in_builtin", IN,
   "mod_builtin", MOD,
   "mod_strong_builtin", MOD_STRONG,
   "mul_builtin", MUL,

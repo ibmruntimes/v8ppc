@@ -218,10 +218,10 @@ int Linkage::FrameStateInputCount(Runtime::FunctionId function) {
   switch (function) {
     case Runtime::kAllocateInTargetSpace:
     case Runtime::kDateField:
-    case Runtime::kFinalizeClassDefinition:        // TODO(conradw): Is it safe?
     case Runtime::kDefineClassMethod:              // TODO(jarin): Is it safe?
     case Runtime::kDefineGetterPropertyUnchecked:  // TODO(jarin): Is it safe?
     case Runtime::kDefineSetterPropertyUnchecked:  // TODO(jarin): Is it safe?
+    case Runtime::kFinalizeClassDefinition:        // TODO(conradw): Is it safe?
     case Runtime::kForInDone:
     case Runtime::kForInStep:
     case Runtime::kGetOriginalConstructor:
@@ -238,18 +238,20 @@ int Linkage::FrameStateInputCount(Runtime::FunctionId function) {
     case Runtime::kTraceExit:
       return 0;
     case Runtime::kInlineArguments:
+    case Runtime::kInlineCall:
     case Runtime::kInlineCallFunction:
     case Runtime::kInlineDefaultConstructorCallSuper:
     case Runtime::kInlineGetCallerJSFunction:
     case Runtime::kInlineGetPrototype:
     case Runtime::kInlineRegExpExec:
+    case Runtime::kInlineSubString:
+    case Runtime::kInlineToName:
+    case Runtime::kInlineToNumber:
     case Runtime::kInlineToObject:
-    case Runtime::kInlineToPrimitive:
     case Runtime::kInlineToPrimitive_Number:
     case Runtime::kInlineToPrimitive_String:
-    case Runtime::kInlineToNumber:
+    case Runtime::kInlineToPrimitive:
     case Runtime::kInlineToString:
-    case Runtime::kInlineToName:
       return 1;
     case Runtime::kInlineDeoptimizeNow:
     case Runtime::kInlineThrowNotDateError:

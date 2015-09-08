@@ -102,11 +102,8 @@ enum BindingFlags {
   V(BIT_XOR_STRONG_BUILTIN_INDEX, JSFunction, bit_xor_strong_builtin)       \
   V(CALL_FUNCTION_PROXY_AS_CONSTRUCTOR_BUILTIN_INDEX, JSFunction,           \
     call_function_proxy_as_constructor_builtin)                             \
-  V(CALL_FUNCTION_PROXY_BUILTIN_INDEX, JSFunction,                          \
-    call_function_proxy_builtin)                                            \
   V(CALL_NON_FUNCTION_AS_CONSTRUCTOR_BUILTIN_INDEX, JSFunction,             \
     call_non_function_as_constructor_builtin)                               \
-  V(CALL_NON_FUNCTION_BUILTIN_INDEX, JSFunction, call_non_function_builtin) \
   V(COMPARE_BUILTIN_INDEX, JSFunction, compare_builtin)                     \
   V(COMPARE_STRONG_BUILTIN_INDEX, JSFunction, compare_strong_builtin)       \
   V(CONCAT_ITERABLE_TO_ARRAY_BUILTIN_INDEX, JSFunction,                     \
@@ -114,7 +111,6 @@ enum BindingFlags {
   V(DIV_BUILTIN_INDEX, JSFunction, div_builtin)                             \
   V(DIV_STRONG_BUILTIN_INDEX, JSFunction, div_strong_builtin)               \
   V(EQUALS_BUILTIN_INDEX, JSFunction, equals_builtin)                       \
-  V(IN_BUILTIN_INDEX, JSFunction, in_builtin)                               \
   V(MOD_BUILTIN_INDEX, JSFunction, mod_builtin)                             \
   V(MOD_STRONG_BUILTIN_INDEX, JSFunction, mod_strong_builtin)               \
   V(MUL_BUILTIN_INDEX, JSFunction, mul_builtin)                             \

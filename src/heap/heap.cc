@@ -17,6 +17,7 @@
 #include "src/debug/debug.h"
 #include "src/deoptimizer.h"
 #include "src/global-handles.h"
+#include "src/heap/array-buffer-tracker.h"
 #include "src/heap/gc-idle-time-handler.h"
 #include "src/heap/gc-tracer.h"
 #include "src/heap/incremental-marking.h"
@@ -144,7 +145,8 @@ Heap::Heap()
       gc_callbacks_depth_(0),
       deserialization_complete_(false),
       concurrent_sweeping_enabled_(false),
-      strong_roots_list_(NULL) {
+      strong_roots_list_(NULL),
+      array_buffer_tracker_(NULL) {
 // Allow build-time customization of the max semispace size. Building
 // V8 with snapshots and a non-default max semispace size is much
 // easier if you can define it as part of the build environment.
@@ -745,6 +747,20 @@ void Heap::PreprocessStackTraces() {
   // of writing to it, when the GC triggered. Instead, we reset the root value.
   set_weak_stack_trace_list(Smi::FromInt(0));
 }
+
+
+class GCCallbacksScope {
+ public:
+  explicit GCCallbacksScope(Heap* heap) : heap_(heap) {
+    heap_->gc_callbacks_depth_++;
+  }
+  ~GCCallbacksScope() { heap_->gc_callbacks_depth_--; }
+
+  bool CheckReenter() { return heap_->gc_callbacks_depth_ == 1; }
+
+ private:
+  Heap* heap_;
+};
 
 
 void Heap::HandleGCRequest() {
@@ -1547,7 +1563,7 @@ void Heap::Scavenge() {
 
   SelectScavengingVisitorsTable();
 
-  PrepareArrayBufferDiscoveryInNewSpace();
+  array_buffer_tracker()->PrepareDiscoveryInNewSpace();
 
   // Flip the semispaces.  After flipping, to space is empty, from space has
   // live objects.
@@ -1649,7 +1665,7 @@ void Heap::Scavenge() {
   new_space_.LowerInlineAllocationLimit(
       new_space_.inline_allocation_limit_step());
 
-  FreeDeadArrayBuffers(true);
+  array_buffer_tracker()->FreeDead(true);
 
   // Update how much has survived scavenge.
   IncrementYoungSurvivorsCounter(static_cast<int>(
@@ -1741,120 +1757,6 @@ void Heap::ProcessNativeContexts(WeakObjectRetainer* retainer) {
   Object* head = VisitWeakList<Context>(this, native_contexts_list(), retainer);
   // Update the head of the list of contexts.
   set_native_contexts_list(head);
-}
-
-
-void Heap::RegisterNewArrayBuffer(bool in_new_space, void* data,
-                                  size_t length) {
-  if (!data) return;
-  if (in_new_space) {
-    live_array_buffers_for_scavenge_[data] = length;
-  } else {
-    live_array_buffers_[data] = length;
-  }
-
-  // We may go over the limit of externally allocated memory here. We call the
-  // api function to trigger a GC in this case.
-  reinterpret_cast<v8::Isolate*>(isolate_)
-      ->AdjustAmountOfExternalAllocatedMemory(length);
-}
-
-
-void Heap::UnregisterArrayBuffer(bool in_new_space, void* data) {
-  if (!data) return;
-
-  std::map<void*, size_t>* live_buffers =
-      in_new_space ? &live_array_buffers_for_scavenge_ : &live_array_buffers_;
-  std::map<void*, size_t>* not_yet_discovered_buffers =
-      in_new_space ? &not_yet_discovered_array_buffers_for_scavenge_
-                   : &not_yet_discovered_array_buffers_;
-
-  DCHECK(live_buffers->count(data) > 0);
-
-  size_t length = (*live_buffers)[data];
-  live_buffers->erase(data);
-  not_yet_discovered_buffers->erase(data);
-
-  amount_of_external_allocated_memory_ -= length;
-}
-
-
-void Heap::RegisterLiveArrayBuffer(bool in_new_space, void* data) {
-  // ArrayBuffer might be in the middle of being constructed.
-  if (data == undefined_value()) return;
-  if (in_new_space) {
-    not_yet_discovered_array_buffers_for_scavenge_.erase(data);
-  } else {
-    not_yet_discovered_array_buffers_.erase(data);
-  }
-}
-
-
-void Heap::FreeDeadArrayBuffers(bool from_scavenge) {
-  size_t freed_memory = 0;
-  for (auto& buffer : not_yet_discovered_array_buffers_for_scavenge_) {
-    isolate()->array_buffer_allocator()->Free(buffer.first, buffer.second);
-    freed_memory += buffer.second;
-    live_array_buffers_for_scavenge_.erase(buffer.first);
-  }
-
-  if (!from_scavenge) {
-    for (auto& buffer : not_yet_discovered_array_buffers_) {
-      isolate()->array_buffer_allocator()->Free(buffer.first, buffer.second);
-      freed_memory += buffer.second;
-      live_array_buffers_.erase(buffer.first);
-    }
-  }
-
-  not_yet_discovered_array_buffers_for_scavenge_ =
-      live_array_buffers_for_scavenge_;
-  if (!from_scavenge) not_yet_discovered_array_buffers_ = live_array_buffers_;
-
-  // Do not call through the api as this code is triggered while doing a GC.
-  amount_of_external_allocated_memory_ -= freed_memory;
-}
-
-
-void Heap::TearDownArrayBuffers() {
-  size_t freed_memory = 0;
-  for (auto& buffer : live_array_buffers_) {
-    isolate()->array_buffer_allocator()->Free(buffer.first, buffer.second);
-    freed_memory += buffer.second;
-  }
-  for (auto& buffer : live_array_buffers_for_scavenge_) {
-    isolate()->array_buffer_allocator()->Free(buffer.first, buffer.second);
-    freed_memory += buffer.second;
-  }
-  live_array_buffers_.clear();
-  live_array_buffers_for_scavenge_.clear();
-  not_yet_discovered_array_buffers_.clear();
-  not_yet_discovered_array_buffers_for_scavenge_.clear();
-
-  if (freed_memory > 0) {
-    reinterpret_cast<v8::Isolate*>(isolate_)
-        ->AdjustAmountOfExternalAllocatedMemory(
-            -static_cast<int64_t>(freed_memory));
-  }
-}
-
-
-void Heap::PrepareArrayBufferDiscoveryInNewSpace() {
-  not_yet_discovered_array_buffers_for_scavenge_ =
-      live_array_buffers_for_scavenge_;
-}
-
-
-void Heap::PromoteArrayBuffer(Object* obj) {
-  JSArrayBuffer* buffer = JSArrayBuffer::cast(obj);
-  if (buffer->is_external()) return;
-  void* data = buffer->backing_store();
-  if (!data) return;
-  // ArrayBuffer might be in the middle of being constructed.
-  if (data == undefined_value()) return;
-  DCHECK(live_array_buffers_for_scavenge_.count(data) > 0);
-  live_array_buffers_[data] = live_array_buffers_for_scavenge_[data];
-  live_array_buffers_for_scavenge_.erase(data);
-  not_yet_discovered_array_buffers_for_scavenge_.erase(data);
 }
 
 
@@ -2084,6 +1986,16 @@ HeapObject* Heap::AlignWithFiller(HeapObject* object, int object_size,
 
 HeapObject* Heap::DoubleAlignForDeserialization(HeapObject* object, int size) {
   return AlignWithFiller(object, size - kPointerSize, size, kDoubleAligned);
+}
+
+
+void Heap::RegisterNewArrayBuffer(JSArrayBuffer* buffer) {
+  return array_buffer_tracker()->RegisterNew(buffer);
+}
+
+
+void Heap::UnregisterArrayBuffer(JSArrayBuffer* buffer) {
+  return array_buffer_tracker()->Unregister(buffer);
 }
 
 
@@ -2388,7 +2300,9 @@ class ScavengingVisitor : public StaticVisitorBase {
     MapWord map_word = object->map_word();
     DCHECK(map_word.IsForwardingAddress());
     HeapObject* target = map_word.ToForwardingAddress();
-    if (!heap->InNewSpace(target)) heap->PromoteArrayBuffer(target);
+    if (!heap->InNewSpace(target)) {
+      heap->array_buffer_tracker()->Promote(JSArrayBuffer::cast(target));
+    }
   }
 
 
@@ -4635,10 +4549,12 @@ void Heap::FinalizeIncrementalMarkingIfComplete(const char* comment) {
 }
 
 
-bool Heap::TryFinalizeIdleIncrementalMarking(
-    double idle_time_in_ms, size_t size_of_objects,
-    size_t final_incremental_mark_compact_speed_in_bytes_per_ms) {
-  if (FLAG_overapproximate_weak_closure && incremental_marking()->IsMarking() &&
+bool Heap::TryFinalizeIdleIncrementalMarking(double idle_time_in_ms) {
+  size_t size_of_objects = static_cast<size_t>(SizeOfObjects());
+  size_t final_incremental_mark_compact_speed_in_bytes_per_ms =
+      static_cast<size_t>(
+          tracer()->FinalIncrementalMarkCompactSpeedInBytesPerMillisecond());
+  if (FLAG_overapproximate_weak_closure &&
       (incremental_marking()->IsReadyToOverApproximateWeakClosure() ||
        (!incremental_marking()->weak_closure_was_overapproximated() &&
         mark_compact_collector_.marking_deque()->IsEmpty() &&
@@ -4665,19 +4581,9 @@ GCIdleTimeHandler::HeapState Heap::ComputeHeapState() {
   heap_state.contexts_disposed = contexts_disposed_;
   heap_state.contexts_disposal_rate =
       tracer()->ContextDisposalRateInMilliseconds();
-  heap_state.size_of_objects = static_cast<size_t>(SizeOfObjects());
   heap_state.incremental_marking_stopped = incremental_marking()->IsStopped();
-  heap_state.sweeping_in_progress =
-      mark_compact_collector()->sweeping_in_progress();
-  heap_state.sweeping_completed =
-      mark_compact_collector()->IsSweepingCompleted();
   heap_state.mark_compact_speed_in_bytes_per_ms =
       static_cast<size_t>(tracer()->MarkCompactSpeedInBytesPerMillisecond());
-  heap_state.incremental_marking_speed_in_bytes_per_ms = static_cast<size_t>(
-      tracer()->IncrementalMarkingSpeedInBytesPerMillisecond());
-  heap_state.final_incremental_mark_compact_speed_in_bytes_per_ms =
-      static_cast<size_t>(
-          tracer()->FinalIncrementalMarkCompactSpeedInBytesPerMillisecond());
   heap_state.scavenge_speed_in_bytes_per_ms =
       static_cast<size_t>(tracer()->ScavengeSpeedInBytesPerMillisecond());
   heap_state.used_new_space_size = new_space_.Size();
@@ -4722,14 +4628,15 @@ bool Heap::PerformIdleTimeAction(GCIdleTimeAction action,
     case DONE:
       result = true;
       break;
-    case DO_INCREMENTAL_MARKING: {
-      const double remaining_idle_time_in_ms =
-          AdvanceIncrementalMarking(action.parameter, deadline_in_ms,
-                                    IncrementalMarking::IdleStepActions());
-      if (remaining_idle_time_in_ms > 0.0) {
-        action.additional_work = TryFinalizeIdleIncrementalMarking(
-            remaining_idle_time_in_ms, heap_state.size_of_objects,
-            heap_state.final_incremental_mark_compact_speed_in_bytes_per_ms);
+    case DO_INCREMENTAL_STEP: {
+      if (incremental_marking()->incremental_marking_job()->IdleTaskPending()) {
+        result = true;
+      } else {
+        incremental_marking()
+            ->incremental_marking_job()
+            ->NotifyIdleTaskProgress();
+        result = IncrementalMarkingJob::IdleTask::Step(this, deadline_in_ms) ==
+                 IncrementalMarkingJob::IdleTask::kDone;
       }
       break;
     }
@@ -4741,9 +4648,6 @@ bool Heap::PerformIdleTimeAction(GCIdleTimeAction action,
     }
     case DO_SCAVENGE:
       CollectGarbage(NEW_SPACE, "idle notification: scavenge");
-      break;
-    case DO_FINALIZE_SWEEPING:
-      mark_compact_collector()->EnsureSweepingCompleted();
       break;
     case DO_NOTHING:
       break;
@@ -5388,7 +5292,7 @@ void Heap::RecordStats(HeapStats* stats, bool take_snapshot) {
     GetFromRingBuffer(stats->last_few_messages);
   if (stats->js_stacktrace != NULL) {
     FixedStringAllocator fixed(stats->js_stacktrace, kStacktraceBufferSize - 1);
-    StringStream accumulator(&fixed);
+    StringStream accumulator(&fixed, StringStream::kPrintObjectConcise);
     isolate()->PrintStack(&accumulator, Isolate::kPrintStackVerbose);
   }
 }
@@ -5659,6 +5563,8 @@ bool Heap::SetUp() {
   object_stats_ = new ObjectStats(this);
   object_stats_->ClearObjectStats(true);
 
+  array_buffer_tracker_ = new ArrayBufferTracker(this);
+
   LOG(isolate_, IntPtrTEvent("heap-capacity", Capacity()));
   LOG(isolate_, IntPtrTEvent("heap-available", Available()));
 
@@ -5774,7 +5680,8 @@ void Heap::TearDown() {
 
   WaitUntilUnmappingOfFreeChunksCompleted();
 
-  TearDownArrayBuffers();
+  delete array_buffer_tracker_;
+  array_buffer_tracker_ = nullptr;
 
   isolate_->global_handles()->TearDown();
 

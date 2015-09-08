@@ -5,6 +5,7 @@
 import("//build/config/android/config.gni")
 import("//build/config/arm.gni")
 import("//build/config/mips.gni")
+import("//build/config/sanitizers/sanitizers.gni")
 
 # Because standalone V8 builds are not supported, assume this is part of a
 # Chromium build.
@@ -496,6 +497,7 @@ action("run_mksnapshot") {
     "--log-snapshot-positions",
     "--logfile",
     rebase_path("$target_gen_dir/snapshot.log", root_build_dir),
+    "--startup_src",
     rebase_path("$target_gen_dir/snapshot.cc", root_build_dir),
   ]
 
@@ -957,6 +959,8 @@ source_set("v8_base") {
     "src/heap-snapshot-generator-inl.h",
     "src/heap-snapshot-generator.cc",
     "src/heap-snapshot-generator.h",
+    "src/heap/array-buffer-tracker.cc",
+    "src/heap/array-buffer-tracker.h",
     "src/heap/gc-idle-time-handler.cc",
     "src/heap/gc-idle-time-handler.h",
     "src/heap/gc-tracer.cc",
@@ -964,6 +968,8 @@ source_set("v8_base") {
     "src/heap/heap-inl.h",
     "src/heap/heap.cc",
     "src/heap/heap.h",
+    "src/heap/incremental-marking-job.cc",
+    "src/heap/incremental-marking-job.h",
     "src/heap/incremental-marking.cc",
     "src/heap/incremental-marking.h",
     "src/heap/mark-compact-inl.h",

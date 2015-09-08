@@ -15,8 +15,6 @@ var GlobalRegExp = global.RegExp;
 var GlobalString = global.String;
 var InternalArray = utils.InternalArray;
 var InternalPackedArray = utils.InternalPackedArray;
-var MathMax;
-var MathMin;
 var RegExpExec;
 var RegExpExecNoTests;
 var RegExpLastMatchInfo;
@@ -27,8 +25,6 @@ var ToString;
 utils.Import(function(from) {
   ArrayIndexOf = from.ArrayIndexOf;
   ArrayJoin = from.ArrayJoin;
-  MathMax = from.MathMax;
-  MathMin = from.MathMin;
   RegExpExec = from.RegExpExec;
   RegExpExecNoTests = from.RegExpExecNoTests;
   RegExpLastMatchInfo = from.RegExpLastMatchInfo;
@@ -318,8 +314,7 @@ function StringReplace(search, replace) {
 
   // Compute the string to replace with.
   if (IS_CALLABLE(replace)) {
-    var receiver = UNDEFINED;
-    result += %_CallFunction(receiver, search, start, subject, replace);
+    result += replace(search, start, subject);
   } else {
     reusableMatchInfo[CAPTURE0] = start;
     reusableMatchInfo[CAPTURE1] = end;
@@ -482,8 +477,7 @@ function StringReplaceGlobalRegExpWithFunction(subject, regexp, replace) {
         override[0] = elem;
         override[1] = match_start;
         $regexpLastMatchInfoOverride = override;
-        var func_result =
-            %_CallFunction(UNDEFINED, elem, match_start, subject, replace);
+        var func_result = replace(elem, match_start, subject);
         // Overwrite the i'th element in the results with the string we got
         // back from the callback function.
         res[i] = TO_STRING_INLINE(func_result);
@@ -529,7 +523,7 @@ function StringReplaceNonGlobalRegExpWithFunction(subject, regexp, replace) {
     // No captures, only the match, which is always valid.
     var s = %_SubString(subject, index, endOfMatch);
     // Don't call directly to avoid exposing the built-in global object.
-    replacement = %_CallFunction(UNDEFINED, s, index, subject, replace);
+    replacement = replace(s, index, subject);
   } else {
     var parameters = new InternalArray(m + 2);
     for (var j = 0; j < m; j++) {
@@ -986,18 +980,28 @@ function StringStartsWith(searchString /* position */) {  // length == 1
   var ss = TO_STRING_INLINE(searchString);
   var pos = 0;
   if (%_ArgumentsLength() > 1) {
-    pos = %_Arguments(1);  // position
-    pos = $toInteger(pos);
+    var arg = %_Arguments(1);  // position
+    if (!IS_UNDEFINED(arg)) {
+      pos = $toInteger(arg);
+    }
   }
 
   var s_len = s.length;
-  var start = MathMin(MathMax(pos, 0), s_len);
+  if (pos < 0) pos = 0;
+  if (pos > s_len) pos = s_len;
   var ss_len = ss.length;
-  if (ss_len + start > s_len) {
+
+  if (ss_len + pos > s_len) {
     return false;
   }
 
-  return %StringIndexOf(s, ss, start) === start;
+  for (var i = 0; i < ss_len; i++) {
+    if (%_StringCharCodeAt(s, pos + i) !== %_StringCharCodeAt(ss, i)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 
@@ -1021,14 +1025,22 @@ function StringEndsWith(searchString /* position */) {  // length == 1
     }
   }
 
-  var end = MathMin(MathMax(pos, 0), s_len);
+  if (pos < 0) pos = 0;
+  if (pos > s_len) pos = s_len;
   var ss_len = ss.length;
-  var start = end - ss_len;
-  if (start < 0) {
+  pos = pos - ss_len;
+
+  if (pos < 0) {
     return false;
   }
 
-  return %StringLastIndexOf(s, ss, start) === start;
+  for (var i = 0; i < ss_len; i++) {
+    if (%_StringCharCodeAt(s, pos + i) !== %_StringCharCodeAt(ss, i)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 

@@ -210,7 +210,7 @@
           'action': [
             '<(mksnapshot_exec)',
             '<@(mksnapshot_flags)',
-            '<@(INTERMEDIATE_DIR)/snapshot.cc',
+            '--startup_src', '<@(INTERMEDIATE_DIR)/snapshot.cc',
             '<(embed_script)',
           ],
         },
@@ -314,25 +314,21 @@
                   'target_conditions': [
                     ['_toolset=="host"', {
                       'outputs': [
-                        '<(INTERMEDIATE_DIR)/snapshot.cc',
                         '<(PRODUCT_DIR)/snapshot_blob_host.bin',
                       ],
                       'action': [
                         '<(mksnapshot_exec)',
                         '<@(mksnapshot_flags)',
-                        '<@(INTERMEDIATE_DIR)/snapshot.cc',
                         '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob_host.bin',
                         '<(embed_script)',
                       ],
                     }, {
                       'outputs': [
-                        '<(INTERMEDIATE_DIR)/snapshot.cc',
                         '<(PRODUCT_DIR)/snapshot_blob.bin',
                       ],
                       'action': [
                         '<(mksnapshot_exec)',
                         '<@(mksnapshot_flags)',
-                        '<@(INTERMEDIATE_DIR)/snapshot.cc',
                         '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob.bin',
                         '<(embed_script)',
                       ],
@@ -340,13 +336,11 @@
                   ],
                 }, {
                   'outputs': [
-                    '<(INTERMEDIATE_DIR)/snapshot.cc',
                     '<(PRODUCT_DIR)/snapshot_blob.bin',
                   ],
                   'action': [
                     '<(mksnapshot_exec)',
                     '<@(mksnapshot_flags)',
-                    '<@(INTERMEDIATE_DIR)/snapshot.cc',
                     '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob.bin',
                     '<(embed_script)',
                   ],
@@ -707,6 +701,8 @@
         '../../src/heap-snapshot-generator-inl.h',
         '../../src/heap-snapshot-generator.cc',
         '../../src/heap-snapshot-generator.h',
+        '../../src/heap/array-buffer-tracker.cc',
+        '../../src/heap/array-buffer-tracker.h',
         '../../src/heap/memory-reducer.cc',
         '../../src/heap/memory-reducer.h',
         '../../src/heap/gc-idle-time-handler.cc',
@@ -717,6 +713,8 @@
         '../../src/heap/heap.cc',
         '../../src/heap/heap.h',
         '../../src/heap/incremental-marking-inl.h',
+        '../../src/heap/incremental-marking-job.cc',
+        '../../src/heap/incremental-marking-job.h',
         '../../src/heap/incremental-marking.cc',
         '../../src/heap/incremental-marking.h',
         '../../src/heap/mark-compact-inl.h',
@@ -1861,9 +1859,7 @@
             '<@(library_files)',
             '<@(i18n_library_files)'
           ],
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
-          ],
+          'outputs': ['<(SHARED_INTERMEDIATE_DIR)/libraries.cc'],
           'action': [
             'python',
             '../../tools/js2c.py',
@@ -1872,13 +1868,24 @@
             '<@(library_files)',
             '<@(i18n_library_files)'
           ],
-          'conditions': [
-            [ 'v8_use_external_startup_data==1', {
-              'outputs': ['<@(libraries_bin_file)'],
-              'action': [
-                '--startup_blob', '<@(libraries_bin_file)',
-              ],
-            }],
+        },
+        {
+          'action_name': 'js2c_bin',
+          'inputs': [
+            '../../tools/js2c.py',
+            '<@(library_files)',
+            '<@(i18n_library_files)'
+          ],
+          'outputs': ['<@(libraries_bin_file)'],
+          'action': [
+            'python',
+            '../../tools/js2c.py',
+            '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
+            'CORE',
+            '<@(library_files)',
+            '<@(i18n_library_files)',
+            '--startup_blob', '<@(libraries_bin_file)',
+            '--nojs',
           ],
         },
         {
@@ -1887,9 +1894,7 @@
             '../../tools/js2c.py',
             '<@(experimental_library_files)',
           ],
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
-          ],
+          'outputs': ['<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc'],
           'action': [
             'python',
             '../../tools/js2c.py',
@@ -1897,13 +1902,22 @@
             'EXPERIMENTAL',
             '<@(experimental_library_files)'
           ],
-          'conditions': [
-            [ 'v8_use_external_startup_data==1', {
-              'outputs': ['<@(libraries_experimental_bin_file)'],
-              'action': [
-                '--startup_blob', '<@(libraries_experimental_bin_file)'
-              ],
-            }],
+        },
+        {
+          'action_name': 'js2c_experimental_bin',
+          'inputs': [
+            '../../tools/js2c.py',
+            '<@(experimental_library_files)',
+          ],
+          'outputs': ['<@(libraries_experimental_bin_file)'],
+          'action': [
+            'python',
+            '../../tools/js2c.py',
+            '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
+            'EXPERIMENTAL',
+            '<@(experimental_library_files)',
+            '--startup_blob', '<@(libraries_experimental_bin_file)',
+            '--nojs',
           ],
         },
         {
@@ -1912,9 +1926,7 @@
             '../../tools/js2c.py',
             '<@(code_stub_library_files)',
           ],
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/code-stub-libraries.cc',
-          ],
+          'outputs': ['<(SHARED_INTERMEDIATE_DIR)/code-stub-libraries.cc'],
           'action': [
             'python',
             '../../tools/js2c.py',
@@ -1922,13 +1934,22 @@
             'CODE_STUB',
             '<@(code_stub_library_files)'
           ],
-          'conditions': [
-            [ 'v8_use_external_startup_data==1', {
-              'outputs': ['<@(libraries_code_stub_bin_file)'],
-              'action': [
-                '--startup_blob', '<@(libraries_code_stub_bin_file)'
-              ],
-            }],
+        },
+        {
+          'action_name': 'js2c_code_stubs_bin',
+          'inputs': [
+            '../../tools/js2c.py',
+            '<@(code_stub_library_files)',
+          ],
+          'outputs': ['<@(libraries_code_stub_bin_file)'],
+          'action': [
+            'python',
+            '../../tools/js2c.py',
+            '<(SHARED_INTERMEDIATE_DIR)/code-stub-libraries.cc',
+            'CODE_STUB',
+            '<@(code_stub_library_files)',
+            '--startup_blob', '<@(libraries_code_stub_bin_file)',
+            '--nojs',
           ],
         },
         {
@@ -1937,9 +1958,7 @@
             '../../tools/js2c.py',
             '<@(v8_extra_library_files)',
           ],
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
-          ],
+          'outputs': ['<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc'],
           'action': [
             'python',
             '../../tools/js2c.py',
@@ -1947,13 +1966,22 @@
             'EXTRAS',
             '<@(v8_extra_library_files)',
           ],
-          'conditions': [
-            [ 'v8_use_external_startup_data==1', {
-              'outputs': ['<@(libraries_extras_bin_file)'],
-              'action': [
-                '--startup_blob', '<@(libraries_extras_bin_file)',
-              ],
-            }],
+        },
+        {
+          'action_name': 'js2c_extras_bin',
+          'inputs': [
+            '../../tools/js2c.py',
+            '<@(v8_extra_library_files)',
+          ],
+          'outputs': ['<@(libraries_extras_bin_file)'],
+          'action': [
+            'python',
+            '../../tools/js2c.py',
+            '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
+            'EXTRAS',
+            '<@(v8_extra_library_files)',
+            '--startup_blob', '<@(libraries_extras_bin_file)',
+            '--nojs',
           ],
         },
         {
@@ -1972,13 +2000,22 @@
             'EXPERIMENTAL_EXTRAS',
             '<@(v8_experimental_extra_library_files)',
           ],
-          'conditions': [
-            [ 'v8_use_external_startup_data==1', {
-              'outputs': ['<@(libraries_experimental_extras_bin_file)'],
-              'action': [
-                '--startup_blob', '<@(libraries_experimental_extras_bin_file)',
-              ],
-            }],
+        },
+        {
+          'action_name': 'js2c_experimental_extras_bin',
+          'inputs': [
+            '../../tools/js2c.py',
+            '<@(v8_experimental_extra_library_files)',
+          ],
+          'outputs': ['<@(libraries_experimental_extras_bin_file)'],
+          'action': [
+            'python',
+            '../../tools/js2c.py',
+            '<(SHARED_INTERMEDIATE_DIR)/experimental-extras-libraries.cc',
+            'EXPERIMENTAL_EXTRAS',
+            '<@(v8_experimental_extra_library_files)',
+            '--startup_blob', '<@(libraries_experimental_extras_bin_file)',
+            '--nojs',
           ],
         },
       ],
