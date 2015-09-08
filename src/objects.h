@@ -6771,8 +6771,13 @@ class SharedFunctionInfo: public HeapObject {
   static const int kCompilerHintsSmiTagSize = kSmiTagSize;
   static const int kCompilerHintsSize = kPointerSize;
 #else
+#if defined(V8_PPC_TAGGING_OPT)
+  // On 64 bit platforms, compiler hints is a smi, see comment above.
+  static const int kCompilerHintsSmiTagSize = kSmiTagSize;
+#else
   // On 64 bit platforms, compiler hints is not a smi, see comment above.
   static const int kCompilerHintsSmiTagSize = 0;
+#endif
   static const int kCompilerHintsSize = kIntSize;
 #endif
 
