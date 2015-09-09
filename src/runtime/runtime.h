@@ -408,7 +408,6 @@ namespace internal {
   F(NumberAdd, 2, 1)                   \
   F(NumberSub, 2, 1)                   \
   F(NumberMul, 2, 1)                   \
-  F(NumberUnaryMinus, 1, 1)            \
   F(NumberDiv, 2, 1)                   \
   F(NumberMod, 2, 1)                   \
   F(NumberImul, 2, 1)                  \
@@ -1177,6 +1176,7 @@ class Runtime : public AllStatic {
       Isolate* isolate, Handle<Object> receiver_obj, Handle<Object> key_obj,
       LanguageMode language_mode);
 
+  // TODO(mstarzinger): Remove this once %DefaultConstructorCallSuper is gone.
   MUST_USE_RESULT static MaybeHandle<Object> GetPrototype(
       Isolate* isolate, Handle<Object> object);
 
@@ -1206,6 +1206,15 @@ class Runtime : public AllStatic {
 
   static MaybeHandle<JSArray> GetInternalProperties(Isolate* isolate,
                                                     Handle<Object>);
+
+  // Find the arguments of the JavaScript function invocation that called
+  // into C++ code. Collect these in a newly allocated array of handles
+  // (possibly prefixed by a number of empty handles).
+  // TODO(mstarzinger): Temporary workaround until this is only used by the
+  // %_Arguments and %_ArgumentsLength intrinsics. Make this function local to
+  // runtime-scopes.cc then.
+  static base::SmartArrayPointer<Handle<Object>> GetCallerArguments(
+      Isolate* isolate, int prefix_argc, int* total_argc);
 
   static bool AtomicIsLockFree(uint32_t size);
 };
