@@ -1422,9 +1422,6 @@ void AstGraphBuilder::VisitTryCatchStatement(TryCatchStatement* stmt) {
   // Evaluate the catch-block.
   VisitInScope(stmt->catch_block(), stmt->scope(), context);
   try_control.EndCatch();
-
-  // TODO(mstarzinger): Remove bailout once everything works.
-  if (!FLAG_turbo_try_catch) SetStackOverflow();
 }
 
 
@@ -1510,8 +1507,6 @@ void AstGraphBuilder::VisitDebuggerStatement(DebuggerStatement* stmt) {
 
 
 void AstGraphBuilder::VisitFunctionLiteral(FunctionLiteral* expr) {
-  Node* context = current_context();
-
   // Find or build a shared function info.
   Handle<SharedFunctionInfo> shared_info =
       Compiler::GetSharedFunctionInfo(expr, info()->script(), info());
@@ -1520,7 +1515,7 @@ void AstGraphBuilder::VisitFunctionLiteral(FunctionLiteral* expr) {
   // Create node to instantiate a new closure.
   PretenureFlag pretenure = expr->pretenure() ? TENURED : NOT_TENURED;
   const Operator* op = javascript()->CreateClosure(shared_info, pretenure);
-  Node* value = NewNode(op, context);
+  Node* value = NewNode(op);
   ast_context()->ProduceValue(value);
 }
 
@@ -1575,7 +1570,6 @@ void AstGraphBuilder::VisitClassLiteralContents(ClassLiteral* expr) {
   environment()->Push(proto);
 
   // Create nodes to store method values into the literal.
-  int store_slot_index = 0;
   for (int i = 0; i < expr->properties()->length(); i++) {
     ObjectLiteral::Property* property = expr->properties()->at(i);
     environment()->Push(property->is_static() ? literal : proto);
@@ -1598,9 +1592,8 @@ void AstGraphBuilder::VisitClassLiteralContents(ClassLiteral* expr) {
     Node* value = environment()->Pop();
     Node* key = environment()->Pop();
     Node* receiver = environment()->Pop();
-    VectorSlotPair feedback = CreateVectorSlotPair(
-        expr->SlotForHomeObject(property->value(), &store_slot_index));
-    BuildSetHomeObject(value, receiver, property->value(), feedback);
+
+    BuildSetHomeObject(value, receiver, property);
 
     switch (property->kind()) {
       case ObjectLiteral::Property::CONSTANT:
@@ -1643,10 +1636,9 @@ void AstGraphBuilder::VisitClassLiteralContents(ClassLiteral* expr) {
     DCHECK_NOT_NULL(expr->class_variable_proxy());
     Variable* var = expr->class_variable_proxy()->var();
     FrameStateBeforeAndAfter states(this, BailoutId::None());
-    VectorSlotPair feedback =
-        CreateVectorSlotPair(FLAG_vector_stores && var->IsUnallocated()
-                                 ? expr->GetNthSlot(store_slot_index++)
-                                 : FeedbackVectorICSlot::Invalid());
+    VectorSlotPair feedback = CreateVectorSlotPair(
+        expr->NeedsProxySlot() ? expr->ProxySlot()
+                               : FeedbackVectorICSlot::Invalid());
     BuildVariableAssignment(var, literal, Token::INIT_CONST, feedback,
                             BailoutId::None(), states);
   }
@@ -1725,7 +1717,6 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
 
   // Create nodes to store computed values into the literal.
   int property_index = 0;
-  int store_slot_index = 0;
   AccessorTable accessor_table(zone());
   for (; property_index < expr->properties()->length(); property_index++) {
     ObjectLiteral::Property* property = expr->properties()->at(property_index);
@@ -1749,17 +1740,12 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
             Node* value = environment()->Pop();
             Handle<Name> name = key->AsPropertyName();
             VectorSlotPair feedback =
-                FLAG_vector_stores
-                    ? CreateVectorSlotPair(expr->GetNthSlot(store_slot_index++))
-                    : VectorSlotPair();
+                CreateVectorSlotPair(property->GetSlot(0));
             Node* store = BuildNamedStore(literal, name, value, feedback,
                                           TypeFeedbackId::None());
             states.AddToNode(store, key->id(),
                              OutputFrameStateCombine::Ignore());
-            VectorSlotPair home_feedback = CreateVectorSlotPair(
-                expr->SlotForHomeObject(property->value(), &store_slot_index));
-            BuildSetHomeObject(value, literal, property->value(),
-                               home_feedback);
+            BuildSetHomeObject(value, literal, property, 1);
           } else {
             VisitForEffect(property->value());
           }
@@ -1778,9 +1764,7 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
           Node* set_property = NewNode(op, receiver, key, value, language);
           // SetProperty should not lazy deopt on an object literal.
           PrepareFrameState(set_property, BailoutId::None());
-          VectorSlotPair home_feedback = CreateVectorSlotPair(
-              expr->SlotForHomeObject(property->value(), &store_slot_index));
-          BuildSetHomeObject(value, receiver, property->value(), home_feedback);
+          BuildSetHomeObject(value, receiver, property);
         }
         break;
       }
@@ -1799,12 +1783,12 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
       }
       case ObjectLiteral::Property::GETTER:
         if (property->emit_store()) {
-          accessor_table.lookup(key)->second->getter = property->value();
+          accessor_table.lookup(key)->second->getter = property;
         }
         break;
       case ObjectLiteral::Property::SETTER:
         if (property->emit_store()) {
-          accessor_table.lookup(key)->second->setter = property->value();
+          accessor_table.lookup(key)->second->setter = property;
         }
         break;
     }
@@ -1815,16 +1799,8 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
   for (AccessorTable::Iterator it = accessor_table.begin();
        it != accessor_table.end(); ++it) {
     VisitForValue(it->first);
-    VisitForValueOrNull(it->second->getter);
-    VectorSlotPair feedback_getter = CreateVectorSlotPair(
-        expr->SlotForHomeObject(it->second->getter, &store_slot_index));
-    BuildSetHomeObject(environment()->Top(), literal, it->second->getter,
-                       feedback_getter);
-    VisitForValueOrNull(it->second->setter);
-    VectorSlotPair feedback_setter = CreateVectorSlotPair(
-        expr->SlotForHomeObject(it->second->setter, &store_slot_index));
-    BuildSetHomeObject(environment()->Top(), literal, it->second->setter,
-                       feedback_setter);
+    VisitObjectLiteralAccessor(literal, it->second->getter);
+    VisitObjectLiteralAccessor(literal, it->second->setter);
     Node* setter = environment()->Pop();
     Node* getter = environment()->Pop();
     Node* name = environment()->Pop();
@@ -1869,9 +1845,7 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
     Node* value = environment()->Pop();
     Node* key = environment()->Pop();
     Node* receiver = environment()->Pop();
-    VectorSlotPair feedback = CreateVectorSlotPair(
-        expr->SlotForHomeObject(property->value(), &store_slot_index));
-    BuildSetHomeObject(value, receiver, property->value(), feedback);
+    BuildSetHomeObject(value, receiver, property);
     switch (property->kind()) {
       case ObjectLiteral::Property::CONSTANT:
       case ObjectLiteral::Property::COMPUTED:
@@ -1912,11 +1886,18 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
     NewNode(op, literal);
   }
 
-  // Verify that compilation exactly consumed the number of store ic slots that
-  // the ObjectLiteral node had to offer.
-  DCHECK(!FLAG_vector_stores || store_slot_index == expr->slot_count());
-
   ast_context()->ProduceValue(environment()->Pop());
+}
+
+
+void AstGraphBuilder::VisitObjectLiteralAccessor(
+    Node* home_object, ObjectLiteralProperty* property) {
+  if (property == nullptr) {
+    VisitForValueOrNull(nullptr);
+  } else {
+    VisitForValue(property->value());
+    BuildSetHomeObject(environment()->Top(), home_object, property);
+  }
 }
 
 
@@ -3813,11 +3794,14 @@ Node* AstGraphBuilder::BuildToObject(Node* input, BailoutId bailout_id) {
 
 
 Node* AstGraphBuilder::BuildSetHomeObject(Node* value, Node* home_object,
-                                          Expression* expr,
-                                          const VectorSlotPair& feedback) {
+                                          ObjectLiteralProperty* property,
+                                          int slot_number) {
+  Expression* expr = property->value();
   if (!FunctionLiteral::NeedsHomeObject(expr)) return value;
   Handle<Name> name = isolate()->factory()->home_object_symbol();
   FrameStateBeforeAndAfter states(this, BailoutId::None());
+  VectorSlotPair feedback =
+      CreateVectorSlotPair(property->GetSlot(slot_number));
   Node* store = BuildNamedStore(value, name, home_object, feedback,
                                 TypeFeedbackId::None());
   states.AddToNode(store, BailoutId::None(), OutputFrameStateCombine::Ignore());

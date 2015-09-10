@@ -49,9 +49,10 @@ MaybeHandle<Object> Runtime::GetObjectProperty(Isolate* isolate,
 }
 
 
-MaybeHandle<Object> Runtime::KeyedGetObjectProperty(
-    Isolate* isolate, Handle<Object> receiver_obj, Handle<Object> key_obj,
-    LanguageMode language_mode) {
+static MaybeHandle<Object> KeyedGetObjectProperty(Isolate* isolate,
+                                                  Handle<Object> receiver_obj,
+                                                  Handle<Object> key_obj,
+                                                  LanguageMode language_mode) {
   // Fast cases for getting named properties of the receiver JSObject
   // itself.
   //
@@ -125,7 +126,8 @@ MaybeHandle<Object> Runtime::KeyedGetObjectProperty(
   }
 
   // Fall back to GetObjectProperty.
-  return GetObjectProperty(isolate, receiver_obj, key_obj, language_mode);
+  return Runtime::GetObjectProperty(isolate, receiver_obj, key_obj,
+                                    language_mode);
 }
 
 
@@ -175,34 +177,24 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
 }
 
 
-MaybeHandle<Object> Runtime::GetPrototype(Isolate* isolate,
-                                          Handle<Object> obj) {
+RUNTIME_FUNCTION(Runtime_GetPrototype) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(Object, obj, 0);
   // We don't expect access checks to be needed on JSProxy objects.
   DCHECK(!obj->IsAccessCheckNeeded() || obj->IsJSObject());
   PrototypeIterator iter(isolate, obj, PrototypeIterator::START_AT_RECEIVER);
   do {
     if (PrototypeIterator::GetCurrent(iter)->IsAccessCheckNeeded() &&
-        !isolate->MayAccess(
-            Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter)))) {
-      return isolate->factory()->null_value();
+        !isolate->MayAccess(PrototypeIterator::GetCurrent<JSObject>(iter))) {
+      return isolate->heap()->null_value();
     }
     iter.AdvanceIgnoringProxies();
     if (PrototypeIterator::GetCurrent(iter)->IsJSProxy()) {
-      return PrototypeIterator::GetCurrent(iter);
+      return *PrototypeIterator::GetCurrent(iter);
     }
   } while (!iter.IsAtEnd(PrototypeIterator::END_AT_NON_HIDDEN));
-  return PrototypeIterator::GetCurrent(iter);
-}
-
-
-RUNTIME_FUNCTION(Runtime_GetPrototype) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 1);
-  CONVERT_ARG_HANDLE_CHECKED(Object, obj, 0);
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
-                                     Runtime::GetPrototype(isolate, obj));
-  return *result;
+  return *PrototypeIterator::GetCurrent(iter);
 }
 
 
@@ -529,7 +521,7 @@ RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
-      Runtime::KeyedGetObjectProperty(isolate, receiver_obj, key_obj, SLOPPY));
+      KeyedGetObjectProperty(isolate, receiver_obj, key_obj, SLOPPY));
   return *result;
 }
 
@@ -544,7 +536,7 @@ RUNTIME_FUNCTION(Runtime_KeyedGetPropertyStrong) {
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
-      Runtime::KeyedGetObjectProperty(isolate, receiver_obj, key_obj, STRONG));
+      KeyedGetObjectProperty(isolate, receiver_obj, key_obj, STRONG));
   return *result;
 }
 
@@ -1467,8 +1459,7 @@ RUNTIME_FUNCTION(Runtime_ToNumber) {
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(Object, input, 0);
   Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
-                                     Object::ToNumber(isolate, input));
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result, Object::ToNumber(input));
   return *result;
 }
 

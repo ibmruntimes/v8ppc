@@ -405,18 +405,7 @@ namespace internal {
   F(NumberToInteger, 1, 1)             \
   F(NumberToIntegerMapMinusZero, 1, 1) \
   F(NumberToSmi, 1, 1)                 \
-  F(NumberAdd, 2, 1)                   \
-  F(NumberSub, 2, 1)                   \
-  F(NumberMul, 2, 1)                   \
-  F(NumberDiv, 2, 1)                   \
-  F(NumberMod, 2, 1)                   \
   F(NumberImul, 2, 1)                  \
-  F(NumberOr, 2, 1)                    \
-  F(NumberAnd, 2, 1)                   \
-  F(NumberXor, 2, 1)                   \
-  F(NumberShl, 2, 1)                   \
-  F(NumberShr, 2, 1)                   \
-  F(NumberSar, 2, 1)                   \
   F(NumberEquals, 2, 1)                \
   F(NumberCompare, 3, 1)               \
   F(SmiLexicographicCompare, 2, 1)     \
@@ -511,6 +500,30 @@ namespace internal {
   F(GetObjectContextNotifierPerformChange, 1, 1)
 
 
+#define FOR_EACH_INTRINSIC_OPERATORS(F) \
+  F(Multiply, 2, 1)                     \
+  F(Multiply_Strong, 2, 1)              \
+  F(Divide, 2, 1)                       \
+  F(Divide_Strong, 2, 1)                \
+  F(Modulus, 2, 1)                      \
+  F(Modulus_Strong, 2, 1)               \
+  F(Add, 2, 1)                          \
+  F(Add_Strong, 2, 1)                   \
+  F(Subtract, 2, 1)                     \
+  F(Subtract_Strong, 2, 1)              \
+  F(ShiftLeft, 2, 1)                    \
+  F(ShiftLeft_Strong, 2, 1)             \
+  F(ShiftRight, 2, 1)                   \
+  F(ShiftRight_Strong, 2, 1)            \
+  F(ShiftRightLogical, 2, 1)            \
+  F(ShiftRightLogical_Strong, 2, 1)     \
+  F(BitwiseAnd, 2, 1)                   \
+  F(BitwiseAnd_Strong, 2, 1)            \
+  F(BitwiseOr, 2, 1)                    \
+  F(BitwiseOr_Strong, 2, 1)             \
+  F(BitwiseXor, 2, 1)                   \
+  F(BitwiseXor_Strong, 2, 1)
+
 #define FOR_EACH_INTRINSIC_PROXY(F) \
   F(CreateJSProxy, 2, 1)            \
   F(CreateJSFunctionProxy, 4, 1)    \
@@ -545,8 +558,8 @@ namespace internal {
   F(NewArguments, 1, 1) /* TODO(turbofan): Only temporary */ \
   F(NewSloppyArguments, 3, 1)                                \
   F(NewStrictArguments, 3, 1)                                \
-  F(NewClosureFromStubFailure, 1, 1)                         \
-  F(NewClosure, 3, 1)                                        \
+  F(NewClosure, 1, 1)                                        \
+  F(NewClosure_Tenured, 1, 1)                                \
   F(NewScriptContext, 2, 1)                                  \
   F(NewFunctionContext, 1, 1)                                \
   F(PushWithContext, 2, 1)                                   \
@@ -1065,6 +1078,7 @@ namespace internal {
   FOR_EACH_INTRINSIC_NUMBERS(F)             \
   FOR_EACH_INTRINSIC_OBJECT(F)              \
   FOR_EACH_INTRINSIC_OBSERVE(F)             \
+  FOR_EACH_INTRINSIC_OPERATORS(F)           \
   FOR_EACH_INTRINSIC_PROXY(F)               \
   FOR_EACH_INTRINSIC_REGEXP(F)              \
   FOR_EACH_INTRINSIC_SCOPES(F)              \
@@ -1172,14 +1186,6 @@ class Runtime : public AllStatic {
       Isolate* isolate, Handle<Object> object, Handle<Object> key,
       LanguageMode language_mode = SLOPPY);
 
-  MUST_USE_RESULT static MaybeHandle<Object> KeyedGetObjectProperty(
-      Isolate* isolate, Handle<Object> receiver_obj, Handle<Object> key_obj,
-      LanguageMode language_mode);
-
-  // TODO(mstarzinger): Remove this once %DefaultConstructorCallSuper is gone.
-  MUST_USE_RESULT static MaybeHandle<Object> GetPrototype(
-      Isolate* isolate, Handle<Object> object);
-
   enum TypedArrayId {
     // arrayIds below should be synchronized with typedarray.js natives.
     ARRAY_ID_UINT8 = 1,
@@ -1215,8 +1221,6 @@ class Runtime : public AllStatic {
   // runtime-scopes.cc then.
   static base::SmartArrayPointer<Handle<Object>> GetCallerArguments(
       Isolate* isolate, int prefix_argc, int* total_argc);
-
-  static bool AtomicIsLockFree(uint32_t size);
 };
 
 
@@ -1232,29 +1236,6 @@ class DeclareGlobalsEvalFlag : public BitField<bool, 0, 1> {};
 class DeclareGlobalsNativeFlag : public BitField<bool, 1, 1> {};
 STATIC_ASSERT(LANGUAGE_END == 3);
 class DeclareGlobalsLanguageMode : public BitField<LanguageMode, 2, 2> {};
-
-//---------------------------------------------------------------------------
-// Inline functions
-
-// Assume that 32-bit architectures don't have 64-bit atomic ops.
-// TODO(binji): can we do better here?
-#if V8_TARGET_ARCH_64_BIT && V8_HOST_ARCH_64_BIT
-
-#define ATOMICS_REQUIRE_LOCK_64_BIT 0
-
-inline bool Runtime::AtomicIsLockFree(uint32_t size) {
-  return size == 1 || size == 2 || size == 4 || size == 8;
-}
-
-#else
-
-#define ATOMICS_REQUIRE_LOCK_64_BIT 1
-
-inline bool Runtime::AtomicIsLockFree(uint32_t size) {
-  return size == 1 || size == 2 || size == 4;
-}
-
-#endif
 
 }  // namespace internal
 }  // namespace v8

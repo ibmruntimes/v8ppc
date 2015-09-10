@@ -1746,33 +1746,9 @@ static void EmitContinueIfStrictOrNative(MacroAssembler* masm, Label* cont) {
 }
 
 
-static void EmitSlowCase(Isolate* isolate,
-                         MacroAssembler* masm,
-                         int argc,
-                         Label* non_function) {
-  // Check for function proxy.
-  __ CmpInstanceType(ecx, JS_FUNCTION_PROXY_TYPE);
-  __ j(not_equal, non_function);
-  __ pop(ecx);
-  __ push(edi);  // put proxy as additional argument under return address
-  __ push(ecx);
-  __ Move(eax, Immediate(argc + 1));
-  __ Move(ebx, Immediate(0));
-  __ GetBuiltinEntry(edx, Context::CALL_FUNCTION_PROXY_BUILTIN_INDEX);
-  {
-    Handle<Code> adaptor = isolate->builtins()->ArgumentsAdaptorTrampoline();
-    __ jmp(adaptor, RelocInfo::CODE_TARGET);
-  }
-
-  // CALL_NON_FUNCTION expects the non-function callee as receiver (instead
-  // of the original receiver from the call site).
-  __ bind(non_function);
-  __ mov(Operand(esp, (argc + 1) * kPointerSize), edi);
-  __ Move(eax, Immediate(argc));
-  __ Move(ebx, Immediate(0));
-  __ GetBuiltinEntry(edx, Context::CALL_NON_FUNCTION_BUILTIN_INDEX);
-  Handle<Code> adaptor = isolate->builtins()->ArgumentsAdaptorTrampoline();
-  __ jmp(adaptor, RelocInfo::CODE_TARGET);
+static void EmitSlowCase(Isolate* isolate, MacroAssembler* masm, int argc) {
+  __ Set(eax, argc);
+  __ Jump(masm->isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
 }
 
 
@@ -1793,11 +1769,11 @@ static void CallFunctionNoFeedback(MacroAssembler* masm,
                                    int argc, bool needs_checks,
                                    bool call_as_method) {
   // edi : the function to call
-  Label slow, non_function, wrap, cont;
+  Label slow, wrap, cont;
 
   if (needs_checks) {
     // Check that the function really is a JavaScript function.
-    __ JumpIfSmi(edi, &non_function);
+    __ JumpIfSmi(edi, &slow);
 
     // Goto slow case if we do not have a function.
     __ CmpObjectType(edi, JS_FUNCTION_TYPE, ecx);
@@ -1832,8 +1808,7 @@ static void CallFunctionNoFeedback(MacroAssembler* masm,
   if (needs_checks) {
     // Slow-case: Non-function called.
     __ bind(&slow);
-    // (non_function is bound in EmitSlowCase)
-    EmitSlowCase(masm->isolate(), masm, argc, &non_function);
+    EmitSlowCase(masm->isolate(), masm, argc);
   }
 
   if (call_as_method) {
@@ -1941,27 +1916,18 @@ static void EmitLoadTypeFeedbackVector(MacroAssembler* masm, Register vector) {
 }
 
 
-void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
+void CallICStub::HandleArrayCase(MacroAssembler* masm, Label* miss) {
   // edi - function
   // edx - slot id
   // ebx - vector
-  Label miss;
-  int argc = arg_count();
-  ParameterCount actual(argc);
-
   __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, ecx);
   __ cmp(edi, ecx);
-  __ j(not_equal, &miss);
+  __ j(not_equal, miss);
 
   __ mov(eax, arg_count());
+  // Reload ecx.
   __ mov(ecx, FieldOperand(ebx, edx, times_half_pointer_size,
                            FixedArray::kHeaderSize));
-
-  // Verify that ecx contains an AllocationSite
-  Factory* factory = masm->isolate()->factory();
-  __ cmp(FieldOperand(ecx, HeapObject::kMapOffset),
-         factory->allocation_site_map());
-  __ j(not_equal, &miss);
 
   // Increment the call count for monomorphic function calls.
   __ add(FieldOperand(ebx, edx, times_half_pointer_size,
@@ -1973,17 +1939,7 @@ void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
   ArrayConstructorStub stub(masm->isolate(), arg_count());
   __ TailCallStub(&stub);
 
-  __ bind(&miss);
-  GenerateMiss(masm);
-
-  // The slow case, we need this no matter what to complete a call after a miss.
-  CallFunctionNoFeedback(masm,
-                         arg_count(),
-                         true,
-                         CallAsMethod());
-
   // Unreachable.
-  __ int3();
 }
 
 
@@ -1997,7 +1953,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
   const int generic_offset =
       FixedArray::OffsetOfElementAt(TypeFeedbackVector::kGenericCountIndex);
   Label extra_checks_or_miss, slow_start;
-  Label slow, non_function, wrap, cont;
+  Label slow, wrap, cont;
   Label have_js_function;
   int argc = arg_count();
   ParameterCount actual(argc);
@@ -2050,7 +2006,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
   __ InvokeFunction(edi, actual, JUMP_FUNCTION, NullCallWrapper());
 
   __ bind(&slow);
-  EmitSlowCase(isolate, masm, argc, &non_function);
+  EmitSlowCase(isolate, masm, argc);
 
   if (CallAsMethod()) {
     __ bind(&wrap);
@@ -2058,10 +2014,20 @@ void CallICStub::Generate(MacroAssembler* masm) {
   }
 
   __ bind(&extra_checks_or_miss);
-  Label uninitialized, miss;
+  Label uninitialized, miss, not_allocation_site;
 
   __ cmp(ecx, Immediate(TypeFeedbackVector::MegamorphicSentinel(isolate)));
   __ j(equal, &slow_start);
+
+  // Check if we have an allocation site.
+  __ CompareRoot(FieldOperand(ecx, HeapObject::kMapOffset),
+                 Heap::kAllocationSiteMapRootIndex);
+  __ j(not_equal, &not_allocation_site);
+
+  // We have an allocation site.
+  HandleArrayCase(masm, &miss);
+
+  __ bind(&not_allocation_site);
 
   // The following cases attempt to handle MISS cases without going to the
   // runtime.
@@ -2131,7 +2097,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
   __ bind(&slow_start);
 
   // Check that the function really is a JavaScript function.
-  __ JumpIfSmi(edi, &non_function);
+  __ JumpIfSmi(edi, &slow);
 
   // Goto slow case if we do not have a function.
   __ CmpObjectType(edi, JS_FUNCTION_TYPE, ecx);
@@ -2146,16 +2112,13 @@ void CallICStub::Generate(MacroAssembler* masm) {
 void CallICStub::GenerateMiss(MacroAssembler* masm) {
   FrameScope scope(masm, StackFrame::INTERNAL);
 
-  // Push the receiver and the function and feedback info.
+  // Push the function and feedback info.
   __ push(edi);
   __ push(ebx);
   __ push(edx);
 
   // Call the entry.
-  Runtime::FunctionId id = GetICState() == DEFAULT
-                               ? Runtime::kCallIC_Miss
-                               : Runtime::kCallIC_Customization_Miss;
-  __ CallRuntime(id, 3);
+  __ CallRuntime(Runtime::kCallIC_Miss, 3);
 
   // Move result to edi and exit the internal frame.
   __ mov(edi, eax);
@@ -4598,13 +4561,6 @@ void VectorKeyedStoreICStub::GenerateImpl(MacroAssembler* masm, bool in_frame) {
 void CallICTrampolineStub::Generate(MacroAssembler* masm) {
   EmitLoadTypeFeedbackVector(masm, ebx);
   CallICStub stub(isolate(), state());
-  __ jmp(stub.GetCode(), RelocInfo::CODE_TARGET);
-}
-
-
-void CallIC_ArrayTrampolineStub::Generate(MacroAssembler* masm) {
-  EmitLoadTypeFeedbackVector(masm, ebx);
-  CallIC_ArrayStub stub(isolate(), state());
   __ jmp(stub.GetCode(), RelocInfo::CODE_TARGET);
 }
 

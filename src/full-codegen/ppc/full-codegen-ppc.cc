@@ -1207,11 +1207,9 @@ void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
     __ mov(r5, Operand(info));
     __ CallStub(&stub);
   } else {
-    __ mov(r3, Operand(info));
-    __ LoadRoot(
-        r4, pretenure ? Heap::kTrueValueRootIndex : Heap::kFalseValueRootIndex);
-    __ Push(cp, r3, r4);
-    __ CallRuntime(Runtime::kNewClosure, 3);
+    __ Push(info);
+    __ CallRuntime(
+        pretenure ? Runtime::kNewClosure_Tenured : Runtime::kNewClosure, 1);
   }
   context()->Plug(r3);
 }
@@ -4112,14 +4110,13 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 2);
 
-  // new.target
+  // Evaluate new.target.
   VisitForStackValue(args->at(0));
 
-  // .this_function
-  VisitForStackValue(args->at(1));
-  __ CallRuntime(Runtime::kGetPrototype, 1);
+  // Evaluate super constructor (to stack and r4).
+  VisitForAccumulatorValue(args->at(1));
+  __ push(result_register());
   __ mr(r4, result_register());
-  __ Push(r4);
 
   // Load original constructor into r7.
   __ LoadP(r7, MemOperand(sp, 1 * kPointerSize));

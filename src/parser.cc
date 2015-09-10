@@ -359,7 +359,7 @@ FunctionLiteral* Parser::DefaultConstructor(bool call_super, Scope* scope,
     body = new (zone()) ZoneList<Statement*>(call_super ? 2 : 1, zone());
     AddAssertIsConstruct(body, pos);
     if (call_super) {
-      // %_DefaultConstructorCallSuper(new.target, .this_function)
+      // %_DefaultConstructorCallSuper(new.target, %GetPrototype(<this-fun>))
       ZoneList<Expression*>* args =
           new (zone()) ZoneList<Expression*>(2, zone());
       VariableProxy* new_target_proxy = scope_->NewUnresolved(
@@ -369,7 +369,12 @@ FunctionLiteral* Parser::DefaultConstructor(bool call_super, Scope* scope,
       VariableProxy* this_function_proxy = scope_->NewUnresolved(
           factory(), ast_value_factory()->this_function_string(),
           Variable::NORMAL, pos);
-      args->Add(this_function_proxy, zone());
+      ZoneList<Expression*>* tmp =
+          new (zone()) ZoneList<Expression*>(1, zone());
+      tmp->Add(this_function_proxy, zone());
+      Expression* get_prototype =
+          factory()->NewCallRuntime(Runtime::kGetPrototype, tmp, pos);
+      args->Add(get_prototype, zone());
       CallRuntime* call = factory()->NewCallRuntime(
           Runtime::kInlineDefaultConstructorCallSuper, args, pos);
       body->Add(factory()->NewReturnStatement(call, pos), zone());
@@ -4206,10 +4211,44 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
       }
     }
     if (!is_lazily_parsed) {
-      body = ParseEagerFunctionBody(function_name, pos, formals, kind,
-                                    function_type, CHECK_OK);
+      // Determine whether the function body can be discarded after parsing.
+      // The preconditions are:
+      // - Lazy compilation has to be enabled.
+      // - Neither V8 natives nor native function declarations can be allowed,
+      //   since parsing one would retroactively force the function to be
+      //   eagerly compiled.
+      // - The invoker of this parser can't depend on the AST being eagerly
+      //   built (either because the function is about to be compiled, or
+      //   because the AST is going to be inspected for some reason).
+      // - Because of the above, we can't be attempting to parse a
+      //   FunctionExpression; even without enclosing parentheses it might be
+      //   immediately invoked.
+      // - The function literal shouldn't be hinted to eagerly compile.
+      bool can_use_temp_zone =
+          FLAG_lazy && !allow_natives() && extension_ == NULL && allow_lazy() &&
+          function_type == FunctionLiteral::DECLARATION &&
+          eager_compile_hint != FunctionLiteral::kShouldEagerCompile;
+      // Open a new BodyScope, which sets our AstNodeFactory to allocate in the
+      // new temporary zone if the preconditions are satisfied, and ensures that
+      // the previous zone is always restored after parsing the body.
+      // For the purpose of scope analysis, some ZoneObjects allocated by the
+      // factory must persist after the function body is thrown away and
+      // temp_zone is deallocated. These objects are instead allocated in a
+      // parser-persistent zone (see parser_zone_ in AstNodeFactory).
+      {
+        Zone temp_zone;
+        AstNodeFactory::BodyScope(factory(), &temp_zone, can_use_temp_zone);
+
+        body = ParseEagerFunctionBody(function_name, pos, formals, kind,
+                                      function_type, CHECK_OK);
+      }
       materialized_literal_count = function_state.materialized_literal_count();
       expected_property_count = function_state.expected_property_count();
+      if (can_use_temp_zone) {
+        // If the preconditions are correct the function body should never be
+        // accessed, but do this anyway for better behaviour if they're wrong.
+        body = NULL;
+      }
     }
 
     // Parsing the body may change the language mode in our scope.

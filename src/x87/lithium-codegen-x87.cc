@@ -3611,11 +3611,8 @@ void LCodeGen::CallKnownFunction(Handle<JSFunction> function,
     // Change context.
     __ mov(esi, FieldOperand(function_reg, JSFunction::kContextOffset));
 
-    // Set eax to arguments count if adaption is not needed. Assumes that eax
-    // is available to write to at this point.
-    if (dont_adapt_arguments) {
-      __ mov(eax, arity);
-    }
+    // Always initialize eax to the number of actual arguments.
+    __ mov(eax, arity);
 
     // Invoke function directly.
     if (function.is_identical_to(info()->closure())) {
@@ -3677,9 +3674,7 @@ void LCodeGen::DoCallJSFunction(LCallJSFunction* instr) {
   DCHECK(ToRegister(instr->function()).is(edi));
   DCHECK(ToRegister(instr->result()).is(eax));
 
-  if (instr->hydrogen()->pass_argument_count()) {
-    __ mov(eax, instr->arity());
-  }
+  __ mov(eax, instr->arity());
 
   // Change context.
   __ mov(esi, FieldOperand(edi, JSFunction::kContextOffset));
@@ -5943,26 +5938,6 @@ void LCodeGen::DoRegExpLiteral(LRegExpLiteral* instr) {
   if ((size % (2 * kPointerSize)) != 0) {
     __ mov(edx, FieldOperand(ebx, size - kPointerSize));
     __ mov(FieldOperand(eax, size - kPointerSize), edx);
-  }
-}
-
-
-void LCodeGen::DoFunctionLiteral(LFunctionLiteral* instr) {
-  DCHECK(ToRegister(instr->context()).is(esi));
-  // Use the fast case closure allocation code that allocates in new
-  // space for nested functions that don't need literals cloning.
-  bool pretenure = instr->hydrogen()->pretenure();
-  if (!pretenure && instr->hydrogen()->has_no_literals()) {
-    FastNewClosureStub stub(isolate(), instr->hydrogen()->language_mode(),
-                            instr->hydrogen()->kind());
-    __ mov(ebx, Immediate(instr->hydrogen()->shared_info()));
-    CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
-  } else {
-    __ push(esi);
-    __ push(Immediate(instr->hydrogen()->shared_info()));
-    __ push(Immediate(pretenure ? factory()->true_value()
-                                : factory()->false_value()));
-    CallRuntime(Runtime::kNewClosure, 3, instr);
   }
 }
 
