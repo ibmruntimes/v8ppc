@@ -150,7 +150,7 @@ void FullCodeGenerator::Generate() {
             ExternalReference::address_of_real_stack_limit(isolate());
         __ cmp(ecx, Operand::StaticVariable(stack_limit));
         __ j(above_equal, &ok, Label::kNear);
-        __ InvokeBuiltin(Context::STACK_OVERFLOW_BUILTIN_INDEX, CALL_FUNCTION);
+        __ CallRuntime(Runtime::kThrowStackOverflow, 0);
         __ bind(&ok);
       }
       __ mov(eax, Immediate(isolate()->factory()->undefined_value()));
@@ -3092,6 +3092,8 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
   CallConstructStub stub(isolate(), RECORD_CONSTRUCTOR_TARGET);
   __ call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
   PrepareForBailoutForId(expr->ReturnId(), TOS_REG);
+  // Restore context register.
+  __ mov(esi, Operand(ebp, StandardFrameConstants::kContextOffset));
   context()->Plug(eax);
 }
 
@@ -3141,6 +3143,8 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
 
   RecordJSReturnSite(expr);
 
+  // Restore context register.
+  __ mov(esi, Operand(ebp, StandardFrameConstants::kContextOffset));
   context()->Plug(eax);
 }
 
@@ -4055,9 +4059,10 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   CallConstructStub stub(isolate(), SUPER_CONSTRUCTOR_CALL);
   __ call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
 
-  __ Drop(1);
+  // Restore context register.
+  __ mov(esi, Operand(ebp, StandardFrameConstants::kContextOffset));
 
-  context()->Plug(eax);
+  context()->DropAndPlug(1, eax);
 }
 
 

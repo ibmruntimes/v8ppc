@@ -192,19 +192,6 @@ function STRING_ADD_RIGHT(y) {
    -----------------------------
 */
 
-function CALL_NON_FUNCTION_AS_CONSTRUCTOR() {
-  var delegate = %GetConstructorDelegate(this);
-  return %Apply(delegate, this, arguments, 0, %_ArgumentsLength());
-}
-
-
-function CALL_FUNCTION_PROXY_AS_CONSTRUCTOR () {
-  var proxy = this;
-  var trap = %GetConstructTrap(proxy);
-  return %Apply(trap, this, arguments, 0, %_ArgumentsLength());
-}
-
-
 function APPLY_PREPARE(args) {
   var length;
 
@@ -331,11 +318,6 @@ function REFLECT_CONSTRUCT_PREPARE(
 function CONCAT_ITERABLE_TO_ARRAY(iterable) {
   return %concat_iterable_to_array(this, iterable);
 };
-
-
-function STACK_OVERFLOW(length) {
-  throw %make_range_error(kStackOverflow);
-}
 
 
 /* -------------------------------------
@@ -550,15 +532,12 @@ $toString = ToString;
 
 %InstallToContext([
   "apply_prepare_builtin", APPLY_PREPARE,
-  "call_function_proxy_as_constructor_builtin", CALL_FUNCTION_PROXY_AS_CONSTRUCTOR,
-  "call_non_function_as_constructor_builtin", CALL_NON_FUNCTION_AS_CONSTRUCTOR,
   "compare_builtin", COMPARE,
   "compare_strong_builtin", COMPARE_STRONG,
   "concat_iterable_to_array_builtin", CONCAT_ITERABLE_TO_ARRAY,
   "equals_builtin", EQUALS,
   "reflect_apply_prepare_builtin", REFLECT_APPLY_PREPARE,
   "reflect_construct_prepare_builtin", REFLECT_CONSTRUCT_PREPARE,
-  "stack_overflow_builtin", STACK_OVERFLOW,
   "string_add_left_builtin", STRING_ADD_LEFT,
   "string_add_right_builtin", STRING_ADD_RIGHT,
 ]);

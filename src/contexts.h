@@ -92,10 +92,6 @@ enum BindingFlags {
 
 #define NATIVE_CONTEXT_JS_BUILTINS(V)                                   \
   V(APPLY_PREPARE_BUILTIN_INDEX, JSFunction, apply_prepare_builtin)     \
-  V(CALL_FUNCTION_PROXY_AS_CONSTRUCTOR_BUILTIN_INDEX, JSFunction,       \
-    call_function_proxy_as_constructor_builtin)                         \
-  V(CALL_NON_FUNCTION_AS_CONSTRUCTOR_BUILTIN_INDEX, JSFunction,         \
-    call_non_function_as_constructor_builtin)                           \
   V(COMPARE_BUILTIN_INDEX, JSFunction, compare_builtin)                 \
   V(COMPARE_STRONG_BUILTIN_INDEX, JSFunction, compare_strong_builtin)   \
   V(CONCAT_ITERABLE_TO_ARRAY_BUILTIN_INDEX, JSFunction,                 \
@@ -105,7 +101,6 @@ enum BindingFlags {
     reflect_apply_prepare_builtin)                                      \
   V(REFLECT_CONSTRUCT_PREPARE_BUILTIN_INDEX, JSFunction,                \
     reflect_construct_prepare_builtin)                                  \
-  V(STACK_OVERFLOW_BUILTIN_INDEX, JSFunction, stack_overflow_builtin)   \
   V(STRING_ADD_LEFT_BUILTIN_INDEX, JSFunction, string_add_left_builtin) \
   V(STRING_ADD_RIGHT_BUILTIN_INDEX, JSFunction, string_add_right_builtin)
 

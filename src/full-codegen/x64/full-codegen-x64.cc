@@ -147,7 +147,7 @@ void FullCodeGenerator::Generate() {
         __ subp(rcx, Immediate(locals_count * kPointerSize));
         __ CompareRoot(rcx, Heap::kRealStackLimitRootIndex);
         __ j(above_equal, &ok, Label::kNear);
-        __ InvokeBuiltin(Context::STACK_OVERFLOW_BUILTIN_INDEX, CALL_FUNCTION);
+        __ CallRuntime(Runtime::kThrowStackOverflow, 0);
         __ bind(&ok);
       }
       __ LoadRoot(rdx, Heap::kUndefinedValueRootIndex);
@@ -3120,6 +3120,8 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
   CallConstructStub stub(isolate(), RECORD_CONSTRUCTOR_TARGET);
   __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
   PrepareForBailoutForId(expr->ReturnId(), TOS_REG);
+  // Restore context register.
+  __ movp(rsi, Operand(rbp, StandardFrameConstants::kContextOffset));
   context()->Plug(rax);
 }
 
@@ -3168,6 +3170,9 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   __ call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
 
   RecordJSReturnSite(expr);
+
+  // Restore context register.
+  __ movp(rsi, Operand(rbp, StandardFrameConstants::kContextOffset));
 
   context()->Plug(rax);
 }
@@ -4081,9 +4086,10 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   CallConstructStub stub(isolate(), SUPER_CONSTRUCTOR_CALL);
   __ call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
 
-  __ Drop(1);
+  // Restore context register.
+  __ movp(rsi, Operand(rbp, StandardFrameConstants::kContextOffset));
 
-  context()->Plug(result_register());
+  context()->DropAndPlug(1, rax);
 }
 
 
