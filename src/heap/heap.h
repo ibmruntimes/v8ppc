@@ -15,7 +15,6 @@
 #include "src/heap/gc-idle-time-handler.h"
 #include "src/heap/incremental-marking.h"
 #include "src/heap/mark-compact.h"
-#include "src/heap/objects-visiting.h"
 #include "src/heap/spaces.h"
 #include "src/heap/store-buffer.h"
 #include "src/list.h"
@@ -427,6 +426,7 @@ class HeapStats;
 class Isolate;
 class MemoryReducer;
 class ObjectStats;
+class Scavenger;
 class WeakObjectRetainer;
 
 
@@ -533,10 +533,6 @@ class PromotionQueue {
 
   DISALLOW_COPY_AND_ASSIGN(PromotionQueue);
 };
-
-
-typedef void (*ScavengingCallback)(Map* map, HeapObject** slot,
-                                   HeapObject* object);
 
 
 enum ArrayStorageAllocationMode {
@@ -702,6 +698,9 @@ class Heap {
   // The roots that have an index less than this are always in old space.
   static const int kOldSpaceRoots = 0x20;
 
+  // The minimum size of a HeapObject on the heap.
+  static const int kMinObjectSizeInWords = 2;
+
   STATIC_ASSERT(kUndefinedValueRootIndex ==
                 Internals::kUndefinedValueRootIndex);
   STATIC_ASSERT(kNullValueRootIndex == Internals::kNullValueRootIndex);
@@ -718,16 +717,6 @@ class Heap {
 
   template <typename T>
   static inline bool IsOneByte(T t, int chars);
-
-  // Callback function passed to Heap::Iterate etc.  Copies an object if
-  // necessary, the object might be promoted to an old space.  The caller must
-  // ensure the precondition that the object is (a) a heap object and (b) in
-  // the heap's from space.
-  static inline void ScavengePointer(HeapObject** p);
-  static inline void ScavengeObject(HeapObject** p, HeapObject* object);
-
-  // Slow part of scavenge object.
-  static void ScavengeObjectSlow(HeapObject** p, HeapObject* object);
 
   static void FatalProcessOutOfMemory(const char* location,
                                       bool take_snapshot = false);
@@ -769,6 +758,10 @@ class Heap {
   // Optimized version of memmove for blocks with pointer size aligned sizes and
   // pointer size aligned addresses.
   static inline void MoveBlock(Address dst, Address src, int byte_size);
+
+  // Determines a static visitor id based on the given {map} that can then be
+  // stored on the map to facilitate fast dispatch for {StaticVisitorBase}.
+  static int GetStaticVisitorIdForMap(Map* map);
 
   // Notifies the heap that is ok to start marking or other activities that
   // should not happen during deserialization.
@@ -1509,8 +1502,9 @@ class Heap {
                                               AllocationAlignment alignment);
 
   // ===========================================================================
-  // ArrayBufferTracker. =======================================================
+  // ArrayBuffer tracking. =====================================================
   // ===========================================================================
+
   void RegisterNewArrayBuffer(JSArrayBuffer* buffer);
   void UnregisterArrayBuffer(JSArrayBuffer* buffer);
 
@@ -1775,8 +1769,6 @@ class Heap {
   bool IsHighSurvivalRate() { return high_survival_rate_period_length_ > 0; }
 
   void ConfigureInitialOldGenerationSize();
-
-  void SelectScavengingVisitorsTable();
 
   bool HasLowYoungGenerationAllocationRate();
   bool HasLowOldGenerationAllocationRate();
@@ -2259,6 +2251,8 @@ class Heap {
   // Last time a garbage collection happened.
   double last_gc_time_;
 
+  Scavenger* scavenge_collector_;
+
   MarkCompactCollector mark_compact_collector_;
 
   StoreBuffer store_buffer_;
@@ -2318,8 +2312,6 @@ class Heap {
 
   ExternalStringTable external_string_table_;
 
-  VisitorDispatchTable<ScavengingCallback> scavenging_visitors_table_;
-
   MemoryChunk* chunks_queued_for_free_;
 
   size_t concurrent_unmapping_tasks_active_;
@@ -2348,6 +2340,7 @@ class Heap {
   friend class MarkCompactMarkingVisitor;
   friend class ObjectStatsVisitor;
   friend class Page;
+  friend class Scavenger;
   friend class StoreBuffer;
 
   // The allocator interface.

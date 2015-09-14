@@ -1060,12 +1060,6 @@ ExternalReference ExternalReference::
 }
 
 
-ExternalReference ExternalReference::flush_icache_function(Isolate* isolate) {
-  return ExternalReference(
-      Redirect(isolate, FUNCTION_ADDR(Assembler::FlushICacheWithoutIsolate)));
-}
-
-
 ExternalReference ExternalReference::delete_handle_scope_extensions(
     Isolate* isolate) {
   return ExternalReference(Redirect(
@@ -1422,6 +1416,12 @@ ExternalReference
         Isolate* isolate) {
   return ExternalReference(
       isolate->debug()->restarter_frame_function_pointer_address());
+}
+
+
+ExternalReference ExternalReference::vector_store_virtual_register(
+    Isolate* isolate) {
+  return ExternalReference(isolate->vector_store_virtual_register_address());
 }
 
 

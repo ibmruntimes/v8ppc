@@ -233,6 +233,8 @@ class MacroAssembler: public Assembler {
 
   void Call(Label* target);
 
+  void Move(Register dst, Smi* smi) { li(dst, Operand(smi)); }
+
   inline void Move(Register dst, Register src) {
     if (!dst.is(src)) {
       mov(dst, src);
@@ -767,11 +769,6 @@ class MacroAssembler: public Assembler {
   // Load the value of the src register from its safepoint stack slot
   // into register dst.
   void LoadFromSafepointRegisterSlot(Register dst, Register src);
-
-  // Flush the I-cache from asm code. You should use CpuFeatures::FlushICache
-  // from C.
-  // Does not handle errors.
-  void FlushICache(Register address, unsigned instructions);
 
   // MIPS32 R2 instruction macro.
   void Ins(Register rt, Register rs, uint16_t pos, uint16_t size);
@@ -1506,18 +1503,6 @@ const Operand& rt = Operand(zero_reg), BranchDelaySlot bd = PROTECT
 
   // -------------------------------------------------------------------------
   // String utilities.
-
-  // Generate code to do a lookup in the number string cache. If the number in
-  // the register object is found in the cache the generated code falls through
-  // with the result in the result register. The object and the result register
-  // can be the same. If the number is not found in the cache the code jumps to
-  // the label not_found with only the content of register object unchanged.
-  void LookupNumberStringCache(Register object,
-                               Register result,
-                               Register scratch1,
-                               Register scratch2,
-                               Register scratch3,
-                               Label* not_found);
 
   // Checks if both instance types are sequential ASCII strings and jumps to
   // label if either is not.

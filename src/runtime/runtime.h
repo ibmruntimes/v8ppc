@@ -449,7 +449,6 @@ namespace internal {
   F(GetIndexedInterceptorElementNames, 1, 1)         \
   F(OwnKeys, 1, 1)                                   \
   F(ToFastProperties, 1, 1)                          \
-  F(NewStringWrapper, 1, 1)                          \
   F(AllocateHeapNumber, 0, 1)                        \
   F(NewObject, 2, 1)                                 \
   F(NewObjectWithAllocationSite, 3, 1)               \
@@ -922,7 +921,6 @@ namespace internal {
   F(TwoByteSeqStringGetChar, 2, 1)              \
   F(TwoByteSeqStringSetChar, 3, 1)              \
   F(StringCharCodeAt, 2, 1)                     \
-  F(IsStringWrapperSafeForDefaultValueOf, 1, 1) \
   F(StringGetLength, 1, 1)
 
 

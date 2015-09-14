@@ -7103,7 +7103,7 @@ Handle<Map> Map::CopyInstallDescriptors(
 #else
     SLOW_DCHECK(result->layout_descriptor()->IsConsistentWithMap(*result));
 #endif
-    result->set_visitor_id(StaticVisitorBase::GetVisitorId(*result));
+    result->set_visitor_id(Heap::GetStaticVisitorIdForMap(*result));
   }
 
   Handle<Name> name = handle(descriptors->GetKey(new_descriptor));
@@ -7240,7 +7240,7 @@ Handle<Map> Map::Create(Isolate* isolate, int inobject_properties) {
   copy->SetInObjectProperties(inobject_properties);
   copy->set_unused_property_fields(inobject_properties);
   copy->set_instance_size(new_instance_size);
-  copy->set_visitor_id(StaticVisitorBase::GetVisitorId(*copy));
+  copy->set_visitor_id(Heap::GetStaticVisitorIdForMap(*copy));
   return copy;
 }
 
@@ -10009,7 +10009,7 @@ static void ShrinkInstanceSize(Map* map, void* data) {
   map->set_instance_size(map->instance_size() - slack * kPointerSize);
 
   // Visitor id might depend on the instance size, recalculate it.
-  map->set_visitor_id(StaticVisitorBase::GetVisitorId(map));
+  map->set_visitor_id(Heap::GetStaticVisitorIdForMap(map));
 }
 
 
@@ -16132,7 +16132,6 @@ void JSArrayBuffer::Setup(Handle<JSArrayBuffer> array_buffer, Isolate* isolate,
   for (int i = 0; i < v8::ArrayBuffer::kInternalFieldCount; i++) {
     array_buffer->SetInternalField(i, Smi::FromInt(0));
   }
-  array_buffer->set_backing_store(data);
   array_buffer->set_bit_field(0);
   array_buffer->set_is_external(is_external);
   array_buffer->set_is_neuterable(shared == SharedFlag::kNotShared);
@@ -16142,6 +16141,11 @@ void JSArrayBuffer::Setup(Handle<JSArrayBuffer> array_buffer, Isolate* isolate,
       isolate->factory()->NewNumberFromSize(allocated_length);
   CHECK(byte_length->IsSmi() || byte_length->IsHeapNumber());
   array_buffer->set_byte_length(*byte_length);
+  // Initialize backing store at last to avoid handling of |JSArrayBuffers| that
+  // are currently being constructed in the |ArrayBufferTracker|. The
+  // registration method below handles the case of registering a buffer that has
+  // already been promoted.
+  array_buffer->set_backing_store(data);
 
   if (data && !is_external) {
     isolate->heap()->RegisterNewArrayBuffer(*array_buffer);
@@ -16191,8 +16195,15 @@ Handle<JSArrayBuffer> JSTypedArray::MaterializeArrayBuffer(
   void* backing_store =
       isolate->array_buffer_allocator()->AllocateUninitialized(
           fixed_typed_array->DataSize());
-  buffer->set_backing_store(backing_store);
   buffer->set_is_external(false);
+  DCHECK(buffer->byte_length()->IsSmi() ||
+         buffer->byte_length()->IsHeapNumber());
+  DCHECK(NumberToInt32(buffer->byte_length()) == fixed_typed_array->DataSize());
+  // Initialize backing store at last to avoid handling of |JSArrayBuffers| that
+  // are currently being constructed in the |ArrayBufferTracker|. The
+  // registration method below handles the case of registering a buffer that has
+  // already been promoted.
+  buffer->set_backing_store(backing_store);
   isolate->heap()->RegisterNewArrayBuffer(*buffer);
   memcpy(buffer->backing_store(),
          fixed_typed_array->DataPtr(),

@@ -121,8 +121,6 @@ ExternalReferenceTable::ExternalReferenceTable(Isolate* isolate) {
       "InvokeFunctionCallback");
   Add(ExternalReference::invoke_accessor_getter_callback(isolate).address(),
       "InvokeAccessorGetterCallback");
-  Add(ExternalReference::flush_icache_function(isolate).address(),
-      "Assembler::FlushICacheWithoutIsolate");
   Add(ExternalReference::log_enter_external_function(isolate).address(),
       "Logger::EnterExternal");
   Add(ExternalReference::log_leave_external_function(isolate).address(),
@@ -131,6 +129,8 @@ ExternalReferenceTable::ExternalReferenceTable(Isolate* isolate) {
       "double_constants.minus_one_half");
   Add(ExternalReference::stress_deopt_count(isolate).address(),
       "Isolate::stress_deopt_count_address()");
+  Add(ExternalReference::vector_store_virtual_register(isolate).address(),
+      "Isolate::vector_store_virtual_register()");
 
   // Debug addresses
   Add(ExternalReference::debug_after_break_target_address(isolate).address(),

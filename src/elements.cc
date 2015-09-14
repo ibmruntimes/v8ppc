@@ -253,14 +253,22 @@ static void CopyDoubleToObjectElements(FixedArrayBase* from_base,
   Isolate* isolate = from_base->GetIsolate();
   Handle<FixedDoubleArray> from(FixedDoubleArray::cast(from_base), isolate);
   Handle<FixedArray> to(FixedArray::cast(to_base), isolate);
-  for (int i = 0; i < copy_size; ++i) {
+
+  // create an outer loop to not waste too much time on creating HandleScopes
+  // on the other hand we might overflow a single handle scope depending on
+  // the copy_size
+  int offset = 0;
+  while (offset < copy_size) {
     HandleScope scope(isolate);
-    if (IsFastSmiElementsKind(to_kind)) {
-      UNIMPLEMENTED();
-    } else {
-      DCHECK(IsFastObjectElementsKind(to_kind));
-      Handle<Object> value = FixedDoubleArray::get(from, i + from_start);
-      to->set(i + to_start, *value, UPDATE_WRITE_BARRIER);
+    offset += 100;
+    for (int i = offset - 100; i < offset && i < copy_size; ++i) {
+      if (IsFastSmiElementsKind(to_kind)) {
+        UNIMPLEMENTED();
+      } else {
+        DCHECK(IsFastObjectElementsKind(to_kind));
+        Handle<Object> value = FixedDoubleArray::get(from, i + from_start);
+        to->set(i + to_start, *value, UPDATE_WRITE_BARRIER);
+      }
     }
   }
 }
@@ -2375,9 +2383,7 @@ Handle<JSArray> ElementsAccessor::Concat(Isolate* isolate, Arguments* args,
       ElementsKind arg_kind = JSArray::cast(arg)->map()->elements_kind();
       has_double = has_double || IsFastDoubleElementsKind(arg_kind);
       is_holey = is_holey || IsFastHoleyElementsKind(arg_kind);
-      if (IsMoreGeneralElementsKindTransition(elements_kind, arg_kind)) {
-        elements_kind = arg_kind;
-      }
+      elements_kind = GetMoreGeneralElementsKind(elements_kind, arg_kind);
     }
     if (is_holey) {
       elements_kind = GetHoleyElementsKind(elements_kind);
