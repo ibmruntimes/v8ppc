@@ -159,7 +159,7 @@ Reduction ChangeLowering::ChangeFloat64ToTagged(Node* value, Node* control) {
 
 Reduction ChangeLowering::ChangeInt32ToTagged(Node* value, Node* control) {
   if (machine()->Is64() ||
-      NodeProperties::GetBounds(value).upper->Is(Type::SignedSmall())) {
+      NodeProperties::GetType(value)->Is(Type::SignedSmall())) {
     return Replace(ChangeInt32ToSmi(value));
   }
 
@@ -186,7 +186,7 @@ Reduction ChangeLowering::ChangeInt32ToTagged(Node* value, Node* control) {
 
 Reduction ChangeLowering::ChangeTaggedToUI32(Node* value, Node* control,
                                              Signedness signedness) {
-  if (NodeProperties::GetBounds(value).upper->Is(Type::TaggedSigned())) {
+  if (NodeProperties::GetType(value)->Is(Type::TaggedSigned())) {
     return Replace(ChangeSmiToInt32(value));
   }
 
@@ -195,7 +195,7 @@ Reduction ChangeLowering::ChangeTaggedToUI32(Node* value, Node* control,
                            ? machine()->ChangeFloat64ToInt32()
                            : machine()->ChangeFloat64ToUint32();
 
-  if (NodeProperties::GetBounds(value).upper->Is(Type::TaggedPointer())) {
+  if (NodeProperties::GetType(value)->Is(Type::TaggedPointer())) {
     return Replace(graph()->NewNode(op, LoadHeapNumberValue(value, control)));
   }
 
@@ -314,7 +314,7 @@ Reduction ChangeLowering::ChangeTaggedToFloat64(Node* value, Node* control) {
 
 
 Reduction ChangeLowering::ChangeUint32ToTagged(Node* value, Node* control) {
-  if (NodeProperties::GetBounds(value).upper->Is(Type::UnsignedSmall())) {
+  if (NodeProperties::GetType(value)->Is(Type::UnsignedSmall())) {
     return Replace(ChangeUint32ToSmi(value));
   }
 

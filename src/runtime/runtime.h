@@ -407,7 +407,6 @@ namespace internal {
   F(NumberToIntegerMapMinusZero, 1, 1) \
   F(NumberToSmi, 1, 1)                 \
   F(NumberImul, 2, 1)                  \
-  F(NumberEquals, 2, 1)                \
   F(NumberCompare, 3, 1)               \
   F(SmiLexicographicCompare, 2, 1)     \
   F(MaxSmi, 0, 1)                      \
@@ -451,7 +450,6 @@ namespace internal {
   F(ToFastProperties, 1, 1)                          \
   F(AllocateHeapNumber, 0, 1)                        \
   F(NewObject, 2, 1)                                 \
-  F(NewObjectWithAllocationSite, 3, 1)               \
   F(FinalizeInstanceSize, 1, 1)                      \
   F(GlobalProxy, 1, 1)                               \
   F(LookupAccessor, 3, 1)                            \
@@ -480,10 +478,12 @@ namespace internal {
   F(ToNumber, 1, 1)                                  \
   F(ToString, 1, 1)                                  \
   F(ToName, 1, 1)                                    \
+  F(Equals, 2, 1)                                    \
   F(StrictEquals, 2, 1)                              \
   F(InstanceOf, 2, 1)                                \
   F(HasInPrototypeChain, 2, 1)                       \
-  F(CreateIterResultObject, 2, 1)
+  F(CreateIterResultObject, 2, 1)                    \
+  F(IsAccessCheckNeeded, 1, 1)
 
 
 #define FOR_EACH_INTRINSIC_OBSERVE(F)            \
@@ -547,37 +547,36 @@ namespace internal {
   F(IsRegExp, 1, 1)
 
 
-#define FOR_EACH_INTRINSIC_SCOPES(F)                         \
-  F(ThrowConstAssignError, 0, 1)                             \
-  F(DeclareGlobals, 2, 1)                                    \
-  F(InitializeVarGlobal, 3, 1)                               \
-  F(InitializeConstGlobal, 2, 1)                             \
-  F(DeclareLookupSlot, 2, 1)                                 \
-  F(DeclareReadOnlyLookupSlot, 2, 1)                         \
-  F(InitializeLegacyConstLookupSlot, 3, 1)                   \
-  F(NewArguments, 1, 1) /* TODO(turbofan): Only temporary */ \
-  F(NewSloppyArguments, 3, 1)                                \
-  F(NewStrictArguments, 3, 1)                                \
-  F(NewClosure, 1, 1)                                        \
-  F(NewClosure_Tenured, 1, 1)                                \
-  F(NewScriptContext, 2, 1)                                  \
-  F(NewFunctionContext, 1, 1)                                \
-  F(PushWithContext, 2, 1)                                   \
-  F(PushCatchContext, 3, 1)                                  \
-  F(PushBlockContext, 2, 1)                                  \
-  F(IsJSModule, 1, 1)                                        \
-  F(PushModuleContext, 2, 1)                                 \
-  F(DeclareModules, 1, 1)                                    \
-  F(DeleteLookupSlot, 2, 1)                                  \
-  F(StoreLookupSlot, 4, 1)                                   \
-  F(ArgumentsLength, 0, 1)                                   \
+#define FOR_EACH_INTRINSIC_SCOPES(F)       \
+  F(ThrowConstAssignError, 0, 1)           \
+  F(DeclareGlobals, 2, 1)                  \
+  F(InitializeVarGlobal, 3, 1)             \
+  F(InitializeConstGlobal, 2, 1)           \
+  F(DeclareLookupSlot, 2, 1)               \
+  F(DeclareReadOnlyLookupSlot, 2, 1)       \
+  F(InitializeLegacyConstLookupSlot, 3, 1) \
+  F(NewSloppyArguments_Generic, 1, 1)      \
+  F(NewStrictArguments_Generic, 1, 1)      \
+  F(NewSloppyArguments, 3, 1)              \
+  F(NewStrictArguments, 3, 1)              \
+  F(NewClosure, 1, 1)                      \
+  F(NewClosure_Tenured, 1, 1)              \
+  F(NewScriptContext, 2, 1)                \
+  F(NewFunctionContext, 1, 1)              \
+  F(PushWithContext, 2, 1)                 \
+  F(PushCatchContext, 3, 1)                \
+  F(PushBlockContext, 2, 1)                \
+  F(IsJSModule, 1, 1)                      \
+  F(PushModuleContext, 2, 1)               \
+  F(DeclareModules, 1, 1)                  \
+  F(DeleteLookupSlot, 2, 1)                \
+  F(StoreLookupSlot, 4, 1)                 \
+  F(ArgumentsLength, 0, 1)                 \
   F(Arguments, 1, 1)
 
 
 #define FOR_EACH_INTRINSIC_SIMD(F)             \
   F(IsSimdValue, 1, 1)                         \
-  F(SimdToObject, 1, 1)                        \
-  F(SimdEquals, 2, 1)                          \
   F(SimdSameValue, 2, 1)                       \
   F(SimdSameValueZero, 2, 1)                   \
   F(CreateFloat32x4, 4, 1)                     \
@@ -928,6 +927,7 @@ namespace internal {
   F(CreateSymbol, 1, 1)              \
   F(CreatePrivateSymbol, 1, 1)       \
   F(SymbolDescription, 1, 1)         \
+  F(SymbolDescriptiveString, 1, 1)   \
   F(SymbolRegistry, 0, 1)            \
   F(SymbolIsPrivate, 1, 1)
 

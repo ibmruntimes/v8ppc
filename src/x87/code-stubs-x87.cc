@@ -1574,26 +1574,22 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
   __ push(eax);
 
   // Figure out which native to call and setup the arguments.
-  if (cc == equal && strict()) {
+  if (cc == equal) {
     __ push(ecx);
-    __ TailCallRuntime(Runtime::kStrictEquals, 2, 1);
+    __ TailCallRuntime(strict() ? Runtime::kStrictEquals : Runtime::kEquals, 2,
+                       1);
   } else {
-    int context_index;
-    if (cc == equal) {
-      context_index = Context::EQUALS_BUILTIN_INDEX;
-    } else {
-      context_index = is_strong(strength())
-                          ? Context::COMPARE_STRONG_BUILTIN_INDEX
-                          : Context::COMPARE_BUILTIN_INDEX;
-      __ push(Immediate(Smi::FromInt(NegativeComparisonResult(cc))));
-    }
+    int native_context_index = is_strong(strength())
+                                   ? Context::COMPARE_STRONG_BUILTIN_INDEX
+                                   : Context::COMPARE_BUILTIN_INDEX;
+    __ push(Immediate(Smi::FromInt(NegativeComparisonResult(cc))));
 
     // Restore return address on the stack.
     __ push(ecx);
 
     // Call the native; it returns -1 (less), 0 (equal), or 1 (greater)
     // tagged as a small integer.
-    __ InvokeBuiltin(context_index, JUMP_FUNCTION);
+    __ InvokeBuiltin(native_context_index, JUMP_FUNCTION);
   }
 
   __ bind(&miss);
@@ -1885,26 +1881,32 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   // eax: number of arguments
   // ecx: object map
   // esp[0]: original receiver (for IsSuperConstructorCall)
-  Label do_call;
   __ bind(&slow);
-  __ CmpInstanceType(ecx, JS_FUNCTION_PROXY_TYPE);
-  __ j(not_equal, &non_function_call);
-  __ GetBuiltinEntry(edx,
-                     Context::CALL_FUNCTION_PROXY_AS_CONSTRUCTOR_BUILTIN_INDEX);
-  __ jmp(&do_call);
+  {
+    __ CmpInstanceType(ecx, JS_FUNCTION_PROXY_TYPE);
+    __ j(not_equal, &non_function_call, Label::kNear);
+    if (IsSuperConstructorCall()) __ Drop(1);
+    // TODO(neis): This doesn't match the ES6 spec for [[Construct]] on proxies.
+    __ mov(edi, FieldOperand(edi, JSFunctionProxy::kConstructTrapOffset));
+    __ Jump(isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
 
-  __ bind(&non_function_call);
-  __ GetBuiltinEntry(edx,
-                     Context::CALL_NON_FUNCTION_AS_CONSTRUCTOR_BUILTIN_INDEX);
-  __ bind(&do_call);
-  if (IsSuperConstructorCall()) {
-    __ Drop(1);
+    __ bind(&non_function_call);
+    if (IsSuperConstructorCall()) __ Drop(1);
+    {
+      // Determine the delegate for the target (if any).
+      FrameScope scope(masm, StackFrame::INTERNAL);
+      __ SmiTag(eax);
+      __ Push(eax);
+      __ Push(edi);
+      __ CallRuntime(Runtime::kGetConstructorDelegate, 1);
+      __ mov(edi, eax);
+      __ Pop(eax);
+      __ SmiUntag(eax);
+    }
+    // The delegate is always a regular function.
+    __ AssertFunction(edi);
+    __ Jump(isolate()->builtins()->CallFunction(), RelocInfo::CODE_TARGET);
   }
-  // Set expected number of arguments to zero (not changing eax).
-  __ Move(ebx, Immediate(0));
-  Handle<Code> arguments_adaptor =
-      isolate()->builtins()->ArgumentsAdaptorTrampoline();
-  __ jmp(arguments_adaptor, RelocInfo::CODE_TARGET);
 }
 
 
@@ -4241,6 +4243,8 @@ static void HandlePolymorphicStoreCase(MacroAssembler* masm, Register receiver,
   Label next, next_loop, prepare_next;
   Label load_smi_map, compare_map;
   Label start_polymorphic;
+  ExternalReference virtual_register =
+      ExternalReference::vector_store_virtual_register(masm->isolate());
 
   __ push(receiver);
   __ push(vector);
@@ -4267,8 +4271,9 @@ static void HandlePolymorphicStoreCase(MacroAssembler* masm, Register receiver,
   __ pop(vector);
   __ pop(receiver);
   __ lea(handler, FieldOperand(handler, Code::kHeaderSize));
-  __ xchg(handler, Operand(esp, 0));
-  __ ret(0);
+  __ mov(Operand::StaticVariable(virtual_register), handler);
+  __ pop(handler);  // Pop "value".
+  __ jmp(Operand::StaticVariable(virtual_register));
 
   // Polymorphic, we have to loop from 2 to N
 
@@ -4288,12 +4293,13 @@ static void HandlePolymorphicStoreCase(MacroAssembler* masm, Register receiver,
   __ j(not_equal, &prepare_next);
   __ mov(handler, FieldOperand(feedback, counter, times_half_pointer_size,
                                FixedArray::kHeaderSize + kPointerSize));
+  __ lea(handler, FieldOperand(handler, Code::kHeaderSize));
   __ pop(key);
   __ pop(vector);
   __ pop(receiver);
-  __ lea(handler, FieldOperand(handler, Code::kHeaderSize));
-  __ xchg(handler, Operand(esp, 0));
-  __ ret(0);
+  __ mov(Operand::StaticVariable(virtual_register), handler);
+  __ pop(handler);  // Pop "value".
+  __ jmp(Operand::StaticVariable(virtual_register));
 
   __ bind(&prepare_next);
   __ add(counter, Immediate(Smi::FromInt(2)));
@@ -4318,6 +4324,8 @@ static void HandleMonomorphicStoreCase(MacroAssembler* masm, Register receiver,
                                        Label* miss) {
   // The store ic value is on the stack.
   DCHECK(weak_cell.is(VectorStoreICDescriptor::ValueRegister()));
+  ExternalReference virtual_register =
+      ExternalReference::vector_store_virtual_register(masm->isolate());
 
   // feedback initially contains the feedback array
   Label compare_smi_map;
@@ -4334,9 +4342,10 @@ static void HandleMonomorphicStoreCase(MacroAssembler* masm, Register receiver,
                                  FixedArray::kHeaderSize + kPointerSize));
   __ lea(weak_cell, FieldOperand(weak_cell, Code::kHeaderSize));
   // Put the store ic value back in it's register.
-  __ xchg(weak_cell, Operand(esp, 0));
-  // "return" to the handler.
-  __ ret(0);
+  __ mov(Operand::StaticVariable(virtual_register), weak_cell);
+  __ pop(weak_cell);  // Pop "value".
+  // jump to the handler.
+  __ jmp(Operand::StaticVariable(virtual_register));
 
   // In microbenchmarks, it made sense to unroll this code so that the call to
   // the handler is duplicated for a HeapObject receiver and a Smi receiver.
@@ -4346,10 +4355,10 @@ static void HandleMonomorphicStoreCase(MacroAssembler* masm, Register receiver,
   __ mov(weak_cell, FieldOperand(vector, slot, times_half_pointer_size,
                                  FixedArray::kHeaderSize + kPointerSize));
   __ lea(weak_cell, FieldOperand(weak_cell, Code::kHeaderSize));
-  // Put the store ic value back in it's register.
-  __ xchg(weak_cell, Operand(esp, 0));
-  // "return" to the handler.
-  __ ret(0);
+  __ mov(Operand::StaticVariable(virtual_register), weak_cell);
+  __ pop(weak_cell);  // Pop "value".
+  // jump to the handler.
+  __ jmp(Operand::StaticVariable(virtual_register));
 }
 
 
@@ -4422,6 +4431,8 @@ static void HandlePolymorphicKeyedStoreCase(MacroAssembler* masm,
   Label load_smi_map, compare_map;
   Label transition_call;
   Label pop_and_miss;
+  ExternalReference virtual_register =
+      ExternalReference::vector_store_virtual_register(masm->isolate());
 
   __ push(receiver);
   __ push(vector);
@@ -4458,8 +4469,9 @@ static void HandlePolymorphicKeyedStoreCase(MacroAssembler* masm,
   __ pop(vector);
   __ pop(receiver);
   __ lea(feedback, FieldOperand(feedback, Code::kHeaderSize));
-  __ xchg(feedback, Operand(esp, 0));
-  __ ret(0);
+  __ mov(Operand::StaticVariable(virtual_register), feedback);
+  __ pop(feedback);  // Pop "value".
+  __ jmp(Operand::StaticVariable(virtual_register));
 
   __ bind(&transition_call);
   // Oh holy hell this will be tough.

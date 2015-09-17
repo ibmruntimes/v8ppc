@@ -1082,11 +1082,11 @@ bool Object::IsArgumentsMarker() const {
 }
 
 
-double Object::Number() {
+double Object::Number() const {
   DCHECK(IsNumber());
   return IsSmi()
-    ? static_cast<double>(reinterpret_cast<Smi*>(this)->value())
-    : reinterpret_cast<HeapNumber*>(this)->value();
+             ? static_cast<double>(reinterpret_cast<const Smi*>(this)->value())
+             : reinterpret_cast<const HeapNumber*>(this)->value();
 }
 
 
@@ -1505,6 +1505,8 @@ HeapObjectContents HeapObject::ContentType() {
   } else if (type >= FIRST_FIXED_TYPED_ARRAY_TYPE &&
              type <= LAST_FIXED_TYPED_ARRAY_TYPE) {
     return HeapObjectContents::kMixedValues;
+  } else if (type == JS_ARRAY_BUFFER_TYPE) {
+    return HeapObjectContents::kMixedValues;
   } else if (type <= LAST_DATA_TYPE) {
     // TODO(jochen): Why do we claim that Code and Map contain only raw values?
     return HeapObjectContents::kRawValues;
@@ -1564,6 +1566,12 @@ bool Simd128Value::Equals(Simd128Value* that) {
   SIMD128_TYPES(SIMD128_VALUE)
 #undef SIMD128_VALUE
   return false;
+}
+
+
+// static
+bool Simd128Value::Equals(Handle<Simd128Value> one, Handle<Simd128Value> two) {
+  return one->Equals(*two);
 }
 
 
@@ -1743,8 +1751,7 @@ bool AllocationSite::SitePointsToLiteral() {
 // elements kind is the initial elements kind.
 AllocationSiteMode AllocationSite::GetMode(
     ElementsKind boilerplate_elements_kind) {
-  if (FLAG_pretenuring_call_new ||
-      IsFastSmiElementsKind(boilerplate_elements_kind)) {
+  if (IsFastSmiElementsKind(boilerplate_elements_kind)) {
     return TRACK_ALLOCATION_SITE;
   }
 
@@ -1754,9 +1761,8 @@ AllocationSiteMode AllocationSite::GetMode(
 
 AllocationSiteMode AllocationSite::GetMode(ElementsKind from,
                                            ElementsKind to) {
-  if (FLAG_pretenuring_call_new ||
-      (IsFastSmiElementsKind(from) &&
-       IsMoreGeneralElementsKindTransition(from, to))) {
+  if (IsFastSmiElementsKind(from) &&
+      IsMoreGeneralElementsKindTransition(from, to)) {
     return TRACK_ALLOCATION_SITE;
   }
 
@@ -2050,6 +2056,12 @@ byte Oddball::kind() const {
 
 void Oddball::set_kind(byte value) {
   WRITE_FIELD(this, kKindOffset, Smi::FromInt(value));
+}
+
+
+// static
+Handle<Object> Oddball::ToNumber(Handle<Oddball> input) {
+  return handle(input->to_number(), input->GetIsolate());
 }
 
 
@@ -6615,6 +6627,32 @@ bool JSArrayBuffer::is_shared() { return IsShared::decode(bit_field()); }
 
 void JSArrayBuffer::set_is_shared(bool value) {
   set_bit_field(IsShared::update(bit_field(), value));
+}
+
+
+// static
+template <typename StaticVisitor>
+void JSArrayBuffer::JSArrayBufferIterateBody(Heap* heap, HeapObject* obj) {
+  StaticVisitor::VisitPointers(
+      heap, obj,
+      HeapObject::RawField(obj, JSArrayBuffer::BodyDescriptor::kStartOffset),
+      HeapObject::RawField(obj,
+                           JSArrayBuffer::kByteLengthOffset + kPointerSize));
+  StaticVisitor::VisitPointers(
+      heap, obj, HeapObject::RawField(obj, JSArrayBuffer::kSize),
+      HeapObject::RawField(obj, JSArrayBuffer::kSizeWithInternalFields));
+}
+
+
+void JSArrayBuffer::JSArrayBufferIterateBody(HeapObject* obj,
+                                             ObjectVisitor* v) {
+  v->VisitPointers(
+      HeapObject::RawField(obj, JSArrayBuffer::BodyDescriptor::kStartOffset),
+      HeapObject::RawField(obj,
+                           JSArrayBuffer::kByteLengthOffset + kPointerSize));
+  v->VisitPointers(
+      HeapObject::RawField(obj, JSArrayBuffer::kSize),
+      HeapObject::RawField(obj, JSArrayBuffer::kSizeWithInternalFields));
 }
 
 

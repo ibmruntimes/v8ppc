@@ -350,6 +350,11 @@ namespace internal {
  *     -2^31   -2^30     0      2^30    2^31    2^32
  *
  * E.g., OtherUnsigned32 (OU32) covers all integers from 2^31 to 2^32-1.
+ *
+ * Some of the atomic numerical bitsets are internal only (see
+ * INTERNAL_BITSET_TYPE_LIST).  To a types user, they should only occur in
+ * union with certain other bitsets.  For instance, OtherNumber should only
+ * occur as part of PlainNumber.
  */
 
 #define PROPER_BITSET_TYPE_LIST(V) \
@@ -529,10 +534,12 @@ class TypeImpl : public Config::Base {
   static TypeHandle Intersect(TypeHandle type1, TypeHandle type2, Region* reg);
 
   static TypeHandle Of(double value, Region* region) {
-    return Config::from_bitset(BitsetType::Lub(value), region);
+    return Config::from_bitset(BitsetType::ExpandInternals(
+        BitsetType::Lub(value)), region);
   }
   static TypeHandle Of(i::Object* value, Region* region) {
-    return Config::from_bitset(BitsetType::Lub(value), region);
+    return Config::from_bitset(BitsetType::ExpandInternals(
+        BitsetType::Lub(value)), region);
   }
   static TypeHandle Of(i::Handle<i::Object> value, Region* region) {
     return Of(*value, region);
@@ -696,12 +703,12 @@ class TypeImpl : public Config::Base {
     double max;
     Limits(double min, double max) : min(min), max(max) {}
     explicit Limits(RangeType* range) : min(range->Min()), max(range->Max()) {}
-    static Limits Empty(Region* region) { return Limits(1, 0); }
+    bool IsEmpty();
+    static Limits Empty() { return Limits(1, 0); }
+    static Limits Intersect(Limits lhs, Limits rhs);
+    static Limits Union(Limits lhs, Limits rhs);
   };
 
-  static bool IsEmpty(Limits lim);
-  static Limits Intersect(Limits lhs, Limits rhs);
-  static Limits Union(Limits lhs, Limits rhs);
   static bool Overlap(RangeType* lhs, RangeType* rhs);
   static bool Contains(RangeType* lhs, RangeType* rhs);
   static bool Contains(RangeType* range, ConstantType* constant);
@@ -750,11 +757,9 @@ class TypeImpl<Config>::BitsetType : public TypeImpl<Config> {
   bitset Bitset() { return Config::as_bitset(this); }
 
   static TypeImpl* New(bitset bits) {
-    if (FLAG_enable_slow_asserts) CheckNumberBits(bits);
     return Config::from_bitset(bits);
   }
   static TypeHandle New(bitset bits, Region* region) {
-    if (FLAG_enable_slow_asserts) CheckNumberBits(bits);
     return Config::from_bitset(bits, region);
   }
 
@@ -780,6 +785,7 @@ class TypeImpl<Config>::BitsetType : public TypeImpl<Config> {
   static bitset Lub(i::Object* value);
   static bitset Lub(double value);
   static bitset Lub(double min, double max);
+  static bitset ExpandInternals(bitset bits);
 
   static const char* Name(bitset);
   static void Print(std::ostream& os, bitset);  // NOLINT
@@ -791,14 +797,13 @@ class TypeImpl<Config>::BitsetType : public TypeImpl<Config> {
 
  private:
   struct Boundary {
-    bitset bits;
+    bitset internal;
+    bitset external;
     double min;
   };
   static const Boundary BoundariesArray[];
   static inline const Boundary* Boundaries();
   static inline size_t BoundariesSize();
-
-  static void CheckNumberBits(bitset bits);
 };
 
 
@@ -883,11 +888,6 @@ class TypeImpl<Config>::UnionType : public StructuralType {
 template<class Config>
 class TypeImpl<Config>::ClassType : public StructuralType {
  public:
-  TypeHandle Bound(Region* region) {
-    return Config::is_class(this) ?
-        BitsetType::New(BitsetType::Lub(*Config::as_class(this)), region) :
-        this->Get(0);
-  }
   i::Handle<i::Map> Map() {
     return Config::is_class(this) ? Config::as_class(this) :
         this->template GetValue<i::Map>(1);
@@ -909,6 +909,14 @@ class TypeImpl<Config>::ClassType : public StructuralType {
     DCHECK(type->IsClass());
     return static_cast<ClassType*>(type);
   }
+
+ private:
+  template<class> friend class TypeImpl;
+  bitset Lub() {
+    return Config::is_class(this) ?
+        BitsetType::Lub(*Config::as_class(this)) :
+        this->Get(0)->AsBitset();
+  }
 };
 
 
@@ -918,7 +926,6 @@ class TypeImpl<Config>::ClassType : public StructuralType {
 template<class Config>
 class TypeImpl<Config>::ConstantType : public StructuralType {
  public:
-  TypeHandle Bound() { return this->Get(0); }
   i::Handle<i::Object> Value() { return this->template GetValue<i::Object>(1); }
 
   static ConstantHandle New(i::Handle<i::Object> value, Region* region) {
@@ -933,6 +940,10 @@ class TypeImpl<Config>::ConstantType : public StructuralType {
     DCHECK(type->IsConstant());
     return static_cast<ConstantType*>(type);
   }
+
+ private:
+  template<class> friend class TypeImpl;
+  bitset Lub() { return this->Get(0)->AsBitset(); }
 };
 // TODO(neis): Also cache value if numerical.
 // TODO(neis): Allow restricting the representation.
@@ -944,7 +955,6 @@ class TypeImpl<Config>::ConstantType : public StructuralType {
 template <class Config>
 class TypeImpl<Config>::RangeType : public TypeImpl<Config> {
  public:
-  bitset Bound() { return Config::range_get_bitset(Config::as_range(this)); }
   double Min() { return Config::range_get_double(Config::as_range(this), 0); }
   double Max() { return Config::range_get_double(Config::as_range(this), 1); }
 
@@ -974,8 +984,13 @@ class TypeImpl<Config>::RangeType : public TypeImpl<Config> {
     DCHECK(type->IsRange());
     return static_cast<RangeType*>(type);
   }
+
+ private:
+  template<class> friend class TypeImpl;
+  bitset Lub() {
+    return Config::range_get_bitset(Config::as_range(this));
+  }
 };
-// TODO(neis): Also cache min and max values.
 
 
 // -----------------------------------------------------------------------------

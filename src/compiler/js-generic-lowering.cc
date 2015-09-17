@@ -489,6 +489,22 @@ void JSGenericLowering::LowerJSLoadDynamicContext(Node* node) {
 }
 
 
+void JSGenericLowering::LowerJSCreateArguments(Node* node) {
+  const CreateArgumentsParameters& p = CreateArgumentsParametersOf(node->op());
+  switch (p.type()) {
+    case CreateArgumentsParameters::kMappedArguments:
+      ReplaceWithRuntimeCall(node, Runtime::kNewSloppyArguments_Generic);
+      break;
+    case CreateArgumentsParameters::kUnmappedArguments:
+      ReplaceWithRuntimeCall(node, Runtime::kNewStrictArguments_Generic);
+      break;
+    case CreateArgumentsParameters::kRestArray:
+      UNIMPLEMENTED();
+      break;
+  }
+}
+
+
 void JSGenericLowering::LowerJSCreateClosure(Node* node) {
   CreateClosureParameters p = CreateClosureParametersOf(node->op());
   node->InsertInput(zone(), 0, jsgraph()->HeapConstant(p.shared_info()));

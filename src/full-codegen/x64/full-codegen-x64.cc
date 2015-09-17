@@ -2262,14 +2262,15 @@ void FullCodeGenerator::EmitNamedPropertyLoad(Property* prop) {
   if (FeedbackVector()->GetIndex(prop->PropertyFeedbackSlot()) == 6) {
     __ Pop(LoadDescriptor::ReceiverRegister());
 
-    Label ok;
+    Label ok, sound_alarm;
     __ JumpIfSmi(rax, &ok, Label::kNear);
     __ movp(rbx, FieldOperand(rax, HeapObject::kMapOffset));
-    __ CmpInstanceType(rbx, LAST_PRIMITIVE_TYPE);
-    __ j(below_equal, &ok, Label::kNear);
-    __ CmpInstanceType(rbx, FIRST_JS_RECEIVER_TYPE);
-    __ j(above_equal, &ok, Label::kNear);
+    __ CompareRoot(rbx, Heap::kMetaMapRootIndex);
+    __ j(equal, &sound_alarm);
+    __ CompareRoot(rbx, Heap::kFixedArrayMapRootIndex);
+    __ j(not_equal, &ok, Label::kNear);
 
+    __ bind(&sound_alarm);
     __ Push(Smi::FromInt(0xaabbccdd));
     __ Push(LoadDescriptor::ReceiverRegister());
     __ movp(rbx, FieldOperand(LoadDescriptor::ReceiverRegister(),
@@ -3108,12 +3109,6 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
   __ movp(rdi, Operand(rsp, arg_count * kPointerSize));
 
   // Record call targets in unoptimized code, but not in the snapshot.
-  if (FLAG_pretenuring_call_new) {
-    EnsureSlotContainsAllocationSite(expr->AllocationSiteFeedbackSlot());
-    DCHECK(expr->AllocationSiteFeedbackSlot().ToInt() ==
-           expr->CallNewFeedbackSlot().ToInt() + 1);
-  }
-
   __ Move(rbx, FeedbackVector());
   __ Move(rdx, SmiFromSlot(expr->CallNewFeedbackSlot()));
 
@@ -3154,15 +3149,6 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   __ movp(rdi, Operand(rsp, arg_count * kPointerSize));
 
   // Record call targets in unoptimized code.
-  if (FLAG_pretenuring_call_new) {
-    UNREACHABLE();
-    /* TODO(dslomov): support pretenuring.
-    EnsureSlotContainsAllocationSite(expr->AllocationSiteFeedbackSlot());
-    DCHECK(expr->AllocationSiteFeedbackSlot().ToInt() ==
-           expr->CallNewFeedbackSlot().ToInt() + 1);
-    */
-  }
-
   __ Move(rbx, FeedbackVector());
   __ Move(rdx, SmiFromSlot(expr->CallFeedbackSlot()));
 

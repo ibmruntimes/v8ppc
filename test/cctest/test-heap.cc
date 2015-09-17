@@ -3312,106 +3312,6 @@ TEST(OptimizedPretenuringNestedDoubleLiterals) {
 }
 
 
-// Make sure pretenuring feedback is gathered for constructed objects as well
-// as for literals.
-TEST(OptimizedPretenuringConstructorCalls) {
-  if (!i::FLAG_pretenuring_call_new) {
-    // FLAG_pretenuring_call_new needs to be synced with the snapshot.
-    return;
-  }
-  i::FLAG_allow_natives_syntax = true;
-  i::FLAG_expose_gc = true;
-  CcTest::InitializeVM();
-  if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
-  if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
-  v8::HandleScope scope(CcTest::isolate());
-
-  // Grow new space unitl maximum capacity reached.
-  while (!CcTest::heap()->new_space()->IsAtMaximumCapacity()) {
-    CcTest::heap()->new_space()->Grow();
-  }
-
-  i::ScopedVector<char> source(1024);
-  // Call new is doing slack tracking for the first
-  // JSFunction::kGenerousAllocationCount allocations, and we can't find
-  // mementos during that time.
-  i::SNPrintF(
-      source,
-      "var number_elements = %d;"
-      "var elements = new Array(number_elements);"
-      "function foo() {"
-      "  this.a = 3;"
-      "  this.b = {};"
-      "}"
-      "function f() {"
-      "  for (var i = 0; i < number_elements; i++) {"
-      "    elements[i] = new foo();"
-      "  }"
-      "  return elements[number_elements - 1];"
-      "};"
-      "f(); gc();"
-      "f(); f();"
-      "%%OptimizeFunctionOnNextCall(f);"
-      "f();",
-      AllocationSite::kPretenureMinimumCreated +
-      JSFunction::kGenerousAllocationCount);
-
-  v8::Local<v8::Value> res = CompileRun(source.start());
-
-  Handle<JSObject> o =
-      v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
-
-  CHECK(CcTest::heap()->InOldSpace(*o));
-}
-
-
-TEST(OptimizedPretenuringCallNew) {
-  if (!i::FLAG_pretenuring_call_new) {
-    // FLAG_pretenuring_call_new needs to be synced with the snapshot.
-    return;
-  }
-  i::FLAG_allow_natives_syntax = true;
-  i::FLAG_expose_gc = true;
-  CcTest::InitializeVM();
-  if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
-  if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
-  v8::HandleScope scope(CcTest::isolate());
-
-  // Grow new space unitl maximum capacity reached.
-  while (!CcTest::heap()->new_space()->IsAtMaximumCapacity()) {
-    CcTest::heap()->new_space()->Grow();
-  }
-
-  i::ScopedVector<char> source(1024);
-  // Call new is doing slack tracking for the first
-  // JSFunction::kGenerousAllocationCount allocations, and we can't find
-  // mementos during that time.
-  i::SNPrintF(
-      source,
-      "var number_elements = %d;"
-      "var elements = new Array(number_elements);"
-      "function g() { this.a = 0; }"
-      "function f() {"
-      "  for (var i = 0; i < number_elements; i++) {"
-      "    elements[i] = new g();"
-      "  }"
-      "  return elements[number_elements - 1];"
-      "};"
-      "f(); gc();"
-      "f(); f();"
-      "%%OptimizeFunctionOnNextCall(f);"
-      "f();",
-      AllocationSite::kPretenureMinimumCreated +
-      JSFunction::kGenerousAllocationCount);
-
-  v8::Local<v8::Value> res = CompileRun(source.start());
-
-  Handle<JSObject> o =
-      v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
-  CHECK(CcTest::heap()->InOldSpace(*o));
-}
-
-
 // Test regular array literals allocation.
 TEST(OptimizedAllocationArrayLiterals) {
   i::FLAG_allow_natives_syntax = true;
@@ -3909,8 +3809,14 @@ static void CheckVectorIC(Handle<JSFunction> f, int ic_slot_index,
   Handle<TypeFeedbackVector> vector =
       Handle<TypeFeedbackVector>(f->shared()->feedback_vector());
   FeedbackVectorICSlot slot(ic_slot_index);
-  LoadICNexus nexus(vector, slot);
-  CHECK(nexus.StateFromFeedback() == desired_state);
+  if (vector->GetKind(slot) == Code::LOAD_IC) {
+    LoadICNexus nexus(vector, slot);
+    CHECK(nexus.StateFromFeedback() == desired_state);
+  } else {
+    CHECK(vector->GetKind(slot) == Code::KEYED_LOAD_IC);
+    KeyedLoadICNexus nexus(vector, slot);
+    CHECK(nexus.StateFromFeedback() == desired_state);
+  }
 }
 
 
@@ -3920,6 +3826,38 @@ static void CheckVectorICCleared(Handle<JSFunction> f, int ic_slot_index) {
   FeedbackVectorICSlot slot(ic_slot_index);
   LoadICNexus nexus(vector, slot);
   CHECK(IC::IsCleared(&nexus));
+}
+
+
+TEST(ICInBuiltInIsClearedAppropriately) {
+  if (i::FLAG_always_opt) return;
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+
+  Handle<JSFunction> apply;
+  {
+    LocalContext env;
+    v8::Local<v8::Value> res = CompileRun("Function.apply");
+    Handle<JSObject> maybe_apply =
+        v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
+    apply = Handle<JSFunction>::cast(maybe_apply);
+    TypeFeedbackVector* vector = apply->shared()->feedback_vector();
+    CHECK(vector->ICSlots() == 1);
+    CheckVectorIC(apply, 0, UNINITIALIZED);
+    CompileRun(
+        "function b(a1, a2, a3) { return a1 + a2 + a3; }"
+        "function fun(bar) { bar.apply({}, [1, 2, 3]); };"
+        "fun(b); fun(b)");
+    CheckVectorIC(apply, 0, MONOMORPHIC);
+  }
+
+  // Fire context dispose notification.
+  CcTest::isolate()->ContextDisposedNotification();
+  SimulateIncrementalMarking(CcTest::heap());
+  CcTest::heap()->CollectAllGarbage();
+
+  // The IC in apply has been cleared, ready to learn again.
+  CheckVectorIC(apply, 0, PREMONOMORPHIC);
 }
 
 
@@ -6453,127 +6391,6 @@ TEST(AllocationThroughput) {
 }
 
 
-TEST(SlotsBufferObjectSlotsRemoval) {
-  CcTest::InitializeVM();
-  v8::HandleScope scope(CcTest::isolate());
-  Isolate* isolate = CcTest::i_isolate();
-  Heap* heap = isolate->heap();
-  Factory* factory = isolate->factory();
-
-  SlotsBuffer* buffer = new SlotsBuffer(NULL);
-  void* fake_object[1];
-
-  Handle<FixedArray> array = factory->NewFixedArray(2, TENURED);
-  CHECK(heap->old_space()->Contains(*array));
-  array->set(0, reinterpret_cast<Object*>(fake_object), SKIP_WRITE_BARRIER);
-
-  // Firstly, let's test the regular slots buffer entry.
-  buffer->Add(HeapObject::RawField(*array, FixedArray::kHeaderSize));
-  CHECK(reinterpret_cast<void*>(buffer->Get(0)) ==
-        HeapObject::RawField(*array, FixedArray::kHeaderSize));
-  SlotsBuffer::RemoveObjectSlots(CcTest::i_isolate()->heap(), buffer,
-                                 array->address(),
-                                 array->address() + array->Size());
-  CHECK(reinterpret_cast<void*>(buffer->Get(0)) ==
-        HeapObject::RawField(heap->empty_fixed_array(),
-                             FixedArrayBase::kLengthOffset));
-
-  // Secondly, let's test the typed slots buffer entry.
-  SlotsBuffer::AddTo(NULL, &buffer, SlotsBuffer::EMBEDDED_OBJECT_SLOT,
-                     array->address() + FixedArray::kHeaderSize,
-                     SlotsBuffer::FAIL_ON_OVERFLOW);
-  CHECK(reinterpret_cast<void*>(buffer->Get(1)) ==
-        reinterpret_cast<Object**>(SlotsBuffer::EMBEDDED_OBJECT_SLOT));
-  CHECK(reinterpret_cast<void*>(buffer->Get(2)) ==
-        HeapObject::RawField(*array, FixedArray::kHeaderSize));
-  SlotsBuffer::RemoveObjectSlots(CcTest::i_isolate()->heap(), buffer,
-                                 array->address(),
-                                 array->address() + array->Size());
-  CHECK(reinterpret_cast<void*>(buffer->Get(1)) ==
-        HeapObject::RawField(heap->empty_fixed_array(),
-                             FixedArrayBase::kLengthOffset));
-  CHECK(reinterpret_cast<void*>(buffer->Get(2)) ==
-        HeapObject::RawField(heap->empty_fixed_array(),
-                             FixedArrayBase::kLengthOffset));
-  delete buffer;
-}
-
-
-TEST(FilterInvalidSlotsBufferEntries) {
-  FLAG_manual_evacuation_candidates_selection = true;
-  CcTest::InitializeVM();
-  v8::HandleScope scope(CcTest::isolate());
-  Isolate* isolate = CcTest::i_isolate();
-  Heap* heap = isolate->heap();
-  Factory* factory = isolate->factory();
-  SlotsBuffer* buffer = new SlotsBuffer(NULL);
-
-  // Set up a fake black object that will contain a recorded SMI, a recorded
-  // pointer to a new space object, and a recorded pointer to a non-evacuation
-  // candidate object. These object should be filtered out. Additionally,
-  // we point to an evacuation candidate object which should not be filtered
-  // out.
-
-  // Create fake object and mark it black.
-  Handle<FixedArray> fake_object = factory->NewFixedArray(23, TENURED);
-  MarkBit mark_bit = Marking::MarkBitFrom(*fake_object);
-  Marking::MarkBlack(mark_bit);
-
-  // Write a SMI into field one and record its address;
-  Object** field_smi = fake_object->RawFieldOfElementAt(0);
-  *field_smi = Smi::FromInt(100);
-  buffer->Add(field_smi);
-
-  // Write a new space reference into field 2 and record its address;
-  Handle<FixedArray> new_space_object = factory->NewFixedArray(23);
-  mark_bit = Marking::MarkBitFrom(*new_space_object);
-  Marking::MarkBlack(mark_bit);
-  Object** field_new_space = fake_object->RawFieldOfElementAt(1);
-  *field_new_space = *new_space_object;
-  buffer->Add(field_new_space);
-
-  // Write an old space reference into field 3 which points to an object not on
-  // an evacuation candidate.
-  Handle<FixedArray> old_space_object_non_evacuation =
-      factory->NewFixedArray(23, TENURED);
-  mark_bit = Marking::MarkBitFrom(*old_space_object_non_evacuation);
-  Marking::MarkBlack(mark_bit);
-  Object** field_old_space_object_non_evacuation =
-      fake_object->RawFieldOfElementAt(2);
-  *field_old_space_object_non_evacuation = *old_space_object_non_evacuation;
-  buffer->Add(field_old_space_object_non_evacuation);
-
-  // Write an old space reference into field 4 which points to an object on an
-  // evacuation candidate.
-  SimulateFullSpace(heap->old_space());
-  Handle<FixedArray> valid_object =
-      isolate->factory()->NewFixedArray(23, TENURED);
-  Page* page = Page::FromAddress(valid_object->address());
-  page->SetFlag(MemoryChunk::EVACUATION_CANDIDATE);
-  Object** valid_field = fake_object->RawFieldOfElementAt(3);
-  *valid_field = *valid_object;
-  buffer->Add(valid_field);
-
-  SlotsBuffer::RemoveInvalidSlots(heap, buffer);
-  Object** kRemovedEntry = HeapObject::RawField(heap->empty_fixed_array(),
-                                                FixedArrayBase::kLengthOffset);
-  CHECK_EQ(buffer->Get(0), kRemovedEntry);
-  CHECK_EQ(buffer->Get(1), kRemovedEntry);
-  CHECK_EQ(buffer->Get(2), kRemovedEntry);
-  CHECK_EQ(buffer->Get(3), valid_field);
-
-  // Clean-up to make verify heap happy.
-  mark_bit = Marking::MarkBitFrom(*fake_object);
-  Marking::MarkWhite(mark_bit);
-  mark_bit = Marking::MarkBitFrom(*new_space_object);
-  Marking::MarkWhite(mark_bit);
-  mark_bit = Marking::MarkBitFrom(*old_space_object_non_evacuation);
-  Marking::MarkWhite(mark_bit);
-
-  delete buffer;
-}
-
-
 TEST(ContextMeasure) {
   CcTest::InitializeVM();
   v8::HandleScope scope(CcTest::isolate());
@@ -6645,9 +6462,12 @@ TEST(SharedFunctionInfoIterator) {
       // Shared function infos without a script (API functions or C++ builtins)
       // are not returned by the iterator because they are not created from a
       // script. They are not interesting for type feedback vector anyways.
+
+      // TODO(mvstanton): There are builtins that use type feedback vectors,
+      // consider adding these to the iterator.
       SharedFunctionInfo* shared = SharedFunctionInfo::cast(obj);
       if (shared->script()->IsUndefined()) {
-        CHECK_EQ(0, shared->feedback_vector()->ICSlots());
+        CHECK(shared->native() || 0 == shared->feedback_vector()->ICSlots());
       } else {
         sfi_count++;
       }

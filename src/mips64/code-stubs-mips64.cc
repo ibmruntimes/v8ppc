@@ -722,26 +722,22 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
   // a1 (rhs) second.
   __ Push(lhs, rhs);
   // Figure out which native to call and setup the arguments.
-  if (cc == eq && strict()) {
-    __ TailCallRuntime(Runtime::kStrictEquals, 2, 1);
+  if (cc == eq) {
+    __ TailCallRuntime(strict() ? Runtime::kStrictEquals : Runtime::kEquals, 2,
+                       1);
   } else {
-    int context_index;
-    if (cc == eq) {
-      context_index = Context::EQUALS_BUILTIN_INDEX;
+    int context_index = is_strong(strength())
+                            ? Context::COMPARE_STRONG_BUILTIN_INDEX
+                            : Context::COMPARE_BUILTIN_INDEX;
+    int ncr;  // NaN compare result.
+    if (cc == lt || cc == le) {
+      ncr = GREATER;
     } else {
-      context_index = is_strong(strength())
-                          ? Context::COMPARE_STRONG_BUILTIN_INDEX
-                          : Context::COMPARE_BUILTIN_INDEX;
-      int ncr;  // NaN compare result.
-      if (cc == lt || cc == le) {
-        ncr = GREATER;
-      } else {
-        DCHECK(cc == gt || cc == ge);  // Remaining cases.
-        ncr = LESS;
-      }
-      __ li(a0, Operand(Smi::FromInt(ncr)));
-      __ push(a0);
+      DCHECK(cc == gt || cc == ge);  // Remaining cases.
+      ncr = LESS;
     }
+    __ li(a0, Operand(Smi::FromInt(ncr)));
+    __ push(a0);
 
     // Call the native; it returns -1 (less), 0 (equal), or 1 (greater)
     // tagged as a small integer.
@@ -2484,27 +2480,24 @@ static void GenerateRecordCallTarget(MacroAssembler* masm, bool is_super) {
   __ Branch(&done, eq, a5, Operand(at));
   __ ld(feedback_map, FieldMemOperand(a5, HeapObject::kMapOffset));
   __ LoadRoot(at, Heap::kWeakCellMapRootIndex);
-  __ Branch(FLAG_pretenuring_call_new ? &miss : &check_allocation_site, ne,
-            feedback_map, Operand(at));
+  __ Branch(&check_allocation_site, ne, feedback_map, Operand(at));
 
   // If the weak cell is cleared, we have a new chance to become monomorphic.
   __ JumpIfSmi(weak_value, &initialize);
   __ jmp(&megamorphic);
 
-  if (!FLAG_pretenuring_call_new) {
-    __ bind(&check_allocation_site);
-    // If we came here, we need to see if we are the array function.
-    // If we didn't have a matching function, and we didn't find the megamorph
-    // sentinel, then we have in the slot either some other function or an
-    // AllocationSite.
-    __ LoadRoot(at, Heap::kAllocationSiteMapRootIndex);
-    __ Branch(&miss, ne, feedback_map, Operand(at));
+  __ bind(&check_allocation_site);
+  // If we came here, we need to see if we are the array function.
+  // If we didn't have a matching function, and we didn't find the megamorph
+  // sentinel, then we have in the slot either some other function or an
+  // AllocationSite.
+  __ LoadRoot(at, Heap::kAllocationSiteMapRootIndex);
+  __ Branch(&miss, ne, feedback_map, Operand(at));
 
-    // Make sure the function is the Array() function
-    __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, a5);
-    __ Branch(&megamorphic, ne, a1, Operand(a5));
-    __ jmp(&done);
-  }
+  // Make sure the function is the Array() function
+  __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, a5);
+  __ Branch(&megamorphic, ne, a1, Operand(a5));
+  __ jmp(&done);
 
   __ bind(&miss);
 
@@ -2523,23 +2516,21 @@ static void GenerateRecordCallTarget(MacroAssembler* masm, bool is_super) {
 
   // An uninitialized cache is patched with the function.
   __ bind(&initialize);
-  if (!FLAG_pretenuring_call_new) {
-    // Make sure the function is the Array() function.
-    __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, a5);
-    __ Branch(&not_array_function, ne, a1, Operand(a5));
+  // Make sure the function is the Array() function.
+  __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, a5);
+  __ Branch(&not_array_function, ne, a1, Operand(a5));
 
-    // The target function is the Array constructor,
-    // Create an AllocationSite if we don't already have it, store it in the
-    // slot.
-    CreateAllocationSiteStub create_stub(masm->isolate());
-    CallStubInRecordCallTarget(masm, &create_stub, is_super);
-    __ Branch(&done);
-
-    __ bind(&not_array_function);
-  }
-
-  CreateWeakCellStub create_stub(masm->isolate());
+  // The target function is the Array constructor,
+  // Create an AllocationSite if we don't already have it, store it in the
+  // slot.
+  CreateAllocationSiteStub create_stub(masm->isolate());
   CallStubInRecordCallTarget(masm, &create_stub, is_super);
+  __ Branch(&done);
+
+  __ bind(&not_array_function);
+
+  CreateWeakCellStub weak_cell_stub(masm->isolate());
+  CallStubInRecordCallTarget(masm, &weak_cell_stub, is_super);
   __ bind(&done);
 }
 
@@ -2659,21 +2650,14 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
 
     __ dsrl(at, a3, 32 - kPointerSizeLog2);
     __ Daddu(a5, a2, at);
-    if (FLAG_pretenuring_call_new) {
-      // Put the AllocationSite from the feedback vector into a2.
-      // By adding kPointerSize we encode that we know the AllocationSite
-      // entry is at the feedback vector slot given by a3 + 1.
-      __ ld(a2, FieldMemOperand(a5, FixedArray::kHeaderSize + kPointerSize));
-    } else {
-      Label feedback_register_initialized;
-      // Put the AllocationSite from the feedback vector into a2, or undefined.
-      __ ld(a2, FieldMemOperand(a5, FixedArray::kHeaderSize));
-      __ ld(a5, FieldMemOperand(a2, AllocationSite::kMapOffset));
-      __ LoadRoot(at, Heap::kAllocationSiteMapRootIndex);
-      __ Branch(&feedback_register_initialized, eq, a5, Operand(at));
-      __ LoadRoot(a2, Heap::kUndefinedValueRootIndex);
-      __ bind(&feedback_register_initialized);
-    }
+    Label feedback_register_initialized;
+    // Put the AllocationSite from the feedback vector into a2, or undefined.
+    __ ld(a2, FieldMemOperand(a5, FixedArray::kHeaderSize));
+    __ ld(a5, FieldMemOperand(a2, AllocationSite::kMapOffset));
+    __ LoadRoot(at, Heap::kAllocationSiteMapRootIndex);
+    __ Branch(&feedback_register_initialized, eq, a5, Operand(at));
+    __ LoadRoot(a2, Heap::kUndefinedValueRootIndex);
+    __ bind(&feedback_register_initialized);
 
     __ AssertUndefinedOrAllocationSite(a2, a5);
   }

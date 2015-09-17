@@ -1982,7 +1982,7 @@ class CallNew final : public Expression {
   // Type feedback information.
   virtual FeedbackVectorRequirements ComputeFeedbackRequirements(
       Isolate* isolate, const ICSlotCache* cache) override {
-    return FeedbackVectorRequirements(FLAG_pretenuring_call_new ? 2 : 1, 0);
+    return FeedbackVectorRequirements(1, 0);
   }
   void SetFirstFeedbackSlot(FeedbackVectorSlot slot) override {
     callnew_feedback_slot_ = slot;
@@ -1991,10 +1991,6 @@ class CallNew final : public Expression {
   FeedbackVectorSlot CallNewFeedbackSlot() {
     DCHECK(!callnew_feedback_slot_.IsInvalid());
     return callnew_feedback_slot_;
-  }
-  FeedbackVectorSlot AllocationSiteFeedbackSlot() {
-    DCHECK(FLAG_pretenuring_call_new);
-    return CallNewFeedbackSlot().next();
   }
 
   bool IsMonomorphic() override { return is_monomorphic_; }
@@ -3680,9 +3676,9 @@ class AstNodeFactory final BASE_EMBEDDED {
   // Handles use of temporary zones when parsing inner function bodies.
   class BodyScope {
    public:
-    BodyScope(AstNodeFactory* factory, Zone* temp_zone, bool can_use_temp_zone)
+    BodyScope(AstNodeFactory* factory, Zone* temp_zone, bool use_temp_zone)
         : factory_(factory), prev_zone_(factory->local_zone_) {
-      if (can_use_temp_zone) {
+      if (use_temp_zone) {
         factory->local_zone_ = temp_zone;
       }
     }

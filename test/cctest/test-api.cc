@@ -14253,6 +14253,28 @@ THREADED_TEST(DataView) {
 }
 
 
+THREADED_TEST(SkipArrayBufferBackingStoreDuringGC) {
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::HandleScope handle_scope(isolate);
+
+  // Make sure the pointer looks like a heap object
+  uint8_t* store_ptr = reinterpret_cast<uint8_t*>(i::kHeapObjectTag);
+
+  // Create ArrayBuffer with pointer-that-cannot-be-visited in the backing store
+  Local<v8::ArrayBuffer> ab = v8::ArrayBuffer::New(isolate, store_ptr, 8);
+
+  // Should not crash
+  CcTest::heap()->CollectGarbage(i::NEW_SPACE);  // in survivor space now
+  CcTest::heap()->CollectGarbage(i::NEW_SPACE);  // in old gen now
+  CcTest::heap()->CollectAllGarbage();
+  CcTest::heap()->CollectAllGarbage();
+
+  // Should not move the pointer
+  CHECK_EQ(ab->GetContents().Data(), store_ptr);
+}
+
+
 THREADED_TEST(SharedUint8Array) {
   i::FLAG_harmony_sharedarraybuffer = true;
   TypedArrayTestHelper<uint8_t, v8::Uint8Array, i::FixedUint8Array,
@@ -21705,6 +21727,45 @@ TEST(ExperimentalExtras) {
              .As<v8::Function>();
   result = func->Call(undefined, 0, {}).As<v8::Number>();
   CHECK_EQ(7, result->Int32Value());
+}
+
+
+TEST(ExtrasUtilsObject) {
+  LocalContext context;
+  v8::Isolate* isolate = context->GetIsolate();
+  v8::HandleScope handle_scope(isolate);
+
+  LocalContext env;
+  v8::Local<v8::Object> binding = env->GetExtrasBindingObject();
+
+  auto func = binding->Get(v8_str("testExtraCanUseUtils")).As<v8::Function>();
+  auto undefined = v8::Undefined(isolate);
+  auto result = func->Call(undefined, 0, {}).As<v8::Object>();
+
+  auto private_symbol = result->Get(v8_str("privateSymbol")).As<v8::Symbol>();
+  i::Handle<i::Symbol> ips = v8::Utils::OpenHandle(*private_symbol);
+  CHECK_EQ(true, ips->IsPrivate());
+
+  CompileRun("var result = 0; function store(x) { result = x; }");
+  auto store = CompileRun("store").As<v8::Function>();
+
+  auto fulfilled_promise =
+      result->Get(v8_str("fulfilledPromise")).As<v8::Promise>();
+  fulfilled_promise->Then(store);
+  isolate->RunMicrotasks();
+  CHECK_EQ(1, CompileRun("result")->Int32Value());
+
+  auto fulfilled_promise_2 =
+      result->Get(v8_str("fulfilledPromise2")).As<v8::Promise>();
+  fulfilled_promise_2->Then(store);
+  isolate->RunMicrotasks();
+  CHECK_EQ(2, CompileRun("result")->Int32Value());
+
+  auto rejected_promise =
+      result->Get(v8_str("rejectedPromise")).As<v8::Promise>();
+  rejected_promise->Catch(store);
+  isolate->RunMicrotasks();
+  CHECK_EQ(3, CompileRun("result")->Int32Value());
 }
 
 

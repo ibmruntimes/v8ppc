@@ -194,6 +194,7 @@ DEFINE_BOOL(legacy_const, true, "legacy semantics for const in sloppy mode")
   V(harmony_proxies, "harmony proxies")                               \
   V(harmony_sloppy_function, "harmony sloppy function block scoping") \
   V(harmony_unicode_regexps, "harmony unicode regexps")               \
+  V(harmony_tolength, "harmony ToLength")                             \
   V(harmony_reflect, "harmony Reflect API")                           \
   V(harmony_destructuring, "harmony destructuring")                   \
   V(harmony_default_parameters, "harmony default parameters")         \
@@ -253,9 +254,6 @@ DEFINE_IMPLICATION(harmony_destructuring, harmony_default_parameters)
 // Flags for experimental implementation features.
 DEFINE_BOOL(compiled_keyed_generic_loads, false,
             "use optimizing compiler to generate keyed generic load stubs")
-// TODO(hpayer): We will remove this flag as soon as we have pretenuring
-// support for specific allocation sites.
-DEFINE_BOOL(pretenuring_call_new, false, "pretenure call new")
 DEFINE_BOOL(allocation_site_pretenuring, true,
             "pretenure with allocation sites")
 DEFINE_BOOL(trace_pretenuring, false,
@@ -697,7 +695,7 @@ DEFINE_BOOL(use_idle_notification, true,
 // ic.cc
 DEFINE_BOOL(use_ic, true, "use inline caching")
 DEFINE_BOOL(trace_ic, false, "trace inline cache state transitions")
-DEFINE_BOOL(vector_stores, true, "use vectors for store ics")
+DEFINE_BOOL(vector_stores, false, "use vectors for store ics")
 DEFINE_BOOL(global_var_shortcuts, true, "use ic-less global loads and stores")
 
 // macro-assembler-ia32.cc

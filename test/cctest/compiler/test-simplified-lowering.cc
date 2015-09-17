@@ -101,7 +101,7 @@ TEST(RunNumberToInt32_float64) {
   FieldAccess load = {kUntaggedBase, 0, Handle<Name>(), Type::Number(),
                       kMachFloat64};
   Node* loaded = t.LoadField(load, t.PointerConstant(&input));
-  NodeProperties::SetBounds(loaded, Bounds(Type::Number()));
+  NodeProperties::SetType(loaded, Type::Number());
   Node* convert = t.NumberToInt32(loaded);
   FieldAccess store = {kUntaggedBase, 0, Handle<Name>(), Type::Signed32(),
                        kMachInt32};
@@ -128,7 +128,7 @@ TEST(RunNumberToUint32_float64) {
   FieldAccess load = {kUntaggedBase, 0, Handle<Name>(), Type::Number(),
                       kMachFloat64};
   Node* loaded = t.LoadField(load, t.PointerConstant(&input));
-  NodeProperties::SetBounds(loaded, Bounds(Type::Number()));
+  NodeProperties::SetType(loaded, Type::Number());
   Node* convert = t.NumberToUint32(loaded);
   FieldAccess store = {kUntaggedBase, 0, Handle<Name>(), Type::Unsigned32(),
                        kMachUint32};
@@ -687,9 +687,9 @@ class TestingGraph : public HandleAndZoneScope, public GraphAndBuilders {
     p1 = graph()->NewNode(common()->Parameter(1), start);
     p2 = graph()->NewNode(common()->Parameter(2), start);
     typer.Run();
-    NodeProperties::SetBounds(p0, Bounds(p0_type));
-    NodeProperties::SetBounds(p1, Bounds(p1_type));
-    NodeProperties::SetBounds(p2, Bounds(p2_type));
+    NodeProperties::SetType(p0, p0_type);
+    NodeProperties::SetType(p1, p1_type);
+    NodeProperties::SetType(p2, p2_type);
   }
 
   void CheckLoweringBinop(IrOpcode::Value expected, const Operator* op) {
@@ -743,17 +743,6 @@ class TestingGraph : public HandleAndZoneScope, public GraphAndBuilders {
       CHECK(type & kRepTagged);
       return p0;
     }
-  }
-
-  Node* ExampleWithTypeAndRep(Type* type, MachineType mach_type) {
-    FieldAccess access = {kUntaggedBase, 0, Handle<Name>::null(), type,
-                          mach_type};
-    // TODO(titzer): using loads here just to force the representation is ugly.
-    Node* node = graph()->NewNode(simplified()->LoadField(access),
-                                  jsgraph.IntPtrConstant(0), graph()->start(),
-                                  graph()->start());
-    NodeProperties::SetBounds(node, Bounds(type));
-    return node;
   }
 
   Node* Use(Node* node, MachineType type) {
@@ -1069,7 +1058,7 @@ TEST(LowerNumberToInt32_to_ChangeTaggedToInt32) {
 TEST(LowerNumberToInt32_to_TruncateFloat64ToInt32) {
   // NumberToInt32(x: kRepFloat64) used as kMachInt32
   TestingGraph t(Type::Number());
-  Node* p0 = t.ExampleWithTypeAndRep(Type::Number(), kMachFloat64);
+  Node* p0 = t.ExampleWithOutput(kMachFloat64);
   Node* trunc = t.graph()->NewNode(t.simplified()->NumberToInt32(), p0);
   Node* use = t.Use(trunc, kMachInt32);
   t.Return(use);
@@ -1131,7 +1120,7 @@ TEST(LowerNumberToUint32_to_TruncateFloat64ToInt32) {
   TestingGraph t(Type::Number());
   Node* p0 = t.ExampleWithOutput(kMachFloat64);
   // TODO(titzer): run the typer here, or attach machine type to param.
-  NodeProperties::SetBounds(p0, Bounds(Type::Number()));
+  NodeProperties::SetType(p0, Type::Number());
   Node* trunc = t.graph()->NewNode(t.simplified()->NumberToUint32(), p0);
   Node* use = t.Use(trunc, kMachUint32);
   t.Return(use);
@@ -1158,64 +1147,12 @@ TEST(LowerNumberToUint32_to_TruncateFloat64ToInt32_with_change) {
 TEST(LowerNumberToUint32_to_TruncateFloat64ToInt32_uint32) {
   // NumberToUint32(x: kRepFloat64) used as kRepWord32
   TestingGraph t(Type::Unsigned32());
-  Node* input = t.ExampleWithTypeAndRep(Type::Number(), kMachFloat64);
+  Node* input = t.ExampleWithOutput(kMachFloat64);
   Node* trunc = t.graph()->NewNode(t.simplified()->NumberToUint32(), input);
   Node* use = t.Use(trunc, kRepWord32);
   t.Return(use);
   t.Lower();
   CheckChangeOf(IrOpcode::kTruncateFloat64ToInt32, input, use->InputAt(0));
-}
-
-
-TEST(LowerNumberToUI32_of_Float64_used_as_word32) {
-  // NumberTo(Int,Uint)32(x: kRepFloat64 | kType(Int,Uint)32) used as
-  // kType(Int,Uint)32 | kRepWord32
-  Type* types[] = {Type::Signed32(), Type::Unsigned32()};
-  MachineType mach[] = {kTypeInt32, kTypeUint32, kMachNone};
-
-  for (int i = 0; i < 2; i++) {
-    for (int u = 0; u < 3; u++) {
-      TestingGraph t(types[i]);
-      Node* input = t.ExampleWithTypeAndRep(
-          types[i], static_cast<MachineType>(kRepFloat64 | mach[i]));
-      const Operator* op = i == 0 ? t.simplified()->NumberToInt32()
-                                  : t.simplified()->NumberToUint32();
-      Node* trunc = t.graph()->NewNode(op, input);
-      Node* use = t.Use(trunc, static_cast<MachineType>(kRepWord32 | mach[u]));
-      t.Return(use);
-      t.Lower();
-      IrOpcode::Value opcode = i == 0 ? IrOpcode::kChangeFloat64ToInt32
-                                      : IrOpcode::kChangeFloat64ToUint32;
-      CheckChangeOf(opcode, input, use->InputAt(0));
-    }
-  }
-}
-
-
-TEST(LowerNumberToUI32_of_Float64_used_as_tagged) {
-  // NumberTo(Int,Uint)32(x: kRepFloat64 | kType(Int,Uint)32) used as
-  // kType(Int,Uint)32 | kRepTagged
-  Type* types[] = {Type::Signed32(), Type::Unsigned32(), Type::Any()};
-  MachineType mach[] = {kTypeInt32, kTypeUint32, kMachNone};
-
-  for (int i = 0; i < 2; i++) {
-    for (int u = 0; u < 3; u++) {
-      TestingGraph t(types[i]);
-      Node* input = t.ExampleWithTypeAndRep(
-          types[i], static_cast<MachineType>(kRepFloat64 | mach[i]));
-      const Operator* op = i == 0 ? t.simplified()->NumberToInt32()
-                                  : t.simplified()->NumberToUint32();
-      Node* trunc = t.graph()->NewNode(op, input);
-      // TODO(titzer): we use the store here to force the representation.
-      FieldAccess access = {kTaggedBase, 0, Handle<Name>(), types[u],
-                            static_cast<MachineType>(mach[u] | kRepTagged)};
-      Node* store = t.graph()->NewNode(t.simplified()->StoreField(access), t.p0,
-                                       trunc, t.start, t.start);
-      t.Effect(store);
-      t.Lower();
-      CheckChangeOf(IrOpcode::kChangeFloat64ToTagged, input, store->InputAt(2));
-    }
-  }
 }
 
 
@@ -1397,8 +1334,8 @@ Node* CheckElementAccessArithmetic(ElementAccess access, Node* load_or_store) {
 }
 
 
-const MachineType kMachineReps[] = {kRepBit,       kMachInt8,  kMachInt16,
-                                    kMachInt32,    kMachInt64, kMachFloat64,
+const MachineType kMachineReps[] = {kMachInt8,     kMachInt16, kMachInt32,
+                                    kMachUint32,   kMachInt64, kMachFloat64,
                                     kMachAnyTagged};
 
 }  // namespace
@@ -2044,8 +1981,8 @@ TEST(PhiRepresentation) {
     Node* phi =
         t.graph()->NewNode(t.common()->Phi(kMachAnyTagged, 2), t.p0, t.p1, m);
 
-    Bounds phi_bounds = Bounds::Either(Bounds(d.arg1), Bounds(d.arg2), z);
-    NodeProperties::SetBounds(phi, phi_bounds);
+    Type* phi_type = Type::Union(d.arg1, d.arg2, z);
+    NodeProperties::SetType(phi, phi_type);
 
     Node* use = t.Use(phi, d.use);
     t.Return(use);

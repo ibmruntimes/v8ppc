@@ -6,6 +6,7 @@
 #define V8_HEAP_SPACES_H_
 
 #include "src/allocation.h"
+#include "src/atomic-utils.h"
 #include "src/base/atomicops.h"
 #include "src/base/bits.h"
 #include "src/base/platform/mutex.h"
@@ -267,6 +268,19 @@ class SlotsBuffer;
 // any heap object.
 class MemoryChunk {
  public:
+  // |kCompactionDone|: Initial compaction state of a |MemoryChunk|.
+  // |kCompactingInProgress|:  Parallel compaction is currently in progress.
+  // |kCompactingFinalize|: Parallel compaction is done but the chunk needs to
+  //   be finalized.
+  // |kCompactingAborted|: Parallel compaction has been aborted, which should
+  //   for now only happen in OOM scenarios.
+  enum ParallelCompactingState {
+    kCompactingDone,
+    kCompactingInProgress,
+    kCompactingFinalize,
+    kCompactingAborted,
+  };
+
   // Only works if the pointer is in the first kPageSize of the MemoryChunk.
   static MemoryChunk* FromAddress(Address a) {
     return reinterpret_cast<MemoryChunk*>(OffsetFrom(a) & ~kAlignmentMask);
@@ -457,6 +471,10 @@ class MemoryChunk {
     base::Release_Store(&parallel_sweeping_, state);
   }
 
+  AtomicValue<ParallelCompactingState>& parallel_compaction_state() {
+    return parallel_compaction_;
+  }
+
   bool TryLock() { return mutex_->TryLock(); }
 
   base::Mutex* mutex() { return mutex_; }
@@ -560,14 +578,15 @@ class MemoryChunk {
 
   static const size_t kMinHeaderSize =
       kWriteBarrierCounterOffset +
-      kIntptrSize      // intptr_t write_barrier_counter_
-      + kIntSize       // int progress_bar_
-      + kIntSize       // int high_water_mark_
-      + kPointerSize   // base::Mutex* mutex_
-      + kPointerSize   // base::AtomicWord parallel_sweeping_
-      + 5 * kIntSize   // int free-list statistics
-      + kPointerSize   // base::AtomicWord next_chunk_
-      + kPointerSize;  // base::AtomicWord prev_chunk_
+      kIntptrSize         // intptr_t write_barrier_counter_
+      + kIntSize          // int progress_bar_
+      + kPointerSize      // AtomicValue high_water_mark_
+      + kPointerSize      // base::Mutex* mutex_
+      + kPointerSize      // base::AtomicWord parallel_sweeping_
+      + kPointerSize      // AtomicValue parallel_compaction_
+      + 5 * kPointerSize  // AtomicNumber free-list statistics
+      + kPointerSize      // base::AtomicWord next_chunk_
+      + kPointerSize;     // base::AtomicWord prev_chunk_
 
   // We add some more space to the computed header size to amount for missing
   // alignment requirements in our computation.
@@ -674,21 +693,23 @@ class MemoryChunk {
   bool CommitArea(size_t requested);
 
   // Approximate amount of physical memory committed for this chunk.
-  size_t CommittedPhysicalMemory() { return high_water_mark_; }
+  size_t CommittedPhysicalMemory() { return high_water_mark_.Value(); }
 
   // Should be called when memory chunk is about to be freed.
   void ReleaseAllocatedMemory();
 
   static inline void UpdateHighWaterMark(Address mark) {
-    if (mark == NULL) return;
+    if (mark == nullptr) return;
     // Need to subtract one from the mark because when a chunk is full the
     // top points to the next address after the chunk, which effectively belongs
     // to another chunk. See the comment to Page::FromAllocationTop.
     MemoryChunk* chunk = MemoryChunk::FromAddress(mark - 1);
-    int new_mark = static_cast<int>(mark - chunk->address());
-    if (new_mark > chunk->high_water_mark_) {
-      chunk->high_water_mark_ = new_mark;
-    }
+    intptr_t new_mark = static_cast<intptr_t>(mark - chunk->address());
+    intptr_t old_mark = 0;
+    do {
+      old_mark = chunk->high_water_mark_.Value();
+    } while ((new_mark > old_mark) &&
+             !chunk->high_water_mark_.TrySetValue(old_mark, new_mark));
   }
 
  protected:
@@ -719,17 +740,18 @@ class MemoryChunk {
   int progress_bar_;
   // Assuming the initial allocation on a page is sequential,
   // count highest number of bytes ever allocated on the page.
-  int high_water_mark_;
+  AtomicValue<intptr_t> high_water_mark_;
 
   base::Mutex* mutex_;
   base::AtomicWord parallel_sweeping_;
+  AtomicValue<ParallelCompactingState> parallel_compaction_;
 
   // PagedSpace free-list statistics.
-  int available_in_small_free_list_;
-  int available_in_medium_free_list_;
-  int available_in_large_free_list_;
-  int available_in_huge_free_list_;
-  int non_available_small_blocks_;
+  AtomicNumber<intptr_t> available_in_small_free_list_;
+  AtomicNumber<intptr_t> available_in_medium_free_list_;
+  AtomicNumber<intptr_t> available_in_large_free_list_;
+  AtomicNumber<intptr_t> available_in_huge_free_list_;
+  AtomicNumber<intptr_t> non_available_small_blocks_;
 
   // next_chunk_ holds a pointer of type MemoryChunk
   base::AtomicWord next_chunk_;
@@ -828,21 +850,22 @@ class Page : public MemoryChunk {
   void ResetFreeListStatistics();
 
   int LiveBytesFromFreeList() {
-    return area_size() - non_available_small_blocks_ -
-           available_in_small_free_list_ - available_in_medium_free_list_ -
-           available_in_large_free_list_ - available_in_huge_free_list_;
+    return static_cast<int>(
+        area_size() - non_available_small_blocks() -
+        available_in_small_free_list() - available_in_medium_free_list() -
+        available_in_large_free_list() - available_in_huge_free_list());
   }
 
-#define FRAGMENTATION_STATS_ACCESSORS(type, name) \
-  type name() { return name##_; }                 \
-  void set_##name(type name) { name##_ = name; }  \
-  void add_##name(type name) { name##_ += name; }
+#define FRAGMENTATION_STATS_ACCESSORS(type, name)        \
+  type name() { return name##_.Value(); }                \
+  void set_##name(type name) { name##_.SetValue(name); } \
+  void add_##name(type name) { name##_.Increment(name); }
 
-  FRAGMENTATION_STATS_ACCESSORS(int, non_available_small_blocks)
-  FRAGMENTATION_STATS_ACCESSORS(int, available_in_small_free_list)
-  FRAGMENTATION_STATS_ACCESSORS(int, available_in_medium_free_list)
-  FRAGMENTATION_STATS_ACCESSORS(int, available_in_large_free_list)
-  FRAGMENTATION_STATS_ACCESSORS(int, available_in_huge_free_list)
+  FRAGMENTATION_STATS_ACCESSORS(intptr_t, non_available_small_blocks)
+  FRAGMENTATION_STATS_ACCESSORS(intptr_t, available_in_small_free_list)
+  FRAGMENTATION_STATS_ACCESSORS(intptr_t, available_in_medium_free_list)
+  FRAGMENTATION_STATS_ACCESSORS(intptr_t, available_in_large_free_list)
+  FRAGMENTATION_STATS_ACCESSORS(intptr_t, available_in_huge_free_list)
 
 #undef FRAGMENTATION_STATS_ACCESSORS
 
@@ -982,9 +1005,6 @@ class CodeRange {
   bool UncommitRawMemory(Address start, size_t length);
   void FreeRawMemory(Address buf, size_t length);
 
-  void ReserveEmergencyBlock();
-  void ReleaseEmergencyBlock();
-
  private:
   // Frees the range of virtual memory, and frees the data structures used to
   // manage it.
@@ -1013,9 +1033,9 @@ class CodeRange {
     size_t size;
   };
 
-  // All access to free_list_ require to take the free_list_mutex_. GC threads
-  // may access the free_list_ concurrently to the main thread.
-  base::Mutex free_list_mutex_;
+  // The global mutex guards free_list_ and allocation_list_ as GC threads may
+  // access both lists concurrently to the main thread.
+  base::Mutex code_range_mutex_;
 
   // Freed blocks of memory are added to the free list.  When the allocation
   // list is exhausted, the free list is sorted and merged to make the new
@@ -1026,12 +1046,6 @@ class CodeRange {
   // The block at current_allocation_block_index_ is the current block.
   List<FreeBlock> allocation_list_;
   int current_allocation_block_index_;
-
-  // Emergency block guarantees that we can always allocate a page for
-  // evacuation candidates when code space is compacted. Emergency block is
-  // reserved immediately after GC and is released immedietely before
-  // allocating a page for evacuation.
-  FreeBlock emergency_block_;
 
   // Finds a block on the allocation list that contains at least the
   // requested amount of memory.  If none is found, sorts and merges
@@ -1128,20 +1142,24 @@ class MemoryAllocator {
   // together.
   void Free(MemoryChunk* chunk);
 
-  // Returns the maximum available bytes of heaps.
-  intptr_t Available() { return capacity_ < size_ ? 0 : capacity_ - size_; }
-
   // Returns allocated spaces in bytes.
-  intptr_t Size() { return size_; }
+  intptr_t Size() { return size_.Value(); }
+
+  // Returns allocated executable spaces in bytes.
+  intptr_t SizeExecutable() { return size_executable_.Value(); }
+
+  // Returns the maximum available bytes of heaps.
+  intptr_t Available() {
+    intptr_t size = Size();
+    return capacity_ < size ? 0 : capacity_ - size;
+  }
 
   // Returns the maximum available executable bytes of heaps.
   intptr_t AvailableExecutable() {
-    if (capacity_executable_ < size_executable_) return 0;
-    return capacity_executable_ - size_executable_;
+    intptr_t executable_size = SizeExecutable();
+    if (capacity_executable_ < executable_size) return 0;
+    return capacity_executable_ - executable_size;
   }
-
-  // Returns allocated executable spaces in bytes.
-  intptr_t SizeExecutable() { return size_executable_; }
 
   // Returns maximum available bytes that the old space can have.
   intptr_t MaxAvailable() {
@@ -1150,9 +1168,9 @@ class MemoryAllocator {
 
   // Returns an indication of whether a pointer is in a space that has
   // been allocated by this MemoryAllocator.
-  V8_INLINE bool IsOutsideAllocatedSpace(const void* address) const {
-    return address < lowest_ever_allocated_ ||
-           address >= highest_ever_allocated_;
+  V8_INLINE bool IsOutsideAllocatedSpace(const void* address) {
+    return address < lowest_ever_allocated_.Value() ||
+           address >= highest_ever_allocated_.Value();
   }
 
 #ifdef DEBUG
@@ -1232,22 +1250,22 @@ class MemoryAllocator {
   Isolate* isolate_;
 
   // Maximum space size in bytes.
-  size_t capacity_;
+  intptr_t capacity_;
   // Maximum subset of capacity_ that can be executable
-  size_t capacity_executable_;
+  intptr_t capacity_executable_;
 
   // Allocated space size in bytes.
-  size_t size_;
+  AtomicNumber<intptr_t> size_;
   // Allocated executable space size in bytes.
-  size_t size_executable_;
+  AtomicNumber<intptr_t> size_executable_;
 
   // We keep the lowest and highest addresses allocated as a quick way
   // of determining that pointers are outside the heap. The estimate is
   // conservative, i.e. not all addrsses in 'allocated' space are allocated
   // to our heap. The range is [lowest, highest[, inclusive on the low end
   // and exclusive on the high end.
-  void* lowest_ever_allocated_;
-  void* highest_ever_allocated_;
+  AtomicValue<void*> lowest_ever_allocated_;
+  AtomicValue<void*> highest_ever_allocated_;
 
   struct MemoryAllocationCallbackRegistration {
     MemoryAllocationCallbackRegistration(MemoryAllocationCallback callback,
@@ -1270,8 +1288,16 @@ class MemoryAllocator {
                                PagedSpace* owner);
 
   void UpdateAllocatedSpaceLimits(void* low, void* high) {
-    lowest_ever_allocated_ = Min(lowest_ever_allocated_, low);
-    highest_ever_allocated_ = Max(highest_ever_allocated_, high);
+    // The use of atomic primitives does not guarantee correctness (wrt.
+    // desired semantics) by default. The loop here ensures that we update the
+    // values only if they did not change in between.
+    void* ptr = nullptr;
+    do {
+      ptr = lowest_ever_allocated_.Value();
+    } while ((low < ptr) && !lowest_ever_allocated_.TrySetValue(ptr, low));
+    do {
+      ptr = highest_ever_allocated_.Value();
+    } while ((high > ptr) && !highest_ever_allocated_.TrySetValue(ptr, high));
   }
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(MemoryAllocator);
@@ -1502,6 +1528,13 @@ class AllocationStats BASE_EMBEDDED {
     }
   }
 
+  void DecreaseCapacity(intptr_t size_in_bytes) {
+    capacity_ -= size_in_bytes;
+    DCHECK_GE(capacity_, 0);
+  }
+
+  void IncreaseCapacity(intptr_t size_in_bytes) { capacity_ += size_in_bytes; }
+
  private:
   intptr_t capacity_;
   intptr_t max_capacity_;
@@ -1517,7 +1550,8 @@ class AllocationStats BASE_EMBEDDED {
 // the end element of the linked list of free memory blocks.
 class FreeListCategory {
  public:
-  FreeListCategory() : top_(0), end_(NULL), available_(0) {}
+  explicit FreeListCategory(FreeList* owner)
+      : top_(0), end_(NULL), available_(0), owner_(owner) {}
 
   intptr_t Concatenate(FreeListCategory* category);
 
@@ -1557,6 +1591,8 @@ class FreeListCategory {
   int FreeListLength();
 #endif
 
+  FreeList* owner() { return owner_; }
+
  private:
   // top_ points to the top FreeSpace* in the free list category.
   base::AtomicWord top_;
@@ -1565,6 +1601,8 @@ class FreeListCategory {
 
   // Total available bytes in all blocks of this free list category.
   int available_;
+
+  FreeList* owner_;
 };
 
 
@@ -1656,6 +1694,8 @@ class FreeList {
   FreeListCategory* medium_list() { return &medium_list_; }
   FreeListCategory* large_list() { return &large_list_; }
   FreeListCategory* huge_list() { return &huge_list_; }
+
+  PagedSpace* owner() { return owner_; }
 
  private:
   // The size range of blocks, in bytes.
@@ -1953,16 +1993,13 @@ class PagedSpace : public Space {
   // Return size of allocatable area on a page in this space.
   inline int AreaSize() { return area_size_; }
 
-  void CreateEmergencyMemory();
-  void FreeEmergencyMemory();
-  void UseEmergencyMemory();
-  intptr_t MaxEmergencyMemoryAllocated();
-
-  bool HasEmergencyMemory() { return emergency_memory_ != NULL; }
-
   // Merges {other} into the current space. Note that this modifies {other},
   // e.g., removes its bump pointer area and resets statistics.
   void MergeCompactionSpace(CompactionSpace* other);
+
+  void MoveOverFreeMemory(PagedSpace* other);
+
+  virtual bool is_local() { return false; }
 
  protected:
   // PagedSpaces that should be included in snapshots have different, i.e.,
@@ -2023,12 +2060,6 @@ class PagedSpace : public Space {
   // and sweep these pages concurrently. They will stop sweeping after the
   // end_of_unswept_pages_ page.
   Page* end_of_unswept_pages_;
-
-  // Emergency memory is the memory of a full page for a given space, allocated
-  // conservatively before evacuating a page. If compaction fails due to out
-  // of memory error the emergency memory can be used to complete compaction.
-  // If not used, the emergency memory is released after compaction.
-  MemoryChunk* emergency_memory_;
 
   // Mutex guarding any concurrent access to the space.
   base::Mutex space_mutex_;
@@ -2411,7 +2442,8 @@ class NewSpace : public Space {
         to_space_(heap, kToSpace),
         from_space_(heap, kFromSpace),
         reservation_(),
-        inline_allocation_limit_step_(0) {}
+        inline_allocation_limit_step_(0),
+        top_on_previous_step_(0) {}
 
   // Sets up the new space using the given chunk.
   bool SetUp(int reserved_semispace_size_, int max_semi_space_size);
@@ -2593,7 +2625,7 @@ class NewSpace : public Space {
   void LowerInlineAllocationLimit(intptr_t step) {
     inline_allocation_limit_step_ = step;
     UpdateInlineAllocationLimit(0);
-    top_on_previous_step_ = allocation_info_.top();
+    top_on_previous_step_ = step ? allocation_info_.top() : 0;
   }
 
   // Get the extent of the inactive semispace (for use as a marking stack,
@@ -2722,9 +2754,37 @@ class CompactionSpace : public PagedSpace {
     Free(start, size_in_bytes);
   }
 
+  virtual bool is_local() { return true; }
+
  protected:
   // The space is temporary and not included in any snapshots.
   virtual bool snapshotable() { return false; }
+};
+
+
+// A collection of |CompactionSpace|s used by a single compaction task.
+class CompactionSpaceCollection : public Malloced {
+ public:
+  explicit CompactionSpaceCollection(Heap* heap)
+      : old_space_(heap, OLD_SPACE, Executability::NOT_EXECUTABLE),
+        code_space_(heap, CODE_SPACE, Executability::EXECUTABLE) {}
+
+  CompactionSpace* Get(AllocationSpace space) {
+    switch (space) {
+      case OLD_SPACE:
+        return &old_space_;
+      case CODE_SPACE:
+        return &code_space_;
+      default:
+        UNREACHABLE();
+    }
+    UNREACHABLE();
+    return nullptr;
+  }
+
+ private:
+  CompactionSpace old_space_;
+  CompactionSpace code_space_;
 };
 
 

@@ -138,18 +138,17 @@ Reduction JSInliner::InlineCall(Node* call, Node* context, Node* frame_state,
     switch (use->opcode()) {
       case IrOpcode::kParameter: {
         int index = 1 + ParameterIndexOf(use->op());
+        DCHECK_LE(index, inlinee_context_index);
         if (index < inliner_inputs && index < inlinee_context_index) {
           // There is an input from the call, and the index is a value
           // projection but not the context, so rewire the input.
           Replace(use, call->InputAt(index));
         } else if (index == inlinee_context_index) {
+          // The projection is requesting the inlinee function context.
           Replace(use, context);
-        } else if (index < inlinee_context_index) {
+        } else {
           // Call has fewer arguments than required, fill with undefined.
           Replace(use, jsgraph_->UndefinedConstant());
-        } else {
-          // We got too many arguments, discard for now.
-          // TODO(sigurds): Fix to treat arguments array correctly.
         }
         break;
       }
@@ -189,24 +188,29 @@ Reduction JSInliner::InlineCall(Node* call, Node* context, Node* frame_state,
         break;
     }
   }
-  DCHECK_NE(0u, values.size());
   DCHECK_EQ(values.size(), effects.size());
   DCHECK_EQ(values.size(), controls.size());
-  int const input_count = static_cast<int>(controls.size());
-  Node* control_output = jsgraph_->graph()->NewNode(
-      jsgraph_->common()->Merge(input_count), input_count, &controls.front());
-  values.push_back(control_output);
-  effects.push_back(control_output);
-  Node* value_output = jsgraph_->graph()->NewNode(
-      jsgraph_->common()->Phi(kMachAnyTagged, input_count),
-      static_cast<int>(values.size()), &values.front());
-  Node* effect_output = jsgraph_->graph()->NewNode(
-      jsgraph_->common()->EffectPhi(input_count),
-      static_cast<int>(effects.size()), &effects.front());
 
-  ReplaceWithValue(call, value_output, effect_output, control_output);
-
-  return Changed(value_output);
+  // Depending on whether the inlinee produces a value, we either replace value
+  // uses with said value or kill value uses if no value can be returned.
+  if (values.size() > 0) {
+    int const input_count = static_cast<int>(controls.size());
+    Node* control_output = jsgraph_->graph()->NewNode(
+        jsgraph_->common()->Merge(input_count), input_count, &controls.front());
+    values.push_back(control_output);
+    effects.push_back(control_output);
+    Node* value_output = jsgraph_->graph()->NewNode(
+        jsgraph_->common()->Phi(kMachAnyTagged, input_count),
+        static_cast<int>(values.size()), &values.front());
+    Node* effect_output = jsgraph_->graph()->NewNode(
+        jsgraph_->common()->EffectPhi(input_count),
+        static_cast<int>(effects.size()), &effects.front());
+    ReplaceWithValue(call, value_output, effect_output, control_output);
+    return Changed(value_output);
+  } else {
+    ReplaceWithValue(call, call, call, jsgraph_->Dead());
+    return Changed(call);
+  }
 }
 
 
@@ -309,14 +313,6 @@ Reduction JSInliner::Reduce(Node* node) {
 
   if (!Compiler::EnsureDeoptimizationSupport(&info)) {
     TRACE("Not inlining %s into %s because deoptimization support failed\n",
-          function->shared()->DebugName()->ToCString().get(),
-          info_->shared_info()->DebugName()->ToCString().get());
-    return NoChange();
-  }
-
-  if (info.scope()->arguments() != NULL && is_sloppy(info.language_mode())) {
-    // For now do not inline functions that use their arguments array.
-    TRACE("Not inlining %s into %s because inlinee uses arguments array\n",
           function->shared()->DebugName()->ToCString().get(),
           info_->shared_info()->DebugName()->ToCString().get());
     return NoChange();

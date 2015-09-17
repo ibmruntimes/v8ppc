@@ -996,17 +996,24 @@ RUNTIME_FUNCTION(Runtime_OwnKeys) {
   // a fresh clone on each invocation.
   int length = contents->length();
   Handle<FixedArray> copy = isolate->factory()->NewFixedArray(length);
-  for (int i = 0; i < length; i++) {
-    Object* entry = contents->get(i);
-    if (entry->IsString()) {
-      copy->set(i, entry);
-    } else {
-      DCHECK(entry->IsNumber());
-      HandleScope scope(isolate);
-      Handle<Object> entry_handle(entry, isolate);
-      Handle<Object> entry_str =
-          isolate->factory()->NumberToString(entry_handle);
-      copy->set(i, *entry_str);
+  int offset = 0;
+  // Use an outer loop to avoid creating too many handles in the current
+  // handle scope.
+  while (offset < length) {
+    HandleScope scope(isolate);
+    offset += 100;
+    int end = Min(offset, length);
+    for (int i = offset - 100; i < end; i++) {
+      Object* entry = contents->get(i);
+      if (entry->IsString()) {
+        copy->set(i, entry);
+      } else {
+        DCHECK(entry->IsNumber());
+        Handle<Object> entry_handle(entry, isolate);
+        Handle<Object> entry_str =
+            isolate->factory()->NumberToString(entry_handle);
+        copy->set(i, *entry_str);
+      }
     }
   }
   return *isolate->factory()->NewJSArrayWithElements(copy);
@@ -1114,22 +1121,6 @@ RUNTIME_FUNCTION(Runtime_NewObject) {
   CONVERT_ARG_HANDLE_CHECKED(Object, original_constructor, 1);
   return Runtime_NewObjectHelper(isolate, constructor, original_constructor,
                                  Handle<AllocationSite>::null());
-}
-
-
-RUNTIME_FUNCTION(Runtime_NewObjectWithAllocationSite) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 3);
-  CONVERT_ARG_HANDLE_CHECKED(Object, original_constructor, 2);
-  CONVERT_ARG_HANDLE_CHECKED(Object, constructor, 1);
-  CONVERT_ARG_HANDLE_CHECKED(Object, feedback, 0);
-  Handle<AllocationSite> site;
-  if (feedback->IsAllocationSite()) {
-    // The feedback can be an AllocationSite or undefined.
-    site = Handle<AllocationSite>::cast(feedback);
-  }
-  return Runtime_NewObjectHelper(isolate, constructor, original_constructor,
-                                 site);
 }
 
 
@@ -1478,6 +1469,18 @@ RUNTIME_FUNCTION(Runtime_ToName) {
 }
 
 
+RUNTIME_FUNCTION(Runtime_Equals) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(Object, x, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, y, 1);
+  Maybe<bool> result = Object::Equals(x, y);
+  if (!result.IsJust()) return isolate->heap()->exception();
+  // TODO(bmeurer): Change this at some point to return true/false instead.
+  return Smi::FromInt(result.FromJust() ? EQUAL : NOT_EQUAL);
+}
+
+
 RUNTIME_FUNCTION(Runtime_StrictEquals) {
   SealHandleScope scope(isolate);
   DCHECK_EQ(2, args.length());
@@ -1550,6 +1553,15 @@ RUNTIME_FUNCTION(Runtime_CreateIterResultObject) {
   CONVERT_ARG_HANDLE_CHECKED(Object, done, 1);
   return *isolate->factory()->NewJSIteratorResult(value, done);
 }
+
+
+RUNTIME_FUNCTION(Runtime_IsAccessCheckNeeded) {
+  SealHandleScope shs(isolate);
+  DCHECK_EQ(1, args.length());
+  CONVERT_ARG_CHECKED(Object, object, 0);
+  return isolate->heap()->ToBoolean(object->IsAccessCheckNeeded());
+}
+
 
 }  // namespace internal
 }  // namespace v8

@@ -100,17 +100,13 @@ void Builtins::Generate_InOptimizationQueue(MacroAssembler* masm) {
 
 
 static void Generate_JSConstructStubHelper(MacroAssembler* masm,
-                                           bool is_api_function,
-                                           bool create_memento) {
+                                           bool is_api_function) {
   // ----------- S t a t e -------------
   //  -- eax: number of arguments
   //  -- edi: constructor function
   //  -- ebx: allocation site or undefined
   //  -- edx: original constructor
   // -----------------------------------
-
-  // Should never create mementos for api functions.
-  DCHECK(!is_api_function || !create_memento);
 
   // Enter a construct frame.
   {
@@ -192,9 +188,6 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // eax: initial map
       __ movzx_b(edi, FieldOperand(eax, Map::kInstanceSizeOffset));
       __ shl(edi, kPointerSizeLog2);
-      if (create_memento) {
-        __ add(edi, Immediate(AllocationMemento::kSize));
-      }
 
       __ Allocate(edi, ebx, edi, no_reg, &rt_call, NO_ALLOCATION_FLAGS);
 
@@ -203,7 +196,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // Allocated the JSObject, now initialize the fields.
       // eax: initial map
       // ebx: JSObject
-      // edi: start of next object (including memento if create_memento)
+      // edi: start of next object
       __ mov(Operand(ebx, JSObject::kMapOffset), eax);
       __ mov(ecx, factory->empty_fixed_array());
       __ mov(Operand(ebx, JSObject::kPropertiesOffset), ecx);
@@ -211,7 +204,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // Set extra fields in the newly allocated object.
       // eax: initial map
       // ebx: JSObject
-      // edi: start of next object (including memento if create_memento)
+      // edi: start of next object
       // esi: slack tracking counter (non-API function case)
       __ mov(edx, factory->undefined_value());
       __ lea(ecx, Operand(ebx, JSObject::kHeaderSize));
@@ -244,22 +237,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         __ bind(&no_inobject_slack_tracking);
       }
 
-      if (create_memento) {
-        __ lea(esi, Operand(edi, -AllocationMemento::kSize));
-        __ InitializeFieldsWithFiller(ecx, esi, edx);
-
-        // Fill in memento fields if necessary.
-        // esi: points to the allocated but uninitialized memento.
-        __ mov(Operand(esi, AllocationMemento::kMapOffset),
-               factory->allocation_memento_map());
-        // Get the cell or undefined.
-        __ mov(edx, Operand(esp, 3 * kPointerSize));
-        __ AssertUndefinedOrAllocationSite(edx);
-        __ mov(Operand(esi, AllocationMemento::kAllocationSiteOffset),
-               edx);
-      } else {
-        __ InitializeFieldsWithFiller(ecx, edi, edx);
-      }
+      __ InitializeFieldsWithFiller(ecx, edi, edx);
 
       // Add the object tag to make the JSObject real, so that we can continue
       // and jump into the continuation code at any time from now on.
@@ -275,12 +253,6 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // edx: original constructor
     __ bind(&rt_call);
     int offset = kPointerSize;
-    if (create_memento) {
-      // Get the cell or allocation site.
-      __ mov(edi, Operand(esp, kPointerSize * 3));
-      __ push(edi);  // argument 1: allocation site
-      offset += kPointerSize;
-    }
 
     // Must restore esi (context) and edi (constructor) before calling
     // runtime.
@@ -288,34 +260,12 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     __ mov(edi, Operand(esp, offset));
     __ push(edi);  // argument 2/1: constructor function
     __ push(edx);  // argument 3/2: original constructor
-    if (create_memento) {
-      __ CallRuntime(Runtime::kNewObjectWithAllocationSite, 3);
-    } else {
-      __ CallRuntime(Runtime::kNewObject, 2);
-    }
+    __ CallRuntime(Runtime::kNewObject, 2);
     __ mov(ebx, eax);  // store result in ebx
-
-    // Runtime_NewObjectWithAllocationSite increments allocation count.
-    // Skip the increment.
-    Label count_incremented;
-    if (create_memento) {
-      __ jmp(&count_incremented);
-    }
 
     // New object allocated.
     // ebx: newly allocated object
     __ bind(&allocated);
-
-    if (create_memento) {
-      __ mov(ecx, Operand(esp, 3 * kPointerSize));
-      __ cmp(ecx, masm->isolate()->factory()->undefined_value());
-      __ j(equal, &count_incremented);
-      // ecx is an AllocationSite. We are creating a memento from it, so we
-      // need to increment the memento create count.
-      __ add(FieldOperand(ecx, AllocationSite::kPretenureCreateCountOffset),
-             Immediate(Smi::FromInt(1)));
-      __ bind(&count_incremented);
-    }
 
     // Restore the parameters.
     __ pop(edx);  // new.target
@@ -405,12 +355,12 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 
 
 void Builtins::Generate_JSConstructStubGeneric(MacroAssembler* masm) {
-  Generate_JSConstructStubHelper(masm, false, FLAG_pretenuring_call_new);
+  Generate_JSConstructStubHelper(masm, false);
 }
 
 
 void Builtins::Generate_JSConstructStubApi(MacroAssembler* masm) {
-  Generate_JSConstructStubHelper(masm, true, false);
+  Generate_JSConstructStubHelper(masm, true);
 }
 
 
@@ -1004,6 +954,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
 
 
 static void Generate_PushAppliedArguments(MacroAssembler* masm,
+                                          const int vectorOffset,
                                           const int argumentsOffset,
                                           const int indexOffset,
                                           const int limitOffset) {
@@ -1019,13 +970,9 @@ static void Generate_PushAppliedArguments(MacroAssembler* masm,
   __ mov(receiver, Operand(ebp, argumentsOffset));  // load arguments
 
   // Use inline caching to speed up access to arguments.
-  Code::Kind kinds[] = {Code::KEYED_LOAD_IC};
-  FeedbackVectorSpec spec(0, 1, kinds);
-  Handle<TypeFeedbackVector> feedback_vector =
-      masm->isolate()->factory()->NewTypeFeedbackVector(&spec);
-  int index = feedback_vector->GetIndex(FeedbackVectorICSlot(0));
-  __ mov(slot, Immediate(Smi::FromInt(index)));
-  __ mov(vector, Immediate(feedback_vector));
+  int slot_index = TypeFeedbackVector::PushAppliedArgumentsIndex();
+  __ mov(slot, Immediate(Smi::FromInt(slot_index)));
+  __ mov(vector, Operand(ebp, vectorOffset));
   Handle<Code> ic =
       KeyedLoadICStub(masm->isolate(), LoadICState(kNoExtraICState)).GetCode();
   __ call(ic, RelocInfo::CODE_TARGET);
@@ -1073,6 +1020,13 @@ static void Generate_ApplyHelper(MacroAssembler* masm, bool targetIsArgument) {
     static const int kArgumentsOffset = kFPOnStackSize + kPCOnStackSize;
     static const int kReceiverOffset = kArgumentsOffset + kPointerSize;
     static const int kFunctionOffset = kReceiverOffset + kPointerSize;
+    static const int kVectorOffset =
+        InternalFrameConstants::kCodeOffset - 1 * kPointerSize;
+
+    // Push the vector.
+    __ mov(edi, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+    __ mov(edi, FieldOperand(edi, SharedFunctionInfo::kFeedbackVectorOffset));
+    __ push(edi);
 
     __ push(Operand(ebp, kFunctionOffset));   // push this
     __ push(Operand(ebp, kArgumentsOffset));  // push arguments
@@ -1086,16 +1040,15 @@ static void Generate_ApplyHelper(MacroAssembler* masm, bool targetIsArgument) {
     Generate_CheckStackOverflow(masm, kFunctionOffset, kEaxIsSmiTagged);
 
     // Push current index and limit.
-    const int kLimitOffset =
-        StandardFrameConstants::kExpressionsOffset - 1 * kPointerSize;
+    const int kLimitOffset = kVectorOffset - 1 * kPointerSize;
     const int kIndexOffset = kLimitOffset - 1 * kPointerSize;
     __ Push(eax);                            // limit
     __ Push(Immediate(0));                   // index
     __ Push(Operand(ebp, kReceiverOffset));  // receiver
 
     // Loop over the arguments array, pushing each value to the stack
-    Generate_PushAppliedArguments(masm, kArgumentsOffset, kIndexOffset,
-                                  kLimitOffset);
+    Generate_PushAppliedArguments(masm, kVectorOffset, kArgumentsOffset,
+                                  kIndexOffset, kLimitOffset);
 
     // Call the callable.
     // TODO(bmeurer): This should be a tail call according to ES6.
@@ -1129,6 +1082,13 @@ static void Generate_ConstructHelper(MacroAssembler* masm) {
     static const int kNewTargetOffset = kFPOnStackSize + kPCOnStackSize;
     static const int kArgumentsOffset = kNewTargetOffset + kPointerSize;
     static const int kFunctionOffset = kArgumentsOffset + kPointerSize;
+    static const int kVectorOffset =
+        InternalFrameConstants::kCodeOffset - 1 * kPointerSize;
+
+    // Push the vector.
+    __ mov(edi, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+    __ mov(edi, FieldOperand(edi, SharedFunctionInfo::kFeedbackVectorOffset));
+    __ push(edi);
 
     // If newTarget is not supplied, set it to constructor
     Label validate_arguments;
@@ -1149,8 +1109,7 @@ static void Generate_ConstructHelper(MacroAssembler* masm) {
     Generate_CheckStackOverflow(masm, kFunctionOffset, kEaxIsSmiTagged);
 
     // Push current index and limit.
-    const int kLimitOffset =
-        StandardFrameConstants::kExpressionsOffset - 1 * kPointerSize;
+    const int kLimitOffset = kVectorOffset - 1 * kPointerSize;
     const int kIndexOffset = kLimitOffset - 1 * kPointerSize;
     __ Push(eax);  // limit
     __ push(Immediate(0));  // index
@@ -1158,8 +1117,8 @@ static void Generate_ConstructHelper(MacroAssembler* masm) {
     __ push(Operand(ebp, kFunctionOffset));
 
     // Loop over the arguments array, pushing each value to the stack
-    Generate_PushAppliedArguments(
-        masm, kArgumentsOffset, kIndexOffset, kLimitOffset);
+    Generate_PushAppliedArguments(masm, kVectorOffset, kArgumentsOffset,
+                                  kIndexOffset, kLimitOffset);
 
     // Use undefined feedback vector
     __ LoadRoot(ebx, Heap::kUndefinedValueRootIndex);
@@ -1251,7 +1210,68 @@ void Builtins::Generate_ArrayCode(MacroAssembler* masm) {
 }
 
 
-void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
+// static
+void Builtins::Generate_StringConstructor(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- eax                 : number of arguments
+  //  -- edi                 : constructor function
+  //  -- esp[0]              : return address
+  //  -- esp[(argc - n) * 4] : arg[n] (zero-based)
+  //  -- esp[(argc + 1) * 4] : receiver
+  // -----------------------------------
+
+  // 1. Load the first argument into eax and get rid of the rest (including the
+  // receiver).
+  Label no_arguments;
+  {
+    __ test(eax, eax);
+    __ j(zero, &no_arguments, Label::kNear);
+    __ mov(ebx, Operand(esp, eax, times_pointer_size, 0));
+    __ PopReturnAddressTo(ecx);
+    __ lea(esp, Operand(esp, eax, times_pointer_size, kPointerSize));
+    __ PushReturnAddressFrom(ecx);
+    __ mov(eax, ebx);
+  }
+
+  // 2a. At least one argument, return eax if it's a string, otherwise
+  // dispatch to appropriate conversion.
+  Label to_string, symbol_descriptive_string;
+  {
+    __ JumpIfSmi(eax, &to_string, Label::kNear);
+    STATIC_ASSERT(FIRST_NONSTRING_TYPE == SYMBOL_TYPE);
+    __ CmpObjectType(eax, FIRST_NONSTRING_TYPE, edx);
+    __ j(above, &to_string, Label::kNear);
+    __ j(equal, &symbol_descriptive_string, Label::kNear);
+    __ Ret();
+  }
+
+  // 2b. No arguments, return the empty string (and pop the receiver).
+  __ bind(&no_arguments);
+  {
+    __ LoadRoot(eax, Heap::kempty_stringRootIndex);
+    __ ret(1 * kPointerSize);
+  }
+
+  // 3a. Convert eax to a string.
+  __ bind(&to_string);
+  {
+    ToStringStub stub(masm->isolate());
+    __ TailCallStub(&stub);
+  }
+
+  // 3b. Convert symbol in eax to a string.
+  __ bind(&symbol_descriptive_string);
+  {
+    __ PopReturnAddressTo(ecx);
+    __ Push(eax);
+    __ PushReturnAddressFrom(ecx);
+    __ TailCallRuntime(Runtime::kSymbolDescriptiveString, 1, 1);
+  }
+}
+
+
+// static
+void Builtins::Generate_StringConstructor_ConstructStub(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- eax                 : number of arguments
   //  -- edi                 : constructor function

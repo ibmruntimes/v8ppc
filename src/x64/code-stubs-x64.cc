@@ -1734,20 +1734,15 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
   __ Push(rax);
 
   // Figure out which native to call and setup the arguments.
-  if (cc == equal && strict()) {
+  if (cc == equal) {
     __ PushReturnAddressFrom(rcx);
-    __ TailCallRuntime(Runtime::kStrictEquals, 2, 1);
+    __ TailCallRuntime(strict() ? Runtime::kStrictEquals : Runtime::kEquals, 2,
+                       1);
   } else {
-    int context_index;
-    if (cc == equal) {
-      context_index = Context::EQUALS_BUILTIN_INDEX;
-    } else {
-      context_index = is_strong(strength())
-                          ? Context::COMPARE_STRONG_BUILTIN_INDEX
-                          : Context::COMPARE_BUILTIN_INDEX;
-      __ Push(Smi::FromInt(NegativeComparisonResult(cc)));
-    }
-
+    int context_index = is_strong(strength())
+                            ? Context::COMPARE_STRONG_BUILTIN_INDEX
+                            : Context::COMPARE_BUILTIN_INDEX;
+    __ Push(Smi::FromInt(NegativeComparisonResult(cc)));
     __ PushReturnAddressFrom(rcx);
 
     // Call the native; it returns -1 (less), 0 (equal), or 1 (greater)
@@ -1823,28 +1818,26 @@ static void GenerateRecordCallTarget(MacroAssembler* masm, bool is_super) {
   __ j(equal, &done, Label::kFar);
   __ CompareRoot(FieldOperand(r11, HeapObject::kMapOffset),
                  Heap::kWeakCellMapRootIndex);
-  __ j(not_equal, FLAG_pretenuring_call_new ? &miss : &check_allocation_site);
+  __ j(not_equal, &check_allocation_site);
 
   // If the weak cell is cleared, we have a new chance to become monomorphic.
   __ CheckSmi(FieldOperand(r11, WeakCell::kValueOffset));
   __ j(equal, &initialize);
   __ jmp(&megamorphic);
 
-  if (!FLAG_pretenuring_call_new) {
-    __ bind(&check_allocation_site);
-    // If we came here, we need to see if we are the array function.
-    // If we didn't have a matching function, and we didn't find the megamorph
-    // sentinel, then we have in the slot either some other function or an
-    // AllocationSite.
-    __ CompareRoot(FieldOperand(r11, 0), Heap::kAllocationSiteMapRootIndex);
-    __ j(not_equal, &miss);
+  __ bind(&check_allocation_site);
+  // If we came here, we need to see if we are the array function.
+  // If we didn't have a matching function, and we didn't find the megamorph
+  // sentinel, then we have in the slot either some other function or an
+  // AllocationSite.
+  __ CompareRoot(FieldOperand(r11, 0), Heap::kAllocationSiteMapRootIndex);
+  __ j(not_equal, &miss);
 
-    // Make sure the function is the Array() function
-    __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r11);
-    __ cmpp(rdi, r11);
-    __ j(not_equal, &megamorphic);
-    __ jmp(&done);
-  }
+  // Make sure the function is the Array() function
+  __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r11);
+  __ cmpp(rdi, r11);
+  __ j(not_equal, &megamorphic);
+  __ jmp(&done);
 
   __ bind(&miss);
 
@@ -1863,21 +1856,18 @@ static void GenerateRecordCallTarget(MacroAssembler* masm, bool is_super) {
   // indicate the ElementsKind if function is the Array constructor.
   __ bind(&initialize);
 
-  if (!FLAG_pretenuring_call_new) {
-    // Make sure the function is the Array() function
-    __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r11);
-    __ cmpp(rdi, r11);
-    __ j(not_equal, &not_array_function);
+  // Make sure the function is the Array() function
+  __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r11);
+  __ cmpp(rdi, r11);
+  __ j(not_equal, &not_array_function);
 
-    CreateAllocationSiteStub create_stub(isolate);
-    CallStubInRecordCallTarget(masm, &create_stub, is_super);
-    __ jmp(&done_no_smi_convert);
-
-    __ bind(&not_array_function);
-  }
-
-  CreateWeakCellStub create_stub(isolate);
+  CreateAllocationSiteStub create_stub(isolate);
   CallStubInRecordCallTarget(masm, &create_stub, is_super);
+  __ jmp(&done_no_smi_convert);
+
+  __ bind(&not_array_function);
+  CreateWeakCellStub weak_cell_stub(isolate);
+  CallStubInRecordCallTarget(masm, &weak_cell_stub, is_super);
   __ jmp(&done_no_smi_convert);
 
   __ bind(&done);
@@ -2003,22 +1993,14 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
     GenerateRecordCallTarget(masm, IsSuperConstructorCall());
 
     __ SmiToInteger32(rdx, rdx);
-    if (FLAG_pretenuring_call_new) {
-      // Put the AllocationSite from the feedback vector into ebx.
-      // By adding kPointerSize we encode that we know the AllocationSite
-      // entry is at the feedback vector slot given by rdx + 1.
-      __ movp(rbx, FieldOperand(rbx, rdx, times_pointer_size,
-                                FixedArray::kHeaderSize + kPointerSize));
-    } else {
-      Label feedback_register_initialized;
-      // Put the AllocationSite from the feedback vector into rbx, or undefined.
-      __ movp(rbx, FieldOperand(rbx, rdx, times_pointer_size,
-                                FixedArray::kHeaderSize));
-      __ CompareRoot(FieldOperand(rbx, 0), Heap::kAllocationSiteMapRootIndex);
-      __ j(equal, &feedback_register_initialized);
-      __ LoadRoot(rbx, Heap::kUndefinedValueRootIndex);
-      __ bind(&feedback_register_initialized);
-    }
+    Label feedback_register_initialized;
+    // Put the AllocationSite from the feedback vector into rbx, or undefined.
+    __ movp(rbx, FieldOperand(rbx, rdx, times_pointer_size,
+                              FixedArray::kHeaderSize));
+    __ CompareRoot(FieldOperand(rbx, 0), Heap::kAllocationSiteMapRootIndex);
+    __ j(equal, &feedback_register_initialized);
+    __ LoadRoot(rbx, Heap::kUndefinedValueRootIndex);
+    __ bind(&feedback_register_initialized);
 
     __ AssertUndefinedOrAllocationSite(rbx);
   }
@@ -4366,7 +4348,7 @@ void LoadICStub::GenerateImpl(MacroAssembler* masm, bool in_frame) {
       masm, Code::LOAD_IC, code_flags, receiver, name, feedback, no_reg);
 
   __ bind(&miss);
-  LoadIC::GenerateMiss(masm);
+  LoadIC::GenerateMiss(masm, LoadIC::kStressDispatcher);
 
   __ bind(&load_smi_map);
   __ LoadRoot(receiver_map, Heap::kHeapNumberMapRootIndex);

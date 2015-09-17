@@ -98,13 +98,13 @@ MaybeHandle<Object> Object::ToNumber(Handle<Object> input) {
     if (input->IsNumber()) {
       return input;
     }
-    Isolate* const isolate = Handle<HeapObject>::cast(input)->GetIsolate();
-    if (input->IsOddball()) {
-      return handle(Handle<Oddball>::cast(input)->to_number(), isolate);
-    }
     if (input->IsString()) {
       return String::ToNumber(Handle<String>::cast(input));
     }
+    if (input->IsOddball()) {
+      return Oddball::ToNumber(Handle<Oddball>::cast(input));
+    }
+    Isolate* const isolate = Handle<HeapObject>::cast(input)->GetIsolate();
     if (input->IsSymbol()) {
       THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kSymbolToNumber),
                       Object);
@@ -159,13 +159,114 @@ bool Object::BooleanValue() {
 }
 
 
+namespace {
+
+// TODO(bmeurer): Maybe we should introduce a marker interface Number,
+// where we put all these methods at some point?
+bool NumberEquals(double x, double y) {
+  // Must check explicitly for NaN's on Windows, but -0 works fine.
+  if (std::isnan(x)) return false;
+  if (std::isnan(y)) return false;
+  return x == y;
+}
+
+
+bool NumberEquals(const Object* x, const Object* y) {
+  return NumberEquals(x->Number(), y->Number());
+}
+
+
+bool NumberEquals(Handle<Object> x, Handle<Object> y) {
+  return NumberEquals(*x, *y);
+}
+
+}  // namespace
+
+
+// static
+Maybe<bool> Object::Equals(Handle<Object> x, Handle<Object> y) {
+  while (true) {
+    if (x->IsNumber()) {
+      if (y->IsNumber()) {
+        return Just(NumberEquals(x, y));
+      } else if (y->IsBoolean()) {
+        return Just(NumberEquals(*x, Handle<Oddball>::cast(y)->to_number()));
+      } else if (y->IsString()) {
+        return Just(NumberEquals(x, String::ToNumber(Handle<String>::cast(y))));
+      } else if (y->IsJSReceiver() && !y->IsUndetectableObject()) {
+        if (!JSReceiver::ToPrimitive(Handle<JSReceiver>::cast(y))
+                 .ToHandle(&y)) {
+          return Nothing<bool>();
+        }
+      } else {
+        return Just(false);
+      }
+    } else if (x->IsString()) {
+      if (y->IsString()) {
+        return Just(
+            String::Equals(Handle<String>::cast(x), Handle<String>::cast(y)));
+      } else if (y->IsNumber()) {
+        x = String::ToNumber(Handle<String>::cast(x));
+        return Just(NumberEquals(x, y));
+      } else if (y->IsBoolean()) {
+        x = String::ToNumber(Handle<String>::cast(x));
+        return Just(NumberEquals(*x, Handle<Oddball>::cast(y)->to_number()));
+      } else if (y->IsJSReceiver() && !y->IsUndetectableObject()) {
+        if (!JSReceiver::ToPrimitive(Handle<JSReceiver>::cast(y))
+                 .ToHandle(&y)) {
+          return Nothing<bool>();
+        }
+      } else {
+        return Just(false);
+      }
+    } else if (x->IsBoolean()) {
+      if (y->IsOddball()) {
+        return Just(x.is_identical_to(y));
+      } else if (y->IsNumber()) {
+        return Just(NumberEquals(Handle<Oddball>::cast(x)->to_number(), *y));
+      } else if (y->IsString()) {
+        y = String::ToNumber(Handle<String>::cast(y));
+        return Just(NumberEquals(Handle<Oddball>::cast(x)->to_number(), *y));
+      } else if (y->IsJSReceiver() && !y->IsUndetectableObject()) {
+        if (!JSReceiver::ToPrimitive(Handle<JSReceiver>::cast(y))
+                 .ToHandle(&y)) {
+          return Nothing<bool>();
+        }
+        x = Oddball::ToNumber(Handle<Oddball>::cast(x));
+      } else {
+        return Just(false);
+      }
+    } else if (x->IsSymbol()) {
+      return Just(x.is_identical_to(y));
+    } else if (x->IsSimd128Value()) {
+      if (!y->IsSimd128Value()) return Just(false);
+      return Just(Simd128Value::Equals(Handle<Simd128Value>::cast(x),
+                                       Handle<Simd128Value>::cast(y)));
+    } else if (x->IsJSReceiver() && !x->IsUndetectableObject()) {
+      if (y->IsJSReceiver()) {
+        return Just(x.is_identical_to(y));
+      } else if (y->IsNull() || y->IsSimd128Value() || y->IsSymbol() ||
+                 y->IsUndefined()) {
+        return Just(false);
+      } else if (y->IsBoolean()) {
+        y = Oddball::ToNumber(Handle<Oddball>::cast(y));
+      }
+      if (!JSReceiver::ToPrimitive(Handle<JSReceiver>::cast(x)).ToHandle(&x)) {
+        return Nothing<bool>();
+      }
+    } else {
+      return Just(
+          (x->IsNull() || x->IsUndefined() || x->IsUndetectableObject()) &&
+          (y->IsNull() || y->IsUndefined() || y->IsUndetectableObject()));
+    }
+  }
+}
+
+
 bool Object::StrictEquals(Object* that) {
   if (this->IsNumber()) {
     if (!that->IsNumber()) return false;
-    double const x = this->Number();
-    double const y = that->Number();
-    // Must check explicitly for NaN:s on Windows, but -0 works fine.
-    return x == y && !std::isnan(x) && !std::isnan(y);
+    return NumberEquals(this, that);
   } else if (this->IsString()) {
     if (!that->IsString()) return false;
     return String::cast(this)->Equals(String::cast(that));
@@ -4046,6 +4147,7 @@ Handle<Map> Map::TransitionElementsTo(Handle<Map> map,
     Object* maybe_array_maps = map->is_strong()
                                    ? native_context->js_array_strong_maps()
                                    : native_context->js_array_maps();
+    // Reuse map transitions for JSArrays.
     if (maybe_array_maps->IsFixedArray()) {
       DisallowHeapAllocation no_gc;
       FixedArray* array_maps = FixedArray::cast(maybe_array_maps);
@@ -4059,6 +4161,14 @@ Handle<Map> Map::TransitionElementsTo(Handle<Map> map,
   }
 
   DCHECK(!map->IsUndefined());
+  // Check if we can go back in the elements kind transition chain.
+  if (IsHoleyElementsKind(from_kind) &&
+      to_kind == GetPackedElementsKind(from_kind) &&
+      map->GetBackPointer()->IsMap() &&
+      Map::cast(map->GetBackPointer())->elements_kind() == to_kind) {
+    return handle(Map::cast(map->GetBackPointer()));
+  }
+
   bool allow_store_transition = IsTransitionElementsKind(from_kind);
   // Only store fast element maps in ascending generality.
   if (IsFastElementsKind(to_kind)) {
@@ -6480,11 +6590,123 @@ Handle<FixedArray> JSObject::GetEnumPropertyKeys(Handle<JSObject> object,
 }
 
 
+Handle<FixedArray> KeyAccumulator::GetKeys() {
+  if (length_ == 0) {
+    return isolate_->factory()->empty_fixed_array();
+  }
+  if (set_.is_null()) {
+    keys_->Shrink(length_);
+    return keys_;
+  }
+  // copy over results from set_
+  Handle<FixedArray> result = isolate_->factory()->NewFixedArray(length_);
+  for (int i = 0; i < length_; i++) {
+    result->set(i, set_->KeyAt(i));
+  }
+  return result;
+}
+
+
+void KeyAccumulator::AddKey(Handle<Object> key, int check_limit) {
+#ifdef ENABLE_SLOW_DCHECKS
+  if (FLAG_enable_slow_asserts) {
+    DCHECK(key->IsNumber() || key->IsName());
+  }
+#endif
+  if (!set_.is_null()) {
+    set_ = OrderedHashSet::Add(set_, key);
+    length_ = set_->NumberOfElements();
+    return;
+  }
+  // check if we already have the key in the case we are still using
+  // the keys_ FixedArray
+  check_limit = Min(check_limit, length_);
+  for (int i = 0; i < check_limit; i++) {
+    Object* current = keys_->get(i);
+    if (current->KeyEquals(*key)) return;
+  }
+  EnsureCapacity(length_);
+  keys_->set(length_, *key);
+  length_++;
+}
+
+
+void KeyAccumulator::AddKeys(Handle<FixedArray> array,
+                             FixedArray::KeyFilter filter) {
+  int add_length = array->length();
+  if (add_length == 0) return;
+  if (keys_.is_null() && filter == FixedArray::ALL_KEYS) {
+    keys_ = array;
+    length_ = keys_->length();
+    return;
+  }
+  PrepareForComparisons(add_length);
+  int previous_key_count = length_;
+  for (int i = 0; i < add_length; i++) {
+    Handle<Object> current(array->get(i), isolate_);
+    if (filter == FixedArray::NON_SYMBOL_KEYS && current->IsSymbol()) continue;
+    AddKey(current, previous_key_count);
+  }
+}
+
+
+void KeyAccumulator::AddKeys(Handle<JSObject> array_like,
+                             FixedArray::KeyFilter filter) {
+  DCHECK(array_like->IsJSArray() || array_like->HasSloppyArgumentsElements());
+  ElementsAccessor* accessor = array_like->GetElementsAccessor();
+  accessor->AddElementsToKeyAccumulator(array_like, this, filter);
+}
+
+
+void KeyAccumulator::PrepareForComparisons(int count) {
+  // Depending on how many comparisons we do we should switch to the
+  // hash-table-based checks which have a one-time overhead for
+  // initializing but O(1) for HasKey checks.
+  if (!set_.is_null()) return;
+  // This limit was obtained through evaluation of a microbench.
+  if (length_ * count < 50) return;
+  set_ = OrderedHashSet::Allocate(isolate_, length_);
+  for (int i = 0; i < length_; i++) {
+    Handle<Object> value(keys_->get(i), isolate_);
+    set_ = OrderedHashSet::Add(set_, value);
+  }
+}
+
+
+void KeyAccumulator::EnsureCapacity(int capacity) {
+  if (keys_.is_null() || keys_->length() <= capacity) {
+    Grow();
+  }
+}
+
+
+void KeyAccumulator::Grow() {
+  // The OrderedHashSet handles growing by itself.
+  if (!set_.is_null()) return;
+  // Otherwise, grow the internal keys_ FixedArray
+  int capacity = keys_.is_null() ? 16 : keys_->length() * 2 + 16;
+  Handle<FixedArray> new_keys = isolate_->factory()->NewFixedArray(capacity);
+  if (keys_.is_null()) {
+    keys_ = new_keys;
+    return;
+  }
+  int buffer_length = keys_->length();
+  {
+    DisallowHeapAllocation no_gc;
+    WriteBarrierMode mode = new_keys->GetWriteBarrierMode(no_gc);
+    for (int i = 0; i < buffer_length; i++) {
+      new_keys->set(i, keys_->get(i), mode);
+    }
+  }
+  keys_ = new_keys;
+}
+
+
 MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
                                             KeyCollectionType type) {
   USE(ContainsOnlyValidKeys);
   Isolate* isolate = object->GetIsolate();
-  Handle<FixedArray> content = isolate->factory()->empty_fixed_array();
+  KeyAccumulator accumulator(isolate);
   Handle<JSFunction> arguments_function(
       JSFunction::cast(isolate->sloppy_arguments_map()->GetConstructor()));
 
@@ -6507,11 +6729,7 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
                           arraysize(args),
                           args),
           FixedArray);
-      ASSIGN_RETURN_ON_EXCEPTION(
-          isolate, content,
-          FixedArray::AddKeysFromArrayLike(
-              content, Handle<JSObject>::cast(names)),
-          FixedArray);
+      accumulator.AddKeys(Handle<JSObject>::cast(names), FixedArray::ALL_KEYS);
       break;
     }
 
@@ -6530,23 +6748,17 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
     Handle<FixedArray> element_keys =
         isolate->factory()->NewFixedArray(current->NumberOfEnumElements());
     current->GetEnumElementKeys(*element_keys);
-    ASSIGN_RETURN_ON_EXCEPTION(
-        isolate, content,
-        FixedArray::UnionOfKeys(content, element_keys),
-        FixedArray);
-    DCHECK(ContainsOnlyValidKeys(content));
+    accumulator.AddKeys(element_keys, FixedArray::ALL_KEYS);
+    DCHECK(ContainsOnlyValidKeys(accumulator.GetKeys()));
 
     // Add the element keys from the interceptor.
     if (current->HasIndexedInterceptor()) {
       Handle<JSObject> result;
       if (JSObject::GetKeysForIndexedInterceptor(
               current, object).ToHandle(&result)) {
-        ASSIGN_RETURN_ON_EXCEPTION(
-            isolate, content,
-            FixedArray::AddKeysFromArrayLike(content, result),
-            FixedArray);
+        accumulator.AddKeys(result, FixedArray::ALL_KEYS);
       }
-      DCHECK(ContainsOnlyValidKeys(content));
+      DCHECK(ContainsOnlyValidKeys(accumulator.GetKeys()));
     }
 
     // We can cache the computed property keys if access checks are
@@ -6564,27 +6776,26 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
          !current->IsJSValue() && !current->IsAccessCheckNeeded() &&
          !current->HasNamedInterceptor() && !current->HasIndexedInterceptor());
     // Compute the property keys and cache them if possible.
-    ASSIGN_RETURN_ON_EXCEPTION(
-        isolate, content,
-        FixedArray::UnionOfKeys(
-            content, JSObject::GetEnumPropertyKeys(current, cache_enum_keys)),
-        FixedArray);
-    DCHECK(ContainsOnlyValidKeys(content));
+
+    Handle<FixedArray> enum_keys =
+        JSObject::GetEnumPropertyKeys(current, cache_enum_keys);
+    accumulator.AddKeys(enum_keys, FixedArray::ALL_KEYS);
+    DCHECK(ContainsOnlyValidKeys(accumulator.GetKeys()));
 
     // Add the non-symbol property keys from the interceptor.
     if (current->HasNamedInterceptor()) {
       Handle<JSObject> result;
       if (JSObject::GetKeysForNamedInterceptor(
               current, object).ToHandle(&result)) {
-        ASSIGN_RETURN_ON_EXCEPTION(
-            isolate, content, FixedArray::AddKeysFromArrayLike(
-                                  content, result, FixedArray::NON_SYMBOL_KEYS),
-            FixedArray);
+        accumulator.AddKeys(result, FixedArray::NON_SYMBOL_KEYS);
       }
-      DCHECK(ContainsOnlyValidKeys(content));
+      DCHECK(ContainsOnlyValidKeys(accumulator.GetKeys()));
     }
   }
-  return content;
+
+  Handle<FixedArray> keys = accumulator.GetKeys();
+  DCHECK(ContainsOnlyValidKeys(keys));
+  return keys;
 }
 
 
@@ -8082,53 +8293,6 @@ void FixedArray::Shrink(int new_length) {
     GetHeap()->RightTrimFixedArray<Heap::CONCURRENT_TO_SWEEPER>(
         this, length() - new_length);
   }
-}
-
-
-MaybeHandle<FixedArray> FixedArray::AddKeysFromArrayLike(
-    Handle<FixedArray> content, Handle<JSObject> array, KeyFilter filter) {
-  DCHECK(array->IsJSArray() || array->HasSloppyArgumentsElements());
-  ElementsAccessor* accessor = array->GetElementsAccessor();
-  Handle<FixedArray> result =
-      accessor->AddElementsToFixedArray(array, content, filter);
-
-#ifdef ENABLE_SLOW_DCHECKS
-  if (FLAG_enable_slow_asserts) {
-    DisallowHeapAllocation no_allocation;
-    for (int i = 0; i < result->length(); i++) {
-      Object* current = result->get(i);
-      DCHECK(current->IsNumber() || current->IsName());
-    }
-  }
-#endif
-  return result;
-}
-
-
-MaybeHandle<FixedArray> FixedArray::UnionOfKeys(Handle<FixedArray> first,
-                                                Handle<FixedArray> second) {
-  if (second->length() == 0) return first;
-  if (first->length() == 0) return second;
-  Isolate* isolate = first->GetIsolate();
-  Handle<FixedArray> result =
-      isolate->factory()->NewFixedArray(first->length() + second->length());
-  for (int i = 0; i < first->length(); i++) {
-    result->set(i, first->get(i));
-  }
-  int pos = first->length();
-  for (int j = 0; j < second->length(); j++) {
-    Object* current = second->get(j);
-    int i;
-    for (i = 0; i < first->length(); i++) {
-      if (current->KeyEquals(first->get(i))) break;
-    }
-    if (i == first->length()) {
-      result->set(pos++, current);
-    }
-  }
-
-  result->Shrink(pos);
-  return result;
 }
 
 
@@ -15454,6 +15618,48 @@ Handle<Derived> OrderedHashTable<Derived, Iterator, entrysize>::Clear(
   return new_table;
 }
 
+template <class Derived, class Iterator, int entrysize>
+bool OrderedHashTable<Derived, Iterator, entrysize>::HasKey(
+    Handle<Derived> table, Handle<Object> key) {
+  int entry = table->KeyToFirstEntry(*key);
+  // Walk the chain in the bucket to find the key.
+  while (entry != kNotFound) {
+    Object* candidate_key = table->KeyAt(entry);
+    if (candidate_key->SameValueZero(*key)) return true;
+    entry = table->NextChainEntry(entry);
+  }
+  return false;
+}
+
+
+Handle<OrderedHashSet> OrderedHashSet::Add(Handle<OrderedHashSet> table,
+                                           Handle<Object> key) {
+  int hash = Object::GetOrCreateHash(table->GetIsolate(), key)->value();
+  int entry = table->HashToEntry(hash);
+  // Walk the chain of the bucket and try finding the key.
+  while (entry != kNotFound) {
+    Object* candidate_key = table->KeyAt(entry);
+    // Do not add if we have the key already
+    if (candidate_key->SameValueZero(*key)) return table;
+    entry = table->NextChainEntry(entry);
+  }
+
+  table = OrderedHashSet::EnsureGrowable(table);
+  // Read the existing bucket values.
+  int bucket = table->HashToBucket(hash);
+  int previous_entry = table->HashToEntry(hash);
+  int nof = table->NumberOfElements();
+  // Insert a new entry at the end,
+  int new_entry = nof + table->NumberOfDeletedElements();
+  int new_index = table->EntryToIndex(new_entry);
+  table->set(new_index, *key);
+  table->set(new_index + kChainOffset, Smi::FromInt(previous_entry));
+  // and point the bucket to the new entry.
+  table->set(kHashTableStartIndex + bucket, Smi::FromInt(new_entry));
+  table->SetNumberOfElements(nof + 1);
+  return table;
+}
+
 
 template<class Derived, class Iterator, int entrysize>
 Handle<Derived> OrderedHashTable<Derived, Iterator, entrysize>::Rehash(
@@ -15516,6 +15722,9 @@ template Handle<OrderedHashSet>
 OrderedHashTable<OrderedHashSet, JSSetIterator, 1>::Clear(
     Handle<OrderedHashSet> table);
 
+template bool OrderedHashTable<OrderedHashSet, JSSetIterator, 1>::HasKey(
+    Handle<OrderedHashSet> table, Handle<Object> key);
+
 
 template Handle<OrderedHashMap>
 OrderedHashTable<OrderedHashMap, JSMapIterator, 2>::Allocate(
@@ -15532,6 +15741,9 @@ OrderedHashTable<OrderedHashMap, JSMapIterator, 2>::Shrink(
 template Handle<OrderedHashMap>
 OrderedHashTable<OrderedHashMap, JSMapIterator, 2>::Clear(
     Handle<OrderedHashMap> table);
+
+template bool OrderedHashTable<OrderedHashMap, JSMapIterator, 2>::HasKey(
+    Handle<OrderedHashMap> table, Handle<Object> key);
 
 
 template<class Derived, class TableType>

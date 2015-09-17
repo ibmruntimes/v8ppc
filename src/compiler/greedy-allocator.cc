@@ -176,8 +176,9 @@ void GreedyAllocator::PreallocateFixedRanges() {
 
 
 void GreedyAllocator::GroupLiveRanges() {
-  CoalescedLiveRanges groupper(local_zone());
+  CoalescedLiveRanges grouper(local_zone());
   for (TopLevelLiveRange* range : data()->live_ranges()) {
+    grouper.clear();
     // Skip splinters, because we do not want to optimize for them, and moves
     // due to assigning them to different registers occur in deferred blocks.
     if (!CanProcessRange(range) || range->IsSplinter() || !range->is_phi()) {
@@ -194,13 +195,12 @@ void GreedyAllocator::GroupLiveRanges() {
                                      : new (local_zone())
                                            LiveRangeGroup(local_zone());
 
-    // Populate the groupper.
+    // Populate the grouper.
     if (range->group() == nullptr) {
-      groupper.clear();
-      groupper.AllocateRange(range);
+      grouper.AllocateRange(range);
     } else {
       for (LiveRange* member : range->group()->ranges()) {
-        groupper.AllocateRange(member);
+        grouper.AllocateRange(member);
       }
     }
     for (int j : data()->GetPhiMapValueFor(range)->phi()->operands()) {
@@ -221,7 +221,7 @@ void GreedyAllocator::GroupLiveRanges() {
       if (other_group != nullptr) {
         bool can_merge = true;
         for (LiveRange* member : other_group->ranges()) {
-          if (groupper.GetConflicts(member).Current() != nullptr) {
+          if (grouper.GetConflicts(member).Current() != nullptr) {
             can_merge = false;
             break;
           }
@@ -233,14 +233,14 @@ void GreedyAllocator::GroupLiveRanges() {
                                       other_group->ranges().begin(),
                                       other_group->ranges().end());
           for (LiveRange* member : other_group->ranges()) {
-            groupper.AllocateRange(member);
+            grouper.AllocateRange(member);
             member->set_group(latest_grp);
           }
           // Clear the other range, so we avoid scheduling it.
           other_group->ranges().clear();
         }
-      } else if (groupper.GetConflicts(other).Current() == nullptr) {
-        groupper.AllocateRange(other);
+      } else if (grouper.GetConflicts(other).Current() == nullptr) {
+        grouper.AllocateRange(other);
         latest_grp->ranges().push_back(other);
         other->set_group(latest_grp);
       }
@@ -338,12 +338,14 @@ void GreedyAllocator::TryAllocateLiveRange(LiveRange* range) {
   int hinted_reg = -1;
 
   EnsureValidRangeWeight(range);
-  DCHECK(range->weight() != LiveRange::kInvalidWeight);
+  float competing_weight = range->weight();
+  DCHECK(competing_weight != LiveRange::kInvalidWeight);
 
   // Can we allocate at the hinted register?
   if (range->FirstHintPosition(&hinted_reg) != nullptr) {
     DCHECK(hinted_reg >= 0);
-    float max_conflict_weight = GetMaximumConflictingWeight(hinted_reg, range);
+    float max_conflict_weight =
+        GetMaximumConflictingWeight(hinted_reg, range, competing_weight);
     if (max_conflict_weight == LiveRange::kInvalidWeight) {
       free_reg = hinted_reg;
     } else if (max_conflict_weight < range->weight()) {
@@ -361,7 +363,8 @@ void GreedyAllocator::TryAllocateLiveRange(LiveRange* range) {
     for (int i = 0; i < num_registers(); i++) {
       // Skip unnecessarily re-visiting the hinted register, if any.
       if (i == hinted_reg) continue;
-      float max_conflict_weight = GetMaximumConflictingWeight(i, range);
+      float max_conflict_weight =
+          GetMaximumConflictingWeight(i, range, competing_weight);
       if (max_conflict_weight == LiveRange::kInvalidWeight) {
         free_reg = i;
         break;
@@ -482,15 +485,16 @@ void GreedyAllocator::AllocateRegisters() {
 
 
 float GreedyAllocator::GetMaximumConflictingWeight(
-    unsigned reg_id, const LiveRange* range) const {
+    unsigned reg_id, const LiveRange* range, float competing_weight) const {
   float ret = LiveRange::kInvalidWeight;
 
   auto conflicts = current_allocations(reg_id)->GetConflicts(range);
   for (LiveRange* conflict = conflicts.Current(); conflict != nullptr;
        conflict = conflicts.GetNext()) {
     DCHECK_NE(conflict->weight(), LiveRange::kInvalidWeight);
+    if (competing_weight <= conflict->weight()) return LiveRange::kMaxWeight;
     ret = Max(ret, conflict->weight());
-    if (ret == LiveRange::kMaxWeight) return ret;
+    DCHECK(ret < LiveRange::kMaxWeight);
   }
 
   return ret;
@@ -503,7 +507,8 @@ float GreedyAllocator::GetMaximumConflictingWeight(unsigned reg_id,
   float ret = LiveRange::kInvalidWeight;
 
   for (LiveRange* member : group->ranges()) {
-    float member_conflict_weight = GetMaximumConflictingWeight(reg_id, member);
+    float member_conflict_weight =
+        GetMaximumConflictingWeight(reg_id, member, group_weight);
     if (member_conflict_weight == LiveRange::kMaxWeight) {
       return LiveRange::kMaxWeight;
     }
