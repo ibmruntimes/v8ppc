@@ -39,10 +39,6 @@ define NEW_TWO_BYTE_STRING = false;
 define GETTER = 0;
 define SETTER = 1;
 
-define NO_HINT     = 0;
-define NUMBER_HINT = 1;
-define STRING_HINT = 2;
-
 # For date.js.
 define HoursPerDay      = 24;
 define MinutesPerHour   = 60;
@@ -73,6 +69,9 @@ define kMaxMonth = 10000000;
 # pointer size. Used by Function.prototype.apply(), Reflect.apply() and
 # Reflect.construct().
 define kSafeArgumentsLength = 0x800000;
+
+# 2^53 - 1
+define kMaxSafeInteger = 9007199254740991;
 
 # Strict mode flags for passing to %SetProperty
 define kSloppyMode = 0;

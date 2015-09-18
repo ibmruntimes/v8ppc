@@ -21,7 +21,6 @@ var $toInteger;
 var $toLength;
 var $toNumber;
 var $toPositiveInteger;
-var $toPrimitive;
 var $toString;
 
 var harmony_tolength = false;
@@ -33,62 +32,10 @@ var harmony_tolength = false;
 var GlobalArray = global.Array;
 var GlobalBoolean = global.Boolean;
 var GlobalString = global.String;
-var GlobalNumber = global.Number;
 var isConcatSpreadableSymbol =
     utils.ImportNow("is_concat_spreadable_symbol");
 
 // ----------------------------------------------------------------------------
-
-/* -----------------------------------
-- - -   C o m p a r i s o n   - - -
------------------------------------
-*/
-
-// ECMA-262, section 11.8.5, page 53. The 'ncr' parameter is used as
-// the result when either (or both) the operands are NaN.
-function COMPARE(x, ncr) {
-  var left;
-  var right;
-  // Fast cases for string, numbers and undefined compares.
-  if (IS_STRING(this)) {
-    if (IS_STRING(x)) return %_StringCompare(this, x);
-    if (IS_UNDEFINED(x)) return ncr;
-    left = this;
-  } else if (IS_NUMBER(this)) {
-    if (IS_NUMBER(x)) return %NumberCompare(this, x, ncr);
-    if (IS_UNDEFINED(x)) return ncr;
-    left = this;
-  } else if (IS_UNDEFINED(this)) {
-    if (!IS_UNDEFINED(x)) {
-      %to_primitive(x, NUMBER_HINT);
-    }
-    return ncr;
-  } else if (IS_UNDEFINED(x)) {
-    %to_primitive(this, NUMBER_HINT);
-    return ncr;
-  } else {
-    left = %to_primitive(this, NUMBER_HINT);
-  }
-
-  right = %to_primitive(x, NUMBER_HINT);
-  if (IS_STRING(left) && IS_STRING(right)) {
-    return %_StringCompare(left, right);
-  } else {
-    var left_number = %to_number_fun(left);
-    var right_number = %to_number_fun(right);
-    if (NUMBER_IS_NAN(left_number) || NUMBER_IS_NAN(right_number)) return ncr;
-    return %NumberCompare(left_number, right_number, ncr);
-  }
-}
-
-// Strong mode COMPARE throws if an implicit conversion would be performed
-function COMPARE_STRONG(x, ncr) {
-  if (IS_STRING(this) && IS_STRING(x)) return %_StringCompare(this, x);
-  if (IS_NUMBER(this) && IS_NUMBER(x)) return %NumberCompare(this, x, ncr);
-
-  throw %make_type_error(kStrongImplicitConversion);
-}
-
 
 /* -----------------------------
    - - -   H e l p e r s   - - -
@@ -228,15 +175,6 @@ function CONCAT_ITERABLE_TO_ARRAY(iterable) {
    -------------------------------------
 */
 
-// ECMA-262, section 9.1, page 30. Use null/undefined for no hint,
-// (1) for number hint, and (2) for string hint.
-function ToPrimitive(x, hint) {
-  if (!IS_SPEC_OBJECT(x)) return x;
-  if (hint == NO_HINT) hint = (IS_DATE(x)) ? STRING_HINT : NUMBER_HINT;
-  return (hint == NUMBER_HINT) ? DefaultNumber(x) : DefaultString(x);
-}
-
-
 // ECMA-262, section 9.2, page 30
 function ToBoolean(x) {
   if (IS_BOOLEAN(x)) return x;
@@ -302,8 +240,7 @@ function ToInteger(x) {
 function ToLength(arg) {
   arg = ToInteger(arg);
   if (arg < 0) return 0;
-  return arg < GlobalNumber.MAX_SAFE_INTEGER ? arg
-                                             : GlobalNumber.MAX_SAFE_INTEGER;
+  return arg < kMaxSafeInteger ? arg : kMaxSafeInteger;
 }
 
 
@@ -430,13 +367,10 @@ $toInteger = ToInteger;
 $toLength = ToLength;
 $toNumber = ToNumber;
 $toPositiveInteger = ToPositiveInteger;
-$toPrimitive = ToPrimitive;
 $toString = ToString;
 
 %InstallToContext([
   "apply_prepare_builtin", APPLY_PREPARE,
-  "compare_builtin", COMPARE,
-  "compare_strong_builtin", COMPARE_STRONG,
   "concat_iterable_to_array_builtin", CONCAT_ITERABLE_TO_ARRAY,
   "reflect_apply_prepare_builtin", REFLECT_APPLY_PREPARE,
   "reflect_construct_prepare_builtin", REFLECT_CONSTRUCT_PREPARE,
@@ -449,7 +383,6 @@ $toString = ToString;
   "to_integer_fun", ToInteger,
   "to_length_fun", ToLength,
   "to_number_fun", ToNumber,
-  "to_primitive", ToPrimitive,
   "to_string_fun", ToString,
 ]);
 
@@ -457,7 +390,6 @@ utils.Export(function(to) {
   to.ToBoolean = ToBoolean;
   to.ToLength = ToLength;
   to.ToNumber = ToNumber;
-  to.ToPrimitive = ToPrimitive;
   to.ToString = ToString;
 });
 

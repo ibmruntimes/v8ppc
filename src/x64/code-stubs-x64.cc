@@ -1739,15 +1739,11 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
     __ TailCallRuntime(strict() ? Runtime::kStrictEquals : Runtime::kEquals, 2,
                        1);
   } else {
-    int context_index = is_strong(strength())
-                            ? Context::COMPARE_STRONG_BUILTIN_INDEX
-                            : Context::COMPARE_BUILTIN_INDEX;
     __ Push(Smi::FromInt(NegativeComparisonResult(cc)));
     __ PushReturnAddressFrom(rcx);
-
-    // Call the native; it returns -1 (less), 0 (equal), or 1 (greater)
-    // tagged as a small integer.
-    __ InvokeBuiltin(context_index, JUMP_FUNCTION);
+    __ TailCallRuntime(
+        is_strong(strength()) ? Runtime::kCompare_Strong : Runtime::kCompare, 3,
+        1);
   }
 
   __ bind(&miss);
@@ -3320,43 +3316,40 @@ void StringHelper::GenerateOneByteCharsCompareLoop(
 
 
 void StringCompareStub::Generate(MacroAssembler* masm) {
-  Label runtime;
-
-  // Stack frame on entry.
-  //  rsp[0]  : return address
-  //  rsp[8]  : right string
-  //  rsp[16] : left string
-
-  StackArgumentsAccessor args(rsp, 2, ARGUMENTS_DONT_CONTAIN_RECEIVER);
-  __ movp(rdx, args.GetArgumentOperand(0));  // left
-  __ movp(rax, args.GetArgumentOperand(1));  // right
+  // ----------- S t a t e -------------
+  //  -- rdx    : left string
+  //  -- rax    : right string
+  //  -- rsp[0] : return address
+  // -----------------------------------
+  __ AssertString(rdx);
+  __ AssertString(rax);
 
   // Check for identity.
   Label not_same;
   __ cmpp(rdx, rax);
   __ j(not_equal, &not_same, Label::kNear);
   __ Move(rax, Smi::FromInt(EQUAL));
-  Counters* counters = isolate()->counters();
-  __ IncrementCounter(counters->string_compare_native(), 1);
-  __ ret(2 * kPointerSize);
+  __ IncrementCounter(isolate()->counters()->string_compare_native(), 1);
+  __ Ret();
 
   __ bind(&not_same);
 
   // Check that both are sequential one-byte strings.
+  Label runtime;
   __ JumpIfNotBothSequentialOneByteStrings(rdx, rax, rcx, rbx, &runtime);
 
   // Inline comparison of one-byte strings.
-  __ IncrementCounter(counters->string_compare_native(), 1);
-  // Drop arguments from the stack
-  __ PopReturnAddressTo(rcx);
-  __ addp(rsp, Immediate(2 * kPointerSize));
-  __ PushReturnAddressFrom(rcx);
+  __ IncrementCounter(isolate()->counters()->string_compare_native(), 1);
   StringHelper::GenerateCompareFlatOneByteStrings(masm, rdx, rax, rcx, rbx, rdi,
                                                   r8);
 
   // Call the runtime; it returns -1 (less), 0 (equal), or 1 (greater)
   // tagged as a small integer.
   __ bind(&runtime);
+  __ PopReturnAddressTo(rcx);
+  __ Push(rdx);
+  __ Push(rax);
+  __ PushReturnAddressFrom(rcx);
   __ TailCallRuntime(Runtime::kStringCompare, 2, 1);
 }
 

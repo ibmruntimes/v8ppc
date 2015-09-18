@@ -86,14 +86,11 @@ enum BindingFlags {
   V(SPREAD_ITERABLE_INDEX, JSFunction, spread_iterable)                   \
   V(TO_LENGTH_FUN_INDEX, JSFunction, to_length_fun)                       \
   V(TO_NUMBER_FUN_INDEX, JSFunction, to_number_fun)                       \
-  V(TO_PRIMITIVE_INDEX, JSFunction, to_primitive)                         \
   V(TO_STRING_FUN_INDEX, JSFunction, to_string_fun)
 
 
 #define NATIVE_CONTEXT_JS_BUILTINS(V)                                 \
   V(APPLY_PREPARE_BUILTIN_INDEX, JSFunction, apply_prepare_builtin)   \
-  V(COMPARE_BUILTIN_INDEX, JSFunction, compare_builtin)               \
-  V(COMPARE_STRONG_BUILTIN_INDEX, JSFunction, compare_strong_builtin) \
   V(CONCAT_ITERABLE_TO_ARRAY_BUILTIN_INDEX, JSFunction,               \
     concat_iterable_to_array_builtin)                                 \
   V(REFLECT_APPLY_PREPARE_BUILTIN_INDEX, JSFunction,                  \
