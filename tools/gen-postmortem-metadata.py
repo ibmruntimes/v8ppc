@@ -132,6 +132,15 @@ consts_misc = [
         'value': 'JavaScriptFrameConstants::kFunctionOffset' },
     { 'name': 'off_fp_args',
         'value': 'JavaScriptFrameConstants::kLastParameterOffset' },
+
+    { 'name': 'scopeinfo_idx_nparams',
+        'value': 'ScopeInfo::kParameterCount' },
+    { 'name': 'scopeinfo_idx_nstacklocals',
+        'value': 'ScopeInfo::kStackLocalCount' },
+    { 'name': 'scopeinfo_idx_ncontextlocals',
+        'value': 'ScopeInfo::kContextLocalCount' },
+    { 'name': 'scopeinfo_idx_first_vars',
+        'value': 'ScopeInfo::kVariablePartIndex' },
 ];
 
 #
@@ -146,7 +155,7 @@ extras_accessors = [
     'Map, instance_size, int, kInstanceSizeOffset',
     'Map, bit_field, char, kBitFieldOffset',
     'Map, bit_field2, char, kBitField2Offset',
-    'Map, bit_field3, SMI, kBitField3Offset',
+    'Map, bit_field3, int, kBitField3Offset',
     'Map, prototype, Object, kPrototypeOffset',
     'NameDictionaryShape, prefix_size, int, kPrefixSize',
     'NameDictionaryShape, entry_size, int, kEntrySize',

@@ -2841,14 +2841,14 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   // x3 : slot in feedback vector (Smi, for RecordCallTarget)
   // x4 : original constructor (for IsSuperConstructorCall)
   Register function = x1;
-  Label slow, non_function_call;
 
+  Label non_function;
   // Check that the function is not a smi.
-  __ JumpIfSmi(function, &non_function_call);
+  __ JumpIfSmi(function, &non_function);
   // Check that the function is a JSFunction.
   Register object_type = x10;
   __ JumpIfNotObjectType(function, object_type, object_type, JS_FUNCTION_TYPE,
-                         &slow);
+                         &non_function);
 
   if (RecordCallTarget()) {
     GenerateRecordCallTarget(masm, x0, function, x2, x3, x4, x5, x11, x12,
@@ -2873,43 +2873,16 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
     __ Mov(x3, function);
   }
 
-  // Jump to the function-specific construct stub.
-  Register jump_reg = x4;
-  Register shared_func_info = jump_reg;
-  Register cons_stub = jump_reg;
-  Register cons_stub_code = jump_reg;
-  __ Ldr(shared_func_info,
-         FieldMemOperand(function, JSFunction::kSharedFunctionInfoOffset));
-  __ Ldr(cons_stub,
-         FieldMemOperand(shared_func_info,
-                         SharedFunctionInfo::kConstructStubOffset));
-  __ Add(cons_stub_code, cons_stub, Code::kHeaderSize - kHeapObjectTag);
-  __ Br(cons_stub_code);
+  // Tail call to the function-specific construct stub (still in the caller
+  // context at this point).
+  __ Ldr(x4, FieldMemOperand(x1, JSFunction::kSharedFunctionInfoOffset));
+  __ Ldr(x4, FieldMemOperand(x4, SharedFunctionInfo::kConstructStubOffset));
+  __ Add(x4, x4, Code::kHeaderSize - kHeapObjectTag);
+  __ Br(x4);
 
-  __ Bind(&slow);
-  {
-    __ Cmp(object_type, JS_FUNCTION_PROXY_TYPE);
-    __ B(ne, &non_function_call);
-    // TODO(neis): This doesn't match the ES6 spec for [[Construct]] on proxies.
-    __ Ldr(x1, FieldMemOperand(x1, JSFunctionProxy::kConstructTrapOffset));
-    __ Jump(isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
-
-    __ Bind(&non_function_call);
-    {
-      // Determine the delegate for the target (if any).
-      FrameScope scope(masm, StackFrame::INTERNAL);
-      __ SmiTag(x0);
-      __ Push(x0, x1);
-      __ CallRuntime(Runtime::kGetConstructorDelegate, 1);
-      __ Mov(x1, x0);
-      __ Pop(x0);
-      __ SmiUntag(x0);
-    }
-    // The delegate is always a regular function.
-    __ AssertFunction(x1);
-    __ Jump(masm->isolate()->builtins()->CallFunction(),
-            RelocInfo::CODE_TARGET);
-  }
+  __ Bind(&non_function);
+  __ Mov(x3, function);
+  __ Jump(isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
 }
 
 
@@ -3273,6 +3246,32 @@ void StringCharFromCodeGenerator::GenerateSlow(
 }
 
 
+void CompareICStub::GenerateBooleans(MacroAssembler* masm) {
+  // Inputs are in x0 (lhs) and x1 (rhs).
+  DCHECK_EQ(CompareICState::BOOLEAN, state());
+  ASM_LOCATION("CompareICStub[Booleans]");
+  Label miss;
+
+  __ CheckMap(x1, x2, Heap::kBooleanMapRootIndex, &miss, DO_SMI_CHECK);
+  __ CheckMap(x0, x3, Heap::kBooleanMapRootIndex, &miss, DO_SMI_CHECK);
+  if (op() != Token::EQ_STRICT && is_strong(strength())) {
+    __ TailCallRuntime(Runtime::kThrowStrongModeImplicitConversion, 0, 1);
+  } else {
+    if (!Token::IsEqualityOp(op())) {
+      __ Ldr(x1, FieldMemOperand(x1, Oddball::kToNumberOffset));
+      __ AssertSmi(x1);
+      __ Ldr(x0, FieldMemOperand(x0, Oddball::kToNumberOffset));
+      __ AssertSmi(x0);
+    }
+    __ Sub(x0, x1, x0);
+    __ Ret();
+  }
+
+  __ Bind(&miss);
+  GenerateMiss(masm);
+}
+
+
 void CompareICStub::GenerateSmis(MacroAssembler* masm) {
   // Inputs are in x0 (lhs) and x1 (rhs).
   DCHECK(state() == CompareICState::SMI);
@@ -3567,8 +3566,21 @@ void CompareICStub::GenerateKnownObjects(MacroAssembler* masm) {
   __ Cmp(lhs_map, map);
   __ B(ne, &miss);
 
+  if (Token::IsEqualityOp(op())) {
   __ Sub(result, rhs, lhs);
   __ Ret();
+  } else if (is_strong(strength())) {
+    __ TailCallRuntime(Runtime::kThrowStrongModeImplicitConversion, 0, 1);
+  } else {
+    Register ncr = x2;
+    if (op() == Token::LT || op() == Token::LTE) {
+      __ Mov(ncr, Smi::FromInt(GREATER));
+    } else {
+      __ Mov(ncr, Smi::FromInt(LESS));
+    }
+    __ Push(lhs, rhs, ncr);
+    __ TailCallRuntime(Runtime::kCompare, 3, 1);
+  }
 
   __ Bind(&miss);
   GenerateMiss(masm);

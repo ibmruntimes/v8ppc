@@ -1977,13 +1977,13 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   // rcx : original constructor (for IsSuperConstructorCall)
   // rdx : slot in feedback vector (Smi, for RecordCallTarget)
   // rdi : constructor function
-  Label slow, non_function_call;
 
-  // Check that function is not a smi.
-  __ JumpIfSmi(rdi, &non_function_call);
-  // Check that function is a JSFunction.
+  Label non_function;
+  // Check that the constructor is not a smi.
+  __ JumpIfSmi(rdi, &non_function);
+  // Check that constructor is a JSFunction.
   __ CmpObjectType(rdi, JS_FUNCTION_TYPE, r11);
-  __ j(not_equal, &slow);
+  __ j(not_equal, &non_function);
 
   if (RecordCallTarget()) {
     GenerateRecordCallTarget(masm, IsSuperConstructorCall());
@@ -2008,42 +2008,16 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
     __ movp(rdx, rdi);
   }
 
-  // Jump to the function-specific construct stub.
-  Register jmp_reg = rcx;
-  __ movp(jmp_reg, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
-  __ movp(jmp_reg, FieldOperand(jmp_reg,
-                                SharedFunctionInfo::kConstructStubOffset));
-  __ leap(jmp_reg, FieldOperand(jmp_reg, Code::kHeaderSize));
-  __ jmp(jmp_reg);
+  // Tail call to the function-specific construct stub (still in the caller
+  // context at this point).
+  __ movp(rcx, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
+  __ movp(rcx, FieldOperand(rcx, SharedFunctionInfo::kConstructStubOffset));
+  __ leap(rcx, FieldOperand(rcx, Code::kHeaderSize));
+  __ jmp(rcx);
 
-  // rdi: called object
-  // rax: number of arguments
-  // r11: object map
-  __ bind(&slow);
-  {
-    __ CmpInstanceType(r11, JS_FUNCTION_PROXY_TYPE);
-    __ j(not_equal, &non_function_call, Label::kNear);
-
-    // TODO(neis): This doesn't match the ES6 spec for [[Construct]] on proxies.
-    __ movp(rdi, FieldOperand(rdi, JSFunctionProxy::kConstructTrapOffset));
-    __ Jump(isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
-
-    __ bind(&non_function_call);
-    {
-      // Determine the delegate for the target (if any).
-      FrameScope scope(masm, StackFrame::INTERNAL);
-      __ Integer32ToSmi(rax, rax);
-      __ Push(rax);
-      __ Push(rdi);
-      __ CallRuntime(Runtime::kGetConstructorDelegate, 1);
-      __ movp(rdi, rax);
-      __ Pop(rax);
-      __ SmiToInteger32(rax, rax);
-    }
-    // The delegate is always a regular function.
-    __ AssertFunction(rdi);
-    __ Jump(isolate()->builtins()->CallFunction(), RelocInfo::CODE_TARGET);
-  }
+  __ bind(&non_function);
+  __ movp(rdx, rdi);
+  __ Jump(isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
 }
 
 
@@ -3158,7 +3132,7 @@ void ToStringStub::Generate(MacroAssembler* masm) {
   __ bind(&not_string);
 
   Label not_heap_number;
-  __ CompareRoot(rax, Heap::kHeapNumberMapRootIndex);
+  __ CompareRoot(rdi, Heap::kHeapNumberMapRootIndex);
   __ j(not_equal, &not_heap_number, Label::kNear);
   __ bind(&is_number);
   NumberToStringStub stub(isolate());
@@ -3379,6 +3353,37 @@ void BinaryOpICWithAllocationSiteStub::Generate(MacroAssembler* masm) {
   // sites.
   BinaryOpWithAllocationSiteStub stub(isolate(), state());
   __ TailCallStub(&stub);
+}
+
+
+void CompareICStub::GenerateBooleans(MacroAssembler* masm) {
+  DCHECK_EQ(CompareICState::BOOLEAN, state());
+  Label miss;
+  Label::Distance const miss_distance =
+      masm->emit_debug_code() ? Label::kFar : Label::kNear;
+
+  __ JumpIfSmi(rdx, &miss, miss_distance);
+  __ movp(rcx, FieldOperand(rdx, HeapObject::kMapOffset));
+  __ JumpIfSmi(rax, &miss, miss_distance);
+  __ movp(rbx, FieldOperand(rax, HeapObject::kMapOffset));
+  __ JumpIfNotRoot(rcx, Heap::kBooleanMapRootIndex, &miss, miss_distance);
+  __ JumpIfNotRoot(rbx, Heap::kBooleanMapRootIndex, &miss, miss_distance);
+  if (op() != Token::EQ_STRICT && is_strong(strength())) {
+    __ TailCallRuntime(Runtime::kThrowStrongModeImplicitConversion, 0, 1);
+  } else {
+    if (!Token::IsEqualityOp(op())) {
+      __ movp(rax, FieldOperand(rax, Oddball::kToNumberOffset));
+      __ AssertSmi(rax);
+      __ movp(rdx, FieldOperand(rdx, Oddball::kToNumberOffset));
+      __ AssertSmi(rdx);
+      __ xchgp(rax, rdx);
+    }
+    __ subp(rax, rdx);
+    __ Ret();
+  }
+
+  __ bind(&miss);
+  GenerateMiss(masm);
 }
 
 
@@ -3683,15 +3688,24 @@ void CompareICStub::GenerateKnownObjects(MacroAssembler* masm) {
   __ j(either_smi, &miss, Label::kNear);
 
   __ GetWeakValue(rdi, cell);
-  __ movp(rcx, FieldOperand(rax, HeapObject::kMapOffset));
-  __ movp(rbx, FieldOperand(rdx, HeapObject::kMapOffset));
-  __ cmpp(rcx, rdi);
+  __ cmpp(FieldOperand(rdx, HeapObject::kMapOffset), rdi);
   __ j(not_equal, &miss, Label::kNear);
-  __ cmpp(rbx, rdi);
+  __ cmpp(FieldOperand(rax, HeapObject::kMapOffset), rdi);
   __ j(not_equal, &miss, Label::kNear);
 
-  __ subp(rax, rdx);
-  __ ret(0);
+  if (Token::IsEqualityOp(op())) {
+    __ subp(rax, rdx);
+    __ ret(0);
+  } else if (is_strong(strength())) {
+    __ TailCallRuntime(Runtime::kThrowStrongModeImplicitConversion, 0, 1);
+  } else {
+    __ PopReturnAddressTo(rcx);
+    __ Push(rdx);
+    __ Push(rax);
+    __ Push(Smi::FromInt(NegativeComparisonResult(GetCondition())));
+    __ PushReturnAddressFrom(rcx);
+    __ TailCallRuntime(Runtime::kCompare, 3, 1);
+  }
 
   __ bind(&miss);
   GenerateMiss(masm);

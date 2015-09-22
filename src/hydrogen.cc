@@ -4789,6 +4789,12 @@ void HOptimizedGraphBuilder::VisitEmptyStatement(EmptyStatement* stmt) {
 }
 
 
+void HOptimizedGraphBuilder::VisitSloppyBlockFunctionStatement(
+    SloppyBlockFunctionStatement* stmt) {
+  Visit(stmt->statement());
+}
+
+
 void HOptimizedGraphBuilder::VisitIfStatement(IfStatement* stmt) {
   DCHECK(!HasStackOverflow());
   DCHECK(current_block() != NULL);
@@ -6403,8 +6409,8 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::LookupInPrototypes() {
 
 bool HOptimizedGraphBuilder::PropertyAccessInfo::IsIntegerIndexedExotic() {
   InstanceType instance_type = map_->instance_type();
-  return instance_type == JS_TYPED_ARRAY_TYPE &&
-         IsSpecialIndex(isolate()->unicode_cache(), *name_);
+  return instance_type == JS_TYPED_ARRAY_TYPE && name_->IsString() &&
+         IsSpecialIndex(isolate()->unicode_cache(), String::cast(*name_));
 }
 
 
@@ -11008,11 +11014,9 @@ HValue* HGraphBuilder::BuildBinaryOperation(
         left = BuildNumberToString(left, left_type);
       } else if (!left_type->Is(Type::String())) {
         DCHECK(right_type->Is(Type::String()));
-        // TODO(bmeurer): We might want to optimize this, because we already
-        // know that the right hand side is a string.
-        Add<HPushArguments>(left, right);
-        return AddUncasted<HCallRuntime>(Runtime::FunctionForId(Runtime::kAdd),
-                                         2);
+        return AddUncasted<HStringAdd>(
+            left, right, allocation_mode.GetPretenureMode(),
+            STRING_ADD_CONVERT_LEFT, allocation_mode.feedback_site());
       }
 
       // Convert right argument as necessary.
@@ -11021,11 +11025,9 @@ HValue* HGraphBuilder::BuildBinaryOperation(
         right = BuildNumberToString(right, right_type);
       } else if (!right_type->Is(Type::String())) {
         DCHECK(left_type->Is(Type::String()));
-        // TODO(bmeurer): We might want to optimize this, because we already
-        // know that the left hand side is a string.
-        Add<HPushArguments>(left, right);
-        return AddUncasted<HCallRuntime>(Runtime::FunctionForId(Runtime::kAdd),
-                                         2);
+        return AddUncasted<HStringAdd>(
+            left, right, allocation_mode.GetPretenureMode(),
+            STRING_ADD_CONVERT_RIGHT, allocation_mode.feedback_site());
       }
     }
 
@@ -11042,7 +11044,7 @@ HValue* HGraphBuilder::BuildBinaryOperation(
     if (!right_string.is_null() && right_string->length() == 0) return left;
     if (!left_string.is_null() && !right_string.is_null()) {
       return AddUncasted<HStringAdd>(
-          left, right, strength, allocation_mode.GetPretenureMode(),
+          left, right, allocation_mode.GetPretenureMode(),
           STRING_ADD_CHECK_NONE, allocation_mode.feedback_site());
     }
 
@@ -11071,8 +11073,8 @@ HValue* HGraphBuilder::BuildBinaryOperation(
 
     // Fallback to using the string add stub.
     return AddUncasted<HStringAdd>(
-        left, right, strength, allocation_mode.GetPretenureMode(),
-        STRING_ADD_CHECK_NONE, allocation_mode.feedback_site());
+        left, right, allocation_mode.GetPretenureMode(), STRING_ADD_CHECK_NONE,
+        allocation_mode.feedback_site());
   }
 
   if (graph()->info()->IsStub()) {
@@ -11572,6 +11574,51 @@ HControlInstruction* HOptimizedGraphBuilder::BuildCompareInstruction(
         return result;
       }
     } else {
+      if (combined_type->IsClass()) {
+        // TODO(bmeurer): This is an optimized version of an x < y, x > y,
+        // x <= y or x >= y, where both x and y are spec objects with the
+        // same map. The CompareIC collects this map for us. So if we know
+        // that there's no @@toPrimitive on the map (including the prototype
+        // chain), and both valueOf and toString are the default initial
+        // implementations (on the %ObjectPrototype%), then we can reduce
+        // the comparison to map checks on x and y, because the comparison
+        // will turn into a comparison of "[object CLASS]" to itself (the
+        // default outcome of toString, since valueOf returns a spec object).
+        // This is pretty much adhoc, so in TurboFan we could do a lot better
+        // and inline the interesting parts of ToPrimitive (actually we could
+        // even do that in Crankshaft but we don't want to waste too much
+        // time on this now).
+        DCHECK(Token::IsOrderedRelationalCompareOp(op));
+        Handle<Map> map = combined_type->AsClass()->Map();
+        PropertyAccessInfo value_of(this, LOAD, map,
+                                    isolate()->factory()->valueOf_string());
+        PropertyAccessInfo to_primitive(
+            this, LOAD, map, isolate()->factory()->to_primitive_symbol());
+        PropertyAccessInfo to_string(this, LOAD, map,
+                                     isolate()->factory()->toString_string());
+        PropertyAccessInfo to_string_tag(
+            this, LOAD, map, isolate()->factory()->to_string_tag_symbol());
+        if (to_primitive.CanAccessMonomorphic() && !to_primitive.IsFound() &&
+            to_string_tag.CanAccessMonomorphic() &&
+            (!to_string_tag.IsFound() || to_string_tag.IsData() ||
+             to_string_tag.IsDataConstant()) &&
+            value_of.CanAccessMonomorphic() && value_of.IsDataConstant() &&
+            value_of.constant().is_identical_to(isolate()->object_value_of()) &&
+            to_string.CanAccessMonomorphic() && to_string.IsDataConstant() &&
+            to_string.constant().is_identical_to(
+                isolate()->object_to_string())) {
+          // We depend on the prototype chain to stay the same, because we
+          // also need to deoptimize when someone installs @@toPrimitive
+          // or @@toStringTag somewhere in the prototype chain.
+          BuildCheckPrototypeMaps(handle(JSObject::cast(map->prototype())),
+                                  Handle<JSObject>::null());
+          AddCheckMap(left, map);
+          AddCheckMap(right, map);
+          // The caller expects a branch instruction, so make it happy.
+          return New<HBranch>(
+              graph()->GetConstantBool(op == Token::LTE || op == Token::GTE));
+        }
+      }
       Bailout(kUnsupportedNonPrimitiveCompare);
       return NULL;
     }
@@ -11602,6 +11649,23 @@ HControlInstruction* HOptimizedGraphBuilder::BuildCompareInstruction(
     Add<HCheckInstanceType>(right, HCheckInstanceType::IS_STRING);
     HStringCompareAndBranch* result =
         New<HStringCompareAndBranch>(left, right, op);
+    return result;
+  } else if (combined_type->Is(Type::Boolean())) {
+    AddCheckMap(left, isolate()->factory()->boolean_map());
+    AddCheckMap(right, isolate()->factory()->boolean_map());
+    if (Token::IsEqualityOp(op)) {
+      HCompareObjectEqAndBranch* result =
+          New<HCompareObjectEqAndBranch>(left, right);
+      return result;
+    }
+    left = Add<HLoadNamedField>(
+        left, nullptr,
+        HObjectAccess::ForOddballToNumber(Representation::Smi()));
+    right = Add<HLoadNamedField>(
+        right, nullptr,
+        HObjectAccess::ForOddballToNumber(Representation::Smi()));
+    HCompareNumericAndBranch* result =
+        New<HCompareNumericAndBranch>(left, right, op);
     return result;
   } else {
     if (combined_rep.IsTagged() || combined_rep.IsNone()) {
@@ -12485,8 +12549,7 @@ void HOptimizedGraphBuilder::GenerateStringAdd(CallRuntime* call) {
   CHECK_ALIVE(VisitForValue(call->arguments()->at(1)));
   HValue* right = Pop();
   HValue* left = Pop();
-  HInstruction* result =
-      NewUncasted<HStringAdd>(left, right, strength(function_language_mode()));
+  HInstruction* result = NewUncasted<HStringAdd>(left, right);
   return ast_context()->ReturnInstruction(result, call->id());
 }
 

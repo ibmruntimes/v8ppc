@@ -2112,17 +2112,17 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   // ecx : original constructor (for IsSuperConstructorCall)
   // edx : slot in feedback vector (Smi, for RecordCallTarget)
   // edi : constructor function
-  Label slow, non_function_call;
 
   if (IsSuperConstructorCall()) {
     __ push(ecx);
   }
 
+  Label non_function;
   // Check that function is not a smi.
-  __ JumpIfSmi(edi, &non_function_call);
+  __ JumpIfSmi(edi, &non_function);
   // Check that function is a JSFunction.
   __ CmpObjectType(edi, JS_FUNCTION_TYPE, ecx);
-  __ j(not_equal, &slow);
+  __ j(not_equal, &non_function);
 
   if (RecordCallTarget()) {
     GenerateRecordCallTarget(masm, IsSuperConstructorCall());
@@ -2148,44 +2148,17 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
     __ mov(edx, edi);
   }
 
-  // Jump to the function-specific construct stub.
-  Register jmp_reg = ecx;
-  __ mov(jmp_reg, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
-  __ mov(jmp_reg, FieldOperand(jmp_reg,
-                               SharedFunctionInfo::kConstructStubOffset));
-  __ lea(jmp_reg, FieldOperand(jmp_reg, Code::kHeaderSize));
-  __ jmp(jmp_reg);
+  // Tail call to the function-specific construct stub (still in the caller
+  // context at this point).
+  __ mov(ecx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+  __ mov(ecx, FieldOperand(ecx, SharedFunctionInfo::kConstructStubOffset));
+  __ lea(ecx, FieldOperand(ecx, Code::kHeaderSize));
+  __ jmp(ecx);
 
-  // edi: called object
-  // eax: number of arguments
-  // ecx: object map
-  // esp[0]: original receiver (for IsSuperConstructorCall)
-  __ bind(&slow);
-  {
-    __ CmpInstanceType(ecx, JS_FUNCTION_PROXY_TYPE);
-    __ j(not_equal, &non_function_call, Label::kNear);
-    if (IsSuperConstructorCall()) __ Drop(1);
-    // TODO(neis): This doesn't match the ES6 spec for [[Construct]] on proxies.
-    __ mov(edi, FieldOperand(edi, JSFunctionProxy::kConstructTrapOffset));
-    __ Jump(isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
-
-    __ bind(&non_function_call);
-    if (IsSuperConstructorCall()) __ Drop(1);
-    {
-      // Determine the delegate for the target (if any).
-      FrameScope scope(masm, StackFrame::INTERNAL);
-      __ SmiTag(eax);
-      __ Push(eax);
-      __ Push(edi);
-      __ CallRuntime(Runtime::kGetConstructorDelegate, 1);
-      __ mov(edi, eax);
-      __ Pop(eax);
-      __ SmiUntag(eax);
-    }
-    // The delegate is always a regular function.
-    __ AssertFunction(edi);
-    __ Jump(isolate()->builtins()->CallFunction(), RelocInfo::CODE_TARGET);
-  }
+  __ bind(&non_function);
+  if (IsSuperConstructorCall()) __ Drop(1);
+  __ mov(edx, edi);
+  __ Jump(isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
 }
 
 
@@ -3427,6 +3400,37 @@ void BinaryOpICWithAllocationSiteStub::Generate(MacroAssembler* masm) {
 }
 
 
+void CompareICStub::GenerateBooleans(MacroAssembler* masm) {
+  DCHECK_EQ(CompareICState::BOOLEAN, state());
+  Label miss;
+  Label::Distance const miss_distance =
+      masm->emit_debug_code() ? Label::kFar : Label::kNear;
+
+  __ JumpIfSmi(edx, &miss, miss_distance);
+  __ mov(ecx, FieldOperand(edx, HeapObject::kMapOffset));
+  __ JumpIfSmi(eax, &miss, miss_distance);
+  __ mov(ebx, FieldOperand(eax, HeapObject::kMapOffset));
+  __ JumpIfNotRoot(ecx, Heap::kBooleanMapRootIndex, &miss, miss_distance);
+  __ JumpIfNotRoot(ebx, Heap::kBooleanMapRootIndex, &miss, miss_distance);
+  if (op() != Token::EQ_STRICT && is_strong(strength())) {
+    __ TailCallRuntime(Runtime::kThrowStrongModeImplicitConversion, 0, 1);
+  } else {
+    if (!Token::IsEqualityOp(op())) {
+      __ mov(eax, FieldOperand(eax, Oddball::kToNumberOffset));
+      __ AssertSmi(eax);
+      __ mov(edx, FieldOperand(edx, Oddball::kToNumberOffset));
+      __ AssertSmi(edx);
+      __ xchg(eax, edx);
+    }
+    __ sub(eax, edx);
+    __ Ret();
+  }
+
+  __ bind(&miss);
+  GenerateMiss(masm);
+}
+
+
 void CompareICStub::GenerateSmis(MacroAssembler* masm) {
   DCHECK(state() == CompareICState::SMI);
   Label miss;
@@ -3744,15 +3748,24 @@ void CompareICStub::GenerateKnownObjects(MacroAssembler* masm) {
   __ JumpIfSmi(ecx, &miss, Label::kNear);
 
   __ GetWeakValue(edi, cell);
-  __ mov(ecx, FieldOperand(eax, HeapObject::kMapOffset));
-  __ mov(ebx, FieldOperand(edx, HeapObject::kMapOffset));
-  __ cmp(ecx, edi);
+  __ cmp(edi, FieldOperand(eax, HeapObject::kMapOffset));
   __ j(not_equal, &miss, Label::kNear);
-  __ cmp(ebx, edi);
+  __ cmp(edi, FieldOperand(edx, HeapObject::kMapOffset));
   __ j(not_equal, &miss, Label::kNear);
 
-  __ sub(eax, edx);
-  __ ret(0);
+  if (Token::IsEqualityOp(op())) {
+    __ sub(eax, edx);
+    __ ret(0);
+  } else if (is_strong(strength())) {
+    __ TailCallRuntime(Runtime::kThrowStrongModeImplicitConversion, 0, 1);
+  } else {
+    __ PopReturnAddressTo(ecx);
+    __ Push(edx);
+    __ Push(eax);
+    __ Push(Immediate(Smi::FromInt(NegativeComparisonResult(GetCondition()))));
+    __ PushReturnAddressFrom(ecx);
+    __ TailCallRuntime(Runtime::kCompare, 3, 1);
+  }
 
   __ bind(&miss);
   GenerateMiss(masm);

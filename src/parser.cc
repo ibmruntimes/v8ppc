@@ -2259,7 +2259,16 @@ Statement* Parser::ParseFunctionDeclaration(
       factory()->NewFunctionDeclaration(proxy, mode, fun, scope_, pos);
   Declare(declaration, DeclarationDescriptor::NORMAL, true, CHECK_OK);
   if (names) names->Add(name, zone());
-  return factory()->NewEmptyStatement(RelocInfo::kNoPosition);
+  EmptyStatement* empty = factory()->NewEmptyStatement(RelocInfo::kNoPosition);
+  if (is_sloppy(language_mode()) && allow_harmony_sloppy_function() &&
+      !scope_->is_declaration_scope()) {
+    SloppyBlockFunctionStatement* delegate =
+        factory()->NewSloppyBlockFunctionStatement(empty, scope_);
+    scope_->DeclarationScope()->sloppy_block_function_map()->Declare(name,
+                                                                     delegate);
+    return delegate;
+  }
+  return empty;
 }
 
 
@@ -2713,7 +2722,8 @@ Statement* Parser::ParseExpressionOrLabelledStatement(
 
   // Parsed expression statement, followed by semicolon.
   // Detect attempts at 'let' declarations in sloppy mode.
-  if (peek() == Token::IDENTIFIER && expr->AsVariableProxy() != NULL &&
+  if (!allow_harmony_sloppy_let() && peek() == Token::IDENTIFIER &&
+      expr->AsVariableProxy() != NULL &&
       expr->AsVariableProxy()->raw_name() ==
           ast_value_factory()->let_string()) {
     ReportMessage(MessageTemplate::kSloppyLexical, NULL);
@@ -3792,8 +3802,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
 
   // Parsed initializer at this point.
   // Detect attempts at 'let' declarations in sloppy mode.
-  if (peek() == Token::IDENTIFIER && is_sloppy(language_mode()) &&
-      is_let_identifier_expression) {
+  if (!allow_harmony_sloppy_let() && peek() == Token::IDENTIFIER &&
+      is_sloppy(language_mode()) && is_let_identifier_expression) {
     ReportMessage(MessageTemplate::kSloppyLexical, NULL);
     *ok = false;
     return NULL;
@@ -4276,6 +4286,9 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     if (is_strict(language_mode)) {
       CheckStrictOctalLiteral(scope->start_position(), scope->end_position(),
                               CHECK_OK);
+    }
+    if (is_sloppy(language_mode) && allow_harmony_sloppy_function()) {
+      InsertSloppyBlockFunctionVarBindings(scope, CHECK_OK);
     }
     if (is_strict(language_mode) || allow_harmony_sloppy()) {
       CheckConflictingVarDeclarations(scope, CHECK_OK);
@@ -4935,6 +4948,41 @@ void Parser::CheckConflictingVarDeclarations(Scope* scope, bool* ok) {
     ParserTraits::ReportMessageAt(location, MessageTemplate::kVarRedeclaration,
                                   name);
     *ok = false;
+  }
+}
+
+
+void Parser::InsertSloppyBlockFunctionVarBindings(Scope* scope, bool* ok) {
+  // For each variable which is used as a function declaration in a sloppy
+  // block,
+  DCHECK(scope->is_declaration_scope());
+  SloppyBlockFunctionMap* map = scope->sloppy_block_function_map();
+  for (ZoneHashMap::Entry* p = map->Start(); p != nullptr; p = map->Next(p)) {
+    AstRawString* name = static_cast<AstRawString*>(p->key);
+    // If the variable wouldn't conflict with a lexical declaration,
+    Variable* var = scope->LookupLocal(name);
+    if (var == nullptr || !IsLexicalVariableMode(var->mode())) {
+      // Declare a var-style binding for the function in the outer scope
+      VariableProxy* proxy = scope->NewUnresolved(factory(), name);
+      Declaration* declaration = factory()->NewVariableDeclaration(
+          proxy, VAR, scope, RelocInfo::kNoPosition);
+      Declare(declaration, DeclarationDescriptor::NORMAL, true, ok, scope);
+      DCHECK(ok);  // Based on the preceding check, this should not fail
+      if (!ok) return;
+
+      // Write in assignments to var for each block-scoped function declaration
+      auto delegates = static_cast<SloppyBlockFunctionMap::Vector*>(p->value);
+      for (SloppyBlockFunctionStatement* delegate : *delegates) {
+        // Read from the local lexical scope and write to the function scope
+        VariableProxy* to = scope->NewUnresolved(factory(), name);
+        VariableProxy* from = delegate->scope()->NewUnresolved(factory(), name);
+        Expression* assignment = factory()->NewAssignment(
+            Token::ASSIGN, to, from, RelocInfo::kNoPosition);
+        Statement* statement = factory()->NewExpressionStatement(
+            assignment, RelocInfo::kNoPosition);
+        delegate->set_statement(statement);
+      }
+    }
   }
 }
 
