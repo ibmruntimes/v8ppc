@@ -79,14 +79,11 @@ enum BindingFlags {
   V(MAKE_RANGE_ERROR_INDEX, JSFunction, make_range_error)                 \
   V(MAKE_TYPE_ERROR_INDEX, JSFunction, make_type_error)                   \
   V(NON_NUMBER_TO_NUMBER_INDEX, JSFunction, non_number_to_number)         \
-  V(NON_STRING_TO_STRING_INDEX, JSFunction, non_string_to_string)         \
   V(REFLECT_APPLY_INDEX, JSFunction, reflect_apply)                       \
   V(REFLECT_CONSTRUCT_INDEX, JSFunction, reflect_construct)               \
   V(SPREAD_ARGUMENTS_INDEX, JSFunction, spread_arguments)                 \
   V(SPREAD_ITERABLE_INDEX, JSFunction, spread_iterable)                   \
-  V(TO_LENGTH_FUN_INDEX, JSFunction, to_length_fun)                       \
-  V(TO_NUMBER_FUN_INDEX, JSFunction, to_number_fun)                       \
-  V(TO_STRING_FUN_INDEX, JSFunction, to_string_fun)
+  V(TO_NUMBER_FUN_INDEX, JSFunction, to_number_fun)
 
 
 #define NATIVE_CONTEXT_JS_BUILTINS(V)                                 \
@@ -161,7 +158,6 @@ enum BindingFlags {
   V(TO_COMPLETE_PROPERTY_DESCRIPTOR_INDEX, JSFunction,                        \
     to_complete_property_descriptor)                                          \
   V(TO_DETAIL_STRING_FUN_INDEX, JSFunction, to_detail_string_fun)             \
-  V(TO_INTEGER_FUN_INDEX, JSFunction, to_integer_fun)                         \
   V(TYPE_ERROR_FUNCTION_INDEX, JSFunction, type_error_function)               \
   V(URI_ERROR_FUNCTION_INDEX, JSFunction, uri_error_function)                 \
   NATIVE_CONTEXT_JS_BUILTINS(V)
@@ -219,6 +215,7 @@ enum BindingFlags {
   V(NORMALIZED_MAP_CACHE_INDEX, Object, normalized_map_cache)                  \
   V(NUMBER_FUNCTION_INDEX, JSFunction, number_function)                        \
   V(OBJECT_FUNCTION_INDEX, JSFunction, object_function)                        \
+  V(OBJECT_FUNCTION_PROTOTYPE_MAP_INDEX, Map, object_function_prototype_map)   \
   V(OPAQUE_REFERENCE_FUNCTION_INDEX, JSFunction, opaque_reference_function)    \
   V(REGEXP_FUNCTION_INDEX, JSFunction, regexp_function)                        \
   V(REGEXP_RESULT_MAP_INDEX, Map, regexp_result_map)                           \
@@ -514,7 +511,7 @@ class Context: public FixedArray {
                                       : SLOPPY_GENERATOR_FUNCTION_MAP_INDEX;
     }
 
-    if (IsConstructor(kind)) {
+    if (IsClassConstructor(kind)) {
       // Use strict function map (no own "caller" / "arguments")
       return is_strong(language_mode) ? STRONG_CONSTRUCTOR_MAP_INDEX
                                       : STRICT_FUNCTION_MAP_INDEX;

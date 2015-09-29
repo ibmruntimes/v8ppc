@@ -449,7 +449,6 @@ enum IsTagged { kEaxIsSmiTagged, kEaxIsUntaggedInt };
 
 // Clobbers ecx, edx, edi; preserves all other registers.
 static void Generate_CheckStackOverflow(MacroAssembler* masm,
-                                        const int calleeOffset,
                                         IsTagged eax_is_tagged) {
   // eax   : the number of items to be pushed to the stack
   //
@@ -474,11 +473,6 @@ static void Generate_CheckStackOverflow(MacroAssembler* masm,
   __ j(greater, &okay);  // Signed comparison.
 
   // Out of stack space.
-  __ push(Operand(ebp, calleeOffset));  // push this
-  if (eax_is_tagged == kEaxIsUntaggedInt) {
-    __ SmiTag(eax);
-  }
-  __ push(eax);
   __ CallRuntime(Runtime::kThrowStackOverflow, 0);
 
   __ bind(&okay);
@@ -512,12 +506,8 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     __ mov(ebx, Operand(ebx, EntryFrameConstants::kArgvOffset));
 
     // Check if we have enough stack space to push all arguments.
-    // The function is the first thing that was pushed above after entering
-    // the internal frame.
-    const int kFunctionOffset =
-        InternalFrameConstants::kCodeOffset - kPointerSize;
     // Expects argument count in eax. Clobbers ecx, edx, edi.
-    Generate_CheckStackOverflow(masm, kFunctionOffset, kEaxIsUntaggedInt);
+    Generate_CheckStackOverflow(masm, kEaxIsUntaggedInt);
 
     // Copy arguments to the stack in a loop.
     Label loop, entry;
@@ -1042,7 +1032,7 @@ static void Generate_ApplyHelper(MacroAssembler* masm, bool targetIsArgument) {
       __ InvokeBuiltin(Context::APPLY_PREPARE_BUILTIN_INDEX, CALL_FUNCTION);
     }
 
-    Generate_CheckStackOverflow(masm, kFunctionOffset, kEaxIsSmiTagged);
+    Generate_CheckStackOverflow(masm, kEaxIsSmiTagged);
 
     // Push current index and limit.
     const int kLimitOffset = kVectorOffset - 1 * kPointerSize;
@@ -1111,7 +1101,7 @@ static void Generate_ConstructHelper(MacroAssembler* masm) {
     __ InvokeBuiltin(Context::REFLECT_CONSTRUCT_PREPARE_BUILTIN_INDEX,
                      CALL_FUNCTION);
 
-    Generate_CheckStackOverflow(masm, kFunctionOffset, kEaxIsSmiTagged);
+    Generate_CheckStackOverflow(masm, kEaxIsSmiTagged);
 
     // Push current index and limit.
     const int kLimitOffset = kVectorOffset - 1 * kPointerSize;
@@ -1516,13 +1506,13 @@ void Builtins::Generate_Call(MacroAssembler* masm) {
   //  -- edi : the target to call (can be any Object).
   // -----------------------------------
 
-  Label non_smi, non_function;
-  __ JumpIfSmi(edi, &non_function);
+  Label non_callable, non_function, non_smi;
+  __ JumpIfSmi(edi, &non_callable);
   __ bind(&non_smi);
-  __ CmpObjectType(edi, JS_FUNCTION_TYPE, edx);
+  __ CmpObjectType(edi, JS_FUNCTION_TYPE, ecx);
   __ j(equal, masm->isolate()->builtins()->CallFunction(),
        RelocInfo::CODE_TARGET);
-  __ CmpInstanceType(edx, JS_FUNCTION_PROXY_TYPE);
+  __ CmpInstanceType(ecx, JS_FUNCTION_PROXY_TYPE);
   __ j(not_equal, &non_function);
 
   // 1. Call to function proxy.
@@ -1534,28 +1524,22 @@ void Builtins::Generate_Call(MacroAssembler* masm) {
   // 2. Call to something else, which might have a [[Call]] internal method (if
   // not we raise an exception).
   __ bind(&non_function);
-  // TODO(bmeurer): I wonder why we prefer to have slow API calls? This could
-  // be awesome instead; i.e. a trivial improvement would be to call into the
-  // runtime and just deal with the API function there instead of returning a
-  // delegate from a runtime call that just jumps back to the runtime once
-  // called. Or, bonus points, call directly into the C API function here, as
-  // we do in some Crankshaft fast cases.
+  // Check if target has a [[Call]] internal method.
+  __ test_b(FieldOperand(ecx, Map::kBitFieldOffset), 1 << Map::kIsCallable);
+  __ j(zero, &non_callable, Label::kNear);
   // Overwrite the original receiver with the (original) target.
   __ mov(Operand(esp, eax, times_pointer_size, kPointerSize), edi);
-  {
-    // Determine the delegate for the target (if any).
-    FrameScope scope(masm, StackFrame::INTERNAL);
-    __ SmiTag(eax);
-    __ Push(eax);
-    __ Push(edi);
-    __ CallRuntime(Runtime::kGetFunctionDelegate, 1);
-    __ mov(edi, eax);
-    __ Pop(eax);
-    __ SmiUntag(eax);
-  }
-  // The delegate is always a regular function.
-  __ AssertFunction(edi);
+  // Let the "call_as_function_delegate" take care of the rest.
+  __ LoadGlobalFunction(Context::CALL_AS_FUNCTION_DELEGATE_INDEX, edi);
   __ Jump(masm->isolate()->builtins()->CallFunction(), RelocInfo::CODE_TARGET);
+
+  // 3. Call to something that is not callable.
+  __ bind(&non_callable);
+  {
+    FrameScope scope(masm, StackFrame::INTERNAL);
+    __ Push(edi);
+    __ CallRuntime(Runtime::kThrowCalledNonCallable, 1);
+  }
 }
 
 
@@ -1583,6 +1567,21 @@ void Builtins::Generate_ConstructFunction(MacroAssembler* masm) {
 
 
 // static
+void Builtins::Generate_ConstructProxy(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- eax : the number of arguments (not including the receiver)
+  //  -- edx : the original constructor (either the same as the constructor or
+  //           the JSFunction on which new was invoked initially)
+  //  -- edi : the constructor to call (checked to be a JSFunctionProxy)
+  // -----------------------------------
+
+  // TODO(neis): This doesn't match the ES6 spec for [[Construct]] on proxies.
+  __ mov(edi, FieldOperand(edi, JSFunctionProxy::kConstructTrapOffset));
+  __ Jump(masm->isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
+}
+
+
+// static
 void Builtins::Generate_Construct(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- eax : the number of arguments (not including the receiver)
@@ -1591,33 +1590,39 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
   //  -- edi : the constructor to call (can be any Object)
   // -----------------------------------
 
-  Label slow;
-  __ JumpIfSmi(edi, &slow, Label::kNear);
-  __ CmpObjectType(edi, JS_FUNCTION_TYPE, ecx);
+  // Check if target has a [[Construct]] internal method.
+  Label non_constructor;
+  __ JumpIfSmi(edi, &non_constructor, Label::kNear);
+  __ mov(ecx, FieldOperand(edi, HeapObject::kMapOffset));
+  __ test_b(FieldOperand(ecx, Map::kBitFieldOffset), 1 << Map::kIsConstructor);
+  __ j(zero, &non_constructor, Label::kNear);
+
+  // Dispatch based on instance type.
+  __ CmpInstanceType(ecx, JS_FUNCTION_TYPE);
   __ j(equal, masm->isolate()->builtins()->ConstructFunction(),
        RelocInfo::CODE_TARGET);
   __ CmpInstanceType(ecx, JS_FUNCTION_PROXY_TYPE);
-  __ j(not_equal, &slow, Label::kNear);
+  __ j(equal, masm->isolate()->builtins()->ConstructProxy(),
+       RelocInfo::CODE_TARGET);
 
-  // TODO(neis): This doesn't match the ES6 spec for [[Construct]] on proxies.
-  __ mov(edi, FieldOperand(edi, JSFunctionProxy::kConstructTrapOffset));
-  __ Jump(masm->isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
-
-  __ bind(&slow);
+  // Called Construct on an exotic Object with a [[Construct]] internal method.
   {
-    // Determine the delegate for the target (if any).
-    FrameScope scope(masm, StackFrame::INTERNAL);
-    __ SmiTag(eax);
-    __ Push(eax);
-    __ Push(edi);
-    __ CallRuntime(Runtime::kGetConstructorDelegate, 1);
-    __ mov(edi, eax);
-    __ Pop(eax);
-    __ SmiUntag(eax);
+    // Overwrite the original receiver with the (original) target.
+    __ mov(Operand(esp, eax, times_pointer_size, kPointerSize), edi);
+    // Let the "call_as_constructor_delegate" take care of the rest.
+    __ LoadGlobalFunction(Context::CALL_AS_CONSTRUCTOR_DELEGATE_INDEX, edi);
+    __ Jump(masm->isolate()->builtins()->CallFunction(),
+            RelocInfo::CODE_TARGET);
   }
-  // The delegate is always a regular function.
-  __ AssertFunction(edi);
-  __ Jump(masm->isolate()->builtins()->CallFunction(), RelocInfo::CODE_TARGET);
+
+  // Called Construct on an Object that doesn't have a [[Construct]] internal
+  // method.
+  __ bind(&non_constructor);
+  {
+    FrameScope scope(masm, StackFrame::INTERNAL);
+    __ Push(edi);
+    __ CallRuntime(Runtime::kThrowCalledNonCallable, 1);
+  }
 }
 
 

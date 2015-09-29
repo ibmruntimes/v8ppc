@@ -35,8 +35,9 @@ class Execution final : public AllStatic {
   MUST_USE_RESULT static MaybeHandle<Object> New(Handle<JSFunction> constructor,
                                                  int argc,
                                                  Handle<Object> argv[]);
-  MUST_USE_RESULT static MaybeHandle<Object> New(Handle<JSFunction> constructor,
-                                                 Handle<JSFunction> new_target,
+  MUST_USE_RESULT static MaybeHandle<Object> New(Isolate* isolate,
+                                                 Handle<Object> constructor,
+                                                 Handle<Object> new_target,
                                                  int argc,
                                                  Handle<Object> argv[]);
 
@@ -50,23 +51,6 @@ class Execution final : public AllStatic {
                                      Handle<Object> receiver, int argc,
                                      Handle<Object> argv[],
                                      MaybeHandle<Object>* exception_out = NULL);
-
-  // ECMA-262 9.4
-  MUST_USE_RESULT static MaybeHandle<Object> ToInteger(
-      Isolate* isolate, Handle<Object> obj);
-
-  // ECMA-262 9.5
-  MUST_USE_RESULT static MaybeHandle<Object> ToInt32(
-      Isolate* isolate, Handle<Object> obj);
-
-  // ECMA-262 9.6
-  MUST_USE_RESULT static MaybeHandle<Object> ToUint32(
-      Isolate* isolate, Handle<Object> obj);
-
-
-  // ES6, draft 10-14-14, section 7.1.15
-  MUST_USE_RESULT static MaybeHandle<Object> ToLength(
-      Isolate* isolate, Handle<Object> obj);
 
   // ECMA-262 9.8
   MUST_USE_RESULT static MaybeHandle<Object> ToDetailString(
@@ -88,20 +72,6 @@ class Execution final : public AllStatic {
                                           Handle<JSFunction> fun,
                                           Handle<Object> pos,
                                           Handle<Object> is_global);
-
-  // Get a function delegate for the given non-function object.
-  // Used for support calling objects as functions.
-  MUST_USE_RESULT static MaybeHandle<JSFunction> GetFunctionDelegate(
-      Isolate* isolate, Handle<Object> object);
-
-  // Get a function delegate (or undefined) for the given non-function
-  // object. Used for support calling objects as constructors.
-  MUST_USE_RESULT static MaybeHandle<JSFunction> GetConstructorDelegate(
-      Isolate* isolate, Handle<Object> object);
-
- private:
-  MUST_USE_RESULT static Handle<String> RenderCallSite(Isolate* isolate,
-                                                       Handle<Object> object);
 };
 
 

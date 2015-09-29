@@ -149,17 +149,19 @@ void JSGenericLowering::ReplaceWithCompareIC(Node* node, Token::Value token,
   inputs.push_back(NodeProperties::GetValueInput(node, 0));
   inputs.push_back(NodeProperties::GetValueInput(node, 1));
   inputs.push_back(NodeProperties::GetContextInput(node));
-  if (node->op()->HasProperty(Operator::kPure)) {
-    // A pure (strict) comparison doesn't have an effect, control or frame
-    // state.  But for the graph, we need to add control and effect inputs.
-    DCHECK(OperatorProperties::GetFrameStateInputCount(node->op()) == 0);
-    inputs.push_back(graph()->start());
-    inputs.push_back(graph()->start());
-  } else {
+  // Some comparisons (StrictEqual) don't have an effect, control or frame
+  // state inputs, so handle those cases here.
+  if (OperatorProperties::GetFrameStateInputCount(node->op()) > 0) {
     inputs.push_back(NodeProperties::GetFrameStateInput(node, 0));
-    inputs.push_back(NodeProperties::GetEffectInput(node));
-    inputs.push_back(NodeProperties::GetControlInput(node));
   }
+  Node* effect = (node->op()->EffectInputCount() > 0)
+                     ? NodeProperties::GetEffectInput(node)
+                     : graph()->start();
+  inputs.push_back(effect);
+  Node* control = (node->op()->ControlInputCount() > 0)
+                      ? NodeProperties::GetControlInput(node)
+                      : graph()->start();
+  inputs.push_back(control);
   CallDescriptor* desc_compare = Linkage::GetStubCallDescriptor(
       isolate(), zone(), callable.descriptor(), 0,
       CallDescriptor::kPatchableCallSiteWithNop | FlagsForNode(node),
@@ -208,7 +210,7 @@ void JSGenericLowering::ReplaceWithCompareIC(Node* node, Token::Value token,
   node->ReplaceInput(0, booleanize);
   node->ReplaceInput(1, true_value);
   node->ReplaceInput(2, false_value);
-  node->set_op(common()->Select(kMachAnyTagged));
+  NodeProperties::ChangeOp(node, common()->Select(kMachAnyTagged));
 }
 
 
@@ -219,7 +221,7 @@ void JSGenericLowering::ReplaceWithStubCall(Node* node, Callable callable,
       isolate(), zone(), callable.descriptor(), 0, flags, properties);
   Node* stub_code = jsgraph()->HeapConstant(callable.code());
   node->InsertInput(zone(), 0, stub_code);
-  node->set_op(common()->Call(desc));
+  NodeProperties::ChangeOp(node, common()->Call(desc));
 }
 
 
@@ -236,7 +238,7 @@ void JSGenericLowering::ReplaceWithRuntimeCall(Node* node,
   node->InsertInput(zone(), 0, jsgraph()->CEntryStubConstant(fun->result_size));
   node->InsertInput(zone(), nargs + 1, ref);
   node->InsertInput(zone(), nargs + 2, arity);
-  node->set_op(common()->Call(desc));
+  NodeProperties::ChangeOp(node, common()->Call(desc));
 }
 
 
@@ -440,7 +442,7 @@ void JSGenericLowering::LowerJSLoadContext(Node* node) {
   node->ReplaceInput(1, jsgraph()->Int32Constant(Context::SlotOffset(
                             static_cast<int>(access.index()))));
   node->AppendInput(zone(), graph()->start());
-  node->set_op(machine()->Load(kMachAnyTagged));
+  NodeProperties::ChangeOp(node, machine()->Load(kMachAnyTagged));
 }
 
 
@@ -458,8 +460,8 @@ void JSGenericLowering::LowerJSStoreContext(Node* node) {
   node->ReplaceInput(2, NodeProperties::GetValueInput(node, 1));
   node->ReplaceInput(1, jsgraph()->Int32Constant(Context::SlotOffset(
                             static_cast<int>(access.index()))));
-  node->set_op(
-      machine()->Store(StoreRepresentation(kMachAnyTagged, kFullWriteBarrier)));
+  NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
+                                     kMachAnyTagged, kFullWriteBarrier)));
 }
 
 
@@ -551,7 +553,7 @@ void JSGenericLowering::LowerJSCallConstruct(Node* node) {
   node->InsertInput(zone(), 2, actual_construct);
   node->InsertInput(zone(), 3, original_construct);
   node->InsertInput(zone(), 4, jsgraph()->UndefinedConstant());
-  node->set_op(common()->Call(desc));
+  NodeProperties::ChangeOp(node, common()->Call(desc));
 }
 
 
@@ -568,7 +570,7 @@ void JSGenericLowering::LowerJSCallFunction(Node* node) {
       isolate(), zone(), d, static_cast<int>(p.arity() - 1), flags);
   Node* stub_code = jsgraph()->HeapConstant(stub.GetCode());
   node->InsertInput(zone(), 0, stub_code);
-  node->set_op(common()->Call(desc));
+  NodeProperties::ChangeOp(node, common()->Call(desc));
 }
 
 

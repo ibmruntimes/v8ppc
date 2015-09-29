@@ -11,12 +11,12 @@
 #include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"
 #include "src/code-stubs.h"
-#include "src/cpu-profiler.h"
 #include "src/deoptimizer.h"
 #include "src/global-handles.h"
 #include "src/log-inl.h"
 #include "src/log-utils.h"
 #include "src/macro-assembler.h"
+#include "src/profiler/cpu-profiler.h"
 #include "src/runtime-profiler.h"
 #include "src/string-stream.h"
 #include "src/vm-state-inl.h"
@@ -1645,8 +1645,8 @@ void Logger::LogCodeObject(Object* object) {
       description = "A keyed store IC from the snapshot";
       tag = Logger::KEYED_STORE_IC_TAG;
       break;
-    case Code::PLACEHOLDER:
-      description = "A placeholder for linking later code";
+    case Code::WASM_FUNCTION:
+      description = "A wasm function";
       tag = Logger::STUB_TAG;
       break;
     case Code::NUMBER_OF_KINDS:

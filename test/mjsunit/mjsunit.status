@@ -154,9 +154,6 @@
   # issue 4078:
   'allocation-site-info': [PASS, NO_VARIANTS],
 
-  # issue 4325:
-  'regress/regress-3960': [PASS, NO_VARIANTS],
-
   ##############################################################################
   # Too slow in debug mode with --stress-opt mode.
   'compiler/regress-stacktrace-methods': [PASS, ['mode == debug', SKIP]],
@@ -283,6 +280,7 @@
   'regress/regress-crbug-137689': [SKIP],
   'regress/regress-165637': [SKIP],
   'regress/regress-2249': [SKIP],
+  'regress/regress-4121': [SKIP],
   # Tests taking too long
   'debug-stepout-scope-part8': [SKIP],
   'mirror-object': [SKIP],

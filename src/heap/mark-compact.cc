@@ -6,9 +6,9 @@
 
 #include "src/base/atomicops.h"
 #include "src/base/bits.h"
+#include "src/base/sys-info.h"
 #include "src/code-stubs.h"
 #include "src/compilation-cache.h"
-#include "src/cpu-profiler.h"
 #include "src/deoptimizer.h"
 #include "src/execution.h"
 #include "src/frames-inl.h"
@@ -23,9 +23,9 @@
 #include "src/heap/objects-visiting-inl.h"
 #include "src/heap/slots-buffer.h"
 #include "src/heap/spaces-inl.h"
-#include "src/heap-profiler.h"
 #include "src/ic/ic.h"
 #include "src/ic/stub-cache.h"
+#include "src/profiler/cpu-profiler.h"
 #include "src/v8.h"
 
 namespace v8 {
@@ -1013,8 +1013,8 @@ void CodeFlusher::ProcessOptimizedCodeMaps() {
       STATIC_ASSERT(SharedFunctionInfo::kEntryLength == 4);
       Context* context =
           Context::cast(code_map->get(i + SharedFunctionInfo::kContextOffset));
-      Code* code =
-          Code::cast(code_map->get(i + SharedFunctionInfo::kCachedCodeOffset));
+      HeapObject* code = HeapObject::cast(
+          code_map->get(i + SharedFunctionInfo::kCachedCodeOffset));
       FixedArray* literals = FixedArray::cast(
           code_map->get(i + SharedFunctionInfo::kLiteralsOffset));
       Smi* ast_id =
@@ -3370,13 +3370,24 @@ bool MarkCompactCollector::EvacuateLiveObjectsFromPage(
 }
 
 
+int MarkCompactCollector::NumberOfParallelCompactionTasks() {
+  if (!FLAG_parallel_compaction) return 1;
+  // We cap the number of parallel compaction tasks by
+  // - (#cores - 1)
+  // - a value depending on the list of evacuation candidates
+  // - a hard limit
+  const int kPagesPerCompactionTask = 4;
+  const int kMaxCompactionTasks = 8;
+  return Min(kMaxCompactionTasks,
+             Min(1 + evacuation_candidates_.length() / kPagesPerCompactionTask,
+                 Max(1, base::SysInfo::NumberOfProcessors() - 1)));
+}
+
+
 void MarkCompactCollector::EvacuatePagesInParallel() {
   if (evacuation_candidates_.length() == 0) return;
 
-  int num_tasks = 1;
-  if (FLAG_parallel_compaction) {
-    num_tasks = NumberOfParallelCompactionTasks();
-  }
+  const int num_tasks = NumberOfParallelCompactionTasks();
 
   // Set up compaction spaces.
   CompactionSpaceCollection** compaction_spaces_for_tasks =

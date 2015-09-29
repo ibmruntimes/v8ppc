@@ -313,7 +313,7 @@ bool Scope::Analyze(ParseInfo* info) {
   if (!info->shared_info().is_null()) {
     Object* script = info->shared_info()->script();
     native = script->IsScript() &&
-             Script::cast(script)->type()->value() == Script::TYPE_NATIVE;
+             Script::cast(script)->type() == Script::TYPE_NATIVE;
   }
 
   if (native ? FLAG_print_builtin_scopes : FLAG_print_scopes) scope->Print();
@@ -357,7 +357,7 @@ void Scope::Initialize() {
                          Variable::NORMAL, kCreatedInitialized);
     }
 
-    if (IsConciseMethod(function_kind_) || IsConstructor(function_kind_) ||
+    if (IsConciseMethod(function_kind_) || IsClassConstructor(function_kind_) ||
         IsAccessorFunction(function_kind_)) {
       variables_.Declare(this, ast_value_factory_->this_function_string(),
                          CONST, Variable::NORMAL, kCreatedInitialized);
@@ -1285,7 +1285,7 @@ ClassVariable* Scope::ClassVariableForMethod() const {
   // It needs to be investigated whether this causes any practical problems.
   if (!is_function_scope()) return nullptr;
   if (IsInObjectLiteral(function_kind_)) return nullptr;
-  if (!IsConciseMethod(function_kind_) && !IsConstructor(function_kind_) &&
+  if (!IsConciseMethod(function_kind_) && !IsClassConstructor(function_kind_) &&
       !IsAccessorFunction(function_kind_)) {
     return nullptr;
   }

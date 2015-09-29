@@ -8,7 +8,6 @@
 #include "src/base/division-by-constant.h"
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
-#include "src/cpu-profiler.h"
 #include "src/debug/debug.h"
 #include "src/runtime/runtime.h"
 
@@ -2777,6 +2776,14 @@ void MacroAssembler::Prologue(bool code_pre_aging) {
   } else {
     __ EmitFrameSetupForCodeAgePatching();
   }
+}
+
+
+void MacroAssembler::EmitLoadTypeFeedbackVector(Register vector) {
+  Ldr(vector, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+  Ldr(vector, FieldMemOperand(vector, JSFunction::kSharedFunctionInfoOffset));
+  Ldr(vector,
+      FieldMemOperand(vector, SharedFunctionInfo::kFeedbackVectorOffset));
 }
 
 

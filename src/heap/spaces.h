@@ -2550,11 +2550,6 @@ class NewSpace : public Space {
     return allocation_info_.top();
   }
 
-  void set_top(Address top) {
-    DCHECK(to_space_.current_page()->ContainsLimit(top));
-    allocation_info_.set_top(top);
-  }
-
   // Return the address of the allocation pointer limit in the active semispace.
   Address limit() {
     DCHECK(to_space_.current_page()->ContainsLimit(allocation_info_.limit()));
@@ -2720,6 +2715,15 @@ class NewSpace : public Space {
   HistogramInfo* promoted_histogram_;
 
   bool EnsureAllocation(int size_in_bytes, AllocationAlignment alignment);
+
+  // If we are doing inline allocation in steps, this method performs the 'step'
+  // operation. Right now incremental marking is the only consumer of inline
+  // allocation steps. top is the memory address of the bump pointer at the last
+  // inline allocation (i.e. it determines the numbers of bytes actually
+  // allocated since the last step.) new_top is the address of the bump pointer
+  // where the next byte is going to be allocated from. top and new_top may be
+  // different when we cross a page boundary or reset the space.
+  void InlineAllocationStep(Address top, Address new_top);
 
   friend class SemiSpaceIterator;
 };
@@ -2889,6 +2893,7 @@ class LargeObjectSpace : public Space {
 
   // Checks whether a heap object is in this space; O(1).
   bool Contains(HeapObject* obj);
+  bool Contains(Address address);
 
   // Checks whether the space is empty.
   bool IsEmpty() { return first_page_ == NULL; }

@@ -8,6 +8,7 @@
 
 #include "src/allocation-site-scopes.h"
 #include "src/ast-numbering.h"
+#include "src/code-factory.h"
 #include "src/full-codegen/full-codegen.h"
 #include "src/hydrogen-bce.h"
 #include "src/hydrogen-bch.h"
@@ -5768,7 +5769,7 @@ void HOptimizedGraphBuilder::VisitRegExpLiteral(RegExpLiteral* expr) {
   DCHECK(current_block() != NULL);
   DCHECK(current_block()->HasPredecessor());
   Handle<JSFunction> closure = function_state()->compilation_info()->closure();
-  Handle<FixedArray> literals(closure->literals());
+  Handle<LiteralsArray> literals(closure->literals());
   HRegExpLiteral* instr = New<HRegExpLiteral>(literals,
                                               expr->pattern(),
                                               expr->flags(),
@@ -5864,8 +5865,8 @@ void HOptimizedGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
 
   // Check whether to use fast or slow deep-copying for boilerplate.
   int max_properties = kMaxFastLiteralProperties;
-  Handle<Object> literals_cell(closure->literals()->get(expr->literal_index()),
-                               isolate());
+  Handle<Object> literals_cell(
+      closure->literals()->literal(expr->literal_index()), isolate());
   Handle<AllocationSite> site;
   Handle<JSObject> boilerplate;
   if (!literals_cell->IsUndefined()) {
@@ -5883,7 +5884,7 @@ void HOptimizedGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
     site_context.ExitScope(site, boilerplate);
   } else {
     NoObservableSideEffectsScope no_effects(this);
-    Handle<FixedArray> closure_literals(closure->literals(), isolate());
+    Handle<LiteralsArray> closure_literals(closure->literals(), isolate());
     Handle<FixedArray> constant_properties = expr->constant_properties();
     int literal_index = expr->literal_index();
     int flags = expr->ComputeFlags(true);
@@ -5994,9 +5995,10 @@ void HOptimizedGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
   HInstruction* literal;
 
   Handle<AllocationSite> site;
-  Handle<FixedArray> literals(environment()->closure()->literals(), isolate());
+  Handle<LiteralsArray> literals(environment()->closure()->literals(),
+                                 isolate());
   bool uninitialized = false;
-  Handle<Object> literals_cell(literals->get(expr->literal_index()),
+  Handle<Object> literals_cell(literals->literal(expr->literal_index()),
                                isolate());
   Handle<JSObject> boilerplate_object;
   if (literals_cell->IsUndefined()) {
@@ -6016,7 +6018,7 @@ void HOptimizedGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
       return Bailout(kArrayBoilerplateCreationFailed);
     }
     creation_context.ExitScope(site, boilerplate_object);
-    literals->set(expr->literal_index(), *site);
+    literals->set_literal(expr->literal_index(), *site);
 
     if (boilerplate_object->elements()->map() ==
         isolate()->heap()->fixed_cow_array_map()) {
@@ -6418,7 +6420,8 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::CanAccessMonomorphic() {
   if (!CanInlinePropertyAccess(map_)) return false;
   if (IsJSObjectFieldAccessor()) return IsLoad();
   if (IsJSArrayBufferViewFieldAccessor()) return IsLoad();
-  if (map_->function_with_prototype() && !map_->has_non_instance_prototype() &&
+  if (map_->IsJSFunctionMap() && map_->is_constructor() &&
+      !map_->has_non_instance_prototype() &&
       name_.is_identical_to(isolate()->factory()->prototype_string())) {
     return IsLoad();
   }
@@ -6532,7 +6535,7 @@ HValue* HOptimizedGraphBuilder::BuildMonomorphicAccess(
   }
 
   if (info->name().is_identical_to(isolate()->factory()->prototype_string()) &&
-      info->map()->function_with_prototype()) {
+      info->map()->IsJSFunctionMap() && info->map()->is_constructor()) {
     DCHECK(!info->map()->has_non_instance_prototype());
     return New<HLoadFunctionPrototype>(checked_object);
   }
@@ -7274,7 +7277,8 @@ HInstruction* HOptimizedGraphBuilder::BuildNamedGeneric(
     return result;
   } else {
     if (FLAG_vector_stores &&
-        current_feedback_vector()->GetKind(slot) == Code::KEYED_STORE_IC) {
+        current_feedback_vector()->GetKind(slot) ==
+            FeedbackVectorSlotKind::KEYED_STORE_IC) {
       // It's possible that a keyed store of a constant string was converted
       // to a named store. Here, at the last minute, we need to make sure to
       // use a generic Keyed Store if we are using the type vector, because
@@ -9625,29 +9629,6 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
   if (prop != NULL) {
     CHECK_ALIVE(VisitForValue(prop->obj()));
     HValue* receiver = Top();
-
-    // Sanity check: The receiver must be a JS-exposed kind of object,
-    // not something internal (like a Map, or FixedArray). Check this here
-    // to chase after a rare but recurring crash bug. It seems to always
-    // occur for functions beginning with "this.foo.bar()", so be selective
-    // and only insert the check for the first call (identified by slot).
-    // TODO(chromium:527994): Remove this when we have a few crash reports.
-    if (prop->key()->IsPropertyName() &&
-        prop->PropertyFeedbackSlot().ToInt() == 2) {
-      IfBuilder if_heapobject(this);
-      if_heapobject.IfNot<HIsSmiAndBranch>(receiver);
-      if_heapobject.Then();
-      {
-        IfBuilder special_map(this);
-        Factory* factory = isolate()->factory();
-        special_map.If<HCompareMap>(receiver, factory->fixed_array_map());
-        special_map.OrIf<HCompareMap>(receiver, factory->meta_map());
-        special_map.Then();
-        Add<HDebugBreak>();
-        special_map.End();
-      }
-      if_heapobject.End();
-    }
 
     SmallMapList* maps;
     ComputeReceiverTypes(expr, receiver, &maps, zone());
@@ -12237,12 +12218,57 @@ void HOptimizedGraphBuilder::GenerateIsRegExp(CallRuntime* call) {
 }
 
 
+void HOptimizedGraphBuilder::GenerateToInteger(CallRuntime* call) {
+  DCHECK_EQ(1, call->arguments()->length());
+  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
+  HValue* input = Pop();
+  if (input->type().IsSmi()) {
+    return ast_context()->ReturnValue(input);
+  } else {
+    IfBuilder if_inputissmi(this);
+    if_inputissmi.If<HIsSmiAndBranch>(input);
+    if_inputissmi.Then();
+    {
+      // Return the input value.
+      Push(input);
+      Add<HSimulate>(call->id(), FIXED_SIMULATE);
+    }
+    if_inputissmi.Else();
+    {
+      Add<HPushArguments>(input);
+      Push(Add<HCallRuntime>(Runtime::FunctionForId(Runtime::kToInteger), 1));
+      Add<HSimulate>(call->id(), FIXED_SIMULATE);
+    }
+    if_inputissmi.End();
+    return ast_context()->ReturnValue(Pop());
+  }
+}
+
+
 void HOptimizedGraphBuilder::GenerateToObject(CallRuntime* call) {
   DCHECK_EQ(1, call->arguments()->length());
   CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
   HValue* value = Pop();
   HValue* result = BuildToObject(value);
   return ast_context()->ReturnValue(result);
+}
+
+
+void HOptimizedGraphBuilder::GenerateToString(CallRuntime* call) {
+  DCHECK_EQ(1, call->arguments()->length());
+  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
+  Callable callable = CodeFactory::ToString(isolate());
+  HValue* input = Pop();
+  if (input->type().IsString()) {
+    return ast_context()->ReturnValue(input);
+  } else {
+    HValue* stub = Add<HConstant>(callable.code());
+    HValue* values[] = {context(), input};
+    HInstruction* result =
+        New<HCallWithDescriptor>(stub, 0, callable.descriptor(),
+                                 Vector<HValue*>(values, arraysize(values)));
+    return ast_context()->ReturnInstruction(result, call->id());
+  }
 }
 
 

@@ -72,7 +72,7 @@ ParseInfo::ParseInfo(Zone* zone, Handle<SharedFunctionInfo> shared)
 
   Handle<Script> script(Script::cast(shared->script()));
   set_script(script);
-  if (!script.is_null() && script->type()->value() == Script::TYPE_NATIVE) {
+  if (!script.is_null() && script->type() == Script::TYPE_NATIVE) {
     set_native();
   }
 }
@@ -86,7 +86,7 @@ ParseInfo::ParseInfo(Zone* zone, Handle<Script> script) : ParseInfo(zone) {
   set_unicode_cache(isolate_->unicode_cache());
   set_script(script);
 
-  if (script->type()->value() == Script::TYPE_NATIVE) {
+  if (script->type() == Script::TYPE_NATIVE) {
     set_native();
   }
 }
@@ -919,7 +919,7 @@ Parser::Parser(ParseInfo* info)
   set_allow_harmony_sloppy_let(FLAG_harmony_sloppy_let);
   set_allow_harmony_rest_parameters(FLAG_harmony_rest_parameters);
   set_allow_harmony_default_parameters(FLAG_harmony_default_parameters);
-  set_allow_harmony_spreadcalls(FLAG_harmony_spreadcalls);
+  set_allow_harmony_spread_calls(FLAG_harmony_spread_calls);
   set_allow_harmony_destructuring(FLAG_harmony_destructuring);
   set_allow_harmony_spread_arrays(FLAG_harmony_spread_arrays);
   set_allow_harmony_new_target(FLAG_harmony_new_target);
@@ -1280,9 +1280,8 @@ void* Parser::ParseStatementList(ZoneList<Statement*>* body, int end_token,
     Scanner::Location old_super_loc = function_state_->super_location();
     Statement* stat = ParseStatementListItem(CHECK_OK);
 
-    if (is_strong(language_mode()) &&
-        scope_->is_function_scope() &&
-        i::IsConstructor(function_state_->kind())) {
+    if (is_strong(language_mode()) && scope_->is_function_scope() &&
+        IsClassConstructor(function_state_->kind())) {
       Scanner::Location this_loc = function_state_->this_location();
       Scanner::Location super_loc = function_state_->super_location();
       if (this_loc.beg_pos != old_this_loc.beg_pos &&
@@ -1336,7 +1335,7 @@ void* Parser::ParseStatementList(ZoneList<Statement*>* body, int end_token,
           if (use_strong_found) {
             scope_->SetLanguageMode(
                 static_cast<LanguageMode>(scope_->language_mode() | STRONG));
-            if (i::IsConstructor(function_state_->kind())) {
+            if (IsClassConstructor(function_state_->kind())) {
               // "use strong" cannot occur in a class constructor body, to avoid
               // unintuitive strong class object semantics.
               ParserTraits::ReportMessageAt(
@@ -2642,7 +2641,7 @@ Statement* Parser::ParseExpressionOrLabelledStatement(
       // Fall through.
     case Token::SUPER:
       if (is_strong(language_mode()) &&
-          i::IsConstructor(function_state_->kind())) {
+          IsClassConstructor(function_state_->kind())) {
         bool is_this = peek() == Token::THIS;
         Expression* expr;
         ExpressionClassifier classifier;
@@ -2849,7 +2848,7 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
     }
   } else {
     if (is_strong(language_mode()) &&
-        i::IsConstructor(function_state_->kind())) {
+        IsClassConstructor(function_state_->kind())) {
       int pos = peek_position();
       ReportMessageAt(Scanner::Location(pos, pos + 1),
                       MessageTemplate::kStrongConstructorReturnValue);
@@ -4205,9 +4204,8 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
                            &expected_property_count, /*CHECK_OK*/ ok,
                            maybe_bookmark);
 
-      if (formals.materialized_literals_count > 0) {
-        materialized_literal_count += formals.materialized_literals_count;
-      }
+      materialized_literal_count += formals.materialized_literals_count +
+                                    function_state.materialized_literal_count();
 
       if (bookmark.HasBeenReset()) {
         // Trigger eager (re-)parsing, just below this block.
@@ -4605,7 +4603,7 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
 
   // For concise constructors, check that they are constructed,
   // not called.
-  if (i::IsConstructor(kind)) {
+  if (IsClassConstructor(kind)) {
     AddAssertIsConstruct(result, pos);
   }
 
@@ -4739,7 +4737,7 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
     SET_ALLOW(harmony_sloppy_let);
     SET_ALLOW(harmony_rest_parameters);
     SET_ALLOW(harmony_default_parameters);
-    SET_ALLOW(harmony_spreadcalls);
+    SET_ALLOW(harmony_spread_calls);
     SET_ALLOW(harmony_destructuring);
     SET_ALLOW(harmony_spread_arrays);
     SET_ALLOW(harmony_new_target);
@@ -6103,8 +6101,8 @@ Expression* Parser::CloseTemplateLiteral(TemplateLiteralState* state, int start,
       ZoneList<Expression*>* args =
           new (zone()) ZoneList<Expression*>(1, zone());
       args->Add(sub, zone());
-      Expression* middle = factory()->NewCallRuntime(
-          Context::TO_STRING_FUN_INDEX, args, sub->position());
+      Expression* middle = factory()->NewCallRuntime(Runtime::kInlineToString,
+                                                     args, sub->position());
 
       expr = factory()->NewBinaryOperation(
           Token::ADD, factory()->NewBinaryOperation(

@@ -9,7 +9,6 @@
 #include "src/base/division-by-constant.h"
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
-#include "src/cpu-profiler.h"
 #include "src/debug/debug.h"
 #include "src/mips64/macro-assembler-mips64.h"
 #include "src/runtime/runtime.h"
@@ -4956,6 +4955,14 @@ void MacroAssembler::Prologue(bool code_pre_aging) {
 }
 
 
+void MacroAssembler::EmitLoadTypeFeedbackVector(Register vector) {
+  ld(vector, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+  ld(vector, FieldMemOperand(vector, JSFunction::kSharedFunctionInfoOffset));
+  ld(vector,
+     FieldMemOperand(vector, SharedFunctionInfo::kFeedbackVectorOffset));
+}
+
+
 void MacroAssembler::EnterFrame(StackFrame::Type type,
                                 bool load_constant_pool_pointer_reg) {
   // Out-of-line constant pool not implemented on mips64.
@@ -5026,7 +5033,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles,
   if (save_doubles) {
     // The stack is already aligned to 0 modulo 8 for stores with sdc1.
     int kNumOfSavedRegisters = FPURegister::kMaxNumRegisters / 2;
-    int space = kNumOfSavedRegisters * kDoubleSize ;
+    int space = kNumOfSavedRegisters * kDoubleSize;
     Dsubu(sp, sp, Operand(space));
     // Remember: we only need to save every 2nd double FPU value.
     for (int i = 0; i < kNumOfSavedRegisters; i++) {
