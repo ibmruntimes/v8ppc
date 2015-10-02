@@ -89,7 +89,7 @@ void LCodeGen::SaveCallerDoubles() {
   BitVector::Iterator save_iterator(doubles);
   while (!save_iterator.Done()) {
     __ movsd(MemOperand(rsp, count * kDoubleSize),
-             XMMRegister::FromAllocationIndex(save_iterator.Current()));
+             XMMRegister::from_code(save_iterator.Current()));
     save_iterator.Advance();
     count++;
   }
@@ -104,7 +104,7 @@ void LCodeGen::RestoreCallerDoubles() {
   BitVector::Iterator save_iterator(doubles);
   int count = 0;
   while (!save_iterator.Done()) {
-    __ movsd(XMMRegister::FromAllocationIndex(save_iterator.Current()),
+    __ movsd(XMMRegister::from_code(save_iterator.Current()),
              MemOperand(rsp, count * kDoubleSize));
     save_iterator.Advance();
     count++;
@@ -153,7 +153,6 @@ bool LCodeGen::GeneratePrologue() {
     } else {
       __ Prologue(info()->IsCodePreAgingActive());
     }
-    info()->AddNoFrameRange(0, masm_->pc_offset());
   }
 
   // Reserve space for the stack slots needed by the code.
@@ -437,12 +436,12 @@ bool LCodeGen::GenerateSafepointTable() {
 
 
 Register LCodeGen::ToRegister(int index) const {
-  return Register::FromAllocationIndex(index);
+  return Register::from_code(index);
 }
 
 
 XMMRegister LCodeGen::ToDoubleRegister(int index) const {
-  return XMMRegister::FromAllocationIndex(index);
+  return XMMRegister::from_code(index);
 }
 
 
@@ -2712,11 +2711,9 @@ void LCodeGen::DoReturn(LReturn* instr) {
   if (info()->saves_caller_doubles()) {
     RestoreCallerDoubles();
   }
-  int no_frame_start = -1;
   if (NeedsEagerFrame()) {
     __ movp(rsp, rbp);
     __ popq(rbp);
-    no_frame_start = masm_->pc_offset();
   }
   if (instr->has_constant_parameter_count()) {
     __ Ret((ToInteger32(instr->constant_parameter_count()) + 1) * kPointerSize,
@@ -2732,9 +2729,6 @@ void LCodeGen::DoReturn(LReturn* instr) {
     __ addp(rsp, reg);
     __ jmp(return_addr_reg);
   }
-  if (no_frame_start != -1) {
-    info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
-  }
 }
 
 
@@ -2749,7 +2743,7 @@ void LCodeGen::EmitVectorLoadICRegisters(T* instr) {
   Handle<TypeFeedbackVector> vector = instr->hydrogen()->feedback_vector();
   __ Move(vector_register, vector);
   // No need to allocate this register.
-  FeedbackVectorICSlot slot = instr->hydrogen()->slot();
+  FeedbackVectorSlot slot = instr->hydrogen()->slot();
   int index = vector->GetIndex(slot);
   __ Move(slot_register, Smi::FromInt(index));
 }
@@ -2763,7 +2757,7 @@ void LCodeGen::EmitVectorStoreICRegisters(T* instr) {
   AllowDeferredHandleDereference vector_structure_check;
   Handle<TypeFeedbackVector> vector = instr->hydrogen()->feedback_vector();
   __ Move(vector_register, vector);
-  FeedbackVectorICSlot slot = instr->hydrogen()->slot();
+  FeedbackVectorSlot slot = instr->hydrogen()->slot();
   int index = vector->GetIndex(slot);
   __ Move(slot_register, Smi::FromInt(index));
 }

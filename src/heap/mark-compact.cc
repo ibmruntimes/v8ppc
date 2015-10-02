@@ -702,8 +702,7 @@ void MarkCompactCollector::CollectEvacuationCandidates(PagedSpace* space) {
   int candidate_count = 0;
   int total_live_bytes = 0;
 
-  bool reduce_memory =
-      heap()->ShouldReduceMemory() || heap()->HasLowAllocationRate();
+  bool reduce_memory = heap()->ShouldReduceMemory();
   if (FLAG_manual_evacuation_candidates_selection) {
     for (size_t i = 0; i < pages.size(); i++) {
       Page* p = pages[i].second;
@@ -3553,7 +3552,6 @@ static intptr_t Free(PagedSpace* space, FreeList* free_list, Address start,
     DCHECK(free_list == NULL);
     return space->Free(start, size);
   } else {
-    // TODO(hpayer): account for wasted bytes in concurrent sweeping too.
     return size - free_list->Free(start, size);
   }
 }
@@ -3784,6 +3782,14 @@ void MarkCompactCollector::EvacuateNewSpaceAndCandidates() {
         SkipList* list = p->skip_list();
         if (list != NULL) list->Clear();
       }
+
+      if (p->IsEvacuationCandidate() &&
+          p->IsFlagSet(Page::RESCAN_ON_EVACUATION)) {
+        // Case where we've aborted compacting a page. Clear the flag here to
+        // avoid release the page later on.
+        p->ClearEvacuationCandidate();
+      }
+
       if (p->IsFlagSet(Page::RESCAN_ON_EVACUATION)) {
         if (FLAG_gc_verbose) {
           PrintF("Sweeping 0x%" V8PRIxPTR " during evacuation.\n",
@@ -3813,12 +3819,6 @@ void MarkCompactCollector::EvacuateNewSpaceAndCandidates() {
             UNREACHABLE();
             break;
         }
-      }
-      if (p->IsEvacuationCandidate() &&
-          p->IsFlagSet(Page::RESCAN_ON_EVACUATION)) {
-        // Case where we've aborted compacting a page. Clear the flag here to
-        // avoid release the page later on.
-        p->ClearEvacuationCandidate();
       }
     }
   }

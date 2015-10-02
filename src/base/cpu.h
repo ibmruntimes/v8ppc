@@ -151,6 +151,7 @@ class CPU final {
   bool is_fp64_mode_;
 };
 
-} }  // namespace v8::base
+}  // namespace base
+}  // namespace v8
 
 #endif  // V8_BASE_CPU_H_

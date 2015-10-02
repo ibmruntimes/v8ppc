@@ -161,7 +161,6 @@ bool LCodeGen::GeneratePrologue() {
     } else {
       __ Prologue(info()->IsCodePreAgingActive());
     }
-    info()->AddNoFrameRange(0, masm_->pc_offset());
   }
 
   if (info()->IsOptimizing() &&
@@ -2982,11 +2981,9 @@ void LCodeGen::DoReturn(LReturn* instr) {
     __ mov(edx, Operand(ebp,
       JavaScriptFrameConstants::kDynamicAlignmentStateOffset));
   }
-  int no_frame_start = -1;
   if (NeedsEagerFrame()) {
     __ mov(esp, ebp);
     __ pop(ebp);
-    no_frame_start = masm_->pc_offset();
   }
   if (dynamic_frame_alignment_) {
     Label no_padding;
@@ -2998,9 +2995,6 @@ void LCodeGen::DoReturn(LReturn* instr) {
   }
 
   EmitReturn(instr, false);
-  if (no_frame_start != -1) {
-    info()->AddNoFrameRange(no_frame_start, masm_->pc_offset());
-  }
 }
 
 
@@ -3015,7 +3009,7 @@ void LCodeGen::EmitVectorLoadICRegisters(T* instr) {
   Handle<TypeFeedbackVector> vector = instr->hydrogen()->feedback_vector();
   __ mov(vector_register, vector);
   // No need to allocate this register.
-  FeedbackVectorICSlot slot = instr->hydrogen()->slot();
+  FeedbackVectorSlot slot = instr->hydrogen()->slot();
   int index = vector->GetIndex(slot);
   __ mov(slot_register, Immediate(Smi::FromInt(index)));
 }
@@ -3029,7 +3023,7 @@ void LCodeGen::EmitVectorStoreICRegisters(T* instr) {
   AllowDeferredHandleDereference vector_structure_check;
   Handle<TypeFeedbackVector> vector = instr->hydrogen()->feedback_vector();
   __ mov(vector_register, vector);
-  FeedbackVectorICSlot slot = instr->hydrogen()->slot();
+  FeedbackVectorSlot slot = instr->hydrogen()->slot();
   int index = vector->GetIndex(slot);
   __ mov(slot_register, Immediate(Smi::FromInt(index)));
 }
@@ -5893,7 +5887,7 @@ void LCodeGen::DoRegExpLiteral(LRegExpLiteral* instr) {
   // eax = regexp literal clone.
   // esi = context.
   int literal_offset =
-      FixedArray::OffsetOfElementAt(instr->hydrogen()->literal_index());
+      LiteralsArray::OffsetOfLiteralAt(instr->hydrogen()->literal_index());
   __ LoadHeapObject(ecx, instr->hydrogen()->literals());
   __ mov(ebx, FieldOperand(ecx, literal_offset));
   __ cmp(ebx, factory()->undefined_value());

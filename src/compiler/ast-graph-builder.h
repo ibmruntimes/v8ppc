@@ -233,7 +233,7 @@ class AstGraphBuilder : public AstVisitor {
   Node** EnsureInputBufferSize(int size);
 
   // Named and keyed loads require a VectorSlotPair for successful lowering.
-  VectorSlotPair CreateVectorSlotPair(FeedbackVectorICSlot slot) const;
+  VectorSlotPair CreateVectorSlotPair(FeedbackVectorSlot slot) const;
 
   // Determine which contexts need to be checked for extension objects that
   // might shadow the optimistic declaration of dynamic lookup variables.
@@ -249,7 +249,8 @@ class AstGraphBuilder : public AstVisitor {
   Node* BuildPatchReceiverToGlobalProxy(Node* receiver);
 
   // Builders to create local function, script and block contexts.
-  Node* BuildLocalFunctionContext(Node* context);
+  Node* BuildLocalActivationContext(Node* context);
+  Node* BuildLocalFunctionContext(Scope* scope);
   Node* BuildLocalScriptContext(Scope* scope);
   Node* BuildLocalBlockContext(Scope* scope);
 

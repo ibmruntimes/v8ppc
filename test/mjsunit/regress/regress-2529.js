@@ -1,4 +1,4 @@
-// Copyright 2009 the V8 project authors. All rights reserved.
+// Copyright 2015 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,8 +25,19 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax
 
-// Test call of JS runtime functions.
+// Regression test for v8 bug 2529.
 
-assertEquals(1, %to_number_fun("1"));
+function makeScript(s) {
+  return 'while(true) { try { "try"; break } finally { "finally" }; ' + s + ' }';
+}
+
+var s1 = makeScript('');
+var s2 = makeScript('y = "done"');
+var s3 = makeScript('if (true) 2; else var x = 3;');
+var s4 = makeScript('if (true) 2; else 3;');
+
+assertEquals("try", eval(s1));
+assertEquals("try", eval(s2));
+assertEquals("try", eval(s3));
+assertEquals("try", eval(s4));

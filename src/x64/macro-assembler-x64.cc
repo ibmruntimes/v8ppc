@@ -10,6 +10,7 @@
 #include "src/codegen.h"
 #include "src/debug/debug.h"
 #include "src/heap/heap.h"
+#include "src/register-configuration.h"
 #include "src/x64/assembler-x64.h"
 #include "src/x64/macro-assembler-x64.h"
 
@@ -729,7 +730,8 @@ void MacroAssembler::GetBuiltinEntry(Register target,
 }
 
 
-#define REG(Name) { kRegister_ ## Name ## _Code }
+#define REG(Name) \
+  { Register::kCode_##Name }
 
 static const Register saved_regs[] = {
   REG(rax), REG(rcx), REG(rdx), REG(rbx), REG(rbp), REG(rsi), REG(rdi), REG(r8),
@@ -3710,12 +3712,14 @@ void MacroAssembler::EnterExitFrameEpilogue(int arg_stack_space,
 #endif
   // Optionally save all XMM registers.
   if (save_doubles) {
-    int space = XMMRegister::kMaxNumAllocatableRegisters * kDoubleSize +
-        arg_stack_space * kRegisterSize;
+    int space = XMMRegister::kMaxNumRegisters * kDoubleSize +
+                arg_stack_space * kRegisterSize;
     subp(rsp, Immediate(space));
     int offset = -2 * kPointerSize;
-    for (int i = 0; i < XMMRegister::NumAllocatableRegisters(); i++) {
-      XMMRegister reg = XMMRegister::FromAllocationIndex(i);
+    const RegisterConfiguration* config = RegisterConfiguration::ArchDefault();
+    for (int i = 0; i < config->num_allocatable_double_registers(); ++i) {
+      DoubleRegister reg =
+          DoubleRegister::from_code(config->GetAllocatableDoubleCode(i));
       movsd(Operand(rbp, offset - ((i + 1) * kDoubleSize)), reg);
     }
   } else if (arg_stack_space > 0) {
@@ -3753,25 +3757,33 @@ void MacroAssembler::EnterApiExitFrame(int arg_stack_space) {
 }
 
 
-void MacroAssembler::LeaveExitFrame(bool save_doubles) {
+void MacroAssembler::LeaveExitFrame(bool save_doubles, bool pop_arguments) {
   // Registers:
   // r15 : argv
   if (save_doubles) {
     int offset = -2 * kPointerSize;
-    for (int i = 0; i < XMMRegister::NumAllocatableRegisters(); i++) {
-      XMMRegister reg = XMMRegister::FromAllocationIndex(i);
+    const RegisterConfiguration* config = RegisterConfiguration::ArchDefault();
+    for (int i = 0; i < config->num_allocatable_double_registers(); ++i) {
+      DoubleRegister reg =
+          DoubleRegister::from_code(config->GetAllocatableDoubleCode(i));
       movsd(reg, Operand(rbp, offset - ((i + 1) * kDoubleSize)));
     }
   }
-  // Get the return address from the stack and restore the frame pointer.
-  movp(rcx, Operand(rbp, kFPOnStackSize));
-  movp(rbp, Operand(rbp, 0 * kPointerSize));
 
-  // Drop everything up to and including the arguments and the receiver
-  // from the caller stack.
-  leap(rsp, Operand(r15, 1 * kPointerSize));
+  if (pop_arguments) {
+    // Get the return address from the stack and restore the frame pointer.
+    movp(rcx, Operand(rbp, kFPOnStackSize));
+    movp(rbp, Operand(rbp, 0 * kPointerSize));
 
-  PushReturnAddressFrom(rcx);
+    // Drop everything up to and including the arguments and the receiver
+    // from the caller stack.
+    leap(rsp, Operand(r15, 1 * kPointerSize));
+
+    PushReturnAddressFrom(rcx);
+  } else {
+    // Otherwise just leave the exit frame.
+    leave();
+  }
 
   LeaveExitFrameEpilogue(true);
 }

@@ -38,7 +38,6 @@ class PlatformInterfaceDescriptor;
   V(CallFunctionWithFeedbackAndVector)        \
   V(CallConstruct)                            \
   V(CallTrampoline)                           \
-  V(PushArgsAndCall)                          \
   V(RegExpConstructResult)                    \
   V(TransitionElementsKind)                   \
   V(AllocateHeapNumber)                       \
@@ -70,7 +69,9 @@ class PlatformInterfaceDescriptor;
   V(ContextOnly)                              \
   V(GrowArrayElements)                        \
   V(MathRoundVariantCallFromUnoptimizedCode)  \
-  V(MathRoundVariantCallFromOptimizedCode)
+  V(MathRoundVariantCallFromOptimizedCode)    \
+  V(InterpreterPushArgsAndCall)               \
+  V(InterpreterCEntry)
 
 
 class CallInterfaceDescriptorData {
@@ -706,10 +707,18 @@ class GrowArrayElementsDescriptor : public CallInterfaceDescriptor {
 };
 
 
-class PushArgsAndCallDescriptor : public CallInterfaceDescriptor {
+class InterpreterPushArgsAndCallDescriptor : public CallInterfaceDescriptor {
  public:
-  DECLARE_DESCRIPTOR(PushArgsAndCallDescriptor, CallInterfaceDescriptor)
+  DECLARE_DESCRIPTOR(InterpreterPushArgsAndCallDescriptor,
+                     CallInterfaceDescriptor)
 };
+
+
+class InterpreterCEntryDescriptor : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR(InterpreterCEntryDescriptor, CallInterfaceDescriptor)
+};
+
 
 #undef DECLARE_DESCRIPTOR
 
@@ -720,8 +729,8 @@ class PushArgsAndCallDescriptor : public CallInterfaceDescriptor {
   CallDescriptors::Key name##Descriptor::key() { return CallDescriptors::name; }
 INTERFACE_DESCRIPTOR_LIST(DEF_KEY)
 #undef DEF_KEY
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 
 #if V8_TARGET_ARCH_ARM64

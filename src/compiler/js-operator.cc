@@ -16,7 +16,7 @@ namespace v8 {
 namespace internal {
 namespace compiler {
 
-VectorSlotPair::VectorSlotPair() : slot_(FeedbackVectorICSlot::Invalid()) {}
+VectorSlotPair::VectorSlotPair() {}
 
 
 int VectorSlotPair::index() const {
@@ -472,11 +472,8 @@ const CreateClosureParameters& CreateClosureParametersOf(const Operator* op) {
   V(ForInPrepare, Operator::kNoProperties, 1, 3)          \
   V(ForInStep, Operator::kPure, 1, 1)                     \
   V(StackCheck, Operator::kNoProperties, 0, 0)            \
-  V(CreateFunctionContext, Operator::kNoProperties, 1, 1) \
   V(CreateWithContext, Operator::kNoProperties, 2, 1)     \
-  V(CreateBlockContext, Operator::kNoProperties, 2, 1)    \
-  V(CreateModuleContext, Operator::kNoProperties, 2, 1)   \
-  V(CreateScriptContext, Operator::kNoProperties, 2, 1)
+  V(CreateModuleContext, Operator::kNoProperties, 2, 1)
 
 
 #define CACHED_OP_LIST_WITH_LANGUAGE_MODE(V)           \
@@ -775,6 +772,15 @@ const Operator* JSOperatorBuilder::CreateLiteralObject(int literal_flags) {
 }
 
 
+const Operator* JSOperatorBuilder::CreateFunctionContext(int slot_count) {
+  return new (zone()) Operator1<int>(                               // --
+      IrOpcode::kJSCreateFunctionContext, Operator::kNoProperties,  // opcode
+      "JSCreateFunctionContext",                                    // name
+      1, 1, 1, 1, 1, 2,                                             // counts
+      slot_count);                                                  // parameter
+}
+
+
 const Operator* JSOperatorBuilder::CreateCatchContext(
     const Handle<String>& name) {
   return new (zone()) Operator1<Handle<String>, Handle<String>::equal_to,
@@ -783,6 +789,28 @@ const Operator* JSOperatorBuilder::CreateCatchContext(
       "JSCreateCatchContext",                                    // name
       2, 1, 1, 1, 1, 2,                                          // counts
       name);                                                     // parameter
+}
+
+
+const Operator* JSOperatorBuilder::CreateBlockContext(
+    const Handle<ScopeInfo>& scpope_info) {
+  return new (zone()) Operator1<Handle<ScopeInfo>, Handle<ScopeInfo>::equal_to,
+                                Handle<ScopeInfo>::hash>(        // --
+      IrOpcode::kJSCreateBlockContext, Operator::kNoProperties,  // opcode
+      "JSCreateBlockContext",                                    // name
+      1, 1, 1, 1, 1, 2,                                          // counts
+      scpope_info);                                              // parameter
+}
+
+
+const Operator* JSOperatorBuilder::CreateScriptContext(
+    const Handle<ScopeInfo>& scpope_info) {
+  return new (zone()) Operator1<Handle<ScopeInfo>, Handle<ScopeInfo>::equal_to,
+                                Handle<ScopeInfo>::hash>(         // --
+      IrOpcode::kJSCreateScriptContext, Operator::kNoProperties,  // opcode
+      "JSCreateScriptContext",                                    // name
+      1, 1, 1, 1, 1, 2,                                           // counts
+      scpope_info);                                               // parameter
 }
 
 }  // namespace compiler

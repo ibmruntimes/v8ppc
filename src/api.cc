@@ -3526,20 +3526,12 @@ static i::MaybeHandle<i::Object> DefineObjectProperty(
     i::Handle<i::JSObject> js_object, i::Handle<i::Object> key,
     i::Handle<i::Object> value, PropertyAttributes attrs) {
   i::Isolate* isolate = js_object->GetIsolate();
-  // Check if the given key is an array index.
-  uint32_t index = 0;
-  if (key->ToArrayIndex(&index)) {
-    return i::JSObject::SetOwnElementIgnoreAttributes(js_object, index, value,
-                                                      attrs);
-  }
+  bool success = false;
+  i::LookupIterator it = i::LookupIterator::PropertyOrElement(
+      isolate, js_object, key, &success, i::LookupIterator::OWN);
+  if (!success) return i::MaybeHandle<i::Object>();
 
-  i::Handle<i::Name> name;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, name,
-                                   i::Object::ToName(isolate, key),
-                                   i::MaybeHandle<i::Object>());
-
-  return i::JSObject::DefinePropertyOrElementIgnoreAttributes(js_object, name,
-                                                              value, attrs);
+  return i::JSObject::DefineOwnPropertyIgnoreAttributes(&it, value, attrs);
 }
 
 
@@ -4464,11 +4456,10 @@ Local<v8::Value> Function::GetBoundFunction() const {
   if (!func->shared()->bound()) {
     return v8::Undefined(reinterpret_cast<v8::Isolate*>(func->GetIsolate()));
   }
-  i::Handle<i::FixedArray> bound_args = i::Handle<i::FixedArray>(
-      i::FixedArray::cast(func->function_bindings()));
-  i::Handle<i::Object> original(
-      bound_args->get(i::JSFunction::kBoundFunctionIndex),
-      func->GetIsolate());
+  i::Handle<i::BindingsArray> bound_args = i::Handle<i::BindingsArray>(
+      i::BindingsArray::cast(func->function_bindings()));
+  i::Handle<i::Object> original(bound_args->bound_function(),
+                                func->GetIsolate());
   return Utils::ToLocal(i::Handle<i::JSFunction>::cast(original));
 }
 
@@ -6837,32 +6828,11 @@ Local<Integer> v8::Integer::NewFromUnsigned(Isolate* isolate, uint32_t value) {
 }
 
 
-void Isolate::CollectAllGarbage(const char* gc_reason) {
+void Isolate::ReportExternalAllocationLimitReached() {
   i::Heap* heap = reinterpret_cast<i::Isolate*>(this)->heap();
-  DCHECK_EQ(heap->gc_state(), i::Heap::NOT_IN_GC);
-  if (heap->incremental_marking()->IsStopped()) {
-    if (heap->incremental_marking()->CanBeActivated()) {
-      heap->StartIncrementalMarking(
-          i::Heap::kNoGCFlags,
-          kGCCallbackFlagSynchronousPhantomCallbackProcessing, gc_reason);
-    } else {
-      heap->CollectAllGarbage(
-          i::Heap::kNoGCFlags, gc_reason,
-          kGCCallbackFlagSynchronousPhantomCallbackProcessing);
-    }
-  } else {
-    // Incremental marking is turned on an has already been started.
-
-    // TODO(mlippautz): Compute the time slice for incremental marking based on
-    // memory pressure.
-    double deadline = heap->MonotonicallyIncreasingTimeInMs() +
-                      i::FLAG_external_allocation_limit_incremental_time;
-    heap->AdvanceIncrementalMarking(
-        0, deadline, i::IncrementalMarking::StepActions(
-                         i::IncrementalMarking::GC_VIA_STACK_GUARD,
-                         i::IncrementalMarking::FORCE_MARKING,
-                         i::IncrementalMarking::FORCE_COMPLETION));
-  }
+  if (heap->gc_state() != i::Heap::NOT_IN_GC) return;
+  heap->ReportExternalMemoryPressure(
+      "external memory allocation limit reached.");
 }
 
 

@@ -72,7 +72,7 @@ void LCodeGen::SaveCallerDoubles() {
   BitVector* doubles = chunk()->allocated_double_registers();
   BitVector::Iterator save_iterator(doubles);
   while (!save_iterator.Done()) {
-    __ vstr(DwVfpRegister::FromAllocationIndex(save_iterator.Current()),
+    __ vstr(DoubleRegister::from_code(save_iterator.Current()),
             MemOperand(sp, count * kDoubleSize));
     save_iterator.Advance();
     count++;
@@ -88,8 +88,8 @@ void LCodeGen::RestoreCallerDoubles() {
   BitVector::Iterator save_iterator(doubles);
   int count = 0;
   while (!save_iterator.Done()) {
-    __ vldr(DwVfpRegister::FromAllocationIndex(save_iterator.Current()),
-             MemOperand(sp, count * kDoubleSize));
+    __ vldr(DoubleRegister::from_code(save_iterator.Current()),
+            MemOperand(sp, count * kDoubleSize));
     save_iterator.Advance();
     count++;
   }
@@ -142,7 +142,6 @@ bool LCodeGen::GeneratePrologue() {
       __ Prologue(info()->IsCodePreAgingActive());
     }
     frame_is_built_ = true;
-    info_->AddNoFrameRange(0, masm_->pc_offset());
   }
 
   // Reserve space for the stack slots needed by the code.
@@ -405,13 +404,13 @@ bool LCodeGen::GenerateSafepointTable() {
 }
 
 
-Register LCodeGen::ToRegister(int index) const {
-  return Register::FromAllocationIndex(index);
+Register LCodeGen::ToRegister(int code) const {
+  return Register::from_code(code);
 }
 
 
-DwVfpRegister LCodeGen::ToDoubleRegister(int index) const {
-  return DwVfpRegister::FromAllocationIndex(index);
+DwVfpRegister LCodeGen::ToDoubleRegister(int code) const {
+  return DwVfpRegister::from_code(code);
 }
 
 
@@ -2759,9 +2758,8 @@ void LCodeGen::DoReturn(LReturn* instr) {
   if (info()->saves_caller_doubles()) {
     RestoreCallerDoubles();
   }
-  int no_frame_start = -1;
   if (NeedsEagerFrame()) {
-    no_frame_start = masm_->LeaveFrame(StackFrame::JAVA_SCRIPT);
+    masm_->LeaveFrame(StackFrame::JAVA_SCRIPT);
   }
   { ConstantPoolUnavailableScope constant_pool_unavailable(masm());
     if (instr->has_constant_parameter_count()) {
@@ -2779,10 +2777,6 @@ void LCodeGen::DoReturn(LReturn* instr) {
     }
 
     __ Jump(lr);
-
-    if (no_frame_start != -1) {
-      info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
-    }
   }
 }
 
@@ -2798,7 +2792,7 @@ void LCodeGen::EmitVectorLoadICRegisters(T* instr) {
   Handle<TypeFeedbackVector> vector = instr->hydrogen()->feedback_vector();
   __ Move(vector_register, vector);
   // No need to allocate this register.
-  FeedbackVectorICSlot slot = instr->hydrogen()->slot();
+  FeedbackVectorSlot slot = instr->hydrogen()->slot();
   int index = vector->GetIndex(slot);
   __ mov(slot_register, Operand(Smi::FromInt(index)));
 }
@@ -2812,7 +2806,7 @@ void LCodeGen::EmitVectorStoreICRegisters(T* instr) {
   AllowDeferredHandleDereference vector_structure_check;
   Handle<TypeFeedbackVector> vector = instr->hydrogen()->feedback_vector();
   __ Move(vector_register, vector);
-  FeedbackVectorICSlot slot = instr->hydrogen()->slot();
+  FeedbackVectorSlot slot = instr->hydrogen()->slot();
   int index = vector->GetIndex(slot);
   __ mov(slot_register, Operand(Smi::FromInt(index)));
 }

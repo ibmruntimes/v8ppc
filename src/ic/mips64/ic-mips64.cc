@@ -433,7 +433,7 @@ void KeyedLoadIC::GenerateMegamorphic(MacroAssembler* masm,
   Handle<TypeFeedbackVector> dummy_vector =
       TypeFeedbackVector::DummyVector(masm->isolate());
   int slot_index = dummy_vector->GetIndex(
-      FeedbackVectorICSlot(TypeFeedbackVector::kDummyKeyedLoadICSlot));
+      FeedbackVectorSlot(TypeFeedbackVector::kDummyKeyedLoadICSlot));
   __ LoadRoot(vector, Heap::kDummyVectorRootIndex);
   __ li(slot, Operand(Smi::FromInt(slot_index)));
 
@@ -551,7 +551,7 @@ static void KeyedStoreGenerateMegamorphicHelper(
   // We have to see if the double version of the hole is present. If so
   // go to the runtime.
   __ Daddu(address, elements,
-           Operand(FixedDoubleArray::kHeaderSize + sizeof(kHoleNanLower32) -
+           Operand(FixedDoubleArray::kHeaderSize + Register::kExponentOffset -
                    kHeapObjectTag));
   __ SmiScale(at, key, kPointerSizeLog2);
   __ daddu(address, address, at);
@@ -684,7 +684,7 @@ void KeyedStoreIC::GenerateMegamorphic(MacroAssembler* masm,
     Handle<TypeFeedbackVector> dummy_vector =
         TypeFeedbackVector::DummyVector(masm->isolate());
     int slot_index = dummy_vector->GetIndex(
-        FeedbackVectorICSlot(TypeFeedbackVector::kDummyKeyedStoreICSlot));
+        FeedbackVectorSlot(TypeFeedbackVector::kDummyKeyedStoreICSlot));
     __ LoadRoot(vector, Heap::kDummyVectorRootIndex);
     __ li(slot, Operand(Smi::FromInt(slot_index)));
   }

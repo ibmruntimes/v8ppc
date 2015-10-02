@@ -4867,7 +4867,8 @@ Maybe<bool> JSObject::CreateDataProperty(LookupIterator* it,
   if (it->IsFound()) {
     if (!it->IsConfigurable()) return Just(false);
   } else {
-    if (!JSObject::cast(*it->GetReceiver())->IsExtensible()) return Just(false);
+    if (!JSObject::IsExtensible(Handle<JSObject>::cast(it->GetReceiver())))
+      return Just(false);
   }
 
   RETURN_ON_EXCEPTION_VALUE(
@@ -6016,14 +6017,18 @@ MaybeHandle<Object> JSObject::PreventExtensions(Handle<JSObject> object) {
 }
 
 
-bool JSObject::IsExtensible() {
-  if (IsJSGlobalProxy()) {
-    PrototypeIterator iter(GetIsolate(), this);
+bool JSObject::IsExtensible(Handle<JSObject> object) {
+  Isolate* isolate = object->GetIsolate();
+  if (object->IsAccessCheckNeeded() && !isolate->MayAccess(object)) {
+    return true;
+  }
+  if (object->IsJSGlobalProxy()) {
+    PrototypeIterator iter(isolate, *object);
     if (iter.IsAtEnd()) return false;
     DCHECK(iter.GetCurrent()->IsJSGlobalObject());
     return iter.GetCurrent<JSObject>()->map()->is_extensible();
   }
-  return map()->is_extensible();
+  return object->map()->is_extensible();
 }
 
 
@@ -6612,91 +6617,90 @@ static Handle<FixedArray> ReduceFixedArrayTo(
 }
 
 
+namespace {
+
+Handle<FixedArray> GetFastEnumPropertyKeys(Isolate* isolate,
+                                           Handle<JSObject> object,
+                                           bool cache_enum_length) {
+  Handle<Map> map(object->map());
+  Handle<DescriptorArray> descs =
+      Handle<DescriptorArray>(map->instance_descriptors(), isolate);
+  int own_property_count = map->EnumLength();
+  // If the enum length of the given map is set to kInvalidEnumCache, this
+  // means that the map itself has never used the present enum cache. The
+  // first step to using the cache is to set the enum length of the map by
+  // counting the number of own descriptors that are not DONT_ENUM or
+  // SYMBOLIC.
+  if (own_property_count == kInvalidEnumCacheSentinel) {
+    own_property_count =
+        map->NumberOfDescribedProperties(OWN_DESCRIPTORS, DONT_SHOW);
+  } else {
+    DCHECK(own_property_count ==
+           map->NumberOfDescribedProperties(OWN_DESCRIPTORS, DONT_SHOW));
+  }
+
+  if (descs->HasEnumCache()) {
+    Handle<FixedArray> keys(descs->GetEnumCache(), isolate);
+    // In case the number of properties required in the enum are actually
+    // present, we can reuse the enum cache. Otherwise, this means that the
+    // enum cache was generated for a previous (smaller) version of the
+    // Descriptor Array. In that case we regenerate the enum cache.
+    if (own_property_count <= keys->length()) {
+      isolate->counters()->enum_cache_hits()->Increment();
+      if (cache_enum_length) map->SetEnumLength(own_property_count);
+      return ReduceFixedArrayTo(keys, own_property_count);
+    }
+  }
+
+  if (descs->IsEmpty()) {
+    isolate->counters()->enum_cache_hits()->Increment();
+    if (cache_enum_length) map->SetEnumLength(0);
+    return isolate->factory()->empty_fixed_array();
+  }
+
+  isolate->counters()->enum_cache_misses()->Increment();
+
+  Handle<FixedArray> storage =
+      isolate->factory()->NewFixedArray(own_property_count);
+  Handle<FixedArray> indices =
+      isolate->factory()->NewFixedArray(own_property_count);
+
+  int size = map->NumberOfOwnDescriptors();
+  int index = 0;
+
+  for (int i = 0; i < size; i++) {
+    PropertyDetails details = descs->GetDetails(i);
+    Object* key = descs->GetKey(i);
+    if (details.IsDontEnum() || key->IsSymbol()) continue;
+    storage->set(index, key);
+    if (!indices.is_null()) {
+      if (details.type() != DATA) {
+        indices = Handle<FixedArray>();
+      } else {
+        FieldIndex field_index = FieldIndex::ForDescriptor(*map, i);
+        int load_by_field_index = field_index.GetLoadByFieldIndex();
+        indices->set(index, Smi::FromInt(load_by_field_index));
+      }
+    }
+    index++;
+  }
+  DCHECK(index == storage->length());
+
+  DescriptorArray::SetEnumCache(descs, isolate, storage, indices);
+  if (cache_enum_length) {
+    map->SetEnumLength(own_property_count);
+  }
+  return storage;
+}
+
+}  // namespace
+
+
 Handle<FixedArray> JSObject::GetEnumPropertyKeys(Handle<JSObject> object,
-                                                 bool cache_result) {
+                                                 bool cache_enum_length) {
   Isolate* isolate = object->GetIsolate();
   if (object->HasFastProperties()) {
-    int own_property_count = object->map()->EnumLength();
-    // If the enum length of the given map is set to kInvalidEnumCache, this
-    // means that the map itself has never used the present enum cache. The
-    // first step to using the cache is to set the enum length of the map by
-    // counting the number of own descriptors that are not DONT_ENUM or
-    // SYMBOLIC.
-    if (own_property_count == kInvalidEnumCacheSentinel) {
-      own_property_count = object->map()->NumberOfDescribedProperties(
-          OWN_DESCRIPTORS, DONT_SHOW);
-    } else {
-      DCHECK(own_property_count == object->map()->NumberOfDescribedProperties(
-          OWN_DESCRIPTORS, DONT_SHOW));
-    }
-
-    if (object->map()->instance_descriptors()->HasEnumCache()) {
-      DescriptorArray* desc = object->map()->instance_descriptors();
-      Handle<FixedArray> keys(desc->GetEnumCache(), isolate);
-
-      // In case the number of properties required in the enum are actually
-      // present, we can reuse the enum cache. Otherwise, this means that the
-      // enum cache was generated for a previous (smaller) version of the
-      // Descriptor Array. In that case we regenerate the enum cache.
-      if (own_property_count <= keys->length()) {
-        if (cache_result) object->map()->SetEnumLength(own_property_count);
-        isolate->counters()->enum_cache_hits()->Increment();
-        return ReduceFixedArrayTo(keys, own_property_count);
-      }
-    }
-
-    Handle<Map> map(object->map());
-
-    if (map->instance_descriptors()->IsEmpty()) {
-      isolate->counters()->enum_cache_hits()->Increment();
-      if (cache_result) map->SetEnumLength(0);
-      return isolate->factory()->empty_fixed_array();
-    }
-
-    isolate->counters()->enum_cache_misses()->Increment();
-
-    Handle<FixedArray> storage = isolate->factory()->NewFixedArray(
-        own_property_count);
-    Handle<FixedArray> indices = isolate->factory()->NewFixedArray(
-        own_property_count);
-
-    Handle<DescriptorArray> descs =
-        Handle<DescriptorArray>(object->map()->instance_descriptors(), isolate);
-
-    int size = map->NumberOfOwnDescriptors();
-    int index = 0;
-
-    for (int i = 0; i < size; i++) {
-      PropertyDetails details = descs->GetDetails(i);
-      Object* key = descs->GetKey(i);
-      if (!(details.IsDontEnum() || key->IsSymbol())) {
-        storage->set(index, key);
-        if (!indices.is_null()) {
-          if (details.type() != DATA) {
-            indices = Handle<FixedArray>();
-          } else {
-            FieldIndex field_index = FieldIndex::ForDescriptor(*map, i);
-            int load_by_field_index = field_index.GetLoadByFieldIndex();
-            indices->set(index, Smi::FromInt(load_by_field_index));
-          }
-        }
-        index++;
-      }
-    }
-    DCHECK(index == storage->length());
-
-    Handle<FixedArray> bridge_storage =
-        isolate->factory()->NewFixedArray(
-            DescriptorArray::kEnumCacheBridgeLength);
-    DescriptorArray* desc = object->map()->instance_descriptors();
-    desc->SetEnumCache(*bridge_storage,
-                       *storage,
-                       indices.is_null() ? Object::cast(Smi::FromInt(0))
-                                         : Object::cast(*indices));
-    if (cache_result) {
-      object->map()->SetEnumLength(own_property_count);
-    }
-    return storage;
+    return GetFastEnumPropertyKeys(isolate, object, cache_enum_length);
   } else if (object->IsGlobalObject()) {
     Handle<GlobalDictionary> dictionary(object->global_dictionary());
     int length = dictionary->NumberOfEnumElements();
@@ -6760,11 +6764,10 @@ void KeyAccumulator::AddKey(Handle<Object> key, int check_limit) {
 }
 
 
-void KeyAccumulator::AddKeys(Handle<FixedArray> array,
-                             FixedArray::KeyFilter filter) {
+void KeyAccumulator::AddKeys(Handle<FixedArray> array, KeyFilter filter) {
   int add_length = array->length();
   if (add_length == 0) return;
-  if (keys_.is_null() && filter == FixedArray::ALL_KEYS) {
+  if (keys_.is_null() && filter == INCLUDE_SYMBOLS) {
     keys_ = array;
     length_ = keys_->length();
     return;
@@ -6773,14 +6776,13 @@ void KeyAccumulator::AddKeys(Handle<FixedArray> array,
   int previous_key_count = length_;
   for (int i = 0; i < add_length; i++) {
     Handle<Object> current(array->get(i), isolate_);
-    if (filter == FixedArray::NON_SYMBOL_KEYS && current->IsSymbol()) continue;
+    if (filter == SKIP_SYMBOLS && current->IsSymbol()) continue;
     AddKey(current, previous_key_count);
   }
 }
 
 
-void KeyAccumulator::AddKeys(Handle<JSObject> array_like,
-                             FixedArray::KeyFilter filter) {
+void KeyAccumulator::AddKeys(Handle<JSObject> array_like, KeyFilter filter) {
   DCHECK(array_like->IsJSArray() || array_like->HasSloppyArgumentsElements());
   ElementsAccessor* accessor = array_like->GetElementsAccessor();
   accessor->AddElementsToKeyAccumulator(array_like, this, filter);
@@ -6792,8 +6794,10 @@ void KeyAccumulator::PrepareForComparisons(int count) {
   // hash-table-based checks which have a one-time overhead for
   // initializing but O(1) for HasKey checks.
   if (!set_.is_null()) return;
-  // This limit was obtained through evaluation of a microbench.
-  if (length_ * count < 50) return;
+  // These limits were obtained through evaluation of several microbenchmarks.
+  if (length_ * count < 100) return;
+  // Don't use a set for few elements
+  if (length_ < 100 && count < 20) return;
   set_ = OrderedHashSet::Allocate(isolate_, length_);
   for (int i = 0; i < length_; i++) {
     Handle<Object> value(keys_->get(i), isolate_);
@@ -6832,7 +6836,8 @@ void KeyAccumulator::Grow() {
 
 
 MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
-                                            KeyCollectionType type) {
+                                            KeyCollectionType type,
+                                            KeyFilter filter) {
   USE(ContainsOnlyValidKeys);
   Isolate* isolate = object->GetIsolate();
   KeyAccumulator accumulator(isolate);
@@ -6858,7 +6863,7 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
                           arraysize(args),
                           args),
           FixedArray);
-      accumulator.AddKeys(Handle<JSObject>::cast(names), FixedArray::ALL_KEYS);
+      accumulator.AddKeys(Handle<JSObject>::cast(names), filter);
       break;
     }
 
@@ -6877,7 +6882,7 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
     Handle<FixedArray> element_keys =
         isolate->factory()->NewFixedArray(current->NumberOfEnumElements());
     current->GetEnumElementKeys(*element_keys);
-    accumulator.AddKeys(element_keys, FixedArray::ALL_KEYS);
+    accumulator.AddKeys(element_keys, filter);
     DCHECK(ContainsOnlyValidKeys(accumulator.GetKeys()));
 
     // Add the element keys from the interceptor.
@@ -6885,38 +6890,49 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
       Handle<JSObject> result;
       if (JSObject::GetKeysForIndexedInterceptor(
               current, object).ToHandle(&result)) {
-        accumulator.AddKeys(result, FixedArray::ALL_KEYS);
+        accumulator.AddKeys(result, filter);
       }
       DCHECK(ContainsOnlyValidKeys(accumulator.GetKeys()));
     }
 
-    // We can cache the computed property keys if access checks are
-    // not needed and no interceptors are involved.
-    //
-    // We do not use the cache if the object has elements and
-    // therefore it does not make sense to cache the property names
-    // for arguments objects.  Arguments objects will always have
-    // elements.
-    // Wrapped strings have elements, but don't have an elements
-    // array or dictionary.  So the fast inline test for whether to
-    // use the cache says yes, so we should not create a cache.
-    bool cache_enum_keys =
-        ((current->map()->GetConstructor() != *arguments_function) &&
-         !current->IsJSValue() && !current->IsAccessCheckNeeded() &&
-         !current->HasNamedInterceptor() && !current->HasIndexedInterceptor());
-    // Compute the property keys and cache them if possible.
+    if (filter == SKIP_SYMBOLS) {
+      // We can cache the computed property keys if access checks are
+      // not needed and no interceptors are involved.
+      //
+      // We do not use the cache if the object has elements and
+      // therefore it does not make sense to cache the property names
+      // for arguments objects.  Arguments objects will always have
+      // elements.
+      // Wrapped strings have elements, but don't have an elements
+      // array or dictionary.  So the fast inline test for whether to
+      // use the cache says yes, so we should not create a cache.
+      bool cache_enum_length =
+          ((current->map()->GetConstructor() != *arguments_function) &&
+           !current->IsJSValue() && !current->IsAccessCheckNeeded() &&
+           !current->HasNamedInterceptor() &&
+           !current->HasIndexedInterceptor());
+      // Compute the property keys and cache them if possible.
 
-    Handle<FixedArray> enum_keys =
-        JSObject::GetEnumPropertyKeys(current, cache_enum_keys);
-    accumulator.AddKeys(enum_keys, FixedArray::ALL_KEYS);
+      Handle<FixedArray> enum_keys =
+          JSObject::GetEnumPropertyKeys(current, cache_enum_length);
+      accumulator.AddKeys(enum_keys, filter);
+    } else {
+      DCHECK(filter == INCLUDE_SYMBOLS);
+      PropertyAttributes attr_filter =
+          static_cast<PropertyAttributes>(DONT_ENUM | PRIVATE_SYMBOL);
+      Handle<FixedArray> property_keys = isolate->factory()->NewFixedArray(
+          current->NumberOfOwnProperties(attr_filter));
+      current->GetOwnPropertyNames(*property_keys, 0, attr_filter);
+      accumulator.AddKeys(property_keys, filter);
+    }
     DCHECK(ContainsOnlyValidKeys(accumulator.GetKeys()));
 
-    // Add the non-symbol property keys from the interceptor.
+    // Add the property keys from the interceptor.
     if (current->HasNamedInterceptor()) {
       Handle<JSObject> result;
       if (JSObject::GetKeysForNamedInterceptor(
               current, object).ToHandle(&result)) {
-        accumulator.AddKeys(result, FixedArray::NON_SYMBOL_KEYS);
+        accumulator.AddKeys(result, filter);
       }
       DCHECK(ContainsOnlyValidKeys(accumulator.GetKeys()));
     }
@@ -8660,18 +8676,27 @@ void DescriptorArray::Replace(int index, Descriptor* descriptor) {
 }
 
 
-void DescriptorArray::SetEnumCache(FixedArray* bridge_storage,
-                                   FixedArray* new_cache,
-                                   Object* new_index_cache) {
-  DCHECK(bridge_storage->length() >= kEnumCacheBridgeLength);
-  DCHECK(new_index_cache->IsSmi() || new_index_cache->IsFixedArray());
-  DCHECK(!IsEmpty());
-  DCHECK(!HasEnumCache() || new_cache->length() > GetEnumCache()->length());
-  FixedArray::cast(bridge_storage)->
-    set(kEnumCacheBridgeCacheIndex, new_cache);
-  FixedArray::cast(bridge_storage)->
-    set(kEnumCacheBridgeIndicesCacheIndex, new_index_cache);
-  set(kEnumCacheIndex, bridge_storage);
+// static
+void DescriptorArray::SetEnumCache(Handle<DescriptorArray> descriptors,
+                                   Isolate* isolate,
+                                   Handle<FixedArray> new_cache,
+                                   Handle<FixedArray> new_index_cache) {
+  DCHECK(!descriptors->IsEmpty());
+  FixedArray* bridge_storage;
+  bool needs_new_enum_cache = !descriptors->HasEnumCache();
+  if (needs_new_enum_cache) {
+    bridge_storage = *isolate->factory()->NewFixedArray(
+        DescriptorArray::kEnumCacheBridgeLength);
+  } else {
+    bridge_storage = FixedArray::cast(descriptors->get(kEnumCacheIndex));
+  }
+  bridge_storage->set(kEnumCacheBridgeCacheIndex, *new_cache);
+  bridge_storage->set(kEnumCacheBridgeIndicesCacheIndex,
+                      new_index_cache.is_null() ? Object::cast(Smi::FromInt(0))
+                                                : *new_index_cache);
+  if (needs_new_enum_cache) {
+    descriptors->set(kEnumCacheIndex, bridge_storage);
+  }
 }
 
 
@@ -8792,6 +8817,47 @@ Handle<LiteralsArray> LiteralsArray::New(Isolate* isolate,
   Handle<LiteralsArray> casted_literals = Handle<LiteralsArray>::cast(literals);
   casted_literals->set_feedback_vector(*vector);
   return casted_literals;
+}
+
+
+// static
+Handle<BindingsArray> BindingsArray::New(Isolate* isolate,
+                                         Handle<TypeFeedbackVector> vector,
+                                         Handle<JSReceiver> bound_function,
+                                         Handle<Object> bound_this,
+                                         int number_of_bindings) {
+  Handle<FixedArray> bindings = isolate->factory()->NewFixedArray(
+      number_of_bindings + kFirstBindingIndex);
+  Handle<BindingsArray> casted_bindings = Handle<BindingsArray>::cast(bindings);
+  casted_bindings->set_feedback_vector(*vector);
+  casted_bindings->set_bound_function(*bound_function);
+  casted_bindings->set_bound_this(*bound_this);
+  return casted_bindings;
+}
+
+
+// static
+Handle<JSArray> BindingsArray::CreateBoundArguments(
+    Handle<BindingsArray> bindings) {
+  int bound_argument_count = bindings->bindings_count();
+  Factory* factory = bindings->GetIsolate()->factory();
+  Handle<FixedArray> arguments = factory->NewFixedArray(bound_argument_count);
+  bindings->CopyTo(kFirstBindingIndex, *arguments, 0, bound_argument_count);
+  return factory->NewJSArrayWithElements(arguments);
+}
+
+
+// static
+Handle<JSArray> BindingsArray::CreateRuntimeBindings(
+    Handle<BindingsArray> bindings) {
+  Factory* factory = bindings->GetIsolate()->factory();
+  // A runtime bindings array consists of
+  // [bound function, bound this, [arg0, arg1, ...]].
+  Handle<FixedArray> runtime_bindings =
+      factory->NewFixedArray(2 + bindings->bindings_count());
+  bindings->CopyTo(kBoundFunctionIndex, *runtime_bindings, 0,
+                   2 + bindings->bindings_count());
+  return factory->NewJSArrayWithElements(runtime_bindings);
 }
 
 
@@ -10763,7 +10829,7 @@ void JSFunction::SetPrototype(Handle<JSFunction> function,
     new_map->set_non_instance_prototype(true);
     Isolate* isolate = new_map->GetIsolate();
     construct_prototype = handle(
-        isolate->context()->native_context()->initial_object_prototype(),
+        function->context()->native_context()->initial_object_prototype(),
         isolate);
   } else {
     function->map()->set_non_instance_prototype(false);
@@ -11806,13 +11872,11 @@ void Code::ClearInlineCaches(Code::Kind* kind) {
 
 void SharedFunctionInfo::ClearTypeFeedbackInfo() {
   feedback_vector()->ClearSlots(this);
-  feedback_vector()->ClearICSlots(this);
 }
 
 
 void SharedFunctionInfo::ClearTypeFeedbackInfoAtGCTime() {
   feedback_vector()->ClearSlotsAtGCTime(this);
-  feedback_vector()->ClearICSlotsAtGCTime(this);
 }
 
 
@@ -12188,7 +12252,7 @@ void DeoptimizationInputData::DeoptimizationInputDataPrint(
 
         case Translation::DOUBLE_REGISTER: {
           int reg_code = iterator.Next();
-          os << "{input=" << DoubleRegister::AllocationIndexToString(reg_code)
+          os << "{input=" << DoubleRegister::from_code(reg_code).ToString()
              << "}";
           break;
         }
@@ -12498,6 +12562,16 @@ void BytecodeArray::Disassemble(std::ostream& os) {
     SNPrintF(buf, "%p", bytecode_start);
     os << buf.start() << " : ";
     interpreter::Bytecodes::Decode(os, bytecode_start, parameter_count());
+    if (interpreter::Bytecodes::IsJump(bytecode)) {
+      int offset = static_cast<int8_t>(bytecode_start[1]);
+      SNPrintF(buf, " (%p)", bytecode_start + offset);
+      os << buf.start();
+    } else if (interpreter::Bytecodes::IsJumpConstant(bytecode)) {
+      int index = static_cast<int>(bytecode_start[1]);
+      int offset = Smi::cast(constant_pool()->get(index))->value();
+      SNPrintF(buf, " (%p)", bytecode_start + offset);
+      os << buf.start();
+    }
     os << "\n";
   }
 
@@ -13825,20 +13899,21 @@ int JSObject::GetOwnPropertyNames(FixedArray* storage, int index,
 
 
 int JSObject::NumberOfOwnElements(PropertyAttributes filter) {
+  // Fast case for objects with no elements.
+  if (!IsJSValue() && HasFastElements()) {
+    uint32_t length =
+        IsJSArray()
+            ? static_cast<uint32_t>(
+                  Smi::cast(JSArray::cast(this)->length())->value())
+            : static_cast<uint32_t>(FixedArrayBase::cast(elements())->length());
+    if (length == 0) return 0;
+  }
+  // Compute the number of enumerable elements.
   return GetOwnElementKeys(NULL, filter);
 }
 
 
 int JSObject::NumberOfEnumElements() {
-  // Fast case for objects with no elements.
-  if (!IsJSValue() && HasFastObjectElements()) {
-    uint32_t length = IsJSArray() ?
-        static_cast<uint32_t>(
-            Smi::cast(JSArray::cast(this)->length())->value()) :
-        static_cast<uint32_t>(FixedArray::cast(elements())->length());
-    if (length == 0) return 0;
-  }
-  // Compute the number of enumerable elements.
   return NumberOfOwnElements(static_cast<PropertyAttributes>(DONT_ENUM));
 }
 

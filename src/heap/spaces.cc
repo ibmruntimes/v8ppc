@@ -2066,12 +2066,6 @@ size_t NewSpace::CommittedPhysicalMemory() {
 intptr_t FreeListCategory::Concatenate(FreeListCategory* category) {
   intptr_t free_bytes = 0;
   if (category->top() != NULL) {
-    // This is safe (not going to deadlock) since Concatenate operations
-    // are never performed on the same free lists at the same time in
-    // reverse order. Furthermore, we only lock if the PagedSpace containing
-    // the free list is know to be globally available, i.e., not local.
-    if (!this->owner()->owner()->is_local()) mutex()->Lock();
-    if (!category->owner()->owner()->is_local()) category->mutex()->Lock();
     DCHECK(category->end_ != NULL);
     free_bytes = category->available();
     if (end_ == NULL) {
@@ -2080,20 +2074,17 @@ intptr_t FreeListCategory::Concatenate(FreeListCategory* category) {
       category->end()->set_next(top());
     }
     set_top(category->top());
-    base::NoBarrier_Store(&top_, category->top_);
     available_ += category->available();
     category->Reset();
-    if (!category->owner()->owner()->is_local()) category->mutex()->Unlock();
-    if (!this->owner()->owner()->is_local()) mutex()->Unlock();
   }
   return free_bytes;
 }
 
 
 void FreeListCategory::Reset() {
-  set_top(NULL);
-  set_end(NULL);
-  set_available(0);
+  set_top(nullptr);
+  set_end(nullptr);
+  available_ = 0;
 }
 
 
@@ -2168,6 +2159,55 @@ FreeSpace* FreeListCategory::PickNodeFromList(int size_in_bytes,
 }
 
 
+FreeSpace* FreeListCategory::SearchForNodeInList(int size_in_bytes,
+                                                 int* node_size) {
+  FreeSpace* return_node = nullptr;
+  FreeSpace* top_node = top();
+
+  for (FreeSpace** node_it = &top_node; *node_it != NULL;
+       node_it = (*node_it)->next_address()) {
+    FreeSpace* cur_node = *node_it;
+    while (cur_node != NULL &&
+           Page::FromAddress(cur_node->address())->IsEvacuationCandidate()) {
+      int size = cur_node->Size();
+      available_ -= size;
+      Page::FromAddress(cur_node->address())
+          ->add_available_in_free_list(type_, -size);
+      cur_node = cur_node->next();
+    }
+
+    // Update iterator.
+    *node_it = cur_node;
+
+    if (cur_node == nullptr) {
+      set_end(nullptr);
+      break;
+    }
+
+    int size = cur_node->Size();
+    if (size >= size_in_bytes) {
+      // Large enough node found.  Unlink it from the list.
+      return_node = cur_node;
+      *node_it = cur_node->next();
+      *node_size = size;
+      available_ -= size;
+      Page::FromAddress(return_node->address())
+          ->add_available_in_free_list(type_, -size);
+      break;
+    }
+  }
+
+  // Top could've changed if we took the first node. Update top and end
+  // accordingly.
+  set_top(top_node);
+  if (top() == nullptr) {
+    set_end(nullptr);
+  }
+
+  return return_node;
+}
+
+
 void FreeListCategory::Free(FreeSpace* free_space, int size_in_bytes) {
   free_space->set_next(top());
   set_top(free_space);
@@ -2195,20 +2235,35 @@ void FreeListCategory::RepairFreeList(Heap* heap) {
 FreeList::FreeList(PagedSpace* owner)
     : owner_(owner),
       heap_(owner->heap()),
-      small_list_(this),
-      medium_list_(this),
-      large_list_(this),
-      huge_list_(this) {
+      wasted_bytes_(0),
+      small_list_(this, kSmall),
+      medium_list_(this, kMedium),
+      large_list_(this, kLarge),
+      huge_list_(this, kHuge) {
   Reset();
 }
 
 
-intptr_t FreeList::Concatenate(FreeList* free_list) {
+intptr_t FreeList::Concatenate(FreeList* other) {
   intptr_t free_bytes = 0;
-  free_bytes += small_list_.Concatenate(free_list->small_list());
-  free_bytes += medium_list_.Concatenate(free_list->medium_list());
-  free_bytes += large_list_.Concatenate(free_list->large_list());
-  free_bytes += huge_list_.Concatenate(free_list->huge_list());
+
+  // This is safe (not going to deadlock) since Concatenate operations
+  // are never performed on the same free lists at the same time in
+  // reverse order. Furthermore, we only lock if the PagedSpace containing
+  // the free list is know to be globally available, i.e., not local.
+  if (!owner()->is_local()) mutex_.Lock();
+  if (!other->owner()->is_local()) other->mutex()->Lock();
+
+  wasted_bytes_ += other->wasted_bytes_;
+  other->wasted_bytes_ = 0;
+
+  free_bytes += small_list_.Concatenate(other->small_list());
+  free_bytes += medium_list_.Concatenate(other->medium_list());
+  free_bytes += large_list_.Concatenate(other->large_list());
+  free_bytes += huge_list_.Concatenate(other->huge_list());
+
+  if (!other->owner()->is_local()) other->mutex()->Unlock();
+  if (!owner()->is_local()) mutex_.Unlock();
   return free_bytes;
 }
 
@@ -2218,6 +2273,7 @@ void FreeList::Reset() {
   medium_list_.Reset();
   large_list_.Reset();
   huge_list_.Reset();
+  ResetStats();
 }
 
 
@@ -2231,6 +2287,7 @@ int FreeList::Free(Address start, int size_in_bytes) {
   // Early return to drop too-small blocks on the floor.
   if (size_in_bytes <= kSmallListMin) {
     page->add_non_available_small_blocks(size_in_bytes);
+    wasted_bytes_ += size_in_bytes;
     return size_in_bytes;
   }
 
@@ -2293,44 +2350,7 @@ FreeSpace* FreeList::FindNodeFor(int size_in_bytes, int* node_size) {
     }
   }
 
-  int huge_list_available = huge_list_.available();
-  FreeSpace* top_node = huge_list_.top();
-  for (FreeSpace** cur = &top_node; *cur != NULL;
-       cur = (*cur)->next_address()) {
-    FreeSpace* cur_node = *cur;
-    while (cur_node != NULL &&
-           Page::FromAddress(cur_node->address())->IsEvacuationCandidate()) {
-      int size = cur_node->Size();
-      huge_list_available -= size;
-      page = Page::FromAddress(cur_node->address());
-      page->add_available_in_huge_free_list(-size);
-      cur_node = cur_node->next();
-    }
-
-    *cur = cur_node;
-    if (cur_node == NULL) {
-      huge_list_.set_end(NULL);
-      break;
-    }
-
-    int size = cur_node->Size();
-    if (size >= size_in_bytes) {
-      // Large enough node found.  Unlink it from the list.
-      node = *cur;
-      *cur = node->next();
-      *node_size = size;
-      huge_list_available -= size;
-      page = Page::FromAddress(node->address());
-      page->add_available_in_huge_free_list(-size);
-      break;
-    }
-  }
-
-  huge_list_.set_top(top_node);
-  if (huge_list_.top() == NULL) {
-    huge_list_.set_end(NULL);
-  }
-  huge_list_.set_available(huge_list_available);
+  node = huge_list_.SearchForNodeInList(size_in_bytes, node_size);
 
   if (node != NULL) {
     DCHECK(IsVeryLong() || available() == SumFreeLists());

@@ -5924,7 +5924,7 @@ void HOptimizedGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
             Handle<Map> map = property->GetReceiverType();
             Handle<String> name = key->AsPropertyName();
             HValue* store;
-            FeedbackVectorICSlot slot = property->GetSlot();
+            FeedbackVectorSlot slot = property->GetSlot();
             if (map.is_null()) {
               // If we don't know the monomorphic type, do a generic store.
               CHECK_ALIVE(store = BuildNamedGeneric(STORE, NULL, slot, literal,
@@ -6604,7 +6604,7 @@ HValue* HOptimizedGraphBuilder::BuildMonomorphicAccess(
 
 
 void HOptimizedGraphBuilder::HandlePolymorphicNamedFieldAccess(
-    PropertyAccessType access_type, Expression* expr, FeedbackVectorICSlot slot,
+    PropertyAccessType access_type, Expression* expr, FeedbackVectorSlot slot,
     BailoutId ast_id, BailoutId return_id, HValue* object, HValue* value,
     SmallMapList* maps, Handle<String> name) {
   // Something did not match; must use a polymorphic load.
@@ -6774,7 +6774,7 @@ static bool AreStringTypes(SmallMapList* maps) {
 
 
 void HOptimizedGraphBuilder::BuildStore(Expression* expr, Property* prop,
-                                        FeedbackVectorICSlot slot,
+                                        FeedbackVectorSlot slot,
                                         BailoutId ast_id, BailoutId return_id,
                                         bool is_uninitialized) {
   if (!prop->key()->IsPropertyName()) {
@@ -6834,8 +6834,7 @@ void HOptimizedGraphBuilder::HandlePropertyAssignment(Assignment* expr) {
 // superclass of Assignment and CountOperation, we cannot just pass the
 // owning expression instead of position and ast_id separately.
 void HOptimizedGraphBuilder::HandleGlobalVariableAssignment(
-    Variable* var, HValue* value, FeedbackVectorICSlot ic_slot,
-    BailoutId ast_id) {
+    Variable* var, HValue* value, FeedbackVectorSlot slot, BailoutId ast_id) {
   Handle<GlobalObject> global(current_info()->global_object());
 
   // Lookup in script contexts.
@@ -6945,7 +6944,7 @@ void HOptimizedGraphBuilder::HandleGlobalVariableAssignment(
     if (FLAG_vector_stores) {
       Handle<TypeFeedbackVector> vector =
           handle(current_feedback_vector(), isolate());
-      instr->SetVectorAndSlot(vector, ic_slot);
+      instr->SetVectorAndSlot(vector, slot);
     }
     USE(instr);
     DCHECK(instr->HasObservableSideEffects());
@@ -7248,7 +7247,7 @@ HInstruction* HGraphBuilder::BuildLoadStringLength(HValue* string) {
 
 
 HInstruction* HOptimizedGraphBuilder::BuildNamedGeneric(
-    PropertyAccessType access_type, Expression* expr, FeedbackVectorICSlot slot,
+    PropertyAccessType access_type, Expression* expr, FeedbackVectorSlot slot,
     HValue* object, Handle<Name> name, HValue* value, bool is_uninitialized) {
   if (is_uninitialized) {
     Add<HDeoptimize>(
@@ -7305,7 +7304,7 @@ HInstruction* HOptimizedGraphBuilder::BuildNamedGeneric(
 
 
 HInstruction* HOptimizedGraphBuilder::BuildKeyedGeneric(
-    PropertyAccessType access_type, Expression* expr, FeedbackVectorICSlot slot,
+    PropertyAccessType access_type, Expression* expr, FeedbackVectorSlot slot,
     HValue* object, HValue* key, HValue* value) {
   if (access_type == LOAD) {
     InlineCacheState initial_state = expr->AsProperty()->GetInlineCacheState();
@@ -7499,7 +7498,7 @@ HInstruction* HOptimizedGraphBuilder::TryBuildConsolidatedElementLoad(
 
 
 HValue* HOptimizedGraphBuilder::HandlePolymorphicElementAccess(
-    Expression* expr, FeedbackVectorICSlot slot, HValue* object, HValue* key,
+    Expression* expr, FeedbackVectorSlot slot, HValue* object, HValue* key,
     HValue* val, SmallMapList* maps, PropertyAccessType access_type,
     KeyedAccessStoreMode store_mode, bool* has_side_effects) {
   *has_side_effects = false;
@@ -7632,7 +7631,7 @@ HValue* HOptimizedGraphBuilder::HandlePolymorphicElementAccess(
 
 HValue* HOptimizedGraphBuilder::HandleKeyedElementAccess(
     HValue* obj, HValue* key, HValue* val, Expression* expr,
-    FeedbackVectorICSlot slot, BailoutId ast_id, BailoutId return_id,
+    FeedbackVectorSlot slot, BailoutId ast_id, BailoutId return_id,
     PropertyAccessType access_type, bool* has_side_effects) {
   if (key->ActualValue()->IsConstant()) {
     Handle<Object> constant =
@@ -7817,7 +7816,7 @@ bool HOptimizedGraphBuilder::TryArgumentsAccess(Property* expr) {
 
 HValue* HOptimizedGraphBuilder::BuildNamedAccess(
     PropertyAccessType access, BailoutId ast_id, BailoutId return_id,
-    Expression* expr, FeedbackVectorICSlot slot, HValue* object,
+    Expression* expr, FeedbackVectorSlot slot, HValue* object,
     Handle<String> name, HValue* value, bool is_uninitialized) {
   SmallMapList* maps;
   ComputeReceiverTypes(expr, object, &maps, zone());
@@ -9766,7 +9765,7 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
         // through the type vector.
         Handle<TypeFeedbackVector> vector =
             handle(current_feedback_vector(), isolate());
-        FeedbackVectorICSlot slot = expr->CallFeedbackICSlot();
+        FeedbackVectorSlot slot = expr->CallFeedbackICSlot();
         call_function->SetVectorAndSlot(vector, slot);
       }
     }
@@ -10623,9 +10622,8 @@ HInstruction* HOptimizedGraphBuilder::BuildIncrement(
 
 
 void HOptimizedGraphBuilder::BuildStoreForEffect(
-    Expression* expr, Property* prop, FeedbackVectorICSlot slot,
-    BailoutId ast_id, BailoutId return_id, HValue* object, HValue* key,
-    HValue* value) {
+    Expression* expr, Property* prop, FeedbackVectorSlot slot, BailoutId ast_id,
+    BailoutId return_id, HValue* object, HValue* key, HValue* value) {
   EffectContext for_effect(this);
   Push(object);
   if (key != NULL) Push(key);
@@ -12272,6 +12270,24 @@ void HOptimizedGraphBuilder::GenerateToString(CallRuntime* call) {
 }
 
 
+void HOptimizedGraphBuilder::GenerateToNumber(CallRuntime* call) {
+  DCHECK_EQ(1, call->arguments()->length());
+  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
+  Callable callable = CodeFactory::ToNumber(isolate());
+  HValue* input = Pop();
+  if (input->type().IsTaggedNumber()) {
+    return ast_context()->ReturnValue(input);
+  } else {
+    HValue* stub = Add<HConstant>(callable.code());
+    HValue* values[] = {context(), input};
+    HInstruction* result =
+        New<HCallWithDescriptor>(stub, 0, callable.descriptor(),
+                                 Vector<HValue*>(values, arraysize(values)));
+    return ast_context()->ReturnInstruction(result, call->id());
+  }
+}
+
+
 void HOptimizedGraphBuilder::GenerateIsJSProxy(CallRuntime* call) {
   DCHECK(call->arguments()->length() == 1);
   CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
@@ -13510,10 +13526,10 @@ void HTracer::TraceLiveRange(LiveRange* range, const char* type,
       int assigned_reg = op->index();
       if (op->IsDoubleRegister()) {
         trace_.Add(" \"%s\"",
-                   DoubleRegister::AllocationIndexToString(assigned_reg));
+                   DoubleRegister::from_code(assigned_reg).ToString());
       } else {
         DCHECK(op->IsRegister());
-        trace_.Add(" \"%s\"", Register::AllocationIndexToString(assigned_reg));
+        trace_.Add(" \"%s\"", Register::from_code(assigned_reg).ToString());
       }
     } else if (range->IsSpilled()) {
       LOperand* op = range->TopLevel()->GetSpillOperand();

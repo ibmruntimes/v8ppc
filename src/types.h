@@ -1279,6 +1279,7 @@ struct BoundsImpl {
 
 typedef BoundsImpl<ZoneTypeConfig> Bounds;
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_TYPES_H_

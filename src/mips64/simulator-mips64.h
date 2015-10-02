@@ -84,7 +84,8 @@ class SimulatorStack : public v8::internal::AllStatic {
   static inline void UnregisterCTryCatch() { }
 };
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 // Calculated the stack limit beyond which we will throw stack overflow errors.
 // This macro must be called from a C++ method. It relies on being able to take
@@ -493,9 +494,10 @@ class Simulator {
 
 #ifdef MIPS_ABI_N64
 #define CALL_GENERATED_REGEXP_CODE(entry, p0, p1, p2, p3, p4, p5, p6, p7, p8) \
-  static_cast<int>(                                                           \
-      Simulator::current(Isolate::Current())                                  \
-          ->Call(entry, 10, p0, p1, p2, p3, p4, p5, p6, p7, NULL, p8))
+  static_cast<int>(Simulator::current(Isolate::Current())                     \
+                       ->Call(entry, 10, p0, p1, p2, p3, p4,                  \
+                              reinterpret_cast<int64_t*>(p5), p6, p7, NULL,   \
+                              p8))
 #else  // Must be O32 Abi.
 #define CALL_GENERATED_REGEXP_CODE(entry, p0, p1, p2, p3, p4, p5, p6, p7, p8) \
   static_cast<int>(                                                           \
@@ -525,7 +527,8 @@ class SimulatorStack : public v8::internal::AllStatic {
   }
 };
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // !defined(USE_SIMULATOR)
 #endif  // V8_MIPS_SIMULATOR_MIPS_H_

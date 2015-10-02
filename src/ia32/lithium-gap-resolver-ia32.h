@@ -72,14 +72,15 @@ class LGapResolver final BASE_EMBEDDED {
   ZoneList<LMoveOperands> moves_;
 
   // Source and destination use counts for the general purpose registers.
-  int source_uses_[Register::kMaxNumAllocatableRegisters];
-  int destination_uses_[Register::kMaxNumAllocatableRegisters];
+  int source_uses_[Register::kNumRegisters];
+  int destination_uses_[DoubleRegister::kMaxNumRegisters];
 
   // If we had to spill on demand, the currently spilled register's
   // allocation index.
   int spilled_register_;
 };
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_IA32_LITHIUM_GAP_RESOLVER_IA32_H_

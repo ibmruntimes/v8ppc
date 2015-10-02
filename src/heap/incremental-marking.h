@@ -103,6 +103,15 @@ class IncrementalMarking {
 
   void Epilogue();
 
+  // Performs incremental marking steps of step_size_in_bytes as long as
+  // deadline_ins_ms is not reached. step_size_in_bytes can be 0 to compute
+  // an estimate increment. Returns the remaining time that cannot be used
+  // for incremental marking anymore because a single step would exceed the
+  // deadline.
+  double AdvanceIncrementalMarking(intptr_t step_size_in_bytes,
+                                   double deadline_in_ms,
+                                   StepActions step_actions);
+
   // It's hard to know how much work the incremental marker should do to make
   // progress in the face of the mutator creating new work for it.  We start
   // of at a moderate rate of work and gradually increase the speed of the
@@ -165,11 +174,11 @@ class IncrementalMarking {
   void RecordCodeTargetPatch(Code* host, Address pc, HeapObject* value);
   void RecordCodeTargetPatch(Address pc, HeapObject* value);
 
-  inline void RecordWrites(HeapObject* obj);
+  void RecordWrites(HeapObject* obj);
 
-  inline void BlackToGreyAndUnshift(HeapObject* obj, MarkBit mark_bit);
+  void BlackToGreyAndUnshift(HeapObject* obj, MarkBit mark_bit);
 
-  inline void WhiteToGreyAndPush(HeapObject* obj, MarkBit mark_bit);
+  void WhiteToGreyAndPush(HeapObject* obj, MarkBit mark_bit);
 
   inline void SetOldSpacePageFlags(MemoryChunk* chunk) {
     SetOldSpacePageFlags(chunk, IsMarking(), IsCompacting());
@@ -267,7 +276,7 @@ class IncrementalMarking {
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(IncrementalMarking);
 };
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_HEAP_INCREMENTAL_MARKING_H_

@@ -55,7 +55,6 @@ std::string Validate(Zone* zone, const char* source,
 
   i::ParseInfo info(zone, script);
   i::Parser parser(&info);
-  parser.set_allow_harmony_arrow_functions(true);
   parser.set_allow_harmony_sloppy(true);
   info.set_global();
   info.set_lazy(false);
@@ -74,7 +73,8 @@ std::string Validate(Zone* zone, const char* source,
     return typer.error_message();
   }
 }
-}
+
+}  // namespace
 
 
 TEST(ValidateMinimum) {
@@ -439,7 +439,8 @@ void CheckStdlibShortcuts(Zone* zone, ZoneVector<ExpressionTypeEntry>& types,
   CHECK_VAR_NEW_SHORTCUT(f32, Bounds(cache.kFloat32Array));
   CHECK_VAR_NEW_SHORTCUT(f64, Bounds(cache.kFloat64Array));
 }
-}
+
+}  // namespace
 
 
 #define CHECK_FUNC_TYPES_BEGIN(func)                   \

@@ -752,6 +752,9 @@ class MemoryChunk {
 };
 
 
+enum FreeListCategoryType { kSmall, kMedium, kLarge, kHuge };
+
+
 // -----------------------------------------------------------------------------
 // A page is a memory chunk of a size 1MB. Large object pages may be larger.
 //
@@ -852,6 +855,25 @@ class Page : public MemoryChunk {
   FRAGMENTATION_STATS_ACCESSORS(intptr_t, available_in_huge_free_list)
 
 #undef FRAGMENTATION_STATS_ACCESSORS
+
+  void add_available_in_free_list(FreeListCategoryType type, intptr_t bytes) {
+    switch (type) {
+      case kSmall:
+        add_available_in_small_free_list(bytes);
+        break;
+      case kMedium:
+        add_available_in_medium_free_list(bytes);
+        break;
+      case kLarge:
+        add_available_in_large_free_list(bytes);
+        break;
+      case kHuge:
+        add_available_in_huge_free_list(bytes);
+        break;
+      default:
+        UNREACHABLE();
+    }
+  }
 
 #ifdef DEBUG
   void Print();
@@ -1420,19 +1442,11 @@ class AllocationInfo {
 
 
 // An abstraction of the accounting statistics of a page-structured space.
-// The 'capacity' of a space is the number of object-area bytes (i.e., not
-// including page bookkeeping structures) currently in the space. The 'size'
-// of a space is the number of allocated bytes, the 'waste' in the space is
-// the number of bytes that are not allocated and not available to
-// allocation without reorganizing the space via a GC (e.g. small blocks due
-// to internal fragmentation, top of page areas in map space), and the bytes
-// 'available' is the number of unallocated bytes that are not waste.  The
-// capacity is the sum of size, waste, and available.
 //
 // The stats are only set by functions that ensure they stay balanced. These
-// functions increase or decrease one of the non-capacity stats in
-// conjunction with capacity, or else they always balance increases and
-// decreases to the non-capacity stats.
+// functions increase or decrease one of the non-capacity stats in conjunction
+// with capacity, or else they always balance increases and decreases to the
+// non-capacity stats.
 class AllocationStats BASE_EMBEDDED {
  public:
   AllocationStats() { Clear(); }
@@ -1442,26 +1456,20 @@ class AllocationStats BASE_EMBEDDED {
     capacity_ = 0;
     max_capacity_ = 0;
     size_ = 0;
-    waste_ = 0;
   }
 
-  void ClearSizeWaste() {
-    size_ = capacity_;
-    waste_ = 0;
-  }
+  void ClearSize() { size_ = capacity_; }
 
-  // Reset the allocation statistics (i.e., available = capacity with no
-  // wasted or allocated bytes).
+  // Reset the allocation statistics (i.e., available = capacity with no wasted
+  // or allocated bytes).
   void Reset() {
     size_ = 0;
-    waste_ = 0;
   }
 
   // Accessors for the allocation statistics.
   intptr_t Capacity() { return capacity_; }
   intptr_t MaxCapacity() { return max_capacity_; }
   intptr_t Size() { return size_; }
-  intptr_t Waste() { return waste_; }
 
   // Grow the space by adding available bytes.  They are initially marked as
   // being in use (part of the size), but will normally be immediately freed,
@@ -1496,17 +1504,10 @@ class AllocationStats BASE_EMBEDDED {
     DCHECK(size_ >= 0);
   }
 
-  // Waste free bytes (available -> waste).
-  void WasteBytes(int size_in_bytes) {
-    DCHECK(size_in_bytes >= 0);
-    waste_ += size_in_bytes;
-  }
-
   // Merge {other} into {this}.
   void Merge(const AllocationStats& other) {
     capacity_ += other.capacity_;
     size_ += other.size_;
-    waste_ += other.waste_;
     if (other.max_capacity_ > max_capacity_) {
       max_capacity_ = other.max_capacity_;
     }
@@ -1520,10 +1521,15 @@ class AllocationStats BASE_EMBEDDED {
   void IncreaseCapacity(intptr_t size_in_bytes) { capacity_ += size_in_bytes; }
 
  private:
+  // |capacity_|: The number of object-area bytes (i.e., not including page
+  // bookkeeping structures) currently in the space.
   intptr_t capacity_;
+
+  // |max_capacity_|: The maximum capacity ever observed.
   intptr_t max_capacity_;
+
+  // |size_|: The number of allocated bytes.
   intptr_t size_;
-  intptr_t waste_;
 };
 
 
@@ -1534,8 +1540,12 @@ class AllocationStats BASE_EMBEDDED {
 // the end element of the linked list of free memory blocks.
 class FreeListCategory {
  public:
-  explicit FreeListCategory(FreeList* owner)
-      : top_(0), end_(NULL), available_(0), owner_(owner) {}
+  explicit FreeListCategory(FreeList* owner, FreeListCategoryType type)
+      : type_(type),
+        top_(nullptr),
+        end_(nullptr),
+        available_(0),
+        owner_(owner) {}
 
   intptr_t Concatenate(FreeListCategory* category);
 
@@ -1543,49 +1553,52 @@ class FreeListCategory {
 
   void Free(FreeSpace* node, int size_in_bytes);
 
+  // Pick a node from the list.
   FreeSpace* PickNodeFromList(int* node_size);
+
+  // Pick a node from the list and compare it against {size_in_bytes}. If the
+  // node's size is greater or equal return the node and null otherwise.
   FreeSpace* PickNodeFromList(int size_in_bytes, int* node_size);
+
+  // Search for a node of size {size_in_bytes}.
+  FreeSpace* SearchForNodeInList(int size_in_bytes, int* node_size);
 
   intptr_t EvictFreeListItemsInList(Page* p);
   bool ContainsPageFreeListItemsInList(Page* p);
 
   void RepairFreeList(Heap* heap);
 
-  FreeSpace* top() const {
-    return reinterpret_cast<FreeSpace*>(base::NoBarrier_Load(&top_));
-  }
+  bool IsEmpty() { return top() == nullptr; }
 
-  void set_top(FreeSpace* top) {
-    base::NoBarrier_Store(&top_, reinterpret_cast<base::AtomicWord>(top));
-  }
-
-  FreeSpace* end() const { return end_; }
-  void set_end(FreeSpace* end) { end_ = end; }
-
-  int* GetAvailableAddress() { return &available_; }
+  FreeList* owner() { return owner_; }
   int available() const { return available_; }
-  void set_available(int available) { available_ = available; }
-
-  base::Mutex* mutex() { return &mutex_; }
-
-  bool IsEmpty() { return top() == 0; }
 
 #ifdef DEBUG
   intptr_t SumFreeList();
   int FreeListLength();
 #endif
 
-  FreeList* owner() { return owner_; }
-
  private:
-  // top_ points to the top FreeSpace* in the free list category.
-  base::AtomicWord top_;
-  FreeSpace* end_;
-  base::Mutex mutex_;
+  FreeSpace* top() { return top_.Value(); }
+  void set_top(FreeSpace* top) { top_.SetValue(top); }
 
-  // Total available bytes in all blocks of this free list category.
+  FreeSpace* end() const { return end_; }
+  void set_end(FreeSpace* end) { end_ = end; }
+
+  // |type_|: The type of this free list category.
+  FreeListCategoryType type_;
+
+  // |top_|: Points to the top FreeSpace* in the free list category.
+  AtomicValue<FreeSpace*> top_;
+
+  // |end_|: Points to the end FreeSpace* in the free list category.
+  FreeSpace* end_;
+
+  // |available_|: Total available bytes in all blocks of this free list
+  //   category.
   int available_;
 
+  // |owner_|: The owning free list of this category.
   FreeList* owner_;
 };
 
@@ -1617,10 +1630,12 @@ class FreeList {
  public:
   explicit FreeList(PagedSpace* owner);
 
-  intptr_t Concatenate(FreeList* free_list);
+  intptr_t Concatenate(FreeList* other);
 
   // Clear the free list.
   void Reset();
+
+  void ResetStats() { wasted_bytes_ = 0; }
 
   // Return the number of bytes available on the free list.
   intptr_t available() {
@@ -1652,9 +1667,8 @@ class FreeList {
   }
 
   // Allocate a block of size 'size_in_bytes' from the free list.  The block
-  // is unitialized.  A failure is returned if no block is available.  The
-  // number of bytes lost to fragmentation is returned in the output parameter
-  // 'wasted_bytes'.  The size should be a non-zero multiple of the word size.
+  // is unitialized.  A failure is returned if no block is available.
+  // The size should be a non-zero multiple of the word size.
   MUST_USE_RESULT HeapObject* Allocate(int size_in_bytes);
 
   bool IsEmpty() {
@@ -1680,6 +1694,8 @@ class FreeList {
   FreeListCategory* huge_list() { return &huge_list_; }
 
   PagedSpace* owner() { return owner_; }
+  intptr_t wasted_bytes() { return wasted_bytes_; }
+  base::Mutex* mutex() { return &mutex_; }
 
  private:
   // The size range of blocks, in bytes.
@@ -1698,6 +1714,8 @@ class FreeList {
 
   PagedSpace* owner_;
   Heap* heap_;
+  base::Mutex mutex_;
+  intptr_t wasted_bytes_;
   FreeListCategory small_list_;
   FreeListCategory medium_list_;
   FreeListCategory large_list_;
@@ -1808,7 +1826,8 @@ class PagedSpace : public Space {
   // discovered during the sweeping they are subtracted from the size and added
   // to the available and wasted totals.
   void ClearStats() {
-    accounting_stats_.ClearSizeWaste();
+    accounting_stats_.ClearSize();
+    free_list_.ResetStats();
     ResetFreeListStatistics();
   }
 
@@ -1834,9 +1853,8 @@ class PagedSpace : public Space {
   intptr_t SizeOfObjects() override;
 
   // Wasted bytes in this space.  These are just the bytes that were thrown away
-  // due to being too small to use for allocation.  They do not include the
-  // free bytes that were not found at all due to lazy sweeping.
-  virtual intptr_t Waste() { return accounting_stats_.Waste(); }
+  // due to being too small to use for allocation.
+  virtual intptr_t Waste() { return free_list_.wasted_bytes(); }
 
   // Returns the allocation pointer in this space.
   Address top() { return allocation_info_.top(); }
@@ -1875,7 +1893,6 @@ class PagedSpace : public Space {
   int Free(Address start, int size_in_bytes) {
     int wasted = free_list_.Free(start, size_in_bytes);
     accounting_stats_.DeallocateBytes(size_in_bytes);
-    accounting_stats_.WasteBytes(wasted);
     return size_in_bytes - wasted;
   }
 
@@ -2973,7 +2990,7 @@ struct CommentStatistic {
   static const int kMaxComments = 64;
 };
 #endif
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_HEAP_SPACES_H_

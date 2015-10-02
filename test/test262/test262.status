@@ -113,6 +113,15 @@
   'language/statements/for-of/const-bound-names-fordecl-tdz-for-of': [PASS, FAIL_SLOPPY],
   'language/statements/for-of/const-fresh-binding-per-iteration-for-of': [PASS, FAIL_SLOPPY],
 
+  # Functions in blocks are var-declared and hoisted in sloppy mode
+  # https://code.google.com/p/v8/issues/detail?id=3305
+  'language/block-scope/shadowing/dynamic-lookup-from-closure': [PASS, FAIL_SLOPPY],
+  'language/block-scope/shadowing/lookup-from-closure': [PASS, FAIL_SLOPPY],
+  'language/block-scope/syntax/redeclaration-in-block/attempt-to-redeclare-function-declaration-with-function-declaration': [PASS, FAIL_SLOPPY],
+  'language/block-scope/syntax/redeclaration-in-block/attempt-to-redeclare-function-declaration-with-var': [PASS, FAIL_SLOPPY],
+  'language/block-scope/syntax/redeclaration-in-block/attempt-to-redeclare-var-with-function-declaration': [PASS, FAIL_SLOPPY],
+  'language/statements/let/block-local-closure-set-before-initialization': [PASS, FAIL_SLOPPY],
+
   # https://code.google.com/p/v8/issues/detail?id=4405
   'language/block-scope/leave/outermost-binding-updated-in-catch-block-nested-block-let-declaration-unseen-outside-of-block': [PASS, FAIL],
 
@@ -414,8 +423,6 @@
   'language/expressions/assignment/S11.13.1_A6*': [FAIL],
 
   # https://code.google.com/p/v8/issues/detail?id=3699
-  'built-ins/Function/instance-name': [FAIL],
-  'built-ins/GeneratorFunction/instance-name': [FAIL],
   'language/expressions/assignment/fn-name-arrow': [FAIL],
   'language/expressions/assignment/fn-name-class': [FAIL],
   'language/expressions/assignment/fn-name-cover': [FAIL],
@@ -746,7 +753,7 @@
 }],  # no_i18n == True and mode == debug
 
 
-['arch == arm or arch == mipsel or arch == mips or arch == arm64 or arch == mips64el', {
+['arch == arm or arch == mipsel or arch == mips or arch == arm64 or arch == mips64 or arch == mips64el', {
 
   # TODO(mstarzinger): Causes stack overflow on simulators due to eager
   # compilation of parenthesized function literals. Needs investigation.

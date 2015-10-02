@@ -77,6 +77,7 @@
 //       - FixedArray
 //         - DescriptorArray
 //         - LiteralsArray
+//         - BindingsArray
 //         - HashTable
 //           - Dictionary
 //           - StringTable
@@ -941,6 +942,7 @@ template <class C> inline bool Is(Object* obj);
   V(LayoutDescriptor)              \
   V(Map)                           \
   V(DescriptorArray)               \
+  V(BindingsArray)                 \
   V(TransitionArray)               \
   V(LiteralsArray)                 \
   V(TypeFeedbackVector)            \
@@ -1775,6 +1777,9 @@ enum AccessorComponent {
 };
 
 
+enum KeyFilter { SKIP_SYMBOLS, INCLUDE_SYMBOLS };
+
+
 // JSReceiver includes types on which properties can be defined, i.e.,
 // JSObject and JSProxy.
 class JSReceiver: public HeapObject {
@@ -1854,8 +1859,8 @@ class JSReceiver: public HeapObject {
   // Computes the enumerable keys for a JSObject. Used for implementing
   // "for (n in object) { }".
   MUST_USE_RESULT static MaybeHandle<FixedArray> GetKeys(
-      Handle<JSReceiver> object,
-      KeyCollectionType type);
+      Handle<JSReceiver> object, KeyCollectionType type,
+      KeyFilter filter = SKIP_SYMBOLS);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSReceiver);
@@ -2266,7 +2271,7 @@ class JSObject: public JSReceiver {
   MUST_USE_RESULT static MaybeHandle<Object> PreventExtensions(
       Handle<JSObject> object);
 
-  bool IsExtensible();
+  static bool IsExtensible(Handle<JSObject> object);
 
   // ES5 Object.seal
   MUST_USE_RESULT static MaybeHandle<Object> Seal(Handle<JSObject> object);
@@ -2519,8 +2524,6 @@ class FixedArray: public FixedArrayBase {
   // Shrink length and insert filler objects.
   void Shrink(int length);
 
-  enum KeyFilter { ALL_KEYS, NON_SYMBOL_KEYS };
-
   // Copy a sub array from the receiver to dest.
   void CopyTo(int pos, FixedArray* dest, int dest_pos, int len);
 
@@ -2768,9 +2771,9 @@ class DescriptorArray: public FixedArray {
 
   // Initialize or change the enum cache,
   // using the supplied storage for the small "bridge".
-  void SetEnumCache(FixedArray* bridge_storage,
-                    FixedArray* new_cache,
-                    Object* new_index_cache);
+  static void SetEnumCache(Handle<DescriptorArray> descriptors,
+                           Isolate* isolate, Handle<FixedArray> new_cache,
+                           Handle<FixedArray> new_index_cache);
 
   bool CanHoldValue(int descriptor, Object* value);
 
@@ -4602,6 +4605,48 @@ class LiteralsArray : public FixedArray {
   inline void set(int index, Object* value);
   inline void set(int index, Smi* value);
   inline void set(int index, Object* value, WriteBarrierMode mode);
+};
+
+
+// A bindings array contains the bindings for a bound function. It also holds
+// the type feedback vector.
+class BindingsArray : public FixedArray {
+ public:
+  inline TypeFeedbackVector* feedback_vector() const;
+  inline void set_feedback_vector(TypeFeedbackVector* vector);
+
+  inline JSReceiver* bound_function() const;
+  inline void set_bound_function(JSReceiver* function);
+  inline Object* bound_this() const;
+  inline void set_bound_this(Object* bound_this);
+
+  inline Object* binding(int binding_index) const;
+  inline void set_binding(int binding_index, Object* binding);
+  inline int bindings_count() const;
+
+  static Handle<BindingsArray> New(Isolate* isolate,
+                                   Handle<TypeFeedbackVector> vector,
+                                   Handle<JSReceiver> bound_function,
+                                   Handle<Object> bound_this,
+                                   int number_of_bindings);
+
+  static Handle<JSArray> CreateBoundArguments(Handle<BindingsArray> bindings);
+  static Handle<JSArray> CreateRuntimeBindings(Handle<BindingsArray> bindings);
+
+  DECLARE_CAST(BindingsArray)
+
+ private:
+  static const int kVectorIndex = 0;
+  static const int kBoundFunctionIndex = 1;
+  static const int kBoundThisIndex = 2;
+  static const int kFirstBindingIndex = 3;
+
+  inline Object* get(int index) const;
+  inline void set(int index, Object* value);
+  inline void set(int index, Smi* value);
+  inline void set(int index, Object* value, WriteBarrierMode mode);
+
+  inline int length() const;
 };
 
 
@@ -7202,8 +7247,8 @@ class JSFunction: public JSObject {
   inline LiteralsArray* literals();
   inline void set_literals(LiteralsArray* literals);
 
-  inline FixedArray* function_bindings();
-  inline void set_function_bindings(FixedArray* bindings);
+  inline BindingsArray* function_bindings();
+  inline void set_function_bindings(BindingsArray* bindings);
 
   // The initial map for an object created by this constructor.
   inline Map* initial_map();
@@ -7289,11 +7334,6 @@ class JSFunction: public JSObject {
   static const int kNonWeakFieldsEndOffset = kLiteralsOffset + kPointerSize;
   static const int kNextFunctionLinkOffset = kNonWeakFieldsEndOffset;
   static const int kSize = kNextFunctionLinkOffset + kPointerSize;
-
-  // Layout of the bound-function binding array.
-  static const int kBoundFunctionIndex = 0;
-  static const int kBoundThisIndex = 1;
-  static const int kBoundArgumentsStartIndex = 2;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSFunction);
@@ -10641,8 +10681,8 @@ class KeyAccumulator final BASE_EMBEDDED {
   explicit KeyAccumulator(Isolate* isolate) : isolate_(isolate), length_(0) {}
 
   void AddKey(Handle<Object> key, int check_limit);
-  void AddKeys(Handle<FixedArray> array, FixedArray::KeyFilter filter);
-  void AddKeys(Handle<JSObject> array, FixedArray::KeyFilter filter);
+  void AddKeys(Handle<FixedArray> array, KeyFilter filter);
+  void AddKeys(Handle<JSObject> array, KeyFilter filter);
   void PrepareForComparisons(int count);
   Handle<FixedArray> GetKeys();
 
@@ -10658,6 +10698,8 @@ class KeyAccumulator final BASE_EMBEDDED {
   int length_;
   DISALLOW_COPY_AND_ASSIGN(KeyAccumulator);
 };
-} }  // namespace v8::internal
+
+}  // NOLINT, false-positive due to second-order macros.
+}  // NOLINT, false-positive due to second-order macros.
 
 #endif  // V8_OBJECTS_H_

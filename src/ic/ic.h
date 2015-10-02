@@ -210,7 +210,7 @@ class IC {
   inline void UpdateTarget();
 
   Handle<TypeFeedbackVector> vector() const { return nexus()->vector_handle(); }
-  FeedbackVectorICSlot slot() const { return nexus()->slot(); }
+  FeedbackVectorSlot slot() const { return nexus()->slot(); }
   State saved_state() const {
     return state() == PROTOTYPE_FAILURE ? old_state_ : state();
   }
@@ -685,7 +685,7 @@ class ToBooleanIC : public IC {
 enum InlinedSmiCheck { ENABLE_INLINED_SMI_CHECK, DISABLE_INLINED_SMI_CHECK };
 void PatchInlinedSmiCode(Address address, InlinedSmiCheck check);
 
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_IC_H_

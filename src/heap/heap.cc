@@ -124,7 +124,7 @@ Heap::Heap()
       scavenge_collector_(nullptr),
       mark_compact_collector_(nullptr),
       store_buffer_(this),
-      incremental_marking_(this),
+      incremental_marking_(nullptr),
       gc_idle_time_handler_(nullptr),
       memory_reducer_(nullptr),
       object_stats_(nullptr),
@@ -862,6 +862,32 @@ void Heap::CollectAllAvailableGarbage(const char* gc_reason) {
   set_current_gc_flags(kNoGCFlags);
   new_space_.Shrink();
   UncommitFromSpace();
+}
+
+
+void Heap::ReportExternalMemoryPressure(const char* gc_reason) {
+  if (incremental_marking()->IsStopped()) {
+    if (incremental_marking()->CanBeActivated()) {
+      StartIncrementalMarking(
+          i::Heap::kNoGCFlags,
+          kGCCallbackFlagSynchronousPhantomCallbackProcessing, gc_reason);
+    } else {
+      CollectAllGarbage(i::Heap::kNoGCFlags, gc_reason,
+                        kGCCallbackFlagSynchronousPhantomCallbackProcessing);
+    }
+  } else {
+    // Incremental marking is turned on an has already been started.
+
+    // TODO(mlippautz): Compute the time slice for incremental marking based on
+    // memory pressure.
+    double deadline = MonotonicallyIncreasingTimeInMs() +
+                      FLAG_external_allocation_limit_incremental_time;
+    incremental_marking()->AdvanceIncrementalMarking(
+        0, deadline,
+        IncrementalMarking::StepActions(IncrementalMarking::GC_VIA_STACK_GUARD,
+                                        IncrementalMarking::FORCE_MARKING,
+                                        IncrementalMarking::FORCE_COMPLETION));
+  }
 }
 
 
@@ -2694,18 +2720,30 @@ void Heap::CreateInitialObjects() {
   set_microtask_queue(empty_fixed_array());
 
   {
-    FeedbackVectorSlotKind kinds[] = {FeedbackVectorSlotKind::LOAD_IC,
-                                      FeedbackVectorSlotKind::KEYED_LOAD_IC,
-                                      FeedbackVectorSlotKind::STORE_IC,
-                                      FeedbackVectorSlotKind::KEYED_STORE_IC};
-    StaticFeedbackVectorSpec spec(0, 4, kinds);
+    StaticFeedbackVectorSpec spec;
+    FeedbackVectorSlot load_ic_slot = spec.AddLoadICSlot();
+    FeedbackVectorSlot keyed_load_ic_slot = spec.AddKeyedLoadICSlot();
+    FeedbackVectorSlot store_ic_slot = spec.AddStoreICSlot();
+    FeedbackVectorSlot keyed_store_ic_slot = spec.AddKeyedStoreICSlot();
+
+    DCHECK_EQ(load_ic_slot,
+              FeedbackVectorSlot(TypeFeedbackVector::kDummyLoadICSlot));
+    DCHECK_EQ(keyed_load_ic_slot,
+              FeedbackVectorSlot(TypeFeedbackVector::kDummyKeyedLoadICSlot));
+    DCHECK_EQ(store_ic_slot,
+              FeedbackVectorSlot(TypeFeedbackVector::kDummyStoreICSlot));
+    DCHECK_EQ(keyed_store_ic_slot,
+              FeedbackVectorSlot(TypeFeedbackVector::kDummyKeyedStoreICSlot));
+
     Handle<TypeFeedbackVector> dummy_vector =
-        factory->NewTypeFeedbackVector(&spec);
-    for (int i = 0; i < 4; i++) {
-      dummy_vector->Set(FeedbackVectorICSlot(0),
-                        *TypeFeedbackVector::MegamorphicSentinel(isolate()),
-                        SKIP_WRITE_BARRIER);
-    }
+        TypeFeedbackVector::New(isolate(), &spec);
+
+    Object* megamorphic = *TypeFeedbackVector::MegamorphicSentinel(isolate());
+    dummy_vector->Set(load_ic_slot, megamorphic, SKIP_WRITE_BARRIER);
+    dummy_vector->Set(keyed_load_ic_slot, megamorphic, SKIP_WRITE_BARRIER);
+    dummy_vector->Set(store_ic_slot, megamorphic, SKIP_WRITE_BARRIER);
+    dummy_vector->Set(keyed_store_ic_slot, megamorphic, SKIP_WRITE_BARRIER);
+
     set_dummy_vector(*dummy_vector);
   }
 
@@ -4051,36 +4089,9 @@ GCIdleTimeHeapState Heap::ComputeHeapState() {
   heap_state.contexts_disposed = contexts_disposed_;
   heap_state.contexts_disposal_rate =
       tracer()->ContextDisposalRateInMilliseconds();
+  heap_state.size_of_objects = static_cast<size_t>(SizeOfObjects());
   heap_state.incremental_marking_stopped = incremental_marking()->IsStopped();
-  heap_state.mark_compact_speed_in_bytes_per_ms =
-      static_cast<size_t>(tracer()->MarkCompactSpeedInBytesPerMillisecond());
   return heap_state;
-}
-
-
-double Heap::AdvanceIncrementalMarking(
-    intptr_t step_size_in_bytes, double deadline_in_ms,
-    IncrementalMarking::StepActions step_actions) {
-  DCHECK(!incremental_marking()->IsStopped());
-
-  if (step_size_in_bytes == 0) {
-    step_size_in_bytes = GCIdleTimeHandler::EstimateMarkingStepSize(
-        static_cast<size_t>(GCIdleTimeHandler::kIncrementalMarkingStepTimeInMs),
-        static_cast<size_t>(
-            tracer()->FinalIncrementalMarkCompactSpeedInBytesPerMillisecond()));
-  }
-
-  double remaining_time_in_ms = 0.0;
-  do {
-    incremental_marking()->Step(
-        step_size_in_bytes, step_actions.completion_action,
-        step_actions.force_marking, step_actions.force_completion);
-    remaining_time_in_ms = deadline_in_ms - MonotonicallyIncreasingTimeInMs();
-  } while (remaining_time_in_ms >=
-               2.0 * GCIdleTimeHandler::kIncrementalMarkingStepTimeInMs &&
-           !incremental_marking()->IsComplete() &&
-           !mark_compact_collector()->marking_deque()->IsEmpty());
-  return remaining_time_in_ms;
 }
 
 
@@ -4981,6 +4992,9 @@ bool Heap::SetUp() {
   if (!isolate_->memory_allocator()->SetUp(MaxReserved(), MaxExecutableSize()))
     return false;
 
+  // Initialize incremental marking.
+  incremental_marking_ = new IncrementalMarking(this);
+
   // Set up new space.
   if (!new_space_.SetUp(reserved_semispace_size_, max_semi_space_size_)) {
     return false;
@@ -5159,6 +5173,9 @@ void Heap::TearDown() {
     delete mark_compact_collector_;
     mark_compact_collector_ = nullptr;
   }
+
+  delete incremental_marking_;
+  incremental_marking_ = nullptr;
 
   delete gc_idle_time_handler_;
   gc_idle_time_handler_ = nullptr;

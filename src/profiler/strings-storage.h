@@ -2,16 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef V8_STRINGS_STORAGE_H_
-#define V8_STRINGS_STORAGE_H_
+#ifndef V8_PROFILER_STRINGS_STORAGE_H_
+#define V8_PROFILER_STRINGS_STORAGE_H_
 
 #include "src/allocation.h"
 #include "src/hashmap.h"
 
 namespace v8 {
 namespace internal {
-
-struct OffsetRange;
 
 // Provides a storage of strings allocated in C++ heap, to hold them
 // forever, even if they disappear from JS heap or external storage.
@@ -41,7 +39,7 @@ class StringsStorage {
 
   DISALLOW_COPY_AND_ASSIGN(StringsStorage);
 };
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
-#endif  // V8_STRINGS_STORAGE_H_
+#endif  // V8_PROFILER_STRINGS_STORAGE_H_

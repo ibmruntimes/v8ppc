@@ -11,6 +11,7 @@
 #include "src/counters.h"
 #include "src/heap/heap.h"
 #include "src/heap/incremental-marking-inl.h"
+#include "src/heap/mark-compact.h"
 #include "src/heap/spaces-inl.h"
 #include "src/heap/store-buffer.h"
 #include "src/heap/store-buffer-inl.h"
@@ -19,6 +20,7 @@
 #include "src/log.h"
 #include "src/msan.h"
 #include "src/objects-inl.h"
+#include "src/type-feedback-vector-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -700,7 +702,7 @@ void VerifySmisVisitor::VisitPointers(Object** start, Object** end) {
     CHECK((*current)->IsSmi());
   }
 }
-}
-}  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_HEAP_HEAP_INL_H_

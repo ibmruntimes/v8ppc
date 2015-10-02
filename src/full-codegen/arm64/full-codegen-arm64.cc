@@ -7,7 +7,6 @@
 #include "src/code-factory.h"
 #include "src/code-stubs.h"
 #include "src/codegen.h"
-#include "src/compiler.h"
 #include "src/debug/debug.h"
 #include "src/full-codegen/full-codegen.h"
 #include "src/ic/ic.h"
@@ -144,7 +143,6 @@ void FullCodeGenerator::Generate() {
   //  Add(fp, jssp, 2 * kPointerSize);
   info->set_prologue_offset(masm_->pc_offset());
   __ Prologue(info->IsCodePreAgingActive());
-  info->AddNoFrameRange(0, masm_->pc_offset());
 
   // Reserve space on the stack for locals.
   { Comment cmnt(masm_, "[ Allocate locals");
@@ -469,7 +467,6 @@ void FullCodeGenerator::EmitReturnSequence() {
     // Nothing ensures 16 bytes alignment here.
     DCHECK(!current_sp.Is(csp));
     __ Mov(current_sp, fp);
-    int no_frame_start = masm_->pc_offset();
     __ Ldp(fp, lr, MemOperand(current_sp, 2 * kXRegSize, PostIndex));
     // Drop the arguments and receiver and return.
     // TODO(all): This implementation is overkill as it supports 2**31+1
@@ -480,7 +477,6 @@ void FullCodeGenerator::EmitReturnSequence() {
     __ Ret();
     int32_t arg_count = info_->scope()->num_parameters() + 1;
     __ dc64(kXRegSize * arg_count);
-    info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
   }
 }
 
@@ -1242,7 +1238,7 @@ void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
 
 
 void FullCodeGenerator::EmitSetHomeObject(Expression* initializer, int offset,
-                                          FeedbackVectorICSlot slot) {
+                                          FeedbackVectorSlot slot) {
   DCHECK(NeedsHomeObject(initializer));
   __ Peek(StoreDescriptor::ReceiverRegister(), 0);
   __ Mov(StoreDescriptor::NameRegister(),
@@ -1253,8 +1249,9 @@ void FullCodeGenerator::EmitSetHomeObject(Expression* initializer, int offset,
 }
 
 
-void FullCodeGenerator::EmitSetHomeObjectAccumulator(
-    Expression* initializer, int offset, FeedbackVectorICSlot slot) {
+void FullCodeGenerator::EmitSetHomeObjectAccumulator(Expression* initializer,
+                                                     int offset,
+                                                     FeedbackVectorSlot slot) {
   DCHECK(NeedsHomeObject(initializer));
   __ Move(StoreDescriptor::ReceiverRegister(), x0);
   __ Mov(StoreDescriptor::NameRegister(),
@@ -2208,7 +2205,7 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
 
 
 void FullCodeGenerator::EmitAssignment(Expression* expr,
-                                       FeedbackVectorICSlot slot) {
+                                       FeedbackVectorSlot slot) {
   DCHECK(expr->IsValidReferenceExpressionOrThis());
 
   Property* prop = expr->AsProperty();
@@ -2303,7 +2300,7 @@ void FullCodeGenerator::EmitStoreToStackLocalOrContextSlot(
 
 
 void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
-                                               FeedbackVectorICSlot slot) {
+                                               FeedbackVectorSlot slot) {
   ASM_LOCATION("FullCodeGenerator::EmitVariableAssignment");
   if (var->IsUnallocated()) {
     // Global var, const, or let.
@@ -3513,6 +3510,19 @@ void FullCodeGenerator::EmitToString(CallRuntime* expr) {
   VisitForAccumulatorValue(args->at(0));
 
   ToStringStub stub(isolate());
+  __ CallStub(&stub);
+  context()->Plug(x0);
+}
+
+
+void FullCodeGenerator::EmitToNumber(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK_EQ(1, args->length());
+
+  // Load the argument into x0 and convert it.
+  VisitForAccumulatorValue(args->at(0));
+
+  ToNumberStub stub(isolate());
   __ CallStub(&stub);
   context()->Plug(x0);
 }
@@ -5156,7 +5166,7 @@ void FullCodeGenerator::ClearPendingMessage() {
 }
 
 
-void FullCodeGenerator::EmitLoadStoreICSlot(FeedbackVectorICSlot slot) {
+void FullCodeGenerator::EmitLoadStoreICSlot(FeedbackVectorSlot slot) {
   DCHECK(FLAG_vector_stores && !slot.IsInvalid());
   __ Mov(VectorStoreICTrampolineDescriptor::SlotRegister(), SmiFromSlot(slot));
 }

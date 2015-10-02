@@ -25,24 +25,30 @@ class BytecodeGenerator : public AstVisitor {
 #undef DECLARE_VISIT
 
  private:
+  class ControlScope;
+  class ControlScopeForIteration;
+
   DEFINE_AST_VISITOR_SUBCLASS_MEMBERS();
 
   void VisitArithmeticExpression(BinaryOperation* binop);
   void VisitPropertyLoad(Register obj, Property* expr);
   void VisitVariableLoad(Variable* variable);
 
-  inline BytecodeArrayBuilder& builder() { return builder_; }
+  inline BytecodeArrayBuilder* builder() { return &builder_; }
   inline Scope* scope() const { return scope_; }
   inline void set_scope(Scope* scope) { scope_ = scope; }
+  inline ControlScope* control_scope() const { return control_scope_; }
+  inline void set_control_scope(ControlScope* scope) { control_scope_ = scope; }
   inline CompilationInfo* info() const { return info_; }
   inline void set_info(CompilationInfo* info) { info_ = info; }
 
   LanguageMode language_mode() const;
-  int feedback_index(FeedbackVectorICSlot slot) const;
+  int feedback_index(FeedbackVectorSlot slot) const;
 
   BytecodeArrayBuilder builder_;
   CompilationInfo* info_;
   Scope* scope_;
+  ControlScope* control_scope_;
 };
 
 }  // namespace interpreter

@@ -7,6 +7,7 @@
 #include "src/code-stubs.h"
 #include "src/compilation-cache.h"
 #include "src/conversions.h"
+#include "src/heap/gc-idle-time-handler.h"
 #include "src/heap/gc-tracer.h"
 #include "src/heap/mark-compact-inl.h"
 #include "src/heap/objects-visiting.h"
@@ -44,6 +45,36 @@ IncrementalMarking::IncrementalMarking(Heap* heap)
       weak_closure_was_overapproximated_(false),
       weak_closure_approximation_rounds_(0),
       request_type_(COMPLETE_MARKING) {}
+
+
+bool IncrementalMarking::BaseRecordWrite(HeapObject* obj, Object** slot,
+                                         Object* value) {
+  HeapObject* value_heap_obj = HeapObject::cast(value);
+  MarkBit value_bit = Marking::MarkBitFrom(value_heap_obj);
+  if (Marking::IsWhite(value_bit)) {
+    MarkBit obj_bit = Marking::MarkBitFrom(obj);
+    if (Marking::IsBlack(obj_bit)) {
+      MemoryChunk* chunk = MemoryChunk::FromAddress(obj->address());
+      if (chunk->IsFlagSet(MemoryChunk::HAS_PROGRESS_BAR)) {
+        if (chunk->IsLeftOfProgressBar(slot)) {
+          WhiteToGreyAndPush(value_heap_obj, value_bit);
+          RestartIfNotMarking();
+        } else {
+          return false;
+        }
+      } else {
+        BlackToGreyAndUnshift(obj, obj_bit);
+        RestartIfNotMarking();
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+  if (!is_compacting_) return false;
+  MarkBit obj_bit = Marking::MarkBitFrom(obj);
+  return Marking::IsBlack(obj_bit);
+}
 
 
 void IncrementalMarking::RecordWriteSlow(HeapObject* obj, Object** slot,
@@ -130,6 +161,58 @@ void IncrementalMarking::RecordWriteIntoCodeSlow(HeapObject* obj,
                                                        Code::cast(value));
     }
   }
+}
+
+
+void IncrementalMarking::RecordWrites(HeapObject* obj) {
+  if (IsMarking()) {
+    MarkBit obj_bit = Marking::MarkBitFrom(obj);
+    if (Marking::IsBlack(obj_bit)) {
+      MemoryChunk* chunk = MemoryChunk::FromAddress(obj->address());
+      if (chunk->IsFlagSet(MemoryChunk::HAS_PROGRESS_BAR)) {
+        chunk->set_progress_bar(0);
+      }
+      BlackToGreyAndUnshift(obj, obj_bit);
+      RestartIfNotMarking();
+    }
+  }
+}
+
+
+void IncrementalMarking::BlackToGreyAndUnshift(HeapObject* obj,
+                                               MarkBit mark_bit) {
+  DCHECK(Marking::MarkBitFrom(obj) == mark_bit);
+  DCHECK(obj->Size() >= 2 * kPointerSize);
+  DCHECK(IsMarking());
+  Marking::BlackToGrey(mark_bit);
+  int obj_size = obj->Size();
+  MemoryChunk::IncrementLiveBytesFromGC(obj, -obj_size);
+  bytes_scanned_ -= obj_size;
+  int64_t old_bytes_rescanned = bytes_rescanned_;
+  bytes_rescanned_ = old_bytes_rescanned + obj_size;
+  if ((bytes_rescanned_ >> 20) != (old_bytes_rescanned >> 20)) {
+    if (bytes_rescanned_ > 2 * heap_->PromotedSpaceSizeOfObjects()) {
+      // If we have queued twice the heap size for rescanning then we are
+      // going around in circles, scanning the same objects again and again
+      // as the program mutates the heap faster than we can incrementally
+      // trace it.  In this case we switch to non-incremental marking in
+      // order to finish off this marking phase.
+      if (FLAG_trace_incremental_marking) {
+        PrintIsolate(
+            heap()->isolate(),
+            "Hurrying incremental marking because of lack of progress\n");
+      }
+      marking_speed_ = kMaxMarkingSpeed;
+    }
+  }
+
+  heap_->mark_compact_collector()->marking_deque()->Unshift(obj);
+}
+
+
+void IncrementalMarking::WhiteToGreyAndPush(HeapObject* obj, MarkBit mark_bit) {
+  Marking::WhiteToGrey(mark_bit);
+  heap_->mark_compact_collector()->marking_deque()->Push(obj);
 }
 
 
@@ -812,6 +895,34 @@ void IncrementalMarking::Epilogue() {
   was_activated_ = false;
   weak_closure_was_overapproximated_ = false;
   weak_closure_approximation_rounds_ = 0;
+}
+
+
+double IncrementalMarking::AdvanceIncrementalMarking(
+    intptr_t step_size_in_bytes, double deadline_in_ms,
+    IncrementalMarking::StepActions step_actions) {
+  DCHECK(!IsStopped());
+
+  if (step_size_in_bytes == 0) {
+    step_size_in_bytes = GCIdleTimeHandler::EstimateMarkingStepSize(
+        static_cast<size_t>(GCIdleTimeHandler::kIncrementalMarkingStepTimeInMs),
+        static_cast<size_t>(
+            heap()
+                ->tracer()
+                ->FinalIncrementalMarkCompactSpeedInBytesPerMillisecond()));
+  }
+
+  double remaining_time_in_ms = 0.0;
+  do {
+    Step(step_size_in_bytes, step_actions.completion_action,
+         step_actions.force_marking, step_actions.force_completion);
+    remaining_time_in_ms =
+        deadline_in_ms - heap()->MonotonicallyIncreasingTimeInMs();
+  } while (remaining_time_in_ms >=
+               2.0 * GCIdleTimeHandler::kIncrementalMarkingStepTimeInMs &&
+           !IsComplete() &&
+           !heap()->mark_compact_collector()->marking_deque()->IsEmpty());
+  return remaining_time_in_ms;
 }
 
 

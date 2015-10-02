@@ -67,7 +67,7 @@ void MemoryReducer::NotifyTimer(const Event& event) {
       const int kIncrementalMarkingDelayMs = 500;
       double deadline = heap()->MonotonicallyIncreasingTimeInMs() +
                         kIncrementalMarkingDelayMs;
-      heap()->AdvanceIncrementalMarking(
+      heap()->incremental_marking()->AdvanceIncrementalMarking(
           0, deadline, i::IncrementalMarking::StepActions(
                            i::IncrementalMarking::NO_GC_VIA_STACK_GUARD,
                            i::IncrementalMarking::FORCE_MARKING,
@@ -150,7 +150,7 @@ bool MemoryReducer::WatchdogGC(const State& state, const Event& event) {
 // For specification of this function see the comment for MemoryReducer class.
 MemoryReducer::State MemoryReducer::Step(const State& state,
                                          const Event& event) {
-  if (!FLAG_incremental_marking) {
+  if (!FLAG_incremental_marking || !FLAG_memory_reducer) {
     return State(kDone, 0, 0, state.last_gc_time_ms);
   }
   switch (state.action) {
@@ -225,5 +225,5 @@ void MemoryReducer::ScheduleTimer(double delay_ms) {
 
 void MemoryReducer::TearDown() { state_ = State(kDone, 0, 0, 0.0); }
 
-}  // internal
-}  // v8
+}  // namespace internal
+}  // namespace v8

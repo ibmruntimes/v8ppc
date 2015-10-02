@@ -182,8 +182,10 @@ void DoubleToIStub::Generate(MacroAssembler* masm) {
   Register input_high = scratch2;
   Register input_low = scratch3;
 
-  __ lw(input_low, MemOperand(input_reg, double_offset));
-  __ lw(input_high, MemOperand(input_reg, double_offset + kIntSize));
+  __ lw(input_low,
+        MemOperand(input_reg, double_offset + Register::kMantissaOffset));
+  __ lw(input_high,
+        MemOperand(input_reg, double_offset + Register::kExponentOffset));
 
   Label normal_exponent, restore_sign;
   // Extract the biased exponent in result.
@@ -1062,13 +1064,21 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   // fp: frame pointer    (restored after C call)
   // sp: stack pointer    (restored as callee's sp after C call)
   // cp: current context  (C callee-saved)
+  //
+  // If argv_in_register():
+  // a2: pointer to the first argument
 
   ProfileEntryHookStub::MaybeCallEntryHook(masm);
 
-  // Compute the argv pointer in a callee-saved register.
-  __ dsll(s1, a0, kPointerSizeLog2);
-  __ Daddu(s1, sp, s1);
-  __ Dsubu(s1, s1, kPointerSize);
+  if (argv_in_register()) {
+    // Move argv into the correct register.
+    __ mov(s1, a2);
+  } else {
+    // Compute the argv pointer in a callee-saved register.
+    __ dsll(s1, a0, kPointerSizeLog2);
+    __ Daddu(s1, sp, s1);
+    __ Dsubu(s1, s1, kPointerSize);
+  }
 
   // Enter the exit frame that transitions from JavaScript to C++.
   FrameScope scope(masm, StackFrame::MANUAL);
@@ -1148,8 +1158,15 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   // v0:v1: result
   // sp: stack pointer
   // fp: frame pointer
-  // s0: still holds argc (callee-saved).
-  __ LeaveExitFrame(save_doubles(), s0, true, EMIT_RETURN);
+  Register argc;
+  if (argv_in_register()) {
+    // We don't want to pop arguments so set argc to no_reg.
+    argc = no_reg;
+  } else {
+    // s0: still holds argc (callee-saved).
+    argc = s0;
+  }
+  __ LeaveExitFrame(save_doubles(), argc, true, EMIT_RETURN);
 
   // Handling of exception.
   __ bind(&exception_returned);
@@ -3309,7 +3326,7 @@ void ToNumberStub::Generate(MacroAssembler* masm) {
   Label not_string, slow_string;
   __ Branch(&not_string, hs, a1, Operand(FIRST_NONSTRING_TYPE));
   // Check if string has a cached array index.
-  __ ld(a2, FieldMemOperand(a0, String::kHashFieldOffset));
+  __ lwu(a2, FieldMemOperand(a0, String::kHashFieldOffset));
   __ And(at, a2, Operand(String::kContainsCachedArrayIndexMask));
   __ Branch(&slow_string, ne, at, Operand(zero_reg));
   __ IndexFromHash(a2, a0);
@@ -5602,8 +5619,8 @@ static void CallApiFunctionStubHelper(MacroAssembler* masm,
   //  --
   //  -- sp[0]               : last argument
   //  -- ...
-  //  -- sp[(argc - 1)* 4]   : first argument
-  //  -- sp[argc * 4]        : receiver
+  //  -- sp[(argc - 1)* 8]   : first argument
+  //  -- sp[argc * 8]        : receiver
   // -----------------------------------
 
   Register callee = a0;
@@ -5662,10 +5679,12 @@ static void CallApiFunctionStubHelper(MacroAssembler* masm,
              Operand((FCA::kArgsLength - 1 + argc.immediate()) * kPointerSize));
     __ sd(at, MemOperand(a0, 1 * kPointerSize));
     // FunctionCallbackInfo::length_ = argc
+    // Stored as int field, 32-bit integers within struct on stack always left
+    // justified by n64 ABI.
     __ li(at, Operand(argc.immediate()));
-    __ sd(at, MemOperand(a0, 2 * kPointerSize));
+    __ sw(at, MemOperand(a0, 2 * kPointerSize));
     // FunctionCallbackInfo::is_construct_call_ = 0
-    __ sd(zero_reg, MemOperand(a0, 3 * kPointerSize));
+    __ sw(zero_reg, MemOperand(a0, 2 * kPointerSize + kIntSize));
   } else {
     // FunctionCallbackInfo::values_
     __ dsll(at, argc.reg(), kPointerSizeLog2);
@@ -5673,11 +5692,13 @@ static void CallApiFunctionStubHelper(MacroAssembler* masm,
     __ Daddu(at, at, Operand((FCA::kArgsLength - 1) * kPointerSize));
     __ sd(at, MemOperand(a0, 1 * kPointerSize));
     // FunctionCallbackInfo::length_ = argc
-    __ sd(argc.reg(), MemOperand(a0, 2 * kPointerSize));
+    // Stored as int field, 32-bit integers within struct on stack always left
+    // justified by n64 ABI.
+    __ sw(argc.reg(), MemOperand(a0, 2 * kPointerSize));
     // FunctionCallbackInfo::is_construct_call_
     __ Daddu(argc.reg(), argc.reg(), Operand(FCA::kArgsLength + 1));
     __ dsll(at, argc.reg(), kPointerSizeLog2);
-    __ sd(at, MemOperand(a0, 3 * kPointerSize));
+    __ sw(at, MemOperand(a0, 2 * kPointerSize + kIntSize));
   }
 
   ExternalReference thunk_ref =

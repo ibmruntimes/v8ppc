@@ -75,6 +75,12 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& Call(Register callable, Register receiver,
                              size_t arg_count);
 
+  // Call the runtime function with |function_id|. The first argument should be
+  // in |first_arg| and all subsequent arguments should be in registers
+  // <first_arg + 1> to <first_arg + 1 + arg_count>.
+  BytecodeArrayBuilder& CallRuntime(Runtime::FunctionId function_id,
+                                    Register first_arg, size_t arg_count);
+
   // Operators (register == lhs, accumulator = rhs).
   BytecodeArrayBuilder& BinaryOperation(Token::Value binop, Register reg);
 
@@ -87,6 +93,8 @@ class BytecodeArrayBuilder {
 
   // Flow Control.
   BytecodeArrayBuilder& Bind(BytecodeLabel* label);
+  BytecodeArrayBuilder& Bind(const BytecodeLabel& target, BytecodeLabel* label);
+
   BytecodeArrayBuilder& Jump(BytecodeLabel* label);
   BytecodeArrayBuilder& JumpIfTrue(BytecodeLabel* label);
   BytecodeArrayBuilder& JumpIfFalse(BytecodeLabel* label);
@@ -95,6 +103,9 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& EnterBlock();
   BytecodeArrayBuilder& LeaveBlock();
 
+  // Accessors
+  Zone* zone() const { return zone_; }
+
  private:
   ZoneVector<uint8_t>* bytecodes() { return &bytecodes_; }
   const ZoneVector<uint8_t>* bytecodes() const { return &bytecodes_; }
@@ -102,28 +113,31 @@ class BytecodeArrayBuilder {
 
   static Bytecode BytecodeForBinaryOperation(Token::Value op);
   static Bytecode BytecodeForCompareOperation(Token::Value op);
-  static bool FitsInIdxOperand(int value);
-  static bool FitsInIdxOperand(size_t value);
+
+  static bool FitsInIdx8Operand(int value);
+  static bool FitsInIdx8Operand(size_t value);
   static bool FitsInImm8Operand(int value);
-  static bool IsJumpWithImm8Operand(Bytecode jump_bytecode);
+  static bool FitsInIdx16Operand(int value);
+
   static Bytecode GetJumpWithConstantOperand(Bytecode jump_with_smi8_operand);
 
   template <size_t N>
-  INLINE(void Output(uint8_t(&bytes)[N]));
-  void Output(Bytecode bytecode, uint8_t operand0, uint8_t operand1,
-              uint8_t operand2);
-  void Output(Bytecode bytecode, uint8_t operand0, uint8_t operand1);
-  void Output(Bytecode bytecode, uint8_t operand0);
+  INLINE(void Output(Bytecode bytecode, uint32_t(&oprands)[N]));
+  void Output(Bytecode bytecode, uint32_t operand0, uint32_t operand1,
+              uint32_t operand2);
+  void Output(Bytecode bytecode, uint32_t operand0, uint32_t operand1);
+  void Output(Bytecode bytecode, uint32_t operand0);
   void Output(Bytecode bytecode);
-  void PatchJump(const ZoneVector<uint8_t>::iterator& jump_target,
-                 ZoneVector<uint8_t>::iterator jump_location);
+
   BytecodeArrayBuilder& OutputJump(Bytecode jump_bytecode,
                                    BytecodeLabel* label);
+  void PatchJump(const ZoneVector<uint8_t>::iterator& jump_target,
+                 ZoneVector<uint8_t>::iterator jump_location);
 
   void EnsureReturn();
 
   bool OperandIsValid(Bytecode bytecode, int operand_index,
-                      uint8_t operand_value) const;
+                      uint32_t operand_value) const;
   bool LastBytecodeInSameBlock() const;
 
   size_t GetConstantPoolEntry(Handle<Object> object);
@@ -133,6 +147,7 @@ class BytecodeArrayBuilder {
   void ReturnTemporaryRegister(int reg_index);
 
   Isolate* isolate_;
+  Zone* zone_;
   ZoneVector<uint8_t> bytecodes_;
   bool bytecode_generated_;
   size_t last_block_end_;
@@ -159,7 +174,6 @@ class BytecodeArrayBuilder {
 class BytecodeLabel final {
  public:
   BytecodeLabel() : bound_(false), offset_(kInvalidOffset) {}
-  ~BytecodeLabel() { DCHECK(bound_ && offset_ != kInvalidOffset); }
 
  private:
   static const size_t kInvalidOffset = static_cast<size_t>(-1);
@@ -188,7 +202,6 @@ class BytecodeLabel final {
   size_t offset_;
 
   friend class BytecodeArrayBuilder;
-  DISALLOW_COPY_AND_ASSIGN(BytecodeLabel);
 };
 
 

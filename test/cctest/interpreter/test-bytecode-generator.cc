@@ -9,6 +9,7 @@
 #include "src/interpreter/bytecode-generator.h"
 #include "src/interpreter/interpreter.h"
 #include "test/cctest/cctest.h"
+#include "test/cctest/test-feedback-vector.h"
 
 namespace v8 {
 namespace internal {
@@ -26,10 +27,11 @@ class BytecodeGeneratorHelper {
     i::FLAG_ignition = true;
     i::FLAG_ignition_filter = StrDup(kFunctionName);
     i::FLAG_always_opt = false;
+    i::FLAG_allow_natives_syntax = true;
     CcTest::i_isolate()->interpreter()->Initialize();
   }
 
-
+  Isolate* isolate() { return CcTest::i_isolate(); }
   Factory* factory() { return CcTest::i_isolate()->factory(); }
 
 
@@ -63,6 +65,15 @@ class BytecodeGeneratorHelper {
 #define U8(x) static_cast<uint8_t>((x) & 0xff)
 #define R(x) static_cast<uint8_t>(-(x) & 0xff)
 #define _ static_cast<uint8_t>(0x5a)
+#if defined(V8_TARGET_LITTLE_ENDIAN)
+#define U16(x) static_cast<uint8_t>((x) & 0xff),                    \
+               static_cast<uint8_t>(((x) >> kBitsPerByte) & 0xff)
+#elif defined(V8_TARGET_BIG_ENDIAN)
+#define U16(x) static_cast<uint8_t>(((x) >> kBitsPerByte) & 0xff),   \
+               static_cast<uint8_t>((x) & 0xff)
+#else
+#error Unknown byte ordering
+#endif
 
 
 // Structure for containing expected bytecode snippets.
@@ -129,22 +140,37 @@ static void CheckBytecodeArrayEqual(struct ExpectedSnippet<T> expected,
              << " but got " << Bytecodes::ToString(bytecode);
       FATAL(stream.str().c_str());
     }
-    for (int j = 0; j < Bytecodes::NumberOfOperands(bytecode); ++j, ++i) {
-      uint8_t raw_operand =
-          iterator.GetRawOperand(j, Bytecodes::GetOperandType(bytecode, j));
+    for (int j = 0; j < Bytecodes::NumberOfOperands(bytecode); ++j) {
+      OperandType operand_type = Bytecodes::GetOperandType(bytecode, j);
+      int operand_index = i;
+      i += static_cast<int>(Bytecodes::SizeOfOperand(operand_type));
+      uint32_t raw_operand = iterator.GetRawOperand(j, operand_type);
       if (has_unknown) {
         // Check actual bytecode array doesn't have the same byte as the
         // one we use to specify an unknown byte.
         CHECK_NE(raw_operand, _);
-        if (expected.bytecode[i] == _) {
+        if (expected.bytecode[operand_index] == _) {
           continue;
         }
       }
-      if (raw_operand != expected.bytecode[i]) {
+      uint32_t expected_operand;
+      switch (Bytecodes::SizeOfOperand(operand_type)) {
+        case OperandSize::kNone:
+          UNREACHABLE();
+        case OperandSize::kByte:
+          expected_operand =
+              static_cast<uint32_t>(expected.bytecode[operand_index]);
+          break;
+        case OperandSize::kShort:
+          expected_operand = Bytecodes::ShortOperandFromBytes(
+              &expected.bytecode[operand_index]);
+          break;
+      }
+      if (raw_operand != expected_operand) {
         std::ostringstream stream;
         stream << "Check failed: expected operand [" << j << "] for bytecode ["
                << bytecode_index << "] to be "
-               << static_cast<unsigned int>(expected.bytecode[i]) << " but got "
+               << static_cast<unsigned int>(expected_operand) << " but got "
                << static_cast<unsigned int>(raw_operand);
         FATAL(stream.str().c_str());
       }
@@ -391,12 +417,14 @@ TEST(StringConstants) {
 TEST(PropertyLoads) {
   InitializedHandleScope handle_scope;
   BytecodeGeneratorHelper helper;
+  Zone zone;
 
-  FeedbackVectorSlotKind ic_kinds[] = {i::FeedbackVectorSlotKind::LOAD_IC,
-                                       i::FeedbackVectorSlotKind::LOAD_IC};
-  StaticFeedbackVectorSpec feedback_spec(0, 2, ic_kinds);
+  FeedbackVectorSpec feedback_spec(&zone);
+  FeedbackVectorSlot slot1 = feedback_spec.AddLoadICSlot();
+  FeedbackVectorSlot slot2 = feedback_spec.AddLoadICSlot();
+
   Handle<i::TypeFeedbackVector> vector =
-      helper.factory()->NewTypeFeedbackVector(&feedback_spec);
+      i::TypeFeedbackVector::New(helper.isolate(), &feedback_spec);
 
   ExpectedSnippet<const char*> snippets[] = {
       {"function f(a) { return a.name; }\nf({name : \"test\"})",
@@ -404,11 +432,11 @@ TEST(PropertyLoads) {
        2,
        10,
        {
-           B(Ldar), R(helper.kLastParamIndex),                  //
-           B(Star), R(0),                                       //
-           B(LdaConstant), U8(0),                               //
-           B(LoadIC), R(0), U8(vector->first_ic_slot_index()),  //
-           B(Return)                                            //
+           B(Ldar), R(helper.kLastParamIndex),            //
+           B(Star), R(0),                                 //
+           B(LdaConstant), U8(0),                         //
+           B(LoadIC), R(0), U8(vector->GetIndex(slot1)),  //
+           B(Return)                                      //
        },
        1,
        {"name"}},
@@ -417,11 +445,11 @@ TEST(PropertyLoads) {
        2,
        10,
        {
-           B(Ldar), R(helper.kLastParamIndex),                  //
-           B(Star), R(0),                                       //
-           B(LdaConstant), U8(0),                               //
-           B(LoadIC), R(0), U8(vector->first_ic_slot_index()),  //
-           B(Return)                                            //
+           B(Ldar), R(helper.kLastParamIndex),            //
+           B(Star), R(0),                                 //
+           B(LdaConstant), U8(0),                         //
+           B(LoadIC), R(0), U8(vector->GetIndex(slot1)),  //
+           B(Return)                                      //
        },
        1,
        {"key"}},
@@ -430,11 +458,11 @@ TEST(PropertyLoads) {
        2,
        10,
        {
-           B(Ldar), R(helper.kLastParamIndex),                       //
-           B(Star), R(0),                                            //
-           B(LdaSmi8), U8(100),                                      //
-           B(KeyedLoadIC), R(0), U8(vector->first_ic_slot_index()),  //
-           B(Return)                                                 //
+           B(Ldar), R(helper.kLastParamIndex),                 //
+           B(Star), R(0),                                      //
+           B(LdaSmi8), U8(100),                                //
+           B(KeyedLoadIC), R(0), U8(vector->GetIndex(slot1)),  //
+           B(Return)                                           //
        },
        0},
       {"function f(a, b) { return a[b]; }\nf({arg : \"test\"}, \"arg\")",
@@ -442,11 +470,11 @@ TEST(PropertyLoads) {
        3,
        10,
        {
-           B(Ldar), R(helper.kLastParamIndex - 1),                   //
-           B(Star), R(0),                                            //
-           B(Ldar), R(helper.kLastParamIndex),                       //
-           B(KeyedLoadIC), R(0), U8(vector->first_ic_slot_index()),  //
-           B(Return)                                                 //
+           B(Ldar), R(helper.kLastParamIndex - 1),             //
+           B(Star), R(0),                                      //
+           B(Ldar), R(helper.kLastParamIndex),                 //
+           B(KeyedLoadIC), R(0), U8(vector->GetIndex(slot1)),  //
+           B(Return)                                           //
        },
        0},
       {"function f(a) { var b = a.name; return a[-124]; }\n"
@@ -455,16 +483,16 @@ TEST(PropertyLoads) {
        2,
        21,
        {
-           B(Ldar), R(helper.kLastParamIndex),                           //
-           B(Star), R(1),                                                //
-           B(LdaConstant), U8(0),                                        //
-           B(LoadIC), R(1), U8(vector->first_ic_slot_index()),           //
-           B(Star), R(0),                                                //
-           B(Ldar), R(helper.kLastParamIndex),                           //
-           B(Star), R(1),                                                //
-           B(LdaSmi8), U8(-124),                                         //
-           B(KeyedLoadIC), R(1), U8(vector->first_ic_slot_index() + 2),  //
-           B(Return)                                                     //
+           B(Ldar), R(helper.kLastParamIndex),                 //
+           B(Star), R(1),                                      //
+           B(LdaConstant), U8(0),                              //
+           B(LoadIC), R(1), U8(vector->GetIndex(slot1)),       //
+           B(Star), R(0),                                      //
+           B(Ldar), R(helper.kLastParamIndex),                 //
+           B(Star), R(1),                                      //
+           B(LdaSmi8), U8(-124),                               //
+           B(KeyedLoadIC), R(1), U8(vector->GetIndex(slot2)),  //
+           B(Return)                                           //
        },
        1,
        {"name"}}};
@@ -479,12 +507,14 @@ TEST(PropertyLoads) {
 TEST(PropertyStores) {
   InitializedHandleScope handle_scope;
   BytecodeGeneratorHelper helper;
+  Zone zone;
 
-  FeedbackVectorSlotKind ic_kinds[] = {i::FeedbackVectorSlotKind::STORE_IC,
-                                       i::FeedbackVectorSlotKind::STORE_IC};
-  StaticFeedbackVectorSpec feedback_spec(0, 2, ic_kinds);
+  FeedbackVectorSpec feedback_spec(&zone);
+  FeedbackVectorSlot slot1 = feedback_spec.AddStoreICSlot();
+  FeedbackVectorSlot slot2 = feedback_spec.AddStoreICSlot();
+
   Handle<i::TypeFeedbackVector> vector =
-      helper.factory()->NewTypeFeedbackVector(&feedback_spec);
+      i::TypeFeedbackVector::New(helper.isolate(), &feedback_spec);
 
   ExpectedSnippet<const char*> snippets[] = {
       {"function f(a) { a.name = \"val\"; }\nf({name : \"test\"})",
@@ -492,14 +522,14 @@ TEST(PropertyStores) {
        2,
        16,
        {
-           B(Ldar), R(helper.kLastParamIndex),                         //
-           B(Star), R(0),                                              //
-           B(LdaConstant), U8(0),                                      //
-           B(Star), R(1),                                              //
-           B(LdaConstant), U8(1),                                      //
-           B(StoreIC), R(0), R(1), U8(vector->first_ic_slot_index()),  //
-           B(LdaUndefined),                                            //
-           B(Return)                                                   //
+           B(Ldar), R(helper.kLastParamIndex),                   //
+           B(Star), R(0),                                        //
+           B(LdaConstant), U8(0),                                //
+           B(Star), R(1),                                        //
+           B(LdaConstant), U8(1),                                //
+           B(StoreIC), R(0), R(1), U8(vector->GetIndex(slot1)),  //
+           B(LdaUndefined),                                      //
+           B(Return)                                             //
        },
        2,
        {"name", "val"}},
@@ -508,14 +538,14 @@ TEST(PropertyStores) {
        2,
        16,
        {
-           B(Ldar), R(helper.kLastParamIndex),                         //
-           B(Star), R(0),                                              //
-           B(LdaConstant), U8(0),                                      //
-           B(Star), R(1),                                              //
-           B(LdaConstant), U8(1),                                      //
-           B(StoreIC), R(0), R(1), U8(vector->first_ic_slot_index()),  //
-           B(LdaUndefined),                                            //
-           B(Return)                                                   //
+           B(Ldar), R(helper.kLastParamIndex),                   //
+           B(Star), R(0),                                        //
+           B(LdaConstant), U8(0),                                //
+           B(Star), R(1),                                        //
+           B(LdaConstant), U8(1),                                //
+           B(StoreIC), R(0), R(1), U8(vector->GetIndex(slot1)),  //
+           B(LdaUndefined),                                      //
+           B(Return)                                             //
        },
        2,
        {"key", "val"}},
@@ -524,14 +554,14 @@ TEST(PropertyStores) {
        2,
        16,
        {
-           B(Ldar), R(helper.kLastParamIndex),                              //
-           B(Star), R(0),                                                   //
-           B(LdaSmi8), U8(100),                                             //
-           B(Star), R(1),                                                   //
-           B(LdaConstant), U8(0),                                           //
-           B(KeyedStoreIC), R(0), R(1), U8(vector->first_ic_slot_index()),  //
-           B(LdaUndefined),                                                 //
-           B(Return)                                                        //
+           B(Ldar), R(helper.kLastParamIndex),                        //
+           B(Star), R(0),                                             //
+           B(LdaSmi8), U8(100),                                       //
+           B(Star), R(1),                                             //
+           B(LdaConstant), U8(0),                                     //
+           B(KeyedStoreIC), R(0), R(1), U8(vector->GetIndex(slot1)),  //
+           B(LdaUndefined),                                           //
+           B(Return)                                                  //
        },
        1,
        {"val"}},
@@ -540,14 +570,14 @@ TEST(PropertyStores) {
        3,
        16,
        {
-           B(Ldar), R(helper.kLastParamIndex - 1),                          //
-           B(Star), R(0),                                                   //
-           B(Ldar), R(helper.kLastParamIndex),                              //
-           B(Star), R(1),                                                   //
-           B(LdaConstant), U8(0),                                           //
-           B(KeyedStoreIC), R(0), R(1), U8(vector->first_ic_slot_index()),  //
-           B(LdaUndefined),                                                 //
-           B(Return)                                                        //
+           B(Ldar), R(helper.kLastParamIndex - 1),                    //
+           B(Star), R(0),                                             //
+           B(Ldar), R(helper.kLastParamIndex),                        //
+           B(Star), R(1),                                             //
+           B(LdaConstant), U8(0),                                     //
+           B(KeyedStoreIC), R(0), R(1), U8(vector->GetIndex(slot1)),  //
+           B(LdaUndefined),                                           //
+           B(Return)                                                  //
        },
        1,
        {"val"}},
@@ -557,17 +587,17 @@ TEST(PropertyStores) {
        2,
        23,
        {
-           B(Ldar), R(helper.kLastParamIndex),                             //
-           B(Star), R(0),                                                  //
-           B(LdaConstant), U8(0),                                          //
-           B(Star), R(1),                                                  //
-           B(Ldar), R(helper.kLastParamIndex),                             //
-           B(Star), R(2),                                                  //
-           B(LdaSmi8), U8(-124),                                           //
-           B(KeyedLoadIC), R(2), U8(vector->first_ic_slot_index()),        //
-           B(StoreIC), R(0), R(1), U8(vector->first_ic_slot_index() + 2),  //
-           B(LdaUndefined),                                                //
-           B(Return)                                                       //
+           B(Ldar), R(helper.kLastParamIndex),                   //
+           B(Star), R(0),                                        //
+           B(LdaConstant), U8(0),                                //
+           B(Star), R(1),                                        //
+           B(Ldar), R(helper.kLastParamIndex),                   //
+           B(Star), R(2),                                        //
+           B(LdaSmi8), U8(-124),                                 //
+           B(KeyedLoadIC), R(2), U8(vector->GetIndex(slot1)),    //
+           B(StoreIC), R(0), R(1), U8(vector->GetIndex(slot2)),  //
+           B(LdaUndefined),                                      //
+           B(Return)                                             //
        },
        1,
        {"name"}}};
@@ -585,12 +615,15 @@ TEST(PropertyStores) {
 TEST(PropertyCall) {
   InitializedHandleScope handle_scope;
   BytecodeGeneratorHelper helper;  //
+  Zone zone;
 
-  FeedbackVectorSlotKind ic_kinds[] = {i::FeedbackVectorSlotKind::LOAD_IC,
-                                       i::FeedbackVectorSlotKind::LOAD_IC};
-  StaticFeedbackVectorSpec feedback_spec(0, 2, ic_kinds);
+  FeedbackVectorSpec feedback_spec(&zone);
+  FeedbackVectorSlot slot1 = feedback_spec.AddLoadICSlot();
+  FeedbackVectorSlot slot2 = feedback_spec.AddLoadICSlot();
+  USE(slot1);
+
   Handle<i::TypeFeedbackVector> vector =
-      helper.factory()->NewTypeFeedbackVector(&feedback_spec);
+      i::TypeFeedbackVector::New(helper.isolate(), &feedback_spec);
 
   ExpectedSnippet<const char*> snippets[] = {
       {"function f(a) { return a.func(); }\nf(" FUNC_ARG ")",
@@ -598,13 +631,13 @@ TEST(PropertyCall) {
        2,
        16,
        {
-           B(Ldar), R(helper.kLastParamIndex),                      //
-           B(Star), R(1),                                           //
-           B(LdaConstant), U8(0),                                   //
-           B(LoadIC), R(1), U8(vector->first_ic_slot_index() + 2),  //
-           B(Star), R(0),                                           //
-           B(Call), R(0), R(1), U8(0),                              //
-           B(Return)                                                //
+           B(Ldar), R(helper.kLastParamIndex),            //
+           B(Star), R(1),                                 //
+           B(LdaConstant), U8(0),                         //
+           B(LoadIC), R(1), U8(vector->GetIndex(slot2)),  //
+           B(Star), R(0),                                 //
+           B(Call), R(0), R(1), U8(0),                    //
+           B(Return)                                      //
        },
        1,
        {"func"}},
@@ -613,17 +646,17 @@ TEST(PropertyCall) {
        4,
        24,
        {
-           B(Ldar), R(helper.kLastParamIndex - 2),                  //
-           B(Star), R(1),                                           //
-           B(LdaConstant), U8(0),                                   //
-           B(LoadIC), R(1), U8(vector->first_ic_slot_index() + 2),  //
-           B(Star), R(0),                                           //
-           B(Ldar), R(helper.kLastParamIndex - 1),                  //
-           B(Star), R(2),                                           //
-           B(Ldar), R(helper.kLastParamIndex),                      //
-           B(Star), R(3),                                           //
-           B(Call), R(0), R(1), U8(2),                              //
-           B(Return)                                                //
+           B(Ldar), R(helper.kLastParamIndex - 2),        //
+           B(Star), R(1),                                 //
+           B(LdaConstant), U8(0),                         //
+           B(LoadIC), R(1), U8(vector->GetIndex(slot2)),  //
+           B(Star), R(0),                                 //
+           B(Ldar), R(helper.kLastParamIndex - 1),        //
+           B(Star), R(2),                                 //
+           B(Ldar), R(helper.kLastParamIndex),            //
+           B(Star), R(3),                                 //
+           B(Call), R(0), R(1), U8(2),                    //
+           B(Return)                                      //
        },
        1,
        {"func"}},
@@ -632,20 +665,20 @@ TEST(PropertyCall) {
        3,
        30,
        {
-           B(Ldar), R(helper.kLastParamIndex - 1),                  //
-           B(Star), R(1),                                           //
-           B(LdaConstant), U8(0),                                   //
-           B(LoadIC), R(1), U8(vector->first_ic_slot_index() + 2),  //
-           B(Star), R(0),                                           //
-           B(Ldar), R(helper.kLastParamIndex),                      //
-           B(Star), R(2),                                           //
-           B(Ldar), R(helper.kLastParamIndex),                      //
-           B(Add), R(2),                                            //
-           B(Star), R(2),                                           //
-           B(Ldar), R(helper.kLastParamIndex),                      //
-           B(Star), R(3),                                           //
-           B(Call), R(0), R(1), U8(2),                              //
-           B(Return)                                                //
+           B(Ldar), R(helper.kLastParamIndex - 1),        //
+           B(Star), R(1),                                 //
+           B(LdaConstant), U8(0),                         //
+           B(LoadIC), R(1), U8(vector->GetIndex(slot2)),  //
+           B(Star), R(0),                                 //
+           B(Ldar), R(helper.kLastParamIndex),            //
+           B(Star), R(2),                                 //
+           B(Ldar), R(helper.kLastParamIndex),            //
+           B(Add), R(2),                                  //
+           B(Star), R(2),                                 //
+           B(Ldar), R(helper.kLastParamIndex),            //
+           B(Star), R(3),                                 //
+           B(Call), R(0), R(1), U8(2),                    //
+           B(Return)                                      //
        },
        1,
        {"func"}}};
@@ -661,20 +694,26 @@ TEST(LoadGlobal) {
   InitializedHandleScope handle_scope;
   BytecodeGeneratorHelper helper;
 
-  ExpectedSnippet<const char*> snippets[] = {
-      {"var a = 1;\nfunction f() { return a; }\nf()",
-       0, 1, 3,
-       {
-          B(LdaGlobal), _,
-          B(Return)
-       },
+  ExpectedSnippet<int> snippets[] = {
+      {
+          "var a = 1;\nfunction f() { return a; }\nf()",
+          0,
+          1,
+          3,
+          {
+              B(LdaGlobal), _,  //
+              B(Return)         //
+          },
       },
-      {"function t() { }\nfunction f() { return t; }\nf()",
-       0, 1, 3,
-       {
-          B(LdaGlobal), _,
-          B(Return)
-       },
+      {
+          "function t() { }\nfunction f() { return t; }\nf()",
+          0,
+          1,
+          3,
+          {
+              B(LdaGlobal), _,  //
+              B(Return)         //
+          },
       },
   };
 
@@ -690,34 +729,93 @@ TEST(CallGlobal) {
   InitializedHandleScope handle_scope;
   BytecodeGeneratorHelper helper;
 
-  ExpectedSnippet<const char*> snippets[] = {
-      {"function t() { }\nfunction f() { return t(); }\nf()",
-       2 * kPointerSize, 1, 12,
-       {
-          B(LdaUndefined),
-          B(Star), R(1),
-          B(LdaGlobal), _,
-          B(Star), R(0),
-          B(Call), R(0), R(1), U8(0),
-          B(Return)
-       },
+  ExpectedSnippet<int> snippets[] = {
+      {
+          "function t() { }\nfunction f() { return t(); }\nf()",
+          2 * kPointerSize,
+          1,
+          12,
+          {
+              B(LdaUndefined),             //
+              B(Star), R(1),               //
+              B(LdaGlobal), _,             //
+              B(Star), R(0),               //
+              B(Call), R(0), R(1), U8(0),  //
+              B(Return)                    //
+          },
       },
-      {"function t(a, b, c) { }\nfunction f() { return t(1, 2, 3); }\nf()",
-       5 * kPointerSize, 1, 24,
-       {
-          B(LdaUndefined),
-          B(Star), R(1),
-          B(LdaGlobal), _,
-          B(Star), R(0),
-          B(LdaSmi8), U8(1),
-          B(Star), R(2),
-          B(LdaSmi8), U8(2),
-          B(Star), R(3),
-          B(LdaSmi8), U8(3),
-          B(Star), R(4),
-          B(Call), R(0), R(1), U8(3),
-          B(Return)
-       },
+      {
+          "function t(a, b, c) { }\nfunction f() { return t(1, 2, 3); }\nf()",
+          5 * kPointerSize,
+          1,
+          24,
+          {
+              B(LdaUndefined),             //
+              B(Star), R(1),               //
+              B(LdaGlobal), _,             //
+              B(Star), R(0),               //
+              B(LdaSmi8), U8(1),           //
+              B(Star), R(2),               //
+              B(LdaSmi8), U8(2),           //
+              B(Star), R(3),               //
+              B(LdaSmi8), U8(3),           //
+              B(Star), R(4),               //
+              B(Call), R(0), R(1), U8(3),  //
+              B(Return)                    //
+          },
+      },
+  };
+
+  size_t num_snippets = sizeof(snippets) / sizeof(snippets[0]);
+  for (size_t i = 0; i < num_snippets; i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecode(snippets[i].code_snippet, "f");
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array, true);
+  }
+}
+
+
+TEST(CallRuntime) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
+  ExpectedSnippet<int> snippets[] = {
+      {
+          "function f() { %TheHole() }\nf()",
+          1 * kPointerSize,
+          1,
+          7,
+          {
+              B(CallRuntime), U16(Runtime::kTheHole), R(0), U8(0),  //
+              B(LdaUndefined),                                      //
+              B(Return)                                             //
+          },
+      },
+      {
+          "function f(a) { return %IsArray(a) }\nf(undefined)",
+          1 * kPointerSize,
+          2,
+          10,
+          {
+              B(Ldar), R(helper.kLastParamIndex),                   //
+              B(Star), R(0),                                        //
+              B(CallRuntime), U16(Runtime::kIsArray), R(0), U8(1),  //
+              B(Return)                                             //
+          },
+      },
+      {
+          "function f() { return %Add(1, 2) }\nf()",
+          2 * kPointerSize,
+          1,
+          14,
+          {
+              B(LdaSmi8), U8(1),                                //
+              B(Star), R(0),                                    //
+              B(LdaSmi8), U8(2),                                //
+              B(Star), R(1),                                    //
+              B(CallRuntime), U16(Runtime::kAdd), R(0), U8(2),  //
+              B(Return)                                         //
+          },
       },
   };
 
@@ -745,7 +843,7 @@ TEST(IfConditions) {
         B(JumpIfFalse), U8(7),  //
         B(LdaSmi8), U8(1),      //
         B(Return),              //
-        B(Jump), U8(5),         // TODO(oth): Unreachable jump after return
+        B(Jump), U8(5),         //
         B(LdaSmi8), U8(-1),     //
         B(Return),              //
         B(LdaUndefined),        //
@@ -761,7 +859,7 @@ TEST(IfConditions) {
         B(JumpIfFalse), U8(7),  //
         B(LdaSmi8), U8(1),      //
         B(Return),              //
-        B(Jump), U8(5),         // TODO(oth): Unreachable jump after return
+        B(Jump), U8(5),         //
         B(LdaSmi8), U8(-1),     //
         B(Return),              //
         B(LdaUndefined),        //
@@ -777,7 +875,7 @@ TEST(IfConditions) {
         B(JumpIfFalse), U8(7),  //
         B(LdaSmi8), U8(1),      //
         B(Return),              //
-        B(Jump), U8(5),         // TODO(oth): Unreachable jump after return
+        B(Jump), U8(5),         //
         B(LdaSmi8), U8(-1),     //
         B(Return),              //
         B(LdaUndefined),        //
@@ -796,11 +894,11 @@ TEST(IfConditions) {
         B(JumpIfFalse), U8(7),               //
         B(LdaConstant), U8(0),               //
         B(Return),                           //
-        B(Jump), U8(5),         // TODO(oth): Unreachable jump after return
-        B(LdaConstant), U8(1),  //
-        B(Return),              //
-        B(LdaUndefined),        //
-        B(Return)},             //
+        B(Jump), U8(5),                      //
+        B(LdaConstant), U8(1),               //
+        B(Return),                           //
+        B(LdaUndefined),                     //
+        B(Return)},                          //
        2,
        {helper.factory()->NewNumberFromInt(200),
         helper.factory()->NewNumberFromInt(-200), unused, unused}},
@@ -808,17 +906,16 @@ TEST(IfConditions) {
        "f('prop', { prop: 'yes'});",
        kPointerSize,
        3,
-       17,
+       15,
        {B(Ldar), R(helper.kLastParamIndex - 1),  //
         B(Star), R(0),                           //
         B(Ldar), R(helper.kLastParamIndex),      //
         B(TestIn), R(0),                         //
-        B(JumpIfFalse), U8(7),                   //
+        B(JumpIfFalse), U8(5),                   //
         B(LdaConstant), U8(0),                   //
         B(Return),                               //
-        B(Jump), U8(2),   // TODO(oth): Unreachable jump after return
-        B(LdaUndefined),  //
-        B(Return)},       //
+        B(LdaUndefined),                         //
+        B(Return)},                              //
        1,
        {helper.factory()->NewNumberFromInt(200), unused, unused, unused}},
       {"function f(z) { var a = 0; var b = 0; if (a === 0.01) { "
@@ -841,10 +938,9 @@ TEST(IfConditions) {
 #define X B(Ldar), R(0), B(Star), R(1), B(Ldar), R(1), B(Star), R(0),
         X X X X X X X X X X X X X X X X X X X X X X X X
 #undef X
-            B(LdaConstant),
-        U8(1),                  //
+        B(LdaConstant), U8(1),  //
         B(Return),              //
-        B(Jump), U8(5),         // TODO(oth): Unreachable jump after return
+        B(Jump), U8(5),         //
         B(LdaConstant), U8(3),  //
         B(Return),              //
         B(LdaUndefined),        //
@@ -869,17 +965,16 @@ TEST(IfConditions) {
        "} f(1, 1);",
        kPointerSize,
        3,
-       122,
+       106,
        {
-#define IF_CONDITION_RETURN(condition)    \
+#define IF_CONDITION_RETURN(condition) \
   B(Ldar), R(helper.kLastParamIndex - 1), \
   B(Star), R(0),                          \
   B(Ldar), R(helper.kLastParamIndex),     \
   B(condition), R(0),                     \
-  B(JumpIfFalse), U8(7),                  \
+  B(JumpIfFalse), U8(5),                  \
   B(LdaSmi8), U8(1),                      \
-  B(Return),                              \
-  B(Jump), U8(2),
+  B(Return),
            IF_CONDITION_RETURN(TestEqual)               //
            IF_CONDITION_RETURN(TestEqualStrict)         //
            IF_CONDITION_RETURN(TestLessThan)            //
@@ -903,6 +998,268 @@ TEST(IfConditions) {
 }
 
 
+TEST(BasicLoops) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
+  ExpectedSnippet<int> snippets[] = {
+      {"var x = 0;"
+       "var y = 1;"
+       "while (x < 10) {"
+       "  y = y * 10;"
+       "  x = x + 1;"
+       "}"
+       "return y;",
+       3 * kPointerSize,
+       1,
+       42,
+       {
+           B(LdaZero),              //
+           B(Star), R(0),           //
+           B(LdaSmi8), U8(1),       //
+           B(Star), R(1),           //
+           B(Jump), U8(22),         //
+           B(Ldar), R(1),           //
+           B(Star), R(2),           //
+           B(LdaSmi8), U8(10),      //
+           B(Mul), R(2),            //
+           B(Star), R(1),           //
+           B(Ldar), R(0),           //
+           B(Star), R(2),           //
+           B(LdaSmi8), U8(1),       //
+           B(Add), R(2),            //
+           B(Star), R(0),           //
+           B(Ldar), R(0),           //
+           B(Star), R(2),           //
+           B(LdaSmi8), U8(10),      //
+           B(TestLessThan), R(2),   //
+           B(JumpIfTrue), U8(-28),  //
+           B(Ldar), R(1),           //
+           B(Return),               //
+       },
+       0},
+      {"var i = 0;"
+       "while(true) {"
+       "  if (i < 0) continue;"
+       "  if (i == 3) break;"
+       "  if (i == 4) break;"
+       "  if (i == 10) continue;"
+       "  if (i == 5) break;"
+       "  i = i + 1;"
+       "}"
+       "return i;",
+       2 * kPointerSize,
+       1,
+       80,
+       {
+           B(LdaZero),              //
+           B(Star), R(0),           //
+           B(Jump), U8(71),         //
+           B(Ldar), R(0),           //
+           B(Star), R(1),           //
+           B(LdaZero),              //
+           B(TestLessThan), R(1),   //
+           B(JumpIfFalse), U8(4),   //
+           B(Jump), U8(60),         //
+           B(Ldar), R(0),           //
+           B(Star), R(1),           //
+           B(LdaSmi8), U8(3),       //
+           B(TestEqual), R(1),      //
+           B(JumpIfFalse), U8(4),   //
+           B(Jump), U8(51),         //
+           B(Ldar), R(0),           //
+           B(Star), R(1),           //
+           B(LdaSmi8), U8(4),       //
+           B(TestEqual), R(1),      //
+           B(JumpIfFalse), U8(4),   //
+           B(Jump), U8(39),         //
+           B(Ldar), R(0),           //
+           B(Star), R(1),           //
+           B(LdaSmi8), U8(10),      //
+           B(TestEqual), R(1),      //
+           B(JumpIfFalse), U8(4),   //
+           B(Jump), U8(24),         //
+           B(Ldar), R(0),           //
+           B(Star), R(1),           //
+           B(LdaSmi8), U8(5),       //
+           B(TestEqual), R(1),      //
+           B(JumpIfFalse), U8(4),   //
+           B(Jump), U8(15),         //
+           B(Ldar), R(0),           //
+           B(Star), R(1),           //
+           B(LdaSmi8), U8(1),       //
+           B(Add), R(1),            //
+           B(Star), R(0),           //
+           B(LdaTrue),              //
+           B(JumpIfTrue), U8(-70),  //
+           B(Ldar), R(0),           //
+           B(Return)                //
+       },
+       0},
+      {"var x = 0; var y = 1;"
+       "do {"
+       "  y = y * 10;"
+       "  if (x == 5) break;"
+       "  if (x == 6) continue;"
+       "  x = x + 1;"
+       "} while (x < 10);"
+       "return y;",
+       3 * kPointerSize,
+       1,
+       64,
+       {
+           B(LdaZero),              //
+           B(Star), R(0),           //
+           B(LdaSmi8), U8(1),       //
+           B(Star), R(1),           //
+           B(Ldar), R(1),           //
+           B(Star), R(2),           //
+           B(LdaSmi8), U8(10),      //
+           B(Mul), R(2),            //
+           B(Star), R(1),           //
+           B(Ldar), R(0),           //
+           B(Star), R(2),           //
+           B(LdaSmi8), U8(5),       //
+           B(TestEqual), R(2),      //
+           B(JumpIfFalse), U8(4),   //
+           B(Jump), U8(34),         //
+           B(Ldar), R(0),           //
+           B(Star), R(2),           //
+           B(LdaSmi8), U8(6),       //
+           B(TestEqual), R(2),      //
+           B(JumpIfFalse), U8(4),   //
+           B(Jump), U8(12),         //
+           B(Ldar), R(0),           //
+           B(Star), R(2),           //
+           B(LdaSmi8), U8(1),       //
+           B(Add), R(2),            //
+           B(Star), R(0),           //
+           B(Ldar), R(0),           //
+           B(Star), R(2),           //
+           B(LdaSmi8), U8(10),      //
+           B(TestLessThan), R(2),   //
+           B(JumpIfTrue), U8(-52),  //
+           B(Ldar), R(1),           //
+           B(Return)                //
+       },
+       0},
+      {"var x = 0; "
+       "for(;;) {"
+       "  if (x == 1) break;"
+       "  x = x + 1;"
+       "}",
+       2 * kPointerSize,
+       1,
+       29,
+       {
+           B(LdaZero),             //
+           B(Star), R(0),          //
+           B(Ldar), R(0),          //
+           B(Star), R(1),          //
+           B(LdaSmi8),             //
+           U8(1),                  //
+           B(TestEqual), R(1),     //
+           B(JumpIfFalse), U8(4),  //
+           B(Jump), U8(14),        //
+           B(Ldar), R(0),          //
+           B(Star), R(1),          //
+           B(LdaSmi8), U8(1),      //
+           B(Add), R(1),           //
+           B(Star), R(0),          //
+           B(Jump), U8(-22),       //
+           B(LdaUndefined),        //
+           B(Return),              //
+       },
+       0},
+      {"var u = 0;"
+       "for(var i = 0; i < 100; i = i + 1) {"
+       "   u = u + 1;"
+       "   continue;"
+       "}",
+       3 * kPointerSize,
+       1,
+       42,
+       {
+           B(LdaZero),              //
+           B(Star), R(0),           //
+           B(LdaZero),              //
+           B(Star), R(1),           //
+           B(Jump), U8(24),         //
+           B(Ldar), R(0),           //
+           B(Star), R(2),           //
+           B(LdaSmi8), U8(1),       //
+           B(Add), R(2),            //
+           B(Star), R(0),           //
+           B(Jump), U8(2),          //
+           B(Ldar), R(1),           //
+           B(Star), R(2),           //
+           B(LdaSmi8), U8(1),       //
+           B(Add), R(2),            //
+           B(Star), R(1),           //
+           B(Ldar), R(1),           //
+           B(Star), R(2),           //
+           B(LdaSmi8), U8(100),     //
+           B(TestLessThan), R(2),   //
+           B(JumpIfTrue), U8(-30),  //
+           B(LdaUndefined),         //
+           B(Return),               //
+       },
+       0},
+      {"var i = 0;"
+       "while(true) {"
+       "  while (i < 3) {"
+       "    if (i == 2) break;"
+       "    i = i + 1;"
+       "  }"
+       "  i = i + 1;"
+       "  break;"
+       "}"
+       "return i;",
+       2 * kPointerSize,
+       1,
+       57,
+       {
+           B(LdaZero),              //
+           B(Star), R(0),           //
+           B(Jump), U8(48),         //
+           B(Jump), U8(24),         //
+           B(Ldar), R(0),           //
+           B(Star), R(1),           //
+           B(LdaSmi8), U8(2),       //
+           B(TestEqual), R(1),      //
+           B(JumpIfFalse), U8(4),   //
+           B(Jump), U8(22),         //
+           B(Ldar), R(0),           //
+           B(Star), R(1),           //
+           B(LdaSmi8), U8(1),       //
+           B(Add), R(1),            //
+           B(Star), R(0),           //
+           B(Ldar), R(0),           //
+           B(Star), R(1),           //
+           B(LdaSmi8), U8(3),       //
+           B(TestLessThan), R(1),   //
+           B(JumpIfTrue), U8(-30),  //
+           B(Ldar), R(0),           //
+           B(Star), R(1),           //
+           B(LdaSmi8), U8(1),       //
+           B(Add), R(1),            //
+           B(Star), R(0),           //
+           B(Jump), U8(5),          //
+           B(LdaTrue),              //
+           B(JumpIfTrue), U8(-47),  //
+           B(Ldar), R(0),           //
+           B(Return),               //
+       },
+       0},
+  };
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecodeForFunctionBody(snippets[i].code_snippet);
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
+}
+
 }  // namespace interpreter
 }  // namespace internal
-}  // namespance v8
+}  // namespace v8
