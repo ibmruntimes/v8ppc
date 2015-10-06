@@ -2267,9 +2267,11 @@ class JSObject: public JSReceiver {
   // Check whether this object references another object
   bool ReferencesObject(Object* obj);
 
-  // Disalow further properties to be added to the oject.
+  // Disallow further properties to be added to the oject.
+  MUST_USE_RESULT static Maybe<bool> PreventExtensionsInternal(
+      Handle<JSObject> object);  // ES [[PreventExtensions]]
   MUST_USE_RESULT static MaybeHandle<Object> PreventExtensions(
-      Handle<JSObject> object);
+      Handle<JSObject> object);  // ES Object.preventExtensions
 
   static bool IsExtensible(Handle<JSObject> object);
 
@@ -2364,10 +2366,6 @@ class JSObject: public JSReceiver {
   // don't want to be wasteful with long lived objects.
   static const int kMaxUncheckedOldFastElementsLength = 500;
 
-  // Note that Page::kMaxRegularHeapObjectSize puts a limit on
-  // permissible values (see the DCHECK in heap.cc).
-  static const int kInitialMaxFastElementArray = 100000;
-
   // This constant applies only to the initial map of "global.Object" and
   // not to arbitrary other JSObject maps.
   static const int kInitialGlobalObjectUnusedPropertiesCount = 4;
@@ -2461,7 +2459,7 @@ class JSObject: public JSReceiver {
   // Helper for fast versions of preventExtensions, seal, and freeze.
   // attrs is one of NONE, SEALED, or FROZEN (depending on the operation).
   template <PropertyAttributes attrs>
-  MUST_USE_RESULT static MaybeHandle<Object> PreventExtensionsWithTransition(
+  MUST_USE_RESULT static Maybe<bool> PreventExtensionsWithTransition(
       Handle<JSObject> object);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSObject);
@@ -10067,6 +10065,10 @@ class JSArray: public JSObject {
   // Layout description.
   static const int kLengthOffset = JSObject::kHeaderSize;
   static const int kSize = kLengthOffset + kPointerSize;
+
+  // Note that Page::kMaxRegularHeapObjectSize puts a limit on
+  // permissible values (see the DCHECK in heap.cc).
+  static const int kInitialMaxFastElementArray = 100000;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSArray);

@@ -129,9 +129,6 @@
   # This times out in sloppy mode because sloppy const assignment does not throw.
   'language/statements/const/syntax/const-invalid-assignment-next-expression-for': [PASS, FAIL, TIMEOUT],
 
-  # https://code.google.com/p/v8/issues/detail?id=4403
-  'language/statements/let/syntax/identifier-let-disallowed-as-boundname': [PASS, FAIL_SLOPPY],
-
   # Number/Boolean.prototype is a plain object in ES6
   # https://code.google.com/p/v8/issues/detail?id=4001
   'built-ins/Boolean/prototype/S15.6.3.1_A1': [FAIL],
@@ -290,9 +287,6 @@
   # https://code.google.com/p/v8/issues/detail?id=4243
   'built-ins/Promise/race/S25.4.4.3_A3.1_T2': [FAIL],
   'built-ins/Promise/reject/S25.4.4.4_A3.1_T1': [FAIL],
-
-  # https://code.google.com/p/v8/issues/detail?id=4341
-  'built-ins/Promise/resolve/arg-uniq-ctor': [FAIL],
 
   # https://code.google.com/p/v8/issues/detail?id=4119
   'built-ins/RegExp/15.10.4.1-1': [FAIL],

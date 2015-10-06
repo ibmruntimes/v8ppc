@@ -122,7 +122,7 @@ Heap::Heap()
       last_idle_notification_time_(0.0),
       last_gc_time_(0.0),
       scavenge_collector_(nullptr),
-      mark_compact_collector_(nullptr),
+      mark_compact_collector_(this),
       store_buffer_(this),
       incremental_marking_(nullptr),
       gc_idle_time_handler_(nullptr),
@@ -819,6 +819,23 @@ void Heap::OverApproximateWeakClosure(const char* gc_reason) {
 }
 
 
+HistogramTimer* Heap::GCTypeTimer(GarbageCollector collector) {
+  if (collector == SCAVENGER) {
+    return isolate_->counters()->gc_scavenger();
+  } else {
+    if (!incremental_marking()->IsStopped()) {
+      if (ShouldReduceMemory()) {
+        return isolate_->counters()->gc_finalize_reduce_memory();
+      } else {
+        return isolate_->counters()->gc_finalize();
+      }
+    } else {
+      return isolate_->counters()->gc_compactor();
+    }
+  }
+}
+
+
 void Heap::CollectAllGarbage(int flags, const char* gc_reason,
                              const v8::GCCallbackFlags gc_callback_flags) {
   // Since we are ignoring the return value, the exact choice of space does
@@ -941,8 +958,7 @@ bool Heap::CollectGarbage(GarbageCollector collector, const char* gc_reason,
     incremental_marking()->Step(kStepSizeWhenDelayedByScavenge,
                                 IncrementalMarking::NO_GC_VIA_STACK_GUARD);
     if (!incremental_marking()->IsComplete() &&
-        !mark_compact_collector()->marking_deque_.IsEmpty() &&
-        !FLAG_gc_global) {
+        !mark_compact_collector_.marking_deque_.IsEmpty() && !FLAG_gc_global) {
       if (FLAG_trace_incremental_marking) {
         PrintF("[IncrementalMarking] Delaying MarkSweep.\n");
       }
@@ -965,9 +981,8 @@ bool Heap::CollectGarbage(GarbageCollector collector, const char* gc_reason,
     GarbageCollectionPrologue();
 
     {
-      HistogramTimerScope histogram_timer_scope(
-          (collector == SCAVENGER) ? isolate_->counters()->gc_scavenger()
-                                   : isolate_->counters()->gc_compactor());
+      HistogramTimerScope histogram_timer_scope(GCTypeTimer(collector));
+
       next_gc_likely_to_collect_more =
           PerformGarbageCollection(collector, gc_callback_flags);
     }
@@ -1240,7 +1255,10 @@ bool Heap::PerformGarbageCollection(
       GCTracer::Scope scope(tracer(), GCTracer::Scope::EXTERNAL);
       VMState<EXTERNAL> state(isolate_);
       HandleScope handle_scope(isolate_);
-      CallGCPrologueCallbacks(gc_type, kNoGCCallbackFlags);
+      if (!(FLAG_scavenge_reclaim_unmodified_objects &&
+            (gc_type == kGCTypeScavenge))) {
+        CallGCPrologueCallbacks(gc_type, kNoGCCallbackFlags);
+      }
     }
   }
 
@@ -1283,8 +1301,8 @@ bool Heap::PerformGarbageCollection(
 
     // We finished a marking cycle. We can uncommit the marking deque until
     // we start marking again.
-    mark_compact_collector()->marking_deque()->Uninitialize();
-    mark_compact_collector()->EnsureMarkingDequeIsCommitted(
+    mark_compact_collector_.marking_deque()->Uninitialize();
+    mark_compact_collector_.EnsureMarkingDequeIsCommitted(
         MarkCompactCollector::kMinMarkingDequeSize);
   }
 
@@ -1325,7 +1343,10 @@ bool Heap::PerformGarbageCollection(
       GCTracer::Scope scope(tracer(), GCTracer::Scope::EXTERNAL);
       VMState<EXTERNAL> state(isolate_);
       HandleScope handle_scope(isolate_);
-      CallGCEpilogueCallbacks(gc_type, gc_callback_flags);
+      if (!(FLAG_scavenge_reclaim_unmodified_objects &&
+            (gc_type == kGCTypeScavenge))) {
+        CallGCEpilogueCallbacks(gc_type, gc_callback_flags);
+      }
     }
   }
 
@@ -1378,13 +1399,13 @@ void Heap::MarkCompact() {
 
   uint64_t size_of_objects_before_gc = SizeOfObjects();
 
-  mark_compact_collector()->Prepare();
+  mark_compact_collector_.Prepare();
 
   ms_count_++;
 
   MarkCompactPrologue();
 
-  mark_compact_collector()->CollectGarbage();
+  mark_compact_collector_.CollectGarbage();
 
   LOG(isolate_, ResourceEvent("markcompact", "end"));
 
@@ -1482,6 +1503,22 @@ void Heap::CheckNewSpaceExpansionCriteria() {
 static bool IsUnscavengedHeapObject(Heap* heap, Object** p) {
   return heap->InNewSpace(*p) &&
          !HeapObject::cast(*p)->map_word().IsForwardingAddress();
+}
+
+
+static bool IsUnmodifiedHeapObject(Object** p) {
+  Object* object = *p;
+  DCHECK(object->IsHeapObject());
+  HeapObject* heap_object = HeapObject::cast(object);
+  if (!object->IsJSObject()) return false;
+  Object* obj_constructor = (JSObject::cast(object))->map()->GetConstructor();
+  if (!obj_constructor->IsJSFunction()) return false;
+  JSFunction* constructor = JSFunction::cast(obj_constructor);
+  if (constructor != nullptr &&
+      constructor->initial_map() == heap_object->map()) {
+    return true;
+  }
+  return false;
 }
 
 
@@ -1603,6 +1640,12 @@ void Heap::Scavenge() {
   promotion_queue_.Initialize();
 
   ScavengeVisitor scavenge_visitor(this);
+
+  if (FLAG_scavenge_reclaim_unmodified_objects) {
+    isolate()->global_handles()->IdentifyWeakUnmodifiedObjects(
+        &IsUnmodifiedHeapObject);
+  }
+
   {
     // Copy roots.
     GCTracer::Scope gc_scope(tracer(), GCTracer::Scope::SCAVENGER_ROOTS);
@@ -1641,7 +1684,14 @@ void Heap::Scavenge() {
     new_space_front = DoScavenge(&scavenge_visitor, new_space_front);
   }
 
-  {
+  if (FLAG_scavenge_reclaim_unmodified_objects) {
+    isolate()->global_handles()->MarkNewSpaceWeakUnmodifiedObjectsPending(
+        &IsUnscavengedHeapObject);
+
+    isolate()->global_handles()->IterateNewSpaceWeakUnmodifiedRoots(
+        &scavenge_visitor);
+    new_space_front = DoScavenge(&scavenge_visitor, new_space_front);
+  } else {
     GCTracer::Scope gc_scope(tracer(),
                              GCTracer::Scope::SCAVENGER_OBJECT_GROUPS);
     while (isolate()->global_handles()->IterateObjectGroups(
@@ -1650,14 +1700,14 @@ void Heap::Scavenge() {
     }
     isolate()->global_handles()->RemoveObjectGroups();
     isolate()->global_handles()->RemoveImplicitRefGroups();
+
+    isolate()->global_handles()->IdentifyNewSpaceWeakIndependentHandles(
+        &IsUnscavengedHeapObject);
+
+    isolate()->global_handles()->IterateNewSpaceWeakIndependentRoots(
+        &scavenge_visitor);
+    new_space_front = DoScavenge(&scavenge_visitor, new_space_front);
   }
-
-  isolate()->global_handles()->IdentifyNewSpaceWeakIndependentHandles(
-      &IsUnscavengedHeapObject);
-
-  isolate()->global_handles()->IterateNewSpaceWeakIndependentRoots(
-      &scavenge_visitor);
-  new_space_front = DoScavenge(&scavenge_visitor, new_space_front);
 
   UpdateNewSpaceReferencesInExternalStringTable(
       &UpdateNewSpaceReferenceInExternalStringTableEntry);
@@ -4048,10 +4098,10 @@ void Heap::FinalizeIncrementalMarkingIfComplete(const char* comment) {
   if (FLAG_overapproximate_weak_closure && incremental_marking()->IsMarking() &&
       (incremental_marking()->IsReadyToOverApproximateWeakClosure() ||
        (!incremental_marking()->weak_closure_was_overapproximated() &&
-        mark_compact_collector()->marking_deque()->IsEmpty()))) {
+        mark_compact_collector_.marking_deque()->IsEmpty()))) {
     OverApproximateWeakClosure(comment);
   } else if (incremental_marking()->IsComplete() ||
-             (mark_compact_collector()->marking_deque()->IsEmpty())) {
+             (mark_compact_collector_.marking_deque()->IsEmpty())) {
     CollectAllGarbage(current_gc_flags_, comment);
   }
 }
@@ -4065,14 +4115,14 @@ bool Heap::TryFinalizeIdleIncrementalMarking(double idle_time_in_ms) {
   if (FLAG_overapproximate_weak_closure &&
       (incremental_marking()->IsReadyToOverApproximateWeakClosure() ||
        (!incremental_marking()->weak_closure_was_overapproximated() &&
-        mark_compact_collector()->marking_deque()->IsEmpty() &&
+        mark_compact_collector_.marking_deque()->IsEmpty() &&
         gc_idle_time_handler_->ShouldDoOverApproximateWeakClosure(
             static_cast<size_t>(idle_time_in_ms))))) {
     OverApproximateWeakClosure(
         "Idle notification: overapproximate weak closure");
     return true;
   } else if (incremental_marking()->IsComplete() ||
-             (mark_compact_collector()->marking_deque()->IsEmpty() &&
+             (mark_compact_collector_.marking_deque()->IsEmpty() &&
               gc_idle_time_handler_->ShouldDoFinalIncrementalMarkCompact(
                   static_cast<size_t>(idle_time_in_ms), size_of_objects,
                   final_incremental_mark_compact_speed_in_bytes_per_ms))) {
@@ -4394,9 +4444,9 @@ void Heap::Verify() {
 
   lo_space_->Verify();
 
-  mark_compact_collector()->VerifyWeakEmbeddedObjectsInCode();
+  mark_compact_collector_.VerifyWeakEmbeddedObjectsInCode();
   if (FLAG_omit_map_checks_for_leaf_maps) {
-    mark_compact_collector()->VerifyOmittedMapChecks();
+    mark_compact_collector_.VerifyOmittedMapChecks();
   }
 }
 #endif
@@ -4694,7 +4744,7 @@ bool Heap::ConfigureHeap(int max_semi_space_size, int max_old_space_size,
   // We rely on being able to allocate new arrays in paged spaces.
   DCHECK(Page::kMaxRegularHeapObjectSize >=
          (JSArray::kSize +
-          FixedArray::SizeFor(JSObject::kInitialMaxFastElementArray) +
+          FixedArray::SizeFor(JSArray::kInitialMaxFastElementArray) +
           AllocationMemento::kSize));
 
   code_range_size_ = code_range_size * MB;
@@ -5046,8 +5096,6 @@ bool Heap::SetUp() {
 
   scavenge_collector_ = new Scavenger(this);
 
-  mark_compact_collector_ = new MarkCompactCollector(this);
-
   gc_idle_time_handler_ = new GCIdleTimeHandler();
 
   memory_reducer_ = new MemoryReducer(this);
@@ -5168,12 +5216,6 @@ void Heap::TearDown() {
   delete scavenge_collector_;
   scavenge_collector_ = nullptr;
 
-  if (mark_compact_collector_ != nullptr) {
-    mark_compact_collector_->TearDown();
-    delete mark_compact_collector_;
-    mark_compact_collector_ = nullptr;
-  }
-
   delete incremental_marking_;
   incremental_marking_ = nullptr;
 
@@ -5200,6 +5242,8 @@ void Heap::TearDown() {
   isolate_->global_handles()->TearDown();
 
   external_string_table_.TearDown();
+
+  mark_compact_collector()->TearDown();
 
   delete tracer_;
   tracer_ = nullptr;

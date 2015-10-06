@@ -14,7 +14,8 @@
 #include "src/assert-scope.h"
 #include "src/atomic-utils.h"
 #include "src/globals.h"
-// TODO(mstarzinger): Two more includes to kill!
+// TODO(mstarzinger): Three more includes to kill!
+#include "src/heap/mark-compact.h"
 #include "src/heap/spaces.h"
 #include "src/heap/store-buffer.h"
 #include "src/list.h"
@@ -429,6 +430,7 @@ class GCIdleTimeHeapState;
 class GCTracer;
 class HeapObjectsFilter;
 class HeapStats;
+class HistogramTimer;
 class Isolate;
 class MemoryReducer;
 class ObjectStats;
@@ -1099,7 +1101,7 @@ class Heap {
   inline Isolate* isolate();
 
   MarkCompactCollector* mark_compact_collector() {
-    return mark_compact_collector_;
+    return &mark_compact_collector_;
   }
 
   // ===========================================================================
@@ -1806,6 +1808,14 @@ class Heap {
   // objects that die later.
   void OverApproximateWeakClosure(const char* gc_reason);
 
+  // Returns the timer used for a given GC type.
+  // - GCScavenger: young generation GC
+  // - GCCompactor: full GC
+  // - GCFinalzeMC: finalization of incremental full GC
+  // - GCFinalizeMCReduceMemory: finalization of incremental full GC with
+  // memory reduction
+  HistogramTimer* GCTypeTimer(GarbageCollector collector);
+
   // ===========================================================================
   // Actual GC. ================================================================
   // ===========================================================================
@@ -2261,7 +2271,7 @@ class Heap {
 
   Scavenger* scavenge_collector_;
 
-  MarkCompactCollector* mark_compact_collector_;
+  MarkCompactCollector mark_compact_collector_;
 
   StoreBuffer store_buffer_;
 

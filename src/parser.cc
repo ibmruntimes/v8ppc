@@ -2535,6 +2535,10 @@ void Parser::ParseVariableDeclarations(VariableDeclarationContext var_context,
       if (!*ok) return;
       ValidateBindingPattern(&pattern_classifier, ok);
       if (!*ok) return;
+      if (IsLexicalVariableMode(parsing_result->descriptor.mode)) {
+        ValidateLetPattern(&pattern_classifier, ok);
+        if (!*ok) return;
+      }
       if (!allow_harmony_destructuring() && !pattern->IsVariableProxy()) {
         ReportUnexpectedToken(next);
         *ok = false;
@@ -2553,7 +2557,9 @@ void Parser::ParseVariableDeclarations(VariableDeclarationContext var_context,
     is_for_iteration_variable =
         var_context == kForStatement &&
         (peek() == Token::IN || PeekContextualKeyword(CStrVector("of")));
-    if (is_for_iteration_variable && parsing_result->descriptor.mode == CONST) {
+    if (is_for_iteration_variable &&
+        (parsing_result->descriptor.mode == CONST ||
+         parsing_result->descriptor.mode == CONST_LEGACY)) {
       parsing_result->descriptor.needs_init = false;
     }
 
@@ -3786,12 +3792,19 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         Expression* enumerable = ParseExpression(true, CHECK_OK);
         Expect(Token::RPAREN, CHECK_OK);
 
+        // Make a block around the statement in case a lexical binding
+        // is introduced, e.g. by a FunctionDeclaration.
+        Block* block =
+            factory()->NewBlock(NULL, 1, false, RelocInfo::kNoPosition);
         Statement* body = ParseSubStatement(NULL, CHECK_OK);
-        InitializeForEachStatement(loop, expression, enumerable, body);
+        block->statements()->Add(body, zone());
+        InitializeForEachStatement(loop, expression, enumerable, block);
         scope_ = saved_scope;
         for_scope->set_end_position(scanner()->location().end_pos);
         for_scope = for_scope->FinalizeBlockScope();
-        DCHECK(for_scope == NULL);
+        if (for_scope != nullptr) {
+          block->set_scope(for_scope);
+        }
         // Parsed for-in loop.
         return loop;
 
@@ -3861,10 +3874,20 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
       //     const x = i;
       //     for (; c; n) b
       //   }
-      DCHECK(init != NULL);
+      //
+      // or, desugar
+      //   for (; c; n) b
+      // into
+      //   {
+      //     for (; c; n) b
+      //   }
+      // just in case b introduces a lexical binding some other way, e.g., if b
+      // is a FunctionDeclaration.
       Block* block =
           factory()->NewBlock(NULL, 2, false, RelocInfo::kNoPosition);
-      block->statements()->Add(init, zone());
+      if (init != nullptr) {
+        block->statements()->Add(init, zone());
+      }
       block->statements()->Add(loop, zone());
       block->set_scope(for_scope);
       loop->Initialize(NULL, cond, next, body);

@@ -6566,7 +6566,8 @@ static void IndependentWeakHandle(bool global_gc, bool interlinked) {
     Local<Object> b(v8::Object::New(iso));
     object_a.handle.Reset(iso, a);
     object_b.handle.Reset(iso, b);
-    if (interlinked) {
+    if (interlinked &&
+        !v8::internal::FLAG_scavenge_reclaim_unmodified_objects) {
       a->Set(v8_str("x"), b);
       b->Set(v8_str("x"), a);
     }
@@ -6577,8 +6578,9 @@ static void IndependentWeakHandle(bool global_gc, bool interlinked) {
     }
     // We are relying on this creating a big flag array and reserving the space
     // up front.
-    v8::Handle<Value> big_array = CompileRun("new Array(50000)");
-    a->Set(v8_str("y"), big_array);
+    v8::Handle<Value> big_array = CompileRun("new Array(5000)");
+    if (!v8::internal::FLAG_scavenge_reclaim_unmodified_objects)
+      a->Set(v8_str("y"), big_array);
     big_heap_size = CcTest::heap()->SizeOfObjects();
   }
 
@@ -6599,7 +6601,7 @@ static void IndependentWeakHandle(bool global_gc, bool interlinked) {
   }
   // A single GC should be enough to reclaim the memory, since we are using
   // phantom handles.
-  CHECK_LT(CcTest::heap()->SizeOfObjects(), big_heap_size - 200000);
+  CHECK_LT(CcTest::heap()->SizeOfObjects(), big_heap_size - 20000);
   CHECK(object_a.flag);
   CHECK(object_b.flag);
 }
@@ -21892,4 +21894,35 @@ TEST(EstimatedContextSize) {
   v8::HandleScope scope(isolate);
   LocalContext env;
   CHECK(50000 < env->EstimatedSize());
+}
+
+
+static int nb_uncaught_exception_callback_calls = 0;
+
+
+bool NoAbortOnUncaughtException(v8::Isolate* isolate) {
+  ++nb_uncaught_exception_callback_calls;
+  return false;
+}
+
+
+TEST(AbortOnUncaughtExceptionNoAbort) {
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope handle_scope(isolate);
+  v8::Handle<v8::ObjectTemplate> global_template =
+      v8::ObjectTemplate::New(isolate);
+  LocalContext env(NULL, global_template);
+
+  i::FLAG_abort_on_uncaught_exception = true;
+  isolate->SetAbortOnUncaughtExceptionCallback(NoAbortOnUncaughtException);
+
+  CompileRun("function boom() { throw new Error(\"boom\") }");
+
+  v8::Local<v8::Object> global_object = env->Global();
+  v8::Local<v8::Function> foo =
+      v8::Local<v8::Function>::Cast(global_object->Get(v8_str("boom")));
+
+  foo->Call(global_object, 0, NULL);
+
+  CHECK_EQ(1, nb_uncaught_exception_callback_calls);
 }
