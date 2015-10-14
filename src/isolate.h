@@ -679,11 +679,11 @@ class Isolate {
   Handle<JSArray> GetDetailedFromSimpleStackTrace(
       Handle<JSObject> error_object);
 
-  // Returns if the top context may access the given global object. If
+  // Returns if the given context may access the given global object. If
   // the result is false, the pending exception is guaranteed to be
   // set.
+  bool MayAccess(Handle<Context> accessing_context, Handle<JSObject> receiver);
 
-  bool MayAccess(Handle<JSObject> receiver);
   bool IsInternallyUsedPropertyName(Handle<Object> name);
   bool IsInternallyUsedPropertyName(Object* name);
 
@@ -1027,9 +1027,11 @@ class Isolate {
 
   void* stress_deopt_count_address() { return &stress_deopt_count_; }
 
-  void* vector_store_virtual_register_address() {
-    return &vector_store_virtual_register_;
+  void* virtual_handler_register_address() {
+    return &virtual_handler_register_;
   }
+
+  void* virtual_slot_register_address() { return &virtual_slot_register_; }
 
   base::RandomNumberGenerator* random_number_generator();
 
@@ -1306,7 +1308,8 @@ class Isolate {
   // Counts deopt points if deopt_every_n_times is enabled.
   unsigned int stress_deopt_count_;
 
-  Address vector_store_virtual_register_;
+  Address virtual_handler_register_;
+  Address virtual_slot_register_;
 
   int next_optimization_id_;
 

@@ -508,6 +508,9 @@ class RawMachineAssembler {
   // Call to a runtime function with two arguments.
   Node* CallRuntime2(Runtime::FunctionId function, Node* arg1, Node* arg2,
                      Node* context);
+  // Call to a runtime function with four arguments.
+  Node* CallRuntime4(Runtime::FunctionId function, Node* arg1, Node* arg2,
+                     Node* arg3, Node* arg4, Node* context);
   // Call to a C function with zero arguments.
   Node* CallCFunction0(MachineType return_type, Node* function);
   // Call to a C function with one parameter.
@@ -536,6 +539,8 @@ class RawMachineAssembler {
   void Switch(Node* index, Label* default_label, int32_t* case_values,
               Label** case_labels, size_t case_count);
   void Return(Node* value);
+  void Return(Node* v1, Node* v2);
+  void Return(Node* v1, Node* v2, Node* v3);
   void Bind(Label* label);
   void Deoptimize(Node* state);
 

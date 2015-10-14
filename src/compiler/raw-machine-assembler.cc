@@ -101,6 +101,22 @@ void RawMachineAssembler::Return(Node* value) {
 }
 
 
+void RawMachineAssembler::Return(Node* v1, Node* v2) {
+  Node* values[] = {v1, v2};
+  Node* ret = MakeNode(common()->Return(2), 2, values);
+  schedule()->AddReturn(CurrentBlock(), ret);
+  current_block_ = nullptr;
+}
+
+
+void RawMachineAssembler::Return(Node* v1, Node* v2, Node* v3) {
+  Node* values[] = {v1, v2, v3};
+  Node* ret = MakeNode(common()->Return(3), 3, values);
+  schedule()->AddReturn(CurrentBlock(), ret);
+  current_block_ = nullptr;
+}
+
+
 Node* RawMachineAssembler::CallN(CallDescriptor* desc, Node* function,
                                  Node** args) {
   int param_count =
@@ -198,6 +214,22 @@ Node* RawMachineAssembler::CallRuntime2(Runtime::FunctionId function,
 
   return AddNode(common()->Call(descriptor), centry, arg1, arg2, ref, arity,
                  context, graph()->start(), graph()->start());
+}
+
+
+Node* RawMachineAssembler::CallRuntime4(Runtime::FunctionId function,
+                                        Node* arg1, Node* arg2, Node* arg3,
+                                        Node* arg4, Node* context) {
+  CallDescriptor* descriptor = Linkage::GetRuntimeCallDescriptor(
+      zone(), function, 4, Operator::kNoProperties, false);
+
+  Node* centry = HeapConstant(CEntryStub(isolate(), 1).GetCode());
+  Node* ref = AddNode(
+      common()->ExternalConstant(ExternalReference(function, isolate())));
+  Node* arity = Int32Constant(4);
+
+  return AddNode(common()->Call(descriptor), centry, arg1, arg2, arg3, arg4,
+                 ref, arity, context, graph()->start(), graph()->start());
 }
 
 

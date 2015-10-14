@@ -13,11 +13,15 @@ namespace internal {
 
 
 enum ContextLookupFlags {
-  FOLLOW_CONTEXT_CHAIN = 1,
-  FOLLOW_PROTOTYPE_CHAIN = 2,
+  FOLLOW_CONTEXT_CHAIN = 1 << 0,
+  FOLLOW_PROTOTYPE_CHAIN = 1 << 1,
+  STOP_AT_DECLARATION_SCOPE = 1 << 2,
+  SKIP_WITH_CONTEXT = 1 << 3,
 
   DONT_FOLLOW_CHAINS = 0,
-  FOLLOW_CHAINS = FOLLOW_CONTEXT_CHAIN | FOLLOW_PROTOTYPE_CHAIN
+  FOLLOW_CHAINS = FOLLOW_CONTEXT_CHAIN | FOLLOW_PROTOTYPE_CHAIN,
+  LEXICAL_TEST =
+      FOLLOW_CONTEXT_CHAIN | STOP_AT_DECLARATION_SCOPE | SKIP_WITH_CONTEXT,
 };
 
 
@@ -102,7 +106,9 @@ enum BindingFlags {
   V(ARRAY_SPLICE_INDEX, JSFunction, array_splice)                             \
   V(ARRAY_SLICE_INDEX, JSFunction, array_slice)                               \
   V(ARRAY_UNSHIFT_INDEX, JSFunction, array_unshift)                           \
+  V(ARRAY_KEYS_ITERATOR_INDEX, JSFunction, array_keys_iterator)               \
   V(ARRAY_VALUES_ITERATOR_INDEX, JSFunction, array_values_iterator)           \
+  V(ARRAY_ENTRIES_ITERATOR_INDEX, JSFunction, array_entries_iterator)         \
   V(CREATE_DATE_FUN_INDEX, JSFunction, create_date_fun)                       \
   V(DERIVED_GET_TRAP_INDEX, JSFunction, derived_get_trap)                     \
   V(DERIVED_HAS_TRAP_INDEX, JSFunction, derived_has_trap)                     \

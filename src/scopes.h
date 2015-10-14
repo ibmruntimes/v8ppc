@@ -302,15 +302,15 @@ class Scope: public ZoneObject {
 
   // Specific scope types.
   bool is_eval_scope() const { return scope_type_ == EVAL_SCOPE; }
-  bool is_function_scope() const {
-    return scope_type_ == FUNCTION_SCOPE || scope_type_ == ARROW_SCOPE;
-  }
+  bool is_function_scope() const { return scope_type_ == FUNCTION_SCOPE; }
   bool is_module_scope() const { return scope_type_ == MODULE_SCOPE; }
   bool is_script_scope() const { return scope_type_ == SCRIPT_SCOPE; }
   bool is_catch_scope() const { return scope_type_ == CATCH_SCOPE; }
   bool is_block_scope() const { return scope_type_ == BLOCK_SCOPE; }
   bool is_with_scope() const { return scope_type_ == WITH_SCOPE; }
-  bool is_arrow_scope() const { return scope_type_ == ARROW_SCOPE; }
+  bool is_arrow_scope() const {
+    return is_function_scope() && IsArrowFunction(function_kind_);
+  }
   bool is_declaration_scope() const { return is_declaration_scope_; }
 
   void set_is_declaration_scope() { is_declaration_scope_ = true; }
@@ -579,9 +579,7 @@ class Scope: public ZoneObject {
 
   // ---------------------------------------------------------------------------
   // Implementation.
- protected:
-  friend class ParserFactory;
-
+ private:
   // Scope tree.
   Scope* outer_scope_;  // the immediately enclosing outer scope, or NULL
   ZoneList<Scope*> inner_scopes_;  // the immediately enclosed inner scopes
@@ -791,7 +789,6 @@ class Scope: public ZoneObject {
   MUST_USE_RESULT
   bool AllocateVariables(ParseInfo* info, AstNodeFactory* factory);
 
- private:
   // Construct a scope based on the scope info.
   Scope(Zone* zone, Scope* inner_scope, ScopeType type,
         Handle<ScopeInfo> scope_info, AstValueFactory* value_factory);

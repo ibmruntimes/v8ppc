@@ -6566,8 +6566,7 @@ static void IndependentWeakHandle(bool global_gc, bool interlinked) {
     Local<Object> b(v8::Object::New(iso));
     object_a.handle.Reset(iso, a);
     object_b.handle.Reset(iso, b);
-    if (interlinked &&
-        !v8::internal::FLAG_scavenge_reclaim_unmodified_objects) {
+    if (interlinked) {
       a->Set(v8_str("x"), b);
       b->Set(v8_str("x"), a);
     }
@@ -6579,8 +6578,7 @@ static void IndependentWeakHandle(bool global_gc, bool interlinked) {
     // We are relying on this creating a big flag array and reserving the space
     // up front.
     v8::Handle<Value> big_array = CompileRun("new Array(5000)");
-    if (!v8::internal::FLAG_scavenge_reclaim_unmodified_objects)
-      a->Set(v8_str("y"), big_array);
+    a->Set(v8_str("y"), big_array);
     big_heap_size = CcTest::heap()->SizeOfObjects();
   }
 
@@ -21925,4 +21923,56 @@ TEST(AbortOnUncaughtExceptionNoAbort) {
   foo->Call(global_object, 0, NULL);
 
   CHECK_EQ(1, nb_uncaught_exception_callback_calls);
+}
+
+
+TEST(AccessCheckedIsConcatSpreadable) {
+  i::FLAG_harmony_concat_spreadable = true;
+  v8::Isolate* isolate = CcTest::isolate();
+  HandleScope scope(isolate);
+  LocalContext env;
+
+  // Object with access check
+  Local<ObjectTemplate> spreadable_template = v8::ObjectTemplate::New(isolate);
+  spreadable_template->SetAccessCheckCallbacks(AccessBlocker, nullptr);
+  spreadable_template->Set(v8::Symbol::GetIsConcatSpreadable(isolate),
+                           v8::Boolean::New(isolate, true));
+  Local<Object> object = spreadable_template->NewInstance();
+
+  allowed_access = true;
+  env->Global()->Set(v8_str("object"), object);
+  object->Set(v8_str("length"), v8_num(2));
+  object->Set(0U, v8_str("a"));
+  object->Set(1U, v8_str("b"));
+
+  // Access check is allowed, and the object is spread
+  CompileRun("var result = [].concat(object)");
+  ExpectTrue("Array.isArray(result)");
+  ExpectString("result[0]", "a");
+  ExpectString("result[1]", "b");
+  ExpectTrue("result.length === 2");
+  ExpectTrue("object[Symbol.isConcatSpreadable]");
+
+  // If access check fails, the value of @@isConcatSpreadable is ignored
+  allowed_access = false;
+  CompileRun("var result = [].concat(object)");
+  ExpectTrue("Array.isArray(result)");
+  ExpectTrue("result[0] === object");
+  ExpectTrue("result.length === 1");
+  ExpectTrue("object[Symbol.isConcatSpreadable] === undefined");
+}
+
+
+TEST(ArrayIteratorMethods) {
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope scope(isolate);
+  LocalContext env;
+
+  env->Global()->Set(v8_str("keys"), v8::Array::GetKeysIterator(isolate));
+  env->Global()->Set(v8_str("values"), v8::Array::GetValuesIterator(isolate));
+  env->Global()->Set(v8_str("entries"), v8::Array::GetEntriesIterator(isolate));
+
+  ExpectString("typeof keys", "function");
+  ExpectString("typeof values", "function");
+  ExpectString("typeof entries", "function");
 }

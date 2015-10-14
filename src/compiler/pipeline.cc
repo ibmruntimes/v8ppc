@@ -30,7 +30,8 @@
 #include "src/compiler/js-context-specialization.h"
 #include "src/compiler/js-frame-specialization.h"
 #include "src/compiler/js-generic-lowering.h"
-#include "src/compiler/js-inlining.h"
+#include "src/compiler/js-global-specialization.h"
+#include "src/compiler/js-inlining-heuristic.h"
 #include "src/compiler/js-intrinsic-lowering.h"
 #include "src/compiler/js-type-feedback.h"
 #include "src/compiler/js-type-feedback-lowering.h"
@@ -495,6 +496,34 @@ struct GraphBuilderPhase {
 };
 
 
+struct NativeContextSpecializationPhase {
+  static const char* phase_name() { return "native context specialization"; }
+
+  void Run(PipelineData* data, Zone* temp_zone) {
+    JSGraphReducer graph_reducer(data->jsgraph(), temp_zone);
+    DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
+                                              data->common());
+    CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
+                                         data->common(), data->machine());
+    JSGlobalSpecialization::Flags flags = JSGlobalSpecialization::kNoFlags;
+    if (data->info()->is_deoptimization_enabled()) {
+      flags |= JSGlobalSpecialization::kDeoptimizationEnabled;
+    }
+    if (data->info()->is_typing_enabled()) {
+      flags |= JSGlobalSpecialization::kTypingEnabled;
+    }
+    JSGlobalSpecialization global_specialization(
+        &graph_reducer, data->jsgraph(), flags,
+        handle(data->info()->global_object(), data->isolate()),
+        data->info()->dependencies());
+    AddReducer(data, &graph_reducer, &dead_code_elimination);
+    AddReducer(data, &graph_reducer, &common_reducer);
+    AddReducer(data, &graph_reducer, &global_specialization);
+    graph_reducer.ReduceGraph();
+  }
+};
+
+
 struct InliningPhase {
   static const char* phase_name() { return "inlining"; }
 
@@ -511,18 +540,20 @@ struct InliningPhase {
             : MaybeHandle<Context>());
     JSFrameSpecialization frame_specialization(data->info()->osr_frame(),
                                                data->jsgraph());
-    JSInliner inliner(&graph_reducer, data->info()->is_inlining_enabled()
-                                          ? JSInliner::kGeneralInlining
-                                          : JSInliner::kRestrictedInlining,
-                      temp_zone, data->info(), data->jsgraph());
+    JSInliningHeuristic inlining(&graph_reducer,
+                                 data->info()->is_inlining_enabled()
+                                     ? JSInliningHeuristic::kGeneralInlining
+                                     : JSInliningHeuristic::kRestrictedInlining,
+                                 temp_zone, data->info(), data->jsgraph());
     AddReducer(data, &graph_reducer, &dead_code_elimination);
     AddReducer(data, &graph_reducer, &common_reducer);
     if (data->info()->is_frame_specializing()) {
       AddReducer(data, &graph_reducer, &frame_specialization);
     }
     AddReducer(data, &graph_reducer, &context_specialization);
-    AddReducer(data, &graph_reducer, &inliner);
+    AddReducer(data, &graph_reducer, &inlining);
     graph_reducer.ReduceGraph();
+    inlining.ProcessCandidates();
   }
 };
 
@@ -1076,7 +1107,13 @@ Handle<Code> Pipeline::GenerateCode() {
     RunPrintAndVerify("OSR deconstruction", true);
   }
 
-  // Perform context specialization and inlining (if enabled).
+  // Perform native context specialization (if enabled).
+  if (info()->is_native_context_specializing()) {
+    Run<NativeContextSpecializationPhase>();
+    RunPrintAndVerify("Native context specialized", true);
+  }
+
+  // Perform function context specialization and inlining (if enabled).
   Run<InliningPhase>();
   RunPrintAndVerify("Inlined", true);
 

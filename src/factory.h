@@ -7,6 +7,7 @@
 
 #include "src/isolate.h"
 #include "src/messages.h"
+#include "src/type-feedback-vector.h"
 
 namespace v8 {
 namespace internal {
@@ -614,6 +615,7 @@ class Factory final {
         &isolate()->heap()->roots_[Heap::k##name##RootIndex])); \
   }
   PUBLIC_SYMBOL_LIST(SYMBOL_ACCESSOR)
+  WELL_KNOWN_SYMBOL_LIST(SYMBOL_ACCESSOR)
 #undef SYMBOL_ACCESSOR
 
   // Allocates a new SharedFunctionInfo object.

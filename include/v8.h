@@ -2465,6 +2465,7 @@ class V8_EXPORT Symbol : public Name {
   static Local<Symbol> GetIterator(Isolate* isolate);
   static Local<Symbol> GetUnscopables(Isolate* isolate);
   static Local<Symbol> GetToStringTag(Isolate* isolate);
+  static Local<Symbol> GetIsConcatSpreadable(Isolate* isolate);
 
   V8_INLINE static Symbol* Cast(v8::Value* obj);
 
@@ -2979,7 +2980,15 @@ class V8_EXPORT Array : public Object {
    */
   static Local<Array> New(Isolate* isolate, int length = 0);
 
+  /**
+   * Access to Array Iterator methods
+   */
+  static Local<Function> GetKeysIterator(Isolate* isolate);
+  static Local<Function> GetValuesIterator(Isolate* isolate);
+  static Local<Function> GetEntriesIterator(Isolate* isolate);
+
   V8_INLINE static Array* Cast(Value* obj);
+
  private:
   Array();
   static void CheckCast(Value* obj);

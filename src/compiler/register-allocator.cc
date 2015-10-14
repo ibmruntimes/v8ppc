@@ -266,6 +266,7 @@ LiveRange::LiveRange(int relative_id, MachineType machine_type,
       current_interval_(nullptr),
       last_processed_use_(nullptr),
       current_hint_position_(nullptr),
+      splitting_pointer_(nullptr),
       size_(kInvalidSize),
       weight_(kInvalidWeight),
       group_(nullptr) {
@@ -455,8 +456,8 @@ LiveRange* LiveRange::SplitAt(LifetimePosition position, Zone* zone) {
 }
 
 
-void LiveRange::DetachAt(LifetimePosition position, LiveRange* result,
-                         Zone* zone) {
+UsePosition* LiveRange::DetachAt(LifetimePosition position, LiveRange* result,
+                                 Zone* zone) {
   DCHECK(Start() < position);
   DCHECK(End() > position);
   DCHECK(result->IsEmpty());
@@ -502,7 +503,10 @@ void LiveRange::DetachAt(LifetimePosition position, LiveRange* result,
 
   // Find the last use position before the split and the first use
   // position after it.
-  auto use_after = first_pos_;
+  auto use_after =
+      splitting_pointer_ == nullptr || splitting_pointer_->pos() > position
+          ? first_pos()
+          : splitting_pointer_;
   UsePosition* use_before = nullptr;
   if (split_at_start) {
     // The split position coincides with the beginning of a use interval (the
@@ -540,6 +544,7 @@ void LiveRange::DetachAt(LifetimePosition position, LiveRange* result,
   Verify();
   result->Verify();
 #endif
+  return use_before;
 }
 
 
@@ -693,7 +698,8 @@ TopLevelLiveRange::TopLevelLiveRange(int vreg, MachineType machine_type)
       spilled_in_deferred_blocks_(false),
       spill_start_index_(kMaxInt),
       last_child_(this),
-      last_insertion_point_(this) {
+      last_pos_(nullptr),
+      splinter_(nullptr) {
   bits_ |= SpillTypeField::encode(SpillType::kNoSpillType);
 }
 
@@ -840,12 +846,12 @@ AllocatedOperand TopLevelLiveRange::GetSpillRangeOperand() const {
 
 
 void TopLevelLiveRange::Splinter(LifetimePosition start, LifetimePosition end,
-                                 TopLevelLiveRange* result, Zone* zone) {
+                                 Zone* zone) {
   DCHECK(start != Start() || end != End());
   DCHECK(start < end);
 
-  result->set_spill_type(spill_type());
-
+  TopLevelLiveRange splinter_temp(-1, machine_type());
+  UsePosition* last_in_splinter = nullptr;
   if (start <= Start()) {
     // TODO(mtrofin): here, the TopLevel part is in the deferred range, so we
     // may want to continue processing the splinter. However, if the value is
@@ -854,21 +860,21 @@ void TopLevelLiveRange::Splinter(LifetimePosition start, LifetimePosition end,
     // should check this, however, this may not be the place, because we don't
     // have access to the instruction sequence.
     DCHECK(end < End());
-    DetachAt(end, result, zone);
+    DetachAt(end, &splinter_temp, zone);
     next_ = nullptr;
   } else if (end >= End()) {
     DCHECK(start > Start());
-    DetachAt(start, result, zone);
+    DetachAt(start, &splinter_temp, zone);
     next_ = nullptr;
   } else {
     DCHECK(start < End() && Start() < end);
 
     const int kInvalidId = std::numeric_limits<int>::max();
 
-    DetachAt(start, result, zone);
+    UsePosition* last = DetachAt(start, &splinter_temp, zone);
 
     LiveRange end_part(kInvalidId, this->machine_type(), nullptr);
-    result->DetachAt(end, &end_part, zone);
+    last_in_splinter = splinter_temp.DetachAt(end, &end_part, zone);
 
     next_ = end_part.next_;
     last_interval_->set_next(end_part.first_interval_);
@@ -878,30 +884,46 @@ void TopLevelLiveRange::Splinter(LifetimePosition start, LifetimePosition end,
     current_interval_ = last_interval_;
     last_interval_ = end_part.last_interval_;
 
-
     if (first_pos_ == nullptr) {
       first_pos_ = end_part.first_pos_;
     } else {
-      UsePosition* pos = first_pos_;
-      for (; pos->next() != nullptr; pos = pos->next()) {
-      }
-      pos->set_next(end_part.first_pos_);
+      splitting_pointer_ = last;
+      if (last != nullptr) last->set_next(end_part.first_pos_);
     }
   }
-  result->next_ = nullptr;
-  result->top_level_ = result;
 
-  result->SetSplinteredFrom(this);
-  // Ensure the result's relative ID is unique within the IDs used for this
-  // virtual register's children and splinters.
-  result->relative_id_ = GetNextChildId();
+  if (splinter()->IsEmpty()) {
+    splinter()->first_interval_ = splinter_temp.first_interval_;
+    splinter()->last_interval_ = splinter_temp.last_interval_;
+  } else {
+    splinter()->last_interval_->set_next(splinter_temp.first_interval_);
+    splinter()->last_interval_ = splinter_temp.last_interval_;
+  }
+  if (splinter()->first_pos() == nullptr) {
+    splinter()->first_pos_ = splinter_temp.first_pos_;
+  } else {
+    splinter()->last_pos_->set_next(splinter_temp.first_pos_);
+  }
+  if (last_in_splinter != nullptr) {
+    splinter()->last_pos_ = last_in_splinter;
+  } else {
+    if (splinter()->first_pos() != nullptr &&
+        splinter()->last_pos_ == nullptr) {
+      splinter()->last_pos_ = splinter()->first_pos();
+      for (UsePosition* pos = splinter()->first_pos(); pos != nullptr;
+           pos = pos->next()) {
+        splinter()->last_pos_ = pos;
+      }
+    }
+  }
+#if DEBUG
+  Verify();
+  splinter()->Verify();
+#endif
 }
 
 
 void TopLevelLiveRange::SetSplinteredFrom(TopLevelLiveRange* splinter_parent) {
-  // The splinter parent is always the original "Top".
-  DCHECK(splinter_parent->Start() < Start());
-
   splintered_from_ = splinter_parent;
   if (!HasSpillOperand() && splinter_parent->spill_range_ != nullptr) {
     SetSpillRange(splinter_parent->spill_range_);
@@ -926,43 +948,55 @@ void TopLevelLiveRange::Merge(TopLevelLiveRange* other, Zone* zone) {
   DCHECK(Start() < other->Start());
   DCHECK(other->splintered_from() == this);
 
-  LiveRange* last_other = other->last_child();
-  LiveRange* last_me = last_child();
+  LiveRange* first = this;
+  LiveRange* second = other;
+  DCHECK(first->Start() < second->Start());
+  while (first != nullptr && second != nullptr) {
+    DCHECK(first != second);
+    // Make sure the ranges are in order each time we iterate.
+    if (second->Start() < first->Start()) {
+      LiveRange* tmp = second;
+      second = first;
+      first = tmp;
+      continue;
+    }
 
-  // Simple case: we just append at the end.
-  if (last_me->End() <= other->Start()) return last_me->AppendAsChild(other);
+    if (first->End() <= second->Start()) {
+      if (first->next() == nullptr ||
+          first->next()->Start() > second->Start()) {
+        // First is in order before second.
+        LiveRange* temp = first->next();
+        first->next_ = second;
+        first = temp;
+      } else {
+        // First is in order before its successor (or second), so advance first.
+        first = first->next();
+      }
+      continue;
+    }
 
-  DCHECK(last_me->End() > last_other->End());
+    DCHECK(first->Start() < second->Start());
+    // If first and second intersect, split first.
+    if (first->Start() < second->End() && second->Start() < first->End()) {
+      LiveRange* temp = first->SplitAt(second->Start(), zone);
 
-  // In the more general case, we need to find the ranges between which to
-  // insert.
-  if (other->Start() < last_insertion_point_->Start()) {
-    last_insertion_point_ = this;
+      temp->set_spilled(first->spilled());
+      if (!temp->spilled())
+        temp->set_assigned_register(first->assigned_register());
+
+      first->next_ = second;
+      first = temp;
+      continue;
+    }
+    DCHECK(first->End() <= second->Start());
   }
 
-  for (; last_insertion_point_->next() != nullptr &&
-         last_insertion_point_->next()->Start() <= other->Start();
-       last_insertion_point_ = last_insertion_point_->next()) {
-  }
-
-  // When we splintered the original range, we reconstituted the original range
-  // into one range without children, but with discontinuities. To merge the
-  // splinter back in, we need to split the range - or a child obtained after
-  // register allocation splitting.
-  LiveRange* after = last_insertion_point_->next();
-  if (last_insertion_point_->End() > other->Start()) {
-    LiveRange* new_after = last_insertion_point_->SplitAt(other->Start(), zone);
-    new_after->set_spilled(last_insertion_point_->spilled());
-    if (!new_after->spilled())
-      new_after->set_assigned_register(
-          last_insertion_point_->assigned_register());
-    after = new_after;
-  }
-
-  last_other->next_ = after;
-  last_insertion_point_->next_ = other;
-  other->UpdateParentForAllChildren(TopLevel());
+  TopLevel()->UpdateParentForAllChildren(TopLevel());
   TopLevel()->UpdateSpillRangePostMerge(other);
+
+#if DEBUG
+  Verify();
+#endif
 }
 
 

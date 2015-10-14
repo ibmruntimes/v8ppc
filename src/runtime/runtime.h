@@ -176,7 +176,7 @@ namespace internal {
   F(DebugPrintScopes, 0, 1)                    \
   F(GetThreadCount, 1, 1)                      \
   F(GetThreadDetails, 2, 1)                    \
-  F(SetDisableBreak, 1, 1)                     \
+  F(SetBreakPointsActive, 1, 1)                \
   F(GetBreakLocations, 2, 1)                   \
   F(SetFunctionBreakPoint, 3, 1)               \
   F(SetScriptBreakPoint, 4, 1)                 \
@@ -227,7 +227,8 @@ namespace internal {
   F(InterpreterGreaterThanOrEqual, 2, 1)  \
   F(InterpreterToBoolean, 1, 1)           \
   F(InterpreterLogicalNot, 1, 1)          \
-  F(InterpreterTypeOf, 1, 1)
+  F(InterpreterTypeOf, 1, 1)              \
+  F(InterpreterNewClosure, 2, 1)
 
 
 #define FOR_EACH_INTRINSIC_FUNCTION(F)                      \
@@ -497,7 +498,9 @@ namespace internal {
   F(InstanceOf, 2, 1)                                \
   F(HasInPrototypeChain, 2, 1)                       \
   F(CreateIterResultObject, 2, 1)                    \
-  F(IsAccessCheckNeeded, 1, 1)
+  F(IsAccessCheckNeeded, 1, 1)                       \
+  F(ObjectDefineProperties, 2, 1)                    \
+  F(ObjectDefineProperty, 3, 1)
 
 
 #define FOR_EACH_INTRINSIC_OBSERVE(F)            \
@@ -566,8 +569,7 @@ namespace internal {
   F(DeclareGlobals, 2, 1)                  \
   F(InitializeVarGlobal, 3, 1)             \
   F(InitializeConstGlobal, 2, 1)           \
-  F(DeclareLookupSlot, 2, 1)               \
-  F(DeclareReadOnlyLookupSlot, 2, 1)       \
+  F(DeclareLookupSlot, 3, 1)               \
   F(InitializeLegacyConstLookupSlot, 3, 1) \
   F(NewSloppyArguments_Generic, 1, 1)      \
   F(NewStrictArguments_Generic, 1, 1)      \

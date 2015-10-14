@@ -60,7 +60,12 @@ class InterpreterAssembler {
   Node* GetAccumulator();
   void SetAccumulator(Node* value);
 
+  // Context.
+  Node* GetContext();
+  void SetContext(Node* value);
+
   // Loads from and stores to the interpreter register file.
+  Node* LoadRegister(interpreter::Register reg);
   Node* LoadRegister(Node* reg_index);
   Node* StoreRegister(Node* value, Node* reg_index);
 
@@ -90,11 +95,8 @@ class InterpreterAssembler {
   // Load a field from an object on the heap.
   Node* LoadObjectField(Node* object, int offset);
 
-  // Load |slot_index| from a context.
-  Node* LoadContextSlot(Node* context, int slot_index);
-
-  // Load |slot_index| from the current context.
-  Node* LoadContextSlot(int slot_index);
+  // Load |slot_index| from |context|.
+  Node* LoadContextSlot(Node* context, Node* slot_index);
 
   // Load the TypeFeedbackVector for the current function.
   Node* LoadTypeFeedbackVector();
@@ -105,6 +107,8 @@ class InterpreterAssembler {
 
   // Call an IC code stub.
   Node* CallIC(CallInterfaceDescriptor descriptor, Node* target, Node* arg1,
+               Node* arg2, Node* arg3);
+  Node* CallIC(CallInterfaceDescriptor descriptor, Node* target, Node* arg1,
                Node* arg2, Node* arg3, Node* arg4);
   Node* CallIC(CallInterfaceDescriptor descriptor, Node* target, Node* arg1,
                Node* arg2, Node* arg3, Node* arg4, Node* arg5);
@@ -113,6 +117,8 @@ class InterpreterAssembler {
   Node* CallRuntime(Node* function_id, Node* first_arg, Node* arg_count);
   Node* CallRuntime(Runtime::FunctionId function_id, Node* arg1);
   Node* CallRuntime(Runtime::FunctionId function_id, Node* arg1, Node* arg2);
+  Node* CallRuntime(Runtime::FunctionId function_id, Node* arg1, Node* arg2,
+                    Node* arg3, Node* arg4);
 
   // Jump relative to the current bytecode by |jump_offset|.
   void Jump(Node* jump_offset);
@@ -146,8 +152,6 @@ class InterpreterAssembler {
   Node* BytecodeOffset();
   // Returns a raw pointer to first entry in the interpreter dispatch table.
   Node* DispatchTableRawPointer();
-  // Returns a tagged pointer to the current context.
-  Node* ContextTaggedPointer();
 
   // Returns the offset of register |index| relative to RegisterFilePointer().
   Node* RegisterFrameOffset(Node* index);
@@ -185,6 +189,7 @@ class InterpreterAssembler {
   base::SmartPointer<RawMachineAssembler> raw_assembler_;
   ZoneVector<Node*> end_nodes_;
   Node* accumulator_;
+  Node* context_;
   bool code_generated_;
 
   DISALLOW_COPY_AND_ASSIGN(InterpreterAssembler);

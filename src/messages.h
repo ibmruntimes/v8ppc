@@ -62,6 +62,8 @@ class CallSite {
   bool IsEval();
   bool IsConstructor();
 
+  bool IsValid() { return !fun_.is_null(); }
+
  private:
   Isolate* isolate_;
   Handle<Object> receiver_;
@@ -214,7 +216,9 @@ class CallSite {
   T(StrictPoisonPill,                                                          \
     "'caller', 'callee', and 'arguments' properties may not be accessed on "   \
     "strict mode functions or the arguments objects for calls to them")        \
-  T(StrictReadOnlyProperty, "Cannot assign to read only property '%' of %")    \
+  T(StrictReadOnlyProperty,                                                    \
+    "Cannot assign to read only property '%' of % '%'")                        \
+  T(StrictCannotCreateProperty, "Cannot create property '%' on % '%'")         \
   T(StrongArity,                                                               \
     "In strong mode, calling a function with too few arguments is deprecated") \
   T(StrongDeleteProperty,                                                      \
@@ -251,6 +255,7 @@ class CallSite {
   T(DateRange, "Provided date is not in valid range.")                         \
   T(ExpectedLocation, "Expected Area/Location for time zone, got %")           \
   T(InvalidArrayBufferLength, "Invalid array buffer length")                   \
+  T(ArrayBufferAllocationFailed, "Array buffer allocation failed")             \
   T(InvalidArrayLength, "Invalid array length")                                \
   T(InvalidCodePoint, "Invalid code point %")                                  \
   T(InvalidCountValue, "Invalid count value")                                  \

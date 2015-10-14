@@ -255,25 +255,91 @@ void BytecodeGraphBuilder::VisitLdaGlobal(
 }
 
 
-void BytecodeGraphBuilder::VisitLoadIC(
+void BytecodeGraphBuilder::VisitStaGlobal(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }
 
 
-void BytecodeGraphBuilder::VisitKeyedLoadIC(
+void BytecodeGraphBuilder::VisitLdaContextSlot(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }
 
 
-void BytecodeGraphBuilder::VisitStoreIC(
+void BytecodeGraphBuilder::VisitLoadICSloppy(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }
 
 
-void BytecodeGraphBuilder::VisitKeyedStoreIC(
+void BytecodeGraphBuilder::VisitLoadICStrict(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitKeyedLoadICSloppy(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitKeyedLoadICStrict(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitStoreICSloppy(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitStoreICStrict(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitKeyedStoreICSloppy(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitKeyedStoreICStrict(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitPushContext(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitPopContext(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitCreateClosure(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitCreateArrayLiteral(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitCreateObjectLiteral(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }
@@ -335,6 +401,42 @@ void BytecodeGraphBuilder::VisitDiv(
 void BytecodeGraphBuilder::VisitMod(
     const interpreter::BytecodeArrayIterator& iterator) {
   BuildBinaryOp(javascript()->Modulus(language_mode()), iterator);
+}
+
+
+void BytecodeGraphBuilder::VisitBitwiseOr(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  BuildBinaryOp(javascript()->BitwiseOr(language_mode()), iterator);
+}
+
+
+void BytecodeGraphBuilder::VisitBitwiseXor(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  BuildBinaryOp(javascript()->BitwiseXor(language_mode()), iterator);
+}
+
+
+void BytecodeGraphBuilder::VisitBitwiseAnd(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  BuildBinaryOp(javascript()->BitwiseAnd(language_mode()), iterator);
+}
+
+
+void BytecodeGraphBuilder::VisitShiftLeft(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  BuildBinaryOp(javascript()->ShiftLeft(language_mode()), iterator);
+}
+
+
+void BytecodeGraphBuilder::VisitShiftRight(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  BuildBinaryOp(javascript()->ShiftRight(language_mode()), iterator);
+}
+
+
+void BytecodeGraphBuilder::VisitShiftRightLogical(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  BuildBinaryOp(javascript()->ShiftRightLogical(language_mode()), iterator);
 }
 
 
@@ -411,7 +513,13 @@ void BytecodeGraphBuilder::VisitTestInstanceOf(
 
 
 void BytecodeGraphBuilder::VisitToBoolean(
-    const interpreter::BytecodeArrayIterator& ToBoolean) {
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitToName(
+    const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }
 

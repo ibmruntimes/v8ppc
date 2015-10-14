@@ -88,6 +88,7 @@
 //           - OrderedHashSet
 //           - OrderedHashMap
 //         - Context
+//         - TypeFeedbackMetadata
 //         - TypeFeedbackVector
 //         - ScopeInfo
 //         - TransitionArray
@@ -859,6 +860,7 @@ class LookupIterator;
 class ObjectHashTable;
 class ObjectVisitor;
 class PropertyCell;
+class PropertyDescriptor;
 class SafepointEntry;
 class SharedFunctionInfo;
 class StringStream;
@@ -945,6 +947,7 @@ template <class C> inline bool Is(Object* obj);
   V(BindingsArray)                 \
   V(TransitionArray)               \
   V(LiteralsArray)                 \
+  V(TypeFeedbackMetadata)          \
   V(TypeFeedbackVector)            \
   V(DeoptimizationInputData)       \
   V(DeoptimizationOutputData)      \
@@ -1232,6 +1235,11 @@ class Object {
   MUST_USE_RESULT static MaybeHandle<Object> ReadAbsentProperty(
       Isolate* isolate, Handle<Object> receiver, Handle<Object> name,
       LanguageMode language_mode);
+  MUST_USE_RESULT static MaybeHandle<Object> CannotCreateProperty(
+      LookupIterator* it, Handle<Object> value, LanguageMode language_mode);
+  MUST_USE_RESULT static MaybeHandle<Object> CannotCreateProperty(
+      Isolate* isolate, Handle<Object> receiver, Handle<Object> name,
+      Handle<Object> value, LanguageMode language_mode);
   MUST_USE_RESULT static MaybeHandle<Object> WriteToReadOnlyProperty(
       LookupIterator* it, Handle<Object> value, LanguageMode language_mode);
   MUST_USE_RESULT static MaybeHandle<Object> WriteToReadOnlyProperty(
@@ -1247,6 +1255,9 @@ class Object {
       LanguageMode language_mode, StoreFromKeyed store_mode);
   MUST_USE_RESULT static inline MaybeHandle<Object> GetPropertyOrElement(
       Handle<Object> object, Handle<Name> name,
+      LanguageMode language_mode = SLOPPY);
+  MUST_USE_RESULT static inline MaybeHandle<Object> GetPropertyOrElement(
+      Handle<JSReceiver> holder, Handle<Name> name, Handle<Object> receiver,
       LanguageMode language_mode = SLOPPY);
   MUST_USE_RESULT static inline MaybeHandle<Object> GetProperty(
       Isolate* isolate, Handle<Object> object, const char* key,
@@ -1780,6 +1791,9 @@ enum AccessorComponent {
 enum KeyFilter { SKIP_SYMBOLS, INCLUDE_SYMBOLS };
 
 
+enum ShouldThrow { THROW_ON_ERROR, DONT_THROW };
+
+
 // JSReceiver includes types on which properties can be defined, i.e.,
 // JSObject and JSProxy.
 class JSReceiver: public HeapObject {
@@ -1815,6 +1829,35 @@ class JSReceiver: public HeapObject {
   MUST_USE_RESULT static MaybeHandle<Object> DeleteElement(
       Handle<JSReceiver> object, uint32_t index,
       LanguageMode language_mode = SLOPPY);
+
+  MUST_USE_RESULT static Object* DefineProperty(Isolate* isolate,
+                                                Handle<Object> object,
+                                                Handle<Object> name,
+                                                Handle<Object> attributes);
+  MUST_USE_RESULT static Object* DefineProperties(Isolate* isolate,
+                                                  Handle<Object> object,
+                                                  Handle<Object> properties);
+
+  // "virtual" dispatcher to the correct [[DefineOwnProperty]] implementation.
+  static bool DefineOwnProperty(Isolate* isolate, Handle<JSObject> object,
+                                Handle<Object> key, PropertyDescriptor* desc,
+                                ShouldThrow should_throw);
+
+  static bool OrdinaryDefineOwnProperty(Isolate* isolate,
+                                        Handle<JSObject> object,
+                                        Handle<Object> key,
+                                        PropertyDescriptor* desc,
+                                        ShouldThrow should_throw);
+  static bool OrdinaryDefineOwnProperty(LookupIterator* it,
+                                        PropertyDescriptor* desc,
+                                        ShouldThrow should_throw);
+
+  static bool GetOwnPropertyDescriptor(Isolate* isolate,
+                                       Handle<JSObject> object,
+                                       Handle<Object> key,
+                                       PropertyDescriptor* desc);
+  static bool GetOwnPropertyDescriptor(LookupIterator* it,
+                                       PropertyDescriptor* desc);
 
   // Tests for the fast common case for property enumeration.
   bool IsSimpleEnum();
@@ -2059,6 +2102,10 @@ class JSObject: public JSReceiver {
   // TODO(mstarzinger): Rename to SetAccessor().
   static MaybeHandle<Object> DefineAccessor(Handle<JSObject> object,
                                             Handle<Name> name,
+                                            Handle<Object> getter,
+                                            Handle<Object> setter,
+                                            PropertyAttributes attributes);
+  static MaybeHandle<Object> DefineAccessor(LookupIterator* it,
                                             Handle<Object> getter,
                                             Handle<Object> setter,
                                             PropertyAttributes attributes);
@@ -8439,6 +8486,11 @@ class Symbol: public Name {
   // be used to designate own properties of objects.
   DECL_BOOLEAN_ACCESSORS(is_private)
 
+  // [is_well_known_symbol]: Whether this is a spec-defined well-known symbol,
+  // or not. Well-known symbols do not throw when an access check fails during
+  // a load.
+  DECL_BOOLEAN_ACCESSORS(is_well_known_symbol)
+
   DECLARE_CAST(Symbol)
 
   // Dispatched behavior.
@@ -8456,6 +8508,7 @@ class Symbol: public Name {
 
  private:
   static const int kPrivateBit = 0;
+  static const int kWellKnownSymbolBit = 1;
 
   const char* PrivateSymbolToName() const;
 
@@ -10052,6 +10105,14 @@ class JSArray: public JSObject {
   // Set the content of the array to the content of storage.
   static inline void SetContent(Handle<JSArray> array,
                                 Handle<FixedArrayBase> storage);
+
+  static bool DefineOwnProperty(Isolate* isolate, Handle<JSArray> o,
+                                Handle<Object> name, PropertyDescriptor* desc,
+                                ShouldThrow should_throw);
+
+  static bool ArraySetLength(Isolate* isolate, Handle<JSArray> a,
+                             PropertyDescriptor* desc,
+                             ShouldThrow should_throw);
 
   DECLARE_CAST(JSArray)
 

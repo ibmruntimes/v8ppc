@@ -25,6 +25,9 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+// TODO(mythria): Remove this define after this flag is turned on globally
+#define V8_IMMINENT_DEPRECATION_WARNINGS
+
 #include <stdlib.h>
 
 #include "src/base/platform/platform.h"
@@ -620,7 +623,7 @@ UNINITIALIZED_TEST(NewSpaceGrowsToTargetCapacity) {
     // This test doesn't work if we start with a non-default new space
     // configuration.
     if (new_space->InitialTotalCapacity() == Page::kPageSize) {
-      CHECK(new_space->CommittedMemory() == new_space->InitialTotalCapacity());
+      CHECK_EQ(new_space->CommittedMemory(), new_space->InitialTotalCapacity());
 
       // Fill up the first (and only) page of the semi space.
       FillCurrentPage(new_space);
@@ -631,7 +634,7 @@ UNINITIALIZED_TEST(NewSpaceGrowsToTargetCapacity) {
       v8::internal::AllocationResult allocation =
           new_space->AllocateRawUnaligned(80);
       CHECK(!allocation.IsRetry());
-      CHECK(new_space->CommittedMemory() == 2 * Page::kPageSize);
+      CHECK_EQ(new_space->CommittedMemory(), 2 * Page::kPageSize);
 
       // Turn the allocation into a proper object so isolate teardown won't
       // crash.

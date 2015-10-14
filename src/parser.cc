@@ -1190,7 +1190,7 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info,
 
     if (shared_info->is_arrow()) {
       Scope* scope =
-          NewScope(scope_, ARROW_SCOPE, FunctionKind::kArrowFunction);
+          NewScope(scope_, FUNCTION_SCOPE, FunctionKind::kArrowFunction);
       scope->SetLanguageMode(shared_info->language_mode());
       scope->set_start_position(shared_info->start_position());
       ExpressionClassifier formals_classifier;
@@ -2114,6 +2114,7 @@ Variable* Parser::Declare(Declaration* declaration,
     var = new (zone()) Variable(declaration_scope, name, mode, kind,
                                 declaration->initialization(), kNotAssigned);
     var->AllocateTo(VariableLocation::LOOKUP, -1);
+    var->SetFromEval();
     resolve = true;
   }
 
@@ -3339,16 +3340,18 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
     Scope* inner_scope, bool is_const, ZoneList<const AstRawString*>* names,
     ForStatement* loop, Statement* init, Expression* cond, Statement* next,
     Statement* body, bool* ok) {
-  // ES6 13.6.3.4 specifies that on each loop iteration the let variables are
-  // copied into a new environment. After copying, the "next" statement of the
-  // loop is executed to update the loop variables. The loop condition is
-  // checked and the loop body is executed.
+  // ES6 13.7.4.8 specifies that on each loop iteration the let variables are
+  // copied into a new environment.  Moreover, the "next" statement must be
+  // evaluated not in the environment of the just completed iteration but in
+  // that of the upcoming one.  We achieve this with the following desugaring.
+  // Extra care is needed to preserve the completion value of the original loop.
   //
-  // We rewrite a for statement of the form
+  // We are given a for statement of the form
   //
   //  labels: for (let/const x = i; cond; next) body
   //
-  // into
+  // and rewrite it as follows.  Here we write {{ ... }} for init-blocks, ie.,
+  // blocks whose ignore_completion_value_ flag is set.
   //
   //  {
   //    let/const x = i;
@@ -3356,29 +3359,21 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
   //    first = 1;
   //    undefined;
   //    outer: for (;;) {
-  //      { // This block's only function is to ensure that the statements it
-  //        // contains do not affect the normal completion value. This is
-  //        // accomplished by setting its ignore_completion_value bit.
-  //        // No new lexical scope is introduced, so lexically scoped variables
-  //        // declared here will be scoped to the outer for loop.
-  //        let/const x = temp_x;
-  //        if (first == 1) {
-  //          first = 0;
-  //        } else {
-  //          next;
-  //        }
-  //        flag = 1;
-  //      }
+  //      let/const x = temp_x;
+  //      {{ if (first == 1) {
+  //           first = 0;
+  //         } else {
+  //           next;
+  //         }
+  //         flag = 1;
+  //         if (!cond) break;
+  //      }}
   //      labels: for (; flag == 1; flag = 0, temp_x = x) {
-  //        if (cond) {
-  //          body
-  //        } else {
-  //          break outer;
-  //        }
+  //        body
   //      }
-  //      if (flag == 1) {
-  //        break;
-  //      }
+  //      {{ if (flag == 1)  // Body used break.
+  //           break;
+  //      }}
   //    }
   //  }
 
@@ -3386,7 +3381,7 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
   Scope* for_scope = scope_;
   ZoneList<Variable*> temps(names->length(), zone());
 
-  Block* outer_block = factory()->NewBlock(NULL, names->length() + 3, false,
+  Block* outer_block = factory()->NewBlock(NULL, names->length() + 4, false,
                                            RelocInfo::kNoPosition);
 
   // Add statement: let/const x = i.
@@ -3443,7 +3438,7 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
   Block* inner_block =
       factory()->NewBlock(NULL, 3, false, RelocInfo::kNoPosition);
   Block* ignore_completion_block = factory()->NewBlock(
-      NULL, names->length() + 2, true, RelocInfo::kNoPosition);
+      NULL, names->length() + 3, true, RelocInfo::kNoPosition);
   ZoneList<Variable*> inner_vars(names->length(), zone());
   // For each let variable x:
   //    make statement: let/const x = temp_x.
@@ -3502,6 +3497,16 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
         factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
     ignore_completion_block->statements()->Add(assignment_statement, zone());
   }
+
+  // Make statement: if (!cond) break.
+  if (cond) {
+    Statement* stop =
+        factory()->NewBreakStatement(outer_loop, RelocInfo::kNoPosition);
+    Statement* noop = factory()->NewEmptyStatement(RelocInfo::kNoPosition);
+    ignore_completion_block->statements()->Add(
+        factory()->NewIfStatement(cond, noop, stop, cond->position()), zone());
+  }
+
   inner_block->statements()->Add(ignore_completion_block, zone());
   // Make cond expression for main loop: flag == 1.
   Expression* flag_cond = NULL;
@@ -3540,23 +3545,14 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
         compound_next, RelocInfo::kNoPosition);
   }
 
-  // Make statement: if (cond) { body; } else { break outer; }
-  Statement* body_or_stop = body;
-  if (cond) {
-    Statement* stop =
-        factory()->NewBreakStatement(outer_loop, RelocInfo::kNoPosition);
-    body_or_stop =
-        factory()->NewIfStatement(cond, body, stop, cond->position());
-  }
-
   // Make statement: labels: for (; flag == 1; flag = 0, temp_x = x)
   // Note that we re-use the original loop node, which retains its labels
   // and ensures that any break or continue statements in body point to
   // the right place.
-  loop->Initialize(NULL, flag_cond, compound_next_statement, body_or_stop);
+  loop->Initialize(NULL, flag_cond, compound_next_statement, body);
   inner_block->statements()->Add(loop, zone());
 
-  // Make statement: if (flag == 1) { break; }
+  // Make statement: {{if (flag == 1) break;}}
   {
     Expression* compare = NULL;
     // Make compare expresion: flag == 1.
@@ -3571,7 +3567,10 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
     Statement* empty = factory()->NewEmptyStatement(RelocInfo::kNoPosition);
     Statement* if_flag_break =
         factory()->NewIfStatement(compare, stop, empty, RelocInfo::kNoPosition);
-    inner_block->statements()->Add(if_flag_break, zone());
+    Block* ignore_completion_block =
+        factory()->NewBlock(NULL, 1, true, RelocInfo::kNoPosition);
+    ignore_completion_block->statements()->Add(if_flag_break, zone());
+    inner_block->statements()->Add(ignore_completion_block, zone());
   }
 
   inner_scope->set_end_position(scanner()->location().end_pos);
@@ -4718,12 +4717,9 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
     // NOTE: We create a proxy and resolve it here so that in the
     // future we can change the AST to only refer to VariableProxies
     // instead of Variables and Proxies as is the case now.
-    Token::Value fvar_init_op = Token::INIT_CONST_LEGACY;
-    bool use_strict_const = is_strict(scope_->language_mode()) ||
-                            (!allow_legacy_const() && allow_harmony_sloppy());
-    if (use_strict_const) {
-      fvar_init_op = Token::INIT_CONST;
-    }
+    const bool use_strict_const = is_strict(scope_->language_mode());
+    Token::Value fvar_init_op =
+        use_strict_const ? Token::INIT_CONST : Token::INIT_CONST_LEGACY;
     VariableMode fvar_mode = use_strict_const ? CONST : CONST_LEGACY;
     Variable* fvar = new (zone())
         Variable(scope_, function_name, fvar_mode, Variable::NORMAL,
@@ -4733,8 +4729,7 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
         proxy, fvar_mode, scope_, RelocInfo::kNoPosition);
     scope_->DeclareFunctionVar(fvar_declaration);
 
-    VariableProxy* fproxy = scope_->NewUnresolved(factory(), function_name);
-    fproxy->BindTo(fvar);
+    VariableProxy* fproxy = factory()->NewVariableProxy(fvar);
     result->Set(kFunctionNameAssignmentIndex,
                 factory()->NewExpressionStatement(
                     factory()->NewAssignment(fvar_init_op, fproxy,

@@ -225,7 +225,11 @@ std::ostream& Bytecodes::Decode(std::ostream& os, const uint8_t* bytecode_start,
         break;
       case interpreter::OperandType::kReg8: {
         Register reg = Register::FromOperand(*operand_start);
-        if (reg.is_parameter()) {
+        if (reg.is_function_context()) {
+          os << "<context>";
+        } else if (reg.is_function_closure()) {
+          os << "<closure>";
+        } else if (reg.is_parameter()) {
           int parameter_index = reg.ToParameterIndex(parameter_count);
           if (parameter_index == 0) {
             os << "<this>";
@@ -266,6 +270,10 @@ std::ostream& operator<<(std::ostream& os, const OperandSize& operand_size) {
 
 static const int kLastParamRegisterIndex =
     -InterpreterFrameConstants::kLastParamFromRegisterPointer / kPointerSize;
+static const int kFunctionClosureRegisterIndex =
+    -InterpreterFrameConstants::kFunctionFromRegisterPointer / kPointerSize;
+static const int kFunctionContextRegisterIndex =
+    -InterpreterFrameConstants::kContextFromRegisterPointer / kPointerSize;
 
 
 // Registers occupy range 0-127 in 8-bit value leaving 128 unused values.
@@ -291,6 +299,26 @@ int Register::ToParameterIndex(int parameter_count) const {
 }
 
 
+Register Register::function_closure() {
+  return Register(kFunctionClosureRegisterIndex);
+}
+
+
+bool Register::is_function_closure() const {
+  return index() == kFunctionClosureRegisterIndex;
+}
+
+
+Register Register::function_context() {
+  return Register(kFunctionContextRegisterIndex);
+}
+
+
+bool Register::is_function_context() const {
+  return index() == kFunctionContextRegisterIndex;
+}
+
+
 int Register::MaxParameterIndex() { return kMaxParameterIndex; }
 
 
@@ -299,6 +327,24 @@ uint8_t Register::ToOperand() const { return static_cast<uint8_t>(-index_); }
 
 Register Register::FromOperand(uint8_t operand) {
   return Register(-static_cast<int8_t>(operand));
+}
+
+
+bool Register::AreContiguous(Register reg1, Register reg2, Register reg3,
+                             Register reg4, Register reg5) {
+  if (reg1.index() + 1 != reg2.index()) {
+    return false;
+  }
+  if (reg3.is_valid() && reg2.index() + 1 != reg3.index()) {
+    return false;
+  }
+  if (reg4.is_valid() && reg3.index() + 1 != reg4.index()) {
+    return false;
+  }
+  if (reg5.is_valid() && reg4.index() + 1 != reg5.index()) {
+    return false;
+  }
+  return true;
 }
 
 }  // namespace interpreter

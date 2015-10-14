@@ -10,11 +10,14 @@
 #include "src/compiler/all-nodes.h"
 #include "src/compiler/ast-graph-builder.h"
 #include "src/compiler/common-operator.h"
+#include "src/compiler/common-operator-reducer.h"
+#include "src/compiler/dead-code-elimination.h"
+#include "src/compiler/graph-reducer.h"
+#include "src/compiler/js-global-specialization.h"
 #include "src/compiler/js-operator.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
 #include "src/compiler/operator-properties.h"
-#include "src/full-codegen/full-codegen.h"
 #include "src/isolate-inl.h"
 #include "src/parser.h"
 #include "src/rewriter.h"
@@ -246,11 +249,23 @@ Reduction JSInliner::Reduce(Node* node) {
 
   JSCallFunctionAccessor call(node);
   HeapObjectMatcher match(call.jsfunction());
-  if (!match.HasValue()) return NoChange();
-
-  if (!match.Value()->IsJSFunction()) return NoChange();
+  if (!match.HasValue() || !match.Value()->IsJSFunction()) return NoChange();
   Handle<JSFunction> function = Handle<JSFunction>::cast(match.Value());
-  if (mode_ == kRestrictedInlining && !function->shared()->force_inline()) {
+
+  return ReduceJSCallFunction(node, function);
+}
+
+
+Reduction JSInliner::ReduceJSCallFunction(Node* node,
+                                          Handle<JSFunction> function) {
+  DCHECK_EQ(IrOpcode::kJSCallFunction, node->opcode());
+  JSCallFunctionAccessor call(node);
+
+  if (!function->shared()->IsInlineable()) {
+    // Function must be inlineable.
+    TRACE("Not inlining %s into %s because callee is not inlineable\n",
+          function->shared()->DebugName()->ToCString().get(),
+          info_->shared_info()->DebugName()->ToCString().get());
     return NoChange();
   }
 
@@ -298,7 +313,15 @@ Reduction JSInliner::Reduce(Node* node) {
   Zone zone;
   ParseInfo parse_info(&zone, function);
   CompilationInfo info(&parse_info);
-  if (info_->is_deoptimization_enabled()) info.MarkAsDeoptimizationEnabled();
+  if (info_->is_deoptimization_enabled()) {
+    info.MarkAsDeoptimizationEnabled();
+  }
+  if (info_->is_native_context_specializing()) {
+    info.MarkAsNativeContextSpecializing();
+  }
+  if (info_->is_typing_enabled()) {
+    info.MarkAsTypingEnabled();
+  }
 
   if (!Compiler::ParseAndAnalyze(info.parse_info())) {
     TRACE("Not inlining %s into %s because parsing failed\n",
@@ -326,6 +349,30 @@ Reduction JSInliner::Reduce(Node* node) {
                   jsgraph_->javascript(), jsgraph_->machine());
   AstGraphBuilder graph_builder(local_zone_, &info, &jsgraph);
   graph_builder.CreateGraph(false);
+
+  // TODO(mstarzinger): Unify this with the Pipeline once JSInliner refactoring
+  // starts.
+  if (info.is_native_context_specializing()) {
+    GraphReducer graph_reducer(local_zone_, &graph, jsgraph.Dead());
+    DeadCodeElimination dead_code_elimination(&graph_reducer, &graph,
+                                              jsgraph.common());
+    CommonOperatorReducer common_reducer(&graph_reducer, &graph,
+                                         jsgraph.common(), jsgraph.machine());
+    JSGlobalSpecialization::Flags flags = JSGlobalSpecialization::kNoFlags;
+    if (info.is_deoptimization_enabled()) {
+      flags |= JSGlobalSpecialization::kDeoptimizationEnabled;
+    }
+    if (info.is_typing_enabled()) {
+      flags |= JSGlobalSpecialization::kTypingEnabled;
+    }
+    JSGlobalSpecialization global_specialization(
+        &graph_reducer, &jsgraph, flags,
+        handle(info.global_object(), info.isolate()), info_->dependencies());
+    graph_reducer.AddReducer(&dead_code_elimination);
+    graph_reducer.AddReducer(&common_reducer);
+    graph_reducer.AddReducer(&global_specialization);
+    graph_reducer.ReduceGraph();
+  }
 
   // The inlinee specializes to the context from the JSFunction object.
   // TODO(turbofan): We might want to load the context from the JSFunction at

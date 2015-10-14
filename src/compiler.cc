@@ -245,13 +245,15 @@ bool CompilationInfo::ShouldSelfOptimize() {
 
 void CompilationInfo::EnsureFeedbackVector() {
   if (feedback_vector_.is_null()) {
-    feedback_vector_ =
-        TypeFeedbackVector::New(isolate(), literal()->feedback_vector_spec());
+    Handle<TypeFeedbackMetadata> feedback_metadata =
+        TypeFeedbackMetadata::New(isolate(), literal()->feedback_vector_spec());
+    feedback_vector_ = TypeFeedbackVector::New(isolate(), feedback_metadata);
   }
 
   // It's very important that recompiles do not alter the structure of the
   // type feedback vector.
-  CHECK(!feedback_vector_->SpecDiffersFrom(literal()->feedback_vector_spec()));
+  CHECK(!feedback_vector_->metadata()->SpecDiffersFrom(
+      literal()->feedback_vector_spec()));
 }
 
 
@@ -437,6 +439,9 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
     if (info()->shared_info()->asm_function()) {
       if (info()->osr_frame()) info()->MarkAsFrameSpecializing();
       info()->MarkAsFunctionContextSpecializing();
+    } else if (info()->has_global_object() &&
+               FLAG_native_context_specialization) {
+      info()->MarkAsNativeContextSpecializing();
     } else if (FLAG_turbo_type_feedback) {
       info()->MarkAsTypeFeedbackEnabled();
       info()->EnsureFeedbackVector();
@@ -689,6 +694,24 @@ static void RecordFunctionCompilation(Logger::LogEventsAndTags tag,
 }
 
 
+// Checks whether top level functions should be passed by {raw_filter}.
+// TODO(rmcilroy): Remove filtering once ignition can handle test262 harness.
+static bool TopLevelFunctionPassesFilter(const char* raw_filter) {
+  Vector<const char> filter = CStrVector(raw_filter);
+  return (filter.length() == 0) || (filter.length() == 1 && filter[0] == '*');
+}
+
+
+// Checks whether the passed {raw_filter} is a prefix of the given scripts name.
+// TODO(rmcilroy): Remove filtering once ignition can handle test262 harness.
+static bool ScriptPassesFilter(const char* raw_filter, Handle<Script> script) {
+  Vector<const char> filter = CStrVector(raw_filter);
+  if (!script->name()->IsString()) return filter.length() == 0;
+  String* name = String::cast(script->name());
+  return name->IsUtf8EqualTo(filter, true);
+}
+
+
 static bool CompileUnoptimizedCode(CompilationInfo* info) {
   DCHECK(AllowCompilation::IsAllowed(info->isolate()));
   if (!Compiler::Analyze(info->parse_info()) ||
@@ -726,7 +749,8 @@ MUST_USE_RESULT static MaybeHandle<Code> GetUnoptimizedCodeCommon(
   SetExpectedNofPropertiesFromEstimate(shared, lit->expected_property_count());
   MaybeDisableOptimization(shared, lit->dont_optimize_reason());
 
-  if (FLAG_ignition && info->closure()->PassesFilter(FLAG_ignition_filter)) {
+  if (FLAG_ignition && info->closure()->PassesFilter(FLAG_ignition_filter) &&
+      ScriptPassesFilter(FLAG_ignition_script_filter, info->script())) {
     // Compile bytecode for the interpreter.
     if (!GenerateBytecode(info)) return MaybeHandle<Code>();
   } else {
@@ -746,6 +770,10 @@ MUST_USE_RESULT static MaybeHandle<Code> GetUnoptimizedCodeCommon(
   // Update the code and feedback vector for the shared function info.
   shared->ReplaceCode(*info->code());
   shared->set_feedback_vector(*info->feedback_vector());
+  if (info->has_bytecode_array()) {
+    DCHECK(shared->function_data()->IsUndefined());
+    shared->set_function_data(*info->bytecode_array());
+  }
 
   return info->code();
 }
@@ -772,7 +800,8 @@ static void InsertCodeIntoOptimizedCodeMap(CompilationInfo* info) {
   Handle<Code> code = info->code();
   if (code->kind() != Code::OPTIMIZED_FUNCTION) return;  // Nothing to do.
 
-  // Context specialization folds-in the context, so no sharing can occur.
+  // Function context specialization folds-in the function context,
+  // so no sharing can occur.
   if (info->is_function_context_specializing()) return;
   // Frame specialization implies function context specialization.
   DCHECK(!info->is_frame_specializing());
@@ -782,19 +811,18 @@ static void InsertCodeIntoOptimizedCodeMap(CompilationInfo* info) {
   if (function->shared()->bound()) return;
 
   // Cache optimized context-specific code.
-  if (FLAG_cache_optimized_code) {
-    Handle<SharedFunctionInfo> shared(function->shared());
-    Handle<LiteralsArray> literals(function->literals());
-    Handle<Context> native_context(function->context()->native_context());
-    SharedFunctionInfo::AddToOptimizedCodeMap(shared, native_context, code,
-                                              literals, info->osr_ast_id());
-  }
+  Handle<SharedFunctionInfo> shared(function->shared());
+  Handle<LiteralsArray> literals(function->literals());
+  Handle<Context> native_context(function->context()->native_context());
+  SharedFunctionInfo::AddToOptimizedCodeMap(shared, native_context, code,
+                                            literals, info->osr_ast_id());
 
-  // Do not cache context-independent code compiled for OSR.
+  // Do not cache (native) context-independent code compiled for OSR.
   if (code->is_turbofanned() && info->is_osr()) return;
 
-  // Cache optimized context-independent code.
-  if (FLAG_turbo_cache_shared_code && code->is_turbofanned()) {
+  // Cache optimized (native) context-independent code.
+  if (FLAG_turbo_cache_shared_code && code->is_turbofanned() &&
+      !info->is_native_context_specializing()) {
     DCHECK(!info->is_function_context_specializing());
     DCHECK(info->osr_ast_id().IsNone());
     Handle<SharedFunctionInfo> shared(function->shared());
@@ -1205,8 +1233,15 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
     HistogramTimerScope timer(rate);
 
     // Compile the code.
-    if (!CompileUnoptimizedCode(info)) {
-      return Handle<SharedFunctionInfo>::null();
+    if (FLAG_ignition && TopLevelFunctionPassesFilter(FLAG_ignition_filter) &&
+        ScriptPassesFilter(FLAG_ignition_script_filter, script)) {
+      if (!GenerateBytecode(info)) {
+        return Handle<SharedFunctionInfo>::null();
+      }
+    } else {
+      if (!CompileUnoptimizedCode(info)) {
+        return Handle<SharedFunctionInfo>::null();
+      }
     }
 
     // Allocate function.
@@ -1216,6 +1251,10 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
         info->code(),
         ScopeInfo::Create(info->isolate(), info->zone(), info->scope()),
         info->feedback_vector());
+    if (info->has_bytecode_array()) {
+      DCHECK(result->function_data()->IsUndefined());
+      result->set_function_data(*info->bytecode_array());
+    }
 
     DCHECK_EQ(RelocInfo::kNoPosition, lit->function_token_position());
     SharedFunctionInfo::InitFromFunctionLiteral(result, lit);
@@ -1226,9 +1265,10 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
       result->set_allows_lazy_compilation_without_context(false);
     }
 
-    Handle<String> script_name = script->name()->IsString()
-        ? Handle<String>(String::cast(script->name()))
-        : isolate->factory()->empty_string();
+    Handle<String> script_name =
+        script->name()->IsString()
+            ? Handle<String>(String::cast(script->name()))
+            : isolate->factory()->empty_string();
     Logger::LogEventsAndTags log_tag = info->is_eval()
         ? Logger::EVAL_TAG
         : Logger::ToNativeByScript(Logger::SCRIPT_TAG, *script);

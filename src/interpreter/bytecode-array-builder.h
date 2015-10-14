@@ -36,9 +36,16 @@ class BytecodeArrayBuilder {
   void set_locals_count(int number_of_locals);
   int locals_count() const;
 
-  Register Parameter(int parameter_index);
+  // Set number of contexts required for bytecode array.
+  void set_context_count(int number_of_contexts);
+  int context_count() const;
 
-  // Constant loads to accumulator.
+  Register first_context_register() const;
+  Register last_context_register() const;
+
+  Register Parameter(int parameter_index) const;
+
+  // Constant loads to the accumulator.
   BytecodeArrayBuilder& LoadLiteral(v8::internal::Smi* value);
   BytecodeArrayBuilder& LoadLiteral(Handle<Object> object);
   BytecodeArrayBuilder& LoadUndefined();
@@ -47,8 +54,12 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& LoadTrue();
   BytecodeArrayBuilder& LoadFalse();
 
-  // Global loads to accumulator.
+  // Global loads to accumulator and stores from the accumulator.
   BytecodeArrayBuilder& LoadGlobal(int slot_index);
+  BytecodeArrayBuilder& StoreGlobal(int slot_index, LanguageMode language_mode);
+
+  // Load the object at |slot_index| in |context| into the accumulator.
+  BytecodeArrayBuilder& LoadContextSlot(Register context, int slot_index);
 
   // Register-accumulator transfers.
   BytecodeArrayBuilder& LoadAccumulatorWithRegister(Register reg);
@@ -68,6 +79,20 @@ class BytecodeArrayBuilder {
                                            int feedback_slot,
                                            LanguageMode language_mode);
 
+  // Create a new closure for the SharedFunctionInfo in the accumulator.
+  BytecodeArrayBuilder& CreateClosure(PretenureFlag tenured);
+
+  // Literals creation.  Constant elements should be in the accumulator.
+  BytecodeArrayBuilder& CreateArrayLiteral(int literal_index, int flags);
+  BytecodeArrayBuilder& CreateObjectLiteral(int literal_index, int flags);
+
+  // Push the context in accumulator as the new context, and store in register
+  // |context|.
+  BytecodeArrayBuilder& PushContext(Register context);
+
+  // Pop the current context and replace with |context|.
+  BytecodeArrayBuilder& PopContext(Register context);
+
   // Call a JS function. The JSFunction or Callable to be called should be in
   // |callable|, the receiver should be in |receiver| and all subsequent
   // arguments should be in registers <receiver + 1> to
@@ -82,7 +107,8 @@ class BytecodeArrayBuilder {
                                     Register first_arg, size_t arg_count);
 
   // Operators (register == lhs, accumulator = rhs).
-  BytecodeArrayBuilder& BinaryOperation(Token::Value binop, Register reg);
+  BytecodeArrayBuilder& BinaryOperation(Token::Value binop, Register reg,
+                                        Strength strength);
 
   // Unary Operators.
   BytecodeArrayBuilder& LogicalNot();
@@ -90,10 +116,11 @@ class BytecodeArrayBuilder {
 
   // Tests.
   BytecodeArrayBuilder& CompareOperation(Token::Value op, Register reg,
-                                         LanguageMode language_mode);
+                                         Strength strength);
 
   // Casts
   BytecodeArrayBuilder& CastAccumulatorToBoolean();
+  BytecodeArrayBuilder& CastAccumulatorToName();
 
   // Flow Control.
   BytecodeArrayBuilder& Bind(BytecodeLabel* label);
@@ -117,6 +144,10 @@ class BytecodeArrayBuilder {
 
   static Bytecode BytecodeForBinaryOperation(Token::Value op);
   static Bytecode BytecodeForCompareOperation(Token::Value op);
+  static Bytecode BytecodeForLoadIC(LanguageMode language_mode);
+  static Bytecode BytecodeForKeyedLoadIC(LanguageMode language_mode);
+  static Bytecode BytecodeForStoreIC(LanguageMode language_mode);
+  static Bytecode BytecodeForKeyedStoreIC(LanguageMode language_mode);
 
   static bool FitsInIdx8Operand(int value);
   static bool FitsInIdx8Operand(size_t value);
@@ -163,6 +194,7 @@ class BytecodeArrayBuilder {
 
   int parameter_count_;
   int local_register_count_;
+  int context_register_count_;
   int temporary_register_count_;
   int temporary_register_next_;
 

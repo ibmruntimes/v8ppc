@@ -35,6 +35,8 @@ InterpreterAssembler::InterpreterAssembler(Isolate* isolate, Zone* zone,
       end_nodes_(zone),
       accumulator_(
           raw_assembler_->Parameter(Linkage::kInterpreterAccumulatorParameter)),
+      context_(
+          raw_assembler_->Parameter(Linkage::kInterpreterContextParameter)),
       code_generated_(false) {}
 
 
@@ -66,19 +68,16 @@ Handle<Code> InterpreterAssembler::GenerateCode() {
 }
 
 
-Node* InterpreterAssembler::GetAccumulator() {
-  return accumulator_;
-}
+Node* InterpreterAssembler::GetAccumulator() { return accumulator_; }
 
 
-void InterpreterAssembler::SetAccumulator(Node* value) {
-  accumulator_ = value;
-}
+void InterpreterAssembler::SetAccumulator(Node* value) { accumulator_ = value; }
 
 
-Node* InterpreterAssembler::ContextTaggedPointer() {
-  return raw_assembler_->Parameter(Linkage::kInterpreterContextParameter);
-}
+Node* InterpreterAssembler::GetContext() { return context_; }
+
+
+void InterpreterAssembler::SetContext(Node* value) { context_ = value; }
 
 
 Node* InterpreterAssembler::RegisterFileRawPointer() {
@@ -109,6 +108,13 @@ Node* InterpreterAssembler::RegisterFrameOffset(Node* index) {
 
 Node* InterpreterAssembler::RegisterLocation(Node* reg_index) {
   return IntPtrAdd(RegisterFileRawPointer(), RegisterFrameOffset(reg_index));
+}
+
+
+Node* InterpreterAssembler::LoadRegister(interpreter::Register reg) {
+  return raw_assembler_->Load(
+      kMachAnyTagged, RegisterFileRawPointer(),
+      RegisterFrameOffset(Int32Constant(reg.ToOperand())));
 }
 
 
@@ -291,14 +297,11 @@ Node* InterpreterAssembler::LoadObjectField(Node* object, int offset) {
 }
 
 
-Node* InterpreterAssembler::LoadContextSlot(Node* context, int slot_index) {
-  return raw_assembler_->Load(kMachAnyTagged, context,
-                              IntPtrConstant(Context::SlotOffset(slot_index)));
-}
-
-
-Node* InterpreterAssembler::LoadContextSlot(int slot_index) {
-  return LoadContextSlot(ContextTaggedPointer(), slot_index);
+Node* InterpreterAssembler::LoadContextSlot(Node* context, Node* slot_index) {
+  Node* offset =
+      IntPtrAdd(WordShl(slot_index, kPointerSizeLog2),
+                Int32Constant(Context::kHeaderSize - kHeapObjectTag));
+  return raw_assembler_->Load(kMachAnyTagged, context, offset);
 }
 
 
@@ -314,8 +317,7 @@ Node* InterpreterAssembler::LoadTypeFeedbackVector() {
 }
 
 
-Node* InterpreterAssembler::CallN(CallDescriptor* descriptor,
-                                  Node* code_target,
+Node* InterpreterAssembler::CallN(CallDescriptor* descriptor, Node* code_target,
                                   Node** args) {
   Node* stack_pointer_before_call = nullptr;
   if (FLAG_debug_code) {
@@ -343,7 +345,7 @@ Node* InterpreterAssembler::CallJS(Node* function, Node* first_arg,
   args[0] = arg_count;
   args[1] = first_arg;
   args[2] = function;
-  args[3] = ContextTaggedPointer();
+  args[3] = GetContext();
 
   return CallN(descriptor, code_target, args);
 }
@@ -359,13 +361,25 @@ Node* InterpreterAssembler::CallIC(CallInterfaceDescriptor descriptor,
 
 Node* InterpreterAssembler::CallIC(CallInterfaceDescriptor descriptor,
                                    Node* target, Node* arg1, Node* arg2,
+                                   Node* arg3) {
+  Node** args = zone()->NewArray<Node*>(4);
+  args[0] = arg1;
+  args[1] = arg2;
+  args[2] = arg3;
+  args[3] = GetContext();
+  return CallIC(descriptor, target, args);
+}
+
+
+Node* InterpreterAssembler::CallIC(CallInterfaceDescriptor descriptor,
+                                   Node* target, Node* arg1, Node* arg2,
                                    Node* arg3, Node* arg4) {
   Node** args = zone()->NewArray<Node*>(5);
   args[0] = arg1;
   args[1] = arg2;
   args[2] = arg3;
   args[3] = arg4;
-  args[4] = ContextTaggedPointer();
+  args[4] = GetContext();
   return CallIC(descriptor, target, args);
 }
 
@@ -379,7 +393,7 @@ Node* InterpreterAssembler::CallIC(CallInterfaceDescriptor descriptor,
   args[2] = arg3;
   args[3] = arg4;
   args[4] = arg5;
-  args[5] = ContextTaggedPointer();
+  args[5] = GetContext();
   return CallIC(descriptor, target, args);
 }
 
@@ -405,7 +419,7 @@ Node* InterpreterAssembler::CallRuntime(Node* function_id, Node* first_arg,
   args[0] = arg_count;
   args[1] = first_arg;
   args[2] = function_entry;
-  args[3] = ContextTaggedPointer();
+  args[3] = GetContext();
 
   return CallN(descriptor, code_target, args);
 }
@@ -413,15 +427,21 @@ Node* InterpreterAssembler::CallRuntime(Node* function_id, Node* first_arg,
 
 Node* InterpreterAssembler::CallRuntime(Runtime::FunctionId function_id,
                                         Node* arg1) {
-  return raw_assembler_->CallRuntime1(function_id, arg1,
-                                      ContextTaggedPointer());
+  return raw_assembler_->CallRuntime1(function_id, arg1, GetContext());
 }
 
 
 Node* InterpreterAssembler::CallRuntime(Runtime::FunctionId function_id,
                                         Node* arg1, Node* arg2) {
-  return raw_assembler_->CallRuntime2(function_id, arg1, arg2,
-                                      ContextTaggedPointer());
+  return raw_assembler_->CallRuntime2(function_id, arg1, arg2, GetContext());
+}
+
+
+Node* InterpreterAssembler::CallRuntime(Runtime::FunctionId function_id,
+                                        Node* arg1, Node* arg2, Node* arg3,
+                                        Node* arg4) {
+  return raw_assembler_->CallRuntime4(function_id, arg1, arg2, arg3, arg4,
+                                      GetContext());
 }
 
 
@@ -440,7 +460,7 @@ void InterpreterAssembler::Return() {
                    BytecodeOffset(),
                    BytecodeArrayTaggedPointer(),
                    DispatchTableRawPointer(),
-                   ContextTaggedPointer() };
+                   GetContext() };
   Node* tail_call = raw_assembler_->TailCallN(
       call_descriptor(), exit_trampoline_code_object, args);
   // This should always be the end node.
@@ -500,7 +520,7 @@ void InterpreterAssembler::DispatchTo(Node* new_bytecode_offset) {
                    new_bytecode_offset,
                    BytecodeArrayTaggedPointer(),
                    DispatchTableRawPointer(),
-                   ContextTaggedPointer() };
+                   GetContext() };
   Node* tail_call =
       raw_assembler_->TailCallN(call_descriptor(), target_code_object, args);
   // This should always be the end node.
@@ -508,8 +528,8 @@ void InterpreterAssembler::DispatchTo(Node* new_bytecode_offset) {
 }
 
 
-void InterpreterAssembler::AbortIfWordNotEqual(
-    Node* lhs, Node* rhs, BailoutReason bailout_reason) {
+void InterpreterAssembler::AbortIfWordNotEqual(Node* lhs, Node* rhs,
+                                               BailoutReason bailout_reason) {
   RawMachineAssembler::Label match, no_match;
   Node* condition = raw_assembler_->WordEqual(lhs, rhs);
   raw_assembler_->Branch(condition, &match, &no_match);

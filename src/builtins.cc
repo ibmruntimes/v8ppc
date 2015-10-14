@@ -1444,6 +1444,116 @@ BUILTIN(ArrayConcat) {
 }
 
 
+// ES6 section 26.1.4 Reflect.deleteProperty
+BUILTIN(ReflectDeleteProperty) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(3, args.length());
+  Handle<Object> target = args.at<Object>(1);
+  Handle<Object> key = args.at<Object>(2);
+
+  if (!target->IsJSReceiver()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kCalledOnNonObject,
+                              isolate->factory()->NewStringFromAsciiChecked(
+                                  "Reflect.deleteProperty")));
+  }
+
+  Handle<Name> name;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, name,
+                                     Object::ToName(isolate, key));
+
+  Handle<Object> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result, JSReceiver::DeletePropertyOrElement(
+                           Handle<JSReceiver>::cast(target), name));
+
+  return *result;
+}
+
+
+// ES6 section 26.1.6 Reflect.get
+BUILTIN(ReflectGet) {
+  HandleScope scope(isolate);
+  Handle<Object> undef = isolate->factory()->undefined_value();
+  Handle<Object> target = args.length() > 1 ? args.at<Object>(1) : undef;
+  Handle<Object> key = args.length() > 2 ? args.at<Object>(2) : undef;
+  Handle<Object> receiver = args.length() > 3 ? args.at<Object>(3) : target;
+
+  if (!target->IsJSReceiver()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kCalledOnNonObject,
+                              isolate->factory()->NewStringFromAsciiChecked(
+                                  "Reflect.get")));
+  }
+
+  Handle<Name> name;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, name,
+                                     Object::ToName(isolate, key));
+
+  Handle<Object> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result, Object::GetPropertyOrElement(
+          Handle<JSReceiver>::cast(target), name, receiver));
+
+  return *result;
+}
+
+
+// ES6 section 26.1.9 Reflect.has
+BUILTIN(ReflectHas) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(3, args.length());
+  Handle<Object> target = args.at<Object>(1);
+  Handle<Object> key = args.at<Object>(2);
+
+  if (!target->IsJSReceiver()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kCalledOnNonObject,
+                              isolate->factory()->NewStringFromAsciiChecked(
+                                  "Reflect.has")));
+  }
+
+  Handle<Name> name;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, name,
+                                     Object::ToName(isolate, key));
+
+  Maybe<bool> maybe =
+      JSReceiver::HasProperty(Handle<JSReceiver>::cast(target), name);
+  if (!maybe.IsJust()) return isolate->heap()->exception();
+  return *isolate->factory()->ToBoolean(maybe.FromJust());
+}
+
+
+// ES6 section 26.1.10 Reflect.isExtensible
+BUILTIN(ReflectIsExtensible) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  Handle<Object> target = args.at<Object>(1);
+
+  if (!target->IsJSReceiver()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kCalledOnNonObject,
+                              isolate->factory()->NewStringFromAsciiChecked(
+                                  "Reflect.isExtensible")));
+  }
+
+  // TODO(neis): For now, we ignore proxies.  Once proxies are fully
+  // implemented, do something like the following:
+  /*
+  Maybe<bool> maybe = JSReceiver::IsExtensible(
+      Handle<JSReceiver>::cast(target));
+  if (!maybe.IsJust()) return isolate->heap()->exception();
+  return *isolate->factory()->ToBoolean(maybe.FromJust());
+  */
+
+  if (target->IsJSObject()) {
+    return *isolate->factory()->ToBoolean(
+        JSObject::IsExtensible(Handle<JSObject>::cast(target)));
+  }
+  return *isolate->factory()->false_value();
+}
+
+
 // ES6 section 20.3.4.45 Date.prototype [ @@toPrimitive ] ( hint )
 BUILTIN(DateToPrimitive) {
   HandleScope scope(isolate);
@@ -1536,7 +1646,7 @@ MUST_USE_RESULT static MaybeHandle<Object> HandleApiCallHelper(
     Handle<Object> receiver(&args[0]);
     if (receiver->IsJSObject() && receiver->IsAccessCheckNeeded()) {
       Handle<JSObject> js_receiver = Handle<JSObject>::cast(receiver);
-      if (!isolate->MayAccess(js_receiver)) {
+      if (!isolate->MayAccess(handle(isolate->context()), js_receiver)) {
         isolate->ReportFailedAccessCheck(js_receiver);
         RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
       }

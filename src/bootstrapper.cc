@@ -1811,6 +1811,7 @@ void Bootstrapper::ExportFromRuntime(Isolate* isolate,
   JSObject::AddProperty(container, NAME##_name, isolate->factory()->NAME(), \
                         NONE);
   PUBLIC_SYMBOL_LIST(EXPORT_PUBLIC_SYMBOL)
+  WELL_KNOWN_SYMBOL_LIST(EXPORT_PUBLIC_SYMBOL)
 #undef EXPORT_PUBLIC_SYMBOL
 
   {
@@ -1879,6 +1880,7 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_concat_spreadable)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexps)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_unicode_regexps)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_tostring)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_completion)
 
 
 void Genesis::InitializeGlobal_harmony_tolength() {
@@ -1890,6 +1892,20 @@ void Genesis::InitializeGlobal_harmony_tolength() {
 }
 
 
+static void SimpleInstallFunction(Handle<JSObject>& base, const char* name,
+                                  Builtins::Name call, int len, bool adapt) {
+  Handle<JSFunction> fun =
+      InstallFunction(base, name, JS_OBJECT_TYPE, JSObject::kHeaderSize,
+                      MaybeHandle<JSObject>(), call);
+  if (adapt) {
+    fun->shared()->set_internal_formal_parameter_count(len);
+  } else {
+    fun->shared()->DontAdaptArguments();
+  }
+  fun->shared()->set_length(len);
+}
+
+
 void Genesis::InitializeGlobal_harmony_reflect() {
   if (!FLAG_harmony_reflect) return;
 
@@ -1897,11 +1913,19 @@ void Genesis::InitializeGlobal_harmony_reflect() {
       native_context()->global_object()));
   Handle<String> reflect_string =
       factory()->NewStringFromStaticChars("Reflect");
-  Handle<Object> reflect =
+  Handle<JSObject> reflect =
       factory()->NewJSObject(isolate()->object_function(), TENURED);
   JSObject::AddProperty(global, reflect_string, reflect, DONT_ENUM);
-}
 
+  SimpleInstallFunction(reflect, "deleteProperty",
+                        Builtins::kReflectDeleteProperty, 2, true);
+  SimpleInstallFunction(reflect, "get",
+                        Builtins::kReflectGet, 3, false);
+  SimpleInstallFunction(reflect, "has",
+                        Builtins::kReflectHas, 2, true);
+  SimpleInstallFunction(reflect, "isExtensible",
+                        Builtins::kReflectIsExtensible, 1, true);
+}
 
 
 void Genesis::InitializeGlobal_harmony_sharedarraybuffer() {
@@ -2587,6 +2611,7 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_simd_natives[] = {"native harmony-simd.js",
                                                nullptr};
   static const char* harmony_tolength_natives[] = {nullptr};
+  static const char* harmony_completion_natives[] = {nullptr};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {

@@ -165,6 +165,10 @@ class Bitmap {
     return index >> kBitsPerCellLog2;
   }
 
+  V8_INLINE static uint32_t IndexInCell(uint32_t index) {
+    return index & kBitIndexMask;
+  }
+
   INLINE(static uint32_t CellToIndex(uint32_t index)) {
     return index << kBitsPerCellLog2;
   }
@@ -184,7 +188,7 @@ class Bitmap {
   }
 
   inline MarkBit MarkBitFromIndex(uint32_t index) {
-    MarkBit::CellType mask = 1 << (index & kBitIndexMask);
+    MarkBit::CellType mask = 1u << IndexInCell(index);
     MarkBit::CellType* cell = this->cells() + (index >> kBitsPerCellLog2);
     return MarkBit(cell, mask);
   }
@@ -255,6 +259,23 @@ class Bitmap {
       }
     }
     return true;
+  }
+
+  // Clears all bits starting from {cell_base_index} up to and excluding
+  // {index}. Note that {cell_base_index} is required to be cell aligned.
+  void ClearRange(uint32_t cell_base_index, uint32_t index) {
+    DCHECK_EQ(IndexInCell(cell_base_index), 0u);
+    DCHECK_GE(index, cell_base_index);
+    uint32_t start_cell_index = IndexToCell(cell_base_index);
+    uint32_t end_cell_index = IndexToCell(index);
+    DCHECK_GE(end_cell_index, start_cell_index);
+    // Clear all cells till the cell containing the last index.
+    for (uint32_t i = start_cell_index; i < end_cell_index; i++) {
+      cells()[i] = 0;
+    }
+    // Clear all bits in the last cell till the last bit before index.
+    uint32_t clear_mask = ~((1u << IndexInCell(index)) - 1);
+    cells()[end_cell_index] &= clear_mask;
   }
 };
 
@@ -908,7 +929,11 @@ class LargePage : public MemoryChunk {
 class Space : public Malloced {
  public:
   Space(Heap* heap, AllocationSpace id, Executability executable)
-      : heap_(heap), id_(id), executable_(executable) {}
+      : heap_(heap),
+        id_(id),
+        executable_(executable),
+        committed_(0),
+        max_committed_(0) {}
 
   virtual ~Space() {}
 
@@ -920,15 +945,18 @@ class Space : public Malloced {
   // Identity used in error reporting.
   AllocationSpace identity() { return id_; }
 
+  // Return the total amount committed memory for this space, i.e., allocatable
+  // memory and page headers.
+  virtual intptr_t CommittedMemory() { return committed_; }
+
+  virtual intptr_t MaximumCommittedMemory() { return max_committed_; }
+
   // Returns allocated size.
   virtual intptr_t Size() = 0;
 
   // Returns size of objects. Can differ from the allocated size
   // (e.g. see LargeObjectSpace).
   virtual intptr_t SizeOfObjects() { return Size(); }
-
-  // Return the total amount of memory committed for new space.
-  virtual intptr_t CommittedMemory() = 0;
 
   // Approximate amount of physical memory committed for this space.
   virtual size_t CommittedPhysicalMemory() = 0;
@@ -948,10 +976,29 @@ class Space : public Malloced {
   virtual void Print() = 0;
 #endif
 
+ protected:
+  void AccountCommitted(intptr_t bytes) {
+    DCHECK_GE(bytes, 0);
+    committed_ += bytes;
+    if (committed_ > max_committed_) {
+      max_committed_ = committed_;
+    }
+  }
+
+  void AccountUncommitted(intptr_t bytes) {
+    DCHECK_GE(bytes, 0);
+    committed_ -= bytes;
+    DCHECK_GE(committed_, 0);
+  }
+
  private:
   Heap* heap_;
   AllocationSpace id_;
   Executability executable_;
+
+  // Keeps track of committed memory in a space.
+  intptr_t committed_;
+  intptr_t max_committed_;
 };
 
 
@@ -1504,7 +1551,7 @@ class AllocationStats BASE_EMBEDDED {
   // Free allocated bytes, making them available (size -> available).
   void DeallocateBytes(intptr_t size_in_bytes) {
     size_ -= size_in_bytes;
-    DCHECK(size_ >= 0);
+    DCHECK_GE(size_, 0);
   }
 
   // Merge {other} into {this}.
@@ -1519,6 +1566,7 @@ class AllocationStats BASE_EMBEDDED {
   void DecreaseCapacity(intptr_t size_in_bytes) {
     capacity_ -= size_in_bytes;
     DCHECK_GE(capacity_, 0);
+    DCHECK_GE(capacity_, size_);
   }
 
   void IncreaseCapacity(intptr_t size_in_bytes) { capacity_ += size_in_bytes; }
@@ -1633,6 +1681,10 @@ class FreeList {
  public:
   explicit FreeList(PagedSpace* owner);
 
+  // The method concatenates {other} into {this} and returns the added bytes,
+  // including waste.
+  //
+  // Can be used concurrently.
   intptr_t Concatenate(FreeList* other);
 
   // Clear the free list.
@@ -1691,11 +1743,6 @@ class FreeList {
   intptr_t EvictFreeListItems(Page* p);
   bool ContainsPageFreeListItems(Page* p);
 
-  FreeListCategory* small_list() { return &small_list_; }
-  FreeListCategory* medium_list() { return &medium_list_; }
-  FreeListCategory* large_list() { return &large_list_; }
-  FreeListCategory* huge_list() { return &huge_list_; }
-
   PagedSpace* owner() { return owner_; }
   intptr_t wasted_bytes() { return wasted_bytes_; }
   base::Mutex* mutex() { return &mutex_; }
@@ -1714,6 +1761,25 @@ class FreeList {
   static const int kLargeAllocationMax = kMediumListMax;
 
   FreeSpace* FindNodeFor(int size_in_bytes, int* node_size);
+  FreeSpace* FindNodeIn(FreeListCategoryType category, int* node_size);
+
+  FreeListCategory* GetFreeListCategory(FreeListCategoryType category) {
+    switch (category) {
+      case kSmall:
+        return &small_list_;
+      case kMedium:
+        return &medium_list_;
+      case kLarge:
+        return &large_list_;
+      case kHuge:
+        return &huge_list_;
+      default:
+        UNREACHABLE();
+    }
+    UNREACHABLE();
+    return nullptr;
+  }
+
 
   PagedSpace* owner_;
   Heap* heap_;
@@ -1810,13 +1876,6 @@ class PagedSpace : public Space {
 
   // Current capacity without growing (Size() + Available()).
   intptr_t Capacity() { return accounting_stats_.Capacity(); }
-
-  // Total amount of memory committed for this space.  For paged
-  // spaces this equals the capacity.
-  intptr_t CommittedMemory() override { return Capacity(); }
-
-  // The maximum amount of memory ever committed for this space.
-  intptr_t MaximumCommittedMemory() { return accounting_stats_.MaxCapacity(); }
 
   // Approximate amount of physical memory committed for this space.
   size_t CommittedPhysicalMemory() override;
@@ -1958,22 +2017,6 @@ class PagedSpace : public Space {
            !p->IsFlagSet(Page::RESCAN_ON_EVACUATION) && !p->WasSwept();
   }
 
-  void IncrementUnsweptFreeBytes(intptr_t by) { unswept_free_bytes_ += by; }
-
-  void IncreaseUnsweptFreeBytes(Page* p) {
-    DCHECK(ShouldBeSweptBySweeperThreads(p));
-    unswept_free_bytes_ += (p->area_size() - p->LiveBytes());
-  }
-
-  void DecrementUnsweptFreeBytes(intptr_t by) { unswept_free_bytes_ -= by; }
-
-  void DecreaseUnsweptFreeBytes(Page* p) {
-    DCHECK(ShouldBeSweptBySweeperThreads(p));
-    unswept_free_bytes_ -= (p->area_size() - p->LiveBytes());
-  }
-
-  void ResetUnsweptFreeBytes() { unswept_free_bytes_ = 0; }
-
   // This function tries to steal size_in_bytes memory from the sweeper threads
   // free-lists. If it does not succeed stealing enough memory, it will wait
   // for the sweeper threads to finish sweeping.
@@ -2055,10 +2098,6 @@ class PagedSpace : public Space {
 
   // Normal allocation information.
   AllocationInfo allocation_info_;
-
-  // The number of free bytes which could be reclaimed by advancing the
-  // concurrent sweeper threads.
-  intptr_t unswept_free_bytes_;
 
   // The sweeper threads iterate over the list of pointer and data space pages
   // and sweep these pages concurrently. They will stop sweeping after the
@@ -2285,11 +2324,6 @@ class SemiSpace : public Space {
 
   intptr_t SizeOfObjects() override { return Size(); }
 
-  intptr_t CommittedMemory() override {
-    UNREACHABLE();
-    return 0;
-  }
-
   intptr_t Available() override {
     UNREACHABLE();
     return 0;
@@ -2334,9 +2368,6 @@ class SemiSpace : public Space {
 
   static void Swap(SemiSpace* from, SemiSpace* to);
 
-  // Returns the maximum amount of memory ever committed by the semi space.
-  size_t MaximumCommittedMemory() { return maximum_committed_; }
-
   // Approximate amount of physical memory committed for this space.
   size_t CommittedPhysicalMemory() override;
 
@@ -2355,8 +2386,6 @@ class SemiSpace : public Space {
   int target_capacity_;
   int maximum_total_capacity_;
   int initial_total_capacity_;
-
-  intptr_t maximum_committed_;
 
   // The start address of the space.
   Address start_;
@@ -2511,16 +2540,15 @@ class NewSpace : public Space {
     return to_space_.TotalCapacity();
   }
 
-  // Return the total amount of memory committed for new space.
+  // Committed memory for NewSpace is the committed memory of both semi-spaces
+  // combined.
   intptr_t CommittedMemory() override {
-    if (from_space_.is_committed()) return 2 * Capacity();
-    return TotalCapacity();
+    return from_space_.CommittedMemory() + to_space_.CommittedMemory();
   }
 
-  // Return the total amount of memory committed for new space.
-  intptr_t MaximumCommittedMemory() {
-    return to_space_.MaximumCommittedMemory() +
-           from_space_.MaximumCommittedMemory();
+  intptr_t MaximumCommittedMemory() override {
+    return from_space_.MaximumCommittedMemory() +
+           to_space_.MaximumCommittedMemory();
   }
 
   // Approximate amount of physical memory committed for this space.
@@ -2693,10 +2721,6 @@ class NewSpace : public Space {
   }
 
   bool IsFromSpaceCommitted() { return from_space_.is_committed(); }
-
-  inline intptr_t inline_allocation_limit_step() {
-    return inline_allocation_limit_step_;
-  }
 
   SemiSpace* active_space() { return &to_space_; }
 
@@ -2888,10 +2912,6 @@ class LargeObjectSpace : public Space {
 
   intptr_t SizeOfObjects() override { return objects_size_; }
 
-  intptr_t MaximumCommittedMemory() { return maximum_committed_; }
-
-  intptr_t CommittedMemory() override { return Size(); }
-
   // Approximate amount of physical memory committed for this space.
   size_t CommittedPhysicalMemory() override;
 
@@ -2934,7 +2954,6 @@ class LargeObjectSpace : public Space {
   bool SlowContains(Address addr) { return FindObject(addr)->IsHeapObject(); }
 
  private:
-  intptr_t maximum_committed_;
   // The head of the linked list of large object chunks.
   LargePage* first_page_;
   intptr_t size_;          // allocated bytes

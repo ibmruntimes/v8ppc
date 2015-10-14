@@ -260,7 +260,7 @@ TEST(SimdObjects) {
 
     // Check special lane values.
     value->set_lane(1, -0.0);
-    CHECK_EQ(-0.0, value->get_lane(1));
+    CHECK_EQ(-0.0f, value->get_lane(1));
     CHECK(std::signbit(value->get_lane(1)));  // Sign bit should be preserved.
     value->set_lane(2, quiet_NaN);
     CHECK(std::isnan(value->get_lane(2)));
@@ -4316,115 +4316,6 @@ TEST(Regress169928) {
   // with the bug.
   AlwaysAllocateScope aa_scope(isolate);
   v8::Script::Compile(mote_code_string)->Run();
-}
-
-
-TEST(Regress168801) {
-  if (i::FLAG_never_compact) return;
-  i::FLAG_always_compact = true;
-  i::FLAG_cache_optimized_code = false;
-  i::FLAG_allow_natives_syntax = true;
-  CcTest::InitializeVM();
-  Isolate* isolate = CcTest::i_isolate();
-  Heap* heap = isolate->heap();
-  HandleScope scope(isolate);
-
-  // Perform one initial GC to enable code flushing.
-  heap->CollectAllGarbage();
-
-  // Ensure the code ends up on an evacuation candidate.
-  SimulateFullSpace(heap->code_space());
-
-  // Prepare an unoptimized function that is eligible for code flushing.
-  Handle<JSFunction> function;
-  {
-    HandleScope inner_scope(isolate);
-    CompileRun("function mkClosure() {"
-               "  return function(x) { return x + 1; };"
-               "}"
-               "var f = mkClosure();"
-               "f(1); f(2);");
-
-    Handle<JSFunction> f =
-        v8::Utils::OpenHandle(
-            *v8::Handle<v8::Function>::Cast(
-                CcTest::global()->Get(v8_str("f"))));
-    CHECK(f->is_compiled());
-    const int kAgingThreshold = 6;
-    for (int i = 0; i < kAgingThreshold; i++) {
-      f->shared()->code()->MakeOlder(static_cast<MarkingParity>(i % 2));
-    }
-
-    function = inner_scope.CloseAndEscape(handle(*f, isolate));
-  }
-
-  // Simulate incremental marking so that unoptimized function is enqueued as a
-  // candidate for code flushing. The shared function info however will not be
-  // explicitly enqueued.
-  SimulateIncrementalMarking(heap);
-
-  // Now optimize the function so that it is taken off the candidate list.
-  {
-    HandleScope inner_scope(isolate);
-    CompileRun("%OptimizeFunctionOnNextCall(f); f(3);");
-  }
-
-  // This cycle will bust the heap and subsequent cycles will go ballistic.
-  heap->CollectAllGarbage();
-  heap->CollectAllGarbage();
-}
-
-
-TEST(Regress173458) {
-  if (i::FLAG_never_compact) return;
-  i::FLAG_always_compact = true;
-  i::FLAG_cache_optimized_code = false;
-  i::FLAG_allow_natives_syntax = true;
-  CcTest::InitializeVM();
-  Isolate* isolate = CcTest::i_isolate();
-  Heap* heap = isolate->heap();
-  HandleScope scope(isolate);
-
-  // Perform one initial GC to enable code flushing.
-  heap->CollectAllGarbage();
-
-  // Ensure the code ends up on an evacuation candidate.
-  SimulateFullSpace(heap->code_space());
-
-  // Prepare an unoptimized function that is eligible for code flushing.
-  Handle<JSFunction> function;
-  {
-    HandleScope inner_scope(isolate);
-    CompileRun("function mkClosure() {"
-               "  return function(x) { return x + 1; };"
-               "}"
-               "var f = mkClosure();"
-               "f(1); f(2);");
-
-    Handle<JSFunction> f =
-        v8::Utils::OpenHandle(
-            *v8::Handle<v8::Function>::Cast(
-                CcTest::global()->Get(v8_str("f"))));
-    CHECK(f->is_compiled());
-    const int kAgingThreshold = 6;
-    for (int i = 0; i < kAgingThreshold; i++) {
-      f->shared()->code()->MakeOlder(static_cast<MarkingParity>(i % 2));
-    }
-
-    function = inner_scope.CloseAndEscape(handle(*f, isolate));
-  }
-
-  // Simulate incremental marking so that unoptimized function is enqueued as a
-  // candidate for code flushing. The shared function info however will not be
-  // explicitly enqueued.
-  SimulateIncrementalMarking(heap);
-
-  // Now enable the debugger which in turn will disable code flushing.
-  CHECK(isolate->debug()->Load());
-
-  // This cycle will bust the heap and subsequent cycles will go ballistic.
-  heap->CollectAllGarbage();
-  heap->CollectAllGarbage();
 }
 
 

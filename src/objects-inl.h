@@ -730,6 +730,9 @@ bool Object::IsTransitionArray() const {
 bool Object::IsTypeFeedbackVector() const { return IsFixedArray(); }
 
 
+bool Object::IsTypeFeedbackMetadata() const { return IsFixedArray(); }
+
+
 bool Object::IsLiteralsArray() const { return IsFixedArray(); }
 bool Object::IsBindingsArray() const { return IsFixedArray(); }
 
@@ -3720,6 +3723,7 @@ bool Name::Equals(Handle<Name> one, Handle<Name> two) {
 ACCESSORS(Symbol, name, Object, kNameOffset)
 SMI_ACCESSORS(Symbol, flags, kFlagsOffset)
 BOOL_ACCESSORS(Symbol, flags, is_private, kPrivateBit)
+BOOL_ACCESSORS(Symbol, flags, is_well_known_symbol, kWellKnownSymbolBit)
 
 
 bool String::Equals(String* other) {
@@ -7305,6 +7309,16 @@ MaybeHandle<Object> Object::GetPropertyOrElement(Handle<Object> object,
                                                  LanguageMode language_mode) {
   LookupIterator it =
       LookupIterator::PropertyOrElement(name->GetIsolate(), object, name);
+  return GetProperty(&it, language_mode);
+}
+
+
+MaybeHandle<Object> Object::GetPropertyOrElement(Handle<JSReceiver> holder,
+                                                 Handle<Name> name,
+                                                 Handle<Object> receiver,
+                                                 LanguageMode language_mode) {
+  LookupIterator it = LookupIterator::PropertyOrElement(
+      name->GetIsolate(), receiver, name, holder);
   return GetProperty(&it, language_mode);
 }
 

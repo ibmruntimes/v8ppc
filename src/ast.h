@@ -1514,6 +1514,27 @@ class ObjectLiteral final : public MaterializedLiteral {
 };
 
 
+// A map from property names to getter/setter pairs allocated in the zone.
+class AccessorTable : public TemplateHashMap<Literal, ObjectLiteral::Accessors,
+                                             ZoneAllocationPolicy> {
+ public:
+  explicit AccessorTable(Zone* zone)
+      : TemplateHashMap<Literal, ObjectLiteral::Accessors,
+                        ZoneAllocationPolicy>(Literal::Match,
+                                              ZoneAllocationPolicy(zone)),
+        zone_(zone) {}
+
+  Iterator lookup(Literal* literal) {
+    Iterator it = find(literal, true, ZoneAllocationPolicy(zone_));
+    if (it->second == NULL) it->second = new (zone_) ObjectLiteral::Accessors();
+    return it;
+  }
+
+ private:
+  Zone* zone_;
+};
+
+
 // Node for capturing a regexp literal.
 class RegExpLiteral final : public MaterializedLiteral {
  public:
@@ -1584,6 +1605,10 @@ class ArrayLiteral final : public MaterializedLiteral {
     kIsStrong = 1 << 2
   };
 
+  void AssignFeedbackVectorSlots(Isolate* isolate, FeedbackVectorSpec* spec,
+                                 FeedbackVectorSlotCache* cache) override;
+  FeedbackVectorSlot LiteralFeedbackSlot() const { return literal_slot_; }
+
  protected:
   ArrayLiteral(Zone* zone, ZoneList<Expression*>* values,
                int first_spread_index, int literal_index, bool is_strong,
@@ -1599,6 +1624,7 @@ class ArrayLiteral final : public MaterializedLiteral {
   Handle<FixedArray> constant_elements_;
   ZoneList<Expression*>* values_;
   int first_spread_index_;
+  FeedbackVectorSlot literal_slot_;
 };
 
 
@@ -3156,23 +3182,23 @@ class AstVisitor BASE_EMBEDDED {
                                                             \
   bool CheckStackOverflow() {                               \
     if (stack_overflow_) return true;                       \
-    StackLimitCheck check(isolate_);                        \
-    if (!check.HasOverflowed()) return false;               \
-    stack_overflow_ = true;                                 \
-    return true;                                            \
+    if (GetCurrentStackPosition() < stack_limit_) {         \
+      stack_overflow_ = true;                               \
+      return true;                                          \
+    }                                                       \
+    return false;                                           \
   }                                                         \
                                                             \
  private:                                                   \
   void InitializeAstVisitor(Isolate* isolate, Zone* zone) { \
-    isolate_ = isolate;                                     \
     zone_ = zone;                                           \
+    stack_limit_ = isolate->stack_guard()->real_climit();   \
     stack_overflow_ = false;                                \
   }                                                         \
   Zone* zone() { return zone_; }                            \
-  Isolate* isolate() { return isolate_; }                   \
                                                             \
-  Isolate* isolate_;                                        \
   Zone* zone_;                                              \
+  uintptr_t stack_limit_;                                   \
   bool stack_overflow_
 
 

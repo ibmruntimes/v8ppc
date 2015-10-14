@@ -59,8 +59,6 @@ void Interpreter::Initialize() {
 
 
 bool Interpreter::MakeBytecode(CompilationInfo* info) {
-  Handle<SharedFunctionInfo> shared_info = info->shared_info();
-
   BytecodeGenerator generator(info->isolate(), info->zone());
   info->EnsureFeedbackVector();
   Handle<BytecodeArray> bytecodes = generator.MakeBytecode(info);
@@ -68,12 +66,7 @@ bool Interpreter::MakeBytecode(CompilationInfo* info) {
     bytecodes->Print();
   }
 
-  DCHECK(shared_info->function_data()->IsUndefined());
-  if (!shared_info->function_data()->IsUndefined()) {
-    return false;
-  }
-
-  shared_info->set_function_data(*bytecodes);
+  info->SetBytecodeArray(bytecodes);
   info->SetCode(info->isolate()->builtins()->InterpreterEntryTrampoline());
   return true;
 }
@@ -203,6 +196,31 @@ void Interpreter::DoLdaGlobal(compiler::InterpreterAssembler* assembler) {
 }
 
 
+// StaGlobal <slot_index>
+//
+// Store the global at |slot_index| with the value in the the accumulator.
+void Interpreter::DoStaGlobal(compiler::InterpreterAssembler* assembler) {
+  Node* slot_index = __ BytecodeOperandIdx8(0);
+  Node* smi_slot_index = __ SmiTag(slot_index);
+  Node* value = __ GetAccumulator();
+  __ CallRuntime(Runtime::kStoreGlobalViaContext_Sloppy, smi_slot_index, value);
+  __ Dispatch();
+}
+
+
+// LdaContextSlot <context> <slot_index>
+//
+// Load the object in |slot_index| of |context| into the accumulator.
+void Interpreter::DoLdaContextSlot(compiler::InterpreterAssembler* assembler) {
+  Node* reg_index = __ BytecodeOperandReg8(0);
+  Node* context = __ LoadRegister(reg_index);
+  Node* slot_index = __ BytecodeOperandIdx8(1);
+  Node* result = __ LoadContextSlot(context, slot_index);
+  __ SetAccumulator(result);
+  __ Dispatch();
+}
+
+
 void Interpreter::DoPropertyLoadIC(Callable ic,
                                    compiler::InterpreterAssembler* assembler) {
   Node* code_target = __ HeapConstant(ic.code());
@@ -219,24 +237,48 @@ void Interpreter::DoPropertyLoadIC(Callable ic,
 }
 
 
-// LoadIC <object> <slot>
+// LoadICSloppy <object> <slot>
 //
-// Calls the LoadIC at FeedBackVector slot <slot> for <object> and the name
-// in the accumulator.
-void Interpreter::DoLoadIC(compiler::InterpreterAssembler* assembler) {
+// Calls the sloppy mode LoadIC at FeedBackVector slot <slot> for <object> and
+// the name in the accumulator.
+void Interpreter::DoLoadICSloppy(compiler::InterpreterAssembler* assembler) {
   Callable ic = CodeFactory::LoadICInOptimizedCode(isolate_, NOT_INSIDE_TYPEOF,
                                                    SLOPPY, UNINITIALIZED);
   DoPropertyLoadIC(ic, assembler);
 }
 
 
-// KeyedLoadIC <object> <slot>
+// LoadICStrict <object> <slot>
 //
-// Calls the KeyedLoadIC at FeedBackVector slot <slot> for <object> and the key
-// in the accumulator.
-void Interpreter::DoKeyedLoadIC(compiler::InterpreterAssembler* assembler) {
+// Calls the strict mode LoadIC at FeedBackVector slot <slot> for <object> and
+// the name in the accumulator.
+void Interpreter::DoLoadICStrict(compiler::InterpreterAssembler* assembler) {
+  Callable ic = CodeFactory::LoadICInOptimizedCode(isolate_, NOT_INSIDE_TYPEOF,
+                                                   STRICT, UNINITIALIZED);
+  DoPropertyLoadIC(ic, assembler);
+}
+
+
+// KeyedLoadICSloppy <object> <slot>
+//
+// Calls the sloppy mode KeyedLoadIC at FeedBackVector slot <slot> for <object>
+// and the key in the accumulator.
+void Interpreter::DoKeyedLoadICSloppy(
+    compiler::InterpreterAssembler* assembler) {
   Callable ic =
       CodeFactory::KeyedLoadICInOptimizedCode(isolate_, SLOPPY, UNINITIALIZED);
+  DoPropertyLoadIC(ic, assembler);
+}
+
+
+// KeyedLoadICStrict <object> <slot>
+//
+// Calls the strict mode KeyedLoadIC at FeedBackVector slot <slot> for <object>
+// and the key in the accumulator.
+void Interpreter::DoKeyedLoadICStrict(
+    compiler::InterpreterAssembler* assembler) {
+  Callable ic =
+      CodeFactory::KeyedLoadICInOptimizedCode(isolate_, STRICT, UNINITIALIZED);
   DoPropertyLoadIC(ic, assembler);
 }
 
@@ -259,25 +301,72 @@ void Interpreter::DoPropertyStoreIC(Callable ic,
 }
 
 
-// StoreIC <object> <name> <slot>
+// StoreICSloppy <object> <name> <slot>
 //
-// Calls the StoreIC at FeedBackVector slot <slot> for <object> and the name
-// <name> with the value in the accumulator.
-void Interpreter::DoStoreIC(compiler::InterpreterAssembler* assembler) {
+// Calls the sloppy mode StoreIC at FeedBackVector slot <slot> for <object> and
+// the name <name> with the value in the accumulator.
+void Interpreter::DoStoreICSloppy(compiler::InterpreterAssembler* assembler) {
   Callable ic =
       CodeFactory::StoreICInOptimizedCode(isolate_, SLOPPY, UNINITIALIZED);
   DoPropertyStoreIC(ic, assembler);
 }
 
 
-// KeyedStoreIC <object> <key> <slot>
+// StoreICStrict <object> <name> <slot>
 //
-// Calls the KeyStoreIC at FeedBackVector slot <slot> for <object> and the key
-// <key> with the value in the accumulator.
-void Interpreter::DoKeyedStoreIC(compiler::InterpreterAssembler* assembler) {
+// Calls the strict mode StoreIC at FeedBackVector slot <slot> for <object> and
+// the name <name> with the value in the accumulator.
+void Interpreter::DoStoreICStrict(compiler::InterpreterAssembler* assembler) {
+  Callable ic =
+      CodeFactory::StoreICInOptimizedCode(isolate_, STRICT, UNINITIALIZED);
+  DoPropertyStoreIC(ic, assembler);
+}
+
+
+// KeyedStoreICSloppy <object> <key> <slot>
+//
+// Calls the sloppy mode KeyStoreIC at FeedBackVector slot <slot> for <object>
+// and the key <key> with the value in the accumulator.
+void Interpreter::DoKeyedStoreICSloppy(
+    compiler::InterpreterAssembler* assembler) {
   Callable ic =
       CodeFactory::KeyedStoreICInOptimizedCode(isolate_, SLOPPY, UNINITIALIZED);
   DoPropertyStoreIC(ic, assembler);
+}
+
+
+// KeyedStoreICStore <object> <key> <slot>
+//
+// Calls the strict mode KeyStoreIC at FeedBackVector slot <slot> for <object>
+// and the key <key> with the value in the accumulator.
+void Interpreter::DoKeyedStoreICStrict(
+    compiler::InterpreterAssembler* assembler) {
+  Callable ic =
+      CodeFactory::KeyedStoreICInOptimizedCode(isolate_, STRICT, UNINITIALIZED);
+  DoPropertyStoreIC(ic, assembler);
+}
+
+
+// PushContext <context>
+//
+// Pushes the accumulator as the current context, and saves it in <context>
+void Interpreter::DoPushContext(compiler::InterpreterAssembler* assembler) {
+  Node* reg_index = __ BytecodeOperandReg8(0);
+  Node* context = __ GetAccumulator();
+  __ SetContext(context);
+  __ StoreRegister(context, reg_index);
+  __ Dispatch();
+}
+
+
+// PopContext <context>
+//
+// Pops the current context and sets <context> as the new context.
+void Interpreter::DoPopContext(compiler::InterpreterAssembler* assembler) {
+  Node* reg_index = __ BytecodeOperandReg8(0);
+  Node* context = __ LoadRegister(reg_index);
+  __ SetContext(context);
+  __ Dispatch();
 }
 
 
@@ -331,6 +420,64 @@ void Interpreter::DoDiv(compiler::InterpreterAssembler* assembler) {
 // Modulo register <src> by accumulator.
 void Interpreter::DoMod(compiler::InterpreterAssembler* assembler) {
   DoBinaryOp(Runtime::kModulus, assembler);
+}
+
+
+// BitwiseOr <src>
+//
+// BitwiseOr register <src> to accumulator.
+void Interpreter::DoBitwiseOr(compiler::InterpreterAssembler* assembler) {
+  DoBinaryOp(Runtime::kBitwiseOr, assembler);
+}
+
+
+// BitwiseXor <src>
+//
+// BitwiseXor register <src> to accumulator.
+void Interpreter::DoBitwiseXor(compiler::InterpreterAssembler* assembler) {
+  DoBinaryOp(Runtime::kBitwiseXor, assembler);
+}
+
+
+// BitwiseAnd <src>
+//
+// BitwiseAnd register <src> to accumulator.
+void Interpreter::DoBitwiseAnd(compiler::InterpreterAssembler* assembler) {
+  DoBinaryOp(Runtime::kBitwiseAnd, assembler);
+}
+
+
+// ShiftLeft <src>
+//
+// Left shifts register <src> by the count specified in the accumulator.
+// Register <src> is converted to an int32 and the accumulator to uint32
+// before the operation. 5 lsb bits from the accumulator are used as count
+// i.e. <src> << (accumulator & 0x1F).
+void Interpreter::DoShiftLeft(compiler::InterpreterAssembler* assembler) {
+  DoBinaryOp(Runtime::kShiftLeft, assembler);
+}
+
+
+// ShiftRight <src>
+//
+// Right shifts register <src> by the count specified in the accumulator.
+// Result is sign extended. Register <src> is converted to an int32 and the
+// accumulator to uint32 before the operation. 5 lsb bits from the accumulator
+// are used as count i.e. <src> >> (accumulator & 0x1F).
+void Interpreter::DoShiftRight(compiler::InterpreterAssembler* assembler) {
+  DoBinaryOp(Runtime::kShiftRight, assembler);
+}
+
+
+// ShiftRightLogical <src>
+//
+// Right Shifts register <src> by the count specified in the accumulator.
+// Result is zero-filled. The accumulator and register <src> are converted to
+// uint32 before the operation 5 lsb bits from the accumulator are used as
+// count i.e. <src> << (accumulator & 0x1F).
+void Interpreter::DoShiftRightLogical(
+    compiler::InterpreterAssembler* assembler) {
+  DoBinaryOp(Runtime::kShiftRightLogical, assembler);
 }
 
 
@@ -489,6 +636,17 @@ void Interpreter::DoToBoolean(compiler::InterpreterAssembler* assembler) {
 }
 
 
+// ToName
+//
+// Cast the object referenced by the accumulator to a name.
+void Interpreter::DoToName(compiler::InterpreterAssembler* assembler) {
+  Node* accumulator = __ GetAccumulator();
+  Node* result = __ CallRuntime(Runtime::kToName, accumulator);
+  __ SetAccumulator(result);
+  __ Dispatch();
+}
+
+
 // Jump <imm8>
 //
 // Jump by number of bytes represented by the immediate operand |imm8|.
@@ -560,6 +718,60 @@ void Interpreter::DoJumpIfFalseConstant(
   Node* relative_jump = __ SmiUntag(constant);
   Node* false_value = __ BooleanConstant(false);
   __ JumpIfWordEqual(accumulator, false_value, relative_jump);
+}
+
+
+void Interpreter::DoCreateLiteral(Runtime::FunctionId function_id,
+                                  compiler::InterpreterAssembler* assembler) {
+  Node* constant_elements = __ GetAccumulator();
+  Node* literal_index_raw = __ BytecodeOperandIdx8(0);
+  Node* literal_index = __ SmiTag(literal_index_raw);
+  Node* flags_raw = __ BytecodeOperandImm8(1);
+  Node* flags = __ SmiTag(flags_raw);
+  Node* closure = __ LoadRegister(Register::function_closure());
+  Node* literals_array =
+      __ LoadObjectField(closure, JSFunction::kLiteralsOffset);
+  Node* result = __ CallRuntime(function_id, literals_array, literal_index,
+                                constant_elements, flags);
+  __ SetAccumulator(result);
+  __ Dispatch();
+}
+
+
+// CreateArrayLiteral <idx> <flags>
+//
+// Creates an array literal for literal index <idx> with flags <flags> and
+// constant elements in the accumulator.
+void Interpreter::DoCreateArrayLiteral(
+    compiler::InterpreterAssembler* assembler) {
+  DoCreateLiteral(Runtime::kCreateArrayLiteral, assembler);
+}
+
+
+// CreateObjectLiteral <idx> <flags>
+//
+// Creates an object literal for literal index <idx> with flags <flags> and
+// constant elements in the accumulator.
+void Interpreter::DoCreateObjectLiteral(
+    compiler::InterpreterAssembler* assembler) {
+  DoCreateLiteral(Runtime::kCreateObjectLiteral, assembler);
+}
+
+
+// CreateClosure <tenured>
+//
+// Creates a new closure for SharedFunctionInfo in the accumulator with the
+// PretenureFlag <tenured>.
+void Interpreter::DoCreateClosure(compiler::InterpreterAssembler* assembler) {
+  // TODO(rmcilroy): Possibly call FastNewClosureStub when possible instead of
+  // calling into the runtime.
+  Node* shared = __ GetAccumulator();
+  Node* tenured_raw = __ BytecodeOperandImm8(0);
+  Node* tenured = __ SmiTag(tenured_raw);
+  Node* result =
+      __ CallRuntime(Runtime::kInterpreterNewClosure, shared, tenured);
+  __ SetAccumulator(result);
+  __ Dispatch();
 }
 
 

@@ -129,6 +129,7 @@ class AstGraphBuilder : public AstVisitor {
   ContextScope* execution_context() const { return execution_context_; }
   CommonOperatorBuilder* common() const { return jsgraph_->common(); }
   CompilationInfo* info() const { return info_; }
+  Isolate* isolate() const;
   LanguageMode language_mode() const;
   JSGraph* jsgraph() { return jsgraph_; }
   Graph* graph() { return jsgraph_->graph(); }
@@ -402,7 +403,8 @@ class AstGraphBuilder : public AstVisitor {
   // Dispatched from VisitForInStatement.
   void VisitForInAssignment(Expression* expr, Node* value,
                             const VectorSlotPair& feedback,
-                            BailoutId bailout_id);
+                            BailoutId bailout_id_before,
+                            BailoutId bailout_id_after);
 
   // Dispatched from VisitObjectLiteral.
   void VisitObjectLiteralAccessor(Node* home_object,
