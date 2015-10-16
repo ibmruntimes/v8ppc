@@ -65,6 +65,7 @@ class InterpreterTester {
         feedback_vector_(feedback_vector) {
     i::FLAG_vector_stores = true;
     i::FLAG_ignition = true;
+    i::FLAG_ignition_fake_try_catch = true;
     i::FLAG_always_opt = false;
     // Set ignition filter flag via SetFlagsFromString to avoid double-free
     // (or potential leak with StrDup() based on ownership confusion).
@@ -1724,4 +1725,177 @@ TEST(InterpreterObjectLiterals) {
     Handle<i::Object> return_value = callable().ToHandleChecked();
     CHECK(return_value->SameValue(*literals[i].second));
   }
+}
+
+
+TEST(InterpreterConstruct) {
+  HandleAndZoneScope handles;
+
+  std::string source(
+      "function counter() { this.count = 0; }\n"
+      "function " +
+      InterpreterTester::function_name() +
+      "() {\n"
+      "  var c = new counter();\n"
+      "  return c.count;\n"
+      "}");
+  InterpreterTester tester(handles.main_isolate(), source.c_str());
+  auto callable = tester.GetCallable<>();
+
+  Handle<Object> return_val = callable().ToHandleChecked();
+  CHECK_EQ(Smi::cast(*return_val), Smi::FromInt(0));
+}
+
+
+TEST(InterpreterConstructWithArgument) {
+  HandleAndZoneScope handles;
+
+  std::string source(
+      "function counter(arg0) { this.count = 17; this.x = arg0; }\n"
+      "function " +
+      InterpreterTester::function_name() +
+      "() {\n"
+      "  var c = new counter(3);\n"
+      "  return c.x;\n"
+      "}");
+  InterpreterTester tester(handles.main_isolate(), source.c_str());
+  auto callable = tester.GetCallable<>();
+
+  Handle<Object> return_val = callable().ToHandleChecked();
+  CHECK_EQ(Smi::cast(*return_val), Smi::FromInt(3));
+}
+
+
+TEST(InterpreterConstructWithArguments) {
+  HandleAndZoneScope handles;
+
+  std::string source(
+      "function counter(arg0, arg1) {\n"
+      "  this.count = 7; this.x = arg0; this.y = arg1;\n"
+      "}\n"
+      "function " +
+      InterpreterTester::function_name() +
+      "() {\n"
+      "  var c = new counter(3, 5);\n"
+      "  return c.count + c.x + c.y;\n"
+      "}");
+  InterpreterTester tester(handles.main_isolate(), source.c_str());
+  auto callable = tester.GetCallable<>();
+
+  Handle<Object> return_val = callable().ToHandleChecked();
+  CHECK_EQ(Smi::cast(*return_val), Smi::FromInt(15));
+}
+
+
+TEST(InterpreterComma) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  std::pair<const char*, Handle<Object>> literals[6] = {
+      std::make_pair("var a; return 0, a;\n", factory->undefined_value()),
+      std::make_pair("return 'a', 2.2, 3;\n",
+                     Handle<Object>(Smi::FromInt(3), isolate)),
+      std::make_pair("return 'a', 'b', 'c';\n",
+                     factory->NewStringFromStaticChars("c")),
+      std::make_pair("return 3.2, 2.3, 4.5;\n", factory->NewNumber(4.5)),
+      std::make_pair("var a = 10; return b = a, b = b+1;\n",
+                     Handle<Object>(Smi::FromInt(11), isolate)),
+      std::make_pair("var a = 10; return b = a, b = b+1, b + 10;\n",
+                     Handle<Object>(Smi::FromInt(21), isolate))};
+
+  for (size_t i = 0; i < arraysize(literals); i++) {
+    std::string source(InterpreterTester::SourceForBody(literals[i].first));
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*literals[i].second));
+  }
+}
+
+
+TEST(InterpreterLogicalOr) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  std::pair<const char*, Handle<Object>> literals[5] = {
+      std::make_pair("var a, b; return a || b;\n", factory->undefined_value()),
+      std::make_pair("var a, b = 10; return a || b;\n",
+                     Handle<Object>(Smi::FromInt(10), isolate)),
+      std::make_pair("var a = '0', b = 10; return a || b;\n",
+                     factory->NewStringFromStaticChars("0")),
+      std::make_pair("return 0 || 3.2;\n", factory->NewNumber(3.2)),
+      std::make_pair("return 'a' || 0;\n",
+                     factory->NewStringFromStaticChars("a"))};
+
+  for (size_t i = 0; i < arraysize(literals); i++) {
+    std::string source(InterpreterTester::SourceForBody(literals[i].first));
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*literals[i].second));
+  }
+}
+
+
+TEST(InterpreterLogicalAnd) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  std::pair<const char*, Handle<Object>> literals[7] = {
+      std::make_pair("var a, b = 10; return a && b;\n",
+                     factory->undefined_value()),
+      std::make_pair("var a = 0, b = 10; return a && b / a;\n",
+                     Handle<Object>(Smi::FromInt(0), isolate)),
+      std::make_pair("var a = '0', b = 10; return a && b;\n",
+                     Handle<Object>(Smi::FromInt(10), isolate)),
+      std::make_pair("return 0.0 && 3.2;\n",
+                     Handle<Object>(Smi::FromInt(0), isolate)),
+      std::make_pair("return 'a' && 'b';\n",
+                     factory->NewStringFromStaticChars("b")),
+      std::make_pair("return 'a' && 0 || 'b', 'c';\n",
+                     factory->NewStringFromStaticChars("c")),
+      std::make_pair("var x = 1, y = 3; return x && 0 + 1 || y;\n",
+                     Handle<Object>(Smi::FromInt(1), isolate))};
+
+  for (size_t i = 0; i < arraysize(literals); i++) {
+    std::string source(InterpreterTester::SourceForBody(literals[i].first));
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*literals[i].second));
+  }
+}
+
+
+TEST(InterpreterTryCatch) {
+  HandleAndZoneScope handles;
+
+  // TODO(rmcilroy): modify tests when we have real try catch support.
+  std::string source(InterpreterTester::SourceForBody(
+      "var a = 1; try { a = a + 1; } catch(e) { a = a + 2; }; return a;"));
+  InterpreterTester tester(handles.main_isolate(), source.c_str());
+  auto callable = tester.GetCallable<>();
+
+  Handle<Object> return_val = callable().ToHandleChecked();
+  CHECK_EQ(Smi::cast(*return_val), Smi::FromInt(2));
+}
+
+
+TEST(InterpreterTryFinally) {
+  HandleAndZoneScope handles;
+
+  // TODO(rmcilroy): modify tests when we have real try finally support.
+  std::string source(InterpreterTester::SourceForBody(
+      "var a = 1; try { a = a + 1; } finally { a = a + 2; }; return a;"));
+  InterpreterTester tester(handles.main_isolate(), source.c_str());
+  auto callable = tester.GetCallable<>();
+
+  Handle<Object> return_val = callable().ToHandleChecked();
+  CHECK_EQ(Smi::cast(*return_val), Smi::FromInt(4));
 }

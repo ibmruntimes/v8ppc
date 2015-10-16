@@ -80,7 +80,8 @@ class JSTypedLoweringTest : public TypedGraphTest {
  protected:
   Reduction Reduce(Node* node) {
     MachineOperatorBuilder machine(zone());
-    JSGraph jsgraph(isolate(), graph(), common(), javascript(), &machine);
+    JSGraph jsgraph(isolate(), graph(), common(), javascript(), nullptr,
+                    &machine);
     // TODO(titzer): mock the GraphReducer here for better unit testing.
     GraphReducer graph_reducer(zone(), graph());
     JSTypedLowering reducer(&graph_reducer, &jsgraph, zone());
@@ -1056,7 +1057,6 @@ TEST_F(JSTypedLoweringTest, JSCreateLiteralObject) {
 
 
 TEST_F(JSTypedLoweringTest, JSCreateFunctionContextViaInlinedAllocation) {
-  if (!FLAG_turbo_allocate) return;
   Node* const closure = Parameter(Type::Any());
   Node* const context = Parameter(Type::Any());
   Node* const effect = graph()->start();
@@ -1066,10 +1066,10 @@ TEST_F(JSTypedLoweringTest, JSCreateFunctionContextViaInlinedAllocation) {
                               context, effect, control));
   ASSERT_TRUE(r.Changed());
   EXPECT_THAT(r.replacement(),
-              IsFinish(IsAllocate(IsNumberConstant(Context::SizeFor(
-                                      8 + Context::MIN_CONTEXT_SLOTS)),
-                                  effect, control),
-                       _));
+              IsFinishRegion(IsAllocate(IsNumberConstant(Context::SizeFor(
+                                            8 + Context::MIN_CONTEXT_SLOTS)),
+                                        IsBeginRegion(effect), control),
+                             _));
 }
 
 
@@ -1094,7 +1094,6 @@ TEST_F(JSTypedLoweringTest, JSCreateFunctionContextViaStub) {
 
 
 TEST_F(JSTypedLoweringTest, JSCreateWithContext) {
-  if (!FLAG_turbo_allocate) return;
   Node* const object = Parameter(Type::Receiver());
   Node* const closure = Parameter(Type::Any());
   Node* const context = Parameter(Type::Any());
@@ -1106,10 +1105,10 @@ TEST_F(JSTypedLoweringTest, JSCreateWithContext) {
                               closure, context, frame_state, effect, control));
   ASSERT_TRUE(r.Changed());
   EXPECT_THAT(r.replacement(),
-              IsFinish(IsAllocate(IsNumberConstant(Context::SizeFor(
-                                      Context::MIN_CONTEXT_SLOTS)),
-                                  effect, control),
-                       _));
+              IsFinishRegion(IsAllocate(IsNumberConstant(Context::SizeFor(
+                                            Context::MIN_CONTEXT_SLOTS)),
+                                        IsBeginRegion(effect), control),
+                             _));
 }
 
 }  // namespace compiler

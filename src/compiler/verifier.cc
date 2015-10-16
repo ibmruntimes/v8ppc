@@ -413,10 +413,10 @@ void Verifier::Visitor::Check(Node* node) {
       CHECK_LT(1, effect_count);
       break;
     }
-    case IrOpcode::kValueEffect:
+    case IrOpcode::kBeginRegion:
       // TODO(rossberg): what are the constraints on these?
       break;
-    case IrOpcode::kFinish: {
+    case IrOpcode::kFinishRegion: {
       // TODO(rossberg): what are the constraints on these?
       // Type must be subsumed by input type.
       if (typing == TYPED) {
@@ -803,6 +803,8 @@ void Verifier::Visitor::Check(Node* node) {
     case IrOpcode::kWord32Ror:
     case IrOpcode::kWord32Equal:
     case IrOpcode::kWord32Clz:
+    case IrOpcode::kWord32Ctz:
+    case IrOpcode::kWord32Popcnt:
     case IrOpcode::kWord64And:
     case IrOpcode::kWord64Or:
     case IrOpcode::kWord64Xor:

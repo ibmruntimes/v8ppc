@@ -242,6 +242,13 @@ void AllocateHeapNumberDescriptor::InitializePlatformSpecific(
 }
 
 
+void AllocateInNewSpaceDescriptor::InitializePlatformSpecific(
+    CallInterfaceDescriptorData* data) {
+  Register registers[] = {x0};
+  data->InitializePlatformSpecific(arraysize(registers), registers);
+}
+
+
 void ArrayConstructorConstantArgCountDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   // x1: function
@@ -444,6 +451,18 @@ void InterpreterPushArgsAndCallDescriptor::InitializePlatformSpecific(
       x0,  // argument count (not including receiver)
       x2,  // address of first argument
       x1   // the target callable to be call
+  };
+  data->InitializePlatformSpecific(arraysize(registers), registers);
+}
+
+
+void InterpreterPushArgsAndConstructDescriptor::InitializePlatformSpecific(
+    CallInterfaceDescriptorData* data) {
+  Register registers[] = {
+      x0,  // argument count (not including receiver)
+      x3,  // original constructor
+      x1,  // constructor to call
+      x2   // address of the first argument
   };
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }

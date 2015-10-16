@@ -1,4 +1,4 @@
-// Copyright 2009 the V8 project authors. All rights reserved.
+// Copyright 2010-2015 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,14 +25,29 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+// Test that properties deleted during an enumeration do not show up in
+// the enumeration.  This is adapted from mjsunit/for-in-delete.js.
 
-// Flags: --expose-natives-as natives
-// Test keyed access to deleted property in a global object w/o access checks.
-// Regression test that exposed the_hole value from Runtime_KeyedGetProperty.
+// Flags: --harmony-reflect
 
-var name = "fisk";
-natives[name] = name;
-function foo() { natives[name] + 12; }
-for(var i = 0; i < 3; i++) foo();
-delete natives[name];
-for(var i = 0; i < 3; i++) foo();
+
+function f(o, expected, del) {
+  var index = 0;
+  for (p of Reflect.enumerate(o)) {
+    if (del) delete o[del];
+    assertEquals(expected[index], p);
+    index++;
+  }
+  assertEquals(expected.length, index);
+}
+
+var o = {}
+o.a = 1;
+o.b = 2;
+o.c = 3;
+o.d = 3;
+
+f(o, ['a', 'b', 'c', 'd']);
+f(o, ['a', 'b', 'c', 'd']);
+f(o, ['a', 'c', 'd'], 'b');
+f(o, ['a', 'c'], 'd');

@@ -93,11 +93,13 @@ class CodeFactory final {
                                   bool has_duplicate_parameters);
 
   static Callable AllocateHeapNumber(Isolate* isolate);
+  static Callable AllocateInNewSpace(Isolate* isolate);
 
   static Callable CallFunction(Isolate* isolate, int argc,
                                CallFunctionFlags flags);
 
   static Callable InterpreterPushArgsAndCall(Isolate* isolate);
+  static Callable InterpreterPushArgsAndConstruct(Isolate* isolate);
   static Callable InterpreterCEntry(Isolate* isolate);
 };
 

@@ -22,6 +22,7 @@ namespace compiler {
 class CommonOperatorBuilder;
 class JSGraph;
 class JSOperatorBuilder;
+class MachineOperatorBuilder;
 
 
 // Specializes a given JSGraph to a given GlobalObject, potentially constant
@@ -33,23 +34,19 @@ class JSGlobalSpecialization final : public AdvancedReducer {
   enum Flag {
     kNoFlags = 0u,
     kDeoptimizationEnabled = 1u << 0,
-    kTypingEnabled = 1u << 1
   };
   typedef base::Flags<Flag> Flags;
 
   JSGlobalSpecialization(Editor* editor, JSGraph* jsgraph, Flags flags,
                          Handle<GlobalObject> global_object,
-                         CompilationDependencies* dependencies);
+                         CompilationDependencies* dependencies, Zone* zone);
 
   Reduction Reduce(Node* node) final;
 
  private:
   Reduction ReduceJSLoadGlobal(Node* node);
   Reduction ReduceJSStoreGlobal(Node* node);
-  Reduction ReduceLoadFromPropertyCell(Node* node,
-                                       Handle<PropertyCell> property_cell);
-  Reduction ReduceStoreToPropertyCell(Node* node,
-                                      Handle<PropertyCell> property_cell);
+  Reduction ReduceJSLoadNamed(Node* node);
 
   Reduction Replace(Node* node, Node* value, Node* effect = nullptr,
                     Node* control = nullptr) {
@@ -58,21 +55,33 @@ class JSGlobalSpecialization final : public AdvancedReducer {
   }
   Reduction Replace(Node* node, Handle<Object> value);
 
+  class PropertyAccessInfo;
+  bool ComputePropertyAccessInfo(Handle<Map> map, Handle<Name> name,
+                                 PropertyAccessInfo* access_info);
+  bool ComputePropertyAccessInfos(MapHandleList const& maps, Handle<Name> name,
+                                  ZoneVector<PropertyAccessInfo>* access_infos);
+
+  struct ScriptContextTableLookupResult;
+  bool LookupInScriptContextTable(Handle<Name> name,
+                                  ScriptContextTableLookupResult* result);
+
   Graph* graph() const;
   JSGraph* jsgraph() const { return jsgraph_; }
   Isolate* isolate() const;
   CommonOperatorBuilder* common() const;
   JSOperatorBuilder* javascript() const;
-  SimplifiedOperatorBuilder* simplified() { return &simplified_; }
+  SimplifiedOperatorBuilder* simplified() const;
+  MachineOperatorBuilder* machine() const;
   Flags flags() const { return flags_; }
   Handle<GlobalObject> global_object() const { return global_object_; }
   CompilationDependencies* dependencies() const { return dependencies_; }
+  Zone* zone() const { return zone_; }
 
   JSGraph* const jsgraph_;
   Flags const flags_;
   Handle<GlobalObject> global_object_;
   CompilationDependencies* const dependencies_;
-  SimplifiedOperatorBuilder simplified_;
+  Zone* const zone_;
 
   DISALLOW_COPY_AND_ASSIGN(JSGlobalSpecialization);
 };

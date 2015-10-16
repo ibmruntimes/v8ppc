@@ -147,7 +147,8 @@ macro TO_INTEGER_MAP_MINUS_ZERO(arg) = (%_IsSmi(%IS_VAR(arg)) ? arg : %NumberToI
 macro TO_INT32(arg) = ((arg) | 0);
 macro TO_UINT32(arg) = ((arg) >>> 0);
 macro TO_LENGTH(arg) = (%ToLength(arg));
-macro TO_LENGTH_OR_UINT32(arg) = (harmony_tolength ? TO_LENGTH(arg) : TO_UINT32(arg));
+macro TO_LENGTH_OR_UINT32(arg) = (FLAG_harmony_tolength ? TO_LENGTH(arg) : TO_UINT32(arg));
+macro TO_LENGTH_OR_INTEGER(arg) = (FLAG_harmony_tolength ? TO_LENGTH(arg) : TO_INTEGER(arg));
 macro TO_STRING(arg) = (%_ToString(arg));
 macro TO_NUMBER(arg) = (%_ToNumber(arg));
 macro TO_OBJECT(arg) = (%_ToObject(arg));
@@ -169,7 +170,6 @@ macro GET_PRIVATE(obj, sym) = (obj[sym]);
 macro SET_PRIVATE(obj, sym, val) = (obj[sym] = val);
 
 # Constants.  The compiler constant folds them.
-define NAN = $NaN;
 define INFINITY = (1/0);
 define UNDEFINED = (void 0);
 
@@ -306,7 +306,7 @@ define NOT_FOUND = -1;
 # Check whether debug is active.
 define DEBUG_IS_ACTIVE = (%_DebugIsActive() != 0);
 macro DEBUG_IS_STEPPING(function) = (%_DebugIsActive() != 0 && %DebugCallbackSupportsStepping(function));
-macro DEBUG_PREPARE_STEP_IN_IF_STEPPING(function) = if (DEBUG_IS_STEPPING(function)) %DebugPrepareStepInIfStepping(function);
+macro DEBUG_PREPARE_STEP_IN_IF_STEPPING(function) = if (%_DebugIsActive() != 0) %DebugPrepareStepInIfStepping(function);
 
 # SharedFlag equivalents
 define kNotShared = false;

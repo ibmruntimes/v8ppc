@@ -196,14 +196,28 @@ void Interpreter::DoLdaGlobal(compiler::InterpreterAssembler* assembler) {
 }
 
 
-// StaGlobal <slot_index>
+// StaGlobalSloppy <slot_index>
 //
-// Store the global at |slot_index| with the value in the the accumulator.
-void Interpreter::DoStaGlobal(compiler::InterpreterAssembler* assembler) {
+// Store the global at |slot_index| with the value in the the accumulator in
+// sloppy mode.
+void Interpreter::DoStaGlobalSloppy(compiler::InterpreterAssembler* assembler) {
   Node* slot_index = __ BytecodeOperandIdx8(0);
   Node* smi_slot_index = __ SmiTag(slot_index);
   Node* value = __ GetAccumulator();
   __ CallRuntime(Runtime::kStoreGlobalViaContext_Sloppy, smi_slot_index, value);
+  __ Dispatch();
+}
+
+
+// StaGlobalStrict <slot_index>
+//
+// Store the global at |slot_index| with the value in the the accumulator in
+// strict mode.
+void Interpreter::DoStaGlobalStrict(compiler::InterpreterAssembler* assembler) {
+  Node* slot_index = __ BytecodeOperandIdx8(0);
+  Node* smi_slot_index = __ SmiTag(slot_index);
+  Node* value = __ GetAccumulator();
+  __ CallRuntime(Runtime::kStoreGlobalViaContext_Strict, smi_slot_index, value);
   __ Dispatch();
 }
 
@@ -537,6 +551,25 @@ void Interpreter::DoCallRuntime(compiler::InterpreterAssembler* assembler) {
 }
 
 
+// New <constructor> <arg_count>
+//
+// Call operator new with |constructor| and the first argument in
+// register |first_arg| and |arg_count| arguments in subsequent
+//
+void Interpreter::DoNew(compiler::InterpreterAssembler* assembler) {
+  Callable ic = CodeFactory::InterpreterPushArgsAndConstruct(isolate_);
+  Node* constructor_index = __ BytecodeOperandReg8(0);
+  Node* constructor = __ LoadRegister(constructor_index);
+  Node* first_arg_reg = __ BytecodeOperandReg8(1);
+  Node* first_arg = __ RegisterLocation(first_arg_reg);
+  Node* args_count = __ BytecodeOperandCount8(2);
+  Node* result =
+      __ CallConstruct(constructor, constructor, first_arg, args_count);
+  __ SetAccumulator(result);
+  __ Dispatch();
+}
+
+
 // TestEqual <src>
 //
 // Test if the value in the <src> register equals the accumulator.
@@ -735,6 +768,72 @@ void Interpreter::DoCreateLiteral(Runtime::FunctionId function_id,
                                 constant_elements, flags);
   __ SetAccumulator(result);
   __ Dispatch();
+}
+
+
+// JumpIfToBooleanTrue <imm8>
+//
+// Jump by number of bytes represented by an immediate operand if the object
+// referenced by the accumulator is true when the object is cast to boolean.
+void Interpreter::DoJumpIfToBooleanTrue(
+    compiler::InterpreterAssembler* assembler) {
+  Node* accumulator = __ GetAccumulator();
+  Node* relative_jump = __ BytecodeOperandImm8(0);
+  Node* to_boolean_value =
+      __ CallRuntime(Runtime::kInterpreterToBoolean, accumulator);
+  Node* true_value = __ BooleanConstant(true);
+  __ JumpIfWordEqual(to_boolean_value, true_value, relative_jump);
+}
+
+
+// JumpIfToBooleanTrueConstant <idx>
+//
+// Jump by number of bytes in the Smi in the |idx| entry in the constant pool
+// if the object referenced by the accumulator is true when the object is cast
+// to boolean.
+void Interpreter::DoJumpIfToBooleanTrueConstant(
+    compiler::InterpreterAssembler* assembler) {
+  Node* accumulator = __ GetAccumulator();
+  Node* to_boolean_value =
+      __ CallRuntime(Runtime::kInterpreterToBoolean, accumulator);
+  Node* index = __ BytecodeOperandIdx8(0);
+  Node* constant = __ LoadConstantPoolEntry(index);
+  Node* relative_jump = __ SmiUntag(constant);
+  Node* true_value = __ BooleanConstant(true);
+  __ JumpIfWordEqual(to_boolean_value, true_value, relative_jump);
+}
+
+
+// JumpIfToBooleanFalse <imm8>
+//
+// Jump by number of bytes represented by an immediate operand if the object
+// referenced by the accumulator is false when the object is cast to boolean.
+void Interpreter::DoJumpIfToBooleanFalse(
+    compiler::InterpreterAssembler* assembler) {
+  Node* accumulator = __ GetAccumulator();
+  Node* relative_jump = __ BytecodeOperandImm8(0);
+  Node* to_boolean_value =
+      __ CallRuntime(Runtime::kInterpreterToBoolean, accumulator);
+  Node* false_value = __ BooleanConstant(false);
+  __ JumpIfWordEqual(to_boolean_value, false_value, relative_jump);
+}
+
+
+// JumpIfToBooleanFalseConstant <idx>
+//
+// Jump by number of bytes in the Smi in the |idx| entry in the constant pool
+// if the object referenced by the accumulator is false when the object is cast
+// to boolean.
+void Interpreter::DoJumpIfToBooleanFalseConstant(
+    compiler::InterpreterAssembler* assembler) {
+  Node* accumulator = __ GetAccumulator();
+  Node* to_boolean_value =
+      __ CallRuntime(Runtime::kInterpreterToBoolean, accumulator);
+  Node* index = __ BytecodeOperandIdx8(0);
+  Node* constant = __ LoadConstantPoolEntry(index);
+  Node* relative_jump = __ SmiUntag(constant);
+  Node* false_value = __ BooleanConstant(false);
+  __ JumpIfWordEqual(to_boolean_value, false_value, relative_jump);
 }
 
 

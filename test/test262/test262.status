@@ -245,6 +245,9 @@
   'built-ins/Symbol/species/builtin-getter-name': [FAIL],
   'built-ins/Symbol/species/subclassing': [FAIL],
 
+  # https://code.google.com/p/v8/issues/detail?id=4242
+  'built-ins/Date/15.9.1.15-1': [FAIL],
+
   # https://code.google.com/p/v8/issues/detail?id=4002
   'built-ins/Error/prototype/S15.11.4_A2': [FAIL],
 
@@ -796,6 +799,16 @@
   'language/literals/regexp/S7.8.5_A2.4_T2': [SKIP],
   'language/statements/const/syntax/const-invalid-assignment-next-expression-for': [SKIP],
 }],  # ALWAYS
+
+['system == linux', {
+  # BUG(v8:4437).
+  'intl402/Collator/10.1.1_19_c': [PASS, FAIL],
+  'intl402/Collator/9.2.5_11_g_ii_2': [PASS, FAIL],
+  'intl402/NumberFormat/11.1.1_17': [PASS, FAIL],
+  'intl402/NumberFormat/11.1.1_19': [PASS, FAIL],
+  'intl402/NumberFormat/prototype/format/11.3.2_TRF': [PASS, FAIL],
+  'intl402/NumberFormat/prototype/format/11.3.2_TRP': [PASS, FAIL],
+}],  # system == linux
 
 ['system == macos', {
   'intl402/11.3.2_TRP': [FAIL],

@@ -625,7 +625,12 @@ bool LCodeGen::GeneratePrologue() {
   if (info()->IsOptimizing()) {
     ProfileEntryHookStub::MaybeCallEntryHook(masm_);
 
-    // TODO(all): Add support for stop_t FLAG in DEBUG mode.
+#ifdef DEBUG
+    if (strlen(FLAG_stop_at) > 0 &&
+        info()->literal()->name()->IsUtf8EqualTo(CStrVector(FLAG_stop_at))) {
+      __ Debug("stop-at", __LINE__, BREAK);
+    }
+#endif
 
     // Sloppy mode functions and builtins need to replace the receiver with the
     // global proxy when called as functions (without an explicit receiver
@@ -2807,6 +2812,8 @@ void LCodeGen::DoDoubleToIntOrSmi(LDoubleToIntOrSmi* instr) {
 
 void LCodeGen::DoDrop(LDrop* instr) {
   __ Drop(instr->count());
+
+  RecordPushedArgumentsDelta(instr->hydrogen_value()->argument_delta());
 }
 
 

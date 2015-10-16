@@ -5877,6 +5877,7 @@ class Map: public HeapObject {
   inline bool IsJSProxyMap();
   inline bool IsJSGlobalProxyMap();
   inline bool IsJSGlobalObjectMap();
+  inline bool IsJSTypedArrayMap();
   inline bool IsGlobalObjectMap();
 
   inline bool CanOmitMapChecks();
@@ -10110,6 +10111,9 @@ class JSArray: public JSObject {
                                 Handle<Object> name, PropertyDescriptor* desc,
                                 ShouldThrow should_throw);
 
+  static bool AnythingToArrayLength(Isolate* isolate,
+                                    Handle<Object> length_object,
+                                    uint32_t* output);
   static bool ArraySetLength(Isolate* isolate, Handle<JSArray> a,
                              PropertyDescriptor* desc,
                              ShouldThrow should_throw);
@@ -10127,9 +10131,13 @@ class JSArray: public JSObject {
   static const int kLengthOffset = JSObject::kHeaderSize;
   static const int kSize = kLengthOffset + kPointerSize;
 
-  // Note that Page::kMaxRegularHeapObjectSize puts a limit on
-  // permissible values (see the DCHECK in heap.cc).
-  static const int kInitialMaxFastElementArray = 100000;
+  // 600 * KB is the Page::kMaxRegularHeapObjectSize defined in spaces.h which
+  // we do not want to include in objects.h
+  // Note that Page::kMaxRegularHeapObjectSize has to be in sync with
+  // kInitialMaxFastElementArray which is checked in a DCHECK in heap.cc.
+  static const int kInitialMaxFastElementArray =
+      (600 * KB - FixedArray::kHeaderSize - kSize - AllocationMemento::kSize) /
+      kPointerSize;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSArray);

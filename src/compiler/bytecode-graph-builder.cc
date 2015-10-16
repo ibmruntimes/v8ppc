@@ -255,7 +255,13 @@ void BytecodeGraphBuilder::VisitLdaGlobal(
 }
 
 
-void BytecodeGraphBuilder::VisitStaGlobal(
+void BytecodeGraphBuilder::VisitStaGlobalSloppy(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitStaGlobalStrict(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }
@@ -352,6 +358,12 @@ void BytecodeGraphBuilder::VisitCall(
 
 
 void BytecodeGraphBuilder::VisitCallRuntime(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitNew(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }
@@ -555,6 +567,30 @@ void BytecodeGraphBuilder::VisitJumpIfFalse(
 
 
 void BytecodeGraphBuilder::VisitJumpIfFalseConstant(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitJumpIfToBooleanTrue(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitJumpIfToBooleanTrueConstant(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitJumpIfToBooleanFalse(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitJumpIfToBooleanFalseConstant(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }

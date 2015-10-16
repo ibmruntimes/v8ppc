@@ -41,8 +41,9 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
   builder.LoadAccumulatorWithRegister(reg).StoreAccumulatorInRegister(reg);
 
   // Emit global load / store operations.
-  builder.LoadGlobal(1);
-  builder.StoreGlobal(1, LanguageMode::SLOPPY);
+  builder.LoadGlobal(1)
+      .StoreGlobal(1, LanguageMode::SLOPPY)
+      .StoreGlobal(1, LanguageMode::STRICT);
 
   // Emit context operations.
   builder.PushContext(reg);
@@ -90,6 +91,9 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
   // Emit unary operator invocations.
   builder.LogicalNot().TypeOf();
 
+  // Emit new.
+  builder.New(reg, reg, 0);
+
   // Emit test operator invocations.
   builder.CompareOperation(Token::Value::EQ, reg, Strength::WEAK)
       .CompareOperation(Token::Value::NE, reg, Strength::WEAK)
@@ -111,13 +115,21 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
   BytecodeLabel start;
   builder.Bind(&start);
   // Short jumps with Imm8 operands
-  builder.Jump(&start).JumpIfTrue(&start).JumpIfFalse(&start);
+  builder.Jump(&start)
+      .JumpIfTrue(&start)
+      .JumpIfFalse(&start)
+      .JumpIfToBooleanTrue(&start)
+      .JumpIfToBooleanFalse(&start);
   // Insert dummy ops to force longer jumps
   for (int i = 0; i < 128; i++) {
     builder.LoadTrue();
   }
   // Longer jumps requiring Constant operand
-  builder.Jump(&start).JumpIfTrue(&start).JumpIfFalse(&start);
+  builder.Jump(&start)
+      .JumpIfTrue(&start)
+      .JumpIfFalse(&start)
+      .JumpIfToBooleanTrue(&start)
+      .JumpIfToBooleanFalse(&start);
   builder.Return();
 
   // Generate BytecodeArray.

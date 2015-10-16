@@ -163,6 +163,7 @@ function PostNatives(utils) {
   // Whitelist of exports from normal natives to experimental natives and debug.
   var expose_list = [
     "ArrayToString",
+    "ErrorToString",
     "FunctionSourceString",
     "GetIterator",
     "GetMethod",
@@ -180,13 +181,23 @@ function PostNatives(utils) {
     "InnerArraySort",
     "InnerArrayToLocaleString",
     "IsNaN",
+    "MapEntries",
+    "MapIterator",
+    "MapIteratorNext",
     "MathMax",
     "MathMin",
     "ObjectIsFrozen",
     "ObjectDefineProperty",
+    "ObserveArrayMethods",
+    "ObserveObjectMethods",
     "OwnPropertyKeys",
+    "SameValueZero",
+    "SetIterator",
+    "SetIteratorNext",
+    "SetValues",
     "SymbolToString",
     "ToNameArray",
+    "ToPositiveInteger",
     // From runtime:
     "is_concat_spreadable_symbol",
     "iterator_symbol",
@@ -222,12 +233,9 @@ function PostExperimentals(utils) {
     imports_from_experimental(exports_container);
   }
 
-  exports_container = UNDEFINED;
-
-  utils.PostExperimentals = UNDEFINED;
-  utils.PostDebug = UNDEFINED;
-  utils.Import = UNDEFINED;
   utils.Export = UNDEFINED;
+  utils.PostDebug = UNDEFINED;
+  utils.PostExperimentals = UNDEFINED;
 }
 
 
@@ -238,11 +246,13 @@ function PostDebug(utils) {
 
   exports_container = UNDEFINED;
 
+  utils.Export = UNDEFINED;
+  utils.Import = UNDEFINED;
+  utils.ImportNow = UNDEFINED;
   utils.PostDebug = UNDEFINED;
   utils.PostExperimentals = UNDEFINED;
-  utils.Import = UNDEFINED;
-  utils.Export = UNDEFINED;
 }
+
 
 // -----------------------------------------------------------------------
 

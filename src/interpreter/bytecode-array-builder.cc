@@ -265,12 +265,10 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadGlobal(int slot_index) {
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::StoreGlobal(
     int slot_index, LanguageMode language_mode) {
-  if (!is_sloppy(language_mode)) {
-    UNIMPLEMENTED();
-  }
   DCHECK(slot_index >= 0);
+  Bytecode bytecode = BytecodeForStoreGlobal(language_mode);
   if (FitsInIdx8Operand(slot_index)) {
-    Output(Bytecode::kStaGlobal, static_cast<uint8_t>(slot_index));
+    Output(bytecode, static_cast<uint8_t>(slot_index));
   } else {
     UNIMPLEMENTED();
   }
@@ -458,6 +456,10 @@ Bytecode BytecodeArrayBuilder::GetJumpWithConstantOperand(
       return Bytecode::kJumpIfTrueConstant;
     case Bytecode::kJumpIfFalse:
       return Bytecode::kJumpIfFalseConstant;
+    case Bytecode::kJumpIfToBooleanTrue:
+      return Bytecode::kJumpIfToBooleanTrueConstant;
+    case Bytecode::kJumpIfToBooleanFalse:
+      return Bytecode::kJumpIfToBooleanFalseConstant;
     default:
       UNREACHABLE();
       return Bytecode::kJumpConstant;
@@ -546,6 +548,18 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfFalse(BytecodeLabel* label) {
 }
 
 
+BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfToBooleanTrue(
+    BytecodeLabel* label) {
+  return OutputJump(Bytecode::kJumpIfToBooleanTrue, label);
+}
+
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfToBooleanFalse(
+    BytecodeLabel* label) {
+  return OutputJump(Bytecode::kJumpIfToBooleanFalse, label);
+}
+
+
 BytecodeArrayBuilder& BytecodeArrayBuilder::Return() {
   Output(Bytecode::kReturn);
   return_seen_in_block_ = true;
@@ -579,6 +593,16 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::Call(Register callable,
   } else {
     UNIMPLEMENTED();
   }
+  return *this;
+}
+
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::New(Register constructor,
+                                                Register first_arg,
+                                                size_t arg_count) {
+  DCHECK(FitsInIdx8Operand(arg_count));
+  Output(Bytecode::kNew, constructor.ToOperand(), first_arg.ToOperand(),
+         static_cast<uint8_t>(arg_count));
   return *this;
 }
 
@@ -783,6 +807,23 @@ Bytecode BytecodeArrayBuilder::BytecodeForKeyedStoreIC(
       return Bytecode::kKeyedStoreICSloppy;
     case STRICT:
       return Bytecode::kKeyedStoreICStrict;
+    case STRONG:
+      UNIMPLEMENTED();
+    default:
+      UNREACHABLE();
+  }
+  return static_cast<Bytecode>(-1);
+}
+
+
+// static
+Bytecode BytecodeArrayBuilder::BytecodeForStoreGlobal(
+    LanguageMode language_mode) {
+  switch (language_mode) {
+    case SLOPPY:
+      return Bytecode::kStaGlobalSloppy;
+    case STRICT:
+      return Bytecode::kStaGlobalStrict;
     case STRONG:
       UNIMPLEMENTED();
     default:

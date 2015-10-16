@@ -2,13 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var $observeEnqueueSpliceRecord;
-var $observeBeginPerformSplice;
-var $observeEndPerformSplice;
-
-var $observeObjectMethods;
-var $observeArrayMethods;
-
 (function(global, utils) {
 
 "use strict";
@@ -18,14 +11,15 @@ var $observeArrayMethods;
 // -------------------------------------------------------------------
 // Imports
 
+var GetHash;
 var GlobalArray = global.Array;
 var GlobalObject = global.Object;
 var InternalArray = utils.InternalArray;
-
 var ObjectFreeze;
 var ObjectIsFrozen;
 
 utils.Import(function(from) {
+  GetHash = from.GetHash;
   ObjectFreeze = from.ObjectFreeze;
   ObjectIsFrozen = from.ObjectIsFrozen;
 });
@@ -207,7 +201,7 @@ function ObjectInfoGetOrCreate(object) {
       performingCount: 0,
     };
     %WeakCollectionSet(GetObservationStateJS().objectInfoMap,
-                       object, objectInfo, $getHash(object));
+                       object, objectInfo, GetHash(object));
   }
   return objectInfo;
 }
@@ -215,13 +209,13 @@ function ObjectInfoGetOrCreate(object) {
 
 function ObjectInfoGet(object) {
   return %WeakCollectionGet(GetObservationStateJS().objectInfoMap, object,
-                            $getHash(object));
+                            GetHash(object));
 }
 
 
 function ObjectInfoGetFromNotifier(notifier) {
   return %WeakCollectionGet(GetObservationStateJS().notifierObjectInfoMap,
-                            notifier, $getHash(notifier));
+                            notifier, GetHash(notifier));
 }
 
 
@@ -230,7 +224,7 @@ function ObjectInfoGetNotifier(objectInfo) {
     var notifier = { __proto__: notifierPrototype };
     objectInfo.notifier = notifier;
     %WeakCollectionSet(GetObservationStateJS().notifierObjectInfoMap,
-                       notifier, objectInfo, $getHash(notifier));
+                       notifier, objectInfo, GetHash(notifier));
   }
 
   return objectInfo.notifier;
@@ -342,13 +336,13 @@ function ConvertAcceptListToTypeMap(arg) {
 // normalizes. When delivery clears any pending change records, it re-optimizes.
 function CallbackInfoGet(callback) {
   return %WeakCollectionGet(GetObservationStateJS().callbackInfoMap, callback,
-                            $getHash(callback));
+                            GetHash(callback));
 }
 
 
 function CallbackInfoSet(callback, callbackInfo) {
   %WeakCollectionSet(GetObservationStateJS().callbackInfoMap,
-                     callback, callbackInfo, $getHash(callback));
+                     callback, callbackInfo, GetHash(callback));
 }
 
 
@@ -684,13 +678,14 @@ utils.InstallFunctions(notifierPrototype, DONT_ENUM, [
   "performChange", ObjectNotifierPerformChange
 ]);
 
-$observeObjectMethods = [
+var ObserveObjectMethods = [
   "deliverChangeRecords", ObjectDeliverChangeRecords,
   "getNotifier", ObjectGetNotifier,
   "observe", ObjectObserve,
   "unobserve", ObjectUnobserve
 ];
-$observeArrayMethods = [
+
+var ObserveArrayMethods = [
   "observe", ArrayObserve,
   "unobserve", ArrayUnobserve
 ];
@@ -700,12 +695,8 @@ $observeArrayMethods = [
 var removePrototypeFn = function(f, i) {
   if (i % 2 === 1) %FunctionRemovePrototype(f);
 };
-$observeObjectMethods.forEach(removePrototypeFn);
-$observeArrayMethods.forEach(removePrototypeFn);
-
-$observeEnqueueSpliceRecord = EnqueueSpliceRecord;
-$observeBeginPerformSplice = BeginPerformSplice;
-$observeEndPerformSplice = EndPerformSplice;
+ObserveObjectMethods.forEach(removePrototypeFn);
+ObserveArrayMethods.forEach(removePrototypeFn);
 
 %InstallToContext([
   "native_object_get_notifier", NativeObjectGetNotifier,
@@ -716,5 +707,13 @@ $observeEndPerformSplice = EndPerformSplice;
   "observers_enqueue_splice", EnqueueSpliceRecord,
   "observers_notify_change", NotifyChange,
 ]);
+
+utils.Export(function(to) {
+  to.ObserveArrayMethods = ObserveArrayMethods;
+  to.ObserveBeginPerformSplice = BeginPerformSplice;
+  to.ObserveEndPerformSplice = EndPerformSplice;
+  to.ObserveEnqueueSpliceRecord = EnqueueSpliceRecord;
+  to.ObserveObjectMethods = ObserveObjectMethods;
+});
 
 })

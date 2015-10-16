@@ -44,8 +44,8 @@
   V(Phi)                 \
   V(EffectSet)           \
   V(EffectPhi)           \
-  V(ValueEffect)         \
-  V(Finish)              \
+  V(BeginRegion)         \
+  V(FinishRegion)        \
   V(FrameState)          \
   V(StateValues)         \
   V(TypedStateValues)    \
@@ -226,6 +226,8 @@
   V(Word32Sar)                  \
   V(Word32Ror)                  \
   V(Word32Clz)                  \
+  V(Word32Ctz)                  \
+  V(Word32Popcnt)               \
   V(Word64And)                  \
   V(Word64Or)                   \
   V(Word64Xor)                  \

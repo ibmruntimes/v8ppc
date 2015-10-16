@@ -25,6 +25,7 @@ class BytecodeGeneratorHelper {
   BytecodeGeneratorHelper() {
     i::FLAG_vector_stores = true;
     i::FLAG_ignition = true;
+    i::FLAG_ignition_fake_try_catch = true;
     i::FLAG_ignition_filter = StrDup(kFunctionName);
     i::FLAG_always_opt = false;
     i::FLAG_allow_natives_syntax = true;
@@ -235,166 +236,263 @@ TEST(PrimitiveExpressions) {
        kPointerSize,
        1,
        6,
-       {
-           B(LdaZero),     //
-           B(Star), R(0),  //
-           B(Ldar), R(0),  //
-           B(Return)       //
-       },
+       {B(LdaZero),     //
+        B(Star), R(0),  //
+        B(Ldar), R(0),  //
+        B(Return)},
        0},
       {"var x = 0; return x + 3;",
        2 * kPointerSize,
        1,
        12,
-       {
-           B(LdaZero),         //
-           B(Star), R(0),      //
-           B(Ldar), R(0),      // Easy to spot r1 not really needed here.
-           B(Star), R(1),      // Dead store.
-           B(LdaSmi8), U8(3),  //
-           B(Add), R(1),       //
-           B(Return)           //
-       },
+       {B(LdaZero),         //
+        B(Star), R(0),      //
+        B(Ldar), R(0),      // Easy to spot r1 not really needed here.
+        B(Star), R(1),      // Dead store.
+        B(LdaSmi8), U8(3),  //
+        B(Add), R(1),       //
+        B(Return)},
        0},
       {"var x = 0; return x - 3;",
        2 * kPointerSize,
        1,
        12,
-       {
-           B(LdaZero),         //
-           B(Star), R(0),      //
-           B(Ldar), R(0),      // Easy to spot r1 not really needed here.
-           B(Star), R(1),      // Dead store.
-           B(LdaSmi8), U8(3),  //
-           B(Sub), R(1),       //
-           B(Return)           //
-       },
+       {B(LdaZero),         //
+        B(Star), R(0),      //
+        B(Ldar), R(0),      // Easy to spot r1 not really needed here.
+        B(Star), R(1),      // Dead store.
+        B(LdaSmi8), U8(3),  //
+        B(Sub), R(1),       //
+        B(Return)},
        0},
       {"var x = 4; return x * 3;",
        2 * kPointerSize,
        1,
        13,
-       {
-           B(LdaSmi8), U8(4),  //
-           B(Star), R(0),      //
-           B(Ldar), R(0),      // Easy to spot r1 not really needed here.
-           B(Star), R(1),      // Dead store.
-           B(LdaSmi8), U8(3),  //
-           B(Mul), R(1),       //
-           B(Return)           //
-       },
+       {B(LdaSmi8), U8(4),  //
+        B(Star), R(0),      //
+        B(Ldar), R(0),      // Easy to spot r1 not really needed here.
+        B(Star), R(1),      // Dead store.
+        B(LdaSmi8), U8(3),  //
+        B(Mul), R(1),       //
+        B(Return)},
        0},
       {"var x = 4; return x / 3;",
        2 * kPointerSize,
        1,
        13,
-       {
-           B(LdaSmi8), U8(4),  //
-           B(Star), R(0),      //
-           B(Ldar), R(0),      // Easy to spot r1 not really needed here.
-           B(Star), R(1),      // Dead store.
-           B(LdaSmi8), U8(3),  //
-           B(Div), R(1),       //
-           B(Return)           //
-       },
+       {B(LdaSmi8), U8(4),  //
+        B(Star), R(0),      //
+        B(Ldar), R(0),      // Easy to spot r1 not really needed here.
+        B(Star), R(1),      // Dead store.
+        B(LdaSmi8), U8(3),  //
+        B(Div), R(1),       //
+        B(Return)},
        0},
       {"var x = 4; return x % 3;",
        2 * kPointerSize,
        1,
        13,
-       {
-           B(LdaSmi8), U8(4),  //
-           B(Star), R(0),      //
-           B(Ldar), R(0),      // Easy to spot r1 not really needed here.
-           B(Star), R(1),      // Dead store.
-           B(LdaSmi8), U8(3),  //
-           B(Mod), R(1),       //
-           B(Return)           //
-       },
+       {B(LdaSmi8), U8(4),  //
+        B(Star), R(0),      //
+        B(Ldar), R(0),      // Easy to spot r1 not really needed here.
+        B(Star), R(1),      // Dead store.
+        B(LdaSmi8), U8(3),  //
+        B(Mod), R(1),       //
+        B(Return)},
        0},
       {"var x = 1; return x | 2;",
        2 * kPointerSize,
        1,
        13,
-       {
-           B(LdaSmi8), U8(1),   //
-           B(Star), R(0),       //
-           B(Ldar), R(0),       // Easy to spot r1 not really needed here.
-           B(Star), R(1),       // Dead store.
-           B(LdaSmi8), U8(2),   //
-           B(BitwiseOr), R(1),  //
-           B(Return)            //
-       },
+       {B(LdaSmi8), U8(1),   //
+        B(Star), R(0),       //
+        B(Ldar), R(0),       // Easy to spot r1 not really needed here.
+        B(Star), R(1),       // Dead store.
+        B(LdaSmi8), U8(2),   //
+        B(BitwiseOr), R(1),  //
+        B(Return)},
        0},
       {"var x = 1; return x ^ 2;",
        2 * kPointerSize,
        1,
        13,
-       {
-           B(LdaSmi8), U8(1),    //
-           B(Star), R(0),        //
-           B(Ldar), R(0),        // Easy to spot r1 not really needed here.
-           B(Star), R(1),        // Dead store.
-           B(LdaSmi8), U8(2),    //
-           B(BitwiseXor), R(1),  //
-           B(Return)             //
-       },
+       {B(LdaSmi8), U8(1),    //
+        B(Star), R(0),        //
+        B(Ldar), R(0),        // Easy to spot r1 not really needed here.
+        B(Star), R(1),        // Dead store.
+        B(LdaSmi8), U8(2),    //
+        B(BitwiseXor), R(1),  //
+        B(Return)},
        0},
       {"var x = 1; return x & 2;",
        2 * kPointerSize,
        1,
        13,
-       {
-           B(LdaSmi8), U8(1),    //
-           B(Star), R(0),        //
-           B(Ldar), R(0),        // Easy to spot r1 not really needed here.
-           B(Star), R(1),        // Dead store.
-           B(LdaSmi8), U8(2),    //
-           B(BitwiseAnd), R(1),  //
-           B(Return)             //
-       },
+       {B(LdaSmi8), U8(1),    //
+        B(Star), R(0),        //
+        B(Ldar), R(0),        // Easy to spot r1 not really needed here.
+        B(Star), R(1),        // Dead store.
+        B(LdaSmi8), U8(2),    //
+        B(BitwiseAnd), R(1),  //
+        B(Return)},
        0},
       {"var x = 10; return x << 3;",
        2 * kPointerSize,
        1,
        13,
-       {
-           B(LdaSmi8), U8(10),  //
-           B(Star), R(0),       //
-           B(Ldar), R(0),       // Easy to spot r1 not really needed here.
-           B(Star), R(1),       // Dead store.
-           B(LdaSmi8), U8(3),   //
-           B(ShiftLeft), R(1),  //
-           B(Return)            //
-       },
+       {B(LdaSmi8), U8(10),  //
+        B(Star), R(0),       //
+        B(Ldar), R(0),       // Easy to spot r1 not really needed here.
+        B(Star), R(1),       // Dead store.
+        B(LdaSmi8), U8(3),   //
+        B(ShiftLeft), R(1),  //
+        B(Return)},
        0},
       {"var x = 10; return x >> 3;",
        2 * kPointerSize,
        1,
        13,
-       {
-           B(LdaSmi8), U8(10),   //
-           B(Star), R(0),        //
-           B(Ldar), R(0),        // Easy to spot r1 not really needed here.
-           B(Star), R(1),        // Dead store.
-           B(LdaSmi8), U8(3),    //
-           B(ShiftRight), R(1),  //
-           B(Return)             //
-       },
+       {B(LdaSmi8), U8(10),   //
+        B(Star), R(0),        //
+        B(Ldar), R(0),        // Easy to spot r1 not really needed here.
+        B(Star), R(1),        // Dead store.
+        B(LdaSmi8), U8(3),    //
+        B(ShiftRight), R(1),  //
+        B(Return)},
        0},
       {"var x = 10; return x >>> 3;",
        2 * kPointerSize,
        1,
        13,
-       {
-           B(LdaSmi8), U8(10),  //
-           B(Star), R(0),       //
-           B(Ldar), R(0),       // Easy to spot r1 not really needed here.
-           B(Star), R(1),       // Dead store.
-           B(LdaSmi8), U8(3),   //
-           B(ShiftRightLogical), R(1),  //
-           B(Return)                    //
-       },
+       {B(LdaSmi8), U8(10),          //
+        B(Star), R(0),               //
+        B(Ldar), R(0),               // Easy to spot r1 not really needed here.
+        B(Star), R(1),               // Dead store.
+        B(LdaSmi8), U8(3),           //
+        B(ShiftRightLogical), R(1),  //
+        B(Return)},
+       0},
+      {"var x = 0; return (x, 3);",
+       1 * kPointerSize,
+       1,
+       8,
+       {B(LdaZero),         //
+        B(Star), R(0),      //
+        B(Ldar), R(0),      //
+        B(LdaSmi8), U8(3),  //
+        B(Return)},
+       0}};
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecodeForFunctionBody(snippets[i].code_snippet);
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
+}
+
+
+TEST(LogicalExpressions) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
+
+  ExpectedSnippet<int> snippets[] = {
+      {"var x = 0; return x || 3;",
+       1 * kPointerSize,
+       1,
+       10,
+       {B(LdaZero),                     //
+        B(Star), R(0),                  //
+        B(Ldar), R(0),                  //
+        B(JumpIfToBooleanTrue), U8(4),  //
+        B(LdaSmi8), U8(3),              //
+        B(Return)},
+       0},
+      {"var x = 0; return x && 3;",
+       1 * kPointerSize,
+       1,
+       10,
+       {B(LdaZero),                      //
+        B(Star), R(0),                   //
+        B(Ldar), R(0),                   //
+        B(JumpIfToBooleanFalse), U8(4),  //
+        B(LdaSmi8), U8(3),               //
+        B(Return)},
+       0},
+      {"var x = 1; var a = 2, b = 3; return x || ("
+#define X "a, b, a, b, "
+       X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X
+#undef X
+       "3);",
+       3 * kPointerSize,
+       1,
+       283,
+       {B(LdaSmi8), U8(1),                      //
+        B(Star), R(0),                          //
+        B(LdaSmi8), U8(2),                      //
+        B(Star), R(1),                          //
+        B(LdaSmi8), U8(3),                      //
+        B(Star), R(2),                          //
+        B(Ldar), R(0),                          //
+        B(JumpIfToBooleanTrueConstant), U8(0),  //
+#define X B(Ldar), R(1), B(Ldar), R(2), B(Ldar), R(1), B(Ldar), R(2),
+        X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X
+#undef X
+        B(LdaSmi8), U8(3),                      //
+        B(Return)},
+       1,
+       {268, 0, 0, 0}},
+      {"var x = 0; var a = 2, b = 3; return x && ("
+#define X "a, b, a, b, "
+       X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X
+#undef X
+       "3);",
+       3 * kPointerSize,
+       1,
+       282,
+       {B(LdaZero),                              //
+        B(Star), R(0),                           //
+        B(LdaSmi8), U8(2),                       //
+        B(Star), R(1),                           //
+        B(LdaSmi8), U8(3),                       //
+        B(Star), R(2),                           //
+        B(Ldar), R(0),                           //
+        B(JumpIfToBooleanFalseConstant), U8(0),  //
+#define X B(Ldar), R(1), B(Ldar), R(2), B(Ldar), R(1), B(Ldar), R(2),
+        X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X
+#undef X
+        B(LdaSmi8), U8(3),                       //
+        B(Return)},
+       1,
+       {268, 0, 0, 0}},
+      {"return 0 && 3;",
+       0 * kPointerSize,
+       1,
+       2,
+       {B(LdaZero),                    //
+        B(Return)},
+       0},
+      {"return 1 || 3;",
+       0 * kPointerSize,
+       1,
+       3,
+       {B(LdaSmi8), U8(1),             //
+        B(Return)},
+       0},
+      {"var x = 1; return x && 3 || 0, 1;",
+       1 * kPointerSize,
+       1,
+       16,
+       {B(LdaSmi8), U8(1),               //
+        B(Star), R(0),                   //
+        B(Ldar), R(0),                   //
+        B(JumpIfToBooleanFalse), U8(4),  //
+        B(LdaSmi8), U8(3),               //
+        B(JumpIfToBooleanTrue), U8(3),   //
+        B(LdaZero),                      //
+        B(LdaSmi8), U8(1),               //
+        B(Return)},
        0}};
 
   for (size_t i = 0; i < arraysize(snippets); i++) {
@@ -917,14 +1015,14 @@ TEST(PropertyCall) {
            B(LoadICSloppy), R(1), U8(vector->GetIndex(slot2)),  //
            B(Star), R(0),                                       //
            B(Ldar), R(helper.kLastParamIndex),                  //
-           B(Star), R(2),                                       //
+           B(Star), R(3),                                       //
            B(Ldar), R(helper.kLastParamIndex),                  //
-           B(Add), R(2),                                        //
+           B(Add), R(3),                                        //
            B(Star), R(2),                                       //
            B(Ldar), R(helper.kLastParamIndex),                  //
            B(Star), R(3),                                       //
            B(Call), R(0), R(1), U8(2),                          //
-           B(Return)                                            //
+           B(Return),                                           //
        },
        1,
        {"func"}}};
@@ -975,17 +1073,17 @@ TEST(StoreGlobal) {
   InitializedHandleScope handle_scope;
   BytecodeGeneratorHelper helper;
 
-  ExpectedSnippet<int> snippets[] = {
+  ExpectedSnippet<InstanceType> snippets[] = {
       {
           "var a = 1;\nfunction f() { a = 2; }\nf()",
           0,
           1,
           6,
           {
-              B(LdaSmi8), U8(2),  //
-              B(StaGlobal), _,    //
-              B(LdaUndefined),    //
-              B(Return)           //
+              B(LdaSmi8), U8(2),      //
+              B(StaGlobalSloppy), _,  //
+              B(LdaUndefined),        //
+              B(Return)               //
           },
       },
       {
@@ -995,9 +1093,21 @@ TEST(StoreGlobal) {
           6,
           {
               B(Ldar), R(helper.kLastParamIndex),  //
-              B(StaGlobal), _,                     //
+              B(StaGlobalSloppy), _,               //
               B(LdaUndefined),                     //
               B(Return)                            //
+          },
+      },
+      {
+          "'use strict'; var a = 1;\nfunction f() { a = 2; }\nf()",
+          0,
+          1,
+          6,
+          {
+              B(LdaSmi8), U8(2),      //
+              B(StaGlobalStrict), _,  //
+              B(LdaUndefined),        //
+              B(Return)               //
           },
       },
   };
@@ -1468,7 +1578,7 @@ TEST(DeclareGlobals) {
            B(CallRuntime), U16(Runtime::kInitializeVarGlobal), R(2),      //
                            U8(3),                                         //
            B(LdaSmi8), U8(2),                                             //
-           B(StaGlobal), _,                                               //
+           B(StaGlobalSloppy), _,                                         //
            B(Star), R(0),                                                 //
            B(Ldar), R(0),                                                 //
            B(Return)                                                      //
@@ -2234,30 +2344,19 @@ TEST(ObjectLiterals) {
         InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE,
         InstanceType::SHARED_FUNCTION_INFO_TYPE,
         InstanceType::SHARED_FUNCTION_INFO_TYPE}},
-      {"return { get a() { return this.x; }, set b(val) { this.y = val } };",
+      {"return { set b(val) { this.y = val } };",
        5 * kPointerSize,
        1,
-       52,
+       31,
        {
            B(LdaConstant), U8(0),                                           //
            B(CreateObjectLiteral), U8(0), U8(deep_elements_flags),          //
            B(Star), R(0),                                                   //
            B(LdaConstant), U8(1),                                           //
            B(Star), R(1),                                                   //
+           B(LdaNull),                                                      //
+           B(Star), R(2),                                                   //
            B(LdaConstant), U8(2),                                           //
-           B(CreateClosure), U8(0),                                         //
-           B(Star), R(2),                                                   //
-           B(LdaNull),                                                      //
-           B(Star), R(3),                                                   //
-           B(LdaZero),                                                      //
-           B(Star), R(4),                                                   //
-           B(CallRuntime), U16(Runtime::kDefineAccessorPropertyUnchecked),  //
-                           R(0), U8(5),                                     //
-           B(LdaConstant), U8(3),                                           //
-           B(Star), R(1),                                                   //
-           B(LdaNull),                                                      //
-           B(Star), R(2),                                                   //
-           B(LdaConstant), U8(4),                                           //
            B(CreateClosure), U8(0),                                         //
            B(Star), R(3),                                                   //
            B(LdaZero),                                                      //
@@ -2267,10 +2366,8 @@ TEST(ObjectLiterals) {
            B(Ldar), R(0),                                                   //
            B(Return),                                                       //
        },
-       5,
+       3,
        {InstanceType::FIXED_ARRAY_TYPE,
-        InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE,
-        InstanceType::SHARED_FUNCTION_INFO_TYPE,
         InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE,
         InstanceType::SHARED_FUNCTION_INFO_TYPE}},
       {"var a = 1; return { 1: a };",
@@ -2509,6 +2606,145 @@ TEST(TopLevelObjectLiterals) {
     Handle<BytecodeArray> bytecode_array =
         helper.MakeTopLevelBytecode(snippets[i].code_snippet);
     CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
+}
+
+
+TEST(TryCatch) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
+  // TODO(rmcilroy): modify tests when we have real try catch support.
+  ExpectedSnippet<int> snippets[] = {
+      {"try { return 1; } catch(e) { return 2; }",
+       0,
+       1,
+       5,
+       {
+           B(LdaSmi8), U8(1),  //
+           B(Return),          //
+           B(LdaUndefined),    //
+           B(Return),          //
+       },
+       0},
+  };
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecodeForFunctionBody(snippets[i].code_snippet);
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
+}
+
+
+TEST(TryFinally) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
+  // TODO(rmcilroy): modify tests when we have real try finally support.
+  ExpectedSnippet<int> snippets[] = {
+      {"var a = 1; try { a = 2; } finally { a = 3; }",
+       1 * kPointerSize,
+       1,
+       14,
+       {
+           B(LdaSmi8), U8(1),  //
+           B(Star), R(0),      //
+           B(LdaSmi8), U8(2),  //
+           B(Star), R(0),      //
+           B(LdaSmi8), U8(3),  //
+           B(Star), R(0),      //
+           B(LdaUndefined),    //
+           B(Return),          //
+       },
+       0},
+      {"var a = 1; try { a = 2; } catch(e) { a = 20 } finally { a = 3; }",
+       1 * kPointerSize,
+       1,
+       14,
+       {
+           B(LdaSmi8), U8(1),  //
+           B(Star), R(0),      //
+           B(LdaSmi8), U8(2),  //
+           B(Star), R(0),      //
+           B(LdaSmi8), U8(3),  //
+           B(Star), R(0),      //
+           B(LdaUndefined),    //
+           B(Return),          //
+       },
+       0},
+  };
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecodeForFunctionBody(snippets[i].code_snippet);
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
+}
+
+
+TEST(CallNew) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
+  ExpectedSnippet<InstanceType> snippets[] = {
+      {"function bar() { this.value = 0; }\n"
+       "function f() { return new bar(); }\n"
+       "f()",
+       kPointerSize,
+       1,
+       9,
+       {
+           B(LdaGlobal), _,            //
+           B(Star), R(0),              //
+           B(New), R(0), R(0), U8(0),  //
+           B(Return),                  //
+       },
+       0},
+      {"function bar(x) { this.value = 18; this.x = x;}\n"
+       "function f() { return new bar(3); }\n"
+       "f()",
+       2 * kPointerSize,
+       1,
+       13,
+       {
+           B(LdaGlobal), _,            //
+           B(Star), R(0),              //
+           B(LdaSmi8), U8(3),          //
+           B(Star), R(1),              //
+           B(New), R(0), R(1), U8(1),  //
+           B(Return),                  //
+       },
+       0},
+      {"function bar(w, x, y, z) {\n"
+       "  this.value = 18;\n"
+       "  this.x = x;\n"
+       "  this.y = y;\n"
+       "  this.z = z;\n"
+       "}\n"
+       "function f() { return new bar(3, 4, 5); }\n"
+       "f()",
+       4 * kPointerSize,
+       1,
+       21,
+       {
+           B(LdaGlobal), _,            //
+           B(Star), R(0),              //
+           B(LdaSmi8), U8(3),          //
+           B(Star), R(1),              //
+           B(LdaSmi8), U8(4),          //
+           B(Star), R(2),              //
+           B(LdaSmi8), U8(5),          //
+           B(Star), R(3),              //
+           B(New), R(0), R(1), U8(3),  //
+           B(Return),                  //
+       },
+       0}};
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecode(snippets[i].code_snippet, "f");
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array, true);
   }
 }
 

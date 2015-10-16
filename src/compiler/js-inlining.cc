@@ -310,6 +310,14 @@ Reduction JSInliner::ReduceJSCallFunction(Node* node,
     }
   }
 
+  // TODO(turbofan): Inlining into a try-block is not yet supported.
+  if (NodeProperties::IsExceptionalCall(node)) {
+    TRACE("Not inlining %s into %s because of surrounding try-block\n",
+          function->shared()->DebugName()->ToCString().get(),
+          info_->shared_info()->DebugName()->ToCString().get());
+    return NoChange();
+  }
+
   Zone zone;
   ParseInfo parse_info(&zone, function);
   CompilationInfo info(&parse_info);
@@ -318,9 +326,6 @@ Reduction JSInliner::ReduceJSCallFunction(Node* node,
   }
   if (info_->is_native_context_specializing()) {
     info.MarkAsNativeContextSpecializing();
-  }
-  if (info_->is_typing_enabled()) {
-    info.MarkAsTypingEnabled();
   }
 
   if (!Compiler::ParseAndAnalyze(info.parse_info())) {
@@ -346,7 +351,8 @@ Reduction JSInliner::ReduceJSCallFunction(Node* node,
 
   Graph graph(info.zone());
   JSGraph jsgraph(info.isolate(), &graph, jsgraph_->common(),
-                  jsgraph_->javascript(), jsgraph_->machine());
+                  jsgraph_->javascript(), jsgraph_->simplified(),
+                  jsgraph_->machine());
   AstGraphBuilder graph_builder(local_zone_, &info, &jsgraph);
   graph_builder.CreateGraph(false);
 
@@ -358,16 +364,13 @@ Reduction JSInliner::ReduceJSCallFunction(Node* node,
                                               jsgraph.common());
     CommonOperatorReducer common_reducer(&graph_reducer, &graph,
                                          jsgraph.common(), jsgraph.machine());
-    JSGlobalSpecialization::Flags flags = JSGlobalSpecialization::kNoFlags;
-    if (info.is_deoptimization_enabled()) {
-      flags |= JSGlobalSpecialization::kDeoptimizationEnabled;
-    }
-    if (info.is_typing_enabled()) {
-      flags |= JSGlobalSpecialization::kTypingEnabled;
-    }
     JSGlobalSpecialization global_specialization(
-        &graph_reducer, &jsgraph, flags,
-        handle(info.global_object(), info.isolate()), info_->dependencies());
+        &graph_reducer, &jsgraph,
+        info.is_deoptimization_enabled()
+            ? JSGlobalSpecialization::kDeoptimizationEnabled
+            : JSGlobalSpecialization::kNoFlags,
+        handle(info.global_object(), info.isolate()), info_->dependencies(),
+        local_zone_);
     graph_reducer.AddReducer(&dead_code_elimination);
     graph_reducer.AddReducer(&common_reducer);
     graph_reducer.AddReducer(&global_specialization);

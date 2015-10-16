@@ -100,13 +100,19 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& Call(Register callable, Register receiver,
                              size_t arg_count);
 
+  // Call the new operator. The |constructor| register is followed by
+  // |arg_count| consecutive registers containing arguments to be
+  // applied to the constructor.
+  BytecodeArrayBuilder& New(Register constructor, Register first_arg,
+                            size_t arg_count);
+
   // Call the runtime function with |function_id|. The first argument should be
   // in |first_arg| and all subsequent arguments should be in registers
   // <first_arg + 1> to <first_arg + 1 + arg_count>.
   BytecodeArrayBuilder& CallRuntime(Runtime::FunctionId function_id,
                                     Register first_arg, size_t arg_count);
 
-  // Operators (register == lhs, accumulator = rhs).
+  // Operators (register holds the lhs value, accumulator holds the rhs value).
   BytecodeArrayBuilder& BinaryOperation(Token::Value binop, Register reg,
                                         Strength strength);
 
@@ -129,6 +135,11 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& Jump(BytecodeLabel* label);
   BytecodeArrayBuilder& JumpIfTrue(BytecodeLabel* label);
   BytecodeArrayBuilder& JumpIfFalse(BytecodeLabel* label);
+  // TODO(mythria) The following two functions should be merged into
+  // JumpIfTrue/False. These bytecodes should be automatically chosen rather
+  // than explicitly using them.
+  BytecodeArrayBuilder& JumpIfToBooleanTrue(BytecodeLabel* label);
+  BytecodeArrayBuilder& JumpIfToBooleanFalse(BytecodeLabel* label);
   BytecodeArrayBuilder& Return();
 
   BytecodeArrayBuilder& EnterBlock();
@@ -148,6 +159,7 @@ class BytecodeArrayBuilder {
   static Bytecode BytecodeForKeyedLoadIC(LanguageMode language_mode);
   static Bytecode BytecodeForStoreIC(LanguageMode language_mode);
   static Bytecode BytecodeForKeyedStoreIC(LanguageMode language_mode);
+  static Bytecode BytecodeForStoreGlobal(LanguageMode language_mode);
 
   static bool FitsInIdx8Operand(int value);
   static bool FitsInIdx8Operand(size_t value);

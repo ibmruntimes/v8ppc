@@ -36,7 +36,8 @@ class ChangeLoweringTest : public TypedGraphTest {
   Reduction Reduce(Node* node) {
     MachineOperatorBuilder machine(zone(), WordRepresentation());
     JSOperatorBuilder javascript(zone());
-    JSGraph jsgraph(isolate(), graph(), common(), &javascript, &machine);
+    JSGraph jsgraph(isolate(), graph(), common(), &javascript, nullptr,
+                    &machine);
     ChangeLowering reducer(&jsgraph);
     return reducer.Reduce(node);
   }
@@ -128,9 +129,10 @@ TARGET_TEST_P(ChangeLoweringCommonTest, ChangeFloat64ToTagged) {
   Capture<Node*> heap_number;
   EXPECT_THAT(
       r.replacement(),
-      IsFinish(
+      IsFinishRegion(
           AllOf(CaptureEq(&heap_number),
-                IsAllocateHeapNumber(IsValueEffect(value), graph()->start())),
+                IsAllocateHeapNumber(IsBeginRegion(graph()->start()),
+                                     graph()->start())),
           IsStore(StoreRepresentation(kMachFloat64, kNoWriteBarrier),
                   CaptureEq(&heap_number),
                   IsIntPtrConstant(HeapNumber::kValueOffset - kHeapObjectTag),
@@ -218,14 +220,15 @@ TARGET_TEST_F(ChangeLowering32Test, ChangeInt32ToTagged) {
   EXPECT_THAT(
       r.replacement(),
       IsPhi(kMachAnyTagged,
-            IsFinish(AllOf(CaptureEq(&heap_number),
-                           IsAllocateHeapNumber(_, CaptureEq(&if_true))),
-                     IsStore(StoreRepresentation(kMachFloat64, kNoWriteBarrier),
-                             CaptureEq(&heap_number),
-                             IsIntPtrConstant(HeapNumber::kValueOffset -
-                                              kHeapObjectTag),
-                             IsChangeInt32ToFloat64(value),
-                             CaptureEq(&heap_number), CaptureEq(&if_true))),
+            IsFinishRegion(
+                AllOf(CaptureEq(&heap_number),
+                      IsAllocateHeapNumber(_, CaptureEq(&if_true))),
+                IsStore(
+                    StoreRepresentation(kMachFloat64, kNoWriteBarrier),
+                    CaptureEq(&heap_number),
+                    IsIntPtrConstant(HeapNumber::kValueOffset - kHeapObjectTag),
+                    IsChangeInt32ToFloat64(value), CaptureEq(&heap_number),
+                    CaptureEq(&if_true))),
             IsProjection(0, AllOf(CaptureEq(&add),
                                   IsInt32AddWithOverflow(value, value))),
             IsMerge(AllOf(CaptureEq(&if_true), IsIfTrue(CaptureEq(&branch))),
@@ -327,14 +330,15 @@ TARGET_TEST_F(ChangeLowering32Test, ChangeUint32ToTagged) {
       IsPhi(
           kMachAnyTagged,
           IsWord32Shl(value, IsInt32Constant(kSmiTagSize + kSmiShiftSize)),
-          IsFinish(AllOf(CaptureEq(&heap_number),
-                         IsAllocateHeapNumber(_, CaptureEq(&if_false))),
-                   IsStore(StoreRepresentation(kMachFloat64, kNoWriteBarrier),
-                           CaptureEq(&heap_number),
-                           IsInt32Constant(HeapNumber::kValueOffset -
-                                           kHeapObjectTag),
-                           IsChangeUint32ToFloat64(value),
-                           CaptureEq(&heap_number), CaptureEq(&if_false))),
+          IsFinishRegion(
+              AllOf(CaptureEq(&heap_number),
+                    IsAllocateHeapNumber(_, CaptureEq(&if_false))),
+              IsStore(
+                  StoreRepresentation(kMachFloat64, kNoWriteBarrier),
+                  CaptureEq(&heap_number),
+                  IsInt32Constant(HeapNumber::kValueOffset - kHeapObjectTag),
+                  IsChangeUint32ToFloat64(value), CaptureEq(&heap_number),
+                  CaptureEq(&if_false))),
           IsMerge(IsIfTrue(AllOf(
                       CaptureEq(&branch),
                       IsBranch(IsUint32LessThanOrEqual(
@@ -459,14 +463,15 @@ TARGET_TEST_F(ChangeLowering64Test, ChangeUint32ToTagged) {
           kMachAnyTagged,
           IsWord64Shl(IsChangeUint32ToUint64(value),
                       IsInt64Constant(kSmiTagSize + kSmiShiftSize)),
-          IsFinish(AllOf(CaptureEq(&heap_number),
-                         IsAllocateHeapNumber(_, CaptureEq(&if_false))),
-                   IsStore(StoreRepresentation(kMachFloat64, kNoWriteBarrier),
-                           CaptureEq(&heap_number),
-                           IsInt64Constant(HeapNumber::kValueOffset -
-                                           kHeapObjectTag),
-                           IsChangeUint32ToFloat64(value),
-                           CaptureEq(&heap_number), CaptureEq(&if_false))),
+          IsFinishRegion(
+              AllOf(CaptureEq(&heap_number),
+                    IsAllocateHeapNumber(_, CaptureEq(&if_false))),
+              IsStore(
+                  StoreRepresentation(kMachFloat64, kNoWriteBarrier),
+                  CaptureEq(&heap_number),
+                  IsInt64Constant(HeapNumber::kValueOffset - kHeapObjectTag),
+                  IsChangeUint32ToFloat64(value), CaptureEq(&heap_number),
+                  CaptureEq(&if_false))),
           IsMerge(IsIfTrue(AllOf(
                       CaptureEq(&branch),
                       IsBranch(IsUint32LessThanOrEqual(

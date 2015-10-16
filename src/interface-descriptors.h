@@ -41,6 +41,7 @@ class PlatformInterfaceDescriptor;
   V(RegExpConstructResult)                    \
   V(TransitionElementsKind)                   \
   V(AllocateHeapNumber)                       \
+  V(AllocateInNewSpace)                       \
   V(ArrayConstructorConstantArgCount)         \
   V(ArrayConstructor)                         \
   V(InternalArrayConstructorConstantArgCount) \
@@ -71,6 +72,7 @@ class PlatformInterfaceDescriptor;
   V(MathRoundVariantCallFromUnoptimizedCode)  \
   V(MathRoundVariantCallFromOptimizedCode)    \
   V(InterpreterPushArgsAndCall)               \
+  V(InterpreterPushArgsAndConstruct)          \
   V(InterpreterCEntry)
 
 
@@ -508,6 +510,12 @@ class AllocateHeapNumberDescriptor : public CallInterfaceDescriptor {
 };
 
 
+class AllocateInNewSpaceDescriptor : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR(AllocateInNewSpaceDescriptor, CallInterfaceDescriptor)
+};
+
+
 class ArrayConstructorConstantArgCountDescriptor
     : public CallInterfaceDescriptor {
  public:
@@ -712,6 +720,14 @@ class GrowArrayElementsDescriptor : public CallInterfaceDescriptor {
 class InterpreterPushArgsAndCallDescriptor : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(InterpreterPushArgsAndCallDescriptor,
+                     CallInterfaceDescriptor)
+};
+
+
+class InterpreterPushArgsAndConstructDescriptor
+    : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR(InterpreterPushArgsAndConstructDescriptor,
                      CallInterfaceDescriptor)
 };
 

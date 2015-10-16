@@ -844,6 +844,8 @@ class Assembler : public AssemblerBase {
   void bts(const Operand& dst, Register src);
   void bsrl(Register dst, Register src);
   void bsrl(Register dst, const Operand& src);
+  void bsfl(Register dst, Register src);
+  void bsfl(Register dst, const Operand& src);
 
   // Miscellaneous
   void clc();
@@ -1267,6 +1269,21 @@ class Assembler : public AssemblerBase {
   void vfmass(byte op, XMMRegister dst, XMMRegister src1, XMMRegister src2);
   void vfmass(byte op, XMMRegister dst, XMMRegister src1, const Operand& src2);
 
+  void vmovd(XMMRegister dst, Register src);
+  void vmovd(XMMRegister dst, const Operand& src);
+  void vmovd(Register dst, XMMRegister src);
+  void vmovq(XMMRegister dst, Register src);
+  void vmovq(XMMRegister dst, const Operand& src);
+  void vmovq(Register dst, XMMRegister src);
+
+  void vmovapd(XMMRegister dst, XMMRegister src);
+  void vmovsd(XMMRegister dst, const Operand& src) {
+    vsd(0x10, dst, xmm0, src);
+  }
+  void vmovsd(XMMRegister dst, XMMRegister src) { vsd(0x10, dst, xmm0, src); }
+  void vmovsd(const Operand& dst, XMMRegister src) {
+    vsd(0x11, src, xmm0, dst);
+  }
   void vaddsd(XMMRegister dst, XMMRegister src1, XMMRegister src2) {
     vsd(0x58, dst, src1, src2);
   }
@@ -1302,6 +1319,13 @@ class Assembler : public AssemblerBase {
   }
   void vminsd(XMMRegister dst, XMMRegister src1, const Operand& src2) {
     vsd(0x5d, dst, src1, src2);
+  }
+  void vcvtlsi2sd(XMMRegister dst, XMMRegister src1, Register src2) {
+    XMMRegister isrc2 = {src2.code()};
+    vsd(0x2a, dst, src1, isrc2);
+  }
+  void vcvtlsi2sd(XMMRegister dst, XMMRegister src1, const Operand& src2) {
+    vsd(0x2a, dst, src1, src2);
   }
   void vucomisd(XMMRegister dst, XMMRegister src);
   void vucomisd(XMMRegister dst, const Operand& src);

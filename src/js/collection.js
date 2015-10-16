@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var $getHash;
-var $getExistingHash;
-
 (function(global, utils) {
 "use strict";
 
@@ -18,16 +15,16 @@ var GlobalObject = global.Object;
 var GlobalSet = global.Set;
 var hashCodeSymbol = utils.ImportNow("hash_code_symbol");
 var IntRandom;
+var MapIterator;
+var NumberIsNaN;
+var SetIterator;
 var toStringTagSymbol = utils.ImportNow("to_string_tag_symbol");
 
 utils.Import(function(from) {
   IntRandom = from.IntRandom;
-});
-
-var NumberIsNaN;
-
-utils.Import(function(from) {
+  MapIterator = from.MapIterator;
   NumberIsNaN = from.NumberIsNaN;
+  SetIterator = from.SetIterator;
 });
 
 // -------------------------------------------------------------------
@@ -249,7 +246,7 @@ function SetForEach(f, receiver) {
 
   var iterator = new SetIterator(this, ITERATOR_KIND_VALUES);
   var key;
-  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
+  var stepping = DEBUG_IS_STEPPING(f);
   var value_array = [UNDEFINED];
   while (%SetIteratorNext(iterator, value_array)) {
     if (stepping) %DebugPrepareStepInIfStepping(f);
@@ -432,7 +429,7 @@ function MapForEach(f, receiver) {
   if (!IS_CALLABLE(f)) throw MakeTypeError(kCalledNonCallable, f);
 
   var iterator = new MapIterator(this, ITERATOR_KIND_ENTRIES);
-  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
+  var stepping = DEBUG_IS_STEPPING(f);
   var value_array = [UNDEFINED, UNDEFINED];
   while (%MapIteratorNext(iterator, value_array)) {
     if (stepping) %DebugPrepareStepInIfStepping(f);
@@ -461,10 +458,6 @@ utils.InstallFunctions(GlobalMap.prototype, DONT_ENUM, [
   "clear", MapClearJS,
   "forEach", MapForEach
 ]);
-
-// Expose to the global scope.
-$getHash = GetHash;
-$getExistingHash = GetExistingHash;
 
 function MapFromArray(array) {
   var map = new GlobalMap;
@@ -500,5 +493,10 @@ function SetFromArray(array) {
   "map_from_array", MapFromArray,
   "set_from_array",SetFromArray,
 ]);
+
+utils.Export(function(to) {
+  to.GetExistingHash = GetExistingHash;
+  to.GetHash = GetHash;
+});
 
 })

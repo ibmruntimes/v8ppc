@@ -2125,25 +2125,25 @@ bool FreeListCategory::ContainsPageFreeListItemsInList(Page* p) {
 
 FreeSpace* FreeListCategory::PickNodeFromList(int* node_size) {
   FreeSpace* node = top();
+  if (node == nullptr) return nullptr;
 
-  if (node == NULL) return NULL;
-
-  while (node != NULL &&
-         Page::FromAddress(node->address())->IsEvacuationCandidate()) {
+  Page* page = Page::FromAddress(node->address());
+  while ((node != nullptr) && page->IsEvacuationCandidate()) {
     available_ -= node->Size();
+    page->add_available_in_free_list(type_, -(node->Size()));
     node = node->next();
   }
 
-  if (node != NULL) {
+  if (node != nullptr) {
     set_top(node->next());
     *node_size = node->Size();
     available_ -= *node_size;
   } else {
-    set_top(NULL);
+    set_top(nullptr);
   }
 
-  if (top() == NULL) {
-    set_end(NULL);
+  if (top() == nullptr) {
+    set_end(nullptr);
   }
 
   return node;
@@ -2153,10 +2153,10 @@ FreeSpace* FreeListCategory::PickNodeFromList(int* node_size) {
 FreeSpace* FreeListCategory::PickNodeFromList(int size_in_bytes,
                                               int* node_size) {
   FreeSpace* node = PickNodeFromList(node_size);
-  if (node != NULL && *node_size < size_in_bytes) {
+  if ((node != nullptr) && (*node_size < size_in_bytes)) {
     Free(node, *node_size);
     *node_size = 0;
-    return NULL;
+    return nullptr;
   }
   return node;
 }
@@ -2164,50 +2164,38 @@ FreeSpace* FreeListCategory::PickNodeFromList(int size_in_bytes,
 
 FreeSpace* FreeListCategory::SearchForNodeInList(int size_in_bytes,
                                                  int* node_size) {
-  FreeSpace* return_node = nullptr;
-  FreeSpace* top_node = top();
+  FreeSpace* prev_non_evac_node = nullptr;
+  for (FreeSpace* cur_node = top(); cur_node != nullptr;
+       cur_node = cur_node->next()) {
+    int size = cur_node->size();
+    Page* page_for_node = Page::FromAddress(cur_node->address());
 
-  for (FreeSpace** node_it = &top_node; *node_it != NULL;
-       node_it = (*node_it)->next_address()) {
-    FreeSpace* cur_node = *node_it;
-    while (cur_node != NULL &&
-           Page::FromAddress(cur_node->address())->IsEvacuationCandidate()) {
-      int size = cur_node->Size();
+    if ((size >= size_in_bytes) || page_for_node->IsEvacuationCandidate()) {
+      // The node is either large enough or contained in an evacuation
+      // candidate. In both cases we need to unlink it from the list.
       available_ -= size;
-      Page::FromAddress(cur_node->address())
-          ->add_available_in_free_list(type_, -size);
-      cur_node = cur_node->next();
-    }
-
-    // Update iterator.
-    *node_it = cur_node;
-
-    if (cur_node == nullptr) {
-      set_end(nullptr);
-      break;
-    }
-
-    int size = cur_node->Size();
-    if (size >= size_in_bytes) {
-      // Large enough node found.  Unlink it from the list.
-      return_node = cur_node;
-      *node_it = cur_node->next();
+      if (cur_node == top()) {
+        set_top(cur_node->next());
+      }
+      if (cur_node == end()) {
+        set_end(prev_non_evac_node);
+      }
+      if (prev_non_evac_node != nullptr) {
+        prev_non_evac_node->set_next(cur_node->next());
+      }
+      // For evacuation candidates we continue.
+      if (page_for_node->IsEvacuationCandidate()) {
+        page_for_node->add_available_in_free_list(type_, -size);
+        continue;
+      }
+      // Otherwise we have a large enough node and can return.
       *node_size = size;
-      available_ -= size;
-      Page::FromAddress(return_node->address())
-          ->add_available_in_free_list(type_, -size);
-      break;
+      return cur_node;
     }
-  }
 
-  // Top could've changed if we took the first node. Update top and end
-  // accordingly.
-  set_top(top_node);
-  if (top() == nullptr) {
-    set_end(nullptr);
+    prev_non_evac_node = cur_node;
   }
-
-  return return_node;
+  return nullptr;
 }
 
 
@@ -2237,7 +2225,6 @@ void FreeListCategory::RepairFreeList(Heap* heap) {
 
 FreeList::FreeList(PagedSpace* owner)
     : owner_(owner),
-      heap_(owner->heap()),
       wasted_bytes_(0),
       small_list_(this, kSmall),
       medium_list_(this, kMedium),
@@ -2285,7 +2272,7 @@ void FreeList::Reset() {
 int FreeList::Free(Address start, int size_in_bytes) {
   if (size_in_bytes == 0) return 0;
 
-  heap_->CreateFillerObjectAt(start, size_in_bytes);
+  owner()->heap()->CreateFillerObjectAt(start, size_in_bytes);
 
   Page* page = Page::FromAddress(start);
 
@@ -2313,7 +2300,7 @@ int FreeList::Free(Address start, int size_in_bytes) {
     page->add_available_in_huge_free_list(size_in_bytes);
   }
 
-  DCHECK(IsVeryLong() || available() == SumFreeLists());
+  DCHECK(IsVeryLong() || Available() == SumFreeLists());
   return 0;
 }
 
@@ -2323,44 +2310,36 @@ FreeSpace* FreeList::FindNodeIn(FreeListCategoryType category, int* node_size) {
   if (node != nullptr) {
     Page::FromAddress(node->address())
         ->add_available_in_free_list(category, -(*node_size));
-    DCHECK(IsVeryLong() || available() == SumFreeLists());
+    DCHECK(IsVeryLong() || Available() == SumFreeLists());
   }
   return node;
 }
 
 
 FreeSpace* FreeList::FindNodeFor(int size_in_bytes, int* node_size) {
-  FreeSpace* node = NULL;
-  Page* page = NULL;
+  FreeSpace* node = nullptr;
+  Page* page = nullptr;
 
   if (size_in_bytes <= kSmallAllocationMax) {
     node = FindNodeIn(kSmall, node_size);
-    if (node != NULL) {
-      DCHECK(IsVeryLong() || available() == SumFreeLists());
-      return node;
-    }
+    if (node != nullptr) return node;
   }
 
   if (size_in_bytes <= kMediumAllocationMax) {
     node = FindNodeIn(kMedium, node_size);
-    if (node != NULL) {
-      DCHECK(IsVeryLong() || available() == SumFreeLists());
-      return node;
-    }
+    if (node != nullptr) return node;
   }
 
   if (size_in_bytes <= kLargeAllocationMax) {
     node = FindNodeIn(kLarge, node_size);
-    if (node != NULL) {
-      DCHECK(IsVeryLong() || available() == SumFreeLists());
-      return node;
-    }
+    if (node != nullptr) return node;
   }
 
   node = huge_list_.SearchForNodeInList(size_in_bytes, node_size);
-
-  if (node != NULL) {
-    DCHECK(IsVeryLong() || available() == SumFreeLists());
+  if (node != nullptr) {
+    page = Page::FromAddress(node->address());
+    page->add_available_in_large_free_list(-(*node_size));
+    DCHECK(IsVeryLong() || Available() == SumFreeLists());
     return node;
   }
 
@@ -2387,7 +2366,7 @@ FreeSpace* FreeList::FindNodeFor(int size_in_bytes, int* node_size) {
     }
   }
 
-  DCHECK(IsVeryLong() || available() == SumFreeLists());
+  DCHECK(IsVeryLong() || Available() == SumFreeLists());
   return node;
 }
 
@@ -2511,9 +2490,6 @@ intptr_t FreeListCategory::SumFreeList() {
 }
 
 
-static const int kVeryLongFreeList = 500;
-
-
 int FreeListCategory::FreeListLength() {
   int length = 0;
   FreeSpace* cur = top();
@@ -2526,12 +2502,14 @@ int FreeListCategory::FreeListLength() {
 }
 
 
+bool FreeListCategory::IsVeryLong() {
+  return FreeListLength() == kVeryLongFreeList;
+}
+
+
 bool FreeList::IsVeryLong() {
-  if (small_list_.FreeListLength() == kVeryLongFreeList) return true;
-  if (medium_list_.FreeListLength() == kVeryLongFreeList) return true;
-  if (large_list_.FreeListLength() == kVeryLongFreeList) return true;
-  if (huge_list_.FreeListLength() == kVeryLongFreeList) return true;
-  return false;
+  return small_list_.IsVeryLong() || medium_list_.IsVeryLong() ||
+         large_list_.IsVeryLong() || huge_list_.IsVeryLong();
 }
 
 
@@ -2588,7 +2566,7 @@ void PagedSpace::RepairFreeListsAfterDeserialization() {
 }
 
 
-void PagedSpace::EvictEvacuationCandidatesFromFreeLists() {
+void PagedSpace::EvictEvacuationCandidatesFromLinearAllocationArea() {
   if (allocation_info_.top() >= allocation_info_.limit()) return;
 
   if (Page::FromAllocationTop(allocation_info_.top())
@@ -2598,8 +2576,8 @@ void PagedSpace::EvictEvacuationCandidatesFromFreeLists() {
         static_cast<int>(allocation_info_.limit() - allocation_info_.top());
     heap()->CreateFillerObjectAt(allocation_info_.top(), remaining);
 
-    allocation_info_.set_top(NULL);
-    allocation_info_.set_limit(NULL);
+    allocation_info_.set_top(nullptr);
+    allocation_info_.set_limit(nullptr);
   }
 }
 
@@ -2659,7 +2637,7 @@ HeapObject* PagedSpace::SlowAllocateRaw(int size_in_bytes) {
   // Try to expand the space and allocate in the new next page.
   if (Expand()) {
     DCHECK((CountTotalPages() > 1) ||
-           (size_in_bytes <= free_list_.available()));
+           (size_in_bytes <= free_list_.Available()));
     return free_list_.Allocate(size_in_bytes);
   }
 

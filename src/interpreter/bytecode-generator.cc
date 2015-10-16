@@ -133,13 +133,14 @@ void BytecodeGenerator::ControlScope::PerformCommand(Command command,
 
 BytecodeGenerator::BytecodeGenerator(Isolate* isolate, Zone* zone)
     : isolate_(isolate),
+      zone_(zone),
       builder_(isolate, zone),
       info_(nullptr),
       scope_(nullptr),
       globals_(0, zone),
       control_scope_(nullptr),
       current_context_(Register::function_context()) {
-  InitializeAstVisitor(isolate, zone);
+  InitializeAstVisitor(isolate);
 }
 
 
@@ -152,11 +153,10 @@ Handle<BytecodeArray> BytecodeGenerator::MakeBytecode(CompilationInfo* info) {
 
   builder()->set_parameter_count(info->num_parameters_including_this());
   builder()->set_locals_count(scope()->num_stack_slots());
-  // TODO(rmcilroy): Set correct context count.
-  builder()->set_context_count(info->num_heap_slots() > 0 ? 1 : 0);
+  builder()->set_context_count(scope()->MaxNestedContextChainLength());
 
   // Build function context only if there are context allocated variables.
-  if (info->num_heap_slots() > 0) {
+  if (scope()->NeedsContext()) {
     // Push a new inner context scope for the function.
     VisitNewLocalFunctionContext();
     ContextScope top_context(this, true);
@@ -432,11 +432,20 @@ void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
 
 
 void BytecodeGenerator::VisitTryCatchStatement(TryCatchStatement* stmt) {
+  if (FLAG_ignition_fake_try_catch) {
+    Visit(stmt->try_block());
+    return;
+  }
   UNIMPLEMENTED();
 }
 
 
 void BytecodeGenerator::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
+  if (FLAG_ignition_fake_try_catch) {
+    Visit(stmt->try_block());
+    Visit(stmt->finally_block());
+    return;
+  }
   UNIMPLEMENTED();
 }
 
@@ -924,6 +933,25 @@ void BytecodeGenerator::VisitProperty(Property* expr) {
 }
 
 
+Register BytecodeGenerator::VisitArguments(
+    ZoneList<Expression*>* args, TemporaryRegisterScope* register_scope) {
+  // Visit arguments and place in a contiguous block of temporary registers.
+  // Return the first temporary register corresponding to the first argument.
+  DCHECK_GT(args->length(), 0);
+  Register first_arg = register_scope->NewRegister();
+  Visit(args->at(0));
+  builder()->StoreAccumulatorInRegister(first_arg);
+  for (int i = 1; i < static_cast<int>(args->length()); i++) {
+    Register ith_arg = register_scope->NewRegister();
+    Visit(args->at(i));
+    builder()->StoreAccumulatorInRegister(ith_arg);
+    DCHECK(ith_arg.index() - i == first_arg.index());
+  }
+
+  return first_arg;
+}
+
+
 void BytecodeGenerator::VisitCall(Call* expr) {
   Expression* callee_expr = expr->expression();
   Call::CallType call_type = expr->GetCallType(isolate());
@@ -971,11 +999,9 @@ void BytecodeGenerator::VisitCall(Call* expr) {
   // Evaluate all arguments to the function call and store in sequential
   // registers.
   ZoneList<Expression*>* args = expr->arguments();
-  for (int i = 0; i < args->length(); ++i) {
-    Visit(args->at(i));
-    Register arg = temporary_register_scope.NewRegister();
-    DCHECK(arg.index() - i == receiver.index() + 1);
-    builder()->StoreAccumulatorInRegister(arg);
+  if (args->length() > 0) {
+    Register first_arg = VisitArguments(args, &temporary_register_scope);
+    CHECK_EQ(first_arg.index(), receiver.index() + 1);
   }
 
   // TODO(rmcilroy): Deal with possible direct eval here?
@@ -984,7 +1010,22 @@ void BytecodeGenerator::VisitCall(Call* expr) {
 }
 
 
-void BytecodeGenerator::VisitCallNew(CallNew* expr) { UNIMPLEMENTED(); }
+void BytecodeGenerator::VisitCallNew(CallNew* expr) {
+  TemporaryRegisterScope temporary_register_scope(builder());
+  Register constructor = temporary_register_scope.NewRegister();
+  Visit(expr->expression());
+  builder()->StoreAccumulatorInRegister(constructor);
+  ZoneList<Expression*>* args = expr->arguments();
+  if (args->length() > 0) {
+    Register first_arg = VisitArguments(args, &temporary_register_scope);
+    builder()->New(constructor, first_arg, args->length());
+  } else {
+    // The second argument here will be ignored as there are zero
+    // arguments. Using the constructor register avoids avoid
+    // allocating a temporary just to fill the operands.
+    builder()->New(constructor, constructor, 0);
+  }
+}
 
 
 void BytecodeGenerator::VisitCallRuntime(CallRuntime* expr) {
@@ -993,22 +1034,21 @@ void BytecodeGenerator::VisitCallRuntime(CallRuntime* expr) {
   }
 
   // Evaluate all arguments to the runtime call.
-  ZoneList<Expression*>* args = expr->arguments();
-  TemporaryRegisterScope temporary_register_scope(builder());
-  // Ensure we always have a valid first_arg register even if there are no
-  // arguments to pass.
-  Register first_arg = temporary_register_scope.NewRegister();
-  for (int i = 0; i < args->length(); ++i) {
-    Register arg =
-        (i == 0) ? first_arg : temporary_register_scope.NewRegister();
-    Visit(args->at(i));
-    DCHECK_EQ(arg.index() - i, first_arg.index());
-    builder()->StoreAccumulatorInRegister(arg);
-  }
+  TemporaryRegisterScope temporary_register_scope(&builder_);
 
   // TODO(rmcilroy): support multiple return values.
   DCHECK_LE(expr->function()->result_size, 1);
   Runtime::FunctionId function_id = expr->function()->function_id;
+  ZoneList<Expression*>* args = expr->arguments();
+  Register first_arg;
+  if (args->length() > 0) {
+    first_arg = VisitArguments(args, &temporary_register_scope);
+  } else {
+    // Allocation here is just to fullfil the requirement that there
+    // is a register operand for the start of the arguments though
+    // there are zero when this is generated.
+    first_arg = temporary_register_scope.NewRegister();
+  }
   builder()->CallRuntime(function_id, first_arg, args->length());
 }
 
@@ -1059,9 +1099,13 @@ void BytecodeGenerator::VisitCountOperation(CountOperation* expr) {
 void BytecodeGenerator::VisitBinaryOperation(BinaryOperation* binop) {
   switch (binop->op()) {
     case Token::COMMA:
+      VisitCommaExpression(binop);
+      break;
     case Token::OR:
+      VisitLogicalOrExpression(binop);
+      break;
     case Token::AND:
-      UNIMPLEMENTED();
+      VisitLogicalAndExpression(binop);
       break;
     default:
       VisitArithmeticExpression(binop);
@@ -1191,6 +1235,53 @@ void BytecodeGenerator::VisitSetHomeObject(Register value, Register home_object,
       .StoreNamedProperty(home_object, name,
                           feedback_index(property->GetSlot(slot_number)),
                           language_mode());
+}
+
+
+void BytecodeGenerator::VisitCommaExpression(BinaryOperation* binop) {
+  Expression* left = binop->left();
+  Expression* right = binop->right();
+
+  Visit(left);
+  Visit(right);
+}
+
+
+void BytecodeGenerator::VisitLogicalOrExpression(BinaryOperation* binop) {
+  Expression* left = binop->left();
+  Expression* right = binop->right();
+
+  // Short-circuit evaluation- If it is known that left is always true,
+  // no need to visit right
+  if (left->ToBooleanIsTrue()) {
+    Visit(left);
+  } else {
+    BytecodeLabel end_label;
+
+    Visit(left);
+    builder()->JumpIfToBooleanTrue(&end_label);
+    Visit(right);
+    builder()->Bind(&end_label);
+  }
+}
+
+
+void BytecodeGenerator::VisitLogicalAndExpression(BinaryOperation* binop) {
+  Expression* left = binop->left();
+  Expression* right = binop->right();
+
+  // Short-circuit evaluation- If it is known that left is always false,
+  // no need to visit right
+  if (left->ToBooleanIsFalse()) {
+    Visit(left);
+  } else {
+    BytecodeLabel end_label;
+
+    Visit(left);
+    builder()->JumpIfToBooleanFalse(&end_label);
+    Visit(right);
+    builder()->Bind(&end_label);
+  }
 }
 
 

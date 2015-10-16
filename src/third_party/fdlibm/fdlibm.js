@@ -36,9 +36,9 @@ var rempio2result;
 // Imports
 
 var GlobalMath = global.Math;
-
 var MathAbs;
 var MathExp;
+var NaN = %GetRootNaN();
 
 utils.Import(function(from) {
   MathAbs = from.MathAbs;
@@ -476,7 +476,7 @@ function MathLog1p(x) {
       if (x === -1) {
         return -INFINITY;  // log1p(-1) = -inf
       } else {
-        return NAN;  // log1p(x<-1) = NaN
+        return NaN;  // log1p(x<-1) = NaN
       }
     } else if (ax < 0x3c900000)  {
       // For |x| < 2^-54 we can return x.
@@ -492,7 +492,7 @@ function MathLog1p(x) {
     }
   }
 
-  // Handle Infinity and NAN
+  // Handle Infinity and NaN
   if (hx >= 0x7ff00000) return x;
 
   if (k !== 0) {
@@ -843,6 +843,63 @@ function MathCosh(x) {
   return INFINITY;
 }
 
+// ES6 draft 09-27-13, section 20.2.2.33.
+// Math.tanh(x)
+// Method :
+//                                    x    -x
+//                                   e  - e
+//     0. tanh(x) is defined to be -----------
+//                                    x    -x
+//                                   e  + e
+//     1. reduce x to non-negative by tanh(-x) = -tanh(x).
+//     2.  0      <= x <= 2**-55 : tanh(x) := x*(one+x)
+//                                             -t
+//         2**-55 <  x <=  1     : tanh(x) := -----; t = expm1(-2x)
+//                                            t + 2
+//                                                  2
+//         1      <= x <=  22.0  : tanh(x) := 1-  ----- ; t = expm1(2x)
+//                                                t + 2
+//         22.0   <  x <= INF    : tanh(x) := 1.
+//
+// Special cases:
+//     tanh(NaN) is NaN;
+//     only tanh(0) = 0 is exact for finite argument.
+//
+
+define TWO_M55 = 2.77555756156289135105e-17;  // 2^-55, empty lower half
+
+function MathTanh(x) {
+  x = x * 1;  // Convert to number.
+  // x is Infinity or NaN
+  if (!NUMBER_IS_FINITE(x)) {
+    if (x > 0) return 1;
+    if (x < 0) return -1;
+    return x;
+  }
+
+  var ax = MathAbs(x);
+  var z;
+  // |x| < 22
+  if (ax < 22) {
+    if (ax < TWO_M55) {
+      // |x| < 2^-55, tanh(small) = small.
+      return x;
+    }
+    if (ax >= 1) {
+      // |x| >= 1
+      var t = MathExpm1(2 * ax);
+      z = 1 - 2 / (t + 2);
+    } else {
+      var t = MathExpm1(-2 * ax);
+      z = -t / (t + 2);
+    }
+  } else {
+    // |x| > 22, return +/- 1
+    z = 1;
+  }
+  return (x >= 0) ? z : -z;
+}
+
 // ES6 draft 09-27-13, section 20.2.2.21.
 // Return the base 10 logarithm of x
 //
@@ -885,7 +942,7 @@ function MathLog10(x) {
     // log10(+/- 0) = -Infinity.
     if (((hx & 0x7fffffff) | lx) === 0) return -INFINITY;
     // log10 of negative number is NaN.
-    if (hx < 0) return NAN;
+    if (hx < 0) return NaN;
     // Subnormal number. Scale up x.
     k -= 54;
     x *= TWO54;
@@ -947,7 +1004,7 @@ function MathLog2(x) {
   if ((ix | lx) == 0) return -INFINITY;
 
   // log(x) = NaN, if x < 0
-  if (hx < 0) return NAN;
+  if (hx < 0) return NaN;
 
   // log2(Infinity) = Infinity, log2(NaN) = NaN
   if (ix >= 0x7ff00000) return x;
@@ -1029,6 +1086,7 @@ utils.InstallFunctions(GlobalMath, DONT_ENUM, [
   "tan", MathTan,
   "sinh", MathSinh,
   "cosh", MathCosh,
+  "tanh", MathTanh,
   "log10", MathLog10,
   "log2", MathLog2,
   "log1p", MathLog1p,

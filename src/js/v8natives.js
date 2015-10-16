@@ -18,14 +18,22 @@ var GlobalObject = global.Object;
 var InternalArray = utils.InternalArray;
 var iteratorSymbol = utils.ImportNow("iterator_symbol");
 var MathAbs;
+var NaN = %GetRootNaN();
+var ObserveBeginPerformSplice;
+var ObserveEndPerformSplice;
+var ObserveEnqueueSpliceRecord;
 var ProxyDelegateCallAndConstruct;
 var ProxyDerivedHasOwnTrap;
 var ProxyDerivedKeysTrap;
+var SameValue = utils.ImportNow("SameValue");
 var StringIndexOf;
 var toStringTagSymbol = utils.ImportNow("to_string_tag_symbol");
 
 utils.Import(function(from) {
   MathAbs = from.MathAbs;
+  ObserveBeginPerformSplice = from.ObserveBeginPerformSplice;
+  ObserveEndPerformSplice = from.ObserveEndPerformSplice;
+  ObserveEnqueueSpliceRecord = from.ObserveEnqueueSpliceRecord;
   StringIndexOf = from.StringIndexOf;
 });
 
@@ -75,7 +83,7 @@ function GlobalParseInt(string, radix) {
     string = TO_STRING(string);
     radix = TO_INT32(radix);
     if (!(radix == 0 || (2 <= radix && radix <= 36))) {
-      return NAN;
+      return NaN;
     }
   }
 
@@ -114,7 +122,7 @@ var attributes = DONT_ENUM | DONT_DELETE | READ_ONLY;
 
 utils.InstallConstants(global, [
   // ECMA 262 - 15.1.1.1.
-  "NaN", NAN,
+  "NaN", NaN,
   // ECMA-262 - 15.1.1.2.
   "Infinity", INFINITY,
   // ECMA-262 - 15.1.1.2.
@@ -646,17 +654,17 @@ function DefineObjectProperty(obj, p, desc, should_throw) {
     if ((IsGenericDescriptor(desc) ||
          IsDataDescriptor(desc) == IsDataDescriptor(current)) &&
         (!desc.hasEnumerable() ||
-         $sameValue(desc.isEnumerable(), current.isEnumerable())) &&
+         SameValue(desc.isEnumerable(), current.isEnumerable())) &&
         (!desc.hasConfigurable() ||
-         $sameValue(desc.isConfigurable(), current.isConfigurable())) &&
+         SameValue(desc.isConfigurable(), current.isConfigurable())) &&
         (!desc.hasWritable() ||
-         $sameValue(desc.isWritable(), current.isWritable())) &&
+         SameValue(desc.isWritable(), current.isWritable())) &&
         (!desc.hasValue() ||
-         $sameValue(desc.getValue(), current.getValue())) &&
+         SameValue(desc.getValue(), current.getValue())) &&
         (!desc.hasGetter() ||
-         $sameValue(desc.getGet(), current.getGet())) &&
+         SameValue(desc.getGet(), current.getGet())) &&
         (!desc.hasSetter() ||
-         $sameValue(desc.getSet(), current.getSet()))) {
+         SameValue(desc.getSet(), current.getSet()))) {
       return true;
     }
     if (!current.isConfigurable()) {
@@ -695,7 +703,7 @@ function DefineObjectProperty(obj, p, desc, should_throw) {
             }
           }
           if (!currentIsWritable && desc.hasValue() &&
-              !$sameValue(desc.getValue(), current.getValue())) {
+              !SameValue(desc.getValue(), current.getValue())) {
             if (should_throw) {
               throw MakeTypeError(kRedefineDisallowed, p);
             } else {
@@ -706,14 +714,14 @@ function DefineObjectProperty(obj, p, desc, should_throw) {
         // Step 11
         if (IsAccessorDescriptor(desc) && IsAccessorDescriptor(current)) {
           if (desc.hasSetter() &&
-              !$sameValue(desc.getSet(), current.getSet())) {
+              !SameValue(desc.getSet(), current.getSet())) {
             if (should_throw) {
               throw MakeTypeError(kRedefineDisallowed, p);
             } else {
               return false;
             }
           }
-          if (desc.hasGetter() && !$sameValue(desc.getGet(),current.getGet())) {
+          if (desc.hasGetter() && !SameValue(desc.getGet(),current.getGet())) {
             if (should_throw) {
               throw MakeTypeError(kRedefineDisallowed, p);
             } else {
@@ -806,14 +814,14 @@ function DefineArrayProperty(obj, p, desc, should_throw) {
       var length = obj.length;
       if (index >= length && %IsObserved(obj)) {
         emit_splice = true;
-        $observeBeginPerformSplice(obj);
+        ObserveBeginPerformSplice(obj);
       }
 
       var length_desc = GetOwnPropertyJS(obj, "length");
       if ((index >= length && !length_desc.isWritable()) ||
           !DefineObjectProperty(obj, p, desc, true)) {
         if (emit_splice)
-          $observeEndPerformSplice(obj);
+          ObserveEndPerformSplice(obj);
         if (should_throw) {
           throw MakeTypeError(kDefineDisallowed, p);
         } else {
@@ -824,8 +832,8 @@ function DefineArrayProperty(obj, p, desc, should_throw) {
         obj.length = index + 1;
       }
       if (emit_splice) {
-        $observeEndPerformSplice(obj);
-        $observeEnqueueSpliceRecord(obj, length, [], index + 1 - length);
+        ObserveEndPerformSplice(obj);
+        ObserveEnqueueSpliceRecord(obj, length, [], index + 1 - length);
       }
       return true;
     }
@@ -1140,7 +1148,7 @@ function ObjectSealJS(obj) {
     if (isProxy) {
       ProxyFix(obj);
     }
-    var names = ObjectGetOwnPropertyNames(obj);
+    var names = OwnPropertyKeys(obj);
     for (var i = 0; i < names.length; i++) {
       var name = names[i];
       var desc = GetOwnPropertyJS(obj, name);
@@ -1170,7 +1178,7 @@ function ObjectFreezeJS(obj) {
     if (isProxy) {
       ProxyFix(obj);
     }
-    var names = ObjectGetOwnPropertyNames(obj);
+    var names = OwnPropertyKeys(obj);
     for (var i = 0; i < names.length; i++) {
       var name = names[i];
       var desc = GetOwnPropertyJS(obj, name);
@@ -1210,7 +1218,7 @@ function ObjectIsSealed(obj) {
   if (%IsExtensible(obj)) {
     return false;
   }
-  var names = ObjectGetOwnPropertyNames(obj);
+  var names = OwnPropertyKeys(obj);
   for (var i = 0; i < names.length; i++) {
     var name = names[i];
     var desc = GetOwnPropertyJS(obj, name);
@@ -1231,7 +1239,7 @@ function ObjectIsFrozen(obj) {
   if (%IsExtensible(obj)) {
     return false;
   }
-  var names = ObjectGetOwnPropertyNames(obj);
+  var names = OwnPropertyKeys(obj);
   for (var i = 0; i < names.length; i++) {
     var name = names[i];
     var desc = GetOwnPropertyJS(obj, name);
@@ -1249,12 +1257,6 @@ function ObjectIsExtensible(obj) {
     return true;
   }
   return %IsExtensible(obj);
-}
-
-
-// ECMA-262, Edition 6, section 19.1.2.10
-function ObjectIs(obj1, obj2) {
-  return $sameValue(obj1, obj2);
 }
 
 
@@ -1353,7 +1355,7 @@ utils.InstallFunctions(GlobalObject, DONT_ENUM, [
   "getOwnPropertyDescriptor", ObjectGetOwnPropertyDescriptor,
   "getOwnPropertyNames", ObjectGetOwnPropertyNames,
   // getOwnPropertySymbols is added in symbol.js.
-  "is", ObjectIs,
+  "is", SameValue,  // ECMA-262, Edition 6, section 19.1.2.10
   "isExtensible", ObjectIsExtensible,
   "isFrozen", ObjectIsFrozen,
   "isSealed", ObjectIsSealed,
@@ -1594,7 +1596,7 @@ utils.InstallConstants(GlobalNumber, [
   // ECMA-262 section 15.7.3.2.
   "MIN_VALUE", 5e-324,
   // ECMA-262 section 15.7.3.3.
-  "NaN", NAN,
+  "NaN", NaN,
   // ECMA-262 section 15.7.3.4.
   "NEGATIVE_INFINITY", -INFINITY,
   // ECMA-262 section 15.7.3.5.

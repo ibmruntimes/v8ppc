@@ -45,7 +45,8 @@ namespace interpreter {
                                                                                \
   /* Globals */                                                                \
   V(LdaGlobal, OperandType::kIdx8)                                             \
-  V(StaGlobal, OperandType::kIdx8)                                             \
+  V(StaGlobalSloppy, OperandType::kIdx8)                                       \
+  V(StaGlobalStrict, OperandType::kIdx8)                                       \
                                                                                \
   /* Context operations */                                                     \
   V(LdaContextSlot, OperandType::kReg8, OperandType::kIdx8)                    \
@@ -89,10 +90,13 @@ namespace interpreter {
   V(LogicalNot, OperandType::kNone)                                            \
   V(TypeOf, OperandType::kNone)                                                \
                                                                                \
-  /* Call operations. */                                                       \
+  /* Call operations */                                                        \
   V(Call, OperandType::kReg8, OperandType::kReg8, OperandType::kCount8)        \
   V(CallRuntime, OperandType::kIdx16, OperandType::kReg8,                      \
     OperandType::kCount8)                                                      \
+                                                                               \
+  /* New operator */                                                           \
+  V(New, OperandType::kReg8, OperandType::kReg8, OperandType::kCount8)         \
                                                                                \
   /* Test Operators */                                                         \
   V(TestEqual, OperandType::kReg8)                                             \
@@ -124,6 +128,10 @@ namespace interpreter {
   V(JumpIfTrueConstant, OperandType::kIdx8)                                    \
   V(JumpIfFalse, OperandType::kImm8)                                           \
   V(JumpIfFalseConstant, OperandType::kIdx8)                                   \
+  V(JumpIfToBooleanTrue, OperandType::kImm8)                                   \
+  V(JumpIfToBooleanTrueConstant, OperandType::kIdx8)                           \
+  V(JumpIfToBooleanFalse, OperandType::kImm8)                                  \
+  V(JumpIfToBooleanFalseConstant, OperandType::kIdx8)                          \
   V(Return, OperandType::kNone)
 
 

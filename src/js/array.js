@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-(function(global, utils) {
+(function(global, utils, extrasUtils) {
 
 "use strict";
 
@@ -12,6 +12,7 @@
 // Imports
 
 var Delete;
+var FLAG_harmony_tolength;
 var GlobalArray = global.Array;
 var InternalArray = utils.InternalArray;
 var InternalPackedArray = utils.InternalPackedArray;
@@ -20,6 +21,9 @@ var ObjectHasOwnProperty;
 var ObjectIsFrozen;
 var ObjectIsSealed;
 var ObjectToString;
+var ObserveBeginPerformSplice;
+var ObserveEndPerformSplice;
+var ObserveEnqueueSpliceRecord;
 var unscopablesSymbol = utils.ImportNow("unscopables_symbol");
 
 utils.Import(function(from) {
@@ -29,6 +33,13 @@ utils.Import(function(from) {
   ObjectIsFrozen = from.ObjectIsFrozen;
   ObjectIsSealed = from.ObjectIsSealed;
   ObjectToString = from.ObjectToString;
+  ObserveBeginPerformSplice = from.ObserveBeginPerformSplice;
+  ObserveEndPerformSplice = from.ObserveEndPerformSplice;
+  ObserveEnqueueSpliceRecord = from.ObserveEnqueueSpliceRecord;
+});
+
+utils.ImportFromExperimental(function(from) {
+  FLAG_harmony_tolength = from.FLAG_harmony_tolength;
 });
 
 // -------------------------------------------------------------------
@@ -437,12 +448,12 @@ function ObservedArrayPop(n) {
   var value = this[n];
 
   try {
-    $observeBeginPerformSplice(this);
+    ObserveBeginPerformSplice(this);
     delete this[n];
     this.length = n;
   } finally {
-    $observeEndPerformSplice(this);
-    $observeEnqueueSpliceRecord(this, n, [value], 0);
+    ObserveEndPerformSplice(this);
+    ObserveEnqueueSpliceRecord(this, n, [value], 0);
   }
 
   return value;
@@ -477,15 +488,15 @@ function ObservedArrayPush() {
   var m = %_ArgumentsLength();
 
   try {
-    $observeBeginPerformSplice(this);
+    ObserveBeginPerformSplice(this);
     for (var i = 0; i < m; i++) {
       this[i+n] = %_Arguments(i);
     }
     var new_length = n + m;
     this.length = new_length;
   } finally {
-    $observeEndPerformSplice(this);
-    $observeEnqueueSpliceRecord(this, n, [], m);
+    ObserveEndPerformSplice(this);
+    ObserveEnqueueSpliceRecord(this, n, [], m);
   }
 
   return new_length;
@@ -617,12 +628,12 @@ function ObservedArrayShift(len) {
   var first = this[0];
 
   try {
-    $observeBeginPerformSplice(this);
+    ObserveBeginPerformSplice(this);
     SimpleMove(this, 0, 1, len, 0);
     this.length = len - 1;
   } finally {
-    $observeEndPerformSplice(this);
-    $observeEnqueueSpliceRecord(this, 0, [first], 0);
+    ObserveEndPerformSplice(this);
+    ObserveEnqueueSpliceRecord(this, 0, [first], 0);
   }
 
   return first;
@@ -664,7 +675,7 @@ function ObservedArrayUnshift() {
   var num_arguments = %_ArgumentsLength();
 
   try {
-    $observeBeginPerformSplice(this);
+    ObserveBeginPerformSplice(this);
     SimpleMove(this, 0, 0, len, num_arguments);
     for (var i = 0; i < num_arguments; i++) {
       this[i] = %_Arguments(i);
@@ -672,8 +683,8 @@ function ObservedArrayUnshift() {
     var new_length = len + num_arguments;
     this.length = new_length;
   } finally {
-    $observeEndPerformSplice(this);
-    $observeEnqueueSpliceRecord(this, 0, [], num_arguments);
+    ObserveEndPerformSplice(this);
+    ObserveEnqueueSpliceRecord(this, 0, [], num_arguments);
   }
 
   return new_length;
@@ -791,7 +802,7 @@ function ObservedArraySplice(start, delete_count) {
   var num_elements_to_add = num_arguments > 2 ? num_arguments - 2 : 0;
 
   try {
-    $observeBeginPerformSplice(this);
+    ObserveBeginPerformSplice(this);
 
     SimpleSlice(this, start_i, del_count, len, deleted_elements);
     SimpleMove(this, start_i, del_count, len, num_elements_to_add);
@@ -807,12 +818,12 @@ function ObservedArraySplice(start, delete_count) {
     this.length = len - del_count + num_elements_to_add;
 
   } finally {
-    $observeEndPerformSplice(this);
+    ObserveEndPerformSplice(this);
     if (deleted_elements.length || num_elements_to_add) {
-      $observeEnqueueSpliceRecord(this,
-                                  start_i,
-                                  deleted_elements.slice(),
-                                  num_elements_to_add);
+      ObserveEnqueueSpliceRecord(this,
+                                 start_i,
+                                 deleted_elements.slice(),
+                                 num_elements_to_add);
     }
   }
 
@@ -1179,7 +1190,7 @@ function InnerArrayFilter(f, receiver, array, length) {
   var accumulator = new InternalArray();
   var accumulator_length = 0;
   var is_array = IS_ARRAY(array);
-  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
+  var stepping = DEBUG_IS_STEPPING(f);
   for (var i = 0; i < length; i++) {
     if (HAS_INDEX(array, i, is_array)) {
       var element = array[i];
@@ -1210,7 +1221,7 @@ function InnerArrayForEach(f, receiver, array, length) {
   if (!IS_CALLABLE(f)) throw MakeTypeError(kCalledNonCallable, f);
 
   var is_array = IS_ARRAY(array);
-  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
+  var stepping = DEBUG_IS_STEPPING(f);
   for (var i = 0; i < length; i++) {
     if (HAS_INDEX(array, i, is_array)) {
       var element = array[i];
@@ -1236,7 +1247,7 @@ function InnerArraySome(f, receiver, array, length) {
   if (!IS_CALLABLE(f)) throw MakeTypeError(kCalledNonCallable, f);
 
   var is_array = IS_ARRAY(array);
-  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
+  var stepping = DEBUG_IS_STEPPING(f);
   for (var i = 0; i < length; i++) {
     if (HAS_INDEX(array, i, is_array)) {
       var element = array[i];
@@ -1266,7 +1277,7 @@ function InnerArrayEvery(f, receiver, array, length) {
   if (!IS_CALLABLE(f)) throw MakeTypeError(kCalledNonCallable, f);
 
   var is_array = IS_ARRAY(array);
-  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
+  var stepping = DEBUG_IS_STEPPING(f);
   for (var i = 0; i < length; i++) {
     if (HAS_INDEX(array, i, is_array)) {
       var element = array[i];
@@ -1294,7 +1305,7 @@ function InnerArrayMap(f, receiver, array, length) {
 
   var accumulator = new InternalArray(length);
   var is_array = IS_ARRAY(array);
-  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
+  var stepping = DEBUG_IS_STEPPING(f);
   for (var i = 0; i < length; i++) {
     if (HAS_INDEX(array, i, is_array)) {
       var element = array[i];
@@ -1463,7 +1474,7 @@ function InnerArrayReduce(callback, current, array, length, argumentsLength) {
     throw MakeTypeError(kReduceNoInitial);
   }
 
-  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(callback);
+  var stepping = DEBUG_IS_STEPPING(callback);
   for (; i < length; i++) {
     if (HAS_INDEX(array, i, is_array)) {
       var element = array[i];
@@ -1506,7 +1517,7 @@ function InnerArrayReduceRight(callback, current, array, length,
     throw MakeTypeError(kReduceNoInitial);
   }
 
-  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(callback);
+  var stepping = DEBUG_IS_STEPPING(callback);
   for (; i >= 0; i--) {
     if (HAS_INDEX(array, i, is_array)) {
       var element = array[i];
@@ -1622,6 +1633,17 @@ utils.SetUpLockedPrototype(InternalPackedArray, GlobalArray(), [
   "pop", getFunction("pop", ArrayPop),
   "push", getFunction("push", ArrayPush),
   "shift", getFunction("shift", ArrayShift)
+]);
+
+// V8 extras get a separate copy of InternalPackedArray. We give them the basic
+// manipulation methods.
+utils.SetUpLockedPrototype(extrasUtils.InternalPackedArray, GlobalArray(), [
+  "push", getFunction("push", ArrayPush),
+  "pop", getFunction("pop", ArrayPop),
+  "shift", getFunction("shift", ArrayShift),
+  "unshift", getFunction("unshift", ArrayUnshift),
+  "splice", getFunction("splice", ArraySplice),
+  "slice", getFunction("slice", ArraySlice)
 ]);
 
 // -------------------------------------------------------------------

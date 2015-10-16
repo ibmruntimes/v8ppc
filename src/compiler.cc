@@ -442,6 +442,7 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
     } else if (info()->has_global_object() &&
                FLAG_native_context_specialization) {
       info()->MarkAsNativeContextSpecializing();
+      info()->MarkAsTypingEnabled();
     } else if (FLAG_turbo_type_feedback) {
       info()->MarkAsTypeFeedbackEnabled();
       info()->EnsureFeedbackVector();
@@ -1570,13 +1571,6 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfo(
                     !LiveEditFunctionTracker::IsActive(isolate) &&
                     (!info.is_debug() || allow_lazy_without_ctx);
 
-  if (outer_info->parse_info()->is_toplevel() && outer_info->will_serialize()) {
-    // Make sure that if the toplevel code (possibly to be serialized),
-    // the inner function must be allowed to be compiled lazily.
-    // This is necessary to serialize toplevel code without inner functions.
-    DCHECK(allow_lazy);
-  }
-
   bool lazy = FLAG_lazy && allow_lazy && !literal->should_eager_compile();
 
   // Generate code
@@ -1799,7 +1793,7 @@ bool CompilationPhase::ShouldProduceTraceOutput() const {
 #if DEBUG
 void CompilationInfo::PrintAstForTesting() {
   PrintF("--- Source from AST ---\n%s\n",
-         PrettyPrinter(isolate(), zone()).PrintProgram(literal()));
+         PrettyPrinter(isolate()).PrintProgram(literal()));
 }
 #endif
 }  // namespace internal

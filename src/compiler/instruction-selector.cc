@@ -545,12 +545,13 @@ void InstructionSelector::VisitNode(Node* node) {
     case IrOpcode::kEffectPhi:
     case IrOpcode::kMerge:
     case IrOpcode::kTerminate:
+    case IrOpcode::kBeginRegion:
       // No code needed for these graph artifacts.
       return;
     case IrOpcode::kIfException:
       return MarkAsReference(node), VisitIfException(node);
-    case IrOpcode::kFinish:
-      return MarkAsReference(node), VisitFinish(node);
+    case IrOpcode::kFinishRegion:
+      return MarkAsReference(node), VisitFinishRegion(node);
     case IrOpcode::kParameter: {
       MachineType type =
           linkage()->GetParameterType(ParameterIndexOf(node->op()));
@@ -611,6 +612,10 @@ void InstructionSelector::VisitNode(Node* node) {
       return VisitWord32Equal(node);
     case IrOpcode::kWord32Clz:
       return MarkAsWord32(node), VisitWord32Clz(node);
+    case IrOpcode::kWord32Ctz:
+      return MarkAsWord32(node), VisitWord32Ctz(node);
+    case IrOpcode::kWord32Popcnt:
+      return MarkAsWord32(node), VisitWord32Popcnt(node);
     case IrOpcode::kWord64And:
       return MarkAsWord64(node), VisitWord64And(node);
     case IrOpcode::kWord64Or:
@@ -925,7 +930,7 @@ void InstructionSelector::VisitBitcastInt64ToFloat64(Node* node) {
 #endif  // V8_TARGET_ARCH_32_BIT
 
 
-void InstructionSelector::VisitFinish(Node* node) {
+void InstructionSelector::VisitFinishRegion(Node* node) {
   OperandGenerator g(this);
   Node* value = node->InputAt(0);
   Emit(kArchNop, g.DefineSameAsFirst(node), g.Use(value));
@@ -1095,7 +1100,7 @@ InstructionOperand InstructionSelector::OperandForDeopt(
         case FrameStateInputKind::kStackSlot:
           return g->UseUniqueSlot(input);
         case FrameStateInputKind::kAny:
-          return g->Use(input);
+          return g->UseAny(input);
       }
       UNREACHABLE();
       return InstructionOperand();
