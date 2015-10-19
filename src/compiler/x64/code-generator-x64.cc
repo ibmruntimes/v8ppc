@@ -596,6 +596,11 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ jmp(FieldOperand(func, JSFunction::kCodeEntryOffset));
       break;
     }
+    case kArchLazyBailout: {
+      EnsureSpaceForLazyDeopt();
+      RecordCallPosition(instr);
+      break;
+    }
     case kArchPrepareCallCFunction: {
       int const num_parameters = MiscField::decode(instr->opcode());
       __ PrepareCallCFunction(num_parameters);
@@ -643,7 +648,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       auto result = i.OutputRegister();
       auto input = i.InputDoubleRegister(0);
       auto ool = new (zone()) OutOfLineTruncateDoubleToI(this, result, input);
-      __ cvttsd2siq(result, input);
+      __ Cvttsd2siq(result, input);
       __ cmpq(result, Immediate(1));
       __ j(overflow, ool->entry());
       __ bind(ool->exit());
@@ -785,7 +790,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       }
       break;
     case kSSEFloat32Cmp:
-      ASSEMBLE_SSE_BINOP(ucomiss);
+      ASSEMBLE_SSE_BINOP(Ucomiss);
       break;
     case kSSEFloat32Add:
       ASSEMBLE_SSE_BINOP(addss);
@@ -826,10 +831,10 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       ASSEMBLE_SSE_BINOP(minss);
       break;
     case kSSEFloat32ToFloat64:
-      ASSEMBLE_SSE_UNOP(cvtss2sd);
+      ASSEMBLE_SSE_UNOP(Cvtss2sd);
       break;
     case kSSEFloat64Cmp:
-      ASSEMBLE_SSE_BINOP(ucomisd);
+      ASSEMBLE_SSE_BINOP(Ucomisd);
       break;
     case kSSEFloat64Add:
       ASSEMBLE_SSE_BINOP(addsd);
@@ -909,20 +914,20 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     }
     case kSSEFloat64ToFloat32:
-      ASSEMBLE_SSE_UNOP(cvtsd2ss);
+      ASSEMBLE_SSE_UNOP(Cvtsd2ss);
       break;
     case kSSEFloat64ToInt32:
       if (instr->InputAt(0)->IsDoubleRegister()) {
-        __ cvttsd2si(i.OutputRegister(), i.InputDoubleRegister(0));
+        __ Cvttsd2si(i.OutputRegister(), i.InputDoubleRegister(0));
       } else {
-        __ cvttsd2si(i.OutputRegister(), i.InputOperand(0));
+        __ Cvttsd2si(i.OutputRegister(), i.InputOperand(0));
       }
       break;
     case kSSEFloat64ToUint32: {
       if (instr->InputAt(0)->IsDoubleRegister()) {
-        __ cvttsd2siq(i.OutputRegister(), i.InputDoubleRegister(0));
+        __ Cvttsd2siq(i.OutputRegister(), i.InputDoubleRegister(0));
       } else {
-        __ cvttsd2siq(i.OutputRegister(), i.InputOperand(0));
+        __ Cvttsd2siq(i.OutputRegister(), i.InputOperand(0));
       }
       __ AssertZeroExtended(i.OutputRegister());
       break;

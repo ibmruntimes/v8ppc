@@ -30,18 +30,30 @@ class BytecodeArrayBuilder {
 
   // Set number of parameters expected by function.
   void set_parameter_count(int number_of_params);
-  int parameter_count() const;
+  int parameter_count() const {
+    DCHECK_GE(parameter_count_, 0);
+    return parameter_count_;
+  }
 
   // Set number of locals required for bytecode array.
   void set_locals_count(int number_of_locals);
-  int locals_count() const;
+  int locals_count() const {
+    DCHECK_GE(local_register_count_, 0);
+    return local_register_count_;
+  }
 
   // Set number of contexts required for bytecode array.
   void set_context_count(int number_of_contexts);
-  int context_count() const;
+  int context_count() const {
+    DCHECK_GE(context_register_count_, 0);
+    return context_register_count_;
+  }
 
   Register first_context_register() const;
   Register last_context_register() const;
+
+  // Returns the number of fixed (non-temporary) registers.
+  int fixed_register_count() const { return context_count() + locals_count(); }
 
   Register Parameter(int parameter_index) const;
 
@@ -60,6 +72,9 @@ class BytecodeArrayBuilder {
 
   // Load the object at |slot_index| in |context| into the accumulator.
   BytecodeArrayBuilder& LoadContextSlot(Register context, int slot_index);
+
+  // Stores the object in the accumulator into |slot_index| of |context|.
+  BytecodeArrayBuilder& StoreContextSlot(Register context, int slot_index);
 
   // Register-accumulator transfers.
   BytecodeArrayBuilder& LoadAccumulatorWithRegister(Register reg);
@@ -83,6 +98,7 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& CreateClosure(PretenureFlag tenured);
 
   // Literals creation.  Constant elements should be in the accumulator.
+  BytecodeArrayBuilder& CreateRegExpLiteral(int literal_index, Register flags);
   BytecodeArrayBuilder& CreateArrayLiteral(int literal_index, int flags);
   BytecodeArrayBuilder& CreateObjectLiteral(int literal_index, int flags);
 
@@ -140,6 +156,8 @@ class BytecodeArrayBuilder {
   // than explicitly using them.
   BytecodeArrayBuilder& JumpIfToBooleanTrue(BytecodeLabel* label);
   BytecodeArrayBuilder& JumpIfToBooleanFalse(BytecodeLabel* label);
+
+  BytecodeArrayBuilder& Throw();
   BytecodeArrayBuilder& Return();
 
   BytecodeArrayBuilder& EnterBlock();
@@ -199,7 +217,7 @@ class BytecodeArrayBuilder {
   bool bytecode_generated_;
   size_t last_block_end_;
   size_t last_bytecode_start_;
-  bool return_seen_in_block_;
+  bool exit_seen_in_block_;
 
   IdentityMap<size_t> constants_map_;
   ZoneVector<Handle<Object>> constants_;

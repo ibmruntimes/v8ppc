@@ -63,6 +63,20 @@
   'reentrant-caching': [SKIP],
 }],  # 'dcheck_always_on == True and (arch == arm or arch == arm64)'
 
+##############################################################################
+['asan == True', {
+  # Skip tests not suitable for ASAN.
+  'fast/js/excessive-comma-usage': [SKIP],
+
+  # BUG(v8:4499).
+  'run-json-stringify': [SKIP],
+}],  # 'asan == True'
+
+##############################################################################
+['isolates', {
+  # BUG(v8:4499).
+  '*': [SKIP],
+}],  # 'isolates'
 
 ##############################################################################
 ['gc_stress == True', {

@@ -60,6 +60,15 @@ ARCH_GUESS = utils.DefaultArch()
 # expected runtimes (suites with slow test cases first). These groups are
 # invoked in seperate steps on the bots.
 TEST_MAP = {
+  "bot_default": [
+    "mjsunit",
+    "cctest",
+    "webkit",
+    "message",
+    "preparser",
+    "intl",
+    "unittests",
+  ],
   "default": [
     "mjsunit",
     "cctest",
@@ -470,6 +479,7 @@ def ProcessOptions(options):
   if not CheckTestMode("pass|fail test", options.pass_fail_tests):
     return False
   if options.no_i18n:
+    TEST_MAP["bot_default"].remove("intl")
     TEST_MAP["default"].remove("intl")
   return True
 

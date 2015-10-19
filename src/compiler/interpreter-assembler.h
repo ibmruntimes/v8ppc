@@ -97,6 +97,8 @@ class InterpreterAssembler {
 
   // Load |slot_index| from |context|.
   Node* LoadContextSlot(Node* context, Node* slot_index);
+  // Stores |value| into |slot_index| of |context|.
+  Node* StoreContextSlot(Node* context, Node* slot_index, Node* value);
 
   // Load the TypeFeedbackVector for the current function.
   Node* LoadTypeFeedbackVector();
@@ -141,6 +143,9 @@ class InterpreterAssembler {
 
   // Dispatch to the bytecode.
   void Dispatch();
+
+  // Abort with the given bailout reason.
+  void Abort(BailoutReason bailout_reason);
 
  protected:
   // Close the graph.

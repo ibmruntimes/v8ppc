@@ -49,7 +49,10 @@ namespace interpreter {
   V(StaGlobalStrict, OperandType::kIdx8)                                       \
                                                                                \
   /* Context operations */                                                     \
+  V(PushContext, OperandType::kReg8)                                           \
+  V(PopContext, OperandType::kReg8)                                            \
   V(LdaContextSlot, OperandType::kReg8, OperandType::kIdx8)                    \
+  V(StaContextSlot, OperandType::kReg8, OperandType::kIdx8)                    \
                                                                                \
   /* Register-accumulator transfers */                                         \
   V(Ldar, OperandType::kReg8)                                                  \
@@ -68,10 +71,6 @@ namespace interpreter {
     OperandType::kIdx8)                                                        \
   V(KeyedStoreICStrict, OperandType::kReg8, OperandType::kReg8,                \
     OperandType::kIdx8)                                                        \
-                                                                               \
-  /* Context operations */                                                     \
-  V(PushContext, OperandType::kReg8)                                           \
-  V(PopContext, OperandType::kReg8)                                            \
                                                                                \
   /* Binary Operators */                                                       \
   V(Add, OperandType::kReg8)                                                   \
@@ -115,6 +114,7 @@ namespace interpreter {
   V(ToName, OperandType::kNone)                                                \
                                                                                \
   /* Literals */                                                               \
+  V(CreateRegExpLiteral, OperandType::kIdx8, OperandType::kReg8)               \
   V(CreateArrayLiteral, OperandType::kIdx8, OperandType::kImm8)                \
   V(CreateObjectLiteral, OperandType::kIdx8, OperandType::kImm8)               \
                                                                                \
@@ -132,6 +132,7 @@ namespace interpreter {
   V(JumpIfToBooleanTrueConstant, OperandType::kIdx8)                           \
   V(JumpIfToBooleanFalse, OperandType::kImm8)                                  \
   V(JumpIfToBooleanFalseConstant, OperandType::kIdx8)                          \
+  V(Throw, OperandType::kNone)                                                 \
   V(Return, OperandType::kNone)
 
 
@@ -209,6 +210,9 @@ class Register {
                             Register reg3 = Register(),
                             Register reg4 = Register(),
                             Register reg5 = Register());
+
+  bool operator==(const Register& o) const { return o.index() == index(); }
+  bool operator!=(const Register& o) const { return o.index() != index(); }
 
  private:
   static const int kIllegalIndex = kMaxInt;

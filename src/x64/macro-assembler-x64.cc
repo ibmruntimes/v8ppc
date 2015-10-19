@@ -787,6 +787,46 @@ void MacroAssembler::PopCallerSaved(SaveFPRegsMode fp_mode,
 }
 
 
+void MacroAssembler::Cvtss2sd(XMMRegister dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vcvtss2sd(dst, src, src);
+  } else {
+    cvtss2sd(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvtss2sd(XMMRegister dst, const Operand& src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vcvtss2sd(dst, dst, src);
+  } else {
+    cvtss2sd(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvtsd2ss(XMMRegister dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vcvtsd2ss(dst, src, src);
+  } else {
+    cvtsd2ss(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvtsd2ss(XMMRegister dst, const Operand& src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vcvtsd2ss(dst, dst, src);
+  } else {
+    cvtsd2ss(dst, src);
+  }
+}
+
+
 void MacroAssembler::Cvtlsi2sd(XMMRegister dst, Register src) {
   if (CpuFeatures::IsSupported(AVX)) {
     CpuFeatureScope scope(this, AVX);
@@ -807,6 +847,46 @@ void MacroAssembler::Cvtlsi2sd(XMMRegister dst, const Operand& src) {
   } else {
     xorpd(dst, dst);
     cvtlsi2sd(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvttsd2si(Register dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vcvttsd2si(dst, src);
+  } else {
+    cvttsd2si(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvttsd2si(Register dst, const Operand& src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vcvttsd2si(dst, src);
+  } else {
+    cvttsd2si(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvttsd2siq(Register dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vcvttsd2siq(dst, src);
+  } else {
+    cvttsd2siq(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvttsd2siq(Register dst, const Operand& src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vcvttsd2siq(dst, src);
+  } else {
+    cvttsd2siq(dst, src);
   }
 }
 
@@ -2539,6 +2619,56 @@ void MacroAssembler::Movq(Register dst, XMMRegister src) {
 }
 
 
+void MacroAssembler::Movmskpd(Register dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vmovmskpd(dst, src);
+  } else {
+    movmskpd(dst, src);
+  }
+}
+
+
+void MacroAssembler::Ucomiss(XMMRegister src1, XMMRegister src2) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vucomiss(src1, src2);
+  } else {
+    ucomiss(src1, src2);
+  }
+}
+
+
+void MacroAssembler::Ucomiss(XMMRegister src1, const Operand& src2) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vucomiss(src1, src2);
+  } else {
+    ucomiss(src1, src2);
+  }
+}
+
+
+void MacroAssembler::Ucomisd(XMMRegister src1, XMMRegister src2) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vucomisd(src1, src2);
+  } else {
+    ucomisd(src1, src2);
+  }
+}
+
+
+void MacroAssembler::Ucomisd(XMMRegister src1, const Operand& src2) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vucomisd(src1, src2);
+  } else {
+    ucomisd(src1, src2);
+  }
+}
+
+
 void MacroAssembler::Xorpd(XMMRegister dst, XMMRegister src) {
   if (CpuFeatures::IsSupported(AVX)) {
     CpuFeatureScope scope(this, AVX);
@@ -3257,7 +3387,7 @@ void MacroAssembler::ClampDoubleToUint8(XMMRegister input_reg,
   jmp(&done, Label::kNear);
   bind(&conv_failure);
   Set(result_reg, 0);
-  ucomisd(input_reg, temp_xmm_reg);
+  Ucomisd(input_reg, temp_xmm_reg);
   j(below, &done, Label::kNear);
   Set(result_reg, 255);
   bind(&done);
@@ -3286,7 +3416,7 @@ void MacroAssembler::TruncateHeapNumberToI(Register result_reg,
                                            Register input_reg) {
   Label done;
   Movsd(xmm0, FieldOperand(input_reg, HeapNumber::kValueOffset));
-  cvttsd2siq(result_reg, xmm0);
+  Cvttsd2siq(result_reg, xmm0);
   cmpq(result_reg, Immediate(1));
   j(no_overflow, &done, Label::kNear);
 
@@ -3309,7 +3439,7 @@ void MacroAssembler::TruncateHeapNumberToI(Register result_reg,
 void MacroAssembler::TruncateDoubleToI(Register result_reg,
                                        XMMRegister input_reg) {
   Label done;
-  cvttsd2siq(result_reg, input_reg);
+  Cvttsd2siq(result_reg, input_reg);
   cmpq(result_reg, Immediate(1));
   j(no_overflow, &done, Label::kNear);
 
@@ -3329,9 +3459,9 @@ void MacroAssembler::DoubleToI(Register result_reg, XMMRegister input_reg,
                                MinusZeroMode minus_zero_mode,
                                Label* lost_precision, Label* is_nan,
                                Label* minus_zero, Label::Distance dst) {
-  cvttsd2si(result_reg, input_reg);
+  Cvttsd2si(result_reg, input_reg);
   Cvtlsi2sd(xmm0, result_reg);
-  ucomisd(xmm0, input_reg);
+  Ucomisd(xmm0, input_reg);
   j(not_equal, lost_precision, dst);
   j(parity_even, is_nan, dst);  // NaN.
   if (minus_zero_mode == FAIL_ON_MINUS_ZERO) {
@@ -3340,7 +3470,7 @@ void MacroAssembler::DoubleToI(Register result_reg, XMMRegister input_reg,
     // only have to test if we got -0 as an input.
     testl(result_reg, result_reg);
     j(not_zero, &done, Label::kNear);
-    movmskpd(result_reg, input_reg);
+    Movmskpd(result_reg, input_reg);
     // Bit 0 contains the sign of the double in input_reg.
     // If input was positive, we are ok and return 0, otherwise
     // jump to minus_zero.

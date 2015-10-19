@@ -183,8 +183,29 @@ Callable CodeFactory::ToString(Isolate* isolate) {
 
 
 // static
+Callable CodeFactory::ToLength(Isolate* isolate) {
+  ToLengthStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+
+// static
 Callable CodeFactory::ToObject(Isolate* isolate) {
   ToObjectStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+
+// static
+Callable CodeFactory::NumberToString(Isolate* isolate) {
+  NumberToStringStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+
+// static
+Callable CodeFactory::RegExpConstructResult(Isolate* isolate) {
+  RegExpConstructResultStub stub(isolate);
   return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
 }
 

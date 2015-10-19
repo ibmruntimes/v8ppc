@@ -273,6 +273,12 @@ void BytecodeGraphBuilder::VisitLdaContextSlot(
 }
 
 
+void BytecodeGraphBuilder::VisitStaContextSlot(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
 void BytecodeGraphBuilder::VisitLoadICSloppy(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
@@ -339,6 +345,12 @@ void BytecodeGraphBuilder::VisitCreateClosure(
 }
 
 
+void BytecodeGraphBuilder::VisitCreateRegExpLiteral(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
 void BytecodeGraphBuilder::VisitCreateArrayLiteral(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
@@ -364,6 +376,12 @@ void BytecodeGraphBuilder::VisitCallRuntime(
 
 
 void BytecodeGraphBuilder::VisitNew(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitThrow(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }

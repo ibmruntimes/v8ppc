@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/compiler/js-global-specialization.h"
+#include "src/compiler/js-native-context-specialization.h"
 
+#include "src/accessors.h"
 #include "src/compilation-dependencies.h"
 #include "src/compiler/access-builder.h"
 #include "src/compiler/js-graph.h"
@@ -18,14 +19,14 @@ namespace v8 {
 namespace internal {
 namespace compiler {
 
-struct JSGlobalSpecialization::ScriptContextTableLookupResult {
+struct JSNativeContextSpecialization::ScriptContextTableLookupResult {
   Handle<Context> context;
   bool immutable;
   int index;
 };
 
 
-JSGlobalSpecialization::JSGlobalSpecialization(
+JSNativeContextSpecialization::JSNativeContextSpecialization(
     Editor* editor, JSGraph* jsgraph, Flags flags,
     Handle<GlobalObject> global_object, CompilationDependencies* dependencies,
     Zone* zone)
@@ -37,7 +38,7 @@ JSGlobalSpecialization::JSGlobalSpecialization(
       zone_(zone) {}
 
 
-Reduction JSGlobalSpecialization::Reduce(Node* node) {
+Reduction JSNativeContextSpecialization::Reduce(Node* node) {
   switch (node->opcode()) {
     case IrOpcode::kJSLoadGlobal:
       return ReduceJSLoadGlobal(node);
@@ -52,7 +53,7 @@ Reduction JSGlobalSpecialization::Reduce(Node* node) {
 }
 
 
-Reduction JSGlobalSpecialization::ReduceJSLoadGlobal(Node* node) {
+Reduction JSNativeContextSpecialization::ReduceJSLoadGlobal(Node* node) {
   DCHECK_EQ(IrOpcode::kJSLoadGlobal, node->opcode());
   Handle<Name> name = LoadGlobalParametersOf(node->op()).name();
   Node* effect = NodeProperties::GetEffectInput(node);
@@ -131,7 +132,7 @@ Reduction JSGlobalSpecialization::ReduceJSLoadGlobal(Node* node) {
 }
 
 
-Reduction JSGlobalSpecialization::ReduceJSStoreGlobal(Node* node) {
+Reduction JSNativeContextSpecialization::ReduceJSStoreGlobal(Node* node) {
   DCHECK_EQ(IrOpcode::kJSStoreGlobal, node->opcode());
   Handle<Name> name = StoreGlobalParametersOf(node->op()).name();
   Node* value = NodeProperties::GetValueInput(node, 2);
@@ -238,7 +239,7 @@ Reduction JSGlobalSpecialization::ReduceJSStoreGlobal(Node* node) {
 
 // This class encapsulates all information required to access a certain
 // object property, either on the object itself or on the prototype chain.
-class JSGlobalSpecialization::PropertyAccessInfo final {
+class JSNativeContextSpecialization::PropertyAccessInfo final {
  public:
   enum Kind { kInvalid, kData, kDataConstant };
 
@@ -249,9 +250,10 @@ class JSGlobalSpecialization::PropertyAccessInfo final {
   }
   static PropertyAccessInfo Data(Type* receiver_type, FieldIndex field_index,
                                  Representation field_representation,
+                                 Type* field_type,
                                  MaybeHandle<JSObject> holder) {
     return PropertyAccessInfo(holder, field_index, field_representation,
-                              receiver_type);
+                              field_type, receiver_type);
   }
 
   PropertyAccessInfo() : kind_(kInvalid) {}
@@ -262,12 +264,14 @@ class JSGlobalSpecialization::PropertyAccessInfo final {
         constant_(constant),
         holder_(holder) {}
   PropertyAccessInfo(MaybeHandle<JSObject> holder, FieldIndex field_index,
-                     Representation field_representation, Type* receiver_type)
+                     Representation field_representation, Type* field_type,
+                     Type* receiver_type)
       : kind_(kData),
         receiver_type_(receiver_type),
         holder_(holder),
         field_index_(field_index),
-        field_representation_(field_representation) {}
+        field_representation_(field_representation),
+        field_type_(field_type) {}
 
   bool IsDataConstant() const { return kind() == kDataConstant; }
   bool IsData() const { return kind() == kData; }
@@ -277,6 +281,7 @@ class JSGlobalSpecialization::PropertyAccessInfo final {
   Handle<Object> constant() const { return constant_; }
   FieldIndex field_index() const { return field_index_; }
   Representation field_representation() const { return field_representation_; }
+  Type* field_type() const { return field_type_; }
   Type* receiver_type() const { return receiver_type_; }
 
  private:
@@ -286,6 +291,7 @@ class JSGlobalSpecialization::PropertyAccessInfo final {
   MaybeHandle<JSObject> holder_;
   FieldIndex field_index_;
   Representation field_representation_;
+  Type* field_type_ = Type::Any();
 };
 
 
@@ -304,11 +310,48 @@ bool CanInlinePropertyAccess(Handle<Map> map) {
 }  // namespace
 
 
-bool JSGlobalSpecialization::ComputePropertyAccessInfo(
+bool JSNativeContextSpecialization::ComputePropertyAccessInfo(
     Handle<Map> map, Handle<Name> name, PropertyAccessInfo* access_info) {
   MaybeHandle<JSObject> holder;
   Type* receiver_type = Type::Class(map, graph()->zone());
   while (CanInlinePropertyAccess(map)) {
+    // Check for special JSObject field accessors.
+    int offset;
+    if (Accessors::IsJSObjectFieldAccessor(map, name, &offset)) {
+      FieldIndex field_index = FieldIndex::ForInObjectOffset(offset);
+      Representation field_representation = Representation::Tagged();
+      Type* field_type = Type::Tagged();
+      if (map->IsStringMap()) {
+        DCHECK(Name::Equals(factory()->length_string(), name));
+        // The String::length property is always a smi in the range
+        // [0, String::kMaxLength].
+        field_representation = Representation::Smi();
+        field_type = Type::Intersect(
+            Type::Range(0.0, String::kMaxLength, graph()->zone()),
+            Type::TaggedSigned(), graph()->zone());
+      } else if (map->IsJSArrayMap()) {
+        DCHECK(Name::Equals(factory()->length_string(), name));
+        // The JSArray::length property is a smi in the range
+        // [0, FixedDoubleArray::kMaxLength] in case of fast double
+        // elements, a smi in the range [0, FixedArray::kMaxLength]
+        // in case of other fast elements, and [0, kMaxUInt32-1] in
+        // case of other arrays.
+        double field_type_upper = kMaxUInt32 - 1;
+        if (IsFastElementsKind(map->elements_kind())) {
+          field_representation = Representation::Smi();
+          field_type_upper = IsFastDoubleElementsKind(map->elements_kind())
+                                 ? FixedDoubleArray::kMaxLength
+                                 : FixedArray::kMaxLength;
+        }
+        field_type =
+            Type::Intersect(Type::Range(0.0, field_type_upper, graph()->zone()),
+                            Type::TaggedSigned(), graph()->zone());
+      }
+      *access_info = PropertyAccessInfo::Data(
+          receiver_type, field_index, field_representation, field_type, holder);
+      return true;
+    }
+
     // Lookup the named property on the {map}.
     Handle<DescriptorArray> descriptors(map->instance_descriptors(), isolate());
     int const number = descriptors->SearchWithCache(*name, *map);
@@ -324,8 +367,19 @@ bool JSGlobalSpecialization::ComputePropertyAccessInfo(
         Representation field_representation = details.representation();
         FieldIndex field_index = FieldIndex::ForPropertyIndex(
             *map, index, field_representation.IsDouble());
-        *access_info = PropertyAccessInfo::Data(receiver_type, field_index,
-                                                field_representation, holder);
+        Type* field_type = Type::Any();
+        if (field_representation.IsSmi()) {
+          field_type = Type::Intersect(Type::SignedSmall(),
+                                       Type::TaggedSigned(), graph()->zone());
+        } else if (field_representation.IsDouble()) {
+          field_type = Type::Intersect(Type::Number(), Type::UntaggedFloat64(),
+                                       graph()->zone());
+        } else if (field_representation.IsHeapObject()) {
+          field_type = Type::TaggedPointer();
+        }
+        *access_info =
+            PropertyAccessInfo::Data(receiver_type, field_index,
+                                     field_representation, field_type, holder);
         return true;
       } else {
         // TODO(bmeurer): Add support for accessors.
@@ -358,7 +412,7 @@ bool JSGlobalSpecialization::ComputePropertyAccessInfo(
 }
 
 
-bool JSGlobalSpecialization::ComputePropertyAccessInfos(
+bool JSNativeContextSpecialization::ComputePropertyAccessInfos(
     MapHandleList const& maps, Handle<Name> name,
     ZoneVector<PropertyAccessInfo>* access_infos) {
   for (Handle<Map> map : maps) {
@@ -370,7 +424,7 @@ bool JSGlobalSpecialization::ComputePropertyAccessInfos(
 }
 
 
-Reduction JSGlobalSpecialization::ReduceJSLoadNamed(Node* node) {
+Reduction JSNativeContextSpecialization::ReduceJSLoadNamed(Node* node) {
   DCHECK_EQ(IrOpcode::kJSLoadNamed, node->opcode());
   LoadNamedParameters const p = LoadNamedParametersOf(node->op());
   Handle<Name> name = p.name();
@@ -510,6 +564,7 @@ Reduction JSGlobalSpecialization::ReduceJSLoadNamed(Node* node) {
       FieldIndex const field_index = access_info.field_index();
       Representation const field_representation =
           access_info.field_representation();
+      Type* const field_type = access_info.field_type();
       if (!field_index.is_inobject()) {
         this_value = this_effect = graph()->NewNode(
             simplified()->LoadField(AccessBuilder::ForJSObjectProperties()),
@@ -519,12 +574,9 @@ Reduction JSGlobalSpecialization::ReduceJSLoadNamed(Node* node) {
       field_access.base_is_tagged = kTaggedBase;
       field_access.offset = field_index.offset();
       field_access.name = name;
-      field_access.type = Type::Any();
+      field_access.type = field_type;
       field_access.machine_type = kMachAnyTagged;
-      if (field_representation.IsSmi()) {
-        field_access.type = Type::Intersect(
-            Type::SignedSmall(), Type::TaggedSigned(), graph()->zone());
-      } else if (field_representation.IsDouble()) {
+      if (field_representation.IsDouble()) {
         if (!field_index.is_inobject() || field_index.is_hidden_field() ||
             !FLAG_unbox_double_fields) {
           this_value = this_effect =
@@ -533,11 +585,7 @@ Reduction JSGlobalSpecialization::ReduceJSLoadNamed(Node* node) {
           field_access.offset = HeapNumber::kValueOffset;
           field_access.name = MaybeHandle<Name>();
         }
-        field_access.type = Type::Intersect(
-            Type::Number(), Type::UntaggedFloat64(), graph()->zone());
         field_access.machine_type = kMachFloat64;
-      } else if (field_representation.IsHeapObject()) {
-        field_access.type = Type::TaggedPointer();
       }
       this_value = this_effect =
           graph()->NewNode(simplified()->LoadField(field_access), this_value,
@@ -550,12 +598,20 @@ Reduction JSGlobalSpecialization::ReduceJSLoadNamed(Node* node) {
     controls.push_back(this_control);
   }
 
+  // Collect the fallthru control as final "exit" control.
+  exit_controls.push_back(fallthrough_control);
+
+// TODO(bmeurer/mtrofin): Splintering cannot currently deal with deferred
+// blocks that contain only a single non-deoptimize instruction (i.e. a
+// jump). Generating a single Merge here, which joins all the deoptimizing
+// controls would generate a lot of these basic blocks, however. So this
+// is disabled for now until splintering is fixed.
+#if 0
   // Generate the single "exit" point, where we get if either all map/instance
   // type checks failed, or one of the assumptions inside one of the cases
   // failes (i.e. failing prototype chain check).
   // TODO(bmeurer): Consider falling back to IC here if deoptimization is
   // disabled.
-  exit_controls.push_back(fallthrough_control);
   int const exit_control_count = static_cast<int>(exit_controls.size());
   Node* exit_control =
       (exit_control_count == 1)
@@ -566,6 +622,14 @@ Reduction JSGlobalSpecialization::ReduceJSLoadNamed(Node* node) {
                                       exit_effect, exit_control);
   // TODO(bmeurer): This should be on the AdvancedReducer somehow.
   NodeProperties::MergeControlToEnd(graph(), common(), deoptimize);
+#else
+  for (Node* const exit_control : exit_controls) {
+    Node* deoptimize = graph()->NewNode(common()->Deoptimize(), frame_state,
+                                        exit_effect, exit_control);
+    // TODO(bmeurer): This should be on the AdvancedReducer somehow.
+    NodeProperties::MergeControlToEnd(graph(), common(), deoptimize);
+  }
+#endif
 
   // Generate the final merge point for all (polymorphic) branches.
   Node* value;
@@ -588,12 +652,13 @@ Reduction JSGlobalSpecialization::ReduceJSLoadNamed(Node* node) {
 }
 
 
-Reduction JSGlobalSpecialization::Replace(Node* node, Handle<Object> value) {
+Reduction JSNativeContextSpecialization::Replace(Node* node,
+                                                 Handle<Object> value) {
   return Replace(node, jsgraph()->Constant(value));
 }
 
 
-bool JSGlobalSpecialization::LookupInScriptContextTable(
+bool JSNativeContextSpecialization::LookupInScriptContextTable(
     Handle<Name> name, ScriptContextTableLookupResult* result) {
   if (!name->IsString()) return false;
   Handle<ScriptContextTable> script_context_table(
@@ -613,30 +678,37 @@ bool JSGlobalSpecialization::LookupInScriptContextTable(
 }
 
 
-Graph* JSGlobalSpecialization::graph() const { return jsgraph()->graph(); }
+Graph* JSNativeContextSpecialization::graph() const {
+  return jsgraph()->graph();
+}
 
 
-Isolate* JSGlobalSpecialization::isolate() const {
+Isolate* JSNativeContextSpecialization::isolate() const {
   return jsgraph()->isolate();
 }
 
 
-MachineOperatorBuilder* JSGlobalSpecialization::machine() const {
+Factory* JSNativeContextSpecialization::factory() const {
+  return isolate()->factory();
+}
+
+
+MachineOperatorBuilder* JSNativeContextSpecialization::machine() const {
   return jsgraph()->machine();
 }
 
 
-CommonOperatorBuilder* JSGlobalSpecialization::common() const {
+CommonOperatorBuilder* JSNativeContextSpecialization::common() const {
   return jsgraph()->common();
 }
 
 
-JSOperatorBuilder* JSGlobalSpecialization::javascript() const {
+JSOperatorBuilder* JSNativeContextSpecialization::javascript() const {
   return jsgraph()->javascript();
 }
 
 
-SimplifiedOperatorBuilder* JSGlobalSpecialization::simplified() const {
+SimplifiedOperatorBuilder* JSNativeContextSpecialization::simplified() const {
   return jsgraph()->simplified();
 }
 

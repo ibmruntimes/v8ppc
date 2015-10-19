@@ -518,7 +518,6 @@ TEST(DisasmX64) {
       __ vmovq(xmm9, Operand(rbx, rcx, times_4, 10000));
       __ vmovq(r9, xmm6);
 
-      __ vmovapd(xmm7, xmm0);
       __ vmovsd(xmm6, xmm2);
       __ vmovsd(xmm9, Operand(rbx, rcx, times_4, 10000));
       __ vmovsd(Operand(rbx, rcx, times_4, 10000), xmm0);
@@ -537,8 +536,20 @@ TEST(DisasmX64) {
       __ vmaxsd(xmm9, xmm1, Operand(rbx, rcx, times_1, 10000));
       __ vucomisd(xmm9, xmm1);
       __ vucomisd(xmm8, Operand(rbx, rdx, times_2, 10981));
+
+      __ vcvtss2sd(xmm4, xmm9, xmm11);
+      __ vcvtsd2ss(xmm9, xmm3, xmm2);
+      __ vcvtss2sd(xmm4, xmm9, Operand(rbx, rcx, times_1, 10000));
+      __ vcvtsd2ss(xmm9, xmm3, Operand(rbx, rcx, times_1, 10000));
       __ vcvtlsi2sd(xmm5, xmm9, rcx);
       __ vcvtlsi2sd(xmm9, xmm3, Operand(rbx, r9, times_4, 10000));
+      __ vcvttsd2si(r9, xmm6);
+      __ vcvttsd2si(rax, Operand(rbx, r9, times_4, 10000));
+      __ vcvttsd2siq(rdi, xmm9);
+      __ vcvttsd2siq(r8, Operand(r9, rbx, times_4, 10000));
+
+      __ vmovapd(xmm7, xmm0);
+      __ vmovmskpd(r9, xmm4);
 
       __ vandps(xmm0, xmm9, xmm2);
       __ vandps(xmm9, xmm1, Operand(rbx, rcx, times_4, 10000));
