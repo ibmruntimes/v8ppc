@@ -1533,20 +1533,15 @@ void AstGraphBuilder::VisitFunctionLiteral(FunctionLiteral* expr) {
 
 
 void AstGraphBuilder::VisitClassLiteral(ClassLiteral* expr) {
-  if (expr->scope() == NULL) {
-    // Visit class literal in the same scope, no declarations.
+  // Visit declarations and class literal in a block scope.
+  if (expr->scope()->ContextLocalCount() > 0) {
+    Node* context = BuildLocalBlockContext(expr->scope());
+    ContextScope scope(this, expr->scope(), context);
+    VisitDeclarations(expr->scope()->declarations());
     VisitClassLiteralContents(expr);
   } else {
-    // Visit declarations and class literal in a block scope.
-    if (expr->scope()->ContextLocalCount() > 0) {
-      Node* context = BuildLocalBlockContext(expr->scope());
-      ContextScope scope(this, expr->scope(), context);
-      VisitDeclarations(expr->scope()->declarations());
-      VisitClassLiteralContents(expr);
-    } else {
-      VisitDeclarations(expr->scope()->declarations());
-      VisitClassLiteralContents(expr);
-    }
+    VisitDeclarations(expr->scope()->declarations());
+    VisitClassLiteralContents(expr);
   }
 }
 
@@ -1644,8 +1639,7 @@ void AstGraphBuilder::VisitClassLiteralContents(ClassLiteral* expr) {
   literal = NewNode(op, literal, proto);
 
   // Assign to class variable.
-  if (expr->scope() != NULL) {
-    DCHECK_NOT_NULL(expr->class_variable_proxy());
+  if (expr->class_variable_proxy() != nullptr) {
     Variable* var = expr->class_variable_proxy()->var();
     FrameStateBeforeAndAfter states(this, BailoutId::None());
     VectorSlotPair feedback = CreateVectorSlotPair(
@@ -2472,7 +2466,9 @@ void AstGraphBuilder::VisitCall(Call* expr) {
   const Operator* call = javascript()->CallFunction(args->length() + 2, flags,
                                                     language_mode(), feedback);
   Node* value = ProcessArguments(call, args->length() + 2);
-  PrepareFrameState(value, expr->id(), ast_context()->GetStateCombine());
+  environment()->Push(callee_value);
+  PrepareFrameState(value, expr->ReturnId(), OutputFrameStateCombine::Push());
+  environment()->Drop(1);
   ast_context()->ProduceValue(value);
 }
 
@@ -3158,7 +3154,8 @@ Node* AstGraphBuilder::BuildLocalScriptContext(Scope* scope) {
   Handle<ScopeInfo> scope_info = scope->GetScopeInfo(isolate());
   const Operator* op = javascript()->CreateScriptContext(scope_info);
   Node* local_context = NewNode(op, GetFunctionClosure());
-  PrepareFrameState(local_context, BailoutId::Prologue());
+  PrepareFrameState(local_context, BailoutId::ScriptContext(),
+                    OutputFrameStateCombine::Push());
 
   return local_context;
 }
