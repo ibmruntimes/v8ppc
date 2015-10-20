@@ -330,6 +330,7 @@ TickProcessor.prototype.processSharedLibrary = function(
       name, startAddr, endAddr, function(fName, fStart, fEnd) {
     self.profile_.addStaticCode(fName, fStart, fEnd);
     self.setCodeType(fName, 'CPP');
+    //    print("addEntry: ", fStart.toString(16), (fEnd - fStart).toString(16), fName);
   });
 };
 
@@ -650,22 +651,32 @@ CppEntriesProvider.prototype.parseVmSymbols = function(
   this.loadSymbols(libName);
 
   var prevEntry;
+  var delta = 0;
 
   function addEntry(funcInfo) {
     // Several functions can be mapped onto the same address. To avoid
     // creating zero-sized entries, skip such duplicates.
-    // Also double-check that function belongs to the library address space.
     if (prevEntry && !prevEntry.end &&
-        prevEntry.start < funcInfo.start &&
-        prevEntry.start >= libStart && funcInfo.start <= libEnd) {
+        prevEntry.start < funcInfo.start) {
       processorFunc(prevEntry.name, prevEntry.start, funcInfo.start);
     }
     if (funcInfo.end &&
-        (!prevEntry || prevEntry.start != funcInfo.start) &&
-        funcInfo.start >= libStart && funcInfo.end <= libEnd) {
+        (!prevEntry || prevEntry.start != funcInfo.start)) {
       processorFunc(funcInfo.name, funcInfo.start, funcInfo.end);
     }
     prevEntry = funcInfo;
+  }
+
+  function findEntryFromOPD(table, offset) {
+    var RE = /[0-9a-f]+\s+([0-9a-f]{8,16})\s+([0-9a-f]{8,16})/;
+    var index = offset >> 3;
+    result = table[index >> 1].match(RE);
+    return parseInt(result[1 + (index & 1)], 16);
+  }
+
+  if (this.textSize) {
+    // Delta to convert symbol table address to runtime address.
+    delta = libStart - (this.textAddress - this.textOffset)
   }
 
   while (true) {
@@ -675,9 +686,27 @@ CppEntriesProvider.prototype.parseVmSymbols = function(
     } else if (funcInfo === false) {
       break;
     }
-    if (funcInfo.start < libStart && funcInfo.start < libEnd - libStart) {
-      funcInfo.start += libStart;
+
+    if (this.opdSize) {
+      if (funcInfo.start < this.opdAddress ||
+          funcInfo.start >= this.opdAddress + this.opdSize) {
+        continue;
+      }
+      funcInfo.start = findEntryFromOPD(this.opdTable,
+                                        funcInfo.start - this.opdAddress);
     }
+    if (this.textSize) {
+      if (funcInfo.start < this.textAddress ||
+          funcInfo.start >= this.textAddress + this.textSize) {
+        continue;
+      }
+      funcInfo.start += delta;
+    } else {
+      if (funcInfo.start < libStart && funcInfo.start < libEnd - libStart) {
+        funcInfo.start += libStart;
+      }
+    }
+
     if (funcInfo.size) {
       funcInfo.end = funcInfo.start + funcInfo.size;
     }
@@ -709,6 +738,7 @@ inherits(UnixCppEntriesProvider, CppEntriesProvider);
 UnixCppEntriesProvider.prototype.loadSymbols = function(libName) {
   this.parsePos = 0;
   libName = this.targetRootFS + libName;
+
   try {
     this.symbols = [
       os.system(this.nmExec, ['-C', '-n', '-S', libName], -1, -1),
@@ -717,6 +747,36 @@ UnixCppEntriesProvider.prototype.loadSymbols = function(libName) {
   } catch (e) {
     // If the library cannot be found on this system let's not panic.
     this.symbols = ['', ''];
+    return;
+  }
+
+  // Examine section headers to properly convert symbol table addresses to runtime locations.
+  try {
+    // .text <Size> <VMA> <LMA> <FileOffset>
+    var TEXT_RE = /\.text\s+([0-9a-f]{8,16})\s+[0-9a-f]{8,16}\s+([0-9a-f]{8,16})\s+([0-9a-f]{8,16})/;
+    var texthdr = os.system('objdump', ['-h', '-j.text', libName], -1, -1).match(TEXT_RE);
+    this.textSize = parseInt(texthdr[1], 16);
+    this.textAddress = parseInt(texthdr[2], 16);
+    this.textOffset = parseInt(texthdr[3], 16);
+  } catch (e) {
+    print("Failed to find .text section in ", libName);
+    this.textSize = 0;
+  }
+
+  try {
+    // .opd <Size> <VMA> <LMA> <FileOffset>
+    var OPD_RE = /\.opd\s+([0-9a-f]{8,16})\s+[0-9a-f]{8,16}\s+([0-9a-f]{8,16})\s+([0-9a-f]{8,16})/;
+    var opdhdr = os.system('objdump', ['-h', '-j.opd', libName], -1, -1).match(OPD_RE);
+    if (opdhdr) {
+      this.opdSize = parseInt(opdhdr[1], 16);
+      this.opdAddress = parseInt(opdhdr[2], 16);
+      this.opdOffset = parseInt(opdhdr[3], 16);
+      this.opdTable = os.system('od', ['-Ax', '-txL', '-N', this.opdSize,
+                                       '-j', this.opdOffset, libName],
+                                -1, -1).split('\n');
+    }
+  } catch (e) {
+    this.opdSize = 0;
   }
 };
 
