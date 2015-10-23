@@ -11,11 +11,11 @@
 #include "src/code-stubs.h"
 #include "src/codegen.h"
 #include "src/crankshaft/hydrogen-osr.h"
-#include "src/crankshaft/x87/frames-x87.h"
 #include "src/deoptimizer.h"
 #include "src/ic/ic.h"
 #include "src/ic/stub-cache.h"
 #include "src/profiler/cpu-profiler.h"
+#include "src/x87/frames-x87.h"
 
 namespace v8 {
 namespace internal {
@@ -518,13 +518,13 @@ bool LCodeGen::GenerateSafepointTable() {
 }
 
 
-Register LCodeGen::ToRegister(int index) const {
-  return Register::FromAllocationIndex(index);
+Register LCodeGen::ToRegister(int code) const {
+  return Register::from_code(code);
 }
 
 
-X87Register LCodeGen::ToX87Register(int index) const {
-  return X87Register::FromAllocationIndex(index);
+X87Register LCodeGen::ToX87Register(int code) const {
+  return X87Register::from_code(code);
 }
 
 
@@ -700,7 +700,7 @@ void LCodeGen::X87Stack::CommitWrite(X87Register reg) {
   DCHECK(is_mutable_);
   // Assert the reg is prepared to write, but not on the virtual stack yet
   DCHECK(!Contains(reg) && stack_[stack_depth_].is(reg) &&
-      stack_depth_ < X87Register::kMaxNumAllocatableRegisters);
+         stack_depth_ < X87Register::kMaxNumAllocatableRegisters);
   stack_depth_++;
 }
 
@@ -3045,24 +3045,6 @@ void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
 }
 
 
-void LCodeGen::DoLoadGlobalViaContext(LLoadGlobalViaContext* instr) {
-  DCHECK(ToRegister(instr->context()).is(esi));
-  DCHECK(ToRegister(instr->result()).is(eax));
-
-  int const slot = instr->slot_index();
-  int const depth = instr->depth();
-  if (depth <= LoadGlobalViaContextStub::kMaximumDepth) {
-    __ mov(LoadGlobalViaContextDescriptor::SlotRegister(), Immediate(slot));
-    Handle<Code> stub =
-        CodeFactory::LoadGlobalViaContext(isolate(), depth).code();
-    CallCode(stub, RelocInfo::CODE_TARGET, instr);
-  } else {
-    __ Push(Smi::FromInt(slot));
-    __ CallRuntime(Runtime::kLoadGlobalViaContext, 1);
-  }
-}
-
-
 void LCodeGen::DoLoadContextSlot(LLoadContextSlot* instr) {
   Register context = ToRegister(instr->context());
   Register result = ToRegister(instr->result());
@@ -4422,30 +4404,6 @@ void LCodeGen::DoStoreNamedGeneric(LStoreNamedGeneric* instr) {
                         isolate(), instr->language_mode(),
                         instr->hydrogen()->initialization_state()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
-}
-
-
-void LCodeGen::DoStoreGlobalViaContext(LStoreGlobalViaContext* instr) {
-  DCHECK(ToRegister(instr->context()).is(esi));
-  DCHECK(ToRegister(instr->value())
-             .is(StoreGlobalViaContextDescriptor::ValueRegister()));
-
-  int const slot = instr->slot_index();
-  int const depth = instr->depth();
-  if (depth <= StoreGlobalViaContextStub::kMaximumDepth) {
-    __ mov(StoreGlobalViaContextDescriptor::SlotRegister(), Immediate(slot));
-    Handle<Code> stub = CodeFactory::StoreGlobalViaContext(
-                            isolate(), depth, instr->language_mode())
-                            .code();
-    CallCode(stub, RelocInfo::CODE_TARGET, instr);
-  } else {
-    __ Push(Smi::FromInt(slot));
-    __ Push(StoreGlobalViaContextDescriptor::ValueRegister());
-    __ CallRuntime(is_strict(instr->language_mode())
-                       ? Runtime::kStoreGlobalViaContext_Strict
-                       : Runtime::kStoreGlobalViaContext_Sloppy,
-                   2);
-  }
 }
 
 

@@ -44,9 +44,10 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
   builder.LoadAccumulatorWithRegister(reg).StoreAccumulatorInRegister(reg);
 
   // Emit global load / store operations.
-  builder.LoadGlobal(1)
-      .StoreGlobal(1, LanguageMode::SLOPPY)
-      .StoreGlobal(1, LanguageMode::STRICT);
+  builder.LoadGlobal(0, 1, LanguageMode::SLOPPY)
+      .LoadGlobal(0, 1, LanguageMode::STRICT)
+      .StoreGlobal(0, 1, LanguageMode::SLOPPY)
+      .StoreGlobal(0, 1, LanguageMode::STRICT);
 
   // Emit context operations.
   builder.PushContext(reg);
@@ -55,17 +56,21 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
   builder.StoreContextSlot(reg, 1);
 
   // Emit load / store property operations.
-  builder.LoadNamedProperty(reg, 0, LanguageMode::SLOPPY)
+  builder.LoadNamedProperty(reg, 0, 0, LanguageMode::SLOPPY)
       .LoadKeyedProperty(reg, 0, LanguageMode::SLOPPY)
-      .StoreNamedProperty(reg, reg, 0, LanguageMode::SLOPPY)
+      .StoreNamedProperty(reg, 0, 0, LanguageMode::SLOPPY)
       .StoreKeyedProperty(reg, reg, 0, LanguageMode::SLOPPY)
-      .LoadNamedProperty(reg, 0, LanguageMode::STRICT)
+      .LoadNamedProperty(reg, 0, 0, LanguageMode::STRICT)
       .LoadKeyedProperty(reg, 0, LanguageMode::STRICT)
-      .StoreNamedProperty(reg, reg, 0, LanguageMode::STRICT)
+      .StoreNamedProperty(reg, 0, 0, LanguageMode::STRICT)
       .StoreKeyedProperty(reg, reg, 0, LanguageMode::STRICT);
 
   // Emit closure operations.
   builder.CreateClosure(NOT_TENURED);
+
+  // Emit argument creation operations.
+  builder.CreateArguments(CreateArgumentsType::kMappedArguments)
+      .CreateArguments(CreateArgumentsType::kUnmappedArguments);
 
   // Emit literal creation operations
   builder.CreateRegExpLiteral(0, reg)
@@ -93,8 +98,13 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
       .BinaryOperation(Token::Value::SAR, reg, Strength::WEAK)
       .BinaryOperation(Token::Value::SHR, reg, Strength::WEAK);
 
+  // Emit count operatior invocations
+  builder.CountOperation(Token::Value::ADD, Strength::WEAK)
+      .CountOperation(Token::Value::SUB, Strength::WEAK);
+
   // Emit unary operator invocations.
   builder.LogicalNot().TypeOf();
+
 
   // Emit new.
   builder.New(reg, reg, 0);
@@ -112,7 +122,7 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
       .CompareOperation(Token::Value::IN, reg, Strength::WEAK);
 
   // Emit cast operator invocations.
-  builder.LoadNull()
+  builder.CastAccumulatorToNumber()
       .CastAccumulatorToBoolean()
       .CastAccumulatorToName();
 
@@ -178,12 +188,12 @@ TEST_F(BytecodeArrayBuilderTest, FrameSizesLookGood) {
         builder.set_parameter_count(0);
         builder.set_locals_count(locals);
         builder.set_context_count(contexts);
-        builder.Return();
 
         TemporaryRegisterScope temporaries(&builder);
         for (int i = 0; i < temps; i++) {
-          temporaries.NewRegister();
+          builder.StoreAccumulatorInRegister(temporaries.NewRegister());
         }
+        builder.Return();
 
         Handle<BytecodeArray> the_array = builder.ToBytecodeArray();
         int total_registers = locals + contexts + temps;
@@ -244,6 +254,32 @@ TEST_F(BytecodeArrayBuilderTest, Parameters) {
   Register param0(builder.Parameter(0));
   Register param9(builder.Parameter(9));
   CHECK_EQ(param9.index() - param0.index(), 9);
+}
+
+
+TEST_F(BytecodeArrayBuilderTest, RegisterType) {
+  BytecodeArrayBuilder builder(isolate(), zone());
+  builder.set_parameter_count(10);
+  builder.set_locals_count(3);
+  builder.set_context_count(0);
+
+  TemporaryRegisterScope temporary_register_scope(&builder);
+  Register temp0 = temporary_register_scope.NewRegister();
+  Register param0(builder.Parameter(0));
+  Register param9(builder.Parameter(9));
+  Register temp1 = temporary_register_scope.NewRegister();
+  Register reg0(0);
+  Register reg1(1);
+  Register reg2(2);
+  Register temp2 = temporary_register_scope.NewRegister();
+  CHECK_EQ(builder.RegisterIsParameterOrLocal(temp0), false);
+  CHECK_EQ(builder.RegisterIsParameterOrLocal(temp1), false);
+  CHECK_EQ(builder.RegisterIsParameterOrLocal(temp2), false);
+  CHECK_EQ(builder.RegisterIsParameterOrLocal(param0), true);
+  CHECK_EQ(builder.RegisterIsParameterOrLocal(param9), true);
+  CHECK_EQ(builder.RegisterIsParameterOrLocal(reg0), true);
+  CHECK_EQ(builder.RegisterIsParameterOrLocal(reg1), true);
+  CHECK_EQ(builder.RegisterIsParameterOrLocal(reg2), true);
 }
 
 

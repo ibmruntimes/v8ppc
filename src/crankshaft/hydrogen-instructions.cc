@@ -811,7 +811,6 @@ bool HInstruction::CanDeoptimize() {
     case HValue::kLeaveInlined:
     case HValue::kLoadFieldByIndex:
     case HValue::kLoadGlobalGeneric:
-    case HValue::kLoadGlobalViaContext:
     case HValue::kLoadNamedField:
     case HValue::kLoadNamedGeneric:
     case HValue::kLoadRoot:
@@ -825,7 +824,6 @@ bool HInstruction::CanDeoptimize() {
     case HValue::kSeqStringGetChar:
     case HValue::kStoreCodeEntry:
     case HValue::kStoreFrameContext:
-    case HValue::kStoreGlobalViaContext:
     case HValue::kStoreKeyed:
     case HValue::kStoreNamedField:
     case HValue::kStoreNamedGeneric:
@@ -1583,9 +1581,10 @@ HValue* HUnaryMathOperation::Canonicalize() {
     HDiv* hdiv = HDiv::cast(value());
 
     HValue* left = hdiv->left();
-    if (left->representation().IsInteger32()) {
+    if (left->representation().IsInteger32() && !left->CheckFlag(kUint32)) {
       // A value with an integer representation does not need to be transformed.
-    } else if (left->IsChange() && HChange::cast(left)->from().IsInteger32()) {
+    } else if (left->IsChange() && HChange::cast(left)->from().IsInteger32() &&
+               !HChange::cast(left)->value()->CheckFlag(kUint32)) {
       // A change from an integer32 can be replaced by the integer32 value.
       left = HChange::cast(left)->value();
     } else if (hdiv->observed_input_representation(1).IsSmiOrInteger32()) {
@@ -1599,10 +1598,12 @@ HValue* HUnaryMathOperation::Canonicalize() {
     if (right->IsInteger32Constant()) {
       right = Prepend(HConstant::cast(right)->CopyToRepresentation(
           Representation::Integer32(), right->block()->zone()));
-    } else if (right->representation().IsInteger32()) {
+    } else if (right->representation().IsInteger32() &&
+               !right->CheckFlag(kUint32)) {
       // A value with an integer representation does not need to be transformed.
     } else if (right->IsChange() &&
-               HChange::cast(right)->from().IsInteger32()) {
+               HChange::cast(right)->from().IsInteger32() &&
+               !HChange::cast(right)->value()->CheckFlag(kUint32)) {
       // A change from an integer32 can be replaced by the integer32 value.
       right = HChange::cast(right)->value();
     } else if (hdiv->observed_input_representation(2).IsSmiOrInteger32()) {
@@ -3565,13 +3566,6 @@ std::ostream& HStoreNamedGeneric::PrintDataTo(
 }
 
 
-std::ostream& HStoreGlobalViaContext::PrintDataTo(
-    std::ostream& os) const {  // NOLINT
-  return os << " depth:" << depth() << " slot:" << slot_index() << " = "
-            << NameOf(value());
-}
-
-
 std::ostream& HStoreNamedField::PrintDataTo(std::ostream& os) const {  // NOLINT
   os << NameOf(object()) << access_ << " = " << NameOf(value());
   if (NeedsWriteBarrier()) os << " (write-barrier)";
@@ -3619,12 +3613,6 @@ std::ostream& HTransitionElementsKind::PrintDataTo(
 std::ostream& HLoadGlobalGeneric::PrintDataTo(
     std::ostream& os) const {  // NOLINT
   return os << name()->ToCString().get() << " ";
-}
-
-
-std::ostream& HLoadGlobalViaContext::PrintDataTo(
-    std::ostream& os) const {  // NOLINT
-  return os << "depth:" << depth() << " slot:" << slot_index();
 }
 
 
@@ -4692,13 +4680,13 @@ std::ostream& operator<<(std::ostream& os, const HObjectAccess& access) {
       break;
     case HObjectAccess::kDouble:  // fall through
     case HObjectAccess::kInobject:
-      if (!access.name().is_null()) {
+      if (!access.name().is_null() && access.name()->IsString()) {
         os << Handle<String>::cast(access.name())->ToCString().get();
       }
       os << "[in-object]";
       break;
     case HObjectAccess::kBackingStore:
-      if (!access.name().is_null()) {
+      if (!access.name().is_null() && access.name()->IsString()) {
         os << Handle<String>::cast(access.name())->ToCString().get();
       }
       os << "[backing-store]";

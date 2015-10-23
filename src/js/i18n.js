@@ -27,6 +27,9 @@ var GlobalDate = global.Date;
 var GlobalNumber = global.Number;
 var GlobalRegExp = global.RegExp;
 var GlobalString = global.String;
+var MakeError;
+var MakeRangeError;
+var MakeTypeError;
 var MathFloor;
 var ObjectDefineProperties = utils.ImportNow("ObjectDefineProperties");
 var ObjectDefineProperty = utils.ImportNow("ObjectDefineProperty");
@@ -45,6 +48,9 @@ utils.Import(function(from) {
   ArrayPush = from.ArrayPush;
   IsFinite = from.IsFinite;
   IsNaN = from.IsNaN;
+  MakeError = from.MakeError;
+  MakeRangeError = from.MakeRangeError;
+  MakeTypeError = from.MakeTypeError;
   MathFloor = from.MathFloor;
   RegExpTest = from.RegExpTest;
   StringIndexOf = from.StringIndexOf;
@@ -1101,14 +1107,15 @@ function initializeNumberFormat(numberFormat, locales, options) {
 
   var mnfd = options['minimumFractionDigits'];
   var mxfd = options['maximumFractionDigits'];
-  if (!IS_UNDEFINED(mnfd) || !internalOptions.style === 'currency') {
+  if (!IS_UNDEFINED(mnfd) || internalOptions.style !== 'currency') {
     mnfd = getNumberOption(options, 'minimumFractionDigits', 0, 20, 0);
     defineWEProperty(internalOptions, 'minimumFractionDigits', mnfd);
   }
 
-  if (!IS_UNDEFINED(mxfd) || !internalOptions.style === 'currency') {
+  if (!IS_UNDEFINED(mxfd) || internalOptions.style !== 'currency') {
+    var min_mxfd = internalOptions.style === 'percent' ? 0 : 3;
     mnfd = IS_UNDEFINED(mnfd) ? 0 : mnfd;
-    fallback_limit = (mnfd > 3) ? mnfd : 3;
+    fallback_limit = (mnfd > min_mxfd) ? mnfd : min_mxfd;
     mxfd = getNumberOption(options, 'maximumFractionDigits', mnfd, 20, fallback_limit);
     defineWEProperty(internalOptions, 'maximumFractionDigits', mxfd);
   }

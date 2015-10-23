@@ -44,9 +44,10 @@ namespace interpreter {
   V(LdaFalse, OperandType::kNone)                                              \
                                                                                \
   /* Globals */                                                                \
-  V(LdaGlobal, OperandType::kIdx8)                                             \
-  V(StaGlobalSloppy, OperandType::kIdx8)                                       \
-  V(StaGlobalStrict, OperandType::kIdx8)                                       \
+  V(LdaGlobalSloppy, OperandType::kIdx8, OperandType::kIdx8)                   \
+  V(LdaGlobalStrict, OperandType::kIdx8, OperandType::kIdx8)                   \
+  V(StaGlobalSloppy, OperandType::kIdx8, OperandType::kIdx8)                   \
+  V(StaGlobalStrict, OperandType::kIdx8, OperandType::kIdx8)                   \
                                                                                \
   /* Context operations */                                                     \
   V(PushContext, OperandType::kReg8)                                           \
@@ -59,14 +60,14 @@ namespace interpreter {
   V(Star, OperandType::kReg8)                                                  \
                                                                                \
   /* LoadIC operations */                                                      \
-  V(LoadICSloppy, OperandType::kReg8, OperandType::kIdx8)                      \
-  V(LoadICStrict, OperandType::kReg8, OperandType::kIdx8)                      \
+  V(LoadICSloppy, OperandType::kReg8, OperandType::kIdx8, OperandType::kIdx8)  \
+  V(LoadICStrict, OperandType::kReg8, OperandType::kIdx8, OperandType::kIdx8)  \
   V(KeyedLoadICSloppy, OperandType::kReg8, OperandType::kIdx8)                 \
   V(KeyedLoadICStrict, OperandType::kReg8, OperandType::kIdx8)                 \
                                                                                \
   /* StoreIC operations */                                                     \
-  V(StoreICSloppy, OperandType::kReg8, OperandType::kReg8, OperandType::kIdx8) \
-  V(StoreICStrict, OperandType::kReg8, OperandType::kReg8, OperandType::kIdx8) \
+  V(StoreICSloppy, OperandType::kReg8, OperandType::kIdx8, OperandType::kIdx8) \
+  V(StoreICStrict, OperandType::kReg8, OperandType::kIdx8, OperandType::kIdx8) \
   V(KeyedStoreICSloppy, OperandType::kReg8, OperandType::kReg8,                \
     OperandType::kIdx8)                                                        \
   V(KeyedStoreICStrict, OperandType::kReg8, OperandType::kReg8,                \
@@ -86,6 +87,8 @@ namespace interpreter {
   V(ShiftRightLogical, OperandType::kReg8)                                     \
                                                                                \
   /* Unary Operators */                                                        \
+  V(Inc, OperandType::kNone)                                                   \
+  V(Dec, OperandType::kNone)                                                   \
   V(LogicalNot, OperandType::kNone)                                            \
   V(TypeOf, OperandType::kNone)                                                \
                                                                                \
@@ -112,6 +115,7 @@ namespace interpreter {
   /* Cast operators */                                                         \
   V(ToBoolean, OperandType::kNone)                                             \
   V(ToName, OperandType::kNone)                                                \
+  V(ToNumber, OperandType::kNone)                                              \
                                                                                \
   /* Literals */                                                               \
   V(CreateRegExpLiteral, OperandType::kIdx8, OperandType::kReg8)               \
@@ -120,6 +124,10 @@ namespace interpreter {
                                                                                \
   /* Closure allocation */                                                     \
   V(CreateClosure, OperandType::kImm8)                                         \
+                                                                               \
+  /* Arguments allocation */                                                   \
+  V(CreateMappedArguments, OperandType::kNone)                                 \
+  V(CreateUnmappedArguments, OperandType::kNone)                               \
                                                                                \
   /* Control Flow */                                                           \
   V(Jump, OperandType::kImm8)                                                  \
@@ -211,8 +219,18 @@ class Register {
                             Register reg4 = Register(),
                             Register reg5 = Register());
 
-  bool operator==(const Register& o) const { return o.index() == index(); }
-  bool operator!=(const Register& o) const { return o.index() != index(); }
+  bool operator==(const Register& other) const {
+    return index() == other.index();
+  }
+  bool operator!=(const Register& other) const {
+    return index() != other.index();
+  }
+  bool operator<(const Register& other) const {
+    return index() < other.index();
+  }
+  bool operator<=(const Register& other) const {
+    return index() <= other.index();
+  }
 
  private:
   static const int kIllegalIndex = kMaxInt;

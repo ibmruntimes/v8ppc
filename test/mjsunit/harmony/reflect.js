@@ -231,6 +231,52 @@ function prepare(tgt) {
 
 
 ////////////////////////////////////////////////////////////////////////////////
+// Reflect.getPrototypeOf
+
+
+(function testReflectGetPrototypeOfArity() {
+  assertEquals(1, Reflect.getPrototypeOf.length);
+})();
+
+
+(function testReflectGetPrototypeOnNonObject() {
+  assertThrows(function() { Reflect.getPrototypeOf(); }, TypeError);
+  assertThrows(function() { Reflect.getPrototypeOf(42); }, TypeError);
+  assertThrows(function() { Reflect.getPrototypeOf(null); }, TypeError);
+})();
+
+
+// See reflect-get-prototype-of.js for further tests.
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Reflect.setPrototypeOf
+
+
+(function testReflectSetPrototypeOfArity() {
+  assertEquals(2, Reflect.setPrototypeOf.length);
+})();
+
+
+(function testReflectSetPrototypeOfOnNonObject() {
+  assertThrows(function() { Reflect.setPrototypeOf(undefined, {}); },
+    TypeError);
+  assertThrows(function() { Reflect.setPrototypeOf(42, {}); }, TypeError);
+  assertThrows(function() { Reflect.setPrototypeOf(null, {}); }, TypeError);
+
+  assertThrows(function() { Reflect.setPrototypeOf({}, undefined); },
+    TypeError);
+  assertThrows(function() { Reflect.setPrototypeOf({}, 42); }, TypeError);
+  assertTrue(Reflect.setPrototypeOf({}, null));
+})();
+
+
+// See reflect-set-prototype-of.js for further tests.
+
+
+
+////////////////////////////////////////////////////////////////////////////////
 // Reflect.isExtensible
 
 
@@ -247,7 +293,7 @@ function prepare(tgt) {
 
 
 (function testReflectIsExtensibleOnObject() {
-  // This should be the last test as it modifies the objects irreversibly.
+  // This should be the last test on [objects] as it modifies them irreversibly.
   for (let tgt of objects) {
     prepare(tgt);
     if (tgt instanceof Int32Array) continue;  // issue v8:4460
@@ -276,3 +322,26 @@ function prepare(tgt) {
 
 
 // See reflect-enumerate*.js for further tests.
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Reflect.preventExtensions
+
+
+(function testReflectPreventExtensionsArity() {
+  assertEquals(1, Reflect.preventExtensions.length);
+})();
+
+
+(function testReflectPreventExtensionsOnNonObject() {
+  assertThrows(function() { Reflect.preventExtensions(); }, TypeError);
+  assertThrows(function() { Reflect.preventExtensions(42); }, TypeError);
+  assertThrows(function() { Reflect.preventExtensions(null); }, TypeError);
+})();
+
+
+// See reflect-prevent-extensions.js for further tests.
+
+// TODO(neis): Need proxies to test the situation where
+// [[preventExtensions]] returns false.

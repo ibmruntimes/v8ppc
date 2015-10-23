@@ -1423,6 +1423,77 @@ TEST(AssemblerX64AVX_sd) {
     __ cmpl(rdx, Immediate(2));
     __ j(not_equal, &exit);
 
+    // Test vpcmpeqd
+    __ movq(rdx, V8_UINT64_C(0x0123456789abcdef));
+    __ movq(rcx, V8_UINT64_C(0x0123456788888888));
+    __ vmovq(xmm6, rdx);
+    __ vmovq(xmm7, rcx);
+    __ vpcmpeqd(xmm8, xmm6, xmm7);
+    __ vmovq(rdx, xmm8);
+    __ movq(rcx, V8_UINT64_C(0xffffffff00000000));
+    __ cmpq(rcx, rdx);
+    __ movl(rax, Immediate(13));
+    __ j(not_equal, &exit);
+
+    // Test vpsllq, vpsrlq
+    __ movl(rax, Immediate(13));
+    __ movq(rdx, V8_UINT64_C(0x0123456789abcdef));
+    __ vmovq(xmm6, rdx);
+    __ vpsrlq(xmm7, xmm6, 4);
+    __ vmovq(rdx, xmm7);
+    __ movq(rcx, V8_UINT64_C(0x00123456789abcde));
+    __ cmpq(rdx, rcx);
+    __ j(not_equal, &exit);
+    __ vpsllq(xmm7, xmm6, 12);
+    __ vmovq(rdx, xmm7);
+    __ movq(rcx, V8_UINT64_C(0x3456789abcdef000));
+    __ cmpq(rdx, rcx);
+    __ j(not_equal, &exit);
+
+    // Test vandpd, vorpd, vxorpd
+    __ movl(rax, Immediate(14));
+    __ movl(rdx, Immediate(0x00ff00ff));
+    __ movl(rcx, Immediate(0x0f0f0f0f));
+    __ vmovd(xmm4, rdx);
+    __ vmovd(xmm5, rcx);
+    __ vandpd(xmm6, xmm4, xmm5);
+    __ vmovd(rdx, xmm6);
+    __ cmpl(rdx, Immediate(0x000f000f));
+    __ j(not_equal, &exit);
+    __ vorpd(xmm6, xmm4, xmm5);
+    __ vmovd(rdx, xmm6);
+    __ cmpl(rdx, Immediate(0x0fff0fff));
+    __ j(not_equal, &exit);
+    __ vxorpd(xmm6, xmm4, xmm5);
+    __ vmovd(rdx, xmm6);
+    __ cmpl(rdx, Immediate(0x0ff00ff0));
+    __ j(not_equal, &exit);
+
+    // Test vsqrtsd
+    __ movl(rax, Immediate(15));
+    __ movq(rdx, V8_UINT64_C(0x4004000000000000));  // 2.5
+    __ vmovq(xmm4, rdx);
+    __ vmulsd(xmm5, xmm4, xmm4);
+    __ vmovsd(Operand(rsp, 0), xmm5);
+    __ vsqrtsd(xmm6, xmm5, xmm5);
+    __ vmovq(rcx, xmm6);
+    __ cmpq(rcx, rdx);
+    __ j(not_equal, &exit);
+    __ vsqrtsd(xmm7, xmm7, Operand(rsp, 0));
+    __ vmovq(rcx, xmm7);
+    __ cmpq(rcx, rdx);
+    __ j(not_equal, &exit);
+
+    // Test vroundsd
+    __ movl(rax, Immediate(16));
+    __ movq(rdx, V8_UINT64_C(0x4002000000000000));  // 2.25
+    __ vmovq(xmm4, rdx);
+    __ vroundsd(xmm5, xmm4, xmm4, kRoundUp);
+    __ movq(rcx, V8_UINT64_C(0x4008000000000000));  // 3.0
+    __ vmovq(xmm6, rcx);
+    __ vucomisd(xmm5, xmm6);
+    __ j(not_equal, &exit);
+
     __ movl(rdx, Immediate(6));
     __ vcvtlsi2sd(xmm6, xmm6, rdx);
     __ movl(Operand(rsp, 0), Immediate(5));

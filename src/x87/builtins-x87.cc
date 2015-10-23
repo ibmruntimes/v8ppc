@@ -22,12 +22,13 @@ void Builtins::Generate_Adaptor(MacroAssembler* masm,
                                 BuiltinExtraArguments extra_args) {
   // ----------- S t a t e -------------
   //  -- eax                : number of arguments excluding receiver
-  //  -- edi                : called function (only guaranteed when
-  //                          extra_args requires it)
+  //                          (only guaranteed when the called function
+  //                           is not marked as DontAdaptArguments)
+  //  -- edi                : called function
   //  -- esp[0]             : return address
   //  -- esp[4]             : last argument
   //  -- ...
-  //  -- esp[4 * argc]      : first argument (argc == eax)
+  //  -- esp[4 * argc]      : first argument
   //  -- esp[4 * (argc +1)] : receiver
   // -----------------------------------
   __ AssertFunction(edi);
@@ -52,8 +53,22 @@ void Builtins::Generate_Adaptor(MacroAssembler* masm,
   }
 
   // JumpToExternalReference expects eax to contain the number of arguments
-  // including the receiver and the extra arguments.
+  // including the receiver and the extra arguments.  But eax is only valid
+  // if the called function is marked as DontAdaptArguments, otherwise we
+  // need to load the argument count from the SharedFunctionInfo.
+  Label argc, done_argc;
+  __ mov(edx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+  __ mov(ebx,
+         FieldOperand(edx, SharedFunctionInfo::kFormalParameterCountOffset));
+  __ SmiUntag(ebx);
+  __ cmp(ebx, SharedFunctionInfo::kDontAdaptArgumentsSentinel);
+  __ j(equal, &argc, Label::kNear);
+  __ lea(eax, Operand(ebx, num_extra_args + 1));
+  __ jmp(&done_argc, Label::kNear);
+  __ bind(&argc);
   __ add(eax, Immediate(num_extra_args + 1));
+  __ bind(&done_argc);
+
   __ JumpToExternalReference(ExternalReference(id, masm->isolate()));
 }
 
@@ -631,17 +646,6 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   //    receiver with the global proxy when called as functions (without an
   //    explicit receiver object).
   //  - Code aging of the BytecodeArray object.
-  //  - Supporting FLAG_trace.
-  //
-  // The following items are also not done here, and will probably be done using
-  // explicit bytecodes instead:
-  //  - Allocating a new local context if applicable.
-  //  - Setting up a local binding to the this function, which is used in
-  //    derived constructors with super calls.
-  //  - Setting new.target if required.
-  //  - Dealing with REST parameters (only if
-  //    https://codereview.chromium.org/1235153006 doesn't land by then).
-  //  - Dealing with argument objects.
 
   // Perform stack guard check.
   {
@@ -709,11 +713,97 @@ void Builtins::Generate_InterpreterExitTrampoline(MacroAssembler* masm) {
 }
 
 
+static void Generate_InterpreterPushArgs(MacroAssembler* masm,
+                                         Register array_limit) {
+  // ----------- S t a t e -------------
+  //  -- ebx : Pointer to the last argument in the args array.
+  //  -- array_limit : Pointer to one before the first argument in the
+  //                   args array.
+  // -----------------------------------
+  Label loop_header, loop_check;
+  __ jmp(&loop_check);
+  __ bind(&loop_header);
+  __ Push(Operand(ebx, 0));
+  __ sub(ebx, Immediate(kPointerSize));
+  __ bind(&loop_check);
+  __ cmp(ebx, array_limit);
+  __ j(greater, &loop_header, Label::kNear);
+}
+
+
+// static
+void Builtins::Generate_InterpreterPushArgsAndCall(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- eax : the number of arguments (not including the receiver)
+  //  -- ebx : the address of the first argument to be pushed. Subsequent
+  //           arguments should be consecutive above this, in the same order as
+  //           they are to be pushed onto the stack.
+  //  -- edi : the target to call (can be any Object).
+  // -----------------------------------
+
+  // Pop return address to allow tail-call after pushing arguments.
+  __ Pop(edx);
+
+  // Find the address of the last argument.
+  __ mov(ecx, eax);
+  __ add(ecx, Immediate(1));  // Add one for receiver.
+  __ shl(ecx, kPointerSizeLog2);
+  __ neg(ecx);
+  __ add(ecx, ebx);
+
+  Generate_InterpreterPushArgs(masm, ecx);
+
+  // Call the target.
+  __ Push(edx);  // Re-push return address.
+  __ Jump(masm->isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
+}
+
+
+// static
+void Builtins::Generate_InterpreterPushArgsAndConstruct(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- eax : the number of arguments (not including the receiver)
+  //  -- edx : the original constructor
+  //  -- edi : the constructor
+  //  -- ebx : the address of the first argument to be pushed. Subsequent
+  //           arguments should be consecutive above this, in the same order as
+  //           they are to be pushed onto the stack.
+  // -----------------------------------
+
+  // Save number of arguments on the stack below where arguments are going
+  // to be pushed.
+  __ mov(ecx, eax);
+  __ neg(ecx);
+  __ mov(Operand(esp, ecx, times_pointer_size, -kPointerSize), eax);
+  __ mov(eax, ecx);
+
+  // Pop return address to allow tail-call after pushing arguments.
+  __ Pop(ecx);
+
+  // Find the address of the last argument.
+  __ shl(eax, kPointerSizeLog2);
+  __ add(eax, ebx);
+
+  // Push padding for receiver.
+  __ Push(Immediate(0));
+
+  Generate_InterpreterPushArgs(masm, eax);
+
+  // Restore number of arguments from slot on stack.
+  __ mov(eax, Operand(esp, -kPointerSize));
+
+  // Re-push return address.
+  __ Push(ecx);
+
+  // Call the constructor with unmodified eax, edi, ebi values.
+  __ Jump(masm->isolate()->builtins()->Construct(), RelocInfo::CONSTRUCT_CALL);
+}
+
+
 void Builtins::Generate_CompileLazy(MacroAssembler* masm) {
   CallRuntimePassFunction(masm, Runtime::kCompileLazy);
   GenerateTailCallToReturnedCode(masm);
 }
-
 
 
 static void CallCompileOptimized(MacroAssembler* masm, bool concurrent) {
@@ -1624,41 +1714,6 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
     __ Push(edi);
     __ CallRuntime(Runtime::kThrowCalledNonCallable, 1);
   }
-}
-
-
-// static
-void Builtins::Generate_PushArgsAndCall(MacroAssembler* masm) {
-  // ----------- S t a t e -------------
-  //  -- eax : the number of arguments (not including the receiver)
-  //  -- ebx : the address of the first argument to be pushed. Subsequent
-  //           arguments should be consecutive above this, in the same order as
-  //           they are to be pushed onto the stack.
-  //  -- edi : the target to call (can be any Object).
-
-  // Pop return address to allow tail-call after pushing arguments.
-  __ Pop(edx);
-
-  // Find the address of the last argument.
-  __ mov(ecx, eax);
-  __ add(ecx, Immediate(1));  // Add one for receiver.
-  __ shl(ecx, kPointerSizeLog2);
-  __ neg(ecx);
-  __ add(ecx, ebx);
-
-  // Push the arguments.
-  Label loop_header, loop_check;
-  __ jmp(&loop_check);
-  __ bind(&loop_header);
-  __ Push(Operand(ebx, 0));
-  __ sub(ebx, Immediate(kPointerSize));
-  __ bind(&loop_check);
-  __ cmp(ebx, ecx);
-  __ j(greater, &loop_header, Label::kNear);
-
-  // Call the target.
-  __ Push(edx);  // Re-push return address.
-  __ Jump(masm->isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
 }
 
 

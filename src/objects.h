@@ -1033,6 +1033,25 @@ class Object {
     CERTAINLY_NOT_STORE_FROM_KEYED
   };
 
+  enum ShouldThrow { THROW_ON_ERROR, DONT_THROW };
+
+#define RETURN_FAILURE(isolate, should_throw, call) \
+  do {                                              \
+    if ((should_throw) == DONT_THROW) {             \
+      return Just(false);                           \
+    } else {                                        \
+      isolate->Throw(*isolate->factory()->call);    \
+      return Nothing<bool>();                       \
+    }                                               \
+  } while (false)
+
+#define MAYBE_RETURN(call, value)         \
+  do {                                    \
+    if ((call).IsNothing()) return value; \
+  } while (false)
+
+#define MAYBE_RETURN_NULL(call) MAYBE_RETURN(call, MaybeHandle<Object>())
+
   INLINE(bool IsFixedArrayBase() const);
   INLINE(bool IsExternal() const);
   INLINE(bool IsAccessorInfo() const);
@@ -1219,12 +1238,22 @@ class Object {
   MUST_USE_RESULT static MaybeHandle<Object> GetProperty(
       LookupIterator* it, LanguageMode language_mode = SLOPPY);
 
-  // Implementation of [[Put]], ECMA-262 5th edition, section 8.12.5.
+  // ES6 [[Set]] (when passed DONT_THROW)
+  // Invariants for this and related functions (unless stated otherwise):
+  // 1) When the result is Nothing, an exception is pending.
+  // 2) When passed THROW_ON_ERROR, the result is never Just(false).
+  // In some cases, an exception is thrown regardless of the ShouldThrow
+  // argument.  These cases are either in accordance with the spec or not
+  // covered by it (eg., concerning API callbacks).
+  MUST_USE_RESULT static Maybe<bool> SetProperty(LookupIterator* it,
+                                                 Handle<Object> value,
+                                                 LanguageMode language_mode,
+                                                 ShouldThrow should_throw,
+                                                 StoreFromKeyed store_mode);
   MUST_USE_RESULT static MaybeHandle<Object> SetProperty(
       Handle<Object> object, Handle<Name> name, Handle<Object> value,
       LanguageMode language_mode,
       StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED);
-
   MUST_USE_RESULT static MaybeHandle<Object> SetProperty(
       LookupIterator* it, Handle<Object> value, LanguageMode language_mode,
       StoreFromKeyed store_mode);
@@ -1238,24 +1267,30 @@ class Object {
   MUST_USE_RESULT static MaybeHandle<Object> ReadAbsentProperty(
       Isolate* isolate, Handle<Object> receiver, Handle<Object> name,
       LanguageMode language_mode);
-  MUST_USE_RESULT static MaybeHandle<Object> CannotCreateProperty(
-      LookupIterator* it, Handle<Object> value, LanguageMode language_mode);
-  MUST_USE_RESULT static MaybeHandle<Object> CannotCreateProperty(
+  MUST_USE_RESULT static Maybe<bool> CannotCreateProperty(
       Isolate* isolate, Handle<Object> receiver, Handle<Object> name,
-      Handle<Object> value, LanguageMode language_mode);
-  MUST_USE_RESULT static MaybeHandle<Object> WriteToReadOnlyProperty(
-      LookupIterator* it, Handle<Object> value, LanguageMode language_mode);
-  MUST_USE_RESULT static MaybeHandle<Object> WriteToReadOnlyProperty(
+      Handle<Object> value, LanguageMode language_mode,
+      ShouldThrow should_throw);
+  MUST_USE_RESULT static Maybe<bool> WriteToReadOnlyProperty(
+      LookupIterator* it, Handle<Object> value, LanguageMode language_mode,
+      ShouldThrow should_throw);
+  MUST_USE_RESULT static Maybe<bool> WriteToReadOnlyProperty(
       Isolate* isolate, Handle<Object> receiver, Handle<Object> name,
-      Handle<Object> value, LanguageMode language_mode);
+      Handle<Object> value, LanguageMode language_mode,
+      ShouldThrow should_throw);
   MUST_USE_RESULT static MaybeHandle<Object> RedefineNonconfigurableProperty(
       Isolate* isolate, Handle<Object> name, Handle<Object> value,
       LanguageMode language_mode);
-  MUST_USE_RESULT static MaybeHandle<Object> SetDataProperty(
-      LookupIterator* it, Handle<Object> value);
+  MUST_USE_RESULT static Maybe<bool> SetDataProperty(LookupIterator* it,
+                                                     Handle<Object> value,
+                                                     ShouldThrow should_throw);
   MUST_USE_RESULT static MaybeHandle<Object> AddDataProperty(
       LookupIterator* it, Handle<Object> value, PropertyAttributes attributes,
       LanguageMode language_mode, StoreFromKeyed store_mode);
+  MUST_USE_RESULT static Maybe<bool> AddDataProperty(
+      LookupIterator* it, Handle<Object> value, PropertyAttributes attributes,
+      LanguageMode language_mode, ShouldThrow should_throw,
+      StoreFromKeyed store_mode);
   MUST_USE_RESULT static inline MaybeHandle<Object> GetPropertyOrElement(
       Handle<Object> object, Handle<Name> name,
       LanguageMode language_mode = SLOPPY);
@@ -1271,16 +1306,16 @@ class Object {
 
   MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithAccessor(
       LookupIterator* it, LanguageMode language_mode);
-  MUST_USE_RESULT static MaybeHandle<Object> SetPropertyWithAccessor(
-      LookupIterator* it, Handle<Object> value, LanguageMode language_mode);
+  MUST_USE_RESULT static Maybe<bool> SetPropertyWithAccessor(
+      LookupIterator* it, Handle<Object> value, LanguageMode language_mode,
+      ShouldThrow should_throw);
 
   MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithDefinedGetter(
       Handle<Object> receiver,
       Handle<JSReceiver> getter);
-  MUST_USE_RESULT static MaybeHandle<Object> SetPropertyWithDefinedSetter(
-      Handle<Object> receiver,
-      Handle<JSReceiver> setter,
-      Handle<Object> value);
+  MUST_USE_RESULT static Maybe<bool> SetPropertyWithDefinedSetter(
+      Handle<Object> receiver, Handle<JSReceiver> setter, Handle<Object> value,
+      ShouldThrow should_throw);
 
   MUST_USE_RESULT static inline MaybeHandle<Object> GetElement(
       Isolate* isolate, Handle<Object> object, uint32_t index,
@@ -1290,8 +1325,9 @@ class Object {
       Isolate* isolate, Handle<Object> object, uint32_t index,
       Handle<Object> value, LanguageMode language_mode);
 
-  static inline Handle<Object> GetPrototypeSkipHiddenPrototypes(
-      Isolate* isolate, Handle<Object> receiver);
+  // Get the first non-hidden prototype.
+  static inline Handle<Object> GetPrototype(Isolate* isolate,
+                                            Handle<Object> receiver);
 
   bool HasInPrototypeChain(Isolate* isolate, Object* object);
 
@@ -1373,9 +1409,10 @@ class Object {
   Map* GetRootMap(Isolate* isolate);
 
   // Helper for SetProperty and SetSuperProperty.
-  MUST_USE_RESULT static MaybeHandle<Object> SetPropertyInternal(
+  // Return value is only meaningful if [found] is set to true on return.
+  MUST_USE_RESULT static Maybe<bool> SetPropertyInternal(
       LookupIterator* it, Handle<Object> value, LanguageMode language_mode,
-      StoreFromKeyed store_mode, bool* found);
+      ShouldThrow should_throw, StoreFromKeyed store_mode, bool* found);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(Object);
 };
@@ -1797,9 +1834,6 @@ enum KeyFilter { SKIP_SYMBOLS, INCLUDE_SYMBOLS };
 enum GetKeysConversion { KEEP_NUMBERS, CONVERT_TO_STRING };
 
 
-enum ShouldThrow { THROW_ON_ERROR, DONT_THROW };
-
-
 // JSReceiver includes types on which properties can be defined, i.e.,
 // JSObject and JSProxy.
 class JSReceiver: public HeapObject {
@@ -1865,6 +1899,11 @@ class JSReceiver: public HeapObject {
   static bool GetOwnPropertyDescriptor(LookupIterator* it,
                                        PropertyDescriptor* desc);
 
+  // Disallow further properties to be added to the object.  This is
+  // ES6's [[PreventExtensions]] when passed DONT_THROW.
+  MUST_USE_RESULT static Maybe<bool> PreventExtensions(
+      Handle<JSReceiver> object, ShouldThrow should_throw);
+
   // Tests for the fast common case for property enumeration.
   bool IsSimpleEnum();
 
@@ -1887,6 +1926,12 @@ class JSReceiver: public HeapObject {
 
   MUST_USE_RESULT static Maybe<PropertyAttributes> GetPropertyAttributes(
       LookupIterator* it);
+
+  // Set the object's prototype (only JSReceiver and null are allowed values).
+  MUST_USE_RESULT static Maybe<bool> SetPrototype(Handle<JSReceiver> object,
+                                                  Handle<Object> value,
+                                                  bool from_javascript,
+                                                  ShouldThrow should_throw);
 
 
   static Handle<Object> GetDataProperty(Handle<JSReceiver> object,
@@ -2009,7 +2054,7 @@ class JSObject: public JSReceiver {
   static Handle<Object> PrepareSlowElementsForSort(Handle<JSObject> object,
                                                    uint32_t limit);
 
-  MUST_USE_RESULT static MaybeHandle<Object> SetPropertyWithInterceptor(
+  MUST_USE_RESULT static Maybe<bool> SetPropertyWithInterceptor(
       LookupIterator* it, Handle<Object> value);
 
   // SetLocalPropertyIgnoreAttributes converts callbacks to fields. We need to
@@ -2046,6 +2091,9 @@ class JSObject: public JSReceiver {
   static void AddProperty(Handle<JSObject> object, Handle<Name> name,
                           Handle<Object> value, PropertyAttributes attributes);
 
+  MUST_USE_RESULT static Maybe<bool> AddDataElement(
+      Handle<JSObject> receiver, uint32_t index, Handle<Object> value,
+      PropertyAttributes attributes, ShouldThrow should_throw);
   MUST_USE_RESULT static MaybeHandle<Object> AddDataElement(
       Handle<JSObject> receiver, uint32_t index, Handle<Object> value,
       PropertyAttributes attributes);
@@ -2309,8 +2357,10 @@ class JSObject: public JSReceiver {
                                        = UPDATE_WRITE_BARRIER);
 
   // Set the object's prototype (only JSReceiver and null are allowed values).
-  MUST_USE_RESULT static MaybeHandle<Object> SetPrototype(
-      Handle<JSObject> object, Handle<Object> value, bool from_javascript);
+  MUST_USE_RESULT static Maybe<bool> SetPrototype(Handle<JSObject> object,
+                                                  Handle<Object> value,
+                                                  bool from_javascript,
+                                                  ShouldThrow should_throw);
 
   // Initializes the body after properties slot, properties slot is
   // initialized by set_properties.  Fill the pre-allocated fields with
@@ -2324,11 +2374,8 @@ class JSObject: public JSReceiver {
   // Check whether this object references another object
   bool ReferencesObject(Object* obj);
 
-  // Disallow further properties to be added to the oject.
-  MUST_USE_RESULT static Maybe<bool> PreventExtensionsInternal(
-      Handle<JSObject> object);  // ES [[PreventExtensions]]
-  MUST_USE_RESULT static MaybeHandle<Object> PreventExtensions(
-      Handle<JSObject> object);  // ES Object.preventExtensions
+  MUST_USE_RESULT static Maybe<bool> PreventExtensions(
+      Handle<JSObject> object, ShouldThrow should_throw);
 
   static bool IsExtensible(Handle<JSObject> object);
 
@@ -2475,8 +2522,8 @@ class JSObject: public JSReceiver {
   MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithFailedAccessCheck(
       LookupIterator* it);
 
-  MUST_USE_RESULT static MaybeHandle<Object> SetPropertyWithFailedAccessCheck(
-      LookupIterator* it, Handle<Object> value);
+  MUST_USE_RESULT static Maybe<bool> SetPropertyWithFailedAccessCheck(
+      LookupIterator* it, Handle<Object> value, ShouldThrow should_throw);
 
   // Add a property to a slow-case object.
   static void AddSlowProperty(Handle<JSObject> object,
@@ -2517,7 +2564,11 @@ class JSObject: public JSReceiver {
   // attrs is one of NONE, SEALED, or FROZEN (depending on the operation).
   template <PropertyAttributes attrs>
   MUST_USE_RESULT static Maybe<bool> PreventExtensionsWithTransition(
-      Handle<JSObject> object);
+      Handle<JSObject> object, ShouldThrow should_throw);
+
+  MUST_USE_RESULT static Maybe<bool> SetPrototypeUnobserved(
+      Handle<JSObject> object, Handle<Object> value, bool from_javascript,
+      ShouldThrow should_throw);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSObject);
 };
@@ -4394,7 +4445,6 @@ class FreeSpace: public HeapObject {
 
   // Accessors for the next field.
   inline FreeSpace* next();
-  inline FreeSpace** next_address();
   inline void set_next(FreeSpace* next);
 
   inline static FreeSpace* cast(HeapObject* obj);
@@ -9540,20 +9590,23 @@ class JSProxy: public JSReceiver {
 
   // If the handler defines an accessor property with a setter, invoke it.
   // If it defines an accessor property without a setter, or a data property
-  // that is read-only, throw. In all these cases set '*done' to true,
-  // otherwise set it to false.
+  // that is read-only, fail.  In all these cases set '*done' to true.
+  // Otherwise set it to false, in which case the return value is not
+  // meaningful.
   MUST_USE_RESULT
-  static MaybeHandle<Object> SetPropertyViaPrototypesWithHandler(
+  static Maybe<bool> SetPropertyViaPrototypesWithHandler(
       Handle<JSProxy> proxy, Handle<Object> receiver, Handle<Name> name,
-      Handle<Object> value, LanguageMode language_mode, bool* done);
+      Handle<Object> value, LanguageMode language_mode,
+      ShouldThrow should_throw, bool* done);
 
   MUST_USE_RESULT static Maybe<PropertyAttributes>
       GetPropertyAttributesWithHandler(Handle<JSProxy> proxy,
                                        Handle<Object> receiver,
                                        Handle<Name> name);
-  MUST_USE_RESULT static MaybeHandle<Object> SetPropertyWithHandler(
+  MUST_USE_RESULT static Maybe<bool> SetPropertyWithHandler(
       Handle<JSProxy> proxy, Handle<Object> receiver, Handle<Name> name,
-      Handle<Object> value, LanguageMode language_mode);
+      Handle<Object> value, LanguageMode language_mode,
+      ShouldThrow should_throw);
 
   // Turn the proxy into an (empty) JSObject.
   static void Fix(Handle<JSProxy> proxy);
@@ -10094,7 +10147,6 @@ class JSArray: public JSObject {
 
   static bool HasReadOnlyLength(Handle<JSArray> array);
   static bool WouldChangeReadOnlyLength(Handle<JSArray> array, uint32_t index);
-  static MaybeHandle<Object> ReadOnlyLengthError(Handle<JSArray> array);
 
   // Initialize the array with the given capacity. The function may
   // fail due to out-of-memory situations, but only if the requested
@@ -10318,6 +10370,7 @@ class AccessCheckInfo: public Struct {
  public:
   DECL_ACCESSORS(named_callback, Object)
   DECL_ACCESSORS(indexed_callback, Object)
+  DECL_ACCESSORS(callback, Object)
   DECL_ACCESSORS(data, Object)
 
   DECLARE_CAST(AccessCheckInfo)
@@ -10328,7 +10381,8 @@ class AccessCheckInfo: public Struct {
 
   static const int kNamedCallbackOffset   = HeapObject::kHeaderSize;
   static const int kIndexedCallbackOffset = kNamedCallbackOffset + kPointerSize;
-  static const int kDataOffset = kIndexedCallbackOffset + kPointerSize;
+  static const int kCallbackOffset = kIndexedCallbackOffset + kPointerSize;
+  static const int kDataOffset = kCallbackOffset + kPointerSize;
   static const int kSize = kDataOffset + kPointerSize;
 
  private:
@@ -10410,7 +10464,9 @@ class TemplateInfo: public Struct {
   static const int kPropertyListOffset = kNumberOfProperties + kPointerSize;
   static const int kPropertyAccessorsOffset =
       kPropertyListOffset + kPointerSize;
-  static const int kHeaderSize = kPropertyAccessorsOffset + kPointerSize;
+  static const int kPropertyIntrinsicsOffset =
+      kPropertyAccessorsOffset + kPointerSize;
+  static const int kHeaderSize = kPropertyIntrinsicsOffset + kPointerSize;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(TemplateInfo);

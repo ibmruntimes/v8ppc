@@ -205,63 +205,61 @@ DynamicContextAccess const& DynamicContextAccessOf(Operator const* op) {
 }
 
 
-bool operator==(LoadNamedParameters const& lhs,
-                LoadNamedParameters const& rhs) {
+bool operator==(NamedAccess const& lhs, NamedAccess const& rhs) {
   return lhs.name().location() == rhs.name().location() &&
          lhs.language_mode() == rhs.language_mode() &&
          lhs.feedback() == rhs.feedback();
 }
 
 
-bool operator!=(LoadNamedParameters const& lhs,
-                LoadNamedParameters const& rhs) {
+bool operator!=(NamedAccess const& lhs, NamedAccess const& rhs) {
   return !(lhs == rhs);
 }
 
 
-size_t hash_value(LoadNamedParameters const& p) {
+size_t hash_value(NamedAccess const& p) {
   return base::hash_combine(p.name().location(), p.language_mode(),
                             p.feedback());
 }
 
 
-std::ostream& operator<<(std::ostream& os, LoadNamedParameters const& p) {
+std::ostream& operator<<(std::ostream& os, NamedAccess const& p) {
   return os << Brief(*p.name()) << ", " << p.language_mode();
 }
 
 
-std::ostream& operator<<(std::ostream& os, LoadPropertyParameters const& p) {
+NamedAccess const& NamedAccessOf(const Operator* op) {
+  DCHECK(op->opcode() == IrOpcode::kJSLoadNamed ||
+         op->opcode() == IrOpcode::kJSStoreNamed);
+  return OpParameter<NamedAccess>(op);
+}
+
+
+std::ostream& operator<<(std::ostream& os, PropertyAccess const& p) {
   return os << p.language_mode();
 }
 
 
-bool operator==(LoadPropertyParameters const& lhs,
-                LoadPropertyParameters const& rhs) {
+bool operator==(PropertyAccess const& lhs, PropertyAccess const& rhs) {
   return lhs.language_mode() == rhs.language_mode() &&
          lhs.feedback() == rhs.feedback();
 }
 
 
-bool operator!=(LoadPropertyParameters const& lhs,
-                LoadPropertyParameters const& rhs) {
+bool operator!=(PropertyAccess const& lhs, PropertyAccess const& rhs) {
   return !(lhs == rhs);
 }
 
 
-const LoadPropertyParameters& LoadPropertyParametersOf(const Operator* op) {
-  DCHECK_EQ(IrOpcode::kJSLoadProperty, op->opcode());
-  return OpParameter<LoadPropertyParameters>(op);
+PropertyAccess const& PropertyAccessOf(const Operator* op) {
+  DCHECK(op->opcode() == IrOpcode::kJSLoadProperty ||
+         op->opcode() == IrOpcode::kJSStoreProperty);
+  return OpParameter<PropertyAccess>(op);
 }
 
 
-size_t hash_value(LoadPropertyParameters const& p) {
+size_t hash_value(PropertyAccess const& p) {
   return base::hash_combine(p.language_mode(), p.feedback());
-}
-
-
-const LoadNamedParameters& LoadNamedParametersOf(const Operator* op) {
-  DCHECK_EQ(IrOpcode::kJSLoadNamed, op->opcode());
-  return OpParameter<LoadNamedParameters>(op);
 }
 
 
@@ -269,8 +267,7 @@ bool operator==(LoadGlobalParameters const& lhs,
                 LoadGlobalParameters const& rhs) {
   return lhs.name().location() == rhs.name().location() &&
          lhs.feedback() == rhs.feedback() &&
-         lhs.typeof_mode() == rhs.typeof_mode() &&
-         lhs.slot_index() == rhs.slot_index();
+         lhs.typeof_mode() == rhs.typeof_mode();
 }
 
 
@@ -281,14 +278,12 @@ bool operator!=(LoadGlobalParameters const& lhs,
 
 
 size_t hash_value(LoadGlobalParameters const& p) {
-  return base::hash_combine(p.name().location(), p.typeof_mode(),
-                            p.slot_index());
+  return base::hash_combine(p.name().location(), p.typeof_mode());
 }
 
 
 std::ostream& operator<<(std::ostream& os, LoadGlobalParameters const& p) {
-  return os << Brief(*p.name()) << ", " << p.typeof_mode()
-            << ", slot: " << p.slot_index();
+  return os << Brief(*p.name()) << ", " << p.typeof_mode();
 }
 
 
@@ -302,8 +297,7 @@ bool operator==(StoreGlobalParameters const& lhs,
                 StoreGlobalParameters const& rhs) {
   return lhs.language_mode() == rhs.language_mode() &&
          lhs.name().location() == rhs.name().location() &&
-         lhs.feedback() == rhs.feedback() &&
-         lhs.slot_index() == rhs.slot_index();
+         lhs.feedback() == rhs.feedback();
 }
 
 
@@ -315,79 +309,18 @@ bool operator!=(StoreGlobalParameters const& lhs,
 
 size_t hash_value(StoreGlobalParameters const& p) {
   return base::hash_combine(p.language_mode(), p.name().location(),
-                            p.feedback(), p.slot_index());
+                            p.feedback());
 }
 
 
 std::ostream& operator<<(std::ostream& os, StoreGlobalParameters const& p) {
-  return os << p.language_mode() << ", " << Brief(*p.name())
-            << ", slot: " << p.slot_index();
+  return os << p.language_mode() << ", " << Brief(*p.name());
 }
 
 
 const StoreGlobalParameters& StoreGlobalParametersOf(const Operator* op) {
   DCHECK_EQ(IrOpcode::kJSStoreGlobal, op->opcode());
   return OpParameter<StoreGlobalParameters>(op);
-}
-
-
-bool operator==(StoreNamedParameters const& lhs,
-                StoreNamedParameters const& rhs) {
-  return lhs.language_mode() == rhs.language_mode() &&
-         lhs.name().location() == rhs.name().location() &&
-         lhs.feedback() == rhs.feedback();
-}
-
-
-bool operator!=(StoreNamedParameters const& lhs,
-                StoreNamedParameters const& rhs) {
-  return !(lhs == rhs);
-}
-
-
-size_t hash_value(StoreNamedParameters const& p) {
-  return base::hash_combine(p.language_mode(), p.name().location(),
-                            p.feedback());
-}
-
-
-std::ostream& operator<<(std::ostream& os, StoreNamedParameters const& p) {
-  return os << p.language_mode() << ", " << Brief(*p.name());
-}
-
-
-const StoreNamedParameters& StoreNamedParametersOf(const Operator* op) {
-  DCHECK_EQ(IrOpcode::kJSStoreNamed, op->opcode());
-  return OpParameter<StoreNamedParameters>(op);
-}
-
-
-bool operator==(StorePropertyParameters const& lhs,
-                StorePropertyParameters const& rhs) {
-  return lhs.language_mode() == rhs.language_mode() &&
-         lhs.feedback() == rhs.feedback();
-}
-
-
-bool operator!=(StorePropertyParameters const& lhs,
-                StorePropertyParameters const& rhs) {
-  return !(lhs == rhs);
-}
-
-
-size_t hash_value(StorePropertyParameters const& p) {
-  return base::hash_combine(p.language_mode(), p.feedback());
-}
-
-
-std::ostream& operator<<(std::ostream& os, StorePropertyParameters const& p) {
-  return os << p.language_mode();
-}
-
-
-const StorePropertyParameters& StorePropertyParametersOf(const Operator* op) {
-  DCHECK_EQ(IrOpcode::kJSStoreProperty, op->opcode());
-  return OpParameter<StorePropertyParameters>(op);
 }
 
 
@@ -600,49 +533,49 @@ const Operator* JSOperatorBuilder::CallConstruct(int arguments) {
 }
 
 
-const Operator* JSOperatorBuilder::LoadNamed(const Handle<Name>& name,
-                                             const VectorSlotPair& feedback,
-                                             LanguageMode language_mode) {
-  LoadNamedParameters parameters(name, feedback, language_mode);
-  return new (zone()) Operator1<LoadNamedParameters>(   // --
+const Operator* JSOperatorBuilder::LoadNamed(LanguageMode language_mode,
+                                             Handle<Name> name,
+                                             const VectorSlotPair& feedback) {
+  NamedAccess access(language_mode, name, feedback);
+  return new (zone()) Operator1<NamedAccess>(           // --
       IrOpcode::kJSLoadNamed, Operator::kNoProperties,  // opcode
       "JSLoadNamed",                                    // name
       2, 1, 1, 1, 1, 2,                                 // counts
-      parameters);                                      // parameter
+      access);                                          // parameter
 }
 
 
-const Operator* JSOperatorBuilder::LoadProperty(const VectorSlotPair& feedback,
-                                                LanguageMode language_mode) {
-  LoadPropertyParameters parameters(feedback, language_mode);
-  return new (zone()) Operator1<LoadPropertyParameters>(   // --
+const Operator* JSOperatorBuilder::LoadProperty(
+    LanguageMode language_mode, VectorSlotPair const& feedback) {
+  PropertyAccess access(language_mode, feedback);
+  return new (zone()) Operator1<PropertyAccess>(           // --
       IrOpcode::kJSLoadProperty, Operator::kNoProperties,  // opcode
       "JSLoadProperty",                                    // name
       3, 1, 1, 1, 1, 2,                                    // counts
-      parameters);                                         // parameter
+      access);                                             // parameter
 }
 
 
 const Operator* JSOperatorBuilder::StoreNamed(LanguageMode language_mode,
-                                              const Handle<Name>& name,
-                                              const VectorSlotPair& feedback) {
-  StoreNamedParameters parameters(language_mode, feedback, name);
-  return new (zone()) Operator1<StoreNamedParameters>(   // --
+                                              Handle<Name> name,
+                                              VectorSlotPair const& feedback) {
+  NamedAccess access(language_mode, name, feedback);
+  return new (zone()) Operator1<NamedAccess>(            // --
       IrOpcode::kJSStoreNamed, Operator::kNoProperties,  // opcode
       "JSStoreNamed",                                    // name
       3, 1, 1, 0, 1, 2,                                  // counts
-      parameters);                                       // parameter
+      access);                                           // parameter
 }
 
 
 const Operator* JSOperatorBuilder::StoreProperty(
-    LanguageMode language_mode, const VectorSlotPair& feedback) {
-  StorePropertyParameters parameters(language_mode, feedback);
-  return new (zone()) Operator1<StorePropertyParameters>(   // --
+    LanguageMode language_mode, VectorSlotPair const& feedback) {
+  PropertyAccess access(language_mode, feedback);
+  return new (zone()) Operator1<PropertyAccess>(            // --
       IrOpcode::kJSStoreProperty, Operator::kNoProperties,  // opcode
       "JSStoreProperty",                                    // name
       4, 1, 1, 0, 1, 2,                                     // counts
-      parameters);                                          // parameter
+      access);                                              // parameter
 }
 
 
@@ -657,26 +590,24 @@ const Operator* JSOperatorBuilder::DeleteProperty(LanguageMode language_mode) {
 
 const Operator* JSOperatorBuilder::LoadGlobal(const Handle<Name>& name,
                                               const VectorSlotPair& feedback,
-                                              TypeofMode typeof_mode,
-                                              int slot_index) {
-  LoadGlobalParameters parameters(name, feedback, typeof_mode, slot_index);
+                                              TypeofMode typeof_mode) {
+  LoadGlobalParameters parameters(name, feedback, typeof_mode);
   return new (zone()) Operator1<LoadGlobalParameters>(   // --
       IrOpcode::kJSLoadGlobal, Operator::kNoProperties,  // opcode
       "JSLoadGlobal",                                    // name
-      3, 1, 1, 1, 1, 2,                                  // counts
+      1, 1, 1, 1, 1, 2,                                  // counts
       parameters);                                       // parameter
 }
 
 
 const Operator* JSOperatorBuilder::StoreGlobal(LanguageMode language_mode,
                                                const Handle<Name>& name,
-                                               const VectorSlotPair& feedback,
-                                               int slot_index) {
-  StoreGlobalParameters parameters(language_mode, feedback, name, slot_index);
+                                               const VectorSlotPair& feedback) {
+  StoreGlobalParameters parameters(language_mode, feedback, name);
   return new (zone()) Operator1<StoreGlobalParameters>(   // --
       IrOpcode::kJSStoreGlobal, Operator::kNoProperties,  // opcode
       "JSStoreGlobal",                                    // name
-      4, 1, 1, 0, 1, 2,                                   // counts
+      2, 1, 1, 0, 1, 2,                                   // counts
       parameters);                                        // parameter
 }
 

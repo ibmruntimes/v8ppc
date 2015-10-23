@@ -50,6 +50,7 @@ class JSNativeContextSpecialization final : public AdvancedReducer {
   Reduction ReduceJSLoadGlobal(Node* node);
   Reduction ReduceJSStoreGlobal(Node* node);
   Reduction ReduceJSLoadNamed(Node* node);
+  Reduction ReduceJSStoreNamed(Node* node);
 
   Reduction Replace(Node* node, Node* value, Node* effect = nullptr,
                     Node* control = nullptr) {
@@ -58,15 +59,22 @@ class JSNativeContextSpecialization final : public AdvancedReducer {
   }
   Reduction Replace(Node* node, Handle<Object> value);
 
+  enum PropertyAccessMode { kLoad, kStore };
   class PropertyAccessInfo;
   bool ComputePropertyAccessInfo(Handle<Map> map, Handle<Name> name,
+                                 PropertyAccessMode access_mode,
                                  PropertyAccessInfo* access_info);
   bool ComputePropertyAccessInfos(MapHandleList const& maps, Handle<Name> name,
+                                  PropertyAccessMode access_mode,
                                   ZoneVector<PropertyAccessInfo>* access_infos);
 
   struct ScriptContextTableLookupResult;
   bool LookupInScriptContextTable(Handle<Name> name,
                                   ScriptContextTableLookupResult* result);
+
+  // Adds stability dependencies on all prototypes of every class in
+  // {receiver_type} up to (and including) the {holder}.
+  void AssumePrototypesStable(Type* receiver_type, Handle<JSObject> holder);
 
   Graph* graph() const;
   JSGraph* jsgraph() const { return jsgraph_; }

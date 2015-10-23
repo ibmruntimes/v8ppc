@@ -5535,6 +5535,11 @@ void HOptimizedGraphBuilder::VisitNativeFunctionLiteral(
 }
 
 
+void HOptimizedGraphBuilder::VisitDoExpression(DoExpression* expr) {
+  UNREACHABLE();
+}
+
+
 void HOptimizedGraphBuilder::VisitConditional(Conditional* expr) {
   DCHECK(!HasStackOverflow());
   DCHECK(current_block() != NULL);
@@ -5711,16 +5716,6 @@ void HOptimizedGraphBuilder::VisitVariableProxy(VariableProxy* expr) {
           instr->SetDependsOnFlag(kGlobalVars);
           return ast_context()->ReturnInstruction(instr, expr->id());
         }
-      } else if (variable->IsGlobalSlot()) {
-        DCHECK(variable->index() > 0);
-        DCHECK(variable->IsStaticGlobalObjectProperty());
-        int slot_index = variable->index();
-        int depth = scope()->ContextChainLength(variable->scope());
-
-        HLoadGlobalViaContext* instr =
-            New<HLoadGlobalViaContext>(depth, slot_index);
-        return ast_context()->ReturnInstruction(instr, expr->id());
-
       } else {
         HValue* global_object = Add<HLoadNamedField>(
             context(), nullptr,
@@ -6620,7 +6615,7 @@ HValue* HOptimizedGraphBuilder::BuildMonomorphicAccess(
 void HOptimizedGraphBuilder::HandlePolymorphicNamedFieldAccess(
     PropertyAccessType access_type, Expression* expr, FeedbackVectorSlot slot,
     BailoutId ast_id, BailoutId return_id, HValue* object, HValue* value,
-    SmallMapList* maps, Handle<String> name) {
+    SmallMapList* maps, Handle<Name> name) {
   // Something did not match; must use a polymorphic load.
   int count = 0;
   HBasicBlock* join = NULL;
@@ -6936,18 +6931,6 @@ void HOptimizedGraphBuilder::HandleGlobalVariableAssignment(
     if (instr->HasObservableSideEffects()) {
       Add<HSimulate>(ast_id, REMOVABLE_SIMULATE);
     }
-  } else if (var->IsGlobalSlot()) {
-    DCHECK(var->index() > 0);
-    DCHECK(var->IsStaticGlobalObjectProperty());
-    int slot_index = var->index();
-    int depth = scope()->ContextChainLength(var->scope());
-
-    HStoreGlobalViaContext* instr = Add<HStoreGlobalViaContext>(
-        value, depth, slot_index, function_language_mode());
-    USE(instr);
-    DCHECK(instr->HasObservableSideEffects());
-    Add<HSimulate>(ast_id, REMOVABLE_SIMULATE);
-
   } else {
     HValue* global_object = Add<HLoadNamedField>(
         context(), nullptr,
@@ -7647,19 +7630,42 @@ HValue* HOptimizedGraphBuilder::HandleKeyedElementAccess(
     HValue* obj, HValue* key, HValue* val, Expression* expr,
     FeedbackVectorSlot slot, BailoutId ast_id, BailoutId return_id,
     PropertyAccessType access_type, bool* has_side_effects) {
-  if (key->ActualValue()->IsConstant()) {
+  // A keyed name access with type feedback may contain the name.
+  Handle<TypeFeedbackVector> vector =
+      handle(current_feedback_vector(), isolate());
+  HValue* expected_key = key;
+  if (!key->ActualValue()->IsConstant()) {
+    Name* name = nullptr;
+    if (access_type == LOAD) {
+      KeyedLoadICNexus nexus(vector, slot);
+      name = nexus.FindFirstName();
+    } else if (FLAG_vector_stores) {
+      KeyedStoreICNexus nexus(vector, slot);
+      name = nexus.FindFirstName();
+    }
+    if (name != nullptr) {
+      Handle<Name> handle_name(name);
+      expected_key = Add<HConstant>(handle_name);
+      // We need a check against the key.
+      bool in_new_space = isolate()->heap()->InNewSpace(*handle_name);
+      Unique<Name> unique_name = Unique<Name>::CreateUninitialized(handle_name);
+      Add<HCheckValue>(key, unique_name, in_new_space);
+    }
+  }
+  if (expected_key->ActualValue()->IsConstant()) {
     Handle<Object> constant =
-        HConstant::cast(key->ActualValue())->handle(isolate());
+        HConstant::cast(expected_key->ActualValue())->handle(isolate());
     uint32_t array_index;
-    if (constant->IsString() &&
-        !Handle<String>::cast(constant)->AsArrayIndex(&array_index)) {
+    if ((constant->IsString() &&
+         !Handle<String>::cast(constant)->AsArrayIndex(&array_index)) ||
+        constant->IsSymbol()) {
       if (!constant->IsUniqueName()) {
         constant = isolate()->factory()->InternalizeString(
             Handle<String>::cast(constant));
       }
       HValue* access =
           BuildNamedAccess(access_type, ast_id, return_id, expr, slot, obj,
-                           Handle<String>::cast(constant), val, false);
+                           Handle<Name>::cast(constant), val, false);
       if (access == NULL || access->IsPhi() ||
           HInstruction::cast(access)->IsLinked()) {
         *has_side_effects = false;
@@ -7831,7 +7837,7 @@ bool HOptimizedGraphBuilder::TryArgumentsAccess(Property* expr) {
 HValue* HOptimizedGraphBuilder::BuildNamedAccess(
     PropertyAccessType access, BailoutId ast_id, BailoutId return_id,
     Expression* expr, FeedbackVectorSlot slot, HValue* object,
-    Handle<String> name, HValue* value, bool is_uninitialized) {
+    Handle<Name> name, HValue* value, bool is_uninitialized) {
   SmallMapList* maps;
   ComputeReceiverTypes(expr, object, &maps, zone());
   DCHECK(maps != NULL);
@@ -8406,13 +8412,6 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
     }
   }
 
-  // Generate the deoptimization data for the unoptimized version of
-  // the target function if we don't already have it.
-  if (!Compiler::EnsureDeoptimizationSupport(&target_info)) {
-    TraceInline(target, caller, "could not generate deoptimization info");
-    return false;
-  }
-
   // In strong mode it is an error to call a function with too few arguments.
   // In that case do not inline because then the arity check would be skipped.
   if (is_strong(function->language_mode()) &&
@@ -8421,6 +8420,17 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
                 "too few arguments passed to a strong function");
     return false;
   }
+
+  // Generate the deoptimization data for the unoptimized version of
+  // the target function if we don't already have it.
+  if (!Compiler::EnsureDeoptimizationSupport(&target_info)) {
+    TraceInline(target, caller, "could not generate deoptimization info");
+    return false;
+  }
+  // Remember that we inlined this function. This needs to be called right
+  // after the EnsureDeoptimizationSupport call so that the code flusher
+  // does not remove the code with the deoptimization support.
+  top_info()->AddInlinedFunction(target_info.shared_info());
 
   // ----------------------------------------------------------------
   // After this point, we've made a decision to inline this function (so
@@ -9840,6 +9850,7 @@ void HOptimizedGraphBuilder::BuildInlinedCallArray(
 // Checks whether allocation using the given constructor can be inlined.
 static bool IsAllocationInlineable(Handle<JSFunction> constructor) {
   return constructor->has_initial_map() &&
+         !IsClassConstructor(constructor->shared()->kind()) &&
          constructor->initial_map()->instance_type() == JS_OBJECT_TYPE &&
          constructor->initial_map()->instance_size() <
              HAllocate::kMaxInlineSize;

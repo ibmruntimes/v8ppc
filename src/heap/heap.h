@@ -336,6 +336,7 @@ namespace internal {
   V(nonexistent_symbol)                     \
   V(nonextensible_symbol)                   \
   V(normal_ic_symbol)                       \
+  V(not_mapped_symbol)                      \
   V(observed_symbol)                        \
   V(premonomorphic_symbol)                  \
   V(promise_combined_deferred_symbol)       \
@@ -617,25 +618,6 @@ class Heap {
 
    private:
     Heap* heap_;
-  };
-
-  // An optional version of the above lock that can be used for some critical
-  // sections on the mutator thread; only safe since the GC currently does not
-  // do concurrent compaction.
-  class OptionalRelocationLock {
-   public:
-    OptionalRelocationLock(Heap* heap, bool concurrent)
-        : heap_(heap), concurrent_(concurrent) {
-      if (concurrent_) heap_->relocation_mutex_.Lock();
-    }
-
-    ~OptionalRelocationLock() {
-      if (concurrent_) heap_->relocation_mutex_.Unlock();
-    }
-
-   private:
-    Heap* heap_;
-    bool concurrent_;
   };
 
   // Support for partial snapshots.  After calling this we have a linear
@@ -1029,6 +1011,8 @@ class Heap {
   bool HasHighFragmentation();
   bool HasHighFragmentation(intptr_t used, intptr_t committed);
 
+  void SetOptimizeForLatency() { optimize_for_memory_usage_ = false; }
+  void SetOptimizeForMemoryUsage() { optimize_for_memory_usage_ = true; }
   bool ShouldOptimizeForMemoryUsage() { return optimize_for_memory_usage_; }
 
   // ===========================================================================

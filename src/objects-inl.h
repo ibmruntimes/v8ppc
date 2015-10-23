@@ -1199,15 +1199,22 @@ MaybeHandle<Object> Object::SetElement(Isolate* isolate, Handle<Object> object,
 }
 
 
-Handle<Object> Object::GetPrototypeSkipHiddenPrototypes(
-    Isolate* isolate, Handle<Object> receiver) {
-  PrototypeIterator iter(isolate, receiver);
-  while (!iter.IsAtEnd(PrototypeIterator::END_AT_NON_HIDDEN)) {
+Handle<Object> Object::GetPrototype(Isolate* isolate, Handle<Object> obj) {
+  // We don't expect access checks to be needed on JSProxy objects.
+  DCHECK(!obj->IsAccessCheckNeeded() || obj->IsJSObject());
+  Handle<Context> context(isolate->context());
+  if (obj->IsAccessCheckNeeded() &&
+      !isolate->MayAccess(context, Handle<JSObject>::cast(obj))) {
+    return isolate->factory()->null_value();
+  }
+
+  PrototypeIterator iter(isolate, obj, PrototypeIterator::START_AT_RECEIVER);
+  do {
+    iter.AdvanceIgnoringProxies();
     if (PrototypeIterator::GetCurrent(iter)->IsJSProxy()) {
       return PrototypeIterator::GetCurrent(iter);
     }
-    iter.Advance();
-  }
+  } while (!iter.IsAtEnd(PrototypeIterator::END_AT_NON_HIDDEN));
   return PrototypeIterator::GetCurrent(iter);
 }
 
@@ -3660,14 +3667,6 @@ FreeSpace* FreeSpace::next() {
 }
 
 
-FreeSpace** FreeSpace::next_address() {
-  DCHECK(map() == GetHeap()->root(Heap::kFreeSpaceMapRootIndex) ||
-         (!GetHeap()->deserialization_complete() && map() == NULL));
-  DCHECK_LE(kNextOffset + kPointerSize, nobarrier_size());
-  return reinterpret_cast<FreeSpace**>(address() + kNextOffset);
-}
-
-
 void FreeSpace::set_next(FreeSpace* next) {
   DCHECK(map() == GetHeap()->root(Heap::kFreeSpaceMapRootIndex) ||
          (!GetHeap()->deserialization_complete() && map() == NULL));
@@ -5660,6 +5659,7 @@ ACCESSORS(AccessorPair, setter, Object, kSetterOffset)
 
 ACCESSORS(AccessCheckInfo, named_callback, Object, kNamedCallbackOffset)
 ACCESSORS(AccessCheckInfo, indexed_callback, Object, kIndexedCallbackOffset)
+ACCESSORS(AccessCheckInfo, callback, Object, kCallbackOffset)
 ACCESSORS(AccessCheckInfo, data, Object, kDataOffset)
 
 ACCESSORS(InterceptorInfo, getter, Object, kGetterOffset)

@@ -23,19 +23,23 @@ namespace interpreter {
 class BytecodeLabel;
 class Register;
 
+// TODO(rmcilroy): Unify this with CreateArgumentsParameters::Type in Turbofan
+// when rest parameters implementation has settled down.
+enum class CreateArgumentsType { kMappedArguments, kUnmappedArguments };
+
 class BytecodeArrayBuilder {
  public:
   BytecodeArrayBuilder(Isolate* isolate, Zone* zone);
   Handle<BytecodeArray> ToBytecodeArray();
 
-  // Set number of parameters expected by function.
+  // Set the number of parameters expected by function.
   void set_parameter_count(int number_of_params);
   int parameter_count() const {
     DCHECK_GE(parameter_count_, 0);
     return parameter_count_;
   }
 
-  // Set number of locals required for bytecode array.
+  // Set the number of locals required for bytecode array.
   void set_locals_count(int number_of_locals);
   int locals_count() const {
     DCHECK_GE(local_register_count_, 0);
@@ -57,7 +61,17 @@ class BytecodeArrayBuilder {
 
   Register Parameter(int parameter_index) const;
 
-  // Constant loads to the accumulator.
+  // Return true if the register |reg| represents a parameter or a
+  // local.
+  bool RegisterIsParameterOrLocal(Register reg) const;
+
+  // Return true if the register |reg| represents a temporary register.
+  bool RegisterIsTemporary(Register reg) const;
+
+  // Gets a constant pool entry for the |object|.
+  size_t GetConstantPoolEntry(Handle<Object> object);
+
+  // Constant loads to accumulator.
   BytecodeArrayBuilder& LoadLiteral(v8::internal::Smi* value);
   BytecodeArrayBuilder& LoadLiteral(Handle<Object> object);
   BytecodeArrayBuilder& LoadUndefined();
@@ -66,9 +80,11 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& LoadTrue();
   BytecodeArrayBuilder& LoadFalse();
 
-  // Global loads to accumulator and stores from the accumulator.
-  BytecodeArrayBuilder& LoadGlobal(int slot_index);
-  BytecodeArrayBuilder& StoreGlobal(int slot_index, LanguageMode language_mode);
+  // Global loads to the accumulator and stores from the accumulator.
+  BytecodeArrayBuilder& LoadGlobal(size_t name_index, int feedback_slot,
+                                   LanguageMode language_mode);
+  BytecodeArrayBuilder& StoreGlobal(size_t name_index, int feedback_slot,
+                                    LanguageMode language_mode);
 
   // Load the object at |slot_index| in |context| into the accumulator.
   BytecodeArrayBuilder& LoadContextSlot(Register context, int slot_index);
@@ -80,14 +96,16 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& LoadAccumulatorWithRegister(Register reg);
   BytecodeArrayBuilder& StoreAccumulatorInRegister(Register reg);
 
-  // Load properties. The property name should be in the accumulator.
-  BytecodeArrayBuilder& LoadNamedProperty(Register object, int feedback_slot,
+  // Named load property.
+  BytecodeArrayBuilder& LoadNamedProperty(Register object, size_t name_index,
+                                          int feedback_slot,
                                           LanguageMode language_mode);
+  // Keyed load property. The key should be in the accumulator.
   BytecodeArrayBuilder& LoadKeyedProperty(Register object, int feedback_slot,
                                           LanguageMode language_mode);
 
   // Store properties. The value to be stored should be in the accumulator.
-  BytecodeArrayBuilder& StoreNamedProperty(Register object, Register name,
+  BytecodeArrayBuilder& StoreNamedProperty(Register object, size_t name_index,
                                            int feedback_slot,
                                            LanguageMode language_mode);
   BytecodeArrayBuilder& StoreKeyedProperty(Register object, Register key,
@@ -96,6 +114,9 @@ class BytecodeArrayBuilder {
 
   // Create a new closure for the SharedFunctionInfo in the accumulator.
   BytecodeArrayBuilder& CreateClosure(PretenureFlag tenured);
+
+  // Create a new arguments object in the accumulator.
+  BytecodeArrayBuilder& CreateArguments(CreateArgumentsType type);
 
   // Literals creation.  Constant elements should be in the accumulator.
   BytecodeArrayBuilder& CreateRegExpLiteral(int literal_index, Register flags);
@@ -132,6 +153,9 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& BinaryOperation(Token::Value binop, Register reg,
                                         Strength strength);
 
+  // Count Operators (value stored in accumulator).
+  BytecodeArrayBuilder& CountOperation(Token::Value op, Strength strength);
+
   // Unary Operators.
   BytecodeArrayBuilder& LogicalNot();
   BytecodeArrayBuilder& TypeOf();
@@ -140,9 +164,10 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& CompareOperation(Token::Value op, Register reg,
                                          Strength strength);
 
-  // Casts
+  // Casts.
   BytecodeArrayBuilder& CastAccumulatorToBoolean();
   BytecodeArrayBuilder& CastAccumulatorToName();
+  BytecodeArrayBuilder& CastAccumulatorToNumber();
 
   // Flow Control.
   BytecodeArrayBuilder& Bind(BytecodeLabel* label);
@@ -172,12 +197,15 @@ class BytecodeArrayBuilder {
   Isolate* isolate() const { return isolate_; }
 
   static Bytecode BytecodeForBinaryOperation(Token::Value op);
+  static Bytecode BytecodeForCountOperation(Token::Value op);
   static Bytecode BytecodeForCompareOperation(Token::Value op);
   static Bytecode BytecodeForLoadIC(LanguageMode language_mode);
   static Bytecode BytecodeForKeyedLoadIC(LanguageMode language_mode);
   static Bytecode BytecodeForStoreIC(LanguageMode language_mode);
   static Bytecode BytecodeForKeyedStoreIC(LanguageMode language_mode);
+  static Bytecode BytecodeForLoadGlobal(LanguageMode language_mode);
   static Bytecode BytecodeForStoreGlobal(LanguageMode language_mode);
+  static Bytecode BytecodeForCreateArguments(CreateArgumentsType type);
 
   static bool FitsInIdx8Operand(int value);
   static bool FitsInIdx8Operand(size_t value);
@@ -205,11 +233,14 @@ class BytecodeArrayBuilder {
                       uint32_t operand_value) const;
   bool LastBytecodeInSameBlock() const;
 
-  size_t GetConstantPoolEntry(Handle<Object> object);
-
-  // Scope helpers used by TemporaryRegisterScope
   int BorrowTemporaryRegister();
   void ReturnTemporaryRegister(int reg_index);
+  int PrepareForConsecutiveTemporaryRegisters(size_t count);
+  void BorrowConsecutiveTemporaryRegister(int reg_index);
+  bool TemporaryRegisterIsLive(Register reg) const;
+
+  Register first_temporary_register() const;
+  Register last_temporary_register() const;
 
   Isolate* isolate_;
   Zone* zone_;
@@ -226,10 +257,11 @@ class BytecodeArrayBuilder {
   int local_register_count_;
   int context_register_count_;
   int temporary_register_count_;
-  int temporary_register_next_;
+
+  ZoneSet<int> free_temporaries_;
 
   friend class TemporaryRegisterScope;
-  DISALLOW_IMPLICIT_CONSTRUCTORS(BytecodeArrayBuilder);
+  DISALLOW_COPY_AND_ASSIGN(BytecodeArrayBuilder);
 };
 
 
@@ -273,19 +305,26 @@ class BytecodeLabel final {
 
 // A stack-allocated class than allows the instantiator to allocate
 // temporary registers that are cleaned up when scope is closed.
+// TODO(oth): Deprecate TemporaryRegisterScope use. Code should be
+// using result scopes as far as possible.
 class TemporaryRegisterScope {
  public:
   explicit TemporaryRegisterScope(BytecodeArrayBuilder* builder);
   ~TemporaryRegisterScope();
   Register NewRegister();
 
+  void PrepareForConsecutiveAllocations(size_t count);
+  Register NextConsecutiveRegister();
+
  private:
   void* operator new(size_t size);
   void operator delete(void* p);
 
   BytecodeArrayBuilder* builder_;
-  int count_;
-  int last_register_index_;
+  const TemporaryRegisterScope* outer_;
+  ZoneVector<int> allocated_;
+  int next_consecutive_register_;
+  int next_consecutive_count_;
 
   DISALLOW_COPY_AND_ASSIGN(TemporaryRegisterScope);
 };

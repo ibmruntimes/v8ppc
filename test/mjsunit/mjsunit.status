@@ -153,15 +153,12 @@
   'regress/regress-1122': [PASS, NO_VARIANTS],
 
   # Issue 4493: Bugs due to --turbo-inlining.
-  'tools/profile': [PASS, NO_VARIANTS],
+  'sparse-array-reverse': [PASS, NO_VARIANTS],
 
   # Assumptions about optimization need investigation in TurboFan.
   'compiler/inlined-call': [PASS, NO_VARIANTS],
   'deopt-with-fp-regs': [PASS, NO_VARIANTS],
   'regress-sync-optimized-lists': [PASS, NO_VARIANTS],
-
-  # TODO(bmeurer/jarin): Crash in code generator?
-  'constant-folding-2': [PASS, NO_VARIANTS],
 
   # issue 4078:
   'allocation-site-info': [PASS, NO_VARIANTS],
@@ -355,6 +352,9 @@
   'json': [PASS, SLOW],
   'regress/regress-446389': [PASS, SLOW],
   'regress/regress-inline-getter-near-stack-limit': [PASS, SLOW],
+
+  # BUG(v8:4493).
+  'tools/profviz': [PASS, NO_VARIANTS],
 }],  # 'gc_stress == True'
 
 ##############################################################################
@@ -575,6 +575,12 @@
   # Flaky with TF.
   'mirror-script': [PASS, NO_VARIANTS],
 }],  # 'arch == mips'
+
+##############################################################################
+['arch == x87', {
+  # Turbofan will hit the known issue that x87 changes sNaN to qNaN by default.
+  'regress-undefined-nan': [SKIP],
+}],  # 'arch == x87'
 
 ##############################################################################
 ['arch == mips64el or arch == mips64', {

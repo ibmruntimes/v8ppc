@@ -14,7 +14,9 @@
 #include "src/codegen.h"
 #include "src/compiler.h"
 #include "src/messages.h"
+#include "src/parameter-initializer-rewriter.h"
 #include "src/preparser.h"
+#include "src/rewriter.h"
 #include "src/runtime/runtime.h"
 #include "src/scanner-character-streams.h"
 #include "src/scopeinfo.h"
@@ -924,6 +926,7 @@ Parser::Parser(ParseInfo* info)
   set_allow_harmony_new_target(FLAG_harmony_new_target);
   set_allow_strong_mode(FLAG_strong_mode);
   set_allow_legacy_const(FLAG_legacy_const);
+  set_allow_harmony_do_expressions(FLAG_harmony_do_expressions);
   for (int feature = 0; feature < v8::Isolate::kUseCounterFeatureCount;
        ++feature) {
     use_counts_[feature] = 0;
@@ -4047,9 +4050,31 @@ void ParserTraits::ParseArrowFunctionFormalParameters(
     DCHECK(!assignment->is_compound());
     initializer = assignment->value();
     expr = assignment->target();
+
+    // TODO(adamk): Only call this if necessary.
+    RewriteParameterInitializerScope(parser_->stack_limit(), initializer,
+                                     parser_->scope_, parameters->scope);
   }
 
   AddFormalParameter(parameters, expr, initializer, is_rest);
+}
+
+
+DoExpression* Parser::ParseDoExpression(bool* ok) {
+  // AssignmentExpression ::
+  //     do '{' StatementList '}'
+  int pos = peek_position();
+
+  Expect(Token::DO, CHECK_OK);
+  Variable* result =
+      scope_->NewTemporary(ast_value_factory()->dot_result_string());
+  Block* block = ParseScopedBlock(nullptr, CHECK_OK);
+  DoExpression* expr = factory()->NewDoExpression(block, result, pos);
+  if (!Rewriter::Rewrite(this, expr, ast_value_factory())) {
+    *ok = false;
+    return nullptr;
+  }
+  return expr;
 }
 
 
@@ -4792,6 +4817,7 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
     SET_ALLOW(harmony_spread_arrays);
     SET_ALLOW(harmony_new_target);
     SET_ALLOW(strong_mode);
+    SET_ALLOW(harmony_do_expressions);
 #undef SET_ALLOW
   }
   PreParser::PreParseResult result = reusable_preparser_->PreParseLazyFunction(

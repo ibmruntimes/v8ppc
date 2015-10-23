@@ -401,7 +401,7 @@ void GCTracer::PrintNVP() const {
   switch (current_.type) {
     case Event::SCAVENGER:
       PrintIsolate(heap_->isolate(),
-                   "[I:%p] %8.0f ms: "
+                   "%8.0f ms: "
                    "pause=%.1f "
                    "mutator=%.1f "
                    "gc=%s "
@@ -415,14 +415,22 @@ void GCTracer::PrintNVP() const {
                    "object_groups=%.2f "
                    "steps_count=%d "
                    "steps_took=%.1f "
-                   "scavenge_throughput=%" V8_PTR_PREFIX "d "
-                   "total_size_before=%" V8_PTR_PREFIX "d "
-                   "total_size_after=%" V8_PTR_PREFIX "d "
-                   "holes_size_before=%" V8_PTR_PREFIX "d "
-                   "holes_size_after=%" V8_PTR_PREFIX "d "
-                   "allocated=%" V8_PTR_PREFIX "d "
-                   "promoted=%" V8_PTR_PREFIX "d "
-                   "semi_space_copied=%" V8_PTR_PREFIX "d "
+                   "scavenge_throughput=%" V8_PTR_PREFIX
+                   "d "
+                   "total_size_before=%" V8_PTR_PREFIX
+                   "d "
+                   "total_size_after=%" V8_PTR_PREFIX
+                   "d "
+                   "holes_size_before=%" V8_PTR_PREFIX
+                   "d "
+                   "holes_size_after=%" V8_PTR_PREFIX
+                   "d "
+                   "allocated=%" V8_PTR_PREFIX
+                   "d "
+                   "promoted=%" V8_PTR_PREFIX
+                   "d "
+                   "semi_space_copied=%" V8_PTR_PREFIX
+                   "d "
                    "nodes_died_in_new=%d "
                    "nodes_copied_in_new=%d "
                    "nodes_promoted=%d "
@@ -430,13 +438,11 @@ void GCTracer::PrintNVP() const {
                    "average_survival_ratio=%.1f%% "
                    "promotion_rate=%.1f%% "
                    "semi_space_copy_rate=%.1f%% "
-                   "new_space_allocation_throughput=%" V8_PTR_PREFIX "d "
+                   "new_space_allocation_throughput=%" V8_PTR_PREFIX
+                   "d "
                    "context_disposal_rate=%.1f\n",
-                   heap_->isolate(),
-                   heap_->isolate()->time_millis_since_init(),
-                   duration,
-                   spent_in_mutator,
-                   current_.TypeName(true),
+                   heap_->isolate()->time_millis_since_init(), duration,
+                   spent_in_mutator, current_.TypeName(true),
                    current_.reduce_memory,
                    current_.scopes[Scope::SCAVENGER_SCAVENGE],
                    current_.scopes[Scope::SCAVENGER_OLD_TO_NEW_POINTERS],
@@ -462,7 +468,7 @@ void GCTracer::PrintNVP() const {
     case Event::MARK_COMPACTOR:
     case Event::INCREMENTAL_MARK_COMPACTOR:
       PrintIsolate(heap_->isolate(),
-                   "[I:%p] %8.0f ms: "
+                   "%8.0f ms: "
                    "pause=%.1f "
                    "mutator=%.1f "
                    "gc=%s "
@@ -479,12 +485,15 @@ void GCTracer::PrintNVP() const {
                    "mark_weakrefs=%.1f "
                    "mark_globalhandles=%.1f "
                    "mark_codeflush=%.1f "
+                   "store_buffer_clear=%.1f "
+                   "slots_buffer_clear=%.1f "
                    "sweep=%.2f "
                    "sweepns=%.2f "
                    "sweepos=%.2f "
                    "sweepcode=%.2f "
                    "sweepcell=%.2f "
                    "sweepmap=%.2f "
+                   "sweepaborted=%.2f "
                    "evacuate=%.1f "
                    "new_new=%.1f "
                    "root_new=%.1f "
@@ -528,8 +537,8 @@ void GCTracer::PrintNVP() const {
                    "new_space_allocation_throughput=%" V8_PTR_PREFIX
                    "d "
                    "context_disposal_rate=%.1f\n",
-                   heap_->isolate(), heap_->isolate()->time_millis_since_init(),
-                   duration, spent_in_mutator, current_.TypeName(true),
+                   heap_->isolate()->time_millis_since_init(), duration,
+                   spent_in_mutator, current_.TypeName(true),
                    current_.reduce_memory, current_.scopes[Scope::EXTERNAL],
                    current_.scopes[Scope::MC_MARK],
                    current_.scopes[Scope::MC_MARK_FINISH_INCREMENTAL],
@@ -542,12 +551,15 @@ void GCTracer::PrintNVP() const {
                    current_.scopes[Scope::MC_MARK_WEAK_REFERENCES],
                    current_.scopes[Scope::MC_MARK_GLOBAL_HANDLES],
                    current_.scopes[Scope::MC_MARK_CODE_FLUSH],
+                   current_.scopes[Scope::MC_STORE_BUFFER_CLEAR],
+                   current_.scopes[Scope::MC_SLOTS_BUFFER_CLEAR],
                    current_.scopes[Scope::MC_SWEEP],
                    current_.scopes[Scope::MC_SWEEP_NEWSPACE],
                    current_.scopes[Scope::MC_SWEEP_OLDSPACE],
                    current_.scopes[Scope::MC_SWEEP_CODE],
                    current_.scopes[Scope::MC_SWEEP_CELL],
                    current_.scopes[Scope::MC_SWEEP_MAP],
+                   current_.scopes[Scope::MC_SWEEP_ABORTED],
                    current_.scopes[Scope::MC_EVACUATE_PAGES],
                    current_.scopes[Scope::MC_UPDATE_NEW_TO_NEW_POINTERS],
                    current_.scopes[Scope::MC_UPDATE_ROOT_TO_NEW_POINTERS],

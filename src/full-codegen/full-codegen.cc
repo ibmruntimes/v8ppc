@@ -802,6 +802,15 @@ void FullCodeGenerator::VisitBlock(Block* stmt) {
 }
 
 
+void FullCodeGenerator::VisitDoExpression(DoExpression* expr) {
+  Comment cmnt(masm_, "[ Do Expression");
+  NestedStatement nested_block(this);
+  SetExpressionPosition(expr);
+  VisitBlock(expr->block());
+  EmitVariableLoad(expr->result());
+}
+
+
 void FullCodeGenerator::VisitExpressionStatement(ExpressionStatement* stmt) {
   Comment cmnt(masm_, "[ ExpressionStatement");
   SetStatementPosition(stmt);
@@ -1354,9 +1363,9 @@ void FullCodeGenerator::VisitNativeFunctionLiteral(
   DCHECK(!fun_template.IsEmpty());
 
   // Instantiate the function and create a shared function info from it.
-  Handle<JSFunction> fun = Utils::OpenHandle(
+  Handle<JSFunction> fun = Handle<JSFunction>::cast(Utils::OpenHandle(
       *fun_template->GetFunction(v8_isolate->GetCurrentContext())
-           .ToLocalChecked());
+           .ToLocalChecked()));
   const int literals = fun->NumberOfLiterals();
   Handle<Code> code = Handle<Code>(fun->shared()->code());
   Handle<Code> construct_stub = Handle<Code>(fun->shared()->construct_stub());

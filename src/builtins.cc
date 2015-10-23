@@ -1499,6 +1499,23 @@ BUILTIN(ReflectGet) {
 }
 
 
+// ES6 section 26.1.8 Reflect.getPrototypeOf
+BUILTIN(ReflectGetPrototypeOf) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  Handle<Object> target = args.at<Object>(1);
+
+  if (!target->IsJSReceiver()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kCalledOnNonObject,
+                              isolate->factory()->NewStringFromAsciiChecked(
+                                  "Reflect.getPrototypeOf")));
+  }
+
+  return *Object::GetPrototype(isolate, target);
+}
+
+
 // ES6 section 26.1.9 Reflect.has
 BUILTIN(ReflectHas) {
   HandleScope scope(isolate);
@@ -1517,10 +1534,10 @@ BUILTIN(ReflectHas) {
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, name,
                                      Object::ToName(isolate, key));
 
-  Maybe<bool> maybe =
+  Maybe<bool> result =
       JSReceiver::HasProperty(Handle<JSReceiver>::cast(target), name);
-  if (!maybe.IsJust()) return isolate->heap()->exception();
-  return *isolate->factory()->ToBoolean(maybe.FromJust());
+  return result.IsJust() ? *isolate->factory()->ToBoolean(result.FromJust())
+                         : isolate->heap()->exception();
 }
 
 
@@ -1551,6 +1568,52 @@ BUILTIN(ReflectIsExtensible) {
         JSObject::IsExtensible(Handle<JSObject>::cast(target)));
   }
   return *isolate->factory()->false_value();
+}
+
+
+// ES6 section 26.1.12 Reflect.preventExtensions
+BUILTIN(ReflectPreventExtensions) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  Handle<Object> target = args.at<Object>(1);
+
+  if (!target->IsJSReceiver()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kCalledOnNonObject,
+                              isolate->factory()->NewStringFromAsciiChecked(
+                                  "Reflect.preventExtensions")));
+  }
+
+  Maybe<bool> result = JSReceiver::PreventExtensions(
+      Handle<JSReceiver>::cast(target), Object::DONT_THROW);
+  return result.IsJust() ? *isolate->factory()->ToBoolean(result.FromJust())
+                         : isolate->heap()->exception();
+}
+
+
+// ES6 section 26.1.14 Reflect.setPrototypeOf
+BUILTIN(ReflectSetPrototypeOf) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(3, args.length());
+  Handle<Object> target = args.at<Object>(1);
+  Handle<Object> proto = args.at<Object>(2);
+
+  if (!target->IsJSReceiver()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kCalledOnNonObject,
+                              isolate->factory()->NewStringFromAsciiChecked(
+                                  "Reflect.setPrototypeOf")));
+  }
+
+  if (!proto->IsJSReceiver() && !proto->IsNull()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kProtoObjectOrNull, proto));
+  }
+
+  Maybe<bool> result = JSReceiver::SetPrototype(
+      Handle<JSReceiver>::cast(target), proto, true, Object::DONT_THROW);
+  MAYBE_RETURN(result, isolate->heap()->exception());
+  return *isolate->factory()->ToBoolean(result.FromJust());
 }
 
 
@@ -2094,6 +2157,9 @@ void Builtins::SetUp(Isolate* isolate, bool create_heap_objects) {
 #ifdef DEBUG
   // We can generate a lot of debug code on Arm64.
   const size_t buffer_size = 32*KB;
+#elif V8_TARGET_ARCH_PPC64
+  // 8 KB is insufficient on PPC64 when FLAG_debug_code is on.
+  const size_t buffer_size = 10 * KB;
 #else
   const size_t buffer_size = 8*KB;
 #endif

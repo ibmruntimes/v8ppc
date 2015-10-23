@@ -943,22 +943,27 @@ void MacroAssembler::EnterApiExitFrame(int argc) {
 }
 
 
-void MacroAssembler::LeaveExitFrame(bool save_doubles) {
+void MacroAssembler::LeaveExitFrame(bool save_doubles, bool pop_arguments) {
   // Optionally restore FPU state.
   if (save_doubles) {
     const int offset = -2 * kPointerSize;
     frstor(MemOperand(ebp, offset - 108));
   }
 
-  // Get the return address from the stack and restore the frame pointer.
-  mov(ecx, Operand(ebp, 1 * kPointerSize));
-  mov(ebp, Operand(ebp, 0 * kPointerSize));
+  if (pop_arguments) {
+    // Get the return address from the stack and restore the frame pointer.
+    mov(ecx, Operand(ebp, 1 * kPointerSize));
+    mov(ebp, Operand(ebp, 0 * kPointerSize));
 
-  // Pop the arguments and the receiver from the caller stack.
-  lea(esp, Operand(esi, 1 * kPointerSize));
+    // Pop the arguments and the receiver from the caller stack.
+    lea(esp, Operand(esi, 1 * kPointerSize));
 
-  // Push the return address to get ready to return.
-  push(ecx);
+    // Push the return address to get ready to return.
+    push(ecx);
+  } else {
+    // Otherwise just leave the exit frame.
+    leave();
+  }
 
   LeaveExitFrameEpilogue(true);
 }
@@ -2309,6 +2314,16 @@ void MacroAssembler::Lzcnt(Register dst, const Operand& src) {
   Move(dst, Immediate(63));  // 63^31 == 32
   bind(&not_zero_src);
   xor_(dst, Immediate(31));  // for x in [0..31], 31^x == 31-x.
+}
+
+
+void MacroAssembler::Tzcnt(Register dst, const Operand& src) {
+  // TODO(intel): Add support for TZCNT (with ABM/BMI1).
+  Label not_zero_src;
+  bsf(dst, src);
+  j(not_zero, &not_zero_src, Label::kNear);
+  Move(dst, Immediate(32));  // The result of tzcnt is 32 if src = 0.
+  bind(&not_zero_src);
 }
 
 

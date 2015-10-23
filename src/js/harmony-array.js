@@ -16,8 +16,9 @@ var GetIterator;
 var GetMethod;
 var GlobalArray = global.Array;
 var iteratorSymbol = utils.ImportNow("iterator_symbol");
-var MathMax;
-var MathMin;
+var MakeTypeError;
+var MaxSimple;
+var MinSimple;
 var ObjectIsFrozen;
 var ObjectDefineProperty;
 
@@ -25,8 +26,9 @@ utils.Import(function(from) {
   FLAG_harmony_tolength = from.FLAG_harmony_tolength;
   GetIterator = from.GetIterator;
   GetMethod = from.GetMethod;
-  MathMax = from.MathMax;
-  MathMin = from.MathMin;
+  MakeTypeError = from.MakeTypeError;
+  MaxSimple = from.MaxSimple;
+  MinSimple = from.MinSimple;
   ObjectIsFrozen = from.ObjectIsFrozen;
   ObjectDefineProperty = from.ObjectDefineProperty;
 });
@@ -37,28 +39,28 @@ function InnerArrayCopyWithin(target, start, end, array, length) {
   target = TO_INTEGER(target);
   var to;
   if (target < 0) {
-    to = MathMax(length + target, 0);
+    to = MaxSimple(length + target, 0);
   } else {
-    to = MathMin(target, length);
+    to = MinSimple(target, length);
   }
 
   start = TO_INTEGER(start);
   var from;
   if (start < 0) {
-    from = MathMax(length + start, 0);
+    from = MaxSimple(length + start, 0);
   } else {
-    from = MathMin(start, length);
+    from = MinSimple(start, length);
   }
 
   end = IS_UNDEFINED(end) ? length : TO_INTEGER(end);
   var final;
   if (end < 0) {
-    final = MathMax(length + end, 0);
+    final = MaxSimple(length + end, 0);
   } else {
-    final = MathMin(end, length);
+    final = MinSimple(end, length);
   }
 
-  var count = MathMin(final - from, length - to);
+  var count = MinSimple(final - from, length - to);
   var direction = 1;
   if (from < to && to < (from + count)) {
     direction = -1;

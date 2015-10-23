@@ -696,9 +696,10 @@ Reduction JSTypedLowering::ReduceJSUnaryNot(Node* node) {
 Reduction JSTypedLowering::ReduceJSToBoolean(Node* node) {
   Node* const input = node->InputAt(0);
   Type* const input_type = NodeProperties::GetType(input);
+  Node* const effect = NodeProperties::GetEffectInput(node);
   if (input_type->Is(Type::Boolean())) {
     // JSToBoolean(x:boolean) => x
-    ReplaceWithValue(node, input);
+    ReplaceWithValue(node, input, effect);
     return Replace(input);
   } else if (input_type->Is(Type::OrderedNumber())) {
     // JSToBoolean(x:ordered-number) => BooleanNot(NumberEqual(x,#0))
@@ -711,10 +712,8 @@ Reduction JSTypedLowering::ReduceJSToBoolean(Node* node) {
   } else if (input_type->Is(Type::String())) {
     // JSToBoolean(x:string) => NumberLessThan(#0,x.length)
     FieldAccess const access = AccessBuilder::ForStringLength(graph()->zone());
-    // It is safe for the load to be effect-free (i.e. not linked into effect
-    // chain) because we assume String::length to be immutable.
     Node* length = graph()->NewNode(simplified()->LoadField(access), input,
-                                    graph()->start(), graph()->start());
+                                    effect, graph()->start());
     ReplaceWithValue(node, node, length);
     node->ReplaceInput(0, jsgraph()->ZeroConstant());
     node->ReplaceInput(1, length);
@@ -827,7 +826,7 @@ Reduction JSTypedLowering::ReduceJSLoadNamed(Node* node) {
   Type* receiver_type = NodeProperties::GetType(receiver);
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* control = NodeProperties::GetControlInput(node);
-  Handle<Name> name = LoadNamedParametersOf(node->op()).name();
+  Handle<Name> name = NamedAccessOf(node->op()).name();
   // Optimize "length" property of strings.
   if (name.is_identical_to(factory()->length_string()) &&
       receiver_type->Is(Type::String())) {
@@ -1043,13 +1042,10 @@ Reduction JSTypedLowering::ReduceJSLoadDynamicGlobal(Node* node) {
   }
 
   // Fast case, because variable is not shadowed. Perform global object load.
-  Node* global = graph()->NewNode(
-      javascript()->LoadContext(0, Context::GLOBAL_OBJECT_INDEX, true), context,
-      context, effect);
   Node* fast = graph()->NewNode(
       javascript()->LoadGlobal(access.name(), access.feedback(),
                                access.typeof_mode()),
-      context, global, vector, context, state1, state2, global, check_true);
+      vector, context, state1, state2, effect, check_true);
 
   // Slow case, because variable potentially shadowed. Perform dynamic lookup.
   uint32_t check_bitset = DynamicGlobalAccess::kFullCheckRequired;

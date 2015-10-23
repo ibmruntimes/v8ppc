@@ -22,13 +22,12 @@ BytecodeArrayBuilder::BytecodeArrayBuilder(Isolate* isolate, Zone* zone)
       local_register_count_(-1),
       context_register_count_(-1),
       temporary_register_count_(0),
-      temporary_register_next_(0) {}
+      free_temporaries_(zone) {}
 
 
 void BytecodeArrayBuilder::set_locals_count(int number_of_locals) {
   local_register_count_ = number_of_locals;
   DCHECK_LE(context_register_count_, 0);
-  temporary_register_next_ = local_register_count_;
 }
 
 
@@ -40,7 +39,6 @@ void BytecodeArrayBuilder::set_parameter_count(int number_of_parameters) {
 void BytecodeArrayBuilder::set_context_count(int number_of_contexts) {
   context_register_count_ = number_of_contexts;
   DCHECK_GE(local_register_count_, 0);
-  temporary_register_next_ = local_register_count_ + context_register_count_;
 }
 
 
@@ -56,9 +54,32 @@ Register BytecodeArrayBuilder::last_context_register() const {
 }
 
 
+Register BytecodeArrayBuilder::first_temporary_register() const {
+  DCHECK_GT(temporary_register_count_, 0);
+  return Register(fixed_register_count());
+}
+
+
+Register BytecodeArrayBuilder::last_temporary_register() const {
+  DCHECK_GT(temporary_register_count_, 0);
+  return Register(fixed_register_count() + temporary_register_count_ - 1);
+}
+
+
 Register BytecodeArrayBuilder::Parameter(int parameter_index) const {
   DCHECK_GE(parameter_index, 0);
   return Register::FromParameterIndex(parameter_index, parameter_count());
+}
+
+
+bool BytecodeArrayBuilder::RegisterIsParameterOrLocal(Register reg) const {
+  return reg.is_parameter() || reg.index() < locals_count();
+}
+
+
+bool BytecodeArrayBuilder::RegisterIsTemporary(Register reg) const {
+  return temporary_register_count_ > 0 && first_temporary_register() <= reg &&
+         reg <= last_temporary_register();
 }
 
 
@@ -147,6 +168,17 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::BinaryOperation(Token::Value op,
   }
 
   Output(BytecodeForBinaryOperation(op), reg.ToOperand());
+  return *this;
+}
+
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::CountOperation(Token::Value op,
+                                                           Strength strength) {
+  if (is_strong(strength)) {
+    UNIMPLEMENTED();
+  }
+
+  Output(BytecodeForCountOperation(op));
   return *this;
 }
 
@@ -243,10 +275,12 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::StoreAccumulatorInRegister(
 }
 
 
-BytecodeArrayBuilder& BytecodeArrayBuilder::LoadGlobal(int slot_index) {
-  DCHECK(slot_index >= 0);
-  if (FitsInIdx8Operand(slot_index)) {
-    Output(Bytecode::kLdaGlobal, static_cast<uint8_t>(slot_index));
+BytecodeArrayBuilder& BytecodeArrayBuilder::LoadGlobal(
+    size_t name_index, int feedback_slot, LanguageMode language_mode) {
+  Bytecode bytecode = BytecodeForLoadGlobal(language_mode);
+  if (FitsInIdx8Operand(name_index) && FitsInIdx8Operand(feedback_slot)) {
+    Output(bytecode, static_cast<uint8_t>(name_index),
+           static_cast<uint8_t>(feedback_slot));
   } else {
     UNIMPLEMENTED();
   }
@@ -255,11 +289,11 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadGlobal(int slot_index) {
 
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::StoreGlobal(
-    int slot_index, LanguageMode language_mode) {
-  DCHECK(slot_index >= 0);
+    size_t name_index, int feedback_slot, LanguageMode language_mode) {
   Bytecode bytecode = BytecodeForStoreGlobal(language_mode);
-  if (FitsInIdx8Operand(slot_index)) {
-    Output(bytecode, static_cast<uint8_t>(slot_index));
+  if (FitsInIdx8Operand(name_index) && FitsInIdx8Operand(feedback_slot)) {
+    Output(bytecode, static_cast<uint8_t>(name_index),
+           static_cast<uint8_t>(feedback_slot));
   } else {
     UNIMPLEMENTED();
   }
@@ -294,10 +328,12 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::StoreContextSlot(Register context,
 
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::LoadNamedProperty(
-    Register object, int feedback_slot, LanguageMode language_mode) {
+    Register object, size_t name_index, int feedback_slot,
+    LanguageMode language_mode) {
   Bytecode bytecode = BytecodeForLoadIC(language_mode);
-  if (FitsInIdx8Operand(feedback_slot)) {
-    Output(bytecode, object.ToOperand(), static_cast<uint8_t>(feedback_slot));
+  if (FitsInIdx8Operand(name_index) && FitsInIdx8Operand(feedback_slot)) {
+    Output(bytecode, object.ToOperand(), static_cast<uint8_t>(name_index),
+           static_cast<uint8_t>(feedback_slot));
   } else {
     UNIMPLEMENTED();
   }
@@ -318,11 +354,11 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadKeyedProperty(
 
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::StoreNamedProperty(
-    Register object, Register name, int feedback_slot,
+    Register object, size_t name_index, int feedback_slot,
     LanguageMode language_mode) {
   Bytecode bytecode = BytecodeForStoreIC(language_mode);
-  if (FitsInIdx8Operand(feedback_slot)) {
-    Output(bytecode, object.ToOperand(), name.ToOperand(),
+  if (FitsInIdx8Operand(name_index) && FitsInIdx8Operand(feedback_slot)) {
+    Output(bytecode, object.ToOperand(), static_cast<uint8_t>(name_index),
            static_cast<uint8_t>(feedback_slot));
   } else {
     UNIMPLEMENTED();
@@ -349,6 +385,17 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::CreateClosure(
     PretenureFlag tenured) {
   DCHECK(FitsInImm8Operand(tenured));
   Output(Bytecode::kCreateClosure, static_cast<uint8_t>(tenured));
+  return *this;
+}
+
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::CreateArguments(
+    CreateArgumentsType type) {
+  // TODO(rmcilroy): Consider passing the type as a bytecode operand rather
+  // than having two different bytecodes once we have better support for
+  // branches in the InterpreterAssembler.
+  Bytecode bytecode = BytecodeForCreateArguments(type);
+  Output(bytecode);
   return *this;
 }
 
@@ -436,6 +483,14 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::CastAccumulatorToBoolean() {
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::CastAccumulatorToName() {
   Output(Bytecode::kToName);
+  return *this;
+}
+
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::CastAccumulatorToNumber() {
+  // TODO(rmcilroy): consider omitting if the preceeding bytecode always returns
+  // a number.
+  Output(Bytecode::kToNumber);
   return *this;
 }
 
@@ -607,6 +662,7 @@ void BytecodeArrayBuilder::EnsureReturn() {
   }
 }
 
+
 BytecodeArrayBuilder& BytecodeArrayBuilder::Call(Register callable,
                                                  Register receiver,
                                                  size_t arg_count) {
@@ -661,18 +717,74 @@ size_t BytecodeArrayBuilder::GetConstantPoolEntry(Handle<Object> object) {
 
 
 int BytecodeArrayBuilder::BorrowTemporaryRegister() {
-  int temporary_reg_index = temporary_register_next_++;
-  int count = temporary_register_next_ - fixed_register_count();
-  if (count > temporary_register_count_) {
-    temporary_register_count_ = count;
+  if (free_temporaries_.empty()) {
+    temporary_register_count_ += 1;
+    return last_temporary_register().index();
+  } else {
+    auto pos = free_temporaries_.begin();
+    int retval = *pos;
+    free_temporaries_.erase(pos);
+    return retval;
   }
-  return temporary_reg_index;
+}
+
+
+void BytecodeArrayBuilder::BorrowConsecutiveTemporaryRegister(int reg_index) {
+  DCHECK(free_temporaries_.find(reg_index) != free_temporaries_.end());
+  free_temporaries_.erase(reg_index);
 }
 
 
 void BytecodeArrayBuilder::ReturnTemporaryRegister(int reg_index) {
-  DCHECK_EQ(reg_index, temporary_register_next_ - 1);
-  temporary_register_next_ = reg_index;
+  DCHECK(free_temporaries_.find(reg_index) == free_temporaries_.end());
+  free_temporaries_.insert(reg_index);
+}
+
+
+int BytecodeArrayBuilder::PrepareForConsecutiveTemporaryRegisters(
+    size_t count) {
+  if (count == 0) {
+    return -1;
+  }
+
+  // Search within existing temporaries for a run.
+  auto start = free_temporaries_.begin();
+  size_t run_length = 0;
+  for (auto run_end = start; run_end != free_temporaries_.end(); run_end++) {
+    if (*run_end != *start + static_cast<int>(run_length)) {
+      start = run_end;
+      run_length = 0;
+    }
+    if (++run_length == count) {
+      return *start;
+    }
+  }
+
+  // Continue run if possible across existing last temporary.
+  if (temporary_register_count_ > 0 &&
+      (start == free_temporaries_.end() ||
+       *start + static_cast<int>(run_length) !=
+           last_temporary_register().index() + 1)) {
+    run_length = 0;
+  }
+
+  // Ensure enough registers for run.
+  while (run_length++ < count) {
+    temporary_register_count_++;
+    free_temporaries_.insert(last_temporary_register().index());
+  }
+  return last_temporary_register().index() - static_cast<int>(count) + 1;
+}
+
+
+bool BytecodeArrayBuilder::TemporaryRegisterIsLive(Register reg) const {
+  if (temporary_register_count_ > 0) {
+    DCHECK(reg.index() >= first_temporary_register().index() &&
+           reg.index() <= last_temporary_register().index());
+    return free_temporaries_.find(reg.index()) == free_temporaries_.end();
+  } else {
+    return false;
+  }
 }
 
 
@@ -693,10 +805,12 @@ bool BytecodeArrayBuilder::OperandIsValid(Bytecode bytecode, int operand_index,
       if (reg.is_function_context() || reg.is_function_closure()) {
         return true;
       } else if (reg.is_parameter()) {
-        int parameter_index = reg.ToParameterIndex(parameter_count());
-        return parameter_index >= 0 && parameter_index < parameter_count();
+        int parameter_index = reg.ToParameterIndex(parameter_count_);
+        return parameter_index >= 0 && parameter_index < parameter_count_;
+      } else if (reg.index() < fixed_register_count()) {
+        return true;
       } else {
-        return (reg.index() >= 0 && reg.index() < temporary_register_next_);
+        return TemporaryRegisterIsLive(reg);
       }
     }
   }
@@ -735,6 +849,20 @@ Bytecode BytecodeArrayBuilder::BytecodeForBinaryOperation(Token::Value op) {
       return Bytecode::kShiftRight;
     case Token::Value::SHR:
       return Bytecode::kShiftRightLogical;
+    default:
+      UNREACHABLE();
+      return static_cast<Bytecode>(-1);
+  }
+}
+
+
+// static
+Bytecode BytecodeArrayBuilder::BytecodeForCountOperation(Token::Value op) {
+  switch (op) {
+    case Token::Value::ADD:
+      return Bytecode::kInc;
+    case Token::Value::SUB:
+      return Bytecode::kDec;
     default:
       UNREACHABLE();
       return static_cast<Bytecode>(-1);
@@ -839,6 +967,23 @@ Bytecode BytecodeArrayBuilder::BytecodeForKeyedStoreIC(
 
 
 // static
+Bytecode BytecodeArrayBuilder::BytecodeForLoadGlobal(
+    LanguageMode language_mode) {
+  switch (language_mode) {
+    case SLOPPY:
+      return Bytecode::kLdaGlobalSloppy;
+    case STRICT:
+      return Bytecode::kLdaGlobalStrict;
+    case STRONG:
+      UNIMPLEMENTED();
+    default:
+      UNREACHABLE();
+  }
+  return static_cast<Bytecode>(-1);
+}
+
+
+// static
 Bytecode BytecodeArrayBuilder::BytecodeForStoreGlobal(
     LanguageMode language_mode) {
   switch (language_mode) {
@@ -848,6 +993,21 @@ Bytecode BytecodeArrayBuilder::BytecodeForStoreGlobal(
       return Bytecode::kStaGlobalStrict;
     case STRONG:
       UNIMPLEMENTED();
+    default:
+      UNREACHABLE();
+  }
+  return static_cast<Bytecode>(-1);
+}
+
+
+// static
+Bytecode BytecodeArrayBuilder::BytecodeForCreateArguments(
+    CreateArgumentsType type) {
+  switch (type) {
+    case CreateArgumentsType::kMappedArguments:
+      return Bytecode::kCreateMappedArguments;
+    case CreateArgumentsType::kUnmappedArguments:
+      return Bytecode::kCreateUnmappedArguments;
     default:
       UNREACHABLE();
   }
@@ -880,20 +1040,43 @@ bool BytecodeArrayBuilder::FitsInIdx16Operand(int value) {
 
 
 TemporaryRegisterScope::TemporaryRegisterScope(BytecodeArrayBuilder* builder)
-    : builder_(builder), count_(0), last_register_index_(-1) {}
+    : builder_(builder),
+      allocated_(builder->zone()),
+      next_consecutive_register_(-1),
+      next_consecutive_count_(-1) {}
 
 
 TemporaryRegisterScope::~TemporaryRegisterScope() {
-  while (count_-- != 0) {
-    builder_->ReturnTemporaryRegister(last_register_index_--);
+  for (auto i = allocated_.rbegin(); i != allocated_.rend(); i++) {
+    builder_->ReturnTemporaryRegister(*i);
   }
+  allocated_.clear();
 }
 
 
 Register TemporaryRegisterScope::NewRegister() {
-  count_++;
-  last_register_index_ = builder_->BorrowTemporaryRegister();
-  return Register(last_register_index_);
+  int allocated = builder_->BorrowTemporaryRegister();
+  allocated_.push_back(allocated);
+  return Register(allocated);
+}
+
+
+void TemporaryRegisterScope::PrepareForConsecutiveAllocations(size_t count) {
+  if (static_cast<int>(count) > next_consecutive_count_) {
+    next_consecutive_register_ =
+        builder_->PrepareForConsecutiveTemporaryRegisters(count);
+    next_consecutive_count_ = static_cast<int>(count);
+  }
+}
+
+
+Register TemporaryRegisterScope::NextConsecutiveRegister() {
+  DCHECK_GE(next_consecutive_register_, 0);
+  DCHECK_GT(next_consecutive_count_, 0);
+  builder_->BorrowConsecutiveTemporaryRegister(next_consecutive_register_);
+  allocated_.push_back(next_consecutive_register_);
+  next_consecutive_count_--;
+  return Register(next_consecutive_register_++);
 }
 
 }  // namespace interpreter

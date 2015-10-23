@@ -228,33 +228,32 @@ std::ostream& operator<<(std::ostream&, DynamicContextAccess const&);
 DynamicContextAccess const& DynamicContextAccessOf(Operator const*);
 
 
-// Defines the property being loaded from an object by a named load. This is
-// used as a parameter by JSLoadNamed operators.
-class LoadNamedParameters final {
+// Defines the property of an object for a named access. This is
+// used as a parameter by the JSLoadNamed and JSStoreNamed operators.
+class NamedAccess final {
  public:
-  LoadNamedParameters(const Handle<Name>& name, const VectorSlotPair& feedback,
-                      LanguageMode language_mode)
+  NamedAccess(LanguageMode language_mode, Handle<Name> name,
+              VectorSlotPair const& feedback)
       : name_(name), feedback_(feedback), language_mode_(language_mode) {}
 
-  const Handle<Name>& name() const { return name_; }
+  Handle<Name> name() const { return name_; }
   LanguageMode language_mode() const { return language_mode_; }
-
-  const VectorSlotPair& feedback() const { return feedback_; }
+  VectorSlotPair const& feedback() const { return feedback_; }
 
  private:
-  const Handle<Name> name_;
-  const VectorSlotPair feedback_;
-  const LanguageMode language_mode_;
+  Handle<Name> const name_;
+  VectorSlotPair const feedback_;
+  LanguageMode const language_mode_;
 };
 
-bool operator==(LoadNamedParameters const&, LoadNamedParameters const&);
-bool operator!=(LoadNamedParameters const&, LoadNamedParameters const&);
+bool operator==(NamedAccess const&, NamedAccess const&);
+bool operator!=(NamedAccess const&, NamedAccess const&);
 
-size_t hash_value(LoadNamedParameters const&);
+size_t hash_value(NamedAccess const&);
 
-std::ostream& operator<<(std::ostream&, LoadNamedParameters const&);
+std::ostream& operator<<(std::ostream&, NamedAccess const&);
 
-const LoadNamedParameters& LoadNamedParametersOf(const Operator* op);
+const NamedAccess& NamedAccessOf(const Operator* op);
 
 
 // Defines the property being loaded from an object by a named load. This is
@@ -262,24 +261,18 @@ const LoadNamedParameters& LoadNamedParametersOf(const Operator* op);
 class LoadGlobalParameters final {
  public:
   LoadGlobalParameters(const Handle<Name>& name, const VectorSlotPair& feedback,
-                       TypeofMode typeof_mode, int slot_index)
-      : name_(name),
-        feedback_(feedback),
-        typeof_mode_(typeof_mode),
-        slot_index_(slot_index) {}
+                       TypeofMode typeof_mode)
+      : name_(name), feedback_(feedback), typeof_mode_(typeof_mode) {}
 
   const Handle<Name>& name() const { return name_; }
   TypeofMode typeof_mode() const { return typeof_mode_; }
 
   const VectorSlotPair& feedback() const { return feedback_; }
 
-  int slot_index() const { return slot_index_; }
-
  private:
   const Handle<Name> name_;
   const VectorSlotPair feedback_;
   const TypeofMode typeof_mode_;
-  const int slot_index_;
 };
 
 bool operator==(LoadGlobalParameters const&, LoadGlobalParameters const&);
@@ -298,67 +291,7 @@ class StoreGlobalParameters final {
  public:
   StoreGlobalParameters(LanguageMode language_mode,
                         const VectorSlotPair& feedback,
-                        const Handle<Name>& name, int slot_index)
-      : language_mode_(language_mode),
-        name_(name),
-        feedback_(feedback),
-        slot_index_(slot_index) {}
-
-  LanguageMode language_mode() const { return language_mode_; }
-  const VectorSlotPair& feedback() const { return feedback_; }
-  const Handle<Name>& name() const { return name_; }
-  int slot_index() const { return slot_index_; }
-
- private:
-  const LanguageMode language_mode_;
-  const Handle<Name> name_;
-  const VectorSlotPair feedback_;
-  int slot_index_;
-};
-
-bool operator==(StoreGlobalParameters const&, StoreGlobalParameters const&);
-bool operator!=(StoreGlobalParameters const&, StoreGlobalParameters const&);
-
-size_t hash_value(StoreGlobalParameters const&);
-
-std::ostream& operator<<(std::ostream&, StoreGlobalParameters const&);
-
-const StoreGlobalParameters& StoreGlobalParametersOf(const Operator* op);
-
-
-// Defines the property being loaded from an object. This is
-// used as a parameter by JSLoadProperty operators.
-class LoadPropertyParameters final {
- public:
-  explicit LoadPropertyParameters(const VectorSlotPair& feedback,
-                                  LanguageMode language_mode)
-      : feedback_(feedback), language_mode_(language_mode) {}
-
-  const VectorSlotPair& feedback() const { return feedback_; }
-
-  LanguageMode language_mode() const { return language_mode_; }
-
- private:
-  const VectorSlotPair feedback_;
-  const LanguageMode language_mode_;
-};
-
-bool operator==(LoadPropertyParameters const&, LoadPropertyParameters const&);
-bool operator!=(LoadPropertyParameters const&, LoadPropertyParameters const&);
-
-size_t hash_value(LoadPropertyParameters const&);
-
-std::ostream& operator<<(std::ostream&, LoadPropertyParameters const&);
-
-const LoadPropertyParameters& LoadPropertyParametersOf(const Operator* op);
-
-
-// Defines the property being stored to an object by a named store. This is
-// used as a parameter by JSStoreNamed operator.
-class StoreNamedParameters final {
- public:
-  StoreNamedParameters(LanguageMode language_mode,
-                       const VectorSlotPair& feedback, const Handle<Name>& name)
+                        const Handle<Name>& name)
       : language_mode_(language_mode), name_(name), feedback_(feedback) {}
 
   LanguageMode language_mode() const { return language_mode_; }
@@ -371,40 +304,39 @@ class StoreNamedParameters final {
   const VectorSlotPair feedback_;
 };
 
-bool operator==(StoreNamedParameters const&, StoreNamedParameters const&);
-bool operator!=(StoreNamedParameters const&, StoreNamedParameters const&);
+bool operator==(StoreGlobalParameters const&, StoreGlobalParameters const&);
+bool operator!=(StoreGlobalParameters const&, StoreGlobalParameters const&);
 
-size_t hash_value(StoreNamedParameters const&);
+size_t hash_value(StoreGlobalParameters const&);
 
-std::ostream& operator<<(std::ostream&, StoreNamedParameters const&);
+std::ostream& operator<<(std::ostream&, StoreGlobalParameters const&);
 
-const StoreNamedParameters& StoreNamedParametersOf(const Operator* op);
+const StoreGlobalParameters& StoreGlobalParametersOf(const Operator* op);
 
 
-// Defines the property being stored to an object. This is used as a parameter
-// by JSStoreProperty operators.
-class StorePropertyParameters final {
+// Defines the property of an object for a keyed access. This is used
+// as a parameter by the JSLoadProperty and JSStoreProperty operators.
+class PropertyAccess final {
  public:
-  StorePropertyParameters(LanguageMode language_mode,
-                          const VectorSlotPair& feedback)
-      : language_mode_(language_mode), feedback_(feedback) {}
+  PropertyAccess(LanguageMode language_mode, VectorSlotPair const& feedback)
+      : feedback_(feedback), language_mode_(language_mode) {}
 
   LanguageMode language_mode() const { return language_mode_; }
-  const VectorSlotPair& feedback() const { return feedback_; }
+  VectorSlotPair const& feedback() const { return feedback_; }
 
  private:
-  const LanguageMode language_mode_;
-  const VectorSlotPair feedback_;
+  VectorSlotPair const feedback_;
+  LanguageMode const language_mode_;
 };
 
-bool operator==(StorePropertyParameters const&, StorePropertyParameters const&);
-bool operator!=(StorePropertyParameters const&, StorePropertyParameters const&);
+bool operator==(PropertyAccess const&, PropertyAccess const&);
+bool operator!=(PropertyAccess const&, PropertyAccess const&);
 
-size_t hash_value(StorePropertyParameters const&);
+size_t hash_value(PropertyAccess const&);
 
-std::ostream& operator<<(std::ostream&, StorePropertyParameters const&);
+std::ostream& operator<<(std::ostream&, PropertyAccess const&);
 
-const StorePropertyParameters& StorePropertyParametersOf(const Operator* op);
+PropertyAccess const& PropertyAccessOf(const Operator* op);
 
 
 // Defines specifics about arguments object or rest parameter creation. This is
@@ -513,17 +445,15 @@ class JSOperatorBuilder final : public ZoneObject {
 
   const Operator* CallConstruct(int arguments);
 
-  const Operator* LoadProperty(const VectorSlotPair& feedback,
-                               LanguageMode language_mode);
-  const Operator* LoadNamed(const Handle<Name>& name,
-                            const VectorSlotPair& feedback,
-                            LanguageMode language_mode);
+  const Operator* LoadProperty(LanguageMode language_mode,
+                               VectorSlotPair const& feedback);
+  const Operator* LoadNamed(LanguageMode language_mode, Handle<Name> name,
+                            VectorSlotPair const& feedback);
 
   const Operator* StoreProperty(LanguageMode language_mode,
-                                const VectorSlotPair& feedback);
-  const Operator* StoreNamed(LanguageMode language_mode,
-                             const Handle<Name>& name,
-                             const VectorSlotPair& feedback);
+                                VectorSlotPair const& feedback);
+  const Operator* StoreNamed(LanguageMode language_mode, Handle<Name> name,
+                             VectorSlotPair const& feedback);
 
   const Operator* DeleteProperty(LanguageMode language_mode);
 
@@ -531,12 +461,10 @@ class JSOperatorBuilder final : public ZoneObject {
 
   const Operator* LoadGlobal(const Handle<Name>& name,
                              const VectorSlotPair& feedback,
-                             TypeofMode typeof_mode = NOT_INSIDE_TYPEOF,
-                             int slot_index = -1);
+                             TypeofMode typeof_mode = NOT_INSIDE_TYPEOF);
   const Operator* StoreGlobal(LanguageMode language_mode,
                               const Handle<Name>& name,
-                              const VectorSlotPair& feedback,
-                              int slot_index = -1);
+                              const VectorSlotPair& feedback);
 
   const Operator* LoadContext(size_t depth, size_t index, bool immutable);
   const Operator* StoreContext(size_t depth, size_t index);

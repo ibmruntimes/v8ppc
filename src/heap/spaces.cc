@@ -982,6 +982,101 @@ void PagedSpace::TearDown() {
 }
 
 
+void PagedSpace::AddMemory(Address start, intptr_t size) {
+  accounting_stats_.ExpandSpace(static_cast<int>(size));
+  Free(start, static_cast<int>(size));
+}
+
+
+FreeSpace* PagedSpace::TryRemoveMemory(intptr_t size_in_bytes) {
+  FreeSpace* free_space = free_list()->TryRemoveMemory(size_in_bytes);
+  if (free_space != nullptr) {
+    accounting_stats_.DecreaseCapacity(free_space->size());
+  }
+  return free_space;
+}
+
+
+void PagedSpace::DivideUponCompactionSpaces(CompactionSpaceCollection** other,
+                                            int num, intptr_t limit) {
+  DCHECK_GT(num, 0);
+  DCHECK(other != nullptr);
+
+  if (limit == 0) limit = std::numeric_limits<intptr_t>::max();
+
+  EmptyAllocationInfo();
+
+  bool memory_available = true;
+  bool spaces_need_memory = true;
+  FreeSpace* node = nullptr;
+  CompactionSpace* current_space = nullptr;
+  // Iterate over spaces and memory as long as we have memory and there are
+  // spaces in need of some.
+  while (memory_available && spaces_need_memory) {
+    spaces_need_memory = false;
+    // Round-robin over all spaces.
+    for (int i = 0; i < num; i++) {
+      current_space = other[i]->Get(identity());
+      if (current_space->free_list()->Available() < limit) {
+        // Space has not reached its limit. Try to get some memory.
+        spaces_need_memory = true;
+        node = TryRemoveMemory(limit - current_space->free_list()->Available());
+        if (node != nullptr) {
+          CHECK(current_space->identity() == identity());
+          current_space->AddMemory(node->address(), node->size());
+        } else {
+          memory_available = false;
+          break;
+        }
+      }
+    }
+  }
+}
+
+
+void PagedSpace::RefillFreeList() {
+  MarkCompactCollector* collector = heap()->mark_compact_collector();
+  FreeList* free_list = nullptr;
+  if (this == heap()->old_space()) {
+    free_list = collector->free_list_old_space().get();
+  } else if (this == heap()->code_space()) {
+    free_list = collector->free_list_code_space().get();
+  } else if (this == heap()->map_space()) {
+    free_list = collector->free_list_map_space().get();
+  } else {
+    // Any PagedSpace might invoke RefillFreeList. We filter all but our old
+    // generation spaces out.
+    return;
+  }
+  DCHECK(free_list != nullptr);
+  intptr_t added = free_list_.Concatenate(free_list);
+  accounting_stats_.IncreaseCapacity(added);
+}
+
+
+void CompactionSpace::RefillFreeList() {
+  MarkCompactCollector* collector = heap()->mark_compact_collector();
+  FreeList* free_list = nullptr;
+  if (identity() == OLD_SPACE) {
+    free_list = collector->free_list_old_space().get();
+  } else if (identity() == CODE_SPACE) {
+    free_list = collector->free_list_code_space().get();
+  } else {
+    // Compaction spaces only represent old or code space.
+    UNREACHABLE();
+  }
+  DCHECK(free_list != nullptr);
+  intptr_t refilled = 0;
+  while (refilled < kCompactionMemoryWanted) {
+    FreeSpace* node =
+        free_list->TryRemoveMemory(kCompactionMemoryWanted - refilled);
+    if (node == nullptr) return;
+    refilled += node->size();
+    AddMemory(node->address(), node->size());
+  }
+}
+
+
 void PagedSpace::MoveOverFreeMemory(PagedSpace* other) {
   DCHECK(identity() == other->identity());
   // Destroy the linear allocation space of {other}. This is needed to
@@ -994,8 +1089,7 @@ void PagedSpace::MoveOverFreeMemory(PagedSpace* other) {
   intptr_t added = free_list_.Concatenate(other->free_list());
 
   // Moved memory is not recorded as allocated memory, but rather increases and
-  // decreases capacity of the corresponding spaces. Used size and waste size
-  // are maintained by the receiving space upon allocating and freeing blocks.
+  // decreases capacity of the corresponding spaces.
   other->accounting_stats_.DecreaseCapacity(added);
   accounting_stats_.IncreaseCapacity(added);
 }
@@ -1004,16 +1098,19 @@ void PagedSpace::MoveOverFreeMemory(PagedSpace* other) {
 void PagedSpace::MergeCompactionSpace(CompactionSpace* other) {
   // Unmerged fields:
   //   area_size_
-  //   allocation_info_
-  //   end_of_unswept_pages_
-  //   unswept_free_bytes_
   //   anchor_
 
   MoveOverFreeMemory(other);
 
   // Update and clear accounting statistics.
   accounting_stats_.Merge(other->accounting_stats_);
-  other->accounting_stats_.Reset();
+  other->accounting_stats_.Clear();
+
+  // The linear allocation area of {other} should be destroyed now.
+  DCHECK(other->top() == nullptr);
+  DCHECK(other->limit() == nullptr);
+
+  DCHECK(other->end_of_unswept_pages_ == nullptr);
 
   AccountCommitted(other->CommittedMemory());
 
@@ -2138,7 +2235,7 @@ FreeSpace* FreeListCategory::PickNodeFromList(int* node_size) {
 
   Page* page = Page::FromAddress(node->address());
   while ((node != nullptr) && page->IsEvacuationCandidate()) {
-    available_ -= node->Size();
+    available_ -= node->size();
     page->add_available_in_free_list(type_, -(node->Size()));
     node = node->next();
   }
@@ -2380,6 +2477,37 @@ FreeSpace* FreeList::FindNodeFor(int size_in_bytes, int* node_size) {
 }
 
 
+FreeSpace* FreeList::TryRemoveMemory(intptr_t hint_size_in_bytes) {
+  hint_size_in_bytes = RoundDown(hint_size_in_bytes, kPointerSize);
+  base::LockGuard<base::Mutex> guard(&mutex_);
+  FreeSpace* node = nullptr;
+  int node_size = 0;
+  // Try to find a node that fits exactly.
+  node = FindNodeFor(static_cast<int>(hint_size_in_bytes), &node_size);
+  // If no node could be found get as much memory as possible.
+  if (node == nullptr) node = FindNodeIn(kHuge, &node_size);
+  if (node == nullptr) node = FindNodeIn(kLarge, &node_size);
+  if (node != nullptr) {
+    // We round up the size to (kSmallListMin + kPointerSize) to (a) have a
+    // size larger then the minimum size required for FreeSpace, and (b) to get
+    // a block that can actually be freed into some FreeList later on.
+    if (hint_size_in_bytes <= kSmallListMin) {
+      hint_size_in_bytes = kSmallListMin + kPointerSize;
+    }
+    // Give back left overs that were not required by {size_in_bytes}.
+    intptr_t left_over = node_size - hint_size_in_bytes;
+
+    // Do not bother to return anything below {kSmallListMin} as it would be
+    // immediately discarded anyways.
+    if (left_over > kSmallListMin) {
+      Free(node->address() + hint_size_in_bytes, static_cast<int>(left_over));
+      node->set_size(static_cast<int>(hint_size_in_bytes));
+    }
+  }
+  return node;
+}
+
+
 // Allocation on the old space free list.  If it succeeds then a new linear
 // allocation space has been set up with the top and limit of the space.  If
 // the allocation fails then NULL is returned, and the caller can perform a GC
@@ -2585,8 +2713,7 @@ void PagedSpace::EvictEvacuationCandidatesFromLinearAllocationArea() {
 }
 
 
-HeapObject* PagedSpace::WaitForSweeperThreadsAndRetryAllocation(
-    int size_in_bytes) {
+HeapObject* PagedSpace::SweepAndRetryAllocation(int size_in_bytes) {
   MarkCompactCollector* collector = heap()->mark_compact_collector();
   if (collector->sweeping_in_progress()) {
     // Wait for the sweeper threads here and complete the sweeping phase.
@@ -2596,7 +2723,17 @@ HeapObject* PagedSpace::WaitForSweeperThreadsAndRetryAllocation(
     // entries.
     return free_list_.Allocate(size_in_bytes);
   }
-  return NULL;
+  return nullptr;
+}
+
+
+HeapObject* CompactionSpace::SweepAndRetryAllocation(int size_in_bytes) {
+  MarkCompactCollector* collector = heap()->mark_compact_collector();
+  if (collector->sweeping_in_progress()) {
+    collector->SweepAndRefill(this);
+    return free_list_.Allocate(size_in_bytes);
+  }
+  return nullptr;
 }
 
 
@@ -2608,7 +2745,7 @@ HeapObject* PagedSpace::SlowAllocateRaw(int size_in_bytes) {
   if (collector->sweeping_in_progress()) {
     // First try to refill the free-list, concurrent sweeper threads
     // may have freed some objects in the meantime.
-    collector->RefillFreeList(this);
+    RefillFreeList();
 
     // Retry the free list allocation.
     HeapObject* object = free_list_.Allocate(size_in_bytes);
@@ -2616,7 +2753,7 @@ HeapObject* PagedSpace::SlowAllocateRaw(int size_in_bytes) {
 
     // If sweeping is still in progress try to sweep pages on the main thread.
     int free_chunk = collector->SweepInParallel(this, size_in_bytes);
-    collector->RefillFreeList(this);
+    RefillFreeList();
     if (free_chunk >= size_in_bytes) {
       HeapObject* object = free_list_.Allocate(size_in_bytes);
       // We should be able to allocate an object here since we just freed that
@@ -2633,7 +2770,7 @@ HeapObject* PagedSpace::SlowAllocateRaw(int size_in_bytes) {
       heap()->OldGenerationAllocationLimitReached()) {
     // If sweeper threads are active, wait for them at that point and steal
     // elements form their free-lists.
-    HeapObject* object = WaitForSweeperThreadsAndRetryAllocation(size_in_bytes);
+    HeapObject* object = SweepAndRetryAllocation(size_in_bytes);
     return object;
   }
 
@@ -2647,7 +2784,7 @@ HeapObject* PagedSpace::SlowAllocateRaw(int size_in_bytes) {
   // If sweeper threads are active, wait for them at that point and steal
   // elements form their free-lists. Allocation may still fail their which
   // would indicate that there is not enough memory for the given allocation.
-  return WaitForSweeperThreadsAndRetryAllocation(size_in_bytes);
+  return SweepAndRetryAllocation(size_in_bytes);
 }
 
 

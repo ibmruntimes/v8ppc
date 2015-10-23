@@ -2980,15 +2980,7 @@ class V8_EXPORT Array : public Object {
    */
   static Local<Array> New(Isolate* isolate, int length = 0);
 
-  /**
-   * Access to Array Iterator methods
-   */
-  static Local<Function> GetKeysIterator(Isolate* isolate);
-  static Local<Function> GetValuesIterator(Isolate* isolate);
-  static Local<Function> GetEntriesIterator(Isolate* isolate);
-
   V8_INLINE static Array* Cast(Value* obj);
-
  private:
   Array();
   static void CheckCast(Value* obj);
@@ -4034,6 +4026,15 @@ class V8_EXPORT External : public Value {
 };
 
 
+#define V8_INTRINSICS_LIST(F) F(ArrayProto_values, array_values_iterator)
+
+enum Intrinsic {
+#define V8_DECL_INTRINSIC(name, iname) k##name,
+  V8_INTRINSICS_LIST(V8_DECL_INTRINSIC)
+#undef V8_DECL_INTRINSIC
+};
+
+
 // --- Templates ---
 
 
@@ -4102,6 +4103,13 @@ class V8_EXPORT Template : public Data {
       Local<Value> data = Local<Value>(), PropertyAttribute attribute = None,
       Local<AccessorSignature> signature = Local<AccessorSignature>(),
       AccessControl settings = DEFAULT);
+
+  /**
+   * During template instantiation, sets the value with the intrinsic property
+   * from the correct context.
+   */
+  void SetIntrinsicDataProperty(Local<Name> name, Intrinsic intrinsic,
+                                PropertyAttribute attribute = None);
 
  private:
   Template();
@@ -4259,6 +4267,14 @@ enum AccessType {
   ACCESS_DELETE,
   ACCESS_KEYS
 };
+
+
+/**
+ * Returns true if the given context should be allowed to access the given
+ * object.
+ */
+typedef bool (*AccessCheckCallback)(Local<Context> accessing_context,
+                                    Local<Object> accessed_object);
 
 
 /**
@@ -4669,16 +4685,20 @@ class V8_EXPORT ObjectTemplate : public Template {
   void MarkAsUndetectable();
 
   /**
-   * Sets access check callbacks on the object template and enables
-   * access checks.
+   * Sets access check callback on the object template and enables access
+   * checks.
    *
    * When accessing properties on instances of this object template,
    * the access check callback will be called to determine whether or
    * not to allow cross-context access to the properties.
    */
-  void SetAccessCheckCallbacks(NamedSecurityCallback named_handler,
-                               IndexedSecurityCallback indexed_handler,
-                               Local<Value> data = Local<Value>());
+  void SetAccessCheckCallback(AccessCheckCallback callback);
+
+  V8_DEPRECATE_SOON(
+      "Use SetAccessCheckCallback instead",
+      void SetAccessCheckCallbacks(NamedSecurityCallback named_handler,
+                                   IndexedSecurityCallback indexed_handler,
+                                   Local<Value> data = Local<Value>()));
 
   /**
    * Gets the number of internal fields for objects generated from
@@ -5815,6 +5835,18 @@ class V8_EXPORT Isolate {
    * context was depending on state from other contexts or not.
    */
   int ContextDisposedNotification(bool dependant_context = true);
+
+  /**
+   * Optional notification that the isolate switched to the foreground.
+   * V8 uses these notifications to guide heuristics.
+   */
+  void IsolateInForegroundNotification();
+
+  /**
+   * Optional notification that the isolate switched to the background.
+   * V8 uses these notifications to guide heuristics.
+   */
+  void IsolateInBackgroundNotification();
 
   /**
    * Allows the host application to provide the address of a function that is

@@ -1318,6 +1318,7 @@ class Assembler : public AssemblerBase {
     impl(opcode, dst, src1, src2);                                     \
   }
 
+  AVX_SP_3(vsqrt, 0x51);
   AVX_SP_3(vadd, 0x58);
   AVX_SP_3(vsub, 0x5c);
   AVX_SP_3(vmul, 0x59);
@@ -1325,7 +1326,9 @@ class Assembler : public AssemblerBase {
   AVX_SP_3(vmin, 0x5d);
   AVX_SP_3(vmax, 0x5f);
   AVX_P_3(vand, 0x54);
+  AVX_P_3(vor, 0x56);
   AVX_P_3(vxor, 0x57);
+  AVX_3(vpcmpeqd, 0x76, vpd);
   AVX_3(vcvtsd2ss, 0x5a, vsd);
 
 #undef AVX_3
@@ -1333,6 +1336,16 @@ class Assembler : public AssemblerBase {
 #undef AVX_P_3
 #undef AVX_SP_3
 
+  void vpsrlq(XMMRegister dst, XMMRegister src, byte imm8) {
+    XMMRegister iop = {2};
+    vpd(0x73, iop, dst, src);
+    emit(imm8);
+  }
+  void vpsllq(XMMRegister dst, XMMRegister src, byte imm8) {
+    XMMRegister iop = {6};
+    vpd(0x73, iop, dst, src);
+    emit(imm8);
+  }
   void vcvtss2sd(XMMRegister dst, XMMRegister src1, XMMRegister src2) {
     vsd(0x5a, dst, src1, src2, kF3, k0F, kWIG);
   }
@@ -1367,6 +1380,11 @@ class Assembler : public AssemblerBase {
   }
   void vucomisd(XMMRegister dst, const Operand& src) {
     vsd(0x2e, dst, xmm0, src, k66, k0F, kWIG);
+  }
+  void vroundsd(XMMRegister dst, XMMRegister src1, XMMRegister src2,
+                RoundingMode mode) {
+    vsd(0x0b, dst, src1, src2, k66, k0F3A, kWIG);
+    emit(static_cast<byte>(mode) | 0x8);  // Mask precision exception.
   }
 
   void vsd(byte op, XMMRegister dst, XMMRegister src1, XMMRegister src2) {

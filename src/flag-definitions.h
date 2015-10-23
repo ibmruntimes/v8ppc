@@ -186,11 +186,12 @@ DEFINE_IMPLICATION(harmony, es_staging)
 DEFINE_IMPLICATION(es_staging, harmony)
 
 DEFINE_BOOL(legacy_const, true, "legacy semantics for const in sloppy mode")
+// ES2015 const semantics are staged
+DEFINE_NEG_IMPLICATION(es_staging, legacy_const)
 
 // Features that are still work in progress (behind individual flags).
 #define HARMONY_INPROGRESS(V)                                         \
   V(harmony_modules, "harmony modules")                               \
-  V(harmony_regexps, "harmony regular expression extensions")         \
   V(harmony_proxies, "harmony proxies")                               \
   V(harmony_unicode_regexps, "harmony unicode regexps")               \
   V(harmony_tolength, "harmony ToLength")                             \
@@ -199,14 +200,15 @@ DEFINE_BOOL(legacy_const, true, "legacy semantics for const in sloppy mode")
   V(harmony_destructuring, "harmony destructuring")                   \
   V(harmony_default_parameters, "harmony default parameters")         \
   V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")           \
-  V(harmony_simd, "harmony simd")
+  V(harmony_simd, "harmony simd")                                     \
+  V(harmony_do_expressions, "harmony do-expressions")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
-#define HARMONY_STAGED(V)                              \
-  V(harmony_tostring, "harmony toString")              \
-  V(harmony_sloppy, "harmony features in sloppy mode") \
-  V(harmony_sloppy_let, "harmony let in sloppy mode")  \
-  V(harmony_completion, "harmony completion value semantics")
+#define HARMONY_STAGED(V)                                     \
+  V(harmony_regexps, "harmony regular expression extensions") \
+  V(harmony_tostring, "harmony toString")                     \
+  V(harmony_sloppy, "harmony features in sloppy mode")        \
+  V(harmony_sloppy_let, "harmony let in sloppy mode")
 
 // Features that are shipping (turned on by default, but internal flag remains).
 #define HARMONY_SHIPPING(V)                                     \
@@ -216,7 +218,8 @@ DEFINE_BOOL(legacy_const, true, "legacy semantics for const in sloppy mode")
   V(harmony_rest_parameters, "harmony rest parameters")         \
   V(harmony_spread_calls, "harmony spread-calls")               \
   V(harmony_spread_arrays, "harmony spread in array literals")  \
-  V(harmony_concat_spreadable, "harmony isConcatSpreadable")
+  V(harmony_concat_spreadable, "harmony isConcatSpreadable")    \
+  V(harmony_completion, "harmony completion value semantics")
 
 // Once a shipping feature has proved stable in the wild, it will be dropped
 // from HARMONY_SHIPPING, all occurrences of the FLAG_ variable are removed,
@@ -429,7 +432,6 @@ DEFINE_BOOL(turbo_verify, DEBUG_BOOL, "verify TurboFan graphs at each phase")
 DEFINE_BOOL(turbo_stats, false, "print TurboFan statistics")
 DEFINE_BOOL(turbo_splitting, true, "split nodes during scheduling in TurboFan")
 DEFINE_BOOL(turbo_types, true, "use typed lowering in TurboFan")
-DEFINE_BOOL(turbo_type_feedback, false, "use type feedback in TurboFan")
 DEFINE_BOOL(turbo_source_positions, false,
             "track source code positions when building TurboFan IR")
 DEFINE_IMPLICATION(trace_turbo, turbo_source_positions)
@@ -698,8 +700,7 @@ DEFINE_BOOL(use_idle_notification, true,
 // ic.cc
 DEFINE_BOOL(use_ic, true, "use inline caching")
 DEFINE_BOOL(trace_ic, false, "trace inline cache state transitions")
-DEFINE_BOOL(vector_stores, false, "use vectors for store ics")
-DEFINE_BOOL(global_var_shortcuts, true, "use ic-less global loads and stores")
+DEFINE_BOOL(vector_stores, true, "use vectors for store ics")
 
 // macro-assembler-ia32.cc
 DEFINE_BOOL(native_code_counters, false,
@@ -1081,6 +1082,8 @@ DEFINE_BOOL(enable_embedded_constant_pool, V8_EMBEDDED_CONSTANT_POOL,
 DEFINE_BOOL(unbox_double_fields, V8_DOUBLE_FIELDS_UNBOXING,
             "enable in-object double fields unboxing (64-bit only)")
 DEFINE_IMPLICATION(unbox_double_fields, track_double_fields)
+
+DEFINE_BOOL(global_var_shortcuts, false, "use ic-less global loads and stores")
 
 
 // Cleanup...

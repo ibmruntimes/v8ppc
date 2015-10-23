@@ -249,7 +249,13 @@ void BytecodeGraphBuilder::VisitStar(
 }
 
 
-void BytecodeGraphBuilder::VisitLdaGlobal(
+void BytecodeGraphBuilder::VisitLdaGlobalSloppy(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitLdaGlobalStrict(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }
@@ -340,6 +346,18 @@ void BytecodeGraphBuilder::VisitPopContext(
 
 
 void BytecodeGraphBuilder::VisitCreateClosure(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitCreateMappedArguments(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitCreateUnmappedArguments(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }
@@ -470,6 +488,18 @@ void BytecodeGraphBuilder::VisitShiftRightLogical(
 }
 
 
+void BytecodeGraphBuilder::VisitInc(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitDec(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
 void BytecodeGraphBuilder::VisitLogicalNot(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
@@ -549,6 +579,12 @@ void BytecodeGraphBuilder::VisitToBoolean(
 
 
 void BytecodeGraphBuilder::VisitToName(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitToNumber(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }

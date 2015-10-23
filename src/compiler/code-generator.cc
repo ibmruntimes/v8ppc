@@ -4,11 +4,11 @@
 
 #include "src/compiler/code-generator.h"
 
+#include "src/address-map.h"
 #include "src/compiler/code-generator-impl.h"
 #include "src/compiler/linkage.h"
 #include "src/compiler/pipeline.h"
 #include "src/frames-inl.h"
-#include "src/snapshot/serialize.h"  // TODO(turbofan): RootIndexMap
 
 namespace v8 {
 namespace internal {
@@ -83,9 +83,9 @@ Handle<Code> CodeGenerator::GenerateCode() {
 
   // Define deoptimization literals for all inlined functions.
   DCHECK_EQ(0u, deoptimization_literals_.size());
-  for (auto shared_info : info->inlined_functions()) {
-    if (!shared_info.is_identical_to(info->shared_info())) {
-      DefineDeoptimizationLiteral(shared_info);
+  for (auto& inlined : info->inlined_functions()) {
+    if (!inlined.shared_info.is_identical_to(info->shared_info())) {
+      DefineDeoptimizationLiteral(inlined.shared_info);
     }
   }
   inlined_function_count_ = deoptimization_literals_.size();
@@ -631,6 +631,10 @@ void CodeGenerator::AddTranslationForOperand(Translation* translation,
         DCHECK(type == kMachInt32 || type == kMachUint32 || type == kRepBit);
         constant_object =
             isolate()->factory()->NewNumberFromInt(constant.ToInt32());
+        break;
+      case Constant::kFloat32:
+        DCHECK((type & (kRepFloat32 | kRepTagged)) != 0);
+        constant_object = isolate()->factory()->NewNumber(constant.ToFloat32());
         break;
       case Constant::kFloat64:
         DCHECK((type & (kRepFloat64 | kRepTagged)) != 0);

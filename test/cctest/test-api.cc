@@ -7889,8 +7889,8 @@ TEST(TryCatchFinallyStoresMessageUsingTryCatchHandler) {
 
 // For use within the TestSecurityHandler() test.
 static bool g_security_callback_result = false;
-static bool SecurityTestCallback(Local<v8::Object> global, Local<Value> name,
-                                 v8::AccessType type, Local<Value> data) {
+static bool SecurityTestCallback(Local<v8::Context> accessing_context,
+                                 Local<v8::Object> accessed_object) {
   printf("a\n");
   return g_security_callback_result;
 }
@@ -7902,7 +7902,7 @@ TEST(SecurityHandler) {
   v8::HandleScope scope0(isolate);
   v8::Handle<v8::ObjectTemplate> global_template =
       v8::ObjectTemplate::New(isolate);
-  global_template->SetAccessCheckCallbacks(SecurityTestCallback, NULL);
+  global_template->SetAccessCheckCallback(SecurityTestCallback);
   // Create an environment
   v8::Handle<Context> context0 = Context::New(isolate, NULL, global_template);
   context0->Enter();
@@ -8063,9 +8063,8 @@ THREADED_TEST(SecurityChecksForPrototypeChain) {
 
 static bool security_check_with_gc_called;
 
-static bool SecurityTestCallbackWithGC(Local<v8::Object> global,
-                                       Local<v8::Value> name,
-                                       v8::AccessType type, Local<Value> data) {
+static bool SecurityTestCallbackWithGC(Local<v8::Context> accessing_context,
+                                       Local<v8::Object> accessed_object) {
   CcTest::heap()->CollectAllGarbage();
   security_check_with_gc_called = true;
   return true;
@@ -8077,7 +8076,7 @@ TEST(SecurityTestGCAllowed) {
   v8::HandleScope handle_scope(isolate);
   v8::Handle<v8::ObjectTemplate> object_template =
       v8::ObjectTemplate::New(isolate);
-  object_template->SetAccessCheckCallbacks(SecurityTestCallbackWithGC, NULL);
+  object_template->SetAccessCheckCallback(SecurityTestCallbackWithGC);
 
   v8::Handle<Context> context = Context::New(isolate);
   v8::Context::Scope context_scope(context);
@@ -8486,9 +8485,10 @@ TEST(DetachedAccesses) {
 
 
 static bool allowed_access = false;
-static bool AccessBlocker(Local<v8::Object> global, Local<Value> name,
-                          v8::AccessType type, Local<Value> data) {
-  return CcTest::isolate()->GetCurrentContext()->Global()->Equals(global) ||
+static bool AccessBlocker(Local<v8::Context> accessing_context,
+                          Local<v8::Object> accessed_object) {
+  return CcTest::isolate()->GetCurrentContext()->Global()->Equals(
+             accessed_object) ||
          allowed_access;
 }
 
@@ -8537,7 +8537,7 @@ TEST(AccessControl) {
   v8::Handle<v8::ObjectTemplate> global_template =
       v8::ObjectTemplate::New(isolate);
 
-  global_template->SetAccessCheckCallbacks(AccessBlocker, NULL);
+  global_template->SetAccessCheckCallback(AccessBlocker);
 
   // Add an accessor accessible by cross-domain JS code.
   global_template->SetAccessor(
@@ -8701,7 +8701,7 @@ TEST(AccessControlES5) {
   v8::Handle<v8::ObjectTemplate> global_template =
       v8::ObjectTemplate::New(isolate);
 
-  global_template->SetAccessCheckCallbacks(AccessBlocker, NULL);
+  global_template->SetAccessCheckCallback(AccessBlocker);
 
   // Add accessible accessor.
   global_template->SetAccessor(
@@ -8764,8 +8764,8 @@ TEST(AccessControlES5) {
 }
 
 
-static bool AccessAlwaysBlocked(Local<v8::Object> global, Local<Value> name,
-                                v8::AccessType type, Local<Value> data) {
+static bool AccessAlwaysBlocked(Local<v8::Context> accessing_context,
+                                Local<v8::Object> global) {
   i::PrintF("Access blocked.\n");
   return false;
 }
@@ -8778,7 +8778,7 @@ THREADED_TEST(AccessControlGetOwnPropertyNames) {
       v8::ObjectTemplate::New(isolate);
 
   obj_template->Set(v8_str("x"), v8::Integer::New(isolate, 42));
-  obj_template->SetAccessCheckCallbacks(AccessAlwaysBlocked, NULL);
+  obj_template->SetAccessCheckCallback(AccessAlwaysBlocked);
 
   // Add an accessor accessible by cross-domain JS code.
   obj_template->SetAccessor(
@@ -8827,7 +8827,7 @@ TEST(Regress470113) {
   v8::HandleScope handle_scope(isolate);
   v8::Handle<v8::ObjectTemplate> obj_template =
       v8::ObjectTemplate::New(isolate);
-  obj_template->SetAccessCheckCallbacks(AccessAlwaysBlocked, NULL);
+  obj_template->SetAccessCheckCallback(AccessAlwaysBlocked);
   LocalContext env;
   env->Global()->Set(v8_str("prohibited"), obj_template->NewInstance());
 
@@ -8907,8 +8907,8 @@ THREADED_TEST(CrossDomainAccessors) {
 
 static int access_count = 0;
 
-static bool AccessCounter(Local<v8::Object> global, Local<Value> name,
-                          v8::AccessType type, Local<Value> data) {
+static bool AccessCounter(Local<v8::Context> accessing_context,
+                          Local<v8::Object> accessed_object) {
   access_count++;
   return true;
 }
@@ -8929,7 +8929,7 @@ TEST(AccessControlIC) {
   // called for cross-domain access.
   v8::Handle<v8::ObjectTemplate> object_template =
       v8::ObjectTemplate::New(isolate);
-  object_template->SetAccessCheckCallbacks(AccessCounter, NULL);
+  object_template->SetAccessCheckCallback(AccessCounter);
   Local<v8::Object> object = object_template->NewInstance();
 
   v8::HandleScope scope1(isolate);
@@ -9830,7 +9830,7 @@ THREADED_TEST(ConstructorForObject) {
     CHECK(!try_catch.HasCaught());
 
     CHECK(instance2->IsObject());
-    CHECK(!instance2->IsFunction());
+    CHECK(instance2->IsFunction());
 
     value = CompileRun("new obj5(28)");
     CHECK(!try_catch.HasCaught());
@@ -12825,7 +12825,7 @@ THREADED_TEST(AccessChecksReenabledCorrectly) {
   v8::Isolate* isolate = context->GetIsolate();
   v8::HandleScope scope(isolate);
   Local<ObjectTemplate> templ = ObjectTemplate::New(isolate);
-  templ->SetAccessCheckCallbacks(AccessAlwaysBlocked, NULL);
+  templ->SetAccessCheckCallback(AccessAlwaysBlocked);
   templ->Set(v8_str("a"), v8_str("a"));
   // Add more than 8 (see kMaxFastProperties) properties
   // so that the constructor will force copying map.
@@ -13446,7 +13446,7 @@ TEST(CreateDataProperty) {
   }
 
   v8::Local<v8::ObjectTemplate> templ = v8::ObjectTemplate::New(isolate);
-  templ->SetAccessCheckCallbacks(AccessAlwaysBlocked, NULL);
+  templ->SetAccessCheckCallback(AccessAlwaysBlocked);
   v8::Local<v8::Object> access_checked =
       templ->NewInstance(env.local()).ToLocalChecked();
   {
@@ -13565,7 +13565,7 @@ TEST(DefineOwnProperty) {
   }
 
   v8::Local<v8::ObjectTemplate> templ = v8::ObjectTemplate::New(isolate);
-  templ->SetAccessCheckCallbacks(AccessAlwaysBlocked, NULL);
+  templ->SetAccessCheckCallback(AccessAlwaysBlocked);
   v8::Local<v8::Object> access_checked =
       templ->NewInstance(env.local()).ToLocalChecked();
   {
@@ -16749,8 +16749,7 @@ TEST(GCInFailedAccessCheckCallback) {
   // check callbacks that will block access.
   v8::Handle<v8::ObjectTemplate> global_template =
       v8::ObjectTemplate::New(isolate);
-  global_template->SetAccessCheckCallbacks(AccessAlwaysBlocked, NULL,
-                                           v8::Handle<v8::Value>());
+  global_template->SetAccessCheckCallback(AccessAlwaysBlocked);
 
   // Create a context and set an x property on it's global object.
   LocalContext context0(NULL, global_template);
@@ -17983,7 +17982,7 @@ THREADED_TEST(Regress93759) {
 
   // Template for object with security check.
   Local<ObjectTemplate> no_proto_template = v8::ObjectTemplate::New(isolate);
-  no_proto_template->SetAccessCheckCallbacks(AccessAlwaysBlocked, NULL);
+  no_proto_template->SetAccessCheckCallback(AccessAlwaysBlocked);
 
   // Templates for objects with hidden prototypes and possibly security check.
   Local<FunctionTemplate> hidden_proto_template =
@@ -17992,8 +17991,8 @@ THREADED_TEST(Regress93759) {
 
   Local<FunctionTemplate> protected_hidden_proto_template =
       v8::FunctionTemplate::New(isolate);
-  protected_hidden_proto_template->InstanceTemplate()->SetAccessCheckCallbacks(
-      AccessAlwaysBlocked, NULL);
+  protected_hidden_proto_template->InstanceTemplate()->SetAccessCheckCallback(
+      AccessAlwaysBlocked);
   protected_hidden_proto_template->SetHiddenPrototype(true);
 
   // Context for "foreign" objects used in test.
@@ -18019,13 +18018,6 @@ THREADED_TEST(Regress93759) {
     Object::New(isolate);
   object_with_hidden->SetPrototype(hidden_prototype);
 
-  // Hidden prototype with security check on the hidden prototype.
-  Local<Object> protected_hidden_prototype =
-      protected_hidden_proto_template->GetFunction()->NewInstance();
-  Local<Object> object_with_protected_hidden =
-    Object::New(isolate);
-  object_with_protected_hidden->SetPrototype(protected_hidden_prototype);
-
   context->Exit();
 
   // Template for object for second context. Values to test are put on it as
@@ -18036,7 +18028,6 @@ THREADED_TEST(Regress93759) {
   global_template->Set(v8_str("global"), global_object);
   global_template->Set(v8_str("proxy"), proxy_object);
   global_template->Set(v8_str("hidden"), object_with_hidden);
-  global_template->Set(v8_str("phidden"), object_with_protected_hidden);
 
   LocalContext context2(NULL, global_template);
 
@@ -18055,9 +18046,6 @@ THREADED_TEST(Regress93759) {
   Local<Value> result5 = CompileRun("Object.getPrototypeOf(hidden)");
   CHECK(result5->Equals(
       object_with_hidden->GetPrototype()->ToObject(isolate)->GetPrototype()));
-
-  Local<Value> result6 = CompileRun("Object.getPrototypeOf(phidden)");
-  CHECK(result6->IsNull());
 }
 
 
@@ -19172,7 +19160,7 @@ TEST(JSONStringifyAccessCheck) {
   // check callbacks that will block access.
   v8::Handle<v8::ObjectTemplate> global_template =
       v8::ObjectTemplate::New(isolate);
-  global_template->SetAccessCheckCallbacks(AccessAlwaysBlocked, NULL);
+  global_template->SetAccessCheckCallback(AccessAlwaysBlocked);
 
   // Create a context and set an x property on it's global object.
   LocalContext context0(NULL, global_template);
@@ -19260,7 +19248,7 @@ TEST(AccessCheckThrows) {
   // check callbacks that will block access.
   v8::Handle<v8::ObjectTemplate> global_template =
       v8::ObjectTemplate::New(isolate);
-  global_template->SetAccessCheckCallbacks(AccessAlwaysBlocked, NULL);
+  global_template->SetAccessCheckCallback(AccessAlwaysBlocked);
 
   // Create a context and set an x property on it's global object.
   LocalContext context0(NULL, global_template);
@@ -19670,11 +19658,12 @@ THREADED_TEST(FunctionNew) {
   CHECK(v8::Integer::New(isolate, 17)->Equals(result));
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   // Verify function not cached
-  auto serial_number = handle(i::Smi::cast(v8::Utils::OpenHandle(*func)
-                                               ->shared()
-                                               ->get_api_func_data()
-                                               ->serial_number()),
-                              i_isolate);
+  auto serial_number = handle(
+      i::Smi::cast(i::Handle<i::JSFunction>::cast(v8::Utils::OpenHandle(*func))
+                       ->shared()
+                       ->get_api_func_data()
+                       ->serial_number()),
+      i_isolate);
   auto cache = i_isolate->function_cache();
   CHECK(cache->Lookup(serial_number)->IsTheHole());
   // Verify that each Function::New creates a new function instance
@@ -20335,7 +20324,7 @@ TEST(Regress354123) {
   v8::HandleScope scope(isolate);
 
   v8::Handle<v8::ObjectTemplate> templ = v8::ObjectTemplate::New(isolate);
-  templ->SetAccessCheckCallbacks(AccessCounter, NULL);
+  templ->SetAccessCheckCallback(AccessCounter);
   current->Global()->Set(v8_str("friend"), templ->NewInstance());
 
   // Test access using __proto__ from the prototype chain.
@@ -20525,7 +20514,7 @@ TEST(Regress411877) {
   v8::HandleScope handle_scope(isolate);
   v8::Handle<v8::ObjectTemplate> object_template =
       v8::ObjectTemplate::New(isolate);
-  object_template->SetAccessCheckCallbacks(AccessCounter, NULL);
+  object_template->SetAccessCheckCallback(AccessCounter);
 
   v8::Handle<Context> context = Context::New(isolate);
   v8::Context::Scope context_scope(context);
@@ -20540,7 +20529,7 @@ TEST(GetHiddenPropertyTableAfterAccessCheck) {
   v8::HandleScope handle_scope(isolate);
   v8::Handle<v8::ObjectTemplate> object_template =
       v8::ObjectTemplate::New(isolate);
-  object_template->SetAccessCheckCallbacks(AccessCounter, NULL);
+  object_template->SetAccessCheckCallback(AccessCounter);
 
   v8::Handle<Context> context = Context::New(isolate);
   v8::Context::Scope context_scope(context);
@@ -20558,7 +20547,7 @@ TEST(Regress411793) {
   v8::HandleScope handle_scope(isolate);
   v8::Handle<v8::ObjectTemplate> object_template =
       v8::ObjectTemplate::New(isolate);
-  object_template->SetAccessCheckCallbacks(AccessCounter, NULL);
+  object_template->SetAccessCheckCallback(AccessCounter);
 
   v8::Handle<Context> context = Context::New(isolate);
   v8::Context::Scope context_scope(context);
@@ -21222,7 +21211,7 @@ TEST(GetPrototypeAccessControl) {
 
   v8::Handle<v8::ObjectTemplate> obj_template =
       v8::ObjectTemplate::New(isolate);
-  obj_template->SetAccessCheckCallbacks(AccessAlwaysBlocked, NULL);
+  obj_template->SetAccessCheckCallback(AccessAlwaysBlocked);
 
   env->Global()->Set(v8_str("prohibited"), obj_template->NewInstance());
 
@@ -21365,17 +21354,15 @@ TEST(SealHandleScopeNested) {
 static bool access_was_called = false;
 
 
-static bool AccessAlwaysAllowedWithFlag(Local<v8::Object> global,
-                                        Local<Value> name, v8::AccessType type,
-                                        Local<Value> data) {
+static bool AccessAlwaysAllowedWithFlag(Local<v8::Context> accessing_context,
+                                        Local<v8::Object> accessed_object) {
   access_was_called = true;
   return true;
 }
 
 
-static bool AccessAlwaysBlockedWithFlag(Local<v8::Object> global,
-                                        Local<Value> name, v8::AccessType type,
-                                        Local<Value> data) {
+static bool AccessAlwaysBlockedWithFlag(Local<v8::Context> accessing_context,
+                                        Local<v8::Object> accessed_object) {
   access_was_called = true;
   return false;
 }
@@ -21392,7 +21379,7 @@ TEST(StrongModeAccessCheckAllowed) {
       v8::ObjectTemplate::New(isolate);
 
   obj_template->Set(v8_str("x"), v8::Integer::New(isolate, 42));
-  obj_template->SetAccessCheckCallbacks(AccessAlwaysAllowedWithFlag, NULL);
+  obj_template->SetAccessCheckCallback(AccessAlwaysAllowedWithFlag);
 
   // Create an environment
   v8::Local<Context> context0 = Context::New(isolate, NULL, obj_template);
@@ -21462,7 +21449,7 @@ TEST(StrongModeAccessCheckBlocked) {
       v8::ObjectTemplate::New(isolate);
 
   obj_template->Set(v8_str("x"), v8::Integer::New(isolate, 42));
-  obj_template->SetAccessCheckCallbacks(AccessAlwaysBlockedWithFlag, NULL);
+  obj_template->SetAccessCheckCallback(AccessAlwaysBlockedWithFlag);
 
   // Create an environment
   v8::Local<Context> context0 = Context::New(isolate, NULL, obj_template);
@@ -21935,7 +21922,7 @@ TEST(AccessCheckedIsConcatSpreadable) {
 
   // Object with access check
   Local<ObjectTemplate> spreadable_template = v8::ObjectTemplate::New(isolate);
-  spreadable_template->SetAccessCheckCallbacks(AccessBlocker, nullptr);
+  spreadable_template->SetAccessCheckCallback(AccessBlocker);
   spreadable_template->Set(v8::Symbol::GetIsConcatSpreadable(isolate),
                            v8::Boolean::New(isolate, true));
   Local<Object> object = spreadable_template->NewInstance();
@@ -21964,16 +21951,34 @@ TEST(AccessCheckedIsConcatSpreadable) {
 }
 
 
-TEST(ArrayIteratorMethods) {
+TEST(ObjectTemplateIntrinsics) {
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope scope(isolate);
   LocalContext env;
 
-  env->Global()->Set(v8_str("keys"), v8::Array::GetKeysIterator(isolate));
-  env->Global()->Set(v8_str("values"), v8::Array::GetValuesIterator(isolate));
-  env->Global()->Set(v8_str("entries"), v8::Array::GetEntriesIterator(isolate));
+  Local<ObjectTemplate> object_template = v8::ObjectTemplate::New(isolate);
+  object_template->SetIntrinsicDataProperty(v8_str("values"),
+                                            v8::kArrayProto_values);
+  Local<Object> object = object_template->NewInstance();
 
-  ExpectString("typeof keys", "function");
-  ExpectString("typeof values", "function");
-  ExpectString("typeof entries", "function");
+  env->Global()->Set(v8_str("obj1"), object);
+  ExpectString("typeof obj1.values", "function");
+
+  auto values = Local<Function>::Cast(object->Get(v8_str("values")));
+  auto fn = i::Handle<i::JSFunction>::cast(v8::Utils::OpenHandle(*values));
+  auto ctx = v8::Utils::OpenHandle(*env.local());
+  CHECK_EQ(fn->GetCreationContext(), *ctx);
+
+  {
+    LocalContext env2;
+    Local<Object> object2 = object_template->NewInstance();
+    env2->Global()->Set(v8_str("obj2"), object2);
+    ExpectString("typeof obj2.values", "function");
+    CHECK_NE(*object->Get(v8_str("values")), *object2->Get(v8_str("values")));
+
+    auto values2 = Local<Function>::Cast(object2->Get(v8_str("values")));
+    auto fn2 = i::Handle<i::JSFunction>::cast(v8::Utils::OpenHandle(*values2));
+    auto ctx2 = v8::Utils::OpenHandle(*env2.local());
+    CHECK_EQ(fn2->GetCreationContext(), *ctx2);
+  }
 }

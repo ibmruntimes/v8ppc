@@ -457,16 +457,23 @@ class MarkCompactCollector {
   // size of the maximum continuous freed memory chunk.
   int SweepInParallel(Page* page, PagedSpace* space);
 
+  // Ensures that sweeping is finished.
+  //
+  // Note: Can only be called safely from main thread.
   void EnsureSweepingCompleted();
 
   void SweepOrWaitUntilSweepingCompleted(Page* page);
+
+  // Help out in sweeping the corresponding space and refill memory that has
+  // been regained.
+  //
+  // Note: Thread-safe.
+  void SweepAndRefill(CompactionSpace* space);
 
   // If sweeper threads are not active this method will return true. If
   // this is a latency issue we should be smarter here. Otherwise, it will
   // return true if the sweeper threads are done processing the pages.
   bool IsSweepingCompleted();
-
-  void RefillFreeList(PagedSpace* space);
 
   // Checks if sweeping is in progress right now on any space.
   bool sweeping_in_progress() { return sweeping_in_progress_; }
@@ -511,6 +518,20 @@ class MarkCompactCollector {
   // Removes all the slots in the slot buffers that are within the given
   // address range.
   void RemoveObjectSlots(Address start_slot, Address end_slot);
+
+  //
+  // Free lists filled by sweeper and consumed by corresponding spaces
+  // (including compaction spaces).
+  //
+  base::SmartPointer<FreeList>& free_list_old_space() {
+    return free_list_old_space_;
+  }
+  base::SmartPointer<FreeList>& free_list_code_space() {
+    return free_list_code_space_;
+  }
+  base::SmartPointer<FreeList>& free_list_map_space() {
+    return free_list_map_space_;
+  }
 
  private:
   class CompactionTask;
@@ -715,6 +736,10 @@ class MarkCompactCollector {
   void WaitUntilCompactionCompleted();
 
   void EvacuateNewSpaceAndCandidates();
+
+  void VisitLiveObjects(Page* page, ObjectVisitor* visitor);
+
+  void SweepAbortedPages();
 
   void ReleaseEvacuationCandidates();
 

@@ -217,8 +217,7 @@ Reduction JSInliner::InlineCall(Node* call, Node* context, Node* frame_state,
 
 
 Node* JSInliner::CreateArgumentsAdaptorFrameState(
-    JSCallFunctionAccessor* call, Handle<SharedFunctionInfo> shared_info,
-    Zone* temp_zone) {
+    JSCallFunctionAccessor* call, Handle<SharedFunctionInfo> shared_info) {
   const FrameStateFunctionInfo* state_info =
       jsgraph_->common()->CreateFrameStateFunctionInfo(
           FrameStateType::kArgumentsAdaptor,
@@ -229,7 +228,7 @@ Node* JSInliner::CreateArgumentsAdaptorFrameState(
       BailoutId(-1), OutputFrameStateCombine::Ignore(), state_info);
   const Operator* op0 = jsgraph_->common()->StateValues(0);
   Node* node0 = jsgraph_->graph()->NewNode(op0);
-  NodeVector params(temp_zone);
+  NodeVector params(local_zone_);
   params.push_back(call->receiver());
   for (size_t argument = 0; argument != call->formal_arguments(); ++argument) {
     params.push_back(call->formal_argument(argument));
@@ -318,12 +317,8 @@ Reduction JSInliner::ReduceJSCallFunction(Node* node,
     return NoChange();
   }
 
-  // TODO(mstarzinger): The correct thing would be to use a local zone here for
-  // the inner graph. This however leads to Zone-Types being allocated in the
-  // wrong zone and makes the engine explode at high speeds. Explosion bad!
-  // Zone zone;
-  // ParseInfo parse_info(&zone, function);
-  ParseInfo parse_info(jsgraph_->zone(), function);
+  Zone zone;
+  ParseInfo parse_info(&zone, function);
   CompilationInfo info(&parse_info);
   if (info_->is_deoptimization_enabled()) {
     info.MarkAsDeoptimizationEnabled();
@@ -342,18 +337,40 @@ Reduction JSInliner::ReduceJSCallFunction(Node* node,
     return NoChange();
   }
 
+  // In strong mode, in case of too few arguments we need to throw a TypeError
+  // so we must not inline this call.
+  size_t parameter_count = info.literal()->parameter_count();
+  if (is_strong(info.language_mode()) &&
+      call.formal_arguments() < parameter_count) {
+    TRACE("Not inlining %s into %s because too few arguments for strong mode\n",
+          function->shared()->DebugName()->ToCString().get(),
+          info_->shared_info()->DebugName()->ToCString().get());
+    return NoChange();
+  }
+
   if (!Compiler::EnsureDeoptimizationSupport(&info)) {
     TRACE("Not inlining %s into %s because deoptimization support failed\n",
           function->shared()->DebugName()->ToCString().get(),
           info_->shared_info()->DebugName()->ToCString().get());
     return NoChange();
   }
+  // Remember that we inlined this function. This needs to be called right
+  // after we ensure deoptimization support so that the code flusher
+  // does not remove the code with the deoptimization support.
+  info_->AddInlinedFunction(info.shared_info());
+
+  // ----------------------------------------------------------------
+  // After this point, we've made a decision to inline this function.
+  // We shall not bailout from inlining if we got here.
 
   TRACE("Inlining %s into %s\n",
         function->shared()->DebugName()->ToCString().get(),
         info_->shared_info()->DebugName()->ToCString().get());
 
-  Graph graph(info.zone());
+  // TODO(mstarzinger): We could use the temporary zone for the graph because
+  // nodes are copied. This however leads to Zone-Types being allocated in the
+  // wrong zone and makes the engine explode at high speeds. Explosion bad!
+  Graph graph(jsgraph_->zone());
   JSGraph jsgraph(info.isolate(), &graph, jsgraph_->common(),
                   jsgraph_->javascript(), jsgraph_->simplified(),
                   jsgraph_->machine());
@@ -387,28 +404,21 @@ Reduction JSInliner::ReduceJSCallFunction(Node* node,
   // type feedback in the compiler.
   Node* context = jsgraph_->Constant(handle(function->context()));
 
-  CopyVisitor visitor(&graph, jsgraph_->graph(), info.zone());
+  CopyVisitor visitor(&graph, jsgraph_->graph(), &zone);
   visitor.CopyGraph();
 
   Node* start = visitor.GetCopy(graph.start());
   Node* end = visitor.GetCopy(graph.end());
-
   Node* frame_state = call.frame_state();
-  size_t const inlinee_formal_parameters = start->op()->ValueOutputCount() - 3;
-  // Insert argument adaptor frame if required.
-  if (call.formal_arguments() != inlinee_formal_parameters) {
-    // In strong mode, in case of too few arguments we need to throw a
-    // TypeError so we must not inline this call.
-    if (is_strong(info.language_mode()) &&
-        call.formal_arguments() < inlinee_formal_parameters) {
-      return NoChange();
-    }
-    frame_state = CreateArgumentsAdaptorFrameState(&call, info.shared_info(),
-                                                   info.zone());
-  }
 
-  // Remember that we inlined this function.
-  info_->AddInlinedFunction(info.shared_info());
+  // Insert argument adaptor frame if required. The callees formal parameter
+  // count (i.e. value outputs of start node minus target, receiver & context)
+  // have to match the number of arguments passed to the call.
+  DCHECK_EQ(static_cast<int>(parameter_count),
+            start->op()->ValueOutputCount() - 3);
+  if (call.formal_arguments() != parameter_count) {
+    frame_state = CreateArgumentsAdaptorFrameState(&call, info.shared_info());
+  }
 
   return InlineCall(node, context, frame_state, start, end);
 }

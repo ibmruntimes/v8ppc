@@ -157,71 +157,31 @@ RUNTIME_FUNCTION(Runtime_GetPrototype) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(Object, obj, 0);
-  // We don't expect access checks to be needed on JSProxy objects.
-  DCHECK(!obj->IsAccessCheckNeeded() || obj->IsJSObject());
-  PrototypeIterator iter(isolate, obj, PrototypeIterator::START_AT_RECEIVER);
-  Handle<Context> context(isolate->context());
-  do {
-    if (PrototypeIterator::GetCurrent(iter)->IsAccessCheckNeeded() &&
-        !isolate->MayAccess(context,
-                            PrototypeIterator::GetCurrent<JSObject>(iter))) {
-      return isolate->heap()->null_value();
-    }
-    iter.AdvanceIgnoringProxies();
-    if (PrototypeIterator::GetCurrent(iter)->IsJSProxy()) {
-      return *PrototypeIterator::GetCurrent(iter);
-    }
-  } while (!iter.IsAtEnd(PrototypeIterator::END_AT_NON_HIDDEN));
-  return *PrototypeIterator::GetCurrent(iter);
+  return *Object::GetPrototype(isolate, obj);
 }
 
 
 RUNTIME_FUNCTION(Runtime_InternalSetPrototype) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 2);
-  CONVERT_ARG_HANDLE_CHECKED(JSObject, obj, 0);
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, obj, 0);
   CONVERT_ARG_HANDLE_CHECKED(Object, prototype, 1);
-  DCHECK(!obj->IsAccessCheckNeeded());
-  DCHECK(!obj->map()->is_observed());
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result, JSObject::SetPrototype(obj, prototype, false));
-  return *result;
+  MAYBE_RETURN(
+      JSReceiver::SetPrototype(obj, prototype, false, Object::THROW_ON_ERROR),
+      isolate->heap()->exception());
+  return *obj;
 }
 
 
 RUNTIME_FUNCTION(Runtime_SetPrototype) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 2);
-  CONVERT_ARG_HANDLE_CHECKED(JSObject, obj, 0);
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, obj, 0);
   CONVERT_ARG_HANDLE_CHECKED(Object, prototype, 1);
-  if (obj->IsAccessCheckNeeded() &&
-      !isolate->MayAccess(handle(isolate->context()), obj)) {
-    isolate->ReportFailedAccessCheck(obj);
-    RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
-    return isolate->heap()->undefined_value();
-  }
-  if (obj->map()->is_observed()) {
-    Handle<Object> old_value =
-        Object::GetPrototypeSkipHiddenPrototypes(isolate, obj);
-    Handle<Object> result;
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-        isolate, result, JSObject::SetPrototype(obj, prototype, true));
-
-    Handle<Object> new_value =
-        Object::GetPrototypeSkipHiddenPrototypes(isolate, obj);
-    if (!new_value->SameValue(*old_value)) {
-      RETURN_FAILURE_ON_EXCEPTION(
-          isolate, JSObject::EnqueueChangeRecord(
-                       obj, "setPrototype", isolate->factory()->proto_string(),
-                       old_value));
-    }
-    return *result;
-  }
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result, JSObject::SetPrototype(obj, prototype, true));
-  return *result;
+  MAYBE_RETURN(
+      JSReceiver::SetPrototype(obj, prototype, true, Object::THROW_ON_ERROR),
+      isolate->heap()->exception());
+  return *obj;
 }
 
 
@@ -304,11 +264,10 @@ RUNTIME_FUNCTION(Runtime_GetOwnProperty) {
 RUNTIME_FUNCTION(Runtime_PreventExtensions) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 1);
-  CONVERT_ARG_HANDLE_CHECKED(JSObject, obj, 0);
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
-                                     JSObject::PreventExtensions(obj));
-  return *result;
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, obj, 0);
+  if (JSReceiver::PreventExtensions(obj, Object::THROW_ON_ERROR).IsNothing())
+    return isolate->heap()->exception();
+  return *obj;
 }
 
 
@@ -1068,8 +1027,9 @@ static Object* Runtime_NewObjectHelper(Isolate* isolate,
     if (original_function->has_instance_prototype()) {
       Handle<Object> prototype =
           handle(original_function->instance_prototype(), isolate);
-      RETURN_FAILURE_ON_EXCEPTION(
-          isolate, JSObject::SetPrototype(result, prototype, false));
+      MAYBE_RETURN(JSObject::SetPrototype(result, prototype, false,
+                                          Object::THROW_ON_ERROR),
+                   isolate->heap()->exception());
     }
   }
 

@@ -74,45 +74,6 @@
 
   ###################### MISSING ES6 FEATURES #######################
 
-  # Const is still interpreted as legacy const in sloppy mode
-  # https://code.google.com/p/v8/issues/detail?id=3305
-  'language/block-scope/shadowing/const-declaration-shadowing-catch-parameter': [PASS, FAIL_SLOPPY],
-  'language/block-scope/shadowing/const-declarations-shadowing-parameter-name-let-const-and-var-variables': [PASS, FAIL_SLOPPY],
-  'language/statements/const/block-local-closure-get-before-initialization': [PASS, FAIL_SLOPPY],
-  'language/statements/const/block-local-use-before-initialization-in-declaration-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/block-local-use-before-initialization-in-prior-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/function-local-closure-get-before-initialization': [PASS, FAIL_SLOPPY],
-  'language/statements/const/function-local-use-before-initialization-in-declaration-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/function-local-use-before-initialization-in-prior-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/global-closure-get-before-initialization': [PASS, FAIL_SLOPPY],
-  'language/statements/const/global-use-before-initialization-in-declaration-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/global-use-before-initialization-in-prior-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/block-scope-syntax-const-declarations-mixed-with-without-initialiser': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/block-scope-syntax-const-declarations-mixed-without-with-initialiser': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/block-scope-syntax-const-declarations-without-initialiser': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/const': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/const-invalid-assignment-statement-body-for-in': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/const-invalid-assignment-statement-body-for-of': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/const-outer-inner-let-bindings': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/with-initializer-do-statement-while-expression': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/with-initializer-for-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/with-initializer-if-expression-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/with-initializer-if-expression-statement-else-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/with-initializer-label-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/with-initializer-while-expression-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/without-initializer-case-expression-statement-list': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/without-initializer-default-statement-list': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/without-initializer-do-statement-while-expression': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/without-initializer-for-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/without-initializer-if-expression-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/without-initializer-if-expression-statement-else-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/without-initializer-label-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/const/syntax/without-initializer-while-expression-statement': [PASS, FAIL_SLOPPY],
-  'language/statements/for-in/const-bound-names-fordecl-tdz-for-in': [PASS, FAIL_SLOPPY],
-  'language/statements/for-in/const-fresh-binding-per-iteration-for-in': [PASS, FAIL_SLOPPY],
-  'language/statements/for-of/const-bound-names-fordecl-tdz-for-of': [PASS, FAIL_SLOPPY],
-  'language/statements/for-of/const-fresh-binding-per-iteration-for-of': [PASS, FAIL_SLOPPY],
-
   # Functions in blocks are var-declared and hoisted in sloppy mode
   # https://code.google.com/p/v8/issues/detail?id=3305
   'language/block-scope/shadowing/dynamic-lookup-from-closure': [PASS, FAIL_SLOPPY],
@@ -518,24 +479,16 @@
   # https://code.google.com/p/v8/issues/detail?id=4342
   'built-ins/RegExp/prototype/exec/get-sticky-coerce': [FAIL],
   'built-ins/RegExp/prototype/exec/get-sticky-err': [FAIL],
-  'built-ins/RegExp/prototype/exec/y-fail-lastindex': [FAIL],
-  'built-ins/RegExp/prototype/exec/y-fail-lastindex-no-write': [FAIL],
-  'built-ins/RegExp/prototype/exec/y-fail-return': [FAIL],
-  'built-ins/RegExp/prototype/exec/y-fail-lastindex': [FAIL],
-  'built-ins/RegExp/prototype/exec/y-init-lastindex': [FAIL],
-  'built-ins/RegExp/prototype/exec/y-set-lastindex': [FAIL],
   'built-ins/RegExp/prototype/sticky/prop-desc': [FAIL],
   'built-ins/RegExp/prototype/sticky/this-invalid-obj': [FAIL],
   'built-ins/RegExp/prototype/sticky/this-non-obj': [FAIL],
-  'built-ins/RegExp/prototype/sticky/this-regexp': [FAIL],
   'built-ins/RegExp/prototype/test/get-sticky-coerce': [FAIL],
   'built-ins/RegExp/prototype/test/get-sticky-err': [FAIL],
-  'built-ins/RegExp/prototype/test/y-fail-lastindex-no-write': [FAIL],
-  'built-ins/RegExp/prototype/test/y-fail-return': [FAIL],
-  'built-ins/RegExp/prototype/test/y-fail-lastindex': [FAIL],
-  'built-ins/RegExp/prototype/test/y-init-lastindex': [FAIL],
-  'built-ins/RegExp/prototype/test/y-set-lastindex': [FAIL],
   'built-ins/RegExp/valid-flags-y': [FAIL],
+
+  # https://code.google.com/p/v8/issues/detail?id=4504
+  'built-ins/RegExp/prototype/exec/y-fail-lastindex-no-write': [PASS, FAIL],
+  'built-ins/RegExp/prototype/test/y-fail-lastindex-no-write': [PASS, FAIL],
 
   # https://code.google.com/p/v8/issues/detail?id=4305
   # SKIP rather than FAIL some tests, as they may check for an exception which
@@ -571,7 +524,9 @@
   'built-ins/String/prototype/split/cstm-split-get-err': [FAIL],
 
   # https://code.google.com/p/v8/issues/detail?id=4346
-  'built-ins/RegExp/prototype/flags/*': [FAIL],
+  'built-ins/RegExp/prototype/flags/name': [FAIL],
+  'built-ins/RegExp/prototype/flags/y-attr-err': [FAIL],
+  'built-ins/RegExp/prototype/flags/u': [FAIL],
 
   # https://code.google.com/p/v8/issues/detail?id=4347
   'built-ins/RegExp/prototype/global/name': [FAIL],

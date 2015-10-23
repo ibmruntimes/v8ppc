@@ -794,13 +794,13 @@ void FullCodeGenerator::VisitVariableDeclaration(
       } else {
         __ push(Immediate(Smi::FromInt(0)));  // Indicates no initial value.
       }
-      __ push(Immediate(variable->DeclarationPropertyAttributes()));
+      __ push(
+          Immediate(Smi::FromInt(variable->DeclarationPropertyAttributes())));
       __ CallRuntime(Runtime::kDeclareLookupSlot, 3);
       break;
     }
   }
 }
-
 
 void FullCodeGenerator::VisitFunctionDeclaration(
     FunctionDeclaration* declaration) {
@@ -843,7 +843,8 @@ void FullCodeGenerator::VisitFunctionDeclaration(
       Comment cmnt(masm_, "[ FunctionDeclaration");
       __ push(Immediate(variable->name()));
       VisitForStackValue(declaration->fun());
-      __ push(Immediate(variable->DeclarationPropertyAttributes()));
+      __ push(
+          Immediate(Smi::FromInt(variable->DeclarationPropertyAttributes())));
       __ CallRuntime(Runtime::kDeclareLookupSlot, 3);
       break;
     }
@@ -1308,27 +1309,11 @@ void FullCodeGenerator::EmitGlobalVariableLoad(VariableProxy* proxy,
   Variable* var = proxy->var();
   DCHECK(var->IsUnallocatedOrGlobalSlot() ||
          (var->IsLookupSlot() && var->mode() == DYNAMIC_GLOBAL));
-  if (var->IsGlobalSlot()) {
-    DCHECK(var->index() > 0);
-    DCHECK(var->IsStaticGlobalObjectProperty());
-    int const slot = var->index();
-    int const depth = scope()->ContextChainLength(var->scope());
-    if (depth <= LoadGlobalViaContextStub::kMaximumDepth) {
-      __ Move(LoadGlobalViaContextDescriptor::SlotRegister(), Immediate(slot));
-      LoadGlobalViaContextStub stub(isolate(), depth);
-      __ CallStub(&stub);
-    } else {
-      __ Push(Smi::FromInt(slot));
-      __ CallRuntime(Runtime::kLoadGlobalViaContext, 1);
-    }
-
-  } else {
-    __ mov(LoadDescriptor::ReceiverRegister(), GlobalObjectOperand());
-    __ mov(LoadDescriptor::NameRegister(), var->name());
-    __ mov(LoadDescriptor::SlotRegister(),
-           Immediate(SmiFromSlot(proxy->VariableFeedbackSlot())));
-    CallLoadIC(typeof_mode);
-  }
+  __ mov(LoadDescriptor::ReceiverRegister(), GlobalObjectOperand());
+  __ mov(LoadDescriptor::NameRegister(), var->name());
+  __ mov(LoadDescriptor::SlotRegister(),
+         Immediate(SmiFromSlot(proxy->VariableFeedbackSlot())));
+  CallLoadIC(typeof_mode);
 }
 
 
@@ -1668,7 +1653,6 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
 void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   Comment cmnt(masm_, "[ ArrayLiteral");
 
-  expr->BuildConstantElements(isolate());
   Handle<FixedArray> constant_elements = expr->constant_elements();
   bool has_constant_fast_elements =
       IsFastObjectElementsKind(expr->constant_elements_kind());
@@ -1719,7 +1703,15 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
     }
     VisitForAccumulatorValue(subexpr);
 
-    if (has_constant_fast_elements) {
+    if (FLAG_vector_stores) {
+      __ mov(StoreDescriptor::NameRegister(),
+             Immediate(Smi::FromInt(array_index)));
+      __ mov(StoreDescriptor::ReceiverRegister(), Operand(esp, kPointerSize));
+      EmitLoadStoreICSlot(expr->LiteralFeedbackSlot());
+      Handle<Code> ic =
+          CodeFactory::KeyedStoreIC(isolate(), language_mode()).code();
+      CallIC(ic);
+    } else if (has_constant_fast_elements) {
       // Fast-case array literal with ElementsKind of FAST_*_ELEMENTS, they
       // cannot transition and don't need to call the runtime stub.
       int offset = FixedArray::kHeaderSize + (array_index * kPointerSize);
@@ -2503,26 +2495,6 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
     __ mov(StoreDescriptor::ReceiverRegister(), GlobalObjectOperand());
     if (FLAG_vector_stores) EmitLoadStoreICSlot(slot);
     CallStoreIC();
-
-  } else if (var->IsGlobalSlot()) {
-    // Global var, const, or let.
-    DCHECK(var->index() > 0);
-    DCHECK(var->IsStaticGlobalObjectProperty());
-    int const slot = var->index();
-    int const depth = scope()->ContextChainLength(var->scope());
-    if (depth <= StoreGlobalViaContextStub::kMaximumDepth) {
-      __ Move(StoreGlobalViaContextDescriptor::SlotRegister(), Immediate(slot));
-      DCHECK(StoreGlobalViaContextDescriptor::ValueRegister().is(eax));
-      StoreGlobalViaContextStub stub(isolate(), depth, language_mode());
-      __ CallStub(&stub);
-    } else {
-      __ Push(Smi::FromInt(slot));
-      __ Push(eax);
-      __ CallRuntime(is_strict(language_mode())
-                         ? Runtime::kStoreGlobalViaContext_Strict
-                         : Runtime::kStoreGlobalViaContext_Sloppy,
-                     2);
-    }
 
   } else if (var->mode() == LET && op != Token::INIT_LET) {
     // Non-initializing assignment to let variable needs a write barrier.
@@ -4079,6 +4051,11 @@ void FullCodeGenerator::EmitFastOneByteArrayJoin(CallRuntime* expr) {
   __ j(overflow, &bailout);
 
   __ shr(string_length, 1);
+
+  // Bailout for large object allocations.
+  __ cmp(string_length, Page::kMaxRegularHeapObjectSize);
+  __ j(greater, &bailout);
+
   // Live registers and stack values:
   //   string_length
   //   elements

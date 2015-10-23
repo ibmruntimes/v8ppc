@@ -124,7 +124,7 @@ class InterpreterTester {
       CompileRun(source_);
       Local<Function> api_function =
           Local<Function>::Cast(CcTest::global()->Get(v8_str(kFunctionName)));
-      function = v8::Utils::OpenHandle(*api_function);
+      function = Handle<JSFunction>::cast(v8::Utils::OpenHandle(*api_function));
     } else {
       int arg_count = sizeof...(A);
       std::string source("(function " + function_name() + "(");
@@ -132,8 +132,8 @@ class InterpreterTester {
         source += i == 0 ? "a" : ", a";
       }
       source += "){})";
-      function = v8::Utils::OpenHandle(
-          *v8::Handle<v8::Function>::Cast(CompileRun(source.c_str())));
+      function = Handle<JSFunction>::cast(v8::Utils::OpenHandle(
+          *v8::Handle<v8::Function>::Cast(CompileRun(source.c_str()))));
       function->ReplaceCode(
           *isolate_->builtins()->InterpreterEntryTrampoline());
     }
@@ -780,9 +780,9 @@ TEST(InterpreterLoadNamedProperty) {
   builder.set_locals_count(0);
   builder.set_context_count(0);
   builder.set_parameter_count(1);
-  builder.LoadLiteral(name)
-      .LoadNamedProperty(builder.Parameter(0), vector->GetIndex(slot),
-                         i::SLOPPY)
+  size_t name_index = builder.GetConstantPoolEntry(name);
+  builder.LoadNamedProperty(builder.Parameter(0), name_index,
+                            vector->GetIndex(slot), i::SLOPPY)
       .Return();
   Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -879,13 +879,12 @@ TEST(InterpreterStoreNamedProperty) {
   name = factory->string_table()->LookupString(isolate, name);
 
   BytecodeArrayBuilder builder(handles.main_isolate(), handles.main_zone());
-  builder.set_locals_count(1);
+  builder.set_locals_count(0);
   builder.set_context_count(0);
   builder.set_parameter_count(1);
-  builder.LoadLiteral(name)
-      .StoreAccumulatorInRegister(Register(0))
-      .LoadLiteral(Smi::FromInt(999))
-      .StoreNamedProperty(builder.Parameter(0), Register(0),
+  size_t name_index = builder.GetConstantPoolEntry(name);
+  builder.LoadLiteral(Smi::FromInt(999))
+      .StoreNamedProperty(builder.Parameter(0), name_index,
                           vector->GetIndex(slot), i::STRICT)
       .Return();
   Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
@@ -998,8 +997,9 @@ TEST(InterpreterCall) {
     builder.set_locals_count(1);
     builder.set_context_count(0);
     builder.set_parameter_count(1);
-    builder.LoadLiteral(name)
-        .LoadNamedProperty(builder.Parameter(0), slot_index, i::SLOPPY)
+    size_t name_index = builder.GetConstantPoolEntry(name);
+    builder.LoadNamedProperty(builder.Parameter(0), name_index, slot_index,
+                              i::SLOPPY)
         .StoreAccumulatorInRegister(Register(0))
         .Call(Register(0), builder.Parameter(0), 0)
         .Return();
@@ -1020,8 +1020,9 @@ TEST(InterpreterCall) {
     builder.set_locals_count(1);
     builder.set_context_count(0);
     builder.set_parameter_count(1);
-    builder.LoadLiteral(name)
-        .LoadNamedProperty(builder.Parameter(0), slot_index, i::SLOPPY)
+    size_t name_index = builder.GetConstantPoolEntry(name);
+    builder.LoadNamedProperty(builder.Parameter(0), name_index, slot_index,
+                              i::SLOPPY)
         .StoreAccumulatorInRegister(Register(0))
         .Call(Register(0), builder.Parameter(0), 0)
         .Return();
@@ -1045,8 +1046,9 @@ TEST(InterpreterCall) {
     builder.set_locals_count(4);
     builder.set_context_count(0);
     builder.set_parameter_count(1);
-    builder.LoadLiteral(name)
-        .LoadNamedProperty(builder.Parameter(0), slot_index, i::SLOPPY)
+    size_t name_index = builder.GetConstantPoolEntry(name);
+    builder.LoadNamedProperty(builder.Parameter(0), name_index, slot_index,
+                              i::SLOPPY)
         .StoreAccumulatorInRegister(Register(0))
         .LoadAccumulatorWithRegister(builder.Parameter(0))
         .StoreAccumulatorInRegister(Register(1))
@@ -1075,8 +1077,9 @@ TEST(InterpreterCall) {
     builder.set_locals_count(12);
     builder.set_context_count(0);
     builder.set_parameter_count(1);
-    builder.LoadLiteral(name)
-        .LoadNamedProperty(builder.Parameter(0), slot_index, i::SLOPPY)
+    size_t name_index = builder.GetConstantPoolEntry(name);
+    builder.LoadNamedProperty(builder.Parameter(0), name_index, slot_index,
+                              i::SLOPPY)
         .StoreAccumulatorInRegister(Register(0))
         .LoadAccumulatorWithRegister(builder.Parameter(0))
         .StoreAccumulatorInRegister(Register(1))
@@ -1721,11 +1724,11 @@ TEST(InterpreterArrayLiterals) {
       std::make_pair("return [][0];\n",
                      factory->undefined_value()),
       std::make_pair("return [1, 3, 2][1];\n",
-                     Handle<Object>(Smi::FromInt(3), isolate)),
+                     handle(Smi::FromInt(3), isolate)),
       std::make_pair("return ['a', 'b', 'c'][2];\n",
                      factory->NewStringFromStaticChars("c")),
       std::make_pair("var a = 100; return [a, a + 1, a + 2, a + 3][2];\n",
-                     Handle<Object>(Smi::FromInt(102), isolate)),
+                     handle(Smi::FromInt(102), isolate)),
       std::make_pair("return [[1, 2, 3], ['a', 'b', 'c']][1][0];\n",
                      factory->NewStringFromStaticChars("a")),
       std::make_pair("var t = 't'; return [[t, t + 'est'], [1 + t]][0][1];\n",
@@ -1754,26 +1757,26 @@ TEST(InterpreterObjectLiterals) {
       std::make_pair("return { name: 'string', val: 9.2 }.name;",
                      factory->NewStringFromStaticChars("string")),
       std::make_pair("var a = 15; return { name: 'string', val: a }.val;",
-                     Handle<Object>(Smi::FromInt(15), isolate)),
+                     handle(Smi::FromInt(15), isolate)),
       std::make_pair("var a = 5; return { val: a, val: a + 1 }.val;",
-                     Handle<Object>(Smi::FromInt(6), isolate)),
+                     handle(Smi::FromInt(6), isolate)),
       std::make_pair("return { func: function() { return 'test' } }.func();",
                      factory->NewStringFromStaticChars("test")),
       std::make_pair("return { func(a) { return a + 'st'; } }.func('te');",
                      factory->NewStringFromStaticChars("test")),
       std::make_pair("return { get a() { return 22; } }.a;",
-                     Handle<Object>(Smi::FromInt(22), isolate)),
+                     handle(Smi::FromInt(22), isolate)),
       std::make_pair("var a = { get b() { return this.x + 't'; },\n"
                      "          set b(val) { this.x = val + 's' } };\n"
                      "a.b = 'te';\n"
                      "return a.b;",
                      factory->NewStringFromStaticChars("test")),
       std::make_pair("var a = 123; return { 1: a }[1];",
-                     Handle<Object>(Smi::FromInt(123), isolate)),
+                     handle(Smi::FromInt(123), isolate)),
       std::make_pair("return Object.getPrototypeOf({ __proto__: null });",
                      factory->null_value()),
       std::make_pair("var a = 'test'; return { [a]: 1 }.test;",
-                     Handle<Object>(Smi::FromInt(1), isolate)),
+                     handle(Smi::FromInt(1), isolate)),
       std::make_pair("var a = 'test'; return { b: a, [a]: a + 'ing' }['test']",
                      factory->NewStringFromStaticChars("testing")),
       std::make_pair("var a = 'proto_str';\n"
@@ -1782,7 +1785,7 @@ TEST(InterpreterObjectLiterals) {
                      factory->NewStringFromStaticChars("proto_str")),
       std::make_pair("var n = 'name';\n"
                      "return { [n]: 'val', get a() { return 987 } }['a'];",
-                     Handle<Object>(Smi::FromInt(987), isolate)),
+                     handle(Smi::FromInt(987), isolate)),
   };
 
   for (size_t i = 0; i < arraysize(literals); i++) {
@@ -1861,19 +1864,19 @@ TEST(InterpreterContextVariables) {
 
   std::pair<const char*, Handle<Object>> context_vars[5] = {
       std::make_pair("var a; (function() { a = 1; })(); return a;",
-                     Handle<Object>(Smi::FromInt(1), isolate)),
+                     handle(Smi::FromInt(1), isolate)),
       std::make_pair("var a = 10; (function() { a; })(); return a;",
-                     Handle<Object>(Smi::FromInt(10), isolate)),
+                     handle(Smi::FromInt(10), isolate)),
       std::make_pair("var a = 20; var b = 30;\n"
                      "return (function() { return a + b; })();",
-                     Handle<Object>(Smi::FromInt(50), isolate)),
+                     handle(Smi::FromInt(50), isolate)),
       std::make_pair("'use strict'; let a = 1;\n"
                      "{ let b = 2; return (function() { return a + b; })(); }",
-                     Handle<Object>(Smi::FromInt(3), isolate)),
+                     handle(Smi::FromInt(3), isolate)),
       std::make_pair("'use strict'; let a = 10;\n"
                      "{ let b = 20; var c = function() { [a, b] };\n"
                      "  return a + b; }",
-                     Handle<Object>(Smi::FromInt(30), isolate)),
+                     handle(Smi::FromInt(30), isolate)),
   };
 
   for (size_t i = 0; i < arraysize(context_vars); i++) {
@@ -1893,11 +1896,11 @@ TEST(InterpreterContextParameters) {
 
   std::pair<const char*, Handle<Object>> context_params[3] = {
       std::make_pair("return (function() { return arg1; })();",
-                     Handle<Object>(Smi::FromInt(1), isolate)),
+                     handle(Smi::FromInt(1), isolate)),
       std::make_pair("(function() { arg1 = 4; })(); return arg1;",
-                     Handle<Object>(Smi::FromInt(4), isolate)),
+                     handle(Smi::FromInt(4), isolate)),
       std::make_pair("(function() { arg3 = arg2 - arg1; })(); return arg3;",
-                     Handle<Object>(Smi::FromInt(1), isolate)),
+                     handle(Smi::FromInt(1), isolate)),
   };
 
   for (size_t i = 0; i < arraysize(context_params); i++) {
@@ -1907,9 +1910,9 @@ TEST(InterpreterContextParameters) {
     auto callable =
         tester.GetCallable<Handle<Object>, Handle<Object>, Handle<Object>>();
 
-    Handle<Object> a1 = Handle<Object>(Smi::FromInt(1), isolate);
-    Handle<Object> a2 = Handle<Object>(Smi::FromInt(2), isolate);
-    Handle<Object> a3 = Handle<Object>(Smi::FromInt(3), isolate);
+    Handle<Object> a1 = handle(Smi::FromInt(1), isolate);
+    Handle<Object> a2 = handle(Smi::FromInt(2), isolate);
+    Handle<Object> a3 = handle(Smi::FromInt(3), isolate);
     Handle<i::Object> return_value = callable(a1, a2, a3).ToHandleChecked();
     CHECK(return_value->SameValue(*context_params[i].second));
   }
@@ -1924,14 +1927,14 @@ TEST(InterpreterComma) {
   std::pair<const char*, Handle<Object>> literals[6] = {
       std::make_pair("var a; return 0, a;\n", factory->undefined_value()),
       std::make_pair("return 'a', 2.2, 3;\n",
-                     Handle<Object>(Smi::FromInt(3), isolate)),
+                     handle(Smi::FromInt(3), isolate)),
       std::make_pair("return 'a', 'b', 'c';\n",
                      factory->NewStringFromStaticChars("c")),
       std::make_pair("return 3.2, 2.3, 4.5;\n", factory->NewNumber(4.5)),
       std::make_pair("var a = 10; return b = a, b = b+1;\n",
-                     Handle<Object>(Smi::FromInt(11), isolate)),
+                     handle(Smi::FromInt(11), isolate)),
       std::make_pair("var a = 10; return b = a, b = b+1, b + 10;\n",
-                     Handle<Object>(Smi::FromInt(21), isolate))};
+                     handle(Smi::FromInt(21), isolate))};
 
   for (size_t i = 0; i < arraysize(literals); i++) {
     std::string source(InterpreterTester::SourceForBody(literals[i].first));
@@ -1952,7 +1955,7 @@ TEST(InterpreterLogicalOr) {
   std::pair<const char*, Handle<Object>> literals[5] = {
       std::make_pair("var a, b; return a || b;\n", factory->undefined_value()),
       std::make_pair("var a, b = 10; return a || b;\n",
-                     Handle<Object>(Smi::FromInt(10), isolate)),
+                     handle(Smi::FromInt(10), isolate)),
       std::make_pair("var a = '0', b = 10; return a || b;\n",
                      factory->NewStringFromStaticChars("0")),
       std::make_pair("return 0 || 3.2;\n", factory->NewNumber(3.2)),
@@ -1979,17 +1982,17 @@ TEST(InterpreterLogicalAnd) {
       std::make_pair("var a, b = 10; return a && b;\n",
                      factory->undefined_value()),
       std::make_pair("var a = 0, b = 10; return a && b / a;\n",
-                     Handle<Object>(Smi::FromInt(0), isolate)),
+                     handle(Smi::FromInt(0), isolate)),
       std::make_pair("var a = '0', b = 10; return a && b;\n",
-                     Handle<Object>(Smi::FromInt(10), isolate)),
+                     handle(Smi::FromInt(10), isolate)),
       std::make_pair("return 0.0 && 3.2;\n",
-                     Handle<Object>(Smi::FromInt(0), isolate)),
+                     handle(Smi::FromInt(0), isolate)),
       std::make_pair("return 'a' && 'b';\n",
                      factory->NewStringFromStaticChars("b")),
       std::make_pair("return 'a' && 0 || 'b', 'c';\n",
                      factory->NewStringFromStaticChars("c")),
       std::make_pair("var x = 1, y = 3; return x && 0 + 1 || y;\n",
-                     Handle<Object>(Smi::FromInt(1), isolate))};
+                     handle(Smi::FromInt(1), isolate))};
 
   for (size_t i = 0; i < arraysize(literals); i++) {
     std::string source(InterpreterTester::SourceForBody(literals[i].first));
@@ -2040,7 +2043,7 @@ TEST(InterpreterThrow) {
       std::make_pair("throw undefined;\n",
                      factory->undefined_value()),
       std::make_pair("throw 1;\n",
-                     Handle<Object>(Smi::FromInt(1), isolate)),
+                     handle(Smi::FromInt(1), isolate)),
       std::make_pair("throw 'Error';\n",
                      factory->NewStringFromStaticChars("Error")),
       std::make_pair("var a = true; if (a) { throw 'Error'; }\n",
@@ -2060,5 +2063,204 @@ TEST(InterpreterThrow) {
     tester.GetCallable<>();
     Handle<Object> thrown_obj = v8::Utils::OpenHandle(*CompileRun(try_wrapper));
     CHECK(thrown_obj->SameValue(*throws[i].second));
+  }
+}
+
+
+TEST(InterpreterCountOperators) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  std::pair<const char*, Handle<Object>> count_ops[16] = {
+      std::make_pair("var a = 1; return ++a;",
+                     handle(Smi::FromInt(2), isolate)),
+      std::make_pair("var a = 1; return a++;",
+                     handle(Smi::FromInt(1), isolate)),
+      std::make_pair("var a = 5; return --a;",
+                     handle(Smi::FromInt(4), isolate)),
+      std::make_pair("var a = 5; return a--;",
+                     handle(Smi::FromInt(5), isolate)),
+      std::make_pair("var a = 5.2; return --a;",
+                     factory->NewHeapNumber(4.2)),
+      std::make_pair("var a = 'string'; return ++a;",
+                     factory->nan_value()),
+      std::make_pair("var a = 'string'; return a--;",
+                     factory->nan_value()),
+      std::make_pair("var a = true; return ++a;",
+                     handle(Smi::FromInt(2), isolate)),
+      std::make_pair("var a = false; return a--;",
+                     handle(Smi::FromInt(0), isolate)),
+      std::make_pair("var a = { val: 11 }; return ++a.val;",
+                     handle(Smi::FromInt(12), isolate)),
+      std::make_pair("var a = { val: 11 }; return a.val--;",
+                     handle(Smi::FromInt(11), isolate)),
+      std::make_pair("var a = { val: 11 }; return ++a.val;",
+                     handle(Smi::FromInt(12), isolate)),
+      std::make_pair("var name = 'val'; var a = { val: 22 }; return --a[name];",
+                     handle(Smi::FromInt(21), isolate)),
+      std::make_pair("var name = 'val'; var a = { val: 22 }; return a[name]++;",
+                     handle(Smi::FromInt(22), isolate)),
+      std::make_pair("var a = 1; (function() { a = 2 })(); return ++a;",
+                     handle(Smi::FromInt(3), isolate)),
+      std::make_pair("var a = 1; (function() { a = 2 })(); return a--;",
+                     handle(Smi::FromInt(2), isolate)),
+  };
+
+  for (size_t i = 0; i < arraysize(count_ops); i++) {
+    std::string source(InterpreterTester::SourceForBody(count_ops[i].first));
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*count_ops[i].second));
+  }
+}
+
+
+TEST(InterpreterGlobalCountOperators) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+
+  std::pair<const char*, Handle<Object>> count_ops[6] = {
+      std::make_pair("var global = 100;function f(){ return ++global; }",
+                     handle(Smi::FromInt(101), isolate)),
+      std::make_pair("var global = 100; function f(){ return --global; }",
+                     handle(Smi::FromInt(99), isolate)),
+      std::make_pair("var global = 100; function f(){ return global++; }",
+                     handle(Smi::FromInt(100), isolate)),
+      std::make_pair("unallocated = 200; function f(){ return ++unallocated; }",
+                     handle(Smi::FromInt(201), isolate)),
+      std::make_pair("unallocated = 200; function f(){ return --unallocated; }",
+                     handle(Smi::FromInt(199), isolate)),
+      std::make_pair("unallocated = 200; function f(){ return unallocated++; }",
+                     handle(Smi::FromInt(200), isolate)),
+  };
+
+  for (size_t i = 0; i < arraysize(count_ops); i++) {
+    InterpreterTester tester(handles.main_isolate(), count_ops[i].first);
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*count_ops[i].second));
+  }
+}
+
+
+TEST(InterpreterCompoundExpressions) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  std::pair<const char*, Handle<Object>> compound_expr[5] = {
+      std::make_pair("var a = 1; a += 2; return a;",
+                     Handle<Object>(Smi::FromInt(3), isolate)),
+      std::make_pair("var a = 10; a /= 2; return a;",
+                     Handle<Object>(Smi::FromInt(5), isolate)),
+      std::make_pair("var a = 'test'; a += 'ing'; return a;",
+                     factory->NewStringFromStaticChars("testing")),
+      std::make_pair("var a = { val: 2 }; a.val *= 2; return a.val;",
+                     Handle<Object>(Smi::FromInt(4), isolate)),
+      std::make_pair("var a = 1; (function f() { a = 2; })(); a += 24;"
+                     "return a;",
+                     Handle<Object>(Smi::FromInt(26), isolate)),
+  };
+
+  for (size_t i = 0; i < arraysize(compound_expr); i++) {
+    std::string source(
+        InterpreterTester::SourceForBody(compound_expr[i].first));
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*compound_expr[i].second));
+  }
+}
+
+
+TEST(InterpreterGlobalCompoundExpressions) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+
+  std::pair<const char*, Handle<Object>> compound_expr[2] = {
+      std::make_pair("var global = 100;"
+                     "function f() { global += 20; return global; }",
+                     Handle<Object>(Smi::FromInt(120), isolate)),
+      std::make_pair("unallocated = 100;"
+                     "function f() { unallocated -= 20; return unallocated; }",
+                     Handle<Object>(Smi::FromInt(80), isolate)),
+  };
+
+  for (size_t i = 0; i < arraysize(compound_expr); i++) {
+    InterpreterTester tester(handles.main_isolate(), compound_expr[i].first);
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*compound_expr[i].second));
+  }
+}
+
+
+TEST(InterpreterCreateArguments) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  std::pair<const char*, int> create_args[9] = {
+      std::make_pair("function f() { return arguments[0]; }", 0),
+      std::make_pair("function f(a) { return arguments[0]; }", 0),
+      std::make_pair("function f() { return arguments[2]; }", 2),
+      std::make_pair("function f(a) { return arguments[2]; }", 2),
+      std::make_pair("function f(a, b, c, d) { return arguments[2]; }", 2),
+      std::make_pair("function f(a) {"
+                     "'use strict'; return arguments[0]; }",
+                     0),
+      std::make_pair("function f(a, b, c, d) {"
+                     "'use strict'; return arguments[2]; }",
+                     2),
+      // Check arguments are mapped in sloppy mode and unmapped in strict.
+      std::make_pair("function f(a, b, c, d) {"
+                     "  c = b; return arguments[2]; }",
+                     1),
+      std::make_pair("function f(a, b, c, d) {"
+                     "  'use strict'; c = b; return arguments[2]; }",
+                     2),
+  };
+
+  // Test passing no arguments.
+  for (size_t i = 0; i < arraysize(create_args); i++) {
+    InterpreterTester tester(handles.main_isolate(), create_args[i].first);
+    auto callable = tester.GetCallable<>();
+    Handle<Object> return_val = callable().ToHandleChecked();
+    CHECK(return_val.is_identical_to(factory->undefined_value()));
+  }
+
+  // Test passing one argument.
+  for (size_t i = 0; i < arraysize(create_args); i++) {
+    InterpreterTester tester(handles.main_isolate(), create_args[i].first);
+    auto callable = tester.GetCallable<Handle<Object>>();
+    Handle<Object> return_val =
+        callable(handle(Smi::FromInt(40), isolate)).ToHandleChecked();
+    if (create_args[i].second == 0) {
+      CHECK_EQ(Smi::cast(*return_val), Smi::FromInt(40));
+    } else {
+      CHECK(return_val.is_identical_to(factory->undefined_value()));
+    }
+  }
+
+  // Test passing three argument.
+  for (size_t i = 0; i < arraysize(create_args); i++) {
+    Handle<Object> args[3] = {
+        handle(Smi::FromInt(40), isolate),
+        handle(Smi::FromInt(60), isolate),
+        handle(Smi::FromInt(80), isolate),
+    };
+
+    InterpreterTester tester(handles.main_isolate(), create_args[i].first);
+    auto callable =
+        tester.GetCallable<Handle<Object>, Handle<Object>, Handle<Object>>();
+    Handle<Object> return_val =
+        callable(args[0], args[1], args[2]).ToHandleChecked();
+    CHECK(return_val->SameValue(*args[create_args[i].second]));
   }
 }
