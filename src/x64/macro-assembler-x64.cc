@@ -23,8 +23,8 @@ MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size)
       has_frame_(false),
       root_array_available_(true) {
   if (isolate() != NULL) {
-    code_object_ = Handle<Object>(isolate()->heap()->undefined_value(),
-                                  isolate());
+    code_object_ =
+        Handle<Object>::New(isolate()->heap()->undefined_value(), isolate());
   }
 }
 
@@ -847,6 +847,28 @@ void MacroAssembler::Cvtlsi2sd(XMMRegister dst, const Operand& src) {
   } else {
     xorpd(dst, dst);
     cvtlsi2sd(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvtqsi2sd(XMMRegister dst, Register src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vxorpd(dst, dst, dst);
+    vcvtqsi2sd(dst, dst, src);
+  } else {
+    xorpd(dst, dst);
+    cvtqsi2sd(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvtsd2si(Register dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vcvtsd2si(dst, src);
+  } else {
+    cvtsd2si(dst, src);
   }
 }
 
@@ -3432,7 +3454,7 @@ void MacroAssembler::ClampDoubleToUint8(XMMRegister input_reg,
   Label done;
   Label conv_failure;
   Xorpd(temp_xmm_reg, temp_xmm_reg);
-  cvtsd2si(result_reg, input_reg);
+  Cvtsd2si(result_reg, input_reg);
   testl(result_reg, Immediate(0xFFFFFF00));
   j(zero, &done, Label::kNear);
   cmpl(result_reg, Immediate(1));
@@ -3457,7 +3479,7 @@ void MacroAssembler::LoadUint32(XMMRegister dst,
     cmpq(src, Immediate(0xffffffff));
     Assert(below_equal, kInputGPRIsExpectedToHaveUpper32Cleared);
   }
-  cvtqsi2sd(dst, src);
+  Cvtqsi2sd(dst, src);
 }
 
 

@@ -5536,7 +5536,10 @@ void HOptimizedGraphBuilder::VisitNativeFunctionLiteral(
 
 
 void HOptimizedGraphBuilder::VisitDoExpression(DoExpression* expr) {
-  UNREACHABLE();
+  DCHECK(!HasStackOverflow());
+  DCHECK(current_block() != NULL);
+  DCHECK(current_block()->HasPredecessor());
+  return Bailout(kDoExpression);
 }
 
 
@@ -6507,9 +6510,12 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::CanAccessAsMonomorphic(
 
 
 Handle<Map> HOptimizedGraphBuilder::PropertyAccessInfo::map() {
-  JSFunction* ctor = IC::GetRootConstructor(
-      *map_, current_info()->closure()->context()->native_context());
-  if (ctor != NULL) return handle(ctor->initial_map());
+  Handle<JSFunction> ctor;
+  if (Map::GetConstructorFunction(
+          map_, handle(current_info()->closure()->context()->native_context()))
+          .ToHandle(&ctor)) {
+    return handle(ctor->initial_map());
+  }
   return map_;
 }
 

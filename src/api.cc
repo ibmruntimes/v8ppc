@@ -734,17 +734,17 @@ SealHandleScope::SealHandleScope(Isolate* isolate) {
   i::HandleScopeData* current = internal_isolate->handle_scope_data();
   prev_limit_ = current->limit;
   current->limit = current->next;
-  prev_level_ = current->level;
-  current->level = 0;
+  prev_sealed_level_ = current->sealed_level;
+  current->sealed_level = current->level;
 }
 
 
 SealHandleScope::~SealHandleScope() {
   i::HandleScopeData* current = isolate_->handle_scope_data();
-  DCHECK_EQ(0, current->level);
-  current->level = prev_level_;
   DCHECK_EQ(current->next, current->limit);
   current->limit = prev_limit_;
+  DCHECK_EQ(current->level, current->sealed_level);
+  current->sealed_level = prev_sealed_level_;
 }
 
 
@@ -1452,7 +1452,8 @@ void ObjectTemplate::MarkAsUndetectable() {
 }
 
 
-void ObjectTemplate::SetAccessCheckCallback(AccessCheckCallback callback) {
+void ObjectTemplate::SetAccessCheckCallback(AccessCheckCallback callback,
+                                            Local<Value> data) {
   i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
   ENTER_V8(isolate);
   i::HandleScope scope(isolate);
@@ -1468,7 +1469,10 @@ void ObjectTemplate::SetAccessCheckCallback(AccessCheckCallback callback) {
   SET_FIELD_WRAPPED(info, set_named_callback, nullptr);
   SET_FIELD_WRAPPED(info, set_indexed_callback, nullptr);
 
-  info->set_data(*isolate->factory()->undefined_value());
+  if (data.IsEmpty()) {
+    data = v8::Undefined(reinterpret_cast<v8::Isolate*>(isolate));
+  }
+  info->set_data(*Utils::OpenHandle(*data));
 
   cons->set_access_check_info(*info);
   cons->set_needs_access_check(true);
@@ -2005,7 +2009,7 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
                           nullptr).ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION(Function);
   RETURN_ESCAPED(
-      Utils::FunctionToLocal(i::Handle<i::JSFunction>::cast(result)));
+      Utils::CallableToLocal(i::Handle<i::JSFunction>::cast(result)));
 }
 
 
@@ -4536,7 +4540,7 @@ Local<v8::Value> Function::GetBoundFunction() const {
       i::BindingsArray::cast(func->function_bindings()));
   i::Handle<i::Object> original(bound_args->bound_function(),
                                 func->GetIsolate());
-  return Utils::FunctionToLocal(i::Handle<i::JSFunction>::cast(original));
+  return Utils::CallableToLocal(i::Handle<i::JSFunction>::cast(original));
 }
 
 
@@ -7764,7 +7768,7 @@ MaybeLocal<Value> Debug::GetMirror(Local<Context> context,
   i::Handle<i::JSObject> debug(isolate_debug->debug_context()->global_object());
   auto name = isolate->factory()->NewStringFromStaticChars("MakeMirror");
   auto fun_obj = i::Object::GetProperty(debug, name).ToHandleChecked();
-  auto v8_fun = Utils::FunctionToLocal(i::Handle<i::JSFunction>::cast(fun_obj));
+  auto v8_fun = Utils::CallableToLocal(i::Handle<i::JSFunction>::cast(fun_obj));
   const int kArgc = 1;
   v8::Local<v8::Value> argv[kArgc] = {obj};
   Local<Value> result;

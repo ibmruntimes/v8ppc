@@ -34,6 +34,7 @@ JSNativeContextSpecialization::JSNativeContextSpecialization(
       jsgraph_(jsgraph),
       flags_(flags),
       global_object_(global_object),
+      native_context_(global_object->native_context(), isolate()),
       dependencies_(dependencies),
       zone_(zone) {}
 
@@ -109,7 +110,10 @@ Reduction JSNativeContextSpecialization::ReduceJSLoadGlobal(Node* node) {
       property_cell_value_type = Type::Intersect(
           Type::Number(), Type::TaggedPointer(), graph()->zone());
     } else {
-      property_cell_value_type = Type::Of(property_cell_value, graph()->zone());
+      Handle<Map> property_cell_value_map(
+          Handle<HeapObject>::cast(property_cell_value)->map(), isolate());
+      property_cell_value_type =
+          Type::Class(property_cell_value_map, graph()->zone());
     }
     Node* value = effect = graph()->NewNode(
         simplified()->LoadField(
@@ -338,15 +342,17 @@ bool JSNativeContextSpecialization::ComputePropertyAccessInfo(
         // elements, a smi in the range [0, FixedArray::kMaxLength]
         // in case of other fast elements, and [0, kMaxUInt32-1] in
         // case of other arrays.
+        Type* field_type_rep = Type::Tagged();
         double field_type_upper = kMaxUInt32 - 1;
         if (IsFastElementsKind(map->elements_kind())) {
+          field_type_rep = Type::TaggedSigned();
           field_type_upper = IsFastDoubleElementsKind(map->elements_kind())
                                  ? FixedDoubleArray::kMaxLength
                                  : FixedArray::kMaxLength;
         }
         field_type =
             Type::Intersect(Type::Range(0.0, field_type_upper, graph()->zone()),
-                            Type::TaggedSigned(), graph()->zone());
+                            field_type_rep, graph()->zone());
       }
       *access_info = PropertyAccessInfo::DataField(receiver_type, field_index,
                                                    field_type, holder);
@@ -405,17 +411,10 @@ bool JSNativeContextSpecialization::ComputePropertyAccessInfo(
             // TODO(bmeurer): It would be awesome to make this saner in the
             // runtime/GC interaction.
             field_type = Type::TaggedPointer();
-          } else {
+          } else if (!Type::Any()->Is(field_type)) {
             // Add proper code dependencies in case of stable field map(s).
-            if (field_type->NumClasses() > 0 && field_type->NowStable()) {
-              dependencies()->AssumeFieldType(
-                  handle(map->FindFieldOwner(number), isolate()));
-              for (auto i = field_type->Classes(); !i.Done(); i.Advance()) {
-                dependencies()->AssumeMapStable(i.Current());
-              }
-            } else {
-              field_type = Type::TaggedPointer();
-            }
+            Handle<Map> field_owner_map(map->FindFieldOwner(number), isolate());
+            dependencies()->AssumeFieldType(field_owner_map);
           }
           DCHECK(field_type->Is(Type::TaggedPointer()));
         }
@@ -437,8 +436,17 @@ bool JSNativeContextSpecialization::ComputePropertyAccessInfo(
 
     // Walk up the prototype chain.
     if (!map->prototype()->IsJSObject()) {
-      // TODO(bmeurer): Handle the not found case if the prototype is null.
-      break;
+      // Perform the implicit ToObject for primitives here.
+      // Implemented according to ES6 section 7.3.2 GetV (V, P).
+      Handle<JSFunction> constructor;
+      if (Map::GetConstructorFunction(map, native_context())
+              .ToHandle(&constructor)) {
+        map = handle(constructor->initial_map(), isolate());
+        DCHECK(map->prototype()->IsJSObject());
+      } else {
+        // TODO(bmeurer): Handle the not found case if the prototype is null.
+        break;
+      }
     }
     Handle<JSObject> map_prototype(JSObject::cast(map->prototype()), isolate());
     if (map_prototype->map()->is_deprecated()) {
@@ -895,7 +903,14 @@ void JSNativeContextSpecialization::AssumePrototypesStable(
     Type* receiver_type, Handle<JSObject> holder) {
   // Determine actual holder and perform prototype chain checks.
   for (auto i = receiver_type->Classes(); !i.Done(); i.Advance()) {
-    Handle<Map> const map = i.Current();
+    Handle<Map> map = i.Current();
+    // Perform the implicit ToObject for primitives here.
+    // Implemented according to ES6 section 7.3.2 GetV (V, P).
+    Handle<JSFunction> constructor;
+    if (Map::GetConstructorFunction(map, native_context())
+            .ToHandle(&constructor)) {
+      map = handle(constructor->initial_map(), isolate());
+    }
     for (PrototypeIterator j(map);; j.Advance()) {
       // Check that the {prototype} still has the same map.  All prototype
       // maps are guaranteed to be stable, so it's sufficient to add a

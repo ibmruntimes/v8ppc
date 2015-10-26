@@ -172,6 +172,7 @@ class InstructionSelector final {
   void InitializeCallBuffer(Node* call, CallBuffer* buffer,
                             bool call_code_immediate,
                             bool call_address_immediate);
+  bool IsTailCallAddressImmediate();
 
   FrameStateDescriptor* GetFrameStateDescriptor(Node* node);
 
@@ -215,6 +216,9 @@ class InstructionSelector final {
   void VisitDeoptimize(Node* value);
   void VisitReturn(Node* ret);
   void VisitThrow(Node* value);
+
+  void EmitPrepareArguments(NodeVector* arguments,
+                            const CallDescriptor* descriptor, Node* node);
 
   // ===========================================================================
 

@@ -7,6 +7,7 @@
 #include "src/base/flags.h"
 #include "src/base/lazy-instance.h"
 #include "src/bootstrapper.h"
+#include "src/compilation-dependencies.h"
 #include "src/compiler/common-operator.h"
 #include "src/compiler/graph-reducer.h"
 #include "src/compiler/js-operator.h"
@@ -37,9 +38,13 @@ class Typer::Decorator final : public GraphDecorator {
 };
 
 
-Typer::Typer(Isolate* isolate, Graph* graph, Type::FunctionType* function_type)
+Typer::Typer(Isolate* isolate, Graph* graph, Flags flags,
+             CompilationDependencies* dependencies,
+             Type::FunctionType* function_type)
     : isolate_(isolate),
       graph_(graph),
+      flags_(flags),
+      dependencies_(dependencies),
       function_type_(function_type),
       decorator_(nullptr),
       cache_(kCache.Get()) {
@@ -204,6 +209,10 @@ class Typer::Visitor : public Reducer {
   Zone* zone() { return typer_->zone(); }
   Isolate* isolate() { return typer_->isolate(); }
   Graph* graph() { return typer_->graph(); }
+  Typer::Flags flags() const { return typer_->flags(); }
+  CompilationDependencies* dependencies() const {
+    return typer_->dependencies();
+  }
 
   void SetWeakened(NodeId node_id) { weakened_nodes_.insert(node_id); }
   bool IsWeakened(NodeId node_id) {
@@ -252,6 +261,8 @@ class Typer::Visitor : public Reducer {
   static Type* JSLoadPropertyTyper(Type*, Type*, Typer*);
   static Type* JSCallFunctionTyper(Type*, Typer*);
 
+  static Type* ReferenceEqualTyper(Type*, Type*, Typer*);
+
   Reduction UpdateType(Node* node, Type* current) {
     if (NodeProperties::IsTyped(node)) {
       // Widen the type of a previously typed node.
@@ -261,10 +272,10 @@ class Typer::Visitor : public Reducer {
         current = Weaken(node, current, previous);
       }
 
-      DCHECK(previous->Is(current));
+      CHECK(previous->Is(current));
 
       NodeProperties::SetType(node, current);
-      if (!(previous->Is(current) && current->Is(previous))) {
+      if (!current->Is(previous)) {
         // If something changed, revisit all uses.
         return Changed(node);
       }
@@ -1373,12 +1384,64 @@ Type* Typer::Visitor::TypeJSCallConstruct(Node* node) {
 
 
 Type* Typer::Visitor::JSCallFunctionTyper(Type* fun, Typer* t) {
-  return fun->IsFunction() ? fun->AsFunction()->Result() : Type::Any();
+  if (fun->IsFunction()) {
+    return fun->AsFunction()->Result();
+  }
+  if (fun->IsConstant() && fun->AsConstant()->Value()->IsJSFunction()) {
+    Handle<JSFunction> function =
+        Handle<JSFunction>::cast(fun->AsConstant()->Value());
+    if (function->shared()->HasBuiltinFunctionId()) {
+      switch (function->shared()->builtin_function_id()) {
+        case kMathRandom:
+          return Type::OrderedNumber();
+        case kMathFloor:
+        case kMathRound:
+        case kMathCeil:
+          return t->cache_.kWeakint;
+        // Unary math functions.
+        case kMathAbs:
+        case kMathLog:
+        case kMathExp:
+        case kMathSqrt:
+        case kMathCos:
+        case kMathSin:
+        case kMathTan:
+        case kMathAcos:
+        case kMathAsin:
+        case kMathAtan:
+        case kMathFround:
+          return Type::Number();
+        // Binary math functions.
+        case kMathAtan2:
+        case kMathPow:
+        case kMathMax:
+        case kMathMin:
+          return Type::Number();
+        case kMathImul:
+          return Type::Signed32();
+        case kMathClz32:
+          return t->cache_.kZeroToThirtyTwo;
+        // String functions.
+        case kStringCharAt:
+        case kStringFromCharCode:
+          return Type::String();
+        // Array functions.
+        case kArrayIndexOf:
+        case kArrayLastIndexOf:
+          return Type::Number();
+        default:
+          break;
+      }
+    }
+  }
+  return Type::Any();
 }
 
 
 Type* Typer::Visitor::TypeJSCallFunction(Node* node) {
-  return TypeUnaryOp(node, JSCallFunctionTyper);  // We ignore argument types.
+  // TODO(bmeurer): We could infer better types if we wouldn't ignore the
+  // argument types for the JSCallFunctionTyper above.
+  return TypeUnaryOp(node, JSCallFunctionTyper);
 }
 
 
@@ -1523,8 +1586,17 @@ Type* Typer::Visitor::TypePlainPrimitiveToNumber(Node* node) {
 }
 
 
+// static
+Type* Typer::Visitor::ReferenceEqualTyper(Type* lhs, Type* rhs, Typer* t) {
+  if (lhs->IsConstant() && rhs->Is(lhs)) {
+    return t->singleton_true_;
+  }
+  return Type::Boolean();
+}
+
+
 Type* Typer::Visitor::TypeReferenceEqual(Node* node) {
-  return Type::Boolean(zone());
+  return TypeBinaryOp(node, ReferenceEqualTyper);
 }
 
 
@@ -1614,8 +1686,53 @@ Type* Typer::Visitor::TypeChangeBitToBool(Node* node) {
 Type* Typer::Visitor::TypeAllocate(Node* node) { return Type::TaggedPointer(); }
 
 
+namespace {
+
+MaybeHandle<Map> GetStableMapFromObjectType(Type* object_type) {
+  if (object_type->IsConstant() &&
+      object_type->AsConstant()->Value()->IsHeapObject()) {
+    Handle<Map> object_map(
+        Handle<HeapObject>::cast(object_type->AsConstant()->Value())->map());
+    if (object_map->is_stable()) return object_map;
+  } else if (object_type->IsClass()) {
+    Handle<Map> object_map = object_type->AsClass()->Map();
+    if (object_map->is_stable()) return object_map;
+  }
+  return MaybeHandle<Map>();
+}
+
+}  // namespace
+
+
 Type* Typer::Visitor::TypeLoadField(Node* node) {
-  return FieldAccessOf(node->op()).type;
+  FieldAccess const& access = FieldAccessOf(node->op());
+  if (access.base_is_tagged == kTaggedBase &&
+      access.offset == HeapObject::kMapOffset) {
+    // The type of LoadField[Map](o) is Constant(map) if map is stable and
+    // either
+    //  (a) o has type Constant(object) and map == object->map, or
+    //  (b) o has type Class(map),
+    // and either
+    //  (1) map cannot transition further, or
+    //  (2) deoptimization is enabled and we can add a code dependency on the
+    //      stability of map (to guard the Constant type information).
+    Type* const object = Operand(node, 0);
+    if (object->Is(Type::None())) return Type::None();
+    Handle<Map> object_map;
+    if (GetStableMapFromObjectType(object).ToHandle(&object_map)) {
+      if (object_map->CanTransition()) {
+        if (flags() & kDeoptimizationEnabled) {
+          dependencies()->AssumeMapStable(object_map);
+        } else {
+          return access.type;
+        }
+      }
+      Type* object_map_type = Type::Constant(object_map, zone());
+      DCHECK(object_map_type->Is(access.type));
+      return object_map_type;
+    }
+  }
+  return access.type;
 }
 
 
@@ -2043,64 +2160,7 @@ Type* Typer::Visitor::TypeCheckedStore(Node* node) {
 
 
 Type* Typer::Visitor::TypeConstant(Handle<Object> value) {
-  if (value->IsJSFunction()) {
-    if (JSFunction::cast(*value)->shared()->HasBuiltinFunctionId()) {
-      switch (JSFunction::cast(*value)->shared()->builtin_function_id()) {
-        case kMathRandom:
-          return typer_->cache_.kRandomFunc0;
-        case kMathFloor:
-        case kMathRound:
-        case kMathCeil:
-          return typer_->cache_.kWeakintFunc1;
-        // Unary math functions.
-        case kMathAbs:  // TODO(rossberg): can't express overloading
-        case kMathLog:
-        case kMathExp:
-        case kMathSqrt:
-        case kMathCos:
-        case kMathSin:
-        case kMathTan:
-        case kMathAcos:
-        case kMathAsin:
-        case kMathAtan:
-        case kMathFround:
-          return typer_->cache_.kNumberFunc1;
-        // Binary math functions.
-        case kMathAtan2:
-        case kMathPow:
-        case kMathMax:
-        case kMathMin:
-          return typer_->cache_.kNumberFunc2;
-        case kMathImul:
-          return typer_->cache_.kImulFunc;
-        case kMathClz32:
-          return typer_->cache_.kClz32Func;
-        default:
-          break;
-      }
-    }
-    int const arity =
-        JSFunction::cast(*value)->shared()->internal_formal_parameter_count();
-    switch (arity) {
-      case SharedFunctionInfo::kDontAdaptArgumentsSentinel:
-        // Some smart optimization at work... &%$!&@+$!
-        break;
-      case 0:
-        return typer_->cache_.kAnyFunc0;
-      case 1:
-        return typer_->cache_.kAnyFunc1;
-      case 2:
-        return typer_->cache_.kAnyFunc2;
-      case 3:
-        return typer_->cache_.kAnyFunc3;
-      default: {
-        DCHECK_LT(3, arity);
-        Type** const params = zone()->NewArray<Type*>(arity);
-        std::fill(&params[0], &params[arity], Type::Any(zone()));
-        return Type::Function(Type::Any(zone()), arity, params, zone());
-      }
-    }
-  } else if (value->IsJSTypedArray()) {
+  if (value->IsJSTypedArray()) {
     switch (JSTypedArray::cast(*value)->type()) {
 #define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size) \
   case kExternal##Type##Array:                          \

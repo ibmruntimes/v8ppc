@@ -552,10 +552,12 @@ TEST(DisasmX64) {
       __ vcvtsd2ss(xmm9, xmm3, Operand(rbx, rcx, times_1, 10000));
       __ vcvtlsi2sd(xmm5, xmm9, rcx);
       __ vcvtlsi2sd(xmm9, xmm3, Operand(rbx, r9, times_4, 10000));
+      __ vcvtqsi2sd(xmm5, xmm9, r11);
       __ vcvttsd2si(r9, xmm6);
       __ vcvttsd2si(rax, Operand(rbx, r9, times_4, 10000));
       __ vcvttsd2siq(rdi, xmm9);
       __ vcvttsd2siq(r8, Operand(r9, rbx, times_4, 10000));
+      __ vcvtsd2si(rdi, xmm9);
 
       __ vmovaps(xmm10, xmm11);
       __ vmovapd(xmm7, xmm0);

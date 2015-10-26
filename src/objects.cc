@@ -1679,6 +1679,20 @@ void JSObject::PrintElementsTransition(
 }
 
 
+// static
+MaybeHandle<JSFunction> Map::GetConstructorFunction(
+    Handle<Map> map, Handle<Context> native_context) {
+  if (map->IsPrimitiveMap()) {
+    int const constructor_function_index = map->GetConstructorFunctionIndex();
+    if (constructor_function_index != kNoConstructorFunctionIndex) {
+      return handle(
+          JSFunction::cast(native_context->get(constructor_function_index)));
+    }
+  }
+  return MaybeHandle<JSFunction>();
+}
+
+
 void Map::PrintReconfiguration(FILE* file, int modify_index, PropertyKind kind,
                                PropertyAttributes attributes) {
   OFStream os(file);
@@ -6060,6 +6074,17 @@ bool JSReceiver::OrdinaryDefineOwnProperty(Isolate* isolate,
   LookupIterator it = LookupIterator::PropertyOrElement(
       isolate, object, key, &success, LookupIterator::HIDDEN);
   DCHECK(success);  // ...so creating a LookupIterator can't fail.
+
+  // Deal with access checks first.
+  if (it.state() == LookupIterator::ACCESS_CHECK) {
+    if (!it.HasAccess()) {
+      isolate->ReportFailedAccessCheck(it.GetHolder<JSObject>());
+      RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, false);
+      return false;
+    }
+    it.Next();
+  }
+
   return OrdinaryDefineOwnProperty(&it, desc, should_throw);
 }
 
@@ -6078,9 +6103,14 @@ bool JSReceiver::OrdinaryDefineOwnProperty(LookupIterator* it,
       isolate->has_pending_exception()) {
     return false;
   }
+  // TODO(jkummerow/verwaest): It would be nice if we didn't have to reset
+  // the iterator every time. Currently, the reasons why we need it are:
+  // - handle interceptors correctly
+  // - handle accessors correctly (which might change the holder's map)
+  it->Restart();
   // 3. Let extensible be the value of the [[Extensible]] internal slot of O.
-  Handle<JSObject> o = Handle<JSObject>::cast(it->GetReceiver());
-  bool extensible = JSObject::IsExtensible(o);
+  Handle<JSObject> object = Handle<JSObject>::cast(it->GetReceiver());
+  bool extensible = JSObject::IsExtensible(object);
 
   bool desc_is_data_descriptor = PropertyDescriptor::IsDataDescriptor(desc);
   bool desc_is_accessor_descriptor =
@@ -6109,7 +6139,7 @@ bool JSReceiver::OrdinaryDefineOwnProperty(LookupIterator* it,
       // [[Configurable]] attribute values are described by Desc. If the value
       // of an attribute field of Desc is absent, the attribute of the newly
       // created property is set to its default value.
-      if (!o->IsUndefined()) {
+      if (!object->IsUndefined()) {
         if (!desc->has_writable()) desc->set_writable(false);
         if (!desc->has_enumerable()) desc->set_enumerable(false);
         if (!desc->has_configurable()) desc->set_configurable(false);
@@ -6118,8 +6148,8 @@ bool JSReceiver::OrdinaryDefineOwnProperty(LookupIterator* it,
                 ? desc->value()
                 : Handle<Object>::cast(isolate->factory()->undefined_value()));
         MaybeHandle<Object> result =
-            JSObject::DefineOwnPropertyIgnoreAttributes(it, value,
-                                                        desc->ToAttributes());
+            JSObject::DefineOwnPropertyIgnoreAttributes(
+                it, value, desc->ToAttributes(), JSObject::DONT_FORCE_FIELD);
         if (result.is_null()) return false;
       }
     } else {
@@ -6130,7 +6160,7 @@ bool JSReceiver::OrdinaryDefineOwnProperty(LookupIterator* it,
       // [[Configurable]] attribute values are described by Desc. If the value
       // of an attribute field of Desc is absent, the attribute of the newly
       // created property is set to its default value.
-      if (!o->IsUndefined()) {
+      if (!object->IsUndefined()) {
         if (!desc->has_enumerable()) desc->set_enumerable(false);
         if (!desc->has_configurable()) desc->set_configurable(false);
         Handle<Object> getter(
@@ -6230,10 +6260,11 @@ bool JSReceiver::OrdinaryDefineOwnProperty(LookupIterator* it,
       // [Strong mode] Disallow changing writable -> readonly for
       // non-configurable properties.
       if (current.writable() && desc->has_writable() && !desc->writable() &&
-          o->map()->is_strong()) {
+          object->map()->is_strong()) {
         if (should_throw == THROW_ON_ERROR) {
           isolate->Throw(*isolate->factory()->NewTypeError(
-              MessageTemplate::kStrongRedefineDisallowed, o, it->GetName()));
+              MessageTemplate::kStrongRedefineDisallowed, object,
+              it->GetName()));
         }
         return false;
       }
@@ -6288,7 +6319,7 @@ bool JSReceiver::OrdinaryDefineOwnProperty(LookupIterator* it,
   }
 
   // 10. If O is not undefined, then:
-  if (!o->IsUndefined()) {
+  if (!object->IsUndefined()) {
     // 10a. For each field of Desc that is present, set the corresponding
     // attribute of the property named P of object O to the value of the field.
     PropertyAttributes attrs = NONE;
@@ -6551,7 +6582,7 @@ bool JSArray::ArraySetLength(Isolate* isolate, Handle<JSArray> a,
   if (!success && should_throw == THROW_ON_ERROR) {
     isolate->Throw(*isolate->factory()->NewTypeError(
         MessageTemplate::kStrictDeleteProperty,
-        isolate->factory()->NewNumberFromUint(actual_new_len - 1)));
+        isolate->factory()->NewNumberFromUint(actual_new_len - 1), a));
   }
   return success;
 }
@@ -6600,7 +6631,11 @@ bool JSReceiver::GetOwnPropertyDescriptor(LookupIterator* it,
                           it->GetAccessors()->IsAccessorPair();
   if (!is_accessor_pair) {
     // 5a. Set D.[[Value]] to the value of X's [[Value]] attribute.
-    Handle<Object> value = JSObject::GetProperty(it).ToHandleChecked();
+    Handle<Object> value;
+    if (!JSObject::GetProperty(it).ToHandle(&value)) {
+      DCHECK(isolate->has_pending_exception());
+      return false;
+    }
     desc->set_value(value);
     // 5b. Set D.[[Writable]] to the value of X's [[Writable]] attribute
     desc->set_writable((attrs & READ_ONLY) == 0);
@@ -6771,8 +6806,6 @@ Maybe<bool> JSObject::PreventExtensions(Handle<JSObject> object,
                                         ShouldThrow should_throw) {
   Isolate* isolate = object->GetIsolate();
 
-  if (!object->map()->is_extensible()) return Just(true);
-
   if (!object->HasSloppyArgumentsElements() && !object->map()->is_observed()) {
     return PreventExtensionsWithTransition<NONE>(object, should_throw);
   }
@@ -6786,6 +6819,8 @@ Maybe<bool> JSObject::PreventExtensions(Handle<JSObject> object,
                    NewTypeError(MessageTemplate::kNoAccess));
   }
 
+  if (!object->map()->is_extensible()) return Just(true);
+
   if (object->IsJSGlobalProxy()) {
     PrototypeIterator iter(isolate, object);
     if (iter.IsAtEnd()) return Just(true);
@@ -6794,19 +6829,15 @@ Maybe<bool> JSObject::PreventExtensions(Handle<JSObject> object,
                              should_throw);
   }
 
-  // It's not possible to seal objects with external array elements
-  if (object->HasFixedTypedArrayElements()) {
-    isolate->Throw(*isolate->factory()->NewTypeError(
-        MessageTemplate::kCannotPreventExtExternalArray));
-    return Nothing<bool>();
+  if (!object->HasFixedTypedArrayElements()) {
+    // If there are fast elements we normalize.
+    Handle<SeededNumberDictionary> dictionary = NormalizeElements(object);
+    DCHECK(object->HasDictionaryElements() ||
+           object->HasSlowArgumentsElements());
+
+    // Make sure that we never go back to fast case.
+    object->RequireSlowElements(*dictionary);
   }
-
-  // If there are fast elements we normalize.
-  Handle<SeededNumberDictionary> dictionary = NormalizeElements(object);
-  DCHECK(object->HasDictionaryElements() || object->HasSlowArgumentsElements());
-
-  // Make sure that we never go back to fast case.
-  object->RequireSlowElements(*dictionary);
 
   // Do a map transition, other objects with this map may still
   // be extensible.
@@ -6887,6 +6918,8 @@ Maybe<bool> JSObject::PreventExtensionsWithTransition(
                    NewTypeError(MessageTemplate::kNoAccess));
   }
 
+  if (attrs == NONE && !object->map()->is_extensible()) return Just(true);
+
   if (object->IsJSGlobalProxy()) {
     PrototypeIterator iter(isolate, object);
     if (iter.IsAtEnd()) return Just(true);
@@ -6895,15 +6928,9 @@ Maybe<bool> JSObject::PreventExtensionsWithTransition(
         PrototypeIterator::GetCurrent<JSObject>(iter), should_throw);
   }
 
-  // It's not possible to seal or freeze objects with external array elements
-  if (object->HasFixedTypedArrayElements()) {
-    isolate->Throw(*isolate->factory()->NewTypeError(
-        MessageTemplate::kCannotPreventExtExternalArray));
-    return Nothing<bool>();
-  }
-
   Handle<SeededNumberDictionary> new_element_dictionary;
-  if (!object->HasDictionaryElements()) {
+  if (!object->HasFixedTypedArrayElements() &&
+      !object->HasDictionaryElements()) {
     int length =
         object->IsJSArray()
             ? Smi::cast(Handle<JSArray>::cast(object)->length())->value()
@@ -6929,7 +6956,8 @@ Maybe<bool> JSObject::PreventExtensionsWithTransition(
       TransitionArray::SearchSpecial(*old_map, *transition_marker);
   if (transition != NULL) {
     Handle<Map> transition_map(transition, isolate);
-    DCHECK(transition_map->has_dictionary_elements());
+    DCHECK(transition_map->has_dictionary_elements() ||
+           transition_map->has_fixed_typed_array_elements());
     DCHECK(!transition_map->is_extensible());
     JSObject::MigrateToMap(object, transition_map);
   } else if (TransitionArray::CanHaveMoreTransitions(old_map)) {
@@ -6948,7 +6976,9 @@ Maybe<bool> JSObject::PreventExtensionsWithTransition(
     Handle<Map> new_map =
         Map::Copy(handle(object->map()), "SlowCopyForPreventExtensions");
     new_map->set_is_extensible(false);
-    new_map->set_elements_kind(DICTIONARY_ELEMENTS);
+    if (!new_element_dictionary.is_null()) {
+      new_map->set_elements_kind(DICTIONARY_ELEMENTS);
+    }
     JSObject::MigrateToMap(object, new_map);
 
     if (attrs != NONE) {
@@ -6958,6 +6988,18 @@ Maybe<bool> JSObject::PreventExtensionsWithTransition(
         ApplyAttributesToDictionary(object->property_dictionary(), attrs);
       }
     }
+  }
+
+  // Both seal and preventExtensions always go through without modifications to
+  // typed array elements. Freeze works only if there are no actual elements.
+  if (object->HasFixedTypedArrayElements()) {
+    if (attrs == FROZEN &&
+        JSArrayBufferView::cast(*object)->byte_length()->Number() > 0) {
+      isolate->Throw(*isolate->factory()->NewTypeError(
+          MessageTemplate::kCannotFreezeArrayBufferView));
+      return Nothing<bool>();
+    }
+    return Just(true);
   }
 
   DCHECK(object->map()->has_dictionary_elements());
@@ -7525,7 +7567,7 @@ Handle<FixedArray> JSObject::GetEnumPropertyKeys(Handle<JSObject> object,
 
 
 KeyAccumulator::~KeyAccumulator() {
-  for (int i = 0; i < elements_.length(); i++) {
+  for (size_t i = 0; i < elements_.size(); i++) {
     delete elements_[i];
   }
 }
@@ -7546,7 +7588,7 @@ Handle<FixedArray> KeyAccumulator::GetKeys(GetKeysConversion convert) {
   Handle<FixedArray> result = isolate_->factory()->NewFixedArray(length_);
   int index = 0;
   int properties_index = 0;
-  for (int level = 0; level < levelLengths_.length(); level++) {
+  for (size_t level = 0; level < levelLengths_.size(); level++) {
     int num_total = levelLengths_[level];
     int num_elements = 0;
     if (num_total < 0) {
@@ -7554,9 +7596,9 @@ Handle<FixedArray> KeyAccumulator::GetKeys(GetKeysConversion convert) {
       // proxy, hence we skip the integer keys in |elements_| since proxies
       // define the complete ordering.
       num_total = -num_total;
-    } else if (level < elements_.length()) {
-      List<uint32_t>* elements = elements_[level];
-      num_elements = elements->length();
+    } else if (level < elements_.size()) {
+      std::vector<uint32_t>* elements = elements_[level];
+      num_elements = static_cast<int>(elements->size());
       for (int i = 0; i < num_elements; i++) {
         Handle<Object> key;
         if (convert == KEEP_NUMBERS) {
@@ -7577,6 +7619,7 @@ Handle<FixedArray> KeyAccumulator::GetKeys(GetKeysConversion convert) {
       properties_index++;
     }
   }
+
   DCHECK_EQ(index, length_);
   return result;
 }
@@ -7584,22 +7627,8 @@ Handle<FixedArray> KeyAccumulator::GetKeys(GetKeysConversion convert) {
 
 namespace {
 
-class FindKey {
- public:
-  explicit FindKey(uint32_t key) : key_(key) {}
-  int operator()(uint32_t* entry) {
-    if (*entry == key_) return 0;
-    return *entry < key_ ? -1 : 1;
-  }
-
- private:
-  uint32_t key_;
-};
-
-
-bool AccumulatorHasKey(List<uint32_t>* sub_elements, uint32_t key) {
-  int index = SortedListBSearch(*sub_elements, FindKey(key));
-  return index != -1;
+bool AccumulatorHasKey(std::vector<uint32_t>* sub_elements, uint32_t key) {
+  return std::binary_search(sub_elements->begin(), sub_elements->end(), key);
 }
 
 }  // namespace
@@ -7607,12 +7636,14 @@ bool AccumulatorHasKey(List<uint32_t>* sub_elements, uint32_t key) {
 
 bool KeyAccumulator::AddKey(uint32_t key) {
   // Make sure we do not add keys to a proxy-level (see AddKeysFromProxy).
+  // We mark proxy-levels with a negative length
   DCHECK_LE(0, levelLength_);
-  int lookup_limit = elements_.length();
-  for (int i = 0; i < lookup_limit; i++) {
-    if (AccumulatorHasKey(elements_[i], key)) return false;
+  // Binary search over all but the last level. The last one might not be
+  // sorted yet.
+  for (size_t i = 1; i < elements_.size(); i++) {
+    if (AccumulatorHasKey(elements_[i - 1], key)) return false;
   }
-  elements_[lookup_limit - 1]->Add(key);
+  elements_.back()->push_back(key);
   length_++;
   levelLength_++;
   return true;
@@ -7706,32 +7737,43 @@ void KeyAccumulator::AddKeysFromProxy(Handle<JSObject> array_like) {
 }
 
 
-namespace {
-
-// Used for sorting indices in a List<uint32_t>.
-int compareUInt32(const uint32_t* ap, const uint32_t* bp) {
-  uint32_t a = *ap;
-  uint32_t b = *bp;
-  return (a == b) ? 0 : (a < b) ? -1 : 1;
+void KeyAccumulator::AddElementKeysFromInterceptor(
+    Handle<JSObject> array_like) {
+  AddKeys(array_like, CONVERT_TO_ARRAY_INDEX);
+  // The interceptor might introduce duplicates for the current level, since
+  // these keys get added after the objects's normal element keys.
+  SortCurrentElementsListRemoveDuplicates();
 }
 
 
-}  // namespace
+void KeyAccumulator::SortCurrentElementsListRemoveDuplicates() {
+  // Sort and remove duplciated from the current elements level and adjust
+  // the lengths accordingly.
+  auto last_level = elements_.back();
+  size_t nof_removed_keys = last_level->size();
+  std::sort(last_level->begin(), last_level->end());
+  last_level->erase(std::unique(last_level->begin(), last_level->end()),
+                    last_level->end());
+  // Adjust total length / level length by the number of removed duplicates
+  nof_removed_keys -= last_level->size();
+  levelLength_ -= static_cast<int>(nof_removed_keys);
+  length_ -= static_cast<int>(nof_removed_keys);
+}
 
 
 void KeyAccumulator::SortCurrentElementsList() {
-  if (elements_.length() == 0) return;
-  List<uint32_t>* element_keys = elements_[elements_.length() - 1];
-  element_keys->Sort(&compareUInt32);
+  if (elements_.empty()) return;
+  auto element_keys = elements_.back();
+  std::sort(element_keys->begin(), element_keys->end());
 }
 
 
 void KeyAccumulator::NextPrototype() {
   // Store the protoLength on the first call of this method.
-  if (!elements_.is_empty()) {
-    levelLengths_.Add(levelLength_);
+  if (!elements_.empty()) {
+    levelLengths_.push_back(levelLength_);
   }
-  elements_.Add(new List<uint32_t>());
+  elements_.push_back(new std::vector<uint32_t>());
   levelLength_ = 0;
 }
 
@@ -7745,7 +7787,6 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
   KeyAccumulator accumulator(isolate, filter);
   Handle<JSFunction> arguments_function(
       JSFunction::cast(isolate->sloppy_arguments_map()->GetConstructor()));
-
   PrototypeIterator::WhereToEnd end = type == OWN_ONLY
                                           ? PrototypeIterator::END_AT_NON_HIDDEN
                                           : PrototypeIterator::END_AT_NULL;
@@ -7790,8 +7831,9 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
       Handle<JSObject> result;
       if (JSObject::GetKeysForIndexedInterceptor(current, object)
               .ToHandle(&result)) {
-        accumulator.AddKeys(result, CONVERT_TO_ARRAY_INDEX);
+        accumulator.AddElementKeysFromInterceptor(result);
       }
+      RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, FixedArray);
     }
 
     if (filter == SKIP_SYMBOLS) {
@@ -7818,7 +7860,10 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
       DCHECK(filter == INCLUDE_SYMBOLS);
       PropertyAttributes attr_filter =
           static_cast<PropertyAttributes>(DONT_ENUM | PRIVATE_SYMBOL);
-      JSObject::CollectOwnElementKeys(current, &accumulator, attr_filter);
+      Handle<FixedArray> property_keys = isolate->factory()->NewFixedArray(
+          current->NumberOfOwnProperties(attr_filter));
+      current->GetOwnPropertyNames(*property_keys, 0, attr_filter);
+      accumulator.AddKeys(property_keys);
     }
 
     // Add the property keys from the interceptor.
@@ -7828,6 +7873,7 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
               .ToHandle(&result)) {
         accumulator.AddKeys(result);
       }
+      RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, FixedArray);
     }
   }
 
@@ -8520,7 +8566,9 @@ Handle<Map> Map::CopyForPreventExtensions(Handle<Map> map,
       map, new_desc, new_layout_descriptor, INSERT_TRANSITION,
       transition_marker, reason, SPECIAL_TRANSITION);
   new_map->set_is_extensible(false);
-  new_map->set_elements_kind(DICTIONARY_ELEMENTS);
+  if (!IsFixedTypedArrayElementsKind(map->elements_kind())) {
+    new_map->set_elements_kind(DICTIONARY_ELEMENTS);
+  }
   return new_map;
 }
 

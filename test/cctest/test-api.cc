@@ -8690,6 +8690,15 @@ TEST(AccessControl) {
       "})()");
   CHECK(value->IsTrue());
 
+  // Test that preventExtensions fails on a non-accessible object even if that
+  // object is already non-extensible.
+  global1->Set(v8_str("checked_object"), global_template->NewInstance());
+  allowed_access = true;
+  CompileRun("Object.preventExtensions(checked_object)");
+  ExpectFalse("Object.isExtensible(checked_object)");
+  allowed_access = false;
+  CHECK(CompileRun("Object.preventExtensions(checked_object)").IsEmpty());
+
   context1->Exit();
   context0->Exit();
 }
@@ -8757,10 +8766,12 @@ TEST(AccessControlES5) {
   CompileRun("other.accessible_prop = 42");
   CHECK_EQ(42, g_echo_value);
 
-  v8::Handle<Value> value;
-  CompileRun("Object.defineProperty(other, 'accessible_prop', {value: -1})");
-  value = CompileRun("other.accessible_prop == 42");
-  CHECK(value->IsTrue());
+  // [[DefineOwnProperty]] always throws for access-checked objects.
+  CHECK(
+      CompileRun("Object.defineProperty(other, 'accessible_prop', {value: 43})")
+          .IsEmpty());
+  CHECK(CompileRun("other.accessible_prop == 42")->IsTrue());
+  CHECK_EQ(42, g_echo_value);  // Make sure we didn't call the setter.
 }
 
 

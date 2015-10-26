@@ -5518,6 +5518,8 @@ class Map: public HeapObject {
   static const int kNoConstructorFunctionIndex = 0;
   inline int GetConstructorFunctionIndex();
   inline void SetConstructorFunctionIndex(int value);
+  static MaybeHandle<JSFunction> GetConstructorFunction(
+      Handle<Map> map, Handle<Context> native_context);
 
   // Instance type.
   inline InstanceType instance_type();
@@ -10835,7 +10837,7 @@ class KeyAccumulator final BASE_EMBEDDED {
  public:
   explicit KeyAccumulator(Isolate* isolate,
                           KeyFilter filter = KeyFilter::SKIP_SYMBOLS)
-      : isolate_(isolate), filter_(filter), length_(0), levelLength_(0) {}
+      : isolate_(isolate), filter_(filter) {}
   ~KeyAccumulator();
 
   bool AddKey(uint32_t key);
@@ -10846,11 +10848,13 @@ class KeyAccumulator final BASE_EMBEDDED {
   void AddKeys(Handle<JSObject> array,
                AddKeyConversion convert = DO_NOT_CONVERT);
   void AddKeysFromProxy(Handle<JSObject> array);
+  void AddElementKeysFromInterceptor(Handle<JSObject> array);
   // Jump to the next level, pushing the current |levelLength_| to
   // |levelLengths_| and adding a new list to |elements_|.
   void NextPrototype();
   // Sort the integer indices in the last list in |elements_|
   void SortCurrentElementsList();
+  void SortCurrentElementsListRemoveDuplicates();
   Handle<FixedArray> GetKeys(GetKeysConversion convert = KEEP_NUMBERS);
 
 
@@ -10858,17 +10862,17 @@ class KeyAccumulator final BASE_EMBEDDED {
   Isolate* isolate_;
   KeyFilter filter_;
   // |elements_| contains the sorted element keys (indices) per level.
-  List<List<uint32_t>*> elements_;
+  std::vector<std::vector<uint32_t>*> elements_;
   // |protoLengths_| contains the total number of keys (elements + properties)
   // per level. Negative values mark counts for a level with keys from a proxy.
-  List<int> levelLengths_;
+  std::vector<int> levelLengths_;
   // |properties_| contains the property keys per level in insertion order.
   Handle<OrderedHashSet> properties_;
   // |length_| keeps track of the total number of all element and property keys.
-  int length_;
+  int length_ = 0;
   // |levelLength_| keeps track of the total number of keys
   // (elements + properties) in the current level.
-  int levelLength_;
+  int levelLength_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(KeyAccumulator);
 };
