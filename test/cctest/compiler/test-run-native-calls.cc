@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(jochen): Remove this after the setting is turned on globally.
+#define V8_IMMINENT_DEPRECATION_WARNINGS
+
 #include "src/assembler.h"
 #include "src/codegen.h"
 #include "src/compiler/linkage.h"
@@ -361,7 +364,8 @@ class ArgsBuffer {
   Node* StoreOutput(RawMachineAssembler& raw, Node* value) {
     Node* base = raw.PointerConstant(&output);
     Node* offset = raw.Int32Constant(0);
-    return raw.Store(MachineTypeForC<CType>(), base, offset, value);
+    return raw.Store(MachineTypeForC<CType>(), base, offset, value,
+                     kNoWriteBarrier);
   }
 
   // Computes the next set of inputs by updating the {input} array.
@@ -573,7 +577,7 @@ static void CopyTwentyInt32(CallDescriptor* desc) {
     Node* base = raw.PointerConstant(output);
     for (int i = 0; i < kNumParams; i++) {
       Node* offset = raw.Int32Constant(i * sizeof(int32_t));
-      raw.Store(kMachInt32, base, offset, raw.Parameter(i));
+      raw.Store(kMachInt32, base, offset, raw.Parameter(i), kNoWriteBarrier);
     }
     raw.Return(raw.Int32Constant(42));
     inner = CompileGraph("CopyTwentyInt32", desc, &graph, raw.Export());

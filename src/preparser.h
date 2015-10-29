@@ -113,10 +113,7 @@ class ParserBase : public Traits {
         allow_harmony_sloppy_let_(false),
         allow_harmony_rest_parameters_(false),
         allow_harmony_default_parameters_(false),
-        allow_harmony_spread_calls_(false),
         allow_harmony_destructuring_(false),
-        allow_harmony_spread_arrays_(false),
-        allow_harmony_new_target_(false),
         allow_strong_mode_(false),
         allow_legacy_const_(true),
         allow_harmony_do_expressions_(false) {}
@@ -132,10 +129,7 @@ class ParserBase : public Traits {
   ALLOW_ACCESSORS(harmony_sloppy_let);
   ALLOW_ACCESSORS(harmony_rest_parameters);
   ALLOW_ACCESSORS(harmony_default_parameters);
-  ALLOW_ACCESSORS(harmony_spread_calls);
   ALLOW_ACCESSORS(harmony_destructuring);
-  ALLOW_ACCESSORS(harmony_spread_arrays);
-  ALLOW_ACCESSORS(harmony_new_target);
   ALLOW_ACCESSORS(strong_mode);
   ALLOW_ACCESSORS(legacy_const);
   ALLOW_ACCESSORS(harmony_do_expressions);
@@ -841,10 +835,7 @@ class ParserBase : public Traits {
   bool allow_harmony_sloppy_let_;
   bool allow_harmony_rest_parameters_;
   bool allow_harmony_default_parameters_;
-  bool allow_harmony_spread_calls_;
   bool allow_harmony_destructuring_;
-  bool allow_harmony_spread_arrays_;
-  bool allow_harmony_new_target_;
   bool allow_strong_mode_;
   bool allow_legacy_const_;
   bool allow_harmony_do_expressions_;
@@ -2523,9 +2514,6 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseArrayLiteral(
       }
       elem = this->GetLiteralTheHole(peek_position(), factory());
     } else if (peek() == Token::ELLIPSIS) {
-      if (!allow_harmony_spread_arrays()) {
-        ExpressionUnexpectedToken(classifier);
-      }
       int start_pos = peek_position();
       Consume(Token::ELLIPSIS);
       ExpressionT argument =
@@ -2869,10 +2857,8 @@ typename Traits::Type::ExpressionList ParserBase<Traits>::ParseArguments(
   bool was_unspread = false;
   int unspread_sequences_count = 0;
   while (!done) {
-    bool is_spread =
-        allow_harmony_spread_calls() && (peek() == Token::ELLIPSIS);
     int start_pos = peek_position();
-    if (is_spread) Consume(Token::ELLIPSIS);
+    bool is_spread = Check(Token::ELLIPSIS);
 
     ExpressionT argument = this->ParseAssignmentExpression(
         true, classifier, CHECK_OK_CUSTOM(NullExpressionList));
@@ -2956,6 +2942,10 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN,
     Scanner::Location loc(lhs_beg_pos, scanner()->location().end_pos);
     Scope* scope =
         this->NewScope(scope_, FUNCTION_SCOPE, FunctionKind::kArrowFunction);
+    // Because the arrow's parameters were parsed in the outer scope, any
+    // usage flags that might have been triggered there need to be copied
+    // to the arrow scope.
+    scope_->PropagateUsageFlagsToScope(scope);
     FormalParametersT parameters(scope);
     if (!arrow_formals_classifier.is_simple_parameter_list()) {
       scope->SetHasNonSimpleParameters();
@@ -3412,7 +3402,7 @@ ParserBase<Traits>::ParseMemberWithNewPrefixesExpression(
     if (peek() == Token::SUPER) {
       const bool is_new = true;
       result = ParseSuperExpression(is_new, classifier, CHECK_OK);
-    } else if (allow_harmony_new_target() && peek() == Token::PERIOD) {
+    } else if (peek() == Token::PERIOD) {
       return ParseNewTargetExpression(CHECK_OK);
     } else {
       result = this->ParseMemberWithNewPrefixesExpression(classifier, CHECK_OK);

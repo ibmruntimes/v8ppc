@@ -13,6 +13,7 @@
 #include "src/field-index-inl.h"
 #include "src/lookup.h"
 #include "src/objects-inl.h"  // TODO(mstarzinger): Temporary cycle breaker!
+#include "src/type-cache.h"
 #include "src/type-feedback-vector.h"
 
 namespace v8 {
@@ -36,7 +37,8 @@ JSNativeContextSpecialization::JSNativeContextSpecialization(
       global_object_(global_object),
       native_context_(global_object->native_context(), isolate()),
       dependencies_(dependencies),
-      zone_(zone) {}
+      zone_(zone),
+      type_cache_(TypeCache::Get()) {}
 
 
 Reduction JSNativeContextSpecialization::Reduce(Node* node) {
@@ -87,53 +89,50 @@ Reduction JSNativeContextSpecialization::ReduceJSLoadGlobal(Node* node) {
     return Replace(node, property_cell_value);
   }
 
-  // Load from constant/undefined global property can be constant-folded
-  // with deoptimization support, by adding a code dependency on the cell.
-  if ((property_details.cell_type() == PropertyCellType::kConstant ||
-       property_details.cell_type() == PropertyCellType::kUndefined) &&
-      (flags() & kDeoptimizationEnabled)) {
-    dependencies()->AssumePropertyCell(property_cell);
-    return Replace(node, property_cell_value);
-  }
-
-  // Load from constant type global property can benefit from representation
-  // (and map) feedback with deoptimization support (requires code dependency).
-  if (property_details.cell_type() == PropertyCellType::kConstantType &&
-      (flags() & kDeoptimizationEnabled)) {
-    dependencies()->AssumePropertyCell(property_cell);
-    // Compute proper type based on the current value in the cell.
-    Type* property_cell_value_type;
-    if (property_cell_value->IsSmi()) {
-      property_cell_value_type = Type::Intersect(
-          Type::SignedSmall(), Type::TaggedSigned(), graph()->zone());
-    } else if (property_cell_value->IsNumber()) {
-      property_cell_value_type = Type::Intersect(
-          Type::Number(), Type::TaggedPointer(), graph()->zone());
-    } else {
-      Handle<Map> property_cell_value_map(
-          Handle<HeapObject>::cast(property_cell_value)->map(), isolate());
-      property_cell_value_type =
-          Type::Class(property_cell_value_map, graph()->zone());
-    }
-    Node* value = effect = graph()->NewNode(
-        simplified()->LoadField(
-            AccessBuilder::ForPropertyCellValue(property_cell_value_type)),
-        jsgraph()->Constant(property_cell), effect, control);
-    return Replace(node, value, effect);
-  }
-
   // Load from non-configurable, data property on the global can be lowered to
   // a field load, even without deoptimization, because the property cannot be
-  // deleted or reconfigured to an accessor/interceptor property.
-  if (property_details.IsConfigurable()) {
-    // With deoptimization support, we can lower loads even from configurable
-    // data properties on the global object, by adding a code dependency on
-    // the cell.
-    if (!(flags() & kDeoptimizationEnabled)) return NoChange();
-    dependencies()->AssumePropertyCell(property_cell);
+  // deleted or reconfigured to an accessor/interceptor property.  Yet, if
+  // deoptimization support is available, we can constant-fold certain global
+  // properties or at least lower them to field loads annotated with more
+  // precise type feedback.
+  Type* property_cell_value_type =
+      Type::Intersect(Type::Any(), Type::Tagged(), graph()->zone());
+  if (flags() & kDeoptimizationEnabled) {
+    // Record a code dependency on the cell if we can benefit from the
+    // additional feedback, or the global property is configurable (i.e.
+    // can be deleted or reconfigured to an accessor property).
+    if (property_details.cell_type() != PropertyCellType::kMutable ||
+        property_details.IsConfigurable()) {
+      dependencies()->AssumePropertyCell(property_cell);
+    }
+
+    // Load from constant/undefined global property can be constant-folded.
+    if ((property_details.cell_type() == PropertyCellType::kConstant ||
+         property_details.cell_type() == PropertyCellType::kUndefined)) {
+      return Replace(node, property_cell_value);
+    }
+
+    // Load from constant type cell can benefit from type feedback.
+    if (property_details.cell_type() == PropertyCellType::kConstantType) {
+      // Compute proper type based on the current value in the cell.
+      if (property_cell_value->IsSmi()) {
+        property_cell_value_type = type_cache_.kSmi;
+      } else if (property_cell_value->IsNumber()) {
+        property_cell_value_type = type_cache_.kHeapNumber;
+      } else {
+        Handle<Map> property_cell_value_map(
+            Handle<HeapObject>::cast(property_cell_value)->map(), isolate());
+        property_cell_value_type =
+            Type::Class(property_cell_value_map, graph()->zone());
+      }
+    }
+  } else if (property_details.IsConfigurable()) {
+    // Access to configurable global properties requires deoptimization support.
+    return NoChange();
   }
   Node* value = effect = graph()->NewNode(
-      simplified()->LoadField(AccessBuilder::ForPropertyCellValue()),
+      simplified()->LoadField(
+          AccessBuilder::ForPropertyCellValue(property_cell_value_type)),
       jsgraph()->Constant(property_cell), effect, control);
   return Replace(node, value, effect);
 }
@@ -249,17 +248,25 @@ Reduction JSNativeContextSpecialization::ReduceJSStoreGlobal(Node* node) {
 // object property, either on the object itself or on the prototype chain.
 class JSNativeContextSpecialization::PropertyAccessInfo final {
  public:
-  enum Kind { kInvalid, kDataConstant, kDataField };
+  enum Kind { kInvalid, kDataConstant, kDataField, kTransitionToField };
 
   static PropertyAccessInfo DataConstant(Type* receiver_type,
                                          Handle<Object> constant,
                                          MaybeHandle<JSObject> holder) {
     return PropertyAccessInfo(holder, constant, receiver_type);
   }
-  static PropertyAccessInfo DataField(Type* receiver_type,
-                                      FieldIndex field_index, Type* field_type,
-                                      MaybeHandle<JSObject> holder) {
+  static PropertyAccessInfo DataField(
+      Type* receiver_type, FieldIndex field_index, Type* field_type,
+      MaybeHandle<JSObject> holder = MaybeHandle<JSObject>()) {
     return PropertyAccessInfo(holder, field_index, field_type, receiver_type);
+  }
+  static PropertyAccessInfo TransitionToField(Type* receiver_type,
+                                              FieldIndex field_index,
+                                              Type* field_type,
+                                              Handle<Map> transition_map,
+                                              MaybeHandle<JSObject> holder) {
+    return PropertyAccessInfo(holder, transition_map, field_index, field_type,
+                              receiver_type);
   }
 
   PropertyAccessInfo() : kind_(kInvalid) {}
@@ -276,13 +283,24 @@ class JSNativeContextSpecialization::PropertyAccessInfo final {
         holder_(holder),
         field_index_(field_index),
         field_type_(field_type) {}
+  PropertyAccessInfo(MaybeHandle<JSObject> holder, Handle<Map> transition_map,
+                     FieldIndex field_index, Type* field_type,
+                     Type* receiver_type)
+      : kind_(kTransitionToField),
+        receiver_type_(receiver_type),
+        transition_map_(transition_map),
+        holder_(holder),
+        field_index_(field_index),
+        field_type_(field_type) {}
 
   bool IsDataConstant() const { return kind() == kDataConstant; }
   bool IsDataField() const { return kind() == kDataField; }
+  bool IsTransitionToField() const { return kind() == kTransitionToField; }
 
   Kind kind() const { return kind_; }
   MaybeHandle<JSObject> holder() const { return holder_; }
   Handle<Object> constant() const { return constant_; }
+  Handle<Object> transition_map() const { return transition_map_; }
   FieldIndex field_index() const { return field_index_; }
   Type* field_type() const { return field_type_; }
   Type* receiver_type() const { return receiver_type_; }
@@ -291,6 +309,7 @@ class JSNativeContextSpecialization::PropertyAccessInfo final {
   Kind kind_;
   Type* receiver_type_;
   Handle<Object> constant_;
+  Handle<Map> transition_map_;
   MaybeHandle<JSObject> holder_;
   FieldIndex field_index_;
   Type* field_type_ = Type::Any();
@@ -315,83 +334,85 @@ bool CanInlinePropertyAccess(Handle<Map> map) {
 bool JSNativeContextSpecialization::ComputePropertyAccessInfo(
     Handle<Map> map, Handle<Name> name, PropertyAccessMode access_mode,
     PropertyAccessInfo* access_info) {
-  MaybeHandle<JSObject> holder;
+  // Check if it is safe to inline property access for the {map}.
+  if (!CanInlinePropertyAccess(map)) return false;
+
+  // Compute the receiver type.
   Handle<Map> receiver_map = map;
   Type* receiver_type = Type::Class(receiver_map, graph()->zone());
-  while (CanInlinePropertyAccess(map)) {
+
+  // We support fast inline cases for certain JSObject getters.
+  if (access_mode == kLoad) {
     // Check for special JSObject field accessors.
     int offset;
     if (Accessors::IsJSObjectFieldAccessor(map, name, &offset)) {
-      // Don't bother optimizing stores to special JSObject field accessors.
-      if (access_mode == kStore) {
-        break;
-      }
       FieldIndex field_index = FieldIndex::ForInObjectOffset(offset);
       Type* field_type = Type::Tagged();
       if (map->IsStringMap()) {
         DCHECK(Name::Equals(factory()->length_string(), name));
         // The String::length property is always a smi in the range
         // [0, String::kMaxLength].
-        field_type = Type::Intersect(
-            Type::Range(0.0, String::kMaxLength, graph()->zone()),
-            Type::TaggedSigned(), graph()->zone());
+        field_type = type_cache_.kStringLengthType;
       } else if (map->IsJSArrayMap()) {
         DCHECK(Name::Equals(factory()->length_string(), name));
         // The JSArray::length property is a smi in the range
         // [0, FixedDoubleArray::kMaxLength] in case of fast double
         // elements, a smi in the range [0, FixedArray::kMaxLength]
-        // in case of other fast elements, and [0, kMaxUInt32-1] in
+        // in case of other fast elements, and [0, kMaxUInt32] in
         // case of other arrays.
-        Type* field_type_rep = Type::Tagged();
-        double field_type_upper = kMaxUInt32 - 1;
-        if (IsFastElementsKind(map->elements_kind())) {
-          field_type_rep = Type::TaggedSigned();
-          field_type_upper = IsFastDoubleElementsKind(map->elements_kind())
-                                 ? FixedDoubleArray::kMaxLength
-                                 : FixedArray::kMaxLength;
+        if (IsFastDoubleElementsKind(map->elements_kind())) {
+          field_type = type_cache_.kFixedDoubleArrayLengthType;
+        } else if (IsFastElementsKind(map->elements_kind())) {
+          field_type = type_cache_.kFixedArrayLengthType;
+        } else {
+          field_type = type_cache_.kJSArrayLengthType;
         }
-        field_type =
-            Type::Intersect(Type::Range(0.0, field_type_upper, graph()->zone()),
-                            field_type_rep, graph()->zone());
       }
-      *access_info = PropertyAccessInfo::DataField(receiver_type, field_index,
-                                                   field_type, holder);
+      *access_info =
+          PropertyAccessInfo::DataField(receiver_type, field_index, field_type);
       return true;
     }
+  }
 
+  MaybeHandle<JSObject> holder;
+  while (true) {
     // Lookup the named property on the {map}.
     Handle<DescriptorArray> descriptors(map->instance_descriptors(), isolate());
     int const number = descriptors->SearchWithCache(*name, *map);
     if (number != DescriptorArray::kNotFound) {
-      if (access_mode == kStore && !map.is_identical_to(receiver_map)) {
-        return false;
-      }
       PropertyDetails const details = descriptors->GetDetails(number);
+      if (access_mode == kStore) {
+        // Don't bother optimizing stores to read-only properties.
+        if (details.IsReadOnly()) {
+          return false;
+        }
+        // Check for store to data property on a prototype.
+        if (details.kind() == kData && !holder.is_null()) {
+          // We need to add the data field to the receiver. Leave the loop
+          // and check whether we already have a transition for this field.
+          // Implemented according to ES6 section 9.1.9 [[Set]] (P, V, Receiver)
+          break;
+        }
+      }
       if (details.type() == DATA_CONSTANT) {
         *access_info = PropertyAccessInfo::DataConstant(
             receiver_type, handle(descriptors->GetValue(number), isolate()),
             holder);
         return true;
       } else if (details.type() == DATA) {
-        // Don't bother optimizing stores to read-only properties.
-        if (access_mode == kStore && details.IsReadOnly()) {
-          break;
-        }
         int index = descriptors->GetFieldIndex(number);
         Representation field_representation = details.representation();
         FieldIndex field_index = FieldIndex::ForPropertyIndex(
             *map, index, field_representation.IsDouble());
         Type* field_type = Type::Tagged();
         if (field_representation.IsSmi()) {
-          field_type = Type::Intersect(Type::SignedSmall(),
-                                       Type::TaggedSigned(), graph()->zone());
+          field_type = type_cache_.kSmi;
         } else if (field_representation.IsDouble()) {
           if (access_mode == kStore) {
             // TODO(bmeurer): Add support for storing to double fields.
-            break;
+            return false;
           }
-          field_type = Type::Intersect(Type::Number(), Type::UntaggedFloat64(),
-                                       graph()->zone());
+          field_type = type_cache_.kFloat64;
         } else if (field_representation.IsHeapObject()) {
           // Extract the field type from the property details (make sure its
           // representation is TaggedPointer to reflect the heap object case).
@@ -401,10 +422,8 @@ bool JSNativeContextSpecialization::ComputePropertyAccessInfo(
                   graph()->zone()),
               Type::TaggedPointer(), graph()->zone());
           if (field_type->Is(Type::None())) {
-            if (access_mode == kStore) {
-              // Store is not safe if the field type was cleared.
-              break;
-            }
+            // Store is not safe if the field type was cleared.
+            if (access_mode == kStore) return false;
 
             // The field type was cleared by the GC, so we don't know anything
             // about the contents now.
@@ -423,7 +442,7 @@ bool JSNativeContextSpecialization::ComputePropertyAccessInfo(
         return true;
       } else {
         // TODO(bmeurer): Add support for accessors.
-        break;
+        return false;
       }
     }
 
@@ -431,7 +450,7 @@ bool JSNativeContextSpecialization::ComputePropertyAccessInfo(
     // integer indexed exotic objects (see ES6 section 9.4.5).
     if (map->IsJSTypedArrayMap() && name->IsString() &&
         IsSpecialIndex(isolate()->unicode_cache(), String::cast(*name))) {
-      break;
+      return false;
     }
 
     // Walk up the prototype chain.
@@ -443,9 +462,17 @@ bool JSNativeContextSpecialization::ComputePropertyAccessInfo(
               .ToHandle(&constructor)) {
         map = handle(constructor->initial_map(), isolate());
         DCHECK(map->prototype()->IsJSObject());
-      } else {
+      } else if (map->prototype()->IsNull()) {
+        // Store to property not found on the receiver or any prototype, we need
+        // to transition to a new data property.
+        // Implemented according to ES6 section 9.1.9 [[Set]] (P, V, Receiver)
+        if (access_mode == kStore) {
+          break;
+        }
         // TODO(bmeurer): Handle the not found case if the prototype is null.
-        break;
+        return false;
+      } else {
+        return false;
       }
     }
     Handle<JSObject> map_prototype(JSObject::cast(map->prototype()), isolate());
@@ -456,6 +483,59 @@ bool JSNativeContextSpecialization::ComputePropertyAccessInfo(
     }
     map = handle(map_prototype->map(), isolate());
     holder = map_prototype;
+
+    // Check if it is safe to inline property access for the {map}.
+    if (!CanInlinePropertyAccess(map)) return false;
+  }
+  DCHECK_EQ(kStore, access_mode);
+
+  // Check if the {receiver_map} has a data transition with the given {name}.
+  if (receiver_map->unused_property_fields() == 0) return false;
+  if (Map* transition = TransitionArray::SearchTransition(*receiver_map, kData,
+                                                          *name, NONE)) {
+    Handle<Map> transition_map(transition, isolate());
+    int const number = transition_map->LastAdded();
+    PropertyDetails const details =
+        transition_map->instance_descriptors()->GetDetails(number);
+    // Don't bother optimizing stores to read-only properties.
+    if (details.IsReadOnly()) return false;
+    // TODO(bmeurer): Handle transition to data constant?
+    if (details.type() != DATA) return false;
+    int const index = details.field_index();
+    Representation field_representation = details.representation();
+    FieldIndex field_index = FieldIndex::ForPropertyIndex(
+        *transition_map, index, field_representation.IsDouble());
+    Type* field_type = Type::Tagged();
+    if (field_representation.IsSmi()) {
+      field_type = type_cache_.kSmi;
+    } else if (field_representation.IsDouble()) {
+      // TODO(bmeurer): Add support for storing to double fields.
+      return false;
+    } else if (field_representation.IsHeapObject()) {
+      // Extract the field type from the property details (make sure its
+      // representation is TaggedPointer to reflect the heap object case).
+      field_type = Type::Intersect(
+          Type::Convert<HeapType>(
+              handle(
+                  transition_map->instance_descriptors()->GetFieldType(number),
+                  isolate()),
+              graph()->zone()),
+          Type::TaggedPointer(), graph()->zone());
+      if (field_type->Is(Type::None())) {
+        // Store is not safe if the field type was cleared.
+        return false;
+      } else if (!Type::Any()->Is(field_type)) {
+        // Add proper code dependencies in case of stable field map(s).
+        Handle<Map> field_owner_map(transition_map->FindFieldOwner(number),
+                                    isolate());
+        dependencies()->AssumeFieldType(field_owner_map);
+      }
+      DCHECK(field_type->Is(Type::TaggedPointer()));
+    }
+    dependencies()->AssumeMapNotDeprecated(transition_map);
+    *access_info = PropertyAccessInfo::TransitionToField(
+        receiver_type, field_index, field_type, transition_map, holder);
+    return true;
   }
   return false;
 }
@@ -478,10 +558,11 @@ bool JSNativeContextSpecialization::ComputePropertyAccessInfos(
 }
 
 
-Reduction JSNativeContextSpecialization::ReduceJSLoadNamed(Node* node) {
-  DCHECK_EQ(IrOpcode::kJSLoadNamed, node->opcode());
-  NamedAccess const& p = NamedAccessOf(node->op());
-  Handle<Name> name = p.name();
+Reduction JSNativeContextSpecialization::ReduceNamedAccess(
+    Node* node, Node* value, MapHandleList const& receiver_maps,
+    Handle<Name> name, PropertyAccessMode access_mode) {
+  DCHECK(node->opcode() == IrOpcode::kJSLoadNamed ||
+         node->opcode() == IrOpcode::kJSStoreNamed);
   Node* receiver = NodeProperties::GetValueInput(node, 0);
   Node* frame_state = NodeProperties::GetFrameStateInput(node, 1);
   Node* effect = NodeProperties::GetEffectInput(node);
@@ -490,16 +571,10 @@ Reduction JSNativeContextSpecialization::ReduceJSLoadNamed(Node* node) {
   // Not much we can do if deoptimization support is disabled.
   if (!(flags() & kDeoptimizationEnabled)) return NoChange();
 
-  // Extract receiver maps from the LOAD_IC using the LoadICNexus.
-  MapHandleList receiver_maps;
-  if (!p.feedback().IsValid()) return NoChange();
-  LoadICNexus nexus(p.feedback().vector(), p.feedback().slot());
-  if (nexus.ExtractMaps(&receiver_maps) == 0) return NoChange();
-  DCHECK_LT(0, receiver_maps.length());
-
   // Compute property access infos for the receiver maps.
   ZoneVector<PropertyAccessInfo> access_infos(zone());
-  if (!ComputePropertyAccessInfos(receiver_maps, name, kLoad, &access_infos)) {
+  if (!ComputePropertyAccessInfos(receiver_maps, name, access_mode,
+                                  &access_infos)) {
     return NoChange();
   }
 
@@ -507,7 +582,7 @@ Reduction JSNativeContextSpecialization::ReduceJSLoadNamed(Node* node) {
   if (access_infos.empty()) return NoChange();
 
   // The final states for every polymorphic branch. We join them with
-  // Merge+Phi+EffectPhi at the bottom.
+  // Merge++Phi+EffectPhi at the bottom.
   ZoneVector<Node*> values(zone());
   ZoneVector<Node*> effects(zone());
   ZoneVector<Node*> controls(zone());
@@ -533,7 +608,8 @@ Reduction JSNativeContextSpecialization::ReduceJSLoadNamed(Node* node) {
   // Generate code for the various different property access patterns.
   Node* fallthrough_control = control;
   for (PropertyAccessInfo const& access_info : access_infos) {
-    Node* this_value = receiver;
+    Node* this_value = value;
+    Node* this_receiver = receiver;
     Node* this_effect = effect;
     Node* this_control;
 
@@ -547,8 +623,8 @@ Reduction JSNativeContextSpecialization::ReduceJSLoadNamed(Node* node) {
       Node* check =
           graph()->NewNode(machine()->Uint32LessThan(), receiver_instance_type,
                            jsgraph()->Uint32Constant(FIRST_NONSTRING_TYPE));
-      Node* branch = graph()->NewNode(common()->Branch(BranchHint::kTrue),
-                                      check, fallthrough_control);
+      Node* branch =
+          graph()->NewNode(common()->Branch(), check, fallthrough_control);
       fallthrough_control = graph()->NewNode(common()->IfFalse(), branch);
       this_control = graph()->NewNode(common()->IfTrue(), branch);
     } else {
@@ -560,8 +636,8 @@ Reduction JSNativeContextSpecialization::ReduceJSLoadNamed(Node* node) {
         Node* check =
             graph()->NewNode(simplified()->ReferenceEqual(Type::Internal()),
                              receiver_map, jsgraph()->Constant(map));
-        Node* branch = graph()->NewNode(common()->Branch(BranchHint::kTrue),
-                                        check, fallthrough_control);
+        Node* branch =
+            graph()->NewNode(common()->Branch(), check, fallthrough_control);
         this_controls.push_back(graph()->NewNode(common()->IfTrue(), branch));
         fallthrough_control = graph()->NewNode(common()->IfFalse(), branch);
       }
@@ -576,44 +652,111 @@ Reduction JSNativeContextSpecialization::ReduceJSLoadNamed(Node* node) {
     // Determine actual holder and perform prototype chain checks.
     Handle<JSObject> holder;
     if (access_info.holder().ToHandle(&holder)) {
-      this_value = jsgraph()->Constant(holder);
       AssumePrototypesStable(receiver_type, holder);
     }
 
     // Generate the actual property access.
     if (access_info.IsDataConstant()) {
       this_value = jsgraph()->Constant(access_info.constant());
+      if (access_mode == kStore) {
+        Node* check = graph()->NewNode(
+            simplified()->ReferenceEqual(Type::Tagged()), value, this_value);
+        Node* branch = graph()->NewNode(common()->Branch(BranchHint::kTrue),
+                                        check, this_control);
+        exit_controls.push_back(graph()->NewNode(common()->IfFalse(), branch));
+        this_control = graph()->NewNode(common()->IfTrue(), branch);
+      }
     } else {
-      // TODO(bmeurer): This is sort of adhoc, and must be refactored into some
-      // common code once we also have support for stores.
-      DCHECK(access_info.IsDataField());
+      DCHECK(access_info.IsDataField() || access_info.IsTransitionToField());
       FieldIndex const field_index = access_info.field_index();
       Type* const field_type = access_info.field_type();
+      if (access_mode == kLoad && access_info.holder().ToHandle(&holder)) {
+        this_receiver = jsgraph()->Constant(holder);
+      }
+      Node* this_storage = this_receiver;
       if (!field_index.is_inobject()) {
-        this_value = this_effect = graph()->NewNode(
+        this_storage = this_effect = graph()->NewNode(
             simplified()->LoadField(AccessBuilder::ForJSObjectProperties()),
-            this_value, this_effect, this_control);
+            this_storage, this_effect, this_control);
       }
-      FieldAccess field_access;
-      field_access.base_is_tagged = kTaggedBase;
-      field_access.offset = field_index.offset();
-      field_access.name = name;
-      field_access.type = field_type;
-      field_access.machine_type = kMachAnyTagged;
-      if (field_type->Is(Type::UntaggedFloat64())) {
-        if (!field_index.is_inobject() || field_index.is_hidden_field() ||
-            !FLAG_unbox_double_fields) {
-          this_value = this_effect =
-              graph()->NewNode(simplified()->LoadField(field_access),
-                               this_value, this_effect, this_control);
-          field_access.offset = HeapNumber::kValueOffset;
-          field_access.name = MaybeHandle<Name>();
+      FieldAccess field_access = {kTaggedBase, field_index.offset(), name,
+                                  field_type, kMachAnyTagged};
+      if (access_mode == kLoad) {
+        if (field_type->Is(Type::UntaggedFloat64())) {
+          if (!field_index.is_inobject() || field_index.is_hidden_field() ||
+              !FLAG_unbox_double_fields) {
+            this_storage = this_effect =
+                graph()->NewNode(simplified()->LoadField(field_access),
+                                 this_storage, this_effect, this_control);
+            field_access.offset = HeapNumber::kValueOffset;
+            field_access.name = MaybeHandle<Name>();
+          }
+          field_access.machine_type = kMachFloat64;
         }
-        field_access.machine_type = kMachFloat64;
+        this_value = this_effect =
+            graph()->NewNode(simplified()->LoadField(field_access),
+                             this_storage, this_effect, this_control);
+      } else {
+        DCHECK_EQ(kStore, access_mode);
+        if (field_type->Is(Type::TaggedSigned())) {
+          Node* check = graph()->NewNode(simplified()->ObjectIsSmi(), value);
+          Node* branch = graph()->NewNode(common()->Branch(BranchHint::kTrue),
+                                          check, this_control);
+          exit_controls.push_back(
+              graph()->NewNode(common()->IfFalse(), branch));
+          this_control = graph()->NewNode(common()->IfTrue(), branch);
+        } else if (field_type->Is(Type::TaggedPointer())) {
+          Node* check = graph()->NewNode(simplified()->ObjectIsSmi(), value);
+          Node* branch = graph()->NewNode(common()->Branch(BranchHint::kFalse),
+                                          check, this_control);
+          exit_controls.push_back(graph()->NewNode(common()->IfTrue(), branch));
+          this_control = graph()->NewNode(common()->IfFalse(), branch);
+          if (field_type->NumClasses() > 0) {
+            // Emit a (sequence of) map checks for the value.
+            ZoneVector<Node*> this_controls(zone());
+            Node* value_map = this_effect = graph()->NewNode(
+                simplified()->LoadField(AccessBuilder::ForMap()), value,
+                this_effect, this_control);
+            for (auto i = field_type->Classes(); !i.Done(); i.Advance()) {
+              Handle<Map> field_map(i.Current());
+              check = graph()->NewNode(
+                  simplified()->ReferenceEqual(Type::Internal()), value_map,
+                  jsgraph()->Constant(field_map));
+              branch = graph()->NewNode(common()->Branch(BranchHint::kTrue),
+                                        check, this_control);
+              this_control = graph()->NewNode(common()->IfFalse(), branch);
+              this_controls.push_back(
+                  graph()->NewNode(common()->IfTrue(), branch));
+            }
+            exit_controls.push_back(this_control);
+            int const this_control_count =
+                static_cast<int>(this_controls.size());
+            this_control =
+                (this_control_count == 1)
+                    ? this_controls.front()
+                    : graph()->NewNode(common()->Merge(this_control_count),
+                                       this_control_count,
+                                       &this_controls.front());
+          }
+        } else {
+          DCHECK(field_type->Is(Type::Tagged()));
+        }
+        if (access_info.IsTransitionToField()) {
+          this_effect = graph()->NewNode(common()->BeginRegion(), this_effect);
+          this_effect = graph()->NewNode(
+              simplified()->StoreField(AccessBuilder::ForMap()), this_receiver,
+              jsgraph()->Constant(access_info.transition_map()), this_effect,
+              this_control);
+        }
+        this_effect = graph()->NewNode(simplified()->StoreField(field_access),
+                                       this_storage, this_value, this_effect,
+                                       this_control);
+        if (access_info.IsTransitionToField()) {
+          this_effect =
+              graph()->NewNode(common()->FinishRegion(),
+                               jsgraph()->UndefinedConstant(), this_effect);
+        }
       }
-      this_value = this_effect =
-          graph()->NewNode(simplified()->LoadField(field_access), this_value,
-                           this_effect, this_control);
     }
 
     // Remember the final state for this property access.
@@ -623,6 +766,17 @@ Reduction JSNativeContextSpecialization::ReduceJSLoadNamed(Node* node) {
   }
 
   // Collect the fallthru control as final "exit" control.
+  if (fallthrough_control != control) {
+    // Mark the last fallthru branch as deferred.
+    Node* branch = NodeProperties::GetControlInput(fallthrough_control);
+    DCHECK_EQ(IrOpcode::kBranch, branch->opcode());
+    if (fallthrough_control->opcode() == IrOpcode::kIfTrue) {
+      NodeProperties::ChangeOp(branch, common()->Branch(BranchHint::kFalse));
+    } else {
+      DCHECK_EQ(IrOpcode::kIfFalse, fallthrough_control->opcode());
+      NodeProperties::ChangeOp(branch, common()->Branch(BranchHint::kTrue));
+    }
+  }
   exit_controls.push_back(fallthrough_control);
 
   // Generate the single "exit" point, where we get if either all map/instance
@@ -642,7 +796,6 @@ Reduction JSNativeContextSpecialization::ReduceJSLoadNamed(Node* node) {
   NodeProperties::MergeControlToEnd(graph(), common(), deoptimize);
 
   // Generate the final merge point for all (polymorphic) branches.
-  Node* value;
   int const control_count = static_cast<int>(controls.size());
   if (control_count == 1) {
     value = values.front();
@@ -662,18 +815,27 @@ Reduction JSNativeContextSpecialization::ReduceJSLoadNamed(Node* node) {
 }
 
 
+Reduction JSNativeContextSpecialization::ReduceJSLoadNamed(Node* node) {
+  DCHECK_EQ(IrOpcode::kJSLoadNamed, node->opcode());
+  NamedAccess const& p = NamedAccessOf(node->op());
+  Node* const value = jsgraph()->Dead();
+
+  // Extract receiver maps from the LOAD_IC using the LoadICNexus.
+  MapHandleList receiver_maps;
+  if (!p.feedback().IsValid()) return NoChange();
+  LoadICNexus nexus(p.feedback().vector(), p.feedback().slot());
+  if (nexus.ExtractMaps(&receiver_maps) == 0) return NoChange();
+  DCHECK_LT(0, receiver_maps.length());
+
+  // Try to lower the named access based on the {receiver_maps}.
+  return ReduceNamedAccess(node, value, receiver_maps, p.name(), kLoad);
+}
+
+
 Reduction JSNativeContextSpecialization::ReduceJSStoreNamed(Node* node) {
   DCHECK_EQ(IrOpcode::kJSStoreNamed, node->opcode());
   NamedAccess const& p = NamedAccessOf(node->op());
-  Handle<Name> name = p.name();
-  Node* receiver = NodeProperties::GetValueInput(node, 0);
-  Node* value = NodeProperties::GetValueInput(node, 1);
-  Node* frame_state = NodeProperties::GetFrameStateInput(node, 1);
-  Node* effect = NodeProperties::GetEffectInput(node);
-  Node* control = NodeProperties::GetControlInput(node);
-
-  // Not much we can do if deoptimization support is disabled.
-  if (!(flags() & kDeoptimizationEnabled)) return NoChange();
+  Node* const value = NodeProperties::GetValueInput(node, 1);
 
   // Extract receiver maps from the STORE_IC using the StoreICNexus.
   MapHandleList receiver_maps;
@@ -682,195 +844,8 @@ Reduction JSNativeContextSpecialization::ReduceJSStoreNamed(Node* node) {
   if (nexus.ExtractMaps(&receiver_maps) == 0) return NoChange();
   DCHECK_LT(0, receiver_maps.length());
 
-  // Compute property access infos for the receiver maps.
-  ZoneVector<PropertyAccessInfo> access_infos(zone());
-  if (!ComputePropertyAccessInfos(receiver_maps, name, kStore, &access_infos)) {
-    return NoChange();
-  }
-
-  // Nothing to do if we have no non-deprecated maps.
-  if (access_infos.empty()) return NoChange();
-
-  // The final states for every polymorphic branch. We join them with
-  // Merge+EffectPhi at the bottom.
-  ZoneVector<Node*> effects(zone());
-  ZoneVector<Node*> controls(zone());
-
-  // The list of "exiting" controls, which currently go to a single deoptimize.
-  // TODO(bmeurer): Consider using an IC as fallback.
-  Node* const exit_effect = effect;
-  ZoneVector<Node*> exit_controls(zone());
-
-  // Ensure that {receiver} is a heap object.
-  Node* check = graph()->NewNode(simplified()->ObjectIsSmi(), receiver);
-  Node* branch =
-      graph()->NewNode(common()->Branch(BranchHint::kFalse), check, control);
-  exit_controls.push_back(graph()->NewNode(common()->IfTrue(), branch));
-  control = graph()->NewNode(common()->IfFalse(), branch);
-
-  // Load the {receiver} map. The resulting effect is the dominating effect for
-  // all (polymorphic) branches.
-  Node* receiver_map = effect =
-      graph()->NewNode(simplified()->LoadField(AccessBuilder::ForMap()),
-                       receiver, effect, control);
-
-  // Generate code for the various different property access patterns.
-  Node* fallthrough_control = control;
-  for (PropertyAccessInfo const& access_info : access_infos) {
-    Node* this_receiver = receiver;
-    Node* this_effect = effect;
-    Node* this_control;
-
-    // Perform map check on {receiver}.
-    Type* receiver_type = access_info.receiver_type();
-    if (receiver_type->Is(Type::String())) {
-      // Emit an instance type check for strings.
-      Node* receiver_instance_type = this_effect = graph()->NewNode(
-          simplified()->LoadField(AccessBuilder::ForMapInstanceType()),
-          receiver_map, this_effect, fallthrough_control);
-      Node* check =
-          graph()->NewNode(machine()->Uint32LessThan(), receiver_instance_type,
-                           jsgraph()->Uint32Constant(FIRST_NONSTRING_TYPE));
-      Node* branch = graph()->NewNode(common()->Branch(BranchHint::kTrue),
-                                      check, fallthrough_control);
-      fallthrough_control = graph()->NewNode(common()->IfFalse(), branch);
-      this_control = graph()->NewNode(common()->IfTrue(), branch);
-    } else {
-      // Emit a (sequence of) map checks for other properties.
-      ZoneVector<Node*> this_controls(zone());
-      for (auto i = access_info.receiver_type()->Classes(); !i.Done();
-           i.Advance()) {
-        Handle<Map> map = i.Current();
-        Node* check =
-            graph()->NewNode(simplified()->ReferenceEqual(Type::Internal()),
-                             receiver_map, jsgraph()->Constant(map));
-        Node* branch = graph()->NewNode(common()->Branch(BranchHint::kTrue),
-                                        check, fallthrough_control);
-        this_controls.push_back(graph()->NewNode(common()->IfTrue(), branch));
-        fallthrough_control = graph()->NewNode(common()->IfFalse(), branch);
-      }
-      int const this_control_count = static_cast<int>(this_controls.size());
-      this_control =
-          (this_control_count == 1)
-              ? this_controls.front()
-              : graph()->NewNode(common()->Merge(this_control_count),
-                                 this_control_count, &this_controls.front());
-    }
-
-    // Determine actual holder and perform prototype chain checks.
-    Handle<JSObject> holder;
-    if (access_info.holder().ToHandle(&holder)) {
-      AssumePrototypesStable(receiver_type, holder);
-    }
-
-    // Generate the actual property access.
-    if (access_info.IsDataConstant()) {
-      Node* check =
-          graph()->NewNode(simplified()->ReferenceEqual(Type::Tagged()), value,
-                           jsgraph()->Constant(access_info.constant()));
-      Node* branch = graph()->NewNode(common()->Branch(BranchHint::kTrue),
-                                      check, this_control);
-      exit_controls.push_back(graph()->NewNode(common()->IfFalse(), branch));
-      this_control = graph()->NewNode(common()->IfTrue(), branch);
-    } else {
-      // TODO(bmeurer): This is sort of adhoc, and must be refactored into some
-      // common code once we also have support for stores.
-      DCHECK(access_info.IsDataField());
-      FieldIndex const field_index = access_info.field_index();
-      Type* const field_type = access_info.field_type();
-      if (!field_index.is_inobject()) {
-        this_receiver = this_effect = graph()->NewNode(
-            simplified()->LoadField(AccessBuilder::ForJSObjectProperties()),
-            this_receiver, this_effect, this_control);
-      }
-      FieldAccess field_access;
-      field_access.base_is_tagged = kTaggedBase;
-      field_access.offset = field_index.offset();
-      field_access.name = name;
-      field_access.type = field_type;
-      field_access.machine_type = kMachAnyTagged;
-      if (field_type->Is(Type::TaggedSigned())) {
-        Node* check = graph()->NewNode(simplified()->ObjectIsSmi(), value);
-        Node* branch = graph()->NewNode(common()->Branch(BranchHint::kTrue),
-                                        check, this_control);
-        exit_controls.push_back(graph()->NewNode(common()->IfFalse(), branch));
-        this_control = graph()->NewNode(common()->IfTrue(), branch);
-      } else if (field_type->Is(Type::TaggedPointer())) {
-        Node* check = graph()->NewNode(simplified()->ObjectIsSmi(), value);
-        Node* branch = graph()->NewNode(common()->Branch(BranchHint::kFalse),
-                                        check, this_control);
-        exit_controls.push_back(graph()->NewNode(common()->IfTrue(), branch));
-        this_control = graph()->NewNode(common()->IfFalse(), branch);
-        if (field_type->NumClasses() > 0) {
-          // Emit a (sequence of) map checks for the value.
-          ZoneVector<Node*> this_controls(zone());
-          Node* value_map = this_effect =
-              graph()->NewNode(simplified()->LoadField(AccessBuilder::ForMap()),
-                               value, this_effect, this_control);
-          for (auto i = field_type->Classes(); !i.Done(); i.Advance()) {
-            Handle<Map> field_map(i.Current());
-            check =
-                graph()->NewNode(simplified()->ReferenceEqual(Type::Internal()),
-                                 value_map, jsgraph()->Constant(field_map));
-            branch = graph()->NewNode(common()->Branch(BranchHint::kTrue),
-                                      check, this_control);
-            this_control = graph()->NewNode(common()->IfFalse(), branch);
-            this_controls.push_back(
-                graph()->NewNode(common()->IfTrue(), branch));
-          }
-          exit_controls.push_back(this_control);
-          int const this_control_count = static_cast<int>(this_controls.size());
-          this_control = (this_control_count == 1)
-                             ? this_controls.front()
-                             : graph()->NewNode(
-                                   common()->Merge(this_control_count),
-                                   this_control_count, &this_controls.front());
-        }
-      } else {
-        DCHECK(field_type->Is(Type::Tagged()));
-      }
-      this_effect =
-          graph()->NewNode(simplified()->StoreField(field_access),
-                           this_receiver, value, this_effect, this_control);
-    }
-
-    // Remember the final state for this property access.
-    effects.push_back(this_effect);
-    controls.push_back(this_control);
-  }
-
-  // Collect the fallthru control as final "exit" control.
-  exit_controls.push_back(fallthrough_control);
-
-  // Generate the single "exit" point, where we get if either all map/instance
-  // type checks failed, or one of the assumptions inside one of the cases
-  // failes (i.e. failing prototype chain check).
-  // TODO(bmeurer): Consider falling back to IC here if deoptimization is
-  // disabled.
-  int const exit_control_count = static_cast<int>(exit_controls.size());
-  Node* exit_control =
-      (exit_control_count == 1)
-          ? exit_controls.front()
-          : graph()->NewNode(common()->Merge(exit_control_count),
-                             exit_control_count, &exit_controls.front());
-  Node* deoptimize = graph()->NewNode(common()->Deoptimize(), frame_state,
-                                      exit_effect, exit_control);
-  // TODO(bmeurer): This should be on the AdvancedReducer somehow.
-  NodeProperties::MergeControlToEnd(graph(), common(), deoptimize);
-
-  // Generate the final merge point for all (polymorphic) branches.
-  int const control_count = static_cast<int>(controls.size());
-  if (control_count == 1) {
-    effect = effects.front();
-    control = controls.front();
-  } else {
-    control = graph()->NewNode(common()->Merge(control_count), control_count,
-                               &controls.front());
-    effects.push_back(control);
-    effect = graph()->NewNode(common()->EffectPhi(control_count),
-                              control_count + 1, &effects.front());
-  }
-  return Replace(node, value, effect, control);
+  // Try to lower the named access based on the {receiver_maps}.
+  return ReduceNamedAccess(node, value, receiver_maps, p.name(), kStore);
 }
 
 

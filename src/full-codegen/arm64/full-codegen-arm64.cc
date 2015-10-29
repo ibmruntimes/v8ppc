@@ -1136,7 +1136,6 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ Push(x1, x0, x2, xzr);
 
   // Generate code for doing the condition check.
-  PrepareForBailoutForId(stmt->BodyId(), NO_REGISTERS);
   __ Bind(&loop);
   SetExpressionAsStatementPosition(stmt->each());
 
@@ -1187,6 +1186,8 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
     PrepareForBailoutForId(stmt->AssignmentId(), NO_REGISTERS);
   }
 
+  // Both Crankshaft and Turbofan expect BodyId to be right before stmt->body().
+  PrepareForBailoutForId(stmt->BodyId(), NO_REGISTERS);
   // Generate code for the body of the loop.
   Visit(stmt->body());
 
@@ -4650,7 +4651,8 @@ void FullCodeGenerator::EmitLiteralCompareNil(CompareOperation* expr,
   } else {
     Handle<Code> ic = CompareNilICStub::GetUninitialized(isolate(), nil);
     CallIC(ic, expr->CompareOperationFeedbackId());
-    __ CompareAndSplit(x0, 0, ne, if_true, if_false, fall_through);
+    __ CompareRoot(x0, Heap::kTrueValueRootIndex);
+    Split(eq, if_true, if_false, fall_through);
   }
 
   context()->Plug(if_true, if_false);

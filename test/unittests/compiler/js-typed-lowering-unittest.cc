@@ -89,6 +89,18 @@ class JSTypedLoweringTest : public TypedGraphTest {
     return reducer.Reduce(node);
   }
 
+  Node* FrameState(Handle<SharedFunctionInfo> shared, Node* outer_frame_state) {
+    Node* state_values = graph()->NewNode(common()->StateValues(0));
+    return graph()->NewNode(
+        common()->FrameState(BailoutId::None(),
+                             OutputFrameStateCombine::Ignore(),
+                             common()->CreateFrameStateFunctionInfo(
+                                 FrameStateType::kJavaScriptFunction, 1, 0,
+                                 shared, CALL_MAINTAINS_NATIVE_CONTEXT)),
+        state_values, state_values, state_values, NumberConstant(0),
+        UndefinedConstant(), outer_frame_state);
+  }
+
   Handle<JSArrayBuffer> NewArrayBuffer(void* bytes, size_t byte_length) {
     Handle<JSArrayBuffer> buffer = factory()->NewJSArrayBuffer();
     JSArrayBuffer::Setup(buffer, isolate(), true, bytes, byte_length);
@@ -191,11 +203,10 @@ TEST_F(JSTypedLoweringTest, JSUnaryNotWithString) {
   Reduction r = Reduce(graph()->NewNode(javascript()->UnaryNot(), input,
                                         context, graph()->start()));
   ASSERT_TRUE(r.Changed());
-  EXPECT_THAT(
-      r.replacement(),
-      IsNumberEqual(IsLoadField(AccessBuilder::ForStringLength(zone()), input,
-                                graph()->start(), graph()->start()),
-                    IsNumberConstant(0.0)));
+  EXPECT_THAT(r.replacement(),
+              IsNumberEqual(IsLoadField(AccessBuilder::ForStringLength(), input,
+                                        graph()->start(), graph()->start()),
+                            IsNumberConstant(0.0)));
 }
 
 
@@ -390,8 +401,8 @@ TEST_F(JSTypedLoweringTest, JSToBooleanWithString) {
   EXPECT_THAT(
       r.replacement(),
       IsNumberLessThan(IsNumberConstant(0.0),
-                       IsLoadField(AccessBuilder::ForStringLength(zone()),
-                                   input, graph()->start(), graph()->start())));
+                       IsLoadField(AccessBuilder::ForStringLength(), input,
+                                   graph()->start(), graph()->start())));
 }
 
 
@@ -881,9 +892,8 @@ TEST_F(JSTypedLoweringTest, JSLoadNamedStringLength) {
                          receiver, vector, context, EmptyFrameState(),
                          EmptyFrameState(), effect, control));
     ASSERT_TRUE(r.Changed());
-    EXPECT_THAT(r.replacement(),
-                IsLoadField(AccessBuilder::ForStringLength(zone()), receiver,
-                            effect, control));
+    EXPECT_THAT(r.replacement(), IsLoadField(AccessBuilder::ForStringLength(),
+                                             receiver, effect, control));
   }
 }
 
@@ -981,6 +991,72 @@ TEST_F(JSTypedLoweringTest, JSAddWithString) {
                                              NOT_TENURED).code()),
                        lhs, rhs, context, frame_state0, effect, control));
   }
+}
+
+
+// -----------------------------------------------------------------------------
+// JSCreateArguments
+
+
+TEST_F(JSTypedLoweringTest, JSCreateArgumentsViaStub) {
+  Node* const closure = Parameter(Type::Any());
+  Node* const context = UndefinedConstant();
+  Node* const effect = graph()->start();
+  Node* const control = graph()->start();
+  Handle<SharedFunctionInfo> shared(isolate()->object_function()->shared());
+  Node* const frame_state = FrameState(shared, graph()->start());
+  Reduction r = Reduce(
+      graph()->NewNode(javascript()->CreateArguments(
+                           CreateArgumentsParameters::kMappedArguments, 0),
+                       closure, context, frame_state, effect, control));
+  ASSERT_TRUE(r.Changed());
+  EXPECT_THAT(r.replacement(),
+              IsCall(_, IsHeapConstant(CodeFactory::ArgumentsAccess(
+                                           isolate(), false, false)
+                                           .code()),
+                     closure, IsNumberConstant(0), _, effect, control));
+}
+
+
+TEST_F(JSTypedLoweringTest, JSCreateArgumentsInlinedMapped) {
+  Node* const closure = Parameter(Type::Any());
+  Node* const context = UndefinedConstant();
+  Node* const effect = graph()->start();
+  Node* const control = graph()->start();
+  Handle<SharedFunctionInfo> shared(isolate()->object_function()->shared());
+  Node* const frame_state_outer = FrameState(shared, graph()->start());
+  Node* const frame_state_inner = FrameState(shared, frame_state_outer);
+  Reduction r = Reduce(
+      graph()->NewNode(javascript()->CreateArguments(
+                           CreateArgumentsParameters::kMappedArguments, 0),
+                       closure, context, frame_state_inner, effect, control));
+  ASSERT_TRUE(r.Changed());
+  EXPECT_THAT(r.replacement(),
+              IsFinishRegion(
+                  IsAllocate(IsNumberConstant(Heap::kSloppyArgumentsObjectSize),
+                             IsBeginRegion(effect), control),
+                  _));
+}
+
+
+TEST_F(JSTypedLoweringTest, JSCreateArgumentsInlinedUnmapped) {
+  Node* const closure = Parameter(Type::Any());
+  Node* const context = UndefinedConstant();
+  Node* const effect = graph()->start();
+  Node* const control = graph()->start();
+  Handle<SharedFunctionInfo> shared(isolate()->object_function()->shared());
+  Node* const frame_state_outer = FrameState(shared, graph()->start());
+  Node* const frame_state_inner = FrameState(shared, frame_state_outer);
+  Reduction r = Reduce(
+      graph()->NewNode(javascript()->CreateArguments(
+                           CreateArgumentsParameters::kUnmappedArguments, 0),
+                       closure, context, frame_state_inner, effect, control));
+  ASSERT_TRUE(r.Changed());
+  EXPECT_THAT(r.replacement(),
+              IsFinishRegion(
+                  IsAllocate(IsNumberConstant(Heap::kStrictArgumentsObjectSize),
+                             IsBeginRegion(effect), control),
+                  _));
 }
 
 

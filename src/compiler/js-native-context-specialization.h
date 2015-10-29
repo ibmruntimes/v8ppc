@@ -15,6 +15,7 @@ namespace internal {
 // Forward declarations.
 class CompilationDependencies;
 class Factory;
+class TypeCache;
 
 
 namespace compiler {
@@ -68,6 +69,11 @@ class JSNativeContextSpecialization final : public AdvancedReducer {
                                   PropertyAccessMode access_mode,
                                   ZoneVector<PropertyAccessInfo>* access_infos);
 
+  Reduction ReduceNamedAccess(Node* node, Node* value,
+                              MapHandleList const& receiver_maps,
+                              Handle<Name> name,
+                              PropertyAccessMode access_mode);
+
   struct ScriptContextTableLookupResult;
   bool LookupInScriptContextTable(Handle<Name> name,
                                   ScriptContextTableLookupResult* result);
@@ -96,6 +102,7 @@ class JSNativeContextSpecialization final : public AdvancedReducer {
   Handle<Context> native_context_;
   CompilationDependencies* const dependencies_;
   Zone* const zone_;
+  TypeCache const& type_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(JSNativeContextSpecialization);
 };

@@ -43,6 +43,7 @@
 #include "src/profiler/profile-generator-inl.h"
 #include "src/profiler/sampler.h"
 #include "src/property.h"
+#include "src/property-descriptor.h"
 #include "src/property-details.h"
 #include "src/prototype.h"
 #include "src/runtime/runtime.h"
@@ -158,6 +159,7 @@ class CallDepthScope {
         do_callback_(do_callback) {
     // TODO(dcarney): remove this when blink stops crashing.
     DCHECK(!isolate_->external_caught_exception());
+    isolate_->IncrementJsCallsFromApiCounter();
     isolate_->handle_scope_implementer()->IncrementCallDepth();
     if (!context_.IsEmpty()) context_->Enter();
   }
@@ -3532,9 +3534,9 @@ Maybe<bool> v8::Object::DefineOwnProperty(v8::Local<v8::Context> context,
                                           v8::PropertyAttribute attributes) {
   PREPARE_FOR_EXECUTION_PRIMITIVE(context, "v8::Object::DefineOwnProperty()",
                                   bool);
-  auto self = Utils::OpenHandle(this);
-  auto key_obj = Utils::OpenHandle(*key);
-  auto value_obj = Utils::OpenHandle(*value);
+  i::Handle<i::JSObject> self = Utils::OpenHandle(this);
+  i::Handle<i::Name> key_obj = Utils::OpenHandle(*key);
+  i::Handle<i::Object> value_obj = Utils::OpenHandle(*value);
 
   if (self->IsAccessCheckNeeded() &&
       !isolate->MayAccess(handle(isolate->context()), self)) {
@@ -3542,21 +3544,16 @@ Maybe<bool> v8::Object::DefineOwnProperty(v8::Local<v8::Context> context,
     return Nothing<bool>();
   }
 
-  i::Handle<i::FixedArray> desc = isolate->factory()->NewFixedArray(3);
-  desc->set(0, isolate->heap()->ToBoolean(!(attributes & v8::ReadOnly)));
-  desc->set(1, isolate->heap()->ToBoolean(!(attributes & v8::DontEnum)));
-  desc->set(2, isolate->heap()->ToBoolean(!(attributes & v8::DontDelete)));
-  i::Handle<i::JSArray> desc_array =
-      isolate->factory()->NewJSArrayWithElements(desc, i::FAST_ELEMENTS, 3);
-  i::Handle<i::Object> args[] = {self, key_obj, value_obj, desc_array};
-  i::Handle<i::Object> undefined = isolate->factory()->undefined_value();
-  i::Handle<i::JSFunction> fun = isolate->object_define_own_property();
-  i::Handle<i::Object> result;
-  has_pending_exception =
-      !i::Execution::Call(isolate, fun, undefined, arraysize(args), args)
-           .ToHandle(&result);
+  i::PropertyDescriptor desc;
+  desc.set_writable(!(attributes & v8::ReadOnly));
+  desc.set_enumerable(!(attributes & v8::DontEnum));
+  desc.set_configurable(!(attributes & v8::DontDelete));
+  desc.set_value(value_obj);
+  bool success = i::JSReceiver::DefineOwnProperty(isolate, self, key_obj, &desc,
+                                                  i::Object::DONT_THROW);
+  // Even though we said DONT_THROW, there might be accessors that do throw.
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-  return Just(result->BooleanValue());
+  return Just(success);
 }
 
 
@@ -3606,6 +3603,13 @@ bool v8::Object::ForceSet(v8::Local<Value> key, v8::Local<Value> value,
 }
 
 
+Maybe<bool> v8::Object::SetPrivate(Local<Context> context, Local<Private> key,
+                                   Local<Value> value) {
+  return DefineOwnProperty(context, Local<Name>(reinterpret_cast<Name*>(*key)),
+                           value, DontEnum);
+}
+
+
 MaybeLocal<Value> v8::Object::Get(Local<v8::Context> context,
                                   Local<Value> key) {
   PREPARE_FOR_EXECUTION(context, "v8::Object::Get()", Value);
@@ -3639,6 +3643,12 @@ MaybeLocal<Value> v8::Object::Get(Local<Context> context, uint32_t index) {
 Local<Value> v8::Object::Get(uint32_t index) {
   auto context = ContextFromHeapObject(Utils::OpenHandle(this));
   RETURN_TO_LOCAL_UNCHECKED(Get(context, index), Value);
+}
+
+
+MaybeLocal<Value> v8::Object::GetPrivate(Local<Context> context,
+                                         Local<Private> key) {
+  return Get(context, Local<Value>(reinterpret_cast<Value*>(*key)));
 }
 
 
@@ -3878,6 +3888,12 @@ bool v8::Object::Delete(v8::Local<Value> key) {
 }
 
 
+Maybe<bool> v8::Object::DeletePrivate(Local<Context> context,
+                                      Local<Private> key) {
+  return Delete(context, Local<Value>(reinterpret_cast<Value*>(*key)));
+}
+
+
 Maybe<bool> v8::Object::Has(Local<Context> context, Local<Value> key) {
   PREPARE_FOR_EXECUTION_PRIMITIVE(context, "v8::Object::Get()", bool);
   auto self = Utils::OpenHandle(this);
@@ -3903,6 +3919,11 @@ Maybe<bool> v8::Object::Has(Local<Context> context, Local<Value> key) {
 bool v8::Object::Has(v8::Local<Value> key) {
   auto context = ContextFromHeapObject(Utils::OpenHandle(this));
   return Has(context, key).FromMaybe(false);
+}
+
+
+Maybe<bool> v8::Object::HasPrivate(Local<Context> context, Local<Private> key) {
+  return HasOwnProperty(context, Local<Name>(reinterpret_cast<Name*>(*key)));
 }
 
 
@@ -4238,13 +4259,16 @@ int v8::Object::GetIdentityHash() {
 bool v8::Object::SetHiddenValue(v8::Local<v8::String> key,
                                 v8::Local<v8::Value> value) {
   i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
-  if (value.IsEmpty()) return DeleteHiddenValue(key);
   ENTER_V8(isolate);
   i::HandleScope scope(isolate);
   i::Handle<i::JSObject> self = Utils::OpenHandle(this);
   i::Handle<i::String> key_obj = Utils::OpenHandle(*key);
   i::Handle<i::String> key_string =
       isolate->factory()->InternalizeString(key_obj);
+  if (value.IsEmpty()) {
+    i::JSObject::DeleteHiddenProperty(self, key_string);
+    return true;
+  }
   i::Handle<i::Object> value_obj = Utils::OpenHandle(*value);
   i::Handle<i::Object> result =
       i::JSObject::SetHiddenProperty(self, key_string, value_obj);
@@ -5246,6 +5270,11 @@ Local<Value> Symbol::Name() const {
   i::Handle<i::Symbol> sym = Utils::OpenHandle(this);
   i::Handle<i::Object> name(sym->name(), sym->GetIsolate());
   return Utils::ToLocal(name);
+}
+
+
+Local<Value> Private::Name() const {
+  return reinterpret_cast<const Symbol*>(this)->Name();
 }
 
 
@@ -6821,7 +6850,8 @@ Local<Symbol> v8::Symbol::New(Isolate* isolate, Local<String> name) {
 
 static i::Handle<i::Symbol> SymbolFor(i::Isolate* isolate,
                                       i::Handle<i::String> name,
-                                      i::Handle<i::String> part) {
+                                      i::Handle<i::String> part,
+                                      bool private_symbol) {
   i::Handle<i::JSObject> registry = isolate->GetSymbolRegistry();
   i::Handle<i::JSObject> symbols =
       i::Handle<i::JSObject>::cast(
@@ -6830,7 +6860,10 @@ static i::Handle<i::Symbol> SymbolFor(i::Isolate* isolate,
       i::Object::GetPropertyOrElement(symbols, name).ToHandleChecked();
   if (!symbol->IsSymbol()) {
     DCHECK(symbol->IsUndefined());
-    symbol = isolate->factory()->NewSymbol();
+    if (private_symbol)
+      symbol = isolate->factory()->NewPrivateSymbol();
+    else
+      symbol = isolate->factory()->NewSymbol();
     i::Handle<i::Symbol>::cast(symbol)->set_name(*name);
     i::JSObject::SetProperty(symbols, name, symbol, i::STRICT).Assert();
   }
@@ -6842,7 +6875,7 @@ Local<Symbol> v8::Symbol::For(Isolate* isolate, Local<String> name) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   i::Handle<i::String> i_name = Utils::OpenHandle(*name);
   i::Handle<i::String> part = i_isolate->factory()->for_string();
-  return Utils::ToLocal(SymbolFor(i_isolate, i_name, part));
+  return Utils::ToLocal(SymbolFor(i_isolate, i_name, part, false));
 }
 
 
@@ -6850,7 +6883,7 @@ Local<Symbol> v8::Symbol::ForApi(Isolate* isolate, Local<String> name) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   i::Handle<i::String> i_name = Utils::OpenHandle(*name);
   i::Handle<i::String> part = i_isolate->factory()->for_api_string();
-  return Utils::ToLocal(SymbolFor(i_isolate, i_name, part));
+  return Utils::ToLocal(SymbolFor(i_isolate, i_name, part, false));
 }
 
 
@@ -6875,6 +6908,27 @@ Local<Symbol> v8::Symbol::GetToStringTag(Isolate* isolate) {
 Local<Symbol> v8::Symbol::GetIsConcatSpreadable(Isolate* isolate) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   return Utils::ToLocal(i_isolate->factory()->is_concat_spreadable_symbol());
+}
+
+
+Local<Private> v8::Private::New(Isolate* isolate, Local<String> name) {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  LOG_API(i_isolate, "Private::New()");
+  ENTER_V8(i_isolate);
+  i::Handle<i::Symbol> symbol = i_isolate->factory()->NewPrivateSymbol();
+  if (!name.IsEmpty()) symbol->set_name(*Utils::OpenHandle(*name));
+  Local<Symbol> result = Utils::ToLocal(symbol);
+  return v8::Local<Private>(reinterpret_cast<Private*>(*result));
+}
+
+
+Local<Private> v8::Private::ForApi(Isolate* isolate, Local<String> name) {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i::Handle<i::String> i_name = Utils::OpenHandle(*name);
+  i::Handle<i::String> part = i_isolate->factory()->private_api_string();
+  Local<Symbol> result =
+      Utils::ToLocal(SymbolFor(i_isolate, i_name, part, true));
+  return v8::Local<Private>(reinterpret_cast<Private*>(*result));
 }
 
 
@@ -7589,6 +7643,15 @@ void Isolate::VisitHandlesForPartialDependence(
   i::DisallowHeapAllocation no_allocation;
   VisitorAdapter visitor_adapter(visitor);
   isolate->global_handles()->IterateAllRootsInNewSpaceWithClassIds(
+      &visitor_adapter);
+}
+
+
+void Isolate::VisitWeakHandles(PersistentHandleVisitor* visitor) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  i::DisallowHeapAllocation no_allocation;
+  VisitorAdapter visitor_adapter(visitor);
+  isolate->global_handles()->IterateWeakRootsInNewSpaceWithClassIds(
       &visitor_adapter);
 }
 

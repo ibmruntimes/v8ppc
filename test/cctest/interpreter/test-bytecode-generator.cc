@@ -35,7 +35,6 @@ class BytecodeGeneratorHelper {
   Isolate* isolate() { return CcTest::i_isolate(); }
   Factory* factory() { return CcTest::i_isolate()->factory(); }
 
-
   Handle<BytecodeArray> MakeTopLevelBytecode(const char* source) {
     const char* old_ignition_filter = i::FLAG_ignition_filter;
     i::FLAG_ignition_filter = "*";
@@ -44,7 +43,6 @@ class BytecodeGeneratorHelper {
     i::Handle<i::JSFunction> js_function = v8::Utils::OpenHandle(*script);
     return handle(js_function->shared()->bytecode_array(), CcTest::i_isolate());
   }
-
 
   Handle<BytecodeArray> MakeBytecode(const char* script,
                                      const char* function_name) {
@@ -55,7 +53,6 @@ class BytecodeGeneratorHelper {
         i::Handle<i::JSFunction>::cast(v8::Utils::OpenHandle(*function));
     return handle(js_function->shared()->bytecode_array(), CcTest::i_isolate());
   }
-
 
   Handle<BytecodeArray> MakeBytecodeForFunctionBody(const char* body) {
     ScopedVector<char> program(1024);
@@ -68,6 +65,17 @@ class BytecodeGeneratorHelper {
     ScopedVector<char> program(1024);
     SNPrintF(program, "%s\n%s();", function, kFunctionName);
     return MakeBytecode(program.start(), kFunctionName);
+  }
+
+  Handle<BytecodeArray> MakeBytecodeForFunctionNoFilter(const char* function) {
+    const char* old_ignition_filter = i::FLAG_ignition_filter;
+    i::FLAG_ignition_filter = "*";
+    ScopedVector<char> program(1024);
+    SNPrintF(program, "%s\n%s();", function, kFunctionName);
+    Handle<BytecodeArray> return_val =
+        MakeBytecode(program.start(), kFunctionName);
+    i::FLAG_ignition_filter = old_ignition_filter;
+    return return_val;
   }
 };
 
@@ -1834,11 +1842,235 @@ TEST(UnaryOperators) {
            B(Return),           //
        },
        0},
+      {"var x = 13;"
+       "return ~x;",
+       1 * kPointerSize,
+       1,
+       9,
+       {
+           B(LdaSmi8), U8(13),   //
+           B(Star), R(0),        //
+           B(LdaSmi8), U8(-1),   //
+           B(BitwiseXor), R(0),  //
+           B(Return),            //
+       },
+       0},
+      {"var x = 13;"
+       "return +x;",
+       1 * kPointerSize,
+       1,
+       9,
+       {
+           B(LdaSmi8), U8(13),  //
+           B(Star), R(0),       //
+           B(LdaSmi8), U8(1),   //
+           B(Mul), R(0),        //
+           B(Return),           //
+       },
+       0},
+      {"var x = 13;"
+       "return -x;",
+       1 * kPointerSize,
+       1,
+       9,
+       {
+           B(LdaSmi8), U8(13),  //
+           B(Star), R(0),       //
+           B(LdaSmi8), U8(-1),  //
+           B(Mul), R(0),        //
+           B(Return),           //
+       },
+       0}};
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecodeForFunctionBody(snippets[i].code_snippet);
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
+}
+
+
+TEST(Delete) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
+  int deep_elements_flags =
+      ObjectLiteral::kFastElements | ObjectLiteral::kDisableMementos;
+  int closure = Register::function_closure().index();
+  int first_context_slot = Context::MIN_CONTEXT_SLOTS;
+
+  ExpectedSnippet<InstanceType> snippets[] = {
+      {"var a = {x:13, y:14}; return delete a.x;",
+       1 * kPointerSize,
+       1,
+       12,
+       {
+           B(LdaConstant), U8(0),                                   //
+           B(CreateObjectLiteral), U8(0), U8(deep_elements_flags),  //
+           B(Star), R(0),                                           //
+           B(LdaConstant), U8(1),                                   //
+           B(DeletePropertySloppy), R(0),                           //
+           B(Return)
+       },
+       2,
+       {InstanceType::FIXED_ARRAY_TYPE,
+        InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE}},
+      {"'use strict'; var a = {x:13, y:14}; return delete a.x;",
+       1 * kPointerSize,
+       1,
+       12,
+       {
+           B(LdaConstant), U8(0),                                   //
+           B(CreateObjectLiteral), U8(0), U8(deep_elements_flags),  //
+           B(Star), R(0),                                           //
+           B(LdaConstant), U8(1),                                   //
+           B(DeletePropertyStrict), R(0),                           //
+           B(Return)
+       },
+       2,
+       {InstanceType::FIXED_ARRAY_TYPE,
+        InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE}},
+      {"var a = {1:13, 2:14}; return delete a[2];",
+       1 * kPointerSize,
+       1,
+       12,
+       {
+           B(LdaConstant), U8(0),                                   //
+           B(CreateObjectLiteral), U8(0), U8(deep_elements_flags),  //
+           B(Star), R(0),                                           //
+           B(LdaSmi8), U8(2),                                       //
+           B(DeletePropertySloppy), R(0),                           //
+           B(Return)
+       },
+       1,
+       {InstanceType::FIXED_ARRAY_TYPE}},
+      {"var a = 10; return delete a;",
+       1 * kPointerSize,
+       1,
+       6,
+       {
+           B(LdaSmi8), U8(10),  //
+           B(Star), R(0),       //
+           B(LdaFalse),         //
+           B(Return)
+        },
+       0},
+      {"'use strict';"
+       "var a = {1:10};"
+       "(function f1() {return a;});"
+       "return delete a[1];",
+       2 * kPointerSize,
+       1,
+       29,
+       {
+           B(CallRuntime), U16(Runtime::kNewFunctionContext),       //
+                            R(closure), U8(1),                      //
+           B(PushContext), R(0),                                    //
+           B(LdaConstant), U8(0),                                   //
+           B(CreateObjectLiteral), U8(0), U8(deep_elements_flags),  //
+           B(StaContextSlot), R(0), U8(first_context_slot),         //
+           B(LdaConstant), U8(1),                                   //
+           B(CreateClosure), U8(0),                                 //
+           B(LdaContextSlot), R(0), U8(first_context_slot),         //
+           B(Star), R(1),                                           //
+           B(LdaSmi8), U8(1),                                       //
+           B(DeletePropertyStrict), R(1),                           //
+           B(Return)
+       },
+       2,
+       {InstanceType::FIXED_ARRAY_TYPE,
+        InstanceType::SHARED_FUNCTION_INFO_TYPE}},
+      {"return delete 'test';",
+       0 * kPointerSize,
+       1,
+       2,
+       {
+           B(LdaTrue),  //
+           B(Return)
+       },
+       0},
   };
 
   for (size_t i = 0; i < arraysize(snippets); i++) {
     Handle<BytecodeArray> bytecode_array =
         helper.MakeBytecodeForFunctionBody(snippets[i].code_snippet);
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
+}
+
+
+TEST(GlobalDelete) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+  Zone zone;
+
+  int context = Register::function_context().index();
+  int global_object_index = Context::GLOBAL_OBJECT_INDEX;
+  FeedbackVectorSpec feedback_spec(&zone);
+  FeedbackVectorSlot slot = feedback_spec.AddLoadICSlot();
+
+  Handle<i::TypeFeedbackVector> vector =
+      i::NewTypeFeedbackVector(helper.isolate(), &feedback_spec);
+
+  ExpectedSnippet<InstanceType> snippets[] = {
+      {"var a = {x:13, y:14};\n function f() { return delete a.x; };\n f();",
+       1 * kPointerSize,
+       1,
+       10,
+       {
+           B(LdaGlobalSloppy), U8(0), U8(vector->GetIndex(slot)),  //
+           B(Star), R(0),                                          //
+           B(LdaConstant), U8(1),                                  //
+           B(DeletePropertySloppy), R(0),                          //
+           B(Return)
+       },
+       2,
+       {InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE,
+        InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE}},
+      {"a = {1:13, 2:14};\n"
+       "function f() {'use strict'; return delete a[1];};\n f();",
+       1 * kPointerSize,
+       1,
+       10,
+       {
+           B(LdaGlobalStrict), U8(0), U8(vector->GetIndex(slot)),  //
+           B(Star), R(0),                                          //
+           B(LdaSmi8), U8(1),                                      //
+           B(DeletePropertyStrict), R(0),                          //
+           B(Return)
+       },
+       1,
+       {InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE}},
+      {"var a = {x:13, y:14};\n function f() { return delete a; };\n f();",
+       1 * kPointerSize,
+       1,
+       10,
+       {
+           B(LdaContextSlot), R(context), U8(global_object_index),  //
+           B(Star), R(0),                                           //
+           B(LdaConstant), U8(0),                                   //
+           B(DeletePropertySloppy), R(0),                           //
+           B(Return)
+       },
+       1,
+       {InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE}},
+      {"b = 30;\n function f() { return delete b; };\n f();",
+       1 * kPointerSize,
+       1,
+       10,
+       {
+           B(LdaContextSlot), R(context), U8(global_object_index),  //
+           B(Star), R(0),                                           //
+           B(LdaConstant), U8(0),                                   //
+           B(DeletePropertySloppy), R(0),                           //
+           B(Return)
+       },
+       1,
+       {InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE}}};
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecode(snippets[i].code_snippet, "f");
     CheckBytecodeArrayEqual(snippets[i], bytecode_array);
   }
 }
@@ -2909,6 +3141,69 @@ TEST(ContextParameters) {
 }
 
 
+TEST(OuterContextVariables) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
+  int context = Register::function_context().index();
+  int first_context_slot = Context::MIN_CONTEXT_SLOTS;
+
+  ExpectedSnippet<InstanceType> snippets[] = {
+      {"function Outer() {"
+       "  var outerVar = 1;"
+       "  function Inner(innerArg) {"
+       "    this.innerFunc = function() { return outerVar * innerArg; }"
+       "  }"
+       "  this.getInnerFunc = function() { return new Inner(1).innerFunc; }"
+       "}"
+       "var f = new Outer().getInnerFunc();",
+       2 * kPointerSize,
+       1,
+       20,
+       {
+           B(Ldar), R(context),                                    //
+           B(Star), R(0),                                          //
+           B(LdaContextSlot), R(0), U8(Context::PREVIOUS_INDEX),   //
+           B(Star), R(0),                                          //
+           B(LdaContextSlot), R(0), U8(first_context_slot),        //
+           B(Star), R(1),                                          //
+           B(LdaContextSlot), R(context), U8(first_context_slot),  //
+           B(Mul), R(1),                                           //
+           B(Return),                                              //
+       }},
+      {"function Outer() {"
+       "  var outerVar = 1;"
+       "  function Inner(innerArg) {"
+       "    this.innerFunc = function() { outerVar = innerArg; }"
+       "  }"
+       "  this.getInnerFunc = function() { return new Inner(1).innerFunc; }"
+       "}"
+       "var f = new Outer().getInnerFunc();",
+       2 * kPointerSize,
+       1,
+       21,
+       {
+           B(LdaContextSlot), R(context), U8(first_context_slot),  //
+           B(Star), R(0),                                          //
+           B(Ldar), R(context),                                    //
+           B(Star), R(1),                                          //
+           B(LdaContextSlot), R(1), U8(Context::PREVIOUS_INDEX),   //
+           B(Star), R(1),                                          //
+           B(Ldar), R(0),                                          //
+           B(StaContextSlot), R(1), U8(first_context_slot),        //
+           B(LdaUndefined),                                        //
+           B(Return),                                              //
+       }},
+  };
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecodeForFunctionNoFilter(snippets[i].code_snippet);
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
+}
+
+
 TEST(CountOperators) {
   InitializedHandleScope handle_scope;
   BytecodeGeneratorHelper helper;
@@ -2917,15 +3212,21 @@ TEST(CountOperators) {
   FeedbackVectorSpec feedback_spec(&zone);
   FeedbackVectorSlot slot1 = feedback_spec.AddLoadICSlot();
   FeedbackVectorSlot slot2 = feedback_spec.AddStoreICSlot();
-
   Handle<i::TypeFeedbackVector> vector =
       i::NewTypeFeedbackVector(helper.isolate(), &feedback_spec);
+
+  FeedbackVectorSpec store_feedback_spec(&zone);
+  FeedbackVectorSlot store_slot = store_feedback_spec.AddStoreICSlot();
+  Handle<i::TypeFeedbackVector> store_vector =
+      i::NewTypeFeedbackVector(helper.isolate(), &store_feedback_spec);
 
   int closure = Register::function_closure().index();
   int first_context_slot = Context::MIN_CONTEXT_SLOTS;
 
   int object_literal_flags =
       ObjectLiteral::kFastElements | ObjectLiteral::kDisableMementos;
+  int array_literal_flags =
+      ArrayLiteral::kDisableMementos | ArrayLiteral::kShallowElements;
 
   ExpectedSnippet<InstanceType> snippets[] = {
       {"var a = 1; return ++a;",
@@ -3108,6 +3409,28 @@ TEST(CountOperators) {
        },
        1,
        {InstanceType::SHARED_FUNCTION_INFO_TYPE}},
+      {"var idx = 1; var a = [1, 2]; return a[idx++] = 2;",
+       3 * kPointerSize,
+       1,
+       26,
+       {
+           B(LdaSmi8), U8(1),                                              //
+           B(Star), R(0),                                                  //
+           B(LdaConstant), U8(0),                                          //
+           B(CreateArrayLiteral), U8(0), U8(array_literal_flags),          //
+           B(Star), R(1),                                                  //
+           B(Ldar), R(0),                                                  //
+           B(ToNumber),                                                    //
+           B(Star), R(2),                                                  //
+           B(Inc),                                                         //
+           B(Star), R(0),                                                  //
+           B(LdaSmi8), U8(2),                                              //
+           B(KeyedStoreICSloppy), R(1), R(2),                              //
+                                  U8(store_vector->GetIndex(store_slot)),  //
+           B(Return),                                                      //
+       },
+       1,
+       {InstanceType::FIXED_ARRAY_TYPE}},
   };
 
   for (size_t i = 0; i < arraysize(snippets); i++) {
@@ -3484,6 +3807,213 @@ TEST(IllegalRedeclaration) {
        },
        1,
        {"a"}},
+  };
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecodeForFunctionBody(snippets[i].code_snippet);
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
+}
+
+
+TEST(ForIn) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+  Zone zone;
+
+  int simple_flags =
+      ArrayLiteral::kDisableMementos | ArrayLiteral::kShallowElements;
+  int deep_elements_flags =
+      ObjectLiteral::kFastElements | ObjectLiteral::kDisableMementos;
+
+  FeedbackVectorSpec feedback_spec(&zone);
+  feedback_spec.AddStoreICSlot();
+  FeedbackVectorSlot slot2 = feedback_spec.AddStoreICSlot();
+  FeedbackVectorSlot slot3 = feedback_spec.AddStoreICSlot();
+  FeedbackVectorSlot slot4 = feedback_spec.AddStoreICSlot();
+  Handle<i::TypeFeedbackVector> vector =
+      i::NewTypeFeedbackVector(helper.isolate(), &feedback_spec);
+
+  ExpectedSnippet<InstanceType> snippets[] = {
+      {"for (var p in null) {}",
+       2 * kPointerSize,
+       1,
+       2,
+       {B(LdaUndefined), B(Return)},
+       0},
+      {"for (var p in undefined) {}",
+       2 * kPointerSize,
+       1,
+       2,
+       {B(LdaUndefined), B(Return)},
+       0},
+      {"var x = 'potatoes';\n"
+       "for (var p in x) { return p; }",
+       5 * kPointerSize,
+       1,
+       52,
+       {
+           B(LdaConstant), U8(0),                                             //
+           B(Star), R(1),                                                     //
+           B(Ldar), R(1),                                                     //
+           B(JumpIfUndefined), U8(44),                                        //
+           B(JumpIfNull), U8(42),                                             //
+           B(ToObject),                                                       //
+           B(Star), R(3),                                                     //
+           B(CallRuntime), U16(Runtime::kGetPropertyNamesFast), R(3), U8(1),  //
+           B(ForInPrepare), R(3),                                             //
+           B(JumpIfUndefined), U8(30),                                        //
+           B(Star), R(4),                                                     //
+           B(LdaZero),                                                        //
+           B(Star), R(3),                                                     //
+           B(ForInDone), R(4),                                                //
+           B(JumpIfTrue), U8(21),                                             //
+           B(ForInNext), R(4), R(3),                                          //
+           B(JumpIfUndefined), U8(11),                                        //
+           B(Star), R(0),                                                     //
+           B(Ldar), R(0),                                                     //
+           B(Star), R(2),                                                     //
+           B(Ldar), R(2),                                                     //
+           B(Return),                                                         //
+           B(Ldar), R(3),                                                     //
+           B(Inc),                                                            //
+           B(Jump), U8(-23),                                                  //
+           B(LdaUndefined),                                                   //
+           B(Return),                                                         //
+       },
+       1,
+       {InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE}},
+      {"var x = 0;\n"
+       "for (var p in [1,2,3]) { x += p; }",
+       5 * kPointerSize,
+       1,
+       57,
+       {
+           B(LdaZero),                                                        //
+           B(Star), R(1),                                                     //
+           B(LdaConstant), U8(0),                                             //
+           B(CreateArrayLiteral), U8(0), U8(simple_flags),                    //
+           B(JumpIfUndefined), U8(47),                                        //
+           B(JumpIfNull), U8(45),                                             //
+           B(ToObject),                                                       //
+           B(Star), R(3),                                                     //
+           B(CallRuntime), U16(Runtime::kGetPropertyNamesFast), R(3), U8(1),  //
+           B(ForInPrepare), R(3),                                             //
+           B(JumpIfUndefined), U8(33),                                        //
+           B(Star), R(4),                                                     //
+           B(LdaZero),                                                        //
+           B(Star), R(3),                                                     //
+           B(ForInDone), R(4),                                                //
+           B(JumpIfTrue), U8(24),                                             //
+           B(ForInNext), R(4), R(3),                                          //
+           B(JumpIfUndefined), U8(14),                                        //
+           B(Star), R(0),                                                     //
+           B(Ldar), R(0),                                                     //
+           B(Star), R(2),                                                     //
+           B(Ldar), R(2),                                                     //
+           B(Add), R(1),                                                      //
+           B(Star), R(1),                                                     //
+           B(Ldar), R(3),                                                     //
+           B(Inc),                                                            //
+           B(Jump), U8(-26),                                                  //
+           B(LdaUndefined),                                                   //
+           B(Return),                                                         //
+       },
+       1,
+       {InstanceType::FIXED_ARRAY_TYPE}},
+      {"var x = { 'a': 1, 'b': 2 };\n"
+       "for (x['a'] in [10, 20, 30]) {\n"
+       "  if (x['a'] == 10) continue;\n"
+       "  if (x['a'] == 20) break;\n"
+       "}",
+       4 * kPointerSize,
+       1,
+       83,
+       {
+           B(LdaConstant), U8(0),                                             //
+           B(CreateObjectLiteral), U8(0), U8(deep_elements_flags),            //
+           B(Star), R(0),                                                     //
+           B(LdaConstant), U8(1),                                             //
+           B(CreateArrayLiteral), U8(1), U8(simple_flags),                    //
+           B(JumpIfUndefined), U8(69),                                        //
+           B(JumpIfNull), U8(67),                                             //
+           B(ToObject),                                                       //
+           B(Star), R(1),                                                     //
+           B(CallRuntime), U16(Runtime::kGetPropertyNamesFast), R(1), U8(1),  //
+           B(ForInPrepare), R(1),                                             //
+           B(JumpIfUndefined), U8(55),                                        //
+           B(Star), R(2),                                                     //
+           B(LdaZero),                                                        //
+           B(Star), R(1),                                                     //
+           B(ForInDone), R(2),                                                //
+           B(JumpIfTrue), U8(46),                                             //
+           B(ForInNext), R(2), R(1),                                          //
+           B(JumpIfUndefined), U8(36),                                        //
+           B(Star), R(3),                                                     //
+           B(StoreICSloppy), R(0), U8(2), U8(vector->GetIndex(slot4)),        //
+           B(LoadICSloppy), R(0), U8(2), U8(vector->GetIndex(slot2)),         //
+           B(Star), R(3),                                                     //
+           B(LdaSmi8), U8(10),                                                //
+           B(TestEqual), R(3),                                                //
+           B(JumpIfFalse), U8(4),                                             //
+           B(Jump), U8(16),                                                   //
+           B(LoadICSloppy), R(0), U8(2), U8(vector->GetIndex(slot3)),         //
+           B(Star), R(3),                                                     //
+           B(LdaSmi8), U8(20),                                                //
+           B(TestEqual), R(3),                                                //
+           B(JumpIfFalse), U8(4),                                             //
+           B(Jump), U8(7),                                                    //
+           B(Ldar), R(1),                                                     //
+           B(Inc),                                                            //
+           B(Jump), U8(-48),                                                  //
+           B(LdaUndefined),                                                   //
+           B(Return),                                                         //
+       },
+       3,
+       {InstanceType::FIXED_ARRAY_TYPE, InstanceType::FIXED_ARRAY_TYPE,
+        InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE}},
+      {"var x = [ 10, 11, 12 ] ;\n"
+       "for (x[0] in [1,2,3]) { return x[3]; }",
+       5 * kPointerSize,
+       1,
+       66,
+       {
+           B(LdaConstant), U8(0),                                             //
+           B(CreateArrayLiteral), U8(0), U8(simple_flags),                    //
+           B(Star), R(0),                                                     //
+           B(LdaConstant), U8(1),                                             //
+           B(CreateArrayLiteral), U8(1), U8(simple_flags),                    //
+           B(JumpIfUndefined), U8(52),                                        //
+           B(JumpIfNull), U8(50),                                             //
+           B(ToObject),                                                       //
+           B(Star), R(1),                                                     //
+           B(CallRuntime), U16(Runtime::kGetPropertyNamesFast), R(1), U8(1),  //
+           B(ForInPrepare), R(1),                                             //
+           B(JumpIfUndefined), U8(38),                                        //
+           B(Star), R(2),                                                     //
+           B(LdaZero),                                                        //
+           B(Star), R(1),                                                     //
+           B(ForInDone), R(2),                                                //
+           B(JumpIfTrue), U8(29),                                             //
+           B(ForInNext), R(2), R(1),                                          //
+           B(JumpIfUndefined), U8(19),                                        //
+           B(Star), R(3),                                                     //
+           B(LdaZero),                                                        //
+           B(Star), R(4),                                                     //
+           B(Ldar), R(3),                                                     //
+           B(KeyedStoreICSloppy), R(0), R(4), U8(vector->GetIndex(slot3)),    //
+           B(LdaSmi8), U8(3),                                                 //
+           B(KeyedLoadICSloppy), R(0), U8(vector->GetIndex(slot2)),           //
+           B(Return),                                                         //
+           B(Ldar), R(1),                                                     //
+           B(Inc),                                                            //
+           B(Jump), U8(-31),                                                  //
+           B(LdaUndefined),                                                   //
+           B(Return),                                                         //
+       },
+       2,
+       {InstanceType::FIXED_ARRAY_TYPE, InstanceType::FIXED_ARRAY_TYPE}},
   };
 
   for (size_t i = 0; i < arraysize(snippets); i++) {

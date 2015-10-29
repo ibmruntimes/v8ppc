@@ -51,6 +51,7 @@ class BytecodeGenerator : public AstVisitor {
   void VisitVoid(UnaryOperation* expr);
   void VisitTypeOf(UnaryOperation* expr);
   void VisitNot(UnaryOperation* expr);
+  void VisitDelete(UnaryOperation* expr);
 
   // Helper visitors which perform common operations.
   Register VisitArguments(ZoneList<Expression*>* arguments);
@@ -77,6 +78,7 @@ class BytecodeGenerator : public AstVisitor {
   void VisitObjectLiteralAccessor(Register home_object,
                                   ObjectLiteralProperty* property,
                                   Register value_out);
+  void VisitForInAssignment(Expression* expr, FeedbackVectorSlot slot);
 
 
   // Visitors for obtaining expression result in the accumulator, in a

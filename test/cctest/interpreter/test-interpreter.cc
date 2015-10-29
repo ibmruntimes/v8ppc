@@ -58,7 +58,8 @@ class InterpreterTester {
  public:
   InterpreterTester(Isolate* isolate, const char* source,
                     MaybeHandle<BytecodeArray> bytecode,
-                    MaybeHandle<TypeFeedbackVector> feedback_vector)
+                    MaybeHandle<TypeFeedbackVector> feedback_vector,
+                    const char* filter)
       : isolate_(isolate),
         source_(source),
         bytecode_(bytecode),
@@ -70,7 +71,7 @@ class InterpreterTester {
     // Set ignition filter flag via SetFlagsFromString to avoid double-free
     // (or potential leak with StrDup() based on ownership confusion).
     ScopedVector<char> ignition_filter(64);
-    SNPrintF(ignition_filter, "--ignition-filter=%s", kFunctionName);
+    SNPrintF(ignition_filter, "--ignition-filter=%s", filter);
     FlagList::SetFlagsFromString(ignition_filter.start(),
                                  ignition_filter.length());
     // Ensure handler table is generated.
@@ -79,13 +80,16 @@ class InterpreterTester {
 
   InterpreterTester(Isolate* isolate, Handle<BytecodeArray> bytecode,
                     MaybeHandle<TypeFeedbackVector> feedback_vector =
-                        MaybeHandle<TypeFeedbackVector>())
-      : InterpreterTester(isolate, nullptr, bytecode, feedback_vector) {}
+                        MaybeHandle<TypeFeedbackVector>(),
+                    const char* filter = kFunctionName)
+      : InterpreterTester(isolate, nullptr, bytecode, feedback_vector, filter) {
+  }
 
 
-  InterpreterTester(Isolate* isolate, const char* source)
+  InterpreterTester(Isolate* isolate, const char* source,
+                    const char* filter = kFunctionName)
       : InterpreterTester(isolate, source, MaybeHandle<BytecodeArray>(),
-                          MaybeHandle<TypeFeedbackVector>()) {}
+                          MaybeHandle<TypeFeedbackVector>(), filter) {}
 
   virtual ~InterpreterTester() {}
 
@@ -1210,6 +1214,42 @@ TEST(InterpreterConditionalJumps) {
 }
 
 
+TEST(InterpreterConditionalJumps2) {
+  // TODO(oth): Add tests for all conditional jumps near and far.
+  HandleAndZoneScope handles;
+  BytecodeArrayBuilder builder(handles.main_isolate(), handles.main_zone());
+  builder.set_locals_count(2);
+  builder.set_context_count(0);
+  builder.set_parameter_count(0);
+  Register reg(0), scratch(1);
+  BytecodeLabel label[2];
+  BytecodeLabel done, done1;
+
+  builder.LoadLiteral(Smi::FromInt(0))
+      .StoreAccumulatorInRegister(reg)
+      .LoadFalse()
+      .JumpIfFalse(&label[0]);
+  IncrementRegister(builder, reg, 1024, scratch)
+      .Bind(&label[0])
+      .LoadTrue()
+      .JumpIfFalse(&done);
+  IncrementRegister(builder, reg, 1, scratch).LoadTrue().JumpIfTrue(&label[1]);
+  IncrementRegister(builder, reg, 2048, scratch).Bind(&label[1]);
+  IncrementRegister(builder, reg, 2, scratch).LoadFalse().JumpIfTrue(&done1);
+  IncrementRegister(builder, reg, 4, scratch)
+      .LoadAccumulatorWithRegister(reg)
+      .Bind(&done)
+      .Bind(&done1)
+      .Return();
+
+  Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
+  InterpreterTester tester(handles.main_isolate(), bytecode_array);
+  auto callable = tester.GetCallable<>();
+  Handle<Object> return_value = callable().ToHandleChecked();
+  CHECK_EQ(Smi::cast(*return_value)->value(), 7);
+}
+
+
 static const Token::Value kComparisonTypes[] = {
     Token::Value::EQ,        Token::Value::NE,  Token::Value::EQ_STRICT,
     Token::Value::NE_STRICT, Token::Value::LTE, Token::Value::LTE,
@@ -1919,6 +1959,39 @@ TEST(InterpreterContextParameters) {
 }
 
 
+TEST(InterpreterOuterContextVariables) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+
+  std::pair<const char*, Handle<Object>> context_vars[2] = {
+      std::make_pair("return outerVar * innerArg;",
+                     handle(Smi::FromInt(200), isolate)),
+      std::make_pair("outerVar = innerArg; return outerVar",
+                     handle(Smi::FromInt(20), isolate)),
+  };
+
+  std::string header(
+      "function Outer() {"
+      "  var outerVar = 10;"
+      "  function Inner(innerArg) {"
+      "    this.innerFunc = function() { ");
+  std::string footer(
+      "  }}"
+      "  this.getInnerFunc = function() { return new Inner(20).innerFunc; }"
+      "}"
+      "var f = new Outer().getInnerFunc();");
+
+  for (size_t i = 0; i < arraysize(context_vars); i++) {
+    std::string source = header + context_vars[i].first + footer;
+    InterpreterTester tester(handles.main_isolate(), source.c_str(), "*");
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*context_vars[i].second));
+  }
+}
+
+
 TEST(InterpreterComma) {
   HandleAndZoneScope handles;
   i::Isolate* isolate = handles.main_isolate();
@@ -2296,5 +2369,358 @@ TEST(InterpreterConditional) {
 
     Handle<i::Object> return_value = callable().ToHandleChecked();
     CHECK(return_value->SameValue(*conditional[i].second));
+  }
+}
+
+
+TEST(InterpreterDelete) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  // Tests for delete for local variables that work both in strict
+  // and sloppy modes
+  std::pair<const char*, Handle<Object>> test_delete[] = {
+      std::make_pair(
+          "var a = { x:10, y:'abc', z:30.2}; delete a.x; return a.x;\n",
+          factory->undefined_value()),
+      std::make_pair(
+          "var b = { x:10, y:'abc', z:30.2}; delete b.x; return b.y;\n",
+          factory->NewStringFromStaticChars("abc")),
+      std::make_pair("var c = { x:10, y:'abc', z:30.2}; var d = c; delete d.x; "
+                     "return c.x;\n",
+                     factory->undefined_value()),
+      std::make_pair("var e = { x:10, y:'abc', z:30.2}; var g = e; delete g.x; "
+                     "return e.y;\n",
+                     factory->NewStringFromStaticChars("abc")),
+      std::make_pair("var a = { x:10, y:'abc', z:30.2};\n"
+                     "var b = a;"
+                     "delete b.x;"
+                     "return b.x;\n",
+                     factory->undefined_value()),
+      std::make_pair("var a = {1:10};\n"
+                     "(function f1() {return a;});"
+                     "return delete a[1];",
+                     factory->ToBoolean(true)),
+      std::make_pair("return delete this;", factory->ToBoolean(true)),
+      std::make_pair("return delete 'test';", factory->ToBoolean(true))};
+
+  // Test delete in sloppy mode
+  for (size_t i = 0; i < arraysize(test_delete); i++) {
+    std::string source(InterpreterTester::SourceForBody(test_delete[i].first));
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*test_delete[i].second));
+  }
+
+  // Test delete in strict mode
+  for (size_t i = 0; i < arraysize(test_delete); i++) {
+    std::string strict_test =
+        "'use strict'; " + std::string(test_delete[i].first);
+    std::string source(InterpreterTester::SourceForBody(strict_test.c_str()));
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*test_delete[i].second));
+  }
+}
+
+
+TEST(InterpreterDeleteSloppyUnqualifiedIdentifier) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  // These tests generate a syntax error for strict mode. We don't
+  // test for it here.
+  std::pair<const char*, Handle<Object>> test_delete[] = {
+      std::make_pair("var sloppy_a = { x:10, y:'abc'};\n"
+                     "var sloppy_b = delete sloppy_a;\n"
+                     "if (delete sloppy_a) {\n"
+                     "  return undefined;\n"
+                     "} else {\n"
+                     "  return sloppy_a.x;\n"
+                     "}\n",
+                     Handle<Object>(Smi::FromInt(10), isolate)),
+      // TODO(mythria) When try-catch is implemented change the tests to check
+      // if delete actually deletes
+      std::make_pair("sloppy_a = { x:10, y:'abc'};\n"
+                     "var sloppy_b = delete sloppy_a;\n"
+                     // "try{return a.x;} catch(e) {return b;}\n"
+                     "return sloppy_b;",
+                     factory->ToBoolean(true)),
+      std::make_pair("sloppy_a = { x:10, y:'abc'};\n"
+                     "var sloppy_b = delete sloppy_c;\n"
+                     "return sloppy_b;",
+                     factory->ToBoolean(true))};
+
+  for (size_t i = 0; i < arraysize(test_delete); i++) {
+    std::string source(InterpreterTester::SourceForBody(test_delete[i].first));
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*test_delete[i].second));
+  }
+}
+
+
+TEST(InterpreterGlobalDelete) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  std::pair<const char*, Handle<Object>> test_global_delete[] = {
+      std::make_pair("var a = { x:10, y:'abc', z:30.2 };\n"
+                     "function f() {\n"
+                     "  delete a.x;\n"
+                     "  return a.x;\n"
+                     "}\n"
+                     "f();\n",
+                     factory->undefined_value()),
+      std::make_pair("var b = {1:10, 2:'abc', 3:30.2 };\n"
+                     "function f() {\n"
+                     "  delete b[2];\n"
+                     "  return b[1];\n"
+                     " }\n"
+                     "f();\n",
+                     Handle<Object>(Smi::FromInt(10), isolate)),
+      std::make_pair("var c = { x:10, y:'abc', z:30.2 };\n"
+                     "function f() {\n"
+                     "   var d = c;\n"
+                     "   delete d.y;\n"
+                     "   return d.x;\n"
+                     "}\n"
+                     "f();\n",
+                     Handle<Object>(Smi::FromInt(10), isolate)),
+      std::make_pair("e = { x:10, y:'abc' };\n"
+                     "function f() {\n"
+                     "  return delete e;\n"
+                     "}\n"
+                     "f();\n",
+                     factory->ToBoolean(true)),
+      std::make_pair("var g = { x:10, y:'abc' };\n"
+                     "function f() {\n"
+                     "  return delete g;\n"
+                     "}\n"
+                     "f();\n",
+                     factory->ToBoolean(false)),
+      std::make_pair("function f() {\n"
+                     "  var obj = {h:10, f1() {return delete this;}};\n"
+                     "  return obj.f1();\n"
+                     "}\n"
+                     "f();",
+                     factory->ToBoolean(true)),
+      std::make_pair("function f() {\n"
+                     "  var obj = {h:10,\n"
+                     "             f1() {\n"
+                     "              'use strict';\n"
+                     "              return delete this.h;}};\n"
+                     "  return obj.f1();\n"
+                     "}\n"
+                     "f();",
+                     factory->ToBoolean(true))};
+
+  for (size_t i = 0; i < arraysize(test_global_delete); i++) {
+    InterpreterTester tester(handles.main_isolate(),
+                             test_global_delete[i].first);
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*test_global_delete[i].second));
+  }
+}
+
+
+TEST(InterpreterForIn) {
+  HandleAndZoneScope handles;
+
+  // TODO(oth): Add a test here for delete mid-loop when delete is ready.
+  std::pair<const char*, int> for_in_samples[] = {
+      {"function f() {\n"
+       "  var r = -1;\n"
+       "  for (var a in null) { r = a; }\n"
+       "  return r;\n"
+       "}",
+       -1},
+      {"function f() {\n"
+       "  var r = -1;\n"
+       "  for (var a in undefined) { r = a; }\n"
+       "  return r;\n"
+       "}",
+       -1},
+      {"function f() {\n"
+       "  var r = 0;\n"
+       "  for (var a in [0,6,7,9]) { r = r + (1 << a); }\n"
+       "  return r;\n"
+       "}",
+       0xf},
+      {"function f() {\n"
+       "  var r = 0;\n"
+       "  for (var a in [0,6,7,9]) { r = r + (1 << a); }\n"
+       "  var r = 0;\n"
+       "  for (var a in [0,6,7,9]) { r = r + (1 << a); }\n"
+       "  return r;\n"
+       "}",
+       0xf},
+      {"function f() {\n"
+       "  var r = 0;\n"
+       "  for (var a in 'foobar') { r = r + (1 << a); }\n"
+       "  return r;\n"
+       "}",
+       0x3f},
+      {"function f() {\n"
+       "  var r = 0;\n"
+       "  for (var a in {1:0, 10:1, 100:2, 1000:3}) {\n"
+       "    r = r + Number(a);\n"
+       "   }\n"
+       "   return r;\n"
+       "}",
+       1111},
+      {"function f() {\n"
+       "  var r = 0;\n"
+       "  var data = {1:0, 10:1, 100:2, 1000:3};\n"
+       "  for (var a in data) {\n"
+       "    if (a == 1) delete data[1];\n"
+       "    r = r + Number(a);\n"
+       "   }\n"
+       "   return r;\n"
+       "}",
+       1111},
+      {"function f() {\n"
+       "  var r = 0;\n"
+       "  var data = {1:0, 10:1, 100:2, 1000:3};\n"
+       "  for (var a in data) {\n"
+       "    if (a == 10) delete data[100];\n"
+       "    r = r + Number(a);\n"
+       "   }\n"
+       "   return r;\n"
+       "}",
+       1011},
+      {"function f() {\n"
+       "  var r = 0;\n"
+       "  var data = {1:0, 10:1, 100:2, 1000:3};\n"
+       "  for (var a in data) {\n"
+       "    if (a == 10) data[10000] = 4;\n"
+       "    r = r + Number(a);\n"
+       "   }\n"
+       "   return r;\n"
+       "}",
+       1111},
+      {"function f() {\n"
+       "  var r = 0;\n"
+       "  var input = 'foobar';\n"
+       "  for (var a in input) {\n"
+       "    if (input[a] == 'b') break;\n"
+       "    r = r + (1 << a);\n"
+       "  }\n"
+       "  return r;\n"
+       "}",
+       0x7},
+      {"function f() {\n"
+       "var r = 0;\n"
+       "var input = 'foobar';\n"
+       "for (var a in input) {\n"
+       "   if (input[a] == 'b') continue;\n"
+       "   r = r + (1 << a);\n"
+       "}\n"
+       "return r;\n"
+       "}",
+       0x37},
+      {"function f() {\n"
+       "  var r = 0;\n"
+       "  var data = {1:0, 10:1, 100:2, 1000:3};\n"
+       "  for (var a in data) {\n"
+       "    if (a == 10) {\n"
+       "       data[10000] = 4;\n"
+       "    }\n"
+       "    r = r + Number(a);\n"
+       "  }\n"
+       "  return r;\n"
+       "}",
+       1111},
+      {"function f() {\n"
+       "  var r = [ 3 ];\n"
+       "  var data = {1:0, 10:1, 100:2, 1000:3};\n"
+       "  for (r[10] in data) {\n"
+       "  }\n"
+       "  return Number(r[10]);\n"
+       "}",
+       1000},
+      {"function f() {\n"
+       "  var r = [ 3 ];\n"
+       "  var data = {1:0, 10:1, 100:2, 1000:3};\n"
+       "  for (r['100'] in data) {\n"
+       "  }\n"
+       "  return Number(r['100']);\n"
+       "}",
+       1000},
+      {"function f() {\n"
+       "  var obj = {}\n"
+       "  var descObj = new Boolean(false);\n"
+       "  var accessed = 0;\n"
+       "  descObj.enumerable = true;\n"
+       "  Object.defineProperties(obj, { prop:descObj });\n"
+       "  for (var p in obj) {\n"
+       "    if (p === 'prop') { accessed = 1; }\n"
+       "  }\n"
+       "  return accessed;"
+       "}",
+       1},
+      {"function f() {\n"
+       "  var appointment = {};\n"
+       "  Object.defineProperty(appointment, 'startTime', {\n"
+       "      value: 1001,\n"
+       "      writable: false,\n"
+       "      enumerable: false,\n"
+       "      configurable: true\n"
+       "  });\n"
+       "  Object.defineProperty(appointment, 'name', {\n"
+       "      value: 'NAME',\n"
+       "      writable: false,\n"
+       "      enumerable: false,\n"
+       "      configurable: true\n"
+       "  });\n"
+       "  var meeting = Object.create(appointment);\n"
+       "  Object.defineProperty(meeting, 'conferenceCall', {\n"
+       "      value: 'In-person meeting',\n"
+       "      writable: false,\n"
+       "      enumerable: false,\n"
+       "      configurable: true\n"
+       "  });\n"
+       "\n"
+       "  var teamMeeting = Object.create(meeting);\n"
+       "\n"
+       "  var flags = 0;\n"
+       "  for (var p in teamMeeting) {\n"
+       "      if (p === 'startTime') {\n"
+       "          flags |= 1;\n"
+       "      }\n"
+       "      if (p === 'name') {\n"
+       "          flags |= 2;\n"
+       "      }\n"
+       "      if (p === 'conferenceCall') {\n"
+       "          flags |= 4;\n"
+       "      }\n"
+       "  }\n"
+       "\n"
+       "  var hasOwnProperty = !teamMeeting.hasOwnProperty('name') &&\n"
+       "      !teamMeeting.hasOwnProperty('startTime') &&\n"
+       "      !teamMeeting.hasOwnProperty('conferenceCall');\n"
+       "  if (!hasOwnProperty) {\n"
+       "      flags |= 8;\n"
+       "  }\n"
+       "  return flags;\n"
+       "  }",
+       0}};
+
+  for (size_t i = 0; i < arraysize(for_in_samples); i++) {
+    InterpreterTester tester(handles.main_isolate(), for_in_samples[i].first);
+    auto callable = tester.GetCallable<>();
+    Handle<Object> return_val = callable().ToHandleChecked();
+    CHECK_EQ(Handle<Smi>::cast(return_val)->value(), for_in_samples[i].second);
   }
 }

@@ -5,9 +5,6 @@
 #ifndef V8_CCTEST_COMPILER_GRAPH_BUILDER_TESTER_H_
 #define V8_CCTEST_COMPILER_GRAPH_BUILDER_TESTER_H_
 
-#include "src/v8.h"
-#include "test/cctest/cctest.h"
-
 #include "src/compiler/common-operator.h"
 #include "src/compiler/instruction-selector.h"
 #include "src/compiler/linkage.h"
@@ -15,6 +12,7 @@
 #include "src/compiler/operator-properties.h"
 #include "src/compiler/pipeline.h"
 #include "src/compiler/simplified-operator.h"
+#include "test/cctest/cctest.h"
 #include "test/cctest/compiler/call-tester.h"
 
 namespace v8 {
@@ -227,6 +225,11 @@ class GraphBuilderTester : public HandleAndZoneScope,
   Node* NewNode(const Operator* op, int value_input_count,
                 Node** value_inputs) {
     return MakeNode(op, value_input_count, value_inputs);
+  }
+
+  Handle<Code> GetCode() {
+    Generate();
+    return code_.ToHandleChecked();
   }
 
  protected:

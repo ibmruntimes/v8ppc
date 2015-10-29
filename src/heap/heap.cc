@@ -774,9 +774,9 @@ void Heap::HandleGCRequest() {
                       current_gc_callback_flags_);
     return;
   }
-  DCHECK(FLAG_overapproximate_weak_closure);
-  if (!incremental_marking()->weak_closure_was_overapproximated()) {
-    OverApproximateWeakClosure("GC interrupt");
+  DCHECK(FLAG_finalize_marking_incrementally);
+  if (!incremental_marking()->finalize_marking_completed()) {
+    FinalizeIncrementalMarking("GC interrupt: finalize incremental marking");
   }
 }
 
@@ -786,14 +786,14 @@ void Heap::ScheduleIdleScavengeIfNeeded(int bytes_allocated) {
 }
 
 
-void Heap::OverApproximateWeakClosure(const char* gc_reason) {
+void Heap::FinalizeIncrementalMarking(const char* gc_reason) {
   if (FLAG_trace_incremental_marking) {
-    PrintF("[IncrementalMarking] Overapproximate weak closure (%s).\n",
-           gc_reason);
+    PrintF("[IncrementalMarking] (%s).\n", gc_reason);
   }
 
-  GCTracer::Scope gc_scope(tracer(),
-                           GCTracer::Scope::MC_INCREMENTAL_WEAKCLOSURE);
+  GCTracer::Scope gc_scope(tracer(), GCTracer::Scope::MC_INCREMENTAL_FINALIZE);
+  HistogramTimerScope incremental_marking_scope(
+      isolate()->counters()->gc_incremental_marking_finalize());
 
   {
     GCCallbacksScope scope(this);
@@ -805,7 +805,7 @@ void Heap::OverApproximateWeakClosure(const char* gc_reason) {
       CallGCPrologueCallbacks(kGCTypeIncrementalMarking, kNoGCCallbackFlags);
     }
   }
-  incremental_marking()->MarkObjectGroups();
+  incremental_marking()->FinalizeIncrementally();
   {
     GCCallbacksScope scope(this);
     if (scope.CheckReenter()) {
@@ -1501,6 +1501,22 @@ static bool IsUnscavengedHeapObject(Heap* heap, Object** p) {
 }
 
 
+static bool IsUnmodifiedHeapObject(Object** p) {
+  Object* object = *p;
+  DCHECK(object->IsHeapObject());
+  HeapObject* heap_object = HeapObject::cast(object);
+  if (!object->IsJSObject()) return false;
+  Object* obj_constructor = (JSObject::cast(object))->map()->GetConstructor();
+  if (!obj_constructor->IsJSFunction()) return false;
+  JSFunction* constructor = JSFunction::cast(obj_constructor);
+  if (constructor != nullptr &&
+      constructor->initial_map() == heap_object->map()) {
+    return true;
+  }
+  return false;
+}
+
+
 void Heap::ScavengeStoreBufferCallback(Heap* heap, MemoryChunk* page,
                                        StoreBufferEvent event) {
   heap->store_buffer_rebuilder_.Callback(page, event);
@@ -1619,6 +1635,12 @@ void Heap::Scavenge() {
   promotion_queue_.Initialize();
 
   ScavengeVisitor scavenge_visitor(this);
+
+  if (FLAG_scavenge_reclaim_unmodified_objects) {
+    isolate()->global_handles()->IdentifyWeakUnmodifiedObjects(
+        &IsUnmodifiedHeapObject);
+  }
+
   {
     // Copy roots.
     GCTracer::Scope gc_scope(tracer(), GCTracer::Scope::SCAVENGER_ROOTS);
@@ -1657,7 +1679,14 @@ void Heap::Scavenge() {
     new_space_front = DoScavenge(&scavenge_visitor, new_space_front);
   }
 
-  {
+  if (FLAG_scavenge_reclaim_unmodified_objects) {
+    isolate()->global_handles()->MarkNewSpaceWeakUnmodifiedObjectsPending(
+        &IsUnscavengedHeapObject);
+
+    isolate()->global_handles()->IterateNewSpaceWeakUnmodifiedRoots(
+        &scavenge_visitor);
+    new_space_front = DoScavenge(&scavenge_visitor, new_space_front);
+  } else {
     GCTracer::Scope gc_scope(tracer(),
                              GCTracer::Scope::SCAVENGER_OBJECT_GROUPS);
     while (isolate()->global_handles()->IterateObjectGroups(
@@ -1666,14 +1695,14 @@ void Heap::Scavenge() {
     }
     isolate()->global_handles()->RemoveObjectGroups();
     isolate()->global_handles()->RemoveImplicitRefGroups();
+
+    isolate()->global_handles()->IdentifyNewSpaceWeakIndependentHandles(
+        &IsUnscavengedHeapObject);
+
+    isolate()->global_handles()->IterateNewSpaceWeakIndependentRoots(
+        &scavenge_visitor);
+    new_space_front = DoScavenge(&scavenge_visitor, new_space_front);
   }
-
-  isolate()->global_handles()->IdentifyNewSpaceWeakIndependentHandles(
-      &IsUnscavengedHeapObject);
-
-  isolate()->global_handles()->IterateNewSpaceWeakIndependentRoots(
-      &scavenge_visitor);
-  new_space_front = DoScavenge(&scavenge_visitor, new_space_front);
 
   UpdateNewSpaceReferencesInExternalStringTable(
       &UpdateNewSpaceReferenceInExternalStringTableEntry);
@@ -1892,42 +1921,8 @@ Address Heap::DoScavenge(ObjectVisitor* scavenge_visitor,
         // for pointers to from semispace instead of looking for pointers
         // to new space.
         DCHECK(!target->IsMap());
-        Address obj_address = target->address();
 
-        // We are not collecting slots on new space objects during mutation
-        // thus we have to scan for pointers to evacuation candidates when we
-        // promote objects. But we should not record any slots in non-black
-        // objects. Grey object's slots would be rescanned.
-        // White object might not survive until the end of collection
-        // it would be a violation of the invariant to record it's slots.
-        bool record_slots = false;
-        if (incremental_marking()->IsCompacting()) {
-          MarkBit mark_bit = Marking::MarkBitFrom(target);
-          record_slots = Marking::IsBlack(mark_bit);
-        }
-#if V8_DOUBLE_FIELDS_UNBOXING
-        LayoutDescriptorHelper helper(target->map());
-        bool has_only_tagged_fields = helper.all_fields_tagged();
-
-        if (!has_only_tagged_fields) {
-          for (int offset = 0; offset < size;) {
-            int end_of_region_offset;
-            if (helper.IsTagged(offset, size, &end_of_region_offset)) {
-              IterateAndMarkPointersToFromSpace(
-                  target, obj_address + offset,
-                  obj_address + end_of_region_offset, record_slots,
-                  &Scavenger::ScavengeObject);
-            }
-            offset = end_of_region_offset;
-          }
-        } else {
-#endif
-          IterateAndMarkPointersToFromSpace(target, obj_address,
-                                            obj_address + size, record_slots,
-                                            &Scavenger::ScavengeObject);
-#if V8_DOUBLE_FIELDS_UNBOXING
-        }
-#endif
+        IteratePointersToFromSpace(target, size, &Scavenger::ScavengeObject);
       }
     }
 
@@ -2664,11 +2659,12 @@ void Heap::CreateInitialObjects() {
 
   {
     HandleScope scope(isolate());
-#define SYMBOL_INIT(name)                                                   \
-  {                                                                         \
-    Handle<String> name##d = factory->NewStringFromStaticChars(#name);      \
-    Handle<Object> symbol(isolate()->factory()->NewPrivateSymbol(name##d)); \
-    roots_[k##name##RootIndex] = *symbol;                                   \
+#define SYMBOL_INIT(name)                                              \
+  {                                                                    \
+    Handle<String> name##d = factory->NewStringFromStaticChars(#name); \
+    Handle<Symbol> symbol(isolate()->factory()->NewPrivateSymbol());   \
+    symbol->set_name(*name##d);                                        \
+    roots_[k##name##RootIndex] = *symbol;                              \
   }
     PRIVATE_SYMBOL_LIST(SYMBOL_INIT)
 #undef SYMBOL_INIT
@@ -2808,6 +2804,8 @@ void Heap::CreateInitialObjects() {
 
   set_weak_stack_trace_list(Smi::FromInt(0));
 
+  set_noscript_shared_function_infos(Smi::FromInt(0));
+
   // Will be filled in by Interpreter::Initialize().
   set_interpreter_table(
       *interpreter::Interpreter::CreateUninitializedInterpreterTable(
@@ -2850,6 +2848,7 @@ bool Heap::RootCanBeWrittenAfterInitialization(Heap::RootListIndex root_index) {
     case kDetachedContextsRootIndex:
     case kWeakObjectToCodeTableRootIndex:
     case kRetainedMapsRootIndex:
+    case kNoScriptSharedFunctionInfosRootIndex:
     case kWeakStackTraceListRootIndex:
 // Smi values
 #define SMI_ENTRY(type, name, Name) case k##Name##RootIndex:
@@ -4073,11 +4072,12 @@ void Heap::ReduceNewSpaceSize() {
 
 
 void Heap::FinalizeIncrementalMarkingIfComplete(const char* comment) {
-  if (FLAG_overapproximate_weak_closure && incremental_marking()->IsMarking() &&
+  if (FLAG_finalize_marking_incrementally &&
+      incremental_marking()->IsMarking() &&
       (incremental_marking()->IsReadyToOverApproximateWeakClosure() ||
-       (!incremental_marking()->weak_closure_was_overapproximated() &&
+       (!incremental_marking()->finalize_marking_completed() &&
         mark_compact_collector()->marking_deque()->IsEmpty()))) {
-    OverApproximateWeakClosure(comment);
+    FinalizeIncrementalMarking(comment);
   } else if (incremental_marking()->IsComplete() ||
              (mark_compact_collector()->marking_deque()->IsEmpty())) {
     CollectAllGarbage(current_gc_flags_, comment);
@@ -4090,14 +4090,14 @@ bool Heap::TryFinalizeIdleIncrementalMarking(double idle_time_in_ms) {
   size_t final_incremental_mark_compact_speed_in_bytes_per_ms =
       static_cast<size_t>(
           tracer()->FinalIncrementalMarkCompactSpeedInBytesPerMillisecond());
-  if (FLAG_overapproximate_weak_closure &&
+  if (FLAG_finalize_marking_incrementally &&
       (incremental_marking()->IsReadyToOverApproximateWeakClosure() ||
-       (!incremental_marking()->weak_closure_was_overapproximated() &&
+       (!incremental_marking()->finalize_marking_completed() &&
         mark_compact_collector()->marking_deque()->IsEmpty() &&
         gc_idle_time_handler_->ShouldDoOverApproximateWeakClosure(
             static_cast<size_t>(idle_time_in_ms))))) {
-    OverApproximateWeakClosure(
-        "Idle notification: overapproximate weak closure");
+    FinalizeIncrementalMarking(
+        "Idle notification: finalize incremental marking");
     return true;
   } else if (incremental_marking()->IsComplete() ||
              (mark_compact_collector()->marking_deque()->IsEmpty() &&
@@ -4105,7 +4105,7 @@ bool Heap::TryFinalizeIdleIncrementalMarking(double idle_time_in_ms) {
                   static_cast<size_t>(idle_time_in_ms), size_of_objects,
                   final_incremental_mark_compact_speed_in_bytes_per_ms))) {
     CollectAllGarbage(current_gc_flags_,
-                      "idle notification: finalize incremental");
+                      "idle notification: finalize incremental marking");
     return true;
   }
   return false;
@@ -4210,15 +4210,11 @@ void Heap::IdleNotificationEpilogue(GCIdleTimeAction action,
 }
 
 
-void Heap::CheckAndNotifyBackgroundIdleNotification(double idle_time_in_ms,
-                                                    double now_ms) {
+void Heap::CheckBackgroundIdleNotification(double idle_time_in_ms,
+                                           double now_ms) {
+  // TODO(ulan): Remove this function once Chrome uses new API
+  // for foreground/background notification.
   if (idle_time_in_ms >= GCIdleTimeHandler::kMinBackgroundIdleTime) {
-    MemoryReducer::Event event;
-    event.type = MemoryReducer::kBackgroundIdleNotification;
-    event.time_ms = now_ms;
-    event.can_start_incremental_gc = incremental_marking()->IsStopped() &&
-                                     incremental_marking()->CanBeActivated();
-    memory_reducer_->NotifyBackgroundIdleNotification(event);
     optimize_for_memory_usage_ = true;
   } else {
     optimize_for_memory_usage_ = false;
@@ -4250,7 +4246,7 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
   double start_ms = MonotonicallyIncreasingTimeInMs();
   double idle_time_in_ms = deadline_in_ms - start_ms;
 
-  CheckAndNotifyBackgroundIdleNotification(idle_time_in_ms, start_ms);
+  CheckBackgroundIdleNotification(idle_time_in_ms, start_ms);
 
   tracer()->SampleAllocation(start_ms, NewSpaceAllocationCounter(),
                              OldGenerationAllocationCounter());
@@ -4474,6 +4470,72 @@ void Heap::IterateAndMarkPointersToFromSpace(HeapObject* object, Address start,
       }
     }
     slot_address += kPointerSize;
+  }
+}
+
+
+void Heap::IteratePointersToFromSpace(HeapObject* target, int size,
+                                      ObjectSlotCallback callback) {
+  Address obj_address = target->address();
+
+  // We are not collecting slots on new space objects during mutation
+  // thus we have to scan for pointers to evacuation candidates when we
+  // promote objects. But we should not record any slots in non-black
+  // objects. Grey object's slots would be rescanned.
+  // White object might not survive until the end of collection
+  // it would be a violation of the invariant to record it's slots.
+  bool record_slots = false;
+  if (incremental_marking()->IsCompacting()) {
+    MarkBit mark_bit = Marking::MarkBitFrom(target);
+    record_slots = Marking::IsBlack(mark_bit);
+  }
+
+  // Do not scavenge JSArrayBuffer's contents
+  switch (target->ContentType()) {
+    case HeapObjectContents::kTaggedValues: {
+      IterateAndMarkPointersToFromSpace(target, obj_address, obj_address + size,
+                                        record_slots, callback);
+      break;
+    }
+    case HeapObjectContents::kMixedValues: {
+      if (target->IsFixedTypedArrayBase()) {
+        IterateAndMarkPointersToFromSpace(
+            target, obj_address + FixedTypedArrayBase::kBasePointerOffset,
+            obj_address + FixedTypedArrayBase::kHeaderSize, record_slots,
+            callback);
+      } else if (target->IsBytecodeArray()) {
+        IterateAndMarkPointersToFromSpace(
+            target, obj_address + BytecodeArray::kConstantPoolOffset,
+            obj_address + BytecodeArray::kHeaderSize, record_slots, callback);
+      } else if (target->IsJSArrayBuffer()) {
+        IterateAndMarkPointersToFromSpace(
+            target, obj_address,
+            obj_address + JSArrayBuffer::kByteLengthOffset + kPointerSize,
+            record_slots, callback);
+        IterateAndMarkPointersToFromSpace(
+            target, obj_address + JSArrayBuffer::kSize, obj_address + size,
+            record_slots, callback);
+#if V8_DOUBLE_FIELDS_UNBOXING
+      } else if (FLAG_unbox_double_fields) {
+        LayoutDescriptorHelper helper(target->map());
+        DCHECK(!helper.all_fields_tagged());
+
+        for (int offset = 0; offset < size;) {
+          int end_of_region_offset;
+          if (helper.IsTagged(offset, size, &end_of_region_offset)) {
+            IterateAndMarkPointersToFromSpace(
+                target, obj_address + offset,
+                obj_address + end_of_region_offset, record_slots, callback);
+          }
+          offset = end_of_region_offset;
+        }
+#endif
+      }
+      break;
+    }
+    case HeapObjectContents::kRawValues: {
+      break;
+    }
   }
 }
 

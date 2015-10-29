@@ -5,7 +5,6 @@
 #include "src/compiler/typer.h"
 
 #include "src/base/flags.h"
-#include "src/base/lazy-instance.h"
 #include "src/bootstrapper.h"
 #include "src/compilation-dependencies.h"
 #include "src/compiler/common-operator.h"
@@ -15,18 +14,11 @@
 #include "src/compiler/node-properties.h"
 #include "src/compiler/simplified-operator.h"
 #include "src/objects-inl.h"
-#include "src/zone-type-cache.h"
+#include "src/type-cache.h"
 
 namespace v8 {
 namespace internal {
 namespace compiler {
-
-namespace {
-
-base::LazyInstance<ZoneTypeCache>::type kCache = LAZY_INSTANCE_INITIALIZER;
-
-}  // namespace
-
 
 class Typer::Decorator final : public GraphDecorator {
  public:
@@ -47,7 +39,7 @@ Typer::Typer(Isolate* isolate, Graph* graph, Flags flags,
       dependencies_(dependencies),
       function_type_(function_type),
       decorator_(nullptr),
-      cache_(kCache.Get()) {
+      cache_(TypeCache::Get()) {
   Zone* zone = this->zone();
   Factory* const factory = isolate->factory();
 
@@ -1480,6 +1472,11 @@ Type* Typer::Visitor::TypeJSCallRuntime(Node* node) {
 }
 
 
+Type* Typer::Visitor::TypeJSConvertReceiver(Node* node) {
+  return Type::Receiver();
+}
+
+
 Type* Typer::Visitor::TypeJSForInNext(Node* node) {
   return Type::Union(Type::Name(), Type::Undefined(), zone());
 }
@@ -1553,6 +1550,21 @@ Type* Typer::Visitor::TypeNumberDivide(Node* node) {
 
 Type* Typer::Visitor::TypeNumberModulus(Node* node) {
   return Type::Number(zone());
+}
+
+
+Type* Typer::Visitor::TypeNumberBitwiseOr(Node* node) {
+  return Type::Signed32(zone());
+}
+
+
+Type* Typer::Visitor::TypeNumberBitwiseXor(Node* node) {
+  return Type::Signed32(zone());
+}
+
+
+Type* Typer::Visitor::TypeNumberBitwiseAnd(Node* node) {
+  return Type::Signed32(zone());
 }
 
 

@@ -105,6 +105,8 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
   // Emit unary operator invocations.
   builder.LogicalNot().TypeOf();
 
+  // Emit delete
+  builder.Delete(reg, LanguageMode::SLOPPY).Delete(reg, LanguageMode::STRICT);
 
   // Emit new.
   builder.New(reg, reg, 0);
@@ -124,6 +126,7 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
   // Emit cast operator invocations.
   builder.CastAccumulatorToNumber()
       .CastAccumulatorToBoolean()
+      .CastAccumulatorToJSObject()
       .CastAccumulatorToName();
 
   // Emit control flow. Return must be the last instruction.
@@ -134,7 +137,10 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
       .JumpIfTrue(&start)
       .JumpIfFalse(&start)
       .JumpIfToBooleanTrue(&start)
-      .JumpIfToBooleanFalse(&start);
+      .JumpIfToBooleanFalse(&start)
+      .JumpIfNull(&start)
+      .JumpIfUndefined(&start);
+
   // Insert dummy ops to force longer jumps
   for (int i = 0; i < 128; i++) {
     builder.LoadTrue();
@@ -144,11 +150,15 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
       .JumpIfTrue(&start)
       .JumpIfFalse(&start)
       .JumpIfToBooleanTrue(&start)
-      .JumpIfToBooleanFalse(&start);
+      .JumpIfToBooleanFalse(&start)
+      .JumpIfNull(&start)
+      .JumpIfUndefined(&start);
 
   builder.EnterBlock()
       .Throw()
       .LeaveBlock();
+
+  builder.ForInPrepare(reg).ForInDone(reg).ForInNext(reg, reg);
 
   builder.Return();
 

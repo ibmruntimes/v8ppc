@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+// TODO(jochen): Remove this after the setting is turned on globally.
+#define V8_IMMINENT_DEPRECATION_WARNINGS
 
 #include "test/cctest/compiler/function-tester.h"
 
@@ -26,18 +27,19 @@ TEST(ThrowMessagePosition) {
       "  throw 4;               \n"
       "})                       ";
   FunctionTester T(src);
-  v8::Handle<v8::Message> message;
+  v8::Local<v8::Message> message;
+  v8::Local<v8::Context> context = CcTest::isolate()->GetCurrentContext();
 
   message = T.CheckThrowsReturnMessage(T.Val(1), T.undefined());
-  CHECK_EQ(2, message->GetLineNumber());
+  CHECK_EQ(2, message->GetLineNumber(context).FromMaybe(-1));
   CHECK_EQ(40, message->GetStartPosition());
 
   message = T.CheckThrowsReturnMessage(T.Val(2), T.undefined());
-  CHECK_EQ(3, message->GetLineNumber());
+  CHECK_EQ(3, message->GetLineNumber(context).FromMaybe(-1));
   CHECK_EQ(67, message->GetStartPosition());
 
   message = T.CheckThrowsReturnMessage(T.Val(3), T.undefined());
-  CHECK_EQ(4, message->GetLineNumber());
+  CHECK_EQ(4, message->GetLineNumber(context).FromMaybe(-1));
   CHECK_EQ(95, message->GetStartPosition());
 }
 
@@ -48,13 +50,15 @@ TEST(ThrowMessageDirectly) {
       "  if (a) { throw b; } else { throw new Error(b); }"
       "})";
   FunctionTester T(src);
-  v8::Handle<v8::Message> message;
+  v8::Local<v8::Message> message;
+  v8::Local<v8::Context> context = CcTest::isolate()->GetCurrentContext();
+  v8::Maybe<bool> t = v8::Just(true);
 
   message = T.CheckThrowsReturnMessage(T.false_value(), T.Val("Wat?"));
-  CHECK(message->Get()->Equals(v8_str("Uncaught Error: Wat?")));
+  CHECK(t == message->Get()->Equals(context, v8_str("Uncaught Error: Wat?")));
 
   message = T.CheckThrowsReturnMessage(T.true_value(), T.Val("Kaboom!"));
-  CHECK(message->Get()->Equals(v8_str("Uncaught Kaboom!")));
+  CHECK(t == message->Get()->Equals(context, v8_str("Uncaught Kaboom!")));
 }
 
 
@@ -69,13 +73,15 @@ TEST(ThrowMessageIndirectly) {
       "  }"
       "})";
   FunctionTester T(src);
-  v8::Handle<v8::Message> message;
+  v8::Local<v8::Message> message;
+  v8::Local<v8::Context> context = CcTest::isolate()->GetCurrentContext();
+  v8::Maybe<bool> t = v8::Just(true);
 
   message = T.CheckThrowsReturnMessage(T.false_value(), T.Val("Wat?"));
-  CHECK(message->Get()->Equals(v8_str("Uncaught Error: Wat?")));
+  CHECK(t == message->Get()->Equals(context, v8_str("Uncaught Error: Wat?")));
 
   message = T.CheckThrowsReturnMessage(T.true_value(), T.Val("Kaboom!"));
-  CHECK(message->Get()->Equals(v8_str("Uncaught Kaboom!")));
+  CHECK(t == message->Get()->Equals(context, v8_str("Uncaught Kaboom!")));
 }
 
 

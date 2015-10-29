@@ -194,7 +194,6 @@ void Scope::SetDefaults(ScopeType scope_type, Scope* outer_scope,
   language_mode_ = outer_scope != NULL ? outer_scope->language_mode_ : SLOPPY;
   outer_scope_calls_sloppy_eval_ = false;
   inner_scope_calls_eval_ = false;
-  inner_scope_uses_arguments_ = false;
   scope_nonlinear_ = false;
   force_eager_compilation_ = false;
   force_context_allocation_ = (outer_scope != NULL && !is_function_scope())
@@ -325,7 +324,6 @@ bool Scope::Analyze(ParseInfo* info) {
 
 
 void Scope::Initialize() {
-  bool subclass_constructor = IsSubclassConstructor(function_kind_);
   DCHECK(!already_resolved());
 
   // Add this scope as a new inner scope of the outer scope.
@@ -338,6 +336,7 @@ void Scope::Initialize() {
 
   // Declare convenience variables and the receiver.
   if (is_declaration_scope() && has_this_declaration()) {
+    bool subclass_constructor = IsSubclassConstructor(function_kind_);
     Variable* var = variables_.Declare(
         this, ast_value_factory_->this_string(),
         subclass_constructor ? CONST : VAR, Variable::THIS,
@@ -352,10 +351,8 @@ void Scope::Initialize() {
     variables_.Declare(this, ast_value_factory_->arguments_string(), VAR,
                        Variable::ARGUMENTS, kCreatedInitialized);
 
-    if (subclass_constructor || FLAG_harmony_new_target) {
-      variables_.Declare(this, ast_value_factory_->new_target_string(), CONST,
-                         Variable::NORMAL, kCreatedInitialized);
-    }
+    variables_.Declare(this, ast_value_factory_->new_target_string(), CONST,
+                       Variable::NORMAL, kCreatedInitialized);
 
     if (IsConciseMethod(function_kind_) || IsClassConstructor(function_kind_) ||
         IsAccessorFunction(function_kind_)) {
@@ -389,22 +386,32 @@ Scope* Scope::FinalizeBlockScope() {
     outer_scope()->unresolved_.Add(unresolved_[i], zone());
   }
 
-  // Propagate usage flags to outer scope.
-  // TODO(adamk): Why doesn't this call PropagateScopeInfo()?
-  if (uses_arguments()) outer_scope_->RecordArgumentsUsage();
-  if (uses_super_property()) outer_scope_->RecordSuperPropertyUsage();
-  if (scope_calls_eval_) outer_scope_->RecordEvalCall();
+  PropagateUsageFlagsToScope(outer_scope_);
 
   return NULL;
 }
 
 
-void Scope::ReplaceOuterScope(Scope* outer_scope) {
+void Scope::ReplaceOuterScope(Scope* outer) {
+  DCHECK_NOT_NULL(outer);
   DCHECK_NOT_NULL(outer_scope_);
+  DCHECK(!already_resolved());
+  DCHECK(!outer->already_resolved());
+  DCHECK(!outer_scope_->already_resolved());
   outer_scope_->RemoveInnerScope(this);
-  outer_scope_ = outer_scope;
-  outer_scope_->AddInnerScope(this);
-  // TODO(adamk): Do we need to propagate usage flags here?
+  outer->AddInnerScope(this);
+  outer_scope_ = outer;
+}
+
+
+void Scope::PropagateUsageFlagsToScope(Scope* other) {
+  DCHECK_NOT_NULL(other);
+  DCHECK(!already_resolved());
+  DCHECK(!other->already_resolved());
+  if (uses_arguments()) other->RecordArgumentsUsage();
+  if (uses_super_property()) other->RecordSuperPropertyUsage();
+  if (calls_eval()) other->RecordEvalCall();
+  if (scope_contains_with_) other->RecordWithStatement();
 }
 
 
@@ -998,9 +1005,6 @@ void Scope::Print(int n) {
   if (scope_uses_arguments_) Indent(n1, "// scope uses 'arguments'\n");
   if (scope_uses_super_property_)
     Indent(n1, "// scope uses 'super' property\n");
-  if (inner_scope_uses_arguments_) {
-    Indent(n1, "// inner scope uses 'arguments'\n");
-  }
   if (outer_scope_calls_sloppy_eval_) {
     Indent(n1, "// outer scope calls 'eval' in sloppy context\n");
   }
@@ -1126,7 +1130,8 @@ Variable* Scope::LookupRecursive(VariableProxy* proxy,
     if (var != NULL && proxy->is_assigned()) var->set_maybe_assigned();
     *binding_kind = DYNAMIC_LOOKUP;
     return NULL;
-  } else if (calls_sloppy_eval() && name_can_be_shadowed) {
+  } else if (calls_sloppy_eval() && !is_script_scope() &&
+             name_can_be_shadowed) {
     // A variable binding may have been found in an outer scope, but the current
     // scope makes a sloppy 'eval' call, so the found variable may not be
     // the correct one (the 'eval' may introduce a binding with the same name).
@@ -1346,14 +1351,6 @@ void Scope::PropagateScopeInfo(bool outer_scope_calls_sloppy_eval ) {
     inner->PropagateScopeInfo(calls_sloppy_eval);
     if (inner->scope_calls_eval_ || inner->inner_scope_calls_eval_) {
       inner_scope_calls_eval_ = true;
-    }
-    // If the inner scope is an arrow function, propagate the flags tracking
-    // usage of arguments/super/this, but do not propagate them out from normal
-    // functions.
-    if (!inner->is_function_scope() || inner->is_arrow_scope()) {
-      if (inner->scope_uses_arguments_ || inner->inner_scope_uses_arguments_) {
-        inner_scope_uses_arguments_ = true;
-      }
     }
     if (inner->force_eager_compilation_) {
       force_eager_compilation_ = true;

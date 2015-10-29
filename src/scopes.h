@@ -117,6 +117,10 @@ class Scope: public ZoneObject {
   // Assumes outer_scope_ is non-null.
   void ReplaceOuterScope(Scope* outer_scope);
 
+  // Propagates any eagerly-gathered scope usage flags (such as calls_eval())
+  // to the passed-in scope.
+  void PropagateUsageFlagsToScope(Scope* other);
+
   Zone* zone() const { return zone_; }
 
   // ---------------------------------------------------------------------------
@@ -237,7 +241,7 @@ class Scope: public ZoneObject {
   void RecordWithStatement() { scope_contains_with_ = true; }
 
   // Inform the scope that the corresponding code contains an eval call.
-  void RecordEvalCall() { if (!is_script_scope()) scope_calls_eval_ = true; }
+  void RecordEvalCall() { scope_calls_eval_ = true; }
 
   // Inform the scope that the corresponding code uses "arguments".
   void RecordArgumentsUsage() { scope_uses_arguments_ = true; }
@@ -339,13 +343,9 @@ class Scope: public ZoneObject {
 
   // Is this scope inside a with statement.
   bool inside_with() const { return scope_inside_with_; }
-  // Does this scope contain a with statement.
-  bool contains_with() const { return scope_contains_with_; }
 
   // Does this scope access "arguments".
   bool uses_arguments() const { return scope_uses_arguments_; }
-  // Does any inner scope access "arguments".
-  bool inner_uses_arguments() const { return inner_scope_uses_arguments_; }
   // Does this scope access "super" property (super.foo).
   bool uses_super_property() const { return scope_uses_super_property_; }
   // Does this scope have the potential to execute declarations non-linearly?
@@ -361,9 +361,10 @@ class Scope: public ZoneObject {
 
   bool NeedsHomeObject() const {
     return scope_uses_super_property_ ||
-           (scope_calls_eval_ && (IsConciseMethod(function_kind()) ||
-                                  IsAccessorFunction(function_kind()) ||
-                                  IsClassConstructor(function_kind())));
+           ((scope_calls_eval_ || inner_scope_calls_eval_) &&
+            (IsConciseMethod(function_kind()) ||
+             IsAccessorFunction(function_kind()) ||
+             IsClassConstructor(function_kind())));
   }
 
   const Scope* NearestOuterEvalScope() const {
@@ -389,8 +390,6 @@ class Scope: public ZoneObject {
     DCHECK_NOT_NULL(receiver_);
     return receiver_;
   }
-
-  Variable* LookupThis() { return Lookup(ast_value_factory_->this_string()); }
 
   // TODO(wingo): Add a GLOBAL_SCOPE scope type which will lexically allocate
   // "this" (and no other variable) on the native context.  Script scopes then
@@ -675,7 +674,6 @@ class Scope: public ZoneObject {
   // Computed via PropagateScopeInfo.
   bool outer_scope_calls_sloppy_eval_;
   bool inner_scope_calls_eval_;
-  bool inner_scope_uses_arguments_;
   bool force_eager_compilation_;
   bool force_context_allocation_;
 

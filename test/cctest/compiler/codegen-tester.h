@@ -5,8 +5,6 @@
 #ifndef V8_CCTEST_COMPILER_CODEGEN_TESTER_H_
 #define V8_CCTEST_COMPILER_CODEGEN_TESTER_H_
 
-#include "src/v8.h"
-
 #include "src/compiler/instruction-selector.h"
 #include "src/compiler/pipeline.h"
 #include "src/compiler/raw-machine-assembler.h"
@@ -110,7 +108,8 @@ class BinopTester {
 
   void AddReturn(Node* val) {
     if (use_result_buffer) {
-      T->Store(rep, T->PointerConstant(&result), T->Int32Constant(0), val);
+      T->Store(rep, T->PointerConstant(&result), T->Int32Constant(0), val,
+               kNoWriteBarrier);
       T->Return(T->Int32Constant(CHECK_VALUE));
     } else {
       T->Return(val);

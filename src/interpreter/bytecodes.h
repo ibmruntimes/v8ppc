@@ -91,6 +91,8 @@ namespace interpreter {
   V(Dec, OperandType::kNone)                                                   \
   V(LogicalNot, OperandType::kNone)                                            \
   V(TypeOf, OperandType::kNone)                                                \
+  V(DeletePropertyStrict, OperandType::kReg8)                                  \
+  V(DeletePropertySloppy, OperandType::kReg8)                                  \
                                                                                \
   /* Call operations */                                                        \
   V(Call, OperandType::kReg8, OperandType::kReg8, OperandType::kCount8)        \
@@ -116,6 +118,7 @@ namespace interpreter {
   V(ToBoolean, OperandType::kNone)                                             \
   V(ToName, OperandType::kNone)                                                \
   V(ToNumber, OperandType::kNone)                                              \
+  V(ToObject, OperandType::kNone)                                              \
                                                                                \
   /* Literals */                                                               \
   V(CreateRegExpLiteral, OperandType::kIdx8, OperandType::kReg8)               \
@@ -140,6 +143,17 @@ namespace interpreter {
   V(JumpIfToBooleanTrueConstant, OperandType::kIdx8)                           \
   V(JumpIfToBooleanFalse, OperandType::kImm8)                                  \
   V(JumpIfToBooleanFalseConstant, OperandType::kIdx8)                          \
+  V(JumpIfNull, OperandType::kImm8)                                            \
+  V(JumpIfNullConstant, OperandType::kIdx8)                                    \
+  V(JumpIfUndefined, OperandType::kImm8)                                       \
+  V(JumpIfUndefinedConstant, OperandType::kIdx8)                               \
+                                                                               \
+  /* Complex flow control For..in */                                           \
+  V(ForInPrepare, OperandType::kReg8)                                          \
+  V(ForInNext, OperandType::kReg8, OperandType::kReg8)                         \
+  V(ForInDone, OperandType::kReg8)                                             \
+                                                                               \
+  /* Non-local flow control */                                                 \
   V(Throw, OperandType::kNone)                                                 \
   V(Return, OperandType::kNone)
 

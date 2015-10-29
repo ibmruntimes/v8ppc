@@ -35,6 +35,7 @@
 #include "src/factory.h"
 #include "src/global-handles.h"
 #include "src/heap/gc-tracer.h"
+#include "src/heap/memory-reducer.h"
 #include "src/ic/ic.h"
 #include "src/macro-assembler.h"
 #include "src/snapshot/snapshot.h"
@@ -6227,18 +6228,7 @@ TEST(SharedFunctionInfoIterator) {
     HeapIterator it(heap);
     for (HeapObject* obj = it.next(); obj != NULL; obj = it.next()) {
       if (!obj->IsSharedFunctionInfo()) continue;
-      // Shared function infos without a script (API functions or C++ builtins)
-      // are not returned by the iterator because they are not created from a
-      // script. They are not interesting for type feedback vector anyways.
-
-      // TODO(mvstanton): There are builtins that use type feedback vectors,
-      // consider adding these to the iterator.
-      SharedFunctionInfo* shared = SharedFunctionInfo::cast(obj);
-      if (shared->script()->IsUndefined()) {
-        CHECK(shared->native() || shared->feedback_vector()->is_empty());
-      } else {
-        sfi_count++;
-      }
+      sfi_count++;
     }
   }
 
@@ -6282,6 +6272,31 @@ TEST(Regress519319) {
   // are called before sweeping finishes.
   heap->StartIncrementalMarking();
   heap->FinalizeIncrementalMarkingIfComplete("test");
+}
+
+
+HEAP_TEST(TestMemoryReducerSampleJsCalls) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Heap* heap = CcTest::heap();
+  Isolate* isolate = CcTest::i_isolate();
+  MemoryReducer* memory_reducer = heap->memory_reducer_;
+  memory_reducer->SampleAndGetJsCallsPerMs(0);
+  isolate->IncrementJsCallsFromApiCounter();
+  isolate->IncrementJsCallsFromApiCounter();
+  isolate->IncrementJsCallsFromApiCounter();
+  double calls_per_ms = memory_reducer->SampleAndGetJsCallsPerMs(1);
+  CheckDoubleEquals(3, calls_per_ms);
+
+  calls_per_ms = memory_reducer->SampleAndGetJsCallsPerMs(2);
+  CheckDoubleEquals(0, calls_per_ms);
+
+  isolate->IncrementJsCallsFromApiCounter();
+  isolate->IncrementJsCallsFromApiCounter();
+  isolate->IncrementJsCallsFromApiCounter();
+  isolate->IncrementJsCallsFromApiCounter();
+  calls_per_ms = memory_reducer->SampleAndGetJsCallsPerMs(4);
+  CheckDoubleEquals(2, calls_per_ms);
 }
 
 

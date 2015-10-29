@@ -160,12 +160,17 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& LogicalNot();
   BytecodeArrayBuilder& TypeOf();
 
+  // Deletes property from an object. This expects that accumulator contains
+  // the key to be deleted and the register contains a reference to the object.
+  BytecodeArrayBuilder& Delete(Register object, LanguageMode language_mode);
+
   // Tests.
   BytecodeArrayBuilder& CompareOperation(Token::Value op, Register reg,
                                          Strength strength);
 
   // Casts.
   BytecodeArrayBuilder& CastAccumulatorToBoolean();
+  BytecodeArrayBuilder& CastAccumulatorToJSObject();
   BytecodeArrayBuilder& CastAccumulatorToName();
   BytecodeArrayBuilder& CastAccumulatorToNumber();
 
@@ -176,6 +181,8 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& Jump(BytecodeLabel* label);
   BytecodeArrayBuilder& JumpIfTrue(BytecodeLabel* label);
   BytecodeArrayBuilder& JumpIfFalse(BytecodeLabel* label);
+  BytecodeArrayBuilder& JumpIfNull(BytecodeLabel* label);
+  BytecodeArrayBuilder& JumpIfUndefined(BytecodeLabel* label);
   // TODO(mythria) The following two functions should be merged into
   // JumpIfTrue/False. These bytecodes should be automatically chosen rather
   // than explicitly using them.
@@ -184,6 +191,11 @@ class BytecodeArrayBuilder {
 
   BytecodeArrayBuilder& Throw();
   BytecodeArrayBuilder& Return();
+
+  // Complex flow control.
+  BytecodeArrayBuilder& ForInPrepare(Register receiver);
+  BytecodeArrayBuilder& ForInNext(Register for_in_state, Register index);
+  BytecodeArrayBuilder& ForInDone(Register for_in_state);
 
   BytecodeArrayBuilder& EnterBlock();
   BytecodeArrayBuilder& LeaveBlock();
@@ -206,6 +218,7 @@ class BytecodeArrayBuilder {
   static Bytecode BytecodeForLoadGlobal(LanguageMode language_mode);
   static Bytecode BytecodeForStoreGlobal(LanguageMode language_mode);
   static Bytecode BytecodeForCreateArguments(CreateArgumentsType type);
+  static Bytecode BytecodeForDelete(LanguageMode language_mode);
 
   static bool FitsInIdx8Operand(int value);
   static bool FitsInIdx8Operand(size_t value);
@@ -282,7 +295,7 @@ class BytecodeLabel final {
     bound_ = true;
   }
   INLINE(void set_referrer(size_t offset)) {
-    DCHECK(!bound_ && offset != kInvalidOffset);
+    DCHECK(!bound_ && offset != kInvalidOffset && offset_ == kInvalidOffset);
     offset_ = offset;
   }
   INLINE(size_t offset() const) { return offset_; }
@@ -315,6 +328,8 @@ class TemporaryRegisterScope {
 
   void PrepareForConsecutiveAllocations(size_t count);
   Register NextConsecutiveRegister();
+
+  bool RegisterIsAllocatedInThisScope(Register reg) const;
 
  private:
   void* operator new(size_t size);

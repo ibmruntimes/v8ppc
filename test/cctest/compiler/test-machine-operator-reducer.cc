@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "test/cctest/cctest.h"
+// TODO(jochen): Remove this after the setting is turned on globally.
+#define V8_IMMINENT_DEPRECATION_WARNINGS
 
 #include "src/base/utils/random-number-generator.h"
 #include "src/codegen.h"
@@ -10,6 +11,7 @@
 #include "src/compiler/machine-operator-reducer.h"
 #include "src/compiler/operator-properties.h"
 #include "src/compiler/typer.h"
+#include "test/cctest/cctest.h"
 #include "test/cctest/compiler/value-helper.h"
 
 using namespace v8::internal;

@@ -979,7 +979,6 @@ TEST(ScopeUsesArgumentsSuperThis) {
     ARGUMENTS = 1,
     SUPER_PROPERTY = 1 << 1,
     THIS = 1 << 2,
-    INNER_ARGUMENTS = 1 << 3,
     EVAL = 1 << 4
   };
 
@@ -1021,9 +1020,9 @@ TEST(ScopeUsesArgumentsSuperThis) {
     {"return { m(x) { return () => super.m() } }", NONE},
     // Flags must be correctly set when using block scoping.
     {"\"use strict\"; while (true) { let x; this, arguments; }",
-     INNER_ARGUMENTS | THIS},
+     THIS},
     {"\"use strict\"; while (true) { let x; this, super.f(), arguments; }",
-     INNER_ARGUMENTS | SUPER_PROPERTY | THIS},
+     SUPER_PROPERTY | THIS},
     {"\"use strict\"; if (foo()) { let x; this.f() }", THIS},
     {"\"use strict\"; if (foo()) { let x; super.f() }", SUPER_PROPERTY},
     {"\"use strict\"; if (1) {"
@@ -1092,10 +1091,9 @@ TEST(ScopeUsesArgumentsSuperThis) {
       if ((source_data[i].expected & THIS) != 0) {
         // Currently the is_used() flag is conservative; all variables in a
         // script scope are marked as used.
-        CHECK(scope->LookupThis()->is_used());
+        CHECK(
+            scope->Lookup(info.ast_value_factory()->this_string())->is_used());
       }
-      CHECK_EQ((source_data[i].expected & INNER_ARGUMENTS) != 0,
-               scope->inner_uses_arguments());
       CHECK_EQ((source_data[i].expected & EVAL) != 0, scope->calls_eval());
     }
   }
@@ -1501,9 +1499,7 @@ enum ParserFlag {
   kAllowHarmonyRestParameters,
   kAllowHarmonySloppy,
   kAllowHarmonySloppyLet,
-  kAllowHarmonySpreadCalls,
   kAllowHarmonyDestructuring,
-  kAllowHarmonySpreadArrays,
   kAllowHarmonyNewTarget,
   kAllowStrongMode,
   kNoLegacyConst
@@ -1525,15 +1521,10 @@ void SetParserFlags(i::ParserBase<Traits>* parser,
       flags.Contains(kAllowHarmonyDefaultParameters));
   parser->set_allow_harmony_rest_parameters(
       flags.Contains(kAllowHarmonyRestParameters));
-  parser->set_allow_harmony_spread_calls(
-      flags.Contains(kAllowHarmonySpreadCalls));
   parser->set_allow_harmony_sloppy(flags.Contains(kAllowHarmonySloppy));
   parser->set_allow_harmony_sloppy_let(flags.Contains(kAllowHarmonySloppyLet));
   parser->set_allow_harmony_destructuring(
       flags.Contains(kAllowHarmonyDestructuring));
-  parser->set_allow_harmony_spread_arrays(
-      flags.Contains(kAllowHarmonySpreadArrays));
-  parser->set_allow_harmony_new_target(flags.Contains(kAllowHarmonyNewTarget));
   parser->set_allow_strong_mode(flags.Contains(kAllowStrongMode));
   parser->set_allow_legacy_const(!flags.Contains(kNoLegacyConst));
 }
@@ -5361,10 +5352,7 @@ TEST(SpreadCall) {
       "...[0, 1, 2], 3, 4, 5, 6, ...'7', 8, 9",
       "...[0, 1, 2], 3, 4, 5, 6, ...'7', 8, 9, ...[10]", NULL};
 
-  static const ParserFlag always_flags[] = {kAllowHarmonySpreadCalls};
-
-  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, always_flags,
-                    arraysize(always_flags));
+  RunParserSyncTest(context_data, data, kSuccess);
 }
 
 
@@ -5375,10 +5363,7 @@ TEST(SpreadCallErrors) {
 
   const char* data[] = {"(...[1, 2, 3])", "......[1,2,3]", NULL};
 
-  static const ParserFlag always_flags[] = {kAllowHarmonySpreadCalls};
-
-  RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
-                    arraysize(always_flags));
+  RunParserSyncTest(context_data, data, kError);
 }
 
 
@@ -6934,8 +6919,6 @@ TEST(DefaultParametersYieldInInitializers) {
 
 
 TEST(SpreadArray) {
-  i::FLAG_harmony_spread_arrays = true;
-
   const char* context_data[][2] = {
       {"'use strict';", ""}, {"", ""}, {NULL, NULL}};
 
@@ -6953,15 +6936,11 @@ TEST(SpreadArray) {
     "[, , ...a]",
     NULL};
   // clang-format on
-  static const ParserFlag always_flags[] = {kAllowHarmonySpreadArrays};
-  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, always_flags,
-                    arraysize(always_flags));
+  RunParserSyncTest(context_data, data, kSuccess);
 }
 
 
 TEST(SpreadArrayError) {
-  i::FLAG_harmony_spread_arrays = true;
-
   const char* context_data[][2] = {
       {"'use strict';", ""}, {"", ""}, {NULL, NULL}};
 
@@ -6974,9 +6953,7 @@ TEST(SpreadArrayError) {
     "[ (...a)]",
     NULL};
   // clang-format on
-  static const ParserFlag always_flags[] = {kAllowHarmonySpreadArrays};
-  RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
-                    arraysize(always_flags));
+  RunParserSyncTest(context_data, data, kError);
 }
 
 

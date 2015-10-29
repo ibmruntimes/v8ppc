@@ -43,10 +43,14 @@ class BytecodeGenerator::ContextScope BASE_EMBEDDED {
     generator_->set_execution_context(outer_);
   }
 
-  // Returns the execution context for the given |scope| if it is a function
-  // local execution context, otherwise returns nullptr.
-  ContextScope* Previous(Scope* scope) {
-    int depth = scope_->ContextChainLength(scope);
+  // Returns the depth of the given |scope| for the current execution context.
+  int ContextChainDepth(Scope* scope) {
+    return scope_->ContextChainLength(scope);
+  }
+
+  // Returns the execution context at |depth| in the current context chain if it
+  // is a function local execution context, otherwise returns nullptr.
+  ContextScope* Previous(int depth) {
     if (depth > depth_) {
       return nullptr;
     }
@@ -189,6 +193,8 @@ class BytecodeGenerator::ExpressionResultScope {
 
   bool result_identified() const { return result_identified_; }
 
+  const TemporaryRegisterScope* allocator() const { return &allocator_; }
+
  private:
   BytecodeGenerator* generator_;
   Expression::Context kind_;
@@ -248,7 +254,8 @@ class BytecodeGenerator::RegisterResultScope final
 
   virtual void SetResultInRegister(Register reg) {
     DCHECK(builder()->RegisterIsParameterOrLocal(reg) ||
-           builder()->RegisterIsTemporary(reg));
+           (builder()->RegisterIsTemporary(reg) &&
+            !allocator()->RegisterIsAllocatedInThisScope(reg)));
     result_register_ = reg;
     set_result_identified();
   }
@@ -414,8 +421,18 @@ void BytecodeGenerator::VisitFunctionDeclaration(FunctionDeclaration* decl) {
       break;
     }
     case VariableLocation::PARAMETER:
-    case VariableLocation::LOCAL:
-    case VariableLocation::CONTEXT:
+    case VariableLocation::LOCAL: {
+      VisitForAccumulatorValue(decl->fun());
+      VisitVariableAssignment(variable, FeedbackVectorSlot::Invalid());
+      break;
+    }
+    case VariableLocation::CONTEXT: {
+      DCHECK_EQ(0, execution_context()->ContextChainDepth(variable->scope()));
+      VisitForAccumulatorValue(decl->fun());
+      builder()->StoreContextSlot(execution_context()->reg(),
+                                  variable->index());
+      break;
+    }
     case VariableLocation::LOOKUP:
       UNIMPLEMENTED();
   }
@@ -461,6 +478,8 @@ void BytecodeGenerator::VisitDeclarations(
 
 
 void BytecodeGenerator::VisitExpressionStatement(ExpressionStatement* stmt) {
+  // TODO(rmcilroy): Replace this with a StatementResultScope when it exists.
+  EffectResultScope effect_scope(this);
   VisitForEffect(stmt->expression());
 }
 
@@ -508,6 +527,7 @@ void BytecodeGenerator::VisitBreakStatement(BreakStatement* stmt) {
 
 
 void BytecodeGenerator::VisitReturnStatement(ReturnStatement* stmt) {
+  EffectResultScope effect_scope(this);
   VisitForAccumulatorValue(stmt->expression());
   builder()->Return();
 }
@@ -593,8 +613,117 @@ void BytecodeGenerator::VisitForStatement(ForStatement* stmt) {
 }
 
 
+void BytecodeGenerator::VisitForInAssignment(Expression* expr,
+                                             FeedbackVectorSlot slot) {
+  DCHECK(expr->IsValidReferenceExpression());
+
+  // Evaluate assignment starting with the value to be stored in the
+  // accumulator.
+  Property* property = expr->AsProperty();
+  LhsKind assign_type = Property::GetAssignType(property);
+  switch (assign_type) {
+    case VARIABLE: {
+      Variable* variable = expr->AsVariableProxy()->var();
+      VisitVariableAssignment(variable, slot);
+      break;
+    }
+    case NAMED_PROPERTY: {
+      TemporaryRegisterScope temporary_register_scope(builder());
+      Register value = temporary_register_scope.NewRegister();
+      builder()->StoreAccumulatorInRegister(value);
+      Register object = VisitForRegisterValue(property->obj());
+      size_t name_index = builder()->GetConstantPoolEntry(
+          property->key()->AsLiteral()->AsPropertyName());
+      builder()->StoreNamedProperty(object, name_index, feedback_index(slot),
+                                    language_mode());
+      break;
+    }
+    case KEYED_PROPERTY: {
+      TemporaryRegisterScope temporary_register_scope(builder());
+      Register value = temporary_register_scope.NewRegister();
+      builder()->StoreAccumulatorInRegister(value);
+      Register object = VisitForRegisterValue(property->obj());
+      Register key = VisitForRegisterValue(property->key());
+      builder()->LoadAccumulatorWithRegister(value);
+      builder()->StoreKeyedProperty(object, key, feedback_index(slot),
+                                    language_mode());
+      break;
+    }
+    case NAMED_SUPER_PROPERTY:
+    case KEYED_SUPER_PROPERTY:
+      UNIMPLEMENTED();
+  }
+}
+
+
 void BytecodeGenerator::VisitForInStatement(ForInStatement* stmt) {
-  UNIMPLEMENTED();
+  // TODO(oth): For now we need a parent scope for paths that end up
+  // in VisitLiteral which can allocate in the parent scope. A future
+  // CL in preparation will add a StatementResultScope that will
+  // remove the need for this EffectResultScope.
+  EffectResultScope result_scope(this);
+
+  if (stmt->subject()->IsNullLiteral() ||
+      stmt->subject()->IsUndefinedLiteral(isolate())) {
+    // ForIn generates lots of code, skip if it wouldn't produce any effects.
+    return;
+  }
+
+  LoopBuilder loop_builder(builder());
+  ControlScopeForIteration control_scope(this, stmt, &loop_builder);
+
+  // Prepare the state for executing ForIn.
+  builder()->EnterBlock();
+  VisitForAccumulatorValue(stmt->subject());
+  loop_builder.BreakIfUndefined();
+  loop_builder.BreakIfNull();
+
+  Register receiver = execution_result()->NewRegister();
+  builder()->CastAccumulatorToJSObject();
+  builder()->StoreAccumulatorInRegister(receiver);
+  builder()->CallRuntime(Runtime::kGetPropertyNamesFast, receiver, 1);
+  builder()->ForInPrepare(receiver);
+  loop_builder.BreakIfUndefined();
+
+  Register for_in_state = execution_result()->NewRegister();
+  builder()->StoreAccumulatorInRegister(for_in_state);
+
+  // The loop.
+  BytecodeLabel condition_label, break_label, continue_label;
+  Register index = receiver;  // Re-using register as receiver no longer used.
+  builder()->LoadLiteral(Smi::FromInt(0));
+
+  // Check loop termination (accumulator holds index).
+  builder()
+      ->Bind(&condition_label)
+      .StoreAccumulatorInRegister(index)
+      .ForInDone(for_in_state);
+  loop_builder.BreakIfTrue();
+
+  // Get the next item.
+  builder()->ForInNext(for_in_state, index);
+
+  // Start again if the item, currently in the accumulator, is undefined.
+  loop_builder.ContinueIfUndefined();
+
+  // Store the value in the each variable.
+  VisitForInAssignment(stmt->each(), stmt->EachFeedbackSlot());
+  // NB the user's loop variable will be assigned the value of each so
+  // even an empty body will have this assignment.
+  Visit(stmt->body());
+
+  // Increment the index and start loop again.
+  builder()
+      ->Bind(&continue_label)
+      .LoadAccumulatorWithRegister(index)
+      .CountOperation(Token::Value::ADD, language_mode_strength())
+      .Jump(&condition_label);
+
+  // End of loop
+  builder()->Bind(&break_label).LeaveBlock();
+
+  loop_builder.SetBreakTarget(break_label);
+  loop_builder.SetContinueTarget(continue_label);
 }
 
 
@@ -981,13 +1110,27 @@ void BytecodeGenerator::VisitVariableLoad(Variable* variable,
       break;
     }
     case VariableLocation::CONTEXT: {
-      ContextScope* context = execution_context()->Previous(variable->scope());
+      int depth = execution_context()->ContextChainDepth(variable->scope());
+      ContextScope* context = execution_context()->Previous(depth);
+      Register context_reg;
       if (context) {
-        builder()->LoadContextSlot(context->reg(), variable->index());
-        execution_result()->SetResultInAccumulator();
+        context_reg = context->reg();
       } else {
-        UNIMPLEMENTED();
+        context_reg = execution_result()->NewRegister();
+        // Walk the context chain to find the context at the given depth.
+        // TODO(rmcilroy): Perform this work in a bytecode handler once we have
+        // a generic mechanism for performing jumps in interpreter.cc.
+        builder()
+            ->LoadAccumulatorWithRegister(execution_context()->reg())
+            .StoreAccumulatorInRegister(context_reg);
+        for (int i = 0; i < depth; ++i) {
+          builder()
+              ->LoadContextSlot(context_reg, Context::PREVIOUS_INDEX)
+              .StoreAccumulatorInRegister(context_reg);
+        }
       }
+      builder()->LoadContextSlot(context_reg, variable->index());
+      execution_result()->SetResultInAccumulator();
       // TODO(rmcilroy): Perform check for uninitialized legacy const, const and
       // let variables.
       break;
@@ -1039,12 +1182,29 @@ void BytecodeGenerator::VisitVariableAssignment(Variable* variable,
     }
     case VariableLocation::CONTEXT: {
       // TODO(rmcilroy): support const mode initialization.
-      ContextScope* context = execution_context()->Previous(variable->scope());
+      int depth = execution_context()->ContextChainDepth(variable->scope());
+      ContextScope* context = execution_context()->Previous(depth);
+      Register context_reg;
       if (context) {
-        builder()->StoreContextSlot(context->reg(), variable->index());
+        context_reg = context->reg();
       } else {
-        UNIMPLEMENTED();
+        Register value_temp = execution_result()->NewRegister();
+        context_reg = execution_result()->NewRegister();
+        // Walk the context chain to find the context at the given depth.
+        // TODO(rmcilroy): Perform this work in a bytecode handler once we have
+        // a generic mechanism for performing jumps in interpreter.cc.
+        builder()
+            ->StoreAccumulatorInRegister(value_temp)
+            .LoadAccumulatorWithRegister(execution_context()->reg())
+            .StoreAccumulatorInRegister(context_reg);
+        for (int i = 0; i < depth; ++i) {
+          builder()
+              ->LoadContextSlot(context_reg, Context::PREVIOUS_INDEX)
+              .StoreAccumulatorInRegister(context_reg);
+        }
+        builder()->LoadAccumulatorWithRegister(value_temp);
       }
+      builder()->StoreContextSlot(context_reg, variable->index());
       break;
     }
     case VariableLocation::LOOKUP:
@@ -1378,12 +1538,73 @@ void BytecodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
     case Token::Value::VOID:
       VisitVoid(expr);
       break;
-    case Token::Value::BIT_NOT:
     case Token::Value::DELETE:
-      UNIMPLEMENTED();
+      VisitDelete(expr);
+      break;
+    case Token::Value::BIT_NOT:
+    case Token::Value::ADD:
+    case Token::Value::SUB:
+      // These operators are converted to an equivalent binary operators in
+      // the parser. These operators are not expected to be visited here.
+      UNREACHABLE();
     default:
       UNREACHABLE();
   }
+}
+
+
+void BytecodeGenerator::VisitDelete(UnaryOperation* expr) {
+  if (expr->expression()->IsProperty()) {
+    // Delete of an object property is allowed both in sloppy
+    // and strict modes.
+    Property* property = expr->expression()->AsProperty();
+    Register object = VisitForRegisterValue(property->obj());
+    VisitForAccumulatorValue(property->key());
+    builder()->Delete(object, language_mode());
+  } else if (expr->expression()->IsVariableProxy()) {
+    // Delete of an unqualified identifier is allowed in sloppy mode but is
+    // not allowed in strict mode. Deleting 'this' is allowed in both modes.
+    VariableProxy* proxy = expr->expression()->AsVariableProxy();
+    Variable* variable = proxy->var();
+    DCHECK(is_sloppy(language_mode()) || variable->HasThisName(isolate()));
+    switch (variable->location()) {
+      case VariableLocation::GLOBAL:
+      case VariableLocation::UNALLOCATED: {
+        // Global var, let, const or variables not explicitly declared.
+        Register global_object = execution_result()->NewRegister();
+        builder()
+            ->LoadContextSlot(execution_context()->reg(),
+                              Context::GLOBAL_OBJECT_INDEX)
+            .StoreAccumulatorInRegister(global_object)
+            .LoadLiteral(variable->name())
+            .Delete(global_object, language_mode());
+        break;
+      }
+      case VariableLocation::PARAMETER:
+      case VariableLocation::LOCAL:
+      case VariableLocation::CONTEXT: {
+        // Deleting local var/let/const, context variables, and arguments
+        // does not have any effect.
+        if (variable->HasThisName(isolate())) {
+          builder()->LoadTrue();
+        } else {
+          builder()->LoadFalse();
+        }
+        break;
+      }
+      case VariableLocation::LOOKUP: {
+        UNIMPLEMENTED();
+        break;
+      }
+      default:
+        UNREACHABLE();
+    }
+  } else {
+    // Delete of an unresolvable reference returns true.
+    VisitForEffect(expr->expression());
+    builder()->LoadTrue();
+  }
+  execution_result()->SetResultInAccumulator();
 }
 
 
@@ -1439,7 +1660,7 @@ void BytecodeGenerator::VisitCountOperation(CountOperation* expr) {
 
   // Save result for postfix expressions.
   if (is_postfix) {
-    old_value = execution_result()->NewRegister();
+    old_value = execution_result()->outer()->NewRegister();
     builder()->StoreAccumulatorInRegister(old_value);
   }
 

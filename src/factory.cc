@@ -708,14 +708,9 @@ Handle<Symbol> Factory::NewSymbol() {
 }
 
 
-Handle<Symbol> Factory::NewPrivateSymbol(Handle<Object> name) {
+Handle<Symbol> Factory::NewPrivateSymbol() {
   Handle<Symbol> symbol = NewSymbol();
   symbol->set_is_private(true);
-  if (name->IsString()) {
-    symbol->set_name(*name);
-  } else {
-    DCHECK(name->IsUndefined());
-  }
   return symbol;
 }
 
@@ -2160,6 +2155,11 @@ Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfo(
   // All compiler hints default to false or 0.
   share->set_compiler_hints(0);
   share->set_opt_count_and_bailout_reason(0);
+
+  // Link into the list.
+  Handle<Object> new_noscript_list =
+      WeakFixedArray::Add(noscript_shared_function_infos(), share);
+  isolate()->heap()->set_noscript_shared_function_infos(*new_noscript_list);
 
   return share;
 }

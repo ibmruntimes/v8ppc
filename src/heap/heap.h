@@ -187,6 +187,7 @@ namespace internal {
   V(Object, weak_stack_trace_list, WeakStackTraceList)                         \
   V(Object, code_stub_context, CodeStubContext)                                \
   V(JSObject, code_stub_exports_object, CodeStubExportsObject)                 \
+  V(Object, noscript_shared_function_infos, NoScriptSharedFunctionInfos)       \
   V(FixedArray, interpreter_table, InterpreterTable)                           \
   V(Map, bytecode_array_map, BytecodeArrayMap)                                 \
   V(BytecodeArray, empty_bytecode_array, EmptyBytecodeArray)
@@ -276,6 +277,7 @@ namespace internal {
   V(Number_string, "Number")                               \
   V(object_string, "object")                               \
   V(Object_string, "Object")                               \
+  V(private_api_string, "private_api")                     \
   V(proto_string, "__proto__")                             \
   V(prototype_string, "prototype")                         \
   V(query_colon_string, "(?:)")                            \
@@ -353,12 +355,16 @@ namespace internal {
   V(string_iterator_next_index_symbol)      \
   V(uninitialized_symbol)
 
-#define PUBLIC_SYMBOL_LIST(V)                               \
-  V(has_instance_symbol, Symbol.hasInstance)                \
-  V(is_regexp_symbol, Symbol.isRegExp)                      \
-  V(iterator_symbol, Symbol.iterator)                       \
-  V(to_primitive_symbol, Symbol.toPrimitive)                \
-  V(to_string_tag_symbol, Symbol.toStringTag)               \
+#define PUBLIC_SYMBOL_LIST(V)                 \
+  V(has_instance_symbol, Symbol.hasInstance)  \
+  V(is_regexp_symbol, Symbol.isRegExp)        \
+  V(iterator_symbol, Symbol.iterator)         \
+  V(match_symbol, Symbol.match)               \
+  V(replace_symbol, Symbol.replace)           \
+  V(search_symbol, Symbol.search)             \
+  V(split_symbol, Symbol.split)               \
+  V(to_primitive_symbol, Symbol.toPrimitive)  \
+  V(to_string_tag_symbol, Symbol.toStringTag) \
   V(unscopables_symbol, Symbol.unscopables)
 
 // Well-Known Symbols are "Public" symbols, which have a bit set which causes
@@ -1164,6 +1170,10 @@ class Heap {
     roots_[kStringTableRootIndex] = value;
   }
 
+  void SetRootNoScriptSharedFunctionInfos(Object* value) {
+    roots_[kNoScriptSharedFunctionInfosRootIndex] = value;
+  }
+
   // Set the stack limit in the roots_ array.  Some architectures generate
   // code that looks here, because it is faster than loading from the static
   // jslimit_/real_jslimit_ variable in the StackGuard.
@@ -1236,6 +1246,9 @@ class Heap {
 
   // Iterate pointers to from semispace of new space found in memory interval
   // from start to end within |object|.
+  void IteratePointersToFromSpace(HeapObject* target, int size,
+                                  ObjectSlotCallback callback);
+
   void IterateAndMarkPointersToFromSpace(HeapObject* object, Address start,
                                          Address end, bool record_slots,
                                          ObjectSlotCallback callback);
@@ -1788,8 +1801,7 @@ class Heap {
   void IdleNotificationEpilogue(GCIdleTimeAction action,
                                 GCIdleTimeHeapState heap_state, double start_ms,
                                 double deadline_in_ms);
-  void CheckAndNotifyBackgroundIdleNotification(double idle_time_in_ms,
-                                                double now_ms);
+  void CheckBackgroundIdleNotification(double idle_time_in_ms, double now_ms);
 
   inline void UpdateAllocationsHash(HeapObject* object);
   inline void UpdateAllocationsHash(uint32_t value);
@@ -1802,7 +1814,7 @@ class Heap {
   // implicit references from global handles, but don't atomically complete
   // marking. If we continue to mark incrementally, we might have marked
   // objects that die later.
-  void OverApproximateWeakClosure(const char* gc_reason);
+  void FinalizeIncrementalMarking(const char* gc_reason);
 
   // Returns the timer used for a given GC type.
   // - GCScavenger: young generation GC

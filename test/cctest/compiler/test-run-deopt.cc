@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/v8.h"
+// TODO(jochen): Remove this after the setting is turned on globally.
+#define V8_IMMINENT_DEPRECATION_WARNINGS
 
 #include "src/frames-inl.h"
 #include "test/cctest/cctest.h"
@@ -22,7 +23,10 @@ static void InstallIsOptimizedHelper(v8::Isolate* isolate) {
   v8::Local<v8::Context> context = isolate->GetCurrentContext();
   v8::Local<v8::FunctionTemplate> t =
       v8::FunctionTemplate::New(isolate, IsOptimized);
-  context->Global()->Set(v8_str("IsOptimized"), t->GetFunction());
+  CHECK(context->Global()
+            ->Set(context, v8_str("IsOptimized"),
+                  t->GetFunction(context).ToLocalChecked())
+            .FromJust());
 }
 
 

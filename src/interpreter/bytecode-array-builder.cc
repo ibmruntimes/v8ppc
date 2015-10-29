@@ -263,6 +263,8 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadFalse() {
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::LoadAccumulatorWithRegister(
     Register reg) {
+  // TODO(oth): Avoid loading the accumulator with the register if the
+  // previous bytecode stored the accumulator with the same register.
   Output(Bytecode::kLdar, reg.ToOperand());
   return *this;
 }
@@ -270,6 +272,8 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadAccumulatorWithRegister(
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::StoreAccumulatorInRegister(
     Register reg) {
+  // TODO(oth): Avoid storing the accumulator in the register if the
+  // previous bytecode loaded the accumulator with the same register.
   Output(Bytecode::kStar, reg.ToOperand());
   return *this;
 }
@@ -481,6 +485,12 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::CastAccumulatorToBoolean() {
 }
 
 
+BytecodeArrayBuilder& BytecodeArrayBuilder::CastAccumulatorToJSObject() {
+  Output(Bytecode::kToObject);
+  return *this;
+}
+
+
 BytecodeArrayBuilder& BytecodeArrayBuilder::CastAccumulatorToName() {
   Output(Bytecode::kToName);
   return *this;
@@ -531,6 +541,10 @@ Bytecode BytecodeArrayBuilder::GetJumpWithConstantOperand(
       return Bytecode::kJumpIfToBooleanTrueConstant;
     case Bytecode::kJumpIfToBooleanFalse:
       return Bytecode::kJumpIfToBooleanFalseConstant;
+    case Bytecode::kJumpIfNull:
+      return Bytecode::kJumpIfNullConstant;
+    case Bytecode::kJumpIfUndefined:
+      return Bytecode::kJumpIfUndefinedConstant;
     default:
       UNREACHABLE();
       return Bytecode::kJumpConstant;
@@ -631,6 +645,17 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfToBooleanFalse(
 }
 
 
+BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfNull(BytecodeLabel* label) {
+  return OutputJump(Bytecode::kJumpIfNull, label);
+}
+
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfUndefined(
+    BytecodeLabel* label) {
+  return OutputJump(Bytecode::kJumpIfUndefined, label);
+}
+
+
 BytecodeArrayBuilder& BytecodeArrayBuilder::Throw() {
   Output(Bytecode::kThrow);
   exit_seen_in_block_ = true;
@@ -641,6 +666,25 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::Throw() {
 BytecodeArrayBuilder& BytecodeArrayBuilder::Return() {
   Output(Bytecode::kReturn);
   exit_seen_in_block_ = true;
+  return *this;
+}
+
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::ForInPrepare(Register receiver) {
+  Output(Bytecode::kForInPrepare, receiver.ToOperand());
+  return *this;
+}
+
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::ForInNext(Register for_in_state,
+                                                      Register index) {
+  Output(Bytecode::kForInNext, for_in_state.ToOperand(), index.ToOperand());
+  return *this;
+}
+
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::ForInDone(Register for_in_state) {
+  Output(Bytecode::kForInDone, for_in_state.ToOperand());
   return *this;
 }
 
@@ -692,6 +736,13 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::CallRuntime(
   DCHECK(FitsInIdx8Operand(arg_count));
   Output(Bytecode::kCallRuntime, static_cast<uint16_t>(function_id),
          first_arg.ToOperand(), static_cast<uint8_t>(arg_count));
+  return *this;
+}
+
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::Delete(Register object,
+                                                   LanguageMode language_mode) {
+  Output(BytecodeForDelete(language_mode), object.ToOperand());
   return *this;
 }
 
@@ -1016,6 +1067,22 @@ Bytecode BytecodeArrayBuilder::BytecodeForCreateArguments(
 
 
 // static
+Bytecode BytecodeArrayBuilder::BytecodeForDelete(LanguageMode language_mode) {
+  switch (language_mode) {
+    case SLOPPY:
+      return Bytecode::kDeletePropertySloppy;
+    case STRICT:
+      return Bytecode::kDeletePropertyStrict;
+    case STRONG:
+      UNIMPLEMENTED();
+    default:
+      UNREACHABLE();
+  }
+  return static_cast<Bytecode>(-1);
+}
+
+
+// static
 bool BytecodeArrayBuilder::FitsInIdx8Operand(int value) {
   return kMinUInt8 <= value && value <= kMaxUInt8;
 }
@@ -1058,6 +1125,15 @@ Register TemporaryRegisterScope::NewRegister() {
   int allocated = builder_->BorrowTemporaryRegister();
   allocated_.push_back(allocated);
   return Register(allocated);
+}
+
+
+bool TemporaryRegisterScope::RegisterIsAllocatedInThisScope(
+    Register reg) const {
+  for (auto i = allocated_.begin(); i != allocated_.end(); i++) {
+    if (*i == reg.index()) return true;
+  }
+  return false;
 }
 
 

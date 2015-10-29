@@ -334,21 +334,37 @@ Maybe<bool> Object::Equals(Handle<Object> x, Handle<Object> y) {
         return Just(false);
       }
     } else if (x->IsSymbol()) {
-      return Just(x.is_identical_to(y));
+      if (y->IsSymbol()) {
+        return Just(x.is_identical_to(y));
+      } else if (y->IsJSReceiver() && !y->IsUndetectableObject()) {
+        if (!JSReceiver::ToPrimitive(Handle<JSReceiver>::cast(y))
+                 .ToHandle(&y)) {
+          return Nothing<bool>();
+        }
+      } else {
+        return Just(false);
+      }
     } else if (x->IsSimd128Value()) {
-      if (!y->IsSimd128Value()) return Just(false);
-      return Just(Simd128Value::Equals(Handle<Simd128Value>::cast(x),
-                                       Handle<Simd128Value>::cast(y)));
+      if (y->IsSimd128Value()) {
+        return Just(Simd128Value::Equals(Handle<Simd128Value>::cast(x),
+                                         Handle<Simd128Value>::cast(y)));
+      } else if (y->IsJSReceiver() && !y->IsUndetectableObject()) {
+        if (!JSReceiver::ToPrimitive(Handle<JSReceiver>::cast(y))
+                 .ToHandle(&y)) {
+          return Nothing<bool>();
+        }
+      } else {
+        return Just(false);
+      }
     } else if (x->IsJSReceiver() && !x->IsUndetectableObject()) {
       if (y->IsJSReceiver()) {
         return Just(x.is_identical_to(y));
-      } else if (y->IsNull() || y->IsSimd128Value() || y->IsSymbol() ||
-                 y->IsUndefined()) {
+      } else if (y->IsNull() || y->IsUndefined()) {
         return Just(false);
       } else if (y->IsBoolean()) {
         y = Oddball::ToNumber(Handle<Oddball>::cast(y));
-      }
-      if (!JSReceiver::ToPrimitive(Handle<JSReceiver>::cast(x)).ToHandle(&x)) {
+      } else if (!JSReceiver::ToPrimitive(Handle<JSReceiver>::cast(x))
+                      .ToHandle(&x)) {
         return Nothing<bool>();
       }
     } else {
@@ -6045,7 +6061,7 @@ Object* JSReceiver::DefineProperties(Isolate* isolate, Handle<Object> object,
 
 
 // static
-bool JSReceiver::DefineOwnProperty(Isolate* isolate, Handle<JSObject> object,
+bool JSReceiver::DefineOwnProperty(Isolate* isolate, Handle<JSReceiver> object,
                                    Handle<Object> key, PropertyDescriptor* desc,
                                    ShouldThrow should_throw) {
   if (object->IsJSArray()) {
@@ -6054,12 +6070,14 @@ bool JSReceiver::DefineOwnProperty(Isolate* isolate, Handle<JSObject> object,
   }
   // TODO(jkummerow): Support Modules (ES6 9.4.6.6)
   // TODO(jkummerow): Support Proxies (ES6 9.5.6)
+  if (!object->IsJSObject()) return true;
 
   // OrdinaryDefineOwnProperty, by virtue of calling
   // DefineOwnPropertyIgnoreAttributes, can handle arguments (ES6 9.4.4.2)
   // and IntegerIndexedExotics (ES6 9.4.5.3), with one exception:
   // TODO(jkummerow): Setting an indexed accessor on a typed array should throw.
-  return OrdinaryDefineOwnProperty(isolate, object, key, desc, should_throw);
+  return OrdinaryDefineOwnProperty(isolate, Handle<JSObject>::cast(object), key,
+                                   desc, should_throw);
 }
 
 
@@ -12102,9 +12120,8 @@ Script* Script::Iterator::Next() { return iterator_.Next<Script>(); }
 
 
 SharedFunctionInfo::Iterator::Iterator(Isolate* isolate)
-    : script_iterator_(isolate), sfi_iterator_(NULL) {
-  NextScript();
-}
+    : script_iterator_(isolate),
+      sfi_iterator_(isolate->heap()->noscript_shared_function_infos()) {}
 
 
 bool SharedFunctionInfo::Iterator::NextScript() {
@@ -12127,6 +12144,38 @@ SharedFunctionInfo* SharedFunctionInfo::Iterator::Next() {
 void SharedFunctionInfo::SetScript(Handle<SharedFunctionInfo> shared,
                                    Handle<Object> script_object) {
   if (shared->script() == *script_object) return;
+  Isolate* isolate = shared->GetIsolate();
+
+  // Add shared function info to new script's list. If a collection occurs,
+  // the shared function info may be temporarily in two lists.
+  // This is okay because the gc-time processing of these lists can tolerate
+  // duplicates.
+  Handle<Object> list;
+  if (script_object->IsScript()) {
+    Handle<Script> script = Handle<Script>::cast(script_object);
+    list = handle(script->shared_function_infos(), isolate);
+  } else {
+    list = isolate->factory()->noscript_shared_function_infos();
+  }
+
+#ifdef DEBUG
+  {
+    WeakFixedArray::Iterator iterator(*list);
+    SharedFunctionInfo* next;
+    while ((next = iterator.Next<SharedFunctionInfo>())) {
+      DCHECK_NE(next, *shared);
+    }
+  }
+#endif  // DEBUG
+  list = WeakFixedArray::Add(list, shared);
+
+  if (script_object->IsScript()) {
+    Handle<Script> script = Handle<Script>::cast(script_object);
+    script->set_shared_function_infos(*list);
+  } else {
+    isolate->heap()->SetRootNoScriptSharedFunctionInfos(*list);
+  }
+
   // Remove shared function info from old script's list.
   if (shared->script()->IsScript()) {
     Script* old_script = Script::cast(shared->script());
@@ -12135,23 +12184,12 @@ void SharedFunctionInfo::SetScript(Handle<SharedFunctionInfo> shared,
           WeakFixedArray::cast(old_script->shared_function_infos());
       list->Remove(shared);
     }
+  } else {
+    // Remove shared function info from root array.
+    Object* list = isolate->heap()->noscript_shared_function_infos();
+    CHECK(WeakFixedArray::cast(list)->Remove(shared));
   }
-  // Add shared function info to new script's list.
-  if (script_object->IsScript()) {
-    Handle<Script> script = Handle<Script>::cast(script_object);
-    Handle<Object> list(script->shared_function_infos(), shared->GetIsolate());
-#ifdef DEBUG
-    {
-      WeakFixedArray::Iterator iterator(*list);
-      SharedFunctionInfo* next;
-      while ((next = iterator.Next<SharedFunctionInfo>())) {
-        DCHECK_NE(next, *shared);
-      }
-    }
-#endif  // DEBUG
-    list = WeakFixedArray::Add(list, shared);
-    script->set_shared_function_infos(*list);
-  }
+
   // Finally set new script.
   shared->set_script(*script_object);
 }

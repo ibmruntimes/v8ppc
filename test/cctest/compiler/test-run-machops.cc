@@ -1,6 +1,9 @@
-// Copyright 2014 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright 2014 the V8 project authors. All rights reserved. Use of this
+// source code is governed by a BSD-style license that can be found in the
+// LICENSE file.
+
+// TODO(jochen): Remove this after the setting is turned on globally.
+#define V8_IMMINENT_DEPRECATION_WARNINGS
 
 #include <cmath>
 #include <functional>
@@ -11,6 +14,7 @@
 #include "src/codegen.h"
 #include "test/cctest/cctest.h"
 #include "test/cctest/compiler/codegen-tester.h"
+#include "test/cctest/compiler/graph-builder-tester.h"
 #include "test/cctest/compiler/value-helper.h"
 
 using namespace v8::base;
@@ -18,6 +22,7 @@ using namespace v8::internal;
 using namespace v8::internal::compiler;
 
 typedef RawMachineAssembler::Label MLabel;
+
 
 TEST(RunInt32Add) {
   RawMachineAssemblerTester<int32_t> m;
@@ -798,8 +803,8 @@ TEST(RunLoadStoreFloat32Offset) {
     // generate load [#base + #index]
     Node* load =
         m.Load(kMachFloat32, m.PointerConstant(from), m.IntPtrConstant(offset));
-    m.Store(kMachFloat32, m.PointerConstant(to), m.IntPtrConstant(offset),
-            load);
+    m.Store(kMachFloat32, m.PointerConstant(to), m.IntPtrConstant(offset), load,
+            kNoWriteBarrier);
     m.Return(m.Int32Constant(magic));
 
     FOR_FLOAT32_INPUTS(j) {
@@ -825,8 +830,8 @@ TEST(RunLoadStoreFloat64Offset) {
     // generate load [#base + #index]
     Node* load =
         m.Load(kMachFloat64, m.PointerConstant(from), m.IntPtrConstant(offset));
-    m.Store(kMachFloat64, m.PointerConstant(to), m.IntPtrConstant(offset),
-            load);
+    m.Store(kMachFloat64, m.PointerConstant(to), m.IntPtrConstant(offset), load,
+            kNoWriteBarrier);
     m.Return(m.Int32Constant(magic));
 
     FOR_FLOAT64_INPUTS(j) {
@@ -3207,7 +3212,7 @@ static void RunLoadStore(MachineType rep) {
     Node* index0 = m.IntPtrConstant(x * sizeof(buffer[0]));
     Node* load = m.Load(rep, base, index0);
     Node* index1 = m.IntPtrConstant(y * sizeof(buffer[0]));
-    m.Store(rep, base, index1, load);
+    m.Store(rep, base, index1, load, kNoWriteBarrier);
     m.Return(m.Int32Constant(OK));
 
     CHECK(buffer[x] != buffer[y]);
@@ -3258,7 +3263,7 @@ TEST(RunFloat32Binop) {
       Node* binop = m.AddNode(ops[i], a, b);
       Node* base = m.PointerConstant(&result);
       Node* zero = m.IntPtrConstant(0);
-      m.Store(kMachFloat32, base, zero, binop);
+      m.Store(kMachFloat32, base, zero, binop, kNoWriteBarrier);
       m.Return(m.Int32Constant(i + j));
       CHECK_EQ(i + j, m.Call());
     }
@@ -3294,7 +3299,7 @@ TEST(RunFloat64Binop) {
       Node* binop = m.AddNode(ops[i], a, b);
       Node* base = m.PointerConstant(&result);
       Node* zero = m.Int32Constant(0);
-      m.Store(kMachFloat64, base, zero, binop);
+      m.Store(kMachFloat64, base, zero, binop, kNoWriteBarrier);
       m.Return(m.Int32Constant(i + j));
       CHECK_EQ(i + j, m.Call());
     }
@@ -3677,8 +3682,8 @@ TEST(RunChangeInt32ToFloat64_A) {
   double result = 0;
 
   Node* convert = m.ChangeInt32ToFloat64(m.Int32Constant(magic));
-  m.Store(kMachFloat64, m.PointerConstant(&result), m.Int32Constant(0),
-          convert);
+  m.Store(kMachFloat64, m.PointerConstant(&result), m.Int32Constant(0), convert,
+          kNoWriteBarrier);
   m.Return(m.Int32Constant(magic));
 
   CHECK_EQ(magic, m.Call());
@@ -3691,8 +3696,8 @@ TEST(RunChangeInt32ToFloat64_B) {
   double output = 0;
 
   Node* convert = m.ChangeInt32ToFloat64(m.Parameter(0));
-  m.Store(kMachFloat64, m.PointerConstant(&output), m.Int32Constant(0),
-          convert);
+  m.Store(kMachFloat64, m.PointerConstant(&output), m.Int32Constant(0), convert,
+          kNoWriteBarrier);
   m.Return(m.Parameter(0));
 
   FOR_INT32_INPUTS(i) {
@@ -3708,8 +3713,8 @@ TEST(RunChangeUint32ToFloat64_B) {
   double output = 0;
 
   Node* convert = m.ChangeUint32ToFloat64(m.Parameter(0));
-  m.Store(kMachFloat64, m.PointerConstant(&output), m.Int32Constant(0),
-          convert);
+  m.Store(kMachFloat64, m.PointerConstant(&output), m.Int32Constant(0), convert,
+          kNoWriteBarrier);
   m.Return(m.Parameter(0));
 
   FOR_UINT32_INPUTS(i) {
@@ -3735,7 +3740,7 @@ TEST(RunChangeUint32ToFloat64_spilled) {
 
   for (int i = 0; i < kNumInputs; i++) {
     m.Store(kMachFloat64, m.PointerConstant(&result), m.Int32Constant(i * 8),
-            m.ChangeUint32ToFloat64(input_node[i]));
+            m.ChangeUint32ToFloat64(input_node[i]), kNoWriteBarrier);
   }
 
   m.Return(m.Int32Constant(magic));
@@ -3759,7 +3764,7 @@ TEST(RunChangeFloat64ToInt32_A) {
   int32_t result = 0;
 
   m.Store(kMachInt32, m.PointerConstant(&result), m.Int32Constant(0),
-          m.ChangeFloat64ToInt32(m.Float64Constant(input)));
+          m.ChangeFloat64ToInt32(m.Float64Constant(input)), kNoWriteBarrier);
   m.Return(m.Int32Constant(magic));
 
   CHECK_EQ(magic, m.Call());
@@ -3775,7 +3780,8 @@ TEST(RunChangeFloat64ToInt32_B) {
   Node* load =
       m.Load(kMachFloat64, m.PointerConstant(&input), m.Int32Constant(0));
   Node* convert = m.ChangeFloat64ToInt32(load);
-  m.Store(kMachInt32, m.PointerConstant(&output), m.Int32Constant(0), convert);
+  m.Store(kMachInt32, m.PointerConstant(&output), m.Int32Constant(0), convert,
+          kNoWriteBarrier);
   m.Return(convert);
 
   {
@@ -3816,7 +3822,8 @@ TEST(RunChangeFloat64ToUint32_B) {
   Node* load =
       m.Load(kMachFloat64, m.PointerConstant(&input), m.Int32Constant(0));
   Node* convert = m.ChangeFloat64ToUint32(load);
-  m.Store(kMachInt32, m.PointerConstant(&output), m.Int32Constant(0), convert);
+  m.Store(kMachInt32, m.PointerConstant(&output), m.Int32Constant(0), convert,
+          kNoWriteBarrier);
   m.Return(convert);
 
   {
@@ -3865,7 +3872,7 @@ TEST(RunChangeFloat64ToInt32_spilled) {
 
   for (int i = 0; i < kNumInputs; i++) {
     m.Store(kMachInt32, m.PointerConstant(&result), m.Int32Constant(i * 4),
-            m.ChangeFloat64ToInt32(input_node[i]));
+            m.ChangeFloat64ToInt32(input_node[i]), kNoWriteBarrier);
   }
 
   m.Return(m.Int32Constant(magic));
@@ -3897,7 +3904,7 @@ TEST(RunChangeFloat64ToUint32_spilled) {
 
   for (int i = 0; i < kNumInputs; i++) {
     m.Store(kMachUint32, m.PointerConstant(&result), m.Int32Constant(i * 4),
-            m.ChangeFloat64ToUint32(input_node[i]));
+            m.ChangeFloat64ToUint32(input_node[i]), kNoWriteBarrier);
   }
 
   m.Return(m.Int32Constant(magic));
@@ -3937,7 +3944,7 @@ TEST(RunTruncateFloat64ToFloat32_spilled) {
 
   for (int i = 0; i < kNumInputs; i++) {
     m.Store(kMachFloat32, m.PointerConstant(&result), m.Int32Constant(i * 4),
-            m.TruncateFloat64ToFloat32(input_node[i]));
+            m.TruncateFloat64ToFloat32(input_node[i]), kNoWriteBarrier);
   }
 
   m.Return(m.Int32Constant(magic));
@@ -4012,7 +4019,8 @@ TEST(RunFloatDiamond) {
   m.Goto(&end);
   m.Bind(&end);
   Node* phi = m.Phi(kMachFloat32, k2, k1);
-  m.Store(kMachFloat32, m.PointerConstant(&buffer), m.IntPtrConstant(0), phi);
+  m.Store(kMachFloat32, m.PointerConstant(&buffer), m.IntPtrConstant(0), phi,
+          kNoWriteBarrier);
   m.Return(m.Int32Constant(magic));
 
   CHECK_EQ(magic, m.Call());
@@ -4037,7 +4045,8 @@ TEST(RunDoubleDiamond) {
   m.Goto(&end);
   m.Bind(&end);
   Node* phi = m.Phi(kMachFloat64, k2, k1);
-  m.Store(kMachFloat64, m.PointerConstant(&buffer), m.Int32Constant(0), phi);
+  m.Store(kMachFloat64, m.PointerConstant(&buffer), m.Int32Constant(0), phi,
+          kNoWriteBarrier);
   m.Return(m.Int32Constant(magic));
 
   CHECK_EQ(magic, m.Call());
@@ -4063,7 +4072,8 @@ TEST(RunRefDiamond) {
   m.Goto(&end);
   m.Bind(&end);
   Node* phi = m.Phi(kMachAnyTagged, k2, k1);
-  m.Store(kMachAnyTagged, m.PointerConstant(&buffer), m.Int32Constant(0), phi);
+  m.Store(kMachAnyTagged, m.PointerConstant(&buffer), m.Int32Constant(0), phi,
+          kNoWriteBarrier);
   m.Return(m.Int32Constant(magic));
 
   CHECK_EQ(magic, m.Call());
@@ -4094,9 +4104,10 @@ TEST(RunDoubleRefDiamond) {
   m.Bind(&end);
   Node* dphi = m.Phi(kMachFloat64, d2, d1);
   Node* rphi = m.Phi(kMachAnyTagged, r2, r1);
-  m.Store(kMachFloat64, m.PointerConstant(&dbuffer), m.Int32Constant(0), dphi);
-  m.Store(kMachAnyTagged, m.PointerConstant(&rbuffer), m.Int32Constant(0),
-          rphi);
+  m.Store(kMachFloat64, m.PointerConstant(&dbuffer), m.Int32Constant(0), dphi,
+          kNoWriteBarrier);
+  m.Store(kMachAnyTagged, m.PointerConstant(&rbuffer), m.Int32Constant(0), rphi,
+          kNoWriteBarrier);
   m.Return(m.Int32Constant(magic));
 
   CHECK_EQ(magic, m.Call());
@@ -4138,9 +4149,10 @@ TEST(RunDoubleRefDoubleDiamond) {
   Node* dphi2 = m.Phi(kMachFloat64, d1, dphi1);
   Node* rphi2 = m.Phi(kMachAnyTagged, r1, rphi1);
 
-  m.Store(kMachFloat64, m.PointerConstant(&dbuffer), m.Int32Constant(0), dphi2);
+  m.Store(kMachFloat64, m.PointerConstant(&dbuffer), m.Int32Constant(0), dphi2,
+          kNoWriteBarrier);
   m.Store(kMachAnyTagged, m.PointerConstant(&rbuffer), m.Int32Constant(0),
-          rphi2);
+          rphi2, kNoWriteBarrier);
   m.Return(m.Int32Constant(magic));
 
   CHECK_EQ(magic, m.Call());
@@ -4168,7 +4180,8 @@ TEST(RunDoubleLoopPhi) {
   m.Bind(&body);
   m.Goto(&header);
   m.Bind(&end);
-  m.Store(kMachFloat64, m.PointerConstant(&buffer), m.Int32Constant(0), phi);
+  m.Store(kMachFloat64, m.PointerConstant(&buffer), m.Int32Constant(0), phi,
+          kNoWriteBarrier);
   m.Return(m.Int32Constant(magic));
 
   CHECK_EQ(magic, m.Call());
@@ -4565,7 +4578,7 @@ TEST(RunTestIntPtrArithmetic) {
   Node* output = m.PointerConstant(&outputs[kInputSize - 1]);
   Node* elem_size = m.IntPtrConstant(sizeof(inputs[0]));
   for (int i = 0; i < kInputSize; i++) {
-    m.Store(kMachInt32, output, m.Load(kMachInt32, input));
+    m.Store(kMachInt32, output, m.Load(kMachInt32, input), kNoWriteBarrier);
     input = m.IntPtrAdd(input, elem_size);
     output = m.IntPtrSub(output, elem_size);
   }
@@ -5002,7 +5015,7 @@ TEST(RunChangeFloat32ToFloat64_spilled) {
 
   for (int i = 0; i < kNumInputs; i++) {
     m.Store(kMachFloat64, m.PointerConstant(&result), m.Int32Constant(i * 8),
-            m.ChangeFloat32ToFloat64(input_node[i]));
+            m.ChangeFloat32ToFloat64(input_node[i]), kNoWriteBarrier);
   }
 
   m.Return(m.Int32Constant(magic));
@@ -5506,13 +5519,15 @@ TEST(RunBitcastInt32ToFloat32) {
 
 
 TEST(RunComputedCodeObject) {
-  RawMachineAssemblerTester<int32_t> a;
+  GraphBuilderTester<int32_t> a;
   a.Return(a.Int32Constant(33));
-  CHECK_EQ(33, a.Call());
+  a.End();
+  Handle<Code> code_a = a.GetCode();
 
-  RawMachineAssemblerTester<int32_t> b;
+  GraphBuilderTester<int32_t> b;
   b.Return(b.Int32Constant(44));
-  CHECK_EQ(44, b.Call());
+  b.End();
+  Handle<Code> code_b = b.GetCode();
 
   RawMachineAssemblerTester<int32_t> r(kMachInt32);
   RawMachineAssembler::Label tlabel;
@@ -5520,10 +5535,10 @@ TEST(RunComputedCodeObject) {
   RawMachineAssembler::Label merge;
   r.Branch(r.Parameter(0), &tlabel, &flabel);
   r.Bind(&tlabel);
-  Node* fa = r.HeapConstant(a.GetCode());
+  Node* fa = r.HeapConstant(code_a);
   r.Goto(&merge);
   r.Bind(&flabel);
-  Node* fb = r.HeapConstant(b.GetCode());
+  Node* fb = r.HeapConstant(code_b);
   r.Goto(&merge);
   r.Bind(&merge);
   Node* phi = r.Phi(kMachInt32, fa, fb);

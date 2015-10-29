@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(jochen): Remove this after the setting is turned on globally.
+#define V8_IMMINENT_DEPRECATION_WARNINGS
+
 #include "src/compiler/js-graph.h"
 #include "src/compiler/js-typed-lowering.h"
 #include "src/compiler/machine-operator.h"
@@ -378,11 +381,11 @@ class JSBitwiseTypedLoweringTester : public JSTypedLoweringTester {
       : JSTypedLoweringTester(), language_mode_(language_mode) {
     int i = 0;
     set(i++, javascript.BitwiseOr(language_mode_), true);
-    set(i++, machine.Word32Or(), true);
+    set(i++, simplified.NumberBitwiseOr(), true);
     set(i++, javascript.BitwiseXor(language_mode_), true);
-    set(i++, machine.Word32Xor(), true);
+    set(i++, simplified.NumberBitwiseXor(), true);
     set(i++, javascript.BitwiseAnd(language_mode_), true);
-    set(i++, machine.Word32And(), true);
+    set(i++, simplified.NumberBitwiseAnd(), true);
   }
   static const int kNumberOps = 6;
   const Operator* ops[kNumberOps];

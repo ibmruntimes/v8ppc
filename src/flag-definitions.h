@@ -194,7 +194,6 @@ DEFINE_NEG_IMPLICATION(es_staging, legacy_const)
   V(harmony_modules, "harmony modules")                               \
   V(harmony_proxies, "harmony proxies")                               \
   V(harmony_unicode_regexps, "harmony unicode regexps")               \
-  V(harmony_tolength, "harmony ToLength")                             \
   V(harmony_reflect, "harmony Reflect API")                           \
   V(harmony_sloppy_function, "harmony sloppy function block scoping") \
   V(harmony_destructuring, "harmony destructuring")                   \
@@ -207,17 +206,15 @@ DEFINE_NEG_IMPLICATION(es_staging, legacy_const)
 #define HARMONY_STAGED(V)                                     \
   V(harmony_regexps, "harmony regular expression extensions") \
   V(harmony_tostring, "harmony toString")                     \
+  V(harmony_tolength, "harmony ToLength")                     \
   V(harmony_sloppy, "harmony features in sloppy mode")        \
   V(harmony_sloppy_let, "harmony let in sloppy mode")
 
 // Features that are shipping (turned on by default, but internal flag remains).
 #define HARMONY_SHIPPING(V)                                     \
   V(harmony_array_includes, "harmony Array.prototype.includes") \
-  V(harmony_new_target, "harmony new.target")                   \
   V(harmony_object_observe, "harmony Object.observe")           \
   V(harmony_rest_parameters, "harmony rest parameters")         \
-  V(harmony_spread_calls, "harmony spread-calls")               \
-  V(harmony_spread_arrays, "harmony spread in array literals")  \
   V(harmony_concat_spreadable, "harmony isConcatSpreadable")    \
   V(harmony_completion, "harmony completion value semantics")
 
@@ -439,7 +436,7 @@ DEFINE_BOOL(function_context_specialization, false,
             "enable function context specialization in TurboFan")
 DEFINE_BOOL(native_context_specialization, true,
             "enable native context specialization in TurboFan")
-DEFINE_BOOL(turbo_inlining, false, "enable inlining in TurboFan")
+DEFINE_BOOL(turbo_inlining, true, "enable inlining in TurboFan")
 DEFINE_BOOL(trace_turbo_inlining, false, "trace TurboFan inlining")
 DEFINE_BOOL(loop_assignment_analysis, true, "perform loop assignment analysis")
 DEFINE_BOOL(turbo_profiling, false, "enable profiling in TurboFan")
@@ -459,6 +456,7 @@ DEFINE_BOOL(turbo_preserve_shared_code, false, "keep context-independent code")
 #if defined(V8_WASM)
 // Flags for native WebAssembly.
 DEFINE_BOOL(trace_wasm_decoder, false, "trace decoding of wasm code")
+DEFINE_BOOL(trace_wasm_decode_time, false, "trace decoding time of wasm code")
 DEFINE_BOOL(trace_wasm_compiler, false, "trace compiling of wasm code")
 DEFINE_BOOL(wasm_break_on_decoder_error, false,
             "debug break when wasm decoder encounters an error")
@@ -657,13 +655,13 @@ DEFINE_BOOL(age_code, true,
             "track un-executed functions to age code and flush only "
             "old code (required for code flushing)")
 DEFINE_BOOL(incremental_marking, true, "use incremental marking")
-DEFINE_BOOL(overapproximate_weak_closure, true,
-            "overapproximate weak closure to reduce atomic pause time")
-DEFINE_INT(min_progress_during_object_groups_marking, 128,
-           "keep overapproximating the weak closure as long as we discover at "
+DEFINE_BOOL(finalize_marking_incrementally, true,
+            "finalize marking in incremental steps")
+DEFINE_INT(min_progress_during_incremental_marking_finalization, 32,
+           "keep finalizing incremental marking as long as we discover at "
            "least this many unmarked objects")
-DEFINE_INT(max_object_groups_marking_rounds, 3,
-           "at most try this many times to over approximate the weak closure")
+DEFINE_INT(max_incremental_marking_finalization_rounds, 3,
+           "at most try this many times to finalize incremental marking")
 DEFINE_BOOL(concurrent_sweeping, true, "use concurrent sweeping")
 DEFINE_BOOL(parallel_compaction, false, "use parallel compaction")
 DEFINE_BOOL(trace_incremental_marking, false,
@@ -683,6 +681,8 @@ DEFINE_BOOL(verify_heap, false, "verify heap pointers before and after GC")
 #endif
 DEFINE_BOOL(move_object_start, false, "enable moving of object starts")
 DEFINE_BOOL(memory_reducer, true, "use memory reducer")
+DEFINE_BOOL(scavenge_reclaim_unmodified_objects, false,
+            "remove unmodified and unreferenced objects")
 
 // counters.cc
 DEFINE_INT(histogram_interval, 600000,

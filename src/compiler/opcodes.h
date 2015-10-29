@@ -139,6 +139,7 @@
   V(JSCallConstruct)        \
   V(JSCallFunction)         \
   V(JSCallRuntime)          \
+  V(JSConvertReceiver)      \
   V(JSForInDone)            \
   V(JSForInNext)            \
   V(JSForInPrepare)         \
@@ -172,6 +173,9 @@
   V(NumberMultiply)                \
   V(NumberDivide)                  \
   V(NumberModulus)                 \
+  V(NumberBitwiseOr)               \
+  V(NumberBitwiseXor)              \
+  V(NumberBitwiseAnd)              \
   V(NumberShiftLeft)               \
   V(NumberShiftRight)              \
   V(NumberShiftRightLogical)       \

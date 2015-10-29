@@ -2155,11 +2155,8 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy_function)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy_let)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_rest_parameters)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_default_parameters)
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_spread_calls)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_destructuring)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_object_observe)
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_spread_arrays)
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_new_target)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_concat_spreadable)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexps)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_unicode_regexps)
@@ -2194,6 +2191,8 @@ void Genesis::InitializeGlobal_harmony_reflect() {
       factory()->NewJSObject(isolate()->object_function(), TENURED);
   JSObject::AddProperty(global, reflect_string, reflect, DONT_ENUM);
 
+  SimpleInstallFunction(reflect, "defineProperty",
+                        Builtins::kReflectDefineProperty, 3, true);
   SimpleInstallFunction(reflect, "deleteProperty",
                         Builtins::kReflectDeleteProperty, 2, true);
   SimpleInstallFunction(reflect, "get",
@@ -2629,15 +2628,11 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_default_parameters_natives[] = {nullptr};
   static const char* harmony_reflect_natives[] = {"native harmony-reflect.js",
                                                   nullptr};
-  static const char* harmony_spread_calls_natives[] = {
-      "native harmony-spread.js", nullptr};
   static const char* harmony_destructuring_natives[] = {nullptr};
   static const char* harmony_object_observe_natives[] = {
       "native harmony-object-observe.js", nullptr};
-  static const char* harmony_spread_arrays_natives[] = {nullptr};
   static const char* harmony_sharedarraybuffer_natives[] = {
       "native harmony-sharedarraybuffer.js", "native harmony-atomics.js", NULL};
-  static const char* harmony_new_target_natives[] = {nullptr};
   static const char* harmony_concat_spreadable_natives[] = {
       "native harmony-concat-spreadable.js", nullptr};
   static const char* harmony_simd_natives[] = {"native harmony-simd.js",

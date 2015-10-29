@@ -126,7 +126,8 @@ Node* InterpreterAssembler::LoadRegister(Node* reg_index) {
 
 Node* InterpreterAssembler::StoreRegister(Node* value, Node* reg_index) {
   return raw_assembler_->Store(kMachAnyTagged, RegisterFileRawPointer(),
-                               RegisterFrameOffset(reg_index), value);
+                               RegisterFrameOffset(reg_index), value,
+                               kNoWriteBarrier);
 }
 
 
@@ -291,6 +292,15 @@ Node* InterpreterAssembler::LoadConstantPoolEntry(Node* index) {
 }
 
 
+Node* InterpreterAssembler::LoadFixedArrayElement(Node* fixed_array,
+                                                  int index) {
+  Node* entry_offset =
+      IntPtrAdd(IntPtrConstant(FixedArray::kHeaderSize - kHeapObjectTag),
+                WordShl(Int32Constant(index), kPointerSizeLog2));
+  return raw_assembler_->Load(kMachAnyTagged, fixed_array, entry_offset);
+}
+
+
 Node* InterpreterAssembler::LoadObjectField(Node* object, int offset) {
   return raw_assembler_->Load(kMachAnyTagged, object,
                               IntPtrConstant(offset - kHeapObjectTag));
@@ -316,7 +326,8 @@ Node* InterpreterAssembler::StoreContextSlot(Node* context, Node* slot_index,
   Node* offset =
       IntPtrAdd(WordShl(slot_index, kPointerSizeLog2),
                 Int32Constant(Context::kHeaderSize - kHeapObjectTag));
-  return raw_assembler_->Store(kMachAnyTagged, context, offset, value);
+  return raw_assembler_->Store(kMachAnyTagged, context, offset, value,
+                               kFullWriteBarrier);
 }
 
 

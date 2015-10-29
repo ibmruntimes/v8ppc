@@ -566,6 +566,7 @@ void Verifier::Visitor::Check(Node* node) {
     }
 
     case IrOpcode::kJSCallConstruct:
+    case IrOpcode::kJSConvertReceiver:
       // Type is Receiver.
       CheckUpperIs(node, Type::Receiver());
       break;
@@ -634,6 +635,14 @@ void Verifier::Visitor::Check(Node* node) {
       CheckValueInputIs(node, 1, Type::Number());
       // TODO(rossberg): activate once we retype after opcode changes.
       // CheckUpperIs(node, Type::Number());
+      break;
+    case IrOpcode::kNumberBitwiseOr:
+    case IrOpcode::kNumberBitwiseXor:
+    case IrOpcode::kNumberBitwiseAnd:
+      // (Signed32, Signed32) -> Signed32
+      CheckValueInputIs(node, 0, Type::Signed32());
+      CheckValueInputIs(node, 1, Type::Signed32());
+      CheckUpperIs(node, Type::Signed32());
       break;
     case IrOpcode::kNumberShiftLeft:
     case IrOpcode::kNumberShiftRight:
