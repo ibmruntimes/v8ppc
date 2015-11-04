@@ -84,9 +84,13 @@ class AsmTyper : public AstVisitor {
   void VisitWithExpectation(Expression* expr, Type* expected_type,
                             const char* msg);
 
+  void VisitIntegerBitwiseOperator(BinaryOperation* expr, Type* left_expected,
+                                   Type* right_expected, Type* result_type,
+                                   bool conversion);
+
   Zone* zone() const { return zone_; }
 
-#define DECLARE_VISIT(type) virtual void Visit##type(type* node) override;
+#define DECLARE_VISIT(type) void Visit##type(type* node) override;
   AST_NODE_LIST(DECLARE_VISIT)
 #undef DECLARE_VISIT
 

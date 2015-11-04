@@ -1594,18 +1594,11 @@ void HGraphBuilder::BuildNonGlobalObjectCheck(HValue* receiver) {
       Add<HLoadNamedField>(receiver, nullptr, HObjectAccess::ForMap());
   HValue* instance_type =
       Add<HLoadNamedField>(map, nullptr, HObjectAccess::ForMapInstanceType());
-  STATIC_ASSERT(JS_BUILTINS_OBJECT_TYPE == JS_GLOBAL_OBJECT_TYPE + 1);
-  HValue* min_global_type = Add<HConstant>(JS_GLOBAL_OBJECT_TYPE);
-  HValue* max_global_type = Add<HConstant>(JS_BUILTINS_OBJECT_TYPE);
+  HValue* global_type = Add<HConstant>(JS_GLOBAL_OBJECT_TYPE);
 
   IfBuilder if_global_object(this);
-  if_global_object.If<HCompareNumericAndBranch>(instance_type,
-                                                max_global_type,
-                                                Token::LTE);
-  if_global_object.And();
-  if_global_object.If<HCompareNumericAndBranch>(instance_type,
-                                                min_global_type,
-                                                Token::GTE);
+  if_global_object.If<HCompareNumericAndBranch>(instance_type, global_type,
+                                                Token::EQ);
   if_global_object.ThenDeopt(Deoptimizer::kReceiverWasAGlobalObject);
   if_global_object.End();
 }
@@ -1870,7 +1863,7 @@ HValue* HGraphBuilder::BuildRegExpConstructResult(HValue* length,
       context(), nullptr,
       HObjectAccess::ForContextSlot(Context::GLOBAL_OBJECT_INDEX));
   HValue* native_context = Add<HLoadNamedField>(
-      global_object, nullptr, HObjectAccess::ForGlobalObjectNativeContext());
+      global_object, nullptr, HObjectAccess::ForJSGlobalObjectNativeContext());
   Add<HStoreNamedField>(
       result, HObjectAccess::ForMap(),
       Add<HLoadNamedField>(
@@ -3273,7 +3266,7 @@ HInstruction* HGraphBuilder::BuildGetNativeContext() {
       HObjectAccess::ForContextSlot(Context::GLOBAL_OBJECT_INDEX));
   return Add<HLoadNamedField>(global_object, nullptr,
                               HObjectAccess::ForObservableJSObjectOffset(
-                                  GlobalObject::kNativeContextOffset));
+                                  JSGlobalObject::kNativeContextOffset));
 }
 
 
@@ -3285,7 +3278,7 @@ HInstruction* HGraphBuilder::BuildGetNativeContext(HValue* closure) {
       context, nullptr,
       HObjectAccess::ForContextSlot(Context::GLOBAL_OBJECT_INDEX));
   HObjectAccess access = HObjectAccess::ForObservableJSObjectOffset(
-      GlobalObject::kNativeContextOffset);
+      JSGlobalObject::kNativeContextOffset);
   return Add<HLoadNamedField>(global_object, nullptr, access);
 }
 
@@ -3561,7 +3554,7 @@ HValue* HGraphBuilder::AddLoadJSBuiltin(int context_index) {
       context(), nullptr,
       HObjectAccess::ForContextSlot(Context::GLOBAL_OBJECT_INDEX));
   HObjectAccess access = HObjectAccess::ForObservableJSObjectOffset(
-      GlobalObject::kNativeContextOffset);
+      JSGlobalObject::kNativeContextOffset);
   HValue* native_context = Add<HLoadNamedField>(global_object, nullptr, access);
   HObjectAccess function_access = HObjectAccess::ForContextSlot(context_index);
   return Add<HLoadNamedField>(native_context, nullptr, function_access);
@@ -5641,7 +5634,7 @@ void HOptimizedGraphBuilder::VisitVariableProxy(VariableProxy* expr) {
         return ast_context()->ReturnInstruction(instr, expr->id());
       }
 
-      Handle<GlobalObject> global(current_info()->global_object());
+      Handle<JSGlobalObject> global(current_info()->global_object());
 
       // Lookup in script contexts.
       {
@@ -6850,7 +6843,7 @@ void HOptimizedGraphBuilder::HandlePropertyAssignment(Assignment* expr) {
 // owning expression instead of position and ast_id separately.
 void HOptimizedGraphBuilder::HandleGlobalVariableAssignment(
     Variable* var, HValue* value, FeedbackVectorSlot slot, BailoutId ast_id) {
-  Handle<GlobalObject> global(current_info()->global_object());
+  Handle<JSGlobalObject> global(current_info()->global_object());
 
   // Lookup in script contexts.
   {
@@ -7375,6 +7368,8 @@ HInstruction* HOptimizedGraphBuilder::BuildMonomorphicElementAccess(
     PrototypeIterator iter(map);
     JSObject* holder = NULL;
     while (!iter.IsAtEnd()) {
+      // JSProxies can't occur here because we wouldn't have installed a
+      // non-generic IC if there were any.
       holder = *PrototypeIterator::GetCurrent<JSObject>(iter);
       iter.Advance();
     }
@@ -8272,7 +8267,7 @@ int HOptimizedGraphBuilder::InliningAstSize(Handle<JSFunction> target) {
   if (target_shared->force_inline()) {
     return 0;
   }
-  if (target->IsBuiltin()) {
+  if (target->shared()->IsBuiltin()) {
     return kNotInlinable;
   }
 
@@ -10040,7 +10035,7 @@ HValue* HGraphBuilder::BuildAllocateEmptyArrayBuffer(HValue* byte_length) {
       context(), nullptr,
       HObjectAccess::ForContextSlot(Context::GLOBAL_OBJECT_INDEX));
   HValue* native_context = Add<HLoadNamedField>(
-      global_object, nullptr, HObjectAccess::ForGlobalObjectNativeContext());
+      global_object, nullptr, HObjectAccess::ForJSGlobalObjectNativeContext());
   Add<HStoreNamedField>(
       result, HObjectAccess::ForMap(),
       Add<HLoadNamedField>(
@@ -10129,25 +10124,6 @@ void HOptimizedGraphBuilder::GenerateDataViewInitialize(
     BuildArrayBufferViewInitialization<JSDataView>(
         obj, buffer, byte_offset, byte_length);
   }
-}
-
-
-static Handle<Map> TypedArrayMap(Isolate* isolate,
-                                 ExternalArrayType array_type,
-                                 ElementsKind target_kind) {
-  Handle<Context> native_context = isolate->native_context();
-  Handle<JSFunction> fun;
-  switch (array_type) {
-#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size)                       \
-    case kExternal##Type##Array:                                              \
-      fun = Handle<JSFunction>(native_context->type##_array_fun());           \
-      break;
-
-    TYPED_ARRAYS(TYPED_ARRAY_CASE)
-#undef TYPED_ARRAY_CASE
-  }
-  Handle<Map> map(fun->initial_map());
-  return Map::AsElementsKind(map, target_kind);
 }
 
 
@@ -10364,9 +10340,6 @@ void HOptimizedGraphBuilder::GenerateTypedArrayInitialize(
     if (buffer != NULL) {
       elements = BuildAllocateExternalElements(
           array_type, is_zero_byte_offset, buffer, byte_offset, length);
-      Handle<Map> obj_map =
-          TypedArrayMap(isolate(), array_type, fixed_elements_kind);
-      AddStoreMapConstant(obj, obj_map);
     } else {
       DCHECK(is_zero_byte_offset);
       elements = BuildAllocateFixedTypedArray(array_type, element_size,
@@ -12667,6 +12640,26 @@ void HOptimizedGraphBuilder::GenerateRegExpExec(CallRuntime* call) {
   CHECK_ALIVE(VisitExpressions(call->arguments()));
   PushArgumentsFromEnvironment(call->arguments()->length());
   HCallStub* result = New<HCallStub>(CodeStub::RegExpExec, 4);
+  return ast_context()->ReturnInstruction(result, call->id());
+}
+
+
+void HOptimizedGraphBuilder::GenerateRegExpFlags(CallRuntime* call) {
+  DCHECK_EQ(1, call->arguments()->length());
+  CHECK_ALIVE(VisitExpressions(call->arguments()));
+  HValue* regexp = Pop();
+  HInstruction* result =
+      New<HLoadNamedField>(regexp, nullptr, HObjectAccess::ForJSRegExpFlags());
+  return ast_context()->ReturnInstruction(result, call->id());
+}
+
+
+void HOptimizedGraphBuilder::GenerateRegExpSource(CallRuntime* call) {
+  DCHECK_EQ(1, call->arguments()->length());
+  CHECK_ALIVE(VisitExpressions(call->arguments()));
+  HValue* regexp = Pop();
+  HInstruction* result =
+      New<HLoadNamedField>(regexp, nullptr, HObjectAccess::ForJSRegExpSource());
   return ast_context()->ReturnInstruction(result, call->id());
 }
 

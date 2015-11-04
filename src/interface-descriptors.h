@@ -42,6 +42,7 @@ class PlatformInterfaceDescriptor;
   V(RegExpConstructResult)                    \
   V(TransitionElementsKind)                   \
   V(AllocateHeapNumber)                       \
+  V(AllocateMutableHeapNumber)                \
   V(AllocateInNewSpace)                       \
   V(ArrayConstructorConstantArgCount)         \
   V(ArrayConstructor)                         \
@@ -223,12 +224,12 @@ class CallInterfaceDescriptor {
   static inline CallDescriptors::Key key();
 
 
-#define DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(name, base)        \
-  DECLARE_DESCRIPTOR(name, base)                                        \
- protected:                                                             \
-  virtual Type::FunctionType* BuildCallInterfaceDescriptorFunctionType( \
-      Isolate* isolate, int register_param_count) override;             \
-                                                                        \
+#define DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(name, base) \
+  DECLARE_DESCRIPTOR(name, base)                                 \
+ protected:                                                      \
+  Type::FunctionType* BuildCallInterfaceDescriptorFunctionType(  \
+      Isolate* isolate, int register_param_count) override;      \
+                                                                 \
  public:
 // LoadDescriptor is used by all stubs that implement Load/KeyedLoad ICs.
 class LoadDescriptor : public CallInterfaceDescriptor {
@@ -518,6 +519,13 @@ class TransitionElementsKindDescriptor : public CallInterfaceDescriptor {
 class AllocateHeapNumberDescriptor : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(AllocateHeapNumberDescriptor, CallInterfaceDescriptor)
+};
+
+
+class AllocateMutableHeapNumberDescriptor : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR(AllocateMutableHeapNumberDescriptor,
+                     CallInterfaceDescriptor)
 };
 
 

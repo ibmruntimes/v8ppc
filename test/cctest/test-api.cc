@@ -11799,7 +11799,13 @@ static int GetGlobalObjectsCount() {
   int count = 0;
   i::HeapIterator it(CcTest::heap());
   for (i::HeapObject* object = it.next(); object != NULL; object = it.next())
-    if (object->IsJSGlobalObject()) count++;
+    if (object->IsJSGlobalObject()) {
+      i::JSGlobalObject* g = i::JSGlobalObject::cast(object);
+      // Skip dummy global object.
+      if (i::GlobalDictionary::cast(g->properties())->NumberOfElements() != 0) {
+        count++;
+      }
+    }
   // Subtract one to compensate for the code stub context that is always present
   return count - 1;
 }
@@ -13702,24 +13708,6 @@ TEST(DefineOwnProperty) {
 }
 
 
-static v8::Local<Context> calling_context0;
-static v8::Local<Context> calling_context1;
-static v8::Local<Context> calling_context2;
-
-
-// Check that the call to the callback is initiated in
-// calling_context2, the directly calling context is calling_context1
-// and the callback itself is in calling_context0.
-static void GetCallingContextCallback(
-    const v8::FunctionCallbackInfo<v8::Value>& args) {
-  ApiTestFuzzer::Fuzz();
-  CHECK(args.GetIsolate()->GetCurrentContext() == calling_context0);
-  CHECK(args.GetIsolate()->GetCallingContext() == calling_context1);
-  CHECK(args.GetIsolate()->GetEnteredContext() == calling_context2);
-  args.GetReturnValue().Set(42);
-}
-
-
 THREADED_TEST(GetCurrentContextWhenNotInContext) {
   i::Isolate* isolate = CcTest::i_isolate();
   CHECK(isolate != NULL);
@@ -13729,52 +13717,6 @@ THREADED_TEST(GetCurrentContextWhenNotInContext) {
   // The following should not crash, but return an empty handle.
   v8::Local<v8::Context> current = v8_isolate->GetCurrentContext();
   CHECK(current.IsEmpty());
-}
-
-
-THREADED_TEST(GetCallingContext) {
-  v8::Isolate* isolate = CcTest::isolate();
-  v8::HandleScope scope(isolate);
-
-  Local<Context> calling_context0(Context::New(isolate));
-  Local<Context> calling_context1(Context::New(isolate));
-  Local<Context> calling_context2(Context::New(isolate));
-  ::calling_context0 = calling_context0;
-  ::calling_context1 = calling_context1;
-  ::calling_context2 = calling_context2;
-
-  // Allow cross-domain access.
-  Local<String> token = v8_str("<security token>");
-  calling_context0->SetSecurityToken(token);
-  calling_context1->SetSecurityToken(token);
-  calling_context2->SetSecurityToken(token);
-
-  // Create an object with a C++ callback in context0.
-  calling_context0->Enter();
-  Local<v8::FunctionTemplate> callback_templ =
-      v8::FunctionTemplate::New(isolate, GetCallingContextCallback);
-  calling_context0->Global()->Set(v8_str("callback"),
-                                  callback_templ->GetFunction());
-  calling_context0->Exit();
-
-  // Expose context0 in context1 and set up a function that calls the
-  // callback function.
-  calling_context1->Enter();
-  calling_context1->Global()->Set(v8_str("context0"),
-                                  calling_context0->Global());
-  CompileRun("function f() { context0.callback() }");
-  calling_context1->Exit();
-
-  // Expose context1 in context2 and call the callback function in
-  // context0 indirectly through f in context1.
-  calling_context2->Enter();
-  calling_context2->Global()->Set(v8_str("context1"),
-                                  calling_context1->Global());
-  CompileRun("context1.f()");
-  calling_context2->Exit();
-  ::calling_context0.Clear();
-  ::calling_context1.Clear();
-  ::calling_context2.Clear();
 }
 
 
@@ -22103,6 +22045,34 @@ TEST(AccessCheckedIsConcatSpreadable) {
   ExpectTrue("result[0] === object");
   ExpectTrue("result.length === 1");
   ExpectTrue("object[Symbol.isConcatSpreadable] === undefined");
+}
+
+
+TEST(AccessCheckedToStringTag) {
+  i::FLAG_harmony_tostring = true;
+  v8::Isolate* isolate = CcTest::isolate();
+  HandleScope scope(isolate);
+  LocalContext env;
+
+  // Object with access check
+  Local<ObjectTemplate> object_template = v8::ObjectTemplate::New(isolate);
+  object_template->SetAccessCheckCallback(AccessBlocker);
+  Local<Object> object = object_template->NewInstance();
+
+  allowed_access = true;
+  env->Global()->Set(v8_str("object"), object);
+  object->Set(v8::Symbol::GetToStringTag(isolate), v8_str("hello"));
+
+  // Access check is allowed, and the toStringTag is read
+  CompileRun("var result = Object.prototype.toString.call(object)");
+  ExpectString("result", "[object hello]");
+  ExpectString("object[Symbol.toStringTag]", "hello");
+
+  // If access check fails, the value of @@toStringTag is ignored
+  allowed_access = false;
+  CompileRun("var result = Object.prototype.toString.call(object)");
+  ExpectString("result", "[object Object]");
+  ExpectTrue("object[Symbol.toStringTag] === undefined");
 }
 
 

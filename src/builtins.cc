@@ -1083,6 +1083,14 @@ bool IterateElements(Isolate* isolate, Handle<JSObject> receiver,
       break;
     }
     case DICTIONARY_ELEMENTS: {
+      // CollectElementIndices() can't be called when there's a JSProxy
+      // on the prototype chain.
+      for (PrototypeIterator iter(isolate, receiver); !iter.IsAtEnd();
+           iter.Advance()) {
+        if (PrototypeIterator::GetCurrent(iter)->IsJSProxy()) {
+          return IterateElementsSlow(isolate, receiver, length, visitor);
+        }
+      }
       Handle<SeededNumberDictionary> dict(receiver->element_dictionary());
       List<uint32_t> indices(dict->Capacity() / 2);
       // Collect all indices in the object and the prototypes less
@@ -1533,6 +1541,33 @@ BUILTIN(ReflectGet) {
 }
 
 
+// ES6 section 26.1.7 Reflect.getOwnPropertyDescriptor
+BUILTIN(ReflectGetOwnPropertyDescriptor) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(3, args.length());
+  Handle<Object> target = args.at<Object>(1);
+  Handle<Object> key = args.at<Object>(2);
+
+  if (!target->IsJSReceiver()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kCalledOnNonObject,
+                              isolate->factory()->NewStringFromAsciiChecked(
+                                  "Reflect.getOwnPropertyDescriptor")));
+  }
+
+  Handle<Name> name;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, name,
+                                     Object::ToName(isolate, key));
+
+  PropertyDescriptor desc;
+  bool found = JSReceiver::GetOwnPropertyDescriptor(
+      isolate, Handle<JSReceiver>::cast(target), name, &desc);
+  if (isolate->has_pending_exception()) return isolate->heap()->exception();
+  if (!found) return isolate->heap()->undefined_value();
+  return *desc.ToObject(isolate);
+}
+
+
 // ES6 section 26.1.8 Reflect.getPrototypeOf
 BUILTIN(ReflectGetPrototypeOf) {
   HandleScope scope(isolate);
@@ -1622,6 +1657,35 @@ BUILTIN(ReflectPreventExtensions) {
       Handle<JSReceiver>::cast(target), Object::DONT_THROW);
   return result.IsJust() ? *isolate->factory()->ToBoolean(result.FromJust())
                          : isolate->heap()->exception();
+}
+
+
+// ES6 section 26.1.13 Reflect.set
+BUILTIN(ReflectSet) {
+  HandleScope scope(isolate);
+  Handle<Object> undef = isolate->factory()->undefined_value();
+  Handle<Object> target = args.length() > 1 ? args.at<Object>(1) : undef;
+  Handle<Object> key = args.length() > 2 ? args.at<Object>(2) : undef;
+  Handle<Object> value = args.length() > 3 ? args.at<Object>(3) : undef;
+  Handle<Object> receiver = args.length() > 4 ? args.at<Object>(4) : target;
+
+  if (!target->IsJSReceiver()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kCalledOnNonObject,
+                              isolate->factory()->NewStringFromAsciiChecked(
+                                  "Reflect.set")));
+  }
+
+  Handle<Name> name;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, name,
+                                     Object::ToName(isolate, key));
+
+  LookupIterator it = LookupIterator::PropertyOrElement(
+      isolate, receiver, name, Handle<JSReceiver>::cast(target));
+  Maybe<bool> result = Object::SetSuperProperty(
+      &it, value, SLOPPY, Object::MAY_BE_STORE_FROM_KEYED);
+  MAYBE_RETURN(result, isolate->heap()->exception());
+  return *isolate->factory()->ToBoolean(result.FromJust());
 }
 
 

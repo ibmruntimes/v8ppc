@@ -939,62 +939,40 @@
     mSloppy() {
       assertEquals(42, this.ownReadOnly);
       super.ownReadOnly = 55;
-      assertEquals(55, this.ownReadOnly);
-      var descr = Object.getOwnPropertyDescriptor(this, 'ownReadOnly');
-      assertEquals(55, descr.value);
-      assertTrue(descr.configurable);
-      assertFalse(descr.enumerable);
-      assertFalse(descr.writable);
+      assertSame(undefined, super.ownReadOnly);
+      assertEquals(42, this.ownReadOnly);
       assertFalse(Base.prototype.hasOwnProperty('ownReadOnly'));
 
       assertEquals(15, this.ownReadonlyAccessor);
       super.ownReadonlyAccessor = 25;
-      assertEquals(25, this.ownReadonlyAccessor);
-      var descr = Object.getOwnPropertyDescriptor(this, 'ownReadonlyAccessor');
-      assertEquals(25, descr.value);
-      assertTrue(descr.configurable);
-      assertFalse(descr.enumerable);
-      assertTrue(descr.writable);
+      assertSame(undefined, super.ownReadonlyAccessor);
+      assertEquals(15, this.ownReadonlyAccessor);
       assertFalse(Base.prototype.hasOwnProperty('ownReadonlyAccessor'));
 
       super.ownSetter = 35;
-      assertEquals(35, this.ownSetter);
+      assertSame(undefined, super.ownSetter);
       var descr = Object.getOwnPropertyDescriptor(this, 'ownSetter');
-      assertEquals(35, descr.value);
-      assertTrue(descr.configurable);
-      assertFalse(descr.enumerable);
-      assertTrue(descr.writable);
+      assertTrue('set' in descr);
       assertFalse(Base.prototype.hasOwnProperty('ownSetter'));
     },
     mStrict() {
       'use strict';
       assertEquals(42, this.ownReadOnly);
-      super.ownReadOnly = 55;
-      assertEquals(55, this.ownReadOnly);
-      var descr = Object.getOwnPropertyDescriptor(this, 'ownReadOnly');
-      assertEquals(55, descr.value);
-      assertTrue(descr.configurable);
-      assertFalse(descr.enumerable);
-      assertFalse(descr.writable);
+      assertThrows(() => {super.ownReadOnly = 55}, TypeError);
+      assertSame(undefined, super.ownReadOnly);
+      assertEquals(42, this.ownReadOnly);
       assertFalse(Base.prototype.hasOwnProperty('ownReadOnly'));
 
       assertEquals(15, this.ownReadonlyAccessor);
-      super.ownReadonlyAccessor = 25;
-      assertEquals(25, this.ownReadonlyAccessor);
-      var descr = Object.getOwnPropertyDescriptor(this, 'ownReadonlyAccessor');
-      assertEquals(25, descr.value);
-      assertTrue(descr.configurable);
-      assertFalse(descr.enumerable);
-      assertTrue(descr.writable);
+      assertThrows(() => {super.ownReadonlyAccessor = 25}, TypeError);
+      assertSame(undefined, super.ownReadonlyAccessor);
+      assertEquals(15, this.ownReadonlyAccessor);
       assertFalse(Base.prototype.hasOwnProperty('ownReadonlyAccessor'));
 
-      super.ownSetter = 35;
-      assertEquals(35, this.ownSetter);
+      assertThrows(() => {super.ownSetter = 35}, TypeError);
+      assertSame(undefined, super.ownSetter);
       var descr = Object.getOwnPropertyDescriptor(this, 'ownSetter');
-      assertEquals(35, descr.value);
-      assertTrue(descr.configurable);
-      assertFalse(descr.enumerable);
-      assertTrue(descr.writable);
+      assertTrue('set' in descr);
       assertFalse(Base.prototype.hasOwnProperty('ownSetter'));
     },
   };
@@ -1052,6 +1030,7 @@
 
       assertEquals(15, this.ownReadonlyAccessor);
       super.ownReadonlyAccessor = 25;
+      assertSame(undefined, super.ownReadonlyAccessor);
       assertEquals(15, this.ownReadonlyAccessor);
       var descr = Object.getOwnPropertyDescriptor(this, 'ownReadonlyAccessor');
       assertFalse(descr.configurable);
@@ -1180,62 +1159,40 @@ function TestKeyedSetterCreatingOwnPropertiesReconfigurable(ownReadOnly,
     mSloppy() {
       assertEquals(42, this[ownReadOnly]);
       super[ownReadOnly] = 55;
-      assertEquals(55, this[ownReadOnly]);
-      var descr = Object.getOwnPropertyDescriptor(this, ownReadOnly);
-      assertEquals(55, descr.value);
-      assertTrue(descr.configurable);
-      assertFalse(descr.enumerable);
-      assertFalse(descr.writable);
+      assertSame(undefined, super[ownReadOnly]);
+      assertEquals(42, this[ownReadOnly]);
       assertFalse(Base.prototype.hasOwnProperty(ownReadOnly));
 
       assertEquals(15, this[ownReadonlyAccessor]);
       super[ownReadonlyAccessor] = 25;
-      assertEquals(25, this[ownReadonlyAccessor]);
-      var descr = Object.getOwnPropertyDescriptor(this, ownReadonlyAccessor);
-      assertEquals(25, descr.value);
-      assertTrue(descr.configurable);
-      assertFalse(descr.enumerable);
-      assertTrue(descr.writable);
+      assertSame(undefined, super[ownReadonlyAccessor]);
+      assertEquals(15, this[ownReadonlyAccessor]);
       assertFalse(Base.prototype.hasOwnProperty(ownReadonlyAccessor));
 
       super[ownSetter] = 35;
-      assertEquals(35, this[ownSetter]);
+      assertSame(undefined, super[ownSetter]);
       var descr = Object.getOwnPropertyDescriptor(this, ownSetter);
-      assertEquals(35, descr.value);
-      assertTrue(descr.configurable);
-      assertFalse(descr.enumerable);
-      assertTrue(descr.writable);
+      assertTrue('set' in descr);
       assertFalse(Base.prototype.hasOwnProperty(ownSetter));
     },
     mStrict() {
       'use strict';
       assertEquals(42, this[ownReadOnly]);
-      super[ownReadOnly] = 55;
-      assertEquals(55, this[ownReadOnly]);
-      var descr = Object.getOwnPropertyDescriptor(this, ownReadOnly);
-      assertEquals(55, descr.value);
-      assertTrue(descr.configurable);
-      assertFalse(descr.enumerable);
-      assertFalse(descr.writable);
+      assertThrows(() => {super[ownReadOnly] = 55}, TypeError);
+      assertSame(undefined, super[ownReadOnly]);
+      assertEquals(42, this[ownReadOnly]);
       assertFalse(Base.prototype.hasOwnProperty(ownReadOnly));
 
       assertEquals(15, this[ownReadonlyAccessor]);
-      super[ownReadonlyAccessor] = 25;
-      assertEquals(25, this[ownReadonlyAccessor]);
-      var descr = Object.getOwnPropertyDescriptor(this, ownReadonlyAccessor);
-      assertEquals(25, descr.value);
-      assertTrue(descr.configurable);
-      assertFalse(descr.enumerable);
-      assertTrue(descr.writable);
+      assertThrows(() => {super[ownReadonlyAccessor] = 25}, TypeError);
+      assertSame(undefined, super[ownReadonlyAccessor]);
+      assertEquals(15, this[ownReadonlyAccessor]);
       assertFalse(Base.prototype.hasOwnProperty(ownReadonlyAccessor));
 
-      super[ownSetter] = 35;
-      assertEquals(35, this[ownSetter]);
+      assertThrows(() => {super[ownSetter] = 35}, TypeError);
+      assertSame(undefined, super[ownSetter]);
       var descr = Object.getOwnPropertyDescriptor(this, ownSetter);
-      assertEquals(35, descr.value);
-      assertTrue(descr.configurable);
-      assertFalse(descr.enumerable);
-      assertTrue(descr.writable);
+      assertTrue('set' in descr);
       assertFalse(Base.prototype.hasOwnProperty(ownSetter));
     },
   };
@@ -1298,6 +1255,7 @@ function TestKeyedSetterCreatingOwnPropertiesNonConfigurable(
 
       assertEquals(15, this[ownReadonlyAccessor]);
       super[ownReadonlyAccessor] = 25;
+      assertSame(undefined, super[ownReadonlyAccessor]);
       assertEquals(15, this[ownReadonlyAccessor]);
       var descr = Object.getOwnPropertyDescriptor(this, ownReadonlyAccessor);
       assertFalse(descr.configurable);
@@ -2020,8 +1978,8 @@ TestKeyedSetterCreatingOwnPropertiesNonConfigurable(42, 43, 44);
   class F extends Object { }
   var f = new F(42);
 
-  // TODO(dslomov,arv): Fix this. BUG=v8:3886.
-  assertInstanceof(f, Number);
+  assertInstanceof(f, F);
+  assertInstanceof(f, Object);
 }());
 
 

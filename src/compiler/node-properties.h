@@ -84,6 +84,7 @@ class NodeProperties final {
   static void ReplaceControlInput(Node* node, Node* control);
   static void ReplaceEffectInput(Node* node, Node* effect, int index = 0);
   static void ReplaceFrameStateInput(Node* node, int index, Node* frame_state);
+  static void RemoveFrameStateInput(Node* node, int index);
   static void RemoveNonValueInputs(Node* node);
 
   // Merge the control node {node} into the end of the graph, introducing a
@@ -121,6 +122,7 @@ class NodeProperties final {
     DCHECK(IsTyped(node));
     return node->type();
   }
+  static Type* GetTypeOrAny(Node* node);
   static void SetType(Node* node, Type* type) {
     DCHECK_NOT_NULL(type);
     node->set_type(type);

@@ -4019,7 +4019,9 @@ class V8_EXPORT RegExp : public Object {
     kNone = 0,
     kGlobal = 1,
     kIgnoreCase = 2,
-    kMultiline = 4
+    kMultiline = 4,
+    kSticky = 8,
+    kUnicode = 16
   };
 
   /**
@@ -5099,6 +5101,7 @@ class V8_EXPORT HeapStatistics {
   size_t total_available_size() { return total_available_size_; }
   size_t used_heap_size() { return used_heap_size_; }
   size_t heap_size_limit() { return heap_size_limit_; }
+  size_t does_zap_garbage() { return does_zap_garbage_; }
 
  private:
   size_t total_heap_size_;
@@ -5107,6 +5110,7 @@ class V8_EXPORT HeapStatistics {
   size_t total_available_size_;
   size_t used_heap_size_;
   size_t heap_size_limit_;
+  bool does_zap_garbage_;
 
   friend class V8;
   friend class Isolate;
@@ -5614,7 +5618,10 @@ class V8_EXPORT Isolate {
   /** Returns true if this isolate has a current context. */
   bool InContext();
 
-  /** Returns the context that is on the top of the stack. */
+  /**
+   * Returns the context of the currently running JavaScript, or the context
+   * on the top of the stack if no JavaScript is running.
+   */
   Local<Context> GetCurrentContext();
 
   /**
@@ -5622,9 +5629,12 @@ class V8_EXPORT Isolate {
    * context of the top-most JavaScript frame.  If there are no
    * JavaScript frames an empty handle is returned.
    */
-  Local<Context> GetCallingContext();
+  V8_DEPRECATE_SOON(
+      "Calling context concept is not compatible with tail calls, and will be "
+      "removed.",
+      Local<Context> GetCallingContext());
 
-  /** Returns the last entered context. */
+  /** Returns the last context entered through V8's C++ API. */
   Local<Context> GetEnteredContext();
 
   /**

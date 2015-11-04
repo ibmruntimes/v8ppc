@@ -79,7 +79,8 @@ static void GenerateLoadInternalArrayFunction(MacroAssembler* masm,
 
   __ LoadP(result,
            MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ LoadP(result, FieldMemOperand(result, GlobalObject::kNativeContextOffset));
+  __ LoadP(result,
+           FieldMemOperand(result, JSGlobalObject::kNativeContextOffset));
   // Load the InternalArray function from the native context.
   __ LoadP(result,
            MemOperand(result, Context::SlotOffset(
@@ -93,7 +94,8 @@ static void GenerateLoadArrayFunction(MacroAssembler* masm, Register result) {
 
   __ LoadP(result,
            MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ LoadP(result, FieldMemOperand(result, GlobalObject::kNativeContextOffset));
+  __ LoadP(result,
+           FieldMemOperand(result, JSGlobalObject::kNativeContextOffset));
   // Load the Array function from the native context.
   __ LoadP(
       result,
@@ -220,41 +222,44 @@ void Builtins::Generate_StringConstructor_ConstructStub(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- r3                     : number of arguments
   //  -- r4                     : constructor function
+  //  -- r6                     : original constructor
   //  -- lr                     : return address
   //  -- sp[(argc - n - 1) * 4] : arg[n] (zero based)
   //  -- sp[argc * 4]           : receiver
   // -----------------------------------
 
-  // 1. Load the first argument into r3 and get rid of the rest (including the
+  // 1. Load the first argument into r5 and get rid of the rest (including the
   // receiver).
   {
     Label no_arguments, done;
     __ cmpi(r3, Operand::Zero());
     __ beq(&no_arguments);
     __ subi(r3, r3, Operand(1));
-    __ ShiftLeftImm(r3, r3, Operand(kPointerSizeLog2));
-    __ LoadPUX(r3, MemOperand(sp, r3));
+    __ ShiftLeftImm(r5, r3, Operand(kPointerSizeLog2));
+    __ LoadPUX(r5, MemOperand(sp, r5));
     __ Drop(2);
     __ b(&done);
     __ bind(&no_arguments);
-    __ LoadRoot(r3, Heap::kempty_stringRootIndex);
+    __ LoadRoot(r5, Heap::kempty_stringRootIndex);
     __ Drop(1);
     __ bind(&done);
   }
 
-  // 2. Make sure r3 is a string.
+  // 2. Make sure r5 is a string.
   {
     Label convert, done_convert;
-    __ JumpIfSmi(r3, &convert);
-    __ CompareObjectType(r3, r5, r5, FIRST_NONSTRING_TYPE);
+    __ JumpIfSmi(r5, &convert);
+    __ CompareObjectType(r5, r7, r7, FIRST_NONSTRING_TYPE);
     __ blt(&done_convert);
     __ bind(&convert);
     {
       FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
       ToStringStub stub(masm->isolate());
-      __ push(r4);
+      __ Push(r4, r6);
+      __ mr(r3, r5);
       __ CallStub(&stub);
-      __ pop(r4);
+      __ mr(r5, r3);
+      __ Pop(r4, r6);
     }
     __ bind(&done_convert);
   }
@@ -262,13 +267,18 @@ void Builtins::Generate_StringConstructor_ConstructStub(MacroAssembler* masm) {
   // 3. Allocate a JSValue wrapper for the string.
   {
     // ----------- S t a t e -------------
-    //  -- r3 : the first argument
+    //  -- r5 : the first argument
     //  -- r4 : constructor function
+    //  -- r6 : original constructor
     //  -- lr : return address
     // -----------------------------------
 
-    Label allocate, done_allocate;
-    __ mr(r5, r3);
+    Label allocate, done_allocate, rt_call;
+
+    // Fall back to runtime if the original constructor and function differ.
+    __ cmp(r4, r6);
+    __ bne(&rt_call);
+
     __ Allocate(JSValue::kSize, r3, r6, r7, &allocate, TAG_OBJECT);
     __ bind(&done_allocate);
 
@@ -292,6 +302,17 @@ void Builtins::Generate_StringConstructor_ConstructStub(MacroAssembler* masm) {
       __ Pop(r4, r5);
     }
     __ b(&done_allocate);
+
+    // Fallback to the runtime to create new object.
+    __ bind(&rt_call);
+    {
+      FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
+      __ Push(r4, r5, r4, r6);  // constructor function, original constructor
+      __ CallRuntime(Runtime::kNewObject, 2);
+      __ Pop(r4, r5);
+    }
+    __ StoreP(r5, FieldMemOperand(r3, JSValue::kValueOffset), r0);
+    __ Ret();
   }
 }
 
@@ -507,7 +528,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // r4: constructor function
     // r6: original constructor
     __ bind(&rt_call);
-    __ Push(r4, r6);
+    __ Push(r4, r6);  // constructor function, original constructor
     __ CallRuntime(Runtime::kNewObject, 2);
     __ mr(r7, r3);
 
@@ -1571,6 +1592,7 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm) {
   //  -- r3 : the number of arguments (not including the receiver)
   //  -- r4 : the function to call (checked to be a JSFunction)
   // -----------------------------------
+  // See ES6 section 9.2.1 [[Call]] ( thisArgument, argumentsList)
 
   Label convert, convert_global_proxy, convert_to_object, done_convert;
   __ AssertFunction(r4);
@@ -1579,7 +1601,6 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm) {
   // Enter the context of the function; ToObject has to run in the function
   // context, and we also need to take the global proxy from the function
   // context in case of conversion.
-  // See ES6 section 9.2.1 [[Call]] ( thisArgument, argumentsList)
   STATIC_ASSERT(SharedFunctionInfo::kNativeByteOffset ==
                 SharedFunctionInfo::kStrictModeByteOffset);
   __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));

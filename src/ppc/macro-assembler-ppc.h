@@ -23,6 +23,7 @@ const Register kInterpreterRegisterFileRegister = {Register::kCode_r14};
 const Register kInterpreterBytecodeOffsetRegister = {Register::kCode_r15};
 const Register kInterpreterBytecodeArrayRegister = {Register::kCode_r16};
 const Register kInterpreterDispatchTableRegister = {Register::kCode_r17};
+const Register kJavaScriptCallArgCountRegister = {Register::kCode_r3};
 const Register kRuntimeCallFunctionRegister = {Register::kCode_r4};
 const Register kRuntimeCallArgCountRegister = {Register::kCode_r3};
 
@@ -384,6 +385,10 @@ class MacroAssembler : public Assembler {
   // Warning: The value in |int_scrach| will be changed in the process!
   void ConvertIntToFloat(const DoubleRegister dst, const Register src,
                          const Register int_scratch);
+
+#if V8_TARGET_ARCH_PPC64
+  void ConvertInt64ToDouble(Register src, DoubleRegister double_dst);
+#endif
 
   // Converts the double_input to an integer.  Note that, upon return,
   // the contents of double_dst will also hold the fixed point representation.

@@ -82,7 +82,8 @@ class BytecodeArrayBuilder {
 
   // Global loads to the accumulator and stores from the accumulator.
   BytecodeArrayBuilder& LoadGlobal(size_t name_index, int feedback_slot,
-                                   LanguageMode language_mode);
+                                   LanguageMode language_mode,
+                                   TypeofMode typeof_mode);
   BytecodeArrayBuilder& StoreGlobal(size_t name_index, int feedback_slot,
                                     LanguageMode language_mode);
 
@@ -149,6 +150,12 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& CallRuntime(Runtime::FunctionId function_id,
                                     Register first_arg, size_t arg_count);
 
+  // Call the JS runtime function with |context_index|. The the receiver should
+  // be in |receiver| and all subsequent arguments should be in registers
+  // <receiver + 1> to <receiver + 1 + arg_count>.
+  BytecodeArrayBuilder& CallJSRuntime(int context_index, Register receiver,
+                                      size_t arg_count);
+
   // Operators (register holds the lhs value, accumulator holds the rhs value).
   BytecodeArrayBuilder& BinaryOperation(Token::Value binop, Register reg,
                                         Strength strength);
@@ -183,11 +190,6 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& JumpIfFalse(BytecodeLabel* label);
   BytecodeArrayBuilder& JumpIfNull(BytecodeLabel* label);
   BytecodeArrayBuilder& JumpIfUndefined(BytecodeLabel* label);
-  // TODO(mythria) The following two functions should be merged into
-  // JumpIfTrue/False. These bytecodes should be automatically chosen rather
-  // than explicitly using them.
-  BytecodeArrayBuilder& JumpIfToBooleanTrue(BytecodeLabel* label);
-  BytecodeArrayBuilder& JumpIfToBooleanFalse(BytecodeLabel* label);
 
   BytecodeArrayBuilder& Throw();
   BytecodeArrayBuilder& Return();
@@ -196,9 +198,6 @@ class BytecodeArrayBuilder {
   BytecodeArrayBuilder& ForInPrepare(Register receiver);
   BytecodeArrayBuilder& ForInNext(Register for_in_state, Register index);
   BytecodeArrayBuilder& ForInDone(Register for_in_state);
-
-  BytecodeArrayBuilder& EnterBlock();
-  BytecodeArrayBuilder& LeaveBlock();
 
   // Accessors
   Zone* zone() const { return zone_; }
@@ -211,11 +210,13 @@ class BytecodeArrayBuilder {
   static Bytecode BytecodeForBinaryOperation(Token::Value op);
   static Bytecode BytecodeForCountOperation(Token::Value op);
   static Bytecode BytecodeForCompareOperation(Token::Value op);
+  static Bytecode BytecodeForWideOperands(Bytecode bytecode);
   static Bytecode BytecodeForLoadIC(LanguageMode language_mode);
   static Bytecode BytecodeForKeyedLoadIC(LanguageMode language_mode);
   static Bytecode BytecodeForStoreIC(LanguageMode language_mode);
   static Bytecode BytecodeForKeyedStoreIC(LanguageMode language_mode);
-  static Bytecode BytecodeForLoadGlobal(LanguageMode language_mode);
+  static Bytecode BytecodeForLoadGlobal(LanguageMode language_mode,
+                                        TypeofMode typeof_mode);
   static Bytecode BytecodeForStoreGlobal(LanguageMode language_mode);
   static Bytecode BytecodeForCreateArguments(CreateArgumentsType type);
   static Bytecode BytecodeForDelete(LanguageMode language_mode);
@@ -224,8 +225,10 @@ class BytecodeArrayBuilder {
   static bool FitsInIdx8Operand(size_t value);
   static bool FitsInImm8Operand(int value);
   static bool FitsInIdx16Operand(int value);
+  static bool FitsInIdx16Operand(size_t value);
 
   static Bytecode GetJumpWithConstantOperand(Bytecode jump_with_smi8_operand);
+  static Bytecode GetJumpWithToBoolean(Bytecode jump);
 
   template <size_t N>
   INLINE(void Output(Bytecode bytecode, uint32_t(&oprands)[N]));
@@ -240,11 +243,14 @@ class BytecodeArrayBuilder {
   void PatchJump(const ZoneVector<uint8_t>::iterator& jump_target,
                  ZoneVector<uint8_t>::iterator jump_location);
 
+  void LeaveBasicBlock();
   void EnsureReturn();
 
   bool OperandIsValid(Bytecode bytecode, int operand_index,
                       uint32_t operand_value) const;
   bool LastBytecodeInSameBlock() const;
+
+  bool NeedToBooleanCast();
 
   int BorrowTemporaryRegister();
   void ReturnTemporaryRegister(int reg_index);
@@ -286,6 +292,8 @@ class BytecodeLabel final {
  public:
   BytecodeLabel() : bound_(false), offset_(kInvalidOffset) {}
 
+  INLINE(bool is_bound() const) { return bound_; }
+
  private:
   static const size_t kInvalidOffset = static_cast<size_t>(-1);
 
@@ -299,7 +307,6 @@ class BytecodeLabel final {
     offset_ = offset;
   }
   INLINE(size_t offset() const) { return offset_; }
-  INLINE(bool is_bound() const) { return bound_; }
   INLINE(bool is_forward_target() const) {
     return offset() != kInvalidOffset && !is_bound();
   }

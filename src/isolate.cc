@@ -316,9 +316,8 @@ static bool IsVisibleInStackTrace(JSFunction* fun,
   // exposed, in which case the native flag is set.
   // The --builtins-in-stack-traces command line flag allows including
   // internal call sites in the stack trace for debugging purposes.
-  if (!FLAG_builtins_in_stack_traces) {
-    if (receiver->IsJSBuiltinsObject()) return false;
-    if (fun->IsBuiltin()) return fun->shared()->native();
+  if (!FLAG_builtins_in_stack_traces && fun->shared()->IsBuiltin()) {
+    return fun->shared()->native();
   }
   return true;
 }
@@ -1342,7 +1341,7 @@ bool Isolate::ComputeLocationFromStackTrace(MessageLocation* target,
   for (int i = 1; i < elements_limit; i += 4) {
     Handle<JSFunction> fun =
         handle(JSFunction::cast(elements->get(i + 1)), this);
-    if (!fun->IsSubjectToDebugging()) continue;
+    if (!fun->shared()->IsSubjectToDebugging()) continue;
 
     Object* script = fun->shared()->script();
     if (script->IsScript() &&

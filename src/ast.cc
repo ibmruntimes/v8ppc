@@ -761,7 +761,16 @@ Call::CallType Call::GetCallType(Isolate* isolate) const {
   if (expression()->IsSuperCallReference()) return SUPER_CALL;
 
   Property* property = expression()->AsProperty();
-  return property != NULL ? PROPERTY_CALL : OTHER_CALL;
+  if (property != nullptr) {
+    bool is_super = property->IsSuperAccess();
+    if (property->key()->IsPropertyName()) {
+      return is_super ? NAMED_SUPER_PROPERTY_CALL : NAMED_PROPERTY_CALL;
+    } else {
+      return is_super ? KEYED_SUPER_PROPERTY_CALL : KEYED_PROPERTY_CALL;
+    }
+  }
+
+  return OTHER_CALL;
 }
 
 
@@ -933,8 +942,7 @@ class RegExpUnparser final : public RegExpVisitor {
  public:
   RegExpUnparser(std::ostream& os, Zone* zone) : os_(os), zone_(zone) {}
   void VisitCharacterRange(CharacterRange that);
-#define MAKE_CASE(Name) \
-  virtual void* Visit##Name(RegExp##Name*, void* data) override;
+#define MAKE_CASE(Name) void* Visit##Name(RegExp##Name*, void* data) override;
   FOR_EACH_REG_EXP_TREE_TYPE(MAKE_CASE)
 #undef MAKE_CASE
  private:

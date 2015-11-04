@@ -8,11 +8,11 @@ vars = {
 
 deps = {
   "v8/build/gyp":
-    Var("git_url") + "/external/gyp.git" + "@" + "3f21260b43401553c37bb28090b65a75577d5b4e",
+    Var("git_url") + "/external/gyp.git" + "@" + "2c1e6cced23554ce84806e570acea637f6473afc",
   "v8/third_party/icu":
     Var("git_url") + "/chromium/deps/icu.git" + "@" + "94e4b770ce2f6065d4261d29c32683a6099b9d93",
   "v8/buildtools":
-    Var("git_url") + "/chromium/buildtools.git" + "@" + "ef7f1f539cff0441c4401d8c052e54cfd01bff07",
+    Var("git_url") + "/chromium/buildtools.git" + "@" + "c2f259809d5ede3275df5ea0842f0431990c4f98",
   "v8/tools/swarming_client":
     Var('git_url') + '/external/swarming.client.git' + '@' + "8fce79620b04bbe5415ace1103db27505bdc4c06",
   "v8/testing/gtest":
@@ -25,7 +25,7 @@ deps = {
     Var("git_url") + "/v8/deps/third_party/mozilla-tests.git" + "@" + "f6c578a10ea707b1a8ab0b88943fe5115ce2b9be",
   "v8/test/simdjs/data": Var("git_url") + "/external/github.com/tc39/ecmascript_simd.git" + "@" + "c8ef63c728283debc25891123eb00482fee4b8cd",
   "v8/test/test262/data":
-    Var("git_url") + "/external/github.com/tc39/test262.git" + "@" + "26e6fd7c1779a63913cc7720cbc6c87b3b7b3285",
+    Var("git_url") + "/external/github.com/tc39/test262.git" + "@" + "ea222fb7d09e334c321b987656315ad4056ded96",
   "v8/tools/clang":
     Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "66f5328417331216569e8beb244fd887f62e8997",
 }
@@ -133,6 +133,12 @@ hooks = [
                 '--bucket', 'chromium-luci',
                 '-d', 'v8/tools/luci-go/linux64',
     ],
+  },
+  {
+    # Update the Windows toolchain if necessary.
+    'name': 'win_toolchain',
+    'pattern': '.',
+    'action': ['python', 'v8/build/vs_toolchain.py', 'update'],
   },
   # Pull binutils for linux, enabled debug fission for faster linking /
   # debugging when used with clang on Ubuntu Precise.

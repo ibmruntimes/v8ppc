@@ -3438,7 +3438,7 @@ void Heap::InitializeJSObjectFromMap(JSObject* obj, FixedArray* properties,
   if (constructor->IsJSFunction() &&
       JSFunction::cast(constructor)->IsInobjectSlackTrackingInProgress()) {
     // We might want to shrink the object later.
-    DCHECK(obj->GetInternalFieldCount() == 0);
+    DCHECK_EQ(0, obj->GetInternalFieldCount());
     filler = Heap::one_pointer_filler_map();
   } else {
     filler = Heap::undefined_value();
@@ -3456,7 +3456,6 @@ AllocationResult Heap::AllocateJSObjectFromMap(
   // Both types of global objects should be allocated using
   // AllocateGlobalObject to be properly initialized.
   DCHECK(map->instance_type() != JS_GLOBAL_OBJECT_TYPE);
-  DCHECK(map->instance_type() != JS_BUILTINS_OBJECT_TYPE);
 
   // Allocate the backing storage for the properties.
   FixedArray* properties = empty_fixed_array();
@@ -3485,7 +3484,7 @@ AllocationResult Heap::AllocateJSObject(JSFunction* constructor,
 #ifdef DEBUG
   // Make sure result is NOT a global object if valid.
   HeapObject* obj = nullptr;
-  DCHECK(!allocation.To(&obj) || !obj->IsGlobalObject());
+  DCHECK(!allocation.To(&obj) || !obj->IsJSGlobalObject());
 #endif
   return allocation;
 }
@@ -4210,18 +4209,6 @@ void Heap::IdleNotificationEpilogue(GCIdleTimeAction action,
 }
 
 
-void Heap::CheckBackgroundIdleNotification(double idle_time_in_ms,
-                                           double now_ms) {
-  // TODO(ulan): Remove this function once Chrome uses new API
-  // for foreground/background notification.
-  if (idle_time_in_ms >= GCIdleTimeHandler::kMinBackgroundIdleTime) {
-    optimize_for_memory_usage_ = true;
-  } else {
-    optimize_for_memory_usage_ = false;
-  }
-}
-
-
 double Heap::MonotonicallyIncreasingTimeInMs() {
   return V8::GetCurrentPlatform()->MonotonicallyIncreasingTime() *
          static_cast<double>(base::Time::kMillisecondsPerSecond);
@@ -4245,8 +4232,6 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
       isolate_->counters()->gc_idle_notification());
   double start_ms = MonotonicallyIncreasingTimeInMs();
   double idle_time_in_ms = deadline_in_ms - start_ms;
-
-  CheckBackgroundIdleNotification(idle_time_in_ms, start_ms);
 
   tracer()->SampleAllocation(start_ms, NewSpaceAllocationCounter(),
                              OldGenerationAllocationCounter());

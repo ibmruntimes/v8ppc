@@ -355,6 +355,28 @@ class AstGraphBuilder : public AstVisitor {
   Node* ProcessArguments(const Operator* op, int arity);
 
   // ===========================================================================
+  // The following build methods have the same contract as the above ones, but
+  // they can also return {NULL} to indicate that no fragment was built. Note
+  // that these are optimizations, disabling any of them should still produce
+  // correct graphs.
+
+  // Optimization for variable load from global object.
+  Node* TryLoadGlobalConstant(Handle<Name> name);
+
+  // Optimization for variable load of dynamic lookup slot that is most likely
+  // to resolve to a global slot or context slot (inferred from scope chain).
+  Node* TryLoadDynamicVariable(Variable* variable, Handle<String> name,
+                               BailoutId bailout_id,
+                               FrameStateBeforeAndAfter& states,
+                               const VectorSlotPair& feedback,
+                               OutputFrameStateCombine combine,
+                               TypeofMode typeof_mode);
+
+  // Optimizations for automatic type conversion.
+  Node* TryFastToBoolean(Node* input);
+  Node* TryFastToName(Node* input);
+
+  // ===========================================================================
   // The following visitation methods all recursively visit a subtree of the
   // underlying AST and extent the graph. The operand stack is mutated in a way
   // consistent with other compilers:

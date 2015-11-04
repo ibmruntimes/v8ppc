@@ -44,6 +44,7 @@
   V(Phi)                 \
   V(EffectSet)           \
   V(EffectPhi)           \
+  V(Guard)               \
   V(BeginRegion)         \
   V(FinishRegion)        \
   V(FrameState)          \
@@ -126,8 +127,7 @@
 #define JS_CONTEXT_OP_LIST(V) \
   V(JSLoadContext)            \
   V(JSStoreContext)           \
-  V(JSLoadDynamicGlobal)      \
-  V(JSLoadDynamicContext)     \
+  V(JSLoadDynamic)            \
   V(JSCreateFunctionContext)  \
   V(JSCreateCatchContext)     \
   V(JSCreateWithContext)      \
@@ -197,6 +197,7 @@
   V(StoreField)                    \
   V(StoreBuffer)                   \
   V(StoreElement)                  \
+  V(ObjectIsNumber)                \
   V(ObjectIsSmi)
 
 // Opcodes for Machine-level operators.
@@ -267,6 +268,7 @@
   V(TruncateFloat64ToFloat32)   \
   V(TruncateFloat64ToInt32)     \
   V(TruncateInt64ToInt32)       \
+  V(RoundInt64ToFloat64)        \
   V(BitcastFloat32ToInt32)      \
   V(BitcastFloat64ToInt64)      \
   V(BitcastInt32ToFloat32)      \

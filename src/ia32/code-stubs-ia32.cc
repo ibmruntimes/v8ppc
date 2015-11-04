@@ -893,7 +893,7 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   // Get the arguments map from the current native context into edi.
   Label has_mapped_parameters, instantiate;
   __ mov(edi, Operand(esi, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ mov(edi, FieldOperand(edi, GlobalObject::kNativeContextOffset));
+  __ mov(edi, FieldOperand(edi, JSGlobalObject::kNativeContextOffset));
   __ mov(ebx, Operand(esp, 0 * kPointerSize));
   __ test(ebx, ebx);
   __ j(not_zero, &has_mapped_parameters, Label::kNear);
@@ -1097,7 +1097,7 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
 
   // Get the arguments map from the current native context.
   __ mov(edi, Operand(esi, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ mov(edi, FieldOperand(edi, GlobalObject::kNativeContextOffset));
+  __ mov(edi, FieldOperand(edi, JSGlobalObject::kNativeContextOffset));
   const int offset = Context::SlotOffset(Context::STRICT_ARGUMENTS_MAP_INDEX);
   __ mov(edi, Operand(edi, offset));
 
@@ -2030,14 +2030,17 @@ static void GenerateRecordCallTarget(MacroAssembler* masm, bool is_super) {
 
 
 static void EmitContinueIfStrictOrNative(MacroAssembler* masm, Label* cont) {
+  // ----------- S t a t e -------------
+  // -- edi : the function to call
+  // -- edx : the function's shared function info
+  // -----------------------------------
   // Do not transform the receiver for strict mode functions.
-  __ mov(ecx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
-  __ test_b(FieldOperand(ecx, SharedFunctionInfo::kStrictModeByteOffset),
+  __ test_b(FieldOperand(edx, SharedFunctionInfo::kStrictModeByteOffset),
             1 << SharedFunctionInfo::kStrictModeBitWithinByte);
   __ j(not_equal, cont);
 
   // Do not transform the receiver for natives (shared already in ecx).
-  __ test_b(FieldOperand(ecx, SharedFunctionInfo::kNativeByteOffset),
+  __ test_b(FieldOperand(edx, SharedFunctionInfo::kNativeByteOffset),
             1 << SharedFunctionInfo::kNativeBitWithinByte);
   __ j(not_equal, cont);
 }
@@ -2062,6 +2065,24 @@ static void EmitWrapCase(MacroAssembler* masm, int argc, Label* cont) {
 }
 
 
+static void EmitClassConstructorCallCheck(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  // -- edi : the function to call
+  // -- edx : the function's shared function info
+  // -----------------------------------
+  // ClassConstructor Check: ES6 section 9.2.1 [[Call]]
+  Label non_class_constructor;
+  // Check whether the current function is a classConstructor.
+  __ test_b(FieldOperand(edx, SharedFunctionInfo::kFunctionKindByteOffset),
+            SharedFunctionInfo::kClassConstructorBitsWithinByte);
+  __ j(zero, &non_class_constructor, Label::kNear);
+  // If we call a classConstructor Function throw a TypeError
+  // indirectly via the CallFunction builtin.
+  __ Jump(masm->isolate()->builtins()->CallFunction(), RelocInfo::CODE_TARGET);
+  __ bind(&non_class_constructor);
+}
+
+
 static void CallFunctionNoFeedback(MacroAssembler* masm,
                                    int argc, bool needs_checks,
                                    bool call_as_method) {
@@ -2076,6 +2097,9 @@ static void CallFunctionNoFeedback(MacroAssembler* masm,
     __ CmpObjectType(edi, JS_FUNCTION_TYPE, ecx);
     __ j(not_equal, &slow);
   }
+
+  __ mov(edx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+  EmitClassConstructorCallCheck(masm);
 
   // Fast-case: Just invoke the function.
   ParameterCount actual(argc);
@@ -2249,6 +2273,10 @@ void CallICStub::Generate(MacroAssembler* masm) {
          Immediate(Smi::FromInt(CallICNexus::kCallCountIncrement)));
 
   __ bind(&have_js_function);
+
+  __ mov(edx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+  EmitClassConstructorCallCheck(masm);
+
   if (CallAsMethod()) {
     EmitContinueIfStrictOrNative(masm, &cont);
 

@@ -58,7 +58,7 @@ Handle<Code> NamedLoadHandlerCompiler::ComputeLoadNonexistent(
       cache_name = name;
       JSReceiver* prototype = JSReceiver::cast(current_map->prototype());
       if (!prototype->map()->is_hidden_prototype() &&
-          !prototype->map()->IsGlobalObjectMap()) {
+          !prototype->map()->IsJSGlobalObjectMap()) {
         break;
       }
     }
@@ -330,6 +330,9 @@ Handle<Code> NamedLoadHandlerCompiler::CompileLoadInterceptor(
     PrototypeIterator iter(isolate(), last);
     while (!iter.IsAtEnd()) {
       lost_holder_register = true;
+      // Casting to JSObject is fine here. The LookupIterator makes sure to
+      // look behind non-masking interceptors during the original lookup, and
+      // we wouldn't try to compile a handler if there was a Proxy anywhere.
       last = iter.GetCurrent<JSObject>();
       iter.Advance();
     }

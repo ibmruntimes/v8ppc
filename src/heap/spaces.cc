@@ -2752,15 +2752,10 @@ HeapObject* PagedSpace::SlowAllocateRaw(int size_in_bytes) {
     if (object != NULL) return object;
 
     // If sweeping is still in progress try to sweep pages on the main thread.
-    int free_chunk = collector->SweepInParallel(this, size_in_bytes);
+    collector->SweepInParallel(heap()->paged_space(identity()), size_in_bytes);
     RefillFreeList();
-    if (free_chunk >= size_in_bytes) {
-      HeapObject* object = free_list_.Allocate(size_in_bytes);
-      // We should be able to allocate an object here since we just freed that
-      // much memory.
-      DCHECK(object != NULL);
-      if (object != NULL) return object;
-    }
+    object = free_list_.Allocate(size_in_bytes);
+    if (object != nullptr) return object;
   }
 
   // Free list allocation failed and there is no next page.  Fail if we have
@@ -2937,11 +2932,10 @@ void PagedSpace::ReportStatistics() {
 
 // -----------------------------------------------------------------------------
 // MapSpace implementation
-// TODO(mvstanton): this is weird...the compiler can't make a vtable unless
-// there is at least one non-inlined virtual function. I would prefer to hide
-// the VerifyObject definition behind VERIFY_HEAP.
 
+#ifdef VERIFY_HEAP
 void MapSpace::VerifyObject(HeapObject* object) { CHECK(object->IsMap()); }
+#endif
 
 
 // -----------------------------------------------------------------------------

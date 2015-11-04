@@ -124,7 +124,7 @@ void FullCodeGenerator::Generate() {
     __ bne(&ok);
 
     __ LoadP(r5, GlobalObjectOperand());
-    __ LoadP(r5, FieldMemOperand(r5, GlobalObject::kGlobalProxyOffset));
+    __ LoadP(r5, FieldMemOperand(r5, JSGlobalObject::kGlobalProxyOffset));
 
     __ StoreP(r5, MemOperand(sp, receiver_offset), r0);
 
@@ -2236,7 +2236,7 @@ void FullCodeGenerator::EmitCreateIteratorResult(bool done) {
 
   __ bind(&done_allocate);
   __ LoadP(r4, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-  __ LoadP(r4, FieldMemOperand(r4, GlobalObject::kNativeContextOffset));
+  __ LoadP(r4, FieldMemOperand(r4, JSGlobalObject::kNativeContextOffset));
   __ LoadP(r4, ContextOperand(r4, Context::ITERATOR_RESULT_MAP_INDEX));
   __ pop(r5);
   __ LoadRoot(r6,
@@ -2950,6 +2950,7 @@ void FullCodeGenerator::EmitCall(Call* expr, CallICState::CallType call_type) {
     VisitForStackValue(args->at(i));
   }
 
+  PrepareForBailoutForId(expr->CallId(), NO_REGISTERS);
   SetCallPosition(expr, arg_count);
   Handle<Code> ic = CodeFactory::CallIC(isolate(), arg_count, call_type).code();
   __ LoadSmiLiteral(r6, SmiFromSlot(expr->CallFeedbackICSlot()));
@@ -3032,91 +3033,40 @@ void FullCodeGenerator::PushCalleeAndWithBaseObject(Call* expr) {
 }
 
 
-void FullCodeGenerator::VisitCall(Call* expr) {
-#ifdef DEBUG
-  // We want to verify that RecordJSReturnSite gets called on all paths
-  // through this function.  Avoid early returns.
-  expr->return_is_recorded_ = false;
-#endif
+void FullCodeGenerator::EmitPossiblyEvalCall(Call* expr) {
+  // In a call to eval, we first call RuntimeHidden_ResolvePossiblyDirectEval
+  // to resolve the function we need to call.  Then we call the resolved
+  // function using the given arguments.
+  ZoneList<Expression*>* args = expr->arguments();
+  int arg_count = args->length();
 
-  Comment cmnt(masm_, "[ Call");
-  Expression* callee = expr->expression();
-  Call::CallType call_type = expr->GetCallType(isolate());
+  PushCalleeAndWithBaseObject(expr);
 
-  if (call_type == Call::POSSIBLY_EVAL_CALL) {
-    // In a call to eval, we first call RuntimeHidden_ResolvePossiblyDirectEval
-    // to resolve the function we need to call.  Then we call the resolved
-    // function using the given arguments.
-    ZoneList<Expression*>* args = expr->arguments();
-    int arg_count = args->length();
-
-    PushCalleeAndWithBaseObject(expr);
-
-    // Push the arguments.
-    for (int i = 0; i < arg_count; i++) {
-      VisitForStackValue(args->at(i));
-    }
-
-    // Push a copy of the function (found below the arguments) and
-    // resolve eval.
-    __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
-    __ push(r4);
-    EmitResolvePossiblyDirectEval(arg_count);
-
-    // Touch up the stack with the resolved function.
-    __ StoreP(r3, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
-
-    PrepareForBailoutForId(expr->EvalId(), NO_REGISTERS);
-
-    // Record source position for debugger.
-    SetCallPosition(expr, arg_count);
-    CallFunctionStub stub(isolate(), arg_count, NO_CALL_FUNCTION_FLAGS);
-    __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
-    __ CallStub(&stub);
-    RecordJSReturnSite(expr);
-    // Restore context register.
-    __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
-    context()->DropAndPlug(1, r3);
-  } else if (call_type == Call::GLOBAL_CALL) {
-    EmitCallWithLoadIC(expr);
-
-  } else if (call_type == Call::LOOKUP_SLOT_CALL) {
-    // Call to a lookup slot (dynamically introduced variable).
-    PushCalleeAndWithBaseObject(expr);
-    EmitCall(expr);
-  } else if (call_type == Call::PROPERTY_CALL) {
-    Property* property = callee->AsProperty();
-    bool is_named_call = property->key()->IsPropertyName();
-    if (property->IsSuperAccess()) {
-      if (is_named_call) {
-        EmitSuperCallWithLoadIC(expr);
-      } else {
-        EmitKeyedSuperCallWithLoadIC(expr);
-      }
-    } else {
-      VisitForStackValue(property->obj());
-      if (is_named_call) {
-        EmitCallWithLoadIC(expr);
-      } else {
-        EmitKeyedCallWithLoadIC(expr, property->key());
-      }
-    }
-  } else if (call_type == Call::SUPER_CALL) {
-    EmitSuperConstructorCall(expr);
-  } else {
-    DCHECK(call_type == Call::OTHER_CALL);
-    // Call to an arbitrary expression not handled specially above.
-    VisitForStackValue(callee);
-    __ LoadRoot(r4, Heap::kUndefinedValueRootIndex);
-    __ push(r4);
-    // Emit function call.
-    EmitCall(expr);
+  // Push the arguments.
+  for (int i = 0; i < arg_count; i++) {
+    VisitForStackValue(args->at(i));
   }
 
-#ifdef DEBUG
-  // RecordJSReturnSite should have been called.
-  DCHECK(expr->return_is_recorded_);
-#endif
+  // Push a copy of the function (found below the arguments) and
+  // resolve eval.
+  __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
+  __ push(r4);
+  EmitResolvePossiblyDirectEval(arg_count);
+
+  // Touch up the stack with the resolved function.
+  __ StoreP(r3, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
+
+  PrepareForBailoutForId(expr->EvalId(), NO_REGISTERS);
+
+  // Record source position for debugger.
+  SetCallPosition(expr, arg_count);
+  CallFunctionStub stub(isolate(), arg_count, NO_CALL_FUNCTION_FLAGS);
+  __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
+  __ CallStub(&stub);
+  RecordJSReturnSite(expr);
+  // Restore context register.
+  __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  context()->DropAndPlug(1, r3);
 }
 
 
@@ -3904,6 +3854,7 @@ void FullCodeGenerator::EmitCall(CallRuntime* expr) {
   for (Expression* const arg : *args) {
     VisitForStackValue(arg);
   }
+  PrepareForBailoutForId(expr->CallId(), NO_REGISTERS);
   // Move target to r4.
   int const argc = args->length() - 2;
   __ LoadP(r4, MemOperand(sp, (argc + 1) * kPointerSize));
@@ -3927,6 +3878,7 @@ void FullCodeGenerator::EmitCallFunction(CallRuntime* expr) {
   }
   VisitForAccumulatorValue(args->last());  // Function.
 
+  PrepareForBailoutForId(expr->CallId(), NO_REGISTERS);
   Label runtime, done;
   // Check for non-function argument (including proxy).
   __ JumpIfSmi(r3, &runtime);
@@ -4317,7 +4269,7 @@ void FullCodeGenerator::EmitCreateIterResultObject(CallRuntime* expr) {
 
   __ Allocate(JSIteratorResult::kSize, r3, r5, r6, &runtime, TAG_OBJECT);
   __ LoadP(r4, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-  __ LoadP(r4, FieldMemOperand(r4, GlobalObject::kNativeContextOffset));
+  __ LoadP(r4, FieldMemOperand(r4, JSGlobalObject::kNativeContextOffset));
   __ LoadP(r4, ContextOperand(r4, Context::ITERATOR_RESULT_MAP_INDEX));
   __ Pop(r5, r6);
   __ LoadRoot(r7, Heap::kEmptyFixedArrayRootIndex);
@@ -4343,7 +4295,7 @@ void FullCodeGenerator::EmitLoadJSRuntimeFunction(CallRuntime* expr) {
   __ push(r3);
 
   __ LoadP(r3, GlobalObjectOperand());
-  __ LoadP(r3, FieldMemOperand(r3, GlobalObject::kNativeContextOffset));
+  __ LoadP(r3, FieldMemOperand(r3, JSGlobalObject::kNativeContextOffset));
   __ LoadP(r3, ContextOperand(r3, expr->context_index()));
 }
 

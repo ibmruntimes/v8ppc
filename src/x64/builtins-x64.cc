@@ -277,8 +277,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // Must restore rsi (context) and rdi (constructor) before calling runtime.
     __ movp(rsi, Operand(rbp, StandardFrameConstants::kContextOffset));
     __ movp(rdi, Operand(rsp, offset));
-    __ Push(rdi);  // argument 2/1: constructor function
-    __ Push(rdx);  // argument 3/2: original constructor
+    __ Push(rdi);  // constructor function
+    __ Push(rdx);  // original constructor
     __ CallRuntime(Runtime::kNewObject, 2);
     __ movp(rbx, rax);  // store result in rbx
 
@@ -1423,6 +1423,7 @@ void Builtins::Generate_StringConstructor_ConstructStub(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- rax                 : number of arguments
   //  -- rdi                 : constructor function
+  //  -- rdx                 : original constructor
   //  -- rsp[0]              : return address
   //  -- rsp[(argc - n) * 8] : arg[n] (zero-based)
   //  -- rsp[(argc + 1) * 8] : receiver
@@ -1449,17 +1450,19 @@ void Builtins::Generate_StringConstructor_ConstructStub(MacroAssembler* masm) {
   {
     Label convert, done_convert;
     __ JumpIfSmi(rbx, &convert, Label::kNear);
-    __ CmpObjectType(rbx, FIRST_NONSTRING_TYPE, rdx);
+    __ CmpObjectType(rbx, FIRST_NONSTRING_TYPE, rcx);
     __ j(below, &done_convert);
     __ bind(&convert);
     {
       FrameScope scope(masm, StackFrame::INTERNAL);
       ToStringStub stub(masm->isolate());
+      __ Push(rdx);
       __ Push(rdi);
       __ Move(rax, rbx);
       __ CallStub(&stub);
       __ Move(rbx, rax);
       __ Pop(rdi);
+      __ Pop(rdx);
     }
     __ bind(&done_convert);
   }
@@ -1469,9 +1472,14 @@ void Builtins::Generate_StringConstructor_ConstructStub(MacroAssembler* masm) {
     // ----------- S t a t e -------------
     //  -- rbx : the first argument
     //  -- rdi : constructor function
+    //  -- rdx : original constructor
     // -----------------------------------
+    Label allocate, done_allocate, rt_call;
 
-    Label allocate, done_allocate;
+    // Fall back to runtime if the original constructor and constructor differ.
+    __ cmpp(rdx, rdi);
+    __ j(not_equal, &rt_call);
+
     __ Allocate(JSValue::kSize, rax, rcx, no_reg, &allocate, TAG_OBJECT);
     __ bind(&done_allocate);
 
@@ -1497,6 +1505,21 @@ void Builtins::Generate_StringConstructor_ConstructStub(MacroAssembler* masm) {
       __ Pop(rbx);
     }
     __ jmp(&done_allocate);
+
+    // Fallback to the runtime to create new object.
+    __ bind(&rt_call);
+    {
+      FrameScope scope(masm, StackFrame::INTERNAL);
+      __ Push(rbx);
+      __ Push(rdi);
+      __ Push(rdi);  // constructor function
+      __ Push(rdx);  // original constructor
+      __ CallRuntime(Runtime::kNewObject, 2);
+      __ Pop(rdi);
+      __ Pop(rbx);
+    }
+    __ movp(FieldOperand(rax, JSValue::kValueOffset), rbx);
+    __ Ret();
   }
 }
 
@@ -1698,6 +1721,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
 
 // static
 void Builtins::Generate_CallFunction(MacroAssembler* masm) {
+  // ES6 section 9.2.1 [[Call]] ( thisArgument, argumentsList)
   // ----------- S t a t e -------------
   //  -- rax : the number of arguments (not including the receiver)
   //  -- rdi : the function to call (checked to be a JSFunction)
@@ -1706,16 +1730,27 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm) {
   Label convert, convert_global_proxy, convert_to_object, done_convert;
   StackArgumentsAccessor args(rsp, rax);
   __ AssertFunction(rdi);
-  // TODO(bmeurer): Throw a TypeError if function's [[FunctionKind]] internal
-  // slot is "classConstructor".
+  __ movp(rdx, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
+  {
+    Label non_class_constructor;
+    // Check whether the current function is a classConstructor
+    __ testb(FieldOperand(rdx, SharedFunctionInfo::kFunctionKindByteOffset),
+             Immediate(SharedFunctionInfo::kClassConstructorBitsWithinByte));
+    __ j(zero, &non_class_constructor);
+    // Step: 2, If we call a classConstructor Function throw a TypeError.
+    {
+      FrameScope frame(masm, StackFrame::INTERNAL);
+      __ CallRuntime(Runtime::kThrowConstructorNonCallableError, 0);
+    }
+    __ bind(&non_class_constructor);
+  }
+
   // Enter the context of the function; ToObject has to run in the function
   // context, and we also need to take the global proxy from the function
   // context in case of conversion.
-  // See ES6 section 9.2.1 [[Call]] ( thisArgument, argumentsList)
   STATIC_ASSERT(SharedFunctionInfo::kNativeByteOffset ==
                 SharedFunctionInfo::kStrictModeByteOffset);
   __ movp(rsi, FieldOperand(rdi, JSFunction::kContextOffset));
-  __ movp(rdx, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
   // We need to convert the receiver for non-native sloppy mode functions.
   __ testb(FieldOperand(rdx, SharedFunctionInfo::kNativeByteOffset),
            Immediate((1 << SharedFunctionInfo::kNativeBitWithinByte) |

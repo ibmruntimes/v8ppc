@@ -193,6 +193,13 @@ void BytecodeGraphBuilder::VisitLdaSmi8(
 }
 
 
+void BytecodeGraphBuilder::VisitLdaConstantWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  Node* node = jsgraph()->Constant(iterator.GetConstantForIndexOperand(0));
+  environment()->BindAccumulator(node);
+}
+
+
 void BytecodeGraphBuilder::VisitLdaConstant(
     const interpreter::BytecodeArrayIterator& iterator) {
   Node* node = jsgraph()->Constant(iterator.GetConstantForIndexOperand(0));
@@ -261,6 +268,42 @@ void BytecodeGraphBuilder::VisitLdaGlobalStrict(
 }
 
 
+void BytecodeGraphBuilder::VisitLdaGlobalInsideTypeofSloppy(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitLdaGlobalInsideTypeofStrict(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitLdaGlobalSloppyWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitLdaGlobalStrictWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitLdaGlobalInsideTypeofSloppyWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitLdaGlobalInsideTypeofStrictWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
 void BytecodeGraphBuilder::VisitStaGlobalSloppy(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
@@ -268,6 +311,17 @@ void BytecodeGraphBuilder::VisitStaGlobalSloppy(
 
 
 void BytecodeGraphBuilder::VisitStaGlobalStrict(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+void BytecodeGraphBuilder::VisitStaGlobalSloppyWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitStaGlobalStrictWide(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }
@@ -309,6 +363,30 @@ void BytecodeGraphBuilder::VisitKeyedLoadICStrict(
 }
 
 
+void BytecodeGraphBuilder::VisitLoadICSloppyWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitLoadICStrictWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitKeyedLoadICSloppyWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitKeyedLoadICStrictWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
 void BytecodeGraphBuilder::VisitStoreICSloppy(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
@@ -328,6 +406,30 @@ void BytecodeGraphBuilder::VisitKeyedStoreICSloppy(
 
 
 void BytecodeGraphBuilder::VisitKeyedStoreICStrict(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitStoreICSloppyWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitStoreICStrictWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitKeyedStoreICSloppyWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitKeyedStoreICStrictWide(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }
@@ -388,6 +490,12 @@ void BytecodeGraphBuilder::VisitCall(
 
 
 void BytecodeGraphBuilder::VisitCallRuntime(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  UNIMPLEMENTED();
+}
+
+
+void BytecodeGraphBuilder::VisitCallJSRuntime(
     const interpreter::BytecodeArrayIterator& iterator) {
   UNIMPLEMENTED();
 }

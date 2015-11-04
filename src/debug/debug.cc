@@ -923,7 +923,7 @@ void Debug::PrepareStep(StepAction step_action,
     }
     // Skip native and extension functions on the stack.
     while (!frames_it.done() &&
-           !frames_it.frame()->function()->IsSubjectToDebugging()) {
+           !frames_it.frame()->function()->shared()->IsSubjectToDebugging()) {
       frames_it.Advance();
     }
     // Step out: If there is a JavaScript caller frame, we need to
@@ -1596,7 +1596,7 @@ void Debug::FramesHaveBeenDropped(StackFrame::Id new_break_frame_id,
 }
 
 
-bool Debug::IsDebugGlobal(GlobalObject* global) {
+bool Debug::IsDebugGlobal(JSGlobalObject* global) {
   return is_loaded() && global == debug_context()->global_object();
 }
 
@@ -2244,8 +2244,9 @@ void Debug::HandleDebugBreak() {
     Object* fun = it.frame()->function();
     if (fun && fun->IsJSFunction()) {
       // Don't stop in builtin functions.
-      if (!JSFunction::cast(fun)->IsSubjectToDebugging()) return;
-      GlobalObject* global = JSFunction::cast(fun)->context()->global_object();
+      if (!JSFunction::cast(fun)->shared()->IsSubjectToDebugging()) return;
+      JSGlobalObject* global =
+          JSFunction::cast(fun)->context()->global_object();
       // Don't stop in debugger functions.
       if (IsDebugGlobal(global)) return;
     }

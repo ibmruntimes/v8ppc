@@ -441,28 +441,17 @@ void JSGenericLowering::LowerJSStoreContext(Node* node) {
 }
 
 
-void JSGenericLowering::LowerJSLoadDynamicGlobal(Node* node) {
-  const DynamicGlobalAccess& access = DynamicGlobalAccessOf(node->op());
+void JSGenericLowering::LowerJSLoadDynamic(Node* node) {
+  const DynamicAccess& access = DynamicAccessOf(node->op());
   Runtime::FunctionId function_id =
       (access.typeof_mode() == NOT_INSIDE_TYPEOF)
           ? Runtime::kLoadLookupSlot
           : Runtime::kLoadLookupSlotNoReferenceError;
   Node* projection = graph()->NewNode(common()->Projection(0), node);
   NodeProperties::ReplaceUses(node, projection, node, node, node);
-  node->RemoveInput(NodeProperties::FirstFrameStateIndex(node) + 1);
   node->RemoveInput(NodeProperties::FirstValueIndex(node));
   node->InsertInput(zone(), 1, jsgraph()->Constant(access.name()));
   ReplaceWithRuntimeCall(node, function_id);
-  projection->ReplaceInput(0, node);
-}
-
-
-void JSGenericLowering::LowerJSLoadDynamicContext(Node* node) {
-  const DynamicContextAccess& access = DynamicContextAccessOf(node->op());
-  Node* projection = graph()->NewNode(common()->Projection(0), node);
-  NodeProperties::ReplaceUses(node, projection, node, node, node);
-  node->InsertInput(zone(), 1, jsgraph()->Constant(access.name()));
-  ReplaceWithRuntimeCall(node, Runtime::kLoadLookupSlot);
   projection->ReplaceInput(0, node);
 }
 
@@ -531,6 +520,7 @@ void JSGenericLowering::LowerJSCreateScriptContext(Node* node) {
 
 
 void JSGenericLowering::LowerJSCallConstruct(Node* node) {
+  // TODO(bmeurer): Use the Construct builtin here.
   int arity = OpParameter<int>(node);
   CallConstructStub stub(isolate(), SUPER_CONSTRUCTOR_CALL);
   CallInterfaceDescriptor d = stub.GetCallInterfaceDescriptor();
@@ -551,24 +541,26 @@ void JSGenericLowering::LowerJSCallConstruct(Node* node) {
 
 
 void JSGenericLowering::LowerJSCallFunction(Node* node) {
-  const CallFunctionParameters& p = CallFunctionParametersOf(node->op());
-  int arg_count = static_cast<int>(p.arity() - 2);
-  CallFunctionStub stub(isolate(), arg_count, p.flags());
-  CallInterfaceDescriptor d = stub.GetCallInterfaceDescriptor();
+  CallFunctionParameters const& p = CallFunctionParametersOf(node->op());
+  int const arg_count = static_cast<int>(p.arity() - 2);
+  Callable callable = CodeFactory::Call(isolate());
   CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
-  if (p.AllowTailCalls()) {
+  if (p.tail_call_mode() == TailCallMode::kAllow) {
     flags |= CallDescriptor::kSupportsTailCalls;
   }
   CallDescriptor* desc = Linkage::GetStubCallDescriptor(
-      isolate(), zone(), d, static_cast<int>(p.arity() - 1), flags);
-  Node* stub_code = jsgraph()->HeapConstant(stub.GetCode());
+      isolate(), zone(), callable.descriptor(), arg_count + 1, flags);
+  Node* stub_code = jsgraph()->HeapConstant(callable.code());
+  Node* stub_arity = jsgraph()->Int32Constant(arg_count);
   node->InsertInput(zone(), 0, stub_code);
+  node->InsertInput(zone(), 2, stub_arity);
   NodeProperties::ChangeOp(node, common()->Call(desc));
 }
 
 
 void JSGenericLowering::LowerJSCallRuntime(Node* node) {
   const CallRuntimeParameters& p = CallRuntimeParametersOf(node->op());
+  AdjustFrameStatesForCall(node);
   ReplaceWithRuntimeCall(node, p.id(), static_cast<int>(p.arity()));
 }
 

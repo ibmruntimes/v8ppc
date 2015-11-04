@@ -1311,14 +1311,13 @@ function ObjectSetProto(proto) {
 }
 
 
+// ECMA-262, Edition 6, section 19.1.1.1
 function ObjectConstructor(x) {
-  if (%_IsConstructCall()) {
-    if (x == null) return this;
-    return TO_OBJECT(x);
-  } else {
-    if (x == null) return { };
-    return TO_OBJECT(x);
+  if (GlobalObject != new.target && !IS_UNDEFINED(new.target)) {
+    return this;
   }
+  if (IS_NULL(x) || IS_UNDEFINED(x)) return {};
+  return TO_OBJECT(x);
 }
 
 
@@ -1786,9 +1785,11 @@ function FunctionConstructor(arg1) {  // length == 1
   var global_proxy = %GlobalProxy(FunctionConstructor);
   // Compile the string in the constructor and not a helper so that errors
   // appear to come from here.
-  var f = %_CallFunction(global_proxy, %CompileString(source, true));
-  %FunctionMarkNameShouldPrintAsAnonymous(f);
-  return f;
+  var func = %_CallFunction(global_proxy, %CompileString(source, true));
+  // Set name-should-print-as-anonymous flag on the ShareFunctionInfo and
+  // ensure that |func| uses correct initial map from |new.target| if
+  // it's available.
+  return %CompleteFunctionConstruction(func, GlobalFunction, new.target);
 }
 
 

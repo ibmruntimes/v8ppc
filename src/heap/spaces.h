@@ -1422,7 +1422,7 @@ class HeapObjectIterator : public ObjectIterator {
   // skipping the special garbage section of which there is one per space.
   // Returns NULL when the iteration has ended.
   inline HeapObject* Next();
-  virtual inline HeapObject* next_object();
+  inline HeapObject* next_object() override;
 
  private:
   enum PageMode { kOnePageOnly, kAllPagesInSpace };
@@ -1877,7 +1877,7 @@ class PagedSpace : public Space {
   // Creates a space with an id.
   PagedSpace(Heap* heap, AllocationSpace id, Executability executable);
 
-  virtual ~PagedSpace() { TearDown(); }
+  ~PagedSpace() override { TearDown(); }
 
   // Set up the space using the given address range of virtual memory (from
   // the memory allocator's initial chunk) if possible.  If the block of
@@ -2470,7 +2470,7 @@ class SemiSpaceIterator : public ObjectIterator {
   inline HeapObject* Next();
 
   // Implementation of the ObjectIterator functions.
-  virtual inline HeapObject* next_object();
+  inline HeapObject* next_object() override;
 
  private:
   void Initialize(Address start, Address end);
@@ -2839,15 +2839,15 @@ class CompactionSpace : public PagedSpace {
     Free(start, size_in_bytes);
   }
 
-  virtual bool is_local() override { return true; }
+  bool is_local() override { return true; }
 
-  virtual void RefillFreeList() override;
+  void RefillFreeList() override;
 
  protected:
   // The space is temporary and not included in any snapshots.
-  virtual bool snapshotable() override { return false; }
+  bool snapshotable() override { return false; }
 
-  MUST_USE_RESULT virtual HeapObject* SweepAndRetryAllocation(
+  MUST_USE_RESULT HeapObject* SweepAndRetryAllocation(
       int size_in_bytes) override;
 };
 
@@ -2857,7 +2857,9 @@ class CompactionSpaceCollection : public Malloced {
  public:
   explicit CompactionSpaceCollection(Heap* heap)
       : old_space_(heap, OLD_SPACE, Executability::NOT_EXECUTABLE),
-        code_space_(heap, CODE_SPACE, Executability::EXECUTABLE) {}
+        code_space_(heap, CODE_SPACE, Executability::EXECUTABLE),
+        duration_(0.0),
+        bytes_compacted_(0) {}
 
   CompactionSpace* Get(AllocationSpace space) {
     switch (space) {
@@ -2872,9 +2874,21 @@ class CompactionSpaceCollection : public Malloced {
     return nullptr;
   }
 
+  void ReportCompactionProgress(double duration, intptr_t bytes_compacted) {
+    duration_ += duration;
+    bytes_compacted_ += bytes_compacted;
+  }
+
+  double duration() const { return duration_; }
+  intptr_t bytes_compacted() const { return bytes_compacted_; }
+
  private:
   CompactionSpace old_space_;
   CompactionSpace code_space_;
+
+  // Book keeping.
+  double duration_;
+  intptr_t bytes_compacted_;
 };
 
 
@@ -2912,7 +2926,7 @@ class MapSpace : public PagedSpace {
   // TODO(1600): this limit is artifical just to keep code compilable
   static const int kMaxMapPageIndex = 1 << 16;
 
-  virtual int RoundSizeDownToObjectAlignment(int size) {
+  int RoundSizeDownToObjectAlignment(int size) override {
     if (base::bits::IsPowerOfTwo32(Map::kSize)) {
       return RoundDown(size, Map::kSize);
     } else {
@@ -2920,8 +2934,9 @@ class MapSpace : public PagedSpace {
     }
   }
 
- protected:
-  virtual void VerifyObject(HeapObject* obj);
+#ifdef VERIFY_HEAP
+  void VerifyObject(HeapObject* obj) override;
+#endif
 
  private:
   static const int kMapsPerPage = Page::kAllocatableMemory / Map::kSize;

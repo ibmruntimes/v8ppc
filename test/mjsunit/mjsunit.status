@@ -57,11 +57,6 @@
   ##############################################################################
   # TurboFan compiler failures.
 
-  # TODO(mstarzinger): An arguments object materialized in the prologue can't
-  # be accessed indirectly. Either we drop that requirement or wait for support
-  # from the deoptimizer to do that.
-  'arguments-indirect': [PASS, NO_VARIANTS],
-
   # TODO(verwaest): Some tests are over-restrictive about object layout.
   'array-constructor-feedback': [PASS, NO_VARIANTS],
   'array-feedback': [PASS, NO_VARIANTS],
@@ -81,6 +76,8 @@
   'whitespaces': [PASS, NO_VARIANTS],
   'compiler/osr-assert': [PASS, NO_VARIANTS],
   'es6/string-fromcodepoint': [PASS, NO_VARIANTS],
+  # TODO(cbruni): enable once we fix classConstructor calls in optimized code
+  'es6/classes': [PASS, NO_VARIANTS],
   'regress/regress-2185-2': [PASS, NO_VARIANTS],
   'regress/regress-2612': [PASS, NO_VARIANTS],
 
@@ -153,8 +150,6 @@
   'regress/regress-1122': [PASS, NO_VARIANTS],
 
   # Assumptions about optimization need investigation in TurboFan.
-  'compiler/inlined-call': [PASS, NO_VARIANTS],
-  'deopt-with-fp-regs': [PASS, NO_VARIANTS],
   'regress-sync-optimized-lists': [PASS, NO_VARIANTS],
 
   # issue 4078:
@@ -346,6 +341,9 @@
   'json': [PASS, SLOW],
   'regress/regress-446389': [PASS, SLOW],
   'regress/regress-inline-getter-near-stack-limit': [PASS, SLOW],
+
+  # BUG(v8:3097)
+  'debug-references': [SKIP],
 }],  # 'gc_stress == True'
 
 ##############################################################################

@@ -254,21 +254,121 @@ void InstructionSelector::MarkAsRepresentation(MachineType rep, Node* node) {
 }
 
 
+namespace {
+
+enum class FrameStateInputKind { kAny, kStackSlot };
+
+
+InstructionOperand OperandForDeopt(OperandGenerator* g, Node* input,
+                                   FrameStateInputKind kind) {
+  switch (input->opcode()) {
+    case IrOpcode::kInt32Constant:
+    case IrOpcode::kNumberConstant:
+    case IrOpcode::kFloat32Constant:
+    case IrOpcode::kFloat64Constant:
+    case IrOpcode::kHeapConstant:
+      return g->UseImmediate(input);
+    default:
+      switch (kind) {
+        case FrameStateInputKind::kStackSlot:
+          return g->UseUniqueSlot(input);
+        case FrameStateInputKind::kAny:
+          return g->UseAny(input);
+      }
+      UNREACHABLE();
+      return InstructionOperand();
+  }
+}
+
+
+void AddFrameStateInputs(Node* state, OperandGenerator* g,
+                         InstructionOperandVector* inputs,
+                         FrameStateDescriptor* descriptor,
+                         FrameStateInputKind kind, Zone* zone) {
+  DCHECK_EQ(IrOpcode::kFrameState, state->op()->opcode());
+
+  if (descriptor->outer_state()) {
+    AddFrameStateInputs(state->InputAt(kFrameStateOuterStateInput), g, inputs,
+                        descriptor->outer_state(), kind, zone);
+  }
+
+  Node* parameters = state->InputAt(kFrameStateParametersInput);
+  Node* locals = state->InputAt(kFrameStateLocalsInput);
+  Node* stack = state->InputAt(kFrameStateStackInput);
+  Node* context = state->InputAt(kFrameStateContextInput);
+  Node* function = state->InputAt(kFrameStateFunctionInput);
+
+  DCHECK_EQ(descriptor->parameters_count(),
+            StateValuesAccess(parameters).size());
+  DCHECK_EQ(descriptor->locals_count(), StateValuesAccess(locals).size());
+  DCHECK_EQ(descriptor->stack_count(), StateValuesAccess(stack).size());
+
+  ZoneVector<MachineType> types(zone);
+  types.reserve(descriptor->GetSize());
+
+  size_t value_index = 0;
+  inputs->push_back(OperandForDeopt(g, function, kind));
+  descriptor->SetType(value_index++, kMachAnyTagged);
+  for (StateValuesAccess::TypedNode input_node :
+       StateValuesAccess(parameters)) {
+    inputs->push_back(OperandForDeopt(g, input_node.node, kind));
+    descriptor->SetType(value_index++, input_node.type);
+  }
+  if (descriptor->HasContext()) {
+    inputs->push_back(OperandForDeopt(g, context, kind));
+    descriptor->SetType(value_index++, kMachAnyTagged);
+  }
+  for (StateValuesAccess::TypedNode input_node : StateValuesAccess(locals)) {
+    inputs->push_back(OperandForDeopt(g, input_node.node, kind));
+    descriptor->SetType(value_index++, input_node.type);
+  }
+  for (StateValuesAccess::TypedNode input_node : StateValuesAccess(stack)) {
+    inputs->push_back(OperandForDeopt(g, input_node.node, kind));
+    descriptor->SetType(value_index++, input_node.type);
+  }
+  DCHECK(value_index == descriptor->GetSize());
+}
+
+}  // namespace
+
+
+// An internal helper class for generating the operands to calls.
 // TODO(bmeurer): Get rid of the CallBuffer business and make
 // InstructionSelector::VisitCall platform independent instead.
-CallBuffer::CallBuffer(Zone* zone, const CallDescriptor* d,
-                       FrameStateDescriptor* frame_desc)
-    : descriptor(d),
-      frame_state_descriptor(frame_desc),
-      output_nodes(zone),
-      outputs(zone),
-      instruction_args(zone),
-      pushed_nodes(zone) {
-  output_nodes.reserve(d->ReturnCount());
-  outputs.reserve(d->ReturnCount());
-  pushed_nodes.reserve(input_count());
-  instruction_args.reserve(input_count() + frame_state_value_count());
-}
+struct CallBuffer {
+  CallBuffer(Zone* zone, const CallDescriptor* descriptor,
+             FrameStateDescriptor* frame_state)
+      : descriptor(descriptor),
+        frame_state_descriptor(frame_state),
+        output_nodes(zone),
+        outputs(zone),
+        instruction_args(zone),
+        pushed_nodes(zone) {
+    output_nodes.reserve(descriptor->ReturnCount());
+    outputs.reserve(descriptor->ReturnCount());
+    pushed_nodes.reserve(input_count());
+    instruction_args.reserve(input_count() + frame_state_value_count());
+  }
+
+
+  const CallDescriptor* descriptor;
+  FrameStateDescriptor* frame_state_descriptor;
+  NodeVector output_nodes;
+  InstructionOperandVector outputs;
+  InstructionOperandVector instruction_args;
+  NodeVector pushed_nodes;
+
+  size_t input_count() const { return descriptor->InputCount(); }
+
+  size_t frame_state_count() const { return descriptor->FrameStateCount(); }
+
+  size_t frame_state_value_count() const {
+    return (frame_state_descriptor == NULL)
+               ? 0
+               : (frame_state_descriptor->GetTotalSize() +
+                  1);  // Include deopt id.
+  }
+};
 
 
 // TODO(bmeurer): Get rid of the CallBuffer business and make
@@ -363,9 +463,9 @@ void InstructionSelector::InitializeCallBuffer(Node* call, CallBuffer* buffer,
 
     Node* frame_state =
         call->InputAt(static_cast<int>(buffer->descriptor->InputCount()));
-    AddFrameStateInputs(frame_state, &buffer->instruction_args,
+    AddFrameStateInputs(frame_state, &g, &buffer->instruction_args,
                         buffer->frame_state_descriptor,
-                        FrameStateInputKind::kStackSlot);
+                        FrameStateInputKind::kStackSlot, instruction_zone());
   }
   DCHECK(1 + buffer->frame_state_value_count() ==
          buffer->instruction_args.size());
@@ -556,6 +656,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsReference(node), VisitIfException(node);
     case IrOpcode::kFinishRegion:
       return MarkAsReference(node), VisitFinishRegion(node);
+    case IrOpcode::kGuard:
+      return MarkAsReference(node), VisitGuard(node);
     case IrOpcode::kParameter: {
       MachineType type =
           linkage()->GetParameterType(ParameterIndexOf(node->op()));
@@ -708,6 +810,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord32(node), VisitTruncateFloat64ToInt32(node);
     case IrOpcode::kTruncateInt64ToInt32:
       return MarkAsWord32(node), VisitTruncateInt64ToInt32(node);
+    case IrOpcode::kRoundInt64ToFloat64:
+      return MarkAsFloat64(node), VisitRoundInt64ToFloat64(node);
     case IrOpcode::kBitcastFloat32ToInt32:
       return MarkAsWord32(node), VisitBitcastFloat32ToInt32(node);
     case IrOpcode::kBitcastFloat64ToInt64:
@@ -922,6 +1026,11 @@ void InstructionSelector::VisitTruncateInt64ToInt32(Node* node) {
 }
 
 
+void InstructionSelector::VisitRoundInt64ToFloat64(Node* node) {
+  UNIMPLEMENTED();
+}
+
+
 void InstructionSelector::VisitBitcastFloat64ToInt64(Node* node) {
   UNIMPLEMENTED();
 }
@@ -935,6 +1044,13 @@ void InstructionSelector::VisitBitcastInt64ToFloat64(Node* node) {
 
 
 void InstructionSelector::VisitFinishRegion(Node* node) {
+  OperandGenerator g(this);
+  Node* value = node->InputAt(0);
+  Emit(kArchNop, g.DefineSameAsFirst(node), g.Use(value));
+}
+
+
+void InstructionSelector::VisitGuard(Node* node) {
   OperandGenerator g(this);
   Node* value = node->InputAt(0);
   Emit(kArchNop, g.DefineSameAsFirst(node), g.Use(value));
@@ -1182,7 +1298,8 @@ void InstructionSelector::VisitDeoptimize(Node* value) {
       sequence()->AddFrameStateDescriptor(desc);
   args.push_back(g.TempImmediate(state_id.ToInt()));
 
-  AddFrameStateInputs(value, &args, desc, FrameStateInputKind::kAny);
+  AddFrameStateInputs(value, &g, &args, desc, FrameStateInputKind::kAny,
+                      instruction_zone());
 
   DCHECK_EQ(args.size(), arg_count);
 
@@ -1224,77 +1341,6 @@ FrameStateDescriptor* InstructionSelector::GetFrameStateDescriptor(
       state_info.shared_info(), outer_state);
 }
 
-
-InstructionOperand InstructionSelector::OperandForDeopt(
-    OperandGenerator* g, Node* input, FrameStateInputKind kind) {
-  switch (input->opcode()) {
-    case IrOpcode::kInt32Constant:
-    case IrOpcode::kNumberConstant:
-    case IrOpcode::kFloat32Constant:
-    case IrOpcode::kFloat64Constant:
-    case IrOpcode::kHeapConstant:
-      return g->UseImmediate(input);
-    default:
-      switch (kind) {
-        case FrameStateInputKind::kStackSlot:
-          return g->UseUniqueSlot(input);
-        case FrameStateInputKind::kAny:
-          return g->UseAny(input);
-      }
-      UNREACHABLE();
-      return InstructionOperand();
-  }
-}
-
-
-void InstructionSelector::AddFrameStateInputs(Node* state,
-                                              InstructionOperandVector* inputs,
-                                              FrameStateDescriptor* descriptor,
-                                              FrameStateInputKind kind) {
-  DCHECK_EQ(IrOpcode::kFrameState, state->op()->opcode());
-
-  if (descriptor->outer_state()) {
-    AddFrameStateInputs(state->InputAt(kFrameStateOuterStateInput), inputs,
-                        descriptor->outer_state(), kind);
-  }
-
-  Node* parameters = state->InputAt(kFrameStateParametersInput);
-  Node* locals = state->InputAt(kFrameStateLocalsInput);
-  Node* stack = state->InputAt(kFrameStateStackInput);
-  Node* context = state->InputAt(kFrameStateContextInput);
-  Node* function = state->InputAt(kFrameStateFunctionInput);
-
-  DCHECK_EQ(descriptor->parameters_count(),
-            StateValuesAccess(parameters).size());
-  DCHECK_EQ(descriptor->locals_count(), StateValuesAccess(locals).size());
-  DCHECK_EQ(descriptor->stack_count(), StateValuesAccess(stack).size());
-
-  ZoneVector<MachineType> types(instruction_zone());
-  types.reserve(descriptor->GetSize());
-
-  OperandGenerator g(this);
-  size_t value_index = 0;
-  inputs->push_back(OperandForDeopt(&g, function, kind));
-  descriptor->SetType(value_index++, kMachAnyTagged);
-  for (StateValuesAccess::TypedNode input_node :
-       StateValuesAccess(parameters)) {
-    inputs->push_back(OperandForDeopt(&g, input_node.node, kind));
-    descriptor->SetType(value_index++, input_node.type);
-  }
-  if (descriptor->HasContext()) {
-    inputs->push_back(OperandForDeopt(&g, context, kind));
-    descriptor->SetType(value_index++, kMachAnyTagged);
-  }
-  for (StateValuesAccess::TypedNode input_node : StateValuesAccess(locals)) {
-    inputs->push_back(OperandForDeopt(&g, input_node.node, kind));
-    descriptor->SetType(value_index++, input_node.type);
-  }
-  for (StateValuesAccess::TypedNode input_node : StateValuesAccess(stack)) {
-    inputs->push_back(OperandForDeopt(&g, input_node.node, kind));
-    descriptor->SetType(value_index++, input_node.type);
-  }
-  DCHECK(value_index == descriptor->GetSize());
-}
 
 }  // namespace compiler
 }  // namespace internal

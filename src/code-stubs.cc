@@ -744,6 +744,12 @@ void AllocateHeapNumberStub::InitializeDescriptor(
 }
 
 
+void AllocateMutableHeapNumberStub::InitializeDescriptor(
+    CodeStubDescriptor* descriptor) {
+  descriptor->Initialize();
+}
+
+
 void AllocateInNewSpaceStub::InitializeDescriptor(
     CodeStubDescriptor* descriptor) {
   descriptor->Initialize();
@@ -1055,7 +1061,7 @@ InternalArrayConstructorStub::InternalArrayConstructorStub(
 
 
 Representation RepresentationFromType(Type* type) {
-  if (type->Is(Type::UntaggedSigned()) || type->Is(Type::UntaggedUnsigned())) {
+  if (type->Is(Type::UntaggedIntegral())) {
     return Representation::Integer32();
   }
 
@@ -1070,5 +1076,6 @@ Representation RepresentationFromType(Type* type) {
   DCHECK(!type->Is(Type::Untagged()));
   return Representation::Tagged();
 }
+
 }  // namespace internal
 }  // namespace v8

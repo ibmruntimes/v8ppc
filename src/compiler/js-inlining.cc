@@ -13,6 +13,7 @@
 #include "src/compiler/common-operator-reducer.h"
 #include "src/compiler/dead-code-elimination.h"
 #include "src/compiler/graph-reducer.h"
+#include "src/compiler/js-global-object-specialization.h"
 #include "src/compiler/js-native-context-specialization.h"
 #include "src/compiler/js-operator.h"
 #include "src/compiler/node-matchers.h"
@@ -56,7 +57,12 @@ class JSCallFunctionAccessor {
     return value_inputs - 2;
   }
 
-  Node* frame_state() { return NodeProperties::GetFrameStateInput(call_, 0); }
+  Node* frame_state_before() {
+    return NodeProperties::GetFrameStateInput(call_, 1);
+  }
+  Node* frame_state_after() {
+    return NodeProperties::GetFrameStateInput(call_, 0);
+  }
 
  private:
   Node* call_;
@@ -128,7 +134,9 @@ Reduction JSInliner::InlineCall(Node* call, Node* context, Node* frame_state,
   Node* control = NodeProperties::GetControlInput(call);
   Node* effect = NodeProperties::GetEffectInput(call);
 
-  // Context is last argument.
+  int const inlinee_arity_index =
+      static_cast<int>(start->op()->ValueOutputCount()) - 2;
+  // Context is last parameter.
   int const inlinee_context_index =
       static_cast<int>(start->op()->ValueOutputCount()) - 1;
 
@@ -142,10 +150,13 @@ Reduction JSInliner::InlineCall(Node* call, Node* context, Node* frame_state,
       case IrOpcode::kParameter: {
         int index = 1 + ParameterIndexOf(use->op());
         DCHECK_LE(index, inlinee_context_index);
-        if (index < inliner_inputs && index < inlinee_context_index) {
+        if (index < inliner_inputs && index < inlinee_arity_index) {
           // There is an input from the call, and the index is a value
           // projection but not the context, so rewire the input.
           Replace(use, call->InputAt(index));
+        } else if (index == inlinee_arity_index) {
+          // The projection is requesting the number of arguments.
+          Replace(use, jsgraph_->Int32Constant(inliner_inputs - 2));
         } else if (index == inlinee_context_index) {
           // The projection is requesting the inlinee function context.
           Replace(use, context);
@@ -237,9 +248,9 @@ Node* JSInliner::CreateArgumentsAdaptorFrameState(
       jsgraph_->common()->StateValues(static_cast<int>(params.size()));
   Node* params_node = jsgraph_->graph()->NewNode(
       op_param, static_cast<int>(params.size()), &params.front());
-  return jsgraph_->graph()->NewNode(op, params_node, node0, node0,
-                                    jsgraph_->UndefinedConstant(),
-                                    call->jsfunction(), call->frame_state());
+  return jsgraph_->graph()->NewNode(
+      op, params_node, node0, node0, jsgraph_->UndefinedConstant(),
+      call->jsfunction(), call->frame_state_after());
 }
 
 
@@ -263,6 +274,15 @@ Reduction JSInliner::ReduceJSCallFunction(Node* node,
   if (!function->shared()->IsInlineable()) {
     // Function must be inlineable.
     TRACE("Not inlining %s into %s because callee is not inlineable\n",
+          function->shared()->DebugName()->ToCString().get(),
+          info_->shared_info()->DebugName()->ToCString().get());
+    return NoChange();
+  }
+
+  // Class constructors are callable, but [[Call]] will raise an exception.
+  // See ES6 section 9.2.1 [[Call]] ( thisArgument, argumentsList ).
+  if (IsClassConstructor(function->shared()->kind())) {
+    TRACE("Not inlining %s into %s because callee is classConstructor\n",
           function->shared()->DebugName()->ToCString().get(),
           info_->shared_info()->DebugName()->ToCString().get());
     return NoChange();
@@ -295,7 +315,7 @@ Reduction JSInliner::ReduceJSCallFunction(Node* node,
   // TODO(turbofan): TranslatedState::GetAdaptedArguments() currently relies on
   // not inlining recursive functions. We might want to relax that at some
   // point.
-  for (Node* frame_state = call.frame_state();
+  for (Node* frame_state = call.frame_state_after();
        frame_state->opcode() == IrOpcode::kFrameState;
        frame_state = frame_state->InputAt(kFrameStateOuterStateInput)) {
     FrameStateInfo const& info = OpParameter<FrameStateInfo>(frame_state);
@@ -385,15 +405,22 @@ Reduction JSInliner::ReduceJSCallFunction(Node* node,
                                               jsgraph.common());
     CommonOperatorReducer common_reducer(&graph_reducer, &graph,
                                          jsgraph.common(), jsgraph.machine());
+    JSGlobalObjectSpecialization global_object_specialization(
+        &graph_reducer, &jsgraph,
+        info.is_deoptimization_enabled()
+            ? JSGlobalObjectSpecialization::kDeoptimizationEnabled
+            : JSGlobalObjectSpecialization::kNoFlags,
+        handle(info.global_object(), info.isolate()), info_->dependencies());
     JSNativeContextSpecialization native_context_specialization(
         &graph_reducer, &jsgraph,
         info.is_deoptimization_enabled()
             ? JSNativeContextSpecialization::kDeoptimizationEnabled
             : JSNativeContextSpecialization::kNoFlags,
-        handle(info.global_object(), info.isolate()), info_->dependencies(),
-        local_zone_);
+        handle(info.global_object()->native_context(), info.isolate()),
+        info_->dependencies(), local_zone_);
     graph_reducer.AddReducer(&dead_code_elimination);
     graph_reducer.AddReducer(&common_reducer);
+    graph_reducer.AddReducer(&global_object_specialization);
     graph_reducer.AddReducer(&native_context_specialization);
     graph_reducer.ReduceGraph();
   }
@@ -409,27 +436,31 @@ Reduction JSInliner::ReduceJSCallFunction(Node* node,
 
   Node* start = visitor.GetCopy(graph.start());
   Node* end = visitor.GetCopy(graph.end());
-  Node* frame_state = call.frame_state();
-
-  // Insert argument adaptor frame if required. The callees formal parameter
-  // count (i.e. value outputs of start node minus target, receiver & context)
-  // have to match the number of arguments passed to the call.
-  DCHECK_EQ(static_cast<int>(parameter_count),
-            start->op()->ValueOutputCount() - 3);
-  if (call.formal_arguments() != parameter_count) {
-    frame_state = CreateArgumentsAdaptorFrameState(&call, info.shared_info());
-  }
+  Node* frame_state = call.frame_state_after();
 
   // Insert a JSConvertReceiver node for sloppy callees. Note that the context
-  // passed into this node has to be the callees context (loaded above).
+  // passed into this node has to be the callees context (loaded above). Note
+  // that the frame state passed to the JSConvertReceiver must be the frame
+  // state _before_ the call; it is not necessary to fiddle with the receiver
+  // in that frame state tho, as the conversion of the receiver can be repeated
+  // any number of times, it's not observable.
   if (is_sloppy(info.language_mode()) && !function->shared()->native()) {
     const CallFunctionParameters& p = CallFunctionParametersOf(node->op());
     Node* effect = NodeProperties::GetEffectInput(node);
     Node* convert = jsgraph_->graph()->NewNode(
         jsgraph_->javascript()->ConvertReceiver(p.convert_mode()),
-        call.receiver(), context, frame_state, effect, start);
+        call.receiver(), context, call.frame_state_before(), effect, start);
     NodeProperties::ReplaceValueInput(node, convert, 1);
     NodeProperties::ReplaceEffectInput(node, convert);
+  }
+
+  // Insert argument adaptor frame if required. The callees formal parameter
+  // count (i.e. value outputs of start node minus target, receiver, num args
+  // and context) have to match the number of arguments passed to the call.
+  DCHECK_EQ(static_cast<int>(parameter_count),
+            start->op()->ValueOutputCount() - 4);
+  if (call.formal_arguments() != parameter_count) {
+    frame_state = CreateArgumentsAdaptorFrameState(&call, info.shared_info());
   }
 
   return InlineCall(node, context, frame_state, start, end);

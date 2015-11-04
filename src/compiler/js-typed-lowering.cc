@@ -844,6 +844,85 @@ Reduction JSTypedLowering::ReduceJSToString(Node* node) {
 }
 
 
+Reduction JSTypedLowering::ReduceJSToObject(Node* node) {
+  DCHECK_EQ(IrOpcode::kJSToObject, node->opcode());
+  Node* receiver = NodeProperties::GetValueInput(node, 0);
+  Type* receiver_type = NodeProperties::GetType(receiver);
+  Node* context = NodeProperties::GetContextInput(node);
+  Node* frame_state = NodeProperties::GetFrameStateInput(node, 0);
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
+  if (!receiver_type->Is(Type::Receiver())) {
+    // TODO(bmeurer/mstarzinger): Add support for lowering inside try blocks.
+    if (receiver_type->Maybe(Type::NullOrUndefined()) &&
+        NodeProperties::IsExceptionalCall(node)) {
+      // ToObject throws for null or undefined inputs.
+      return NoChange();
+    }
+
+    // Check whether {receiver} is a Smi.
+    Node* check0 = graph()->NewNode(simplified()->ObjectIsSmi(), receiver);
+    Node* branch0 =
+        graph()->NewNode(common()->Branch(BranchHint::kFalse), check0, control);
+    Node* if_true0 = graph()->NewNode(common()->IfTrue(), branch0);
+    Node* etrue0 = effect;
+
+    Node* if_false0 = graph()->NewNode(common()->IfFalse(), branch0);
+    Node* efalse0 = effect;
+
+    // Determine the instance type of {receiver}.
+    Node* receiver_map = efalse0 =
+        graph()->NewNode(simplified()->LoadField(AccessBuilder::ForMap()),
+                         receiver, efalse0, if_false0);
+    Node* receiver_instance_type = efalse0 = graph()->NewNode(
+        simplified()->LoadField(AccessBuilder::ForMapInstanceType()),
+        receiver_map, efalse0, if_false0);
+
+    // Check whether {receiver} is a spec object.
+    STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
+    Node* check1 =
+        graph()->NewNode(machine()->Uint32LessThanOrEqual(),
+                         jsgraph()->Uint32Constant(FIRST_JS_RECEIVER_TYPE),
+                         receiver_instance_type);
+    Node* branch1 = graph()->NewNode(common()->Branch(BranchHint::kTrue),
+                                     check1, if_false0);
+    Node* if_true1 = graph()->NewNode(common()->IfTrue(), branch1);
+    Node* etrue1 = efalse0;
+
+    Node* if_false1 = graph()->NewNode(common()->IfFalse(), branch1);
+    Node* efalse1 = efalse0;
+
+    // Convert {receiver} using the ToObjectStub.
+    Node* if_convert =
+        graph()->NewNode(common()->Merge(2), if_true0, if_false1);
+    Node* econvert =
+        graph()->NewNode(common()->EffectPhi(2), etrue0, efalse1, if_convert);
+    Node* rconvert;
+    {
+      Callable callable = CodeFactory::ToObject(isolate());
+      CallDescriptor const* const desc = Linkage::GetStubCallDescriptor(
+          isolate(), graph()->zone(), callable.descriptor(), 0,
+          CallDescriptor::kNeedsFrameState, node->op()->properties());
+      rconvert = econvert = graph()->NewNode(
+          common()->Call(desc), jsgraph()->HeapConstant(callable.code()),
+          receiver, context, frame_state, econvert, if_convert);
+    }
+
+    // The {receiver} is already a spec object.
+    Node* if_done = if_true1;
+    Node* edone = etrue1;
+    Node* rdone = receiver;
+
+    control = graph()->NewNode(common()->Merge(2), if_convert, if_done);
+    effect = graph()->NewNode(common()->EffectPhi(2), econvert, edone, control);
+    receiver = graph()->NewNode(common()->Phi(kMachAnyTagged, 2), rconvert,
+                                rdone, control);
+  }
+  ReplaceWithValue(node, receiver, effect, control);
+  return Changed(receiver);
+}
+
+
 Reduction JSTypedLowering::ReduceJSLoadNamed(Node* node) {
   DCHECK_EQ(IrOpcode::kJSLoadNamed, node->opcode());
   Node* receiver = NodeProperties::GetValueInput(node, 0);
@@ -1031,122 +1110,6 @@ Reduction JSTypedLowering::ReduceJSStoreContext(Node* node) {
 }
 
 
-Reduction JSTypedLowering::ReduceJSLoadDynamicGlobal(Node* node) {
-  DCHECK_EQ(IrOpcode::kJSLoadDynamicGlobal, node->opcode());
-  DynamicGlobalAccess const& access = DynamicGlobalAccessOf(node->op());
-  Node* const vector = NodeProperties::GetValueInput(node, 0);
-  Node* const context = NodeProperties::GetContextInput(node);
-  Node* const state1 = NodeProperties::GetFrameStateInput(node, 0);
-  Node* const state2 = NodeProperties::GetFrameStateInput(node, 1);
-  Node* const effect = NodeProperties::GetEffectInput(node);
-  Node* const control = NodeProperties::GetControlInput(node);
-  if (access.RequiresFullCheck()) return NoChange();
-
-  // Perform checks whether the fast mode applies, by looking for any extension
-  // object which might shadow the optimistic declaration.
-  uint32_t bitset = access.check_bitset();
-  Node* check_true = control;
-  Node* check_false = graph()->NewNode(common()->Merge(0));
-  for (int depth = 0; bitset != 0; bitset >>= 1, depth++) {
-    if ((bitset & 1) == 0) continue;
-    Node* load = graph()->NewNode(
-        javascript()->LoadContext(depth, Context::EXTENSION_INDEX, false),
-        context, context, effect);
-    Node* check = graph()->NewNode(simplified()->ReferenceEqual(Type::Tagged()),
-                                   load, jsgraph()->ZeroConstant());
-    Node* branch = graph()->NewNode(common()->Branch(BranchHint::kTrue), check,
-                                    check_true);
-    Node* if_true = graph()->NewNode(common()->IfTrue(), branch);
-    Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
-    check_false->AppendInput(graph()->zone(), if_false);
-    NodeProperties::ChangeOp(check_false,
-                             common()->Merge(check_false->InputCount()));
-    check_true = if_true;
-  }
-
-  // Fast case, because variable is not shadowed. Perform global object load.
-  Node* fast = graph()->NewNode(
-      javascript()->LoadGlobal(access.name(), access.feedback(),
-                               access.typeof_mode()),
-      vector, context, state1, state2, effect, check_true);
-
-  // Slow case, because variable potentially shadowed. Perform dynamic lookup.
-  uint32_t check_bitset = DynamicGlobalAccess::kFullCheckRequired;
-  Node* slow = graph()->NewNode(
-      javascript()->LoadDynamicGlobal(access.name(), check_bitset,
-                                      access.feedback(), access.typeof_mode()),
-      vector, context, context, state1, state2, effect, check_false);
-
-  // Replace value, effect and control uses accordingly.
-  Node* new_control =
-      graph()->NewNode(common()->Merge(2), check_true, check_false);
-  Node* new_effect =
-      graph()->NewNode(common()->EffectPhi(2), fast, slow, new_control);
-  Node* new_value = graph()->NewNode(common()->Phi(kMachAnyTagged, 2), fast,
-                                     slow, new_control);
-  ReplaceWithValue(node, new_value, new_effect, new_control);
-  return Changed(new_value);
-}
-
-
-Reduction JSTypedLowering::ReduceJSLoadDynamicContext(Node* node) {
-  DCHECK_EQ(IrOpcode::kJSLoadDynamicContext, node->opcode());
-  DynamicContextAccess const& access = DynamicContextAccessOf(node->op());
-  ContextAccess const& context_access = access.context_access();
-  Node* const context = NodeProperties::GetContextInput(node);
-  Node* const state = NodeProperties::GetFrameStateInput(node, 0);
-  Node* const effect = NodeProperties::GetEffectInput(node);
-  Node* const control = NodeProperties::GetControlInput(node);
-  if (access.RequiresFullCheck()) return NoChange();
-
-  // Perform checks whether the fast mode applies, by looking for any extension
-  // object which might shadow the optimistic declaration.
-  uint32_t bitset = access.check_bitset();
-  Node* check_true = control;
-  Node* check_false = graph()->NewNode(common()->Merge(0));
-  for (int depth = 0; bitset != 0; bitset >>= 1, depth++) {
-    if ((bitset & 1) == 0) continue;
-    Node* load = graph()->NewNode(
-        javascript()->LoadContext(depth, Context::EXTENSION_INDEX, false),
-        context, context, effect);
-    Node* check = graph()->NewNode(simplified()->ReferenceEqual(Type::Tagged()),
-                                   load, jsgraph()->ZeroConstant());
-    Node* branch = graph()->NewNode(common()->Branch(BranchHint::kTrue), check,
-                                    check_true);
-    Node* if_true = graph()->NewNode(common()->IfTrue(), branch);
-    Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
-    check_false->AppendInput(graph()->zone(), if_false);
-    NodeProperties::ChangeOp(check_false,
-                             common()->Merge(check_false->InputCount()));
-    check_true = if_true;
-  }
-
-  // Fast case, because variable is not shadowed. Perform context slot load.
-  Node* fast =
-      graph()->NewNode(javascript()->LoadContext(context_access.depth(),
-                                                 context_access.index(), false),
-                       context, context, effect);
-
-  // Slow case, because variable potentially shadowed. Perform dynamic lookup.
-  uint32_t check_bitset = DynamicContextAccess::kFullCheckRequired;
-  Node* slow =
-      graph()->NewNode(javascript()->LoadDynamicContext(
-                           access.name(), check_bitset, context_access.depth(),
-                           context_access.index()),
-                       context, context, state, effect, check_false);
-
-  // Replace value, effect and control uses accordingly.
-  Node* new_control =
-      graph()->NewNode(common()->Merge(2), check_true, check_false);
-  Node* new_effect =
-      graph()->NewNode(common()->EffectPhi(2), fast, slow, new_control);
-  Node* new_value = graph()->NewNode(common()->Phi(kMachAnyTagged, 2), fast,
-                                     slow, new_control);
-  ReplaceWithValue(node, new_value, new_effect, new_control);
-  return Changed(new_value);
-}
-
-
 Reduction JSTypedLowering::ReduceJSConvertReceiver(Node* node) {
   DCHECK_EQ(IrOpcode::kJSConvertReceiver, node->opcode());
   ConvertReceiverMode mode = ConvertReceiverModeOf(node->op());
@@ -1172,7 +1135,7 @@ Reduction JSTypedLowering::ReduceJSConvertReceiver(Node* node) {
             context, context, effect);
         receiver = effect =
             graph()->NewNode(simplified()->LoadField(
-                                 AccessBuilder::ForGlobalObjectGlobalProxy()),
+                                 AccessBuilder::ForJSGlobalObjectGlobalProxy()),
                              global_object, effect, control);
       }
     } else if (!receiver_type->Maybe(Type::NullOrUndefined()) ||
@@ -1181,7 +1144,62 @@ Reduction JSTypedLowering::ReduceJSConvertReceiver(Node* node) {
           graph()->NewNode(javascript()->ToObject(), receiver, context,
                            frame_state, effect, control);
     } else {
-      return NoChange();
+      // Check {receiver} for undefined.
+      Node* check0 =
+          graph()->NewNode(simplified()->ReferenceEqual(receiver_type),
+                           receiver, jsgraph()->UndefinedConstant());
+      Node* branch0 = graph()->NewNode(common()->Branch(BranchHint::kFalse),
+                                       check0, control);
+      Node* if_true0 = graph()->NewNode(common()->IfTrue(), branch0);
+      Node* if_false0 = graph()->NewNode(common()->IfFalse(), branch0);
+
+      // Check {receiver} for null.
+      Node* check1 =
+          graph()->NewNode(simplified()->ReferenceEqual(receiver_type),
+                           receiver, jsgraph()->NullConstant());
+      Node* branch1 = graph()->NewNode(common()->Branch(BranchHint::kFalse),
+                                       check1, if_false0);
+      Node* if_true1 = graph()->NewNode(common()->IfTrue(), branch1);
+      Node* if_false1 = graph()->NewNode(common()->IfFalse(), branch1);
+
+      // Convert {receiver} using ToObject.
+      Node* if_convert = if_false1;
+      Node* econvert = effect;
+      Node* rconvert;
+      {
+        rconvert = econvert =
+            graph()->NewNode(javascript()->ToObject(), receiver, context,
+                             frame_state, econvert, if_convert);
+      }
+
+      // Replace {receiver} with global proxy of {context}.
+      Node* if_global =
+          graph()->NewNode(common()->Merge(2), if_true0, if_true1);
+      Node* eglobal = effect;
+      Node* rglobal;
+      {
+        if (context_type->IsConstant()) {
+          Handle<JSObject> global_proxy(
+              Handle<Context>::cast(context_type->AsConstant()->Value())
+                  ->global_proxy(),
+              isolate());
+          rglobal = jsgraph()->Constant(global_proxy);
+        } else {
+          Node* global_object = eglobal = graph()->NewNode(
+              javascript()->LoadContext(0, Context::GLOBAL_OBJECT_INDEX, true),
+              context, context, eglobal);
+          rglobal = eglobal = graph()->NewNode(
+              simplified()->LoadField(
+                  AccessBuilder::ForJSGlobalObjectGlobalProxy()),
+              global_object, eglobal, if_global);
+        }
+      }
+
+      control = graph()->NewNode(common()->Merge(2), if_convert, if_global);
+      effect =
+          graph()->NewNode(common()->EffectPhi(2), econvert, eglobal, control);
+      receiver = graph()->NewNode(common()->Phi(kMachAnyTagged, 2), rconvert,
+                                  rglobal, control);
     }
   }
   ReplaceWithValue(node, receiver, effect, control);
@@ -1263,9 +1281,10 @@ Reduction JSTypedLowering::ReduceJSCreateArguments(Node* node) {
         simplified()->LoadField(
             AccessBuilder::ForContextSlot(Context::GLOBAL_OBJECT_INDEX)),
         context, effect, control);
-    Node* const load_native_context = graph()->NewNode(
-        simplified()->LoadField(AccessBuilder::ForGlobalObjectNativeContext()),
-        load_global_object, effect, control);
+    Node* const load_native_context =
+        graph()->NewNode(simplified()->LoadField(
+                             AccessBuilder::ForJSGlobalObjectNativeContext()),
+                         load_global_object, effect, control);
     Node* const load_arguments_map = graph()->NewNode(
         simplified()->LoadField(AccessBuilder::ForContextSlot(
             has_aliased_arguments ? Context::FAST_ALIASED_ARGUMENTS_MAP_INDEX
@@ -1305,9 +1324,10 @@ Reduction JSTypedLowering::ReduceJSCreateArguments(Node* node) {
         simplified()->LoadField(
             AccessBuilder::ForContextSlot(Context::GLOBAL_OBJECT_INDEX)),
         context, effect, control);
-    Node* const load_native_context = graph()->NewNode(
-        simplified()->LoadField(AccessBuilder::ForGlobalObjectNativeContext()),
-        load_global_object, effect, control);
+    Node* const load_native_context =
+        graph()->NewNode(simplified()->LoadField(
+                             AccessBuilder::ForJSGlobalObjectNativeContext()),
+                         load_global_object, effect, control);
     Node* const load_arguments_map = graph()->NewNode(
         simplified()->LoadField(
             AccessBuilder::ForContextSlot(Context::STRICT_ARGUMENTS_MAP_INDEX)),
@@ -1554,10 +1574,14 @@ Reduction JSTypedLowering::ReduceJSCallFunction(Node* node) {
   DCHECK_EQ(IrOpcode::kJSCallFunction, node->opcode());
   CallFunctionParameters const& p = CallFunctionParametersOf(node->op());
   int const arity = static_cast<int>(p.arity() - 2);
+  ConvertReceiverMode const convert_mode = p.convert_mode();
   Node* target = NodeProperties::GetValueInput(node, 0);
   Type* target_type = NodeProperties::GetType(target);
   Node* receiver = NodeProperties::GetValueInput(node, 1);
   Type* receiver_type = NodeProperties::GetType(receiver);
+  Node* frame_state = NodeProperties::GetFrameStateInput(node, 1);
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
 
   // Check if {target} is a known JSFunction.
   if (target_type->IsConstant() &&
@@ -1565,33 +1589,58 @@ Reduction JSTypedLowering::ReduceJSCallFunction(Node* node) {
     Handle<JSFunction> function =
         Handle<JSFunction>::cast(target_type->AsConstant()->Value());
     Handle<SharedFunctionInfo> shared(function->shared(), isolate());
-    if (shared->internal_formal_parameter_count() == arity) {
-      // Check if we need to wrap the {receiver}.
-      if (is_sloppy(shared->language_mode()) && !shared->native()) {
-        if (receiver_type->Is(Type::NullOrUndefined())) {
-          // Change {receiver} to global proxy of {function}.
-          receiver =
-              jsgraph()->Constant(handle(function->global_proxy(), isolate()));
-        } else if (!receiver_type->Is(Type::Receiver())) {
-          // TODO(bmeurer): Add support for wrapping abitrary receivers.
-          return NoChange();
-        }
-        NodeProperties::ReplaceValueInput(node, receiver, 1);
-      }
 
-      // Grab the context from the {function}.
-      Node* context =
-          jsgraph()->Constant(handle(function->context(), isolate()));
-      NodeProperties::ReplaceContextInput(node, context);
-      CallDescriptor::Flags flags = CallDescriptor::kNeedsFrameState;
-      if (p.AllowTailCalls()) {
-        flags |= CallDescriptor::kSupportsTailCalls;
-      }
+    // Class constructors are callable, but [[Call]] will raise an exception.
+    // See ES6 section 9.2.1 [[Call]] ( thisArgument, argumentsList ).
+    if (IsClassConstructor(shared->kind())) return NoChange();
+
+    // Grab the context from the {function}.
+    Node* context = jsgraph()->Constant(handle(function->context(), isolate()));
+    NodeProperties::ReplaceContextInput(node, context);
+
+    // Check if we need to convert the {receiver}.
+    if (is_sloppy(shared->language_mode()) && !shared->native() &&
+        !receiver_type->Is(Type::Receiver())) {
+      receiver = effect =
+          graph()->NewNode(javascript()->ConvertReceiver(convert_mode),
+                           receiver, context, frame_state, effect, control);
+      NodeProperties::ReplaceEffectInput(node, effect);
+      NodeProperties::ReplaceValueInput(node, receiver, 1);
+    }
+
+    // Remove the eager bailout frame state.
+    NodeProperties::RemoveFrameStateInput(node, 1);
+
+    // Compute flags for the call.
+    CallDescriptor::Flags flags = CallDescriptor::kNeedsFrameState;
+    if (p.tail_call_mode() == TailCallMode::kAllow) {
+      flags |= CallDescriptor::kSupportsTailCalls;
+    }
+
+    if (shared->internal_formal_parameter_count() == arity ||
+        shared->internal_formal_parameter_count() ==
+            SharedFunctionInfo::kDontAdaptArgumentsSentinel) {
+      // Patch {node} to a direct call.
+      node->InsertInput(graph()->zone(), arity + 2,
+                        jsgraph()->Int32Constant(arity));
       NodeProperties::ChangeOp(node,
                                common()->Call(Linkage::GetJSCallDescriptor(
                                    graph()->zone(), false, 1 + arity, flags)));
-      return Changed(node);
+    } else {
+      // Patch {node} to an indirect call via the ArgumentsAdaptorTrampoline.
+      Callable callable = CodeFactory::ArgumentAdaptor(isolate());
+      node->InsertInput(graph()->zone(), 0,
+                        jsgraph()->HeapConstant(callable.code()));
+      node->InsertInput(graph()->zone(), 2, jsgraph()->Int32Constant(arity));
+      node->InsertInput(
+          graph()->zone(), 3,
+          jsgraph()->Int32Constant(shared->internal_formal_parameter_count()));
+      NodeProperties::ChangeOp(
+          node, common()->Call(Linkage::GetStubCallDescriptor(
+                    isolate(), graph()->zone(), callable.descriptor(),
+                    1 + arity, flags)));
     }
+    return Changed(node);
   }
 
   return NoChange();
@@ -1942,6 +1991,8 @@ Reduction JSTypedLowering::Reduce(Node* node) {
       return ReduceJSToNumber(node);
     case IrOpcode::kJSToString:
       return ReduceJSToString(node);
+    case IrOpcode::kJSToObject:
+      return ReduceJSToObject(node);
     case IrOpcode::kJSLoadNamed:
       return ReduceJSLoadNamed(node);
     case IrOpcode::kJSLoadProperty:
@@ -1952,10 +2003,6 @@ Reduction JSTypedLowering::Reduce(Node* node) {
       return ReduceJSLoadContext(node);
     case IrOpcode::kJSStoreContext:
       return ReduceJSStoreContext(node);
-    case IrOpcode::kJSLoadDynamicGlobal:
-      return ReduceJSLoadDynamicGlobal(node);
-    case IrOpcode::kJSLoadDynamicContext:
-      return ReduceJSLoadDynamicContext(node);
     case IrOpcode::kJSConvertReceiver:
       return ReduceJSConvertReceiver(node);
     case IrOpcode::kJSCreateArguments:

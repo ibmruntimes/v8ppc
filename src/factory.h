@@ -80,6 +80,8 @@ class Factory final {
   template<class StringTableKey>
   Handle<String> InternalizeStringWithKey(StringTableKey* key);
 
+  Handle<Name> InternalizeName(Handle<Name> name);
+
 
   // String creation functions.  Most of the string creation functions take
   // a Heap::PretenureFlag argument to optionally request that they be
@@ -374,7 +376,7 @@ class Factory final {
                                           Handle<AllocationSite> site);
 
   // Global objects are pretenured and initialized based on a constructor.
-  Handle<GlobalObject> NewGlobalObject(Handle<JSFunction> constructor);
+  Handle<JSGlobalObject> NewJSGlobalObject(Handle<JSFunction> constructor);
 
   // JS objects are pretenured when allocated by the bootstrapper and
   // runtime.
@@ -505,8 +507,11 @@ class Factory final {
                                                  bool is_strict = false);
 
   Handle<JSFunction> NewFunctionFromSharedFunctionInfo(
-      Handle<SharedFunctionInfo> function_info,
-      Handle<Context> context,
+      Handle<Map> initial_map, Handle<SharedFunctionInfo> function_info,
+      Handle<Context> context, PretenureFlag pretenure = TENURED);
+
+  Handle<JSFunction> NewFunctionFromSharedFunctionInfo(
+      Handle<SharedFunctionInfo> function_info, Handle<Context> context,
       PretenureFlag pretenure = TENURED);
 
   Handle<JSFunction> NewFunction(Handle<String> name, Handle<Code> code,

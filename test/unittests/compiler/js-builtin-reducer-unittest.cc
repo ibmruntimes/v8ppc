@@ -85,12 +85,12 @@ TEST_F(JSBuiltinReducerTest, MathMax0) {
 
   Node* effect = graph()->start();
   Node* control = graph()->start();
+  Node* context = UndefinedConstant();
   Node* frame_state = graph()->start();
   TRACED_FOREACH(LanguageMode, language_mode, kLanguageModes) {
-    Node* call = graph()->NewNode(
-        javascript()->CallFunction(2, NO_CALL_FUNCTION_FLAGS, language_mode),
-        function, UndefinedConstant(), frame_state, frame_state, effect,
-        control);
+    Node* call = graph()->NewNode(javascript()->CallFunction(2, language_mode),
+                                  function, UndefinedConstant(), context,
+                                  frame_state, frame_state, effect, control);
     Reduction r = Reduce(call);
 
     ASSERT_TRUE(r.Changed());
@@ -104,14 +104,15 @@ TEST_F(JSBuiltinReducerTest, MathMax1) {
 
   Node* effect = graph()->start();
   Node* control = graph()->start();
+  Node* context = UndefinedConstant();
   Node* frame_state = graph()->start();
   TRACED_FOREACH(LanguageMode, language_mode, kLanguageModes) {
     TRACED_FOREACH(Type*, t0, kNumberTypes) {
       Node* p0 = Parameter(t0, 0);
-      Node* call = graph()->NewNode(
-          javascript()->CallFunction(3, NO_CALL_FUNCTION_FLAGS, language_mode),
-          function, UndefinedConstant(), p0, frame_state, frame_state, effect,
-          control);
+      Node* call =
+          graph()->NewNode(javascript()->CallFunction(3, language_mode),
+                           function, UndefinedConstant(), p0, context,
+                           frame_state, frame_state, effect, control);
       Reduction r = Reduce(call);
 
       ASSERT_TRUE(r.Changed());
@@ -126,6 +127,7 @@ TEST_F(JSBuiltinReducerTest, MathMax2) {
 
   Node* effect = graph()->start();
   Node* control = graph()->start();
+  Node* context = UndefinedConstant();
   Node* frame_state = graph()->start();
   TRACED_FOREACH(LanguageMode, language_mode, kLanguageModes) {
     TRACED_FOREACH(Type*, t0, kIntegral32Types) {
@@ -133,10 +135,9 @@ TEST_F(JSBuiltinReducerTest, MathMax2) {
         Node* p0 = Parameter(t0, 0);
         Node* p1 = Parameter(t1, 1);
         Node* call =
-            graph()->NewNode(javascript()->CallFunction(
-                                 4, NO_CALL_FUNCTION_FLAGS, language_mode),
-                             function, UndefinedConstant(), p0, p1, frame_state,
-                             frame_state, effect, control);
+            graph()->NewNode(javascript()->CallFunction(4, language_mode),
+                             function, UndefinedConstant(), p0, p1, context,
+                             frame_state, frame_state, effect, control);
         Reduction r = Reduce(call);
 
         ASSERT_TRUE(r.Changed());
@@ -157,6 +158,7 @@ TEST_F(JSBuiltinReducerTest, MathImul) {
 
   Node* effect = graph()->start();
   Node* control = graph()->start();
+  Node* context = UndefinedConstant();
   Node* frame_state = graph()->start();
   TRACED_FOREACH(LanguageMode, language_mode, kLanguageModes) {
     TRACED_FOREACH(Type*, t0, kIntegral32Types) {
@@ -164,10 +166,9 @@ TEST_F(JSBuiltinReducerTest, MathImul) {
         Node* p0 = Parameter(t0, 0);
         Node* p1 = Parameter(t1, 1);
         Node* call =
-            graph()->NewNode(javascript()->CallFunction(
-                                 4, NO_CALL_FUNCTION_FLAGS, language_mode),
-                             function, UndefinedConstant(), p0, p1, frame_state,
-                             frame_state, effect, control);
+            graph()->NewNode(javascript()->CallFunction(4, language_mode),
+                             function, UndefinedConstant(), p0, p1, context,
+                             frame_state, frame_state, effect, control);
         Reduction r = Reduce(call);
 
         ASSERT_TRUE(r.Changed());
@@ -187,14 +188,15 @@ TEST_F(JSBuiltinReducerTest, MathFround) {
 
   Node* effect = graph()->start();
   Node* control = graph()->start();
+  Node* context = UndefinedConstant();
   Node* frame_state = graph()->start();
   TRACED_FOREACH(LanguageMode, language_mode, kLanguageModes) {
     TRACED_FOREACH(Type*, t0, kNumberTypes) {
       Node* p0 = Parameter(t0, 0);
-      Node* call = graph()->NewNode(
-          javascript()->CallFunction(3, NO_CALL_FUNCTION_FLAGS, language_mode),
-          function, UndefinedConstant(), p0, frame_state, frame_state, effect,
-          control);
+      Node* call =
+          graph()->NewNode(javascript()->CallFunction(3, language_mode),
+                           function, UndefinedConstant(), p0, context,
+                           frame_state, frame_state, effect, control);
       Reduction r = Reduce(call);
 
       ASSERT_TRUE(r.Changed());

@@ -14,8 +14,8 @@ Type* SmiType(Zone* zone) {
 }
 
 
-Type* UntaggedSigned32(Zone* zone) {
-  return Type::Intersect(Type::Signed32(), Type::UntaggedSigned32(), zone);
+Type* UntaggedIntegral32(Zone* zone) {
+  return Type::Intersect(Type::Signed32(), Type::UntaggedIntegral32(), zone);
 }
 
 
@@ -72,6 +72,12 @@ const char* CallInterfaceDescriptor::DebugName(Isolate* isolate) const {
       break;
   }
   return "";
+}
+
+
+void AllocateMutableHeapNumberDescriptor::InitializePlatformSpecific(
+    CallInterfaceDescriptorData* data) {
+  data->InitializePlatformSpecific(0, nullptr, nullptr);
 }
 
 
@@ -144,7 +150,7 @@ LoadGlobalViaContextDescriptor::BuildCallInterfaceDescriptorFunctionType(
   Zone* zone = isolate->interface_descriptor_zone();
   Type::FunctionType* function =
       Type::FunctionType::New(AnyTagged(zone), Type::Undefined(), 1, zone);
-  function->InitParameter(0, UntaggedSigned32(zone));
+  function->InitParameter(0, UntaggedIntegral32(zone));
   return function;
 }
 
@@ -162,7 +168,7 @@ StoreGlobalViaContextDescriptor::BuildCallInterfaceDescriptorFunctionType(
   Zone* zone = isolate->interface_descriptor_zone();
   Type::FunctionType* function =
       Type::FunctionType::New(AnyTagged(zone), Type::Undefined(), 2, zone);
-  function->InitParameter(0, UntaggedSigned32(zone));
+  function->InitParameter(0, UntaggedIntegral32(zone));
   function->InitParameter(1, AnyTagged(zone));
   return function;
 }
@@ -416,7 +422,7 @@ CallTrampolineDescriptor::BuildCallInterfaceDescriptorFunctionType(
       Type::FunctionType::New(AnyTagged(zone), Type::Undefined(), 2, zone);
   function->InitParameter(0, AnyTagged(zone));  // target
   function->InitParameter(
-      1, UntaggedSigned32(zone));  // actual number of arguments
+      1, UntaggedIntegral32(zone));  // actual number of arguments
   return function;
 }
 
@@ -454,7 +460,7 @@ ArrayConstructorDescriptor::BuildCallInterfaceDescriptorFunctionType(
       Type::FunctionType::New(AnyTagged(zone), Type::Undefined(), 3, zone);
   function->InitParameter(0, Type::Receiver());  // JSFunction
   function->InitParameter(1, AnyTagged(zone));
-  function->InitParameter(2, UntaggedSigned32(zone));
+  function->InitParameter(2, UntaggedIntegral32(zone));
   return function;
 }
 
@@ -466,7 +472,7 @@ InternalArrayConstructorDescriptor::BuildCallInterfaceDescriptorFunctionType(
   Type::FunctionType* function =
       Type::FunctionType::New(AnyTagged(zone), Type::Undefined(), 2, zone);
   function->InitParameter(0, Type::Receiver());  // JSFunction
-  function->InitParameter(1, UntaggedSigned32(zone));
+  function->InitParameter(1, UntaggedIntegral32(zone));
   return function;
 }
 
@@ -479,10 +485,10 @@ ArgumentAdaptorDescriptor::BuildCallInterfaceDescriptorFunctionType(
       Type::FunctionType::New(AnyTagged(zone), Type::Undefined(), 3, zone);
   function->InitParameter(0, Type::Receiver());    // JSFunction
   function->InitParameter(
-      1, UntaggedSigned32(zone));  // actual number of arguments
+      1, UntaggedIntegral32(zone));  // actual number of arguments
   function->InitParameter(
       2,
-      UntaggedSigned32(zone));  // expected number of arguments
+      UntaggedIntegral32(zone));  // expected number of arguments
   return function;
 }
 
@@ -498,7 +504,7 @@ ApiFunctionDescriptor::BuildCallInterfaceDescriptorFunctionType(
   function->InitParameter(2, AnyTagged(zone));        // holder
   function->InitParameter(3, ExternalPointer(zone));  // api_function_address
   function->InitParameter(
-      4, UntaggedSigned32(zone));  // actual number of arguments
+      4, UntaggedIntegral32(zone));  // actual number of arguments
   return function;
 }
 

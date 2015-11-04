@@ -716,7 +716,7 @@ void MacroAssembler::GetBuiltinFunction(Register target,
                                         int native_context_index) {
   // Load the builtins object into target register.
   movp(target, Operand(rsi, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  movp(target, FieldOperand(target, GlobalObject::kNativeContextOffset));
+  movp(target, FieldOperand(target, JSGlobalObject::kNativeContextOffset));
   movp(target, ContextOperand(target, native_context_index));
 }
 
@@ -852,6 +852,18 @@ void MacroAssembler::Cvtlsi2sd(XMMRegister dst, const Operand& src) {
 
 
 void MacroAssembler::Cvtqsi2sd(XMMRegister dst, Register src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vxorpd(dst, dst, dst);
+    vcvtqsi2sd(dst, dst, src);
+  } else {
+    xorpd(dst, dst);
+    cvtqsi2sd(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvtqsi2sd(XMMRegister dst, const Operand& src) {
   if (CpuFeatures::IsSupported(AVX)) {
     CpuFeatureScope scope(this, AVX);
     vxorpd(dst, dst, dst);
@@ -3822,6 +3834,43 @@ void MacroAssembler::DebugBreak() {
 }
 
 
+void MacroAssembler::InvokeFunction(Register function,
+                                    const ParameterCount& actual,
+                                    InvokeFlag flag,
+                                    const CallWrapper& call_wrapper) {
+  movp(rdx, FieldOperand(function, JSFunction::kSharedFunctionInfoOffset));
+  LoadSharedFunctionInfoSpecialField(
+      rbx, rdx, SharedFunctionInfo::kFormalParameterCountOffset);
+
+  ParameterCount expected(rbx);
+  InvokeFunction(function, expected, actual, flag, call_wrapper);
+}
+
+
+void MacroAssembler::InvokeFunction(Handle<JSFunction> function,
+                                    const ParameterCount& expected,
+                                    const ParameterCount& actual,
+                                    InvokeFlag flag,
+                                    const CallWrapper& call_wrapper) {
+  Move(rdi, function);
+  InvokeFunction(rdi, expected, actual, flag, call_wrapper);
+}
+
+
+void MacroAssembler::InvokeFunction(Register function,
+                                    const ParameterCount& expected,
+                                    const ParameterCount& actual,
+                                    InvokeFlag flag,
+                                    const CallWrapper& call_wrapper) {
+  DCHECK(function.is(rdi));
+  movp(rsi, FieldOperand(function, JSFunction::kContextOffset));
+  // Advances rdx to the end of the Code object header, to the start of
+  // the executable code.
+  movp(rdx, FieldOperand(rdi, JSFunction::kCodeEntryOffset));
+  InvokeCode(rdx, expected, actual, flag, call_wrapper);
+}
+
+
 void MacroAssembler::InvokeCode(Register code,
                                 const ParameterCount& expected,
                                 const ParameterCount& actual,
@@ -3852,55 +3901,6 @@ void MacroAssembler::InvokeCode(Register code,
     }
     bind(&done);
   }
-}
-
-
-void MacroAssembler::InvokeFunction(Register function,
-                                    const ParameterCount& actual,
-                                    InvokeFlag flag,
-                                    const CallWrapper& call_wrapper) {
-  // You can't call a function without a valid frame.
-  DCHECK(flag == JUMP_FUNCTION || has_frame());
-
-  DCHECK(function.is(rdi));
-  movp(rdx, FieldOperand(function, JSFunction::kSharedFunctionInfoOffset));
-  movp(rsi, FieldOperand(function, JSFunction::kContextOffset));
-  LoadSharedFunctionInfoSpecialField(rbx, rdx,
-      SharedFunctionInfo::kFormalParameterCountOffset);
-  // Advances rdx to the end of the Code object header, to the start of
-  // the executable code.
-  movp(rdx, FieldOperand(rdi, JSFunction::kCodeEntryOffset));
-
-  ParameterCount expected(rbx);
-  InvokeCode(rdx, expected, actual, flag, call_wrapper);
-}
-
-
-void MacroAssembler::InvokeFunction(Register function,
-                                    const ParameterCount& expected,
-                                    const ParameterCount& actual,
-                                    InvokeFlag flag,
-                                    const CallWrapper& call_wrapper) {
-  // You can't call a function without a valid frame.
-  DCHECK(flag == JUMP_FUNCTION || has_frame());
-
-  DCHECK(function.is(rdi));
-  movp(rsi, FieldOperand(function, JSFunction::kContextOffset));
-  // Advances rdx to the end of the Code object header, to the start of
-  // the executable code.
-  movp(rdx, FieldOperand(rdi, JSFunction::kCodeEntryOffset));
-
-  InvokeCode(rdx, expected, actual, flag, call_wrapper);
-}
-
-
-void MacroAssembler::InvokeFunction(Handle<JSFunction> function,
-                                    const ParameterCount& expected,
-                                    const ParameterCount& actual,
-                                    InvokeFlag flag,
-                                    const CallWrapper& call_wrapper) {
-  Move(rdi, function);
-  InvokeFunction(rdi, expected, actual, flag, call_wrapper);
 }
 
 
@@ -4206,7 +4206,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
   int offset =
       Context::kHeaderSize + Context::GLOBAL_OBJECT_INDEX * kPointerSize;
   movp(scratch, FieldOperand(scratch, offset));
-  movp(scratch, FieldOperand(scratch, GlobalObject::kNativeContextOffset));
+  movp(scratch, FieldOperand(scratch, JSGlobalObject::kNativeContextOffset));
 
   // Check the context is a native context.
   if (emit_debug_code()) {
@@ -4864,7 +4864,7 @@ void MacroAssembler::LoadContext(Register dst, int context_chain_length) {
 
 void MacroAssembler::LoadGlobalProxy(Register dst) {
   movp(dst, GlobalObjectOperand());
-  movp(dst, FieldOperand(dst, GlobalObject::kGlobalProxyOffset));
+  movp(dst, FieldOperand(dst, JSGlobalObject::kGlobalProxyOffset));
 }
 
 
@@ -4877,7 +4877,7 @@ void MacroAssembler::LoadTransitionedArrayMapConditional(
   // Load the global or builtins object from the current context.
   movp(scratch,
        Operand(rsi, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  movp(scratch, FieldOperand(scratch, GlobalObject::kNativeContextOffset));
+  movp(scratch, FieldOperand(scratch, JSGlobalObject::kNativeContextOffset));
 
   // Check that the function's map is the same as the expected cached map.
   movp(scratch, Operand(scratch,
@@ -4906,7 +4906,7 @@ void MacroAssembler::LoadGlobalFunction(int index, Register function) {
   movp(function,
        Operand(rsi, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   // Load the native context from the global or builtins object.
-  movp(function, FieldOperand(function, GlobalObject::kNativeContextOffset));
+  movp(function, FieldOperand(function, JSGlobalObject::kNativeContextOffset));
   // Load the function from the native context.
   movp(function, Operand(function, Context::SlotOffset(index)));
 }

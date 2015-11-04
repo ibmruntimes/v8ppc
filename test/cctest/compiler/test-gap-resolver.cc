@@ -10,8 +10,9 @@
 #include "src/base/utils/random-number-generator.h"
 #include "test/cctest/cctest.h"
 
-using namespace v8::internal;
-using namespace v8::internal::compiler;
+namespace v8 {
+namespace internal {
+namespace compiler {
 
 // The state of our move interpreter is the mapping of operands to values. Note
 // that the actual values don't really matter, all we care about is equality.
@@ -135,15 +136,15 @@ class MoveInterpreter : public GapResolver::Assembler {
  public:
   explicit MoveInterpreter(Zone* zone) : zone_(zone) {}
 
-  virtual void AssembleMove(InstructionOperand* source,
-                            InstructionOperand* destination) override {
+  void AssembleMove(InstructionOperand* source,
+                    InstructionOperand* destination) override {
     ParallelMove* moves = new (zone_) ParallelMove(zone_);
     moves->AddMove(*source, *destination);
     state_.ExecuteInParallel(moves);
   }
 
-  virtual void AssembleSwap(InstructionOperand* source,
-                            InstructionOperand* destination) override {
+  void AssembleSwap(InstructionOperand* source,
+                    InstructionOperand* destination) override {
     ParallelMove* moves = new (zone_) ParallelMove(zone_);
     moves->AddMove(*source, *destination);
     moves->AddMove(*destination, *source);
@@ -255,3 +256,7 @@ TEST(FuzzResolver) {
     }
   }
 }
+
+}  // namespace compiler
+}  // namespace internal
+}  // namespace v8

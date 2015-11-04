@@ -199,7 +199,8 @@ TEST(HeapObjects) {
   CHECK_EQ(10, s->length());
 
   Handle<String> object_string = Handle<String>::cast(factory->Object_string());
-  Handle<GlobalObject> global(CcTest::i_isolate()->context()->global_object());
+  Handle<JSGlobalObject> global(
+      CcTest::i_isolate()->context()->global_object());
   CHECK(Just(true) == JSReceiver::HasOwnProperty(global, object_string));
 
   // Check ToString for oddballs
@@ -439,7 +440,8 @@ TEST(GarbageCollection) {
   // Check GC.
   heap->CollectGarbage(NEW_SPACE);
 
-  Handle<GlobalObject> global(CcTest::i_isolate()->context()->global_object());
+  Handle<JSGlobalObject> global(
+      CcTest::i_isolate()->context()->global_object());
   Handle<String> name = factory->InternalizeUtf8String("theFunction");
   Handle<String> prop_name = factory->InternalizeUtf8String("theSlot");
   Handle<String> prop_namex = factory->InternalizeUtf8String("theSlotx");
@@ -1650,7 +1652,8 @@ static int CountOptimizedUserFunctions(v8::Handle<v8::Context> context) {
   int count = 0;
   Handle<Context> icontext = v8::Utils::OpenHandle(*context);
   Object* object = icontext->get(Context::OPTIMIZED_FUNCTIONS_LIST);
-  while (object->IsJSFunction() && !JSFunction::cast(object)->IsBuiltin()) {
+  while (object->IsJSFunction() &&
+         !JSFunction::cast(object)->shared()->IsBuiltin()) {
     count++;
     object = JSFunction::cast(object)->next_function_link();
   }
@@ -1794,7 +1797,7 @@ static int CountOptimizedUserFunctionsWithGC(v8::Handle<v8::Context> context,
   Handle<Object> object(icontext->get(Context::OPTIMIZED_FUNCTIONS_LIST),
                         isolate);
   while (object->IsJSFunction() &&
-         !Handle<JSFunction>::cast(object)->IsBuiltin()) {
+         !Handle<JSFunction>::cast(object)->shared()->IsBuiltin()) {
     count++;
     if (count == n) isolate->heap()->CollectAllGarbage();
     object = Handle<Object>(
@@ -2354,7 +2357,7 @@ static int NumberOfGlobalObjects() {
   int count = 0;
   HeapIterator iterator(CcTest::heap());
   for (HeapObject* obj = iterator.next(); obj != NULL; obj = iterator.next()) {
-    if (obj->IsGlobalObject()) count++;
+    if (obj->IsJSGlobalObject()) count++;
   }
   // Subtract two to compensate for the two global objects (not global
   // JSObjects, of which there would only be one) that are part of the code stub
@@ -3586,7 +3589,7 @@ static int forced_gc_counter = 0;
 
 void MockUseCounterCallback(v8::Isolate* isolate,
                             v8::Isolate::UseCounterFeature feature) {
-  isolate->GetCallingContext();
+  isolate->GetCurrentContext();
   if (feature == v8::Isolate::kForcedGC) {
     forced_gc_counter++;
   }
@@ -3818,16 +3821,12 @@ TEST(IncrementalMarkingPreservesMonomorphicIC) {
   Handle<JSFunction> f = Handle<JSFunction>::cast(v8::Utils::OpenHandle(
       *v8::Handle<v8::Function>::Cast(CcTest::global()->Get(v8_str("f")))));
 
-  Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
   CheckVectorIC(f, 0, MONOMORPHIC);
-  CHECK(ic_before->ic_state() == DEFAULT);
 
   SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage();
 
-  Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
   CheckVectorIC(f, 0, MONOMORPHIC);
-  CHECK(ic_after->ic_state() == DEFAULT);
 }
 
 
@@ -3850,18 +3849,14 @@ TEST(IncrementalMarkingClearsMonomorphicIC) {
   Handle<JSFunction> f = Handle<JSFunction>::cast(v8::Utils::OpenHandle(
       *v8::Handle<v8::Function>::Cast(CcTest::global()->Get(v8_str("f")))));
 
-  Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
   CheckVectorIC(f, 0, MONOMORPHIC);
-  CHECK(ic_before->ic_state() == DEFAULT);
 
   // Fire context dispose notification.
   CcTest::isolate()->ContextDisposedNotification();
   SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage();
 
-  Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
   CheckVectorICCleared(f, 0);
-  CHECK(ic_after->ic_state() == DEFAULT);
 }
 
 
@@ -3891,17 +3886,13 @@ TEST(IncrementalMarkingPreservesPolymorphicIC) {
   Handle<JSFunction> f = Handle<JSFunction>::cast(v8::Utils::OpenHandle(
       *v8::Handle<v8::Function>::Cast(CcTest::global()->Get(v8_str("f")))));
 
-  Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
   CheckVectorIC(f, 0, POLYMORPHIC);
-  CHECK(ic_before->ic_state() == DEFAULT);
 
   // Fire context dispose notification.
   SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage();
 
-  Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
   CheckVectorIC(f, 0, POLYMORPHIC);
-  CHECK(ic_after->ic_state() == DEFAULT);
 }
 
 
@@ -3931,9 +3922,7 @@ TEST(IncrementalMarkingClearsPolymorphicIC) {
   Handle<JSFunction> f = Handle<JSFunction>::cast(v8::Utils::OpenHandle(
       *v8::Handle<v8::Function>::Cast(CcTest::global()->Get(v8_str("f")))));
 
-  Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
   CheckVectorIC(f, 0, POLYMORPHIC);
-  CHECK(ic_before->ic_state() == DEFAULT);
 
   // Fire context dispose notification.
   CcTest::isolate()->ContextDisposedNotification();
@@ -3941,7 +3930,6 @@ TEST(IncrementalMarkingClearsPolymorphicIC) {
   CcTest::heap()->CollectAllGarbage();
 
   CheckVectorICCleared(f, 0);
-  CHECK(ic_before->ic_state() == DEFAULT);
 }
 
 
@@ -5605,7 +5593,8 @@ TEST(Regress442710) {
   Factory* factory = isolate->factory();
 
   HandleScope sc(isolate);
-  Handle<GlobalObject> global(CcTest::i_isolate()->context()->global_object());
+  Handle<JSGlobalObject> global(
+      CcTest::i_isolate()->context()->global_object());
   Handle<JSArray> array = factory->NewJSArray(2);
 
   Handle<String> name = factory->InternalizeUtf8String("testArray");

@@ -6706,10 +6706,6 @@ TEST(Backtrace) {
 
   v8::Debug::SetMessageHandler(BacktraceData::MessageHandler);
 
-  // TODO(mstarzinger): This doesn't work with --always-opt because we don't
-  // have correct source positions in optimized code. Enable once we have.
-  i::FLAG_always_opt = false;
-
   const int kBufferSize = 1000;
   uint16_t buffer[kBufferSize];
   const char* scripts_command =
@@ -6814,9 +6810,6 @@ static void NamedGetterWithCallingContextCheck(
   v8::Handle<v8::Context> current = info.GetIsolate()->GetCurrentContext();
   CHECK(current == debugee_context);
   CHECK(current != debugger_context);
-  v8::Handle<v8::Context> calling = info.GetIsolate()->GetCallingContext();
-  CHECK(calling == debugee_context);
-  CHECK(calling != debugger_context);
   info.GetReturnValue().Set(1);
 }
 

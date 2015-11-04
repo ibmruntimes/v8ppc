@@ -61,6 +61,7 @@ namespace internal {
   V(VectorKeyedStoreIC)                     \
   /* HydrogenCodeStubs */                   \
   V(AllocateHeapNumber)                     \
+  V(AllocateMutableHeapNumber)              \
   V(AllocateInNewSpace)                     \
   V(ArrayNArgumentsConstructor)             \
   V(ArrayNoArgumentConstructor)             \
@@ -541,7 +542,7 @@ class TurboFanCodeStub : public CodeStub {
   // Retrieve the code for the stub. Generate the code if needed.
   Handle<Code> GenerateCode() override;
 
-  virtual int GetStackParameterCount() const override {
+  int GetStackParameterCount() const override {
     return GetCallInterfaceDescriptor().GetStackParameterCount();
   }
 
@@ -632,9 +633,9 @@ class StubRuntimeCallHelper : public RuntimeCallHelper {
  public:
   StubRuntimeCallHelper() {}
 
-  virtual void BeforeCall(MacroAssembler* masm) const;
+  void BeforeCall(MacroAssembler* masm) const override;
 
-  virtual void AfterCall(MacroAssembler* masm) const;
+  void AfterCall(MacroAssembler* masm) const override;
 };
 
 
@@ -643,9 +644,9 @@ class NopRuntimeCallHelper : public RuntimeCallHelper {
  public:
   NopRuntimeCallHelper() {}
 
-  virtual void BeforeCall(MacroAssembler* masm) const {}
+  void BeforeCall(MacroAssembler* masm) const override {}
 
-  virtual void AfterCall(MacroAssembler* masm) const {}
+  void AfterCall(MacroAssembler* masm) const override {}
 };
 
 
@@ -975,7 +976,7 @@ class CallICStub: public PlatformCodeStub {
 
   Code::Kind GetCodeKind() const override { return Code::CALL_IC; }
 
-  InlineCacheState GetICState() const override { return DEFAULT; }
+  InlineCacheState GetICState() const override { return GENERIC; }
 
   ExtraICState GetExtraICState() const final {
     return static_cast<ExtraICState>(minor_key_);
@@ -1357,7 +1358,7 @@ class StoreGlobalStub : public HandlerStub {
     return isolate->factory()->termination_exception();
   }
 
-  Handle<Code> GetCodeCopyFromTemplate(Handle<GlobalObject> global,
+  Handle<Code> GetCodeCopyFromTemplate(Handle<JSGlobalObject> global,
                                        Handle<PropertyCell> cell) {
     Code::FindAndReplacePattern pattern;
     if (check_global()) {
@@ -2258,7 +2259,7 @@ class LoadICTrampolineStub : public PlatformCodeStub {
 
   Code::Kind GetCodeKind() const override { return Code::LOAD_IC; }
 
-  InlineCacheState GetICState() const final { return DEFAULT; }
+  InlineCacheState GetICState() const final { return GENERIC; }
 
   ExtraICState GetExtraICState() const final {
     return static_cast<ExtraICState>(minor_key_);
@@ -2294,7 +2295,7 @@ class VectorStoreICTrampolineStub : public PlatformCodeStub {
 
   Code::Kind GetCodeKind() const override { return Code::STORE_IC; }
 
-  InlineCacheState GetICState() const final { return DEFAULT; }
+  InlineCacheState GetICState() const final { return GENERIC; }
 
   ExtraICState GetExtraICState() const final {
     return static_cast<ExtraICState>(minor_key_);
@@ -2332,7 +2333,7 @@ class CallICTrampolineStub : public PlatformCodeStub {
 
   Code::Kind GetCodeKind() const override { return Code::CALL_IC; }
 
-  InlineCacheState GetICState() const final { return DEFAULT; }
+  InlineCacheState GetICState() const final { return GENERIC; }
 
   ExtraICState GetExtraICState() const final {
     return static_cast<ExtraICState>(minor_key_);
@@ -2358,7 +2359,7 @@ class LoadICStub : public PlatformCodeStub {
   void GenerateForTrampoline(MacroAssembler* masm);
 
   Code::Kind GetCodeKind() const override { return Code::LOAD_IC; }
-  InlineCacheState GetICState() const final { return DEFAULT; }
+  InlineCacheState GetICState() const final { return GENERIC; }
   ExtraICState GetExtraICState() const final {
     return static_cast<ExtraICState>(minor_key_);
   }
@@ -2381,7 +2382,7 @@ class KeyedLoadICStub : public PlatformCodeStub {
   void GenerateForTrampoline(MacroAssembler* masm);
 
   Code::Kind GetCodeKind() const override { return Code::KEYED_LOAD_IC; }
-  InlineCacheState GetICState() const final { return DEFAULT; }
+  InlineCacheState GetICState() const final { return GENERIC; }
   ExtraICState GetExtraICState() const final {
     return static_cast<ExtraICState>(minor_key_);
   }
@@ -2404,7 +2405,7 @@ class VectorStoreICStub : public PlatformCodeStub {
   void GenerateForTrampoline(MacroAssembler* masm);
 
   Code::Kind GetCodeKind() const final { return Code::STORE_IC; }
-  InlineCacheState GetICState() const final { return DEFAULT; }
+  InlineCacheState GetICState() const final { return GENERIC; }
   ExtraICState GetExtraICState() const final {
     return static_cast<ExtraICState>(minor_key_);
   }
@@ -2427,8 +2428,8 @@ class VectorKeyedStoreICStub : public PlatformCodeStub {
   void GenerateForTrampoline(MacroAssembler* masm);
 
   Code::Kind GetCodeKind() const final { return Code::KEYED_STORE_IC; }
-  InlineCacheState GetICState() const final { return DEFAULT; }
-  virtual ExtraICState GetExtraICState() const final {
+  InlineCacheState GetICState() const final { return GENERIC; }
+  ExtraICState GetExtraICState() const final {
     return static_cast<ExtraICState>(minor_key_);
   }
 
@@ -2655,6 +2656,17 @@ class AllocateHeapNumberStub final : public HydrogenCodeStub {
  private:
   DEFINE_CALL_INTERFACE_DESCRIPTOR(AllocateHeapNumber);
   DEFINE_HYDROGEN_CODE_STUB(AllocateHeapNumber, HydrogenCodeStub);
+};
+
+
+class AllocateMutableHeapNumberStub final : public HydrogenCodeStub {
+ public:
+  explicit AllocateMutableHeapNumberStub(Isolate* isolate)
+      : HydrogenCodeStub(isolate) {}
+
+ private:
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(AllocateMutableHeapNumber);
+  DEFINE_HYDROGEN_CODE_STUB(AllocateMutableHeapNumber, HydrogenCodeStub);
 };
 
 

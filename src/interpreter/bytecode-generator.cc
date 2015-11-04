@@ -136,6 +136,36 @@ class BytecodeGenerator::ControlScopeForIteration
 };
 
 
+// Scoped class for enabling 'break' in switch statements.
+class BytecodeGenerator::ControlScopeForSwitch
+    : public BytecodeGenerator::ControlScope {
+ public:
+  ControlScopeForSwitch(BytecodeGenerator* generator,
+                        SwitchStatement* statement,
+                        SwitchBuilder* switch_builder)
+      : ControlScope(generator),
+        statement_(statement),
+        switch_builder_(switch_builder) {}
+
+ protected:
+  virtual bool Execute(Command command, Statement* statement) {
+    if (statement != statement_) return false;
+    switch (command) {
+      case CMD_BREAK:
+        switch_builder_->Break();
+        return true;
+      case CMD_CONTINUE:
+        break;
+    }
+    return false;
+  }
+
+ private:
+  Statement* statement_;
+  SwitchBuilder* switch_builder_;
+};
+
+
 void BytecodeGenerator::ControlScope::PerformCommand(Command command,
                                                      Statement* statement) {
   ControlScope* current = this;
@@ -344,7 +374,6 @@ void BytecodeGenerator::MakeBytecodeBody() {
 
 
 void BytecodeGenerator::VisitBlock(Block* stmt) {
-  builder()->EnterBlock();
   if (stmt->scope() == NULL) {
     // Visit statements in the same scope, no declarations.
     VisitStatements(stmt->statements());
@@ -360,7 +389,6 @@ void BytecodeGenerator::VisitBlock(Block* stmt) {
       VisitStatements(stmt->statements());
     }
   }
-  builder()->LeaveBlock();
 }
 
 
@@ -489,24 +517,28 @@ void BytecodeGenerator::VisitEmptyStatement(EmptyStatement* stmt) {
 
 
 void BytecodeGenerator::VisitIfStatement(IfStatement* stmt) {
-  // TODO(oth): Spot easy cases where there code would not need to
-  // emit the then block or the else block, e.g. condition is
-  // obviously true/1/false/0.
-
   BytecodeLabel else_label, end_label;
-
-  VisitForAccumulatorValue(stmt->condition());
-  builder()->CastAccumulatorToBoolean();
-  builder()->JumpIfFalse(&else_label);
-  Visit(stmt->then_statement());
-  if (stmt->HasElseStatement()) {
-    builder()->Jump(&end_label);
-    builder()->Bind(&else_label);
-    Visit(stmt->else_statement());
+  if (stmt->condition()->ToBooleanIsTrue()) {
+    // Generate only then block.
+    Visit(stmt->then_statement());
+  } else if (stmt->condition()->ToBooleanIsFalse()) {
+    // Generate only else block if it exists.
+    if (stmt->HasElseStatement()) {
+      Visit(stmt->else_statement());
+    }
   } else {
-    builder()->Bind(&else_label);
+    VisitForAccumulatorValue(stmt->condition());
+    builder()->JumpIfFalse(&else_label);
+    Visit(stmt->then_statement());
+    if (stmt->HasElseStatement()) {
+      builder()->Jump(&end_label);
+      builder()->Bind(&else_label);
+      Visit(stmt->else_statement());
+    } else {
+      builder()->Bind(&else_label);
+    }
+    builder()->Bind(&end_label);
   }
-  builder()->Bind(&end_label);
 }
 
 
@@ -539,25 +571,82 @@ void BytecodeGenerator::VisitWithStatement(WithStatement* stmt) {
 
 
 void BytecodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
-  UNIMPLEMENTED();
+  ZoneList<CaseClause*>* clauses = stmt->cases();
+  SwitchBuilder switch_builder(builder(), clauses->length());
+  ControlScopeForSwitch scope(this, stmt, &switch_builder);
+  int default_index = -1;
+
+  // Keep the switch value in a register until a case matches.
+  Register tag = VisitForRegisterValue(stmt->tag());
+
+  // Iterate over all cases and create nodes for label comparison.
+  BytecodeLabel done_label;
+  for (int i = 0; i < clauses->length(); i++) {
+    CaseClause* clause = clauses->at(i);
+
+    // The default is not a test, remember index.
+    if (clause->is_default()) {
+      default_index = i;
+      continue;
+    }
+
+    // Perform label comparison as if via '===' with tag.
+    VisitForAccumulatorValue(clause->label());
+    builder()->CompareOperation(Token::Value::EQ_STRICT, tag,
+                                language_mode_strength());
+    switch_builder.Case(i);
+  }
+
+  if (default_index >= 0) {
+    // Emit default jump if there is a default case.
+    switch_builder.DefaultAt(default_index);
+  } else {
+    // Otherwise if we have reached here none of the cases matched, so jump to
+    // done.
+    builder()->Jump(&done_label);
+  }
+
+  // Iterate over all cases and create the case bodies.
+  for (int i = 0; i < clauses->length(); i++) {
+    CaseClause* clause = clauses->at(i);
+    switch_builder.SetCaseTarget(i);
+    VisitStatements(clause->statements());
+  }
+  builder()->Bind(&done_label);
+
+  switch_builder.SetBreakTarget(done_label);
 }
 
 
-void BytecodeGenerator::VisitCaseClause(CaseClause* clause) { UNIMPLEMENTED(); }
+void BytecodeGenerator::VisitCaseClause(CaseClause* clause) {
+  // Handled entirely in VisitSwitchStatement.
+  UNREACHABLE();
+}
 
 
 void BytecodeGenerator::VisitDoWhileStatement(DoWhileStatement* stmt) {
   LoopBuilder loop_builder(builder());
   ControlScopeForIteration execution_control(this, stmt, &loop_builder);
-
   BytecodeLabel body_label, condition_label, done_label;
-  builder()->Bind(&body_label);
-  Visit(stmt->body());
-  builder()->Bind(&condition_label);
-  VisitForAccumulatorValue(stmt->cond());
-  builder()->JumpIfTrue(&body_label);
-  builder()->Bind(&done_label);
 
+  if (stmt->cond()->ToBooleanIsFalse()) {
+    Visit(stmt->body());
+    // Bind condition_label and done_label for processing continue and break.
+    builder()->Bind(&condition_label);
+    builder()->Bind(&done_label);
+  } else {
+    builder()->Bind(&body_label);
+    Visit(stmt->body());
+
+    builder()->Bind(&condition_label);
+    if (stmt->cond()->ToBooleanIsTrue()) {
+      builder()->Jump(&body_label);
+    } else {
+      VisitForAccumulatorValue(stmt->cond());
+      builder()->JumpIfTrue(&body_label);
+    }
+    builder()->Bind(&done_label);
+  }
   loop_builder.SetBreakTarget(done_label);
   loop_builder.SetContinueTarget(condition_label);
 }
@@ -568,12 +657,24 @@ void BytecodeGenerator::VisitWhileStatement(WhileStatement* stmt) {
   ControlScopeForIteration execution_control(this, stmt, &loop_builder);
 
   BytecodeLabel body_label, condition_label, done_label;
-  builder()->Jump(&condition_label);
+  if (stmt->cond()->ToBooleanIsFalse()) {
+    // If the condition is false there is no need to generating the loop.
+    return;
+  }
+
+  if (!stmt->cond()->ToBooleanIsTrue()) {
+    builder()->Jump(&condition_label);
+  }
   builder()->Bind(&body_label);
   Visit(stmt->body());
+
   builder()->Bind(&condition_label);
-  VisitForAccumulatorValue(stmt->cond());
-  builder()->JumpIfTrue(&body_label);
+  if (stmt->cond()->ToBooleanIsTrue()) {
+    builder()->Jump(&body_label);
+  } else {
+    VisitForAccumulatorValue(stmt->cond());
+    builder()->JumpIfTrue(&body_label);
+  }
   builder()->Bind(&done_label);
 
   loop_builder.SetBreakTarget(done_label);
@@ -589,8 +690,14 @@ void BytecodeGenerator::VisitForStatement(ForStatement* stmt) {
     Visit(stmt->init());
   }
 
+  if (stmt->cond() && stmt->cond()->ToBooleanIsFalse()) {
+    // If the condition is known to be false there is no need to generate
+    // body, next or condition blocks. Init block should be generated.
+    return;
+  }
+
   BytecodeLabel body_label, condition_label, next_label, done_label;
-  if (stmt->cond() != nullptr) {
+  if (stmt->cond() && !stmt->cond()->ToBooleanIsTrue()) {
     builder()->Jump(&condition_label);
   }
   builder()->Bind(&body_label);
@@ -599,7 +706,7 @@ void BytecodeGenerator::VisitForStatement(ForStatement* stmt) {
   if (stmt->next() != nullptr) {
     Visit(stmt->next());
   }
-  if (stmt->cond()) {
+  if (stmt->cond() && !stmt->cond()->ToBooleanIsTrue()) {
     builder()->Bind(&condition_label);
     VisitForAccumulatorValue(stmt->cond());
     builder()->JumpIfTrue(&body_label);
@@ -673,7 +780,6 @@ void BytecodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   ControlScopeForIteration control_scope(this, stmt, &loop_builder);
 
   // Prepare the state for executing ForIn.
-  builder()->EnterBlock();
   VisitForAccumulatorValue(stmt->subject());
   loop_builder.BreakIfUndefined();
   loop_builder.BreakIfNull();
@@ -719,8 +825,8 @@ void BytecodeGenerator::VisitForInStatement(ForInStatement* stmt) {
       .CountOperation(Token::Value::ADD, language_mode_strength())
       .Jump(&condition_label);
 
-  // End of loop
-  builder()->Bind(&break_label).LeaveBlock();
+  // End of the loop.
+  builder()->Bind(&break_label);
 
   loop_builder.SetBreakTarget(break_label);
   loop_builder.SetContinueTarget(continue_label);
@@ -793,7 +899,6 @@ void BytecodeGenerator::VisitConditional(Conditional* expr) {
   BytecodeLabel else_label, end_label;
 
   VisitForAccumulatorValue(expr->condition());
-  builder()->CastAccumulatorToBoolean();
   builder()->JumpIfFalse(&else_label);
 
   VisitForAccumulatorValue(expr->then_expression());
@@ -1088,7 +1193,8 @@ void BytecodeGenerator::VisitVariableProxy(VariableProxy* proxy) {
 
 
 void BytecodeGenerator::VisitVariableLoad(Variable* variable,
-                                          FeedbackVectorSlot slot) {
+                                          FeedbackVectorSlot slot,
+                                          TypeofMode typeof_mode) {
   switch (variable->location()) {
     case VariableLocation::LOCAL: {
       Register source(Register(variable->index()));
@@ -1105,7 +1211,8 @@ void BytecodeGenerator::VisitVariableLoad(Variable* variable,
     case VariableLocation::GLOBAL:
     case VariableLocation::UNALLOCATED: {
       size_t name_index = builder()->GetConstantPoolEntry(variable->name());
-      builder()->LoadGlobal(name_index, feedback_index(slot), language_mode());
+      builder()->LoadGlobal(name_index, feedback_index(slot), language_mode(),
+                            typeof_mode);
       execution_result()->SetResultInAccumulator();
       break;
     }
@@ -1142,16 +1249,16 @@ void BytecodeGenerator::VisitVariableLoad(Variable* variable,
 
 
 void BytecodeGenerator::VisitVariableLoadForAccumulatorValue(
-    Variable* variable, FeedbackVectorSlot slot) {
+    Variable* variable, FeedbackVectorSlot slot, TypeofMode typeof_mode) {
   AccumulatorResultScope accumulator_result(this);
-  VisitVariableLoad(variable, slot);
+  VisitVariableLoad(variable, slot, typeof_mode);
 }
 
 
 Register BytecodeGenerator::VisitVariableLoadForRegisterValue(
-    Variable* variable, FeedbackVectorSlot slot) {
+    Variable* variable, FeedbackVectorSlot slot, TypeofMode typeof_mode) {
   RegisterResultScope register_scope(this);
-  VisitVariableLoad(variable, slot);
+  VisitVariableLoad(variable, slot, typeof_mode);
   return register_scope.ResultRegister();
 }
 
@@ -1368,6 +1475,10 @@ void BytecodeGenerator::VisitProperty(Property* expr) {
 
 
 Register BytecodeGenerator::VisitArguments(ZoneList<Expression*>* args) {
+  if (args->length() == 0) {
+    return Register();
+  }
+
   // Visit arguments and place in a contiguous block of temporary
   // registers.  Return the first temporary register corresponding to
   // the first argument.
@@ -1412,12 +1523,9 @@ void BytecodeGenerator::VisitCall(Call* expr) {
   Register receiver = execution_result()->NextConsecutiveRegister();
 
   switch (call_type) {
-    case Call::PROPERTY_CALL: {
+    case Call::NAMED_PROPERTY_CALL:
+    case Call::KEYED_PROPERTY_CALL: {
       Property* property = callee_expr->AsProperty();
-      if (property->IsSuperAccess()) {
-        UNIMPLEMENTED();
-      }
-
       VisitForAccumulatorValue(property->obj());
       builder()->StoreAccumulatorInRegister(receiver);
       VisitPropertyLoadForAccumulator(receiver, property);
@@ -1440,6 +1548,8 @@ void BytecodeGenerator::VisitCall(Call* expr) {
       builder()->StoreAccumulatorInRegister(callee);
       break;
     }
+    case Call::NAMED_SUPER_PROPERTY_CALL:
+    case Call::KEYED_SUPER_PROPERTY_CALL:
     case Call::LOOKUP_SLOT_CALL:
     case Call::SUPER_CALL:
     case Call::POSSIBLY_EVAL_CALL:
@@ -1448,10 +1558,8 @@ void BytecodeGenerator::VisitCall(Call* expr) {
 
   // Evaluate all arguments to the function call and store in sequential
   // registers.
-  if (args->length() > 0) {
-    Register arg = VisitArguments(args);
-    CHECK(arg.index() == receiver.index() + 1);
-  }
+  Register arg = VisitArguments(args);
+  CHECK(args->length() == 0 || arg.index() == receiver.index() + 1);
 
   // TODO(rmcilroy): Deal with possible direct eval here?
   // TODO(rmcilroy): Use CallIC to allow call type feedback.
@@ -1466,40 +1574,33 @@ void BytecodeGenerator::VisitCallNew(CallNew* expr) {
   builder()->StoreAccumulatorInRegister(constructor);
 
   ZoneList<Expression*>* args = expr->arguments();
-  if (args->length() > 0) {
-    Register first_arg = VisitArguments(args);
-    builder()->New(constructor, first_arg, args->length());
-  } else {
-    // The second argument here will be ignored as there are zero
-    // arguments. Using the constructor register avoids avoid
-    // allocating a temporary just to fill the operands.
-    builder()->New(constructor, constructor, 0);
-  }
+  Register first_arg = VisitArguments(args);
+  builder()->New(constructor, first_arg, args->length());
   execution_result()->SetResultInAccumulator();
 }
 
 
 void BytecodeGenerator::VisitCallRuntime(CallRuntime* expr) {
-  if (expr->is_jsruntime()) {
-    UNIMPLEMENTED();
-  }
-
-  // TODO(rmcilroy): support multiple return values.
-  DCHECK_LE(expr->function()->result_size, 1);
-  Runtime::FunctionId function_id = expr->function()->function_id;
-
-  // Evaluate all arguments to the runtime call.
   ZoneList<Expression*>* args = expr->arguments();
-  Register first_arg;
-  if (args->length() > 0) {
-    first_arg = VisitArguments(args);
-  } else {
-    // Allocation here is just to fullfil the requirement that there
-    // is a register operand for the start of the arguments though
-    // there are zero when this is generated.
-    first_arg = execution_result()->NewRegister();
+  Register receiver;
+  if (expr->is_jsruntime()) {
+    // Allocate a register for the receiver and load it with undefined.
+    execution_result()->PrepareForConsecutiveAllocations(args->length() + 1);
+    receiver = execution_result()->NextConsecutiveRegister();
+    builder()->LoadUndefined().StoreAccumulatorInRegister(receiver);
   }
-  builder()->CallRuntime(function_id, first_arg, args->length());
+  // Evaluate all arguments to the runtime call.
+  Register first_arg = VisitArguments(args);
+
+  if (expr->is_jsruntime()) {
+    DCHECK(args->length() == 0 || first_arg.index() == receiver.index() + 1);
+    builder()->CallJSRuntime(expr->context_index(), receiver, args->length());
+  } else {
+    // TODO(rmcilroy): support multiple return values.
+    DCHECK_LE(expr->function()->result_size, 1);
+    Runtime::FunctionId function_id = expr->function()->function_id;
+    builder()->CallRuntime(function_id, first_arg, args->length());
+  }
   execution_result()->SetResultInAccumulator();
 }
 
@@ -1512,9 +1613,15 @@ void BytecodeGenerator::VisitVoid(UnaryOperation* expr) {
 
 
 void BytecodeGenerator::VisitTypeOf(UnaryOperation* expr) {
-  // TODO(rmcilroy): Set TypeofMode to INSIDE_TYPEOF for any loadICs performed
-  // while visiting the expression.
-  VisitForAccumulatorValue(expr->expression());
+  if (expr->expression()->IsVariableProxy()) {
+    // Typeof does not throw a reference error on global variables, hence we
+    // perform a non-contextual load in case the operand is a variable proxy.
+    VariableProxy* proxy = expr->expression()->AsVariableProxy();
+    VisitVariableLoadForAccumulatorValue(
+        proxy->var(), proxy->VariableFeedbackSlot(), INSIDE_TYPEOF);
+  } else {
+    VisitForAccumulatorValue(expr->expression());
+  }
   builder()->TypeOf();
   execution_result()->SetResultInAccumulator();
 }
@@ -1794,7 +1901,7 @@ void BytecodeGenerator::VisitLogicalOrExpression(BinaryOperation* binop) {
   } else {
     BytecodeLabel end_label;
     VisitForAccumulatorValue(left);
-    builder()->JumpIfToBooleanTrue(&end_label);
+    builder()->JumpIfTrue(&end_label);
     VisitForAccumulatorValue(right);
     builder()->Bind(&end_label);
   }
@@ -1813,7 +1920,7 @@ void BytecodeGenerator::VisitLogicalAndExpression(BinaryOperation* binop) {
   } else {
     BytecodeLabel end_label;
     VisitForAccumulatorValue(left);
-    builder()->JumpIfToBooleanFalse(&end_label);
+    builder()->JumpIfFalse(&end_label);
     VisitForAccumulatorValue(right);
     builder()->Bind(&end_label);
   }

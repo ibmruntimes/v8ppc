@@ -62,10 +62,12 @@ enum BuiltinExtraArguments {
   V(ReflectDefineProperty, NO_EXTRA_ARGUMENTS)               \
   V(ReflectDeleteProperty, NO_EXTRA_ARGUMENTS)               \
   V(ReflectGet, NO_EXTRA_ARGUMENTS)                          \
+  V(ReflectGetOwnPropertyDescriptor, NO_EXTRA_ARGUMENTS)     \
   V(ReflectGetPrototypeOf, NO_EXTRA_ARGUMENTS)               \
   V(ReflectHas, NO_EXTRA_ARGUMENTS)                          \
   V(ReflectIsExtensible, NO_EXTRA_ARGUMENTS)                 \
   V(ReflectPreventExtensions, NO_EXTRA_ARGUMENTS)            \
+  V(ReflectSet, NO_EXTRA_ARGUMENTS)                          \
   V(ReflectSetPrototypeOf, NO_EXTRA_ARGUMENTS)               \
                                                              \
   V(SymbolConstructor, NO_EXTRA_ARGUMENTS)                   \

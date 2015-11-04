@@ -488,7 +488,7 @@ Type* Typer::Visitor::TypeOsrValue(Node* node) { return Type::Any(); }
 Type* Typer::Visitor::TypeInt32Constant(Node* node) {
   double number = OpParameter<int32_t>(node);
   return Type::Intersect(Type::Range(number, number, zone()),
-                         Type::UntaggedSigned32(), zone());
+                         Type::UntaggedIntegral32(), zone());
 }
 
 
@@ -554,6 +554,13 @@ Type* Typer::Visitor::TypeEffectPhi(Node* node) {
 Type* Typer::Visitor::TypeEffectSet(Node* node) {
   UNREACHABLE();
   return nullptr;
+}
+
+
+Type* Typer::Visitor::TypeGuard(Node* node) {
+  Type* input_type = Operand(node, 0);
+  Type* guard_type = OpParameter<Type*>(node);
+  return Type::Intersect(input_type, guard_type, zone());
 }
 
 
@@ -1095,6 +1102,8 @@ Type* Typer::Visitor::JSTypeOfTyper(Type* type, Typer* t) {
     return Type::Constant(f->boolean_string(), t->zone());
   } else if (type->Is(Type::Number())) {
     return Type::Constant(f->number_string(), t->zone());
+  } else if (type->Is(Type::String())) {
+    return Type::Constant(f->string_string(), t->zone());
   } else if (type->Is(Type::Symbol())) {
     return Type::Constant(f->symbol_string(), t->zone());
   } else if (type->Is(Type::Union(Type::Undefined(), Type::Undetectable(),
@@ -1102,6 +1111,9 @@ Type* Typer::Visitor::JSTypeOfTyper(Type* type, Typer* t) {
     return Type::Constant(f->undefined_string(), t->zone());
   } else if (type->Is(Type::Null())) {
     return Type::Constant(f->object_string(), t->zone());
+  } else if (type->IsConstant()) {
+    return Type::Constant(
+        Object::TypeOf(t->isolate(), type->AsConstant()->Value()), t->zone());
   }
   return Type::InternalizedString();
 }
@@ -1312,14 +1324,7 @@ Type* Typer::Visitor::TypeJSStoreContext(Node* node) {
 }
 
 
-Type* Typer::Visitor::TypeJSLoadDynamicGlobal(Node* node) {
-  return Type::Any();
-}
-
-
-Type* Typer::Visitor::TypeJSLoadDynamicContext(Node* node) {
-  return Type::Any();
-}
+Type* Typer::Visitor::TypeJSLoadDynamic(Node* node) { return Type::Any(); }
 
 
 Type* Typer::Visitor::WrapContextTypeForInput(Node* node) {
@@ -1640,14 +1645,14 @@ Type* ChangeRepresentation(Type* type, Type* rep, Zone* zone) {
 Type* Typer::Visitor::TypeChangeTaggedToInt32(Node* node) {
   Type* arg = Operand(node, 0);
   // TODO(neis): DCHECK(arg->Is(Type::Signed32()));
-  return ChangeRepresentation(arg, Type::UntaggedSigned32(), zone());
+  return ChangeRepresentation(arg, Type::UntaggedIntegral32(), zone());
 }
 
 
 Type* Typer::Visitor::TypeChangeTaggedToUint32(Node* node) {
   Type* arg = Operand(node, 0);
   // TODO(neis): DCHECK(arg->Is(Type::Unsigned32()));
-  return ChangeRepresentation(arg, Type::UntaggedUnsigned32(), zone());
+  return ChangeRepresentation(arg, Type::UntaggedIntegral32(), zone());
 }
 
 
@@ -1783,6 +1788,15 @@ Type* Typer::Visitor::TypeStoreBuffer(Node* node) {
 Type* Typer::Visitor::TypeStoreElement(Node* node) {
   UNREACHABLE();
   return nullptr;
+}
+
+
+Type* Typer::Visitor::TypeObjectIsNumber(Node* node) {
+  Type* arg = Operand(node, 0);
+  if (arg->Is(Type::None())) return Type::None();
+  if (arg->Is(Type::Number())) return typer_->singleton_true_;
+  if (!arg->Maybe(Type::Number())) return typer_->singleton_false_;
+  return Type::Boolean();
 }
 
 
@@ -1963,12 +1977,12 @@ Type* Typer::Visitor::TypeChangeFloat32ToFloat64(Node* node) {
 
 
 Type* Typer::Visitor::TypeChangeFloat64ToInt32(Node* node) {
-  return Type::Intersect(Type::Signed32(), Type::UntaggedSigned32(), zone());
+  return Type::Intersect(Type::Signed32(), Type::UntaggedIntegral32(), zone());
 }
 
 
 Type* Typer::Visitor::TypeChangeFloat64ToUint32(Node* node) {
-  return Type::Intersect(Type::Unsigned32(), Type::UntaggedUnsigned32(),
+  return Type::Intersect(Type::Unsigned32(), Type::UntaggedIntegral32(),
                          zone());
 }
 
@@ -1999,12 +2013,17 @@ Type* Typer::Visitor::TypeTruncateFloat64ToFloat32(Node* node) {
 
 
 Type* Typer::Visitor::TypeTruncateFloat64ToInt32(Node* node) {
-  return Type::Intersect(Type::Signed32(), Type::UntaggedSigned32(), zone());
+  return Type::Intersect(Type::Signed32(), Type::UntaggedIntegral32(), zone());
 }
 
 
 Type* Typer::Visitor::TypeTruncateInt64ToInt32(Node* node) {
-  return Type::Intersect(Type::Signed32(), Type::UntaggedSigned32(), zone());
+  return Type::Intersect(Type::Signed32(), Type::UntaggedIntegral32(), zone());
+}
+
+
+Type* Typer::Visitor::TypeRoundInt64ToFloat64(Node* node) {
+  return Type::Intersect(Type::PlainNumber(), Type::UntaggedFloat64(), zone());
 }
 
 

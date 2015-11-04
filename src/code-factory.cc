@@ -274,6 +274,13 @@ Callable CodeFactory::AllocateHeapNumber(Isolate* isolate) {
 
 
 // static
+Callable CodeFactory::AllocateMutableHeapNumber(Isolate* isolate) {
+  AllocateMutableHeapNumberStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+
+// static
 Callable CodeFactory::AllocateInNewSpace(Isolate* isolate) {
   AllocateInNewSpaceStub stub(isolate);
   return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
@@ -285,6 +292,20 @@ Callable CodeFactory::CallFunction(Isolate* isolate, int argc,
                                    CallFunctionFlags flags) {
   CallFunctionStub stub(isolate, argc, flags);
   return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+
+// static
+Callable CodeFactory::ArgumentAdaptor(Isolate* isolate) {
+  return Callable(isolate->builtins()->ArgumentsAdaptorTrampoline(),
+                  ArgumentAdaptorDescriptor(isolate));
+}
+
+
+// static
+Callable CodeFactory::Call(Isolate* isolate) {
+  return Callable(isolate->builtins()->Call(),
+                  CallTrampolineDescriptor(isolate));
 }
 
 

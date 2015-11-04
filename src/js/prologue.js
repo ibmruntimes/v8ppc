@@ -175,6 +175,7 @@ function PostNatives(utils) {
     "FunctionSourceString",
     "GetIterator",
     "GetMethod",
+    "GetRegExpFlagGetter",
     "InnerArrayEvery",
     "InnerArrayFilter",
     "InnerArrayForEach",
@@ -245,11 +246,14 @@ function PostExperimentals(utils) {
     imports_from_experimental(exports_container);
   }
 
+  utils.InitializeRNG();
+  utils.InitializeRNG = UNDEFINED;
+  utils.CreateDoubleResultArray();
+  utils.CreateDoubleResultArray = UNDEFINED;
+
   utils.Export = UNDEFINED;
   utils.PostDebug = UNDEFINED;
   utils.PostExperimentals = UNDEFINED;
-  utils.InitializeBuiltinTypedArrays = UNDEFINED;
-  utils.SetupTypedArray = UNDEFINED;
   typed_array_setup = UNDEFINED;
 }
 
@@ -259,6 +263,11 @@ function PostDebug(utils) {
     imports(exports_container);
   }
 
+  utils.InitializeRNG();
+  utils.InitializeRNG = UNDEFINED;
+  utils.CreateDoubleResultArray();
+  utils.CreateDoubleResultArray = UNDEFINED;
+
   exports_container = UNDEFINED;
 
   utils.Export = UNDEFINED;
@@ -266,18 +275,15 @@ function PostDebug(utils) {
   utils.ImportNow = UNDEFINED;
   utils.PostDebug = UNDEFINED;
   utils.PostExperimentals = UNDEFINED;
-  utils.InitializeBuiltinTypedArrays = UNDEFINED;
-  utils.SetupTypedArray = UNDEFINED;
   typed_array_setup = UNDEFINED;
 }
 
 
-function InitializeBuiltinTypedArrays(
-    utils, rng_state, math_constants, rempio2result) {
+function InitializeBuiltinTypedArrays(utils, rng_state, rempio2result) {
   var setup_list =  typed_array_setup;
 
   for ( ; !IS_UNDEFINED(setup_list); setup_list = setup_list.next) {
-    setup_list(rng_state, math_constants, rempio2result);
+    setup_list(rng_state, rempio2result);
   }
 }
 
@@ -299,8 +305,6 @@ utils.SetUpLockedPrototype = SetUpLockedPrototype;
 utils.PostNatives = PostNatives;
 utils.PostExperimentals = PostExperimentals;
 utils.PostDebug = PostDebug;
-utils.SetupTypedArray = SetupTypedArray;
-utils.InitializeBuiltinTypedArrays = InitializeBuiltinTypedArrays;
 
 %ToFastProperties(utils);
 

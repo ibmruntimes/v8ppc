@@ -236,7 +236,7 @@ namespace internal {
   F(FunctionGetName, 1, 1)                                  \
   F(FunctionSetName, 2, 1)                                  \
   F(FunctionNameShouldPrintAsAnonymous, 1, 1)               \
-  F(FunctionMarkNameShouldPrintAsAnonymous, 1, 1)           \
+  F(CompleteFunctionConstruction, 3, 1)                     \
   F(FunctionIsArrow, 1, 1)                                  \
   F(FunctionIsConciseMethod, 1, 1)                          \
   F(FunctionRemovePrototype, 1, 1)                          \
@@ -404,7 +404,8 @@ namespace internal {
   F(RoundNumber, 1, 1)              \
   F(MathSqrt, 1, 1)                 \
   F(MathFround, 1, 1)               \
-  F(IsMinusZero, 1, 1)
+  F(IsMinusZero, 1, 1)              \
+  F(InitializeRNG, 0, 1)
 
 
 #define FOR_EACH_INTRINSIC_NUMBERS(F)  \
@@ -558,6 +559,8 @@ namespace internal {
   F(StringReplaceGlobalRegExpWithString, 4, 1) \
   F(StringSplit, 3, 1)                         \
   F(RegExpExec, 4, 1)                          \
+  F(RegExpFlags, 1, 1)                         \
+  F(RegExpSource, 1, 1)                        \
   F(RegExpConstructResult, 3, 1)               \
   F(RegExpInitializeAndCompile, 3, 1)          \
   F(MaterializeRegExpLiteral, 4, 1)            \
