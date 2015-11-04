@@ -7114,31 +7114,40 @@ class SharedFunctionInfo: public HeapObject {
 
  public:
   // Constants for optimizing codegen for strict mode function and
+  // native tests when using integer-width instructions.
+  static const int kStrictModeBit =
+      kStrictModeFunction + kCompilerHintsSmiTagSize;
+  static const int kStrongModeBit =
+      kStrongModeFunction + kCompilerHintsSmiTagSize;
+  static const int kNativeBit = kNative + kCompilerHintsSmiTagSize;
+  static const int kBoundBit = kBoundFunction + kCompilerHintsSmiTagSize;
+
+  static const int kClassConstructorBits =
+      FunctionKind::kClassConstructor
+      << (kFunctionKind + kCompilerHintsSmiTagSize);
+
+  // Constants for optimizing codegen for strict mode function and
   // native tests.
   // Allows to use byte-width instructions.
-  static const int kStrictModeBitWithinByte =
-      (kStrictModeFunction + kCompilerHintsSmiTagSize) % kBitsPerByte;
-  static const int kStrongModeBitWithinByte =
-      (kStrongModeFunction + kCompilerHintsSmiTagSize) % kBitsPerByte;
+  static const int kStrictModeBitWithinByte = kStrictModeBit % kBitsPerByte;
+  static const int kStrongModeBitWithinByte = kStrongModeBit % kBitsPerByte;
+  static const int kNativeBitWithinByte = kNativeBit % kBitsPerByte;
+  static const int kBoundBitWithinByte = kBoundBit % kBitsPerByte;
 
-  static const int kNativeBitWithinByte =
-      (kNative + kCompilerHintsSmiTagSize) % kBitsPerByte;
-
-  static const int kBoundBitWithinByte =
-      (kBoundFunction + kCompilerHintsSmiTagSize) % kBitsPerByte;
-
+#if !defined(V8_PPC_TAGGING_OPT)
   static const int kClassConstructorBitsWithinByte =
       FunctionKind::kClassConstructor << kCompilerHintsSmiTagSize;
   STATIC_ASSERT(kClassConstructorBitsWithinByte < (1 << kBitsPerByte));
+#endif
 
 #if defined(V8_TARGET_LITTLE_ENDIAN)
 #define BYTE_OFFSET(compiler_hint) \
   kCompilerHintsOffset +           \
       (compiler_hint + kCompilerHintsSmiTagSize) / kBitsPerByte
 #elif defined(V8_TARGET_BIG_ENDIAN)
-#define BYTE_OFFSET(compiler_hint)                   \
-  kCompilerHintsOffset + +(kCompilerHintsSize - 1) - \
-      ((kStrictModeFunction + kCompilerHintsSmiTagSize) / kBitsPerByte)
+#define BYTE_OFFSET(compiler_hint)                  \
+  kCompilerHintsOffset + (kCompilerHintsSize - 1) - \
+      ((compiler_hint + kCompilerHintsSmiTagSize) / kBitsPerByte)
 #else
 #error Unknown byte ordering
 #endif
@@ -7146,7 +7155,9 @@ class SharedFunctionInfo: public HeapObject {
   static const int kStrongModeByteOffset = BYTE_OFFSET(kStrongModeFunction);
   static const int kNativeByteOffset = BYTE_OFFSET(kNative);
   static const int kBoundByteOffset = BYTE_OFFSET(kBoundFunction);
+#if !defined(V8_PPC_TAGGING_OPT)
   static const int kFunctionKindByteOffset = BYTE_OFFSET(kFunctionKind);
+#endif
 #undef BYTE_OFFSET
 
  private:
