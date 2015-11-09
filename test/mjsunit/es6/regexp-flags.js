@@ -47,3 +47,18 @@ assertEquals(4, get_count);
 // Overridden flag getters do not affect the internal flags.
 assertEquals(expected, string.replace(r3, "X"));
 assertEquals(4, get_count);
+
+
+function testName(name) {
+  assertThrows(() => RegExp.prototype[name], TypeError);
+  assertEquals(
+      "RegExp.prototype." + name,
+      Object.getOwnPropertyDescriptor(RegExp.prototype, name).get.name);
+}
+
+testName("global");
+testName("ignoreCase");
+testName("multiline");
+testName("source");
+testName("sticky");
+testName("unicode");

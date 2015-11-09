@@ -2204,7 +2204,6 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(IsJSProxy)                         \
   F(IsConstructCall)                   \
   F(Call)                              \
-  F(CallFunction)                      \
   F(ArgumentsLength)                   \
   F(Arguments)                         \
   F(ValueOf)                           \
@@ -2231,7 +2230,6 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(FastOneByteArrayJoin)              \
   F(DebugBreakInOptimizedCode)         \
   F(StringCharCodeAt)                  \
-  F(StringAdd)                         \
   F(SubString)                         \
   F(RegExpExec)                        \
   F(RegExpConstructResult)             \
@@ -2239,8 +2237,6 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(RegExpSource)                      \
   F(NumberToString)                    \
   F(DebugIsActive)                     \
-  F(Likely)                            \
-  F(Unlikely)                          \
   F(HasInPrototypeChain)               \
   /* Typed Arrays */                   \
   F(TypedArrayInitialize)              \

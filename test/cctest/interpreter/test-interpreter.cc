@@ -2885,6 +2885,72 @@ TEST(InterpreterSwitch) {
   }
 }
 
+
+TEST(InterpreterSloppyThis) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  std::pair<const char*, Handle<Object>> sloppy_this[] = {
+      std::make_pair("var global_val = 100;\n"
+                     "function f() { return this.global_val; }\n",
+                     handle(Smi::FromInt(100), isolate)),
+      std::make_pair("var global_val = 110;\n"
+                     "function g() { return this.global_val; };"
+                     "function f() { return g(); }\n",
+                     handle(Smi::FromInt(110), isolate)),
+      std::make_pair("var global_val = 110;\n"
+                     "function g() { return this.global_val };"
+                     "function f() { 'use strict'; return g(); }\n",
+                     handle(Smi::FromInt(110), isolate)),
+      std::make_pair("function f() { 'use strict'; return this; }\n",
+                     factory->undefined_value()),
+      std::make_pair("function g() { 'use strict'; return this; };"
+                     "function f() { return g(); }\n",
+                     factory->undefined_value()),
+  };
+
+  for (size_t i = 0; i < arraysize(sloppy_this); i++) {
+    InterpreterTester tester(handles.main_isolate(), sloppy_this[i].first);
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*sloppy_this[i].second));
+  }
+}
+
+
+TEST(InterpreterThisFunction) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  InterpreterTester tester(handles.main_isolate(),
+                           "var f;\n f = function f() { return f.name; }");
+  auto callable = tester.GetCallable<>();
+
+  Handle<i::Object> return_value = callable().ToHandleChecked();
+  CHECK(return_value->SameValue(*factory->NewStringFromStaticChars("f")));
+}
+
+
+TEST(InterpreterNewTarget) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  // TODO(rmcilroy): Add tests that we get the original constructor for
+  // superclass constructors once we have class support.
+  InterpreterTester tester(handles.main_isolate(),
+                           "function f() { this.a = new.target; }");
+  auto callable = tester.GetCallable<>();
+  callable().ToHandleChecked();
+
+  Handle<Object> new_target_name = v8::Utils::OpenHandle(
+      *CompileRun("(function() { return (new f()).a.name; })();"));
+  CHECK(new_target_name->SameValue(*factory->NewStringFromStaticChars("f")));
+}
+
 }  // namespace interpreter
 }  // namespace internal
 }  // namespace v8

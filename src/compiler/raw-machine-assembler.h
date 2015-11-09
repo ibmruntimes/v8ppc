@@ -233,6 +233,7 @@ class RawMachineAssembler {
   Node* Word64Ror(Node* a, Node* b) {
     return AddNode(machine()->Word64Ror(), a, b);
   }
+  Node* Word64Clz(Node* a) { return AddNode(machine()->Word64Clz(), a); }
   Node* Word64Equal(Node* a, Node* b) {
     return AddNode(machine()->Word64Equal(), a, b);
   }
@@ -521,9 +522,6 @@ class RawMachineAssembler {
                             Node* frame_state);
   // Tail call the given call descriptor and the given arguments.
   Node* TailCallN(CallDescriptor* call_descriptor, Node* function, Node** args);
-  // Call through CallFunctionStub with lazy deopt and frame-state.
-  Node* CallFunctionStub0(Node* function, Node* receiver, Node* context,
-                          Node* frame_state, CallFunctionFlags flags);
   // Call to a runtime function with one arguments.
   Node* CallRuntime1(Runtime::FunctionId function, Node* arg0, Node* context);
   // Call to a runtime function with two arguments.
@@ -605,7 +603,7 @@ class RawMachineAssembler {
   MachineOperatorBuilder machine_;
   CommonOperatorBuilder common_;
   CallDescriptor* call_descriptor_;
-  Node** parameters_;
+  NodeVector parameters_;
   BasicBlock* current_block_;
 
   DISALLOW_COPY_AND_ASSIGN(RawMachineAssembler);

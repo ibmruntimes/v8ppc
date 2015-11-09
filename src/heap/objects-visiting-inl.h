@@ -428,6 +428,13 @@ void StaticMarkingVisitor<StaticVisitor>::VisitCode(Map* map,
   if (FLAG_age_code && !heap->isolate()->serializer_enabled()) {
     code->MakeOlder(heap->mark_compact_collector()->marking_parity());
   }
+  MarkCompactCollector* collector = heap->mark_compact_collector();
+  if (collector->is_code_flushing_enabled()) {
+    if (code->kind() == Code::OPTIMIZED_FUNCTION) {
+      // Visit all unoptimized code objects to prevent flushing them.
+      MarkInlinedFunctionsCode(heap, code);
+    }
+  }
   code->CodeIterateBody<StaticVisitor>(heap);
 }
 
@@ -443,23 +450,22 @@ void StaticMarkingVisitor<StaticVisitor>::VisitSharedFunctionInfo(
   if (FLAG_cleanup_code_caches_at_gc) {
     shared->ClearTypeFeedbackInfoAtGCTime();
   }
-  if ((FLAG_flush_optimized_code_cache ||
-       heap->isolate()->serializer_enabled()) &&
-      !shared->optimized_code_map()->IsSmi()) {
-    // Always flush the optimized code map if requested by flag.
-    shared->ClearOptimizedCodeMap();
-  }
-  MarkCompactCollector* collector = heap->mark_compact_collector();
-  if (collector->is_code_flushing_enabled()) {
+  if (FLAG_flush_optimized_code_cache) {
     if (!shared->optimized_code_map()->IsSmi()) {
-      // Add the shared function info holding an optimized code map to
-      // the code flusher for processing of code maps after marking.
-      collector->code_flusher()->AddOptimizedCodeMap(shared);
+      // Always flush the optimized code map if requested by flag.
+      shared->ClearOptimizedCodeMap();
+    }
+  } else {
+    if (!shared->optimized_code_map()->IsSmi()) {
       // Treat some references within the code map weakly by marking the
-      // code map itself but not pushing it onto the marking deque.
+      // code map itself but not pushing it onto the marking deque. The
+      // map will be processed after marking.
       FixedArray* code_map = FixedArray::cast(shared->optimized_code_map());
       MarkOptimizedCodeMap(heap, code_map);
     }
+  }
+  MarkCompactCollector* collector = heap->mark_compact_collector();
+  if (collector->is_code_flushing_enabled()) {
     if (IsFlushable(heap, shared)) {
       // This function's code looks flushable. But we have to postpone
       // the decision until we see all functions that point to the same
@@ -471,12 +477,6 @@ void StaticMarkingVisitor<StaticVisitor>::VisitSharedFunctionInfo(
       // Treat the reference to the code object weakly.
       VisitSharedFunctionInfoWeakCode(heap, object);
       return;
-    }
-  } else {
-    if (!shared->optimized_code_map()->IsSmi()) {
-      // Flush optimized code map on major GCs without code flushing,
-      // needed because cached code doesn't contain breakpoints.
-      shared->ClearOptimizedCodeMap();
     }
   }
   VisitSharedFunctionInfoStrongCode(heap, object);
@@ -512,9 +512,6 @@ void StaticMarkingVisitor<StaticVisitor>::VisitJSFunction(Map* map,
     } else {
       // Visit all unoptimized code objects to prevent flushing them.
       StaticVisitor::MarkObject(heap, function->shared()->code());
-      if (function->code()->kind() == Code::OPTIMIZED_FUNCTION) {
-        MarkInlinedFunctionsCode(heap, function->code());
-      }
     }
   }
   VisitJSFunctionStrongCode(heap, object);
@@ -656,13 +653,15 @@ void StaticMarkingVisitor<StaticVisitor>::MarkInlinedFunctionsCode(Heap* heap,
   // For optimized functions we should retain both non-optimized version
   // of its code and non-optimized version of all inlined functions.
   // This is required to support bailing out from inlined code.
-  DeoptimizationInputData* const data =
-      DeoptimizationInputData::cast(code->deoptimization_data());
-  FixedArray* const literals = data->LiteralArray();
-  int const inlined_count = data->InlinedFunctionCount()->value();
-  for (int i = 0; i < inlined_count; ++i) {
-    StaticVisitor::MarkObject(
-        heap, SharedFunctionInfo::cast(literals->get(i))->code());
+  if (code->deoptimization_data() != heap->empty_fixed_array()) {
+    DeoptimizationInputData* const data =
+        DeoptimizationInputData::cast(code->deoptimization_data());
+    FixedArray* const literals = data->LiteralArray();
+    int const inlined_count = data->InlinedFunctionCount()->value();
+    for (int i = 0; i < inlined_count; ++i) {
+      StaticVisitor::MarkObject(
+          heap, SharedFunctionInfo::cast(literals->get(i))->code());
+    }
   }
 }
 

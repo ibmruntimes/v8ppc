@@ -242,9 +242,6 @@ class AstGraphBuilder : public AstVisitor {
   // resulting node. The operand stack height remains the same, variables and
   // other dependencies tracked by the environment might be mutated though.
 
-  // Builder to create a receiver check for sloppy mode.
-  Node* BuildPatchReceiverToGlobalProxy(Node* receiver);
-
   // Builders to create local function, script and block contexts.
   Node* BuildLocalActivationContext(Node* context);
   Node* BuildLocalFunctionContext(Scope* scope);
@@ -304,16 +301,11 @@ class AstGraphBuilder : public AstVisitor {
   // Builders for accessing the function context.
   Node* BuildLoadGlobalObject();
   Node* BuildLoadNativeContextField(int index);
-  Node* BuildLoadGlobalProxy();
   Node* BuildLoadFeedbackVector();
 
   // Builder for accessing a (potentially immutable) object field.
   Node* BuildLoadObjectField(Node* object, int offset);
   Node* BuildLoadImmutableObjectField(Node* object, int offset);
-
-  // Builders for accessing external references.
-  Node* BuildLoadExternal(ExternalReference ref, MachineType type);
-  Node* BuildStoreExternal(ExternalReference ref, MachineType type, Node* val);
 
   // Builders for automatic type conversion.
   Node* BuildToBoolean(Node* input);

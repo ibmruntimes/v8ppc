@@ -188,79 +188,34 @@ class VisitorDispatchTable {
 };
 
 
-template <typename StaticVisitor>
-class BodyVisitorBase : public AllStatic {
- public:
-  INLINE(static void IteratePointers(Heap* heap, HeapObject* object,
-                                     int start_offset, int end_offset)) {
-    DCHECK(!FLAG_unbox_double_fields || object->map()->HasFastPointerLayout());
-    IterateRawPointers(heap, object, start_offset, end_offset);
-  }
-
-  INLINE(static void IterateBody(Heap* heap, HeapObject* object,
-                                 int start_offset, int end_offset)) {
-    if (!FLAG_unbox_double_fields || object->map()->HasFastPointerLayout()) {
-      IterateRawPointers(heap, object, start_offset, end_offset);
-    } else {
-      IterateBodyUsingLayoutDescriptor(heap, object, start_offset, end_offset);
-    }
-  }
-
- private:
-  INLINE(static void IterateRawPointers(Heap* heap, HeapObject* object,
-                                        int start_offset, int end_offset)) {
-    StaticVisitor::VisitPointers(heap, object,
-                                 HeapObject::RawField(object, start_offset),
-                                 HeapObject::RawField(object, end_offset));
-  }
-
-  static void IterateBodyUsingLayoutDescriptor(Heap* heap, HeapObject* object,
-                                               int start_offset,
-                                               int end_offset) {
-    DCHECK(FLAG_unbox_double_fields);
-    DCHECK(IsAligned(start_offset, kPointerSize) &&
-           IsAligned(end_offset, kPointerSize));
-
-    LayoutDescriptorHelper helper(object->map());
-    DCHECK(!helper.all_fields_tagged());
-    for (int offset = start_offset; offset < end_offset;) {
-      int end_of_region_offset;
-      if (helper.IsTagged(offset, end_offset, &end_of_region_offset)) {
-        IterateRawPointers(heap, object, offset, end_of_region_offset);
-      }
-      offset = end_of_region_offset;
-    }
-  }
-};
-
-
 template <typename StaticVisitor, typename BodyDescriptor, typename ReturnType>
-class FlexibleBodyVisitor : public BodyVisitorBase<StaticVisitor> {
+class FlexibleBodyVisitor : public AllStatic {
  public:
   INLINE(static ReturnType Visit(Map* map, HeapObject* object)) {
     int object_size = BodyDescriptor::SizeOf(map, object);
-    BodyVisitorBase<StaticVisitor>::IterateBody(
-        map->GetHeap(), object, BodyDescriptor::kStartOffset, object_size);
+    BodyDescriptor::template IterateBody<StaticVisitor>(object, object_size);
     return static_cast<ReturnType>(object_size);
   }
 
+  // This specialization is only suitable for objects containing pointer fields.
   template <int object_size>
   static inline ReturnType VisitSpecialized(Map* map, HeapObject* object) {
     DCHECK(BodyDescriptor::SizeOf(map, object) == object_size);
-    BodyVisitorBase<StaticVisitor>::IteratePointers(
-        map->GetHeap(), object, BodyDescriptor::kStartOffset, object_size);
+    DCHECK(!FLAG_unbox_double_fields || map->HasFastPointerLayout());
+    StaticVisitor::VisitPointers(
+        object->GetHeap(), object,
+        HeapObject::RawField(object, BodyDescriptor::kStartOffset),
+        HeapObject::RawField(object, object_size));
     return static_cast<ReturnType>(object_size);
   }
 };
 
 
 template <typename StaticVisitor, typename BodyDescriptor, typename ReturnType>
-class FixedBodyVisitor : public BodyVisitorBase<StaticVisitor> {
+class FixedBodyVisitor : public AllStatic {
  public:
   INLINE(static ReturnType Visit(Map* map, HeapObject* object)) {
-    BodyVisitorBase<StaticVisitor>::IterateBody(map->GetHeap(), object,
-                                                BodyDescriptor::kStartOffset,
-                                                BodyDescriptor::kEndOffset);
+    BodyDescriptor::template IterateBody<StaticVisitor>(object);
     return static_cast<ReturnType>(BodyDescriptor::kSize);
   }
 };
@@ -415,10 +370,6 @@ class StaticMarkingVisitor : public StaticVisitorBase {
   // Skip the weak next code link in a code object.
   INLINE(static void VisitNextCodeLink(Heap* heap, Object** slot)) {}
 
-  // Mark non-optimize code for functions inlined into the given optimized
-  // code. This will prevent it from being flushed.
-  static void MarkInlinedFunctionsCode(Heap* heap, Code* code);
-
  protected:
   INLINE(static void VisitMap(Map* map, HeapObject* object));
   INLINE(static void VisitCode(Map* map, HeapObject* object));
@@ -441,6 +392,10 @@ class StaticMarkingVisitor : public StaticVisitorBase {
   // Mark pointers in the optimized code map that should act as strong
   // references, possibly treating some entries weak.
   static void MarkOptimizedCodeMap(Heap* heap, FixedArray* code_map);
+
+  // Mark non-optimized code for functions inlined into the given optimized
+  // code. This will prevent it from being flushed.
+  static void MarkInlinedFunctionsCode(Heap* heap, Code* code);
 
   // Code flushing support.
   INLINE(static bool IsFlushable(Heap* heap, JSFunction* function));

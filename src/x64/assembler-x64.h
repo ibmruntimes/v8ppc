@@ -847,6 +847,8 @@ class Assembler : public AssemblerBase {
   // Bit operations.
   void bt(const Operand& dst, Register src);
   void bts(const Operand& dst, Register src);
+  void bsrq(Register dst, Register src);
+  void bsrq(Register dst, const Operand& src);
   void bsrl(Register dst, Register src);
   void bsrl(Register dst, const Operand& src);
   void bsfl(Register dst, Register src);
@@ -1611,9 +1613,6 @@ class Assembler : public AssemblerBase {
   void rorxq(Register dst, const Operand& src, byte imm8);
   void rorxl(Register dst, Register src, byte imm8);
   void rorxl(Register dst, const Operand& src, byte imm8);
-
-  // Debugging
-  void Print();
 
   // Check the code size generated from label to here.
   int SizeOfCodeGeneratedSince(Label* label) {

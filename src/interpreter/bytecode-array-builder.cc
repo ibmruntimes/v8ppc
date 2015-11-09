@@ -126,7 +126,7 @@ void BytecodeArrayBuilder::Output(Bytecode bytecode, uint32_t(&operands)[N]) {
         break;
       case OperandSize::kShort: {
         uint8_t operand_bytes[2];
-        Bytecodes::ShortOperandToBytes(operands[i], operand_bytes);
+        WriteUnalignedUInt16(operand_bytes, operands[i]);
         bytecodes()->insert(bytecodes()->end(), operand_bytes,
                             operand_bytes + 2);
         break;
@@ -783,7 +783,7 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::New(Register constructor,
                                                 Register first_arg,
                                                 size_t arg_count) {
   if (!first_arg.is_valid()) {
-    DCHECK_EQ(0, arg_count);
+    DCHECK_EQ(0u, arg_count);
     first_arg = Register(0);
   }
   DCHECK(FitsInIdx8Operand(arg_count));
@@ -798,7 +798,7 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::CallRuntime(
   DCHECK(FitsInIdx16Operand(function_id));
   DCHECK(FitsInIdx8Operand(arg_count));
   if (!first_arg.is_valid()) {
-    DCHECK_EQ(0, arg_count);
+    DCHECK_EQ(0u, arg_count);
     first_arg = Register(0);
   }
   Output(Bytecode::kCallRuntime, static_cast<uint16_t>(function_id),

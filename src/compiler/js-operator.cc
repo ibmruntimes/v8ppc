@@ -40,25 +40,6 @@ size_t hash_value(VectorSlotPair const& p) {
 }
 
 
-size_t hash_value(ConvertReceiverMode mode) {
-  return base::hash_value(static_cast<unsigned>(mode));
-}
-
-
-std::ostream& operator<<(std::ostream& os, ConvertReceiverMode mode) {
-  switch (mode) {
-    case ConvertReceiverMode::kNullOrUndefined:
-      return os << "NULL_OR_UNDEFINED";
-    case ConvertReceiverMode::kNotNullOrUndefined:
-      return os << "NOT_NULL_OR_UNDEFINED";
-    case ConvertReceiverMode::kAny:
-      return os << "ANY";
-  }
-  UNREACHABLE();
-  return os;
-}
-
-
 ConvertReceiverMode ConvertReceiverModeOf(Operator const* op) {
   DCHECK_EQ(IrOpcode::kJSConvertReceiver, op->opcode());
   return OpParameter<ConvertReceiverMode>(op);
@@ -370,28 +351,30 @@ const CreateClosureParameters& CreateClosureParametersOf(const Operator* op) {
 }
 
 
-#define CACHED_OP_LIST(V)                                 \
-  V(Equal, Operator::kNoProperties, 2, 1)                 \
-  V(NotEqual, Operator::kNoProperties, 2, 1)              \
-  V(StrictEqual, Operator::kNoThrow, 2, 1)                \
-  V(StrictNotEqual, Operator::kNoThrow, 2, 1)             \
-  V(UnaryNot, Operator::kEliminatable, 1, 1)              \
-  V(ToBoolean, Operator::kEliminatable, 1, 1)             \
-  V(ToNumber, Operator::kNoProperties, 1, 1)              \
-  V(ToString, Operator::kNoProperties, 1, 1)              \
-  V(ToName, Operator::kNoProperties, 1, 1)                \
-  V(ToObject, Operator::kNoProperties, 1, 1)              \
-  V(Yield, Operator::kNoProperties, 1, 1)                 \
-  V(Create, Operator::kEliminatable, 0, 1)                \
-  V(HasProperty, Operator::kNoProperties, 2, 1)           \
-  V(TypeOf, Operator::kEliminatable, 1, 1)                \
-  V(InstanceOf, Operator::kNoProperties, 2, 1)            \
-  V(ForInDone, Operator::kPure, 2, 1)                     \
-  V(ForInNext, Operator::kNoProperties, 4, 1)             \
-  V(ForInPrepare, Operator::kNoProperties, 1, 3)          \
-  V(ForInStep, Operator::kPure, 1, 1)                     \
-  V(StackCheck, Operator::kNoProperties, 0, 0)            \
-  V(CreateWithContext, Operator::kNoProperties, 2, 1)     \
+#define CACHED_OP_LIST(V)                             \
+  V(Equal, Operator::kNoProperties, 2, 1)             \
+  V(NotEqual, Operator::kNoProperties, 2, 1)          \
+  V(StrictEqual, Operator::kNoThrow, 2, 1)            \
+  V(StrictNotEqual, Operator::kNoThrow, 2, 1)         \
+  V(UnaryNot, Operator::kEliminatable, 1, 1)          \
+  V(ToBoolean, Operator::kEliminatable, 1, 1)         \
+  V(ToNumber, Operator::kNoProperties, 1, 1)          \
+  V(ToString, Operator::kNoProperties, 1, 1)          \
+  V(ToName, Operator::kNoProperties, 1, 1)            \
+  V(ToObject, Operator::kNoProperties, 1, 1)          \
+  V(Yield, Operator::kNoProperties, 1, 1)             \
+  V(Create, Operator::kEliminatable, 0, 1)            \
+  V(HasProperty, Operator::kNoProperties, 2, 1)       \
+  V(TypeOf, Operator::kEliminatable, 1, 1)            \
+  V(InstanceOf, Operator::kNoProperties, 2, 1)        \
+  V(ForInDone, Operator::kPure, 2, 1)                 \
+  V(ForInNext, Operator::kNoProperties, 4, 1)         \
+  V(ForInPrepare, Operator::kNoProperties, 1, 3)      \
+  V(ForInStep, Operator::kPure, 1, 1)                 \
+  V(LoadMessage, Operator::kNoThrow, 0, 1)            \
+  V(StoreMessage, Operator::kNoThrow, 1, 0)           \
+  V(StackCheck, Operator::kNoProperties, 0, 0)        \
+  V(CreateWithContext, Operator::kNoProperties, 2, 1) \
   V(CreateModuleContext, Operator::kNoProperties, 2, 1)
 
 

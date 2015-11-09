@@ -599,15 +599,6 @@ enum InlineCacheState {
 };
 
 
-enum CallFunctionFlags {
-  NO_CALL_FUNCTION_FLAGS,
-  CALL_AS_METHOD,
-  // Always wrap the receiver and call to the JSFunction. Only use this flag
-  // both the receiver type and the target method are statically known.
-  WRAP_AND_CALL
-};
-
-
 enum CallConstructorFlags {
   NO_CALL_CONSTRUCTOR_FLAGS = 0,
   // The call target is cached in the instruction stream.
@@ -750,6 +741,31 @@ enum CpuFeature {
   ISELECT,
   NUMBER_OF_CPU_FEATURES
 };
+
+
+// Defines hints about receiver values based on structural knowledge.
+enum class ConvertReceiverMode : unsigned {
+  kNullOrUndefined,     // Guaranteed to be null or undefined.
+  kNotNullOrUndefined,  // Guaranteed to never be null or undefined.
+  kAny                  // No specific knowledge about receiver.
+};
+
+inline size_t hash_value(ConvertReceiverMode mode) {
+  return bit_cast<unsigned>(mode);
+}
+
+inline std::ostream& operator<<(std::ostream& os, ConvertReceiverMode mode) {
+  switch (mode) {
+    case ConvertReceiverMode::kNullOrUndefined:
+      return os << "NULL_OR_UNDEFINED";
+    case ConvertReceiverMode::kNotNullOrUndefined:
+      return os << "NOT_NULL_OR_UNDEFINED";
+    case ConvertReceiverMode::kAny:
+      return os << "ANY";
+  }
+  UNREACHABLE();
+  return os;
+}
 
 
 // Used to specify if a macro instruction must perform a smi check on tagged

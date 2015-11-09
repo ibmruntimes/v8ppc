@@ -329,29 +329,47 @@ function RegExpMakeCaptureGetter(n) {
 }
 
 
-// ES6 21.2.5.4, 21.2.5.5, 21.2.5.7, 21.2.5.12, 21.2.5.15.
-function GetRegExpFlagGetter(name, mask) {
-  var getter = function() {
-    if (!IS_REGEXP(this)) {
-      throw MakeTypeError(kRegExpNonObject, name, TO_STRING(this));
-    }
-    return !!(%_RegExpFlags(this) & mask);
-  };
-  %FunctionSetName(getter, name);
-  %SetNativeFlag(getter);
-  return getter;
+// ES6 21.2.5.4.
+function RegExpGetGlobal() {
+  if (!IS_REGEXP(this)) {
+    throw MakeTypeError(kRegExpNonRegExp, "RegExp.prototype.global");
+  }
+  return !!REGEXP_GLOBAL(this);
 }
+%FunctionSetName(RegExpGetGlobal, "RegExp.prototype.global");
+%SetNativeFlag(RegExpGetGlobal);
+
+
+// ES6 21.2.5.5.
+function RegExpGetIgnoreCase() {
+  if (!IS_REGEXP(this)) {
+    throw MakeTypeError(kRegExpNonRegExp, "RegExp.prototype.ignoreCase");
+  }
+  return !!REGEXP_IGNORE_CASE(this);
+}
+%FunctionSetName(RegExpGetIgnoreCase, "RegExp.prototype.ignoreCase");
+%SetNativeFlag(RegExpGetIgnoreCase);
+
+
+// ES6 21.2.5.7.
+function RegExpGetMultiline() {
+  if (!IS_REGEXP(this)) {
+    throw MakeTypeError(kRegExpNonRegExp, "RegExp.prototype.multiline");
+  }
+  return !!REGEXP_MULTILINE(this);
+}
+%FunctionSetName(RegExpGetMultiline, "RegExp.prototype.multiline");
+%SetNativeFlag(RegExpGetMultiline);
 
 
 // ES6 21.2.5.10.
 function RegExpGetSource() {
   if (!IS_REGEXP(this)) {
-    throw MakeTypeError(kRegExpNonObject, "RegExp.prototype.source",
-                        TO_STRING(this));
+    throw MakeTypeError(kRegExpNonRegExp, "RegExp.prototype.source");
   }
-  return %_RegExpSource(this);
+  return REGEXP_SOURCE(this);
 }
-
+%FunctionSetName(RegExpGetSource, "RegExp.prototype.source");
 %SetNativeFlag(RegExpGetSource);
 
 // -------------------------------------------------------------------
@@ -370,16 +388,13 @@ utils.InstallFunctions(GlobalRegExp.prototype, DONT_ENUM, [
 ]);
 
 %DefineGetterPropertyUnchecked(GlobalRegExp.prototype, "global",
-    GetRegExpFlagGetter("RegExp.prototype.global", REGEXP_GLOBAL_MASK),
-    DONT_ENUM);
+                               RegExpGetGlobal, DONT_ENUM);
 %DefineGetterPropertyUnchecked(GlobalRegExp.prototype, "ignoreCase",
-    GetRegExpFlagGetter("RegExp.prototype.ignoreCase", REGEXP_IGNORE_CASE_MASK),
-    DONT_ENUM);
+                               RegExpGetIgnoreCase, DONT_ENUM);
 %DefineGetterPropertyUnchecked(GlobalRegExp.prototype, "multiline",
-    GetRegExpFlagGetter("RegExp.prototype.multiline", REGEXP_MULTILINE_MASK),
-    DONT_ENUM);
+                               RegExpGetMultiline, DONT_ENUM);
 %DefineGetterPropertyUnchecked(GlobalRegExp.prototype, "source",
-    RegExpGetSource, DONT_ENUM);
+                               RegExpGetSource, DONT_ENUM);
 
 // The length of compile is 1 in SpiderMonkey.
 %FunctionSetLength(GlobalRegExp.prototype.compile, 1);
@@ -400,25 +415,6 @@ var RegExpSetInput = function(string) {
                                  RegExpSetInput, DONT_DELETE);
 %DefineAccessorPropertyUnchecked(GlobalRegExp, '$_', RegExpGetInput,
                                  RegExpSetInput, DONT_ENUM | DONT_DELETE);
-
-// The properties multiline and $* are aliases for each other.  When this
-// value is set in SpiderMonkey, the value it is set to is coerced to a
-// boolean.  We mimic that behavior with a slight difference: in SpiderMonkey
-// the value of the expression 'RegExp.multiline = null' (for instance) is the
-// boolean false (i.e., the value after coercion), while in V8 it is the value
-// null (i.e., the value before coercion).
-
-// Getter and setter for multiline.
-var multiline = false;
-var RegExpGetMultiline = function() { return multiline; };
-var RegExpSetMultiline = function(flag) { multiline = flag ? true : false; };
-
-%DefineAccessorPropertyUnchecked(GlobalRegExp, 'multiline', RegExpGetMultiline,
-                                 RegExpSetMultiline, DONT_DELETE);
-%DefineAccessorPropertyUnchecked(GlobalRegExp, '$*', RegExpGetMultiline,
-                                 RegExpSetMultiline,
-                                 DONT_ENUM | DONT_DELETE);
-
 
 var NoOpSetter = function(ignored) {};
 
@@ -454,7 +450,6 @@ for (var i = 1; i < 10; ++i) {
 // Exports
 
 utils.Export(function(to) {
-  to.GetRegExpFlagGetter = GetRegExpFlagGetter;
   to.RegExpExec = DoRegExpExec;
   to.RegExpExecNoTests = RegExpExecNoTests;
   to.RegExpLastMatchInfo = RegExpLastMatchInfo;

@@ -1869,7 +1869,7 @@ void BytecodeGenerator::VisitEmptyParentheses(EmptyParentheses* expr) {
 
 
 void BytecodeGenerator::VisitThisFunction(ThisFunction* expr) {
-  UNIMPLEMENTED();
+  execution_result()->SetResultInRegister(Register::function_closure());
 }
 
 
@@ -2049,9 +2049,6 @@ void BytecodeGenerator::VisitThisFunctionVariable(Variable* variable) {
 
 void BytecodeGenerator::VisitNewTargetVariable(Variable* variable) {
   if (variable == nullptr) return;
-
-  // TODO(rmcilroy): Remove once we have tests which exercise this code path.
-  UNIMPLEMENTED();
 
   // Store the closure we were called with in the this_function_var.
   builder()->CallRuntime(Runtime::kGetOriginalConstructor, Register(), 0);

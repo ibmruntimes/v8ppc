@@ -197,6 +197,11 @@ SharedFunctionInfo* IC::GetSharedFunctionInfo() const {
   // corresponding to the frame.
   StackFrameIterator it(isolate());
   while (it.frame()->fp() != this->fp()) it.Advance();
+  if (FLAG_ignition && it.frame()->type() == StackFrame::STUB) {
+    // Advance over bytecode handler frame.
+    // TODO(rmcilroy): Remove this once bytecode handlers don't need a frame.
+    it.Advance();
+  }
   JavaScriptFrame* frame = JavaScriptFrame::cast(it.frame());
   // Find the function on the stack and both the active code for the
   // function and the original code.
@@ -1585,16 +1590,16 @@ MaybeHandle<Object> StoreIC::Store(Handle<Object> object, Handle<Name> name,
 
 
 Handle<Code> CallIC::initialize_stub(Isolate* isolate, int argc,
-                                     CallICState::CallType call_type) {
-  CallICTrampolineStub stub(isolate, CallICState(argc, call_type));
+                                     ConvertReceiverMode mode) {
+  CallICTrampolineStub stub(isolate, CallICState(argc, mode));
   Handle<Code> code = stub.GetCode();
   return code;
 }
 
 
 Handle<Code> CallIC::initialize_stub_in_optimized_code(
-    Isolate* isolate, int argc, CallICState::CallType call_type) {
-  CallICStub stub(isolate, CallICState(argc, call_type));
+    Isolate* isolate, int argc, ConvertReceiverMode mode) {
+  CallICStub stub(isolate, CallICState(argc, mode));
   Handle<Code> code = stub.GetCode();
   return code;
 }

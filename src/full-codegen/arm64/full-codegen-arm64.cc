@@ -115,22 +115,13 @@ void FullCodeGenerator::Generate() {
   }
 #endif
 
-  // Sloppy mode functions and builtins need to replace the receiver with the
-  // global proxy when called as functions (without an explicit receiver
-  // object).
-  if (info->MustReplaceUndefinedReceiverWithGlobalProxy()) {
-    Label ok;
+  if (FLAG_debug_code && info->ExpectsJSReceiverAsReceiver()) {
     int receiver_offset = info->scope()->num_parameters() * kXRegSize;
     __ Peek(x10, receiver_offset);
-    __ JumpIfNotRoot(x10, Heap::kUndefinedValueRootIndex, &ok);
-
-    __ Ldr(x10, GlobalObjectMemOperand());
-    __ Ldr(x10, FieldMemOperand(x10, JSGlobalObject::kGlobalProxyOffset));
-    __ Poke(x10, receiver_offset);
-
-    __ Bind(&ok);
+    __ AssertNotSmi(x10);
+    __ CompareObjectType(x10, x10, x11, FIRST_SPEC_OBJECT_TYPE);
+    __ Assert(ge, kSloppyFunctionExpectsJSReceiverReceiver);
   }
-
 
   // Open a frame scope to indicate that there is a frame on the stack.
   // The MANUAL indicates that the scope shouldn't actually generate code
@@ -2518,11 +2509,9 @@ void FullCodeGenerator::CallIC(Handle<Code> code,
 void FullCodeGenerator::EmitCallWithLoadIC(Call* expr) {
   Expression* callee = expr->expression();
 
-  CallICState::CallType call_type =
-      callee->IsVariableProxy() ? CallICState::FUNCTION : CallICState::METHOD;
-
   // Get the target function.
-  if (call_type == CallICState::FUNCTION) {
+  ConvertReceiverMode convert_mode;
+  if (callee->IsVariableProxy()) {
     { StackValueContext context(this);
       EmitVariableLoad(callee->AsVariableProxy());
       PrepareForBailout(callee, NO_REGISTERS);
@@ -2535,6 +2524,7 @@ void FullCodeGenerator::EmitCallWithLoadIC(Call* expr) {
       __ LoadRoot(temp, Heap::kUndefinedValueRootIndex);
       __ Push(temp);
     }
+    convert_mode = ConvertReceiverMode::kNullOrUndefined;
   } else {
     // Load the function from the receiver.
     DCHECK(callee->IsProperty());
@@ -2545,9 +2535,10 @@ void FullCodeGenerator::EmitCallWithLoadIC(Call* expr) {
     // Push the target function under the receiver.
     __ Pop(x10);
     __ Push(x0, x10);
+    convert_mode = ConvertReceiverMode::kNotNullOrUndefined;
   }
 
-  EmitCall(expr, call_type);
+  EmitCall(expr, convert_mode);
 }
 
 
@@ -2587,7 +2578,7 @@ void FullCodeGenerator::EmitSuperCallWithLoadIC(Call* expr) {
   // Stack here:
   // - target function
   // - this (receiver)
-  EmitCall(expr, CallICState::METHOD);
+  EmitCall(expr);
 }
 
 
@@ -2610,7 +2601,7 @@ void FullCodeGenerator::EmitKeyedCallWithLoadIC(Call* expr,
   __ Pop(x10);
   __ Push(x0, x10);
 
-  EmitCall(expr, CallICState::METHOD);
+  EmitCall(expr, ConvertReceiverMode::kNotNullOrUndefined);
 }
 
 
@@ -2648,11 +2639,11 @@ void FullCodeGenerator::EmitKeyedSuperCallWithLoadIC(Call* expr) {
   // Stack here:
   // - target function
   // - this (receiver)
-  EmitCall(expr, CallICState::METHOD);
+  EmitCall(expr);
 }
 
 
-void FullCodeGenerator::EmitCall(Call* expr, CallICState::CallType call_type) {
+void FullCodeGenerator::EmitCall(Call* expr, ConvertReceiverMode mode) {
   // Load the arguments.
   ZoneList<Expression*>* args = expr->arguments();
   int arg_count = args->length();
@@ -2663,7 +2654,7 @@ void FullCodeGenerator::EmitCall(Call* expr, CallICState::CallType call_type) {
   PrepareForBailoutForId(expr->CallId(), NO_REGISTERS);
   SetCallPosition(expr, arg_count);
 
-  Handle<Code> ic = CodeFactory::CallIC(isolate(), arg_count, call_type).code();
+  Handle<Code> ic = CodeFactory::CallIC(isolate(), arg_count, mode).code();
   __ Mov(x3, SmiFromSlot(expr->CallFeedbackICSlot()));
   __ Peek(x1, (arg_count + 1) * kXRegSize);
   // Don't assign a type feedback id to the IC, since type feedback is provided
@@ -2773,9 +2764,9 @@ void FullCodeGenerator::EmitPossiblyEvalCall(Call* expr) {
   SetCallPosition(expr, arg_count);
 
   // Call the evaluated function.
-  CallFunctionStub stub(isolate(), arg_count, NO_CALL_FUNCTION_FLAGS);
   __ Peek(x1, (arg_count + 1) * kXRegSize);
-  __ CallStub(&stub);
+  __ Mov(x0, arg_count);
+  __ Call(isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
   RecordJSReturnSite(expr);
   // Restore context register.
   __ Ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
@@ -3543,24 +3534,8 @@ void FullCodeGenerator::EmitStringCharAt(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitStringAdd(CallRuntime* expr) {
-  ASM_LOCATION("FullCodeGenerator::EmitStringAdd");
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK_EQ(2, args->length());
-
-  VisitForStackValue(args->at(0));
-  VisitForAccumulatorValue(args->at(1));
-
-  __ Pop(x1);
-  StringAddStub stub(isolate(), STRING_ADD_CHECK_BOTH, NOT_TENURED);
-  __ CallStub(&stub);
-
-  context()->Plug(x0);
-}
-
-
 void FullCodeGenerator::EmitCall(CallRuntime* expr) {
-  ASM_LOCATION("FullCodeGenerator::EmitCallFunction");
+  ASM_LOCATION("FullCodeGenerator::EmitCall");
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK_LE(2, args->length());
   // Push target, receiver and arguments onto the stack.
@@ -3578,39 +3553,6 @@ void FullCodeGenerator::EmitCall(CallRuntime* expr) {
   __ Ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
   // Discard the function left on TOS.
   context()->DropAndPlug(1, x0);
-}
-
-
-void FullCodeGenerator::EmitCallFunction(CallRuntime* expr) {
-  ASM_LOCATION("FullCodeGenerator::EmitCallFunction");
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() >= 2);
-
-  int arg_count = args->length() - 2;  // 2 ~ receiver and function.
-  for (int i = 0; i < arg_count + 1; i++) {
-    VisitForStackValue(args->at(i));
-  }
-  VisitForAccumulatorValue(args->last());  // Function.
-
-  PrepareForBailoutForId(expr->CallId(), NO_REGISTERS);
-  Label runtime, done;
-  // Check for non-function argument (including proxy).
-  __ JumpIfSmi(x0, &runtime);
-  __ JumpIfNotObjectType(x0, x1, x1, JS_FUNCTION_TYPE, &runtime);
-
-  // InvokeFunction requires the function in x1. Move it in there.
-  __ Mov(x1, x0);
-  ParameterCount count(arg_count);
-  __ InvokeFunction(x1, count, CALL_FUNCTION, NullCallWrapper());
-  __ Ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
-  __ B(&done);
-
-  __ Bind(&runtime);
-  __ Push(x0);
-  __ CallRuntime(Runtime::kCallFunction, args->length());
-  __ Bind(&done);
-
-  context()->Plug(x0);
 }
 
 
@@ -3992,9 +3934,10 @@ void FullCodeGenerator::EmitCallJSRuntimeFunction(CallRuntime* expr) {
   int arg_count = args->length();
 
   SetCallPosition(expr, arg_count);
-  CallFunctionStub stub(isolate(), arg_count, NO_CALL_FUNCTION_FLAGS);
   __ Peek(x1, (arg_count + 1) * kPointerSize);
-  __ CallStub(&stub);
+  __ Mov(x0, arg_count);
+  __ Call(isolate()->builtins()->Call(ConvertReceiverMode::kNullOrUndefined),
+          RelocInfo::CODE_TARGET);
 }
 
 
@@ -4760,8 +4703,10 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       __ Mov(x1, x0);
       __ Poke(x1, 2 * kPointerSize);
       SetCallPosition(expr, 1);
-      CallFunctionStub stub(isolate(), 1, CALL_AS_METHOD);
-      __ CallStub(&stub);
+      __ Mov(x0, 1);
+      __ Call(
+          isolate()->builtins()->Call(ConvertReceiverMode::kNotNullOrUndefined),
+          RelocInfo::CODE_TARGET);
 
       __ Ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
       __ Drop(1);  // The function is still on the stack; drop it.

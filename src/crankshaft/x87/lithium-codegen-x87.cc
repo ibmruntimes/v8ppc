@@ -107,26 +107,6 @@ bool LCodeGen::GeneratePrologue() {
     }
 #endif
 
-    // Sloppy mode functions and builtins need to replace the receiver with the
-    // global proxy when called as functions (without an explicit receiver
-    // object).
-    if (info()->MustReplaceUndefinedReceiverWithGlobalProxy()) {
-      Label ok;
-      // +1 for return address.
-      int receiver_offset = (scope()->num_parameters() + 1) * kPointerSize;
-      __ mov(ecx, Operand(esp, receiver_offset));
-
-      __ cmp(ecx, isolate()->factory()->undefined_value());
-      __ j(not_equal, &ok, Label::kNear);
-
-      __ mov(ecx, GlobalObjectOperand());
-      __ mov(ecx, FieldOperand(ecx, JSGlobalObject::kGlobalProxyOffset));
-
-      __ mov(Operand(esp, receiver_offset), ecx);
-
-      __ bind(&ok);
-    }
-
     if (support_aligned_spilled_doubles_ && dynamic_frame_alignment_) {
       // Move state of dynamic frame alignment into edx.
       __ Move(edx, Immediate(kNoAlignmentPadding));
@@ -4181,7 +4161,7 @@ void LCodeGen::DoCallFunction(LCallFunction* instr) {
   DCHECK(ToRegister(instr->result()).is(eax));
 
   int arity = instr->arity();
-  CallFunctionFlags flags = instr->hydrogen()->function_flags();
+  ConvertReceiverMode mode = instr->hydrogen()->convert_mode();
   if (instr->hydrogen()->HasVectorAndSlot()) {
     Register slot_register = ToRegister(instr->temp_slot());
     Register vector_register = ToRegister(instr->temp_vector());
@@ -4195,15 +4175,12 @@ void LCodeGen::DoCallFunction(LCallFunction* instr) {
     __ mov(vector_register, vector);
     __ mov(slot_register, Immediate(Smi::FromInt(index)));
 
-    CallICState::CallType call_type =
-        (flags & CALL_AS_METHOD) ? CallICState::METHOD : CallICState::FUNCTION;
-
     Handle<Code> ic =
-        CodeFactory::CallICInOptimizedCode(isolate(), arity, call_type).code();
+        CodeFactory::CallICInOptimizedCode(isolate(), arity, mode).code();
     CallCode(ic, RelocInfo::CODE_TARGET, instr);
   } else {
-    CallFunctionStub stub(isolate(), arity, flags);
-    CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
+    __ Set(eax, arity);
+    CallCode(isolate()->builtins()->Call(mode), RelocInfo::CODE_TARGET, instr);
   }
 }
 

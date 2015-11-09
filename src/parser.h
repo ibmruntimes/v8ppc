@@ -1154,7 +1154,6 @@ class Parser : public ParserBase<ParserTraits> {
   BreakableStatement* LookupBreakTarget(const AstRawString* label, bool* ok);
   IterationStatement* LookupContinueTarget(const AstRawString* label, bool* ok);
 
-  void AddAssertIsConstruct(ZoneList<Statement*>* body, int pos);
   Statement* BuildAssertIsCoercible(Variable* var);
 
   // Factory methods.
@@ -1199,6 +1198,9 @@ class Parser : public ParserBase<ParserTraits> {
                          ZoneList<v8::internal::Expression*>* args, int pos);
   Expression* SpreadCallNew(Expression* function,
                             ZoneList<v8::internal::Expression*>* args, int pos);
+
+  void SetLanguageMode(Scope* scope, LanguageMode mode);
+  void RaiseLanguageMode(LanguageMode mode);
 
   Scanner scanner_;
   PreParser* reusable_preparser_;

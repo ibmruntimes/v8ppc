@@ -113,24 +113,6 @@ bool LCodeGen::GeneratePrologue() {
     // cp: Callee's context.
     // fp: Caller's frame pointer.
     // lr: Caller's pc.
-
-    // Sloppy mode functions and builtins need to replace the receiver with the
-    // global proxy when called as functions (without an explicit receiver
-    // object).
-    if (info()->MustReplaceUndefinedReceiverWithGlobalProxy()) {
-      Label ok;
-      int receiver_offset = info_->scope()->num_parameters() * kPointerSize;
-      __ LoadRoot(at, Heap::kUndefinedValueRootIndex);
-      __ ld(a2, MemOperand(sp, receiver_offset));
-      __ Branch(&ok, ne, a2, Operand(at));
-
-      __ ld(a2, GlobalObjectOperand());
-      __ ld(a2, FieldMemOperand(a2, JSGlobalObject::kGlobalProxyOffset));
-
-      __ sd(a2, MemOperand(sp, receiver_offset));
-
-      __ bind(&ok);
-    }
   }
 
   info()->set_prologue_offset(masm_->pc_offset());
@@ -3997,7 +3979,7 @@ void LCodeGen::DoCallFunction(LCallFunction* instr) {
   DCHECK(ToRegister(instr->result()).is(v0));
 
   int arity = instr->arity();
-  CallFunctionFlags flags = instr->hydrogen()->function_flags();
+  ConvertReceiverMode mode = instr->hydrogen()->convert_mode();
   if (instr->hydrogen()->HasVectorAndSlot()) {
     Register slot_register = ToRegister(instr->temp_slot());
     Register vector_register = ToRegister(instr->temp_vector());
@@ -4011,15 +3993,12 @@ void LCodeGen::DoCallFunction(LCallFunction* instr) {
     __ li(vector_register, vector);
     __ li(slot_register, Operand(Smi::FromInt(index)));
 
-    CallICState::CallType call_type =
-        (flags & CALL_AS_METHOD) ? CallICState::METHOD : CallICState::FUNCTION;
-
     Handle<Code> ic =
-        CodeFactory::CallICInOptimizedCode(isolate(), arity, call_type).code();
+        CodeFactory::CallICInOptimizedCode(isolate(), arity, mode).code();
     CallCode(ic, RelocInfo::CODE_TARGET, instr);
   } else {
-    CallFunctionStub stub(isolate(), arity, flags);
-    CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
+    __ li(a0, Operand(arity));
+    CallCode(isolate()->builtins()->Call(mode), RelocInfo::CODE_TARGET, instr);
   }
 }
 
@@ -4728,7 +4707,8 @@ void LCodeGen::DoDeferredStringCharFromCode(LStringCharFromCode* instr) {
   PushSafepointRegistersScope scope(this);
   __ SmiTag(char_code);
   __ push(char_code);
-  CallRuntimeFromDeferred(Runtime::kCharFromCode, 1, instr, instr->context());
+  CallRuntimeFromDeferred(Runtime::kStringCharFromCode, 1, instr,
+                          instr->context());
   __ StoreToSafepointRegisterSlot(v0, result);
 }
 

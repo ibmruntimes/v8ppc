@@ -3548,6 +3548,47 @@ TEST(UseConstLegacyCount) {
 }
 
 
+TEST(StrictModeUseCount) {
+  i::Isolate* isolate = CcTest::i_isolate();
+  i::HandleScope scope(isolate);
+  LocalContext env;
+  int use_counts[v8::Isolate::kUseCounterFeatureCount] = {};
+  global_use_counts = use_counts;
+  CcTest::isolate()->SetUseCounterCallback(MockUseCounterCallback);
+  CompileRun(
+      "\"use strict\";\n"
+      "function bar() { var baz = 1; }");  // strict mode inherits
+  CHECK_LT(0, use_counts[v8::Isolate::kStrictMode]);
+  CHECK_EQ(0, use_counts[v8::Isolate::kSloppyMode]);
+}
+
+
+TEST(SloppyModeUseCount) {
+  i::Isolate* isolate = CcTest::i_isolate();
+  i::HandleScope scope(isolate);
+  LocalContext env;
+  int use_counts[v8::Isolate::kUseCounterFeatureCount] = {};
+  global_use_counts = use_counts;
+  CcTest::isolate()->SetUseCounterCallback(MockUseCounterCallback);
+  CompileRun("function bar() { var baz = 1; }");
+  CHECK_LT(0, use_counts[v8::Isolate::kSloppyMode]);
+  CHECK_EQ(0, use_counts[v8::Isolate::kStrictMode]);
+}
+
+
+TEST(BothModesUseCount) {
+  i::Isolate* isolate = CcTest::i_isolate();
+  i::HandleScope scope(isolate);
+  LocalContext env;
+  int use_counts[v8::Isolate::kUseCounterFeatureCount] = {};
+  global_use_counts = use_counts;
+  CcTest::isolate()->SetUseCounterCallback(MockUseCounterCallback);
+  CompileRun("function bar() { 'use strict'; var baz = 1; }");
+  CHECK_LT(0, use_counts[v8::Isolate::kSloppyMode]);
+  CHECK_LT(0, use_counts[v8::Isolate::kStrictMode]);
+}
+
+
 TEST(ErrorsArrowFormalParameters) {
   const char* context_data[][2] = {
     { "()", "=>{}" },
@@ -6514,6 +6555,7 @@ TEST(DestructuringPositiveTests) {
                                    {"function f(argument1, ", ") {}"},
                                    {"var f = (", ") => {};"},
                                    {"var f = (argument1,", ") => {};"},
+                                   {"try {} catch(", ") {}"},
                                    {NULL, NULL}};
 
   // clang-format off
@@ -6575,6 +6617,7 @@ TEST(DestructuringNegativeTests) {
                                      {"var f = (", ") => {};"},
                                      {"var f = ", " => {};"},
                                      {"var f = (argument1,", ") => {};"},
+                                     {"try {} catch(", ") {}"},
                                      {NULL, NULL}};
 
     // clang-format off
@@ -6699,6 +6742,33 @@ TEST(DestructuringNegativeTests) {
       "{ x : yield }",
       NULL};
     // clang-format on
+    RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
+                      arraysize(always_flags));
+  }
+
+  { // Declaration-specific errors
+    const char* context_data[][2] = {{"'use strict'; var ", ""},
+                                     {"'use strict'; let ", ""},
+                                     {"'use strict'; const ", ""},
+                                     {"'use strict'; for (var ", ";;) {}"},
+                                     {"'use strict'; for (let ", ";;) {}"},
+                                     {"'use strict'; for (const ", ";;) {}"},
+                                     {"var ", ""},
+                                     {"let ", ""},
+                                     {"const ", ""},
+                                     {"for (var ", ";;) {}"},
+                                     {"for (let ", ";;) {}"},
+                                     {"for (const ", ";;) {}"},
+                                     {NULL, NULL}};
+
+    // clang-format off
+    const char* data[] = {
+      "{ a }",
+      "[ a ]",
+      NULL};
+    // clang-format on
+    static const ParserFlag always_flags[] = {kAllowHarmonyDestructuring,
+                                              kAllowHarmonySloppyLet};
     RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
                       arraysize(always_flags));
   }
@@ -7188,13 +7258,13 @@ TEST(LetSloppyOnly) {
     "for (var [let] = 1; let < 1; let++) {}",
     "for (var [let] in {}) {}",
     "var let",
-    "var [let]",
+    "var [let] = []",
     "for (const let = 1; let < 1; let++) {}",
     "for (const let in {}) {}",
     "for (const [let] = 1; let < 1; let++) {}",
     "for (const [let] in {}) {}",
     "const let",
-    "const [let]",
+    "const [let] = []",
     NULL
   };
   // clang-format on

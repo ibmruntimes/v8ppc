@@ -261,7 +261,6 @@ namespace internal {
   F(Apply, 5, 1)                                            \
   F(GetOriginalConstructor, 0, 1)                           \
   F(ConvertReceiver, 1, 1)                                  \
-  F(CallFunction, -1 /* receiver + n args + function */, 1) \
   F(IsConstructCall, 0, 1)                                  \
   F(IsFunction, 1, 1)
 
@@ -350,8 +349,6 @@ namespace internal {
   F(CallSiteIsConstructorRT, 1, 1)            \
   F(IS_VAR, 1, 1)                             \
   F(IncrementStatsCounter, 1, 1)              \
-  F(Likely, 1, 1)                             \
-  F(Unlikely, 1, 1)                           \
   F(HarmonyToString, 0, 1)                    \
   F(GetTypeFeedbackVector, 1, 1)              \
   F(GetCallerJSFunction, 0, 1)                \
@@ -913,7 +910,6 @@ namespace internal {
   F(InternalizeString, 1, 1)                    \
   F(StringMatch, 3, 1)                          \
   F(StringCharCodeAtRT, 2, 1)                   \
-  F(CharFromCode, 1, 1)                         \
   F(StringCompare, 2, 1)                        \
   F(StringBuilderConcat, 3, 1)                  \
   F(StringBuilderJoin, 3, 1)                    \

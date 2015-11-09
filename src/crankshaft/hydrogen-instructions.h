@@ -2394,14 +2394,13 @@ class HInvokeFunction final : public HBinaryCall {
 
 class HCallFunction final : public HBinaryCall {
  public:
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P2(HCallFunction, HValue*, int);
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P3(
-      HCallFunction, HValue*, int, CallFunctionFlags);
+  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P3(HCallFunction, HValue*, int,
+                                              ConvertReceiverMode);
 
   HValue* context() const { return first(); }
   HValue* function() const { return second(); }
-  CallFunctionFlags function_flags() const { return function_flags_; }
 
+  ConvertReceiverMode convert_mode() const { return convert_mode_; }
   FeedbackVectorSlot slot() const { return slot_; }
   Handle<TypeFeedbackVector> feedback_vector() const {
     return feedback_vector_;
@@ -2421,12 +2420,12 @@ class HCallFunction final : public HBinaryCall {
 
  private:
   HCallFunction(HValue* context, HValue* function, int argument_count,
-                CallFunctionFlags flags = NO_CALL_FUNCTION_FLAGS)
+                ConvertReceiverMode convert_mode)
       : HBinaryCall(context, function, argument_count),
-        function_flags_(flags) {}
-  CallFunctionFlags function_flags_;
+        convert_mode_(convert_mode) {}
   Handle<TypeFeedbackVector> feedback_vector_;
   FeedbackVectorSlot slot_;
+  ConvertReceiverMode convert_mode_;
 };
 
 

@@ -371,7 +371,7 @@ void LCodeGen::DoCallFunction(LCallFunction* instr) {
   DCHECK(ToRegister(instr->result()).Is(x0));
 
   int arity = instr->arity();
-  CallFunctionFlags flags = instr->hydrogen()->function_flags();
+  ConvertReceiverMode mode = instr->hydrogen()->convert_mode();
   if (instr->hydrogen()->HasVectorAndSlot()) {
     Register slot_register = ToRegister(instr->temp_slot());
     Register vector_register = ToRegister(instr->temp_vector());
@@ -385,15 +385,12 @@ void LCodeGen::DoCallFunction(LCallFunction* instr) {
     __ Mov(vector_register, vector);
     __ Mov(slot_register, Operand(Smi::FromInt(index)));
 
-    CallICState::CallType call_type =
-        (flags & CALL_AS_METHOD) ? CallICState::METHOD : CallICState::FUNCTION;
-
     Handle<Code> ic =
-        CodeFactory::CallICInOptimizedCode(isolate(), arity, call_type).code();
+        CodeFactory::CallICInOptimizedCode(isolate(), arity, mode).code();
     CallCode(ic, RelocInfo::CODE_TARGET, instr);
   } else {
-    CallFunctionStub stub(isolate(), arity, flags);
-    CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
+    __ Mov(x0, arity);
+    CallCode(isolate()->builtins()->Call(mode), RelocInfo::CODE_TARGET, instr);
   }
   RecordPushedArgumentsDelta(instr->hydrogen()->argument_delta());
 }
@@ -632,22 +629,6 @@ bool LCodeGen::GeneratePrologue() {
       __ Debug("stop-at", __LINE__, BREAK);
     }
 #endif
-
-    // Sloppy mode functions and builtins need to replace the receiver with the
-    // global proxy when called as functions (without an explicit receiver
-    // object).
-    if (info()->MustReplaceUndefinedReceiverWithGlobalProxy()) {
-      Label ok;
-      int receiver_offset = info_->scope()->num_parameters() * kXRegSize;
-      __ Peek(x10, receiver_offset);
-      __ JumpIfNotRoot(x10, Heap::kUndefinedValueRootIndex, &ok);
-
-      __ Ldr(x10, GlobalObjectMemOperand());
-      __ Ldr(x10, FieldMemOperand(x10, JSGlobalObject::kGlobalProxyOffset));
-      __ Poke(x10, receiver_offset);
-
-      __ Bind(&ok);
-    }
   }
 
   DCHECK(__ StackPointer().Is(jssp));
@@ -5447,7 +5428,8 @@ void LCodeGen::DoDeferredStringCharFromCode(LStringCharFromCode* instr) {
 
   PushSafepointRegistersScope scope(this);
   __ SmiTagAndPush(char_code);
-  CallRuntimeFromDeferred(Runtime::kCharFromCode, 1, instr, instr->context());
+  CallRuntimeFromDeferred(Runtime::kStringCharFromCode, 1, instr,
+                          instr->context());
   __ StoreToSafepointRegisterSlot(x0, result);
 }
 

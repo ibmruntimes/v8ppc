@@ -307,6 +307,7 @@ RUNTIME_FUNCTION(Runtime_FormatMessageString) {
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
       MessageTemplate::FormatMessage(template_index, arg0, arg1, arg2));
+  isolate->native_context()->IncrementErrorsThrown();
   return *result;
 }
 
@@ -368,18 +369,6 @@ RUNTIME_FUNCTION(Runtime_IncrementStatsCounter) {
     StatsCounter(isolate, name->ToCString().get()).Increment();
   }
   return isolate->heap()->undefined_value();
-}
-
-
-RUNTIME_FUNCTION(Runtime_Likely) {
-  DCHECK(args.length() == 1);
-  return args[0];
-}
-
-
-RUNTIME_FUNCTION(Runtime_Unlikely) {
-  DCHECK(args.length() == 1);
-  return args[0];
 }
 
 

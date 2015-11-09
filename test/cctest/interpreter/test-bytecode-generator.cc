@@ -210,8 +210,8 @@ static void CheckBytecodeArrayEqual(const ExpectedSnippet<T, C>& expected,
               static_cast<uint32_t>(expected.bytecode[operand_index]);
           break;
         case OperandSize::kShort:
-          expected_operand = Bytecodes::ShortOperandFromBytes(
-              &expected.bytecode[operand_index]);
+          expected_operand =
+              ReadUnalignedUInt16(&expected.bytecode[operand_index]);
           break;
         default:
           UNREACHABLE();
@@ -771,7 +771,7 @@ TEST(HeapNumberConstants) {
          REPEAT_256(COMMA,                     //
            B(LdaConstant), U8(wide_idx++),     //
            B(Star), R(0)),                     //
-         B(LdaConstantWide), U16(wide_idx++),  //
+         B(LdaConstantWide), U16(wide_idx),    //
          B(Star), R(0),                        //
          B(LdaUndefined),                      //
          B(Return),                            //
@@ -944,7 +944,7 @@ TEST(PropertyLoads) {
               REPEAT_127(COMMA,                                            //
                 B(LoadICSloppy), A(1, 2), U8(0), U8((wide_idx_1 += 2)),    //
                 B(Star), R(0)),                                            //
-              B(LoadICSloppyWide), A(1, 2), U16(0), U16(wide_idx_1 += 2),  //
+              B(LoadICSloppyWide), A(1, 2), U16(0), U16(wide_idx_1 + 2),   //
               B(Return),                                                   //
           },
           1,
@@ -962,7 +962,7 @@ TEST(PropertyLoads) {
               REPEAT_127(COMMA,                                            //
                 B(LoadICStrict), A(1, 2), U8(0), U8((wide_idx_2 += 2)),    //
                 B(Star), R(0)),                                            //
-              B(LoadICStrictWide), A(1, 2), U16(0), U16(wide_idx_2 += 2),  //
+              B(LoadICStrictWide), A(1, 2), U16(0), U16(wide_idx_2 + 2),   //
               B(Return),                                                   //
           },
           1,
@@ -982,7 +982,7 @@ TEST(PropertyLoads) {
                 B(KeyedLoadICSloppy), A(1, 3), U8((wide_idx_3 += 2)),   //
                 B(Star), R(0)),                                         //
               B(Ldar), A(2, 3),                                         //
-              B(KeyedLoadICSloppyWide), A(1, 3), U16(wide_idx_3 += 2),  //
+              B(KeyedLoadICSloppyWide), A(1, 3), U16(wide_idx_3 + 2),   //
               B(Return),                                                //
           }},
       {
@@ -1000,7 +1000,7 @@ TEST(PropertyLoads) {
                 B(KeyedLoadICStrict), A(1, 3), U8((wide_idx_4 += 2)),   //
                 B(Star), R(0)),                                         //
               B(Ldar), A(2, 3),                                         //
-              B(KeyedLoadICStrictWide), A(1, 3), U16(wide_idx_4 += 2),  //
+              B(KeyedLoadICStrictWide), A(1, 3), U16(wide_idx_4 + 2),   //
               B(Return),                                                //
           }},
       };
@@ -1136,7 +1136,7 @@ TEST(PropertyStores) {
              B(LdaSmi8), U8(1),                                          //
              B(StoreICSloppy), A(1, 2), U8(0), U8((wide_idx_1 += 2))),   //
            B(LdaSmi8), U8(2),                                            //
-           B(StoreICSloppyWide), A(1, 2), U16(0), U16(wide_idx_1 += 2),  //
+           B(StoreICSloppyWide), A(1, 2), U16(0), U16(wide_idx_1 + 2),   //
            B(LdaUndefined),                                              //
            B(Return),                                                    //
        },
@@ -1155,7 +1155,7 @@ TEST(PropertyStores) {
              B(LdaSmi8), U8(1),                                          //
              B(StoreICStrict), A(1, 2), U8(0), U8((wide_idx_2 += 2))),   //
            B(LdaSmi8), U8(2),                                            //
-           B(StoreICStrictWide), A(1, 2), U16(0), U16(wide_idx_2 += 2),  //
+           B(StoreICStrictWide), A(1, 2), U16(0), U16(wide_idx_2 + 2),   //
            B(LdaUndefined),                                              //
            B(Return),                                                    //
        },
@@ -1175,7 +1175,7 @@ TEST(PropertyStores) {
                                     U8((wide_idx_3 += 2))),                   //
            B(LdaSmi8), U8(2),                                                 //
            B(KeyedStoreICSloppyWide), A(1, 3), A(2, 3),                       //
-                                      U16(wide_idx_3 += 2),                   //
+                                      U16(wide_idx_3 + 2),                    //
            B(LdaUndefined),                                                   //
            B(Return),                                                         //
        }},
@@ -1194,7 +1194,7 @@ TEST(PropertyStores) {
                                     U8((wide_idx_4 += 2))),                   //
            B(LdaSmi8), U8(2),                                                 //
            B(KeyedStoreICStrictWide), A(1, 3), A(2, 3),                       //
-                                      U16(wide_idx_4 += 2),                   //
+                                      U16(wide_idx_4 + 2),                    //
            B(LdaUndefined),                                                   //
            B(Return),                                                         //
        }}};
@@ -1347,7 +1347,7 @@ TEST(LoadGlobal) {
        {
            REPEAT_127(COMMA,                                         //
              B(LoadICSloppy), A(1, 2), U8(0), U8(wide_idx_1 += 2)),  //
-           B(LdaGlobalSloppyWide), U16(1), U16(wide_idx_1 += 2),     //
+           B(LdaGlobalSloppyWide), U16(1), U16(wide_idx_1 + 2),      //
            B(Return),                                                //
        },
        2,
@@ -1362,7 +1362,7 @@ TEST(LoadGlobal) {
        {
            REPEAT_127(COMMA,                                         //
              B(LoadICStrict), A(1, 2), U8(0), U8(wide_idx_2 += 2)),  //
-           B(LdaGlobalStrictWide), U16(1), U16(wide_idx_2 += 2),     //
+           B(LdaGlobalStrictWide), U16(1), U16(wide_idx_2 + 2),      //
            B(Return),                                                //
        },
        2,
@@ -1451,7 +1451,7 @@ TEST(StoreGlobal) {
            REPEAT_127(COMMA,                                         //
              B(LoadICSloppy), A(1, 2), U8(0), U8(wide_idx_1 += 2)),  //
            B(LdaSmi8), U8(2),                                        //
-           B(StaGlobalSloppyWide), U16(1), U16(wide_idx_1 += 2),     //
+           B(StaGlobalSloppyWide), U16(1), U16(wide_idx_1 + 2),      //
            B(LdaUndefined),                                          //
            B(Return),                                                //
        },
@@ -1468,7 +1468,7 @@ TEST(StoreGlobal) {
            REPEAT_127(COMMA,                                         //
              B(LoadICStrict), A(1, 2), U8(0), U8(wide_idx_2 += 2)),  //
            B(LdaSmi8), U8(2),                                        //
-           B(StaGlobalStrictWide), U16(1), U16(wide_idx_2 += 2),     //
+           B(StaGlobalStrictWide), U16(1), U16(wide_idx_2 + 2),      //
            B(LdaUndefined),                                          //
            B(Return),                                                //
        },
@@ -5137,6 +5137,73 @@ TEST(DeadCodeRemoval) {
            B(Return),                       //
            B(LdaSmi8), U8(2),               //
            B(Return),                       //
+       }},
+  };
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecodeForFunctionBody(snippets[i].code_snippet);
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
+}
+
+
+TEST(ThisFunction) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
+  int closure = Register::function_closure().index();
+
+  ExpectedSnippet<int> snippets[] = {
+      {"var f;\n f = function f() { }",
+       1 * kPointerSize,
+       1,
+       9,
+       {
+           B(LdaTheHole),        //
+           B(Star), R(0),        //
+           B(Ldar), R(closure),  //
+           B(Star), R(0),        //
+           B(LdaUndefined),      //
+           B(Return),            //
+       }},
+      {"var f;\n f = function f() { return f; }",
+       1 * kPointerSize,
+       1,
+       10,
+       {
+           B(LdaTheHole),        //
+           B(Star), R(0),        //
+           B(Ldar), R(closure),  //
+           B(Star), R(0),        //
+           B(Ldar), R(0),        //
+           B(Return),            //
+       }},
+  };
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecodeForFunction(snippets[i].code_snippet);
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
+}
+
+
+TEST(NewTarget) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
+  ExpectedSnippet<int> snippets[] = {
+      {"return new.target;",
+       1 * kPointerSize,
+       1,
+       10,
+       {
+           B(CallRuntime), U16(Runtime::kGetOriginalConstructor), R(0),  //
+                           U8(0),                                        //
+           B(Star), R(0),                                                //
+           B(Ldar), R(0),                                                //
+           B(Return),                                                    //
        }},
   };
 

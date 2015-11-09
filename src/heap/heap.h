@@ -240,6 +240,7 @@ namespace internal {
   V(enumerable_string, "enumerable")                       \
   V(Error_string, "Error")                                 \
   V(eval_string, "eval")                                   \
+  V(false_string, "false")                                 \
   V(float32x4_string, "float32x4")                         \
   V(Float32x4_string, "Float32x4")                         \
   V(for_api_string, "for_api")                             \
@@ -295,6 +296,7 @@ namespace internal {
   V(throw_string, "throw")                                 \
   V(toJSON_string, "toJSON")                               \
   V(toString_string, "toString")                           \
+  V(true_string, "true")                                   \
   V(uint16x8_string, "uint16x8")                           \
   V(Uint16x8_string, "Uint16x8")                           \
   V(uint32x4_string, "uint32x4")                           \
@@ -345,8 +347,6 @@ namespace internal {
   V(promise_raw_symbol)                     \
   V(promise_status_symbol)                  \
   V(promise_value_symbol)                   \
-  V(regexp_flags_symbol)                    \
-  V(regexp_source_symbol)                   \
   V(sealed_symbol)                          \
   V(stack_trace_symbol)                     \
   V(string_iterator_iterated_string_symbol) \
@@ -1896,13 +1896,6 @@ class Heap {
                                        double mutator_speed);
 
   // ===========================================================================
-  // Inline allocation. ========================================================
-  // ===========================================================================
-
-  void LowerInlineAllocationLimit(intptr_t step);
-  void ResetInlineAllocationLimit();
-
-  // ===========================================================================
   // Idle notification. ========================================================
   // ===========================================================================
 
@@ -2289,6 +2282,8 @@ class Heap {
 
   ScavengeJob* scavenge_job_;
 
+  InlineAllocationObserver* idle_scavenge_observer_;
+
   // These two counters are monotomically increasing and never reset.
   size_t full_codegen_bytes_generated_;
   size_t crankshaft_codegen_bytes_generated_;
@@ -2359,6 +2354,7 @@ class Heap {
   friend class GCCallbacksScope;
   friend class GCTracer;
   friend class HeapIterator;
+  friend class IdleScavengeObserver;
   friend class IncrementalMarking;
   friend class MarkCompactCollector;
   friend class MarkCompactMarkingVisitor;
@@ -2429,14 +2425,14 @@ class AlwaysAllocateScope {
 // objects in a heap space but above the allocation pointer.
 class VerifyPointersVisitor : public ObjectVisitor {
  public:
-  inline void VisitPointers(Object** start, Object** end);
+  inline void VisitPointers(Object** start, Object** end) override;
 };
 
 
 // Verify that all objects are Smis.
 class VerifySmisVisitor : public ObjectVisitor {
  public:
-  inline void VisitPointers(Object** start, Object** end);
+  inline void VisitPointers(Object** start, Object** end) override;
 };
 
 
@@ -2697,7 +2693,7 @@ class PathTracer : public ObjectVisitor {
         object_stack_(20),
         no_allocation() {}
 
-  virtual void VisitPointers(Object** start, Object** end);
+  void VisitPointers(Object** start, Object** end) override;
 
   void Reset();
   void TracePathFrom(Object** root);

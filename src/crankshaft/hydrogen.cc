@@ -6589,7 +6589,8 @@ HValue* HOptimizedGraphBuilder::BuildMonomorphicAccess(
     if (info->NeedsWrappingFor(info->accessor())) {
       HValue* function = Add<HConstant>(info->accessor());
       PushArgumentsFromEnvironment(argument_count);
-      return New<HCallFunction>(function, argument_count, WRAP_AND_CALL);
+      return New<HCallFunction>(function, argument_count,
+                                ConvertReceiverMode::kNotNullOrUndefined);
     } else if (FLAG_inline_accessors && can_inline_accessor) {
       bool success = info->IsLoad()
           ? TryInlineGetter(info->accessor(), info->map(), ast_id, return_id)
@@ -8169,10 +8170,11 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(Call* expr,
       // use the regular CallFunctionStub for method calls to wrap the receiver.
       // TODO(verwaest): Support creation of value wrappers directly in
       // HWrapReceiver.
-      HInstruction* call = needs_wrapping
-          ? NewUncasted<HCallFunction>(
-              function, argument_count, WRAP_AND_CALL)
-          : BuildCallConstantFunction(target, argument_count);
+      HInstruction* call =
+          needs_wrapping ? NewUncasted<HCallFunction>(
+                               function, argument_count,
+                               ConvertReceiverMode::kNotNullOrUndefined)
+                         : BuildCallConstantFunction(target, argument_count);
       PushArgumentsFromEnvironment(argument_count);
       AddInstruction(call);
       Drop(1);  // Drop the function.
@@ -8201,10 +8203,8 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(Call* expr,
     environment()->SetExpressionStackAt(0, receiver);
     CHECK_ALIVE(VisitExpressions(expr->arguments()));
 
-    CallFunctionFlags flags = receiver->type().IsJSObject()
-        ? NO_CALL_FUNCTION_FLAGS : CALL_AS_METHOD;
     HInstruction* call = New<HCallFunction>(
-        function, argument_count, flags);
+        function, argument_count, ConvertReceiverMode::kNotNullOrUndefined);
 
     PushArgumentsFromEnvironment(argument_count);
 
@@ -8361,6 +8361,11 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
 
   CompilationInfo target_info(&parse_info);
   Handle<SharedFunctionInfo> target_shared(target->shared());
+
+  if (IsClassConstructor(target_shared->kind())) {
+    TraceInline(target, caller, "target is classConstructor");
+    return false;
+  }
   if (target_shared->HasDebugInfo()) {
     TraceInline(target, caller, "target is being debugged");
     return false;
@@ -9357,6 +9362,7 @@ bool HOptimizedGraphBuilder::TryIndirectCall(Call* expr) {
 }
 
 
+// f.apply(...)
 void HOptimizedGraphBuilder::BuildFunctionApply(Call* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   CHECK_ALIVE(VisitForValue(args->at(0)));
@@ -9707,8 +9713,8 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
         // the receiver.
         // TODO(verwaest): Support creation of value wrappers directly in
         // HWrapReceiver.
-        call = New<HCallFunction>(
-            function, argument_count, WRAP_AND_CALL);
+        call = New<HCallFunction>(function, argument_count,
+                                  ConvertReceiverMode::kNotNullOrUndefined);
       } else if (TryInlineCall(expr)) {
         return;
       } else {
@@ -9731,9 +9737,8 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
       Push(receiver);
 
       CHECK_ALIVE(VisitExpressions(expr->arguments(), arguments_flag));
-      CallFunctionFlags flags = receiver->type().IsJSObject()
-          ? NO_CALL_FUNCTION_FLAGS : CALL_AS_METHOD;
-      call = New<HCallFunction>(function, argument_count, flags);
+      call = New<HCallFunction>(function, argument_count,
+                                ConvertReceiverMode::kNotNullOrUndefined);
     }
     PushArgumentsFromEnvironment(argument_count);
 
@@ -9758,7 +9763,8 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
     Push(graph()->GetConstantUndefined());
     CHECK_ALIVE(VisitExpressions(expr->arguments()));
 
-    if (expr->IsMonomorphic()) {
+    if (expr->IsMonomorphic() &&
+        !IsClassConstructor(expr->target()->shared()->kind())) {
       Add<HCheckValue>(function, expr->target());
 
       // Patch the global object on the stack by the expected receiver.
@@ -9782,8 +9788,8 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
       call = BuildCallConstantFunction(expr->target(), argument_count);
     } else {
       PushArgumentsFromEnvironment(argument_count);
-      HCallFunction* call_function =
-          New<HCallFunction>(function, argument_count);
+      HCallFunction* call_function = New<HCallFunction>(
+          function, argument_count, ConvertReceiverMode::kNullOrUndefined);
       call = call_function;
       if (expr->is_uninitialized() &&
           expr->IsUsingCallFeedbackICSlot(isolate())) {
@@ -12603,18 +12609,6 @@ void HOptimizedGraphBuilder::GenerateObjectEquals(CallRuntime* call) {
 }
 
 
-// Fast support for StringAdd.
-void HOptimizedGraphBuilder::GenerateStringAdd(CallRuntime* call) {
-  DCHECK_EQ(2, call->arguments()->length());
-  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
-  CHECK_ALIVE(VisitForValue(call->arguments()->at(1)));
-  HValue* right = Pop();
-  HValue* left = Pop();
-  HInstruction* result = NewUncasted<HStringAdd>(left, right);
-  return ast_context()->ReturnInstruction(result, call->id());
-}
-
-
 // Fast support for SubString.
 void HOptimizedGraphBuilder::GenerateSubString(CallRuntime* call) {
   DCHECK_EQ(3, call->arguments()->length());
@@ -12734,52 +12728,6 @@ void HOptimizedGraphBuilder::GenerateCall(CallRuntime* call) {
 }
 
 
-// Fast call for custom callbacks.
-void HOptimizedGraphBuilder::GenerateCallFunction(CallRuntime* call) {
-  // 1 ~ The function to call is not itself an argument to the call.
-  int arg_count = call->arguments()->length() - 1;
-  DCHECK(arg_count >= 1);  // There's always at least a receiver.
-
-  CHECK_ALIVE(VisitExpressions(call->arguments()));
-  // The function is the last argument
-  HValue* function = Pop();
-  // Push the arguments to the stack
-  PushArgumentsFromEnvironment(arg_count);
-
-  IfBuilder if_is_jsfunction(this);
-  if_is_jsfunction.If<HHasInstanceTypeAndBranch>(function, JS_FUNCTION_TYPE);
-
-  if_is_jsfunction.Then();
-  {
-    HInstruction* invoke_result =
-        Add<HInvokeFunction>(function, arg_count);
-    if (!ast_context()->IsEffect()) {
-      Push(invoke_result);
-    }
-    Add<HSimulate>(call->id(), FIXED_SIMULATE);
-  }
-
-  if_is_jsfunction.Else();
-  {
-    HInstruction* call_result =
-        Add<HCallFunction>(function, arg_count);
-    if (!ast_context()->IsEffect()) {
-      Push(call_result);
-    }
-    Add<HSimulate>(call->id(), FIXED_SIMULATE);
-  }
-  if_is_jsfunction.End();
-
-  if (ast_context()->IsEffect()) {
-    // EffectContext::ReturnValue ignores the value, so we can just pass
-    // 'undefined' (as we do not have the call result anymore).
-    return ast_context()->ReturnValue(graph()->GetConstantUndefined());
-  } else {
-    return ast_context()->ReturnValue(Pop());
-  }
-}
-
-
 // Fast call to math functions.
 void HOptimizedGraphBuilder::GenerateMathPow(CallRuntime* call) {
   DCHECK_EQ(2, call->arguments()->length());
@@ -12825,17 +12773,6 @@ void HOptimizedGraphBuilder::GenerateMathSqrt(CallRuntime* call) {
   HValue* value = Pop();
   HInstruction* result = NewUncasted<HUnaryMathOperation>(value, kMathSqrt);
   return ast_context()->ReturnInstruction(result, call->id());
-}
-
-
-void HOptimizedGraphBuilder::GenerateLikely(CallRuntime* call) {
-  DCHECK(call->arguments()->length() == 1);
-  Visit(call->arguments()->at(0));
-}
-
-
-void HOptimizedGraphBuilder::GenerateUnlikely(CallRuntime* call) {
-  return GenerateLikely(call);
 }
 
 

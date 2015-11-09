@@ -463,7 +463,7 @@ class FullCodeGenerator: public AstVisitor {
   void EmitReturnSequence();
 
   // Platform-specific code sequences for calls
-  void EmitCall(Call* expr, CallICState::CallType = CallICState::FUNCTION);
+  void EmitCall(Call* expr, ConvertReceiverMode = ConvertReceiverMode::kAny);
   void EmitSuperConstructorCall(Call* expr);
   void EmitCallWithLoadIC(Call* expr);
   void EmitSuperCallWithLoadIC(Call* expr);
@@ -479,7 +479,6 @@ class FullCodeGenerator: public AstVisitor {
   F(IsJSProxy)                          \
   F(IsConstructCall)                    \
   F(Call)                               \
-  F(CallFunction)                       \
   F(DefaultConstructorCallSuper)        \
   F(ArgumentsLength)                    \
   F(Arguments)                          \
@@ -505,7 +504,6 @@ class FullCodeGenerator: public AstVisitor {
   F(DebugBreakInOptimizedCode)          \
   F(ClassOf)                            \
   F(StringCharCodeAt)                   \
-  F(StringAdd)                          \
   F(SubString)                          \
   F(RegExpExec)                         \
   F(RegExpConstructResult)              \

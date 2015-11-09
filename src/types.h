@@ -160,12 +160,12 @@ namespace internal {
 
 #if defined(V8_PPC_TAGGING_OPT)
 #define MASK_BITSET_TYPE_LIST(V) \
-  V(Representation, 0x7ff80000u) \
-  V(Semantic,       0x0007ffffu)
+  V(Representation, 0x7fc00000u) \
+  V(Semantic,       0x003fffffu)
 #else  // V8_PPC_TAGGING_OPT
 #define MASK_BITSET_TYPE_LIST(V) \
-  V(Representation, 0xfff00000u) \
-  V(Semantic,       0x000ffffeu)
+  V(Representation, 0xff800000u) \
+  V(Semantic,       0x007ffffeu)
 #endif  // V8_PPC_TAGGING_OPT
 
 #define REPRESENTATION(k) ((k) & BitsetType::kRepresentation)
@@ -241,53 +241,7 @@ namespace internal {
   V(Undetectable,        1u << 15 | REPRESENTATION(kTaggedPointer)) \
   V(OtherObject,         1u << 16 | REPRESENTATION(kTaggedPointer)) \
   V(Proxy,               1u << 17 | REPRESENTATION(kTaggedPointer)) \
-  V(Internal,            1u << 18 | REPRESENTATION(kTagged | kUntagged)) \
-  \
-  V(Signed31,            kUnsigned30 | kNegative31) \
-  V(Signed32,            kSigned31 | kOtherUnsigned31 | kOtherSigned32) \
-  V(Negative32,          kNegative31 | kOtherSigned32) \
-  V(Unsigned31,          kUnsigned30 | kOtherUnsigned31) \
-  V(Unsigned32,          kUnsigned30 | kOtherUnsigned31 | kOtherUnsigned32) \
-  V(Integral32,          kSigned32 | kUnsigned32) \
-  V(PlainNumber,         kIntegral32 | kOtherNumber) \
-  V(OrderedNumber,       kPlainNumber | kMinusZero) \
-  V(MinusZeroOrNaN,      kMinusZero | kNaN) \
-  V(Number,              kOrderedNumber | kNaN) \
-  V(String,              kInternalizedString | kOtherString) \
-  V(UniqueName,          kSymbol | kInternalizedString) \
-  V(Name,                kSymbol | kString) \
-  V(BooleanOrNumber,     kBoolean | kNumber) \
-  V(NullOrUndefined,     kNull | kUndefined) \
-  V(NumberOrString,      kNumber | kString) \
-  V(NumberOrUndefined,   kNumber | kUndefined) \
-  V(PlainPrimitive,      kNumberOrString | kBoolean | kNullOrUndefined) \
-  V(Primitive,           kSymbol | kSimd | kPlainPrimitive) \
-  V(DetectableReceiver,  kOtherObject | kProxy) \
-  V(Detectable,          kDetectableReceiver | kNumber | kName) \
-  V(Object,              kOtherObject | kUndetectable) \
-  V(Receiver,            kObject | kProxy) \
-  V(ReceiverOrUndefined, kReceiver | kUndefined) \
-  V(StringOrReceiver,    kString | kReceiver) \
-  V(Unique,              kBoolean | kUniqueName | kNull | kUndefined | \
-                         kReceiver) \
-  V(NonNumber,           kUnique | kString | kInternal) \
-  V(Any,                 0x7fffffffu)
-#else  // V8_PPC_TAGGING_OPT
-#define SEMANTIC_BITSET_TYPE_LIST(V) \
-  V(Negative31,          1u << 5  | REPRESENTATION(kTagged | kUntaggedNumber)) \
-  V(Null,                1u << 6  | REPRESENTATION(kTaggedPointer)) \
-  V(Undefined,           1u << 7  | REPRESENTATION(kTaggedPointer)) \
-  V(Boolean,             1u << 8  | REPRESENTATION(kTaggedPointer)) \
-  V(Unsigned30,          1u << 9  | REPRESENTATION(kTagged | kUntaggedNumber)) \
-  V(MinusZero,           1u << 10 | REPRESENTATION(kTagged | kUntaggedNumber)) \
-  V(NaN,                 1u << 11 | REPRESENTATION(kTagged | kUntaggedNumber)) \
-  V(Symbol,              1u << 12 | REPRESENTATION(kTaggedPointer)) \
-  V(InternalizedString,  1u << 13 | REPRESENTATION(kTaggedPointer)) \
-  V(OtherString,         1u << 14 | REPRESENTATION(kTaggedPointer)) \
-  V(Simd,                1u << 15 | REPRESENTATION(kTaggedPointer)) \
-  V(Undetectable,        1u << 16 | REPRESENTATION(kTaggedPointer)) \
-  V(OtherObject,         1u << 17 | REPRESENTATION(kTaggedPointer)) \
-  V(Proxy,               1u << 18 | REPRESENTATION(kTaggedPointer)) \
+  V(Function,            1u << 18 | REPRESENTATION(kTaggedPointer)) \
   V(Internal,            1u << 19 | REPRESENTATION(kTagged | kUntagged)) \
   \
   V(Signed31,            kUnsigned30 | kNegative31) \
@@ -309,11 +263,57 @@ namespace internal {
   V(NumberOrUndefined,   kNumber | kUndefined) \
   V(PlainPrimitive,      kNumberOrString | kBoolean | kNullOrUndefined) \
   V(Primitive,           kSymbol | kSimd | kPlainPrimitive) \
-  V(DetectableReceiver,  kOtherObject | kProxy) \
+  V(DetectableReceiver,  kFunction | kOtherObject | kProxy) \
   V(Detectable,          kDetectableReceiver | kNumber | kName) \
-  V(Object,              kOtherObject | kUndetectable) \
+  V(Object,              kFunction | kOtherObject | kUndetectable) \
   V(Receiver,            kObject | kProxy) \
-  V(ReceiverOrUndefined, kReceiver | kUndefined) \
+  V(StringOrReceiver,    kString | kReceiver) \
+  V(Unique,              kBoolean | kUniqueName | kNull | kUndefined | \
+                         kReceiver) \
+  V(NonNumber,           kUnique | kString | kInternal) \
+  V(Any,                 0x7fffffffu)
+#else  // V8_PPC_TAGGING_OPT
+#define SEMANTIC_BITSET_TYPE_LIST(V) \
+  V(Negative31,          1u << 5  | REPRESENTATION(kTagged | kUntaggedNumber)) \
+  V(Null,                1u << 6  | REPRESENTATION(kTaggedPointer)) \
+  V(Undefined,           1u << 7  | REPRESENTATION(kTaggedPointer)) \
+  V(Boolean,             1u << 8  | REPRESENTATION(kTaggedPointer)) \
+  V(Unsigned30,          1u << 9  | REPRESENTATION(kTagged | kUntaggedNumber)) \
+  V(MinusZero,           1u << 10 | REPRESENTATION(kTagged | kUntaggedNumber)) \
+  V(NaN,                 1u << 11 | REPRESENTATION(kTagged | kUntaggedNumber)) \
+  V(Symbol,              1u << 12 | REPRESENTATION(kTaggedPointer)) \
+  V(InternalizedString,  1u << 13 | REPRESENTATION(kTaggedPointer)) \
+  V(OtherString,         1u << 14 | REPRESENTATION(kTaggedPointer)) \
+  V(Simd,                1u << 15 | REPRESENTATION(kTaggedPointer)) \
+  V(Undetectable,        1u << 16 | REPRESENTATION(kTaggedPointer)) \
+  V(OtherObject,         1u << 17 | REPRESENTATION(kTaggedPointer)) \
+  V(Proxy,               1u << 18 | REPRESENTATION(kTaggedPointer)) \
+  V(Function,            1u << 19 | REPRESENTATION(kTaggedPointer)) \
+  V(Internal,            1u << 20 | REPRESENTATION(kTagged | kUntagged)) \
+  \
+  V(Signed31,            kUnsigned30 | kNegative31) \
+  V(Signed32,            kSigned31 | kOtherUnsigned31 | kOtherSigned32) \
+  V(Negative32,          kNegative31 | kOtherSigned32) \
+  V(Unsigned31,          kUnsigned30 | kOtherUnsigned31) \
+  V(Unsigned32,          kUnsigned30 | kOtherUnsigned31 | kOtherUnsigned32) \
+  V(Integral32,          kSigned32 | kUnsigned32) \
+  V(PlainNumber,         kIntegral32 | kOtherNumber) \
+  V(OrderedNumber,       kPlainNumber | kMinusZero) \
+  V(MinusZeroOrNaN,      kMinusZero | kNaN) \
+  V(Number,              kOrderedNumber | kNaN) \
+  V(String,              kInternalizedString | kOtherString) \
+  V(UniqueName,          kSymbol | kInternalizedString) \
+  V(Name,                kSymbol | kString) \
+  V(BooleanOrNumber,     kBoolean | kNumber) \
+  V(NullOrUndefined,     kNull | kUndefined) \
+  V(NumberOrString,      kNumber | kString) \
+  V(NumberOrUndefined,   kNumber | kUndefined) \
+  V(PlainPrimitive,      kNumberOrString | kBoolean | kNullOrUndefined) \
+  V(Primitive,           kSymbol | kSimd | kPlainPrimitive) \
+  V(DetectableReceiver,  kFunction | kOtherObject | kProxy) \
+  V(Detectable,          kDetectableReceiver | kNumber | kName) \
+  V(Object,              kFunction | kOtherObject | kUndetectable) \
+  V(Receiver,            kObject | kProxy) \
   V(StringOrReceiver,    kString | kReceiver) \
   V(Unique,              kBoolean | kUniqueName | kNull | kUndefined | \
                          kReceiver) \

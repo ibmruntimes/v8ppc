@@ -17,7 +17,6 @@
 namespace v8 {
 namespace internal {
 
-
 IncrementalMarking::StepActions IncrementalMarking::IdleStepActions() {
   return StepActions(IncrementalMarking::NO_GC_VIA_STACK_GUARD,
                      IncrementalMarking::FORCE_MARKING,
@@ -27,6 +26,7 @@ IncrementalMarking::StepActions IncrementalMarking::IdleStepActions() {
 
 IncrementalMarking::IncrementalMarking(Heap* heap)
     : heap_(heap),
+      observer_(*this, kAllocatedThreshold),
       state_(STOPPED),
       is_compacting_(false),
       steps_count_(0),
@@ -349,9 +349,9 @@ class IncrementalMarkingRootMarkingVisitor : public ObjectVisitor {
       IncrementalMarking* incremental_marking)
       : heap_(incremental_marking->heap()) {}
 
-  void VisitPointer(Object** p) { MarkObjectByPointer(p); }
+  void VisitPointer(Object** p) override { MarkObjectByPointer(p); }
 
-  void VisitPointers(Object** start, Object** end) {
+  void VisitPointers(Object** start, Object** end) override {
     for (Object** p = start; p < end; p++) MarkObjectByPointer(p);
   }
 
@@ -568,7 +568,8 @@ void IncrementalMarking::Start(const char* reason) {
     state_ = SWEEPING;
   }
 
-  heap_->LowerInlineAllocationLimit(kAllocatedThreshold);
+  heap_->new_space()->AddInlineAllocationObserver(&observer_);
+
   incremental_marking_job()->Start(heap_);
 }
 
@@ -843,7 +844,8 @@ void IncrementalMarking::Stop() {
   if (FLAG_trace_incremental_marking) {
     PrintF("[IncrementalMarking] Stopping.\n");
   }
-  heap_->ResetInlineAllocationLimit();
+
+  heap_->new_space()->RemoveInlineAllocationObserver(&observer_);
   IncrementalMarking::set_should_hurry(false);
   ResetStepCounters();
   if (IsMarking()) {
@@ -871,7 +873,8 @@ void IncrementalMarking::Finalize() {
   Hurry();
   state_ = STOPPED;
   is_compacting_ = false;
-  heap_->ResetInlineAllocationLimit();
+
+  heap_->new_space()->RemoveInlineAllocationObserver(&observer_);
   IncrementalMarking::set_should_hurry(false);
   ResetStepCounters();
   PatchIncrementalMarkingRecordWriteStubs(heap_,

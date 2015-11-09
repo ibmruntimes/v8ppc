@@ -108,6 +108,7 @@ class CallSite {
   T(DateType, "this is not a Date object.")                                    \
   T(DebuggerFrame, "Debugger: Invalid frame index.")                           \
   T(DebuggerType, "Debugger: Parameters have wrong types.")                    \
+  T(DeclarationMissingInitializer, "Missing initializer in % declaration")     \
   T(DefineDisallowed, "Cannot define property:%, object is not extensible.")   \
   T(DuplicateTemplateProperty, "Object template has duplicate property '%'")   \
   T(ExtendsValueGenerator,                                                     \
@@ -201,7 +202,7 @@ class CallSite {
   T(RegExpFlags,                                                               \
     "Cannot supply flags when constructing one RegExp from another")           \
   T(RegExpNonObject, "% getter called on non-object %")                        \
-  T(RegExpNonRegExp, "% is not an RegExp object")                              \
+  T(RegExpNonRegExp, "% getter called on non-RegExp object")                   \
   T(ReinitializeIntl, "Trying to re-initialize % object.")                     \
   T(ResolvedOptionsCalledOnNonObject,                                          \
     "resolvedOptions method called on a non-object or on a object that is "    \

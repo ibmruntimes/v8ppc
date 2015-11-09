@@ -59,17 +59,17 @@ Callable CodeFactory::KeyedLoadICInOptimizedCode(
 
 // static
 Callable CodeFactory::CallIC(Isolate* isolate, int argc,
-                             CallICState::CallType call_type) {
-  return Callable(CallIC::initialize_stub(isolate, argc, call_type),
+                             ConvertReceiverMode mode) {
+  return Callable(CallIC::initialize_stub(isolate, argc, mode),
                   CallFunctionWithFeedbackDescriptor(isolate));
 }
 
 
 // static
 Callable CodeFactory::CallICInOptimizedCode(Isolate* isolate, int argc,
-                                            CallICState::CallType call_type) {
+                                            ConvertReceiverMode mode) {
   return Callable(
-      CallIC::initialize_stub_in_optimized_code(isolate, argc, call_type),
+      CallIC::initialize_stub_in_optimized_code(isolate, argc, mode),
       CallFunctionWithFeedbackAndVectorDescriptor(isolate));
 }
 
@@ -288,14 +288,6 @@ Callable CodeFactory::AllocateInNewSpace(Isolate* isolate) {
 
 
 // static
-Callable CodeFactory::CallFunction(Isolate* isolate, int argc,
-                                   CallFunctionFlags flags) {
-  CallFunctionStub stub(isolate, argc, flags);
-  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
-}
-
-
-// static
 Callable CodeFactory::ArgumentAdaptor(Isolate* isolate) {
   return Callable(isolate->builtins()->ArgumentsAdaptorTrampoline(),
                   ArgumentAdaptorDescriptor(isolate));
@@ -303,8 +295,15 @@ Callable CodeFactory::ArgumentAdaptor(Isolate* isolate) {
 
 
 // static
-Callable CodeFactory::Call(Isolate* isolate) {
-  return Callable(isolate->builtins()->Call(),
+Callable CodeFactory::Call(Isolate* isolate, ConvertReceiverMode mode) {
+  return Callable(isolate->builtins()->Call(mode),
+                  CallTrampolineDescriptor(isolate));
+}
+
+
+// static
+Callable CodeFactory::CallFunction(Isolate* isolate, ConvertReceiverMode mode) {
+  return Callable(isolate->builtins()->CallFunction(mode),
                   CallTrampolineDescriptor(isolate));
 }
 

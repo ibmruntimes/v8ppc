@@ -543,7 +543,8 @@ void JSGenericLowering::LowerJSCallConstruct(Node* node) {
 void JSGenericLowering::LowerJSCallFunction(Node* node) {
   CallFunctionParameters const& p = CallFunctionParametersOf(node->op());
   int const arg_count = static_cast<int>(p.arity() - 2);
-  Callable callable = CodeFactory::Call(isolate());
+  ConvertReceiverMode const mode = p.convert_mode();
+  Callable callable = CodeFactory::Call(isolate(), mode);
   CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
   if (p.tail_call_mode() == TailCallMode::kAllow) {
     flags |= CallDescriptor::kSupportsTailCalls;
@@ -768,6 +769,27 @@ void JSGenericLowering::LowerJSForInPrepare(Node* node) {
 
 void JSGenericLowering::LowerJSForInStep(Node* node) {
   ReplaceWithRuntimeCall(node, Runtime::kForInStep);
+}
+
+
+void JSGenericLowering::LowerJSLoadMessage(Node* node) {
+  ExternalReference message_address =
+      ExternalReference::address_of_pending_message_obj(isolate());
+  node->RemoveInput(NodeProperties::FirstContextIndex(node));
+  node->InsertInput(zone(), 0, jsgraph()->ExternalConstant(message_address));
+  node->InsertInput(zone(), 1, jsgraph()->IntPtrConstant(0));
+  NodeProperties::ChangeOp(node, machine()->Load(kMachAnyTagged));
+}
+
+
+void JSGenericLowering::LowerJSStoreMessage(Node* node) {
+  ExternalReference message_address =
+      ExternalReference::address_of_pending_message_obj(isolate());
+  node->RemoveInput(NodeProperties::FirstContextIndex(node));
+  node->InsertInput(zone(), 0, jsgraph()->ExternalConstant(message_address));
+  node->InsertInput(zone(), 1, jsgraph()->IntPtrConstant(0));
+  StoreRepresentation representation(kMachAnyTagged, kNoWriteBarrier);
+  NodeProperties::ChangeOp(node, machine()->Store(representation));
 }
 
 
