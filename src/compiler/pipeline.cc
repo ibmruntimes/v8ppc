@@ -12,6 +12,7 @@
 #include "src/compiler/ast-graph-builder.h"
 #include "src/compiler/ast-loop-assignment-analyzer.h"
 #include "src/compiler/basic-block-instrumentor.h"
+#include "src/compiler/binary-operator-reducer.h"
 #include "src/compiler/branch-elimination.h"
 #include "src/compiler/bytecode-graph-builder.h"
 #include "src/compiler/change-lowering.h"
@@ -393,6 +394,8 @@ class SourcePositionWrapper final : public Reducer {
     return reducer_->Reduce(node);
   }
 
+  void Finalize() final { reducer_->Finalize(); }
+
  private:
   Reducer* const reducer_;
   SourcePositionTable* const table_;
@@ -588,7 +591,11 @@ struct TypedLoweringPhase {
                                               data->common());
     LoadElimination load_elimination(&graph_reducer);
     JSBuiltinReducer builtin_reducer(&graph_reducer, data->jsgraph());
-    JSTypedLowering typed_lowering(&graph_reducer, data->jsgraph(), temp_zone);
+    JSTypedLowering typed_lowering(&graph_reducer, data->info()->dependencies(),
+                                   data->info()->is_deoptimization_enabled()
+                                       ? JSTypedLowering::kDeoptimizationEnabled
+                                       : JSTypedLowering::kNoFlags,
+                                   data->jsgraph(), temp_zone);
     JSIntrinsicLowering intrinsic_lowering(
         &graph_reducer, data->jsgraph(),
         data->info()->is_deoptimization_enabled()
@@ -638,11 +645,14 @@ struct SimplifiedLoweringPhase {
     MachineOperatorReducer machine_reducer(data->jsgraph());
     CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
                                          data->common(), data->machine());
+    BinaryOperatorReducer binary_reducer(&graph_reducer, data->graph(),
+                                         data->common(), data->machine());
     AddReducer(data, &graph_reducer, &dead_code_elimination);
     AddReducer(data, &graph_reducer, &simple_reducer);
     AddReducer(data, &graph_reducer, &value_numbering);
     AddReducer(data, &graph_reducer, &machine_reducer);
     AddReducer(data, &graph_reducer, &common_reducer);
+    AddReducer(data, &graph_reducer, &binary_reducer);
     graph_reducer.ReduceGraph();
   }
 };

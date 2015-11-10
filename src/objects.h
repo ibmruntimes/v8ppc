@@ -1644,8 +1644,15 @@ class BodyDescriptorBase {
                                      int end_offset, ObjectVisitor* v);
 
   template <typename StaticVisitor>
-  static inline void IterateBodyImpl(HeapObject* obj, int start_offset,
-                                     int end_offset);
+  static inline void IterateBodyImpl(Heap* heap, HeapObject* obj,
+                                     int start_offset, int end_offset);
+
+  static inline void IteratePointers(HeapObject* obj, int start_offset,
+                                     int end_offset, ObjectVisitor* v);
+
+  template <typename StaticVisitor>
+  static inline void IteratePointers(Heap* heap, HeapObject* obj,
+                                     int start_offset, int end_offset);
 };
 
 
@@ -1665,7 +1672,8 @@ class FixedBodyDescriptor : public BodyDescriptorBase {
 
   template <typename StaticVisitor>
   static inline void IterateBody(HeapObject* obj) {
-    IterateBodyImpl<StaticVisitor>(obj, start_offset, end_offset);
+    Heap* heap = obj->GetHeap();
+    IterateBodyImpl<StaticVisitor>(heap, obj, start_offset, end_offset);
   }
 };
 
@@ -1685,7 +1693,8 @@ class FlexibleBodyDescriptorBase : public BodyDescriptorBase {
 
   template <typename StaticVisitor>
   static inline void IterateBody(HeapObject* obj, int object_size) {
-    IterateBodyImpl<StaticVisitor>(obj, start_offset, object_size);
+    Heap* heap = obj->GetHeap();
+    IterateBodyImpl<StaticVisitor>(heap, obj, start_offset, object_size);
   }
 };
 
@@ -5579,6 +5588,10 @@ class Map: public HeapObject {
   static const int kRetainingCounterStart = kSlackTrackingCounterEnd - 1;
   static const int kRetainingCounterEnd = 0;
 
+  // Completes inobject slack tracking for the transition tree starting at this
+  // initial map.
+  void CompleteInobjectSlackTracking();
+
   // Tells whether the object in the prototype property will be used
   // for instances created from this function.  If the prototype
   // property is set to a value that is not a JSObject, the prototype
@@ -7436,9 +7449,26 @@ class JSFunction: public JSObject {
                                             int* instance_size,
                                             int* in_object_properties);
 
-  // Iterates the objects, including code objects indirectly referenced
-  // through pointers to the first instruction in the code object.
-  void JSFunctionIterateBody(int object_size, ObjectVisitor* v);
+  // Visiting policy flags define whether the code entry or next function
+  // should be visited or not.
+  enum BodyVisitingPolicy {
+    kVisitCodeEntry = 1 << 0,
+    kVisitNextFunction = 1 << 1,
+
+    kSkipCodeEntryAndNextFunction = 0,
+    kVisitCodeEntryAndNextFunction = kVisitCodeEntry | kVisitNextFunction
+  };
+  // Iterates the function object according to the visiting policy.
+  template <BodyVisitingPolicy>
+  class BodyDescriptorImpl;
+
+  // Visit the whole object.
+  typedef BodyDescriptorImpl<kVisitCodeEntryAndNextFunction> BodyDescriptor;
+
+  // Don't visit next function.
+  typedef BodyDescriptorImpl<kVisitCodeEntry> BodyDescriptorStrongCode;
+  typedef BodyDescriptorImpl<kSkipCodeEntryAndNextFunction>
+      BodyDescriptorWeakCode;
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSFunction)
@@ -7456,15 +7486,14 @@ class JSFunction: public JSObject {
 
   // Layout descriptors. The last property (from kNonWeakFieldsEndOffset to
   // kSize) is weak and has special handling during garbage collection.
-  static const int kCodeEntryOffset = JSObject::kHeaderSize;
-  static const int kPrototypeOrInitialMapOffset =
-      kCodeEntryOffset + kPointerSize;
+  static const int kPrototypeOrInitialMapOffset = JSObject::kHeaderSize;
   static const int kSharedFunctionInfoOffset =
       kPrototypeOrInitialMapOffset + kPointerSize;
   static const int kContextOffset = kSharedFunctionInfoOffset + kPointerSize;
   static const int kLiteralsOffset = kContextOffset + kPointerSize;
   static const int kNonWeakFieldsEndOffset = kLiteralsOffset + kPointerSize;
-  static const int kNextFunctionLinkOffset = kNonWeakFieldsEndOffset;
+  static const int kCodeEntryOffset = kNonWeakFieldsEndOffset;
+  static const int kNextFunctionLinkOffset = kCodeEntryOffset + kPointerSize;
   static const int kSize = kNextFunctionLinkOffset + kPointerSize;
 
  private:

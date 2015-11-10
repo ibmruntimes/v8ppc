@@ -48,6 +48,7 @@ namespace compiler {
   V(X64Ror32)                      \
   V(X64Lzcnt)                      \
   V(X64Lzcnt32)                    \
+  V(X64Tzcnt)                      \
   V(X64Tzcnt32)                    \
   V(X64Popcnt32)                   \
   V(SSEFloat32Cmp)                 \
@@ -123,7 +124,6 @@ namespace compiler {
   V(X64Inc32)                      \
   V(X64Push)                       \
   V(X64Poke)                       \
-  V(X64StoreWriteBarrier)          \
   V(X64StackCheck)
 
 

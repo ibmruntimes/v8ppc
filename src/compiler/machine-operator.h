@@ -49,7 +49,12 @@ TruncationMode TruncationModeOf(Operator const*);
 
 
 // Supported write barrier modes.
-enum WriteBarrierKind { kNoWriteBarrier, kFullWriteBarrier };
+enum WriteBarrierKind {
+  kNoWriteBarrier,
+  kMapWriteBarrier,
+  kPointerWriteBarrier,
+  kFullWriteBarrier
+};
 
 std::ostream& operator<<(std::ostream& os, WriteBarrierKind);
 
@@ -119,9 +124,11 @@ class MachineOperatorBuilder final : public ZoneObject {
     kWord32ShiftIsSafe = 1u << 9,
     kWord32Ctz = 1u << 10,
     kWord32Popcnt = 1u << 11,
+    kWord64Ctz = 1u << 12,
     kAllOptionalOps = kFloat32Max | kFloat32Min | kFloat64Max | kFloat64Min |
                       kFloat64RoundDown | kFloat64RoundTruncate |
-                      kFloat64RoundTiesAway | kWord32Ctz | kWord32Popcnt
+                      kFloat64RoundTiesAway | kWord32Ctz | kWord32Popcnt |
+                      kWord64Ctz
   };
   typedef base::Flags<Flag, unsigned> Flags;
 
@@ -149,6 +156,7 @@ class MachineOperatorBuilder final : public ZoneObject {
   const Operator* Word64Sar();
   const Operator* Word64Ror();
   const Operator* Word64Clz();
+  const OptionalOperator Word64Ctz();
   const Operator* Word64Equal();
 
   const Operator* Int32Add();

@@ -10980,15 +10980,6 @@ bool Map::EquivalentToForNormalization(Map* other,
 }
 
 
-void JSFunction::JSFunctionIterateBody(int object_size, ObjectVisitor* v) {
-  // Iterate over all fields in the body but take care in dealing with
-  // the code entry.
-  IteratePointers(v, kPropertiesOffset, kCodeEntryOffset);
-  v->VisitCodeEntry(this->address() + kCodeEntryOffset);
-  IteratePointers(v, kCodeEntryOffset + kPointerSize, object_size);
-}
-
-
 bool JSFunction::Inlines(SharedFunctionInfo* candidate) {
   DisallowHeapAllocation no_gc;
   if (shared() == candidate) return true;
@@ -11104,12 +11095,7 @@ void SharedFunctionInfo::AddToOptimizedCodeMap(
     // flushed the optimized code map and the copy we created is full of holes.
     // For now we just give up on adding the entry and pretend it got flushed.
     if (shared->optimized_code_map()->IsSmi()) return;
-    int old_length = old_code_map->length();
-    // Zap the old map to avoid any stale entries. Note that this is required
-    // for correctness because entries are being treated weakly by the GC.
-    MemsetPointer(old_code_map->data_start(), isolate->heap()->the_hole_value(),
-                  old_length);
-    entry = old_length;
+    entry = old_code_map->length();
   }
   new_code_map->set(entry + kContextOffset, *native_context);
   new_code_map->set(entry + kCachedCodeOffset, *code);
@@ -11129,12 +11115,10 @@ void SharedFunctionInfo::AddToOptimizedCodeMap(
   }
 #endif
 
-  if (Heap::ShouldZapGarbage()) {
-    // Zap any old optimized code map for heap-verifier.
-    if (!shared->optimized_code_map()->IsSmi()) {
-      FixedArray* old_code_map = FixedArray::cast(shared->optimized_code_map());
-      old_code_map->FillWithHoles(0, old_code_map->length());
-    }
+  // Zap any old optimized code map.
+  if (!shared->optimized_code_map()->IsSmi()) {
+    FixedArray* old_code_map = FixedArray::cast(shared->optimized_code_map());
+    old_code_map->FillWithHoles(0, old_code_map->length());
   }
 
   shared->set_optimized_code_map(*new_code_map);
@@ -11142,12 +11126,10 @@ void SharedFunctionInfo::AddToOptimizedCodeMap(
 
 
 void SharedFunctionInfo::ClearOptimizedCodeMap() {
-  if (Heap::ShouldZapGarbage()) {
-    // Zap any old optimized code map for heap-verifier.
-    if (!optimized_code_map()->IsSmi()) {
-      FixedArray* old_code_map = FixedArray::cast(optimized_code_map());
-      old_code_map->FillWithHoles(0, old_code_map->length());
-    }
+  // Zap any old optimized code map.
+  if (!optimized_code_map()->IsSmi()) {
+    FixedArray* old_code_map = FixedArray::cast(optimized_code_map());
+    old_code_map->FillWithHoles(0, old_code_map->length());
   }
 
   set_optimized_code_map(Smi::FromInt(0));
@@ -11253,16 +11235,22 @@ static void ShrinkInstanceSize(Map* map, void* data) {
 
 void JSFunction::CompleteInobjectSlackTracking() {
   DCHECK(has_initial_map());
-  Map* map = initial_map();
+  initial_map()->CompleteInobjectSlackTracking();
+}
 
-  DCHECK(map->counter() >= Map::kSlackTrackingCounterEnd - 1);
-  map->set_counter(Map::kRetainingCounterStart);
 
-  int slack = map->unused_property_fields();
-  TransitionArray::TraverseTransitionTree(map, &GetMinInobjectSlack, &slack);
+void Map::CompleteInobjectSlackTracking() {
+  // Has to be an initial map.
+  DCHECK(GetBackPointer()->IsUndefined());
+
+  DCHECK_GE(counter(), kSlackTrackingCounterEnd - 1);
+  set_counter(kRetainingCounterStart);
+
+  int slack = unused_property_fields();
+  TransitionArray::TraverseTransitionTree(this, &GetMinInobjectSlack, &slack);
   if (slack != 0) {
     // Resize the initial map and all maps in its transition tree.
-    TransitionArray::TraverseTransitionTree(map, &ShrinkInstanceSize, &slack);
+    TransitionArray::TraverseTransitionTree(this, &ShrinkInstanceSize, &slack);
   }
 }
 
