@@ -722,6 +722,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord32(node), VisitWord32Ctz(node);
     case IrOpcode::kWord32Popcnt:
       return MarkAsWord32(node), VisitWord32Popcnt(node);
+    case IrOpcode::kWord64Popcnt:
+      return MarkAsWord32(node), VisitWord64Popcnt(node);
     case IrOpcode::kWord64And:
       return MarkAsWord64(node), VisitWord64And(node);
     case IrOpcode::kWord64Or:
@@ -814,6 +816,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord32(node), VisitTruncateFloat64ToInt32(node);
     case IrOpcode::kTruncateInt64ToInt32:
       return MarkAsWord32(node), VisitTruncateInt64ToInt32(node);
+    case IrOpcode::kRoundInt64ToFloat32:
+      return MarkAsFloat32(node), VisitRoundInt64ToFloat32(node);
     case IrOpcode::kRoundInt64ToFloat64:
       return MarkAsFloat64(node), VisitRoundInt64ToFloat64(node);
     case IrOpcode::kBitcastFloat32ToInt32:
@@ -981,6 +985,9 @@ void InstructionSelector::VisitWord64Clz(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitWord64Ctz(Node* node) { UNIMPLEMENTED(); }
 
 
+void InstructionSelector::VisitWord64Popcnt(Node* node) { UNIMPLEMENTED(); }
+
+
 void InstructionSelector::VisitWord64Equal(Node* node) { UNIMPLEMENTED(); }
 
 
@@ -1032,6 +1039,11 @@ void InstructionSelector::VisitChangeUint32ToUint64(Node* node) {
 
 
 void InstructionSelector::VisitTruncateInt64ToInt32(Node* node) {
+  UNIMPLEMENTED();
+}
+
+
+void InstructionSelector::VisitRoundInt64ToFloat32(Node* node) {
   UNIMPLEMENTED();
 }
 

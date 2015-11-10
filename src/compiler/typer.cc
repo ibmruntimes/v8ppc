@@ -1961,6 +1961,9 @@ Type* Typer::Visitor::TypeWord64Clz(Node* node) { return Type::Internal(); }
 Type* Typer::Visitor::TypeWord64Ctz(Node* node) { return Type::Internal(); }
 
 
+Type* Typer::Visitor::TypeWord64Popcnt(Node* node) { return Type::Internal(); }
+
+
 Type* Typer::Visitor::TypeWord64Equal(Node* node) { return Type::Boolean(); }
 
 
@@ -2104,6 +2107,11 @@ Type* Typer::Visitor::TypeTruncateFloat64ToInt32(Node* node) {
 
 Type* Typer::Visitor::TypeTruncateInt64ToInt32(Node* node) {
   return Type::Intersect(Type::Signed32(), Type::UntaggedIntegral32(), zone());
+}
+
+
+Type* Typer::Visitor::TypeRoundInt64ToFloat32(Node* node) {
+  return Type::Intersect(Type::PlainNumber(), Type::UntaggedFloat32(), zone());
 }
 
 

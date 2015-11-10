@@ -284,6 +284,25 @@ TEST(RunWord64Ctz) {
   CHECK_EQ(1, m.Call(uint64_t(0x000000009afdbc82)));
   CHECK_EQ(0, m.Call(uint64_t(0x000000009afdbc81)));
 }
+
+
+TEST(RunWord64Popcnt) {
+  BufferedRawMachineAssemblerTester<int32_t> m(kMachUint64);
+  if (!m.machine()->Word64Popcnt().IsSupported()) {
+    return;
+  }
+
+  m.Return(m.AddNode(m.machine()->Word64Popcnt().op(), m.Parameter(0)));
+
+  CHECK_EQ(0, m.Call(uint64_t(0x0000000000000000)));
+  CHECK_EQ(1, m.Call(uint64_t(0x0000000000000001)));
+  CHECK_EQ(1, m.Call(uint64_t(0x8000000000000000)));
+  CHECK_EQ(64, m.Call(uint64_t(0xffffffffffffffff)));
+  CHECK_EQ(12, m.Call(uint64_t(0x000dc100000dc100)));
+  CHECK_EQ(18, m.Call(uint64_t(0xe00dc100e00dc100)));
+  CHECK_EQ(22, m.Call(uint64_t(0xe00dc103e00dc103)));
+  CHECK_EQ(18, m.Call(uint64_t(0x000dc107000dc107)));
+}
 #endif  // V8_TARGET_ARCH_64_BIT
 
 
@@ -5345,6 +5364,13 @@ TEST(RunBitcastFloat64ToInt64) {
     double expected = bit_cast<int64_t>(input);
     CHECK_EQ(expected, output);
   }
+}
+
+
+TEST(RunRoundInt64ToFloat32) {
+  BufferedRawMachineAssemblerTester<float> m(kMachInt64);
+  m.Return(m.RoundInt64ToFloat32(m.Parameter(0)));
+  FOR_INT64_INPUTS(i) { CHECK_EQ(static_cast<float>(*i), m.Call(*i)); }
 }
 
 

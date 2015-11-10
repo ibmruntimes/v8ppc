@@ -136,6 +136,7 @@ CheckedStoreRepresentation CheckedStoreRepresentationOf(Operator const* op) {
   V(ChangeFloat64ToInt32, Operator::kNoProperties, 1, 0, 1)                   \
   V(ChangeFloat64ToUint32, Operator::kNoProperties, 1, 0, 1)                  \
   V(ChangeInt32ToFloat64, Operator::kNoProperties, 1, 0, 1)                   \
+  V(RoundInt64ToFloat32, Operator::kNoProperties, 1, 0, 1)                    \
   V(RoundInt64ToFloat64, Operator::kNoProperties, 1, 0, 1)                    \
   V(ChangeInt32ToInt64, Operator::kNoProperties, 1, 0, 1)                     \
   V(ChangeUint32ToFloat64, Operator::kNoProperties, 1, 0, 1)                  \
@@ -176,6 +177,7 @@ CheckedStoreRepresentation CheckedStoreRepresentationOf(Operator const* op) {
   V(Word32Ctz, Operator::kNoProperties, 1, 0, 1)            \
   V(Word64Ctz, Operator::kNoProperties, 1, 0, 1)            \
   V(Word32Popcnt, Operator::kNoProperties, 1, 0, 1)         \
+  V(Word64Popcnt, Operator::kNoProperties, 1, 0, 1)         \
   V(Float32Max, Operator::kNoProperties, 2, 0, 1)           \
   V(Float32Min, Operator::kNoProperties, 2, 0, 1)           \
   V(Float64Max, Operator::kNoProperties, 2, 0, 1)           \

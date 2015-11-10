@@ -817,6 +817,10 @@ class MacroAssembler: public Assembler {
   // xorpd to clear the dst register before cvtsi2sd to solve this issue.
   void Cvtlsi2sd(XMMRegister dst, Register src);
   void Cvtlsi2sd(XMMRegister dst, const Operand& src);
+
+  void Cvtqsi2ss(XMMRegister dst, Register src);
+  void Cvtqsi2ss(XMMRegister dst, const Operand& src);
+
   void Cvtqsi2sd(XMMRegister dst, Register src);
   void Cvtqsi2sd(XMMRegister dst, const Operand& src);
 
@@ -1024,6 +1028,9 @@ class MacroAssembler: public Assembler {
 
   void Popcntl(Register dst, Register src);
   void Popcntl(Register dst, const Operand& src);
+
+  void Popcntq(Register dst, Register src);
+  void Popcntq(Register dst, const Operand& src);
 
   // Non-x64 instructions.
   // Push/pop all general purpose registers.

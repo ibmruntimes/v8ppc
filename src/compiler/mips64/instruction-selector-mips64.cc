@@ -352,6 +352,9 @@ void InstructionSelector::VisitWord64Ctz(Node* node) { UNREACHABLE(); }
 void InstructionSelector::VisitWord32Popcnt(Node* node) { UNREACHABLE(); }
 
 
+void InstructionSelector::VisitWord64Popcnt(Node* node) { UNREACHABLE(); }
+
+
 void InstructionSelector::VisitWord64Ror(Node* node) {
   VisitRRO(this, kMips64Dror, node);
 }
@@ -611,6 +614,11 @@ void InstructionSelector::VisitTruncateFloat64ToInt32(Node* node) {
       return VisitRR(this, kMips64TruncWD, node);
   }
   UNREACHABLE();
+}
+
+
+void InstructionSelector::VisitRoundInt64ToFloat32(Node* node) {
+  VisitRR(this, kMips64CvtSL, node);
 }
 
 

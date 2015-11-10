@@ -829,6 +829,7 @@ void Verifier::Visitor::Check(Node* node) {
     case IrOpcode::kWord64Sar:
     case IrOpcode::kWord64Ror:
     case IrOpcode::kWord64Clz:
+    case IrOpcode::kWord64Popcnt:
     case IrOpcode::kWord64Ctz:
     case IrOpcode::kWord64Equal:
     case IrOpcode::kInt32Add:
@@ -884,6 +885,7 @@ void Verifier::Visitor::Check(Node* node) {
     case IrOpcode::kFloat64LessThan:
     case IrOpcode::kFloat64LessThanOrEqual:
     case IrOpcode::kTruncateInt64ToInt32:
+    case IrOpcode::kRoundInt64ToFloat32:
     case IrOpcode::kRoundInt64ToFloat64:
     case IrOpcode::kTruncateFloat64ToFloat32:
     case IrOpcode::kTruncateFloat64ToInt32:

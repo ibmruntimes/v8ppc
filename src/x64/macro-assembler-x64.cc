@@ -851,6 +851,30 @@ void MacroAssembler::Cvtlsi2sd(XMMRegister dst, const Operand& src) {
 }
 
 
+void MacroAssembler::Cvtqsi2ss(XMMRegister dst, Register src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vxorps(dst, dst, dst);
+    vcvtqsi2ss(dst, dst, src);
+  } else {
+    xorps(dst, dst);
+    cvtqsi2ss(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvtqsi2ss(XMMRegister dst, const Operand& src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vxorps(dst, dst, dst);
+    vcvtqsi2ss(dst, dst, src);
+  } else {
+    xorps(dst, dst);
+    cvtqsi2ss(dst, src);
+  }
+}
+
+
 void MacroAssembler::Cvtqsi2sd(XMMRegister dst, Register src) {
   if (CpuFeatures::IsSupported(AVX)) {
     CpuFeatureScope scope(this, AVX);
@@ -3261,6 +3285,26 @@ void MacroAssembler::Popcntl(Register dst, const Operand& src) {
   if (CpuFeatures::IsSupported(POPCNT)) {
     CpuFeatureScope scope(this, POPCNT);
     popcntl(dst, src);
+    return;
+  }
+  UNREACHABLE();
+}
+
+
+void MacroAssembler::Popcntq(Register dst, Register src) {
+  if (CpuFeatures::IsSupported(POPCNT)) {
+    CpuFeatureScope scope(this, POPCNT);
+    popcntq(dst, src);
+    return;
+  }
+  UNREACHABLE();
+}
+
+
+void MacroAssembler::Popcntq(Register dst, const Operand& src) {
+  if (CpuFeatures::IsSupported(POPCNT)) {
+    CpuFeatureScope scope(this, POPCNT);
+    popcntq(dst, src);
     return;
   }
   UNREACHABLE();

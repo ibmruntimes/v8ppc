@@ -625,6 +625,12 @@ void InstructionSelector::VisitWord32Popcnt(Node* node) {
 }
 
 
+void InstructionSelector::VisitWord64Popcnt(Node* node) {
+  X64OperandGenerator g(this);
+  Emit(kX64Popcnt, g.DefineAsRegister(node), g.Use(node->InputAt(0)));
+}
+
+
 void InstructionSelector::VisitInt32Add(Node* node) {
   X64OperandGenerator g(this);
 
@@ -950,6 +956,12 @@ void InstructionSelector::VisitTruncateInt64ToInt32(Node* node) {
     }
   }
   Emit(kX64Movl, g.DefineAsRegister(node), g.Use(value));
+}
+
+
+void InstructionSelector::VisitRoundInt64ToFloat32(Node* node) {
+  X64OperandGenerator g(this);
+  Emit(kSSEInt64ToFloat32, g.DefineAsRegister(node), g.Use(node->InputAt(0)));
 }
 
 
@@ -1637,7 +1649,8 @@ InstructionSelector::SupportedMachineOperatorFlags() {
       MachineOperatorBuilder::kWord32ShiftIsSafe |
       MachineOperatorBuilder::kWord32Ctz | MachineOperatorBuilder::kWord64Ctz;
   if (CpuFeatures::IsSupported(POPCNT)) {
-    flags |= MachineOperatorBuilder::kWord32Popcnt;
+    flags |= MachineOperatorBuilder::kWord32Popcnt |
+             MachineOperatorBuilder::kWord64Popcnt;
   }
   if (CpuFeatures::IsSupported(SSE4_1)) {
     flags |= MachineOperatorBuilder::kFloat64RoundDown |

@@ -964,6 +964,9 @@ void InstructionSelector::VisitWord64Ctz(Node* node) { UNREACHABLE(); }
 void InstructionSelector::VisitWord32Popcnt(Node* node) { UNREACHABLE(); }
 
 
+void InstructionSelector::VisitWord64Popcnt(Node* node) { UNREACHABLE(); }
+
+
 void InstructionSelector::VisitInt32Add(Node* node) {
   Arm64OperandGenerator g(this);
   Int32BinopMatcher m(node);
@@ -1310,6 +1313,11 @@ void InstructionSelector::VisitTruncateInt64ToInt32(Node* node) {
   }
 
   Emit(kArm64Mov32, g.DefineAsRegister(node), g.UseRegister(node->InputAt(0)));
+}
+
+
+void InstructionSelector::VisitRoundInt64ToFloat32(Node* node) {
+  VisitRR(this, kArm64Int64ToFloat32, node);
 }
 
 
