@@ -2168,6 +2168,12 @@ void Assembler::fcfid(const DoubleRegister frt, const DoubleRegister frb,
 }
 
 
+void Assembler::fcfidu(const DoubleRegister frt, const DoubleRegister frb,
+                       RCBit rc) {
+  emit(EXT4 | FCFIDU | frt.code() * B21 | frb.code() * B11 | rc);
+}
+
+
 void Assembler::fcfids(const DoubleRegister frt, const DoubleRegister frb,
                        RCBit rc) {
   emit(EXT3 | FCFID | frt.code() * B21 | frb.code() * B11 | rc);
