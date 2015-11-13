@@ -1504,13 +1504,6 @@ class MapWord BASE_EMBEDDED {
 };
 
 
-// The content of an heap object (except for the map pointer). kTaggedValues
-// objects can contain both heap pointers and Smis, kMixedValues can contain
-// heap pointers, Smis, and raw values (e.g. doubles or strings), and kRawValues
-// objects can contain raw values and Smis.
-enum class HeapObjectContents { kTaggedValues, kMixedValues, kRawValues };
-
-
 // HeapObject is the superclass for all classes describing heap allocated
 // objects.
 class HeapObject: public Object {
@@ -1586,9 +1579,6 @@ class HeapObject: public Object {
 
   // Returns the heap object's size in bytes
   inline int Size();
-
-  // Indicates what type of values this heap object may contain.
-  inline HeapObjectContents ContentType();
 
   // Given a heap object's map pointer, returns the heap size in bytes
   // Useful when the map pointer field is used for other purposes.
@@ -1843,6 +1833,7 @@ class JSReceiver: public HeapObject {
                                 Handle<Object> key, PropertyDescriptor* desc,
                                 ShouldThrow should_throw);
 
+  // ES6 9.1.6.1
   static bool OrdinaryDefineOwnProperty(Isolate* isolate,
                                         Handle<JSObject> object,
                                         Handle<Object> key,
@@ -1851,6 +1842,18 @@ class JSReceiver: public HeapObject {
   static bool OrdinaryDefineOwnProperty(LookupIterator* it,
                                         PropertyDescriptor* desc,
                                         ShouldThrow should_throw);
+  // ES6 9.1.6.2
+  static bool IsCompatiblePropertyDescriptor(bool extensible,
+                                             PropertyDescriptor* desc,
+                                             PropertyDescriptor* current,
+                                             Handle<Name> property_name);
+  // ES6 9.1.6.3
+  // |it| can be NULL in cases where the ES spec passes |undefined| as the
+  // receiver. Exactly one of |it| and |property_name| must be provided.
+  static bool ValidateAndApplyPropertyDescriptor(
+      LookupIterator* it, bool extensible, PropertyDescriptor* desc,
+      PropertyDescriptor* current, ShouldThrow should_throw,
+      Handle<Name> property_name = Handle<Name>());
 
   static bool GetOwnPropertyDescriptor(Isolate* isolate,
                                        Handle<JSReceiver> object,
