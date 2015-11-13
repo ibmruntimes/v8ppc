@@ -658,7 +658,7 @@ void BytecodeGenerator::VisitWhileStatement(WhileStatement* stmt) {
 
   BytecodeLabel body_label, condition_label, done_label;
   if (stmt->cond()->ToBooleanIsFalse()) {
-    // If the condition is false there is no need to generating the loop.
+    // If the condition is false there is no need to generate the loop.
     return;
   }
 
@@ -2041,7 +2041,7 @@ void BytecodeGenerator::VisitThisFunctionVariable(Variable* variable) {
   // TODO(rmcilroy): Remove once we have tests which exercise this code path.
   UNIMPLEMENTED();
 
-  // Store the closure we were called with in the this_function_var.
+  // Store the closure we were called with in the given variable.
   builder()->LoadAccumulatorWithRegister(Register::function_closure());
   VisitVariableAssignment(variable, FeedbackVectorSlot::Invalid());
 }
@@ -2050,8 +2050,8 @@ void BytecodeGenerator::VisitThisFunctionVariable(Variable* variable) {
 void BytecodeGenerator::VisitNewTargetVariable(Variable* variable) {
   if (variable == nullptr) return;
 
-  // Store the closure we were called with in the this_function_var.
-  builder()->CallRuntime(Runtime::kGetOriginalConstructor, Register(), 0);
+  // Store the new target we were called with in the given variable.
+  builder()->CallRuntime(Runtime::kGetNewTarget, Register(), 0);
   VisitVariableAssignment(variable, FeedbackVectorSlot::Invalid());
 }
 

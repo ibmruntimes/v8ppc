@@ -158,7 +158,10 @@ RUNTIME_FUNCTION(Runtime_GetPrototype) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(Object, obj, 0);
-  return *Object::GetPrototype(isolate, obj);
+  Handle<Object> prototype;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, prototype,
+                                     Object::GetPrototype(isolate, obj));
+  return *prototype;
 }
 
 
@@ -251,6 +254,9 @@ MUST_USE_RESULT static MaybeHandle<Object> GetOwnProperty(Isolate* isolate,
 //  if args[1] is an accessor on args[0]
 //         [true, GetFunction, SetFunction, Enumerable, Configurable]
 RUNTIME_FUNCTION(Runtime_GetOwnProperty) {
+  // TODO(jkummerow): Support Proxies.
+  // TODO(jkummerow): Use JSReceiver::GetOwnPropertyDescriptor() and
+  //                  PropertyDescriptor::ToObject().
   HandleScope scope(isolate);
   DCHECK(args.length() == 2);
   CONVERT_ARG_HANDLE_CHECKED(JSObject, obj, 0);
@@ -656,6 +662,8 @@ RUNTIME_FUNCTION(Runtime_HasOwnProperty) {
     // Fast case: either the key is a real named property or it is not
     // an array index and there are no interceptors or hidden
     // prototypes.
+    // TODO(jkummerow): Make JSReceiver::HasOwnProperty fast enough to
+    // handle all cases directly (without this custom fast path).
     Maybe<bool> maybe = Nothing<bool>();
     if (key_is_array_index) {
       maybe = JSObject::HasOwnElement(js_obj, index);
@@ -757,6 +765,8 @@ RUNTIME_FUNCTION(Runtime_GetPropertyNamesFast) {
 // Return the names of the own named properties.
 // args[0]: object
 // args[1]: PropertyAttributes as int
+// TODO(cbruni/jkummerow): Use JSReceiver::GetKeys() internally, merge with
+// Runtime_GetOwnElementNames.
 RUNTIME_FUNCTION(Runtime_GetOwnPropertyNames) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 2);

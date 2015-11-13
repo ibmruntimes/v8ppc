@@ -668,7 +668,8 @@ void MarkCompactCollector::CollectEvacuationCandidates(PagedSpace* space) {
   int area_size = space->AreaSize();
 
   // Pairs of (live_bytes_in_page, page).
-  std::vector<std::pair<int, Page*> > pages;
+  typedef std::pair<int, Page*> LiveBytesPagePair;
+  std::vector<LiveBytesPagePair> pages;
   pages.reserve(number_of_pages);
 
   PageIterator it(space);
@@ -739,7 +740,10 @@ void MarkCompactCollector::CollectEvacuationCandidates(PagedSpace* space) {
     // - the total size of evacuated objects does not exceed the specified
     // limit.
     // - fragmentation of (n+1)-th page does not exceed the specified limit.
-    std::sort(pages.begin(), pages.end());
+    std::sort(pages.begin(), pages.end(),
+              [](const LiveBytesPagePair& a, const LiveBytesPagePair& b) {
+                return a.first < b.first;
+              });
     for (size_t i = 0; i < pages.size(); i++) {
       int live_bytes = pages[i].first;
       int free_bytes = area_size - live_bytes;
@@ -1809,7 +1813,7 @@ void MarkCompactCollector::ProcessTopOptimizedFrame(ObjectVisitor* visitor) {
     if (it.frame()->type() == StackFrame::OPTIMIZED) {
       Code* code = it.frame()->LookupCode();
       if (!code->CanDeoptAt(it.frame()->pc())) {
-        code->CodeIterateBody(visitor);
+        Code::BodyDescriptor::IterateBody(code, visitor);
       }
       ProcessMarkingDeque();
       return;
@@ -1968,7 +1972,7 @@ void MarkCompactCollector::MarkLiveObjects() {
   GCTracer::Scope gc_scope(heap()->tracer(), GCTracer::Scope::MC_MARK);
   double start_time = 0.0;
   if (FLAG_print_cumulative_gc_stat) {
-    start_time = base::OS::TimeCurrentMillis();
+    start_time = heap_->MonotonicallyIncreasingTimeInMs();
   }
   // The recursive GC marker detects when it is nearing stack overflow,
   // and switches to a different marking system.  JS interrupts interfere
@@ -2058,7 +2062,8 @@ void MarkCompactCollector::MarkLiveObjects() {
   AfterMarking();
 
   if (FLAG_print_cumulative_gc_stat) {
-    heap_->tracer()->AddMarkingTime(base::OS::TimeCurrentMillis() - start_time);
+    heap_->tracer()->AddMarkingTime(heap_->MonotonicallyIncreasingTimeInMs() -
+                                    start_time);
   }
 }
 
@@ -2718,8 +2723,7 @@ void MarkCompactCollector::MigrateObjectMixed(
     heap()->MoveBlock(dst->address(), src->address(), size);
 
     // Visit inherited JSObject properties and byte length of ArrayBuffer
-    Address regular_slot =
-        dst->address() + JSArrayBuffer::BodyDescriptor::kStartOffset;
+    Address regular_slot = dst->address() + JSArrayBuffer::kPropertiesOffset;
     Address regular_slots_end =
         dst->address() + JSArrayBuffer::kByteLengthOffset + kPointerSize;
     while (regular_slot < regular_slots_end) {
@@ -2788,7 +2792,7 @@ static inline void UpdateSlot(Isolate* isolate, ObjectVisitor* v,
     }
     case SlotsBuffer::RELOCATED_CODE_OBJECT: {
       HeapObject* obj = HeapObject::FromAddress(addr);
-      Code::cast(obj)->CodeIterateBody(v);
+      Code::BodyDescriptor::IterateBody(obj, v);
       break;
     }
     case SlotsBuffer::DEBUG_TARGET_SLOT: {
@@ -3135,7 +3139,7 @@ bool MarkCompactCollector::IsSlotInLiveObject(Address slot) {
                  BytecodeArray::kConstantPoolOffset;
         } else if (object->IsJSArrayBuffer()) {
           int off = static_cast<int>(slot - object->address());
-          return (off >= JSArrayBuffer::BodyDescriptor::kStartOffset &&
+          return (off >= JSArrayBuffer::kPropertiesOffset &&
                   off <= JSArrayBuffer::kByteLengthOffset) ||
                  (off >= JSArrayBuffer::kSize &&
                   off < JSArrayBuffer::kSizeWithInternalFields);
@@ -4404,7 +4408,7 @@ void MarkCompactCollector::SweepSpaces() {
   GCTracer::Scope gc_scope(heap()->tracer(), GCTracer::Scope::MC_SWEEP);
   double start_time = 0.0;
   if (FLAG_print_cumulative_gc_stat) {
-    start_time = base::OS::TimeCurrentMillis();
+    start_time = heap_->MonotonicallyIncreasingTimeInMs();
   }
 
 #ifdef DEBUG
@@ -4456,7 +4460,7 @@ void MarkCompactCollector::SweepSpaces() {
   ReleaseEvacuationCandidates();
 
   if (FLAG_print_cumulative_gc_stat) {
-    heap_->tracer()->AddSweepingTime(base::OS::TimeCurrentMillis() -
+    heap_->tracer()->AddSweepingTime(heap_->MonotonicallyIncreasingTimeInMs() -
                                      start_time);
   }
 

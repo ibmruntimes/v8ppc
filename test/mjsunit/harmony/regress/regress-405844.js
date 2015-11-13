@@ -4,7 +4,7 @@
 //
 // Flags: --harmony-proxies --harmony-object-observe
 
-var proxy = Proxy.create({ fix: function() { return {}; } });
+var proxy = new Proxy({}, { fix: function() { return {}; } });
 Object.preventExtensions(proxy);
 Object.observe(proxy, function(){});
 

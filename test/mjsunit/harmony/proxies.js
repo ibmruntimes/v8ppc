@@ -35,8 +35,10 @@
 // Helper.
 
 function TestWithProxies(test, x, y, z) {
-  test(Proxy.create, x, y, z)
-  test(function(h) {return Proxy.createFunction(h, function() {})}, x, y, z)
+  test(function(handler) { return new Proxy({}, handler) }, x, y, z)
+  test(function(handler) {
+    return Proxy.createFunction(handler, function() {})
+  }, x, y, z)
 }
 
 
@@ -81,7 +83,7 @@ TestGetOwnProperty({
   }
 })
 
-TestGetOwnProperty(Proxy.create({
+TestGetOwnProperty(new Proxy({}, {
   get: function(pr, pk) {
     return function(k) { key = k; return {value: 42, configurable: true} }
   }
@@ -1824,35 +1826,35 @@ TestKeysThrow({
 //         Object.isFrozen, Object.isSealed, Object.isExtensible)
 
 function TestFix(names, handler) {
-  var proto = {p: 77}
+  var target = {p: 77}
   var assertFixing = function(o, s, f, e) {
     assertEquals(s, Object.isSealed(o))
     assertEquals(f, Object.isFrozen(o))
     assertEquals(e, Object.isExtensible(o))
   }
 
-  var p1 = Proxy.create(handler, proto)
+  var p1 = new Proxy(target, handler)
   assertFixing(p1, false, false, true)
   Object.seal(p1)
   assertFixing(p1, true, names.length === 0, false)
   assertArrayEquals(names.sort(), Object.getOwnPropertyNames(p1).sort())
   assertArrayEquals(names.filter(function(x) {return x < "z"}).sort(),
                     Object.keys(p1).sort())
-  assertEquals(proto, Object.getPrototypeOf(p1))
+  assertEquals(target, Object.getPrototypeOf(p1))
   assertEquals(77, p1.p)
   for (var n in p1) {
     var desc = Object.getOwnPropertyDescriptor(p1, n)
     if (desc !== undefined) assertFalse(desc.configurable)
   }
 
-  var p2 = Proxy.create(handler, proto)
+  var p2 = new Proxy(target, handler)
   assertFixing(p2, false, false, true)
   Object.freeze(p2)
   assertFixing(p2, true, true, false)
   assertArrayEquals(names.sort(), Object.getOwnPropertyNames(p2).sort())
   assertArrayEquals(names.filter(function(x) {return x < "z"}).sort(),
                     Object.keys(p2).sort())
-  assertEquals(proto, Object.getPrototypeOf(p2))
+  assertEquals(target, Object.getPrototypeOf(p2))
   assertEquals(77, p2.p)
   for (var n in p2) {
     var desc = Object.getOwnPropertyDescriptor(p2, n)
@@ -1860,17 +1862,17 @@ function TestFix(names, handler) {
     if (desc !== undefined) assertFalse(desc.configurable)
   }
 
-  var p3 = Proxy.create(handler, proto)
+  var p3 = new Proxy(target, handler)
   assertFixing(p3, false, false, true)
   Object.preventExtensions(p3)
   assertFixing(p3, names.length === 0, names.length === 0, false)
   assertArrayEquals(names.sort(), Object.getOwnPropertyNames(p3).sort())
   assertArrayEquals(names.filter(function(x) {return x < "z"}).sort(),
                     Object.keys(p3).sort())
-  assertEquals(proto, Object.getPrototypeOf(p3))
+  assertEquals(target, Object.getPrototypeOf(p3))
   assertEquals(77, p3.p)
 
-  var p = Proxy.create(handler, proto)
+  var p = new Proxy(target, handler)
   var o = Object.create(p)
   assertFixing(p, false, false, true)
   assertFixing(o, false, false, true)

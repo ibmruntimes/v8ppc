@@ -13,24 +13,46 @@ namespace internal {
 
 RUNTIME_FUNCTION(Runtime_CreateJSProxy) {
   HandleScope scope(isolate);
-  DCHECK(args.length() == 2);
-  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, handler, 0);
-  CONVERT_ARG_HANDLE_CHECKED(Object, prototype, 1);
-  if (!prototype->IsJSReceiver()) prototype = isolate->factory()->null_value();
-  return *isolate->factory()->NewJSProxy(handler, prototype);
+  DCHECK(args.length() == 3);
+  CONVERT_ARG_HANDLE_CHECKED(JSProxy, instance, 0);
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, target, 1);
+  CONVERT_ARG_HANDLE_CHECKED(Object, handler, 2);
+  if (!target->IsSpecObject()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kProxyTargetNonObject));
+  }
+  if (target->IsJSProxy() && !JSProxy::cast(*target)->has_handler()) {
+    // TODO(cbruni): Use better error message.
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kProxyTargetNonObject));
+  }
+  if (!handler->IsSpecObject()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kProxyHandlerNonObject));
+  }
+  if (handler->IsJSProxy() && !JSProxy::cast(*handler)->has_handler()) {
+    // TODO(cbruni): Use better error message.
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kProxyHandlerNonObject));
+  }
+  instance->set_target(*target);
+  instance->set_handler(*handler);
+  instance->set_hash(isolate->heap()->undefined_value(), SKIP_WRITE_BARRIER);
+  return *instance;
 }
 
 
 RUNTIME_FUNCTION(Runtime_CreateJSFunctionProxy) {
   HandleScope scope(isolate);
-  DCHECK(args.length() == 4);
-  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, handler, 0);
-  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, call_trap, 1);
+  DCHECK(args.length() == 5);
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, target, 0);
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, handler, 1);
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, call_trap, 2);
   RUNTIME_ASSERT(call_trap->IsJSFunction() || call_trap->IsJSFunctionProxy());
-  CONVERT_ARG_HANDLE_CHECKED(JSFunction, construct_trap, 2);
-  CONVERT_ARG_HANDLE_CHECKED(Object, prototype, 3);
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, construct_trap, 3);
+  CONVERT_ARG_HANDLE_CHECKED(Object, prototype, 4);
   if (!prototype->IsJSReceiver()) prototype = isolate->factory()->null_value();
-  return *isolate->factory()->NewJSFunctionProxy(handler, call_trap,
+  return *isolate->factory()->NewJSFunctionProxy(target, handler, call_trap,
                                                  construct_trap, prototype);
 }
 
@@ -74,13 +96,5 @@ RUNTIME_FUNCTION(Runtime_GetConstructTrap) {
   return proxy->construct_trap();
 }
 
-
-RUNTIME_FUNCTION(Runtime_Fix) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 1);
-  CONVERT_ARG_HANDLE_CHECKED(JSProxy, proxy, 0);
-  JSProxy::Fix(proxy);
-  return isolate->heap()->undefined_value();
-}
 }  // namespace internal
 }  // namespace v8

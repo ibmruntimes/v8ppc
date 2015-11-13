@@ -1204,7 +1204,6 @@ void AstGraphBuilder::VisitSwitchStatement(SwitchStatement* stmt) {
 
   // Keep the switch value on the stack until a case matches.
   VisitForValue(stmt->tag());
-  Node* tag = environment()->Top();
 
   // Iterate over all cases and create nodes for label comparison.
   for (int i = 0; i < clauses->length(); i++) {
@@ -1220,6 +1219,7 @@ void AstGraphBuilder::VisitSwitchStatement(SwitchStatement* stmt) {
     // value is still on the operand stack while the label is evaluated.
     VisitForValue(clause->label());
     Node* label = environment()->Pop();
+    Node* tag = environment()->Top();
     const Operator* op = javascript()->StrictEqual();
     Node* condition = NewNode(op, tag, label);
     compare_switch.BeginLabel(i, condition);
@@ -2503,7 +2503,7 @@ void AstGraphBuilder::VisitCallSuper(Call* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   VisitForValues(args);
 
-  // Original constructor is loaded from the {new.target} variable.
+  // The new target is loaded from the {new.target} variable.
   VisitForValue(super->new_target_var());
 
   // Create node to perform the super call.
@@ -2521,7 +2521,7 @@ void AstGraphBuilder::VisitCallNew(CallNew* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   VisitForValues(args);
 
-  // Original constructor is the same as the callee.
+  // The new target is the same as the callee.
   environment()->Push(environment()->Peek(args->length()));
 
   // Create node to perform the construct call.
@@ -3211,11 +3211,11 @@ Node* AstGraphBuilder::BuildThisFunctionVariable(Variable* this_function_var) {
 Node* AstGraphBuilder::BuildNewTargetVariable(Variable* new_target_var) {
   if (new_target_var == nullptr) return nullptr;
 
-  // Retrieve the original constructor in case we are called as a constructor.
-  const Operator* op =
-      javascript()->CallRuntime(Runtime::kGetOriginalConstructor, 0);
+  // Retrieve the new target in case we are called as a constructor.
+  const Operator* op = javascript()->CallRuntime(Runtime::kGetNewTarget, 0);
   Node* object = NewNode(op);
-  PrepareFrameState(object, BailoutId::None());
+  // TODO(4544): Bailout id only needed for JavaScriptFrame::Summarize.
+  PrepareFrameState(object, BailoutId::FunctionContext());
 
   // Assign the object to the {new.target} variable. This should never lazy
   // deopt, so it is fine to send invalid bailout id.

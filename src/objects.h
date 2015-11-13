@@ -1306,8 +1306,8 @@ class Object {
       Handle<Object> value, LanguageMode language_mode);
 
   // Get the first non-hidden prototype.
-  static inline Handle<Object> GetPrototype(Isolate* isolate,
-                                            Handle<Object> receiver);
+  static inline MaybeHandle<Object> GetPrototype(Isolate* isolate,
+                                                 Handle<Object> receiver);
 
   bool HasInPrototypeChain(Isolate* isolate, Object* object);
 
@@ -1555,14 +1555,34 @@ class HeapObject: public Object {
     return reinterpret_cast<Address>(this) - kHeapObjectTag;
   }
 
-  // Iterates over pointers contained in the object (including the Map)
+  // Iterates over pointers contained in the object (including the Map).
+  // If it's not performance critical iteration use the non-templatized
+  // version.
   void Iterate(ObjectVisitor* v);
+
+  template <typename ObjectVisitor>
+  inline void IterateFast(ObjectVisitor* v);
 
   // Iterates over all pointers contained in the object except the
   // first map pointer.  The object type is given in the first
   // parameter. This function does not access the map pointer in the
   // object, and so is safe to call while the map pointer is modified.
+  // If it's not performance critical iteration use the non-templatized
+  // version.
+  void IterateBody(ObjectVisitor* v);
   void IterateBody(InstanceType type, int object_size, ObjectVisitor* v);
+
+  template <typename ObjectVisitor>
+  inline void IterateBodyFast(ObjectVisitor* v);
+
+  template <typename ObjectVisitor>
+  inline void IterateBodyFast(InstanceType type, int object_size,
+                              ObjectVisitor* v);
+
+  // Returns true if the object contains a tagged value at given offset.
+  // It is used for invalid slots filtering. If the offset points outside
+  // of the object or to the map word, the result is UNDEFINED (!!!).
+  bool IsValidSlot(int offset);
 
   // Returns the heap object's size in bytes
   inline int Size();
@@ -1623,90 +1643,17 @@ class HeapObject: public Object {
 
   STATIC_ASSERT(kMapOffset == Internals::kHeapObjectMapOffset);
 
- protected:
-  // helpers for calling an ObjectVisitor to iterate over pointers in the
-  // half-open range [start, end) specified as integer offsets
-  inline void IteratePointers(ObjectVisitor* v, int start, int end);
-  // as above, for the single element at "offset"
-  inline void IteratePointer(ObjectVisitor* v, int offset);
-  // as above, for the next code link of a code object.
-  inline void IterateNextCodeLink(ObjectVisitor* v, int offset);
-
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(HeapObject);
 };
 
 
-// This is the base class for object's body descriptors.
-class BodyDescriptorBase {
- protected:
-  static inline void IterateBodyImpl(HeapObject* obj, int start_offset,
-                                     int end_offset, ObjectVisitor* v);
-
-  template <typename StaticVisitor>
-  static inline void IterateBodyImpl(Heap* heap, HeapObject* obj,
-                                     int start_offset, int end_offset);
-
-  static inline void IteratePointers(HeapObject* obj, int start_offset,
-                                     int end_offset, ObjectVisitor* v);
-
-  template <typename StaticVisitor>
-  static inline void IteratePointers(Heap* heap, HeapObject* obj,
-                                     int start_offset, int end_offset);
-};
-
-
-// This class describes a body of an object of a fixed size
-// in which all pointer fields are located in the [start_offset, end_offset)
-// interval.
 template <int start_offset, int end_offset, int size>
-class FixedBodyDescriptor : public BodyDescriptorBase {
- public:
-  static const int kStartOffset = start_offset;
-  static const int kEndOffset = end_offset;
-  static const int kSize = size;
-
-  static inline void IterateBody(HeapObject* obj, ObjectVisitor* v) {
-    IterateBodyImpl(obj, start_offset, end_offset, v);
-  }
-
-  template <typename StaticVisitor>
-  static inline void IterateBody(HeapObject* obj) {
-    Heap* heap = obj->GetHeap();
-    IterateBodyImpl<StaticVisitor>(heap, obj, start_offset, end_offset);
-  }
-};
+class FixedBodyDescriptor;
 
 
-// This base class describes a body of an object of a variable size
-// in which all pointer fields are located in the [start_offset, object_size)
-// interval.
 template <int start_offset>
-class FlexibleBodyDescriptorBase : public BodyDescriptorBase {
- public:
-  static const int kStartOffset = start_offset;
-
-  static inline void IterateBody(HeapObject* obj, int object_size,
-                                 ObjectVisitor* v) {
-    IterateBodyImpl(obj, start_offset, object_size, v);
-  }
-
-  template <typename StaticVisitor>
-  static inline void IterateBody(HeapObject* obj, int object_size) {
-    Heap* heap = obj->GetHeap();
-    IterateBodyImpl<StaticVisitor>(heap, obj, start_offset, object_size);
-  }
-};
-
-
-// This class describes a body of an object of a variable size
-// in which all pointer fields are located in the [start_offset, object_size)
-// interval. The size of the object is taken from the map.
-template <int start_offset>
-class FlexibleBodyDescriptor : public FlexibleBodyDescriptorBase<start_offset> {
- public:
-  static inline int SizeOf(Map* map, HeapObject* object);
-};
+class FlexibleBodyDescriptor;
 
 
 // The HeapNumber class describes heap allocated numbers that cannot be
@@ -1916,6 +1863,8 @@ class JSReceiver: public HeapObject {
   // ES6's [[PreventExtensions]] when passed DONT_THROW.
   MUST_USE_RESULT static Maybe<bool> PreventExtensions(
       Handle<JSReceiver> object, ShouldThrow should_throw);
+
+  MUST_USE_RESULT static Maybe<bool> IsExtensible(Handle<JSReceiver> object);
 
   // Tests for the fast common case for property enumeration.
   bool IsSimpleEnum();
@@ -2688,10 +2637,7 @@ class FixedArray: public FixedArrayBase {
   // object, the prefix of this array is sorted.
   void SortPairs(FixedArray* numbers, uint32_t len);
 
-  class BodyDescriptor : public FlexibleBodyDescriptorBase<kHeaderSize> {
-   public:
-    static inline int SizeOf(Map* map, HeapObject* object);
-  };
+  typedef FlexibleBodyDescriptor<kHeaderSize> BodyDescriptor;
 
  protected:
   // Set operation on FixedArray without using write barriers. Can
@@ -4423,7 +4369,6 @@ class BytecodeArray : public FixedArrayBase {
 
   // Dispatched behavior.
   inline int BytecodeArraySize();
-  inline void BytecodeArrayIterateBody(ObjectVisitor* v);
 
   DECLARE_PRINTER(BytecodeArray)
   DECLARE_VERIFIER(BytecodeArray)
@@ -4442,6 +4387,8 @@ class BytecodeArray : public FixedArrayBase {
   static const int kMaxSize = 512 * MB;
   // Maximal length of a single BytecodeArray.
   static const int kMaxLength = kMaxSize - kHeaderSize;
+
+  class BodyDescriptor;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(BytecodeArray);
@@ -4508,11 +4455,6 @@ class FixedTypedArrayBase: public FixedArrayBase {
   DECL_ACCESSORS(external_pointer, void)
 
   // Dispatched behavior.
-  inline void FixedTypedArrayBaseIterateBody(ObjectVisitor* v);
-
-  template <typename StaticVisitor>
-  inline void FixedTypedArrayBaseIterateBody();
-
   DECLARE_CAST(FixedTypedArrayBase)
 
   static const int kBasePointerOffset = FixedArrayBase::kHeaderSize;
@@ -4521,6 +4463,8 @@ class FixedTypedArrayBase: public FixedArrayBase {
       DOUBLE_POINTER_ALIGN(kExternalPointerOffset + kPointerSize);
 
   static const int kDataOffset = kHeaderSize;
+
+  class BodyDescriptor;
 
   inline int size();
 
@@ -5192,10 +5136,6 @@ class Code: public HeapObject {
 
   // Dispatched behavior.
   inline int CodeSize();
-  inline void CodeIterateBody(ObjectVisitor* v);
-
-  template<typename StaticVisitor>
-  inline void CodeIterateBody(Heap* heap);
 
   DECLARE_PRINTER(Code)
   DECLARE_VERIFIER(Code)
@@ -5293,6 +5233,8 @@ class Code: public HeapObject {
   // the Code object header.
   static const int kHeaderSize =
       (kHeaderPaddingStart + kCodeAlignmentMask) & ~kCodeAlignmentMask;
+
+  class BodyDescriptor;
 
   // Byte offsets within kKindSpecificFlags1Offset.
   static const int kFullCodeFlags = kKindSpecificFlags1Offset;
@@ -9235,11 +9177,7 @@ class ExternalOneByteString : public ExternalString {
 
   DECLARE_CAST(ExternalOneByteString)
 
-  // Garbage collection support.
-  inline void ExternalOneByteStringIterateBody(ObjectVisitor* v);
-
-  template <typename StaticVisitor>
-  inline void ExternalOneByteStringIterateBody();
+  class BodyDescriptor;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalOneByteString);
@@ -9274,11 +9212,7 @@ class ExternalTwoByteString: public ExternalString {
 
   DECLARE_CAST(ExternalTwoByteString)
 
-  // Garbage collection support.
-  inline void ExternalTwoByteStringIterateBody(ObjectVisitor* v);
-
-  template<typename StaticVisitor>
-  inline void ExternalTwoByteStringIterateBody();
+  class BodyDescriptor;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalTwoByteString);
@@ -9598,11 +9532,16 @@ class JSProxy: public JSReceiver {
  public:
   // [handler]: The handler property.
   DECL_ACCESSORS(handler, Object)
-
+  // [target]: The target property.
+  DECL_ACCESSORS(target, Object)
   // [hash]: The hash code property (undefined if not initialized yet).
   DECL_ACCESSORS(hash, Object)
 
+  inline bool has_handler();
+
   DECLARE_CAST(JSProxy)
+
+  static MaybeHandle<Object> GetPrototype(Handle<JSProxy> receiver);
 
   MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithHandler(
       Handle<JSProxy> proxy,
@@ -9627,21 +9566,6 @@ class JSProxy: public JSReceiver {
       Handle<JSProxy> proxy, Handle<Object> receiver, Handle<Name> name,
       Handle<Object> value, ShouldThrow should_throw);
 
-  // Turn the proxy into an (empty) JSObject.
-  static void Fix(Handle<JSProxy> proxy);
-
-  // Initializes the body after the handler slot.
-  inline void InitializeBody(int object_size, Object* value);
-
-  // Invoke a trap by name. If the trap does not exist on this's handler,
-  // but derived_trap is non-NULL, invoke that instead.  May cause GC.
-  MUST_USE_RESULT static MaybeHandle<Object> CallTrap(
-      Handle<JSProxy> proxy,
-      const char* name,
-      Handle<Object> derived_trap,
-      int argc,
-      Handle<Object> args[]);
-
   // Dispatched behavior.
   DECLARE_PRINTER(JSProxy)
   DECLARE_VERIFIER(JSProxy)
@@ -9649,31 +9573,31 @@ class JSProxy: public JSReceiver {
   // Layout description. We add padding so that a proxy has the same
   // size as a virgin JSObject. This is essential for becoming a JSObject
   // upon freeze.
-  static const int kHandlerOffset = HeapObject::kHeaderSize;
+  static const int kTargetOffset = HeapObject::kHeaderSize;
+  static const int kHandlerOffset = kTargetOffset + kPointerSize;
   static const int kHashOffset = kHandlerOffset + kPointerSize;
-  static const int kPaddingOffset = kHashOffset + kPointerSize;
-  static const int kSize = JSObject::kHeaderSize;
-  static const int kHeaderSize = kPaddingOffset;
-  static const int kPaddingSize = kSize - kPaddingOffset;
+  static const int kSize = kHashOffset + kPointerSize;
 
-  STATIC_ASSERT(kPaddingSize >= 0);
+  typedef FixedBodyDescriptor<kTargetOffset, kSize, kSize> BodyDescriptor;
 
-  typedef FixedBodyDescriptor<kHandlerOffset,
-                              kPaddingOffset,
-                              kSize> BodyDescriptor;
+  MUST_USE_RESULT Object* GetIdentityHash();
+
+  static Handle<Smi> GetOrCreateIdentityHash(Handle<JSProxy> proxy);
 
  private:
   friend class JSReceiver;
+
+  // Invoke a trap by name. If the trap does not exist on this's handler,
+  // but derived_trap is non-NULL, invoke that instead.  May cause GC.
+  MUST_USE_RESULT static MaybeHandle<Object> CallTrap(
+      Handle<JSProxy> proxy, const char* name, Handle<Object> derived_trap,
+      int argc, Handle<Object> args[]);
 
   MUST_USE_RESULT static Maybe<bool> HasPropertyWithHandler(
       Handle<JSProxy> proxy, Handle<Name> name);
 
   MUST_USE_RESULT static MaybeHandle<Object> DeletePropertyWithHandler(
       Handle<JSProxy> proxy, Handle<Name> name, LanguageMode language_mode);
-
-  MUST_USE_RESULT Object* GetIdentityHash();
-
-  static Handle<Smi> GetOrCreateIdentityHash(Handle<JSProxy> proxy);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSProxy);
 };
@@ -9694,17 +9618,11 @@ class JSFunctionProxy: public JSProxy {
   DECLARE_VERIFIER(JSFunctionProxy)
 
   // Layout description.
-  static const int kCallTrapOffset = JSProxy::kPaddingOffset;
+  static const int kCallTrapOffset = JSProxy::kSize;
   static const int kConstructTrapOffset = kCallTrapOffset + kPointerSize;
-  static const int kPaddingOffset = kConstructTrapOffset + kPointerSize;
-  static const int kSize = JSFunction::kSize;
-  static const int kPaddingSize = kSize - kPaddingOffset;
+  static const int kSize = kConstructTrapOffset + kPointerSize;
 
-  STATIC_ASSERT(kPaddingSize >= 0);
-
-  typedef FixedBodyDescriptor<kHandlerOffset,
-                              kConstructTrapOffset + kPointerSize,
-                              kSize> BodyDescriptor;
+  typedef FixedBodyDescriptor<kTargetOffset, kSize, kSize> BodyDescriptor;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSFunctionProxy);
@@ -9917,6 +9835,8 @@ class JSWeakCollection: public JSObject {
   static const int kNextOffset = kTableOffset + kPointerSize;
   static const int kSize = kNextOffset + kPointerSize;
 
+  class BodyDescriptor;
+
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSWeakCollection);
 };
@@ -9995,11 +9915,6 @@ class JSArrayBuffer: public JSObject {
   DECLARE_VERIFIER(JSArrayBuffer)
 
   static const int kByteLengthOffset = JSObject::kHeaderSize;
-
-  // NOTE: GC will visit objects fields:
-  // 1. From JSObject::BodyDescriptor::kStartOffset to kByteLengthOffset +
-  //    kPointerSize
-  // 2. From start of the internal fields and up to the end of them
   static const int kBackingStoreOffset = kByteLengthOffset + kPointerSize;
   static const int kBitFieldSlot = kBackingStoreOffset + kPointerSize;
 #if V8_TARGET_LITTLE_ENDIAN || !V8_HOST_ARCH_64_BIT
@@ -10012,11 +9927,9 @@ class JSArrayBuffer: public JSObject {
   static const int kSizeWithInternalFields =
       kSize + v8::ArrayBuffer::kInternalFieldCount * kPointerSize;
 
-  template <typename StaticVisitor>
-  static inline void JSArrayBufferIterateBody(Heap* heap, HeapObject* obj);
-
-  static inline void JSArrayBufferIterateBody(HeapObject* obj,
-                                              ObjectVisitor* v);
+  // Iterates all fields in the object including internal ones except
+  // kBackingStoreOffset and kBitFieldSlot.
+  class BodyDescriptor;
 
 #if defined(V8_PPC_TAGGING_OPT)
   class IsExternal : public BitField<bool, kSmiTagSize, 1> {};
@@ -10129,12 +10042,6 @@ class Foreign: public HeapObject {
   DECLARE_CAST(Foreign)
 
   // Dispatched behavior.
-  inline void ForeignIterateBody(ObjectVisitor* v);
-
-  template<typename StaticVisitor>
-  inline void ForeignIterateBody();
-
-  // Dispatched behavior.
   DECLARE_PRINTER(Foreign)
   DECLARE_VERIFIER(Foreign)
 
@@ -10144,6 +10051,8 @@ class Foreign: public HeapObject {
   static const int kSize = kForeignAddressOffset + kPointerSize;
 
   STATIC_ASSERT(kForeignAddressOffset == Internals::kForeignAddressOffset);
+
+  class BodyDescriptor;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(Foreign);
@@ -10806,9 +10715,6 @@ class ObjectVisitor BASE_EMBEDDED {
   // Also used for marking up GC roots in heap snapshots.
   virtual void Synchronize(VisitorSynchronization::SyncTag tag) {}
 };
-
-
-typedef FlexibleBodyDescriptor<HeapObject::kHeaderSize> StructBodyDescriptor;
 
 
 // BooleanBit is a helper class for setting and getting a bit in an integer.

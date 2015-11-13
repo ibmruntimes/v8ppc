@@ -528,6 +528,24 @@ RUNTIME_FUNCTION(Runtime_Call) {
 }
 
 
+RUNTIME_FUNCTION(Runtime_TailCall) {
+  HandleScope scope(isolate);
+  DCHECK_LE(2, args.length());
+  int const argc = args.length() - 2;
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, target, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, receiver, 1);
+  ScopedVector<Handle<Object>> argv(argc);
+  for (int i = 0; i < argc; ++i) {
+    argv[i] = args.at<Object>(2 + i);
+  }
+  Handle<Object> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result,
+      Execution::Call(isolate, target, receiver, argc, argv.start()));
+  return *result;
+}
+
+
 RUNTIME_FUNCTION(Runtime_Apply) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 5);
@@ -565,15 +583,23 @@ RUNTIME_FUNCTION(Runtime_Apply) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_GetOriginalConstructor) {
+RUNTIME_FUNCTION(Runtime_GetNewTarget) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 0);
   JavaScriptFrameIterator it(isolate);
   JavaScriptFrame* frame = it.frame();
-  // Currently we don't inline [[Construct]] calls.
-  return frame->IsConstructor() && !frame->HasInlinedFrames()
-             ? frame->GetOriginalConstructor()
-             : isolate->heap()->undefined_value();
+  // TODO(4544): Currently we never inline any [[Construct]] calls where the
+  // actual target differs from the new target. Fix this soon!
+  if (frame->HasInlinedFrames()) {
+    HandleScope scope(isolate);
+    List<FrameSummary> frames(FLAG_max_inlining_levels + 1);
+    it.frame()->Summarize(&frames);
+    FrameSummary& summary = frames.last();
+    return summary.is_constructor() ? Object::cast(*summary.function())
+                                    : isolate->heap()->undefined_value();
+  }
+  return frame->IsConstructor() ? frame->GetNewTarget()
+                                : isolate->heap()->undefined_value();
 }
 
 
@@ -590,11 +616,13 @@ RUNTIME_FUNCTION(Runtime_ConvertReceiver) {
 
 
 RUNTIME_FUNCTION(Runtime_IsConstructCall) {
-  SealHandleScope shs(isolate);
+  HandleScope scope(isolate);
   DCHECK(args.length() == 0);
   JavaScriptFrameIterator it(isolate);
-  JavaScriptFrame* frame = it.frame();
-  return isolate->heap()->ToBoolean(frame->IsConstructor());
+  List<FrameSummary> frames(FLAG_max_inlining_levels + 1);
+  it.frame()->Summarize(&frames);
+  FrameSummary& summary = frames.last();
+  return isolate->heap()->ToBoolean(summary.is_constructor());
 }
 
 

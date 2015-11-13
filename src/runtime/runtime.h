@@ -232,36 +232,37 @@ namespace internal {
   F(InterpreterForInPrepare, 1, 1)
 
 
-#define FOR_EACH_INTRINSIC_FUNCTION(F)                      \
-  F(FunctionGetName, 1, 1)                                  \
-  F(FunctionSetName, 2, 1)                                  \
-  F(FunctionNameShouldPrintAsAnonymous, 1, 1)               \
-  F(CompleteFunctionConstruction, 3, 1)                     \
-  F(FunctionIsArrow, 1, 1)                                  \
-  F(FunctionIsConciseMethod, 1, 1)                          \
-  F(FunctionRemovePrototype, 1, 1)                          \
-  F(FunctionGetScript, 1, 1)                                \
-  F(FunctionGetSourceCode, 1, 1)                            \
-  F(FunctionGetScriptSourcePosition, 1, 1)                  \
-  F(FunctionGetPositionForOffset, 2, 1)                     \
-  F(FunctionSetInstanceClassName, 2, 1)                     \
-  F(FunctionSetLength, 2, 1)                                \
-  F(FunctionSetPrototype, 2, 1)                             \
-  F(FunctionIsAPIFunction, 1, 1)                            \
-  F(FunctionHidesSource, 1, 1)                              \
-  F(SetCode, 2, 1)                                          \
-  F(SetNativeFlag, 1, 1)                                    \
-  F(ThrowStrongModeTooFewArguments, 0, 1)                   \
-  F(IsConstructor, 1, 1)                                    \
-  F(SetForceInlineFlag, 1, 1)                               \
-  F(FunctionBindArguments, 4, 1)                            \
-  F(BoundFunctionGetBindings, 1, 1)                         \
-  F(NewObjectFromBound, 1, 1)                               \
-  F(Call, -1 /* >= 2 */, 1)                                 \
-  F(Apply, 5, 1)                                            \
-  F(GetOriginalConstructor, 0, 1)                           \
-  F(ConvertReceiver, 1, 1)                                  \
-  F(IsConstructCall, 0, 1)                                  \
+#define FOR_EACH_INTRINSIC_FUNCTION(F)        \
+  F(FunctionGetName, 1, 1)                    \
+  F(FunctionSetName, 2, 1)                    \
+  F(FunctionNameShouldPrintAsAnonymous, 1, 1) \
+  F(CompleteFunctionConstruction, 3, 1)       \
+  F(FunctionIsArrow, 1, 1)                    \
+  F(FunctionIsConciseMethod, 1, 1)            \
+  F(FunctionRemovePrototype, 1, 1)            \
+  F(FunctionGetScript, 1, 1)                  \
+  F(FunctionGetSourceCode, 1, 1)              \
+  F(FunctionGetScriptSourcePosition, 1, 1)    \
+  F(FunctionGetPositionForOffset, 2, 1)       \
+  F(FunctionSetInstanceClassName, 2, 1)       \
+  F(FunctionSetLength, 2, 1)                  \
+  F(FunctionSetPrototype, 2, 1)               \
+  F(FunctionIsAPIFunction, 1, 1)              \
+  F(FunctionHidesSource, 1, 1)                \
+  F(SetCode, 2, 1)                            \
+  F(SetNativeFlag, 1, 1)                      \
+  F(ThrowStrongModeTooFewArguments, 0, 1)     \
+  F(IsConstructor, 1, 1)                      \
+  F(SetForceInlineFlag, 1, 1)                 \
+  F(FunctionBindArguments, 4, 1)              \
+  F(BoundFunctionGetBindings, 1, 1)           \
+  F(NewObjectFromBound, 1, 1)                 \
+  F(Call, -1 /* >= 2 */, 1)                   \
+  F(TailCall, -1 /* >= 2 */, 1)               \
+  F(Apply, 5, 1)                              \
+  F(GetNewTarget, 0, 1)                       \
+  F(ConvertReceiver, 1, 1)                    \
+  F(IsConstructCall, 0, 1)                    \
   F(IsFunction, 1, 1)
 
 
@@ -542,14 +543,13 @@ namespace internal {
   F(BitwiseXor_Strong, 2, 1)
 
 #define FOR_EACH_INTRINSIC_PROXY(F) \
-  F(CreateJSProxy, 2, 1)            \
-  F(CreateJSFunctionProxy, 4, 1)    \
+  F(CreateJSProxy, 3, 1)            \
+  F(CreateJSFunctionProxy, 5, 1)    \
   F(IsJSProxy, 1, 1)                \
   F(IsJSFunctionProxy, 1, 1)        \
   F(GetHandler, 1, 1)               \
   F(GetCallTrap, 1, 1)              \
-  F(GetConstructTrap, 1, 1)         \
-  F(Fix, 1, 1)
+  F(GetConstructTrap, 1, 1)
 
 
 #define FOR_EACH_INTRINSIC_REGEXP(F)           \
@@ -1008,6 +1008,7 @@ namespace internal {
   F(IsTypedArray, 1, 1)                      \
   F(IsSharedTypedArray, 1, 1)                \
   F(IsSharedIntegerTypedArray, 1, 1)         \
+  F(IsSharedInteger32TypedArray, 1, 1)       \
   F(DataViewInitialize, 4, 1)                \
   F(DataViewGetUint8, 3, 1)                  \
   F(DataViewGetInt8, 3, 1)                   \

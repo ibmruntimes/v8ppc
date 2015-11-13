@@ -59,6 +59,9 @@ Reduction JSIntrinsicLowering::Reduce(Node* node) {
       return ReduceIsInstanceType(node, JS_FUNCTION_TYPE);
     case Runtime::kInlineIsRegExp:
       return ReduceIsInstanceType(node, JS_REGEXP_TYPE);
+    case Runtime::kInlineIsSpecObject:
+      // TODO(bmeurer): Rename %_IsSpecObject to %_IsReceiver.
+      return ReduceIsSpecObject(node);
     case Runtime::kInlineIsSmi:
       return ReduceIsSmi(node);
     case Runtime::kInlineJSValueGetValue:
@@ -111,6 +114,8 @@ Reduction JSIntrinsicLowering::Reduce(Node* node) {
       return ReduceThrowNotDateError(node);
     case Runtime::kInlineCall:
       return ReduceCall(node);
+    case Runtime::kInlineTailCall:
+      return ReduceTailCall(node);
     default:
       break;
   }
@@ -247,6 +252,47 @@ Reduction JSIntrinsicLowering::ReduceIsInstanceType(
 
   // Turn the {node} into a Phi.
   return Change(node, common()->Phi(type, 2), vtrue, vfalse, merge);
+}
+
+
+Reduction JSIntrinsicLowering::ReduceIsSpecObject(Node* node) {
+  // if (%_IsSmi(value)) {
+  //   return false;
+  // } else {
+  //   return FIRST_JS_RECEIVER_TYPE <= %_GetInstanceType(%_GetMap(value))
+  // }
+  STATIC_ASSERT(LAST_TYPE == LAST_JS_RECEIVER_TYPE);
+  MachineType const type = static_cast<MachineType>(kTypeBool | kRepTagged);
+
+  Node* value = NodeProperties::GetValueInput(node, 0);
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
+
+  Node* check = graph()->NewNode(simplified()->ObjectIsSmi(), value);
+  Node* branch = graph()->NewNode(common()->Branch(), check, control);
+
+  Node* if_true = graph()->NewNode(common()->IfTrue(), branch);
+  Node* etrue = effect;
+  Node* vtrue = jsgraph()->FalseConstant();
+
+  Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
+  Node* efalse = graph()->NewNode(
+      simplified()->LoadField(AccessBuilder::ForMapInstanceType()),
+      graph()->NewNode(simplified()->LoadField(AccessBuilder::ForMap()), value,
+                       effect, if_false),
+      effect, if_false);
+  Node* vfalse = graph()->NewNode(
+      machine()->Uint32LessThanOrEqual(),
+      jsgraph()->Int32Constant(FIRST_JS_RECEIVER_TYPE), efalse);
+
+  control = graph()->NewNode(common()->Merge(2), if_true, if_false);
+
+  // Replace all effect uses of {node} with the {ephi}.
+  effect = graph()->NewNode(common()->EffectPhi(2), etrue, efalse, control);
+  ReplaceWithValue(node, node, effect, control);
+
+  // Turn the {node} into a Phi.
+  return Change(node, common()->Phi(type, 2), vtrue, vfalse, control);
 }
 
 
@@ -604,6 +650,16 @@ Reduction JSIntrinsicLowering::ReduceToString(Node* node) {
 
 
 Reduction JSIntrinsicLowering::ReduceCall(Node* node) {
+  size_t const arity = CallRuntimeParametersOf(node->op()).arity();
+  NodeProperties::ChangeOp(
+      node, javascript()->CallFunction(arity, STRICT, VectorSlotPair(),
+                                       ConvertReceiverMode::kAny,
+                                       TailCallMode::kDisallow));
+  return Changed(node);
+}
+
+
+Reduction JSIntrinsicLowering::ReduceTailCall(Node* node) {
   size_t const arity = CallRuntimeParametersOf(node->op()).arity();
   NodeProperties::ChangeOp(
       node, javascript()->CallFunction(arity, STRICT, VectorSlotPair(),
