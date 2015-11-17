@@ -114,12 +114,63 @@ BytecodeGraphBuilder::BytecodeGraphBuilder(Zone* local_zone,
 Node* BytecodeGraphBuilder::GetFunctionContext() {
   if (!function_context_.is_set()) {
     // Parameter (arity + 1) is special for the outer context of the function
-    const Operator* op =
-        common()->Parameter(bytecode_array()->parameter_count(), "%context");
+    const Operator* op = common()->Parameter(
+        bytecode_array()->parameter_count() + 1, "%context");
     Node* node = NewNode(op, graph()->start());
     function_context_.set(node);
   }
   return function_context_.get();
+}
+
+
+Node* BytecodeGraphBuilder::GetFunctionClosure() {
+  if (!function_closure_.is_set()) {
+    const Operator* op = common()->Parameter(
+        Linkage::kJSFunctionCallClosureParamIndex, "%closure");
+    Node* node = NewNode(op, graph()->start());
+    function_closure_.set(node);
+  }
+  return function_closure_.get();
+}
+
+
+Node* BytecodeGraphBuilder::BuildLoadImmutableObjectField(Node* object,
+                                                          int offset) {
+  return graph()->NewNode(jsgraph()->machine()->Load(kMachAnyTagged), object,
+                          jsgraph()->IntPtrConstant(offset - kHeapObjectTag),
+                          graph()->start(), graph()->start());
+}
+
+
+Node* BytecodeGraphBuilder::BuildLoadFeedbackVector() {
+  if (!feedback_vector_.is_set()) {
+    Node* closure = GetFunctionClosure();
+    Node* shared = BuildLoadImmutableObjectField(
+        closure, JSFunction::kSharedFunctionInfoOffset);
+    Node* vector = BuildLoadImmutableObjectField(
+        shared, SharedFunctionInfo::kFeedbackVectorOffset);
+    feedback_vector_.set(vector);
+  }
+  return feedback_vector_.get();
+}
+
+
+VectorSlotPair BytecodeGraphBuilder::CreateVectorSlotPair(int slot_id) {
+  Handle<TypeFeedbackVector> feedback_vector = info()->feedback_vector();
+  FeedbackVectorSlot slot = feedback_vector->ToSlot(slot_id);
+  return VectorSlotPair(feedback_vector, slot);
+}
+
+
+// TODO(mythria): Replace this function with one which adds real frame state.
+// Also add before and after frame states and checkpointing if required.
+void BytecodeGraphBuilder::AddEmptyFrameStateInputs(Node* node) {
+  int frame_state_count =
+      OperatorProperties::GetFrameStateInputCount(node->op());
+  for (int i = 0; i < frame_state_count; i++) {
+    NodeProperties::ReplaceFrameStateInput(node, i,
+                                           jsgraph()->EmptyFrameState());
+  }
 }
 
 
@@ -128,8 +179,10 @@ bool BytecodeGraphBuilder::CreateGraph(bool stack_check) {
   // the formal parameters (including the receiver) plus context and
   // closure.
 
-  // The additional count items are for the context and closure.
-  int actual_parameter_count = bytecode_array()->parameter_count() + 2;
+  // Set up the basic structure of the graph. Outputs for {Start} are the formal
+  // parameters (including the receiver) plus number of arguments, context and
+  // closure.
+  int actual_parameter_count = bytecode_array()->parameter_count() + 3;
   graph()->SetStart(graph()->NewNode(common()->Start(actual_parameter_count)));
 
   Environment env(this, bytecode_array()->register_count(),
@@ -256,74 +309,114 @@ void BytecodeGraphBuilder::VisitStar(
 }
 
 
+void BytecodeGraphBuilder::BuildLoadGlobal(
+    const interpreter::BytecodeArrayIterator& iterator,
+    TypeofMode typeof_mode) {
+  Handle<Name> name =
+      Handle<Name>::cast(iterator.GetConstantForIndexOperand(0));
+  VectorSlotPair feedback = CreateVectorSlotPair(iterator.GetIndexOperand(1));
+
+  const Operator* op = javascript()->LoadGlobal(name, feedback, typeof_mode);
+  Node* node = NewNode(op, BuildLoadFeedbackVector());
+  AddEmptyFrameStateInputs(node);
+  environment()->BindAccumulator(node);
+}
+
+
 void BytecodeGraphBuilder::VisitLdaGlobalSloppy(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_sloppy(language_mode()));
+  BuildLoadGlobal(iterator, TypeofMode::NOT_INSIDE_TYPEOF);
 }
 
 
 void BytecodeGraphBuilder::VisitLdaGlobalStrict(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_strict(language_mode()));
+  BuildLoadGlobal(iterator, TypeofMode::NOT_INSIDE_TYPEOF);
 }
 
 
 void BytecodeGraphBuilder::VisitLdaGlobalInsideTypeofSloppy(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_sloppy(language_mode()));
+  BuildLoadGlobal(iterator, TypeofMode::INSIDE_TYPEOF);
 }
 
 
 void BytecodeGraphBuilder::VisitLdaGlobalInsideTypeofStrict(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_strict(language_mode()));
+  BuildLoadGlobal(iterator, TypeofMode::INSIDE_TYPEOF);
 }
 
 
 void BytecodeGraphBuilder::VisitLdaGlobalSloppyWide(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_sloppy(language_mode()));
+  BuildLoadGlobal(iterator, TypeofMode::NOT_INSIDE_TYPEOF);
 }
 
 
 void BytecodeGraphBuilder::VisitLdaGlobalStrictWide(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_strict(language_mode()));
+  BuildLoadGlobal(iterator, TypeofMode::NOT_INSIDE_TYPEOF);
 }
 
 
 void BytecodeGraphBuilder::VisitLdaGlobalInsideTypeofSloppyWide(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_sloppy(language_mode()));
+  BuildLoadGlobal(iterator, TypeofMode::INSIDE_TYPEOF);
 }
 
 
 void BytecodeGraphBuilder::VisitLdaGlobalInsideTypeofStrictWide(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_strict(language_mode()));
+  BuildLoadGlobal(iterator, TypeofMode::INSIDE_TYPEOF);
+}
+
+
+void BytecodeGraphBuilder::BuildStoreGlobal(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  Handle<Name> name =
+      Handle<Name>::cast(iterator.GetConstantForIndexOperand(0));
+  VectorSlotPair feedback = CreateVectorSlotPair(iterator.GetIndexOperand(1));
+  Node* value = environment()->LookupAccumulator();
+
+  const Operator* op =
+      javascript()->StoreGlobal(language_mode(), name, feedback);
+  Node* node = NewNode(op, value, BuildLoadFeedbackVector());
+  AddEmptyFrameStateInputs(node);
 }
 
 
 void BytecodeGraphBuilder::VisitStaGlobalSloppy(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_sloppy(language_mode()));
+  BuildStoreGlobal(iterator);
 }
 
 
 void BytecodeGraphBuilder::VisitStaGlobalStrict(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_strict(language_mode()));
+  BuildStoreGlobal(iterator);
 }
 
 void BytecodeGraphBuilder::VisitStaGlobalSloppyWide(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_sloppy(language_mode()));
+  BuildStoreGlobal(iterator);
 }
 
 
 void BytecodeGraphBuilder::VisitStaGlobalStrictWide(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_strict(language_mode()));
+  BuildStoreGlobal(iterator);
 }
 
 
@@ -339,15 +432,31 @@ void BytecodeGraphBuilder::VisitStaContextSlot(
 }
 
 
+void BytecodeGraphBuilder::BuildNamedLoad(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  Node* object = environment()->LookupRegister(iterator.GetRegisterOperand(0));
+  Handle<Name> name =
+      Handle<Name>::cast(iterator.GetConstantForIndexOperand(1));
+  VectorSlotPair feedback = CreateVectorSlotPair(iterator.GetIndexOperand(2));
+
+  const Operator* op = javascript()->LoadNamed(language_mode(), name, feedback);
+  Node* node = NewNode(op, object, BuildLoadFeedbackVector());
+  AddEmptyFrameStateInputs(node);
+  environment()->BindAccumulator(node);
+}
+
+
 void BytecodeGraphBuilder::VisitLoadICSloppy(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_sloppy(language_mode()));
+  BuildNamedLoad(iterator);
 }
 
 
 void BytecodeGraphBuilder::VisitLoadICStrict(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_strict(language_mode()));
+  BuildNamedLoad(iterator);
 }
 
 
@@ -365,13 +474,15 @@ void BytecodeGraphBuilder::VisitKeyedLoadICStrict(
 
 void BytecodeGraphBuilder::VisitLoadICSloppyWide(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_sloppy(language_mode()));
+  BuildNamedLoad(iterator);
 }
 
 
 void BytecodeGraphBuilder::VisitLoadICStrictWide(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  DCHECK(is_strict(language_mode()));
+  BuildNamedLoad(iterator);
 }
 
 
@@ -483,9 +594,51 @@ void BytecodeGraphBuilder::VisitCreateObjectLiteral(
 }
 
 
+Node* BytecodeGraphBuilder::ProcessCallArguments(const Operator* call_op,
+                                                 interpreter::Register callee,
+                                                 interpreter::Register receiver,
+                                                 size_t arity) {
+  Node** all = info()->zone()->NewArray<Node*>(arity);
+  all[0] = environment()->LookupRegister(callee);
+  all[1] = environment()->LookupRegister(receiver);
+  int receiver_index = receiver.index();
+  for (int i = 2; i < static_cast<int>(arity); ++i) {
+    all[i] = environment()->LookupRegister(
+        interpreter::Register(receiver_index + i - 1));
+  }
+  Node* value = MakeNode(call_op, static_cast<int>(arity), all, false);
+  return value;
+}
+
+
+void BytecodeGraphBuilder::BuildCall(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  // TODO(rmcilroy): Set receiver_hint correctly based on whether the receiver
+  // register has been loaded with null / undefined explicitly or we are sure it
+  // is not null / undefined.
+  ConvertReceiverMode receiver_hint = ConvertReceiverMode::kAny;
+  interpreter::Register callee = iterator.GetRegisterOperand(0);
+  interpreter::Register receiver = iterator.GetRegisterOperand(1);
+  size_t arg_count = iterator.GetCountOperand(2);
+  VectorSlotPair feedback = CreateVectorSlotPair(iterator.GetIndexOperand(3));
+
+  const Operator* call = javascript()->CallFunction(
+      arg_count + 2, language_mode(), feedback, receiver_hint);
+  Node* value = ProcessCallArguments(call, callee, receiver, arg_count + 2);
+  AddEmptyFrameStateInputs(value);
+  environment()->BindAccumulator(value);
+}
+
+
 void BytecodeGraphBuilder::VisitCall(
     const interpreter::BytecodeArrayIterator& iterator) {
-  UNIMPLEMENTED();
+  BuildCall(iterator);
+}
+
+
+void BytecodeGraphBuilder::VisitCallWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  BuildCall(iterator);
 }
 
 
@@ -519,13 +672,7 @@ void BytecodeGraphBuilder::BuildBinaryOp(
   Node* right = environment()->LookupAccumulator();
   Node* node = NewNode(js_op, left, right);
 
-  // TODO(oth): Real frame state and environment check pointing.
-  int frame_state_count =
-      OperatorProperties::GetFrameStateInputCount(node->op());
-  for (int i = 0; i < frame_state_count; i++) {
-    NodeProperties::ReplaceFrameStateInput(node, i,
-                                           jsgraph()->EmptyFrameState());
-  }
+  AddEmptyFrameStateInputs(node);
   environment()->BindAccumulator(node);
 }
 

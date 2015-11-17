@@ -1928,7 +1928,7 @@ THREADED_TEST(ExecutableAccessorIsPreservedOnAttributeChange) {
   v8::HandleScope scope(isolate);
   LocalContext env;
   v8::Local<v8::Value> res = CompileRun("var a = []; a;");
-  i::Handle<i::JSObject> a(v8::Utils::OpenHandle(v8::Object::Cast(*res)));
+  i::Handle<i::JSReceiver> a(v8::Utils::OpenHandle(v8::Object::Cast(*res)));
   CHECK(a->map()->instance_descriptors()->IsFixedArray());
   CHECK_GT(i::FixedArray::cast(a->map()->instance_descriptors())->length(), 0);
   CompileRun("Object.defineProperty(a, 'length', { writable: false });");
@@ -9760,7 +9760,7 @@ THREADED_TEST(Constructor) {
   Local<Function> cons = templ->GetFunction();
   context->Global()->Set(v8_str("Fun"), cons);
   Local<v8::Object> inst = cons->NewInstance();
-  i::Handle<i::JSObject> obj(v8::Utils::OpenHandle(*inst));
+  i::Handle<i::JSReceiver> obj(v8::Utils::OpenHandle(*inst));
   CHECK(obj->IsJSObject());
   Local<Value> value = CompileRun("(new Fun()).constructor === Fun");
   CHECK(value->BooleanValue());
@@ -13771,7 +13771,7 @@ static void ObjectWithExternalArrayTestHelper(Handle<Context> context,
                                               int element_count,
                                               i::ExternalArrayType array_type,
                                               int64_t low, int64_t high) {
-  i::Handle<i::JSObject> jsobj = v8::Utils::OpenHandle(*obj);
+  i::Handle<i::JSReceiver> jsobj = v8::Utils::OpenHandle(*obj);
   i::Isolate* isolate = jsobj->GetIsolate();
   obj->Set(v8_str("field"),
            v8::Int32::New(reinterpret_cast<v8::Isolate*>(isolate), 1503));
@@ -14001,8 +14001,8 @@ static void ObjectWithExternalArrayTestHelper(Handle<Context> context,
     CHECK_EQ(true, result->BooleanValue());
   }
 
-  i::Handle<ExternalArrayClass> array(
-      ExternalArrayClass::cast(jsobj->elements()));
+  i::Handle<ExternalArrayClass> array(ExternalArrayClass::cast(
+      i::Handle<i::JSObject>::cast(jsobj)->elements()));
   for (int i = 0; i < element_count; i++) {
     array->set(i, static_cast<ElementType>(i));
   }
@@ -20338,13 +20338,13 @@ TEST(PromiseThen) {
   Handle<Function> f1 = Handle<Function>::Cast(global->Get(v8_str("f1")));
   Handle<Function> f2 = Handle<Function>::Cast(global->Get(v8_str("f2")));
 
-  // Chain
-  q->Chain(f1);
-  CHECK(global->Get(v8_str("x1"))->IsNumber());
+  // TODO(caitp): remove tests once PromiseChain is removed, per bug 3237
+  /* q->Chain(f1);
+  CHECK(global->Get(v8_str2("x1"))->IsNumber());
   CHECK_EQ(0, global->Get(v8_str("x1"))->Int32Value());
   isolate->RunMicrotasks();
   CHECK(!global->Get(v8_str("x1"))->IsNumber());
-  CHECK(p->Equals(global->Get(v8_str("x1"))));
+  CHECK(p->Equals(global->Get(v8_str("x1")))); */
 
   // Then
   CompileRun("x1 = x2 = 0;");

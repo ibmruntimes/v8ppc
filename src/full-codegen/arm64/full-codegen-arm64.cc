@@ -1235,7 +1235,7 @@ void FullCodeGenerator::EmitSetHomeObject(Expression* initializer, int offset,
   __ Mov(StoreDescriptor::NameRegister(),
          Operand(isolate()->factory()->home_object_symbol()));
   __ Peek(StoreDescriptor::ValueRegister(), offset * kPointerSize);
-  if (FLAG_vector_stores) EmitLoadStoreICSlot(slot);
+  EmitLoadStoreICSlot(slot);
   CallStoreIC();
 }
 
@@ -1248,7 +1248,7 @@ void FullCodeGenerator::EmitSetHomeObjectAccumulator(Expression* initializer,
   __ Mov(StoreDescriptor::NameRegister(),
          Operand(isolate()->factory()->home_object_symbol()));
   __ Peek(StoreDescriptor::ValueRegister(), offset * kPointerSize);
-  if (FLAG_vector_stores) EmitLoadStoreICSlot(slot);
+  EmitLoadStoreICSlot(slot);
   CallStoreIC();
 }
 
@@ -1563,12 +1563,8 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
             DCHECK(StoreDescriptor::ValueRegister().is(x0));
             __ Mov(StoreDescriptor::NameRegister(), Operand(key->value()));
             __ Peek(StoreDescriptor::ReceiverRegister(), 0);
-            if (FLAG_vector_stores) {
-              EmitLoadStoreICSlot(property->GetSlot(0));
-              CallStoreIC();
-            } else {
-              CallStoreIC(key->LiteralFeedbackId());
-            }
+            EmitLoadStoreICSlot(property->GetSlot(0));
+            CallStoreIC();
             PrepareForBailoutForId(key->id(), NO_REGISTERS);
 
             if (NeedsHomeObject(value)) {
@@ -1760,27 +1756,12 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
     }
     VisitForAccumulatorValue(subexpr);
 
-    if (FLAG_vector_stores) {
-      __ Mov(StoreDescriptor::NameRegister(), Smi::FromInt(array_index));
-      __ Peek(StoreDescriptor::ReceiverRegister(), kPointerSize);
-      EmitLoadStoreICSlot(expr->LiteralFeedbackSlot());
-      Handle<Code> ic =
-          CodeFactory::KeyedStoreIC(isolate(), language_mode()).code();
-      CallIC(ic);
-    } else if (has_fast_elements) {
-      int offset = FixedArray::kHeaderSize + (array_index * kPointerSize);
-      __ Peek(x6, kPointerSize);  // Copy of array literal.
-      __ Ldr(x1, FieldMemOperand(x6, JSObject::kElementsOffset));
-      __ Str(result_register(), FieldMemOperand(x1, offset));
-      // Update the write barrier for the array store.
-      __ RecordWriteField(x1, offset, result_register(), x10,
-                          kLRHasBeenSaved, kDontSaveFPRegs,
-                          EMIT_REMEMBERED_SET, INLINE_SMI_CHECK);
-    } else {
-      __ Mov(x3, Smi::FromInt(array_index));
-      StoreArrayLiteralElementStub stub(isolate());
-      __ CallStub(&stub);
-    }
+    __ Mov(StoreDescriptor::NameRegister(), Smi::FromInt(array_index));
+    __ Peek(StoreDescriptor::ReceiverRegister(), kPointerSize);
+    EmitLoadStoreICSlot(expr->LiteralFeedbackSlot());
+    Handle<Code> ic =
+        CodeFactory::KeyedStoreIC(isolate(), language_mode()).code();
+    CallIC(ic);
 
     PrepareForBailoutForId(expr->GetIdForElement(array_index), NO_REGISTERS);
   }
@@ -2209,7 +2190,7 @@ void FullCodeGenerator::EmitAssignment(Expression* expr,
       __ Pop(StoreDescriptor::ValueRegister());  // Restore value.
       __ Mov(StoreDescriptor::NameRegister(),
              Operand(prop->key()->AsLiteral()->value()));
-      if (FLAG_vector_stores) EmitLoadStoreICSlot(slot);
+      EmitLoadStoreICSlot(slot);
       CallStoreIC();
       break;
     }
@@ -2257,7 +2238,7 @@ void FullCodeGenerator::EmitAssignment(Expression* expr,
       __ Mov(StoreDescriptor::NameRegister(), x0);
       __ Pop(StoreDescriptor::ReceiverRegister(),
              StoreDescriptor::ValueRegister());
-      if (FLAG_vector_stores) EmitLoadStoreICSlot(slot);
+      EmitLoadStoreICSlot(slot);
       Handle<Code> ic =
           CodeFactory::KeyedStoreIC(isolate(), language_mode()).code();
       CallIC(ic);
@@ -2288,10 +2269,10 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
     // Global var, const, or let.
     __ Mov(StoreDescriptor::NameRegister(), Operand(var->name()));
     __ Ldr(StoreDescriptor::ReceiverRegister(), GlobalObjectMemOperand());
-    if (FLAG_vector_stores) EmitLoadStoreICSlot(slot);
+    EmitLoadStoreICSlot(slot);
     CallStoreIC();
 
-  } else if (var->mode() == LET && op != Token::INIT_LET) {
+  } else if (var->mode() == LET && op != Token::INIT) {
     // Non-initializing assignment to let variable needs a write barrier.
     DCHECK(!var->IsLookupSlot());
     DCHECK(var->IsStackAllocated() || var->IsContextSlot());
@@ -2306,7 +2287,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
     __ Bind(&assign);
     EmitStoreToStackLocalOrContextSlot(var, location);
 
-  } else if (var->mode() == CONST && op != Token::INIT_CONST) {
+  } else if (var->mode() == CONST && op != Token::INIT) {
     // Assignment to const variable needs a write barrier.
     DCHECK(!var->IsLookupSlot());
     DCHECK(var->IsStackAllocated() || var->IsContextSlot());
@@ -2320,7 +2301,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
     __ Bind(&const_error);
     __ CallRuntime(Runtime::kThrowConstAssignError, 0);
 
-  } else if (var->is_this() && op == Token::INIT_CONST) {
+  } else if (var->is_this() && var->mode() == CONST && op == Token::INIT) {
     // Initializing assignment to const {this} needs a write barrier.
     DCHECK(var->IsStackAllocated() || var->IsContextSlot());
     Label uninitialized_this;
@@ -2333,7 +2314,8 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
     __ bind(&uninitialized_this);
     EmitStoreToStackLocalOrContextSlot(var, location);
 
-  } else if (!var->is_const_mode() || op == Token::INIT_CONST) {
+  } else if (!var->is_const_mode() ||
+             (var->mode() == CONST && op == Token::INIT)) {
     if (var->IsLookupSlot()) {
       // Assignment to var.
       __ Mov(x11, Operand(var->name()));
@@ -2349,7 +2331,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
       // mode.
       DCHECK(var->IsStackAllocated() || var->IsContextSlot());
       MemOperand location = VarOperand(var, x1);
-      if (FLAG_debug_code && op == Token::INIT_LET) {
+      if (FLAG_debug_code && var->mode() == LET && op == Token::INIT) {
         __ Ldr(x10, location);
         __ CompareRoot(x10, Heap::kTheHoleValueRootIndex);
         __ Check(eq, kLetBindingReInitialization);
@@ -2357,9 +2339,8 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
       EmitStoreToStackLocalOrContextSlot(var, location);
     }
 
-  } else if (op == Token::INIT_CONST_LEGACY) {
+  } else if (var->mode() == CONST_LEGACY && op == Token::INIT) {
     // Const initializers need a write barrier.
-    DCHECK(var->mode() == CONST_LEGACY);
     DCHECK(!var->IsParameter());  // No const parameters.
     if (var->IsLookupSlot()) {
       __ Mov(x1, Operand(var->name()));
@@ -2376,7 +2357,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
     }
 
   } else {
-    DCHECK(var->mode() == CONST_LEGACY && op != Token::INIT_CONST_LEGACY);
+    DCHECK(var->mode() == CONST_LEGACY && op != Token::INIT);
     if (is_strict(language_mode())) {
       __ CallRuntime(Runtime::kThrowConstAssignError, 0);
     }
@@ -2395,12 +2376,8 @@ void FullCodeGenerator::EmitNamedPropertyAssignment(Assignment* expr) {
   __ Mov(StoreDescriptor::NameRegister(),
          Operand(prop->key()->AsLiteral()->value()));
   __ Pop(StoreDescriptor::ReceiverRegister());
-  if (FLAG_vector_stores) {
-    EmitLoadStoreICSlot(expr->AssignmentSlot());
-    CallStoreIC();
-  } else {
-    CallStoreIC(expr->AssignmentFeedbackId());
-  }
+  EmitLoadStoreICSlot(expr->AssignmentSlot());
+  CallStoreIC();
 
   PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
   context()->Plug(x0);
@@ -2447,12 +2424,8 @@ void FullCodeGenerator::EmitKeyedPropertyAssignment(Assignment* expr) {
 
   Handle<Code> ic =
       CodeFactory::KeyedStoreIC(isolate(), language_mode()).code();
-  if (FLAG_vector_stores) {
-    EmitLoadStoreICSlot(expr->AssignmentSlot());
-    CallIC(ic);
-  } else {
-    CallIC(ic, expr->AssignmentFeedbackId());
-  }
+  EmitLoadStoreICSlot(expr->AssignmentSlot());
+  CallIC(ic);
 
   PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
   context()->Plug(x0);
@@ -2794,7 +2767,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetConstructCallPosition(expr);
+  SetConstructCallPosition(expr, arg_count);
 
   // Load function and argument count into x1 and x0.
   __ Mov(x0, arg_count);
@@ -2830,9 +2803,9 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetConstructCallPosition(expr);
+  SetConstructCallPosition(expr, arg_count);
 
-  // Load original constructor into x4.
+  // Load new target into x4.
   VisitForAccumulatorValue(super_call_ref->new_target_var());
   __ Mov(x4, result_register());
 
@@ -3563,7 +3536,11 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   VisitForStackValue(args->at(0));
   VisitForStackValue(args->at(1));
 
-  // Load original constructor into x3.
+  // Call the construct call builtin that handles allocation and
+  // constructor invocation.
+  SetConstructCallPosition(expr, 0);
+
+  // Load new target into x3.
   __ Peek(x3, 1 * kPointerSize);
 
   // Check if the calling frame is an arguments adaptor frame.
@@ -4299,12 +4276,8 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
       __ Mov(StoreDescriptor::NameRegister(),
              Operand(prop->key()->AsLiteral()->value()));
       __ Pop(StoreDescriptor::ReceiverRegister());
-      if (FLAG_vector_stores) {
-        EmitLoadStoreICSlot(expr->CountSlot());
-        CallStoreIC();
-      } else {
-        CallStoreIC(expr->CountStoreFeedbackId());
-      }
+      EmitLoadStoreICSlot(expr->CountSlot());
+      CallStoreIC();
       PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
       if (expr->is_postfix()) {
         if (!context()->IsEffect()) {
@@ -4342,12 +4315,8 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
       __ Pop(StoreDescriptor::ReceiverRegister());
       Handle<Code> ic =
           CodeFactory::KeyedStoreIC(isolate(), language_mode()).code();
-      if (FLAG_vector_stores) {
-        EmitLoadStoreICSlot(expr->CountSlot());
-        CallIC(ic);
-      } else {
-        CallIC(ic, expr->CountStoreFeedbackId());
-      }
+      EmitLoadStoreICSlot(expr->CountSlot());
+      CallIC(ic);
       PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
       if (expr->is_postfix()) {
         if (!context()->IsEffect()) {
@@ -4977,7 +4946,7 @@ void FullCodeGenerator::ClearPendingMessage() {
 
 
 void FullCodeGenerator::EmitLoadStoreICSlot(FeedbackVectorSlot slot) {
-  DCHECK(FLAG_vector_stores && !slot.IsInvalid());
+  DCHECK(!slot.IsInvalid());
   __ Mov(VectorStoreICTrampolineDescriptor::SlotRegister(), SmiFromSlot(slot));
 }
 

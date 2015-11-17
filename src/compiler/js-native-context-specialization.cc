@@ -13,6 +13,7 @@
 #include "src/compiler/linkage.h"
 #include "src/compiler/node-matchers.h"
 #include "src/field-index-inl.h"
+#include "src/isolate-inl.h"
 #include "src/objects-inl.h"  // TODO(mstarzinger): Temporary cycle breaker!
 #include "src/type-cache.h"
 #include "src/type-feedback-vector.h"
@@ -37,8 +38,6 @@ JSNativeContextSpecialization::JSNativeContextSpecialization(
 
 Reduction JSNativeContextSpecialization::Reduce(Node* node) {
   switch (node->opcode()) {
-    case IrOpcode::kJSCallFunction:
-      return ReduceJSCallFunction(node);
     case IrOpcode::kJSLoadNamed:
       return ReduceJSLoadNamed(node);
     case IrOpcode::kJSStoreNamed:
@@ -49,56 +48,6 @@ Reduction JSNativeContextSpecialization::Reduce(Node* node) {
       return ReduceJSStoreProperty(node);
     default:
       break;
-  }
-  return NoChange();
-}
-
-
-Reduction JSNativeContextSpecialization::ReduceJSCallFunction(Node* node) {
-  DCHECK_EQ(IrOpcode::kJSCallFunction, node->opcode());
-  CallFunctionParameters const& p = CallFunctionParametersOf(node->op());
-  Node* target = NodeProperties::GetValueInput(node, 0);
-  Node* frame_state = NodeProperties::GetFrameStateInput(node, 1);
-  Node* control = NodeProperties::GetControlInput(node);
-  Node* effect = NodeProperties::GetEffectInput(node);
-
-  // Not much we can do if deoptimization support is disabled.
-  if (!(flags() & kDeoptimizationEnabled)) return NoChange();
-
-  // Don't mess with JSCallFunction nodes that have a constant {target}.
-  if (HeapObjectMatcher(target).HasValue()) return NoChange();
-  if (!p.feedback().IsValid()) return NoChange();
-  CallICNexus nexus(p.feedback().vector(), p.feedback().slot());
-  Handle<Object> feedback(nexus.GetFeedback(), isolate());
-  if (feedback->IsWeakCell()) {
-    Handle<WeakCell> cell = Handle<WeakCell>::cast(feedback);
-    if (cell->value()->IsJSFunction()) {
-      // Avoid cross-context leaks, meaning don't embed references to functions
-      // in other native contexts.
-      Handle<JSFunction> function(JSFunction::cast(cell->value()), isolate());
-      if (function->context()->native_context() != *native_context()) {
-        return NoChange();
-      }
-
-      // Check that the {target} is still the {target_function}.
-      Node* target_function = jsgraph()->HeapConstant(function);
-      Node* check = graph()->NewNode(simplified()->ReferenceEqual(Type::Any()),
-                                     target, target_function);
-      Node* branch =
-          graph()->NewNode(common()->Branch(BranchHint::kTrue), check, control);
-      Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
-      Node* deoptimize = graph()->NewNode(common()->Deoptimize(), frame_state,
-                                          effect, if_false);
-      // TODO(bmeurer): This should be on the AdvancedReducer somehow.
-      NodeProperties::MergeControlToEnd(graph(), common(), deoptimize);
-      control = graph()->NewNode(common()->IfTrue(), branch);
-
-      // Specialize the JSCallFunction node to the {target_function}.
-      NodeProperties::ReplaceValueInput(node, target_function, 0);
-      NodeProperties::ReplaceControlInput(node, control);
-      return Changed(node);
-    }
-    // TODO(bmeurer): Also support optimizing bound functions and proxies here.
   }
   return NoChange();
 }
@@ -496,7 +445,8 @@ Reduction JSNativeContextSpecialization::ReduceJSStoreNamed(Node* node) {
 
 Reduction JSNativeContextSpecialization::ReduceElementAccess(
     Node* node, Node* index, Node* value, MapHandleList const& receiver_maps,
-    AccessMode access_mode, LanguageMode language_mode) {
+    AccessMode access_mode, LanguageMode language_mode,
+    KeyedAccessStoreMode store_mode) {
   DCHECK(node->opcode() == IrOpcode::kJSLoadProperty ||
          node->opcode() == IrOpcode::kJSStoreProperty);
   Node* receiver = NodeProperties::GetValueInput(node, 0);
@@ -507,6 +457,9 @@ Reduction JSNativeContextSpecialization::ReduceElementAccess(
 
   // Not much we can do if deoptimization support is disabled.
   if (!(flags() & kDeoptimizationEnabled)) return NoChange();
+
+  // TODO(bmeurer): Add support for non-standard stores.
+  if (store_mode != STANDARD_STORE) return NoChange();
 
   // Compute element access infos for the receiver maps.
   ZoneVector<ElementAccessInfo> access_infos(zone());
@@ -728,10 +681,87 @@ Reduction JSNativeContextSpecialization::ReduceElementAccess(
                                     element_type, element_machine_type};
 
     // Access the actual element.
+    // TODO(bmeurer): Refactor this into separate methods or even a separate
+    // class that deals with the elements access.
     if (access_mode == AccessMode::kLoad) {
+      // Compute the real element access type, which includes the hole in case
+      // of holey backing stores.
+      if (elements_kind == FAST_HOLEY_ELEMENTS ||
+          elements_kind == FAST_HOLEY_SMI_ELEMENTS) {
+        element_access.type = Type::Union(
+            element_type,
+            Type::Constant(factory()->the_hole_value(), graph()->zone()),
+            graph()->zone());
+      }
+      // Perform the actual backing store access.
       this_value = this_effect = graph()->NewNode(
           simplified()->LoadElement(element_access), this_elements, this_index,
           this_effect, this_control);
+      // Handle loading from holey backing stores correctly, by either mapping
+      // the hole to undefined if possible, or deoptimizing otherwise.
+      if (elements_kind == FAST_HOLEY_ELEMENTS ||
+          elements_kind == FAST_HOLEY_SMI_ELEMENTS) {
+        // Perform the hole check on the result.
+        Node* check =
+            graph()->NewNode(simplified()->ReferenceEqual(element_access.type),
+                             this_value, jsgraph()->TheHoleConstant());
+        Node* branch = graph()->NewNode(common()->Branch(BranchHint::kFalse),
+                                        check, this_control);
+        Node* if_true = graph()->NewNode(common()->IfTrue(), branch);
+        Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
+        // Check if we are allowed to turn the hole into undefined.
+        Type* initial_holey_array_type = Type::Class(
+            handle(isolate()->get_initial_js_array_map(elements_kind)),
+            graph()->zone());
+        if (receiver_type->NowIs(initial_holey_array_type) &&
+            isolate()->IsFastArrayConstructorPrototypeChainIntact()) {
+          // Add a code dependency on the array protector cell.
+          AssumePrototypesStable(receiver_type,
+                                 isolate()->initial_object_prototype());
+          dependencies()->AssumePropertyCell(factory()->array_protector());
+          // Turn the hole into undefined.
+          this_control =
+              graph()->NewNode(common()->Merge(2), if_true, if_false);
+          this_value = graph()->NewNode(common()->Phi(kMachAnyTagged, 2),
+                                        jsgraph()->UndefinedConstant(),
+                                        this_value, this_control);
+          element_type =
+              Type::Union(element_type, Type::Undefined(), graph()->zone());
+        } else {
+          // Deoptimize in case of the hole.
+          exit_controls.push_back(if_true);
+          this_control = if_false;
+        }
+        // Rename the result to represent the actual type (not polluted by the
+        // hole).
+        this_value = graph()->NewNode(common()->Guard(element_type), this_value,
+                                      this_control);
+      } else if (elements_kind == FAST_HOLEY_DOUBLE_ELEMENTS) {
+        // Perform the hole check on the result.
+        Node* check =
+            graph()->NewNode(simplified()->NumberIsHoleNaN(), this_value);
+        // Check if we are allowed to return the hole directly.
+        Type* initial_holey_array_type = Type::Class(
+            handle(isolate()->get_initial_js_array_map(elements_kind)),
+            graph()->zone());
+        if (receiver_type->NowIs(initial_holey_array_type) &&
+            isolate()->IsFastArrayConstructorPrototypeChainIntact()) {
+          // Add a code dependency on the array protector cell.
+          AssumePrototypesStable(receiver_type,
+                                 isolate()->initial_object_prototype());
+          dependencies()->AssumePropertyCell(factory()->array_protector());
+          // Turn the hole into undefined.
+          this_value = graph()->NewNode(
+              common()->Select(kMachAnyTagged, BranchHint::kFalse), check,
+              jsgraph()->UndefinedConstant(), this_value);
+        } else {
+          // Deoptimize in case of the hole.
+          Node* branch = graph()->NewNode(common()->Branch(BranchHint::kFalse),
+                                          check, this_control);
+          this_control = graph()->NewNode(common()->IfFalse(), branch);
+          exit_controls.push_back(graph()->NewNode(common()->IfTrue(), branch));
+        }
+      }
     } else {
       DCHECK_EQ(AccessMode::kStore, access_mode);
       if (IsFastSmiElementsKind(elements_kind)) {
@@ -809,7 +839,8 @@ Reduction JSNativeContextSpecialization::ReduceElementAccess(
 
 Reduction JSNativeContextSpecialization::ReduceKeyedAccess(
     Node* node, Node* index, Node* value, FeedbackNexus const& nexus,
-    AccessMode access_mode, LanguageMode language_mode) {
+    AccessMode access_mode, LanguageMode language_mode,
+    KeyedAccessStoreMode store_mode) {
   DCHECK(node->opcode() == IrOpcode::kJSLoadProperty ||
          node->opcode() == IrOpcode::kJSStoreProperty);
 
@@ -848,7 +879,7 @@ Reduction JSNativeContextSpecialization::ReduceKeyedAccess(
 
   // Try to lower the element access based on the {receiver_maps}.
   return ReduceElementAccess(node, index, value, receiver_maps, access_mode,
-                             language_mode);
+                             language_mode, store_mode);
 }
 
 
@@ -864,7 +895,7 @@ Reduction JSNativeContextSpecialization::ReduceJSLoadProperty(Node* node) {
 
   // Try to lower the keyed access based on the {nexus}.
   return ReduceKeyedAccess(node, index, value, nexus, AccessMode::kLoad,
-                           p.language_mode());
+                           p.language_mode(), STANDARD_STORE);
 }
 
 
@@ -878,9 +909,12 @@ Reduction JSNativeContextSpecialization::ReduceJSStoreProperty(Node* node) {
   if (!p.feedback().IsValid()) return NoChange();
   KeyedStoreICNexus nexus(p.feedback().vector(), p.feedback().slot());
 
+  // Extract the keyed access store mode from the KEYED_STORE_IC.
+  KeyedAccessStoreMode store_mode = nexus.GetKeyedAccessStoreMode();
+
   // Try to lower the keyed access based on the {nexus}.
   return ReduceKeyedAccess(node, index, value, nexus, AccessMode::kStore,
-                           p.language_mode());
+                           p.language_mode(), store_mode);
 }
 
 

@@ -91,7 +91,6 @@ namespace internal {
   F(StoreToSuper_Sloppy, 4, 1)                \
   F(StoreKeyedToSuper_Strict, 4, 1)           \
   F(StoreKeyedToSuper_Sloppy, 4, 1)           \
-  F(HandleStepInForDerivedConstructors, 1, 1) \
   F(DefaultConstructorCallSuper, 2, 1)
 
 
@@ -431,6 +430,7 @@ namespace internal {
   F(InternalSetPrototype, 2, 1)                      \
   F(SetPrototype, 2, 1)                              \
   F(GetOwnProperty, 2, 1)                            \
+  F(GetOwnProperty_Legacy, 2, 1)                     \
   F(PreventExtensions, 1, 1)                         \
   F(IsExtensible, 1, 1)                              \
   F(OptimizeObjectForAddingMultipleProperties, 2, 1) \

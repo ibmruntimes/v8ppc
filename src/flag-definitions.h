@@ -202,7 +202,8 @@ DEFINE_IMPLICATION(es_staging, harmony_destructuring)
   V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")           \
   V(harmony_simd, "harmony simd")                                     \
   V(harmony_do_expressions, "harmony do-expressions")                 \
-  V(harmony_regexp_subclass, "harmony regexp subclassing")
+  V(harmony_regexp_subclass, "harmony regexp subclassing")            \
+  V(harmony_regexp_lookbehind, "harmony regexp lookbehind")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                     \
@@ -288,7 +289,6 @@ DEFINE_BOOL(string_slices, true, "use string slices")
 
 // Flags for Ignition.
 DEFINE_BOOL(ignition, false, "use ignition interpreter")
-DEFINE_IMPLICATION(ignition, vector_stores)
 DEFINE_STRING(ignition_filter, "~~", "filter for ignition interpreter")
 DEFINE_BOOL(ignition_fake_try_catch, false,
             "enable fake try-catch-finally blocks in ignition for testing")
@@ -380,7 +380,7 @@ DEFINE_INT(stress_runs, 0, "number of stress runs")
 DEFINE_BOOL(lookup_sample_by_shared, true,
             "when picking a function to optimize, watch for shared function "
             "info, not JSFunction itself")
-DEFINE_BOOL(flush_optimized_code_cache, true,
+DEFINE_BOOL(flush_optimized_code_cache, false,
             "flushes the cache of optimized code for closures on every GC")
 DEFINE_BOOL(inline_construct, true, "inline constructor calls")
 DEFINE_BOOL(inline_arguments, true, "inline functions with arguments object")
@@ -674,7 +674,7 @@ DEFINE_INT(min_progress_during_incremental_marking_finalization, 32,
 DEFINE_INT(max_incremental_marking_finalization_rounds, 3,
            "at most try this many times to finalize incremental marking")
 DEFINE_BOOL(concurrent_sweeping, true, "use concurrent sweeping")
-DEFINE_BOOL(parallel_compaction, true, "use parallel compaction")
+DEFINE_BOOL(parallel_compaction, false, "use parallel compaction")
 DEFINE_BOOL(trace_incremental_marking, false,
             "trace progress of the incremental marking")
 DEFINE_BOOL(track_gc_object_stats, false,
@@ -711,7 +711,6 @@ DEFINE_BOOL(use_idle_notification, true,
 // ic.cc
 DEFINE_BOOL(use_ic, true, "use inline caching")
 DEFINE_BOOL(trace_ic, false, "trace inline cache state transitions")
-DEFINE_BOOL(vector_stores, true, "use vectors for store ics")
 
 // macro-assembler-ia32.cc
 DEFINE_BOOL(native_code_counters, false,

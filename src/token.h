@@ -50,10 +50,7 @@ namespace internal {
   /* IsAssignmentOp() and Assignment::is_compound() relies on */     \
   /* this block of enum values being contiguous and sorted in the */ \
   /* same order! */                                                  \
-  T(INIT_VAR, "=init_var", 2)                   /* AST-use only. */  \
-  T(INIT_LET, "=init_let", 2)                   /* AST-use only. */  \
-  T(INIT_CONST, "=init_const", 2)               /* AST-use only. */  \
-  T(INIT_CONST_LEGACY, "=init_const_legacy", 2) /* AST-use only. */  \
+  T(INIT, "=init", 2) /* AST-use only. */                            \
   T(ASSIGN, "=", 2)                                                  \
   T(ASSIGN_BIT_OR, "|=", 2)                                          \
   T(ASSIGN_BIT_XOR, "^=", 2)                                         \
@@ -163,6 +160,8 @@ namespace internal {
                                                                      \
   /* Illegal token - not able to scan. */                            \
   T(ILLEGAL, "ILLEGAL", 0)                                           \
+  T(ESCAPED_KEYWORD, NULL, 0)                                        \
+  T(ESCAPED_STRICT_RESERVED_WORD, NULL, 0)                           \
                                                                      \
   /* Scanner-internal use only. */                                   \
   T(WHITESPACE, NULL, 0)                                             \
@@ -200,6 +199,7 @@ class Token {
     switch (tok) {
       case IDENTIFIER:
         return true;
+      case ESCAPED_STRICT_RESERVED_WORD:
       case FUTURE_STRICT_RESERVED_WORD:
       case LET:
       case STATIC:
@@ -214,7 +214,7 @@ class Token {
   }
 
   static bool IsAssignmentOp(Value tok) {
-    return INIT_VAR <= tok && tok <= ASSIGN_MOD;
+    return INIT <= tok && tok <= ASSIGN_MOD;
   }
 
   static bool IsBinaryOp(Value op) {

@@ -9,6 +9,7 @@
 #include "src/debug/debug.h"
 #include "src/isolate-inl.h"
 #include "src/messages.h"
+#include "src/property-descriptor.h"
 #include "src/runtime/runtime.h"
 
 namespace v8 {
@@ -253,10 +254,8 @@ MUST_USE_RESULT static MaybeHandle<Object> GetOwnProperty(Isolate* isolate,
 //         [false, value, Writeable, Enumerable, Configurable]
 //  if args[1] is an accessor on args[0]
 //         [true, GetFunction, SetFunction, Enumerable, Configurable]
-RUNTIME_FUNCTION(Runtime_GetOwnProperty) {
-  // TODO(jkummerow): Support Proxies.
-  // TODO(jkummerow): Use JSReceiver::GetOwnPropertyDescriptor() and
-  //                  PropertyDescriptor::ToObject().
+// TODO(jkummerow): Deprecated. Remove all callers and delete.
+RUNTIME_FUNCTION(Runtime_GetOwnProperty_Legacy) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 2);
   CONVERT_ARG_HANDLE_CHECKED(JSObject, obj, 0);
@@ -265,6 +264,31 @@ RUNTIME_FUNCTION(Runtime_GetOwnProperty) {
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
                                      GetOwnProperty(isolate, obj, name));
   return *result;
+}
+
+
+// ES6 19.1.2.6
+RUNTIME_FUNCTION(Runtime_GetOwnProperty) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 2);
+  CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, raw_name, 1);
+  // 1. Let obj be ? ToObject(O).
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, object,
+                                     Execution::ToObject(isolate, object));
+  // 2. Let key be ? ToPropertyKey(P).
+  Handle<Name> key;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, key,
+                                     Object::ToName(isolate, raw_name));
+
+  // 3. Let desc be ? obj.[[GetOwnProperty]](key).
+  PropertyDescriptor desc;
+  bool found = JSReceiver::GetOwnPropertyDescriptor(
+      isolate, Handle<JSReceiver>::cast(object), key, &desc);
+  if (isolate->has_pending_exception()) return isolate->heap()->exception();
+  // 4. Return FromPropertyDescriptor(desc).
+  if (!found) return isolate->heap()->undefined_value();
+  return *desc.ToObject(isolate);
 }
 
 
@@ -984,7 +1008,7 @@ RUNTIME_FUNCTION(Runtime_AllocateHeapNumber) {
 
 static Object* Runtime_NewObjectHelper(Isolate* isolate,
                                        Handle<Object> constructor,
-                                       Handle<Object> original_constructor,
+                                       Handle<Object> new_target,
                                        Handle<AllocationSite> site) {
   // If the constructor isn't a proper function we throw a type error.
   if (!constructor->IsJSFunction()) {
@@ -994,9 +1018,8 @@ static Object* Runtime_NewObjectHelper(Isolate* isolate,
 
   Handle<JSFunction> function = Handle<JSFunction>::cast(constructor);
 
-  CHECK(original_constructor->IsJSFunction());
-  Handle<JSFunction> original_function =
-      Handle<JSFunction>::cast(original_constructor);
+  CHECK(new_target->IsJSFunction());
+  Handle<JSFunction> original_function = Handle<JSFunction>::cast(new_target);
 
 
   // Check that function is a constructor.
@@ -1004,10 +1027,6 @@ static Object* Runtime_NewObjectHelper(Isolate* isolate,
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate, NewTypeError(MessageTemplate::kNotConstructor, constructor));
   }
-
-  Debug* debug = isolate->debug();
-  // Handle stepping into constructors if step into is active.
-  if (debug->StepInActive()) debug->HandleStepIn(function, true);
 
   // The function should be compiled for the optimization hints to be
   // available.
@@ -1038,8 +1057,8 @@ RUNTIME_FUNCTION(Runtime_NewObject) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 2);
   CONVERT_ARG_HANDLE_CHECKED(Object, constructor, 0);
-  CONVERT_ARG_HANDLE_CHECKED(Object, original_constructor, 1);
-  return Runtime_NewObjectHelper(isolate, constructor, original_constructor,
+  CONVERT_ARG_HANDLE_CHECKED(Object, new_target, 1);
+  return Runtime_NewObjectHelper(isolate, constructor, new_target,
                                  Handle<AllocationSite>::null());
 }
 

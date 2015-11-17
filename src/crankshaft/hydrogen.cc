@@ -6938,11 +6938,9 @@ void HOptimizedGraphBuilder::HandleGlobalVariableAssignment(
     HStoreNamedGeneric* instr =
         Add<HStoreNamedGeneric>(global_object, var->name(), value,
                                 function_language_mode(), PREMONOMORPHIC);
-    if (FLAG_vector_stores) {
-      Handle<TypeFeedbackVector> vector =
-          handle(current_feedback_vector(), isolate());
-      instr->SetVectorAndSlot(vector, slot);
-    }
+    Handle<TypeFeedbackVector> vector =
+        handle(current_feedback_vector(), isolate());
+    instr->SetVectorAndSlot(vector, slot);
     USE(instr);
     DCHECK(instr->HasObservableSideEffects());
     Add<HSimulate>(ast_id, REMOVABLE_SIMULATE);
@@ -7074,11 +7072,11 @@ void HOptimizedGraphBuilder::VisitAssignment(Assignment* expr) {
     Variable* var = proxy->var();
 
     if (var->mode() == CONST) {
-      if (expr->op() != Token::INIT_CONST) {
+      if (expr->op() != Token::INIT) {
         return Bailout(kNonInitializerAssignmentToConst);
       }
     } else if (var->mode() == CONST_LEGACY) {
-      if (expr->op() != Token::INIT_CONST_LEGACY) {
+      if (expr->op() != Token::INIT) {
         CHECK_ALIVE(VisitForValue(expr->value()));
         return ast_context()->ReturnValue(Pop());
       }
@@ -7152,14 +7150,13 @@ void HOptimizedGraphBuilder::VisitAssignment(Assignment* expr) {
             default:
               mode = HStoreContextSlot::kNoCheck;
           }
-        } else if (expr->op() == Token::INIT_VAR ||
-                   expr->op() == Token::INIT_LET ||
-                   expr->op() == Token::INIT_CONST) {
-          mode = HStoreContextSlot::kNoCheck;
         } else {
-          DCHECK(expr->op() == Token::INIT_CONST_LEGACY);
-
-          mode = HStoreContextSlot::kCheckIgnoreAssignment;
+          DCHECK_EQ(Token::INIT, expr->op());
+          if (var->mode() == CONST_LEGACY) {
+            mode = HStoreContextSlot::kCheckIgnoreAssignment;
+          } else {
+            mode = HStoreContextSlot::kNoCheck;
+          }
         }
 
         HValue* context = BuildContextChainWalk(var);
@@ -7272,9 +7269,8 @@ HInstruction* HOptimizedGraphBuilder::BuildNamedGeneric(
     result->SetVectorAndSlot(vector, slot);
     return result;
   } else {
-    if (FLAG_vector_stores &&
-        current_feedback_vector()->GetKind(slot) ==
-            FeedbackVectorSlotKind::KEYED_STORE_IC) {
+    if (current_feedback_vector()->GetKind(slot) ==
+        FeedbackVectorSlotKind::KEYED_STORE_IC) {
       // It's possible that a keyed store of a constant string was converted
       // to a named store. Here, at the last minute, we need to make sure to
       // use a generic Keyed Store if we are using the type vector, because
@@ -7290,11 +7286,9 @@ HInstruction* HOptimizedGraphBuilder::BuildNamedGeneric(
 
     HStoreNamedGeneric* result = New<HStoreNamedGeneric>(
         object, name, value, function_language_mode(), PREMONOMORPHIC);
-    if (FLAG_vector_stores) {
-      Handle<TypeFeedbackVector> vector =
-          handle(current_feedback_vector(), isolate());
-      result->SetVectorAndSlot(vector, slot);
-    }
+    Handle<TypeFeedbackVector> vector =
+        handle(current_feedback_vector(), isolate());
+    result->SetVectorAndSlot(vector, slot);
     return result;
   }
 }
@@ -7319,11 +7313,9 @@ HInstruction* HOptimizedGraphBuilder::BuildKeyedGeneric(
   } else {
     HStoreKeyedGeneric* result = New<HStoreKeyedGeneric>(
         object, key, value, function_language_mode(), PREMONOMORPHIC);
-    if (FLAG_vector_stores) {
-      Handle<TypeFeedbackVector> vector =
-          handle(current_feedback_vector(), isolate());
-      result->SetVectorAndSlot(vector, slot);
-    }
+    Handle<TypeFeedbackVector> vector =
+        handle(current_feedback_vector(), isolate());
+    result->SetVectorAndSlot(vector, slot);
     return result;
   }
 }
@@ -7641,7 +7633,7 @@ HValue* HOptimizedGraphBuilder::HandleKeyedElementAccess(
     if (access_type == LOAD) {
       KeyedLoadICNexus nexus(vector, slot);
       name = nexus.FindFirstName();
-    } else if (FLAG_vector_stores) {
+    } else {
       KeyedStoreICNexus nexus(vector, slot);
       name = nexus.FindFirstName();
     }

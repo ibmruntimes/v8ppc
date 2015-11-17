@@ -499,27 +499,6 @@ const char* Heap::GetSpaceName(int idx) {
 }
 
 
-void Heap::ClearAllKeyedStoreICs() {
-  if (FLAG_vector_stores) {
-    TypeFeedbackVector::ClearAllKeyedStoreICs(isolate_);
-    return;
-  }
-
-  // TODO(mvstanton): Remove this function when FLAG_vector_stores is turned on
-  // permanently, and divert all callers to KeyedStoreIC::ClearAllKeyedStoreICs.
-  HeapObjectIterator it(code_space());
-
-  for (Object* object = it.Next(); object != NULL; object = it.Next()) {
-    Code* code = Code::cast(object);
-    Code::Kind current_kind = code->kind();
-    if (current_kind == Code::FUNCTION ||
-        current_kind == Code::OPTIMIZED_FUNCTION) {
-      code->ClearInlineCaches(Code::KEYED_STORE_IC);
-    }
-  }
-}
-
-
 void Heap::RepairFreeListsAfterDeserialization() {
   PagedSpaces spaces(this);
   for (PagedSpace* space = spaces.next(); space != NULL;
@@ -1048,6 +1027,10 @@ int Heap::NotifyContextDisposed(bool dependant_context) {
   if (!dependant_context) {
     tracer()->ResetSurvivalEvents();
     old_generation_size_configured_ = false;
+    MemoryReducer::Event event;
+    event.type = MemoryReducer::kContextDisposed;
+    event.time_ms = MonotonicallyIncreasingTimeInMs();
+    memory_reducer_->NotifyContextDisposed(event);
   }
   if (isolate()->concurrent_recompilation_enabled()) {
     // Flush the queued recompilation tasks.
@@ -1056,10 +1039,6 @@ int Heap::NotifyContextDisposed(bool dependant_context) {
   AgeInlineCaches();
   set_retained_maps(ArrayList::cast(empty_fixed_array()));
   tracer()->AddContextDisposalTime(MonotonicallyIncreasingTimeInMs());
-  MemoryReducer::Event event;
-  event.type = MemoryReducer::kContextDisposed;
-  event.time_ms = MonotonicallyIncreasingTimeInMs();
-  memory_reducer_->NotifyContextDisposed(event);
   return ++contexts_disposed_;
 }
 

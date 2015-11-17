@@ -193,9 +193,21 @@ Node* InterpreterAssembler::BytecodeOperandShort(int operand_index) {
 
 
 Node* InterpreterAssembler::BytecodeOperandCount(int operand_index) {
-  DCHECK_EQ(interpreter::OperandType::kCount8,
-            interpreter::Bytecodes::GetOperandType(bytecode_, operand_index));
-  return BytecodeOperand(operand_index);
+  switch (interpreter::Bytecodes::GetOperandSize(bytecode_, operand_index)) {
+    case interpreter::OperandSize::kByte:
+      DCHECK_EQ(
+          interpreter::OperandType::kCount8,
+          interpreter::Bytecodes::GetOperandType(bytecode_, operand_index));
+      return BytecodeOperand(operand_index);
+    case interpreter::OperandSize::kShort:
+      DCHECK_EQ(
+          interpreter::OperandType::kCount16,
+          interpreter::Bytecodes::GetOperandType(bytecode_, operand_index));
+      return BytecodeOperandShort(operand_index);
+    default:
+      UNREACHABLE();
+      return nullptr;
+  }
 }
 
 
@@ -352,9 +364,8 @@ Node* InterpreterAssembler::LoadTypeFeedbackVector() {
 }
 
 
-Node* InterpreterAssembler::CallConstruct(Node* original_constructor,
-                                          Node* constructor, Node* first_arg,
-                                          Node* arg_count) {
+Node* InterpreterAssembler::CallConstruct(Node* new_target, Node* constructor,
+                                          Node* first_arg, Node* arg_count) {
   Callable callable = CodeFactory::InterpreterPushArgsAndConstruct(isolate());
   CallDescriptor* descriptor = Linkage::GetStubCallDescriptor(
       isolate(), zone(), callable.descriptor(), 0, CallDescriptor::kNoFlags);
@@ -363,7 +374,7 @@ Node* InterpreterAssembler::CallConstruct(Node* original_constructor,
 
   Node** args = zone()->NewArray<Node*>(5);
   args[0] = arg_count;
-  args[1] = original_constructor;
+  args[1] = new_target;
   args[2] = constructor;
   args[3] = first_arg;
   args[4] = GetContext();

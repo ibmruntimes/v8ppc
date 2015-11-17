@@ -2622,13 +2622,13 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub,
                                        Register argc, Register function,
                                        Register feedback_vector, Register index,
-                                       Register orig_construct, bool is_super) {
+                                       Register new_target, bool is_super) {
   FrameScope scope(masm, StackFrame::INTERNAL);
 
   // Number-of-arguments register must be smi-tagged to call out.
   __ SmiTag(argc);
   if (is_super) {
-    __ Push(argc, function, feedback_vector, index, orig_construct);
+    __ Push(argc, function, feedback_vector, index, new_target);
   } else {
     __ Push(argc, function, feedback_vector, index);
   }
@@ -2637,7 +2637,7 @@ static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub,
   __ CallStub(stub);
 
   if (is_super) {
-    __ Pop(orig_construct, index, feedback_vector, function, argc);
+    __ Pop(new_target, index, feedback_vector, function, argc);
   } else {
     __ Pop(index, feedback_vector, function, argc);
   }
@@ -2648,19 +2648,19 @@ static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub,
 static void GenerateRecordCallTarget(MacroAssembler* masm, Register argc,
                                      Register function,
                                      Register feedback_vector, Register index,
-                                     Register orig_construct, Register scratch1,
+                                     Register new_target, Register scratch1,
                                      Register scratch2, Register scratch3,
                                      bool is_super) {
   ASM_LOCATION("GenerateRecordCallTarget");
   DCHECK(!AreAliased(scratch1, scratch2, scratch3, argc, function,
-                     feedback_vector, index, orig_construct));
+                     feedback_vector, index, new_target));
   // Cache the called function in a feedback vector slot. Cache states are
   // uninitialized, monomorphic (indicated by a JSFunction), and megamorphic.
   //  argc :            number of arguments to the construct function
   //  function :        the function to call
   //  feedback_vector : the feedback vector
   //  index :           slot in feedback vector (smi)
-  //  orig_construct :  original constructor (for IsSuperConstructorCall)
+  //  new_target :      new target (for IsSuperConstructorCall)
   Label initialize, done, miss, megamorphic, not_array_function;
 
   DCHECK_EQ(*TypeFeedbackVector::MegamorphicSentinel(masm->isolate()),
@@ -2736,13 +2736,13 @@ static void GenerateRecordCallTarget(MacroAssembler* masm, Register argc,
   // slot.
   CreateAllocationSiteStub create_stub(masm->isolate());
   CallStubInRecordCallTarget(masm, &create_stub, argc, function,
-                             feedback_vector, index, orig_construct, is_super);
+                             feedback_vector, index, new_target, is_super);
   __ B(&done);
 
   __ Bind(&not_array_function);
   CreateWeakCellStub weak_cell_stub(masm->isolate());
   CallStubInRecordCallTarget(masm, &weak_cell_stub, argc, function,
-                             feedback_vector, index, orig_construct, is_super);
+                             feedback_vector, index, new_target, is_super);
   __ Bind(&done);
 }
 
@@ -2753,7 +2753,7 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   // x1 : the function to call
   // x2 : feedback vector
   // x3 : slot in feedback vector (Smi, for RecordCallTarget)
-  // x4 : original constructor (for IsSuperConstructorCall)
+  // x4 : new target (for IsSuperConstructorCall)
   Register function = x1;
 
   Label non_function;
@@ -2828,9 +2828,9 @@ void CallICStub::HandleArrayCase(MacroAssembler* masm, Label* miss) {
 
   // Set up arguments for the array constructor stub.
   Register allocation_site_arg = feedback_vector;
-  Register original_constructor_arg = index;
+  Register new_target_arg = index;
   __ Mov(allocation_site_arg, allocation_site);
-  __ Mov(original_constructor_arg, function);
+  __ Mov(new_target_arg, function);
   ArrayConstructorStub stub(masm->isolate(), arg_count());
   __ TailCallStub(&stub);
 }
@@ -2944,6 +2944,14 @@ void CallICStub::Generate(MacroAssembler* masm) {
   __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, x5);
   __ Cmp(function, x5);
   __ B(eq, &miss);
+
+  // Make sure the function belongs to the same native context (which implies
+  // the same global object).
+  __ Ldr(x4, FieldMemOperand(function, JSFunction::kContextOffset));
+  __ Ldr(x4, ContextMemOperand(x4, Context::GLOBAL_OBJECT_INDEX));
+  __ Ldr(x4, GlobalObjectMemOperand());
+  __ Cmp(x4, x5);
+  __ B(ne, &miss);
 
   // Update stats.
   __ Ldr(x4, FieldMemOperand(feedback_vector, with_types_offset));
@@ -4170,76 +4178,6 @@ void RecordWriteStub::Generate(MacroAssembler* masm) {
 }
 
 
-void StoreArrayLiteralElementStub::Generate(MacroAssembler* masm) {
-  // x0     value            element value to store
-  // x3     index_smi        element index as smi
-  // sp[0]  array_index_smi  array literal index in function as smi
-  // sp[1]  array            array literal
-
-  Register value = x0;
-  Register index_smi = x3;
-
-  Register array = x1;
-  Register array_map = x2;
-  Register array_index_smi = x4;
-  __ PeekPair(array_index_smi, array, 0);
-  __ Ldr(array_map, FieldMemOperand(array, JSObject::kMapOffset));
-
-  Label double_elements, smi_element, fast_elements, slow_elements;
-  Register bitfield2 = x10;
-  __ Ldrb(bitfield2, FieldMemOperand(array_map, Map::kBitField2Offset));
-
-  // Jump if array's ElementsKind is not FAST*_SMI_ELEMENTS, FAST_ELEMENTS or
-  // FAST_HOLEY_ELEMENTS.
-  STATIC_ASSERT(FAST_SMI_ELEMENTS == 0);
-  STATIC_ASSERT(FAST_HOLEY_SMI_ELEMENTS == 1);
-  STATIC_ASSERT(FAST_ELEMENTS == 2);
-  STATIC_ASSERT(FAST_HOLEY_ELEMENTS == 3);
-  __ Cmp(bitfield2, Map::kMaximumBitField2FastHoleyElementValue);
-  __ B(hi, &double_elements);
-
-  __ JumpIfSmi(value, &smi_element);
-
-  // Jump if array's ElementsKind is not FAST_ELEMENTS or FAST_HOLEY_ELEMENTS.
-  __ Tbnz(bitfield2, MaskToBit(FAST_ELEMENTS << Map::ElementsKindBits::kShift),
-          &fast_elements);
-
-  // Store into the array literal requires an elements transition. Call into
-  // the runtime.
-  __ Bind(&slow_elements);
-  __ Push(array, index_smi, value);
-  __ Ldr(x10, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  __ Ldr(x11, FieldMemOperand(x10, JSFunction::kLiteralsOffset));
-  __ Push(x11, array_index_smi);
-  __ TailCallRuntime(Runtime::kStoreArrayLiteralElement, 5, 1);
-
-  // Array literal has ElementsKind of FAST_*_ELEMENTS and value is an object.
-  __ Bind(&fast_elements);
-  __ Ldr(x10, FieldMemOperand(array, JSObject::kElementsOffset));
-  __ Add(x11, x10, Operand::UntagSmiAndScale(index_smi, kPointerSizeLog2));
-  __ Add(x11, x11, FixedArray::kHeaderSize - kHeapObjectTag);
-  __ Str(value, MemOperand(x11));
-  // Update the write barrier for the array store.
-  __ RecordWrite(x10, x11, value, kLRHasNotBeenSaved, kDontSaveFPRegs,
-                 EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
-  __ Ret();
-
-  // Array literal has ElementsKind of FAST_*_SMI_ELEMENTS or FAST_*_ELEMENTS,
-  // and value is Smi.
-  __ Bind(&smi_element);
-  __ Ldr(x10, FieldMemOperand(array, JSObject::kElementsOffset));
-  __ Add(x11, x10, Operand::UntagSmiAndScale(index_smi, kPointerSizeLog2));
-  __ Str(value, FieldMemOperand(x11, FixedArray::kHeaderSize));
-  __ Ret();
-
-  __ Bind(&double_elements);
-  __ Ldr(x10, FieldMemOperand(array, JSObject::kElementsOffset));
-  __ StoreNumberToDoubleElements(value, index_smi, x10, x11, d0,
-                                 &slow_elements);
-  __ Ret();
-}
-
-
 void StubFailureTrampolineStub::Generate(MacroAssembler* masm) {
   CEntryStub ces(isolate(), 1, kSaveFPRegs);
   __ Call(ces.GetCode(), RelocInfo::CODE_TARGET);
@@ -5230,12 +5168,12 @@ void ArrayConstructorStub::Generate(MacroAssembler* masm) {
   //  -- x0 : argc (only if argument_count() is ANY or MORE_THAN_ONE)
   //  -- x1 : constructor
   //  -- x2 : AllocationSite or undefined
-  //  -- x3 : original constructor
+  //  -- x3 : new target
   //  -- sp[0] : last argument
   // -----------------------------------
   Register constructor = x1;
   Register allocation_site = x2;
-  Register original_constructor = x3;
+  Register new_target = x3;
 
   if (FLAG_debug_code) {
     // The array construct code is only set for the global and natives
@@ -5258,7 +5196,7 @@ void ArrayConstructorStub::Generate(MacroAssembler* masm) {
   }
 
   Label subclassing;
-  __ Cmp(original_constructor, constructor);
+  __ Cmp(new_target, constructor);
   __ B(ne, &subclassing);
 
   Register kind = x3;
@@ -5277,7 +5215,7 @@ void ArrayConstructorStub::Generate(MacroAssembler* masm) {
 
   // Subclassing support.
   __ Bind(&subclassing);
-  __ Push(constructor, original_constructor);
+  __ Push(constructor, new_target);
   // Adjust argc.
   switch (argument_count()) {
     case ANY:

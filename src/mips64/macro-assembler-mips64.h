@@ -818,12 +818,16 @@ class MacroAssembler: public Assembler {
   // FPU macros. These do not handle special cases like NaN or +- inf.
 
   // Convert unsigned word to double.
-  void Cvt_d_uw(FPURegister fd, FPURegister fs, FPURegister scratch);
-  void Cvt_d_uw(FPURegister fd, Register rs, FPURegister scratch);
+  void Cvt_d_uw(FPURegister fd, FPURegister fs);
+  void Cvt_d_uw(FPURegister fd, Register rs);
 
   // Convert unsigned long to double.
   void Cvt_d_ul(FPURegister fd, FPURegister fs);
   void Cvt_d_ul(FPURegister fd, Register rs);
+
+  // Convert unsigned long to float.
+  void Cvt_s_ul(FPURegister fd, FPURegister fs);
+  void Cvt_s_ul(FPURegister fd, Register rs);
 
   // Convert double to unsigned long.
   void Trunc_l_ud(FPURegister fd, FPURegister fs, FPURegister scratch);

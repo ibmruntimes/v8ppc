@@ -183,6 +183,7 @@
   V(NumberShiftRightLogical)       \
   V(NumberToInt32)                 \
   V(NumberToUint32)                \
+  V(NumberIsHoleNaN)               \
   V(PlainPrimitiveToNumber)        \
   V(ChangeTaggedToInt32)           \
   V(ChangeTaggedToUint32)          \
@@ -275,6 +276,7 @@
   V(TruncateInt64ToInt32)       \
   V(RoundInt64ToFloat32)        \
   V(RoundInt64ToFloat64)        \
+  V(RoundUint64ToFloat32)       \
   V(RoundUint64ToFloat64)       \
   V(BitcastFloat32ToInt32)      \
   V(BitcastFloat64ToInt64)      \

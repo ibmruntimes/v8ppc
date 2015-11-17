@@ -1056,7 +1056,7 @@ MaybeHandle<Object> Object::GetPropertyWithDefinedGetter(
   Debug* debug = isolate->debug();
   // Handle stepping into a getter if step into is active.
   // TODO(rossberg): should this apply to getters that are function proxies?
-  if (debug->is_active()) debug->HandleStepIn(getter, false);
+  if (debug->is_active()) debug->HandleStepIn(getter);
 
   return Execution::Call(isolate, getter, receiver, 0, NULL);
 }
@@ -1071,7 +1071,7 @@ Maybe<bool> Object::SetPropertyWithDefinedSetter(Handle<Object> receiver,
   Debug* debug = isolate->debug();
   // Handle stepping into a setter if step into is active.
   // TODO(rossberg): should this apply to getters that are function proxies?
-  if (debug->is_active()) debug->HandleStepIn(setter, false);
+  if (debug->is_active()) debug->HandleStepIn(setter);
 
   Handle<Object> argv[] = { value };
   RETURN_ON_EXCEPTION_VALUE(isolate, Execution::Call(isolate, setter, receiver,
@@ -2249,6 +2249,21 @@ String* JSReceiver::constructor_name() {
 }
 
 
+Context* JSReceiver::GetCreationContext() {
+  Object* constructor = map()->GetConstructor();
+  JSFunction* function;
+  if (!constructor->IsJSFunction()) {
+    // Functions have null as a constructor,
+    // but any JSFunction knows its context immediately.
+    function = JSFunction::cast(this);
+  } else {
+    function = JSFunction::cast(constructor);
+  }
+
+  return function->context()->native_context();
+}
+
+
 static Handle<Object> WrapType(Handle<HeapType> type) {
   if (type->IsClass()) return Map::WeakCellForMap(type->AsClass()->Map());
   return type;
@@ -2350,21 +2365,6 @@ void JSObject::AddSlowProperty(Handle<JSObject> object,
         NameDictionary::Add(dict, name, value, details);
     if (*dict != *result) object->set_properties(*result);
   }
-}
-
-
-Context* JSObject::GetCreationContext() {
-  Object* constructor = this->map()->GetConstructor();
-  JSFunction* function;
-  if (!constructor->IsJSFunction()) {
-    // Functions have null as a constructor,
-    // but any JSFunction knows its context immediately.
-    function = JSFunction::cast(this);
-  } else {
-    function = JSFunction::cast(constructor);
-  }
-
-  return function->context()->native_context();
 }
 
 
@@ -5505,7 +5505,7 @@ void JSObject::RequireSlowElements(SeededNumberDictionary* dictionary) {
   dictionary->set_requires_slow_elements();
   // TODO(verwaest): Remove this hack.
   if (map()->is_prototype_map()) {
-    GetHeap()->ClearAllKeyedStoreICs();
+    TypeFeedbackVector::ClearAllKeyedStoreICs(GetIsolate());
   }
 }
 
@@ -6171,11 +6171,12 @@ bool JSReceiver::OrdinaryDefineOwnProperty(Isolate* isolate,
 bool JSReceiver::OrdinaryDefineOwnProperty(LookupIterator* it,
                                            PropertyDescriptor* desc,
                                            ShouldThrow should_throw) {
+  Isolate* isolate = it->isolate();
   // 1. Let current be O.[[GetOwnProperty]](P).
   // 2. ReturnIfAbrupt(current).
   PropertyDescriptor current;
   if (!GetOwnPropertyDescriptor(it, &current) &&
-      it->isolate()->has_pending_exception()) {
+      isolate->has_pending_exception()) {
     return false;
   }
   // TODO(jkummerow/verwaest): It would be nice if we didn't have to reset
@@ -6187,35 +6188,35 @@ bool JSReceiver::OrdinaryDefineOwnProperty(LookupIterator* it,
   Handle<JSObject> object = Handle<JSObject>::cast(it->GetReceiver());
   bool extensible = JSObject::IsExtensible(object);
 
-  return ValidateAndApplyPropertyDescriptor(it, extensible, desc, &current,
-                                            should_throw);
+  return ValidateAndApplyPropertyDescriptor(isolate, it, extensible, desc,
+                                            &current, should_throw);
 }
 
 
 // ES6 9.1.6.2
 // static
-bool JSReceiver::IsCompatiblePropertyDescriptor(bool extensible,
+bool JSReceiver::IsCompatiblePropertyDescriptor(Isolate* isolate,
+                                                bool extensible,
                                                 PropertyDescriptor* desc,
                                                 PropertyDescriptor* current,
                                                 Handle<Name> property_name) {
   // 1. Return ValidateAndApplyPropertyDescriptor(undefined, undefined,
   //    Extensible, Desc, Current).
-  return ValidateAndApplyPropertyDescriptor(NULL, extensible, desc, current,
-                                            THROW_ON_ERROR, property_name);
+  return ValidateAndApplyPropertyDescriptor(
+      isolate, NULL, extensible, desc, current, THROW_ON_ERROR, property_name);
 }
 
 
 // ES6 9.1.6.3
 // static
 bool JSReceiver::ValidateAndApplyPropertyDescriptor(
-    LookupIterator* it, bool extensible, PropertyDescriptor* desc,
-    PropertyDescriptor* current, ShouldThrow should_throw,
-    Handle<Name> property_name) {
+    Isolate* isolate, LookupIterator* it, bool extensible,
+    PropertyDescriptor* desc, PropertyDescriptor* current,
+    ShouldThrow should_throw, Handle<Name> property_name) {
   // We either need a LookupIterator, or a property name.
   DCHECK((it == NULL) != property_name.is_null());
   Handle<JSObject> object;
   if (it != NULL) object = Handle<JSObject>::cast(it->GetReceiver());
-  Isolate* isolate = it->isolate();
   bool desc_is_data_descriptor = PropertyDescriptor::IsDataDescriptor(desc);
   bool desc_is_accessor_descriptor =
       PropertyDescriptor::IsAccessorDescriptor(desc);
@@ -6492,6 +6493,15 @@ bool JSReceiver::ValidateAndApplyPropertyDescriptor(
 
   // 11. Return true.
   return true;
+}
+
+
+// static
+Maybe<bool> JSReceiver::CreateDataProperty(LookupIterator* it,
+                                           Handle<Object> value) {
+  // TODO(rossberg): Support proxies.
+  if (!it->GetReceiver()->IsJSObject()) return Nothing<bool>();
+  return JSObject::CreateDataProperty(it, value);
 }
 
 
@@ -6868,7 +6878,7 @@ bool JSProxy::GetOwnPropertyDescriptor(LookupIterator* it,
   PropertyDescriptor::CompletePropertyDescriptor(isolate, desc);
   // 15. Let valid be IsCompatiblePropertyDescriptor (extensibleTarget,
   //     resultDesc, targetDesc).
-  bool valid = IsCompatiblePropertyDescriptor(extensible_target, desc,
+  bool valid = IsCompatiblePropertyDescriptor(isolate, extensible_target, desc,
                                               &target_desc, property_name);
   // 16. If valid is false, throw a TypeError exception.
   if (!valid) {
@@ -11931,36 +11941,36 @@ void JSFunction::EnsureHasInitialMap(Handle<JSFunction> function) {
 
 
 Handle<Map> JSFunction::EnsureDerivedHasInitialMap(
-    Handle<JSFunction> original_constructor, Handle<JSFunction> constructor) {
+    Handle<JSFunction> new_target, Handle<JSFunction> constructor) {
   DCHECK(constructor->has_initial_map());
   Isolate* isolate = constructor->GetIsolate();
   Handle<Map> constructor_initial_map(constructor->initial_map(), isolate);
-  if (*original_constructor == *constructor) return constructor_initial_map;
-  if (original_constructor->has_initial_map()) {
-    // Check that |original_constructor|'s initial map still in sync with
+  if (*new_target == *constructor) return constructor_initial_map;
+  if (new_target->has_initial_map()) {
+    // Check that |new_target|'s initial map still in sync with
     // the |constructor|, otherwise we must create a new initial map for
-    // |original_constructor|.
-    if (original_constructor->initial_map()->GetConstructor() == *constructor) {
-      return handle(original_constructor->initial_map(), isolate);
+    // |new_target|.
+    if (new_target->initial_map()->GetConstructor() == *constructor) {
+      return handle(new_target->initial_map(), isolate);
     }
   }
 
   // First create a new map with the size and number of in-object properties
   // suggested by the function.
-  DCHECK(!original_constructor->shared()->is_generator());
+  DCHECK(!new_target->shared()->is_generator());
   DCHECK(!constructor->shared()->is_generator());
 
   // Fetch or allocate prototype.
   Handle<Object> prototype;
-  if (original_constructor->has_instance_prototype()) {
-    prototype = handle(original_constructor->instance_prototype(), isolate);
+  if (new_target->has_instance_prototype()) {
+    prototype = handle(new_target->instance_prototype(), isolate);
   } else {
-    prototype = isolate->factory()->NewFunctionPrototype(original_constructor);
+    prototype = isolate->factory()->NewFunctionPrototype(new_target);
   }
 
   // Finally link initial map and constructor function if the original
   // constructor is actually a subclass constructor.
-  if (IsSubclassConstructor(original_constructor->shared()->kind())) {
+  if (IsSubclassConstructor(new_target->shared()->kind())) {
 // TODO(ishell): v8:4531, allow ES6 built-ins subclasses to have
 // in-object properties.
 #if 0
@@ -11971,7 +11981,7 @@ Handle<Map> JSFunction::EnsureDerivedHasInitialMap(
                             constructor_initial_map->unused_property_fields();
     int instance_size;
     int in_object_properties;
-    original_constructor->CalculateInstanceSizeForDerivedClass(
+    new_target->CalculateInstanceSizeForDerivedClass(
         instance_type, internal_fields, &instance_size, &in_object_properties);
 
     int unused_property_fields = in_object_properties - pre_allocated;
@@ -11981,9 +11991,9 @@ Handle<Map> JSFunction::EnsureDerivedHasInitialMap(
 #endif
     Handle<Map> map = Map::CopyInitialMap(constructor_initial_map);
 
-    JSFunction::SetInitialMap(original_constructor, map, prototype);
+    JSFunction::SetInitialMap(new_target, map, prototype);
     map->SetConstructor(*constructor);
-    original_constructor->StartInobjectSlackTracking();
+    new_target->StartInobjectSlackTracking();
     return map;
 
   } else {
@@ -14267,7 +14277,7 @@ Maybe<bool> JSObject::SetPrototypeUnobserved(Handle<JSObject> object,
     // If the prototype chain didn't previously have element callbacks, then
     // KeyedStoreICs need to be cleared to ensure any that involve this
     // map go generic.
-    object->GetHeap()->ClearAllKeyedStoreICs();
+    TypeFeedbackVector::ClearAllKeyedStoreICs(isolate);
   }
 
   heap->ClearInstanceofCache();
@@ -14868,9 +14878,11 @@ MaybeHandle<JSObject> JSObject::GetKeysForNamedInterceptor(
   }
   if (result.IsEmpty()) return MaybeHandle<JSObject>();
   DCHECK(v8::Utils::OpenHandle(*result)->IsJSArray() ||
-         v8::Utils::OpenHandle(*result)->HasSloppyArgumentsElements());
+         (v8::Utils::OpenHandle(*result)->IsJSObject() &&
+          Handle<JSObject>::cast(v8::Utils::OpenHandle(*result))
+              ->HasSloppyArgumentsElements()));
   // Rebox before returning.
-  return handle(*v8::Utils::OpenHandle(*result), isolate);
+  return handle(JSObject::cast(*v8::Utils::OpenHandle(*result)), isolate);
 }
 
 
@@ -14891,9 +14903,11 @@ MaybeHandle<JSObject> JSObject::GetKeysForIndexedInterceptor(
   }
   if (result.IsEmpty()) return MaybeHandle<JSObject>();
   DCHECK(v8::Utils::OpenHandle(*result)->IsJSArray() ||
-         v8::Utils::OpenHandle(*result)->HasSloppyArgumentsElements());
+         (v8::Utils::OpenHandle(*result)->IsJSObject() &&
+          Handle<JSObject>::cast(v8::Utils::OpenHandle(*result))
+              ->HasSloppyArgumentsElements()));
   // Rebox before returning.
-  return handle(*v8::Utils::OpenHandle(*result), isolate);
+  return handle(JSObject::cast(*v8::Utils::OpenHandle(*result)), isolate);
 }
 
 
@@ -16715,7 +16729,7 @@ void SeededNumberDictionary::UpdateMaxNumberKey(uint32_t key,
   if (key > kRequiresSlowElementsLimit) {
     if (used_as_prototype) {
       // TODO(verwaest): Remove this hack.
-      GetHeap()->ClearAllKeyedStoreICs();
+      TypeFeedbackVector::ClearAllKeyedStoreICs(GetIsolate());
     }
     set_requires_slow_elements();
     return;

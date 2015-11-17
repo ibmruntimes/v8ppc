@@ -2222,8 +2222,7 @@ Statement* Parser::ParseNativeDeclaration(bool* ok) {
   NativeFunctionLiteral* lit = factory()->NewNativeFunctionLiteral(
       name, extension_, RelocInfo::kNoPosition);
   return factory()->NewExpressionStatement(
-      factory()->NewAssignment(
-          Token::INIT_VAR, proxy, lit, RelocInfo::kNoPosition),
+      factory()->NewAssignment(Token::INIT, proxy, lit, RelocInfo::kNoPosition),
       pos);
 }
 
@@ -2341,9 +2340,8 @@ Statement* Parser::ParseClassDeclaration(ZoneList<const AstRawString*>* names,
             outer_class_variable->AsClassVariable()->declaration_group_start());
   }
 
-  Token::Value init_op =
-      is_strong(language_mode()) ? Token::INIT_CONST : Token::INIT_LET;
-  Assignment* assignment = factory()->NewAssignment(init_op, proxy, value, pos);
+  Assignment* assignment =
+      factory()->NewAssignment(Token::INIT, proxy, value, pos);
   Statement* assignment_statement =
       factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
   if (names) names->Add(name, zone());
@@ -2460,7 +2458,6 @@ void Parser::ParseVariableDeclarations(VariableDeclarationContext var_context,
   // immediately by their declaration nodes.
   parsing_result->descriptor.needs_init = false;
   parsing_result->descriptor.is_const = false;
-  parsing_result->descriptor.init_op = Token::INIT_VAR;
   if (peek() == Token::VAR) {
     if (is_strong(language_mode())) {
       Scanner::Location location = scanner()->peek_location();
@@ -2473,13 +2470,11 @@ void Parser::ParseVariableDeclarations(VariableDeclarationContext var_context,
     Consume(Token::CONST);
     if (is_sloppy(language_mode()) && allow_legacy_const()) {
       parsing_result->descriptor.mode = CONST_LEGACY;
-      parsing_result->descriptor.init_op = Token::INIT_CONST_LEGACY;
       ++use_counts_[v8::Isolate::kLegacyConst];
     } else {
       DCHECK(is_strict(language_mode()) || allow_harmony_sloppy());
       DCHECK(var_context != kStatement);
       parsing_result->descriptor.mode = CONST;
-      parsing_result->descriptor.init_op = Token::INIT_CONST;
     }
     parsing_result->descriptor.is_const = true;
     parsing_result->descriptor.needs_init = true;
@@ -2488,7 +2483,6 @@ void Parser::ParseVariableDeclarations(VariableDeclarationContext var_context,
     DCHECK(var_context != kStatement);
     parsing_result->descriptor.mode = LET;
     parsing_result->descriptor.needs_init = true;
-    parsing_result->descriptor.init_op = Token::INIT_LET;
   } else {
     UNREACHABLE();  // by current callers
   }
@@ -3185,7 +3179,6 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
           descriptor.needs_init = true;
           descriptor.declaration_pos = pattern->position();
           descriptor.initialization_pos = pattern->position();
-          descriptor.init_op = Token::INIT_LET;
 
           DeclarationParsingResult::Declaration decl(
               pattern, pattern->position(),
@@ -3512,9 +3505,8 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
     Declare(declaration, DeclarationDescriptor::NORMAL, true, CHECK_OK);
     inner_vars.Add(declaration->proxy()->var(), zone());
     VariableProxy* temp_proxy = factory()->NewVariableProxy(temps.at(i));
-    Assignment* assignment =
-        factory()->NewAssignment(is_const ? Token::INIT_CONST : Token::INIT_LET,
-                                 proxy, temp_proxy, RelocInfo::kNoPosition);
+    Assignment* assignment = factory()->NewAssignment(
+        Token::INIT, proxy, temp_proxy, RelocInfo::kNoPosition);
     Statement* assignment_statement =
         factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
     DCHECK(init->position() != RelocInfo::kNoPosition);
@@ -4559,7 +4551,6 @@ Block* Parser::BuildParameterInitializationBlock(
     descriptor.needs_init = true;
     descriptor.declaration_pos = parameter.pattern->position();
     descriptor.initialization_pos = parameter.pattern->position();
-    descriptor.init_op = Token::INIT_LET;
     Expression* initial_value =
         factory()->NewVariableProxy(parameters.scope->parameter(i));
     if (parameter.initializer != nullptr) {
@@ -4593,7 +4584,7 @@ Block* Parser::BuildParameterInitializationBlock(
           is_strong(language_mode()), RelocInfo::kNoPosition);
 
       auto init_array = factory()->NewAssignment(
-          Token::INIT_VAR, factory()->NewVariableProxy(temp_var), empty_array,
+          Token::INIT, factory()->NewVariableProxy(temp_var), empty_array,
           RelocInfo::kNoPosition);
 
       auto loop = factory()->NewForStatement(NULL, RelocInfo::kNoPosition);
@@ -4602,7 +4593,7 @@ Block* Parser::BuildParameterInitializationBlock(
           parameters.scope->NewTemporary(ast_value_factory()->empty_string());
       auto init = factory()->NewExpressionStatement(
           factory()->NewAssignment(
-              Token::INIT_VAR, factory()->NewVariableProxy(argument_index),
+              Token::INIT, factory()->NewVariableProxy(argument_index),
               factory()->NewSmiLiteral(i, RelocInfo::kNoPosition),
               RelocInfo::kNoPosition),
           RelocInfo::kNoPosition);
@@ -4731,7 +4722,7 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
       VariableProxy* init_proxy = factory()->NewVariableProxy(
           function_state_->generator_object_variable());
       Assignment* assignment = factory()->NewAssignment(
-          Token::INIT_VAR, init_proxy, allocation, RelocInfo::kNoPosition);
+          Token::INIT, init_proxy, allocation, RelocInfo::kNoPosition);
       VariableProxy* get_proxy = factory()->NewVariableProxy(
           function_state_->generator_object_variable());
       Yield* yield = factory()->NewYield(
@@ -4789,10 +4780,7 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
     // NOTE: We create a proxy and resolve it here so that in the
     // future we can change the AST to only refer to VariableProxies
     // instead of Variables and Proxies as is the case now.
-    const bool use_strict_const = is_strict(scope_->language_mode());
-    Token::Value fvar_init_op =
-        use_strict_const ? Token::INIT_CONST : Token::INIT_CONST_LEGACY;
-    VariableMode fvar_mode = use_strict_const ? CONST : CONST_LEGACY;
+    VariableMode fvar_mode = is_strict(language_mode()) ? CONST : CONST_LEGACY;
     Variable* fvar = new (zone())
         Variable(scope_, function_name, fvar_mode, Variable::NORMAL,
                  kCreatedInitialized, kNotAssigned);
@@ -4804,7 +4792,7 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
     VariableProxy* fproxy = factory()->NewVariableProxy(fvar);
     result->Set(kFunctionNameAssignmentIndex,
                 factory()->NewExpressionStatement(
-                    factory()->NewAssignment(fvar_init_op, fproxy,
+                    factory()->NewAssignment(Token::INIT, fproxy,
                                              factory()->NewThisFunction(pos),
                                              RelocInfo::kNoPosition),
                     RelocInfo::kNoPosition));
@@ -5194,6 +5182,7 @@ RegExpParser::RegExpParser(FlatStringReader* in, Handle<String>* error,
       in_(in),
       current_(kEndMarker),
       next_pos_(0),
+      captures_started_(0),
       capture_count_(0),
       has_more_(true),
       multiline_(multiline),
@@ -5297,25 +5286,26 @@ RegExpTree* RegExpParser::ParsePattern() {
 //   Atom Quantifier
 RegExpTree* RegExpParser::ParseDisjunction() {
   // Used to store current state while parsing subexpressions.
-  RegExpParserState initial_state(NULL, INITIAL, 0, zone());
-  RegExpParserState* stored_state = &initial_state;
+  RegExpParserState initial_state(NULL, INITIAL, RegExpLookaround::LOOKAHEAD, 0,
+                                  zone());
+  RegExpParserState* state = &initial_state;
   // Cache the builder in a local variable for quick access.
   RegExpBuilder* builder = initial_state.builder();
   while (true) {
     switch (current()) {
     case kEndMarker:
-      if (stored_state->IsSubexpression()) {
+      if (state->IsSubexpression()) {
         // Inside a parenthesized group when hitting end of input.
         ReportError(CStrVector("Unterminated group") CHECK_FAILED);
       }
-      DCHECK_EQ(INITIAL, stored_state->group_type());
+      DCHECK_EQ(INITIAL, state->group_type());
       // Parsing completed successfully.
       return builder->ToRegExp();
     case ')': {
-      if (!stored_state->IsSubexpression()) {
+      if (!state->IsSubexpression()) {
         ReportError(CStrVector("Unmatched ')'") CHECK_FAILED);
       }
-      DCHECK_NE(INITIAL, stored_state->group_type());
+      DCHECK_NE(INITIAL, state->group_type());
 
       Advance();
       // End disjunction parsing and convert builder content to new single
@@ -5324,27 +5314,27 @@ RegExpTree* RegExpParser::ParseDisjunction() {
 
       int end_capture_index = captures_started();
 
-      int capture_index = stored_state->capture_index();
-      SubexpressionType group_type = stored_state->group_type();
-
-      // Restore previous state.
-      stored_state = stored_state->previous_state();
-      builder = stored_state->builder();
+      int capture_index = state->capture_index();
+      SubexpressionType group_type = state->group_type();
 
       // Build result of subexpression.
       if (group_type == CAPTURE) {
-        RegExpCapture* capture = new(zone()) RegExpCapture(body, capture_index);
-        captures_->at(capture_index - 1) = capture;
+        RegExpCapture* capture = GetCapture(capture_index);
+        capture->set_body(body);
         body = capture;
       } else if (group_type != GROUPING) {
-        DCHECK(group_type == POSITIVE_LOOKAHEAD ||
-               group_type == NEGATIVE_LOOKAHEAD);
-        bool is_positive = (group_type == POSITIVE_LOOKAHEAD);
-        body = new(zone()) RegExpLookahead(body,
-                                   is_positive,
-                                   end_capture_index - capture_index,
-                                   capture_index);
+        DCHECK(group_type == POSITIVE_LOOKAROUND ||
+               group_type == NEGATIVE_LOOKAROUND);
+        bool is_positive = (group_type == POSITIVE_LOOKAROUND);
+        body = new (zone()) RegExpLookaround(
+            body, is_positive, end_capture_index - capture_index, capture_index,
+            state->lookaround_type());
       }
+
+      // Restore previous state.
+      state = state->previous_state();
+      builder = state->builder();
+
       builder->AddAtom(body);
       // For compatability with JSC and ES3, we allow quantifiers after
       // lookaheads, and break in all cases.
@@ -5391,6 +5381,7 @@ RegExpTree* RegExpParser::ParseDisjunction() {
     }
     case '(': {
       SubexpressionType subexpr_type = CAPTURE;
+      RegExpLookaround::Type lookaround_type = state->lookaround_type();
       Advance();
       if (current() == '?') {
         switch (Next()) {
@@ -5398,29 +5389,41 @@ RegExpTree* RegExpParser::ParseDisjunction() {
             subexpr_type = GROUPING;
             break;
           case '=':
-            subexpr_type = POSITIVE_LOOKAHEAD;
+            lookaround_type = RegExpLookaround::LOOKAHEAD;
+            subexpr_type = POSITIVE_LOOKAROUND;
             break;
           case '!':
-            subexpr_type = NEGATIVE_LOOKAHEAD;
+            lookaround_type = RegExpLookaround::LOOKAHEAD;
+            subexpr_type = NEGATIVE_LOOKAROUND;
             break;
+          case '<':
+            if (FLAG_harmony_regexp_lookbehind) {
+              Advance();
+              lookaround_type = RegExpLookaround::LOOKBEHIND;
+              if (Next() == '=') {
+                subexpr_type = POSITIVE_LOOKAROUND;
+                break;
+              } else if (Next() == '!') {
+                subexpr_type = NEGATIVE_LOOKAROUND;
+                break;
+              }
+            }
+          // Fall through.
           default:
             ReportError(CStrVector("Invalid group") CHECK_FAILED);
             break;
         }
         Advance(2);
       } else {
-        if (captures_ == NULL) {
-          captures_ = new(zone()) ZoneList<RegExpCapture*>(2, zone());
-        }
-        if (captures_started() >= kMaxCaptures) {
+        if (captures_started_ >= kMaxCaptures) {
           ReportError(CStrVector("Too many captures") CHECK_FAILED);
         }
-        captures_->Add(NULL, zone());
+        captures_started_++;
       }
       // Store current state and begin new disjunction parsing.
-      stored_state = new(zone()) RegExpParserState(stored_state, subexpr_type,
-                                                   captures_started(), zone());
-      builder = stored_state->builder();
+      state = new (zone()) RegExpParserState(
+          state, subexpr_type, lookaround_type, captures_started_, zone());
+      builder = state->builder();
       continue;
     }
     case '[': {
@@ -5463,16 +5466,15 @@ RegExpTree* RegExpParser::ParseDisjunction() {
       case '7': case '8': case '9': {
         int index = 0;
         if (ParseBackReferenceIndex(&index)) {
-          RegExpCapture* capture = NULL;
-          if (captures_ != NULL && index <= captures_->length()) {
-            capture = captures_->at(index - 1);
-          }
-          if (capture == NULL) {
+          if (state->IsInsideCaptureGroup(index)) {
+            // The backreference is inside the capture group it refers to.
+            // Nothing can possibly have been captured yet.
             builder->AddEmpty();
-            break;
+          } else {
+            RegExpCapture* capture = GetCapture(index);
+            RegExpTree* atom = new (zone()) RegExpBackReference(capture);
+            builder->AddAtom(atom);
           }
-          RegExpTree* atom = new(zone()) RegExpBackReference(capture);
-          builder->AddAtom(atom);
           break;
         }
         uc32 first_digit = Next();
@@ -5730,6 +5732,34 @@ bool RegExpParser::ParseBackReferenceIndex(int* index_out) {
   }
   *index_out = value;
   return true;
+}
+
+
+RegExpCapture* RegExpParser::GetCapture(int index) {
+  // The index for the capture groups are one-based. Its index in the list is
+  // zero-based.
+  int know_captures =
+      is_scanned_for_captures_ ? capture_count_ : captures_started_;
+  DCHECK(index <= know_captures);
+  if (captures_ == NULL) {
+    captures_ = new (zone()) ZoneList<RegExpCapture*>(know_captures, zone());
+  }
+  while (captures_->length() < know_captures) {
+    captures_->Add(new (zone()) RegExpCapture(captures_->length() + 1), zone());
+  }
+  return captures_->at(index - 1);
+}
+
+
+bool RegExpParser::RegExpParserState::IsInsideCaptureGroup(int index) {
+  for (RegExpParserState* s = this; s != NULL; s = s->previous_state()) {
+    if (s->group_type() != CAPTURE) continue;
+    // Return true if we found the matching capture index.
+    if (index == s->capture_index()) return true;
+    // Abort if index is larger than what has been parsed up till this state.
+    if (index > s->capture_index()) return false;
+  }
+  return false;
 }
 
 
@@ -6064,7 +6094,7 @@ RegExpTree* RegExpParser::ParseCharacterClass() {
     ranges->Add(CharacterRange::Everything(), zone());
     is_negated = !is_negated;
   }
-  return new(zone()) RegExpCharacterClass(ranges, is_negated);
+  return new (zone()) RegExpCharacterClass(ranges, is_negated);
 }
 
 

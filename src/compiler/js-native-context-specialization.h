@@ -50,7 +50,6 @@ class JSNativeContextSpecialization final : public AdvancedReducer {
   Reduction Reduce(Node* node) final;
 
  private:
-  Reduction ReduceJSCallFunction(Node* node);
   Reduction ReduceJSLoadNamed(Node* node);
   Reduction ReduceJSStoreNamed(Node* node);
   Reduction ReduceJSLoadProperty(Node* node);
@@ -59,11 +58,13 @@ class JSNativeContextSpecialization final : public AdvancedReducer {
   Reduction ReduceElementAccess(Node* node, Node* index, Node* value,
                                 MapHandleList const& receiver_maps,
                                 AccessMode access_mode,
-                                LanguageMode language_mode);
+                                LanguageMode language_mode,
+                                KeyedAccessStoreMode store_mode);
   Reduction ReduceKeyedAccess(Node* node, Node* index, Node* value,
                               FeedbackNexus const& nexus,
                               AccessMode access_mode,
-                              LanguageMode language_mode);
+                              LanguageMode language_mode,
+                              KeyedAccessStoreMode store_mode);
   Reduction ReduceNamedAccess(Node* node, Node* value,
                               MapHandleList const& receiver_maps,
                               Handle<Name> name, AccessMode access_mode,

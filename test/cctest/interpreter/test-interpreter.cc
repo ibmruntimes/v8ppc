@@ -67,7 +67,6 @@ class InterpreterTester {
         source_(source),
         bytecode_(bytecode),
         feedback_vector_(feedback_vector) {
-    i::FLAG_vector_stores = true;
     i::FLAG_ignition = true;
     i::FLAG_ignition_fake_try_catch = true;
     i::FLAG_always_opt = false;
@@ -999,7 +998,7 @@ TEST(InterpreterCall) {
     builder.LoadNamedProperty(builder.Parameter(0), name_index, slot_index,
                               i::SLOPPY)
         .StoreAccumulatorInRegister(Register(0))
-        .Call(Register(0), builder.Parameter(0), 0)
+        .Call(Register(0), builder.Parameter(0), 0, 0)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -1022,7 +1021,7 @@ TEST(InterpreterCall) {
     builder.LoadNamedProperty(builder.Parameter(0), name_index, slot_index,
                               i::SLOPPY)
         .StoreAccumulatorInRegister(Register(0))
-        .Call(Register(0), builder.Parameter(0), 0)
+        .Call(Register(0), builder.Parameter(0), 0, 0)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -1054,7 +1053,7 @@ TEST(InterpreterCall) {
         .StoreAccumulatorInRegister(Register(2))
         .LoadLiteral(Smi::FromInt(11))
         .StoreAccumulatorInRegister(Register(3))
-        .Call(Register(0), Register(1), 2)
+        .Call(Register(0), Register(1), 2, 0)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -1101,7 +1100,7 @@ TEST(InterpreterCall) {
         .StoreAccumulatorInRegister(Register(10))
         .LoadLiteral(factory->NewStringFromAsciiChecked("j"))
         .StoreAccumulatorInRegister(Register(11))
-        .Call(Register(0), Register(1), 10)
+        .Call(Register(0), Register(1), 10, 0)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 

@@ -19,6 +19,7 @@ class Handle;
 class HeapObject;
 template <class>
 class TypeImpl;
+enum TypeofMode : int;
 struct ZoneTypeConfig;
 typedef TypeImpl<ZoneTypeConfig> Type;
 
@@ -99,6 +100,10 @@ Matcher<Node*> IsEffectSet(const Matcher<Node*>& effect0_matcher,
                            const Matcher<Node*>& effect1_matcher);
 Matcher<Node*> IsProjection(const Matcher<size_t>& index_matcher,
                             const Matcher<Node*>& base_matcher);
+Matcher<Node*> IsCall(const Matcher<const CallDescriptor*>& descriptor_matcher,
+                      const Matcher<Node*>& value0_matcher,
+                      const Matcher<Node*>& effect_matcher,
+                      const Matcher<Node*>& control_matcher);
 Matcher<Node*> IsCall(const Matcher<const CallDescriptor*>& descriptor_matcher,
                       const Matcher<Node*>& value0_matcher,
                       const Matcher<Node*>& value1_matcher,
@@ -353,6 +358,24 @@ Matcher<Node*> IsNumberToInt32(const Matcher<Node*>& input_matcher);
 Matcher<Node*> IsNumberToUint32(const Matcher<Node*>& input_matcher);
 Matcher<Node*> IsParameter(const Matcher<int> index_matcher);
 Matcher<Node*> IsLoadFramePointer();
+Matcher<Node*> IsJSLoadNamed(const Handle<Name> name,
+                             const Matcher<Node*>& object_value_matcher,
+                             const Matcher<Node*>& feedback_vector_matcher,
+                             const Matcher<Node*>& effect_matcher,
+                             const Matcher<Node*>& control_matcher);
+Matcher<Node*> IsJSLoadGlobal(const Handle<Name> name,
+                              const TypeofMode typeof_mode,
+                              const Matcher<Node*>& feedback_vector_matcher,
+                              const Matcher<Node*>& effect_matcher,
+                              const Matcher<Node*>& control_matcher);
+Matcher<Node*> IsJSStoreGlobal(const Handle<Name> name,
+                               const Matcher<Node*>& value,
+                               const Matcher<Node*>& feedback_vector_matcher,
+                               const Matcher<Node*>& effect_matcher,
+                               const Matcher<Node*>& control_matcher);
+Matcher<Node*> IsJSCallFunction(std::vector<Matcher<Node*>> value_matchers,
+                                const Matcher<Node*>& effect_matcher,
+                                const Matcher<Node*>& control_matcher);
 
 }  // namespace compiler
 }  // namespace internal

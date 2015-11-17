@@ -2429,7 +2429,7 @@ static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub,
   // a2 : feedback vector
   // a3 : slot in feedback vector (Smi)
   // a1 : the function to call
-  // a4 : original constructor (for IsSuperConstructorCall)
+  // a4 : new target (for IsSuperConstructorCall)
   FrameScope scope(masm, StackFrame::INTERNAL);
   const RegList kSavedRegs = 1 << 4 |                   // a0
                              1 << 5 |                   // a1
@@ -2457,7 +2457,7 @@ static void GenerateRecordCallTarget(MacroAssembler* masm, bool is_super) {
   // a1 : the function to call
   // a2 : feedback vector
   // a3 : slot in feedback vector (Smi)
-  // a4 : original constructor (for IsSuperConstructorCall)
+  // a4 : new target (for IsSuperConstructorCall)
   Label initialize, done, miss, megamorphic, not_array_function;
 
   DCHECK_EQ(*TypeFeedbackVector::MegamorphicSentinel(masm->isolate()),
@@ -2543,7 +2543,7 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   // a1 : the function to call
   // a2 : feedback vector
   // a3 : slot in feedback vector (Smi, for RecordCallTarget)
-  // a4 : original constructor (for IsSuperConstructorCall)
+  // a4 : new target (for IsSuperConstructorCall)
 
   Label non_function;
   // Check that the function is not a smi.
@@ -2569,7 +2569,7 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
     __ AssertUndefinedOrAllocationSite(a2, a5);
   }
 
-  // Pass function as original constructor.
+  // Pass function as new target.
   if (IsSuperConstructorCall()) {
     __ mov(a3, a4);
   } else {
@@ -2757,6 +2757,13 @@ void CallICStub::Generate(MacroAssembler* masm) {
   // behavior on MISS.
   __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, a4);
   __ Branch(&miss, eq, a1, Operand(a4));
+
+  // Make sure the function belongs to the same native context (which implies
+  // the same global object).
+  __ ld(t0, FieldMemOperand(a1, JSFunction::kContextOffset));
+  __ ld(t0, ContextOperand(t0, Context::GLOBAL_OBJECT_INDEX));
+  __ ld(t1, GlobalObjectOperand());
+  __ Branch(&miss, ne, t0, Operand(t1));
 
   // Update stats.
   __ ld(a4, FieldMemOperand(a2, with_types_offset));
@@ -4305,73 +4312,6 @@ void RecordWriteStub::CheckNeedsToInformIncrementalMarker(
 }
 
 
-void StoreArrayLiteralElementStub::Generate(MacroAssembler* masm) {
-  // ----------- S t a t e -------------
-  //  -- a0    : element value to store
-  //  -- a3    : element index as smi
-  //  -- sp[0] : array literal index in function as smi
-  //  -- sp[4] : array literal
-  // clobbers a1, a2, a4
-  // -----------------------------------
-
-  Label element_done;
-  Label double_elements;
-  Label smi_element;
-  Label slow_elements;
-  Label fast_elements;
-
-  // Get array literal index, array literal and its map.
-  __ ld(a4, MemOperand(sp, 0 * kPointerSize));
-  __ ld(a1, MemOperand(sp, 1 * kPointerSize));
-  __ ld(a2, FieldMemOperand(a1, JSObject::kMapOffset));
-
-  __ CheckFastElements(a2, a5, &double_elements);
-  // Check for FAST_*_SMI_ELEMENTS or FAST_*_ELEMENTS elements
-  __ JumpIfSmi(a0, &smi_element);
-  __ CheckFastSmiElements(a2, a5, &fast_elements);
-
-  // Store into the array literal requires a elements transition. Call into
-  // the runtime.
-  __ bind(&slow_elements);
-  // call.
-  __ Push(a1, a3, a0);
-  __ ld(a5, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  __ ld(a5, FieldMemOperand(a5, JSFunction::kLiteralsOffset));
-  __ Push(a5, a4);
-  __ TailCallRuntime(Runtime::kStoreArrayLiteralElement, 5, 1);
-
-  // Array literal has ElementsKind of FAST_*_ELEMENTS and value is an object.
-  __ bind(&fast_elements);
-  __ ld(a5, FieldMemOperand(a1, JSObject::kElementsOffset));
-  __ SmiScale(a6, a3, kPointerSizeLog2);
-  __ Daddu(a6, a5, a6);
-  __ Daddu(a6, a6, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ sd(a0, MemOperand(a6, 0));
-  // Update the write barrier for the array store.
-  __ RecordWrite(a5, a6, a0, kRAHasNotBeenSaved, kDontSaveFPRegs,
-                 EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
-  __ Ret(USE_DELAY_SLOT);
-  __ mov(v0, a0);
-
-  // Array literal has ElementsKind of FAST_*_SMI_ELEMENTS or FAST_*_ELEMENTS,
-  // and value is Smi.
-  __ bind(&smi_element);
-  __ ld(a5, FieldMemOperand(a1, JSObject::kElementsOffset));
-  __ SmiScale(a6, a3, kPointerSizeLog2);
-  __ Daddu(a6, a5, a6);
-  __ sd(a0, FieldMemOperand(a6, FixedArray::kHeaderSize));
-  __ Ret(USE_DELAY_SLOT);
-  __ mov(v0, a0);
-
-  // Array literal has ElementsKind of FAST_*_DOUBLE_ELEMENTS.
-  __ bind(&double_elements);
-  __ ld(a5, FieldMemOperand(a1, JSObject::kElementsOffset));
-  __ StoreNumberToDoubleElements(a0, a3, a5, a7, t1, &slow_elements);
-  __ Ret(USE_DELAY_SLOT);
-  __ mov(v0, a0);
-}
-
-
 void StubFailureTrampolineStub::Generate(MacroAssembler* masm) {
   CEntryStub ces(isolate(), 1, kSaveFPRegs);
   __ Call(ces.GetCode(), RelocInfo::CODE_TARGET);
@@ -5074,7 +5014,7 @@ void ArrayConstructorStub::Generate(MacroAssembler* masm) {
   //  -- a0 : argc (only if argument_count() == ANY)
   //  -- a1 : constructor
   //  -- a2 : AllocationSite or undefined
-  //  -- a3 : original constructor
+  //  -- a3 : new target
   //  -- sp[0] : last argument
   // -----------------------------------
 

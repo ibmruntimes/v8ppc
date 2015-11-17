@@ -1677,6 +1677,11 @@ Type* Typer::Visitor::TypeNumberToUint32(Node* node) {
 }
 
 
+Type* Typer::Visitor::TypeNumberIsHoleNaN(Node* node) {
+  return Type::Boolean(zone());
+}
+
+
 Type* Typer::Visitor::TypePlainPrimitiveToNumber(Node* node) {
   return TypeUnaryOp(node, ToNumber);
 }
@@ -2117,6 +2122,11 @@ Type* Typer::Visitor::TypeRoundInt64ToFloat32(Node* node) {
 
 Type* Typer::Visitor::TypeRoundInt64ToFloat64(Node* node) {
   return Type::Intersect(Type::PlainNumber(), Type::UntaggedFloat64(), zone());
+}
+
+
+Type* Typer::Visitor::TypeRoundUint64ToFloat32(Node* node) {
+  return Type::Intersect(Type::PlainNumber(), Type::UntaggedFloat32(), zone());
 }
 
 
