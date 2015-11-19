@@ -52,14 +52,13 @@ class RepresentationChanger {
     if (use_type & kRepTagged) {
       return GetTaggedRepresentationFor(node, output_type);
     } else if (use_type & kRepFloat32) {
-      return GetFloat32RepresentationFor(node, output_type);
+      return GetFloat32RepresentationFor(node, output_type, use_type);
     } else if (use_type & kRepFloat64) {
-      return GetFloat64RepresentationFor(node, output_type);
+      return GetFloat64RepresentationFor(node, output_type, use_type);
     } else if (use_type & kRepBit) {
       return GetBitRepresentationFor(node, output_type);
     } else if (IsWord(use_type)) {
-      return GetWord32RepresentationFor(node, output_type,
-                                        use_type & kTypeUint32);
+      return GetWord32RepresentationFor(node, output_type);
     } else if (use_type & kRepWord64) {
       return GetWord64RepresentationFor(node, output_type);
     } else {
@@ -116,7 +115,8 @@ class RepresentationChanger {
     return jsgraph()->graph()->NewNode(op, node);
   }
 
-  Node* GetFloat32RepresentationFor(Node* node, MachineTypeUnion output_type) {
+  Node* GetFloat32RepresentationFor(Node* node, MachineTypeUnion output_type,
+                                    MachineTypeUnion truncation) {
     // Eagerly fold representation changes for constants.
     switch (node->opcode()) {
       case IrOpcode::kFloat64Constant:
@@ -144,6 +144,10 @@ class RepresentationChanger {
       if (output_type & kTypeUint32) {
         op = machine()->ChangeUint32ToFloat64();
       } else {
+        // Either the output is int32 or the uses only care about the
+        // low 32 bits (so we can pick int32 safely).
+        DCHECK(output_type & kTypeInt32 ||
+               !(truncation & ~(kTypeInt32 | kTypeUint32 | kRepMask)));
         op = machine()->ChangeInt32ToFloat64();
       }
       // int32 -> float64 -> float32
@@ -162,7 +166,8 @@ class RepresentationChanger {
     return jsgraph()->graph()->NewNode(op, node);
   }
 
-  Node* GetFloat64RepresentationFor(Node* node, MachineTypeUnion output_type) {
+  Node* GetFloat64RepresentationFor(Node* node, MachineTypeUnion output_type,
+                                    MachineTypeUnion use_type) {
     // Eagerly fold representation changes for constants.
     switch (node->opcode()) {
       case IrOpcode::kNumberConstant:
@@ -190,6 +195,10 @@ class RepresentationChanger {
       if (output_type & kTypeUint32) {
         op = machine()->ChangeUint32ToFloat64();
       } else {
+        // Either the output is int32 or the uses only care about the
+        // low 32 bits (so we can pick int32 safely).
+        DCHECK(output_type & kTypeInt32 ||
+               !(use_type & ~(kTypeInt32 | kTypeUint32 | kRepMask)));
         op = machine()->ChangeInt32ToFloat64();
       }
     } else if (output_type & kRepTagged) {
@@ -202,16 +211,8 @@ class RepresentationChanger {
     return jsgraph()->graph()->NewNode(op, node);
   }
 
-  Node* MakeInt32Constant(double value) {
-    if (value < 0) {
-      DCHECK(IsInt32Double(value));
-      int32_t iv = static_cast<int32_t>(value);
-      return jsgraph()->Int32Constant(iv);
-    } else {
-      DCHECK(IsUint32Double(value));
-      int32_t iv = static_cast<int32_t>(static_cast<uint32_t>(value));
-      return jsgraph()->Int32Constant(iv);
-    }
+  Node* MakeTruncatedInt32Constant(double value) {
+    return jsgraph()->Int32Constant(DoubleToInt32(value));
   }
 
   Node* GetTruncatedWord32For(Node* node, MachineTypeUnion output_type) {
@@ -245,42 +246,50 @@ class RepresentationChanger {
     return jsgraph()->graph()->NewNode(op, node);
   }
 
-  Node* GetWord32RepresentationFor(Node* node, MachineTypeUnion output_type,
-                                   bool use_unsigned) {
+  Node* GetWord32RepresentationFor(Node* node, MachineTypeUnion output_type) {
     // Eagerly fold representation changes for constants.
     switch (node->opcode()) {
       case IrOpcode::kInt32Constant:
         return node;  // No change necessary.
       case IrOpcode::kFloat32Constant:
-        return MakeInt32Constant(OpParameter<float>(node));
+        return MakeTruncatedInt32Constant(OpParameter<float>(node));
       case IrOpcode::kNumberConstant:
       case IrOpcode::kFloat64Constant:
-        return MakeInt32Constant(OpParameter<double>(node));
+        return MakeTruncatedInt32Constant(OpParameter<double>(node));
       default:
         break;
     }
     // Select the correct X -> Word32 operator.
     const Operator* op;
+    Type* type = NodeProperties::GetType(node);
+
     if (output_type & kRepBit) {
       return node;  // Sloppy comparison -> word32
     } else if (output_type & kRepFloat64) {
-      if (output_type & kTypeUint32 || use_unsigned) {
+      if (output_type & kTypeUint32 || type->Is(Type::Unsigned32())) {
         op = machine()->ChangeFloat64ToUint32();
-      } else {
+      } else if (output_type & kTypeInt32 || type->Is(Type::Signed32())) {
         op = machine()->ChangeFloat64ToInt32();
+      } else {
+        op = machine()->TruncateFloat64ToInt32(TruncationMode::kJavaScript);
       }
     } else if (output_type & kRepFloat32) {
       node = InsertChangeFloat32ToFloat64(node);  // float32 -> float64 -> int32
-      if (output_type & kTypeUint32 || use_unsigned) {
+      if (output_type & kTypeUint32 || type->Is(Type::Unsigned32())) {
         op = machine()->ChangeFloat64ToUint32();
-      } else {
+      } else if (output_type & kTypeInt32 || type->Is(Type::Signed32())) {
         op = machine()->ChangeFloat64ToInt32();
+      } else {
+        op = machine()->TruncateFloat64ToInt32(TruncationMode::kJavaScript);
       }
     } else if (output_type & kRepTagged) {
-      if (output_type & kTypeUint32 || use_unsigned) {
+      if (output_type & kTypeUint32 || type->Is(Type::Unsigned32())) {
         op = simplified()->ChangeTaggedToUint32();
-      } else {
+      } else if (output_type & kTypeInt32 || type->Is(Type::Signed32())) {
         op = simplified()->ChangeTaggedToInt32();
+      } else {
+        node = InsertChangeTaggedToFloat64(node);
+        op = machine()->TruncateFloat64ToInt32(TruncationMode::kJavaScript);
       }
     } else {
       return TypeError(node, output_type, kRepWord32);

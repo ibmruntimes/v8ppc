@@ -1102,6 +1102,8 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
                       empty_function, Builtins::kIllegal);
   function_function->initial_map()->set_is_callable();
   function_function->initial_map()->set_is_constructor(true);
+  function_function->shared()->set_construct_stub(
+      isolate->builtins()->builtin(Builtins::kJSBuiltinsConstructStub));
 
   {  // --- A r r a y ---
     Handle<JSFunction> array_function =
@@ -1158,6 +1160,8 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
                         isolate->initial_object_prototype(),
                         Builtins::kIllegal);
     native_context()->set_number_function(*number_fun);
+    number_fun->shared()->set_construct_stub(
+        isolate->builtins()->builtin(Builtins::kJSBuiltinsConstructStub));
   }
 
   {  // --- B o o l e a n ---
@@ -1208,8 +1212,11 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
 
   {  // --- D a t e ---
     // Builtin functions for Date.prototype.
-    InstallFunction(global, "Date", JS_DATE_TYPE, JSDate::kSize,
-                    isolate->initial_object_prototype(), Builtins::kIllegal);
+    Handle<JSFunction> date_fun = InstallFunction(
+        global, "Date", JS_DATE_TYPE, JSDate::kSize,
+        isolate->initial_object_prototype(), Builtins::kIllegal);
+    date_fun->shared()->set_construct_stub(
+        isolate->builtins()->builtin(Builtins::kJSBuiltinsConstructStub));
   }
 
   {  // -- R e g E x p
@@ -1219,6 +1226,8 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
                         isolate->initial_object_prototype(),
                         Builtins::kIllegal);
     native_context()->set_regexp_function(*regexp_fun);
+    regexp_fun->shared()->set_construct_stub(
+        isolate->builtins()->builtin(Builtins::kJSBuiltinsConstructStub));
 
     DCHECK(regexp_fun->has_initial_map());
     Handle<Map> initial_map(regexp_fun->initial_map());
@@ -1298,6 +1307,8 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
             isolate->initial_object_prototype(),
             Builtins::kIllegal);
     native_context()->set_data_view_fun(*data_view_fun);
+    data_view_fun->shared()->set_construct_stub(
+        isolate->builtins()->builtin(Builtins::kJSBuiltinsConstructStub));
   }
 
   {  // -- M a p
@@ -1841,6 +1852,8 @@ void Bootstrapper::ExportFromRuntime(Isolate* isolate,
                         Builtins::kIllegal, kUseStrictFunctionMap);
     generator_function_function->initial_map()->set_is_callable();
     generator_function_function->initial_map()->set_is_constructor(true);
+    generator_function_function->shared()->set_construct_stub(
+        isolate->builtins()->builtin(Builtins::kJSBuiltinsConstructStub));
   }
 
   {  // -- S e t I t e r a t o r
@@ -2042,7 +2055,7 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy_function)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy_let)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_rest_parameters)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_default_parameters)
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_destructuring)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_destructuring_bind)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_object_observe)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexps)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_unicode_regexps)
@@ -2132,6 +2145,8 @@ void Genesis::InitializeGlobal_harmony_reflect() {
                         Builtins::kReflectHas, 2, true);
   SimpleInstallFunction(reflect, "isExtensible",
                         Builtins::kReflectIsExtensible, 1, true);
+  SimpleInstallFunction(reflect, "ownKeys",
+                        Builtins::kReflectOwnKeys, 1, true);
   SimpleInstallFunction(reflect, "preventExtensions",
                         Builtins::kReflectPreventExtensions, 1, true);
   SimpleInstallFunction(reflect, "set",
@@ -2191,8 +2206,14 @@ void Genesis::InitializeGlobal_harmony_proxies() {
   Handle<JSGlobalObject> global(
       JSGlobalObject::cast(native_context()->global_object()));
   Isolate* isolate = global->GetIsolate();
-  InstallFunction(global, "Proxy", JS_PROXY_TYPE, JSProxy::kSize,
-                  isolate->initial_object_prototype(), Builtins::kIllegal);
+  Handle<JSFunction> proxy_fun =
+      InstallFunction(global, "Proxy", JS_PROXY_TYPE, JSProxy::kSize,
+                      isolate->initial_object_prototype(), Builtins::kIllegal);
+  // TODO(verwaest): Set to null in InstallFunction.
+  proxy_fun->initial_map()->set_prototype(isolate->heap()->null_value());
+  proxy_fun->shared()->set_construct_stub(
+      isolate->builtins()->builtin(Builtins::kJSBuiltinsConstructStub));
+  native_context()->set_proxy_function(*proxy_fun);
 }
 
 
@@ -2438,6 +2459,18 @@ bool Genesis::InstallNatives(ContextType context_type) {
     apply->shared()->set_length(2);
   }
 
+  // Set up the Promise constructor.
+  {
+    Handle<String> key = factory()->Promise_string();
+    Handle<JSFunction> function = Handle<JSFunction>::cast(
+        Object::GetProperty(handle(native_context()->global_object()), key)
+            .ToHandleChecked());
+    JSFunction::EnsureHasInitialMap(function);
+    function->initial_map()->set_instance_type(JS_PROMISE_TYPE);
+    function->shared()->set_construct_stub(
+        isolate()->builtins()->builtin(Builtins::kJSBuiltinsConstructStub));
+  }
+
   InstallBuiltinFunctionIds();
 
   // Create a constructor for RegExp results (a variant of Array that
@@ -2550,7 +2583,7 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_default_parameters_natives[] = {nullptr};
   static const char* harmony_reflect_natives[] = {"native harmony-reflect.js",
                                                   nullptr};
-  static const char* harmony_destructuring_natives[] = {nullptr};
+  static const char* harmony_destructuring_bind_natives[] = {nullptr};
   static const char* harmony_object_observe_natives[] = {
       "native harmony-object-observe.js", nullptr};
   static const char* harmony_sharedarraybuffer_natives[] = {

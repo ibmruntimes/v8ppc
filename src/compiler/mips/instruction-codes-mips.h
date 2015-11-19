@@ -30,6 +30,7 @@ namespace compiler {
   V(MipsShl)                       \
   V(MipsShr)                       \
   V(MipsSar)                       \
+  V(MipsExt)                       \
   V(MipsRor)                       \
   V(MipsMov)                       \
   V(MipsTst)                       \
@@ -57,6 +58,7 @@ namespace compiler {
   V(MipsFloat64RoundDown)          \
   V(MipsFloat64RoundTruncate)      \
   V(MipsFloat64RoundUp)            \
+  V(MipsFloat64RoundTiesEven)      \
   V(MipsCvtSD)                     \
   V(MipsCvtDS)                     \
   V(MipsTruncWD)                   \

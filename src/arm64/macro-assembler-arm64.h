@@ -45,6 +45,7 @@ namespace internal {
 #define kInterpreterBytecodeArrayRegister x20
 #define kInterpreterDispatchTableRegister x21
 #define kJavaScriptCallArgCountRegister x0
+#define kJavaScriptCallNewTargetRegister x3
 #define kRuntimeCallFunctionRegister x1
 #define kRuntimeCallArgCountRegister x0
 
@@ -1179,8 +1180,6 @@ class MacroAssembler : public Assembler {
   // 'call_kind' must be x5.
   void InvokePrologue(const ParameterCount& expected,
                       const ParameterCount& actual,
-                      Handle<Code> code_constant,
-                      Register code_reg,
                       Label* done,
                       InvokeFlag flag,
                       bool* definitely_mismatches,

@@ -3060,15 +3060,6 @@ class V8_EXPORT Map : public Object {
    */
   static Local<Map> New(Isolate* isolate);
 
-  /**
-   * Creates a new Map containing the elements of array, which must be formatted
-   * in the same manner as the array returned from AsArray().
-   * Guaranteed to be side-effect free if the array contains no holes.
-   */
-  static V8_WARN_UNUSED_RESULT V8_DEPRECATED(
-      "Use mutation methods instead",
-      MaybeLocal<Map> FromArray(Local<Context> context, Local<Array> array));
-
   V8_INLINE static Map* Cast(Value* obj);
 
  private:
@@ -3100,14 +3091,6 @@ class V8_EXPORT Set : public Object {
    * Creates a new empty Set.
    */
   static Local<Set> New(Isolate* isolate);
-
-  /**
-   * Creates a new Set containing the items in array.
-   * Guaranteed to be side-effect free if the array contains no holes.
-   */
-  static V8_WARN_UNUSED_RESULT V8_DEPRECATED(
-      "Use mutation methods instead",
-      MaybeLocal<Set> FromArray(Local<Context> context, Local<Array> array));
 
   V8_INLINE static Set* Cast(Value* obj);
 
@@ -3285,6 +3268,12 @@ class V8_EXPORT Function : public Object {
    * to object properties.
    */
   Local<Value> GetInferredName() const;
+
+  /**
+   * displayName if it is set, otherwise name if it is configured, otherwise
+   * function name, otherwise inferred name.
+   */
+  Local<Value> GetDebugName() const;
 
   /**
    * User-defined name assigned to the "displayName" property of this function.

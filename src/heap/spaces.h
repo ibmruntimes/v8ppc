@@ -1493,9 +1493,6 @@ class AllocationInfo {
   }
 
   INLINE(Address limit()) const {
-    SLOW_DCHECK(limit_ == NULL ||
-                (reinterpret_cast<intptr_t>(limit_) & kHeapObjectTagMask) ==
-                    0);
     return limit_;
   }
 
@@ -1544,7 +1541,10 @@ class AllocationStats BASE_EMBEDDED {
   // Accessors for the allocation statistics.
   intptr_t Capacity() { return capacity_; }
   intptr_t MaxCapacity() { return max_capacity_; }
-  intptr_t Size() { return size_; }
+  intptr_t Size() {
+    CHECK_GE(size_, 0);
+    return size_;
+  }
 
   // Grow the space by adding available bytes.  They are initially marked as
   // being in use (part of the size), but will normally be immediately freed,
@@ -1555,7 +1555,7 @@ class AllocationStats BASE_EMBEDDED {
     if (capacity_ > max_capacity_) {
       max_capacity_ = capacity_;
     }
-    DCHECK(size_ >= 0);
+    CHECK(size_ >= 0);
   }
 
   // Shrink the space by removing available bytes.  Since shrinking is done
@@ -1564,19 +1564,19 @@ class AllocationStats BASE_EMBEDDED {
   void ShrinkSpace(int size_in_bytes) {
     capacity_ -= size_in_bytes;
     size_ -= size_in_bytes;
-    DCHECK(size_ >= 0);
+    CHECK(size_ >= 0);
   }
 
   // Allocate from available bytes (available -> size).
   void AllocateBytes(intptr_t size_in_bytes) {
     size_ += size_in_bytes;
-    DCHECK(size_ >= 0);
+    CHECK(size_ >= 0);
   }
 
   // Free allocated bytes, making them available (size -> available).
   void DeallocateBytes(intptr_t size_in_bytes) {
     size_ -= size_in_bytes;
-    DCHECK_GE(size_, 0);
+    CHECK_GE(size_, 0);
   }
 
   // Merge {other} into {this}.
@@ -1586,12 +1586,13 @@ class AllocationStats BASE_EMBEDDED {
     if (other.max_capacity_ > max_capacity_) {
       max_capacity_ = other.max_capacity_;
     }
+    CHECK_GE(size_, 0);
   }
 
   void DecreaseCapacity(intptr_t size_in_bytes) {
     capacity_ -= size_in_bytes;
-    DCHECK_GE(capacity_, 0);
-    DCHECK_GE(capacity_, size_);
+    CHECK_GE(capacity_, 0);
+    CHECK_GE(capacity_, size_);
   }
 
   void IncreaseCapacity(intptr_t size_in_bytes) { capacity_ += size_in_bytes; }
@@ -2513,7 +2514,7 @@ class InlineAllocationObserver {
  public:
   explicit InlineAllocationObserver(intptr_t step_size)
       : step_size_(step_size), bytes_to_next_step_(step_size) {
-    DCHECK(step_size >= kPointerSize && (step_size & kHeapObjectTagMask) == 0);
+    DCHECK(step_size >= kPointerSize);
   }
   virtual ~InlineAllocationObserver() {}
 
@@ -2521,15 +2522,13 @@ class InlineAllocationObserver {
   intptr_t step_size() const { return step_size_; }
   intptr_t bytes_to_next_step() const { return bytes_to_next_step_; }
 
-  // Pure virtual method provided by the subclasses that gets called when more
-  // than step_size byte have been allocated.
+  // Pure virtual method provided by the subclasses that gets called when at
+  // least step_size bytes have been allocated.
   virtual void Step(int bytes_allocated) = 0;
 
   // Called each time the new space does an inline allocation step. This may be
   // more frequently than the step_size we are monitoring (e.g. when there are
-  // multiple observers, or when page or space boundary is encountered.) The
-  // Step method is only called once more than step_size bytes have been
-  // allocated.
+  // multiple observers, or when page or space boundary is encountered.)
   void InlineAllocationStep(int bytes_allocated) {
     bytes_to_next_step_ -= bytes_allocated;
     if (bytes_to_next_step_ <= 0) {

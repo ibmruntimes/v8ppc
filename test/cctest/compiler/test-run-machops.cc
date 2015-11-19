@@ -5346,18 +5346,40 @@ TEST(RunBitcastInt64ToFloat64) {
 
 
 TEST(RunBitcastFloat64ToInt64) {
-  double input = 0;
-  int64_t output = 0;
-  RawMachineAssemblerTester<int32_t> m;
-  m.StoreToPointer(
-      &output, kMachInt64,
-      m.BitcastFloat64ToInt64(m.LoadFromPointer(&input, kMachFloat64)));
-  m.Return(m.Int32Constant(11));
+  BufferedRawMachineAssemblerTester<int64_t> m(kMachFloat64);
+
+  m.Return(m.BitcastFloat64ToInt64(m.Parameter(0)));
+  FOR_FLOAT64_INPUTS(i) { CHECK_EQ(bit_cast<int64_t>(*i), m.Call(*i)); }
+}
+
+
+TEST(RunChangeFloat64ToInt64) {
+  BufferedRawMachineAssemblerTester<int64_t> m(kMachFloat64);
+  m.Return(m.ChangeFloat64ToInt64(m.Parameter(0)));
+
+  FOR_INT64_INPUTS(i) {
+    double input = static_cast<double>(*i);
+    CHECK_EQ(static_cast<int64_t>(input), m.Call(input));
+  }
+}
+
+
+TEST(RunTruncateFloat64ToUint64) {
+  BufferedRawMachineAssemblerTester<uint64_t> m(kMachFloat64);
+  m.Return(m.TruncateFloat64ToUint64(m.Parameter(0)));
+
+  FOR_UINT64_INPUTS(j) {
+    double input = static_cast<double>(*j);
+
+    if (input < 18446744073709551616.0) {
+      CHECK_EQ(static_cast<uint64_t>(input), m.Call(input));
+    }
+  }
+
   FOR_FLOAT64_INPUTS(i) {
-    input = *i;
-    CHECK_EQ(11, m.Call());
-    double expected = bit_cast<int64_t>(input);
-    CHECK_EQ(expected, output);
+    if (*i < 18446744073709551616.0 && *i >= 0) {
+      CHECK_EQ(static_cast<uint64_t>(*i), m.Call(*i));
+    }
   }
 }
 

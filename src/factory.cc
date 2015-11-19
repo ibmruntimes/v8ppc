@@ -1938,13 +1938,9 @@ Handle<JSDataView> Factory::NewJSDataView(Handle<JSArrayBuffer> buffer,
 
 Handle<JSProxy> Factory::NewJSProxy(Handle<JSReceiver> target,
                                     Handle<JSReceiver> handler) {
-  // Allocate map.
-  // TODO(rossberg): Once we optimize proxies, think about a scheme to share
-  // maps. Will probably depend on the identity of the handler object, too.
-  Handle<Map> map = NewMap(JS_PROXY_TYPE, JSProxy::kSize);
-  Map::SetPrototype(map, null_value());
-
   // Allocate the proxy object.
+  Handle<Map> map(isolate()->proxy_function()->initial_map());
+  DCHECK(map->prototype()->IsNull());
   Handle<JSProxy> result = New<JSProxy>(map, NEW_SPACE);
   result->set_target(*target);
   result->set_handler(*handler);
@@ -2071,7 +2067,7 @@ Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfo(
     code = handle(isolate()->builtins()->builtin(Builtins::kIllegal));
   }
   share->set_code(*code);
-  share->set_optimized_code_map(Smi::FromInt(0));
+  share->set_optimized_code_map(*cleared_optimized_code_map());
   share->set_scope_info(ScopeInfo::Empty(isolate()));
   Code* construct_stub =
       isolate()->builtins()->builtin(Builtins::kJSConstructStubGeneric);

@@ -24,6 +24,7 @@ const Register kInterpreterBytecodeOffsetRegister = {Register::kCode_r5};
 const Register kInterpreterBytecodeArrayRegister = {Register::kCode_r6};
 const Register kInterpreterDispatchTableRegister = {Register::kCode_r8};
 const Register kJavaScriptCallArgCountRegister = {Register::kCode_r0};
+const Register kJavaScriptCallNewTargetRegister = {Register::kCode_r3};
 const Register kRuntimeCallFunctionRegister = {Register::kCode_r1};
 const Register kRuntimeCallArgCountRegister = {Register::kCode_r0};
 
@@ -1462,8 +1463,6 @@ class MacroAssembler: public Assembler {
   // Helper functions for generating invokes.
   void InvokePrologue(const ParameterCount& expected,
                       const ParameterCount& actual,
-                      Handle<Code> code_constant,
-                      Register code_reg,
                       Label* done,
                       bool* definitely_mismatches,
                       InvokeFlag flag,

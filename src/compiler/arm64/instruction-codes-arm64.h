@@ -76,7 +76,7 @@ namespace compiler {
   V(Arm64TestAndBranch32)          \
   V(Arm64TestAndBranch)            \
   V(Arm64CompareAndBranch32)       \
-  V(Arm64Claim)                    \
+  V(Arm64ClaimForCallArguments)    \
   V(Arm64Poke)                     \
   V(Arm64PokePair)                 \
   V(Arm64Float32Cmp)               \
@@ -108,6 +108,8 @@ namespace compiler {
   V(Arm64Float64ToFloat32)         \
   V(Arm64Float64ToInt32)           \
   V(Arm64Float64ToUint32)          \
+  V(Arm64Float64ToInt64)           \
+  V(Arm64Float64ToUint64)          \
   V(Arm64Int32ToFloat64)           \
   V(Arm64Int64ToFloat32)           \
   V(Arm64Int64ToFloat64)           \

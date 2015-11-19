@@ -250,12 +250,12 @@ void Verifier::Visitor::Check(Node* node) {
             break;
           }
           default: {
-            UNREACHABLE();
+            V8_Fatal(__FILE__, __LINE__, "Switch #%d illegally used by #%d:%s",
+                     node->id(), use->id(), use->op()->mnemonic());
             break;
           }
         }
       }
-      CHECK_LE(1, count_case);
       CHECK_EQ(1, count_default);
       CHECK_EQ(node->op()->ControlOutputCount(), count_case + count_default);
       // Type is empty.
@@ -909,6 +909,8 @@ void Verifier::Visitor::Check(Node* node) {
     case IrOpcode::kChangeFloat32ToFloat64:
     case IrOpcode::kChangeFloat64ToInt32:
     case IrOpcode::kChangeFloat64ToUint32:
+    case IrOpcode::kChangeFloat64ToInt64:
+    case IrOpcode::kTruncateFloat64ToUint64:
     case IrOpcode::kFloat64ExtractLowWord32:
     case IrOpcode::kFloat64ExtractHighWord32:
     case IrOpcode::kFloat64InsertLowWord32:

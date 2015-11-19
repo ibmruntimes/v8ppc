@@ -462,7 +462,6 @@ const Operator* CommonOperatorBuilder::IfException(IfExceptionHint hint) {
 
 
 const Operator* CommonOperatorBuilder::Switch(size_t control_output_count) {
-  DCHECK_GE(control_output_count, 3u);        // Disallow trivial switches.
   return new (zone()) Operator(               // --
       IrOpcode::kSwitch, Operator::kKontrol,  // opcode
       "Switch",                               // name
@@ -573,22 +572,20 @@ const Operator* CommonOperatorBuilder::Int64Constant(int64_t value) {
 
 
 const Operator* CommonOperatorBuilder::Float32Constant(volatile float value) {
-  return new (zone())
-      Operator1<float, base::bit_equal_to<float>, base::bit_hash<float>>(  // --
-          IrOpcode::kFloat32Constant, Operator::kPure,  // opcode
-          "Float32Constant",                            // name
-          0, 0, 0, 1, 0, 0,                             // counts
-          value);                                       // parameter
+  return new (zone()) Operator1<float>(             // --
+      IrOpcode::kFloat32Constant, Operator::kPure,  // opcode
+      "Float32Constant",                            // name
+      0, 0, 0, 1, 0, 0,                             // counts
+      value);                                       // parameter
 }
 
 
 const Operator* CommonOperatorBuilder::Float64Constant(volatile double value) {
-  return new (zone()) Operator1<double, base::bit_equal_to<double>,
-                                base::bit_hash<double>>(  // --
-      IrOpcode::kFloat64Constant, Operator::kPure,        // opcode
-      "Float64Constant",                                  // name
-      0, 0, 0, 1, 0, 0,                                   // counts
-      value);                                             // parameter
+  return new (zone()) Operator1<double>(            // --
+      IrOpcode::kFloat64Constant, Operator::kPure,  // opcode
+      "Float64Constant",                            // name
+      0, 0, 0, 1, 0, 0,                             // counts
+      value);                                       // parameter
 }
 
 
@@ -603,24 +600,21 @@ const Operator* CommonOperatorBuilder::ExternalConstant(
 
 
 const Operator* CommonOperatorBuilder::NumberConstant(volatile double value) {
-  return new (zone()) Operator1<double, base::bit_equal_to<double>,
-                                base::bit_hash<double>>(  // --
-      IrOpcode::kNumberConstant, Operator::kPure,         // opcode
-      "NumberConstant",                                   // name
-      0, 0, 0, 1, 0, 0,                                   // counts
-      value);                                             // parameter
+  return new (zone()) Operator1<double>(           // --
+      IrOpcode::kNumberConstant, Operator::kPure,  // opcode
+      "NumberConstant",                            // name
+      0, 0, 0, 1, 0, 0,                            // counts
+      value);                                      // parameter
 }
 
 
 const Operator* CommonOperatorBuilder::HeapConstant(
     const Handle<HeapObject>& value) {
-  return new (zone())
-      Operator1<Handle<HeapObject>, Handle<HeapObject>::equal_to,
-                Handle<HeapObject>::hash>(           // --
-          IrOpcode::kHeapConstant, Operator::kPure,  // opcode
-          "HeapConstant",                            // name
-          0, 0, 0, 1, 0, 0,                          // counts
-          value);                                    // parameter
+  return new (zone()) Operator1<Handle<HeapObject>>(  // --
+      IrOpcode::kHeapConstant, Operator::kPure,       // opcode
+      "HeapConstant",                                 // name
+      0, 0, 0, 1, 0, 0,                               // counts
+      value);                                         // parameter
 }
 
 

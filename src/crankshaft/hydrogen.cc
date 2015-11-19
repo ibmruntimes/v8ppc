@@ -7876,7 +7876,7 @@ void HOptimizedGraphBuilder::PushLoad(Property* expr,
 void HOptimizedGraphBuilder::BuildLoad(Property* expr,
                                        BailoutId ast_id) {
   HInstruction* instr = NULL;
-  if (expr->IsStringAccess()) {
+  if (expr->IsStringAccess() && expr->GetKeyType() == ELEMENT) {
     HValue* index = Pop();
     HValue* string = Pop();
     HInstruction* char_code = BuildStringCharCodeAt(string, index);
@@ -7977,16 +7977,15 @@ HInstruction* HOptimizedGraphBuilder::NewPlainFunctionCall(HValue* fun,
 HInstruction* HOptimizedGraphBuilder::NewArgumentAdaptorCall(
     HValue* fun, HValue* context,
     int argument_count, HValue* expected_param_count) {
-  ArgumentAdaptorDescriptor descriptor(isolate());
+  HValue* new_target = graph()->GetConstantUndefined();
   HValue* arity = Add<HConstant>(argument_count - 1);
 
-  HValue* op_vals[] = { context, fun, arity, expected_param_count };
+  HValue* op_vals[] = {context, fun, new_target, arity, expected_param_count};
 
-  Handle<Code> adaptor =
-      isolate()->builtins()->ArgumentsAdaptorTrampoline();
-  HConstant* adaptor_value = Add<HConstant>(adaptor);
+  Callable callable = CodeFactory::ArgumentAdaptor(isolate());
+  HConstant* stub = Add<HConstant>(callable.code());
 
-  return New<HCallWithDescriptor>(adaptor_value, argument_count, descriptor,
+  return New<HCallWithDescriptor>(stub, argument_count, callable.descriptor(),
                                   Vector<HValue*>(op_vals, arraysize(op_vals)));
 }
 
@@ -9926,6 +9925,11 @@ void HOptimizedGraphBuilder::VisitCallNew(CallNew* expr) {
       expr->IsMonomorphic() &&
       IsAllocationInlineable(expr->target())) {
     Handle<JSFunction> constructor = expr->target();
+    DCHECK(
+        constructor->shared()->construct_stub() ==
+            isolate()->builtins()->builtin(Builtins::kJSConstructStubGeneric) ||
+        constructor->shared()->construct_stub() ==
+            isolate()->builtins()->builtin(Builtins::kJSConstructStubApi));
     HValue* check = Add<HCheckValue>(function, constructor);
 
     // Force completion of inobject slack tracking before generating

@@ -618,6 +618,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kMips64MulHighU:
       __ Mulhu(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
       break;
+    case kMips64DMulHigh:
+      __ Dmulh(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
+      break;
     case kMips64Div:
       __ Div(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
       break;
@@ -969,6 +972,13 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       // Other arches use round to zero here, so we follow.
       __ trunc_w_d(scratch, i.InputDoubleRegister(0));
       __ mfc1(i.OutputRegister(), scratch);
+      break;
+    }
+    case kMips64TruncLD: {
+      FPURegister scratch = kScratchDoubleReg;
+      // Other arches use round to zero here, so we follow.
+      __ trunc_l_d(scratch, i.InputDoubleRegister(0));
+      __ dmfc1(i.OutputRegister(), scratch);
       break;
     }
     case kMips64TruncUwD: {

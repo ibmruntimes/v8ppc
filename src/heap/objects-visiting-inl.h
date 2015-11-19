@@ -304,13 +304,6 @@ void StaticMarkingVisitor<StaticVisitor>::VisitNativeContext(
     Map* map, HeapObject* object) {
   FixedBodyVisitor<StaticVisitor, Context::MarkCompactBodyDescriptor,
                    void>::Visit(map, object);
-
-  MarkCompactCollector* collector = map->GetHeap()->mark_compact_collector();
-  for (int idx = Context::FIRST_WEAK_SLOT; idx < Context::NATIVE_CONTEXT_SLOTS;
-       ++idx) {
-    Object** slot = Context::cast(object)->RawFieldOfElementAt(idx);
-    collector->RecordSlot(object, slot, *slot);
-  }
 }
 
 
@@ -458,16 +451,16 @@ void StaticMarkingVisitor<StaticVisitor>::VisitSharedFunctionInfo(
     shared->ClearTypeFeedbackInfoAtGCTime();
   }
   if (FLAG_flush_optimized_code_cache) {
-    if (!shared->optimized_code_map()->IsSmi()) {
+    if (!shared->OptimizedCodeMapIsCleared()) {
       // Always flush the optimized code map if requested by flag.
       shared->ClearOptimizedCodeMap();
     }
   } else {
-    if (!shared->optimized_code_map()->IsSmi()) {
+    if (!shared->OptimizedCodeMapIsCleared()) {
       // Treat some references within the code map weakly by marking the
       // code map itself but not pushing it onto the marking deque. The
       // map will be processed after marking.
-      FixedArray* code_map = FixedArray::cast(shared->optimized_code_map());
+      FixedArray* code_map = shared->optimized_code_map();
       MarkOptimizedCodeMap(heap, code_map);
     }
   }

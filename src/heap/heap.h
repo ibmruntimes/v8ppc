@@ -179,6 +179,7 @@ namespace internal {
   V(FixedArray, allocation_sites_scratchpad, AllocationSitesScratchpad)        \
   V(FixedArray, microtask_queue, MicrotaskQueue)                               \
   V(TypeFeedbackVector, dummy_vector, DummyVector)                             \
+  V(FixedArray, cleared_optimized_code_map, ClearedOptimizedCodeMap)           \
   V(FixedArray, detached_contexts, DetachedContexts)                           \
   V(ArrayList, retained_maps, RetainedMaps)                                    \
   V(WeakHashTable, weak_object_to_code_table, WeakObjectToCodeTable)           \
@@ -238,6 +239,7 @@ namespace internal {
   V(default_string, "default")                                   \
   V(defineProperty_string, "defineProperty")                     \
   V(deleteProperty_string, "deleteProperty")                     \
+  V(display_name_string, "displayName")                          \
   V(done_string, "done")                                         \
   V(dot_result_string, ".result")                                \
   V(dot_string, ".")                                             \
@@ -288,6 +290,7 @@ namespace internal {
   V(ownKeys_string, "ownKeys")                                   \
   V(preventExtensions_string, "preventExtensions")               \
   V(private_api_string, "private_api")                           \
+  V(Promise_string, "Promise")                                   \
   V(proto_string, "__proto__")                                   \
   V(prototype_string, "prototype")                               \
   V(query_colon_string, "(?:)")                                  \

@@ -137,6 +137,7 @@ StaticVisitorBase::VisitorId StaticVisitorBase::GetVisitorId(
     case JS_SET_ITERATOR_TYPE:
     case JS_MAP_ITERATOR_TYPE:
     case JS_ITERATOR_RESULT_TYPE:
+    case JS_PROMISE_TYPE:
       return GetVisitorIdForSize(kVisitJSObject, kVisitJSObjectGeneric,
                                  instance_size, has_unboxed_fields);
 
@@ -307,9 +308,17 @@ struct WeakListVisitor<Context> {
     DoWeakList<JSFunction>(heap, context, retainer,
                            Context::OPTIMIZED_FUNCTIONS_LIST);
 
-    // Code objects are always allocated in Code space, we do not have to visit
-    // them during scavenges.
     if (heap->gc_state() == Heap::MARK_COMPACT) {
+      // Record the slots of the weak entries in the native context.
+      MarkCompactCollector* collector = heap->mark_compact_collector();
+      for (int idx = Context::FIRST_WEAK_SLOT;
+           idx < Context::NATIVE_CONTEXT_SLOTS; ++idx) {
+        Object** slot = Context::cast(context)->RawFieldOfElementAt(idx);
+        collector->RecordSlot(context, slot, *slot);
+      }
+      // Code objects are always allocated in Code space, we do not have to
+      // visit
+      // them during scavenges.
       DoWeakList<Code>(heap, context, retainer, Context::OPTIMIZED_CODE_LIST);
       DoWeakList<Code>(heap, context, retainer, Context::DEOPTIMIZED_CODE_LIST);
     }

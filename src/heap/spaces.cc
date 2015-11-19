@@ -1516,7 +1516,7 @@ void NewSpace::UpdateInlineAllocationLimit(int size_in_bytes) {
     // Lower limit during incremental marking.
     Address high = to_space_.page_high();
     Address new_top = allocation_info_.top() + size_in_bytes;
-    Address new_limit = new_top + GetNextInlineAllocationStepSize();
+    Address new_limit = new_top + GetNextInlineAllocationStepSize() - 1;
     allocation_info_.set_limit(Min(new_limit, high));
   }
   DCHECK_SEMISPACE_ALLOCATION_INFO(allocation_info_, to_space_);
@@ -2707,7 +2707,8 @@ void PagedSpace::PrepareForMarkCompact() {
 
 intptr_t PagedSpace::SizeOfObjects() {
   const intptr_t size = Size() - (limit() - top());
-  DCHECK_GE(size, 0);
+  CHECK_GE(limit(), top());
+  CHECK_GE(size, 0);
   USE(size);
   return size;
 }

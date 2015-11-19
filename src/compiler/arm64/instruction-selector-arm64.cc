@@ -1237,6 +1237,16 @@ void InstructionSelector::VisitChangeFloat64ToUint32(Node* node) {
 }
 
 
+void InstructionSelector::VisitChangeFloat64ToInt64(Node* node) {
+  VisitRR(this, kArm64Float64ToInt64, node);
+}
+
+
+void InstructionSelector::VisitTruncateFloat64ToUint64(Node* node) {
+  VisitRR(this, kArm64Float64ToUint64, node);
+}
+
+
 void InstructionSelector::VisitChangeInt32ToInt64(Node* node) {
   VisitRR(this, kArm64Sxtw, node);
 }
@@ -1502,7 +1512,8 @@ void InstructionSelector::EmitPrepareArguments(NodeVector* arguments,
   if (aligned_push_count > 0) {
     // TODO(dcarney): it would be better to bump the csp here only
     //                and emit paired stores with increment for non c frames.
-    Emit(kArm64Claim, g.NoOutput(), g.TempImmediate(aligned_push_count));
+    Emit(kArm64ClaimForCallArguments, g.NoOutput(),
+         g.TempImmediate(aligned_push_count));
   }
   // Move arguments to the stack.
   {

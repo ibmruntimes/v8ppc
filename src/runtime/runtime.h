@@ -125,14 +125,15 @@ namespace internal {
   F(ObservationWeakMapCreate, 0, 1)
 
 
-#define FOR_EACH_INTRINSIC_COMPILER(F)  \
-  F(CompileLazy, 1, 1)                  \
-  F(CompileOptimized, 2, 1)             \
-  F(NotifyStubFailure, 0, 1)            \
-  F(NotifyDeoptimized, 1, 1)            \
-  F(CompileForOnStackReplacement, 1, 1) \
-  F(TryInstallOptimizedCode, 1, 1)      \
-  F(CompileString, 2, 1)                \
+#define FOR_EACH_INTRINSIC_COMPILER(F)    \
+  F(CompileLazy, 1, 1)                    \
+  F(CompileOptimized_Concurrent, 1, 1)    \
+  F(CompileOptimized_NotConcurrent, 1, 1) \
+  F(NotifyStubFailure, 0, 1)              \
+  F(NotifyDeoptimized, 1, 1)              \
+  F(CompileForOnStackReplacement, 1, 1)   \
+  F(TryInstallOptimizedCode, 1, 1)        \
+  F(CompileString, 2, 1)                  \
   F(ResolvePossiblyDirectEval, 5, 1)
 
 
@@ -192,6 +193,7 @@ namespace internal {
   F(DebugGetPrototype, 1, 1)                   \
   F(DebugSetScriptSource, 2, 1)                \
   F(FunctionGetInferredName, 1, 1)             \
+  F(FunctionGetDebugName, 1, 1)                \
   F(GetFunctionCodePositionFromSource, 2, 1)   \
   F(ExecuteInDebugContext, 1, 1)               \
   F(GetDebugContext, 0, 1)                     \
@@ -543,7 +545,7 @@ namespace internal {
   F(BitwiseXor_Strong, 2, 1)
 
 #define FOR_EACH_INTRINSIC_PROXY(F) \
-  F(CreateJSProxy, 3, 1)            \
+  F(CreateJSProxy, 2, 1)            \
   F(CreateJSFunctionProxy, 5, 1)    \
   F(IsJSProxy, 1, 1)                \
   F(IsJSFunctionProxy, 1, 1)        \
