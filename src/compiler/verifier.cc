@@ -511,6 +511,10 @@ void Verifier::Visitor::Check(Node* node) {
       // Type is OtherObject.
       CheckUpperIs(node, Type::OtherObject());
       break;
+    case IrOpcode::kJSCreateArray:
+      // Type is OtherObject.
+      CheckUpperIs(node, Type::OtherObject());
+      break;
     case IrOpcode::kJSCreateClosure:
       // Type is Function.
       CheckUpperIs(node, Type::OtherObject());
@@ -545,6 +549,7 @@ void Verifier::Visitor::Check(Node* node) {
 
     case IrOpcode::kJSLoadContext:
     case IrOpcode::kJSLoadDynamic:
+    case IrOpcode::kJSLoadNativeContext:
       // Type can be anything.
       CheckUpperIs(node, Type::Any());
       break;
@@ -909,7 +914,7 @@ void Verifier::Visitor::Check(Node* node) {
     case IrOpcode::kChangeFloat32ToFloat64:
     case IrOpcode::kChangeFloat64ToInt32:
     case IrOpcode::kChangeFloat64ToUint32:
-    case IrOpcode::kChangeFloat64ToInt64:
+    case IrOpcode::kTruncateFloat64ToInt64:
     case IrOpcode::kTruncateFloat64ToUint64:
     case IrOpcode::kFloat64ExtractLowWord32:
     case IrOpcode::kFloat64ExtractHighWord32:

@@ -347,11 +347,35 @@ void InstructionSelector::VisitWord64Or(Node* node) {
 
 
 void InstructionSelector::VisitWord32Xor(Node* node) {
+  Int32BinopMatcher m(node);
+  if (m.left().IsWord32Or() && CanCover(node, m.left().node()) &&
+      m.right().Is(-1)) {
+    Int32BinopMatcher mleft(m.left().node());
+    if (!mleft.right().HasValue()) {
+      Mips64OperandGenerator g(this);
+      Emit(kMips64Nor, g.DefineAsRegister(node),
+           g.UseRegister(mleft.left().node()),
+           g.UseRegister(mleft.right().node()));
+      return;
+    }
+  }
   VisitBinop(this, node, kMips64Xor);
 }
 
 
 void InstructionSelector::VisitWord64Xor(Node* node) {
+  Int64BinopMatcher m(node);
+  if (m.left().IsWord64Or() && CanCover(node, m.left().node()) &&
+      m.right().Is(-1)) {
+    Int64BinopMatcher mleft(m.left().node());
+    if (!mleft.right().HasValue()) {
+      Mips64OperandGenerator g(this);
+      Emit(kMips64Nor, g.DefineAsRegister(node),
+           g.UseRegister(mleft.left().node()),
+           g.UseRegister(mleft.right().node()));
+      return;
+    }
+  }
   VisitBinop(this, node, kMips64Xor);
 }
 
@@ -707,13 +731,13 @@ void InstructionSelector::VisitChangeFloat64ToUint32(Node* node) {
 }
 
 
-void InstructionSelector::VisitChangeFloat64ToInt64(Node* node) {
+void InstructionSelector::VisitTruncateFloat64ToInt64(Node* node) {
   VisitRR(this, kMips64TruncLD, node);
 }
 
 
 void InstructionSelector::VisitTruncateFloat64ToUint64(Node* node) {
-  UNIMPLEMENTED();
+  VisitRR(this, kMips64TruncUlD, node);
 }
 
 

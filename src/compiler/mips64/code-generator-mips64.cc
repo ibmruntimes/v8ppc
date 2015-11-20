@@ -454,20 +454,23 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
 
 
 void CodeGenerator::AssembleDeconstructActivationRecord(int stack_param_delta) {
+  int sp_slot_delta = TailCallFrameStackSlotDelta(stack_param_delta);
+  if (sp_slot_delta > 0) {
+    __ daddiu(sp, sp, sp_slot_delta * kPointerSize);
+  }
   CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
-  int stack_slots = frame()->GetSpillSlotCount();
-  int stack_pointer_delta = 0;
-  if (descriptor->IsJSFunctionCall() || stack_slots > 0) {
-    __ mov(sp, fp);
-    __ ld(fp, MemOperand(sp, 0 * kPointerSize));
-    __ ld(ra, MemOperand(sp, 1 * kPointerSize));
-    stack_pointer_delta = 2 * kPointerSize;
+  int spill_slots = frame()->GetSpillSlotCount();
+  bool has_frame = descriptor->IsJSFunctionCall() || spill_slots > 0;
+  if (has_frame) {
+    __ Pop(ra, fp);
   }
-  if (stack_param_delta < 0) {
-    stack_pointer_delta += -stack_param_delta * kPointerSize;
-  }
-  if (stack_pointer_delta != 0) {
-    __ daddiu(sp, sp, stack_pointer_delta);
+}
+
+
+void CodeGenerator::AssemblePrepareTailCall(int stack_param_delta) {
+  int sp_slot_delta = TailCallFrameStackSlotDelta(stack_param_delta);
+  if (sp_slot_delta < 0) {
+    __ Dsubu(sp, sp, Operand(-sp_slot_delta * kPointerSize));
   }
 }
 
@@ -538,6 +541,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ PrepareCallCFunction(num_parameters, kScratchReg);
       break;
     }
+    case kArchPrepareTailCall:
+      AssemblePrepareTailCall(i.InputInt32(instr->InputCount() - 1));
+      break;
     case kArchCallCFunction: {
       int const num_parameters = MiscField::decode(instr->opcode());
       if (instr->InputAt(0)->IsImmediate()) {
@@ -653,6 +659,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kMips64Or:
       __ Or(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
+      break;
+    case kMips64Nor:
+      __ Nor(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
       break;
     case kMips64Xor:
       __ Xor(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
@@ -985,6 +994,12 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       FPURegister scratch = kScratchDoubleReg;
       // TODO(plind): Fix wrong param order of Trunc_uw_d() macro-asm function.
       __ Trunc_uw_d(i.InputDoubleRegister(0), i.OutputRegister(), scratch);
+      break;
+    }
+    case kMips64TruncUlD: {
+      FPURegister scratch = kScratchDoubleReg;
+      // TODO(plind): Fix wrong param order of Trunc_ul_d() macro-asm function.
+      __ Trunc_ul_d(i.InputDoubleRegister(0), i.OutputRegister(), scratch);
       break;
     }
     case kMips64BitcastDL:

@@ -1215,6 +1215,11 @@ Type* Typer::Visitor::TypeJSCreateArguments(Node* node) {
 }
 
 
+Type* Typer::Visitor::TypeJSCreateArray(Node* node) {
+  return Type::OtherObject();
+}
+
+
 Type* Typer::Visitor::TypeJSCreateClosure(Node* node) {
   return Type::OtherObject();
 }
@@ -1377,6 +1382,11 @@ Type* Typer::Visitor::TypeJSLoadContext(Node* node) {
 Type* Typer::Visitor::TypeJSStoreContext(Node* node) {
   UNREACHABLE();
   return nullptr;
+}
+
+
+Type* Typer::Visitor::TypeJSLoadNativeContext(Node* node) {
+  return Type::Intersect(Type::Internal(), Type::TaggedPointer(), zone());
 }
 
 
@@ -2080,7 +2090,7 @@ Type* Typer::Visitor::TypeChangeFloat64ToUint32(Node* node) {
 }
 
 
-Type* Typer::Visitor::TypeChangeFloat64ToInt64(Node* node) {
+Type* Typer::Visitor::TypeTruncateFloat64ToInt64(Node* node) {
   return Type::Internal();
 }
 

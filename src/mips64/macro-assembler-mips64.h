@@ -565,12 +565,8 @@ class MacroAssembler: public Assembler {
                 Label* gc_required,
                 AllocationFlags flags);
 
-  void Allocate(Register object_size,
-                Register result,
-                Register scratch1,
-                Register scratch2,
-                Label* gc_required,
-                AllocationFlags flags);
+  void Allocate(Register object_size, Register result, Register result_end,
+                Register scratch, Label* gc_required, AllocationFlags flags);
 
   void AllocateTwoByteString(Register result,
                              Register length,
@@ -842,6 +838,10 @@ class MacroAssembler: public Assembler {
   void Trunc_uw_d(FPURegister fd, FPURegister fs, FPURegister scratch);
   void Trunc_uw_d(FPURegister fd, Register rs, FPURegister scratch);
 
+  // Convert double to unsigned long.
+  void Trunc_ul_d(FPURegister fd, FPURegister fs, FPURegister scratch);
+  void Trunc_ul_d(FPURegister fd, Register rs, FPURegister scratch);
+
   void Trunc_w_d(FPURegister fd, FPURegister fs);
   void Round_w_d(FPURegister fd, FPURegister fs);
   void Floor_w_d(FPURegister fd, FPURegister fs);
@@ -1080,12 +1080,11 @@ class MacroAssembler: public Assembler {
                  Register length,
                  Register scratch);
 
-  // Initialize fields with filler values.  Fields starting at |start_offset|
-  // not including end_offset are overwritten with the value in |filler|.  At
-  // the end the loop, |start_offset| takes the value of |end_offset|.
-  void InitializeFieldsWithFiller(Register start_offset,
-                                  Register end_offset,
-                                  Register filler);
+  // Initialize fields with filler values.  Fields starting at |current_address|
+  // not including |end_address| are overwritten with the value in |filler|.  At
+  // the end the loop, |current_address| takes the value of |end_address|.
+  void InitializeFieldsWithFiller(Register current_address,
+                                  Register end_address, Register filler);
 
   // -------------------------------------------------------------------------
   // Support functions.

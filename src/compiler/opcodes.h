@@ -111,6 +111,7 @@
 #define JS_OBJECT_OP_LIST(V) \
   V(JSCreate)                \
   V(JSCreateArguments)       \
+  V(JSCreateArray)           \
   V(JSCreateClosure)         \
   V(JSCreateLiteralArray)    \
   V(JSCreateLiteralObject)   \
@@ -128,6 +129,7 @@
   V(JSLoadContext)            \
   V(JSStoreContext)           \
   V(JSLoadDynamic)            \
+  V(JSLoadNativeContext)      \
   V(JSCreateFunctionContext)  \
   V(JSCreateCatchContext)     \
   V(JSCreateWithContext)      \
@@ -267,7 +269,7 @@
   V(ChangeFloat32ToFloat64)     \
   V(ChangeFloat64ToInt32)       \
   V(ChangeFloat64ToUint32)      \
-  V(ChangeFloat64ToInt64)       \
+  V(TruncateFloat64ToInt64)     \
   V(TruncateFloat64ToUint64)    \
   V(ChangeInt32ToFloat64)       \
   V(ChangeInt32ToInt64)         \
