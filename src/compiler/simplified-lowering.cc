@@ -130,7 +130,8 @@ class UseInfo {
 };
 
 
-UseInfo UseInfoFromRepresentation(MachineTypeUnion rep) {
+UseInfo UseInfoFromMachineType(MachineType type) {
+  MachineTypeUnion rep = RepresentationOf(type);
   DCHECK((rep & kTypeMask) == 0);
   if (rep & kRepTagged) return UseInfo::AnyTagged();
   if (rep & kRepFloat64) {
@@ -150,11 +151,6 @@ UseInfo UseInfoFromRepresentation(MachineTypeUnion rep) {
   }
   DCHECK(rep & kRepBit);
   return UseInfo::Bool();
-}
-
-
-UseInfo UseInfoFromMachineType(MachineType type) {
-  return UseInfoFromRepresentation(RepresentationOf(type));
 }
 
 
@@ -447,26 +443,12 @@ class RepresentationSelector {
   static MachineType GetRepresentationForPhi(Node* node, MachineTypeUnion use) {
     // Phis adapt to the output representation their uses demand.
     Type* upper = NodeProperties::GetType(node);
-    if ((use & kRepMask) == kRepFloat32) {
-      // only float32 uses.
-      return kRepFloat32;
-    } else if ((use & kRepMask) == kRepFloat64) {
-      // only float64 uses.
-      return kRepFloat64;
-    } else if ((use & kRepMask) == kRepTagged) {
-      // only tagged uses.
-      return kRepTagged;
-    } else if (upper->Is(Type::Integral32())) {
-      // Integer within [-2^31, 2^32[ range.
-      if (upper->Is(Type::Signed32()) || upper->Is(Type::Unsigned32())) {
-        // multiple uses, but we are within 32 bits range => pick kRepWord32.
-        return kRepWord32;
-      } else if (!CanObserveNonWord32(use)) {
-        // We only use 32 bits.
-        return kRepWord32;
-      } else {
-        return kRepFloat64;
-      }
+    if (upper->Is(Type::Signed32()) || upper->Is(Type::Unsigned32())) {
+      // We are within 32 bits range => pick kRepWord32.
+      return kRepWord32;
+    } else if (!CanObserveNonWord32(use)) {
+      // We only use 32 bits.
+      return kRepWord32;
     } else if (upper->Is(Type::Boolean())) {
       // multiple uses => pick kRepBit.
       return kRepBit;
@@ -739,19 +721,9 @@ class RepresentationSelector {
       case IrOpcode::kNumberSubtract: {
         // Add and subtract reduce to Int32Add/Sub if the inputs
         // are already integers and all uses are truncating.
-        if (CanLowerToInt32Binop(node, use)) {
+        if (CanLowerToWord32AdditiveBinop(node, use)) {
           // => signed Int32Add/Sub
           VisitInt32Binop(node);
-          if (lower()) NodeProperties::ChangeOp(node, Int32Op(node));
-        } else if (CanLowerToUint32Binop(node, use)) {
-          // => unsigned Int32Add/Sub
-          VisitUint32Binop(node);
-          if (lower()) NodeProperties::ChangeOp(node, Uint32Op(node));
-        } else if (CanLowerToWord32AdditiveBinop(node, use)) {
-          // => signed Int32Add/Sub, truncating inputs
-          ProcessTruncateWord32Input(node, 0);
-          ProcessTruncateWord32Input(node, 1);
-          SetOutput(node, kMachInt32);
           if (lower()) NodeProperties::ChangeOp(node, Int32Op(node));
         } else {
           // => Float64Add/Sub
@@ -837,35 +809,15 @@ class RepresentationSelector {
         break;
       }
       case IrOpcode::kNumberToInt32: {
-        MachineTypeUnion use_rep = use & kRepMask;
-        Node* input = node->InputAt(0);
-        Type* in_upper = NodeProperties::GetType(input);
-        if (in_upper->Is(Type::Signed32())) {
-          // If the input has type int32, pass through representation.
-          VisitUnop(node, UseInfoFromRepresentation(use_rep),
-                    kTypeInt32 | use_rep);
-          if (lower()) DeferReplacement(node, node->InputAt(0));
-        } else {
-          // Just change representation if necessary.
-          VisitUnop(node, UseInfo::TruncatingWord32(), kMachInt32);
-          if (lower()) DeferReplacement(node, node->InputAt(0));
-        }
+        // Just change representation if necessary.
+        VisitUnop(node, UseInfo::TruncatingWord32(), kMachInt32);
+        if (lower()) DeferReplacement(node, node->InputAt(0));
         break;
       }
       case IrOpcode::kNumberToUint32: {
-        MachineTypeUnion use_rep = use & kRepMask;
-        Node* input = node->InputAt(0);
-        Type* in_upper = NodeProperties::GetType(input);
-        if (in_upper->Is(Type::Unsigned32())) {
-          // If the input has type uint32, pass through representation.
-          VisitUnop(node, UseInfoFromRepresentation(use_rep),
-                    kTypeUint32 | use_rep);
-          if (lower()) DeferReplacement(node, node->InputAt(0));
-        } else {
-          // Just change representation if necessary.
-          VisitUnop(node, UseInfo::TruncatingWord32(), kMachUint32);
-          if (lower()) DeferReplacement(node, node->InputAt(0));
-        }
+        // Just change representation if necessary.
+        VisitUnop(node, UseInfo::TruncatingWord32(), kMachUint32);
+        if (lower()) DeferReplacement(node, node->InputAt(0));
         break;
       }
       case IrOpcode::kNumberIsHoleNaN: {

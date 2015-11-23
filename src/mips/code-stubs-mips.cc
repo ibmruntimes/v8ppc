@@ -2389,19 +2389,16 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 }
 
 
-static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub,
-                                       bool is_super) {
+static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub) {
   // a0 : number of arguments to the construct function
   // a2 : feedback vector
   // a3 : slot in feedback vector (Smi)
   // a1 : the function to call
-  // t0 : new target (for IsSuperConstructorCall)
   FrameScope scope(masm, StackFrame::INTERNAL);
-  const RegList kSavedRegs = 1 << 4 |                   // a0
-                             1 << 5 |                   // a1
-                             1 << 6 |                   // a2
-                             1 << 7 |                   // a3
-                             BoolToInt(is_super) << 8;  // t0
+  const RegList kSavedRegs = 1 << 4 |  // a0
+                             1 << 5 |  // a1
+                             1 << 6 |  // a2
+                             1 << 7;   // a3
 
   // Number-of-arguments register must be smi-tagged to call out.
   __ SmiTag(a0);
@@ -2414,7 +2411,7 @@ static void CallStubInRecordCallTarget(MacroAssembler* masm, CodeStub* stub,
 }
 
 
-static void GenerateRecordCallTarget(MacroAssembler* masm, bool is_super) {
+static void GenerateRecordCallTarget(MacroAssembler* masm) {
   // Cache the called function in a feedback vector slot.  Cache states
   // are uninitialized, monomorphic (indicated by a JSFunction), and
   // megamorphic.
@@ -2422,7 +2419,6 @@ static void GenerateRecordCallTarget(MacroAssembler* masm, bool is_super) {
   // a1 : the function to call
   // a2 : feedback vector
   // a3 : slot in feedback vector (Smi)
-  // t0 : new target (for IsSuperConstructorCall)
   Label initialize, done, miss, megamorphic, not_array_function;
 
   DCHECK_EQ(*TypeFeedbackVector::MegamorphicSentinel(masm->isolate()),
@@ -2492,12 +2488,12 @@ static void GenerateRecordCallTarget(MacroAssembler* masm, bool is_super) {
   // Create an AllocationSite if we don't already have it, store it in the
   // slot.
   CreateAllocationSiteStub create_stub(masm->isolate());
-  CallStubInRecordCallTarget(masm, &create_stub, is_super);
+  CallStubInRecordCallTarget(masm, &create_stub);
   __ Branch(&done);
 
   __ bind(&not_array_function);
   CreateWeakCellStub weak_cell_stub(masm->isolate());
-  CallStubInRecordCallTarget(masm, &weak_cell_stub, is_super);
+  CallStubInRecordCallTarget(masm, &weak_cell_stub);
   __ bind(&done);
 }
 
@@ -2507,7 +2503,6 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   // a1 : the function to call
   // a2 : feedback vector
   // a3 : slot in feedback vector (Smi, for RecordCallTarget)
-  // t0 : new target (for IsSuperConstructorCall)
 
   Label non_function;
   // Check that the function is not a smi.
@@ -2516,29 +2511,23 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   __ GetObjectType(a1, t1, t1);
   __ Branch(&non_function, ne, t1, Operand(JS_FUNCTION_TYPE));
 
-  if (RecordCallTarget()) {
-    GenerateRecordCallTarget(masm, IsSuperConstructorCall());
+  GenerateRecordCallTarget(masm);
 
-    __ sll(at, a3, kPointerSizeLog2 - kSmiTagSize);
-    __ Addu(t1, a2, at);
-    Label feedback_register_initialized;
-    // Put the AllocationSite from the feedback vector into a2, or undefined.
-    __ lw(a2, FieldMemOperand(t1, FixedArray::kHeaderSize));
-    __ lw(t1, FieldMemOperand(a2, AllocationSite::kMapOffset));
-    __ LoadRoot(at, Heap::kAllocationSiteMapRootIndex);
-    __ Branch(&feedback_register_initialized, eq, t1, Operand(at));
-    __ LoadRoot(a2, Heap::kUndefinedValueRootIndex);
-    __ bind(&feedback_register_initialized);
+  __ sll(at, a3, kPointerSizeLog2 - kSmiTagSize);
+  __ Addu(t1, a2, at);
+  Label feedback_register_initialized;
+  // Put the AllocationSite from the feedback vector into a2, or undefined.
+  __ lw(a2, FieldMemOperand(t1, FixedArray::kHeaderSize));
+  __ lw(t1, FieldMemOperand(a2, AllocationSite::kMapOffset));
+  __ LoadRoot(at, Heap::kAllocationSiteMapRootIndex);
+  __ Branch(&feedback_register_initialized, eq, t1, Operand(at));
+  __ LoadRoot(a2, Heap::kUndefinedValueRootIndex);
+  __ bind(&feedback_register_initialized);
 
-    __ AssertUndefinedOrAllocationSite(a2, t1);
-  }
+  __ AssertUndefinedOrAllocationSite(a2, t1);
 
   // Pass function as new target.
-  if (IsSuperConstructorCall()) {
-    __ mov(a3, t0);
-  } else {
-    __ mov(a3, a1);
-  }
+  __ mov(a3, a1);
 
   // Tail call to the function-specific construct stub (still in the caller
   // context at this point).
@@ -2585,7 +2574,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
       FixedArray::OffsetOfElementAt(TypeFeedbackVector::kWithTypesIndex);
   const int generic_offset =
       FixedArray::OffsetOfElementAt(TypeFeedbackVector::kGenericCountIndex);
-  Label extra_checks_or_miss, call;
+  Label extra_checks_or_miss, call, call_function;
   int argc = arg_count();
   ParameterCount actual(argc);
 
@@ -2622,9 +2611,11 @@ void CallICStub::Generate(MacroAssembler* masm) {
   __ Addu(a3, a3, Operand(Smi::FromInt(CallICNexus::kCallCountIncrement)));
   __ sw(a3, FieldMemOperand(at, FixedArray::kHeaderSize + kPointerSize));
 
-  __ bind(&call);
-  __ li(a0, Operand(argc));
-  __ Jump(masm->isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
+  __ bind(&call_function);
+  __ Jump(masm->isolate()->builtins()->CallFunction(convert_mode()),
+          RelocInfo::CODE_TARGET, al, zero_reg, Operand(zero_reg),
+          USE_DELAY_SLOT);
+  __ li(a0, Operand(argc));  // In delay slot.
 
   __ bind(&extra_checks_or_miss);
   Label uninitialized, miss, not_allocation_site;
@@ -2665,8 +2656,13 @@ void CallICStub::Generate(MacroAssembler* masm) {
   __ sw(t0, FieldMemOperand(a2, with_types_offset));
   __ lw(t0, FieldMemOperand(a2, generic_offset));
   __ Addu(t0, t0, Operand(Smi::FromInt(1)));
-  __ Branch(USE_DELAY_SLOT, &call);
-  __ sw(t0, FieldMemOperand(a2, generic_offset));  // In delay slot.
+  __ sw(t0, FieldMemOperand(a2, generic_offset));
+
+  __ bind(&call);
+  __ Jump(masm->isolate()->builtins()->Call(convert_mode()),
+          RelocInfo::CODE_TARGET, al, zero_reg, Operand(zero_reg),
+          USE_DELAY_SLOT);
+  __ li(a0, Operand(argc));  // In delay slot.
 
   __ bind(&uninitialized);
 
@@ -2712,7 +2708,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
     __ Pop(a1);
   }
 
-  __ Branch(&call);
+  __ Branch(&call_function);
 
   // We are here because tracing is on or we encountered a MISS case we can't
   // handle here.

@@ -51,7 +51,7 @@ typedef Object* (*F4)(void* p0, void* p1, int p2, int p3, int p4);
 // Simple add parameter 1 to parameter 2 and return
 TEST(0) {
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   Assembler assm(isolate, NULL, 0);
@@ -69,8 +69,8 @@ TEST(0) {
   code->Print();
 #endif
   F2 f = FUNCTION_CAST<F2>(code->entry());
-  intptr_t res =
-      reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 3, 4, 0, 0, 0));
+  intptr_t res = reinterpret_cast<intptr_t>(
+      CALL_GENERATED_CODE(isolate, f, 3, 4, 0, 0, 0));
   ::printf("f() = %" V8PRIdPTR "\n", res);
   CHECK_EQ(7, static_cast<int>(res));
 }
@@ -79,7 +79,7 @@ TEST(0) {
 // Loop 100 times, adding loop counter to result
 TEST(1) {
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   Assembler assm(isolate, NULL, 0);
@@ -108,8 +108,8 @@ TEST(1) {
   code->Print();
 #endif
   F1 f = FUNCTION_CAST<F1>(code->entry());
-  intptr_t res =
-      reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 100, 0, 0, 0, 0));
+  intptr_t res = reinterpret_cast<intptr_t>(
+      CALL_GENERATED_CODE(isolate, f, 100, 0, 0, 0, 0));
   ::printf("f() = %" V8PRIdPTR "\n", res);
   CHECK_EQ(5050, static_cast<int>(res));
 }
@@ -117,7 +117,7 @@ TEST(1) {
 
 TEST(2) {
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   Assembler assm(isolate, NULL, 0);
@@ -159,8 +159,8 @@ TEST(2) {
   code->Print();
 #endif
   F1 f = FUNCTION_CAST<F1>(code->entry());
-  intptr_t res =
-      reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 10, 0, 0, 0, 0));
+  intptr_t res = reinterpret_cast<intptr_t>(
+      CALL_GENERATED_CODE(isolate, f, 10, 0, 0, 0, 0));
   ::printf("f() = %" V8PRIdPTR "\n", res);
   CHECK_EQ(3628800, static_cast<int>(res));
 }
@@ -168,7 +168,7 @@ TEST(2) {
 
 TEST(3) {
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   typedef struct {
@@ -178,7 +178,7 @@ TEST(3) {
   } T;
   T t;
 
-  Assembler assm(Isolate::Current(), NULL, 0);
+  Assembler assm(CcTest::i_isolate(), NULL, 0);
   Label L, C;
 
   __ function_descriptor();
@@ -235,8 +235,8 @@ TEST(3) {
   t.i = 100000;
   t.c = 10;
   t.s = 1000;
-  intptr_t res =
-      reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, &t, 0, 0, 0, 0));
+  intptr_t res = reinterpret_cast<intptr_t>(
+      CALL_GENERATED_CODE(isolate, f, &t, 0, 0, 0, 0));
   ::printf("f() = %" V8PRIdPTR "\n", res);
   CHECK_EQ(101010, static_cast<int>(res));
   CHECK_EQ(100000 / 2, t.i);
@@ -248,7 +248,7 @@ TEST(3) {
 TEST(4) {
   // Test the VFP floating point instructions.
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   typedef struct {
@@ -270,7 +270,7 @@ TEST(4) {
 
   // Create a function that accepts &t, and loads, manipulates, and stores
   // the doubles and floats.
-  Assembler assm(Isolate::Current(), NULL, 0);
+  Assembler assm(CcTest::i_isolate(), NULL, 0);
   Label L, C;
 
   if (CpuFeatures::IsSupported(VFP3)) {
@@ -361,7 +361,7 @@ TEST(4) {
     t.n = 123.456;
     t.x = 4.5;
     t.y = 9.0;
-    Object* dummy = CALL_GENERATED_CODE(f, &t, 0, 0, 0, 0);
+    Object* dummy = CALL_GENERATED_CODE(isolate, f, &t, 0, 0, 0, 0);
     USE(dummy);
     CHECK_EQ(4.5, t.y);
     CHECK_EQ(9.0, t.x);
@@ -383,7 +383,7 @@ TEST(4) {
 TEST(5) {
   // Test the ARMv7 bitfield instructions.
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   Assembler assm(isolate, NULL, 0);
@@ -410,7 +410,7 @@ TEST(5) {
 #endif
     F1 f = FUNCTION_CAST<F1>(Code::cast(code)->entry());
     int res = reinterpret_cast<int>(
-                CALL_GENERATED_CODE(f, 0xAAAAAAAA, 0, 0, 0, 0));
+                CALL_GENERATED_CODE(isolate, f, 0xAAAAAAAA, 0, 0, 0, 0));
     ::printf("f() = %d\n", res);
     CHECK_EQ(-7, res);
   }
@@ -420,7 +420,7 @@ TEST(5) {
 TEST(6) {
   // Test saturating instructions.
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   Assembler assm(isolate, NULL, 0);
@@ -446,7 +446,7 @@ TEST(6) {
 #endif
     F1 f = FUNCTION_CAST<F1>(Code::cast(code)->entry());
     int res = reinterpret_cast<int>(
-                CALL_GENERATED_CODE(f, 0xFFFF, 0, 0, 0, 0));
+                CALL_GENERATED_CODE(isolate, f, 0xFFFF, 0, 0, 0, 0));
     ::printf("f() = %d\n", res);
     CHECK_EQ(382, res);
   }
@@ -463,7 +463,7 @@ static void TestRoundingMode(VCVTTypes types,
                              int expected,
                              bool expected_exception = false) {
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   Assembler assm(isolate, NULL, 0);
@@ -522,7 +522,7 @@ static void TestRoundingMode(VCVTTypes types,
 #endif
     F1 f = FUNCTION_CAST<F1>(Code::cast(code)->entry());
     int res = reinterpret_cast<int>(
-                CALL_GENERATED_CODE(f, 0, 0, 0, 0, 0));
+                CALL_GENERATED_CODE(isolate, f, 0, 0, 0, 0, 0));
     ::printf("res = %d\n", res);
     CHECK_EQ(expected, res);
   }
@@ -642,7 +642,7 @@ TEST(7) {
 TEST(8) {
   // Test VFP multi load/store with ia_w.
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   typedef struct {
@@ -727,7 +727,7 @@ TEST(8) {
     f.g = 7.0;
     f.h = 8.0;
 
-    Object* dummy = CALL_GENERATED_CODE(fn, &d, &f, 0, 0, 0);
+    Object* dummy = CALL_GENERATED_CODE(isolate, fn, &d, &f, 0, 0, 0);
     USE(dummy);
 
     CHECK_EQ(7.7, d.a);
@@ -754,7 +754,7 @@ TEST(8) {
 TEST(9) {
   // Test VFP multi load/store with ia.
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   typedef struct {
@@ -843,7 +843,7 @@ TEST(9) {
     f.g = 7.0;
     f.h = 8.0;
 
-    Object* dummy = CALL_GENERATED_CODE(fn, &d, &f, 0, 0, 0);
+    Object* dummy = CALL_GENERATED_CODE(isolate, fn, &d, &f, 0, 0, 0);
     USE(dummy);
 
     CHECK_EQ(7.7, d.a);
@@ -870,7 +870,7 @@ TEST(9) {
 TEST(10) {
   // Test VFP multi load/store with db_w.
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   typedef struct {
@@ -955,7 +955,7 @@ TEST(10) {
     f.g = 7.0;
     f.h = 8.0;
 
-    Object* dummy = CALL_GENERATED_CODE(fn, &d, &f, 0, 0, 0);
+    Object* dummy = CALL_GENERATED_CODE(isolate, fn, &d, &f, 0, 0, 0);
     USE(dummy);
 
     CHECK_EQ(7.7, d.a);
@@ -982,7 +982,7 @@ TEST(10) {
 TEST(11) {
   // Test instructions using the carry flag.
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   typedef struct {
@@ -1035,7 +1035,7 @@ TEST(11) {
   Code::cast(code)->Print();
 #endif
   F3 f = FUNCTION_CAST<F3>(Code::cast(code)->entry());
-  Object* dummy = CALL_GENERATED_CODE(f, &i, 0, 0, 0, 0);
+  Object* dummy = CALL_GENERATED_CODE(isolate, f, &i, 0, 0, 0, 0);
   USE(dummy);
 
   CHECK_EQ(0xabcd0001, i.a);
@@ -1048,7 +1048,7 @@ TEST(11) {
 TEST(12) {
   // Test chaining of label usages within instructions (issue 1644).
   CcTest::InitializeVM();
-  Isolate* isolate = Isolate::Current();
+  Isolate* isolate = CcTest::i_isolate();
   HandleScope scope(isolate);
 
   Assembler assm(isolate, NULL, 0);

@@ -1155,7 +1155,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
 #if V8_TARGET_ARCH_PPC64
-    case kPPC_DoubleToUInt64:
+    case kPPC_DoubleToUint64:
       __ ConvertDoubleToUnsignedInt64(i.InputDoubleRegister(0),
                                       i.OutputRegister(), kScratchDoubleReg);
       DCHECK_EQ(LeaveRC, i.OutputRCBit());

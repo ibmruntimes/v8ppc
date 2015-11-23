@@ -933,7 +933,7 @@ void InstructionSelector::VisitTruncateFloat64ToInt64(Node* node) {
 
 
 void InstructionSelector::VisitTruncateFloat64ToUint64(Node* node) {
-  VisitRR(this, kPPC_DoubleToUInt64, node);
+  VisitRR(this, kPPC_DoubleToUint64, node);
 }
 
 
