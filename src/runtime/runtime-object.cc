@@ -296,8 +296,8 @@ RUNTIME_FUNCTION(Runtime_PreventExtensions) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(JSReceiver, obj, 0);
-  if (JSReceiver::PreventExtensions(obj, Object::THROW_ON_ERROR).IsNothing())
-    return isolate->heap()->exception();
+  MAYBE_RETURN(JSReceiver::PreventExtensions(obj, Object::THROW_ON_ERROR),
+               isolate->heap()->exception());
   return *obj;
 }
 
@@ -305,8 +305,10 @@ RUNTIME_FUNCTION(Runtime_PreventExtensions) {
 RUNTIME_FUNCTION(Runtime_IsExtensible) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 1);
-  CONVERT_ARG_HANDLE_CHECKED(JSObject, obj, 0);
-  return isolate->heap()->ToBoolean(JSObject::IsExtensible(obj));
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, obj, 0);
+  Maybe<bool> result = JSReceiver::IsExtensible(obj);
+  MAYBE_RETURN(result, isolate->heap()->exception());
+  return isolate->heap()->ToBoolean(result.FromJust());
 }
 
 
@@ -1042,11 +1044,7 @@ RUNTIME_FUNCTION(Runtime_NewObject) {
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, constructor, 0);
   CONVERT_ARG_HANDLE_CHECKED(JSReceiver, new_target, 1);
 
-  // TODO(verwaest): Make sure |constructor| is guaranteed to be a constructor.
-  if (!constructor->IsConstructor()) {
-    THROW_NEW_ERROR_RETURN_FAILURE(
-        isolate, NewTypeError(MessageTemplate::kNotConstructor, constructor));
-  }
+  DCHECK(constructor->IsConstructor());
 
   // If called through new, new.target can be:
   // - a subclass of constructor,

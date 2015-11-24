@@ -493,6 +493,18 @@ Node* AstGraphBuilder::GetFunctionContext() {
 }
 
 
+Node* AstGraphBuilder::GetNewTarget() {
+  if (!new_target_.is_set()) {
+    int params = info()->num_parameters_including_this();
+    int index = Linkage::GetJSCallNewTargetParamIndex(params);
+    const Operator* op = common()->Parameter(index, "%new.target");
+    Node* node = NewNode(op, graph()->start());
+    new_target_.set(node);
+  }
+  return new_target_.get();
+}
+
+
 bool AstGraphBuilder::CreateGraph(bool stack_check) {
   Scope* scope = info()->scope();
   DCHECK(graph() != NULL);
@@ -1701,13 +1713,10 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
   Node* closure = GetFunctionClosure();
 
   // Create node to deep-copy the literal boilerplate.
-  Node* literals_array =
-      BuildLoadObjectField(closure, JSFunction::kLiteralsOffset);
-  Node* literal_index = jsgraph()->Constant(expr->literal_index());
-  Node* constants = jsgraph()->Constant(expr->constant_properties());
-  const Operator* op =
-      javascript()->CreateLiteralObject(expr->ComputeFlags(true));
-  Node* literal = NewNode(op, literals_array, literal_index, constants);
+  const Operator* op = javascript()->CreateLiteralObject(
+      expr->constant_properties(), expr->ComputeFlags(true),
+      expr->literal_index());
+  Node* literal = NewNode(op, closure);
   PrepareFrameState(literal, expr->CreateLiteralId(),
                     OutputFrameStateCombine::Push());
 
@@ -1907,20 +1916,16 @@ void AstGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
   Node* closure = GetFunctionClosure();
 
   // Create node to deep-copy the literal boilerplate.
-  Node* literals_array =
-      BuildLoadObjectField(closure, JSFunction::kLiteralsOffset);
-  Node* literal_index = jsgraph()->Constant(expr->literal_index());
-  Node* constants = jsgraph()->Constant(expr->constant_elements());
-  const Operator* op =
-      javascript()->CreateLiteralArray(expr->ComputeFlags(true));
-  Node* literal = NewNode(op, literals_array, literal_index, constants);
+  const Operator* op = javascript()->CreateLiteralArray(
+      expr->constant_elements(), expr->ComputeFlags(true),
+      expr->literal_index());
+  Node* literal = NewNode(op, closure);
   PrepareFrameState(literal, expr->CreateLiteralId(),
                     OutputFrameStateCombine::Push());
 
-  // The array and the literal index are both expected on the operand stack
-  // during computation of the element values.
+  // The array is expected on the operand stack during computation of the
+  // element values.
   environment()->Push(literal);
-  environment()->Push(literal_index);
 
   // Create nodes to evaluate all the non-constant subexpressions and to store
   // them into the newly cloned array.
@@ -1936,7 +1941,7 @@ void AstGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
       VectorSlotPair pair = CreateVectorSlotPair(expr->LiteralFeedbackSlot());
       Node* value = environment()->Pop();
       Node* index = jsgraph()->Constant(array_index);
-      Node* literal = environment()->Peek(1);
+      Node* literal = environment()->Top();
       Node* store = BuildKeyedStore(literal, index, value, pair);
       states.AddToNode(store, expr->GetIdForElement(array_index),
                        OutputFrameStateCombine::Ignore());
@@ -1948,7 +1953,6 @@ void AstGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
   // above. The second part is the part after the first spread expression
   // (inclusive) and these elements gets appended to the array. Note that the
   // number elements an iterable produces is unknown ahead of time.
-  environment()->Pop();  // Array literal index.
   for (; array_index < expr->values()->length(); array_index++) {
     Expression* subexpr = expr->values()->at(array_index);
     Node* result;
@@ -3225,11 +3229,8 @@ Node* AstGraphBuilder::BuildThisFunctionVariable(Variable* this_function_var) {
 Node* AstGraphBuilder::BuildNewTargetVariable(Variable* new_target_var) {
   if (new_target_var == nullptr) return nullptr;
 
-  // Retrieve the new target in case we are called as a constructor.
-  const Operator* op = javascript()->CallRuntime(Runtime::kGetNewTarget, 0);
-  Node* object = NewNode(op);
-  // TODO(4544): Bailout id only needed for JavaScriptFrame::Summarize.
-  PrepareFrameState(object, BailoutId::FunctionContext());
+  // Retrieve the new target we were called with.
+  Node* object = GetNewTarget();
 
   // Assign the object to the {new.target} variable. This should never lazy
   // deopt, so it is fine to send invalid bailout id.

@@ -1528,7 +1528,6 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
 
   Handle<FixedArray> constant_properties = expr->constant_properties();
   __ lw(a3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  __ lw(a3, FieldMemOperand(a3, JSFunction::kLiteralsOffset));
   __ li(a2, Operand(Smi::FromInt(expr->literal_index())));
   __ li(a1, Operand(constant_properties));
   __ li(a0, Operand(Smi::FromInt(expr->ComputeFlags())));
@@ -1734,7 +1733,6 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
 
   __ mov(a0, result_register());
   __ lw(a3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  __ lw(a3, FieldMemOperand(a3, JSFunction::kLiteralsOffset));
   __ li(a2, Operand(Smi::FromInt(expr->literal_index())));
   __ li(a1, Operand(constant_elements));
   if (MustCreateArrayLiteralWithRuntime(expr)) {
@@ -1764,14 +1762,13 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
 
     if (!result_saved) {
       __ push(v0);  // array literal
-      __ Push(Smi::FromInt(expr->literal_index()));
       result_saved = true;
     }
 
     VisitForAccumulatorValue(subexpr);
 
     __ li(StoreDescriptor::NameRegister(), Operand(Smi::FromInt(array_index)));
-    __ lw(StoreDescriptor::ReceiverRegister(), MemOperand(sp, kPointerSize));
+    __ lw(StoreDescriptor::ReceiverRegister(), MemOperand(sp, 0));
     __ mov(StoreDescriptor::ValueRegister(), result_register());
     EmitLoadStoreICSlot(expr->LiteralFeedbackSlot());
     Handle<Code> ic =
@@ -1787,7 +1784,6 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   // (inclusive) and these elements gets appended to the array. Note that the
   // number elements an iterable produces is unknown ahead of time.
   if (array_index < length && result_saved) {
-    __ Pop();  // literal index
     __ Pop(v0);
     result_saved = false;
   }
@@ -1808,7 +1804,6 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   }
 
   if (result_saved) {
-    __ Pop();  // literal index
     context()->PlugTOS();
   } else {
     context()->Plug(v0);

@@ -107,6 +107,8 @@ RUNTIME_FUNCTION(Runtime_FunctionRemovePrototype) {
 
   CONVERT_ARG_CHECKED(JSFunction, f, 0);
   RUNTIME_ASSERT(f->RemovePrototype());
+  f->shared()->set_construct_stub(
+      *isolate->builtins()->ConstructedNonConstructable());
 
   return isolate->heap()->undefined_value();
 }
@@ -395,6 +397,8 @@ RUNTIME_FUNCTION(Runtime_FunctionBindArguments) {
   bound_function->shared()->set_optimized_code_map(
       isolate->heap()->cleared_optimized_code_map());
   bound_function->shared()->set_inferred_name(isolate->heap()->empty_string());
+  bound_function->shared()->set_construct_stub(
+      *isolate->builtins()->JSBuiltinsConstructStub());
   // Get all arguments of calling function (Function.prototype.bind).
   int argc = 0;
   base::SmartArrayPointer<Handle<Object>> arguments =
@@ -590,16 +594,9 @@ RUNTIME_FUNCTION(Runtime_GetNewTarget) {
   DCHECK(args.length() == 0);
   JavaScriptFrameIterator it(isolate);
   JavaScriptFrame* frame = it.frame();
-  // TODO(4544): Currently we never inline any [[Construct]] calls where the
-  // actual target differs from the new target. Fix this soon!
-  if (frame->HasInlinedFrames()) {
-    HandleScope scope(isolate);
-    List<FrameSummary> frames(FLAG_max_inlining_levels + 1);
-    it.frame()->Summarize(&frames);
-    FrameSummary& summary = frames.last();
-    return summary.is_constructor() ? Object::cast(*summary.function())
-                                    : isolate->heap()->undefined_value();
-  }
+  // TODO(4544): By now the runtime function is only used by the interpreter,
+  // get rid of the entire runtime function once the interpreter is switched.
+  DCHECK(!frame->is_optimized() && !frame->HasInlinedFrames());
   return frame->IsConstructor() ? frame->GetNewTarget()
                                 : isolate->heap()->undefined_value();
 }

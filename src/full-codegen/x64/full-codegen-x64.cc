@@ -1486,15 +1486,13 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   Handle<FixedArray> constant_properties = expr->constant_properties();
   int flags = expr->ComputeFlags();
   if (MustCreateObjectLiteralWithRuntime(expr)) {
-    __ movp(rdi, Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
-    __ Push(FieldOperand(rdi, JSFunction::kLiteralsOffset));
+    __ Push(Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
     __ Push(Smi::FromInt(expr->literal_index()));
     __ Push(constant_properties);
     __ Push(Smi::FromInt(flags));
     __ CallRuntime(Runtime::kCreateObjectLiteral, 4);
   } else {
-    __ movp(rdi, Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
-    __ movp(rax, FieldOperand(rdi, JSFunction::kLiteralsOffset));
+    __ movp(rax, Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
     __ Move(rbx, Smi::FromInt(expr->literal_index()));
     __ Move(rcx, constant_properties);
     __ Move(rdx, Smi::FromInt(flags));
@@ -1682,15 +1680,13 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   }
 
   if (MustCreateArrayLiteralWithRuntime(expr)) {
-    __ movp(rbx, Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
-    __ Push(FieldOperand(rbx, JSFunction::kLiteralsOffset));
+    __ Push(Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
     __ Push(Smi::FromInt(expr->literal_index()));
     __ Push(constant_elements);
     __ Push(Smi::FromInt(expr->ComputeFlags()));
     __ CallRuntime(Runtime::kCreateArrayLiteral, 4);
   } else {
-    __ movp(rbx, Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
-    __ movp(rax, FieldOperand(rbx, JSFunction::kLiteralsOffset));
+    __ movp(rax, Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
     __ Move(rbx, Smi::FromInt(expr->literal_index()));
     __ Move(rcx, constant_elements);
     FastCloneShallowArrayStub stub(isolate(), allocation_site_mode);
@@ -1715,13 +1711,12 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
 
     if (!result_saved) {
       __ Push(rax);  // array literal
-      __ Push(Smi::FromInt(expr->literal_index()));
       result_saved = true;
     }
     VisitForAccumulatorValue(subexpr);
 
     __ Move(StoreDescriptor::NameRegister(), Smi::FromInt(array_index));
-    __ movp(StoreDescriptor::ReceiverRegister(), Operand(rsp, kPointerSize));
+    __ movp(StoreDescriptor::ReceiverRegister(), Operand(rsp, 0));
     EmitLoadStoreICSlot(expr->LiteralFeedbackSlot());
     Handle<Code> ic =
         CodeFactory::KeyedStoreIC(isolate(), language_mode()).code();
@@ -1736,7 +1731,6 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   // (inclusive) and these elements gets appended to the array. Note that the
   // number elements an iterable produces is unknown ahead of time.
   if (array_index < length && result_saved) {
-    __ Drop(1);  // literal index
     __ Pop(rax);
     result_saved = false;
   }
@@ -1757,7 +1751,6 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   }
 
   if (result_saved) {
-    __ Drop(1);  // literal index
     context()->PlugTOS();
   } else {
     context()->Plug(rax);

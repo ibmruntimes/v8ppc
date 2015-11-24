@@ -75,14 +75,21 @@ void Builtins::Generate_Adaptor(MacroAssembler* masm,
 
 static void CallRuntimePassFunction(
     MacroAssembler* masm, Runtime::FunctionId function_id) {
+  // ----------- S t a t e -------------
+  //  -- edx : new target (preserved for callee)
+  //  -- edi : target function (preserved for callee)
+  // -----------------------------------
+
   FrameScope scope(masm, StackFrame::INTERNAL);
-  // Push a copy of the function.
+  // Push a copy of the target function and the new target.
   __ push(edi);
+  __ push(edx);
   // Function is also the parameter to the runtime call.
   __ push(edi);
 
   __ CallRuntime(function_id, 1);
-  // Restore receiver.
+  // Restore target function and new target.
+  __ pop(edx);
   __ pop(edi);
 }
 
@@ -251,8 +258,10 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
                       kUnexpectedNumberOfPreAllocatedPropertyFields);
           }
           __ InitializeFieldsWithFiller(ecx, esi, edx);
+
+          // To allow truncation fill the remaining fields with one pointer
+          // filler map.
           __ mov(edx, factory->one_pointer_filler_map());
-          // Fill the remaining fields with one pointer filler map.
 
           __ bind(&no_inobject_slack_tracking);
         }
@@ -332,8 +341,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ call(code, RelocInfo::CODE_TARGET);
     } else {
       ParameterCount actual(eax);
-      __ InvokeFunction(edi, actual, CALL_FUNCTION,
-                        NullCallWrapper());
+      __ InvokeFunction(edi, edx, actual, CALL_FUNCTION, NullCallWrapper());
     }
 
     // Store offset of return address for deoptimizer.
@@ -399,6 +407,13 @@ void Builtins::Generate_JSConstructStubApi(MacroAssembler* masm) {
 
 void Builtins::Generate_JSBuiltinsConstructStub(MacroAssembler* masm) {
   Generate_JSConstructStubHelper(masm, false, false);
+}
+
+
+void Builtins::Generate_ConstructedNonConstructable(MacroAssembler* masm) {
+  FrameScope scope(masm, StackFrame::INTERNAL);
+  __ push(edi);
+  __ CallRuntime(Runtime::kThrowConstructedNonConstructable, 1);
 }
 
 
@@ -1528,14 +1543,15 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm,
   __ SmiUntag(ebx);
   ParameterCount actual(eax);
   ParameterCount expected(ebx);
-  __ InvokeCode(FieldOperand(edi, JSFunction::kCodeEntryOffset), expected,
-                actual, JUMP_FUNCTION, NullCallWrapper());
+  __ InvokeCode(FieldOperand(edi, JSFunction::kCodeEntryOffset), no_reg,
+                expected, actual, JUMP_FUNCTION, NullCallWrapper());
 
   // The function is a "classConstructor", need to raise an exception.
   __ bind(&class_constructor);
   {
     FrameScope frame(masm, StackFrame::INTERNAL);
-    __ CallRuntime(Runtime::kThrowConstructorNonCallableError, 0);
+    __ push(edi);
+    __ CallRuntime(Runtime::kThrowConstructorNonCallableError, 1);
   }
 }
 
@@ -1662,11 +1678,8 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
   // Called Construct on an Object that doesn't have a [[Construct]] internal
   // method.
   __ bind(&non_constructor);
-  {
-    FrameScope scope(masm, StackFrame::INTERNAL);
-    __ Push(edi);
-    __ CallRuntime(Runtime::kThrowCalledNonCallable, 1);
-  }
+  __ Jump(masm->isolate()->builtins()->ConstructedNonConstructable(),
+          RelocInfo::CODE_TARGET);
 }
 
 
@@ -1795,6 +1808,134 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     FrameScope frame(masm, StackFrame::MANUAL);
     __ CallRuntime(Runtime::kThrowStackOverflow, 0);
     __ int3();
+  }
+}
+
+
+static void CompatibleReceiverCheck(MacroAssembler* masm, Register receiver,
+                                    Register function_template_info,
+                                    Register scratch0, Register scratch1,
+                                    Label* receiver_check_failed) {
+  // If receiver is not an object, jump to receiver_check_failed.
+  __ CmpObjectType(receiver, FIRST_JS_OBJECT_TYPE, scratch0);
+  __ j(below, receiver_check_failed);
+
+  // If there is no signature, return the holder.
+  __ CompareRoot(FieldOperand(function_template_info,
+                              FunctionTemplateInfo::kSignatureOffset),
+                 Heap::kUndefinedValueRootIndex);
+  Label receiver_check_passed;
+  __ j(equal, &receiver_check_passed, Label::kNear);
+
+  // Walk the prototype chain.
+  Label prototype_loop_start;
+  __ bind(&prototype_loop_start);
+
+  // End if receiver is null or if it's a hidden prototype.
+  __ CompareRoot(receiver, Heap::kNullValueRootIndex);
+  __ j(equal, receiver_check_failed, Label::kNear);
+  __ mov(scratch0, FieldOperand(receiver, HeapObject::kMapOffset));
+  __ test(FieldOperand(scratch0, Map::kBitField3Offset),
+          Immediate(Map::IsHiddenPrototype::kMask));
+  __ j(not_zero, receiver_check_failed, Label::kNear);
+
+  // Get the constructor, if any.
+  __ GetMapConstructor(scratch0, scratch0, scratch1);
+  __ CmpInstanceType(scratch1, JS_FUNCTION_TYPE);
+  Label next_prototype;
+  __ j(not_equal, &next_prototype, Label::kNear);
+
+  // Get the constructor's signature.
+  __ mov(scratch0,
+         FieldOperand(scratch0, JSFunction::kSharedFunctionInfoOffset));
+  __ mov(scratch0,
+         FieldOperand(scratch0, SharedFunctionInfo::kFunctionDataOffset));
+
+  // Loop through the chain of inheriting function templates.
+  Label function_template_loop;
+  __ bind(&function_template_loop);
+
+  // If the signatures match, we have a compatible receiver.
+  __ cmp(scratch0, FieldOperand(function_template_info,
+                                FunctionTemplateInfo::kSignatureOffset));
+  __ j(equal, &receiver_check_passed, Label::kNear);
+
+  // If the current type is not a FunctionTemplateInfo, load the next prototype
+  // in the chain.
+  __ JumpIfSmi(scratch0, &next_prototype, Label::kNear);
+  __ CmpObjectType(scratch0, FUNCTION_TEMPLATE_INFO_TYPE, scratch1);
+  __ j(not_equal, &next_prototype, Label::kNear);
+
+  // Otherwise load the parent function template and iterate.
+  __ mov(scratch0,
+         FieldOperand(scratch0, FunctionTemplateInfo::kParentTemplateOffset));
+  __ jmp(&function_template_loop, Label::kNear);
+
+  // Load the next prototype and iterate.
+  __ bind(&next_prototype);
+  __ mov(receiver, FieldOperand(receiver, HeapObject::kMapOffset));
+  __ mov(receiver, FieldOperand(receiver, Map::kPrototypeOffset));
+  __ jmp(&prototype_loop_start, Label::kNear);
+
+  __ bind(&receiver_check_passed);
+}
+
+
+void Builtins::Generate_HandleFastApiCall(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- eax                : number of arguments (not including the receiver)
+  //  -- edi                : callee
+  //  -- esi                : context
+  //  -- esp[0]             : return address
+  //  -- esp[4]             : last argument
+  //  -- ...
+  //  -- esp[eax * 4]       : first argument
+  //  -- esp[(eax + 1) * 4] : receiver
+  // -----------------------------------
+
+  // Load the receiver.
+  Operand receiver_operand(esp, eax, times_pointer_size, kPCOnStackSize);
+  __ mov(ecx, receiver_operand);
+
+  // Update the receiver if this is a contextual call.
+  Label set_global_proxy, valid_receiver;
+  __ CompareRoot(ecx, Heap::kUndefinedValueRootIndex);
+  __ j(equal, &set_global_proxy);
+  __ bind(&valid_receiver);
+
+  // Load the FunctionTemplateInfo.
+  __ mov(ebx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+  __ mov(ebx, FieldOperand(ebx, SharedFunctionInfo::kFunctionDataOffset));
+
+  // Do the compatible receiver check.
+  Label receiver_check_failed;
+  __ Push(eax);
+  CompatibleReceiverCheck(masm, ecx, ebx, edx, eax, &receiver_check_failed);
+  __ Pop(eax);
+  // Get the callback offset from the FunctionTemplateInfo, and jump to the
+  // beginning of the code.
+  __ mov(edx, FieldOperand(ebx, FunctionTemplateInfo::kCallCodeOffset));
+  __ mov(edx, FieldOperand(edx, CallHandlerInfo::kFastHandlerOffset));
+  __ add(edx, Immediate(Code::kHeaderSize - kHeapObjectTag));
+  __ jmp(edx);
+
+  __ bind(&set_global_proxy);
+  __ mov(ecx, GlobalObjectOperand());
+  __ mov(ecx, FieldOperand(ecx, JSGlobalObject::kGlobalProxyOffset));
+  __ mov(receiver_operand, ecx);
+  __ jmp(&valid_receiver, Label::kNear);
+
+  // Compatible receiver check failed: pop return address, arguments and
+  // receiver and throw an Illegal Invocation exception.
+  __ bind(&receiver_check_failed);
+  __ Pop(eax);
+  __ PopReturnAddressTo(ebx);
+  __ lea(eax, Operand(eax, times_pointer_size, 1 * kPointerSize));
+  __ add(esp, eax);
+  __ PushReturnAddressFrom(ebx);
+  {
+    FrameScope scope(masm, StackFrame::INTERNAL);
+    __ TailCallRuntime(Runtime::kThrowIllegalInvocation, 0, 1);
   }
 }
 

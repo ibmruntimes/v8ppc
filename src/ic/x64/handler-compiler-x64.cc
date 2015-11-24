@@ -188,6 +188,13 @@ void PropertyHandlerCompiler::GenerateApiAccessorCall(
     __ movp(data, FieldOperand(data, CallHandlerInfo::kDataOffset));
   }
 
+  if (api_call_info->fast_handler()->IsCode()) {
+    // Just tail call into the fast handler if present.
+    __ Jump(handle(Code::cast(api_call_info->fast_handler())),
+            RelocInfo::CODE_TARGET);
+    return;
+  }
+
   // Put api_function_address in place.
   Address function_address = v8::ToCData<Address>(api_call_info->callback());
   __ Move(api_function_address, function_address,
@@ -241,7 +248,7 @@ void NamedStoreHandlerCompiler::GenerateStoreViaSetter(
       ParameterCount actual(1);
       ParameterCount expected(expected_arguments);
       __ LoadAccessor(rdi, holder, accessor_index, ACCESSOR_SETTER);
-      __ InvokeFunction(rdi, expected, actual, CALL_FUNCTION,
+      __ InvokeFunction(rdi, no_reg, expected, actual, CALL_FUNCTION,
                         NullCallWrapper());
     } else {
       // If we generate a global code snippet for deoptimization only, remember
@@ -284,7 +291,7 @@ void NamedLoadHandlerCompiler::GenerateLoadViaGetter(
       ParameterCount actual(0);
       ParameterCount expected(expected_arguments);
       __ LoadAccessor(rdi, holder, accessor_index, ACCESSOR_GETTER);
-      __ InvokeFunction(rdi, expected, actual, CALL_FUNCTION,
+      __ InvokeFunction(rdi, no_reg, expected, actual, CALL_FUNCTION,
                         NullCallWrapper());
     } else {
       // If we generate a global code snippet for deoptimization only, remember

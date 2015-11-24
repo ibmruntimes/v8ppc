@@ -288,15 +288,20 @@ void Builtins::Generate_StringConstructor_ConstructStub(MacroAssembler* masm) {
 
 static void CallRuntimePassFunction(MacroAssembler* masm,
                                     Runtime::FunctionId function_id) {
+  // ----------- S t a t e -------------
+  //  -- x1 : target function (preserved for callee)
+  //  -- x3 : new target (preserved for callee)
+  // -----------------------------------
+
   FrameScope scope(masm, StackFrame::INTERNAL);
-  //   - Push a copy of the function onto the stack.
-  //   - Push another copy as a parameter to the runtime call.
-  __ Push(x1, x1);
+  // Push a copy of the target function and the new target.
+  // Push another copy as a parameter to the runtime call.
+  __ Push(x1, x3, x1);
 
   __ CallRuntime(function_id, 1);
 
-  //   - Restore receiver.
-  __ Pop(x1);
+  // Restore target function and new target.
+  __ Pop(x3, x1);
 }
 
 
@@ -361,11 +366,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // Preserve the incoming parameters on the stack.
     __ AssertUndefinedOrAllocationSite(allocation_site, x10);
     __ SmiTag(argc);
-    if (create_implicit_receiver) {
-      __ Push(allocation_site, argc, constructor, new_target);
-    } else {
-      __ Push(allocation_site, argc);
-    }
+    __ Push(allocation_site, argc);
 
     if (create_implicit_receiver) {
       // sp[0]: new.target
@@ -418,23 +419,21 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
           __ Cmp(constructon_count, Operand(Map::kSlackTrackingCounterEnd));
           __ B(ne, &allocate);
 
-          // Push the constructor and map to the stack, and the map again
-          // as argument to the runtime call.
-          __ Push(constructor, init_map, init_map);
+          // Push the constructor, new_target and map to the stack, and
+          // the map again as an argument to the runtime call.
+          __ Push(constructor, new_target, init_map, init_map);
           __ CallRuntime(Runtime::kFinalizeInstanceSize, 1);
-          __ Pop(init_map, constructor);
+          __ Pop(init_map, new_target, constructor);
           __ Mov(constructon_count, Operand(Map::kSlackTrackingCounterEnd - 1));
           __ Bind(&allocate);
         }
 
         // Now allocate the JSObject on the heap.
-        Label rt_call_reload_new_target;
-        Register obj_size = x3;
+        Register obj_size = x10;
         Register new_obj = x4;
-        Register next_obj = x10;
+        Register next_obj = obj_size;  // May overlap.
         __ Ldrb(obj_size, FieldMemOperand(init_map, Map::kInstanceSizeOffset));
-        __ Allocate(obj_size, new_obj, next_obj, x11,
-                    &rt_call_reload_new_target, SIZE_IN_WORDS);
+        __ Allocate(obj_size, new_obj, next_obj, x11, &rt_call, SIZE_IN_WORDS);
 
         // Allocated the JSObject, now initialize the fields. Map is set to
         // initial map and properties and elements are set to empty fixed array.
@@ -449,6 +448,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         STATIC_ASSERT(2 * kPointerSize == JSObject::kElementsOffset);
         __ Stp(empty, empty,
                MemOperand(write_address, 2 * kPointerSize, PostIndex));
+        STATIC_ASSERT(3 * kPointerSize == JSObject::kHeaderSize);
 
         // Fill all of the in-object properties with the appropriate filler.
         Register filler = x7;
@@ -498,27 +498,25 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 
         // Continue with JSObject being successfully allocated.
         __ B(&allocated);
-
-        // Reload the new target and fall-through.
-        __ Bind(&rt_call_reload_new_target);
-        __ Peek(x3, 0 * kXRegSize);
       }
 
       // Allocate the new receiver object using the runtime call.
       // x1: constructor function
       // x3: new target
       __ Bind(&rt_call);
-      __ Push(constructor, new_target);  // arguments 1-2
+
+      // Push the constructor and new_target twice, second pair as arguments
+      // to the runtime call.
+      __ Push(constructor, new_target, constructor, new_target);
       __ CallRuntime(Runtime::kNewObject, 2);
       __ Mov(x4, x0);
+      __ Pop(new_target, constructor);
 
       // Receiver for constructor call allocated.
+      // x1: constructor function
+      // x3: new target
       // x4: JSObject
       __ Bind(&allocated);
-
-      // Restore the parameters.
-      __ Pop(new_target);
-      __ Pop(constructor);
 
       // Reload the number of arguments from the stack.
       // Set it up in x0 for the function call below.
@@ -548,19 +546,20 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // x0: number of arguments
     // x1: constructor function
     // x2: address of last argument (caller sp)
+    // x3: new target
     // jssp[0]: receiver
     // jssp[1]: receiver
     // jssp[2]: new.target
     // jssp[3]: number of arguments (smi-tagged)
     // Compute the start address of the copy in x3.
-    __ Add(x3, x2, Operand(argc, LSL, kPointerSizeLog2));
+    __ Add(x4, x2, Operand(argc, LSL, kPointerSizeLog2));
     Label loop, entry, done_copying_arguments;
     __ B(&entry);
     __ Bind(&loop);
-    __ Ldp(x10, x11, MemOperand(x3, -2 * kPointerSize, PreIndex));
+    __ Ldp(x10, x11, MemOperand(x4, -2 * kPointerSize, PreIndex));
     __ Push(x11, x10);
     __ Bind(&entry);
-    __ Cmp(x3, x2);
+    __ Cmp(x4, x2);
     __ B(gt, &loop);
     // Because we copied values 2 by 2 we may have copied one extra value.
     // Drop it if that is the case.
@@ -571,6 +570,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // Call the function.
     // x0: number of arguments
     // x1: constructor function
+    // x3: new target
     if (is_api_function) {
       __ Ldr(cp, FieldMemOperand(constructor, JSFunction::kContextOffset));
       Handle<Code> code =
@@ -578,7 +578,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ Call(code, RelocInfo::CODE_TARGET);
     } else {
       ParameterCount actual(argc);
-      __ InvokeFunction(constructor, actual, CALL_FUNCTION, NullCallWrapper());
+      __ InvokeFunction(constructor, new_target, actual, CALL_FUNCTION,
+                        NullCallWrapper());
     }
 
     // Store offset of return address for deoptimizer.
@@ -650,6 +651,13 @@ void Builtins::Generate_JSConstructStubApi(MacroAssembler* masm) {
 
 void Builtins::Generate_JSBuiltinsConstructStub(MacroAssembler* masm) {
   Generate_JSConstructStubHelper(masm, false, false);
+}
+
+
+void Builtins::Generate_ConstructedNonConstructable(MacroAssembler* masm) {
+  FrameScope scope(masm, StackFrame::INTERNAL);
+  __ Push(x1);
+  __ CallRuntime(Runtime::kThrowConstructedNonConstructable, 1);
 }
 
 
@@ -946,16 +954,17 @@ static void GenerateMakeCodeYoungAgainCommon(MacroAssembler* masm) {
   // calling through to the runtime:
   //   x0 - The address from which to resume execution.
   //   x1 - isolate
+  //   x3 - new target
   //   lr - The return address for the JSFunction itself. It has not yet been
   //        preserved on the stack because the frame setup code was replaced
   //        with a call to this stub, to handle code ageing.
   {
     FrameScope scope(masm, StackFrame::MANUAL);
-    __ Push(x0, x1, fp, lr);
+    __ Push(x0, x1, x3, fp, lr);
     __ Mov(x1, ExternalReference::isolate_address(masm->isolate()));
     __ CallCFunction(
         ExternalReference::get_make_code_young_function(masm->isolate()), 2);
-    __ Pop(lr, fp, x1, x0);
+    __ Pop(lr, fp, x3, x1, x0);
   }
 
   // The calling function has been made young again, so return to execute the
@@ -986,17 +995,18 @@ void Builtins::Generate_MarkCodeAsExecutedOnce(MacroAssembler* masm) {
   // calling through to the runtime:
   //   x0 - The address from which to resume execution.
   //   x1 - isolate
+  //   x3 - new target
   //   lr - The return address for the JSFunction itself. It has not yet been
   //        preserved on the stack because the frame setup code was replaced
   //        with a call to this stub, to handle code ageing.
   {
     FrameScope scope(masm, StackFrame::MANUAL);
-    __ Push(x0, x1, fp, lr);
+    __ Push(x0, x1, x3, fp, lr);
     __ Mov(x1, ExternalReference::isolate_address(masm->isolate()));
     __ CallCFunction(
         ExternalReference::get_mark_code_as_executed_function(
             masm->isolate()), 2);
-    __ Pop(lr, fp, x1, x0);
+    __ Pop(lr, fp, x3, x1, x0);
 
     // Perform prologue operations usually performed by the young code stub.
     __ EmitFrameSetupForCodeAgePatching(masm);
@@ -1100,6 +1110,126 @@ void Builtins::Generate_NotifyLazyDeoptimized(MacroAssembler* masm) {
 
 void Builtins::Generate_NotifySoftDeoptimized(MacroAssembler* masm) {
   Generate_NotifyDeoptimizedHelper(masm, Deoptimizer::SOFT);
+}
+
+
+static void CompatibleReceiverCheck(MacroAssembler* masm, Register receiver,
+                                    Register function_template_info,
+                                    Register scratch0, Register scratch1,
+                                    Register scratch2,
+                                    Label* receiver_check_failed) {
+  Register signature = scratch0;
+  Register map = scratch1;
+  Register constructor = scratch2;
+
+  // If the receiver is not an object, jump to receiver_check_failed.
+  __ CompareObjectType(receiver, map, x16, FIRST_JS_OBJECT_TYPE);
+  __ B(lo, receiver_check_failed);
+
+  // If there is no signature, return the holder.
+  __ Ldr(signature, FieldMemOperand(function_template_info,
+                                    FunctionTemplateInfo::kSignatureOffset));
+  __ CompareRoot(signature, Heap::kUndefinedValueRootIndex);
+  Label receiver_check_passed;
+  __ B(eq, &receiver_check_passed);
+
+  // Walk the prototype chain.
+  Label prototype_loop_start;
+  __ Bind(&prototype_loop_start);
+
+  // End if the receiver is null or if it's a hidden type.
+  __ CompareRoot(receiver, Heap::kNullValueRootIndex);
+  __ B(eq, receiver_check_failed);
+  __ Ldr(map, FieldMemOperand(receiver, HeapObject::kMapOffset));
+  __ Ldr(x16, FieldMemOperand(map, Map::kBitField3Offset));
+  __ Tst(x16, Operand(Map::IsHiddenPrototype::kMask));
+  __ B(ne, receiver_check_failed);
+
+  // Get the constructor, if any
+  __ GetMapConstructor(constructor, map, x16, x16);
+  __ cmp(x16, Operand(JS_FUNCTION_TYPE));
+  Label next_prototype;
+  __ B(ne, &next_prototype);
+  Register type = constructor;
+  __ Ldr(type,
+         FieldMemOperand(constructor, JSFunction::kSharedFunctionInfoOffset));
+  __ Ldr(type, FieldMemOperand(type, SharedFunctionInfo::kFunctionDataOffset));
+
+  // Loop through the chain of inheriting function templates.
+  Label function_template_loop;
+  __ Bind(&function_template_loop);
+
+  // If the signatures match, we have a compatible receiver.
+  __ Cmp(signature, type);
+  __ B(eq, &receiver_check_passed);
+
+  // If the current type is not a FunctionTemplateInfo, load the next prototype
+  // in the chain.
+  __ JumpIfSmi(type, &next_prototype);
+  __ CompareObjectType(type, x16, x17, FUNCTION_TEMPLATE_INFO_TYPE);
+  __ B(ne, &next_prototype);
+
+  // Otherwise load the parent function template and iterate.
+  __ Ldr(type,
+         FieldMemOperand(type, FunctionTemplateInfo::kParentTemplateOffset));
+  __ B(&function_template_loop);
+
+  // Load the next prototype and iterate.
+  __ Bind(&next_prototype);
+  __ Ldr(receiver, FieldMemOperand(map, Map::kPrototypeOffset));
+  __ B(&prototype_loop_start);
+
+  __ Bind(&receiver_check_passed);
+}
+
+
+void Builtins::Generate_HandleFastApiCall(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- x0                 : number of arguments excluding receiver
+  //  -- x1                 : callee
+  //  -- lr                 : return address
+  //  -- sp[0]              : last argument
+  //  -- ...
+  //  -- sp[8 * (argc - 1)] : first argument
+  //  -- sp[8 * argc]       : receiver
+  // -----------------------------------
+
+  // Load the receiver.
+  __ Ldr(x2, MemOperand(jssp, x0, LSL, kPointerSizeLog2));
+
+  // Update the receiver if this is a contextual call.
+  Label set_global_proxy, valid_receiver;
+  __ CompareRoot(x2, Heap::kUndefinedValueRootIndex);
+  __ B(eq, &set_global_proxy);
+  __ Bind(&valid_receiver);
+
+  // Load the FunctionTemplateInfo.
+  __ Ldr(x3, FieldMemOperand(x1, JSFunction::kSharedFunctionInfoOffset));
+  __ Ldr(x3, FieldMemOperand(x3, SharedFunctionInfo::kFunctionDataOffset));
+
+  // Do the compatible receiver check.
+  Label receiver_check_failed;
+  CompatibleReceiverCheck(masm, x2, x3, x4, x5, x6, &receiver_check_failed);
+
+  // Get the callback offset from the FunctionTemplateInfo, and jump to the
+  // beginning of the code.
+  __ Ldr(x4, FieldMemOperand(x3, FunctionTemplateInfo::kCallCodeOffset));
+  __ Ldr(x4, FieldMemOperand(x4, CallHandlerInfo::kFastHandlerOffset));
+  __ Add(x4, x4, Operand(Code::kHeaderSize - kHeapObjectTag));
+  __ Jump(x4);
+
+  __ Bind(&set_global_proxy);
+  __ Ldr(x2, GlobalObjectMemOperand());
+  __ Ldr(x2, FieldMemOperand(x2, JSGlobalObject::kGlobalProxyOffset));
+  __ Str(x2, MemOperand(jssp, x0, LSL, kPointerSizeLog2));
+  __ B(&valid_receiver);
+
+  // Compatible receiver check failed: throw an Illegal Invocation exception.
+  __ Bind(&receiver_check_failed);
+  // Drop the arguments (including the receiver)
+  __ add(x0, x0, Operand(1));
+  __ Drop(x0);
+  __ TailCallRuntime(Runtime::kThrowIllegalInvocation, 0, 1);
 }
 
 
@@ -1541,16 +1671,17 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm,
 
   __ Ldrsw(
       x2, FieldMemOperand(x2, SharedFunctionInfo::kFormalParameterCountOffset));
-  __ Ldr(x3, FieldMemOperand(x1, JSFunction::kCodeEntryOffset));
+  __ Ldr(x4, FieldMemOperand(x1, JSFunction::kCodeEntryOffset));
   ParameterCount actual(x0);
   ParameterCount expected(x2);
-  __ InvokeCode(x3, expected, actual, JUMP_FUNCTION, NullCallWrapper());
+  __ InvokeCode(x4, no_reg, expected, actual, JUMP_FUNCTION, NullCallWrapper());
 
   // The function is a "classConstructor", need to raise an exception.
   __ bind(&class_constructor);
   {
     FrameScope frame(masm, StackFrame::INTERNAL);
-    __ CallRuntime(Runtime::kThrowConstructorNonCallableError, 0);
+    __ Push(x1);
+    __ CallRuntime(Runtime::kThrowConstructorNonCallableError, 1);
   }
 }
 
@@ -1677,11 +1808,8 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
   // Called Construct on an Object that doesn't have a [[Construct]] internal
   // method.
   __ bind(&non_constructor);
-  {
-    FrameScope scope(masm, StackFrame::INTERNAL);
-    __ Push(x1);
-    __ CallRuntime(Runtime::kThrowCalledNonCallable, 1);
-  }
+  __ Jump(masm->isolate()->builtins()->ConstructedNonConstructable(),
+          RelocInfo::CODE_TARGET);
 }
 
 
