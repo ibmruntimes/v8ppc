@@ -40,7 +40,8 @@ void NamedLoadHandlerCompiler::GenerateLoadViaGetter(
       ParameterCount actual(0);
       ParameterCount expected(expected_arguments);
       __ LoadAccessor(a1, holder, accessor_index, ACCESSOR_GETTER);
-      __ InvokeFunction(a1, expected, actual, CALL_FUNCTION, NullCallWrapper());
+      __ InvokeFunction(a1, expected, actual, CALL_FUNCTION,
+                        CheckDebugStepCallWrapper());
     } else {
       // If we generate a global code snippet for deoptimization only, remember
       // the place to continue after deoptimization.
@@ -81,7 +82,8 @@ void NamedStoreHandlerCompiler::GenerateStoreViaSetter(
       ParameterCount actual(1);
       ParameterCount expected(expected_arguments);
       __ LoadAccessor(a1, holder, accessor_index, ACCESSOR_SETTER);
-      __ InvokeFunction(a1, expected, actual, CALL_FUNCTION, NullCallWrapper());
+      __ InvokeFunction(a1, expected, actual, CALL_FUNCTION,
+                        CheckDebugStepCallWrapper());
     } else {
       // If we generate a global code snippet for deoptimization only, remember
       // the place to continue after deoptimization.
@@ -141,7 +143,7 @@ void PropertyHandlerCompiler::GenerateDictionaryNegativeLookup(
 
   // Check that receiver is a JSObject.
   __ lbu(scratch0, FieldMemOperand(map, Map::kInstanceTypeOffset));
-  __ Branch(miss_label, lt, scratch0, Operand(FIRST_SPEC_OBJECT_TYPE));
+  __ Branch(miss_label, lt, scratch0, Operand(FIRST_JS_RECEIVER_TYPE));
 
   // Load properties array.
   Register properties = scratch0;
@@ -165,11 +167,7 @@ void PropertyHandlerCompiler::GenerateDictionaryNegativeLookup(
 
 void NamedLoadHandlerCompiler::GenerateDirectLoadGlobalFunctionPrototype(
     MacroAssembler* masm, int index, Register result, Label* miss) {
-  // Check we're still in the same context.
-  const int offset = Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX);
-  __ ld(result, MemOperand(cp, offset));
-  __ ld(result, FieldMemOperand(result, JSGlobalObject::kNativeContextOffset));
-  __ ld(result, MemOperand(result, Context::SlotOffset(index)));
+  __ LoadNativeContextSlot(index, result);
   // Load its initial map. The global functions all have initial maps.
   __ ld(result,
         FieldMemOperand(result, JSFunction::kPrototypeOrInitialMapOffset));

@@ -206,6 +206,7 @@ class Genesis BASE_EMBEDDED {
   HARMONY_INPROGRESS(DECLARE_FEATURE_INITIALIZATION)
   HARMONY_STAGED(DECLARE_FEATURE_INITIALIZATION)
   HARMONY_SHIPPING(DECLARE_FEATURE_INITIALIZATION)
+  DECLARE_FEATURE_INITIALIZATION(promise_extra, "")
 #undef DECLARE_FEATURE_INITIALIZATION
 
   Handle<JSFunction> InstallInternalArray(Handle<JSObject> target,
@@ -686,7 +687,9 @@ Handle<JSFunction> Genesis::GetThrowTypeErrorIntrinsic(
   function->shared()->DontAdaptArguments();
 
   // %ThrowTypeError% must not have a name property.
-  JSReceiver::DeleteProperty(function, factory()->name_string()).Assert();
+  if (JSReceiver::DeleteProperty(function, factory()->name_string())
+          .IsNothing())
+    DCHECK(false);
 
   // length needs to be non configurable.
   Handle<Object> value(Smi::FromInt(function->shared()->length()), isolate());
@@ -1049,15 +1052,6 @@ void Genesis::HookUpGlobalObject(Handle<JSGlobalObject> global_object,
   native_context()->set_extension(*global_object);
   native_context()->set_security_token(*global_object);
 
-  // Replace outdated global objects in deserialized contexts.
-  for (int i = 0; i < outdated_contexts->length(); ++i) {
-    Context* context = Context::cast(outdated_contexts->get(i));
-    // Assert that there is only one native context.
-    DCHECK(!context->IsNativeContext() || context == *native_context());
-    DCHECK_EQ(context->global_object(), *global_object_from_snapshot);
-    context->set_global_object(*global_object);
-  }
-
   TransferNamedProperties(global_object_from_snapshot, global_object);
   TransferIndexedProperties(global_object_from_snapshot, global_object);
 }
@@ -1074,7 +1068,6 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
   native_context()->set_previous(NULL);
   // Set extension and global object.
   native_context()->set_extension(*global_object);
-  native_context()->set_global_object(*global_object);
   // Security setup: Set the security token of the native context to the global
   // object. This makes the security check between two different contexts fail
   // by default even in case of global object reinitialization.
@@ -1517,6 +1510,7 @@ void Genesis::InitializeExperimentalGlobal() {
   HARMONY_INPROGRESS(FEATURE_INITIALIZE_GLOBAL)
   HARMONY_STAGED(FEATURE_INITIALIZE_GLOBAL)
   HARMONY_SHIPPING(FEATURE_INITIALIZE_GLOBAL)
+  FEATURE_INITIALIZE_GLOBAL(promise_extra, "")
 #undef FEATURE_INITIALIZE_GLOBAL
 }
 
@@ -1619,10 +1613,9 @@ bool Bootstrapper::CompileNative(Isolate* isolate, Vector<const char> name,
 
   DCHECK(context->IsNativeContext());
 
-  Handle<Context> runtime_context(context->runtime_context());
   Handle<JSFunction> fun =
       isolate->factory()->NewFunctionFromSharedFunctionInfo(function_info,
-                                                            runtime_context);
+                                                            context);
   Handle<Object> receiver = isolate->factory()->undefined_value();
 
   // For non-extension scripts, run script to get the function wrapper.
@@ -1749,12 +1742,6 @@ void Genesis::ConfigureUtilsObject(ContextType context_type) {
 
   // The utils object can be removed for cases that reach this point.
   native_context()->set_natives_utils_object(heap()->undefined_value());
-
-#ifdef DEBUG
-  JSGlobalObject* dummy = native_context()->runtime_context()->global_object();
-  DCHECK_EQ(0, dummy->elements()->length());
-  DCHECK_EQ(0, GlobalDictionary::cast(dummy->properties())->NumberOfElements());
-#endif
 }
 
 
@@ -2038,6 +2025,7 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_completion)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_tolength)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_do_expressions)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexp_lookbehind)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(promise_extra)
 
 
 static void SimpleInstallFunction(Handle<JSObject> base, Handle<Name> name,
@@ -2237,31 +2225,6 @@ Handle<JSFunction> Genesis::InstallInternalArray(Handle<JSObject> target,
 
 bool Genesis::InstallNatives(ContextType context_type) {
   HandleScope scope(isolate());
-
-  // Create a bridge function that has context in the native context.
-  Handle<JSFunction> bridge = factory()->NewFunction(factory()->empty_string());
-  DCHECK(bridge->context() == *isolate()->native_context());
-
-  // Allocate the runtime context.
-  {
-    Handle<Context> context =
-        factory()->NewFunctionContext(Context::MIN_CONTEXT_SLOTS, bridge);
-    native_context()->set_runtime_context(*context);
-    Handle<Code> code = isolate()->builtins()->Illegal();
-    Handle<JSFunction> global_fun =
-        factory()->NewFunction(factory()->empty_string(), code,
-                               JS_GLOBAL_OBJECT_TYPE, JSGlobalObject::kSize);
-    global_fun->initial_map()->set_dictionary_map(true);
-    global_fun->initial_map()->set_prototype(heap()->null_value());
-    Handle<JSGlobalObject> dummy_global =
-        Handle<JSGlobalObject>::cast(factory()->NewJSGlobalObject(global_fun));
-    dummy_global->set_native_context(*native_context());
-    dummy_global->set_global_proxy(native_context()->global_proxy());
-    context->set_global_object(*dummy_global);
-    // Something went wrong if we actually need to write into the dummy global.
-    dummy_global->set_properties(*GlobalDictionary::New(isolate(), 0));
-    dummy_global->set_elements(heap()->empty_fixed_array());
-  }
 
   // Set up the utils object as shared container between native scripts.
   Handle<JSObject> utils = factory()->NewJSObject(isolate()->object_function());
@@ -2571,6 +2534,8 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_do_expressions_natives[] = {nullptr};
   static const char* harmony_regexp_subclass_natives[] = {nullptr};
   static const char* harmony_regexp_lookbehind_natives[] = {nullptr};
+  static const char* promise_extra_natives[] = {"native promise-extra.js",
+                                                nullptr};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {
@@ -2589,6 +2554,7 @@ bool Genesis::InstallExperimentalNatives() {
     HARMONY_INPROGRESS(INSTALL_EXPERIMENTAL_NATIVES);
     HARMONY_STAGED(INSTALL_EXPERIMENTAL_NATIVES);
     HARMONY_SHIPPING(INSTALL_EXPERIMENTAL_NATIVES);
+    INSTALL_EXPERIMENTAL_NATIVES(promise_extra, "");
 #undef INSTALL_EXPERIMENTAL_NATIVES
   }
 
@@ -3183,6 +3149,8 @@ Genesis::Genesis(Isolate* isolate,
     InitializeGlobal(global_object, empty_function, context_type);
     InitializeNormalizedMapCaches();
 
+    // TODO(yangguo): Find a way to prevent accidentially installing properties
+    // on the global object.
     if (!InstallNatives(context_type)) return;
 
     MakeFunctionInstancePrototypeWritable();

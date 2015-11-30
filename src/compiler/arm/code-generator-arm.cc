@@ -5,11 +5,11 @@
 #include "src/compiler/code-generator.h"
 
 #include "src/arm/macro-assembler-arm.h"
+#include "src/ast/scopes.h"
 #include "src/compiler/code-generator-impl.h"
 #include "src/compiler/gap-resolver.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/osr.h"
-#include "src/scopes.h"
 
 namespace v8 {
 namespace internal {
@@ -149,8 +149,8 @@ class ArmOperandConverter final : public InstructionOperandConverter {
   MemOperand ToMemOperand(InstructionOperand* op) const {
     DCHECK(op != NULL);
     DCHECK(op->IsStackSlot() || op->IsDoubleStackSlot());
-    FrameOffset offset =
-        linkage()->GetFrameOffset(AllocatedOperand::cast(op)->index(), frame());
+    FrameOffset offset = frame_access_state()->GetFrameOffset(
+        AllocatedOperand::cast(op)->index());
     return MemOperand(offset.from_stack_pointer() ? sp : fp, offset.offset());
   }
 };
@@ -359,16 +359,7 @@ void CodeGenerator::AssembleDeconstructActivationRecord(int stack_param_delta) {
   if (sp_slot_delta > 0) {
     __ add(sp, sp, Operand(sp_slot_delta * kPointerSize));
   }
-  CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
-  int spill_slots = frame()->GetSpillSlotCount();
-  bool has_frame = descriptor->IsJSFunctionCall() || spill_slots > 0;
-  if (has_frame) {
-    if (FLAG_enable_embedded_constant_pool) {
-      __ ldm(ia_w, sp, pp.bit() | fp.bit() | lr.bit());
-    } else {
-      __ ldm(ia_w, sp, fp.bit() | lr.bit());
-    }
-  }
+  frame_access_state()->SetFrameAccessToDefault();
 }
 
 
@@ -376,7 +367,16 @@ void CodeGenerator::AssemblePrepareTailCall(int stack_param_delta) {
   int sp_slot_delta = TailCallFrameStackSlotDelta(stack_param_delta);
   if (sp_slot_delta < 0) {
     __ sub(sp, sp, Operand(-sp_slot_delta * kPointerSize));
+    frame_access_state()->IncreaseSPDelta(-sp_slot_delta);
   }
+  if (frame()->needs_frame()) {
+    if (FLAG_enable_embedded_constant_pool) {
+      __ ldr(cp, MemOperand(fp, StandardFrameConstants::kConstantPoolOffset));
+    }
+    __ ldr(lr, MemOperand(fp, StandardFrameConstants::kCallerPCOffset));
+    __ ldr(fp, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  }
+  frame_access_state()->SetFrameAccessToSP();
 }
 
 
@@ -399,6 +399,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       }
       RecordCallPosition(instr);
       DCHECK_EQ(LeaveCC, i.OutputSBit());
+      frame_access_state()->ClearSPDelta();
       break;
     }
     case kArchTailCallCodeObject: {
@@ -413,6 +414,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ Jump(ip);
       }
       DCHECK_EQ(LeaveCC, i.OutputSBit());
+      frame_access_state()->ClearSPDelta();
       break;
     }
     case kArchCallJSFunction: {
@@ -428,6 +430,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ Call(ip);
       RecordCallPosition(instr);
       DCHECK_EQ(LeaveCC, i.OutputSBit());
+      frame_access_state()->ClearSPDelta();
       break;
     }
     case kArchTailCallJSFunction: {
@@ -443,6 +446,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ ldr(ip, FieldMemOperand(func, JSFunction::kCodeEntryOffset));
       __ Jump(ip);
       DCHECK_EQ(LeaveCC, i.OutputSBit());
+      frame_access_state()->ClearSPDelta();
       break;
     }
     case kArchLazyBailout: {
@@ -453,6 +457,8 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArchPrepareCallCFunction: {
       int const num_parameters = MiscField::decode(instr->opcode());
       __ PrepareCallCFunction(num_parameters, kScratchReg);
+      // Frame alignment requires using FP-relative frame addressing.
+      frame_access_state()->SetFrameAccessToFP();
       break;
     }
     case kArchPrepareTailCall:
@@ -467,6 +473,8 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         Register func = i.InputRegister(0);
         __ CallCFunction(func, num_parameters);
       }
+      frame_access_state()->SetFrameAccessToDefault();
+      frame_access_state()->ClearSPDelta();
       break;
     }
     case kArchJmp:
@@ -783,17 +791,29 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArmVnegF64:
       __ vneg(i.OutputFloat64Register(), i.InputFloat64Register(0));
       break;
+    case kArmVrintmF32:
+      __ vrintm(i.OutputFloat32Register(), i.InputFloat32Register(0));
+      break;
     case kArmVrintmF64:
       __ vrintm(i.OutputFloat64Register(), i.InputFloat64Register(0));
       break;
+    case kArmVrintpF32:
+      __ vrintp(i.OutputFloat32Register(), i.InputFloat32Register(0));
+      break;
     case kArmVrintpF64:
       __ vrintp(i.OutputFloat64Register(), i.InputFloat64Register(0));
+      break;
+    case kArmVrintzF32:
+      __ vrintz(i.OutputFloat32Register(), i.InputFloat32Register(0));
       break;
     case kArmVrintzF64:
       __ vrintz(i.OutputFloat64Register(), i.InputFloat64Register(0));
       break;
     case kArmVrintaF64:
       __ vrinta(i.OutputFloat64Register(), i.InputFloat64Register(0));
+      break;
+    case kArmVrintnF32:
+      __ vrintn(i.OutputFloat32Register(), i.InputFloat32Register(0));
       break;
     case kArmVrintnF64:
       __ vrintn(i.OutputFloat64Register(), i.InputFloat64Register(0));
@@ -921,8 +941,10 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArmPush:
       if (instr->InputAt(0)->IsDoubleRegister()) {
         __ vpush(i.InputDoubleRegister(0));
+        frame_access_state()->IncreaseSPDelta(kDoubleSize / kPointerSize);
       } else {
         __ push(i.InputRegister(0));
+        frame_access_state()->IncreaseSPDelta(1);
       }
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
@@ -1044,7 +1066,7 @@ void CodeGenerator::AssembleDeoptimizerCall(
 
 void CodeGenerator::AssemblePrologue() {
   CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
-  if (descriptor->kind() == CallDescriptor::kCallAddress) {
+  if (descriptor->IsCFunctionCall()) {
     if (FLAG_enable_embedded_constant_pool) {
       __ Push(lr, fp, pp);
       // Adjust FP to point to saved FP.
@@ -1056,11 +1078,12 @@ void CodeGenerator::AssemblePrologue() {
   } else if (descriptor->IsJSFunctionCall()) {
     CompilationInfo* info = this->info();
     __ Prologue(info->IsCodePreAgingActive());
-  } else if (needs_frame_) {
+  } else if (frame()->needs_frame()) {
     __ StubPrologue();
   } else {
     frame()->SetElidedFrameSizeInSlots(0);
   }
+  frame_access_state()->SetFrameAccessToDefault();
 
   int stack_shrink_slots = frame()->GetSpillSlotCount();
   if (info()->is_osr()) {
@@ -1131,9 +1154,9 @@ void CodeGenerator::AssembleReturn() {
             DwVfpRegister::from_code(last));
   }
 
-  if (descriptor->kind() == CallDescriptor::kCallAddress) {
+  if (descriptor->IsCFunctionCall()) {
     __ LeaveFrame(StackFrame::MANUAL);
-  } else if (descriptor->IsJSFunctionCall() || needs_frame_) {
+  } else if (frame()->needs_frame()) {
     // Canonicalize JSFunction return sites for now.
     if (return_label_.is_bound()) {
       __ b(&return_label_);

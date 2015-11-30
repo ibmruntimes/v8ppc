@@ -19,11 +19,12 @@
 namespace v8 {
 namespace internal {
 
-MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size)
+MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size,
+                               CodeObjectRequired create_code_object)
     : Assembler(arg_isolate, buffer, size),
       generating_stub_(false),
       has_frame_(false) {
-  if (isolate() != NULL) {
+  if (create_code_object == CodeObjectRequired::kYes) {
     code_object_ =
         Handle<Object>::New(isolate()->heap()->undefined_value(), isolate());
   }
@@ -1303,18 +1304,65 @@ void MacroAssembler::InvokePrologue(const ParameterCount& expected,
 }
 
 
-void MacroAssembler::InvokeCode(Register code,
-                                Register new_target,
-                                const ParameterCount& expected,
-                                const ParameterCount& actual,
-                                InvokeFlag flag,
-                                const CallWrapper& call_wrapper) {
+void MacroAssembler::FloodFunctionIfStepping(Register fun, Register new_target,
+                                             const ParameterCount& expected,
+                                             const ParameterCount& actual) {
+  Label skip_flooding;
+  ExternalReference debug_step_action =
+      ExternalReference::debug_last_step_action_address(isolate());
+  mov(r4, Operand(debug_step_action));
+  ldrb(r4, MemOperand(r4));
+  cmp(r4, Operand(StepIn));
+  b(ne, &skip_flooding);
+  {
+    FrameScope frame(this,
+                     has_frame() ? StackFrame::NONE : StackFrame::INTERNAL);
+    if (expected.is_reg()) {
+      SmiTag(expected.reg());
+      Push(expected.reg());
+    }
+    if (actual.is_reg()) {
+      SmiTag(actual.reg());
+      Push(actual.reg());
+    }
+    if (new_target.is_valid()) {
+      Push(new_target);
+    }
+    Push(fun);
+    Push(fun);
+    CallRuntime(Runtime::kDebugPrepareStepInIfStepping, 1);
+    Pop(fun);
+    if (new_target.is_valid()) {
+      Pop(new_target);
+    }
+    if (actual.is_reg()) {
+      Pop(actual.reg());
+      SmiUntag(actual.reg());
+    }
+    if (expected.is_reg()) {
+      Pop(expected.reg());
+      SmiUntag(expected.reg());
+    }
+  }
+  bind(&skip_flooding);
+}
+
+
+void MacroAssembler::InvokeFunctionCode(Register function, Register new_target,
+                                        const ParameterCount& expected,
+                                        const ParameterCount& actual,
+                                        InvokeFlag flag,
+                                        const CallWrapper& call_wrapper) {
   // You can't call a function without a valid frame.
   DCHECK(flag == JUMP_FUNCTION || has_frame());
-
-  // Ensure new target is passed in the correct register. Otherwise clear the
-  // appropriate register in case new target is not given.
+  DCHECK(function.is(r1));
   DCHECK_IMPLIES(new_target.is_valid(), new_target.is(r3));
+
+  if (call_wrapper.NeedsDebugStepCheck()) {
+    FloodFunctionIfStepping(function, new_target, expected, actual);
+  }
+
+  // Clear the new.target register if not given.
   if (!new_target.is_valid()) {
     LoadRoot(r3, Heap::kUndefinedValueRootIndex);
   }
@@ -1324,6 +1372,11 @@ void MacroAssembler::InvokeCode(Register code,
   InvokePrologue(expected, actual, &done, &definitely_mismatches, flag,
                  call_wrapper);
   if (!definitely_mismatches) {
+    // We call indirectly through the code field in the function to
+    // allow recompilation to take effect without changing any of the
+    // call sites.
+    Register code = r4;
+    ldr(code, FieldMemOperand(function, JSFunction::kCodeEntryOffset));
     if (flag == CALL_FUNCTION) {
       call_wrapper.BeforeCall(CallSize(code));
       Call(code);
@@ -1352,19 +1405,17 @@ void MacroAssembler::InvokeFunction(Register fun,
   DCHECK(fun.is(r1));
 
   Register expected_reg = r2;
-  Register code_reg = r4;
+  Register temp_reg = r4;
 
-  ldr(code_reg, FieldMemOperand(r1, JSFunction::kSharedFunctionInfoOffset));
+  ldr(temp_reg, FieldMemOperand(r1, JSFunction::kSharedFunctionInfoOffset));
   ldr(cp, FieldMemOperand(r1, JSFunction::kContextOffset));
   ldr(expected_reg,
-      FieldMemOperand(code_reg,
+      FieldMemOperand(temp_reg,
                       SharedFunctionInfo::kFormalParameterCountOffset));
   SmiUntag(expected_reg);
-  ldr(code_reg,
-      FieldMemOperand(r1, JSFunction::kCodeEntryOffset));
 
   ParameterCount expected(expected_reg);
-  InvokeCode(code_reg, new_target, expected, actual, flag, call_wrapper);
+  InvokeFunctionCode(fun, new_target, expected, actual, flag, call_wrapper);
 }
 
 
@@ -1382,11 +1433,7 @@ void MacroAssembler::InvokeFunction(Register function,
   // Get the function and setup the context.
   ldr(cp, FieldMemOperand(r1, JSFunction::kContextOffset));
 
-  // We call indirectly through the code field in the function to
-  // allow recompilation to take effect without changing any of the
-  // call sites.
-  ldr(r4, FieldMemOperand(r1, JSFunction::kCodeEntryOffset));
-  InvokeCode(r4, no_reg, expected, actual, flag, call_wrapper);
+  InvokeFunctionCode(r1, no_reg, expected, actual, flag, call_wrapper);
 }
 
 
@@ -1474,10 +1521,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
 #endif
 
   // Load the native context of the current context.
-  int offset =
-      Context::kHeaderSize + Context::GLOBAL_OBJECT_INDEX * kPointerSize;
-  ldr(scratch, FieldMemOperand(scratch, offset));
-  ldr(scratch, FieldMemOperand(scratch, JSGlobalObject::kNativeContextOffset));
+  ldr(scratch, ContextMemOperand(scratch, Context::NATIVE_CONTEXT_INDEX));
 
   // Check the context is a native context.
   if (emit_debug_code()) {
@@ -2473,7 +2517,8 @@ void MacroAssembler::InvokeBuiltin(int native_context_index, InvokeFlag flag,
   // You can't call a builtin without a valid frame.
   DCHECK(flag == JUMP_FUNCTION || has_frame());
 
-  GetBuiltinEntry(r2, native_context_index);
+  LoadNativeContextSlot(native_context_index, r1);
+  ldr(r2, FieldMemOperand(r1, JSFunction::kCodeEntryOffset));
   if (flag == CALL_FUNCTION) {
     call_wrapper.BeforeCall(CallSize(r2));
     Call(r2);
@@ -2482,26 +2527,6 @@ void MacroAssembler::InvokeBuiltin(int native_context_index, InvokeFlag flag,
     DCHECK(flag == JUMP_FUNCTION);
     Jump(r2);
   }
-}
-
-
-void MacroAssembler::GetBuiltinFunction(Register target,
-                                        int native_context_index) {
-  // Load the builtins object into target register.
-  ldr(target,
-      MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  ldr(target, FieldMemOperand(target, JSGlobalObject::kNativeContextOffset));
-  // Load the JavaScript builtin function from the builtins object.
-  ldr(target, ContextOperand(target, native_context_index));
-}
-
-
-void MacroAssembler::GetBuiltinEntry(Register target,
-                                     int native_context_index) {
-  DCHECK(!target.is(r1));
-  GetBuiltinFunction(r1, native_context_index);
-  // Load the code entry point from the builtins object.
-  ldr(target, FieldMemOperand(r1, JSFunction::kCodeEntryOffset));
 }
 
 
@@ -2635,29 +2660,15 @@ void MacroAssembler::LoadContext(Register dst, int context_chain_length) {
 }
 
 
-void MacroAssembler::LoadGlobalProxy(Register dst) {
-  ldr(dst, GlobalObjectOperand());
-  ldr(dst, FieldMemOperand(dst, JSGlobalObject::kGlobalProxyOffset));
-}
-
-
 void MacroAssembler::LoadTransitionedArrayMapConditional(
     ElementsKind expected_kind,
     ElementsKind transitioned_kind,
     Register map_in_out,
     Register scratch,
     Label* no_map_match) {
-  // Load the global or builtins object from the current context.
-  ldr(scratch,
-      MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  ldr(scratch, FieldMemOperand(scratch, JSGlobalObject::kNativeContextOffset));
-
   // Check that the function's map is the same as the expected cached map.
-  ldr(scratch,
-      MemOperand(scratch,
-                 Context::SlotOffset(Context::JS_ARRAY_MAPS_INDEX)));
-  size_t offset = expected_kind * kPointerSize +
-      FixedArrayBase::kHeaderSize;
+  LoadNativeContextSlot(Context::JS_ARRAY_MAPS_INDEX, scratch);
+  size_t offset = expected_kind * kPointerSize + FixedArrayBase::kHeaderSize;
   ldr(ip, FieldMemOperand(scratch, offset));
   cmp(map_in_out, ip);
   b(ne, no_map_match);
@@ -2669,15 +2680,9 @@ void MacroAssembler::LoadTransitionedArrayMapConditional(
 }
 
 
-void MacroAssembler::LoadGlobalFunction(int index, Register function) {
-  // Load the global or builtins object from the current context.
-  ldr(function,
-      MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  // Load the native context from the global or builtins object.
-  ldr(function,
-      FieldMemOperand(function, JSGlobalObject::kNativeContextOffset));
-  // Load the function from the native context.
-  ldr(function, MemOperand(function, Context::SlotOffset(index)));
+void MacroAssembler::LoadNativeContextSlot(int index, Register dst) {
+  ldr(dst, NativeContextMemOperand());
+  ldr(dst, ContextMemOperand(dst, index));
 }
 
 
@@ -2926,30 +2931,6 @@ void MacroAssembler::AllocateHeapNumberWithValue(Register result,
   AllocateHeapNumber(result, scratch1, scratch2, heap_number_map, gc_required);
   sub(scratch1, result, Operand(kHeapObjectTag));
   vstr(value, scratch1, HeapNumber::kValueOffset);
-}
-
-
-// Copies a fixed number of fields of heap objects from src to dst.
-void MacroAssembler::CopyFields(Register dst,
-                                Register src,
-                                LowDwVfpRegister double_scratch,
-                                int field_count) {
-  int double_count = field_count / (DwVfpRegister::kSizeInBytes / kPointerSize);
-  for (int i = 0; i < double_count; i++) {
-    vldr(double_scratch, FieldMemOperand(src, i * DwVfpRegister::kSizeInBytes));
-    vstr(double_scratch, FieldMemOperand(dst, i * DwVfpRegister::kSizeInBytes));
-  }
-
-  STATIC_ASSERT(SwVfpRegister::kSizeInBytes == kPointerSize);
-  STATIC_ASSERT(2 * SwVfpRegister::kSizeInBytes == DwVfpRegister::kSizeInBytes);
-
-  int remain = field_count % (DwVfpRegister::kSizeInBytes / kPointerSize);
-  if (remain != 0) {
-    vldr(double_scratch.low(),
-         FieldMemOperand(src, (field_count - 1) * kPointerSize));
-    vstr(double_scratch.low(),
-         FieldMemOperand(dst, (field_count - 1) * kPointerSize));
-  }
 }
 
 
@@ -3645,12 +3626,11 @@ bool AreAliased(Register reg1,
 #endif
 
 
-CodePatcher::CodePatcher(byte* address,
-                         int instructions,
+CodePatcher::CodePatcher(Isolate* isolate, byte* address, int instructions,
                          FlushICache flush_cache)
     : address_(address),
       size_(instructions * Assembler::kInstrSize),
-      masm_(NULL, address, size_ + Assembler::kGap),
+      masm_(isolate, address, size_ + Assembler::kGap, CodeObjectRequired::kNo),
       flush_cache_(flush_cache) {
   // Create a new macro assembler pointing to the address of the code to patch.
   // The size is adjusted with kGap on order for the assembler to generate size
@@ -3662,7 +3642,7 @@ CodePatcher::CodePatcher(byte* address,
 CodePatcher::~CodePatcher() {
   // Indicate that code has changed.
   if (flush_cache_ == FLUSH) {
-    Assembler::FlushICacheWithoutIsolate(address_, size_);
+    Assembler::FlushICache(masm_.isolate(), address_, size_);
   }
 
   // Check that the code was patched as expected.

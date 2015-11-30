@@ -190,12 +190,6 @@ bool Object::IsConstructor() const {
 }
 
 
-bool Object::IsSpecObject() const {
-  return Object::IsHeapObject()
-    && HeapObject::cast(this)->map()->instance_type() >= FIRST_SPEC_OBJECT_TYPE;
-}
-
-
 bool Object::IsTemplateInfo() const {
   return IsObjectTemplateInfo() || IsFunctionTemplateInfo();
 }
@@ -1995,6 +1989,16 @@ void JSObject::initialize_elements() {
 }
 
 
+InterceptorInfo* JSObject::GetIndexedInterceptor() {
+  DCHECK(map()->has_indexed_interceptor());
+  JSFunction* constructor = JSFunction::cast(map()->GetConstructor());
+  DCHECK(constructor->shared()->IsApiFunction());
+  Object* result =
+      constructor->shared()->get_api_func_data()->indexed_property_handler();
+  return InterceptorInfo::cast(result);
+}
+
+
 ACCESSORS(Oddball, to_string, String, kToStringOffset)
 ACCESSORS(Oddball, to_number, Object, kToNumberOffset)
 ACCESSORS(Oddball, type_of, String, kTypeOfOffset)
@@ -2288,7 +2292,7 @@ Object* JSObject::InObjectPropertyAtPut(int index,
 }
 
 
-void JSObject::InitializeBody(Map* map,
+void JSObject::InitializeBody(Map* map, int start_offset,
                               Object* pre_allocated_value,
                               Object* filler_value) {
   DCHECK(!filler_value->IsHeapObject() ||
@@ -2296,7 +2300,7 @@ void JSObject::InitializeBody(Map* map,
   DCHECK(!pre_allocated_value->IsHeapObject() ||
          !GetHeap()->InNewSpace(pre_allocated_value));
   int size = map->instance_size();
-  int offset = kHeaderSize;
+  int offset = start_offset;
   if (filler_value != pre_allocated_value) {
     int end_of_pre_allocated_offset =
         size - (map->unused_property_fields() * kPointerSize);
@@ -2360,7 +2364,7 @@ bool Object::IsStringObjectWithCharacterAt(uint32_t index) {
 
 void Object::VerifyApiCallResultType() {
 #if DEBUG
-  if (!(IsSmi() || IsString() || IsSymbol() || IsSpecObject() ||
+  if (!(IsSmi() || IsString() || IsSymbol() || IsJSReceiver() ||
         IsHeapNumber() || IsSimd128Value() || IsUndefined() || IsTrue() ||
         IsFalse() || IsNull())) {
     FATAL("API call returned invalid object");
@@ -2582,20 +2586,6 @@ void FixedArray::set(int index,
   int offset = kHeaderSize + index * kPointerSize;
   WRITE_FIELD(this, offset, value);
   CONDITIONAL_WRITE_BARRIER(GetHeap(), this, offset, value, mode);
-}
-
-
-void FixedArray::NoIncrementalWriteBarrierSet(FixedArray* array,
-                                              int index,
-                                              Object* value) {
-  DCHECK(array->map() != array->GetHeap()->fixed_cow_array_map());
-  DCHECK(index >= 0 && index < array->length());
-  int offset = kHeaderSize + index * kPointerSize;
-  WRITE_FIELD(array, offset, value);
-  Heap* heap = array->GetHeap();
-  if (heap->InNewSpace(value)) {
-    heap->RecordWrite(array->address(), offset);
-  }
 }
 
 
@@ -3037,20 +3027,12 @@ void DescriptorArray::Get(int descriptor_number, Descriptor* desc) {
 }
 
 
-void DescriptorArray::Set(int descriptor_number,
-                          Descriptor* desc,
-                          const WhitenessWitness&) {
+void DescriptorArray::SetDescriptor(int descriptor_number, Descriptor* desc) {
   // Range check.
   DCHECK(descriptor_number < number_of_descriptors());
-
-  NoIncrementalWriteBarrierSet(this,
-                               ToKeyIndex(descriptor_number),
-                               *desc->GetKey());
-  NoIncrementalWriteBarrierSet(this,
-                               ToValueIndex(descriptor_number),
-                               *desc->GetValue());
-  NoIncrementalWriteBarrierSet(this, ToDetailsIndex(descriptor_number),
-                               desc->GetDetails().AsSmi());
+  set(ToKeyIndex(descriptor_number), *desc->GetKey());
+  set(ToValueIndex(descriptor_number), *desc->GetValue());
+  set(ToDetailsIndex(descriptor_number), desc->GetDetails().AsSmi());
 }
 
 
@@ -3088,19 +3070,6 @@ void DescriptorArray::SwapSortedKeys(int first, int second) {
   int first_key = GetSortedKeyIndex(first);
   SetSortedKey(first, GetSortedKeyIndex(second));
   SetSortedKey(second, first_key);
-}
-
-
-DescriptorArray::WhitenessWitness::WhitenessWitness(DescriptorArray* array)
-    : marking_(array->GetHeap()->incremental_marking()) {
-  marking_->EnterNoMarkingScope();
-  DCHECK(!marking_->IsMarking() ||
-         Marking::Color(array) == Marking::WHITE_OBJECT);
-}
-
-
-DescriptorArray::WhitenessWitness::~WhitenessWitness() {
-  marking_->LeaveNoMarkingScope();
 }
 
 
@@ -5590,7 +5559,6 @@ ACCESSORS(Box, value, Object, kValueOffset)
 ACCESSORS(PrototypeInfo, prototype_users, Object, kPrototypeUsersOffset)
 SMI_ACCESSORS(PrototypeInfo, registry_slot, kRegistrySlotOffset)
 ACCESSORS(PrototypeInfo, validity_cell, Object, kValidityCellOffset)
-ACCESSORS(PrototypeInfo, constructor_name, Object, kConstructorNameOffset)
 
 ACCESSORS(SloppyBlockWithEvalContextExtension, scope_info, ScopeInfo,
           kScopeInfoOffset)
@@ -5648,8 +5616,6 @@ SMI_ACCESSORS(FunctionTemplateInfo, flag, kFlagOffset)
 ACCESSORS(ObjectTemplateInfo, constructor, Object, kConstructorOffset)
 ACCESSORS(ObjectTemplateInfo, internal_field_count, Object,
           kInternalFieldCountOffset)
-
-ACCESSORS(TypeSwitchInfo, types, Object, kTypesOffset)
 
 ACCESSORS(AllocationSite, transition_info, Object, kTransitionInfoOffset)
 ACCESSORS(AllocationSite, nested_site, Object, kNestedSiteOffset)
@@ -6391,7 +6357,6 @@ int JSFunction::NumberOfLiterals() {
 ACCESSORS(JSProxy, target, Object, kTargetOffset)
 ACCESSORS(JSProxy, handler, Object, kHandlerOffset)
 ACCESSORS(JSProxy, hash, Object, kHashOffset)
-bool JSProxy::has_handler() { return !handler()->IsNull(); }
 
 ACCESSORS(JSFunctionProxy, call_trap, JSReceiver, kCallTrapOffset)
 ACCESSORS(JSFunctionProxy, construct_trap, Object, kConstructTrapOffset)

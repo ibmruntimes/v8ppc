@@ -72,11 +72,17 @@ namespace compiler {
   V(Mips64Float64RoundTruncate)     \
   V(Mips64Float64RoundUp)           \
   V(Mips64Float64RoundTiesEven)     \
+  V(Mips64Float32RoundDown)         \
+  V(Mips64Float32RoundTruncate)     \
+  V(Mips64Float32RoundUp)           \
+  V(Mips64Float32RoundTiesEven)     \
   V(Mips64CvtSD)                    \
   V(Mips64CvtDS)                    \
   V(Mips64TruncWD)                  \
+  V(Mips64TruncLS)                  \
   V(Mips64TruncLD)                  \
   V(Mips64TruncUwD)                 \
+  V(Mips64TruncUlS)                 \
   V(Mips64TruncUlD)                 \
   V(Mips64CvtDW)                    \
   V(Mips64CvtSL)                    \

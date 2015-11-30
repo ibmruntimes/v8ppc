@@ -16,23 +16,18 @@ RUNTIME_FUNCTION(Runtime_CreateJSProxy) {
   DCHECK(args.length() == 2);
   CONVERT_ARG_HANDLE_CHECKED(Object, target, 0);
   CONVERT_ARG_HANDLE_CHECKED(Object, handler, 1);
-  if (!target->IsSpecObject()) {
+  if (!target->IsJSReceiver()) {
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate, NewTypeError(MessageTemplate::kProxyTargetNonObject));
   }
-  if (target->IsJSProxy() && !JSProxy::cast(*target)->has_handler()) {
-    // TODO(cbruni): Use better error message.
-    THROW_NEW_ERROR_RETURN_FAILURE(
-        isolate, NewTypeError(MessageTemplate::kProxyTargetNonObject));
-  }
-  if (!handler->IsSpecObject()) {
+  if (!handler->IsJSReceiver()) {
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate, NewTypeError(MessageTemplate::kProxyHandlerNonObject));
   }
-  if (handler->IsJSProxy() && !JSProxy::cast(*handler)->has_handler()) {
-    // TODO(cbruni): Use better error message.
+  if ((target->IsJSProxy() && JSProxy::cast(*target)->IsRevoked()) ||
+      (handler->IsJSProxy() && JSProxy::cast(*handler)->IsRevoked())) {
     THROW_NEW_ERROR_RETURN_FAILURE(
-        isolate, NewTypeError(MessageTemplate::kProxyHandlerNonObject));
+        isolate, NewTypeError(MessageTemplate::kProxyHandlerOrTargetRevoked));
   }
   return *isolate->factory()->NewJSProxy(Handle<JSReceiver>::cast(target),
                                          Handle<JSReceiver>::cast(handler));

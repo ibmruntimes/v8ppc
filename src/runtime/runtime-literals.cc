@@ -6,9 +6,9 @@
 
 #include "src/allocation-site-scopes.h"
 #include "src/arguments.h"
-#include "src/ast.h"
+#include "src/ast/ast.h"
 #include "src/isolate-inl.h"
-#include "src/parser.h"
+#include "src/parsing/parser.h"
 #include "src/runtime/runtime.h"
 
 namespace v8 {
@@ -233,6 +233,25 @@ MUST_USE_RESULT static MaybeHandle<Object> CreateLiteralBoilerplate(
       UNREACHABLE();
       return MaybeHandle<Object>();
   }
+}
+
+
+RUNTIME_FUNCTION(Runtime_CreateRegExpLiteral) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(4, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, closure, 0);
+  CONVERT_SMI_ARG_CHECKED(index, 1);
+  CONVERT_ARG_HANDLE_CHECKED(String, pattern, 2);
+  CONVERT_SMI_ARG_CHECKED(flags, 3);
+
+  // Check if boilerplate exists. If not, create it first.
+  Handle<Object> boilerplate(closure->literals()->literal(index), isolate);
+  if (boilerplate->IsUndefined()) {
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, boilerplate, JSRegExp::New(pattern, JSRegExp::Flags(flags)));
+    closure->literals()->set_literal(index, *boilerplate);
+  }
+  return *JSRegExp::Copy(Handle<JSRegExp>::cast(boilerplate));
 }
 
 

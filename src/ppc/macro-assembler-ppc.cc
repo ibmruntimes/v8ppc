@@ -20,11 +20,12 @@
 namespace v8 {
 namespace internal {
 
-MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size)
+MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size,
+                               CodeObjectRequired create_code_object)
     : Assembler(arg_isolate, buffer, size),
       generating_stub_(false),
       has_frame_(false) {
-  if (isolate() != NULL) {
+  if (create_code_object == CodeObjectRequired::kYes) {
     code_object_ =
         Handle<Object>::New(isolate()->heap()->undefined_value(), isolate());
   }
@@ -50,7 +51,7 @@ void MacroAssembler::Jump(intptr_t target, RelocInfo::Mode rmode,
   if (cond != al) b(NegateCondition(cond), &skip, cr);
 
   DCHECK(rmode == RelocInfo::CODE_TARGET || rmode == RelocInfo::RUNTIME_ENTRY ||
-         rmode == RelocInfo::CONSTRUCT_CALL);
+         rmode == RelocInfo::CODE_TARGET);
 
   mov(ip, Operand(target, rmode));
   mtctr(ip);
@@ -2754,32 +2755,6 @@ void MacroAssembler::AllocateHeapNumberWithValue(
 }
 
 
-// Copies a fixed number of fields of heap objects from src to dst.
-void MacroAssembler::CopyFields(Register dst, Register src, RegList temps,
-                                int field_count) {
-  // At least one bit set in the first 15 registers.
-  DCHECK((temps & ((1 << 15) - 1)) != 0);
-  DCHECK((temps & dst.bit()) == 0);
-  DCHECK((temps & src.bit()) == 0);
-  // Primitive implementation using only one temporary register.
-
-  Register tmp = no_reg;
-  // Find a temp register in temps list.
-  for (int i = 0; i < 15; i++) {
-    if ((temps & (1 << i)) != 0) {
-      tmp.set_code(i);
-      break;
-    }
-  }
-  DCHECK(!tmp.is(no_reg));
-
-  for (int i = 0; i < field_count; i++) {
-    LoadP(tmp, FieldMemOperand(src, i * kPointerSize), r0);
-    StoreP(tmp, FieldMemOperand(dst, i * kPointerSize), r0);
-  }
-}
-
-
 void MacroAssembler::CopyBytes(Register src, Register dst, Register length,
                                Register scratch) {
   Label align_loop, aligned, word_loop, byte_loop, byte_loop_1, done;
@@ -4378,11 +4353,11 @@ bool AreAliased(Register reg1, Register reg2, Register reg3, Register reg4,
 #endif
 
 
-CodePatcher::CodePatcher(byte* address, int instructions,
+CodePatcher::CodePatcher(Isolate* isolate, byte* address, int instructions,
                          FlushICache flush_cache)
     : address_(address),
       size_(instructions * Assembler::kInstrSize),
-      masm_(NULL, address, size_ + Assembler::kGap),
+      masm_(isolate, address, size_ + Assembler::kGap, CodeObjectRequired::kNo),
       flush_cache_(flush_cache) {
   // Create a new macro assembler pointing to the address of the code to patch.
   // The size is adjusted with kGap on order for the assembler to generate size
@@ -4394,7 +4369,7 @@ CodePatcher::CodePatcher(byte* address, int instructions,
 CodePatcher::~CodePatcher() {
   // Indicate that code has changed.
   if (flush_cache_ == FLUSH) {
-    Assembler::FlushICacheWithoutIsolate(address_, size_);
+    Assembler::FlushICache(masm_.isolate(), address_, size_);
   }
 
   // Check that the code was patched as expected.

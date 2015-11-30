@@ -89,8 +89,6 @@ StaticVisitorBase::VisitorId StaticVisitorBase::GetVisitorId(
     case SHARED_FUNCTION_INFO_TYPE:
       return kVisitSharedFunctionInfo;
 
-    case JS_SET_TYPE:
-    case JS_MAP_TYPE:
     case JS_PROXY_TYPE:
     case JS_FUNCTION_PROXY_TYPE:
       return GetVisitorIdForSize(kVisitStruct, kVisitStructGeneric,
@@ -102,12 +100,6 @@ StaticVisitorBase::VisitorId StaticVisitorBase::GetVisitorId(
     case JS_ARRAY_BUFFER_TYPE:
       return kVisitJSArrayBuffer;
 
-    case JS_TYPED_ARRAY_TYPE:
-      return kVisitJSTypedArray;
-
-    case JS_DATA_VIEW_TYPE:
-      return kVisitJSDataView;
-
     case JS_OBJECT_TYPE:
     case JS_CONTEXT_EXTENSION_OBJECT_TYPE:
     case JS_GENERATOR_OBJECT_TYPE:
@@ -118,6 +110,10 @@ StaticVisitorBase::VisitorId StaticVisitorBase::GetVisitorId(
     case JS_GLOBAL_PROXY_TYPE:
     case JS_GLOBAL_OBJECT_TYPE:
     case JS_MESSAGE_OBJECT_TYPE:
+    case JS_TYPED_ARRAY_TYPE:
+    case JS_DATA_VIEW_TYPE:
+    case JS_SET_TYPE:
+    case JS_MAP_TYPE:
     case JS_SET_ITERATOR_TYPE:
     case JS_MAP_ITERATOR_TYPE:
     case JS_ITERATOR_RESULT_TYPE:

@@ -33,9 +33,10 @@
 #include "src/global-handles.h"
 #include "src/icu_util.h"
 #include "src/isolate-inl.h"
-#include "src/json-parser.h"
 #include "src/messages.h"
-#include "src/parser.h"
+#include "src/parsing/json-parser.h"
+#include "src/parsing/parser.h"
+#include "src/parsing/scanner-character-streams.h"
 #include "src/pending-compilation-error-handler.h"
 #include "src/profiler/cpu-profiler.h"
 #include "src/profiler/heap-profiler.h"
@@ -48,7 +49,6 @@
 #include "src/prototype.h"
 #include "src/runtime/runtime.h"
 #include "src/runtime-profiler.h"
-#include "src/scanner-character-streams.h"
 #include "src/simulator.h"
 #include "src/snapshot/natives.h"
 #include "src/snapshot/snapshot.h"
@@ -1066,41 +1066,6 @@ Local<Signature> Signature::New(Isolate* isolate,
 Local<AccessorSignature> AccessorSignature::New(
     Isolate* isolate, Local<FunctionTemplate> receiver) {
   return Utils::AccessorSignatureToLocal(Utils::OpenHandle(*receiver));
-}
-
-
-Local<TypeSwitch> TypeSwitch::New(Local<FunctionTemplate> type) {
-  Local<FunctionTemplate> types[1] = {type};
-  return TypeSwitch::New(1, types);
-}
-
-
-Local<TypeSwitch> TypeSwitch::New(int argc, Local<FunctionTemplate> types[]) {
-  i::Isolate* isolate = i::Isolate::Current();
-  LOG_API(isolate, "TypeSwitch::New");
-  ENTER_V8(isolate);
-  i::Handle<i::FixedArray> vector = isolate->factory()->NewFixedArray(argc);
-  for (int i = 0; i < argc; i++)
-    vector->set(i, *Utils::OpenHandle(*types[i]));
-  i::Handle<i::Struct> struct_obj =
-      isolate->factory()->NewStruct(i::TYPE_SWITCH_INFO_TYPE);
-  i::Handle<i::TypeSwitchInfo> obj =
-      i::Handle<i::TypeSwitchInfo>::cast(struct_obj);
-  obj->set_types(*vector);
-  return Utils::ToLocal(obj);
-}
-
-
-int TypeSwitch::match(v8::Local<Value> value) {
-  i::Handle<i::TypeSwitchInfo> info = Utils::OpenHandle(this);
-  LOG_API(info->GetIsolate(), "TypeSwitch::match");
-  i::Handle<i::Object> obj = Utils::OpenHandle(*value);
-  i::FixedArray* types = i::FixedArray::cast(info->types());
-  for (int i = 0; i < types->length(); i++) {
-    if (i::FunctionTemplateInfo::cast(types->get(i))->IsTemplateFor(*obj))
-      return i + 1;
-  }
-  return 0;
 }
 
 
@@ -3870,7 +3835,7 @@ Local<String> v8::Object::ObjectProtoToString() {
 
 Local<String> v8::Object::GetConstructorName() {
   auto self = Utils::OpenHandle(this);
-  i::Handle<i::String> name(self->constructor_name());
+  i::Handle<i::String> name = i::JSReceiver::GetConstructorName(self);
   return Utils::ToLocal(name);
 }
 
@@ -3879,12 +3844,11 @@ Maybe<bool> v8::Object::Delete(Local<Context> context, Local<Value> key) {
   PREPARE_FOR_EXECUTION_PRIMITIVE(context, "v8::Object::Delete()", bool);
   auto self = Utils::OpenHandle(this);
   auto key_obj = Utils::OpenHandle(*key);
-  i::Handle<i::Object> obj;
-  has_pending_exception =
-      !i::Runtime::DeleteObjectProperty(isolate, self, key_obj, i::SLOPPY)
-           .ToHandle(&obj);
+  Maybe<bool> result =
+      i::Runtime::DeleteObjectProperty(isolate, self, key_obj, i::SLOPPY);
+  has_pending_exception = result.IsNothing();
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-  return Just(obj->IsTrue());
+  return result;
 }
 
 
@@ -3937,11 +3901,10 @@ Maybe<bool> v8::Object::Delete(Local<Context> context, uint32_t index) {
   PREPARE_FOR_EXECUTION_PRIMITIVE(context, "v8::Object::DeleteProperty()",
                                   bool);
   auto self = Utils::OpenHandle(this);
-  i::Handle<i::Object> obj;
-  has_pending_exception =
-      !i::JSReceiver::DeleteElement(self, index).ToHandle(&obj);
+  Maybe<bool> result = i::JSReceiver::DeleteElement(self, index);
+  has_pending_exception = result.IsNothing();
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-  return Just(obj->IsTrue());
+  return result;
 }
 
 
@@ -6029,17 +5992,21 @@ double v8::NumberObject::ValueOf() const {
 }
 
 
-Local<v8::Value> v8::BooleanObject::New(bool value) {
-  i::Isolate* isolate = i::Isolate::Current();
-  LOG_API(isolate, "BooleanObject::New");
-  ENTER_V8(isolate);
-  i::Handle<i::Object> boolean(value
-                               ? isolate->heap()->true_value()
-                               : isolate->heap()->false_value(),
-                               isolate);
+Local<v8::Value> v8::BooleanObject::New(Isolate* isolate, bool value) {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  LOG_API(i_isolate, "BooleanObject::New");
+  ENTER_V8(i_isolate);
+  i::Handle<i::Object> boolean(value ? i_isolate->heap()->true_value()
+                                     : i_isolate->heap()->false_value(),
+                               i_isolate);
   i::Handle<i::Object> obj =
-      i::Object::ToObject(isolate, boolean).ToHandleChecked();
+      i::Object::ToObject(i_isolate, boolean).ToHandleChecked();
   return Utils::ToLocal(obj);
+}
+
+
+Local<v8::Value> v8::BooleanObject::New(bool value) {
+  return New(Isolate::GetCurrent(), value);
 }
 
 
@@ -6142,28 +6109,14 @@ void v8::Date::DateTimeConfigurationChangeNotification(Isolate* isolate) {
 }
 
 
-static i::Handle<i::String> RegExpFlagsToString(RegExp::Flags flags) {
-  i::Isolate* isolate = i::Isolate::Current();
-  uint8_t flags_buf[5];
-  int num_flags = 0;
-  if ((flags & RegExp::kGlobal) != 0) flags_buf[num_flags++] = 'g';
-  if ((flags & RegExp::kMultiline) != 0) flags_buf[num_flags++] = 'm';
-  if ((flags & RegExp::kIgnoreCase) != 0) flags_buf[num_flags++] = 'i';
-  if ((flags & RegExp::kSticky) != 0) flags_buf[num_flags++] = 'y';
-  if ((flags & RegExp::kUnicode) != 0) flags_buf[num_flags++] = 'u';
-  DCHECK(num_flags <= static_cast<int>(arraysize(flags_buf)));
-  return isolate->factory()->InternalizeOneByteString(
-      i::Vector<const uint8_t>(flags_buf, num_flags));
-}
-
-
 MaybeLocal<v8::RegExp> v8::RegExp::New(Local<Context> context,
                                        Local<String> pattern, Flags flags) {
   PREPARE_FOR_EXECUTION(context, "RegExp::New", RegExp);
   Local<v8::RegExp> result;
-  has_pending_exception = !ToLocal<RegExp>(
-      i::JSRegExp::New(Utils::OpenHandle(*pattern), RegExpFlagsToString(flags)),
-      &result);
+  has_pending_exception =
+      !ToLocal<RegExp>(i::JSRegExp::New(Utils::OpenHandle(*pattern),
+                                        static_cast<i::JSRegExp::Flags>(flags)),
+                       &result);
   RETURN_ON_FAILED_EXECUTION(RegExp);
   RETURN_ESCAPED(result);
 }
@@ -6184,20 +6137,20 @@ Local<v8::String> v8::RegExp::GetSource() const {
 
 
 // Assert that the static flags cast in GetFlags is valid.
-#define REGEXP_FLAG_ASSERT_EQ(api_flag, internal_flag)          \
-  STATIC_ASSERT(static_cast<int>(v8::RegExp::api_flag) ==       \
-                static_cast<int>(i::JSRegExp::internal_flag))
-REGEXP_FLAG_ASSERT_EQ(kNone, NONE);
-REGEXP_FLAG_ASSERT_EQ(kGlobal, GLOBAL);
-REGEXP_FLAG_ASSERT_EQ(kIgnoreCase, IGNORE_CASE);
-REGEXP_FLAG_ASSERT_EQ(kMultiline, MULTILINE);
-REGEXP_FLAG_ASSERT_EQ(kSticky, STICKY);
-REGEXP_FLAG_ASSERT_EQ(kUnicode, UNICODE_ESCAPES);
+#define REGEXP_FLAG_ASSERT_EQ(flag)                   \
+  STATIC_ASSERT(static_cast<int>(v8::RegExp::flag) == \
+                static_cast<int>(i::JSRegExp::flag))
+REGEXP_FLAG_ASSERT_EQ(kNone);
+REGEXP_FLAG_ASSERT_EQ(kGlobal);
+REGEXP_FLAG_ASSERT_EQ(kIgnoreCase);
+REGEXP_FLAG_ASSERT_EQ(kMultiline);
+REGEXP_FLAG_ASSERT_EQ(kSticky);
+REGEXP_FLAG_ASSERT_EQ(kUnicode);
 #undef REGEXP_FLAG_ASSERT_EQ
 
 v8::RegExp::Flags v8::RegExp::GetFlags() const {
   i::Handle<i::JSRegExp> obj = Utils::OpenHandle(this);
-  return static_cast<RegExp::Flags>(obj->GetFlags().value());
+  return RegExp::Flags(static_cast<int>(obj->GetFlags()));
 }
 
 
@@ -7741,14 +7694,22 @@ DEFINE_ERROR(Error, error)
 #undef DEFINE_ERROR
 
 
+Local<Message> Exception::CreateMessage(Isolate* isolate,
+                                        Local<Value> exception) {
+  i::Handle<i::Object> obj = Utils::OpenHandle(*exception);
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  ENTER_V8(i_isolate);
+  i::HandleScope scope(i_isolate);
+  return Utils::MessageToLocal(
+      scope.CloseAndEscape(i_isolate->CreateMessage(obj, NULL)));
+}
+
+
 Local<Message> Exception::CreateMessage(Local<Value> exception) {
   i::Handle<i::Object> obj = Utils::OpenHandle(*exception);
   if (!obj->IsHeapObject()) return Local<Message>();
   i::Isolate* isolate = i::HeapObject::cast(*obj)->GetIsolate();
-  ENTER_V8(isolate);
-  i::HandleScope scope(isolate);
-  return Utils::MessageToLocal(
-      scope.CloseAndEscape(isolate->CreateMessage(obj, NULL)));
+  return CreateMessage(reinterpret_cast<Isolate*>(isolate), exception);
 }
 
 
@@ -7895,8 +7856,8 @@ MaybeLocal<Array> Debug::GetInternalProperties(Isolate* v8_isolate,
 
 
 Local<String> CpuProfileNode::GetFunctionName() const {
-  i::Isolate* isolate = i::Isolate::Current();
   const i::ProfileNode* node = reinterpret_cast<const i::ProfileNode*>(this);
+  i::Isolate* isolate = node->isolate();
   const i::CodeEntry* entry = node->entry();
   i::Handle<i::String> name =
       isolate->factory()->InternalizeUtf8String(entry->name());
@@ -7920,8 +7881,8 @@ int CpuProfileNode::GetScriptId() const {
 
 
 Local<String> CpuProfileNode::GetScriptResourceName() const {
-  i::Isolate* isolate = i::Isolate::Current();
   const i::ProfileNode* node = reinterpret_cast<const i::ProfileNode*>(this);
+  i::Isolate* isolate = node->isolate();
   return ToApiHandle<String>(isolate->factory()->InternalizeUtf8String(
       node->entry()->resource_name()));
 }
@@ -7991,16 +7952,17 @@ const std::vector<CpuProfileDeoptInfo>& CpuProfileNode::GetDeoptInfos() const {
 
 
 void CpuProfile::Delete() {
-  i::Isolate* isolate = i::Isolate::Current();
+  i::CpuProfile* profile = reinterpret_cast<i::CpuProfile*>(this);
+  i::Isolate* isolate = profile->top_down()->isolate();
   i::CpuProfiler* profiler = isolate->cpu_profiler();
   DCHECK(profiler != NULL);
-  profiler->DeleteProfile(reinterpret_cast<i::CpuProfile*>(this));
+  profiler->DeleteProfile(profile);
 }
 
 
 Local<String> CpuProfile::GetTitle() const {
-  i::Isolate* isolate = i::Isolate::Current();
   const i::CpuProfile* profile = reinterpret_cast<const i::CpuProfile*>(this);
+  i::Isolate* isolate = profile->top_down()->isolate();
   return ToApiHandle<String>(isolate->factory()->InternalizeUtf8String(
       profile->title()));
 }
@@ -8087,8 +8049,8 @@ HeapGraphEdge::Type HeapGraphEdge::GetType() const {
 
 
 Local<Value> HeapGraphEdge::GetName() const {
-  i::Isolate* isolate = i::Isolate::Current();
   i::HeapGraphEdge* edge = ToInternal(this);
+  i::Isolate* isolate = edge->isolate();
   switch (edge->type()) {
     case i::HeapGraphEdge::kContextVariable:
     case i::HeapGraphEdge::kInternal:
@@ -8131,7 +8093,7 @@ HeapGraphNode::Type HeapGraphNode::GetType() const {
 
 
 Local<String> HeapGraphNode::GetName() const {
-  i::Isolate* isolate = i::Isolate::Current();
+  i::Isolate* isolate = ToInternal(this)->isolate();
   return ToApiHandle<String>(
       isolate->factory()->InternalizeUtf8String(ToInternal(this)->name()));
 }
@@ -8165,7 +8127,7 @@ static i::HeapSnapshot* ToInternal(const HeapSnapshot* snapshot) {
 
 
 void HeapSnapshot::Delete() {
-  i::Isolate* isolate = i::Isolate::Current();
+  i::Isolate* isolate = ToInternal(this)->profiler()->isolate();
   if (isolate->heap_profiler()->GetSnapshotsCount() > 1) {
     ToInternal(this)->Delete();
   } else {
@@ -8361,11 +8323,10 @@ void Testing::PrepareStressRun(int run) {
 }
 
 
-// TODO(svenpanne) Deprecate this.
-void Testing::DeoptimizeAll() {
-  i::Isolate* isolate = i::Isolate::Current();
-  i::HandleScope scope(isolate);
-  internal::Deoptimizer::DeoptimizeAll(isolate);
+void Testing::DeoptimizeAll(Isolate* isolate) {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i::HandleScope scope(i_isolate);
+  internal::Deoptimizer::DeoptimizeAll(i_isolate);
 }
 
 

@@ -13,8 +13,11 @@ deps = {
     Var("git_url") + "/chromium/deps/icu.git" + "@" + "42c58d4e49f2250039f0e98d43e0b76e8f5ca024",
   "v8/buildtools":
     Var("git_url") + "/chromium/buildtools.git" + "@" + "818123dac34899ec230840936fc15b8b2b5556f9",
+  # TODO(fmeawad): this dependency is not currently used. Added to allow for developement of the V8 Tracing system.
+  "v8/src/tracing/common":
+    Var("git_url") + "/chromium/src/base/trace_event/common.git" + "@" + "d83d44b13d07c2fd0a40101a7deef9b93b841732",
   "v8/tools/swarming_client":
-    Var('git_url') + '/external/swarming.client.git' + '@' + "05e17879accce360bee999cd9ec891d761056bc2",
+    Var('git_url') + '/external/swarming.client.git' + '@' + "df99a00d96fae932bae824dccba13156bf7eddd0",
   "v8/testing/gtest":
     Var("git_url") + "/external/github.com/google/googletest.git" + "@" + "6f8a66431cb592dad629028a50b3dd418a408c87",
   "v8/testing/gmock":
@@ -25,9 +28,9 @@ deps = {
     Var("git_url") + "/v8/deps/third_party/mozilla-tests.git" + "@" + "f6c578a10ea707b1a8ab0b88943fe5115ce2b9be",
   "v8/test/simdjs/data": Var("git_url") + "/external/github.com/tc39/ecmascript_simd.git" + "@" + "c8ef63c728283debc25891123eb00482fee4b8cd",
   "v8/test/test262/data":
-    Var("git_url") + "/external/github.com/tc39/test262.git" + "@" + "ea222fb7d09e334c321b987656315ad4056ded96",
+    Var("git_url") + "/external/github.com/tc39/test262.git" + "@" + "fd44cd73dfbce0b515a2474b7cd505d6176a9eb5",
   "v8/tools/clang":
-    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "71b766acbd4f2dbe860bcb57c003eba006244ae9",
+    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "865186d384b106af211dcfaf2ab3f4e778773098",
 }
 
 deps_os = {

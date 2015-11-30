@@ -1233,11 +1233,16 @@ Type* Typer::Visitor::TypeJSCreateClosure(Node* node) {
 
 
 Type* Typer::Visitor::TypeJSCreateLiteralArray(Node* node) {
-  return Type::None(), Type::OtherObject();
+  return Type::OtherObject();
 }
 
 
 Type* Typer::Visitor::TypeJSCreateLiteralObject(Node* node) {
+  return Type::OtherObject();
+}
+
+
+Type* Typer::Visitor::TypeJSCreateLiteralRegExp(Node* node) {
   return Type::OtherObject();
 }
 
@@ -1257,7 +1262,37 @@ Type* Typer::Visitor::TypeJSLoadProperty(Node* node) {
 }
 
 
-Type* Typer::Visitor::TypeJSLoadNamed(Node* node) { return Type::Any(); }
+Type* Typer::Visitor::TypeJSLoadNamed(Node* node) {
+  Factory* const f = isolate()->factory();
+  Handle<Name> name = NamedAccessOf(node->op()).name();
+  if (name.is_identical_to(f->prototype_string())) {
+    Type* receiver = Operand(node, 0);
+    if (receiver->Is(Type::None())) return Type::None();
+    if (receiver->IsConstant() &&
+        receiver->AsConstant()->Value()->IsJSFunction()) {
+      Handle<JSFunction> function =
+          Handle<JSFunction>::cast(receiver->AsConstant()->Value());
+      if (function->has_prototype()) {
+        // We need to add a code dependency on the initial map of the {function}
+        // in order to be notified about changes to "prototype" of {function},
+        // so we can only infer a constant type if deoptimization is enabled.
+        if (flags() & kDeoptimizationEnabled) {
+          JSFunction::EnsureHasInitialMap(function);
+          Handle<Map> initial_map(function->initial_map(), isolate());
+          dependencies()->AssumeInitialMapCantChange(initial_map);
+          return Type::Constant(handle(initial_map->prototype(), isolate()),
+                                zone());
+        }
+      }
+    } else if (receiver->IsClass() &&
+               receiver->AsClass()->Map()->IsJSFunctionMap()) {
+      Handle<Map> map = receiver->AsClass()->Map();
+      return map->has_non_instance_prototype() ? Type::Primitive(zone())
+                                               : Type::Receiver(zone());
+    }
+  }
+  return Type::Any();
+}
 
 
 Type* Typer::Visitor::TypeJSLoadGlobal(Node* node) { return Type::Any(); }
@@ -1381,6 +1416,10 @@ Type* Typer::Visitor::TypeJSInstanceOf(Node* node) {
 
 
 Type* Typer::Visitor::TypeJSLoadContext(Node* node) {
+  ContextAccess const& access = ContextAccessOf(node->op());
+  if (access.index() == Context::EXTENSION_INDEX) {
+    return Type::TaggedPointer();
+  }
   // Since contexts are mutable, we just return the top.
   return Type::Any();
 }
@@ -1389,11 +1428,6 @@ Type* Typer::Visitor::TypeJSLoadContext(Node* node) {
 Type* Typer::Visitor::TypeJSStoreContext(Node* node) {
   UNREACHABLE();
   return nullptr;
-}
-
-
-Type* Typer::Visitor::TypeJSLoadNativeContext(Node* node) {
-  return Type::Intersect(Type::Internal(), Type::TaggedPointer(), zone());
 }
 
 
@@ -2097,7 +2131,17 @@ Type* Typer::Visitor::TypeChangeFloat64ToUint32(Node* node) {
 }
 
 
+Type* Typer::Visitor::TypeTruncateFloat32ToInt64(Node* node) {
+  return Type::Internal();
+}
+
+
 Type* Typer::Visitor::TypeTruncateFloat64ToInt64(Node* node) {
+  return Type::Internal();
+}
+
+
+Type* Typer::Visitor::TypeTruncateFloat32ToUint64(Node* node) {
   return Type::Internal();
 }
 
@@ -2265,13 +2309,31 @@ Type* Typer::Visitor::TypeFloat64LessThanOrEqual(Node* node) {
 }
 
 
+Type* Typer::Visitor::TypeFloat32RoundDown(Node* node) {
+  // TODO(sigurds): We could have a tighter bound here.
+  return Type::Number();
+}
+
+
 Type* Typer::Visitor::TypeFloat64RoundDown(Node* node) {
   // TODO(sigurds): We could have a tighter bound here.
   return Type::Number();
 }
 
 
+Type* Typer::Visitor::TypeFloat32RoundUp(Node* node) {
+  // TODO(sigurds): We could have a tighter bound here.
+  return Type::Number();
+}
+
+
 Type* Typer::Visitor::TypeFloat64RoundUp(Node* node) {
+  // TODO(sigurds): We could have a tighter bound here.
+  return Type::Number();
+}
+
+
+Type* Typer::Visitor::TypeFloat32RoundTruncate(Node* node) {
   // TODO(sigurds): We could have a tighter bound here.
   return Type::Number();
 }
@@ -2284,6 +2346,12 @@ Type* Typer::Visitor::TypeFloat64RoundTruncate(Node* node) {
 
 
 Type* Typer::Visitor::TypeFloat64RoundTiesAway(Node* node) {
+  // TODO(sigurds): We could have a tighter bound here.
+  return Type::Number();
+}
+
+
+Type* Typer::Visitor::TypeFloat32RoundTiesEven(Node* node) {
   // TODO(sigurds): We could have a tighter bound here.
   return Type::Number();
 }

@@ -125,7 +125,7 @@ macro IS_STRONG(arg)            = (%IsStrong(arg));
 # This is the same as being either a function or an object in V8 terminology
 # (including proxies).
 # In addition, an undetectable object is also included by this.
-macro IS_SPEC_OBJECT(arg)   = (%_IsSpecObject(arg));
+macro IS_SPEC_OBJECT(arg)   = (%_IsJSReceiver(arg));
 
 # Macro for ECMAScript 5 queries of the type:
 # "IsCallable(O)"
@@ -313,7 +313,6 @@ define NOT_FOUND = -1;
 
 # Check whether debug is active.
 define DEBUG_IS_ACTIVE = (%_DebugIsActive() != 0);
-macro DEBUG_IS_STEPPING(function) = (%_DebugIsActive() != 0 && %DebugCallbackSupportsStepping(function));
 macro DEBUG_PREPARE_STEP_IN_IF_STEPPING(function) = if (%_DebugIsActive() != 0) %DebugPrepareStepInIfStepping(function);
 
 # SharedFlag equivalents

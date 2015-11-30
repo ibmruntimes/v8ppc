@@ -216,7 +216,9 @@ void Interpreter::DoLoadGlobal(Callable ic,
                                compiler::InterpreterAssembler* assembler) {
   // Get the global object.
   Node* context = __ GetContext();
-  Node* global = __ LoadContextSlot(context, Context::GLOBAL_OBJECT_INDEX);
+  Node* native_context =
+      __ LoadContextSlot(context, Context::NATIVE_CONTEXT_INDEX);
+  Node* global = __ LoadContextSlot(native_context, Context::EXTENSION_INDEX);
 
   // Load the global via the LoadIC.
   Node* code_target = __ HeapConstant(ic.code());
@@ -330,7 +332,9 @@ void Interpreter::DoStoreGlobal(Callable ic,
                                 compiler::InterpreterAssembler* assembler) {
   // Get the global object.
   Node* context = __ GetContext();
-  Node* global = __ LoadContextSlot(context, Context::GLOBAL_OBJECT_INDEX);
+  Node* native_context =
+      __ LoadContextSlot(context, Context::NATIVE_CONTEXT_INDEX);
+  Node* global = __ LoadContextSlot(native_context, Context::EXTENSION_INDEX);
 
   // Store the global via the StoreIC.
   Node* code_target = __ HeapConstant(ic.code());
@@ -952,9 +956,8 @@ void Interpreter::DoCallJSRuntime(compiler::InterpreterAssembler* assembler) {
 
   // Get the function to call from the native context.
   Node* context = __ GetContext();
-  Node* global = __ LoadContextSlot(context, Context::GLOBAL_OBJECT_INDEX);
   Node* native_context =
-      __ LoadObjectField(global, JSGlobalObject::kNativeContextOffset);
+      __ LoadContextSlot(context, Context::NATIVE_CONTEXT_INDEX);
   Node* function = __ LoadContextSlot(native_context, context_index);
 
   // Call the function.
@@ -1311,27 +1314,6 @@ void Interpreter::DoJumpIfUndefinedConstant(
 }
 
 
-// CreateRegExpLiteral <idx> <flags_reg>
-//
-// Creates a regular expression literal for literal index <idx> with flags held
-// in <flags_reg> and the pattern in the accumulator.
-void Interpreter::DoCreateRegExpLiteral(
-    compiler::InterpreterAssembler* assembler) {
-  Node* pattern = __ GetAccumulator();
-  Node* literal_index_raw = __ BytecodeOperandIdx(0);
-  Node* literal_index = __ SmiTag(literal_index_raw);
-  Node* flags_reg = __ BytecodeOperandReg(1);
-  Node* flags = __ LoadRegister(flags_reg);
-  Node* closure = __ LoadRegister(Register::function_closure());
-  Node* literals_array =
-      __ LoadObjectField(closure, JSFunction::kLiteralsOffset);
-  Node* result = __ CallRuntime(Runtime::kMaterializeRegExpLiteral,
-                                literals_array, literal_index, pattern, flags);
-  __ SetAccumulator(result);
-  __ Dispatch();
-}
-
-
 void Interpreter::DoCreateLiteral(Runtime::FunctionId function_id,
                                   compiler::InterpreterAssembler* assembler) {
   Node* constant_elements = __ GetAccumulator();
@@ -1344,6 +1326,16 @@ void Interpreter::DoCreateLiteral(Runtime::FunctionId function_id,
                                 constant_elements, flags);
   __ SetAccumulator(result);
   __ Dispatch();
+}
+
+
+// CreateRegExpLiteral <idx> <flags>
+//
+// Creates a regular expression literal for literal index <idx> with <flags> and
+// the pattern in the accumulator.
+void Interpreter::DoCreateRegExpLiteral(
+    compiler::InterpreterAssembler* assembler) {
+  DoCreateLiteral(Runtime::kCreateRegExpLiteral, assembler);
 }
 
 
@@ -1367,20 +1359,31 @@ void Interpreter::DoCreateObjectLiteral(
 }
 
 
-// CreateClosure <tenured>
+// CreateClosure <index> <tenured>
 //
-// Creates a new closure for SharedFunctionInfo in the accumulator with the
-// PretenureFlag <tenured>.
+// Creates a new closure for SharedFunctionInfo at position |index| in the
+// constant pool and with the PretenureFlag <tenured>.
 void Interpreter::DoCreateClosure(compiler::InterpreterAssembler* assembler) {
   // TODO(rmcilroy): Possibly call FastNewClosureStub when possible instead of
   // calling into the runtime.
-  Node* shared = __ GetAccumulator();
-  Node* tenured_raw = __ BytecodeOperandImm(0);
+  Node* index = __ BytecodeOperandIdx(0);
+  Node* shared = __ LoadConstantPoolEntry(index);
+  Node* tenured_raw = __ BytecodeOperandImm(1);
   Node* tenured = __ SmiTag(tenured_raw);
   Node* result =
       __ CallRuntime(Runtime::kInterpreterNewClosure, shared, tenured);
   __ SetAccumulator(result);
   __ Dispatch();
+}
+
+
+// CreateClosureWide <index> <tenured>
+//
+// Creates a new closure for SharedFunctionInfo at position |index| in the
+// constant pool and with the PretenureFlag <tenured>.
+void Interpreter::DoCreateClosureWide(
+    compiler::InterpreterAssembler* assembler) {
+  return DoCreateClosure(assembler);
 }
 
 

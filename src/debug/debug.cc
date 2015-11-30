@@ -43,6 +43,7 @@ Debug::Debug(Isolate* isolate)
       break_on_exception_(false),
       break_on_uncaught_exception_(false),
       debug_info_list_(NULL),
+      feature_tracker_(isolate),
       isolate_(isolate) {
   ThreadInit();
 }
@@ -280,10 +281,11 @@ void BreakLocation::SetDebugBreak() {
   if (IsDebugBreak()) return;
 
   DCHECK(IsDebugBreakSlot());
-  Builtins* builtins = debug_info_->GetIsolate()->builtins();
+  Isolate* isolate = debug_info_->GetIsolate();
+  Builtins* builtins = isolate->builtins();
   Handle<Code> target =
       IsReturn() ? builtins->Return_DebugBreak() : builtins->Slot_DebugBreak();
-  DebugCodegen::PatchDebugBreakSlot(pc(), target);
+  DebugCodegen::PatchDebugBreakSlot(isolate, pc(), target);
   DCHECK(IsDebugBreak());
 }
 
@@ -293,7 +295,7 @@ void BreakLocation::ClearDebugBreak() {
   if (IsDebuggerStatement()) return;
 
   DCHECK(IsDebugBreakSlot());
-  DebugCodegen::ClearDebugBreakSlot(pc());
+  DebugCodegen::ClearDebugBreakSlot(debug_info_->GetIsolate(), pc());
   DCHECK(!IsDebugBreak());
 }
 
@@ -313,6 +315,15 @@ bool BreakLocation::IsDebugBreak() const {
 
 Handle<Object> BreakLocation::BreakPointObjects() const {
   return debug_info_->GetBreakPointObjects(pc_offset_);
+}
+
+
+void DebugFeatureTracker::Track(DebugFeatureTracker::Feature feature) {
+  uint32_t mask = 1 << feature;
+  // Only count one sample per feature and isolate.
+  if (bitfield_ & mask) return;
+  isolate_->counters()->debug_feature_usage()->AddSample(feature);
+  bitfield_ |= mask;
 }
 
 
@@ -396,6 +407,9 @@ bool Debug::Load() {
 
   debug_context_ = Handle<Context>::cast(
       isolate_->global_handles()->Create(*context));
+
+  feature_tracker()->Track(DebugFeatureTracker::kActive);
+
   return true;
 }
 
@@ -625,6 +639,8 @@ bool Debug::SetBreakPoint(Handle<JSFunction> function,
   *source_position = location.statement_position();
   location.SetBreakPoint(break_point_object);
 
+  feature_tracker()->Track(DebugFeatureTracker::kBreakPoint);
+
   // At least one active break point now.
   return debug_info->GetBreakPointCount() > 0;
 }
@@ -665,6 +681,8 @@ bool Debug::SetBreakPointForScript(Handle<Script> script,
   BreakLocation location = BreakLocation::FromPosition(
       debug_info, ALL_BREAK_LOCATIONS, position, alignment);
   location.SetBreakPoint(break_point_object);
+
+  feature_tracker()->Track(DebugFeatureTracker::kBreakPoint);
 
   position = (alignment == STATEMENT_ALIGNED) ? location.statement_position()
                                               : location.position();
@@ -731,6 +749,13 @@ void Debug::ClearAllBreakPoints() {
 
 void Debug::FloodWithOneShot(Handle<JSFunction> function,
                              BreakLocatorType type) {
+  if (!function->shared()->IsSubjectToDebugging()) {
+    // Builtin functions are not subject to stepping, but need to be
+    // deoptimized, because optimized code does not check for debug
+    // step in at call sites.
+    Deoptimizer::DeoptimizeFunction(*function);
+    return;
+  }
   // Make sure the function is compiled and has set up the debug info.
   Handle<SharedFunctionInfo> shared(function->shared());
   if (!EnsureDebugInfo(shared, function)) {
@@ -874,6 +899,8 @@ void Debug::PrepareStep(StepAction step_action,
   JavaScriptFrameIterator frames_it(isolate_, id);
   JavaScriptFrame* frame = frames_it.frame();
 
+  feature_tracker()->Track(DebugFeatureTracker::kStepping);
+
   // First of all ensure there is one-shot break points in the top handler
   // if any.
   FloodHandlerWithOneShot();
@@ -938,7 +965,7 @@ void Debug::PrepareStep(StepAction step_action,
     return;
   }
 
-  if (step_action != StepNext && step_action != StepMin) {
+  if (step_action != StepNext) {
     // If there's restarter frame on top of the stack, just get the pointer
     // to function which is going to be restarted.
     if (thread_local_.restarter_frame_function_pointer_ != NULL) {
@@ -2278,6 +2305,9 @@ void Debug::HandleDebugBreak() {
                             !isolate_->stack_guard()->CheckDebugBreak();
 
   isolate_->stack_guard()->ClearDebugBreak();
+
+  // Clear stepping to avoid duplicate breaks.
+  ClearStepping();
 
   ProcessDebugMessages(debug_command_only);
 }

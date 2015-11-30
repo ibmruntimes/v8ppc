@@ -96,7 +96,6 @@ Handle<PrototypeInfo> Factory::NewPrototypeInfo() {
   result->set_prototype_users(WeakFixedArray::Empty());
   result->set_registry_slot(PrototypeInfo::UNREGISTERED);
   result->set_validity_cell(Smi::FromInt(0));
-  result->set_constructor_name(Smi::FromInt(0));
   return result;
 }
 
@@ -726,6 +725,7 @@ Handle<Context> Factory::NewNativeContext() {
       NewFixedArray(Context::NATIVE_CONTEXT_SLOTS, TENURED);
   array->set_map_no_write_barrier(*native_context_map());
   Handle<Context> context = Handle<Context>::cast(array);
+  context->set_native_context(*context);
   context->set_js_array_maps(*undefined_value());
   context->set_errors_thrown(Smi::FromInt(0));
   DCHECK(context->IsNativeContext());
@@ -742,7 +742,7 @@ Handle<Context> Factory::NewScriptContext(Handle<JSFunction> function,
   context->set_closure(*function);
   context->set_previous(function->context());
   context->set_extension(*scope_info);
-  context->set_global_object(function->context()->global_object());
+  context->set_native_context(function->native_context());
   DCHECK(context->IsScriptContext());
   return context;
 }
@@ -764,7 +764,7 @@ Handle<Context> Factory::NewModuleContext(Handle<ScopeInfo> scope_info) {
   array->set_map_no_write_barrier(*module_context_map());
   // Instance link will be set later.
   Handle<Context> context = Handle<Context>::cast(array);
-  context->set_extension(Smi::FromInt(0));
+  context->set_extension(*the_hole_value());
   return context;
 }
 
@@ -777,8 +777,8 @@ Handle<Context> Factory::NewFunctionContext(int length,
   Handle<Context> context = Handle<Context>::cast(array);
   context->set_closure(*function);
   context->set_previous(function->context());
-  context->set_extension(Smi::FromInt(0));
-  context->set_global_object(function->context()->global_object());
+  context->set_extension(*the_hole_value());
+  context->set_native_context(function->native_context());
   return context;
 }
 
@@ -794,7 +794,7 @@ Handle<Context> Factory::NewCatchContext(Handle<JSFunction> function,
   context->set_closure(*function);
   context->set_previous(*previous);
   context->set_extension(*name);
-  context->set_global_object(previous->global_object());
+  context->set_native_context(previous->native_context());
   context->set(Context::THROWN_OBJECT_INDEX, *thrown_object);
   return context;
 }
@@ -809,7 +809,7 @@ Handle<Context> Factory::NewWithContext(Handle<JSFunction> function,
   context->set_closure(*function);
   context->set_previous(*previous);
   context->set_extension(*extension);
-  context->set_global_object(previous->global_object());
+  context->set_native_context(previous->native_context());
   return context;
 }
 
@@ -824,7 +824,7 @@ Handle<Context> Factory::NewBlockContext(Handle<JSFunction> function,
   context->set_closure(*function);
   context->set_previous(*previous);
   context->set_extension(*scope_info);
-  context->set_global_object(previous->global_object());
+  context->set_native_context(previous->native_context());
   return context;
 }
 
@@ -1173,9 +1173,13 @@ DEFINE_ERROR(TypeError, type_error)
 #undef DEFINE_ERROR
 
 
-void Factory::InitializeFunction(Handle<JSFunction> function,
-                                 Handle<SharedFunctionInfo> info,
-                                 Handle<Context> context) {
+Handle<JSFunction> Factory::NewFunction(Handle<Map> map,
+                                        Handle<SharedFunctionInfo> info,
+                                        Handle<Context> context,
+                                        PretenureFlag pretenure) {
+  AllocationSpace space = pretenure == TENURED ? OLD_SPACE : NEW_SPACE;
+  Handle<JSFunction> function = New<JSFunction>(map, space);
+
   function->initialize_properties();
   function->initialize_elements();
   function->set_shared(*info);
@@ -1184,17 +1188,8 @@ void Factory::InitializeFunction(Handle<JSFunction> function,
   function->set_prototype_or_initial_map(*the_hole_value());
   function->set_literals_or_bindings(*empty_fixed_array());
   function->set_next_function_link(*undefined_value(), SKIP_WRITE_BARRIER);
-}
-
-
-Handle<JSFunction> Factory::NewFunction(Handle<Map> map,
-                                        Handle<SharedFunctionInfo> info,
-                                        Handle<Context> context,
-                                        PretenureFlag pretenure) {
-  AllocationSpace space = pretenure == TENURED ? OLD_SPACE : NEW_SPACE;
-  Handle<JSFunction> result = New<JSFunction>(map, space);
-  InitializeFunction(result, info, context);
-  return result;
+  isolate()->heap()->InitializeJSObjectBody(*function, *map, JSFunction::kSize);
+  return function;
 }
 
 
@@ -1428,9 +1423,8 @@ Handle<Code> Factory::NewCode(const CodeDesc& desc,
   code->set_next_code_link(*undefined_value());
   code->set_handler_table(*empty_fixed_array(), SKIP_WRITE_BARRIER);
   code->set_prologue_offset(prologue_offset);
-  if (FLAG_enable_embedded_constant_pool) {
-    code->set_constant_pool_offset(desc.instr_size - desc.constant_pool_size);
-  }
+  code->set_constant_pool_offset(desc.instr_size - desc.constant_pool_size);
+
   if (code->kind() == Code::OPTIMIZED_FUNCTION) {
     code->set_marked_for_deoptimization(false);
   }
@@ -2297,7 +2291,7 @@ void Factory::SetRegExpAtomData(Handle<JSRegExp> regexp,
 
   store->set(JSRegExp::kTagIndex, Smi::FromInt(type));
   store->set(JSRegExp::kSourceIndex, *source);
-  store->set(JSRegExp::kFlagsIndex, Smi::FromInt(flags.value()));
+  store->set(JSRegExp::kFlagsIndex, Smi::FromInt(flags));
   store->set(JSRegExp::kAtomPatternIndex, *data);
   regexp->set_data(*store);
 }
@@ -2312,7 +2306,7 @@ void Factory::SetRegExpIrregexpData(Handle<JSRegExp> regexp,
   Smi* uninitialized = Smi::FromInt(JSRegExp::kUninitializedValue);
   store->set(JSRegExp::kTagIndex, Smi::FromInt(type));
   store->set(JSRegExp::kSourceIndex, *source);
-  store->set(JSRegExp::kFlagsIndex, Smi::FromInt(flags.value()));
+  store->set(JSRegExp::kFlagsIndex, Smi::FromInt(flags));
   store->set(JSRegExp::kIrregexpLatin1CodeIndex, uninitialized);
   store->set(JSRegExp::kIrregexpUC16CodeIndex, uninitialized);
   store->set(JSRegExp::kIrregexpLatin1CodeSavedIndex, uninitialized);

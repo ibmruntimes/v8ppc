@@ -31,16 +31,13 @@ class DebugScope;
 
 
 // Step actions. NOTE: These values are in macros.py as well.
-enum StepAction {
+enum StepAction : int8_t {
   StepNone = -1,  // Stepping not prepared.
   StepOut = 0,    // Step out of the current function.
   StepNext = 1,   // Step to the next statement in the current function.
   StepIn = 2,     // Step into new functions invoked or the next statement
                   // in the current function.
-  StepMin = 3,    // Perform a minimum step in the current function.
-  StepInMin = 4,  // Step into new functions invoked or perform a minimum step
-                  // in the current function.
-  StepFrame = 5   // Step into a new frame or return to previous frame.
+  StepFrame = 3   // Step into a new frame or return to previous frame.
 };
 
 
@@ -109,7 +106,7 @@ class BreakLocation {
 
 
   inline RelocInfo rinfo() const {
-    return RelocInfo(pc(), rmode(), data_, code());
+    return RelocInfo(debug_info_->GetIsolate(), pc(), rmode(), data_, code());
   }
 
   inline int position() const { return position_; }
@@ -343,6 +340,28 @@ class LockingCommandMessageQueue BASE_EMBEDDED {
 };
 
 
+class DebugFeatureTracker {
+ public:
+  enum Feature {
+    kActive = 1,
+    kBreakPoint = 2,
+    kStepping = 3,
+    kHeapSnapshot = 4,
+    kAllocationTracking = 5,
+    kProfiler = 6,
+    kLiveEdit = 7,
+  };
+
+  explicit DebugFeatureTracker(Isolate* isolate)
+      : isolate_(isolate), bitfield_(0) {}
+  void Track(Feature feature);
+
+ private:
+  Isolate* isolate_;
+  uint32_t bitfield_;
+};
+
+
 // This class contains the debugger support. The main purpose is to handle
 // setting break points in the code.
 //
@@ -502,11 +521,13 @@ class Debug {
     return reinterpret_cast<Address>(address);
   }
 
-  Address step_in_fp_addr() {
-    return reinterpret_cast<Address>(&thread_local_.step_into_fp_);
+  Address last_step_action_addr() {
+    return reinterpret_cast<Address>(&thread_local_.last_step_action_);
   }
 
   StepAction last_step_action() { return thread_local_.last_step_action_; }
+
+  DebugFeatureTracker* feature_tracker() { return &feature_tracker_; }
 
  private:
   explicit Debug(Isolate* isolate);
@@ -605,6 +626,9 @@ class Debug {
   // Note that this address is not GC safe.  It should be computed immediately
   // before returning to the DebugBreakCallHelper.
   Address after_break_target_;
+
+  // Used to collect histogram data on debugger feature usage.
+  DebugFeatureTracker feature_tracker_;
 
   // Per-thread data.
   class ThreadLocal {
@@ -759,8 +783,9 @@ class DebugCodegen : public AllStatic {
   static void GenerateSlot(MacroAssembler* masm, RelocInfo::Mode mode,
                            int call_argc = -1);
 
-  static void PatchDebugBreakSlot(Address pc, Handle<Code> code);
-  static void ClearDebugBreakSlot(Address pc);
+  static void PatchDebugBreakSlot(Isolate* isolate, Address pc,
+                                  Handle<Code> code);
+  static void ClearDebugBreakSlot(Isolate* isolate, Address pc);
 };
 
 

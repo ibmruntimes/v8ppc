@@ -6,11 +6,11 @@
 
 #include "src/arm64/frames-arm64.h"
 #include "src/arm64/macro-assembler-arm64.h"
+#include "src/ast/scopes.h"
 #include "src/compiler/code-generator-impl.h"
 #include "src/compiler/gap-resolver.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/osr.h"
-#include "src/scopes.h"
 
 namespace v8 {
 namespace internal {
@@ -205,11 +205,13 @@ class Arm64OperandConverter final : public InstructionOperandConverter {
   MemOperand ToMemOperand(InstructionOperand* op, MacroAssembler* masm) const {
     DCHECK(op != NULL);
     DCHECK(op->IsStackSlot() || op->IsDoubleStackSlot());
-    FrameOffset offset =
-        linkage()->GetFrameOffset(AllocatedOperand::cast(op)->index(), frame());
+    FrameOffset offset = frame_access_state()->GetFrameOffset(
+        AllocatedOperand::cast(op)->index());
     if (offset.from_frame_pointer()) {
       int from_sp =
-          offset.offset() + (frame()->GetSpToFpSlotCount() * kPointerSize);
+          offset.offset() +
+          ((frame()->GetSpToFpSlotCount() + frame_access_state()->sp_delta()) *
+           kPointerSize);
       // Convert FP-offsets to SP-offsets if it results in better code.
       if (Assembler::IsImmLSUnscaled(from_sp) ||
           Assembler::IsImmLSScaled(from_sp, LSDoubleWord)) {
@@ -462,12 +464,7 @@ void CodeGenerator::AssembleDeconstructActivationRecord(int stack_param_delta) {
   if (sp_slot_delta > 0) {
     __ Add(jssp, jssp, Operand(sp_slot_delta * kPointerSize));
   }
-  CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
-  int spill_slots = frame()->GetSpillSlotCount();
-  bool has_frame = descriptor->IsJSFunctionCall() || spill_slots > 0;
-  if (has_frame) {
-    __ Pop(fp, lr);
-  }
+  frame_access_state()->SetFrameAccessToDefault();
 }
 
 
@@ -475,8 +472,13 @@ void CodeGenerator::AssemblePrepareTailCall(int stack_param_delta) {
   int sp_slot_delta = TailCallFrameStackSlotDelta(stack_param_delta);
   if (sp_slot_delta < 0) {
     __ Sub(jssp, jssp, Operand(-sp_slot_delta * kPointerSize));
-    frame()->AllocateOutgoingParameterSlots(-sp_slot_delta);
+    frame_access_state()->IncreaseSPDelta(-sp_slot_delta);
   }
+  if (frame()->needs_frame()) {
+    __ Ldr(lr, MemOperand(fp, StandardFrameConstants::kCallerPCOffset));
+    __ Ldr(fp, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  }
+  frame_access_state()->SetFrameAccessToSP();
 }
 
 
@@ -495,7 +497,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ Add(target, target, Code::kHeaderSize - kHeapObjectTag);
         __ Call(target);
       }
-      frame()->ClearOutgoingParameterSlots();
+      frame_access_state()->ClearSPDelta();
       RecordCallPosition(instr);
       break;
     }
@@ -510,7 +512,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ Add(target, target, Code::kHeaderSize - kHeapObjectTag);
         __ Jump(target);
       }
-      frame()->ClearOutgoingParameterSlots();
+      frame_access_state()->ClearSPDelta();
       break;
     }
     case kArchCallJSFunction: {
@@ -526,7 +528,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       }
       __ Ldr(x10, FieldMemOperand(func, JSFunction::kCodeEntryOffset));
       __ Call(x10);
-      frame()->ClearOutgoingParameterSlots();
+      frame_access_state()->ClearSPDelta();
       RecordCallPosition(instr);
       break;
     }
@@ -544,7 +546,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       AssembleDeconstructActivationRecord(stack_param_delta);
       __ Ldr(x10, FieldMemOperand(func, JSFunction::kCodeEntryOffset));
       __ Jump(x10);
-      frame()->ClearOutgoingParameterSlots();
+      frame_access_state()->ClearSPDelta();
       break;
     }
     case kArchLazyBailout: {
@@ -572,7 +574,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       }
       // CallCFunction only supports register arguments so we never need to call
       // frame()->ClearOutgoingParameterSlots() here.
-      DCHECK(frame()->GetOutgoingParameterSlotCount() == 0);
+      DCHECK(frame_access_state()->sp_delta() == 0);
       break;
     }
     case kArchJmp:
@@ -622,8 +624,14 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ Bind(ool->exit());
       break;
     }
+    case kArm64Float32RoundDown:
+      __ Frintm(i.OutputFloat32Register(), i.InputFloat32Register(0));
+      break;
     case kArm64Float64RoundDown:
       __ Frintm(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
+      break;
+    case kArm64Float32RoundUp:
+      __ Frintp(i.OutputFloat32Register(), i.InputFloat32Register(0));
       break;
     case kArm64Float64RoundUp:
       __ Frintp(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
@@ -631,8 +639,14 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArm64Float64RoundTiesAway:
       __ Frinta(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
       break;
+    case kArm64Float32RoundTruncate:
+      __ Frintz(i.OutputFloat32Register(), i.InputFloat32Register(0));
+      break;
     case kArm64Float64RoundTruncate:
       __ Frintz(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
+      break;
+    case kArm64Float32RoundTiesEven:
+      __ Frintn(i.OutputFloat32Register(), i.InputFloat32Register(0));
       break;
     case kArm64Float64RoundTiesEven:
       __ Frintn(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
@@ -858,7 +872,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kArm64ClaimForCallArguments: {
       __ Claim(i.InputInt32(0));
-      frame()->AllocateOutgoingParameterSlots(i.InputInt32(0));
+      frame_access_state()->IncreaseSPDelta(i.InputInt32(0));
       break;
     }
     case kArm64Poke: {
@@ -1009,8 +1023,14 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArm64Float64ToUint32:
       __ Fcvtzu(i.OutputRegister32(), i.InputDoubleRegister(0));
       break;
+    case kArm64Float32ToInt64:
+      __ Fcvtzs(i.OutputRegister64(), i.InputFloat32Register(0));
+      break;
     case kArm64Float64ToInt64:
       __ Fcvtzs(i.OutputRegister64(), i.InputDoubleRegister(0));
+      break;
+    case kArm64Float32ToUint64:
+      __ Fcvtzu(i.OutputRegister64(), i.InputFloat32Register(0));
       break;
     case kArm64Float64ToUint64:
       __ Fcvtzu(i.OutputRegister64(), i.InputDoubleRegister(0));
@@ -1263,7 +1283,7 @@ void CodeGenerator::AssembleDeoptimizerCall(
 
 void CodeGenerator::AssemblePrologue() {
   CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
-  if (descriptor->kind() == CallDescriptor::kCallAddress) {
+  if (descriptor->IsCFunctionCall()) {
     __ SetStackPointer(csp);
     __ Push(lr, fp);
     __ Mov(fp, csp);
@@ -1271,12 +1291,13 @@ void CodeGenerator::AssemblePrologue() {
     CompilationInfo* info = this->info();
     __ SetStackPointer(jssp);
     __ Prologue(info->IsCodePreAgingActive());
-  } else if (needs_frame_) {
+  } else if (frame()->needs_frame()) {
     __ SetStackPointer(jssp);
     __ StubPrologue();
   } else {
     frame()->SetElidedFrameSizeInSlots(0);
   }
+  frame_access_state()->SetFrameAccessToDefault();
 
   int stack_shrink_slots = frame()->GetSpillSlotCount();
   if (info()->is_osr()) {
@@ -1343,10 +1364,10 @@ void CodeGenerator::AssembleReturn() {
   }
 
   int pop_count = static_cast<int>(descriptor->StackParameterCount());
-  if (descriptor->kind() == CallDescriptor::kCallAddress) {
+  if (descriptor->IsCFunctionCall()) {
     __ Mov(csp, fp);
     __ Pop(fp, lr);
-  } else if (descriptor->IsJSFunctionCall() || needs_frame_) {
+  } else if (frame()->needs_frame()) {
     // Canonicalize JSFunction return sites for now.
     if (return_label_.is_bound()) {
       __ B(&return_label_);

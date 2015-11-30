@@ -56,7 +56,7 @@ void PropertyHandlerCompiler::GenerateDictionaryNegativeLookup(
   __ j(not_zero, miss_label);
 
   // Check that receiver is a JSObject.
-  __ CmpInstanceType(scratch0, FIRST_SPEC_OBJECT_TYPE);
+  __ CmpInstanceType(scratch0, FIRST_JS_RECEIVER_TYPE);
   __ j(below, miss_label);
 
   // Load properties array.
@@ -78,10 +78,7 @@ void PropertyHandlerCompiler::GenerateDictionaryNegativeLookup(
 
 void NamedLoadHandlerCompiler::GenerateDirectLoadGlobalFunctionPrototype(
     MacroAssembler* masm, int index, Register result, Label* miss) {
-  const int offset = Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX);
-  __ movp(result, Operand(rsi, offset));
-  __ movp(result, FieldOperand(result, JSGlobalObject::kNativeContextOffset));
-  __ movp(result, Operand(result, Context::SlotOffset(index)));
+  __ LoadNativeContextSlot(index, result);
   // Load its initial map. The global functions all have initial maps.
   __ movp(result,
           FieldOperand(result, JSFunction::kPrototypeOrInitialMapOffset));
@@ -249,7 +246,7 @@ void NamedStoreHandlerCompiler::GenerateStoreViaSetter(
       ParameterCount expected(expected_arguments);
       __ LoadAccessor(rdi, holder, accessor_index, ACCESSOR_SETTER);
       __ InvokeFunction(rdi, no_reg, expected, actual, CALL_FUNCTION,
-                        NullCallWrapper());
+                        CheckDebugStepCallWrapper());
     } else {
       // If we generate a global code snippet for deoptimization only, remember
       // the place to continue after deoptimization.
@@ -292,7 +289,7 @@ void NamedLoadHandlerCompiler::GenerateLoadViaGetter(
       ParameterCount expected(expected_arguments);
       __ LoadAccessor(rdi, holder, accessor_index, ACCESSOR_GETTER);
       __ InvokeFunction(rdi, no_reg, expected, actual, CALL_FUNCTION,
-                        NullCallWrapper());
+                        CheckDebugStepCallWrapper());
     } else {
       // If we generate a global code snippet for deoptimization only, remember
       // the place to continue after deoptimization.

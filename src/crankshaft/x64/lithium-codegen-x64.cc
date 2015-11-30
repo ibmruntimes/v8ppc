@@ -2193,7 +2193,7 @@ void LCodeGen::DoBranch(LBranch* instr) {
 
       if (expected.Contains(ToBooleanStub::SPEC_OBJECT)) {
         // spec object -> true.
-        __ CmpInstanceType(map, FIRST_SPEC_OBJECT_TYPE);
+        __ CmpInstanceType(map, FIRST_JS_RECEIVER_TYPE);
         __ j(above_equal, instr->TrueLabel(chunk_));
       }
 
@@ -2557,14 +2557,14 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
     // for both being a function type and being in the object type range.
     STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
     STATIC_ASSERT(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                  FIRST_SPEC_OBJECT_TYPE + 1);
+                  FIRST_JS_RECEIVER_TYPE + 1);
     STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                  LAST_SPEC_OBJECT_TYPE - 1);
-    STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
-    __ CmpObjectType(input, FIRST_SPEC_OBJECT_TYPE, temp);
+                  LAST_JS_RECEIVER_TYPE - 1);
+    STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
+    __ CmpObjectType(input, FIRST_JS_RECEIVER_TYPE, temp);
     __ j(below, is_false);
     __ j(equal, is_true);
-    __ CmpInstanceType(temp, LAST_SPEC_OBJECT_TYPE);
+    __ CmpInstanceType(temp, LAST_JS_RECEIVER_TYPE);
     __ j(equal, is_true);
   } else {
     // Faster code path to avoid two compares: subtract lower bound from the
@@ -3260,16 +3260,14 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
   // The receiver should be a JS object.
   Condition is_smi = __ CheckSmi(receiver);
   DeoptimizeIf(is_smi, instr, Deoptimizer::kSmi);
-  __ CmpObjectType(receiver, FIRST_SPEC_OBJECT_TYPE, kScratchRegister);
+  __ CmpObjectType(receiver, FIRST_JS_RECEIVER_TYPE, kScratchRegister);
   DeoptimizeIf(below, instr, Deoptimizer::kNotAJavaScriptObject);
 
   __ jmp(&receiver_ok, Label::kNear);
   __ bind(&global_object);
   __ movp(receiver, FieldOperand(function, JSFunction::kContextOffset));
-  __ movp(receiver,
-          Operand(receiver,
-                  Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ movp(receiver, FieldOperand(receiver, JSGlobalObject::kGlobalProxyOffset));
+  __ movp(receiver, ContextOperand(receiver, Context::NATIVE_CONTEXT_INDEX));
+  __ movp(receiver, ContextOperand(receiver, Context::GLOBAL_PROXY_INDEX));
 
   __ bind(&receiver_ok);
 }
@@ -3895,7 +3893,7 @@ void LCodeGen::DoCallNewArray(LCallNewArray* instr) {
 
   if (instr->arity() == 0) {
     ArrayNoArgumentConstructorStub stub(isolate(), kind, override_mode);
-    CallCode(stub.GetCode(), RelocInfo::CONSTRUCT_CALL, instr);
+    CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
   } else if (instr->arity() == 1) {
     Label done;
     if (IsFastPackedElementsKind(kind)) {
@@ -3910,17 +3908,17 @@ void LCodeGen::DoCallNewArray(LCallNewArray* instr) {
       ArraySingleArgumentConstructorStub stub(isolate(),
                                               holey_kind,
                                               override_mode);
-      CallCode(stub.GetCode(), RelocInfo::CONSTRUCT_CALL, instr);
+      CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
       __ jmp(&done, Label::kNear);
       __ bind(&packed_case);
     }
 
     ArraySingleArgumentConstructorStub stub(isolate(), kind, override_mode);
-    CallCode(stub.GetCode(), RelocInfo::CONSTRUCT_CALL, instr);
+    CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
     __ bind(&done);
   } else {
     ArrayNArgumentsConstructorStub stub(isolate(), kind, override_mode);
-    CallCode(stub.GetCode(), RelocInfo::CONSTRUCT_CALL, instr);
+    CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
   }
 }
 
@@ -5377,57 +5375,6 @@ void LCodeGen::DoToFastProperties(LToFastProperties* instr) {
 }
 
 
-void LCodeGen::DoRegExpLiteral(LRegExpLiteral* instr) {
-  DCHECK(ToRegister(instr->context()).is(rsi));
-  Label materialized;
-  // Registers will be used as follows:
-  // rcx = literals array.
-  // rbx = regexp literal.
-  // rax = regexp literal clone.
-  int literal_offset =
-      LiteralsArray::OffsetOfLiteralAt(instr->hydrogen()->literal_index());
-  __ Move(rcx, instr->hydrogen()->literals());
-  __ movp(rbx, FieldOperand(rcx, literal_offset));
-  __ CompareRoot(rbx, Heap::kUndefinedValueRootIndex);
-  __ j(not_equal, &materialized, Label::kNear);
-
-  // Create regexp literal using runtime function
-  // Result will be in rax.
-  __ Push(rcx);
-  __ Push(Smi::FromInt(instr->hydrogen()->literal_index()));
-  __ Push(instr->hydrogen()->pattern());
-  __ Push(instr->hydrogen()->flags());
-  CallRuntime(Runtime::kMaterializeRegExpLiteral, 4, instr);
-  __ movp(rbx, rax);
-
-  __ bind(&materialized);
-  int size = JSRegExp::kSize + JSRegExp::kInObjectFieldCount * kPointerSize;
-  Label allocated, runtime_allocate;
-  __ Allocate(size, rax, rcx, rdx, &runtime_allocate, TAG_OBJECT);
-  __ jmp(&allocated, Label::kNear);
-
-  __ bind(&runtime_allocate);
-  __ Push(rbx);
-  __ Push(Smi::FromInt(size));
-  CallRuntime(Runtime::kAllocateInNewSpace, 1, instr);
-  __ Pop(rbx);
-
-  __ bind(&allocated);
-  // Copy the content into the newly allocated memory.
-  // (Unroll copy loop once for better throughput).
-  for (int i = 0; i < size - kPointerSize; i += 2 * kPointerSize) {
-    __ movp(rdx, FieldOperand(rbx, i));
-    __ movp(rcx, FieldOperand(rbx, i + kPointerSize));
-    __ movp(FieldOperand(rax, i), rdx);
-    __ movp(FieldOperand(rax, i + kPointerSize), rcx);
-  }
-  if ((size % (2 * kPointerSize)) != 0) {
-    __ movp(rdx, FieldOperand(rbx, size - kPointerSize));
-    __ movp(FieldOperand(rax, size - kPointerSize), rdx);
-  }
-}
-
-
 void LCodeGen::DoTypeof(LTypeof* instr) {
   DCHECK(ToRegister(instr->context()).is(rsi));
   DCHECK(ToRegister(instr->value()).is(rbx));
@@ -5525,8 +5472,8 @@ Condition LCodeGen::EmitTypeofIs(LTypeofIsAndBranch* instr, Register input) {
     __ JumpIfSmi(input, false_label, false_distance);
     __ CompareRoot(input, Heap::kNullValueRootIndex);
     __ j(equal, true_label, true_distance);
-    STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
-    __ CmpObjectType(input, FIRST_SPEC_OBJECT_TYPE, input);
+    STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
+    __ CmpObjectType(input, FIRST_JS_RECEIVER_TYPE, input);
     __ j(below, false_label, false_distance);
     // Check for callable or undetectable objects => false.
     __ testb(FieldOperand(input, Map::kBitFieldOffset),
@@ -5702,7 +5649,7 @@ void LCodeGen::DoForInPrepareMap(LForInPrepareMap* instr) {
   Condition cc = masm()->CheckSmi(rax);
   DeoptimizeIf(cc, instr, Deoptimizer::kSmi);
 
-  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_SPEC_OBJECT_TYPE);
+  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
   __ CmpObjectType(rax, LAST_JS_PROXY_TYPE, rcx);
   DeoptimizeIf(below_equal, instr, Deoptimizer::kWrongInstanceType);
 

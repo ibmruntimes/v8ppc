@@ -4,12 +4,12 @@
 
 #include "src/interpreter/bytecode-generator.h"
 
+#include "src/ast/scopes.h"
 #include "src/compiler.h"
 #include "src/interpreter/control-flow-builders.h"
 #include "src/objects.h"
-#include "src/parser.h"
-#include "src/scopes.h"
-#include "src/token.h"
+#include "src/parsing/parser.h"
+#include "src/parsing/token.h"
 
 namespace v8 {
 namespace internal {
@@ -971,10 +971,8 @@ void BytecodeGenerator::VisitFunctionLiteral(FunctionLiteral* expr) {
   Handle<SharedFunctionInfo> shared_info =
       Compiler::GetSharedFunctionInfo(expr, info()->script(), info());
   CHECK(!shared_info.is_null());  // TODO(rmcilroy): Set stack overflow?
-
-  builder()
-      ->LoadLiteral(shared_info)
-      .CreateClosure(expr->pretenure() ? TENURED : NOT_TENURED);
+  builder()->CreateClosure(shared_info,
+                           expr->pretenure() ? TENURED : NOT_TENURED);
   execution_result()->SetResultInAccumulator();
 }
 
@@ -1042,12 +1040,9 @@ void BytecodeGenerator::VisitLiteral(Literal* expr) {
 void BytecodeGenerator::VisitRegExpLiteral(RegExpLiteral* expr) {
   // Materialize a regular expression literal.
   TemporaryRegisterScope temporary_register_scope(builder());
-  Register flags = temporary_register_scope.NewRegister();
   builder()
-      ->LoadLiteral(expr->flags())
-      .StoreAccumulatorInRegister(flags)
-      .LoadLiteral(expr->pattern())
-      .CreateRegExpLiteral(expr->literal_index(), flags);
+      ->LoadLiteral(expr->pattern())
+      .CreateRegExpLiteral(expr->literal_index(), expr->flags());
   execution_result()->SetResultInAccumulator();
 }
 
@@ -1788,10 +1783,13 @@ void BytecodeGenerator::VisitDelete(UnaryOperation* expr) {
       case VariableLocation::GLOBAL:
       case VariableLocation::UNALLOCATED: {
         // Global var, let, const or variables not explicitly declared.
+        Register native_context = execution_result()->NewRegister();
         Register global_object = execution_result()->NewRegister();
         builder()
             ->LoadContextSlot(execution_context()->reg(),
-                              Context::GLOBAL_OBJECT_INDEX)
+                              Context::NATIVE_CONTEXT_INDEX)
+            .StoreAccumulatorInRegister(native_context)
+            .LoadContextSlot(native_context, Context::EXTENSION_INDEX)
             .StoreAccumulatorInRegister(global_object)
             .LoadLiteral(variable->name())
             .Delete(global_object, language_mode());
@@ -2157,7 +2155,7 @@ void BytecodeGenerator::VisitNewTargetVariable(Variable* variable) {
   if (variable == nullptr) return;
 
   // Store the new target we were called with in the given variable.
-  builder()->CallRuntime(Runtime::kGetNewTarget, Register(), 0);
+  builder()->LoadAccumulatorWithRegister(Register::new_target());
   VisitVariableAssignment(variable, FeedbackVectorSlot::Invalid());
 }
 

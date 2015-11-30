@@ -995,7 +995,6 @@ void PrototypeInfo::PrototypeInfoPrint(std::ostream& os) {  // NOLINT
   os << "\n - prototype users: " << Brief(prototype_users());
   os << "\n - registry slot: " << registry_slot();
   os << "\n - validity cell: " << Brief(validity_cell());
-  os << "\n - constructor name: " << Brief(constructor_name());
   os << "\n";
 }
 
@@ -1078,13 +1077,6 @@ void ObjectTemplateInfo::ObjectTemplateInfoPrint(std::ostream& os) {  // NOLINT
   os << "\n - property_accessors: " << Brief(property_accessors());
   os << "\n - constructor: " << Brief(constructor());
   os << "\n - internal_field_count: " << Brief(internal_field_count());
-  os << "\n";
-}
-
-
-void TypeSwitchInfo::TypeSwitchInfoPrint(std::ostream& os) {  // NOLINT
-  HeapObject::PrintHeader(os, "TypeSwitchInfo");
-  os << "\n - types: " << Brief(types());
   os << "\n";
 }
 

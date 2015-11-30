@@ -280,8 +280,6 @@ Matcher<Node*> IsWord64Or(const Matcher<Node*>& lhs_matcher,
                           const Matcher<Node*>& rhs_matcher);
 Matcher<Node*> IsWord64Shl(const Matcher<Node*>& lhs_matcher,
                            const Matcher<Node*>& rhs_matcher);
-Matcher<Node*> IsWord64Shr(const Matcher<Node*>& lhs_matcher,
-                           const Matcher<Node*>& rhs_matcher);
 Matcher<Node*> IsWord64Sar(const Matcher<Node*>& lhs_matcher,
                            const Matcher<Node*>& rhs_matcher);
 Matcher<Node*> IsWord64Equal(const Matcher<Node*>& lhs_matcher,
@@ -306,8 +304,6 @@ Matcher<Node*> IsInt64Add(const Matcher<Node*>& lhs_matcher,
                           const Matcher<Node*>& rhs_matcher);
 Matcher<Node*> IsInt64Sub(const Matcher<Node*>& lhs_matcher,
                           const Matcher<Node*>& rhs_matcher);
-Matcher<Node*> IsInt64Mul(const Matcher<Node*>& lhs_matcher,
-                          const Matcher<Node*>& rhs_matcher);
 Matcher<Node*> IsJSAdd(const Matcher<Node*>& lhs_matcher,
                        const Matcher<Node*>& rhs_matcher);
 Matcher<Node*> IsChangeFloat64ToInt32(const Matcher<Node*>& input_matcher);
@@ -319,7 +315,6 @@ Matcher<Node*> IsChangeUint32ToUint64(const Matcher<Node*>& input_matcher);
 Matcher<Node*> IsTruncateFloat64ToFloat32(const Matcher<Node*>& input_matcher);
 Matcher<Node*> IsTruncateFloat64ToInt32(const Matcher<Node*>& input_matcher);
 Matcher<Node*> IsTruncateInt64ToInt32(const Matcher<Node*>& input_matcher);
-Matcher<Node*> IsRoundInt64ToFloat64(const Matcher<Node*>& input_matcher);
 Matcher<Node*> IsFloat32Max(const Matcher<Node*>& lhs_matcher,
                             const Matcher<Node*>& rhs_matcher);
 Matcher<Node*> IsFloat32Min(const Matcher<Node*>& lhs_matcher,
@@ -358,53 +353,6 @@ Matcher<Node*> IsNumberToInt32(const Matcher<Node*>& input_matcher);
 Matcher<Node*> IsNumberToUint32(const Matcher<Node*>& input_matcher);
 Matcher<Node*> IsParameter(const Matcher<int> index_matcher);
 Matcher<Node*> IsLoadFramePointer();
-Matcher<Node*> IsJSLoadGlobal(const Handle<Name> name,
-                              const TypeofMode typeof_mode,
-                              const Matcher<Node*>& feedback_vector_matcher,
-                              const Matcher<Node*>& effect_matcher,
-                              const Matcher<Node*>& control_matcher);
-Matcher<Node*> IsJSStoreGlobal(const Handle<Name> name,
-                               const Matcher<Node*>& value,
-                               const Matcher<Node*>& feedback_vector_matcher,
-                               const Matcher<Node*>& effect_matcher,
-                               const Matcher<Node*>& control_matcher);
-Matcher<Node*> IsJSLoadNamed(const Handle<Name> name,
-                             const Matcher<Node*>& object_value_matcher,
-                             const Matcher<Node*>& feedback_vector_matcher,
-                             const Matcher<Node*>& effect_matcher,
-                             const Matcher<Node*>& control_matcher);
-Matcher<Node*> IsJSLoadProperty(const Matcher<Node*>& object_matcher,
-                                const Matcher<Node*>& key_matcher,
-                                const Matcher<Node*>& feedback_vector_matcher,
-                                const Matcher<Node*>& effect_matcher,
-                                const Matcher<Node*>& control_matcher);
-Matcher<Node*> IsJSStoreNamed(const Handle<Name> name,
-                              const Matcher<Node*>& object_matcher,
-                              const Matcher<Node*>& value_matcher,
-                              const Matcher<Node*>& feedback_vector_matcher,
-                              const Matcher<Node*>& effect_matcher,
-                              const Matcher<Node*>& control_matcher);
-Matcher<Node*> IsJSStoreProperty(const Matcher<Node*>& object_matcher,
-                                 const Matcher<Node*>& key_matcher,
-                                 const Matcher<Node*>& value_matcher,
-                                 const Matcher<Node*>& feedback_vector_matcher,
-                                 const Matcher<Node*>& effect_matcher,
-                                 const Matcher<Node*>& control_matcher);
-Matcher<Node*> IsJSCallConstruct(std::vector<Matcher<Node*>> value_matchers,
-                                 const Matcher<Node*>& effect_matcher,
-                                 const Matcher<Node*>& control_matcher);
-Matcher<Node*> IsJSCallFunction(std::vector<Matcher<Node*>> value_matchers,
-                                const Matcher<Node*>& effect_matcher,
-                                const Matcher<Node*>& control_matcher);
-Matcher<Node*> IsJSCallRuntime(std::vector<Matcher<Node*>> value_matchers,
-                               const Matcher<Node*>& effect_matcher,
-                               const Matcher<Node*>& control_matcher);
-Matcher<Node*> IsJSUnaryNot(const Matcher<Node*>& value_matcher);
-Matcher<Node*> IsJSTypeOf(const Matcher<Node*>& value_matcher);
-Matcher<Node*> IsJSDeleteProperty(const Matcher<Node*>& object_value_matcher,
-                                  const Matcher<Node*>& key_matcher,
-                                  const Matcher<Node*>& effect_matcher,
-                                  const Matcher<Node*>& control_matcher);
 
 }  // namespace compiler
 }  // namespace internal

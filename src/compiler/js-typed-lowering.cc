@@ -975,6 +975,27 @@ Reduction JSTypedLowering::ReduceJSLoadNamed(Node* node) {
     ReplaceWithValue(node, value, effect);
     return Replace(value);
   }
+  // Optimize "prototype" property of functions.
+  if (name.is_identical_to(factory()->prototype_string()) &&
+      receiver_type->IsConstant() &&
+      receiver_type->AsConstant()->Value()->IsJSFunction()) {
+    // TODO(turbofan): This lowering might not kick in if we ever lower
+    // the C++ accessor for "prototype" in an earlier optimization pass.
+    Handle<JSFunction> function =
+        Handle<JSFunction>::cast(receiver_type->AsConstant()->Value());
+    if (function->has_initial_map()) {
+      // We need to add a code dependency on the initial map of the {function}
+      // in order to be notified about changes to the "prototype" of {function},
+      // so it doesn't make sense to continue unless deoptimization is enabled.
+      if (!(flags() & kDeoptimizationEnabled)) return NoChange();
+      Handle<Map> initial_map(function->initial_map(), isolate());
+      dependencies()->AssumeInitialMapCantChange(initial_map);
+      Node* value =
+          jsgraph()->Constant(handle(initial_map->prototype(), isolate()));
+      ReplaceWithValue(node, value);
+      return Replace(value);
+    }
+  }
   return NoChange();
 }
 
@@ -1219,14 +1240,14 @@ Reduction JSTypedLowering::ReduceJSInstanceOf(Node* node) {
 Reduction JSTypedLowering::ReduceJSLoadContext(Node* node) {
   DCHECK_EQ(IrOpcode::kJSLoadContext, node->opcode());
   ContextAccess const& access = ContextAccessOf(node->op());
-  Node* const effect = NodeProperties::GetEffectInput(node);
-  Node* const control = graph()->start();
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = graph()->start();
   for (size_t i = 0; i < access.depth(); ++i) {
-    node->ReplaceInput(
-        0, graph()->NewNode(
-               simplified()->LoadField(
-                   AccessBuilder::ForContextSlot(Context::PREVIOUS_INDEX)),
-               NodeProperties::GetValueInput(node, 0), effect, control));
+    Node* previous = effect = graph()->NewNode(
+        simplified()->LoadField(
+            AccessBuilder::ForContextSlot(Context::PREVIOUS_INDEX)),
+        NodeProperties::GetValueInput(node, 0), effect, control);
+    node->ReplaceInput(0, previous);
   }
   node->ReplaceInput(1, effect);
   node->ReplaceInput(2, control);
@@ -1240,32 +1261,20 @@ Reduction JSTypedLowering::ReduceJSLoadContext(Node* node) {
 Reduction JSTypedLowering::ReduceJSStoreContext(Node* node) {
   DCHECK_EQ(IrOpcode::kJSStoreContext, node->opcode());
   ContextAccess const& access = ContextAccessOf(node->op());
-  Node* const effect = NodeProperties::GetEffectInput(node);
-  Node* const control = graph()->start();
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = graph()->start();
   for (size_t i = 0; i < access.depth(); ++i) {
-    node->ReplaceInput(
-        0, graph()->NewNode(
-               simplified()->LoadField(
-                   AccessBuilder::ForContextSlot(Context::PREVIOUS_INDEX)),
-               NodeProperties::GetValueInput(node, 0), effect, control));
+    Node* previous = effect = graph()->NewNode(
+        simplified()->LoadField(
+            AccessBuilder::ForContextSlot(Context::PREVIOUS_INDEX)),
+        NodeProperties::GetValueInput(node, 0), effect, control);
+    node->ReplaceInput(0, previous);
   }
   node->RemoveInput(2);
+  node->ReplaceInput(2, effect);
   NodeProperties::ChangeOp(
       node,
       simplified()->StoreField(AccessBuilder::ForContextSlot(access.index())));
-  return Changed(node);
-}
-
-
-Reduction JSTypedLowering::ReduceJSLoadNativeContext(Node* node) {
-  DCHECK_EQ(IrOpcode::kJSLoadNativeContext, node->opcode());
-  Node* const effect = NodeProperties::GetEffectInput(node);
-  Node* const control = graph()->start();
-  node->ReplaceInput(1, effect);
-  node->ReplaceInput(2, control);
-  NodeProperties::ChangeOp(
-      node,
-      simplified()->LoadField(AccessBuilder::ForJSGlobalObjectNativeContext()));
   return Changed(node);
 }
 
@@ -1290,13 +1299,12 @@ Reduction JSTypedLowering::ReduceJSConvertReceiver(Node* node) {
             isolate());
         receiver = jsgraph()->Constant(global_proxy);
       } else {
-        Node* global_object = effect = graph()->NewNode(
-            javascript()->LoadContext(0, Context::GLOBAL_OBJECT_INDEX, true),
+        Node* native_context = effect = graph()->NewNode(
+            javascript()->LoadContext(0, Context::NATIVE_CONTEXT_INDEX, true),
             context, context, effect);
-        receiver = effect =
-            graph()->NewNode(simplified()->LoadField(
-                                 AccessBuilder::ForJSGlobalObjectGlobalProxy()),
-                             global_object, effect, control);
+        receiver = effect = graph()->NewNode(
+            javascript()->LoadContext(0, Context::GLOBAL_PROXY_INDEX, true),
+            native_context, native_context, effect);
       }
     } else if (!receiver_type->Maybe(Type::NullOrUndefined()) ||
                mode == ConvertReceiverMode::kNotNullOrUndefined) {
@@ -1345,13 +1353,12 @@ Reduction JSTypedLowering::ReduceJSConvertReceiver(Node* node) {
               isolate());
           rglobal = jsgraph()->Constant(global_proxy);
         } else {
-          Node* global_object = eglobal = graph()->NewNode(
-              javascript()->LoadContext(0, Context::GLOBAL_OBJECT_INDEX, true),
+          Node* native_context = eglobal = graph()->NewNode(
+              javascript()->LoadContext(0, Context::NATIVE_CONTEXT_INDEX, true),
               context, context, eglobal);
           rglobal = eglobal = graph()->NewNode(
-              simplified()->LoadField(
-                  AccessBuilder::ForJSGlobalObjectGlobalProxy()),
-              global_object, eglobal, if_global);
+              javascript()->LoadContext(0, Context::GLOBAL_PROXY_INDEX, true),
+              native_context, native_context, eglobal);
         }
       }
 
@@ -1509,14 +1516,9 @@ Reduction JSTypedLowering::ReduceJSCreateArguments(Node* node) {
     Node* allocate_effect =
         elements->op()->EffectOutputCount() > 0 ? elements : effect;
     // Load the arguments object map from the current native context.
-    Node* const load_global_object = graph()->NewNode(
-        simplified()->LoadField(
-            AccessBuilder::ForContextSlot(Context::GLOBAL_OBJECT_INDEX)),
-        context, effect, control);
-    Node* const load_native_context =
-        graph()->NewNode(simplified()->LoadField(
-                             AccessBuilder::ForJSGlobalObjectNativeContext()),
-                         load_global_object, effect, control);
+    Node* const load_native_context = graph()->NewNode(
+        javascript()->LoadContext(0, Context::NATIVE_CONTEXT_INDEX, true),
+        context, context, effect);
     Node* const load_arguments_map = graph()->NewNode(
         simplified()->LoadField(AccessBuilder::ForContextSlot(
             has_aliased_arguments ? Context::FAST_ALIASED_ARGUMENTS_MAP_INDEX
@@ -1554,14 +1556,9 @@ Reduction JSTypedLowering::ReduceJSCreateArguments(Node* node) {
     Node* allocate_effect =
         elements->op()->EffectOutputCount() > 0 ? elements : effect;
     // Load the arguments object map from the current native context.
-    Node* const load_global_object = graph()->NewNode(
-        simplified()->LoadField(
-            AccessBuilder::ForContextSlot(Context::GLOBAL_OBJECT_INDEX)),
-        context, effect, control);
-    Node* const load_native_context =
-        graph()->NewNode(simplified()->LoadField(
-                             AccessBuilder::ForJSGlobalObjectNativeContext()),
-                         load_global_object, effect, control);
+    Node* const load_native_context = graph()->NewNode(
+        javascript()->LoadContext(0, Context::NATIVE_CONTEXT_INDEX, true),
+        context, context, effect);
     Node* const load_arguments_map = graph()->NewNode(
         simplified()->LoadField(
             AccessBuilder::ForContextSlot(Context::STRICT_ARGUMENTS_MAP_INDEX)),
@@ -1616,13 +1613,9 @@ Reduction JSTypedLowering::ReduceNewArray(Node* node, Node* length,
     js_array_map = jsgraph()->Constant(
         handle(js_array_maps->get(elements_kind), isolate()));
   } else {
-    Node* global_object = effect = graph()->NewNode(
-        javascript()->LoadContext(0, Context::GLOBAL_OBJECT_INDEX, true),
+    Node* native_context = effect = graph()->NewNode(
+        javascript()->LoadContext(0, Context::NATIVE_CONTEXT_INDEX, true),
         context, context, effect);
-    Node* native_context = effect =
-        graph()->NewNode(simplified()->LoadField(
-                             AccessBuilder::ForJSGlobalObjectNativeContext()),
-                         global_object, effect, control);
     Node* js_array_maps = effect = graph()->NewNode(
         javascript()->LoadContext(0, Context::JS_ARRAY_MAPS_INDEX, true),
         native_context, native_context, effect);
@@ -1765,7 +1758,8 @@ Reduction JSTypedLowering::ReduceJSCreateClosure(Node* node) {
 Reduction JSTypedLowering::ReduceJSCreateLiteralArray(Node* node) {
   DCHECK_EQ(IrOpcode::kJSCreateLiteralArray, node->opcode());
   CreateLiteralParameters const& p = CreateLiteralParametersOf(node->op());
-  int const length = p.constants()->length();
+  Handle<FixedArray> const constants = Handle<FixedArray>::cast(p.constant());
+  int const length = constants->length();
   int const flags = p.flags();
 
   // Use the FastCloneShallowArrayStub only for shallow boilerplates up to the
@@ -1784,7 +1778,7 @@ Reduction JSTypedLowering::ReduceJSCreateLiteralArray(Node* node) {
     const Operator* new_op = common()->Call(desc);
     Node* stub_code = jsgraph()->HeapConstant(callable.code());
     Node* literal_index = jsgraph()->SmiConstant(p.index());
-    Node* constant_elements = jsgraph()->HeapConstant(p.constants());
+    Node* constant_elements = jsgraph()->HeapConstant(constants);
     node->InsertInput(graph()->zone(), 0, stub_code);
     node->InsertInput(graph()->zone(), 2, literal_index);
     node->InsertInput(graph()->zone(), 3, constant_elements);
@@ -1799,8 +1793,9 @@ Reduction JSTypedLowering::ReduceJSCreateLiteralArray(Node* node) {
 Reduction JSTypedLowering::ReduceJSCreateLiteralObject(Node* node) {
   DCHECK_EQ(IrOpcode::kJSCreateLiteralObject, node->opcode());
   CreateLiteralParameters const& p = CreateLiteralParametersOf(node->op());
+  Handle<FixedArray> const constants = Handle<FixedArray>::cast(p.constant());
   // Constants are pairs, see ObjectLiteral::properties_count().
-  int const length = p.constants()->length() / 2;
+  int const length = constants->length() / 2;
   int const flags = p.flags();
 
   // Use the FastCloneShallowObjectStub only for shallow boilerplates without
@@ -1818,7 +1813,7 @@ Reduction JSTypedLowering::ReduceJSCreateLiteralObject(Node* node) {
     Node* stub_code = jsgraph()->HeapConstant(callable.code());
     Node* literal_index = jsgraph()->SmiConstant(p.index());
     Node* literal_flags = jsgraph()->SmiConstant(flags);
-    Node* constant_elements = jsgraph()->HeapConstant(p.constants());
+    Node* constant_elements = jsgraph()->HeapConstant(constants);
     node->InsertInput(graph()->zone(), 0, stub_code);
     node->InsertInput(graph()->zone(), 2, literal_index);
     node->InsertInput(graph()->zone(), 3, constant_elements);
@@ -1836,22 +1831,16 @@ Reduction JSTypedLowering::ReduceJSCreateFunctionContext(Node* node) {
   int slot_count = OpParameter<int>(node->op());
   Node* const closure = NodeProperties::GetValueInput(node, 0);
 
-  // The closure can be NumberConstant(0) if the closure is global code
-  // (rather than a function). We exclude that case here.
-  // TODO(jarin) Find a better way to check that the closure is a function.
-
   // Use inline allocation for function contexts up to a size limit.
-  if (slot_count < kFunctionContextAllocationLimit &&
-      closure->opcode() != IrOpcode::kNumberConstant) {
+  if (slot_count < kFunctionContextAllocationLimit) {
     // JSCreateFunctionContext[slot_count < limit]](fun)
-    Node* const effect = NodeProperties::GetEffectInput(node);
-    Node* const control = NodeProperties::GetControlInput(node);
-    Node* const context = NodeProperties::GetContextInput(node);
-    Node* const extension = jsgraph()->ZeroConstant();
-    Node* const load = graph()->NewNode(
-        simplified()->LoadField(
-            AccessBuilder::ForContextSlot(Context::GLOBAL_OBJECT_INDEX)),
-        context, effect, control);
+    Node* effect = NodeProperties::GetEffectInput(node);
+    Node* control = NodeProperties::GetControlInput(node);
+    Node* context = NodeProperties::GetContextInput(node);
+    Node* extension = jsgraph()->TheHoleConstant();
+    Node* native_context = effect = graph()->NewNode(
+        javascript()->LoadContext(0, Context::NATIVE_CONTEXT_INDEX, true),
+        context, context, effect);
     AllocationBuilder a(jsgraph(), effect, control);
     STATIC_ASSERT(Context::MIN_CONTEXT_SLOTS == 4);  // Ensure fully covered.
     int context_length = slot_count + Context::MIN_CONTEXT_SLOTS;
@@ -1859,7 +1848,8 @@ Reduction JSTypedLowering::ReduceJSCreateFunctionContext(Node* node) {
     a.Store(AccessBuilder::ForContextSlot(Context::CLOSURE_INDEX), closure);
     a.Store(AccessBuilder::ForContextSlot(Context::PREVIOUS_INDEX), context);
     a.Store(AccessBuilder::ForContextSlot(Context::EXTENSION_INDEX), extension);
-    a.Store(AccessBuilder::ForContextSlot(Context::GLOBAL_OBJECT_INDEX), load);
+    a.Store(AccessBuilder::ForContextSlot(Context::NATIVE_CONTEXT_INDEX),
+            native_context);
     for (int i = Context::MIN_CONTEXT_SLOTS; i < context_length; ++i) {
       a.Store(AccessBuilder::ForContextSlot(i), jsgraph()->UndefinedConstant());
     }
@@ -1888,38 +1878,25 @@ Reduction JSTypedLowering::ReduceJSCreateFunctionContext(Node* node) {
 
 Reduction JSTypedLowering::ReduceJSCreateWithContext(Node* node) {
   DCHECK_EQ(IrOpcode::kJSCreateWithContext, node->opcode());
-  Node* const input = NodeProperties::GetValueInput(node, 0);
-  Node* const closure = NodeProperties::GetValueInput(node, 1);
-  Type* input_type = NodeProperties::GetType(input);
-
-  // The closure can be NumberConstant(0) if the closure is global code
-  // (rather than a function). We exclude that case here.
-  // TODO(jarin) Find a better way to check that the closure is a function.
-
-  // Use inline allocation for with contexts for regular objects.
-  if (input_type->Is(Type::Receiver()) &&
-      closure->opcode() != IrOpcode::kNumberConstant) {
-    // JSCreateWithContext(o:receiver, fun)
-    Node* const effect = NodeProperties::GetEffectInput(node);
-    Node* const control = NodeProperties::GetControlInput(node);
-    Node* const context = NodeProperties::GetContextInput(node);
-    Node* const load = graph()->NewNode(
-        simplified()->LoadField(
-            AccessBuilder::ForContextSlot(Context::GLOBAL_OBJECT_INDEX)),
-        context, effect, control);
-    AllocationBuilder a(jsgraph(), effect, control);
-    STATIC_ASSERT(Context::MIN_CONTEXT_SLOTS == 4);  // Ensure fully covered.
-    a.AllocateArray(Context::MIN_CONTEXT_SLOTS, factory()->with_context_map());
-    a.Store(AccessBuilder::ForContextSlot(Context::CLOSURE_INDEX), closure);
-    a.Store(AccessBuilder::ForContextSlot(Context::PREVIOUS_INDEX), context);
-    a.Store(AccessBuilder::ForContextSlot(Context::EXTENSION_INDEX), input);
-    a.Store(AccessBuilder::ForContextSlot(Context::GLOBAL_OBJECT_INDEX), load);
-    RelaxControls(node);
-    a.FinishAndChange(node);
-    return Changed(node);
-  }
-
-  return NoChange();
+  Node* object = NodeProperties::GetValueInput(node, 0);
+  Node* closure = NodeProperties::GetValueInput(node, 1);
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
+  Node* context = NodeProperties::GetContextInput(node);
+  Node* native_context = effect = graph()->NewNode(
+      javascript()->LoadContext(0, Context::NATIVE_CONTEXT_INDEX, true),
+      context, context, effect);
+  AllocationBuilder a(jsgraph(), effect, control);
+  STATIC_ASSERT(Context::MIN_CONTEXT_SLOTS == 4);  // Ensure fully covered.
+  a.AllocateArray(Context::MIN_CONTEXT_SLOTS, factory()->with_context_map());
+  a.Store(AccessBuilder::ForContextSlot(Context::CLOSURE_INDEX), closure);
+  a.Store(AccessBuilder::ForContextSlot(Context::PREVIOUS_INDEX), context);
+  a.Store(AccessBuilder::ForContextSlot(Context::EXTENSION_INDEX), object);
+  a.Store(AccessBuilder::ForContextSlot(Context::NATIVE_CONTEXT_INDEX),
+          native_context);
+  RelaxControls(node);
+  a.FinishAndChange(node);
+  return Changed(node);
 }
 
 
@@ -1929,29 +1906,24 @@ Reduction JSTypedLowering::ReduceJSCreateBlockContext(Node* node) {
   int context_length = scope_info->ContextLength();
   Node* const closure = NodeProperties::GetValueInput(node, 0);
 
-  // The closure can be NumberConstant(0) if the closure is global code
-  // (rather than a function). We exclude that case here.
-  // TODO(jarin) Find a better way to check that the closure is a function.
-
   // Use inline allocation for block contexts up to a size limit.
-  if (context_length < kBlockContextAllocationLimit &&
-      closure->opcode() != IrOpcode::kNumberConstant) {
+  if (context_length < kBlockContextAllocationLimit) {
     // JSCreateBlockContext[scope[length < limit]](fun)
-    Node* const effect = NodeProperties::GetEffectInput(node);
-    Node* const control = NodeProperties::GetControlInput(node);
-    Node* const context = NodeProperties::GetContextInput(node);
-    Node* const extension = jsgraph()->Constant(scope_info);
-    Node* const load = graph()->NewNode(
-        simplified()->LoadField(
-            AccessBuilder::ForContextSlot(Context::GLOBAL_OBJECT_INDEX)),
-        context, effect, control);
+    Node* effect = NodeProperties::GetEffectInput(node);
+    Node* control = NodeProperties::GetControlInput(node);
+    Node* context = NodeProperties::GetContextInput(node);
+    Node* extension = jsgraph()->Constant(scope_info);
+    Node* native_context = effect = graph()->NewNode(
+        javascript()->LoadContext(0, Context::NATIVE_CONTEXT_INDEX, true),
+        context, context, effect);
     AllocationBuilder a(jsgraph(), effect, control);
     STATIC_ASSERT(Context::MIN_CONTEXT_SLOTS == 4);  // Ensure fully covered.
     a.AllocateArray(context_length, factory()->block_context_map());
     a.Store(AccessBuilder::ForContextSlot(Context::CLOSURE_INDEX), closure);
     a.Store(AccessBuilder::ForContextSlot(Context::PREVIOUS_INDEX), context);
     a.Store(AccessBuilder::ForContextSlot(Context::EXTENSION_INDEX), extension);
-    a.Store(AccessBuilder::ForContextSlot(Context::GLOBAL_OBJECT_INDEX), load);
+    a.Store(AccessBuilder::ForContextSlot(Context::NATIVE_CONTEXT_INDEX),
+            native_context);
     for (int i = Context::MIN_CONTEXT_SLOTS; i < context_length; ++i) {
       a.Store(AccessBuilder::ForContextSlot(i), jsgraph()->TheHoleConstant());
     }
@@ -2189,7 +2161,7 @@ Reduction JSTypedLowering::ReduceJSForInPrepare(Node* node) {
         simplified()->LoadField(AccessBuilder::ForMapInstanceType()),
         receiver_map, effect, if_false0);
 
-    STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_SPEC_OBJECT_TYPE);
+    STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
     cache_type_false0 = graph()->NewNode(
         common()->Select(kMachAnyTagged, BranchHint::kFalse),
         graph()->NewNode(machine()->Uint32LessThanOrEqual(),
@@ -2441,8 +2413,6 @@ Reduction JSTypedLowering::Reduce(Node* node) {
       return ReduceJSLoadContext(node);
     case IrOpcode::kJSStoreContext:
       return ReduceJSStoreContext(node);
-    case IrOpcode::kJSLoadNativeContext:
-      return ReduceJSLoadNativeContext(node);
     case IrOpcode::kJSConvertReceiver:
       return ReduceJSConvertReceiver(node);
     case IrOpcode::kJSCreate:

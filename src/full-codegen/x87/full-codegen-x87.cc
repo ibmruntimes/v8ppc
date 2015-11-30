@@ -4,14 +4,14 @@
 
 #if V8_TARGET_ARCH_X87
 
+#include "src/ast/scopes.h"
 #include "src/code-factory.h"
 #include "src/code-stubs.h"
 #include "src/codegen.h"
 #include "src/debug/debug.h"
 #include "src/full-codegen/full-codegen.h"
 #include "src/ic/ic.h"
-#include "src/parser.h"
-#include "src/scopes.h"
+#include "src/parsing/parser.h"
 #include "src/x87/frames-x87.h"
 
 namespace v8 {
@@ -109,7 +109,7 @@ void FullCodeGenerator::Generate() {
     int receiver_offset = (info->scope()->num_parameters() + 1) * kPointerSize;
     __ mov(ecx, Operand(esp, receiver_offset));
     __ AssertNotSmi(ecx);
-    __ CmpObjectType(ecx, FIRST_SPEC_OBJECT_TYPE, ecx);
+    __ CmpObjectType(ecx, FIRST_JS_RECEIVER_TYPE, ecx);
     __ Assert(above_equal, kSloppyFunctionExpectsJSReceiverReceiver);
   }
 
@@ -973,7 +973,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // Convert the object to a JS object.
   Label convert, done_convert;
   __ JumpIfSmi(eax, &convert, Label::kNear);
-  __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, ecx);
+  __ CmpObjectType(eax, FIRST_JS_RECEIVER_TYPE, ecx);
   __ j(above_equal, &done_convert, Label::kNear);
   __ bind(&convert);
   ToObjectStub stub(isolate());
@@ -984,7 +984,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
   // Check for proxies.
   Label call_runtime, use_cache, fixed_array;
-  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_SPEC_OBJECT_TYPE);
+  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
   __ CmpObjectType(eax, LAST_JS_PROXY_TYPE, ecx);
   __ j(below_equal, &call_runtime);
 
@@ -1042,7 +1042,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
   __ mov(ebx, Immediate(Smi::FromInt(1)));  // Smi indicates slow check
   __ mov(ecx, Operand(esp, 0 * kPointerSize));  // Get enumerated object
-  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_SPEC_OBJECT_TYPE);
+  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
   __ CmpObjectType(ecx, LAST_JS_PROXY_TYPE, ecx);
   __ j(above, &non_proxy);
   __ Move(ebx, Immediate(Smi::FromInt(0)));  // Zero indicates proxy
@@ -1297,7 +1297,10 @@ void FullCodeGenerator::EmitGlobalVariableLoad(VariableProxy* proxy,
   Variable* var = proxy->var();
   DCHECK(var->IsUnallocatedOrGlobalSlot() ||
          (var->IsLookupSlot() && var->mode() == DYNAMIC_GLOBAL));
-  __ mov(LoadDescriptor::ReceiverRegister(), GlobalObjectOperand());
+  __ mov(LoadDescriptor::ReceiverRegister(), NativeContextOperand());
+  __ mov(LoadDescriptor::ReceiverRegister(),
+         ContextOperand(LoadDescriptor::ReceiverRegister(),
+                        Context::EXTENSION_INDEX));
   __ mov(LoadDescriptor::NameRegister(), var->name());
   __ mov(LoadDescriptor::SlotRegister(),
          Immediate(SmiFromSlot(proxy->VariableFeedbackSlot())));
@@ -1377,53 +1380,12 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy,
 
 void FullCodeGenerator::VisitRegExpLiteral(RegExpLiteral* expr) {
   Comment cmnt(masm_, "[ RegExpLiteral");
-  Label materialized;
-  // Registers will be used as follows:
-  // edi = JS function.
-  // ecx = literals array.
-  // ebx = regexp literal.
-  // eax = regexp literal clone.
   __ mov(edi, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
-  __ mov(ecx, FieldOperand(edi, JSFunction::kLiteralsOffset));
-  int literal_offset = LiteralsArray::OffsetOfLiteralAt(expr->literal_index());
-  __ mov(ebx, FieldOperand(ecx, literal_offset));
-  __ cmp(ebx, isolate()->factory()->undefined_value());
-  __ j(not_equal, &materialized, Label::kNear);
-
-  // Create regexp literal using runtime function
-  // Result will be in eax.
-  __ push(ecx);
-  __ push(Immediate(Smi::FromInt(expr->literal_index())));
-  __ push(Immediate(expr->pattern()));
-  __ push(Immediate(expr->flags()));
-  __ CallRuntime(Runtime::kMaterializeRegExpLiteral, 4);
-  __ mov(ebx, eax);
-
-  __ bind(&materialized);
-  int size = JSRegExp::kSize + JSRegExp::kInObjectFieldCount * kPointerSize;
-  Label allocated, runtime_allocate;
-  __ Allocate(size, eax, ecx, edx, &runtime_allocate, TAG_OBJECT);
-  __ jmp(&allocated);
-
-  __ bind(&runtime_allocate);
-  __ push(ebx);
-  __ push(Immediate(Smi::FromInt(size)));
-  __ CallRuntime(Runtime::kAllocateInNewSpace, 1);
-  __ pop(ebx);
-
-  __ bind(&allocated);
-  // Copy the content into the newly allocated memory.
-  // (Unroll copy loop once for better throughput).
-  for (int i = 0; i < size - kPointerSize; i += 2 * kPointerSize) {
-    __ mov(edx, FieldOperand(ebx, i));
-    __ mov(ecx, FieldOperand(ebx, i + kPointerSize));
-    __ mov(FieldOperand(eax, i), edx);
-    __ mov(FieldOperand(eax, i + kPointerSize), ecx);
-  }
-  if ((size % (2 * kPointerSize)) != 0) {
-    __ mov(edx, FieldOperand(ebx, size - kPointerSize));
-    __ mov(FieldOperand(eax, size - kPointerSize), edx);
-  }
+  __ Move(eax, Immediate(Smi::FromInt(expr->literal_index())));
+  __ Move(ecx, Immediate(expr->pattern()));
+  __ Move(edx, Immediate(Smi::FromInt(expr->flags())));
+  FastCloneRegExpStub stub(isolate());
+  __ CallStub(&stub);
   context()->Plug(eax);
 }
 
@@ -1452,15 +1414,13 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   // If any of the keys would store to the elements array, then we shouldn't
   // allow it.
   if (MustCreateObjectLiteralWithRuntime(expr)) {
-    __ mov(edi, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
-    __ push(FieldOperand(edi, JSFunction::kLiteralsOffset));
+    __ push(Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
     __ push(Immediate(Smi::FromInt(expr->literal_index())));
     __ push(Immediate(constant_properties));
     __ push(Immediate(Smi::FromInt(flags)));
     __ CallRuntime(Runtime::kCreateObjectLiteral, 4);
   } else {
-    __ mov(edi, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
-    __ mov(eax, FieldOperand(edi, JSFunction::kLiteralsOffset));
+    __ mov(eax, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
     __ mov(ebx, Immediate(Smi::FromInt(expr->literal_index())));
     __ mov(ecx, Immediate(constant_properties));
     __ mov(edx, Immediate(Smi::FromInt(flags)));
@@ -1649,15 +1609,13 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   }
 
   if (MustCreateArrayLiteralWithRuntime(expr)) {
-    __ mov(ebx, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
-    __ push(FieldOperand(ebx, JSFunction::kLiteralsOffset));
+    __ push(Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
     __ push(Immediate(Smi::FromInt(expr->literal_index())));
     __ push(Immediate(constant_elements));
     __ push(Immediate(Smi::FromInt(expr->ComputeFlags())));
     __ CallRuntime(Runtime::kCreateArrayLiteral, 4);
   } else {
-    __ mov(ebx, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
-    __ mov(eax, FieldOperand(ebx, JSFunction::kLiteralsOffset));
+    __ mov(eax, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
     __ mov(ebx, Immediate(Smi::FromInt(expr->literal_index())));
     __ mov(ecx, Immediate(constant_elements));
     FastCloneShallowArrayStub stub(isolate(), allocation_site_mode);
@@ -1682,14 +1640,13 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
 
     if (!result_saved) {
       __ push(eax);  // array literal.
-      __ push(Immediate(Smi::FromInt(expr->literal_index())));
       result_saved = true;
     }
     VisitForAccumulatorValue(subexpr);
 
     __ mov(StoreDescriptor::NameRegister(),
            Immediate(Smi::FromInt(array_index)));
-    __ mov(StoreDescriptor::ReceiverRegister(), Operand(esp, kPointerSize));
+    __ mov(StoreDescriptor::ReceiverRegister(), Operand(esp, 0));
     EmitLoadStoreICSlot(expr->LiteralFeedbackSlot());
     Handle<Code> ic =
         CodeFactory::KeyedStoreIC(isolate(), language_mode()).code();
@@ -1703,7 +1660,6 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   // (inclusive) and these elements gets appended to the array. Note that the
   // number elements an iterable produces is unknown ahead of time.
   if (array_index < length && result_saved) {
-    __ Drop(1);  // literal index
     __ Pop(eax);
     result_saved = false;
   }
@@ -1724,7 +1680,6 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   }
 
   if (result_saved) {
-    __ Drop(1);  // literal index
     context()->PlugTOS();
   } else {
     context()->Plug(eax);
@@ -2136,8 +2091,7 @@ void FullCodeGenerator::EmitCreateIteratorResult(bool done) {
   __ CallRuntime(Runtime::kAllocateInNewSpace, 1);
 
   __ bind(&done_allocate);
-  __ mov(ebx, GlobalObjectOperand());
-  __ mov(ebx, FieldOperand(ebx, JSGlobalObject::kNativeContextOffset));
+  __ mov(ebx, NativeContextOperand());
   __ mov(ebx, ContextOperand(ebx, Context::ITERATOR_RESULT_MAP_INDEX));
   __ mov(FieldOperand(eax, HeapObject::kMapOffset), ebx);
   __ mov(FieldOperand(eax, JSObject::kPropertiesOffset),
@@ -2459,7 +2413,10 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
   if (var->IsUnallocated()) {
     // Global var, const, or let.
     __ mov(StoreDescriptor::NameRegister(), var->name());
-    __ mov(StoreDescriptor::ReceiverRegister(), GlobalObjectOperand());
+    __ mov(StoreDescriptor::ReceiverRegister(), NativeContextOperand());
+    __ mov(StoreDescriptor::ReceiverRegister(),
+           ContextOperand(StoreDescriptor::ReceiverRegister(),
+                          Context::EXTENSION_INDEX));
     EmitLoadStoreICSlot(slot);
     CallStoreIC();
 
@@ -2947,7 +2904,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
   __ mov(edx, Immediate(SmiFromSlot(expr->CallNewFeedbackSlot())));
 
   CallConstructStub stub(isolate());
-  __ call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
+  __ call(stub.GetCode(), RelocInfo::CODE_TARGET);
   PrepareForBailoutForId(expr->ReturnId(), TOS_REG);
   // Restore context register.
   __ mov(esi, Operand(ebp, StandardFrameConstants::kContextOffset));
@@ -2982,7 +2939,7 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   __ Move(eax, Immediate(arg_count));
   __ mov(edi, Operand(esp, arg_count * kPointerSize));
 
-  __ Call(isolate()->builtins()->Construct(), RelocInfo::CONSTRUCT_CALL);
+  __ Call(isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
 
   RecordJSReturnSite(expr);
 
@@ -3013,7 +2970,7 @@ void FullCodeGenerator::EmitIsSmi(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitIsSpecObject(CallRuntime* expr) {
+void FullCodeGenerator::EmitIsJSReceiver(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 1);
 
@@ -3027,7 +2984,7 @@ void FullCodeGenerator::EmitIsSpecObject(CallRuntime* expr) {
                          &if_true, &if_false, &fall_through);
 
   __ JumpIfSmi(eax, if_false);
-  __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, ebx);
+  __ CmpObjectType(eax, FIRST_JS_RECEIVER_TYPE, ebx);
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   Split(above_equal, if_true, if_false, fall_through);
 
@@ -3306,16 +3263,16 @@ void FullCodeGenerator::EmitClassOf(CallRuntime* expr) {
   // Assume that there are only two callable types, and one of them is at
   // either end of the type range for JS object types. Saves extra comparisons.
   STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
-  __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, eax);
+  __ CmpObjectType(eax, FIRST_JS_RECEIVER_TYPE, eax);
   // Map is now in eax.
   __ j(below, &null);
   STATIC_ASSERT(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                FIRST_SPEC_OBJECT_TYPE + 1);
+                FIRST_JS_RECEIVER_TYPE + 1);
   __ j(equal, &function);
 
-  __ CmpInstanceType(eax, LAST_SPEC_OBJECT_TYPE);
+  __ CmpInstanceType(eax, LAST_JS_RECEIVER_TYPE);
   STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                LAST_SPEC_OBJECT_TYPE - 1);
+                LAST_JS_RECEIVER_TYPE - 1);
   __ j(equal, &function);
   // Assume that there is no larger type.
   STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE == LAST_TYPE - 1);
@@ -3743,7 +3700,7 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
 
   __ mov(edx, Operand(esp, eax, times_pointer_size, 1 * kPointerSize));
   __ mov(edi, Operand(esp, eax, times_pointer_size, 0 * kPointerSize));
-  __ Call(isolate()->builtins()->Construct(), RelocInfo::CONSTRUCT_CALL);
+  __ Call(isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
 
   // Restore context register.
   __ mov(esi, Operand(ebp, StandardFrameConstants::kContextOffset));
@@ -4078,8 +4035,7 @@ void FullCodeGenerator::EmitCreateIterResultObject(CallRuntime* expr) {
   Label runtime, done;
 
   __ Allocate(JSIteratorResult::kSize, eax, ecx, edx, &runtime, TAG_OBJECT);
-  __ mov(ebx, GlobalObjectOperand());
-  __ mov(ebx, FieldOperand(ebx, JSGlobalObject::kNativeContextOffset));
+  __ mov(ebx, NativeContextOperand());
   __ mov(ebx, ContextOperand(ebx, Context::ITERATOR_RESULT_MAP_INDEX));
   __ mov(FieldOperand(eax, HeapObject::kMapOffset), ebx);
   __ mov(FieldOperand(eax, JSObject::kPropertiesOffset),
@@ -4103,9 +4059,7 @@ void FullCodeGenerator::EmitLoadJSRuntimeFunction(CallRuntime* expr) {
   // Push undefined as receiver.
   __ push(Immediate(isolate()->factory()->undefined_value()));
 
-  __ mov(eax, GlobalObjectOperand());
-  __ mov(eax, FieldOperand(eax, JSGlobalObject::kNativeContextOffset));
-  __ mov(eax, ContextOperand(eax, expr->context_index()));
+  __ LoadGlobalFunction(expr->context_index(), eax);
 }
 
 
@@ -4194,7 +4148,8 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
         bool is_this = var->HasThisName(isolate());
         DCHECK(is_sloppy(language_mode()) || is_this);
         if (var->IsUnallocatedOrGlobalSlot()) {
-          __ push(GlobalObjectOperand());
+          __ mov(eax, NativeContextOperand());
+          __ push(ContextOperand(eax, Context::EXTENSION_INDEX));
           __ push(Immediate(var->name()));
           __ CallRuntime(Runtime::kDeleteProperty_Sloppy, 2);
           context()->Plug(eax);
@@ -4599,8 +4554,8 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ JumpIfSmi(eax, if_false);
     __ cmp(eax, isolate()->factory()->null_value());
     __ j(equal, if_true);
-    STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
-    __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, edx);
+    STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
+    __ CmpObjectType(eax, FIRST_JS_RECEIVER_TYPE, edx);
     __ j(below, if_false);
     // Check for callable or undetectable objects => false.
     __ test_b(FieldOperand(edx, Map::kBitFieldOffset),
@@ -4758,9 +4713,9 @@ void FullCodeGenerator::PushFunctionArgumentForContextAllocation() {
       closure_scope->is_module_scope()) {
     // Contexts nested in the native context have a canonical empty function
     // as their closure, not the anonymous closure containing the global
-    // code.  Pass a smi sentinel and let the runtime look up the empty
-    // function.
-    __ push(Immediate(Smi::FromInt(0)));
+    // code.
+    __ mov(eax, NativeContextOperand());
+    __ push(ContextOperand(eax, Context::CLOSURE_INDEX));
   } else if (closure_scope->is_eval_scope()) {
     // Contexts nested inside eval code have the same closure as the context
     // calling eval, not the anonymous closure containing the eval code.
@@ -4875,8 +4830,8 @@ void BackEdgeTable::PatchAt(Code* unoptimized_code,
       break;
   }
 
-  Assembler::set_target_address_at(call_target_address,
-                                   unoptimized_code,
+  Assembler::set_target_address_at(unoptimized_code->GetIsolate(),
+                                   call_target_address, unoptimized_code,
                                    replacement_code->entry());
   unoptimized_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
       unoptimized_code, call_target_address, replacement_code);

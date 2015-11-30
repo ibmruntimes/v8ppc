@@ -38,8 +38,8 @@
 #include "src/allocation.h"
 #include "src/builtins.h"
 #include "src/isolate.h"
+#include "src/parsing/token.h"
 #include "src/runtime/runtime.h"
-#include "src/token.h"
 
 namespace v8 {
 
@@ -54,6 +54,9 @@ class StatsCounter;
 
 // -----------------------------------------------------------------------------
 // Platform independent assembler base class.
+
+enum class CodeObjectRequired { kNo, kYes };
+
 
 class AssemblerBase: public Malloced {
  public:
@@ -106,9 +109,6 @@ class AssemblerBase: public Malloced {
   static const int kMinimalBufferSize = 4*KB;
 
   static void FlushICache(Isolate* isolate, void* start, size_t size);
-
-  // TODO(all): Help get rid of this one.
-  static void FlushICacheWithoutIsolate(void* start, size_t size);
 
  protected:
   // The buffer into which code and relocation info are generated. It could
@@ -233,17 +233,18 @@ class CpuFeatures : public AllStatic {
   static void PrintTarget();
   static void PrintFeatures();
 
+ private:
+  friend class ExternalReference;
+  friend class AssemblerBase;
   // Flush instruction cache.
   static void FlushICache(void* start, size_t size);
 
- private:
   // Platform-dependent implementation.
   static void ProbeImpl(bool cross_compile);
 
   static unsigned supported_;
   static unsigned cache_line_size_;
   static bool initialized_;
-  friend class ExternalReference;
   DISALLOW_COPY_AND_ASSIGN(CpuFeatures);
 };
 
@@ -376,7 +377,6 @@ class RelocInfo {
     // Please note the order is important (see IsCodeTarget, IsGCRelocMode).
     CODE_TARGET,  // Code target which is not any of the above.
     CODE_TARGET_WITH_ID,
-    CONSTRUCT_CALL,  // code target that is a call to a JavaScript constructor.
     DEBUGGER_STATEMENT,  // Code target for the debugger statement.
     EMBEDDED_OBJECT,
     CELL,
@@ -428,18 +428,18 @@ class RelocInfo {
 
   STATIC_ASSERT(NUMBER_OF_MODES <= kBitsPerInt);
 
-  RelocInfo() {}
+  explicit RelocInfo(Isolate* isolate) : isolate_(isolate) {
+    DCHECK_NOT_NULL(isolate);
+  }
 
-  RelocInfo(byte* pc, Mode rmode, intptr_t data, Code* host)
-      : pc_(pc), rmode_(rmode), data_(data), host_(host) {
+  RelocInfo(Isolate* isolate, byte* pc, Mode rmode, intptr_t data, Code* host)
+      : isolate_(isolate), pc_(pc), rmode_(rmode), data_(data), host_(host) {
+    DCHECK_NOT_NULL(isolate);
   }
 
   static inline bool IsRealRelocMode(Mode mode) {
     return mode >= FIRST_REAL_RELOC_MODE &&
         mode <= LAST_REAL_RELOC_MODE;
-  }
-  static inline bool IsConstructCall(Mode mode) {
-    return mode == CONSTRUCT_CALL;
   }
   static inline bool IsCodeTarget(Mode mode) {
     return mode <= LAST_CODE_ENUM;
@@ -514,6 +514,7 @@ class RelocInfo {
   static inline int ModeMask(Mode mode) { return 1 << mode; }
 
   // Accessors
+  Isolate* isolate() const { return isolate_; }
   byte* pc() const { return pc_; }
   void set_pc(byte* pc) { pc_ = pc; }
   Mode rmode() const {  return rmode_; }
@@ -621,9 +622,6 @@ class RelocInfo {
   template<typename StaticVisitor> inline void Visit(Heap* heap);
   inline void Visit(Isolate* isolate, ObjectVisitor* v);
 
-  // Patch the code with a call.
-  void PatchCodeWithCall(Address target, int guard_bytes);
-
   // Check whether this return sequence has been patched
   // with a call to the debugger.
   INLINE(bool IsPatchedReturnSequence());
@@ -657,6 +655,7 @@ class RelocInfo {
   static const int kApplyMask;  // Modes affected by apply.  Depends on arch.
 
  private:
+  Isolate* isolate_;
   // On ARM, note that pc_ is the address of the constant pool entry
   // to be relocated and not the address of the instruction
   // referencing the constant pool entry (except when rmode_ ==
@@ -1006,7 +1005,7 @@ class ExternalReference BASE_EMBEDDED {
   Address address() const { return reinterpret_cast<Address>(address_); }
 
   // Used to check if single stepping is enabled in generated code.
-  static ExternalReference debug_step_in_fp_address(Isolate* isolate);
+  static ExternalReference debug_last_step_action_address(Isolate* isolate);
 
 #ifndef V8_INTERPRETED_REGEXP
   // C functions called from RegExp generated code.
@@ -1140,7 +1139,7 @@ inline int NumberOfBitsSet(uint32_t x) {
 bool EvalComparison(Token::Value op, double op1, double op2);
 
 // Computes pow(x, y) with the special cases in the spec for Math.pow.
-double power_helper(double x, double y);
+double power_helper(Isolate* isolate, double x, double y);
 double power_double_int(double x, int y);
 double power_double_double(double x, double y);
 
@@ -1156,7 +1155,10 @@ class CallWrapper {
   virtual void BeforeCall(int call_size) const = 0;
   // Called just after emitting a call, i.e., at the return site for the call.
   virtual void AfterCall() const = 0;
+  // Return whether call needs to check for debug stepping.
+  virtual bool NeedsDebugStepCheck() const { return false; }
 };
+
 
 class NullCallWrapper : public CallWrapper {
  public:
@@ -1164,6 +1166,16 @@ class NullCallWrapper : public CallWrapper {
   virtual ~NullCallWrapper() { }
   virtual void BeforeCall(int call_size) const { }
   virtual void AfterCall() const { }
+};
+
+
+class CheckDebugStepCallWrapper : public CallWrapper {
+ public:
+  CheckDebugStepCallWrapper() {}
+  virtual ~CheckDebugStepCallWrapper() {}
+  virtual void BeforeCall(int call_size) const {}
+  virtual void AfterCall() const {}
+  virtual bool NeedsDebugStepCheck() const { return true; }
 };
 
 

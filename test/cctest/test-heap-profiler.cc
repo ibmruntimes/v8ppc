@@ -1539,7 +1539,8 @@ class GraphWithImplicitRefs {
     instance_ = NULL;
   }
 
-  static void gcPrologue(v8::GCType type, v8::GCCallbackFlags flags) {
+  static void gcPrologue(v8::Isolate* isolate, v8::GCType type,
+                         v8::GCCallbackFlags flags) {
     instance_->AddImplicitReferences();
   }
 
@@ -1571,7 +1572,7 @@ TEST(HeapSnapshotImplicitReferences) {
   v8::HeapProfiler* heap_profiler = env->GetIsolate()->GetHeapProfiler();
 
   GraphWithImplicitRefs graph(&env);
-  v8::V8::AddGCPrologueCallback(&GraphWithImplicitRefs::gcPrologue);
+  env->GetIsolate()->AddGCPrologueCallback(&GraphWithImplicitRefs::gcPrologue);
 
   const v8::HeapSnapshot* snapshot = heap_profiler->TakeHeapSnapshot();
   CHECK(ValidateSnapshot(snapshot));
@@ -1594,7 +1595,8 @@ TEST(HeapSnapshotImplicitReferences) {
     }
   }
   CHECK_EQ(2, implicit_targets_count);
-  v8::V8::RemoveGCPrologueCallback(&GraphWithImplicitRefs::gcPrologue);
+  env->GetIsolate()->RemoveGCPrologueCallback(
+      &GraphWithImplicitRefs::gcPrologue);
 }
 
 
@@ -1818,11 +1820,11 @@ TEST(GetConstructorName) {
       "var Constructor2 = function() {};\n"
       "var obj2 = new Constructor2();\n"
       "var obj3 = {};\n"
-      "obj3.constructor = function Constructor3() {};\n"
+      "obj3.__proto__ = { constructor: function Constructor3() {} };\n"
       "var obj4 = {};\n"
       "// Slow properties\n"
       "for (var i=0; i<2000; ++i) obj4[\"p\" + i] = i;\n"
-      "obj4.constructor = function Constructor4() {};\n"
+      "obj4.__proto__ = { constructor: function Constructor4() {} };\n"
       "var obj5 = {};\n"
       "var obj6 = {};\n"
       "obj6.constructor = 6;");
@@ -1841,17 +1843,13 @@ TEST(GetConstructorName) {
   v8::Local<v8::Object> obj3 = js_global->Get(v8_str("obj3")).As<v8::Object>();
   i::Handle<i::JSObject> js_obj3 =
       i::Handle<i::JSObject>::cast(v8::Utils::OpenHandle(*obj3));
-  // TODO(verwaest): Restore to Constructor3 once supported by the
-  // heap-snapshot-generator.
-  CHECK_EQ(
-      0, StringCmp("Object", i::V8HeapExplorer::GetConstructorName(*js_obj3)));
+  CHECK_EQ(0, StringCmp("Constructor3",
+                        i::V8HeapExplorer::GetConstructorName(*js_obj3)));
   v8::Local<v8::Object> obj4 = js_global->Get(v8_str("obj4")).As<v8::Object>();
   i::Handle<i::JSObject> js_obj4 =
       i::Handle<i::JSObject>::cast(v8::Utils::OpenHandle(*obj4));
-  // TODO(verwaest): Restore to Constructor4 once supported by the
-  // heap-snapshot-generator.
-  CHECK_EQ(
-      0, StringCmp("Object", i::V8HeapExplorer::GetConstructorName(*js_obj4)));
+  CHECK_EQ(0, StringCmp("Constructor4",
+                        i::V8HeapExplorer::GetConstructorName(*js_obj4)));
   v8::Local<v8::Object> obj5 = js_global->Get(v8_str("obj5")).As<v8::Object>();
   i::Handle<i::JSObject> js_obj5 =
       i::Handle<i::JSObject>::cast(v8::Utils::OpenHandle(*obj5));

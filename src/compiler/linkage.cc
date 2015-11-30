@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/ast/scopes.h"
 #include "src/code-stubs.h"
 #include "src/compiler.h"
 #include "src/compiler/common-operator.h"
@@ -10,7 +11,6 @@
 #include "src/compiler/node.h"
 #include "src/compiler/osr.h"
 #include "src/compiler/pipeline.h"
-#include "src/scopes.h"
 
 namespace v8 {
 namespace internal {
@@ -144,24 +144,6 @@ CallDescriptor* Linkage::ComputeIncoming(Zone* zone, CompilationInfo* info) {
                                CallDescriptor::kNoFlags);
   }
   return NULL;  // TODO(titzer): ?
-}
-
-
-FrameOffset Linkage::GetFrameOffset(int spill_slot, Frame* frame) const {
-  bool has_frame = frame->GetSpillSlotCount() > 0 ||
-                   incoming_->IsJSFunctionCall() ||
-                   incoming_->kind() == CallDescriptor::kCallAddress;
-  const int offset =
-      (StandardFrameConstants::kFixedSlotCountAboveFp - spill_slot - 1) *
-      kPointerSize;
-  if (has_frame) {
-    return FrameOffset::FromFramePointer(offset);
-  } else {
-    // No frame. Retrieve all parameters relative to stack pointer.
-    DCHECK(spill_slot < 0);  // Must be a parameter.
-    int sp_offset = offset + (frame->GetSpToFpSlotCount() * kPointerSize);
-    return FrameOffset::FromStackPointer(sp_offset);
-  }
 }
 
 

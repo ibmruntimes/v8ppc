@@ -661,7 +661,7 @@ TEST_F(JSTypedLoweringTest, JSLoadContext) {
                               IsLoadField(AccessBuilder::ForContextSlot(
                                               Context::PREVIOUS_INDEX),
                                           context, effect, graph()->start()),
-                              effect, graph()->start()));
+                              _, graph()->start()));
     }
   }
 }
@@ -696,7 +696,7 @@ TEST_F(JSTypedLoweringTest, JSStoreContext) {
                                IsLoadField(AccessBuilder::ForContextSlot(
                                                Context::PREVIOUS_INDEX),
                                            context, effect, graph()->start()),
-                               value, effect, control));
+                               value, _, control));
     }
   }
 }
@@ -952,6 +952,27 @@ TEST_F(JSTypedLoweringTest, JSLoadNamedStringLength) {
 }
 
 
+TEST_F(JSTypedLoweringTest, JSLoadNamedFunctionPrototype) {
+  VectorSlotPair feedback;
+  Handle<Name> name = factory()->prototype_string();
+  Handle<JSFunction> function = isolate()->object_function();
+  Handle<JSObject> function_prototype(JSObject::cast(function->prototype()));
+  Node* const receiver = Parameter(Type::Constant(function, zone()), 0);
+  Node* const vector = Parameter(Type::Internal(), 1);
+  Node* const context = Parameter(Type::Internal(), 2);
+  Node* const effect = graph()->start();
+  Node* const control = graph()->start();
+  TRACED_FOREACH(LanguageMode, language_mode, kLanguageModes) {
+    Reduction const r = Reduce(
+        graph()->NewNode(javascript()->LoadNamed(language_mode, name, feedback),
+                         receiver, vector, context, EmptyFrameState(),
+                         EmptyFrameState(), effect, control));
+    ASSERT_TRUE(r.Changed());
+    EXPECT_THAT(r.replacement(), IsHeapConstant(function_prototype));
+  }
+}
+
+
 // -----------------------------------------------------------------------------
 // JSAdd
 
@@ -1159,7 +1180,7 @@ TEST_F(JSTypedLoweringTest, JSCreateFunctionContextViaInlinedAllocation) {
   EXPECT_THAT(r.replacement(),
               IsFinishRegion(IsAllocate(IsNumberConstant(Context::SizeFor(
                                             8 + Context::MIN_CONTEXT_SLOTS)),
-                                        IsBeginRegion(effect), control),
+                                        IsBeginRegion(_), control),
                              _));
 }
 
@@ -1186,7 +1207,7 @@ TEST_F(JSTypedLoweringTest, JSCreateFunctionContextViaStub) {
 
 TEST_F(JSTypedLoweringTest, JSCreateWithContext) {
   Node* const object = Parameter(Type::Receiver());
-  Node* const closure = Parameter(Type::Any());
+  Node* const closure = Parameter(Type::Function());
   Node* const context = Parameter(Type::Any());
   Node* const frame_state = EmptyFrameState();
   Node* const effect = graph()->start();
@@ -1198,7 +1219,7 @@ TEST_F(JSTypedLoweringTest, JSCreateWithContext) {
   EXPECT_THAT(r.replacement(),
               IsFinishRegion(IsAllocate(IsNumberConstant(Context::SizeFor(
                                             Context::MIN_CONTEXT_SLOTS)),
-                                        IsBeginRegion(effect), control),
+                                        IsBeginRegion(_), control),
                              _));
 }
 

@@ -4,12 +4,12 @@
 
 #include "src/debug/debug-scopes.h"
 
+#include "src/ast/scopes.h"
 #include "src/debug/debug.h"
 #include "src/frames-inl.h"
 #include "src/globals.h"
 #include "src/isolate-inl.h"
-#include "src/parser.h"
-#include "src/scopes.h"
+#include "src/parsing/parser.h"
 
 namespace v8 {
 namespace internal {
@@ -337,7 +337,7 @@ void ScopeIterator::DebugPrint() {
       if (!CurrentContext().is_null()) {
         CurrentContext()->Print(os);
         if (CurrentContext()->has_extension()) {
-          Handle<Object> extension(CurrentContext()->extension(), isolate_);
+          Handle<HeapObject> extension(CurrentContext()->extension(), isolate_);
           if (extension->IsJSContextExtensionObject()) {
             extension->Print(os);
           }
@@ -361,7 +361,7 @@ void ScopeIterator::DebugPrint() {
       os << "Closure:\n";
       CurrentContext()->Print(os);
       if (CurrentContext()->has_extension()) {
-        Handle<Object> extension(CurrentContext()->extension(), isolate_);
+        Handle<HeapObject> extension(CurrentContext()->extension(), isolate_);
         if (extension->IsJSContextExtensionObject()) {
           extension->Print(os);
         }

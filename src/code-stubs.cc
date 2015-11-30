@@ -12,7 +12,7 @@
 #include "src/ic/handler-compiler.h"
 #include "src/ic/ic.h"
 #include "src/macro-assembler.h"
-#include "src/parser.h"
+#include "src/parsing/parser.h"
 #include "src/profiler/cpu-profiler.h"
 
 namespace v8 {
@@ -108,7 +108,7 @@ Handle<Code> PlatformCodeStub::GenerateCode() {
   Factory* factory = isolate()->factory();
 
   // Generate the new code.
-  MacroAssembler masm(isolate(), NULL, 256);
+  MacroAssembler masm(isolate(), NULL, 256, CodeObjectRequired::kYes);
 
   {
     // Update the static counter each time a new code stub is generated.
@@ -694,6 +694,13 @@ void NumberToStringStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
 }
 
 
+void FastCloneRegExpStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
+  FastCloneRegExpDescriptor call_descriptor(isolate());
+  descriptor->Initialize(
+      Runtime::FunctionForId(Runtime::kCreateRegExpLiteral)->entry);
+}
+
+
 void FastCloneShallowArrayStub::InitializeDescriptor(
     CodeStubDescriptor* descriptor) {
   FastCloneShallowArrayDescriptor call_descriptor(isolate());
@@ -962,7 +969,7 @@ bool ToBooleanStub::Types::UpdateStatus(Handle<Object> object) {
   } else if (object->IsSmi()) {
     Add(SMI);
     return Smi::cast(*object)->value() != 0;
-  } else if (object->IsSpecObject()) {
+  } else if (object->IsJSReceiver()) {
     Add(SPEC_OBJECT);
     return !object->IsUndetectableObject();
   } else if (object->IsString()) {

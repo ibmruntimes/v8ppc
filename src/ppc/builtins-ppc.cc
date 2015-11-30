@@ -601,8 +601,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ JumpIfSmi(r3, &use_receiver);
 
       // If the type of the result (stored in its map) is less than
-      // FIRST_SPEC_OBJECT_TYPE, it is not an object in the ECMA sense.
-      __ CompareObjectType(r3, r4, r6, FIRST_SPEC_OBJECT_TYPE);
+      // FIRST_JS_RECEIVER_TYPE, it is not an object in the ECMA sense.
+      __ CompareObjectType(r3, r4, r6, FIRST_JS_RECEIVER_TYPE);
       __ bge(&exit);
 
       // Throw away the result of the constructor invocation and use the
@@ -962,7 +962,7 @@ void Builtins::Generate_InterpreterPushArgsAndConstruct(MacroAssembler* masm) {
   __ bind(&skip);
 
   // Call the constructor with r3, r4, and r6 unmodified.
-  __ Jump(masm->isolate()->builtins()->Construct(), RelocInfo::CONSTRUCT_CALL);
+  __ Jump(masm->isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
 }
 
 
@@ -1537,8 +1537,7 @@ static void Generate_ConstructHelper(MacroAssembler* masm) {
     __ LoadP(r6, MemOperand(fp, kNewTargetOffset));
 
     // Call the function.
-    __ Call(masm->isolate()->builtins()->Construct(),
-            RelocInfo::CONSTRUCT_CALL);
+    __ Call(masm->isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
 
     // Leave internal frame.
   }

@@ -663,8 +663,7 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   // r11 = argument count (untagged)
   // Get the arguments map from the current native context into r9.
   Label has_mapped_parameters, instantiate;
-  __ movp(r9, Operand(rsi, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ movp(r9, FieldOperand(r9, JSGlobalObject::kNativeContextOffset));
+  __ movp(r9, NativeContextOperand());
   __ testp(rbx, rbx);
   __ j(not_zero, &has_mapped_parameters, Label::kNear);
 
@@ -945,10 +944,8 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   __ Allocate(rax, rax, rbx, no_reg, &runtime, TAG_OBJECT);
 
   // Get the arguments map from the current native context.
-  __ movp(rdi, Operand(rsi, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ movp(rdi, FieldOperand(rdi, JSGlobalObject::kNativeContextOffset));
-  const int offset = Context::SlotOffset(Context::STRICT_ARGUMENTS_MAP_INDEX);
-  __ movp(rdi, Operand(rdi, offset));
+  __ movp(rdi, NativeContextOperand());
+  __ movp(rdi, ContextOperand(rdi, Context::STRICT_ARGUMENTS_MAP_INDEX));
 
   __ movp(FieldOperand(rax, JSObject::kMapOffset), rdi);
   __ LoadRoot(kScratchRegister, Heap::kEmptyFixedArrayRootIndex);
@@ -1541,7 +1538,7 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
       __ movp(rcx, FieldOperand(rax, HeapObject::kMapOffset));
       __ movzxbl(rcx, FieldOperand(rcx, Map::kInstanceTypeOffset));
       // Call runtime on identical objects.  Otherwise return equal.
-      __ cmpb(rcx, Immediate(static_cast<uint8_t>(FIRST_SPEC_OBJECT_TYPE)));
+      __ cmpb(rcx, Immediate(static_cast<uint8_t>(FIRST_JS_RECEIVER_TYPE)));
       __ j(above_equal, &runtime_call, Label::kFar);
       // Call runtime on identical symbols since we need to throw a TypeError.
       __ cmpb(rcx, Immediate(static_cast<uint8_t>(SYMBOL_TYPE)));
@@ -1608,9 +1605,9 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
       // There is no test for undetectability in strict equality.
 
       // If the first object is a JS object, we have done pointer comparison.
-      STATIC_ASSERT(LAST_TYPE == LAST_SPEC_OBJECT_TYPE);
+      STATIC_ASSERT(LAST_TYPE == LAST_JS_RECEIVER_TYPE);
       Label first_non_object;
-      __ CmpObjectType(rax, FIRST_SPEC_OBJECT_TYPE, rcx);
+      __ CmpObjectType(rax, FIRST_JS_RECEIVER_TYPE, rcx);
       __ j(below, &first_non_object, Label::kNear);
       // Return non-zero (rax (not rax) is not zero)
       Label return_not_equal;
@@ -1623,7 +1620,7 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
       __ CmpInstanceType(rcx, ODDBALL_TYPE);
       __ j(equal, &return_not_equal);
 
-      __ CmpObjectType(rdx, FIRST_SPEC_OBJECT_TYPE, rcx);
+      __ CmpObjectType(rdx, FIRST_JS_RECEIVER_TYPE, rcx);
       __ j(above_equal, &return_not_equal);
 
       // Check for oddballs: true, false, null, undefined.
@@ -1710,9 +1707,9 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
     __ leap(rcx, Operand(rax, rdx, times_1, 0));
     __ testb(rcx, Immediate(kSmiTagMask));
     __ j(not_zero, &runtime_call, Label::kNear);
-    __ CmpObjectType(rax, FIRST_SPEC_OBJECT_TYPE, rbx);
+    __ CmpObjectType(rax, FIRST_JS_RECEIVER_TYPE, rbx);
     __ j(below, &runtime_call, Label::kNear);
-    __ CmpObjectType(rdx, FIRST_SPEC_OBJECT_TYPE, rcx);
+    __ CmpObjectType(rdx, FIRST_JS_RECEIVER_TYPE, rcx);
     __ j(below, &runtime_call, Label::kNear);
     __ testb(FieldOperand(rbx, Map::kBitFieldOffset),
              Immediate(1 << Map::kIsUndetectable));
@@ -1823,7 +1820,7 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
   __ j(not_equal, &miss);
 
   // Make sure the function is the Array() function
-  __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r11);
+  __ LoadNativeContextSlot(Context::ARRAY_FUNCTION_INDEX, r11);
   __ cmpp(rdi, r11);
   __ j(not_equal, &megamorphic);
   __ jmp(&done);
@@ -1846,7 +1843,7 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
   __ bind(&initialize);
 
   // Make sure the function is the Array() function
-  __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r11);
+  __ LoadNativeContextSlot(Context::ARRAY_FUNCTION_INDEX, r11);
   __ cmpp(rdi, r11);
   __ j(not_equal, &not_array_function);
 
@@ -1914,7 +1911,7 @@ void CallICStub::HandleArrayCase(MacroAssembler* masm, Label* miss) {
   // rdx - slot id
   // rbx - vector
   // rcx - allocation site (loaded from vector[slot]).
-  __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r8);
+  __ LoadNativeContextSlot(Context::ARRAY_FUNCTION_INDEX, r8);
   __ cmpp(rdi, r8);
   __ j(not_equal, miss);
 
@@ -2036,15 +2033,14 @@ void CallICStub::Generate(MacroAssembler* masm) {
 
   // Make sure the function is not the Array() function, which requires special
   // behavior on MISS.
-  __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, rcx);
+  __ LoadNativeContextSlot(Context::ARRAY_FUNCTION_INDEX, rcx);
   __ cmpp(rdi, rcx);
   __ j(equal, &miss);
 
-  // Make sure the function belongs to the same native context (which implies
-  // the same global object).
+  // Make sure the function belongs to the same native context.
   __ movp(rcx, FieldOperand(rdi, JSFunction::kContextOffset));
-  __ movp(rcx, ContextOperand(rcx, Context::GLOBAL_OBJECT_INDEX));
-  __ cmpp(rcx, GlobalObjectOperand());
+  __ movp(rcx, ContextOperand(rcx, Context::NATIVE_CONTEXT_INDEX));
+  __ cmpp(rcx, NativeContextOperand());
   __ j(not_equal, &miss);
 
   // Update stats.
@@ -5132,7 +5128,7 @@ static void CallApiFunctionAndReturn(MacroAssembler* masm,
   __ CmpInstanceType(map, LAST_NAME_TYPE);
   __ j(below_equal, &ok, Label::kNear);
 
-  __ CmpInstanceType(map, FIRST_SPEC_OBJECT_TYPE);
+  __ CmpInstanceType(map, FIRST_JS_RECEIVER_TYPE);
   __ j(above_equal, &ok, Label::kNear);
 
   __ CompareRoot(map, Heap::kHeapNumberMapRootIndex);

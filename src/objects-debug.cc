@@ -877,7 +877,6 @@ void PrototypeInfo::PrototypeInfoVerify() {
     CHECK(prototype_users()->IsSmi());
   }
   CHECK(validity_cell()->IsCell() || validity_cell()->IsSmi());
-  VerifyPointer(constructor_name());
 }
 
 
@@ -966,12 +965,6 @@ void ObjectTemplateInfo::ObjectTemplateInfoVerify() {
   TemplateInfoVerify();
   VerifyPointer(constructor());
   VerifyPointer(internal_field_count());
-}
-
-
-void TypeSwitchInfo::TypeSwitchInfoVerify() {
-  CHECK(IsTypeSwitchInfo());
-  VerifyPointer(types());
 }
 
 

@@ -34,14 +34,14 @@ class CodeGenerator::JumpTable final : public ZoneObject {
 
 CodeGenerator::CodeGenerator(Frame* frame, Linkage* linkage,
                              InstructionSequence* code, CompilationInfo* info)
-    : frame_(frame),
+    : frame_access_state_(new (code->zone()) FrameAccessState(frame)),
       linkage_(linkage),
       code_(code),
       info_(info),
       labels_(zone()->NewArray<Label>(code->InstructionBlockCount())),
       current_block_(RpoNumber::Invalid()),
       current_source_position_(SourcePosition::Unknown()),
-      masm_(info->isolate(), NULL, 0),
+      masm_(info->isolate(), NULL, 0, CodeObjectRequired::kYes),
       resolver_(this),
       safepoints_(code->zone()),
       handlers_(code->zone()),
@@ -52,10 +52,12 @@ CodeGenerator::CodeGenerator(Frame* frame, Linkage* linkage,
       last_lazy_deopt_pc_(0),
       jump_tables_(nullptr),
       ools_(nullptr),
-      osr_pc_offset_(-1),
-      needs_frame_(frame->GetSpillSlotCount() > 0 || code->ContainsCall()) {
+      osr_pc_offset_(-1) {
   for (int i = 0; i < code->InstructionBlockCount(); ++i) {
     new (&labels_[i]) Label;
+  }
+  if (code->ContainsCall()) {
+    frame->MarkNeedsFrame();
   }
 }
 
@@ -673,12 +675,10 @@ int CodeGenerator::TailCallFrameStackSlotDelta(int stack_param_delta) {
   CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
   int spill_slots = frame()->GetSpillSlotCount();
   bool has_frame = descriptor->IsJSFunctionCall() || spill_slots > 0;
-  // Leave the PC and saved frame pointer on the stack.
+  // Leave the PC on the stack on platforms that have that as part of their ABI
+  int pc_slots = V8_TARGET_ARCH_STORES_RETURN_ADDRESS_ON_STACK ? 1 : 0;
   int sp_slot_delta =
-      has_frame
-          ? (frame()->GetTotalFrameSlotCount() -
-             (StandardFrameConstants::kFixedFrameSizeFromFp / kPointerSize))
-          : 0;
+      has_frame ? (frame()->GetTotalFrameSlotCount() - pc_slots) : 0;
   // Discard only slots that won't be used by new parameters.
   sp_slot_delta += stack_param_delta;
   return sp_slot_delta;

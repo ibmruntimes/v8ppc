@@ -125,7 +125,7 @@ function GetHash(key) {
 // Harmony Set
 
 function SetConstructor(iterable) {
-  if (!%_IsConstructCall()) {
+  if (IS_UNDEFINED(new.target)) {
     throw MakeTypeError(kConstructorNotFunction, "Set");
   }
 
@@ -248,10 +248,8 @@ function SetForEach(f, receiver) {
 
   var iterator = new SetIterator(this, ITERATOR_KIND_VALUES);
   var key;
-  var stepping = DEBUG_IS_STEPPING(f);
   var value_array = [UNDEFINED];
   while (%SetIteratorNext(iterator, value_array)) {
-    if (stepping) %DebugPrepareStepInIfStepping(f);
     key = value_array[0];
     %_Call(f, receiver, key, key, this);
   }
@@ -283,7 +281,7 @@ utils.InstallFunctions(GlobalSet.prototype, DONT_ENUM, [
 // Harmony Map
 
 function MapConstructor(iterable) {
-  if (!%_IsConstructCall()) {
+  if (IS_UNDEFINED(new.target)) {
     throw MakeTypeError(kConstructorNotFunction, "Map");
   }
 
@@ -431,10 +429,8 @@ function MapForEach(f, receiver) {
   if (!IS_CALLABLE(f)) throw MakeTypeError(kCalledNonCallable, f);
 
   var iterator = new MapIterator(this, ITERATOR_KIND_ENTRIES);
-  var stepping = DEBUG_IS_STEPPING(f);
   var value_array = [UNDEFINED, UNDEFINED];
   while (%MapIteratorNext(iterator, value_array)) {
-    if (stepping) %DebugPrepareStepInIfStepping(f);
     %_Call(f, receiver, value_array[1], value_array[0], this);
   }
 }

@@ -189,6 +189,10 @@ DEFINE_BOOL(legacy_const, true, "legacy semantics for const in sloppy mode")
 // ES2015 const semantics are staged
 DEFINE_NEG_IMPLICATION(harmony, legacy_const)
 
+DEFINE_BOOL(promise_extra, true, "additional V8 Promise functions")
+// Removing extra Promise functions is staged
+DEFINE_NEG_IMPLICATION(es_staging, promise_extra)
+
 // Activate on ClusterFuzz.
 DEFINE_IMPLICATION(es_staging, harmony_destructuring_bind)
 
@@ -207,7 +211,6 @@ DEFINE_IMPLICATION(es_staging, harmony_destructuring_bind)
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                     \
-  V(harmony_destructuring_bind, "harmony destructuring")      \
   V(harmony_regexps, "harmony regular expression extensions") \
   V(harmony_sloppy, "harmony features in sloppy mode")        \
   V(harmony_sloppy_let, "harmony let in sloppy mode")
@@ -216,6 +219,7 @@ DEFINE_IMPLICATION(es_staging, harmony_destructuring_bind)
 #define HARMONY_SHIPPING(V)                                     \
   V(harmony_array_includes, "harmony Array.prototype.includes") \
   V(harmony_default_parameters, "harmony default parameters")   \
+  V(harmony_destructuring_bind, "harmony destructuring bind")   \
   V(harmony_object_observe, "harmony Object.observe")           \
   V(harmony_rest_parameters, "harmony rest parameters")         \
   V(harmony_concat_spreadable, "harmony isConcatSpreadable")    \
@@ -413,6 +417,8 @@ DEFINE_IMPLICATION(turbo, turbo_asm_deoptimization)
 DEFINE_IMPLICATION(turbo, turbo_inlining)
 DEFINE_BOOL(turbo_shipping, true, "enable TurboFan compiler on subset")
 DEFINE_BOOL(turbo_greedy_regalloc, false, "use the greedy register allocator")
+DEFINE_BOOL(turbo_sp_frame_access, false,
+            "use stack pointer-relative access to frame wherever possible")
 DEFINE_BOOL(turbo_preprocess_ranges, true,
             "run pre-register allocation heuristics")
 DEFINE_BOOL(turbo_loop_stackcheck, true, "enable stack checks in loops")
@@ -690,7 +696,6 @@ DEFINE_IMPLICATION(trace_detached_contexts, track_detached_contexts)
 #ifdef VERIFY_HEAP
 DEFINE_BOOL(verify_heap, false, "verify heap pointers before and after GC")
 #endif
-DEFINE_BOOL(move_object_start, false, "enable moving of object starts")
 DEFINE_BOOL(memory_reducer, true, "use memory reducer")
 DEFINE_BOOL(scavenge_reclaim_unmodified_objects, false,
             "remove unmodified and unreferenced objects")

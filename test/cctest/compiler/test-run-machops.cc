@@ -23,8 +23,6 @@ namespace v8 {
 namespace internal {
 namespace compiler {
 
-typedef RawMachineAssembler::Label MLabel;
-
 
 TEST(RunInt32Add) {
   RawMachineAssemblerTester<int32_t> m;
@@ -427,7 +425,7 @@ TEST(RunGoto) {
   RawMachineAssemblerTester<int32_t> m;
   int constant = 99999;
 
-  MLabel next;
+  RawMachineLabel next;
   m.Goto(&next);
   m.Bind(&next);
   m.Return(m.Int32Constant(constant));
@@ -440,7 +438,7 @@ TEST(RunGotoMultiple) {
   RawMachineAssemblerTester<int32_t> m;
   int constant = 9999977;
 
-  MLabel labels[10];
+  RawMachineLabel labels[10];
   for (size_t i = 0; i < arraysize(labels); i++) {
     m.Goto(&labels[i]);
     m.Bind(&labels[i]);
@@ -455,7 +453,7 @@ TEST(RunBranch) {
   RawMachineAssemblerTester<int32_t> m;
   int constant = 999777;
 
-  MLabel blocka, blockb;
+  RawMachineLabel blocka, blockb;
   m.Branch(m.Int32Constant(0), &blocka, &blockb);
   m.Bind(&blocka);
   m.Return(m.Int32Constant(0 - constant));
@@ -471,7 +469,7 @@ TEST(RunDiamond2) {
 
   int constant = 995666;
 
-  MLabel blocka, blockb, end;
+  RawMachineLabel blocka, blockb, end;
   m.Branch(m.Int32Constant(0), &blocka, &blockb);
   m.Bind(&blocka);
   m.Goto(&end);
@@ -488,7 +486,7 @@ TEST(RunLoop) {
   RawMachineAssemblerTester<int32_t> m;
   int constant = 999555;
 
-  MLabel header, body, exit;
+  RawMachineLabel header, body, exit;
   m.Goto(&header);
   m.Bind(&header);
   m.Branch(m.Int32Constant(0), &body, &exit);
@@ -505,7 +503,7 @@ template <typename R>
 static void BuildDiamondPhi(RawMachineAssemblerTester<R>* m, Node* cond_node,
                             MachineType type, Node* true_node,
                             Node* false_node) {
-  MLabel blocka, blockb, end;
+  RawMachineLabel blocka, blockb, end;
   m->Branch(cond_node, &blocka, &blockb);
   m->Bind(&blocka);
   m->Goto(&end);
@@ -577,7 +575,7 @@ TEST(RunLoopPhiConst) {
   Node* false_node = m.Int32Constant(false_val);
 
   // x = false_val; while(false) { x = true_val; } return x;
-  MLabel body, header, end;
+  RawMachineLabel body, header, end;
 
   m.Goto(&header);
   m.Bind(&header);
@@ -595,7 +593,7 @@ TEST(RunLoopPhiConst) {
 TEST(RunLoopPhiParam) {
   RawMachineAssemblerTester<int32_t> m(kMachInt32, kMachInt32, kMachInt32);
 
-  MLabel blocka, blockb, end;
+  RawMachineLabel blocka, blockb, end;
 
   m.Goto(&blocka);
 
@@ -625,7 +623,7 @@ TEST(RunLoopPhiInduction) {
   int false_val = 0x10777;
 
   // x = false_val; while(false) { x++; } return x;
-  MLabel header, body, end;
+  RawMachineLabel header, body, end;
   Node* false_node = m.Int32Constant(false_val);
 
   m.Goto(&header);
@@ -651,7 +649,7 @@ TEST(RunLoopIncrement) {
   Int32BinopTester bt(&m);
 
   // x = 0; while(x ^ param) { x++; } return x;
-  MLabel header, body, end;
+  RawMachineLabel header, body, end;
   Node* zero = m.Int32Constant(0);
 
   m.Goto(&header);
@@ -678,7 +676,7 @@ TEST(RunLoopIncrement2) {
   Int32BinopTester bt(&m);
 
   // x = 0; while(x < param) { x++; } return x;
-  MLabel header, body, end;
+  RawMachineLabel header, body, end;
   Node* zero = m.Int32Constant(0);
 
   m.Goto(&header);
@@ -706,7 +704,7 @@ TEST(RunLoopIncrement3) {
   Int32BinopTester bt(&m);
 
   // x = 0; while(x < param) { x++; } return x;
-  MLabel header, body, end;
+  RawMachineLabel header, body, end;
   Node* zero = m.Int32Constant(0);
 
   m.Goto(&header);
@@ -734,7 +732,7 @@ TEST(RunLoopDecrement) {
   Int32BinopTester bt(&m);
 
   // x = param; while(x) { x--; } return x;
-  MLabel header, body, end;
+  RawMachineLabel header, body, end;
 
   m.Goto(&header);
 
@@ -759,7 +757,7 @@ TEST(RunLoopIncrementFloat32) {
   RawMachineAssemblerTester<int32_t> m;
 
   // x = -3.0f; while(x < 10f) { x = x + 0.5f; } return (int) (double) x;
-  MLabel header, body, end;
+  RawMachineLabel header, body, end;
   Node* minus_3 = m.Float32Constant(-3.0f);
   Node* ten = m.Float32Constant(10.0f);
 
@@ -784,7 +782,7 @@ TEST(RunLoopIncrementFloat64) {
   RawMachineAssemblerTester<int32_t> m;
 
   // x = -3.0; while(x < 10) { x = x + 0.5; } return (int) x;
-  MLabel header, body, end;
+  RawMachineLabel header, body, end;
   Node* minus_3 = m.Float64Constant(-3.0);
   Node* ten = m.Float64Constant(10.0);
 
@@ -810,8 +808,8 @@ TEST(RunSwitch1) {
 
   int constant = 11223344;
 
-  MLabel block0, block1, def, end;
-  MLabel* case_labels[] = {&block0, &block1};
+  RawMachineLabel block0, block1, def, end;
+  RawMachineLabel* case_labels[] = {&block0, &block1};
   int32_t case_values[] = {0, 1};
   m.Switch(m.Int32Constant(0), &def, case_values, case_labels,
            arraysize(case_labels));
@@ -831,8 +829,8 @@ TEST(RunSwitch1) {
 TEST(RunSwitch2) {
   RawMachineAssemblerTester<int32_t> m(kMachInt32);
 
-  MLabel blocka, blockb, blockc;
-  MLabel* case_labels[] = {&blocka, &blockb};
+  RawMachineLabel blocka, blockb, blockc;
+  RawMachineLabel* case_labels[] = {&blocka, &blockb};
   int32_t case_values[] = {std::numeric_limits<int32_t>::min(),
                            std::numeric_limits<int32_t>::max()};
   m.Switch(m.Parameter(0), &blockc, case_values, case_labels,
@@ -855,8 +853,8 @@ TEST(RunSwitch2) {
 TEST(RunSwitch3) {
   RawMachineAssemblerTester<int32_t> m(kMachInt32);
 
-  MLabel blocka, blockb, blockc;
-  MLabel* case_labels[] = {&blocka, &blockb};
+  RawMachineLabel blocka, blockb, blockc;
+  RawMachineLabel* case_labels[] = {&blocka, &blockb};
   int32_t case_values[] = {std::numeric_limits<int32_t>::min() + 0,
                            std::numeric_limits<int32_t>::min() + 1};
   m.Switch(m.Parameter(0), &blockc, case_values, case_labels,
@@ -884,13 +882,14 @@ TEST(RunSwitch4) {
   int32_t values[kNumValues];
   m.main_isolate()->random_number_generator()->NextBytes(values,
                                                          sizeof(values));
-  MLabel end, def;
+  RawMachineLabel end, def;
   int32_t case_values[kNumCases];
-  MLabel* case_labels[kNumCases];
+  RawMachineLabel* case_labels[kNumCases];
   Node* results[kNumValues];
   for (size_t i = 0; i < kNumCases; ++i) {
     case_values[i] = static_cast<int32_t>(i);
-    case_labels[i] = new (m.main_zone()->New(sizeof(MLabel))) MLabel;
+    case_labels[i] =
+        new (m.main_zone()->New(sizeof(RawMachineLabel))) RawMachineLabel;
   }
   m.Switch(m.Parameter(0), &def, case_values, case_labels,
            arraysize(case_labels));
@@ -1255,7 +1254,7 @@ TEST(RunInt32AddInBranch) {
   {
     RawMachineAssemblerTester<int32_t> m;
     Int32BinopTester bt(&m);
-    MLabel blocka, blockb;
+    RawMachineLabel blocka, blockb;
     m.Branch(
         m.Word32Equal(m.Int32Add(bt.param0, bt.param1), m.Int32Constant(0)),
         &blocka, &blockb);
@@ -1273,7 +1272,7 @@ TEST(RunInt32AddInBranch) {
   {
     RawMachineAssemblerTester<int32_t> m;
     Int32BinopTester bt(&m);
-    MLabel blocka, blockb;
+    RawMachineLabel blocka, blockb;
     m.Branch(
         m.Word32NotEqual(m.Int32Add(bt.param0, bt.param1), m.Int32Constant(0)),
         &blocka, &blockb);
@@ -1291,7 +1290,7 @@ TEST(RunInt32AddInBranch) {
   {
     FOR_UINT32_INPUTS(i) {
       RawMachineAssemblerTester<uint32_t> m(kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32Equal(m.Int32Add(m.Int32Constant(*i), m.Parameter(0)),
                              m.Int32Constant(0)),
                &blocka, &blockb);
@@ -1308,7 +1307,7 @@ TEST(RunInt32AddInBranch) {
   {
     FOR_UINT32_INPUTS(i) {
       RawMachineAssemblerTester<uint32_t> m(kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32NotEqual(m.Int32Add(m.Int32Constant(*i), m.Parameter(0)),
                                 m.Int32Constant(0)),
                &blocka, &blockb);
@@ -1330,7 +1329,7 @@ TEST(RunInt32AddInBranch) {
     for (size_t n = 0; n < arraysize(shops); n++) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32, kMachInt32,
                                            kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32Equal(m.Int32Add(m.Parameter(0),
                                         m.AddNode(shops[n], m.Parameter(1),
                                                   m.Parameter(2))),
@@ -1592,7 +1591,7 @@ TEST(RunInt32SubInBranch) {
   {
     RawMachineAssemblerTester<int32_t> m;
     Int32BinopTester bt(&m);
-    MLabel blocka, blockb;
+    RawMachineLabel blocka, blockb;
     m.Branch(
         m.Word32Equal(m.Int32Sub(bt.param0, bt.param1), m.Int32Constant(0)),
         &blocka, &blockb);
@@ -1610,7 +1609,7 @@ TEST(RunInt32SubInBranch) {
   {
     RawMachineAssemblerTester<int32_t> m;
     Int32BinopTester bt(&m);
-    MLabel blocka, blockb;
+    RawMachineLabel blocka, blockb;
     m.Branch(
         m.Word32NotEqual(m.Int32Sub(bt.param0, bt.param1), m.Int32Constant(0)),
         &blocka, &blockb);
@@ -1628,7 +1627,7 @@ TEST(RunInt32SubInBranch) {
   {
     FOR_UINT32_INPUTS(i) {
       RawMachineAssemblerTester<uint32_t> m(kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32Equal(m.Int32Sub(m.Int32Constant(*i), m.Parameter(0)),
                              m.Int32Constant(0)),
                &blocka, &blockb);
@@ -1645,7 +1644,7 @@ TEST(RunInt32SubInBranch) {
   {
     FOR_UINT32_INPUTS(i) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32NotEqual(m.Int32Sub(m.Int32Constant(*i), m.Parameter(0)),
                                 m.Int32Constant(0)),
                &blocka, &blockb);
@@ -1667,7 +1666,7 @@ TEST(RunInt32SubInBranch) {
     for (size_t n = 0; n < arraysize(shops); n++) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32, kMachInt32,
                                            kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32Equal(m.Int32Sub(m.Parameter(0),
                                         m.AddNode(shops[n], m.Parameter(1),
                                                   m.Parameter(2))),
@@ -2260,7 +2259,7 @@ TEST(RunWord32AndInBranch) {
   {
     RawMachineAssemblerTester<int32_t> m;
     Int32BinopTester bt(&m);
-    MLabel blocka, blockb;
+    RawMachineLabel blocka, blockb;
     m.Branch(
         m.Word32Equal(m.Word32And(bt.param0, bt.param1), m.Int32Constant(0)),
         &blocka, &blockb);
@@ -2278,7 +2277,7 @@ TEST(RunWord32AndInBranch) {
   {
     RawMachineAssemblerTester<int32_t> m;
     Int32BinopTester bt(&m);
-    MLabel blocka, blockb;
+    RawMachineLabel blocka, blockb;
     m.Branch(
         m.Word32NotEqual(m.Word32And(bt.param0, bt.param1), m.Int32Constant(0)),
         &blocka, &blockb);
@@ -2296,7 +2295,7 @@ TEST(RunWord32AndInBranch) {
   {
     FOR_UINT32_INPUTS(i) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32Equal(m.Word32And(m.Int32Constant(*i), m.Parameter(0)),
                              m.Int32Constant(0)),
                &blocka, &blockb);
@@ -2313,7 +2312,7 @@ TEST(RunWord32AndInBranch) {
   {
     FOR_UINT32_INPUTS(i) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(
           m.Word32NotEqual(m.Word32And(m.Int32Constant(*i), m.Parameter(0)),
                            m.Int32Constant(0)),
@@ -2336,7 +2335,7 @@ TEST(RunWord32AndInBranch) {
     for (size_t n = 0; n < arraysize(shops); n++) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32, kMachInt32,
                                            kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32Equal(m.Word32And(m.Parameter(0),
                                          m.AddNode(shops[n], m.Parameter(1),
                                                    m.Parameter(2))),
@@ -2489,7 +2488,7 @@ TEST(RunWord32OrInBranch) {
   {
     RawMachineAssemblerTester<int32_t> m;
     Int32BinopTester bt(&m);
-    MLabel blocka, blockb;
+    RawMachineLabel blocka, blockb;
     m.Branch(
         m.Word32Equal(m.Word32Or(bt.param0, bt.param1), m.Int32Constant(0)),
         &blocka, &blockb);
@@ -2507,7 +2506,7 @@ TEST(RunWord32OrInBranch) {
   {
     RawMachineAssemblerTester<int32_t> m;
     Int32BinopTester bt(&m);
-    MLabel blocka, blockb;
+    RawMachineLabel blocka, blockb;
     m.Branch(
         m.Word32NotEqual(m.Word32Or(bt.param0, bt.param1), m.Int32Constant(0)),
         &blocka, &blockb);
@@ -2525,7 +2524,7 @@ TEST(RunWord32OrInBranch) {
   {
     FOR_INT32_INPUTS(i) {
       RawMachineAssemblerTester<int32_t> m(kMachInt32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32Equal(m.Word32Or(m.Int32Constant(*i), m.Parameter(0)),
                              m.Int32Constant(0)),
                &blocka, &blockb);
@@ -2542,7 +2541,7 @@ TEST(RunWord32OrInBranch) {
   {
     FOR_INT32_INPUTS(i) {
       RawMachineAssemblerTester<int32_t> m(kMachInt32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32NotEqual(m.Word32Or(m.Int32Constant(*i), m.Parameter(0)),
                                 m.Int32Constant(0)),
                &blocka, &blockb);
@@ -2564,7 +2563,7 @@ TEST(RunWord32OrInBranch) {
     for (size_t n = 0; n < arraysize(shops); n++) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32, kMachInt32,
                                            kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32Equal(m.Word32Or(m.Parameter(0),
                                         m.AddNode(shops[n], m.Parameter(1),
                                                   m.Parameter(2))),
@@ -2713,7 +2712,7 @@ TEST(RunWord32XorInBranch) {
   {
     RawMachineAssemblerTester<int32_t> m;
     Uint32BinopTester bt(&m);
-    MLabel blocka, blockb;
+    RawMachineLabel blocka, blockb;
     m.Branch(
         m.Word32Equal(m.Word32Xor(bt.param0, bt.param1), m.Int32Constant(0)),
         &blocka, &blockb);
@@ -2731,7 +2730,7 @@ TEST(RunWord32XorInBranch) {
   {
     RawMachineAssemblerTester<int32_t> m;
     Uint32BinopTester bt(&m);
-    MLabel blocka, blockb;
+    RawMachineLabel blocka, blockb;
     m.Branch(
         m.Word32NotEqual(m.Word32Xor(bt.param0, bt.param1), m.Int32Constant(0)),
         &blocka, &blockb);
@@ -2749,7 +2748,7 @@ TEST(RunWord32XorInBranch) {
   {
     FOR_UINT32_INPUTS(i) {
       RawMachineAssemblerTester<uint32_t> m(kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32Equal(m.Word32Xor(m.Int32Constant(*i), m.Parameter(0)),
                              m.Int32Constant(0)),
                &blocka, &blockb);
@@ -2766,7 +2765,7 @@ TEST(RunWord32XorInBranch) {
   {
     FOR_UINT32_INPUTS(i) {
       RawMachineAssemblerTester<uint32_t> m(kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(
           m.Word32NotEqual(m.Word32Xor(m.Int32Constant(*i), m.Parameter(0)),
                            m.Int32Constant(0)),
@@ -2789,7 +2788,7 @@ TEST(RunWord32XorInBranch) {
     for (size_t n = 0; n < arraysize(shops); n++) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32, kMachInt32,
                                            kMachUint32);
-      MLabel blocka, blockb;
+      RawMachineLabel blocka, blockb;
       m.Branch(m.Word32Equal(m.Word32Xor(m.Parameter(0),
                                          m.AddNode(shops[n], m.Parameter(1),
                                                    m.Parameter(2))),
@@ -3967,7 +3966,7 @@ TEST(RunLoopPhiInduction2) {
   int false_val = 0x10777;
 
   // x = false_val; while(false) { x++; } return x;
-  MLabel header, body, end;
+  RawMachineLabel header, body, end;
   Node* false_node = m.Int32Constant(false_val);
   m.Goto(&header);
   m.Bind(&header);
@@ -3991,7 +3990,7 @@ TEST(RunFloatDiamond) {
   float buffer = 0.1f;
   float constant = 99.99f;
 
-  MLabel blocka, blockb, end;
+  RawMachineLabel blocka, blockb, end;
   Node* k1 = m.Float32Constant(constant);
   Node* k2 = m.Float32Constant(0 - constant);
   m.Branch(m.Int32Constant(0), &blocka, &blockb);
@@ -4017,7 +4016,7 @@ TEST(RunDoubleDiamond) {
   double buffer = 0.1;
   double constant = 99.99;
 
-  MLabel blocka, blockb, end;
+  RawMachineLabel blocka, blockb, end;
   Node* k1 = m.Float64Constant(constant);
   Node* k2 = m.Float64Constant(0 - constant);
   m.Branch(m.Int32Constant(0), &blocka, &blockb);
@@ -4044,7 +4043,7 @@ TEST(RunRefDiamond) {
       CcTest::i_isolate()->factory()->InternalizeUtf8String("A");
   String* buffer;
 
-  MLabel blocka, blockb, end;
+  RawMachineLabel blocka, blockb, end;
   Node* k1 = m.StringConstant("A");
   Node* k2 = m.StringConstant("B");
   m.Branch(m.Int32Constant(0), &blocka, &blockb);
@@ -4073,7 +4072,7 @@ TEST(RunDoubleRefDiamond) {
       CcTest::i_isolate()->factory()->InternalizeUtf8String("AX");
   String* rbuffer;
 
-  MLabel blocka, blockb, end;
+  RawMachineLabel blocka, blockb, end;
   Node* d1 = m.Float64Constant(dconstant);
   Node* d2 = m.Float64Constant(0 - dconstant);
   Node* r1 = m.StringConstant("AX");
@@ -4108,7 +4107,7 @@ TEST(RunDoubleRefDoubleDiamond) {
       CcTest::i_isolate()->factory()->InternalizeUtf8String("AD");
   String* rbuffer;
 
-  MLabel blocka, blockb, mid, blockd, blocke, end;
+  RawMachineLabel blocka, blockb, mid, blockd, blocke, end;
   Node* d1 = m.Float64Constant(dconstant);
   Node* d2 = m.Float64Constant(0 - dconstant);
   Node* r1 = m.StringConstant("AD");
@@ -4145,7 +4144,7 @@ TEST(RunDoubleRefDoubleDiamond) {
 
 TEST(RunDoubleLoopPhi) {
   RawMachineAssemblerTester<int32_t> m;
-  MLabel header, body, end;
+  RawMachineLabel header, body, end;
 
   int magic = 99773;
   double buffer = 0.99;
@@ -4177,7 +4176,7 @@ TEST(RunCountToTenAccRaw) {
   Node* ten = m.Int32Constant(10);
   Node* one = m.Int32Constant(1);
 
-  MLabel header, body, body_cont, end;
+  RawMachineLabel header, body, body_cont, end;
 
   m.Goto(&header);
 
@@ -4210,7 +4209,7 @@ TEST(RunCountToTenAccRaw2) {
   Node* ten = m.Int32Constant(10);
   Node* one = m.Int32Constant(1);
 
-  MLabel header, body, body_cont, end;
+  RawMachineLabel header, body, body_cont, end;
 
   m.Goto(&header);
 
@@ -4640,7 +4639,7 @@ TEST(RunNewSpaceConstantsInPhi) {
   Node* true_node = m.HeapConstant(true_val);
   Node* false_node = m.HeapConstant(false_val);
 
-  MLabel blocka, blockb, end;
+  RawMachineLabel blocka, blockb, end;
   m.Branch(m.Parameter(0), &blocka, &blockb);
   m.Bind(&blocka);
   m.Goto(&end);
@@ -4723,7 +4722,7 @@ TEST(RunInt32AddWithOverflowImm) {
 
 TEST(RunInt32AddWithOverflowInBranchP) {
   int constant = 911777;
-  MLabel blocka, blockb;
+  RawMachineLabel blocka, blockb;
   RawMachineAssemblerTester<int32_t> m;
   Int32BinopTester bt(&m);
   Node* add = m.Int32AddWithOverflow(bt.param0, bt.param1);
@@ -4811,7 +4810,7 @@ TEST(RunInt32SubWithOverflowImm) {
 
 TEST(RunInt32SubWithOverflowInBranchP) {
   int constant = 911999;
-  MLabel blocka, blockb;
+  RawMachineLabel blocka, blockb;
   RawMachineAssemblerTester<int32_t> m;
   Int32BinopTester bt(&m);
   Node* sub = m.Int32SubWithOverflow(bt.param0, bt.param1);
@@ -4834,7 +4833,7 @@ TEST(RunInt32SubWithOverflowInBranchP) {
 
 TEST(RunWord64EqualInBranchP) {
   int64_t input;
-  MLabel blocka, blockb;
+  RawMachineLabel blocka, blockb;
   RawMachineAssemblerTester<int64_t> m;
   if (!m.machine()->Is64()) return;
   Node* value = m.LoadFromPointer(&input, kMachInt64);
@@ -5144,13 +5143,23 @@ static double kValues[] = {0.1,
                            -two_52 + 1 - 0.7};
 
 
+TEST(RunFloat32RoundDown) {
+  BufferedRawMachineAssemblerTester<float> m(kMachFloat32);
+  if (!m.machine()->Float32RoundDown().IsSupported()) return;
+
+  m.Return(m.Float32RoundDown(m.Parameter(0)));
+
+  FOR_FLOAT32_INPUTS(i) { CheckFloatEq(floorf(*i), m.Call(*i)); }
+}
+
+
 TEST(RunFloat64RoundDown1) {
   BufferedRawMachineAssemblerTester<double> m(kMachFloat64);
   if (!m.machine()->Float64RoundDown().IsSupported()) return;
 
   m.Return(m.Float64RoundDown(m.Parameter(0)));
 
-  FOR_FLOAT64_INPUTS(i) { CheckDoubleEq(std::floor(*i), m.Call(*i)); }
+  FOR_FLOAT64_INPUTS(i) { CheckDoubleEq(floor(*i), m.Call(*i)); }
 }
 
 
@@ -5162,8 +5171,17 @@ TEST(RunFloat64RoundDown2) {
                                                         m.Parameter(0)))));
 
   for (size_t i = 0; i < arraysize(kValues); ++i) {
-    CHECK_EQ(std::ceil(kValues[i]), m.Call(kValues[i]));
+    CHECK_EQ(ceil(kValues[i]), m.Call(kValues[i]));
   }
+}
+
+
+TEST(RunFloat32RoundUp) {
+  BufferedRawMachineAssemblerTester<float> m(kMachFloat32);
+  if (!m.machine()->Float32RoundUp().IsSupported()) return;
+  m.Return(m.Float32RoundUp(m.Parameter(0)));
+
+  FOR_FLOAT32_INPUTS(i) { CheckFloatEq(ceilf(*i), m.Call(*i)); }
 }
 
 
@@ -5172,7 +5190,16 @@ TEST(RunFloat64RoundUp) {
   if (!m.machine()->Float64RoundUp().IsSupported()) return;
   m.Return(m.Float64RoundUp(m.Parameter(0)));
 
-  FOR_FLOAT64_INPUTS(i) { CheckDoubleEq(std::ceil(*i), m.Call(*i)); }
+  FOR_FLOAT64_INPUTS(i) { CheckDoubleEq(ceil(*i), m.Call(*i)); }
+}
+
+
+TEST(RunFloat32RoundTiesEven) {
+  BufferedRawMachineAssemblerTester<float> m(kMachFloat32);
+  if (!m.machine()->Float32RoundTiesEven().IsSupported()) return;
+  m.Return(m.Float32RoundTiesEven(m.Parameter(0)));
+
+  FOR_FLOAT32_INPUTS(i) { CheckFloatEq(nearbyint(*i), m.Call(*i)); }
 }
 
 
@@ -5182,6 +5209,16 @@ TEST(RunFloat64RoundTiesEven) {
   m.Return(m.Float64RoundTiesEven(m.Parameter(0)));
 
   FOR_FLOAT64_INPUTS(i) { CheckDoubleEq(nearbyint(*i), m.Call(*i)); }
+}
+
+
+TEST(RunFloat32RoundTruncate) {
+  BufferedRawMachineAssemblerTester<float> m(kMachFloat32);
+  if (!m.machine()->Float32RoundTruncate().IsSupported()) return;
+
+  m.Return(m.Float32RoundTruncate(m.Parameter(0)));
+
+  FOR_FLOAT32_INPUTS(i) { CheckFloatEq(truncf(*i), m.Call(*i)); }
 }
 
 
@@ -5353,6 +5390,24 @@ TEST(RunBitcastFloat64ToInt64) {
 }
 
 
+TEST(RunTruncateFloat32ToInt64) {
+  BufferedRawMachineAssemblerTester<int64_t> m(kMachFloat32);
+  m.Return(m.TruncateFloat32ToInt64(m.Parameter(0)));
+
+  FOR_INT64_INPUTS(i) {
+    float input = static_cast<float>(*i);
+    if (input < 9223372036854775808.0 && input > -9223372036854775809.0) {
+      CHECK_EQ(static_cast<int64_t>(input), m.Call(input));
+    }
+  }
+  FOR_FLOAT32_INPUTS(j) {
+    if (*j < 9223372036854775808.0 && *j > -9223372036854775809.0) {
+      CHECK_EQ(static_cast<int64_t>(*j), m.Call(*j));
+    }
+  }
+}
+
+
 TEST(RunTruncateFloat64ToInt64) {
   BufferedRawMachineAssemblerTester<int64_t> m(kMachFloat64);
   m.Return(m.TruncateFloat64ToInt64(m.Parameter(0)));
@@ -5360,6 +5415,24 @@ TEST(RunTruncateFloat64ToInt64) {
   FOR_INT64_INPUTS(i) {
     double input = static_cast<double>(*i);
     CHECK_EQ(static_cast<int64_t>(input), m.Call(input));
+  }
+}
+
+
+TEST(RunTruncateFloat32ToUint64) {
+  BufferedRawMachineAssemblerTester<uint64_t> m(kMachFloat32);
+  m.Return(m.TruncateFloat32ToUint64(m.Parameter(0)));
+
+  FOR_UINT64_INPUTS(i) {
+    float input = static_cast<float>(*i);
+    if (input < 18446744073709551616.0) {
+      CHECK_EQ(static_cast<uint64_t>(input), m.Call(input));
+    }
+  }
+  FOR_FLOAT32_INPUTS(j) {
+    if (*j < 18446744073709551616.0 && *j >= 0) {
+      CHECK_EQ(static_cast<uint64_t>(*j), m.Call(*j));
+    }
   }
 }
 
@@ -5621,9 +5694,9 @@ TEST(RunComputedCodeObject) {
   Handle<Code> code_b = b.GetCode();
 
   RawMachineAssemblerTester<int32_t> r(kMachInt32);
-  RawMachineAssembler::Label tlabel;
-  RawMachineAssembler::Label flabel;
-  RawMachineAssembler::Label merge;
+  RawMachineLabel tlabel;
+  RawMachineLabel flabel;
+  RawMachineLabel merge;
   r.Branch(r.Parameter(0), &tlabel, &flabel);
   r.Bind(&tlabel);
   Node* fa = r.HeapConstant(code_a);

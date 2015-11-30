@@ -114,7 +114,8 @@ class MacroAssembler : public Assembler {
   // not use isolate-dependent functionality. In this case, it's the
   // responsibility of the caller to never invoke such function on the
   // macro assembler.
-  MacroAssembler(Isolate* isolate, void* buffer, int size);
+  MacroAssembler(Isolate* isolate, void* buffer, int size,
+                 CodeObjectRequired create_code_object);
 
 
   // Returns the size of a call in instructions. Note, the value returned is
@@ -687,9 +688,6 @@ class MacroAssembler : public Assembler {
                                    Register scratch1, Register scratch2,
                                    Register heap_number_map,
                                    Label* gc_required);
-
-  // Copies a fixed number of fields of heap objects from src to dst.
-  void CopyFields(Register dst, Register src, RegList temps, int field_count);
 
   // Copies a number of bytes from src to dst. All registers are clobbered. On
   // exit src and dst will point to the place just after where the last byte was
@@ -1543,7 +1541,8 @@ class CodePatcher {
  public:
   enum FlushICache { FLUSH, DONT_FLUSH };
 
-  CodePatcher(byte* address, int instructions, FlushICache flush_cache = FLUSH);
+  CodePatcher(Isolate* isolate, byte* address, int instructions,
+              FlushICache flush_cache = FLUSH);
   ~CodePatcher();
 
   // Macro assembler to emit code.

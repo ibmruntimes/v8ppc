@@ -40,7 +40,8 @@ void NamedLoadHandlerCompiler::GenerateLoadViaGetter(
       ParameterCount actual(0);
       ParameterCount expected(expected_arguments);
       __ LoadAccessor(r1, holder, accessor_index, ACCESSOR_GETTER);
-      __ InvokeFunction(r1, expected, actual, CALL_FUNCTION, NullCallWrapper());
+      __ InvokeFunction(r1, expected, actual, CALL_FUNCTION,
+                        CheckDebugStepCallWrapper());
     } else {
       // If we generate a global code snippet for deoptimization only, remember
       // the place to continue after deoptimization.
@@ -81,7 +82,8 @@ void NamedStoreHandlerCompiler::GenerateStoreViaSetter(
       ParameterCount actual(1);
       ParameterCount expected(expected_arguments);
       __ LoadAccessor(r1, holder, accessor_index, ACCESSOR_SETTER);
-      __ InvokeFunction(r1, expected, actual, CALL_FUNCTION, NullCallWrapper());
+      __ InvokeFunction(r1, expected, actual, CALL_FUNCTION,
+                        CheckDebugStepCallWrapper());
     } else {
       // If we generate a global code snippet for deoptimization only, remember
       // the place to continue after deoptimization.
@@ -143,7 +145,7 @@ void PropertyHandlerCompiler::GenerateDictionaryNegativeLookup(
 
   // Check that receiver is a JSObject.
   __ ldrb(scratch0, FieldMemOperand(map, Map::kInstanceTypeOffset));
-  __ cmp(scratch0, Operand(FIRST_SPEC_OBJECT_TYPE));
+  __ cmp(scratch0, Operand(FIRST_JS_RECEIVER_TYPE));
   __ b(lt, miss_label);
 
   // Load properties array.
@@ -169,10 +171,7 @@ void PropertyHandlerCompiler::GenerateDictionaryNegativeLookup(
 
 void NamedLoadHandlerCompiler::GenerateDirectLoadGlobalFunctionPrototype(
     MacroAssembler* masm, int index, Register result, Label* miss) {
-  const int offset = Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX);
-  __ ldr(result, MemOperand(cp, offset));
-  __ ldr(result, FieldMemOperand(result, JSGlobalObject::kNativeContextOffset));
-  __ ldr(result, MemOperand(result, Context::SlotOffset(index)));
+  __ LoadNativeContextSlot(index, result);
   // Load its initial map. The global functions all have initial maps.
   __ ldr(result,
          FieldMemOperand(result, JSFunction::kPrototypeOrInitialMapOffset));

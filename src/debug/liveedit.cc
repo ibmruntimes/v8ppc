@@ -4,6 +4,8 @@
 
 #include "src/debug/liveedit.h"
 
+#include "src/ast/scopeinfo.h"
+#include "src/ast/scopes.h"
 #include "src/code-stubs.h"
 #include "src/compilation-cache.h"
 #include "src/compiler.h"
@@ -13,9 +15,7 @@
 #include "src/global-handles.h"
 #include "src/isolate-inl.h"
 #include "src/messages.h"
-#include "src/parser.h"
-#include "src/scopeinfo.h"
-#include "src/scopes.h"
+#include "src/parsing/parser.h"
 #include "src/v8.h"
 #include "src/v8memory.h"
 
@@ -1307,7 +1307,8 @@ static Handle<Code> PatchPositionsInCode(
         int new_position = TranslatePosition(position,
                                              position_change_array);
         if (position != new_position) {
-          RelocInfo info_copy(rinfo->pc(), rinfo->rmode(), new_position, NULL);
+          RelocInfo info_copy(rinfo->isolate(), rinfo->pc(), rinfo->rmode(),
+                              new_position, NULL);
           buffer_writer.Write(&info_copy);
           continue;
         }

@@ -2759,7 +2759,7 @@ double Simulator::FPRoundInt(double value, FPRounding round_mode) {
       // If the error is greater than 0.5, or is equal to 0.5 and the integer
       // result is odd, round up.
       } else if ((error > 0.5) ||
-          ((error == 0.5) && (fmod(int_result, 2) != 0))) {
+                 ((error == 0.5) && (modulo(int_result, 2) != 0))) {
         int_result++;
       }
       break;
@@ -3105,7 +3105,8 @@ T Simulator::FPSqrt(T op) {
   } else if (op < 0.0) {
     return FPDefaultNaN<T>();
   } else {
-    return fast_sqrt(op);
+    lazily_initialize_fast_sqrt(isolate_);
+    return fast_sqrt(op, isolate_);
   }
 }
 

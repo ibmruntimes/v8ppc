@@ -12,7 +12,6 @@
 #include "src/compiler/ast-graph-builder.h"
 #include "src/compiler/ast-loop-assignment-analyzer.h"
 #include "src/compiler/basic-block-instrumentor.h"
-#include "src/compiler/binary-operator-reducer.h"
 #include "src/compiler/branch-elimination.h"
 #include "src/compiler/bytecode-graph-builder.h"
 #include "src/compiler/change-lowering.h"
@@ -274,12 +273,12 @@ class PipelineData {
     DCHECK(register_allocation_data_ == nullptr);
     int fixed_frame_size = 0;
     if (descriptor != nullptr) {
-      fixed_frame_size = (descriptor->kind() == CallDescriptor::kCallAddress)
+      fixed_frame_size = (descriptor->IsCFunctionCall())
                              ? StandardFrameConstants::kFixedSlotCountAboveFp +
                                    StandardFrameConstants::kCPSlotCount
                              : StandardFrameConstants::kFixedSlotCount;
     }
-    frame_ = new (instruction_zone()) Frame(fixed_frame_size);
+    frame_ = new (instruction_zone()) Frame(fixed_frame_size, descriptor);
     register_allocation_data_ = new (register_allocation_zone())
         RegisterAllocationData(config, register_allocation_zone(), frame(),
                                sequence(), debug_name);
@@ -639,14 +638,11 @@ struct SimplifiedLoweringPhase {
     MachineOperatorReducer machine_reducer(data->jsgraph());
     CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
                                          data->common(), data->machine());
-    BinaryOperatorReducer binary_reducer(&graph_reducer, data->graph(),
-                                         data->common(), data->machine());
     AddReducer(data, &graph_reducer, &dead_code_elimination);
     AddReducer(data, &graph_reducer, &simple_reducer);
     AddReducer(data, &graph_reducer, &value_numbering);
     AddReducer(data, &graph_reducer, &machine_reducer);
     AddReducer(data, &graph_reducer, &common_reducer);
-    AddReducer(data, &graph_reducer, &binary_reducer);
     graph_reducer.ReduceGraph();
   }
 };
@@ -1376,6 +1372,8 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
   }
   if (verifier != nullptr) {
     CHECK(!data->register_allocation_data()->ExistsUseWithoutDefinition());
+    CHECK(data->register_allocation_data()
+              ->RangesDefinedInDeferredStayInDeferred());
   }
 
   if (FLAG_turbo_preprocess_ranges) {

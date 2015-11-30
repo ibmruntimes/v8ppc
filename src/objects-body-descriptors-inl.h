@@ -166,22 +166,14 @@ class JSArrayBuffer::BodyDescriptor final : public BodyDescriptorBase {
   static bool IsValidSlot(HeapObject* obj, int offset) {
     if (offset < kBackingStoreOffset) return true;
     if (offset < kSize) return false;
-    if (offset < kSizeWithInternalFields) return true;
-    // TODO(ishell): v8:4531, fix when JSArrayBuffers are allowed to have
-    // in-object properties
-    // return IsValidSlotImpl(obj, offset);
-    return true;
+    return IsValidSlotImpl(obj, offset);
   }
 
   template <typename ObjectVisitor>
   static inline void IterateBody(HeapObject* obj, int object_size,
                                  ObjectVisitor* v) {
     IteratePointers(obj, kPropertiesOffset, kBackingStoreOffset, v);
-    IteratePointers(obj, kSize, kSizeWithInternalFields, v);
-
-    // TODO(ishell): v8:4531, fix when JSArrayBuffers are allowed to have
-    // in-object properties
-    // IterateBodyImpl(obj, kSize, object_size, v);
+    IterateBodyImpl(obj, kSize, object_size, v);
   }
 
   template <typename StaticVisitor>
@@ -189,18 +181,11 @@ class JSArrayBuffer::BodyDescriptor final : public BodyDescriptorBase {
     Heap* heap = obj->GetHeap();
     IteratePointers<StaticVisitor>(heap, obj, kPropertiesOffset,
                                    kBackingStoreOffset);
-    IteratePointers<StaticVisitor>(heap, obj, kSize, kSizeWithInternalFields);
-
-    // TODO(ishell): v8:4531, fix when JSArrayBuffers are allowed to have
-    // in-object properties
-    // IterateBodyImpl<StaticVisitor>(heap, obj, kSize, object_size);
+    IterateBodyImpl<StaticVisitor>(heap, obj, kSize, object_size);
   }
 
   static inline int SizeOf(Map* map, HeapObject* object) {
-    // TODO(ishell): v8:4531, fix when JSArrayBuffers are allowed to have
-    // in-object properties
-    // return map->instance_size();
-    return kSizeWithInternalFields;
+    return map->instance_size();
   }
 };
 
@@ -253,36 +238,42 @@ class FixedTypedArrayBase::BodyDescriptor final : public BodyDescriptorBase {
 };
 
 
-class JSWeakCollection::BodyDescriptor final : public BodyDescriptorBase {
+template <JSWeakCollection::BodyVisitingPolicy body_visiting_policy>
+class JSWeakCollection::BodyDescriptorImpl final : public BodyDescriptorBase {
  public:
+  STATIC_ASSERT(kTableOffset + kPointerSize == kNextOffset);
+  STATIC_ASSERT(kNextOffset + kPointerSize == kSize);
+
   static bool IsValidSlot(HeapObject* obj, int offset) {
-    // TODO(ishell): v8:4531, fix when JSWeakCollections are allowed to have
-    // in-object properties
-    // return IsValidSlotImpl(obj, offset);
-    return true;
+    return IsValidSlotImpl(obj, offset);
   }
 
   template <typename ObjectVisitor>
   static inline void IterateBody(HeapObject* obj, int object_size,
                                  ObjectVisitor* v) {
-    IteratePointers(obj, kPropertiesOffset, kSize, v);
-
-    // TODO(ishell): v8:4531, fix when JSWeakCollections are allowed to have
-    // in-object properties
-    // IterateBodyImpl(obj, kSize, object_size, v);
+    if (body_visiting_policy == kVisitStrong) {
+      IterateBodyImpl(obj, kPropertiesOffset, object_size, v);
+    } else {
+      IteratePointers(obj, kPropertiesOffset, kTableOffset, v);
+      IterateBodyImpl(obj, kSize, object_size, v);
+    }
   }
 
   template <typename StaticVisitor>
   static inline void IterateBody(HeapObject* obj, int object_size) {
     Heap* heap = obj->GetHeap();
-    IteratePointers<StaticVisitor>(heap, obj, kPropertiesOffset, kSize);
-
-    // TODO(ishell): v8:4531, fix when JSWeakCollections are allowed to have
-    // in-object properties
-    // IterateBodyImpl<StaticVisitor>(heap, obj, kSize, object_size);
+    if (body_visiting_policy == kVisitStrong) {
+      IterateBodyImpl<StaticVisitor>(heap, obj, kPropertiesOffset, object_size);
+    } else {
+      IteratePointers<StaticVisitor>(heap, obj, kPropertiesOffset,
+                                     kTableOffset);
+      IterateBodyImpl<StaticVisitor>(heap, obj, kSize, object_size);
+    }
   }
 
-  static inline int SizeOf(Map* map, HeapObject* object) { return kSize; }
+  static inline int SizeOf(Map* map, HeapObject* object) {
+    return map->instance_size();
+  }
 };
 
 

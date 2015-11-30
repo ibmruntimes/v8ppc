@@ -118,14 +118,14 @@ static MaybeHandle<Object> KeyedGetObjectProperty(Isolate* isolate,
 }
 
 
-MaybeHandle<Object> Runtime::DeleteObjectProperty(Isolate* isolate,
-                                                  Handle<JSReceiver> receiver,
-                                                  Handle<Object> key,
-                                                  LanguageMode language_mode) {
+Maybe<bool> Runtime::DeleteObjectProperty(Isolate* isolate,
+                                          Handle<JSReceiver> receiver,
+                                          Handle<Object> key,
+                                          LanguageMode language_mode) {
   bool success = false;
   LookupIterator it = LookupIterator::PropertyOrElement(
       isolate, receiver, key, &success, LookupIterator::HIDDEN);
-  if (!success) return MaybeHandle<Object>();
+  if (!success) return Nothing<bool>();
 
   return JSReceiver::DeleteProperty(&it, language_mode);
 }
@@ -618,11 +618,10 @@ Object* DeleteProperty(Isolate* isolate, Handle<Object> object,
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate, NewTypeError(MessageTemplate::kUndefinedOrNullToObject));
   }
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
-      Runtime::DeleteObjectProperty(isolate, receiver, key, language_mode));
-  return *result;
+  Maybe<bool> result =
+      Runtime::DeleteObjectProperty(isolate, receiver, key, language_mode);
+  MAYBE_RETURN(result, isolate->heap()->exception());
+  return isolate->heap()->ToBoolean(result.FromJust());
 }
 
 }  // namespace
@@ -1012,21 +1011,13 @@ static Object* Runtime_NewObjectHelper(Isolate* isolate,
                                        Handle<JSFunction> constructor,
                                        Handle<JSReceiver> new_target,
                                        Handle<AllocationSite> site) {
-  // TODO(verwaest): new_target could be a proxy. Read new.target.prototype in
-  // that case.
-  Handle<JSFunction> original_function = Handle<JSFunction>::cast(new_target);
+  DCHECK(!constructor->has_initial_map() ||
+         constructor->initial_map()->instance_type() != JS_FUNCTION_TYPE);
 
-  // The function should be compiled for the optimization hints to be
-  // available.
-  Compiler::Compile(constructor, CLEAR_EXCEPTION);
-
-  JSFunction::EnsureHasInitialMap(constructor);
-  DCHECK_NE(JS_FUNCTION_TYPE, constructor->initial_map()->instance_type());
-
-  // TODO(verwaest): original_function could have non-instance-prototype
-  // (non-JSReceiver), requiring fallback to the intrinsicDefaultProto.
-  Handle<Map> initial_map =
-      JSFunction::EnsureDerivedHasInitialMap(original_function, constructor);
+  Handle<Map> initial_map;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, initial_map,
+      JSFunction::GetDerivedMap(isolate, constructor, new_target));
 
   Handle<JSObject> result =
       isolate->factory()->NewJSObjectFromMap(initial_map, NOT_TENURED, site);
@@ -1268,11 +1259,11 @@ RUNTIME_FUNCTION(Runtime_ObjectEquals) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_IsSpecObject) {
+RUNTIME_FUNCTION(Runtime_IsJSReceiver) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 1);
   CONVERT_ARG_CHECKED(Object, obj, 0);
-  return isolate->heap()->ToBoolean(obj->IsSpecObject());
+  return isolate->heap()->ToBoolean(obj->IsJSReceiver());
 }
 
 

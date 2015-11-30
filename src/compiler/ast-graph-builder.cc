@@ -4,6 +4,7 @@
 
 #include "src/compiler/ast-graph-builder.h"
 
+#include "src/ast/scopes.h"
 #include "src/compiler.h"
 #include "src/compiler/ast-loop-assignment-analyzer.h"
 #include "src/compiler/control-builders.h"
@@ -14,8 +15,7 @@
 #include "src/compiler/node-properties.h"
 #include "src/compiler/operator-properties.h"
 #include "src/compiler/state-values-utils.h"
-#include "src/parser.h"
-#include "src/scopes.h"
+#include "src/parsing/parser.h"
 
 namespace v8 {
 namespace internal {
@@ -461,8 +461,7 @@ Node* AstGraphBuilder::GetFunctionClosureForContext() {
       closure_scope->is_module_scope()) {
     // Contexts nested in the native context have a canonical empty function as
     // their closure, not the anonymous closure containing the global code.
-    // Pass a SMI sentinel and let the runtime look up the empty function.
-    return jsgraph()->SmiConstant(0);
+    return BuildLoadNativeContextField(Context::CLOSURE_INDEX);
   } else {
     DCHECK(closure_scope->is_function_scope());
     return GetFunctionClosure();
@@ -1200,8 +1199,9 @@ void AstGraphBuilder::VisitReturnStatement(ReturnStatement* stmt) {
 void AstGraphBuilder::VisitWithStatement(WithStatement* stmt) {
   VisitForValue(stmt->expression());
   Node* value = environment()->Pop();
+  Node* object = BuildToObject(value, stmt->ToObjectId());
   const Operator* op = javascript()->CreateWithContext();
-  Node* context = NewNode(op, value, GetFunctionClosureForContext());
+  Node* context = NewNode(op, object, GetFunctionClosureForContext());
   PrepareFrameState(context, stmt->EntryId());
   VisitInScope(stmt->statement(), stmt->scope(), context);
 }
@@ -1696,14 +1696,9 @@ void AstGraphBuilder::VisitRegExpLiteral(RegExpLiteral* expr) {
   Node* closure = GetFunctionClosure();
 
   // Create node to materialize a regular expression literal.
-  Node* literals_array =
-      BuildLoadObjectField(closure, JSFunction::kLiteralsOffset);
-  Node* literal_index = jsgraph()->Constant(expr->literal_index());
-  Node* pattern = jsgraph()->Constant(expr->pattern());
-  Node* flags = jsgraph()->Constant(expr->flags());
-  const Operator* op =
-      javascript()->CallRuntime(Runtime::kMaterializeRegExpLiteral, 4);
-  Node* literal = NewNode(op, literals_array, literal_index, pattern, flags);
+  const Operator* op = javascript()->CreateLiteralRegExp(
+      expr->pattern(), expr->flags(), expr->literal_index());
+  Node* literal = NewNode(op, closure);
   PrepareFrameState(literal, expr->id(), ast_context()->GetStateCombine());
   ast_context()->ProduceValue(literal);
 }
@@ -3654,15 +3649,14 @@ Node* AstGraphBuilder::BuildLoadImmutableObjectField(Node* object, int offset) {
 
 
 Node* AstGraphBuilder::BuildLoadGlobalObject() {
-  const Operator* load_op =
-      javascript()->LoadContext(0, Context::GLOBAL_OBJECT_INDEX, true);
-  return NewNode(load_op, GetFunctionContext());
+  return BuildLoadNativeContextField(Context::EXTENSION_INDEX);
 }
 
 
 Node* AstGraphBuilder::BuildLoadNativeContextField(int index) {
-  Node* global = BuildLoadGlobalObject();
-  Node* native_context = NewNode(javascript()->LoadNativeContext(), global);
+  const Operator* op =
+      javascript()->LoadContext(0, Context::NATIVE_CONTEXT_INDEX, true);
+  Node* native_context = NewNode(op, current_context());
   return NewNode(javascript()->LoadContext(0, index, true), native_context);
 }
 
@@ -3864,8 +3858,8 @@ Node* AstGraphBuilder::TryLoadDynamicVariable(
       Node* load = NewNode(
           javascript()->LoadContext(depth, Context::EXTENSION_INDEX, false),
           current_context());
-      Node* check =
-          NewNode(javascript()->CallRuntime(Runtime::kInlineIsSmi, 1), load);
+      Node* check = NewNode(javascript()->StrictEqual(), load,
+                            jsgraph()->TheHoleConstant());
       fast_block.BreakUnless(check, BranchHint::kTrue);
     }
 
@@ -3906,8 +3900,8 @@ Node* AstGraphBuilder::TryLoadDynamicVariable(
       Node* load = NewNode(
           javascript()->LoadContext(depth, Context::EXTENSION_INDEX, false),
           current_context());
-      Node* check =
-          NewNode(javascript()->CallRuntime(Runtime::kInlineIsSmi, 1), load);
+      Node* check = NewNode(javascript()->StrictEqual(), load,
+                            jsgraph()->TheHoleConstant());
       fast_block.BreakUnless(check, BranchHint::kTrue);
     }
 

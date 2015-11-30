@@ -851,13 +851,28 @@ void InstructionSelector::VisitFloat64Sqrt(Node* node) {
 }
 
 
+void InstructionSelector::VisitFloat32RoundDown(Node* node) {
+  VisitRR(this, node, kSSEFloat32Round | MiscField::encode(kRoundDown));
+}
+
+
 void InstructionSelector::VisitFloat64RoundDown(Node* node) {
   VisitRR(this, node, kSSEFloat64Round | MiscField::encode(kRoundDown));
 }
 
 
+void InstructionSelector::VisitFloat32RoundUp(Node* node) {
+  VisitRR(this, node, kSSEFloat32Round | MiscField::encode(kRoundUp));
+}
+
+
 void InstructionSelector::VisitFloat64RoundUp(Node* node) {
   VisitRR(this, node, kSSEFloat64Round | MiscField::encode(kRoundUp));
+}
+
+
+void InstructionSelector::VisitFloat32RoundTruncate(Node* node) {
+  VisitRR(this, node, kSSEFloat32Round | MiscField::encode(kRoundToZero));
 }
 
 
@@ -868,6 +883,11 @@ void InstructionSelector::VisitFloat64RoundTruncate(Node* node) {
 
 void InstructionSelector::VisitFloat64RoundTiesAway(Node* node) {
   UNREACHABLE();
+}
+
+
+void InstructionSelector::VisitFloat32RoundTiesEven(Node* node) {
+  VisitRR(this, node, kSSEFloat32Round | MiscField::encode(kRoundToNearest));
 }
 
 
@@ -1284,9 +1304,13 @@ InstructionSelector::SupportedMachineOperatorFlags() {
     flags |= MachineOperatorBuilder::kWord32Popcnt;
   }
   if (CpuFeatures::IsSupported(SSE4_1)) {
-    flags |= MachineOperatorBuilder::kFloat64RoundDown |
+    flags |= MachineOperatorBuilder::kFloat32RoundDown |
+             MachineOperatorBuilder::kFloat64RoundDown |
+             MachineOperatorBuilder::kFloat32RoundUp |
              MachineOperatorBuilder::kFloat64RoundUp |
+             MachineOperatorBuilder::kFloat32RoundTruncate |
              MachineOperatorBuilder::kFloat64RoundTruncate |
+             MachineOperatorBuilder::kFloat32RoundTiesEven |
              MachineOperatorBuilder::kFloat64RoundTiesEven;
   }
   return flags;

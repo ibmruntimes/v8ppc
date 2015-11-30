@@ -25,7 +25,7 @@ utils.Import(function(from) {
 //----------------------------------------------------------------------------
 
 function ProxyCreate(target, handler) {
-  if (!%_IsConstructCall()) {
+  if (IS_UNDEFINED(new.target)) {
     throw MakeTypeError(kConstructorNotFunction, "Proxy");
   }
   return %CreateJSProxy(target, handler);
@@ -66,7 +66,7 @@ function DerivedConstructTrap(callTrap) {
 
 function DelegateCallAndConstruct(callTrap, constructTrap) {
   return function() {
-    return %Apply(%_IsConstructCall() ? constructTrap : callTrap,
+    return %Apply(IS_UNDEFINED(new.target) ? callTrap : constructTrap,
                   this, arguments, 0, %_ArgumentsLength())
   }
 }
@@ -130,10 +130,6 @@ function DerivedSetTrap(receiver, name, val) {
   return true;
 }
 
-function DerivedHasTrap(name) {
-  return !!this.getPropertyDescriptor(name)
-}
-
 function DerivedHasOwnTrap(name) {
   return !!this.getOwnPropertyDescriptor(name)
 }
@@ -152,31 +148,30 @@ function DerivedKeysTrap() {
   return enumerableNames
 }
 
-function DerivedEnumerateTrap() {
-  var names = this.getPropertyNames()
-  var enumerableNames = []
-  for (var i = 0, count = 0; i < names.length; ++i) {
-    var name = names[i]
-    if (IS_SYMBOL(name)) continue
-    var desc = this.getPropertyDescriptor(TO_STRING(name))
-    if (!IS_UNDEFINED(desc)) {
-      if (!desc.configurable) {
-        throw MakeTypeError(kProxyPropNotConfigurable,
-                            this, name, "getPropertyDescriptor")
-      }
-      if (desc.enumerable) enumerableNames[count++] = names[i]
+// Implements part of ES6 9.5.11 Proxy.[[Enumerate]]:
+// Call the trap, which should return an iterator, exhaust the iterator,
+// and return an array containing the values.
+function ProxyEnumerate(trap, handler, target) {
+  // 7. Let trapResult be ? Call(trap, handler, «target»).
+  var trap_result = %_Call(trap, handler, target);
+  // 8. If Type(trapResult) is not Object, throw a TypeError exception.
+  if (!IS_SPEC_OBJECT(trap_result)) {
+    throw MakeTypeError(kProxyHandlerReturned, handler, "non-Object",
+                        "enumerate");
+  }
+  // 9. Return trapResult.
+  var result = [];
+  for (var it = trap_result.next(); !it.done; it = trap_result.next()) {
+    var key = it.value;
+    // Not yet spec'ed as of 2015-11-25, but will be spec'ed soon:
+    // If the iterator returns a non-string value, throw a TypeError.
+    if (!IS_STRING(key)) {
+      throw MakeTypeError(kProxyHandlerReturned, handler, "non-String",
+                          "enumerate-iterator");
     }
+    result.push(key);
   }
-  return enumerableNames
-}
-
-function ProxyEnumerate(proxy) {
-  var handler = %GetHandler(proxy)
-  if (IS_UNDEFINED(handler.enumerate)) {
-    return %Apply(DerivedEnumerateTrap, handler, [], 0, 0)
-  } else {
-    return ToNameArray(handler.enumerate(), "enumerate", false)
-  }
+  return result;
 }
 
 //-------------------------------------------------------------------
@@ -198,7 +193,6 @@ utils.Export(function(to) {
 
 %InstallToContext([
   "derived_get_trap", DerivedGetTrap,
-  "derived_has_trap", DerivedHasTrap,
   "derived_set_trap", DerivedSetTrap,
   "proxy_enumerate", ProxyEnumerate,
 ]);

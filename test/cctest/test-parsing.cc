@@ -34,18 +34,18 @@
 
 #include "src/v8.h"
 
-#include "src/ast.h"
-#include "src/ast-numbering.h"
-#include "src/ast-value-factory.h"
+#include "src/ast/ast.h"
+#include "src/ast/ast-numbering.h"
+#include "src/ast/ast-value-factory.h"
 #include "src/compiler.h"
 #include "src/execution.h"
 #include "src/isolate.h"
 #include "src/objects.h"
-#include "src/parser.h"
-#include "src/preparser.h"
-#include "src/rewriter.h"
-#include "src/scanner-character-streams.h"
-#include "src/token.h"
+#include "src/parsing/parser.h"
+#include "src/parsing/preparser.h"
+#include "src/parsing/rewriter.h"
+#include "src/parsing/scanner-character-streams.h"
+#include "src/parsing/token.h"
 #include "src/utils.h"
 
 #include "test/cctest/cctest.h"
@@ -220,7 +220,7 @@ TEST(UsingCachedData) {
       "         42: 'number literal', for: 'keyword as propertyName', "
       "         f\\u006fr: 'keyword propertyname with escape'};"
       "var v = /RegExp Literal/;"
-      "var w = /RegExp Literal\\u0020With Escape/gin;"
+      "var w = /RegExp Literal\\u0020With Escape/gi;"
       "var y = { get getter() { return 42; }, "
       "          set setter(v) { this.value = v; }};"
       "var f = a => function (b) { return a + b; };"
@@ -2795,7 +2795,6 @@ TEST(NoErrorsRegexpLiteral) {
   const char* statement_data[] = {
     "/foo/",
     "/foo/g",
-    "/foo/whatever",  // This is an error but not detected by the parser.
     NULL
   };
 

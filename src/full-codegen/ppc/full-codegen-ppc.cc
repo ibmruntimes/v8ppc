@@ -4,14 +4,14 @@
 
 #if V8_TARGET_ARCH_PPC
 
+#include "src/ast/scopes.h"
 #include "src/code-factory.h"
 #include "src/code-stubs.h"
 #include "src/codegen.h"
 #include "src/debug/debug.h"
 #include "src/full-codegen/full-codegen.h"
 #include "src/ic/ic.h"
-#include "src/parser.h"
-#include "src/scopes.h"
+#include "src/parsing/parser.h"
 
 #include "src/ppc/code-stubs-ppc.h"
 #include "src/ppc/macro-assembler-ppc.h"
@@ -117,7 +117,7 @@ void FullCodeGenerator::Generate() {
     int receiver_offset = info->scope()->num_parameters() * kPointerSize;
     __ LoadP(r5, MemOperand(sp, receiver_offset), r0);
     __ AssertNotSmi(r5);
-    __ CompareObjectType(r5, r5, no_reg, FIRST_SPEC_OBJECT_TYPE);
+    __ CompareObjectType(r5, r5, no_reg, FIRST_JS_RECEIVER_TYPE);
     __ Assert(ge, kSloppyFunctionExpectsJSReceiverReceiver);
   }
 
@@ -1005,7 +1005,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // Convert the object to a JS object.
   Label convert, done_convert;
   __ JumpIfSmi(r3, &convert);
-  __ CompareObjectType(r3, r4, r4, FIRST_SPEC_OBJECT_TYPE);
+  __ CompareObjectType(r3, r4, r4, FIRST_JS_RECEIVER_TYPE);
   __ bge(&done_convert);
   __ bind(&convert);
   ToObjectStub stub(isolate());
@@ -1016,7 +1016,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
   // Check for proxies.
   Label call_runtime;
-  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_SPEC_OBJECT_TYPE);
+  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
   __ CompareObjectType(r3, r4, r4, LAST_JS_PROXY_TYPE);
   __ ble(&call_runtime);
 
@@ -1083,7 +1083,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
   __ LoadSmiLiteral(r4, Smi::FromInt(1));          // Smi indicates slow check
   __ LoadP(r5, MemOperand(sp, 0 * kPointerSize));  // Get enumerated object
-  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_SPEC_OBJECT_TYPE);
+  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
   __ CompareObjectType(r5, r6, r6, LAST_JS_PROXY_TYPE);
   __ bgt(&non_proxy);
   __ LoadSmiLiteral(r4, Smi::FromInt(0));  // Zero indicates proxy
@@ -1426,49 +1426,12 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy,
 
 void FullCodeGenerator::VisitRegExpLiteral(RegExpLiteral* expr) {
   Comment cmnt(masm_, "[ RegExpLiteral");
-  Label materialized;
-  // Registers will be used as follows:
-  // r8 = materialized value (RegExp literal)
-  // r7 = JS function, literals array
-  // r6 = literal index
-  // r5 = RegExp pattern
-  // r4 = RegExp flags
-  // r3 = RegExp literal clone
-  __ LoadP(r3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  __ LoadP(r7, FieldMemOperand(r3, JSFunction::kLiteralsOffset));
-  int literal_offset = LiteralsArray::OffsetOfLiteralAt(expr->literal_index());
-  __ LoadP(r8, FieldMemOperand(r7, literal_offset), r0);
-  __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
-  __ cmp(r8, ip);
-  __ bne(&materialized);
-
-  // Create regexp literal using runtime function.
-  // Result will be in r3.
-  __ LoadSmiLiteral(r6, Smi::FromInt(expr->literal_index()));
-  __ mov(r5, Operand(expr->pattern()));
-  __ mov(r4, Operand(expr->flags()));
-  __ Push(r7, r6, r5, r4);
-  __ CallRuntime(Runtime::kMaterializeRegExpLiteral, 4);
-  __ mr(r8, r3);
-
-  __ bind(&materialized);
-  int size = JSRegExp::kSize + JSRegExp::kInObjectFieldCount * kPointerSize;
-  Label allocated, runtime_allocate;
-  __ Allocate(size, r3, r5, r6, &runtime_allocate, TAG_OBJECT);
-  __ b(&allocated);
-
-  __ bind(&runtime_allocate);
-  __ LoadSmiLiteral(r3, Smi::FromInt(size));
-  __ Push(r8, r3);
-  __ CallRuntime(Runtime::kAllocateInNewSpace, 1);
-  __ pop(r8);
-
-  __ bind(&allocated);
-  // After this, registers are used as follows:
-  // r3: Newly allocated regexp.
-  // r8: Materialized regexp.
-  // r5: temp.
-  __ CopyFields(r3, r8, r5.bit(), size / kPointerSize);
+  __ LoadP(r6, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+  __ LoadSmiLiteral(r5, Smi::FromInt(expr->literal_index()));
+  __ mov(r4, Operand(expr->pattern()));
+  __ LoadSmiLiteral(r3, Smi::FromInt(expr->flags()));
+  FastCloneRegExpStub stub(isolate());
+  __ CallStub(&stub);
   context()->Plug(r3);
 }
 
@@ -3060,7 +3023,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
   __ LoadSmiLiteral(r6, SmiFromSlot(expr->CallNewFeedbackSlot()));
 
   CallConstructStub stub(isolate());
-  __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
+  __ Call(stub.GetCode(), RelocInfo::CODE_TARGET);
   PrepareForBailoutForId(expr->ReturnId(), TOS_REG);
   // Restore context register.
   __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
@@ -3095,7 +3058,7 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   __ mov(r3, Operand(arg_count));
   __ LoadP(r4, MemOperand(sp, arg_count * kPointerSize));
 
-  __ Call(isolate()->builtins()->Construct(), RelocInfo::CONSTRUCT_CALL);
+  __ Call(isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
 
   RecordJSReturnSite(expr);
 
@@ -3126,7 +3089,7 @@ void FullCodeGenerator::EmitIsSmi(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitIsSpecObject(CallRuntime* expr) {
+void FullCodeGenerator::EmitIsJSReceiver(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 1);
 
@@ -3140,7 +3103,7 @@ void FullCodeGenerator::EmitIsSpecObject(CallRuntime* expr) {
                          &if_false, &fall_through);
 
   __ JumpIfSmi(r3, if_false);
-  __ CompareObjectType(r3, r4, r4, FIRST_SPEC_OBJECT_TYPE);
+  __ CompareObjectType(r3, r4, r4, FIRST_JS_RECEIVER_TYPE);
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   Split(ge, if_true, if_false, fall_through);
 
@@ -3429,15 +3392,15 @@ void FullCodeGenerator::EmitClassOf(CallRuntime* expr) {
   // Assume that there are only two callable types, and one of them is at
   // either end of the type range for JS object types. Saves extra comparisons.
   STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
-  __ CompareObjectType(r3, r3, r4, FIRST_SPEC_OBJECT_TYPE);
+  __ CompareObjectType(r3, r3, r4, FIRST_JS_RECEIVER_TYPE);
   // Map is now in r3.
   __ blt(&null);
   STATIC_ASSERT(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                FIRST_SPEC_OBJECT_TYPE + 1);
+                FIRST_JS_RECEIVER_TYPE + 1);
   __ beq(&function);
 
-  __ cmpi(r4, Operand(LAST_SPEC_OBJECT_TYPE));
-  STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE == LAST_SPEC_OBJECT_TYPE - 1);
+  __ cmpi(r4, Operand(LAST_JS_RECEIVER_TYPE));
+  STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE == LAST_JS_RECEIVER_TYPE - 1);
   __ beq(&function);
   // Assume that there is no larger type.
   STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE == LAST_TYPE - 1);
@@ -3857,7 +3820,7 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   }
 
   __ bind(&args_set_up);
-  __ Call(isolate()->builtins()->Construct(), RelocInfo::CONSTRUCT_CALL);
+  __ Call(isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
 
   // Restore context register.
   __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
@@ -4694,8 +4657,8 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ JumpIfSmi(r3, if_false);
     __ CompareRoot(r3, Heap::kNullValueRootIndex);
     __ beq(if_true);
-    STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
-    __ CompareObjectType(r3, r3, r4, FIRST_SPEC_OBJECT_TYPE);
+    STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
+    __ CompareObjectType(r3, r3, r4, FIRST_JS_RECEIVER_TYPE);
     __ blt(if_false);
     // Check for callable or undetectable objects => false.
     __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
@@ -4938,7 +4901,8 @@ void BackEdgeTable::PatchAt(Code* unoptimized_code, Address pc,
                             Code* replacement_code) {
   Address mov_address = Assembler::target_address_from_return_address(pc);
   Address cmp_address = mov_address - 2 * Assembler::kInstrSize;
-  CodePatcher patcher(cmp_address, 1);
+  Isolate* isolate = unoptimized_code->GetIsolate();
+  CodePatcher patcher(isolate, cmp_address, 1);
 
   switch (target_state) {
     case INTERRUPT: {
@@ -4971,7 +4935,7 @@ void BackEdgeTable::PatchAt(Code* unoptimized_code, Address pc,
 
   // Replace the stack check address in the mov sequence with the
   // entry address of the replacement code.
-  Assembler::set_target_address_at(mov_address, unoptimized_code,
+  Assembler::set_target_address_at(isolate, mov_address, unoptimized_code,
                                    replacement_code->entry());
 
   unoptimized_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(

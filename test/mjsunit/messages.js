@@ -335,11 +335,6 @@ test(function() {
 }, "Invalid property descriptor. Cannot both specify accessors " +
    "and a value or writable attribute, #<Object>", TypeError);
 
-// kWithExpression
-test(function() {
-  with (null) {}
-}, "null has no properties", TypeError);
-
 // kWrongArgs
 test(function() {
   (function() {}).apply({}, 1);
@@ -358,8 +353,8 @@ test(function() {
 
 // kInvalidRegExpFlags
 test(function() {
-  /a/x.test("a");
-}, "Invalid flags supplied to RegExp constructor 'x'", SyntaxError);
+  eval("/a/x.test(\"a\");");
+}, "Invalid regular expression flags", SyntaxError);
 
 // kMalformedRegExp
 test(function() {

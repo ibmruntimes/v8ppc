@@ -1189,7 +1189,7 @@ bool HasConcatSpreadableModifier(Isolate* isolate, Handle<JSArray> obj) {
 
 bool IsConcatSpreadable(Isolate* isolate, Handle<Object> obj) {
   HandleScope handle_scope(isolate);
-  if (!obj->IsSpecObject()) return false;
+  if (!obj->IsJSReceiver()) return false;
   if (FLAG_harmony_concat_spreadable) {
     Handle<Symbol> key(isolate->factory()->is_concat_spreadable_symbol());
     Handle<Object> value;
@@ -1500,12 +1500,10 @@ BUILTIN(ReflectDeleteProperty) {
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, name,
                                      Object::ToName(isolate, key));
 
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result, JSReceiver::DeletePropertyOrElement(
-                           Handle<JSReceiver>::cast(target), name));
-
-  return *result;
+  Maybe<bool> result = JSReceiver::DeletePropertyOrElement(
+      Handle<JSReceiver>::cast(target), name, SLOPPY);
+  MAYBE_RETURN(result, isolate->heap()->exception());
+  return *isolate->factory()->ToBoolean(result.FromJust());
 }
 
 
@@ -2306,7 +2304,8 @@ void Builtins::SetUp(Isolate* isolate, bool create_heap_objects) {
   // separate code object for each one.
   for (int i = 0; i < builtin_count; i++) {
     if (create_heap_objects) {
-      MacroAssembler masm(isolate, u.buffer, sizeof u.buffer);
+      MacroAssembler masm(isolate, u.buffer, sizeof u.buffer,
+                          CodeObjectRequired::kYes);
       // Generate the code/adaptor.
       typedef void (*Generator)(MacroAssembler*, int, BuiltinExtraArguments);
       Generator g = FUNCTION_CAST<Generator>(functions[i].generator);

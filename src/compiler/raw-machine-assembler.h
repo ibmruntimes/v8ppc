@@ -19,7 +19,9 @@ namespace internal {
 namespace compiler {
 
 class BasicBlock;
+class RawMachineLabel;
 class Schedule;
+
 
 // The RawMachineAssembler produces a low-level IR graph. All nodes are wired
 // into a graph and also placed into a schedule immediately, hence subsequent
@@ -34,19 +36,6 @@ class Schedule;
 // non-schedulable due to missing control and effect dependencies.
 class RawMachineAssembler {
  public:
-  class Label {
-   public:
-    Label() : block_(NULL), used_(false), bound_(false) {}
-    ~Label() { DCHECK(bound_ || !used_); }
-
-   private:
-    BasicBlock* block_;
-    bool used_;
-    bool bound_;
-    friend class RawMachineAssembler;
-    DISALLOW_COPY_AND_ASSIGN(Label);
-  };
-
   RawMachineAssembler(Isolate* isolate, Graph* graph,
                       CallDescriptor* call_descriptor,
                       MachineType word = kMachPtr,
@@ -438,8 +427,14 @@ class RawMachineAssembler {
   Node* ChangeFloat64ToUint32(Node* a) {
     return AddNode(machine()->ChangeFloat64ToUint32(), a);
   }
+  Node* TruncateFloat32ToInt64(Node* a) {
+    return AddNode(machine()->TruncateFloat32ToInt64(), a);
+  }
   Node* TruncateFloat64ToInt64(Node* a) {
     return AddNode(machine()->TruncateFloat64ToInt64(), a);
+  }
+  Node* TruncateFloat32ToUint64(Node* a) {
+    return AddNode(machine()->TruncateFloat32ToUint64(), a);
   }
   Node* TruncateFloat64ToUint64(Node* a) {
     return AddNode(machine()->TruncateFloat64ToUint64(), a);
@@ -483,17 +478,29 @@ class RawMachineAssembler {
   Node* BitcastInt64ToFloat64(Node* a) {
     return AddNode(machine()->BitcastInt64ToFloat64(), a);
   }
+  Node* Float32RoundDown(Node* a) {
+    return AddNode(machine()->Float32RoundDown().op(), a);
+  }
   Node* Float64RoundDown(Node* a) {
     return AddNode(machine()->Float64RoundDown().op(), a);
   }
+  Node* Float32RoundUp(Node* a) {
+    return AddNode(machine()->Float32RoundUp().op(), a);
+  }
   Node* Float64RoundUp(Node* a) {
     return AddNode(machine()->Float64RoundUp().op(), a);
+  }
+  Node* Float32RoundTruncate(Node* a) {
+    return AddNode(machine()->Float32RoundTruncate().op(), a);
   }
   Node* Float64RoundTruncate(Node* a) {
     return AddNode(machine()->Float64RoundTruncate().op(), a);
   }
   Node* Float64RoundTiesAway(Node* a) {
     return AddNode(machine()->Float64RoundTiesAway().op(), a);
+  }
+  Node* Float32RoundTiesEven(Node* a) {
+    return AddNode(machine()->Float32RoundTiesEven().op(), a);
   }
   Node* Float64RoundTiesEven(Node* a) {
     return AddNode(machine()->Float64RoundTiesEven().op(), a);
@@ -569,14 +576,15 @@ class RawMachineAssembler {
   // the current basic block or create new basic blocks for labels.
 
   // Control flow.
-  void Goto(Label* label);
-  void Branch(Node* condition, Label* true_val, Label* false_val);
-  void Switch(Node* index, Label* default_label, int32_t* case_values,
-              Label** case_labels, size_t case_count);
+  void Goto(RawMachineLabel* label);
+  void Branch(Node* condition, RawMachineLabel* true_val,
+              RawMachineLabel* false_val);
+  void Switch(Node* index, RawMachineLabel* default_label, int32_t* case_values,
+              RawMachineLabel** case_labels, size_t case_count);
   void Return(Node* value);
   void Return(Node* v1, Node* v2);
   void Return(Node* v1, Node* v2, Node* v3);
-  void Bind(Label* label);
+  void Bind(RawMachineLabel* label);
   void Deoptimize(Node* state);
 
   // Variables.
@@ -609,8 +617,8 @@ class RawMachineAssembler {
 
  private:
   Node* MakeNode(const Operator* op, int input_count, Node** inputs);
-  BasicBlock* Use(Label* label);
-  BasicBlock* EnsureBlock(Label* label);
+  BasicBlock* Use(RawMachineLabel* label);
+  BasicBlock* EnsureBlock(RawMachineLabel* label);
   BasicBlock* CurrentBlock();
 
   Schedule* schedule() { return schedule_; }
@@ -629,6 +637,20 @@ class RawMachineAssembler {
   BasicBlock* current_block_;
 
   DISALLOW_COPY_AND_ASSIGN(RawMachineAssembler);
+};
+
+
+class RawMachineLabel final {
+ public:
+  RawMachineLabel();
+  ~RawMachineLabel();
+
+ private:
+  BasicBlock* block_;
+  bool used_;
+  bool bound_;
+  friend class RawMachineAssembler;
+  DISALLOW_COPY_AND_ASSIGN(RawMachineLabel);
 };
 
 }  // namespace compiler

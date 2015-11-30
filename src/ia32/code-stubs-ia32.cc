@@ -892,8 +892,7 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   // esp[8] = parameter count (tagged)
   // Get the arguments map from the current native context into edi.
   Label has_mapped_parameters, instantiate;
-  __ mov(edi, Operand(esi, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ mov(edi, FieldOperand(edi, JSGlobalObject::kNativeContextOffset));
+  __ mov(edi, NativeContextOperand());
   __ mov(ebx, Operand(esp, 0 * kPointerSize));
   __ test(ebx, ebx);
   __ j(not_zero, &has_mapped_parameters, Label::kNear);
@@ -1096,10 +1095,8 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   __ Allocate(eax, eax, ebx, no_reg, &runtime, TAG_OBJECT);
 
   // Get the arguments map from the current native context.
-  __ mov(edi, Operand(esi, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ mov(edi, FieldOperand(edi, JSGlobalObject::kNativeContextOffset));
-  const int offset = Context::SlotOffset(Context::STRICT_ARGUMENTS_MAP_INDEX);
-  __ mov(edi, Operand(edi, offset));
+  __ mov(edi, NativeContextOperand());
+  __ mov(edi, ContextOperand(edi, Context::STRICT_ARGUMENTS_MAP_INDEX));
 
   __ mov(FieldOperand(eax, JSObject::kMapOffset), edi);
   __ mov(FieldOperand(eax, JSObject::kPropertiesOffset),
@@ -1685,7 +1682,7 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
       __ mov(ecx, FieldOperand(eax, HeapObject::kMapOffset));
       __ movzx_b(ecx, FieldOperand(ecx, Map::kInstanceTypeOffset));
       // Call runtime on identical JSObjects.  Otherwise return equal.
-      __ cmpb(ecx, static_cast<uint8_t>(FIRST_SPEC_OBJECT_TYPE));
+      __ cmpb(ecx, static_cast<uint8_t>(FIRST_JS_RECEIVER_TYPE));
       __ j(above_equal, &runtime_call, Label::kFar);
       // Call runtime on identical symbols since we need to throw a TypeError.
       __ cmpb(ecx, static_cast<uint8_t>(SYMBOL_TYPE));
@@ -1753,8 +1750,8 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
     // Get the type of the first operand.
     // If the first object is a JS object, we have done pointer comparison.
     Label first_non_object;
-    STATIC_ASSERT(LAST_TYPE == LAST_SPEC_OBJECT_TYPE);
-    __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, ecx);
+    STATIC_ASSERT(LAST_TYPE == LAST_JS_RECEIVER_TYPE);
+    __ CmpObjectType(eax, FIRST_JS_RECEIVER_TYPE, ecx);
     __ j(below, &first_non_object, Label::kNear);
 
     // Return non-zero (eax is not zero)
@@ -1768,7 +1765,7 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
     __ CmpInstanceType(ecx, ODDBALL_TYPE);
     __ j(equal, &return_not_equal);
 
-    __ CmpObjectType(edx, FIRST_SPEC_OBJECT_TYPE, ecx);
+    __ CmpObjectType(edx, FIRST_JS_RECEIVER_TYPE, ecx);
     __ j(above_equal, &return_not_equal);
 
     // Check for oddballs: true, false, null, undefined.
@@ -1852,9 +1849,9 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
     __ lea(ecx, Operand(eax, edx, times_1, 0));
     __ test(ecx, Immediate(kSmiTagMask));
     __ j(not_zero, &runtime_call, Label::kNear);
-    __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, ecx);
+    __ CmpObjectType(eax, FIRST_JS_RECEIVER_TYPE, ecx);
     __ j(below, &runtime_call, Label::kNear);
-    __ CmpObjectType(edx, FIRST_SPEC_OBJECT_TYPE, ebx);
+    __ CmpObjectType(edx, FIRST_JS_RECEIVER_TYPE, ebx);
     __ j(below, &runtime_call, Label::kNear);
     // We do not bail out after this point.  Both are JSObjects, and
     // they are equal if and only if both are undetectable.
@@ -2188,11 +2185,10 @@ void CallICStub::Generate(MacroAssembler* masm) {
   __ cmp(edi, ecx);
   __ j(equal, &miss);
 
-  // Make sure the function belongs to the same native context (which implies
-  // the same global object).
+  // Make sure the function belongs to the same native context.
   __ mov(ecx, FieldOperand(edi, JSFunction::kContextOffset));
-  __ mov(ecx, ContextOperand(ecx, Context::GLOBAL_OBJECT_INDEX));
-  __ cmp(ecx, GlobalObjectOperand());
+  __ mov(ecx, ContextOperand(ecx, Context::NATIVE_CONTEXT_INDEX));
+  __ cmp(ecx, NativeContextOperand());
   __ j(not_equal, &miss);
 
   // Update stats.
@@ -5392,7 +5388,7 @@ static void CallApiFunctionAndReturn(MacroAssembler* masm,
   __ CmpInstanceType(map, LAST_NAME_TYPE);
   __ j(below_equal, &ok, Label::kNear);
 
-  __ CmpInstanceType(map, FIRST_SPEC_OBJECT_TYPE);
+  __ CmpInstanceType(map, FIRST_JS_RECEIVER_TYPE);
   __ j(above_equal, &ok, Label::kNear);
 
   __ cmp(map, isolate->factory()->heap_number_map());

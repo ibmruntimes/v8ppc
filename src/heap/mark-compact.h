@@ -83,12 +83,6 @@ class Marking : public AllStatic {
     markbit.Clear();
   }
 
-  INLINE(static void GreyToWhite(MarkBit markbit)) {
-    DCHECK(IsGrey(markbit));
-    markbit.Clear();
-    markbit.Next().Clear();
-  }
-
   INLINE(static void BlackToGrey(MarkBit markbit)) {
     DCHECK(IsBlack(markbit));
     markbit.Next().Set();
@@ -118,8 +112,6 @@ class Marking : public AllStatic {
     markbit.Set();
     markbit.Next().Set();
   }
-
-  static void TransferMark(Heap* heap, Address old_start, Address new_start);
 
 #ifdef DEBUG
   enum ObjectColor {
@@ -329,6 +321,11 @@ class ThreadLocalTop;
 // Mark-Compact collector
 class MarkCompactCollector {
  public:
+  enum IterationMode {
+    kKeepMarking,
+    kClearMarkbits,
+  };
+
   static void Initialize();
 
   void SetUp();
@@ -415,8 +412,6 @@ class MarkCompactCollector {
   void MigrateObject(HeapObject* dst, HeapObject* src, int size,
                      AllocationSpace to_old_space,
                      SlotsBuffer** evacuation_slots_buffer);
-
-  bool TryPromoteObject(HeapObject* object, int object_size);
 
   void InvalidateCode(Code* code);
 
@@ -515,6 +510,10 @@ class MarkCompactCollector {
 
  private:
   class CompactionTask;
+  class EvacuateNewSpaceVisitor;
+  class EvacuateOldSpaceVisitor;
+  class EvacuateVisitorBase;
+  class HeapObjectVisitor;
   class SweeperTask;
 
   explicit MarkCompactCollector(Heap* heap);
@@ -525,6 +524,10 @@ class MarkCompactCollector {
   void ClearInvalidStoreAndSlotsBufferEntries();
 
   void StartSweeperThreads();
+
+  void ComputeEvacuationHeuristics(int area_size,
+                                   int* target_fragmentation_percent,
+                                   int* max_evacuated_bytes);
 
 #ifdef DEBUG
   enum CollectorState {
@@ -656,7 +659,6 @@ class MarkCompactCollector {
   // Map transitions from a live map to a dead map must be killed.
   // We replace them with a null descriptor, with the same key.
   void ClearNonLiveReferences();
-  void ClearNonLivePrototypeTransitions(Map* map);
   void ClearNonLiveMapTransitions(Map* map);
   void ClearMapTransitions(Map* map, Map* dead_transition);
   bool ClearMapBackPointer(Map* map);
@@ -706,13 +708,12 @@ class MarkCompactCollector {
   // regions to each space's free list.
   void SweepSpaces();
 
-  int DiscoverAndEvacuateBlackObjectsOnPage(NewSpace* new_space,
-                                            NewSpacePage* p);
+  // Iterates through all live objects on a page using marking information.
+  // Returns whether all objects have successfully been visited.
+  bool IterateLiveObjectsOnPage(MemoryChunk* page, HeapObjectVisitor* visitor,
+                                IterationMode mode);
 
   void EvacuateNewSpace();
-
-  bool EvacuateLiveObjectsFromPage(Page* p, PagedSpace* target_space,
-                                   SlotsBuffer** evacuation_slots_buffer);
 
   void AddEvacuationSlotsBufferSynchronized(
       SlotsBuffer* evacuation_slots_buffer);

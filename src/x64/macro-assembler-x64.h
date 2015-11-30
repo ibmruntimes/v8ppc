@@ -85,11 +85,8 @@ struct SmiIndex {
 // MacroAssembler implements a collection of frequently used macros.
 class MacroAssembler: public Assembler {
  public:
-  // The isolate parameter can be NULL if the macro assembler should
-  // not use isolate-dependent functionality. In this case, it's the
-  // responsibility of the caller to never invoke such function on the
-  // macro assembler.
-  MacroAssembler(Isolate* isolate, void* buffer, int size);
+  MacroAssembler(Isolate* isolate, void* buffer, int size,
+                 CodeObjectRequired create_code_object);
 
   // Prevent the use of the RootArray during the lifetime of this
   // scope object.
@@ -156,9 +153,21 @@ class MacroAssembler: public Assembler {
     CompareRoot(with, index);
     j(equal, if_equal, if_equal_distance);
   }
+  void JumpIfRoot(const Operand& with, Heap::RootListIndex index,
+                  Label* if_equal,
+                  Label::Distance if_equal_distance = Label::kNear) {
+    CompareRoot(with, index);
+    j(equal, if_equal, if_equal_distance);
+  }
 
   // Compare the object in a register to a value and jump if they are not equal.
   void JumpIfNotRoot(Register with, Heap::RootListIndex index,
+                     Label* if_not_equal,
+                     Label::Distance if_not_equal_distance = Label::kNear) {
+    CompareRoot(with, index);
+    j(not_equal, if_not_equal, if_not_equal_distance);
+  }
+  void JumpIfNotRoot(const Operand& with, Heap::RootListIndex index,
                      Label* if_not_equal,
                      Label::Distance if_not_equal_distance = Label::kNear) {
     CompareRoot(with, index);
@@ -371,12 +380,10 @@ class MacroAssembler: public Assembler {
   // JavaScript invokes
 
   // Invoke the JavaScript function code by either calling or jumping.
-  void InvokeCode(Register code,
-                  Register new_target,
-                  const ParameterCount& expected,
-                  const ParameterCount& actual,
-                  InvokeFlag flag,
-                  const CallWrapper& call_wrapper);
+  void InvokeFunctionCode(Register function, Register new_target,
+                          const ParameterCount& expected,
+                          const ParameterCount& actual, InvokeFlag flag,
+                          const CallWrapper& call_wrapper);
 
   // Invoke the JavaScript function in the given register. Changes the
   // current context to the context in the function before invoking.
@@ -402,13 +409,6 @@ class MacroAssembler: public Assembler {
   // Invoke specified builtin JavaScript function.
   void InvokeBuiltin(int native_context_index, InvokeFlag flag,
                      const CallWrapper& call_wrapper = NullCallWrapper());
-
-  // Store the function for the given builtin in the target register.
-  void GetBuiltinFunction(Register target, int native_context_index);
-
-  // Store the code object for the given builtin in the target register.
-  void GetBuiltinEntry(Register target, int native_context_index);
-
 
   // ---------------------------------------------------------------------------
   // Smi tagging, untagging and operations on tagged smis.
@@ -835,6 +835,8 @@ class MacroAssembler: public Assembler {
 
   void Cvttsd2si(Register dst, XMMRegister src);
   void Cvttsd2si(Register dst, const Operand& src);
+  void Cvttss2siq(Register dst, XMMRegister src);
+  void Cvttss2siq(Register dst, const Operand& src);
   void Cvttsd2siq(Register dst, XMMRegister src);
   void Cvttsd2siq(Register dst, const Operand& src);
 
@@ -970,6 +972,7 @@ class MacroAssembler: public Assembler {
   void Movapd(XMMRegister dst, XMMRegister src);
   void Movmskpd(Register dst, XMMRegister src);
 
+  void Roundss(XMMRegister dst, XMMRegister src, RoundingMode mode);
   void Roundsd(XMMRegister dst, XMMRegister src, RoundingMode mode);
   void Sqrtsd(XMMRegister dst, XMMRegister src);
   void Sqrtsd(XMMRegister dst, const Operand& src);
@@ -1360,8 +1363,15 @@ class MacroAssembler: public Assembler {
   // Find the function context up the context chain.
   void LoadContext(Register dst, int context_chain_length);
 
+  // Load the global object from the current context.
+  void LoadGlobalObject(Register dst) {
+    LoadNativeContextSlot(Context::EXTENSION_INDEX, dst);
+  }
+
   // Load the global proxy from the current context.
-  void LoadGlobalProxy(Register dst);
+  void LoadGlobalProxy(Register dst) {
+    LoadNativeContextSlot(Context::GLOBAL_PROXY_INDEX, dst);
+  }
 
   // Conditionally load the cached Array transitioned map of type
   // transitioned_kind from the native context if the map in register
@@ -1374,8 +1384,8 @@ class MacroAssembler: public Assembler {
       Register scratch,
       Label* no_map_match);
 
-  // Load the global function with the given index.
-  void LoadGlobalFunction(int index, Register function);
+  // Load the native context slot with the current index.
+  void LoadNativeContextSlot(int index, Register dst);
 
   // Load the initial map from the global function. The registers
   // function and map can be the same.
@@ -1594,6 +1604,10 @@ class MacroAssembler: public Assembler {
                       Label::Distance near_jump,
                       const CallWrapper& call_wrapper);
 
+  void FloodFunctionIfStepping(Register fun, Register new_target,
+                               const ParameterCount& expected,
+                               const ParameterCount& actual);
+
   void EnterExitFramePrologue(bool save_rax);
 
   // Allocates arg_stack_space * kPointerSize memory (not GCed) on the stack
@@ -1655,7 +1669,7 @@ class MacroAssembler: public Assembler {
 // an assertion.
 class CodePatcher {
  public:
-  CodePatcher(byte* address, int size);
+  CodePatcher(Isolate* isolate, byte* address, int size);
   ~CodePatcher();
 
   // Macro assembler to emit code.
@@ -1696,8 +1710,8 @@ inline Operand ContextOperand(Register context, Register index) {
 }
 
 
-inline Operand GlobalObjectOperand() {
-  return ContextOperand(rsi, Context::GLOBAL_OBJECT_INDEX);
+inline Operand NativeContextOperand() {
+  return ContextOperand(rsi, Context::NATIVE_CONTEXT_INDEX);
 }
 
 

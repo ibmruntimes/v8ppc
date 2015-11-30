@@ -9,7 +9,8 @@
 #include <fstream>  // NOLINT(readability/streams)
 #include <sstream>
 
-#include "src/ast.h"
+#include "src/ast/ast.h"
+#include "src/ast/scopeinfo.h"
 #include "src/base/platform/platform.h"
 #include "src/base/sys-info.h"
 #include "src/base/utils/random-number-generator.h"
@@ -32,7 +33,6 @@
 #include "src/prototype.h"
 #include "src/regexp/regexp-stack.h"
 #include "src/runtime-profiler.h"
-#include "src/scopeinfo.h"
 #include "src/simulator.h"
 #include "src/snapshot/serialize.h"
 #include "src/v8.h"
@@ -1836,6 +1836,8 @@ Isolate::Isolate(bool enable_serializer)
 
   InitializeLoggingAndCounters();
   debug_ = new Debug(this);
+
+  init_memcopy_functions(this);
 }
 
 
@@ -2151,7 +2153,7 @@ bool Isolate::Init(Deserializer* des) {
 #endif
 #endif
 
-  code_aging_helper_ = new CodeAgingHelper();
+  code_aging_helper_ = new CodeAgingHelper(this);
 
   { // NOLINT
     // Ensure that the thread has a valid stack guard.  The v8::Locker object

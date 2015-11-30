@@ -1115,13 +1115,28 @@ void InstructionSelector::VisitFloat64Sqrt(Node* node) {
 }
 
 
+void InstructionSelector::VisitFloat32RoundDown(Node* node) {
+  VisitRR(this, kArmVrintmF32, node);
+}
+
+
 void InstructionSelector::VisitFloat64RoundDown(Node* node) {
   VisitRR(this, kArmVrintmF64, node);
 }
 
 
+void InstructionSelector::VisitFloat32RoundUp(Node* node) {
+  VisitRR(this, kArmVrintpF32, node);
+}
+
+
 void InstructionSelector::VisitFloat64RoundUp(Node* node) {
   VisitRR(this, kArmVrintpF64, node);
+}
+
+
+void InstructionSelector::VisitFloat32RoundTruncate(Node* node) {
+  VisitRR(this, kArmVrintzF32, node);
 }
 
 
@@ -1132,6 +1147,11 @@ void InstructionSelector::VisitFloat64RoundTruncate(Node* node) {
 
 void InstructionSelector::VisitFloat64RoundTiesAway(Node* node) {
   VisitRR(this, kArmVrintaF64, node);
+}
+
+
+void InstructionSelector::VisitFloat32RoundTiesEven(Node* node) {
+  VisitRR(this, kArmVrintnF32, node);
 }
 
 
@@ -1565,10 +1585,14 @@ InstructionSelector::SupportedMachineOperatorFlags() {
       MachineOperatorBuilder::kInt32DivIsSafe |
       MachineOperatorBuilder::kUint32DivIsSafe;
   if (CpuFeatures::IsSupported(ARMv8)) {
-    flags |= MachineOperatorBuilder::kFloat64RoundDown |
+    flags |= MachineOperatorBuilder::kFloat32RoundDown |
+             MachineOperatorBuilder::kFloat64RoundDown |
+             MachineOperatorBuilder::kFloat32RoundUp |
              MachineOperatorBuilder::kFloat64RoundUp |
+             MachineOperatorBuilder::kFloat32RoundTruncate |
              MachineOperatorBuilder::kFloat64RoundTruncate |
              MachineOperatorBuilder::kFloat64RoundTiesAway |
+             MachineOperatorBuilder::kFloat32RoundTiesEven |
              MachineOperatorBuilder::kFloat64RoundTiesEven;
   }
   return flags;

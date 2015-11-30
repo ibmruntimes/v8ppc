@@ -6,14 +6,14 @@
 
 #include <sstream>
 
-#include "src/ast.h"
+#include "src/ast/ast.h"
+#include "src/ast/scopeinfo.h"
 #include "src/base/bits.h"
 #include "src/deoptimizer.h"
 #include "src/frames-inl.h"
 #include "src/full-codegen/full-codegen.h"
 #include "src/register-configuration.h"
 #include "src/safepoint-table.h"
-#include "src/scopeinfo.h"
 #include "src/string-stream.h"
 #include "src/vm-state-inl.h"
 
@@ -436,6 +436,8 @@ StackFrame::Type StackFrame::ComputeType(const StackFrameIteratorBase* iterator,
         return JAVA_SCRIPT;
       case Code::OPTIMIZED_FUNCTION:
         return OPTIMIZED;
+      case Code::WASM_FUNCTION:
+        return STUB;
       case Code::BUILTIN:
         if (!marker->IsSmi()) {
           if (StandardFrame::IsArgumentsAdaptorFrame(state->fp)) {
@@ -753,20 +755,6 @@ bool JavaScriptFrame::HasInlinedFrames() const {
   List<JSFunction*> functions(1);
   GetFunctions(&functions);
   return functions.length() > 1;
-}
-
-
-Object* JavaScriptFrame::GetNewTarget() const {
-  DCHECK(!HasInlinedFrames());
-  Address fp = caller_fp();
-  if (has_adapted_arguments()) {
-    // Skip the arguments adaptor frame and look at the real caller.
-    fp = Memory::Address_at(fp + StandardFrameConstants::kCallerFPOffset);
-  }
-  DCHECK(IsConstructFrame(fp));
-  STATIC_ASSERT(ConstructFrameConstants::kNewTargetOffset ==
-                StandardFrameConstants::kExpressionsOffset - 3 * kPointerSize);
-  return GetExpression(fp, 3);
 }
 
 

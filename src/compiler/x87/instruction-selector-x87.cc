@@ -842,6 +842,9 @@ void InstructionSelector::VisitFloat64Sqrt(Node* node) {
 }
 
 
+void InstructionSelector::VisitFloat32RoundDown(Node* node) { UNIMPLEMENTED(); }
+
+
 void InstructionSelector::VisitFloat64RoundDown(Node* node) {
   X87OperandGenerator g(this);
   Emit(kX87Float64Round | MiscField::encode(kRoundDown),
@@ -849,7 +852,15 @@ void InstructionSelector::VisitFloat64RoundDown(Node* node) {
 }
 
 
+void InstructionSelector::VisitFloat32RoundUp(Node* node) { UNREACHABLE(); }
+
+
 void InstructionSelector::VisitFloat64RoundUp(Node* node) { UNREACHABLE(); }
+
+
+void InstructionSelector::VisitFloat32RoundTruncate(Node* node) {
+  UNREACHABLE();
+}
 
 
 void InstructionSelector::VisitFloat64RoundTruncate(Node* node) {
@@ -860,6 +871,11 @@ void InstructionSelector::VisitFloat64RoundTruncate(Node* node) {
 
 
 void InstructionSelector::VisitFloat64RoundTiesAway(Node* node) {
+  UNREACHABLE();
+}
+
+
+void InstructionSelector::VisitFloat32RoundTiesEven(Node* node) {
   UNREACHABLE();
 }
 

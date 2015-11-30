@@ -458,7 +458,7 @@ void Assembler::target_at_put(int pos, int target_pos, bool* is_branch) {
       // pointer in a register.
       Register dst = Register::from_code(instr_at(pos + kInstrSize));
       int32_t offset = target_pos + (Code::kHeaderSize - kHeapObjectTag);
-      CodePatcher patcher(reinterpret_cast<byte*>(buffer_ + pos), 2,
+      CodePatcher patcher(isolate(), reinterpret_cast<byte*>(buffer_ + pos), 2,
                           CodePatcher::DONT_FLUSH);
       patcher.masm()->bitwise_mov32(dst, offset);
       break;
@@ -469,7 +469,7 @@ void Assembler::target_at_put(int pos, int target_pos, bool* is_branch) {
       Register dst = Register::from_code((operands >> 21) & 0x1f);
       Register base = Register::from_code((operands >> 16) & 0x1f);
       int32_t offset = target_pos + SIGN_EXT_IMM16(operands & kImm16Mask);
-      CodePatcher patcher(reinterpret_cast<byte*>(buffer_ + pos), 2,
+      CodePatcher patcher(isolate(), reinterpret_cast<byte*>(buffer_ + pos), 2,
                           CodePatcher::DONT_FLUSH);
       patcher.masm()->bitwise_add32(dst, base, offset);
       break;
@@ -477,7 +477,7 @@ void Assembler::target_at_put(int pos, int target_pos, bool* is_branch) {
     case kUnboundMovLabelAddrOpcode: {
       // Load the address of the label in a register.
       Register dst = Register::from_code(instr_at(pos + kInstrSize));
-      CodePatcher patcher(reinterpret_cast<byte*>(buffer_ + pos),
+      CodePatcher patcher(isolate(), reinterpret_cast<byte*>(buffer_ + pos),
                           kMovInstructionsNoConstantPool,
                           CodePatcher::DONT_FLUSH);
       // Keep internal references relative until EmitRelocations.
@@ -485,7 +485,7 @@ void Assembler::target_at_put(int pos, int target_pos, bool* is_branch) {
       break;
     }
     case kUnboundJumpTableEntryOpcode: {
-      CodePatcher patcher(reinterpret_cast<byte*>(buffer_ + pos),
+      CodePatcher patcher(isolate(), reinterpret_cast<byte*>(buffer_ + pos),
                           kPointerSize / kInstrSize, CodePatcher::DONT_FLUSH);
       // Keep internal references relative until EmitRelocations.
       patcher.masm()->dp(target_pos);
@@ -2328,6 +2328,7 @@ void Assembler::GrowBuffer(int needed) {
 
   // Set up new buffer.
   desc.buffer = NewArray<byte>(desc.buffer_size);
+  desc.origin = this;
 
   desc.instr_size = pc_offset();
   desc.reloc_size = (buffer_ + buffer_size_) - reloc_info_writer.pos();
@@ -2406,7 +2407,7 @@ void Assembler::EmitRelocations() {
     RelocInfo::Mode rmode = it->rmode();
     Address pc = buffer_ + it->position();
     Code* code = NULL;
-    RelocInfo rinfo(pc, rmode, it->data(), code);
+    RelocInfo rinfo(isolate(), pc, rmode, it->data(), code);
 
     // Fix up internal references now that they are guaranteed to be bound.
     if (RelocInfo::IsInternalReference(rmode)) {
@@ -2416,7 +2417,8 @@ void Assembler::EmitRelocations() {
     } else if (RelocInfo::IsInternalReferenceEncoded(rmode)) {
       // mov sequence
       intptr_t pos = reinterpret_cast<intptr_t>(target_address_at(pc, code));
-      set_target_address_at(pc, code, buffer_ + pos, SKIP_ICACHE_FLUSH);
+      set_target_address_at(isolate(), pc, code, buffer_ + pos,
+                            SKIP_ICACHE_FLUSH);
     }
 
     reloc_info_writer.Write(&rinfo);

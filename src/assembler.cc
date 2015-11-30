@@ -51,6 +51,7 @@
 #include "src/ic/ic.h"
 #include "src/ic/stub-cache.h"
 #include "src/ostreams.h"
+#include "src/parsing/token.h"
 #include "src/profiler/cpu-profiler.h"
 #include "src/regexp/jsregexp.h"
 #include "src/regexp/regexp-macro-assembler.h"
@@ -59,7 +60,6 @@
 #include "src/runtime/runtime.h"
 #include "src/simulator.h"  // For flushing instruction cache.
 #include "src/snapshot/serialize.h"
-#include "src/token.h"
 
 #if V8_TARGET_ARCH_IA32
 #include "src/ia32/assembler-ia32-inl.h"  // NOLINT
@@ -173,7 +173,8 @@ AssemblerBase::AssemblerBase(Isolate* isolate, void* buffer, int buffer_size)
       // We may use the assembler without an isolate.
       serializer_enabled_(isolate && isolate->serializer_enabled()),
       constant_pool_available_(false) {
-  if (FLAG_mask_constants_with_cookie && isolate != NULL)  {
+  DCHECK_NOT_NULL(isolate);
+  if (FLAG_mask_constants_with_cookie) {
     jit_cookie_ = isolate->random_number_generator()->NextInt();
   }
   own_buffer_ = buffer == NULL;
@@ -201,19 +202,6 @@ void AssemblerBase::FlushICache(Isolate* isolate, void* start, size_t size) {
 #else
   CpuFeatures::FlushICache(start, size);
 #endif  // USE_SIMULATOR
-}
-
-
-void AssemblerBase::FlushICacheWithoutIsolate(void* start, size_t size) {
-  // Ideally we would just call Isolate::Current() here. However, this flushes
-  // out issues because we usually only need the isolate when in the simulator.
-  Isolate* isolate;
-#if defined(USE_SIMULATOR)
-  isolate = Isolate::Current();
-#else
-  isolate = nullptr;
-#endif  // USE_SIMULATOR
-  FlushICache(isolate, start, size);
 }
 
 
@@ -740,7 +728,8 @@ void RelocIterator::next() {
 }
 
 
-RelocIterator::RelocIterator(Code* code, int mode_mask) {
+RelocIterator::RelocIterator(Code* code, int mode_mask)
+    : rinfo_(code->map()->GetIsolate()) {
   rinfo_.host_ = code;
   rinfo_.pc_ = code->instruction_start();
   rinfo_.data_ = 0;
@@ -765,7 +754,8 @@ RelocIterator::RelocIterator(Code* code, int mode_mask) {
 }
 
 
-RelocIterator::RelocIterator(const CodeDesc& desc, int mode_mask) {
+RelocIterator::RelocIterator(const CodeDesc& desc, int mode_mask)
+    : rinfo_(desc.origin->isolate()) {
   rinfo_.pc_ = desc.buffer;
   rinfo_.data_ = 0;
   // Relocation info is read backwards.
@@ -809,8 +799,6 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "no reloc 64";
     case EMBEDDED_OBJECT:
       return "embedded object";
-    case CONSTRUCT_CALL:
-      return "code target (js construct call)";
     case DEBUGGER_STATEMENT:
       return "debugger statement";
     case CODE_TARGET:
@@ -911,7 +899,6 @@ void RelocInfo::Verify(Isolate* isolate) {
       Object::VerifyPointer(target_cell());
       break;
     case DEBUGGER_STATEMENT:
-    case CONSTRUCT_CALL:
     case CODE_TARGET_WITH_ID:
     case CODE_TARGET: {
       // convert inline target address to code object
@@ -1481,17 +1468,20 @@ ExternalReference ExternalReference::runtime_function_table_address(
 }
 
 
-double power_helper(double x, double y) {
+double power_helper(Isolate* isolate, double x, double y) {
   int y_int = static_cast<int>(y);
   if (y == y_int) {
     return power_double_int(x, y_int);  // Returns 1 if exponent is 0.
   }
   if (y == 0.5) {
+    lazily_initialize_fast_sqrt(isolate);
     return (std::isinf(x)) ? V8_INFINITY
-                           : fast_sqrt(x + 0.0);  // Convert -0 to +0.
+                           : fast_sqrt(x + 0.0, isolate);  // Convert -0 to +0.
   }
   if (y == -0.5) {
-    return (std::isinf(x)) ? 0 : 1.0 / fast_sqrt(x + 0.0);  // Convert -0 to +0.
+    lazily_initialize_fast_sqrt(isolate);
+    return (std::isinf(x)) ? 0 : 1.0 / fast_sqrt(x + 0.0,
+                                                 isolate);  // Convert -0 to +0.
   }
   return power_double_double(x, y);
 }
@@ -1589,9 +1579,9 @@ ExternalReference ExternalReference::mod_two_doubles_operation(
 }
 
 
-ExternalReference ExternalReference::debug_step_in_fp_address(
+ExternalReference ExternalReference::debug_last_step_action_address(
     Isolate* isolate) {
-  return ExternalReference(isolate->debug()->step_in_fp_addr());
+  return ExternalReference(isolate->debug()->last_step_action_addr());
 }
 
 

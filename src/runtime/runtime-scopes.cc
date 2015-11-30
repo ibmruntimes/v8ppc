@@ -6,11 +6,11 @@
 
 #include "src/accessors.h"
 #include "src/arguments.h"
+#include "src/ast/scopeinfo.h"
+#include "src/ast/scopes.h"
 #include "src/frames-inl.h"
 #include "src/isolate-inl.h"
 #include "src/messages.h"
-#include "src/scopeinfo.h"
-#include "src/scopes.h"
 
 namespace v8 {
 namespace internal {
@@ -294,7 +294,7 @@ Object* DeclareLookupSlot(Isolate* isolate, Handle<String> name,
       DCHECK(context->IsBlockContext());
       object = isolate->factory()->NewJSObject(
           isolate->context_extension_function());
-      Handle<Object> extension =
+      Handle<HeapObject> extension =
           isolate->factory()->NewSloppyBlockWithEvalContextExtension(
               handle(context->scope_info()), object);
       context->set_extension(*extension);
@@ -705,31 +705,9 @@ RUNTIME_FUNCTION(Runtime_NewFunctionContext) {
 
 RUNTIME_FUNCTION(Runtime_PushWithContext) {
   HandleScope scope(isolate);
-  DCHECK(args.length() == 2);
-  Handle<JSReceiver> extension_object;
-  if (args[0]->IsJSReceiver()) {
-    extension_object = args.at<JSReceiver>(0);
-  } else {
-    // Try to convert the object to a proper JavaScript object.
-    MaybeHandle<JSReceiver> maybe_object =
-        Object::ToObject(isolate, args.at<Object>(0));
-    if (!maybe_object.ToHandle(&extension_object)) {
-      Handle<Object> handle = args.at<Object>(0);
-      THROW_NEW_ERROR_RETURN_FAILURE(
-          isolate, NewTypeError(MessageTemplate::kWithExpression, handle));
-    }
-  }
-
-  Handle<JSFunction> function;
-  if (args[1]->IsSmi()) {
-    // A smi sentinel indicates a context nested inside global code rather
-    // than some function.  There is a canonical empty function that can be
-    // gotten from the native context.
-    function = handle(isolate->native_context()->closure());
-  } else {
-    function = args.at<JSFunction>(1);
-  }
-
+  DCHECK_EQ(2, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, extension_object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 1);
   Handle<Context> current(isolate->context());
   Handle<Context> context =
       isolate->factory()->NewWithContext(function, current, extension_object);
@@ -740,18 +718,10 @@ RUNTIME_FUNCTION(Runtime_PushWithContext) {
 
 RUNTIME_FUNCTION(Runtime_PushCatchContext) {
   HandleScope scope(isolate);
-  DCHECK(args.length() == 3);
+  DCHECK_EQ(3, args.length());
   CONVERT_ARG_HANDLE_CHECKED(String, name, 0);
   CONVERT_ARG_HANDLE_CHECKED(Object, thrown_object, 1);
-  Handle<JSFunction> function;
-  if (args[2]->IsSmi()) {
-    // A smi sentinel indicates a context nested inside global code rather
-    // than some function.  There is a canonical empty function that can be
-    // gotten from the native context.
-    function = handle(isolate->native_context()->closure());
-  } else {
-    function = args.at<JSFunction>(2);
-  }
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 2);
   Handle<Context> current(isolate->context());
   Handle<Context> context = isolate->factory()->NewCatchContext(
       function, current, name, thrown_object);
@@ -762,17 +732,9 @@ RUNTIME_FUNCTION(Runtime_PushCatchContext) {
 
 RUNTIME_FUNCTION(Runtime_PushBlockContext) {
   HandleScope scope(isolate);
-  DCHECK(args.length() == 2);
+  DCHECK_EQ(2, args.length());
   CONVERT_ARG_HANDLE_CHECKED(ScopeInfo, scope_info, 0);
-  Handle<JSFunction> function;
-  if (args[1]->IsSmi()) {
-    // A smi sentinel indicates a context nested inside global code rather
-    // than some function.  There is a canonical empty function that can be
-    // gotten from the native context.
-    function = handle(isolate->native_context()->closure());
-  } else {
-    function = args.at<JSFunction>(1);
-  }
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 1);
   Handle<Context> current(isolate->context());
   Handle<Context> context =
       isolate->factory()->NewBlockContext(function, current, scope_info);
@@ -814,7 +776,7 @@ RUNTIME_FUNCTION(Runtime_PushModuleContext) {
   Context* previous = isolate->context();
   context->set_previous(previous);
   context->set_closure(previous->closure());
-  context->set_global_object(previous->global_object());
+  context->set_native_context(previous->native_context());
   isolate->set_context(*context);
 
   // Find hosting scope and initialize internal variable holding module there.
@@ -903,10 +865,9 @@ RUNTIME_FUNCTION(Runtime_DeleteLookupSlot) {
   // the global object, or the subject of a with.  Try to delete it
   // (respecting DONT_DELETE).
   Handle<JSObject> object = Handle<JSObject>::cast(holder);
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
-                                     JSReceiver::DeleteProperty(object, name));
-  return *result;
+  Maybe<bool> result = JSReceiver::DeleteProperty(object, name);
+  MAYBE_RETURN(result, isolate->heap()->exception());
+  return isolate->heap()->ToBoolean(result.FromJust());
 }
 
 

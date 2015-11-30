@@ -2416,7 +2416,7 @@ void LCodeGen::DoBranch(LBranch* instr) {
 
       if (expected.Contains(ToBooleanStub::SPEC_OBJECT)) {
         // spec object -> true.
-        __ CmpInstanceType(map, FIRST_SPEC_OBJECT_TYPE);
+        __ CmpInstanceType(map, FIRST_JS_RECEIVER_TYPE);
         __ j(above_equal, instr->TrueLabel(chunk_));
       }
 
@@ -2783,14 +2783,14 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
     // for both being a function type and being in the object type range.
     STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
     STATIC_ASSERT(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                  FIRST_SPEC_OBJECT_TYPE + 1);
+                  FIRST_JS_RECEIVER_TYPE + 1);
     STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                  LAST_SPEC_OBJECT_TYPE - 1);
-    STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
-    __ CmpObjectType(input, FIRST_SPEC_OBJECT_TYPE, temp);
+                  LAST_JS_RECEIVER_TYPE - 1);
+    STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
+    __ CmpObjectType(input, FIRST_JS_RECEIVER_TYPE, temp);
     __ j(below, is_false);
     __ j(equal, is_true);
-    __ CmpInstanceType(temp, LAST_SPEC_OBJECT_TYPE);
+    __ CmpInstanceType(temp, LAST_JS_RECEIVER_TYPE);
     __ j(equal, is_true);
   } else {
     // Faster code path to avoid two compares: subtract lower bound from the
@@ -3453,16 +3453,14 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
   // The receiver should be a JS object.
   __ test(receiver, Immediate(kSmiTagMask));
   DeoptimizeIf(equal, instr, Deoptimizer::kSmi);
-  __ CmpObjectType(receiver, FIRST_SPEC_OBJECT_TYPE, scratch);
+  __ CmpObjectType(receiver, FIRST_JS_RECEIVER_TYPE, scratch);
   DeoptimizeIf(below, instr, Deoptimizer::kNotAJavaScriptObject);
 
   __ jmp(&receiver_ok, Label::kNear);
   __ bind(&global_object);
   __ mov(receiver, FieldOperand(function, JSFunction::kContextOffset));
-  const int global_offset = Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX);
-  __ mov(receiver, Operand(receiver, global_offset));
-  const int proxy_offset = JSGlobalObject::kGlobalProxyOffset;
-  __ mov(receiver, FieldOperand(receiver, proxy_offset));
+  __ mov(receiver, ContextOperand(receiver, Context::NATIVE_CONTEXT_INDEX));
+  __ mov(receiver, ContextOperand(receiver, Context::GLOBAL_PROXY_INDEX));
   __ bind(&receiver_ok);
 }
 
@@ -3503,7 +3501,8 @@ void LCodeGen::DoApplyArguments(LApplyArguments* instr) {
   SafepointGenerator safepoint_generator(
       this, pointers, Safepoint::kLazyDeopt);
   ParameterCount actual(eax);
-  __ InvokeFunction(function, actual, CALL_FUNCTION, safepoint_generator);
+  __ InvokeFunction(function, no_reg, actual, CALL_FUNCTION,
+                    safepoint_generator);
 }
 
 
@@ -4095,7 +4094,7 @@ void LCodeGen::DoInvokeFunction(LInvokeFunction* instr) {
     SafepointGenerator generator(
         this, pointers, Safepoint::kLazyDeopt);
     ParameterCount count(instr->arity());
-    __ InvokeFunction(edi, count, CALL_FUNCTION, generator);
+    __ InvokeFunction(edi, no_reg, count, CALL_FUNCTION, generator);
   } else {
     CallKnownFunction(known_function,
                       instr->hydrogen()->formal_parameter_count(),
@@ -4157,7 +4156,7 @@ void LCodeGen::DoCallNewArray(LCallNewArray* instr) {
 
   if (instr->arity() == 0) {
     ArrayNoArgumentConstructorStub stub(isolate(), kind, override_mode);
-    CallCode(stub.GetCode(), RelocInfo::CONSTRUCT_CALL, instr);
+    CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
   } else if (instr->arity() == 1) {
     Label done;
     if (IsFastPackedElementsKind(kind)) {
@@ -4172,17 +4171,17 @@ void LCodeGen::DoCallNewArray(LCallNewArray* instr) {
       ArraySingleArgumentConstructorStub stub(isolate(),
                                               holey_kind,
                                               override_mode);
-      CallCode(stub.GetCode(), RelocInfo::CONSTRUCT_CALL, instr);
+      CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
       __ jmp(&done, Label::kNear);
       __ bind(&packed_case);
     }
 
     ArraySingleArgumentConstructorStub stub(isolate(), kind, override_mode);
-    CallCode(stub.GetCode(), RelocInfo::CONSTRUCT_CALL, instr);
+    CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
     __ bind(&done);
   } else {
     ArrayNArgumentsConstructorStub stub(isolate(), kind, override_mode);
-    CallCode(stub.GetCode(), RelocInfo::CONSTRUCT_CALL, instr);
+    CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
   }
 }
 
@@ -5748,58 +5747,6 @@ void LCodeGen::DoToFastProperties(LToFastProperties* instr) {
 }
 
 
-void LCodeGen::DoRegExpLiteral(LRegExpLiteral* instr) {
-  DCHECK(ToRegister(instr->context()).is(esi));
-  Label materialized;
-  // Registers will be used as follows:
-  // ecx = literals array.
-  // ebx = regexp literal.
-  // eax = regexp literal clone.
-  // esi = context.
-  int literal_offset =
-      LiteralsArray::OffsetOfLiteralAt(instr->hydrogen()->literal_index());
-  __ LoadHeapObject(ecx, instr->hydrogen()->literals());
-  __ mov(ebx, FieldOperand(ecx, literal_offset));
-  __ cmp(ebx, factory()->undefined_value());
-  __ j(not_equal, &materialized, Label::kNear);
-
-  // Create regexp literal using runtime function
-  // Result will be in eax.
-  __ push(ecx);
-  __ push(Immediate(Smi::FromInt(instr->hydrogen()->literal_index())));
-  __ push(Immediate(instr->hydrogen()->pattern()));
-  __ push(Immediate(instr->hydrogen()->flags()));
-  CallRuntime(Runtime::kMaterializeRegExpLiteral, 4, instr);
-  __ mov(ebx, eax);
-
-  __ bind(&materialized);
-  int size = JSRegExp::kSize + JSRegExp::kInObjectFieldCount * kPointerSize;
-  Label allocated, runtime_allocate;
-  __ Allocate(size, eax, ecx, edx, &runtime_allocate, TAG_OBJECT);
-  __ jmp(&allocated, Label::kNear);
-
-  __ bind(&runtime_allocate);
-  __ push(ebx);
-  __ push(Immediate(Smi::FromInt(size)));
-  CallRuntime(Runtime::kAllocateInNewSpace, 1, instr);
-  __ pop(ebx);
-
-  __ bind(&allocated);
-  // Copy the content into the newly allocated memory.
-  // (Unroll copy loop once for better throughput).
-  for (int i = 0; i < size - kPointerSize; i += 2 * kPointerSize) {
-    __ mov(edx, FieldOperand(ebx, i));
-    __ mov(ecx, FieldOperand(ebx, i + kPointerSize));
-    __ mov(FieldOperand(eax, i), edx);
-    __ mov(FieldOperand(eax, i + kPointerSize), ecx);
-  }
-  if ((size % (2 * kPointerSize)) != 0) {
-    __ mov(edx, FieldOperand(ebx, size - kPointerSize));
-    __ mov(FieldOperand(eax, size - kPointerSize), edx);
-  }
-}
-
-
 void LCodeGen::DoTypeof(LTypeof* instr) {
   DCHECK(ToRegister(instr->context()).is(esi));
   DCHECK(ToRegister(instr->value()).is(ebx));
@@ -5882,8 +5829,8 @@ Condition LCodeGen::EmitTypeofIs(LTypeofIsAndBranch* instr, Register input) {
     __ JumpIfSmi(input, false_label, false_distance);
     __ cmp(input, factory()->null_value());
     __ j(equal, true_label, true_distance);
-    STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
-    __ CmpObjectType(input, FIRST_SPEC_OBJECT_TYPE, input);
+    STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
+    __ CmpObjectType(input, FIRST_JS_RECEIVER_TYPE, input);
     __ j(below, false_label, false_distance);
     // Check for callable or undetectable objects => false.
     __ test_b(FieldOperand(input, Map::kBitFieldOffset),
@@ -6064,7 +6011,7 @@ void LCodeGen::DoForInPrepareMap(LForInPrepareMap* instr) {
   __ test(eax, Immediate(kSmiTagMask));
   DeoptimizeIf(zero, instr, Deoptimizer::kSmi);
 
-  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_SPEC_OBJECT_TYPE);
+  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
   __ CmpObjectType(eax, LAST_JS_PROXY_TYPE, ecx);
   DeoptimizeIf(below_equal, instr, Deoptimizer::kWrongInstanceType);
 

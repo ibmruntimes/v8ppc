@@ -314,10 +314,15 @@ void JSGenericLowering::LowerJSLoadGlobal(Node* node) {
   Callable callable = CodeFactory::LoadICInOptimizedCode(
       isolate(), p.typeof_mode(), SLOPPY, UNINITIALIZED);
   // Load global object from the context.
-  Node* global = graph()->NewNode(machine()->Load(kMachAnyTagged), context,
-                                  jsgraph()->IntPtrConstant(Context::SlotOffset(
-                                      Context::GLOBAL_OBJECT_INDEX)),
-                                  effect, graph()->start());
+  Node* native_context =
+      graph()->NewNode(machine()->Load(kMachAnyTagged), context,
+                       jsgraph()->IntPtrConstant(
+                           Context::SlotOffset(Context::NATIVE_CONTEXT_INDEX)),
+                       effect, graph()->start());
+  Node* global = graph()->NewNode(
+      machine()->Load(kMachAnyTagged), native_context,
+      jsgraph()->IntPtrConstant(Context::SlotOffset(Context::EXTENSION_INDEX)),
+      effect, graph()->start());
   node->InsertInput(zone(), 0, global);
   node->InsertInput(zone(), 1, jsgraph()->HeapConstant(p.name()));
   node->InsertInput(zone(), 2, jsgraph()->SmiConstant(p.feedback().index()));
@@ -359,10 +364,15 @@ void JSGenericLowering::LowerJSStoreGlobal(Node* node) {
   Callable callable = CodeFactory::StoreICInOptimizedCode(
       isolate(), p.language_mode(), UNINITIALIZED);
   // Load global object from the context.
-  Node* global = graph()->NewNode(machine()->Load(kMachAnyTagged), context,
-                                  jsgraph()->IntPtrConstant(Context::SlotOffset(
-                                      Context::GLOBAL_OBJECT_INDEX)),
-                                  effect, graph()->start());
+  Node* native_context =
+      graph()->NewNode(machine()->Load(kMachAnyTagged), context,
+                       jsgraph()->IntPtrConstant(
+                           Context::SlotOffset(Context::NATIVE_CONTEXT_INDEX)),
+                       effect, graph()->start());
+  Node* global = graph()->NewNode(
+      machine()->Load(kMachAnyTagged), native_context,
+      jsgraph()->IntPtrConstant(Context::SlotOffset(Context::EXTENSION_INDEX)),
+      effect, graph()->start());
   node->InsertInput(zone(), 0, global);
   node->InsertInput(zone(), 1, jsgraph()->HeapConstant(p.name()));
   DCHECK(p.feedback().index() != -1);
@@ -426,15 +436,6 @@ void JSGenericLowering::LowerJSStoreContext(Node* node) {
                             static_cast<int>(access.index()))));
   NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
                                      kMachAnyTagged, kFullWriteBarrier)));
-}
-
-
-void JSGenericLowering::LowerJSLoadNativeContext(Node* node) {
-  node->ReplaceInput(
-      1, jsgraph()->IntPtrConstant(JSGlobalObject::kNativeContextOffset -
-                                   kHeapObjectTag));
-  node->AppendInput(zone(), graph()->start());
-  NodeProperties::ChangeOp(node, machine()->Load(kMachAnyTagged));
 }
 
 
@@ -506,7 +507,7 @@ void JSGenericLowering::LowerJSCreateClosure(Node* node) {
 void JSGenericLowering::LowerJSCreateLiteralArray(Node* node) {
   CreateLiteralParameters const& p = CreateLiteralParametersOf(node->op());
   node->InsertInput(zone(), 1, jsgraph()->SmiConstant(p.index()));
-  node->InsertInput(zone(), 2, jsgraph()->HeapConstant(p.constants()));
+  node->InsertInput(zone(), 2, jsgraph()->HeapConstant(p.constant()));
   node->InsertInput(zone(), 3, jsgraph()->SmiConstant(p.flags()));
   ReplaceWithRuntimeCall(node, Runtime::kCreateArrayLiteral);
 }
@@ -515,9 +516,23 @@ void JSGenericLowering::LowerJSCreateLiteralArray(Node* node) {
 void JSGenericLowering::LowerJSCreateLiteralObject(Node* node) {
   CreateLiteralParameters const& p = CreateLiteralParametersOf(node->op());
   node->InsertInput(zone(), 1, jsgraph()->SmiConstant(p.index()));
-  node->InsertInput(zone(), 2, jsgraph()->HeapConstant(p.constants()));
+  node->InsertInput(zone(), 2, jsgraph()->HeapConstant(p.constant()));
   node->InsertInput(zone(), 3, jsgraph()->SmiConstant(p.flags()));
   ReplaceWithRuntimeCall(node, Runtime::kCreateObjectLiteral);
+}
+
+
+void JSGenericLowering::LowerJSCreateLiteralRegExp(Node* node) {
+  CreateLiteralParameters const& p = CreateLiteralParametersOf(node->op());
+  CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
+  Callable callable = CodeFactory::FastCloneRegExp(isolate());
+  Node* literal_index = jsgraph()->SmiConstant(p.index());
+  Node* literal_flags = jsgraph()->SmiConstant(p.flags());
+  Node* pattern = jsgraph()->HeapConstant(p.constant());
+  node->InsertInput(graph()->zone(), 1, literal_index);
+  node->InsertInput(graph()->zone(), 2, pattern);
+  node->InsertInput(graph()->zone(), 3, literal_flags);
+  ReplaceWithStubCall(node, callable, flags);
 }
 
 
@@ -716,7 +731,7 @@ void JSGenericLowering::LowerJSForInPrepare(Node* node) {
         jsgraph()->IntPtrConstant(Map::kInstanceTypeOffset - kHeapObjectTag),
         effect, if_false0);
 
-    STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_SPEC_OBJECT_TYPE);
+    STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
     Node* check1 = graph()->NewNode(
         machine()->Uint32LessThanOrEqual(), object_instance_type,
         jsgraph()->Uint32Constant(LAST_JS_PROXY_TYPE));

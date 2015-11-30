@@ -146,7 +146,8 @@ enum SeqStringSetCharCheckIndexType { kIndexIsSmi, kIndexIsInteger32 };
 
 class MacroAssembler : public Assembler {
  public:
-  MacroAssembler(Isolate* isolate, byte * buffer, unsigned buffer_size);
+  MacroAssembler(Isolate* isolate, byte* buffer, unsigned buffer_size,
+                 CodeObjectRequired create_code_object);
 
   inline Handle<Object> CodeObject();
 
@@ -1028,17 +1029,6 @@ class MacroAssembler : public Assembler {
 
   // ---- Object Utilities ----
 
-  // Copy fields from 'src' to 'dst', where both are tagged objects.
-  // The 'temps' list is a list of X registers which can be used for scratch
-  // values. The temps list must include at least one register.
-  //
-  // Currently, CopyFields cannot make use of more than three registers from
-  // the 'temps' list.
-  //
-  // CopyFields expects to be able to take at least two registers from
-  // MacroAssembler::TmpList().
-  void CopyFields(Register dst, Register src, CPURegList temps, unsigned count);
-
   // Initialize fields with filler values.  Fields starting at |current_address|
   // not including |end_address| are overwritten with the value in |filler|.  At
   // the end the loop, |current_address| takes the value of |end_address|.
@@ -1142,14 +1132,6 @@ class MacroAssembler : public Assembler {
   void InvokeBuiltin(int native_context_index, InvokeFlag flag,
                      const CallWrapper& call_wrapper = NullCallWrapper());
 
-  // Store the code object for the given builtin in the target register and
-  // setup the function in the function register.
-  void GetBuiltinEntry(Register target, Register function,
-                       int native_context_index);
-
-  // Store the function for the given builtin in the target register.
-  void GetBuiltinFunction(Register target, int native_context_index);
-
   void Jump(Register target);
   void Jump(Address target, RelocInfo::Mode rmode, Condition cond = al);
   void Jump(Handle<Code> code, RelocInfo::Mode rmode, Condition cond = al);
@@ -1184,12 +1166,13 @@ class MacroAssembler : public Assembler {
                       InvokeFlag flag,
                       bool* definitely_mismatches,
                       const CallWrapper& call_wrapper);
-  void InvokeCode(Register code,
-                  Register new_target,
-                  const ParameterCount& expected,
-                  const ParameterCount& actual,
-                  InvokeFlag flag,
-                  const CallWrapper& call_wrapper);
+  void FloodFunctionIfStepping(Register fun, Register new_target,
+                               const ParameterCount& expected,
+                               const ParameterCount& actual);
+  void InvokeFunctionCode(Register function, Register new_target,
+                          const ParameterCount& expected,
+                          const ParameterCount& actual, InvokeFlag flag,
+                          const CallWrapper& call_wrapper);
   // Invoke the JavaScript function in the given register.
   // Changes the current context to the context in the function before invoking.
   void InvokeFunction(Register function,
@@ -1685,8 +1668,15 @@ class MacroAssembler : public Assembler {
 
   void LoadContext(Register dst, int context_chain_length);
 
+  // Load the global object from the current context.
+  void LoadGlobalObject(Register dst) {
+    LoadNativeContextSlot(Context::EXTENSION_INDEX, dst);
+  }
+
   // Load the global proxy from the current context.
-  void LoadGlobalProxy(Register dst);
+  void LoadGlobalProxy(Register dst) {
+    LoadNativeContextSlot(Context::GLOBAL_PROXY_INDEX, dst);
+  }
 
   // Emit code for a truncating division by a constant. The dividend register is
   // unchanged. Dividend and result must be different.
@@ -1908,7 +1898,7 @@ class MacroAssembler : public Assembler {
       Register scratch2,
       Label* no_map_match);
 
-  void LoadGlobalFunction(int index, Register function);
+  void LoadNativeContextSlot(int index, Register dst);
 
   // Load the initial map from the global function. The registers function and
   // map can be the same, function is then overwritten.
@@ -2010,19 +2000,6 @@ class MacroAssembler : public Assembler {
   void PopPostamble(int count, int size) { PopPostamble(count * size); }
 
  private:
-  // Helpers for CopyFields.
-  // These each implement CopyFields in a different way.
-  void CopyFieldsLoopPairsHelper(Register dst, Register src, unsigned count,
-                                 Register scratch1, Register scratch2,
-                                 Register scratch3, Register scratch4,
-                                 Register scratch5);
-  void CopyFieldsUnrolledPairsHelper(Register dst, Register src, unsigned count,
-                                     Register scratch1, Register scratch2,
-                                     Register scratch3, Register scratch4);
-  void CopyFieldsUnrolledHelper(Register dst, Register src, unsigned count,
-                                Register scratch1, Register scratch2,
-                                Register scratch3);
-
   // The actual Push and Pop implementations. These don't generate any code
   // other than that required for the push or pop. This allows
   // (Push|Pop)CPURegList to bundle together run-time assertions for a large
@@ -2226,8 +2203,8 @@ inline MemOperand ContextMemOperand(Register context, int index = 0) {
   return MemOperand(context, Context::SlotOffset(index));
 }
 
-inline MemOperand GlobalObjectMemOperand() {
-  return ContextMemOperand(cp, Context::GLOBAL_OBJECT_INDEX);
+inline MemOperand NativeContextMemOperand() {
+  return ContextMemOperand(cp, Context::NATIVE_CONTEXT_INDEX);
 }
 
 

@@ -88,6 +88,7 @@ namespace compiler {
   V(Arm64Float32Min)               \
   V(Arm64Float32Abs)               \
   V(Arm64Float32Sqrt)              \
+  V(Arm64Float32RoundDown)         \
   V(Arm64Float64Cmp)               \
   V(Arm64Float64Add)               \
   V(Arm64Float64Sub)               \
@@ -100,15 +101,20 @@ namespace compiler {
   V(Arm64Float64Neg)               \
   V(Arm64Float64Sqrt)              \
   V(Arm64Float64RoundDown)         \
+  V(Arm64Float32RoundUp)           \
   V(Arm64Float64RoundUp)           \
   V(Arm64Float64RoundTiesAway)     \
+  V(Arm64Float32RoundTruncate)     \
   V(Arm64Float64RoundTruncate)     \
+  V(Arm64Float32RoundTiesEven)     \
   V(Arm64Float64RoundTiesEven)     \
   V(Arm64Float32ToFloat64)         \
   V(Arm64Float64ToFloat32)         \
   V(Arm64Float64ToInt32)           \
   V(Arm64Float64ToUint32)          \
+  V(Arm64Float32ToInt64)           \
   V(Arm64Float64ToInt64)           \
+  V(Arm64Float32ToUint64)          \
   V(Arm64Float64ToUint64)          \
   V(Arm64Int32ToFloat64)           \
   V(Arm64Int64ToFloat32)           \

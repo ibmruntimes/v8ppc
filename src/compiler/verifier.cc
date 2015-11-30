@@ -521,6 +521,7 @@ void Verifier::Visitor::Check(Node* node) {
       break;
     case IrOpcode::kJSCreateLiteralArray:
     case IrOpcode::kJSCreateLiteralObject:
+    case IrOpcode::kJSCreateLiteralRegExp:
       // Type is OtherObject.
       CheckUpperIs(node, Type::OtherObject());
       break;
@@ -549,7 +550,6 @@ void Verifier::Visitor::Check(Node* node) {
 
     case IrOpcode::kJSLoadContext:
     case IrOpcode::kJSLoadDynamic:
-    case IrOpcode::kJSLoadNativeContext:
       // Type can be anything.
       CheckUpperIs(node, Type::Any());
       break;
@@ -888,10 +888,14 @@ void Verifier::Visitor::Check(Node* node) {
     case IrOpcode::kFloat64Min:
     case IrOpcode::kFloat64Abs:
     case IrOpcode::kFloat64Sqrt:
+    case IrOpcode::kFloat32RoundDown:
     case IrOpcode::kFloat64RoundDown:
+    case IrOpcode::kFloat32RoundUp:
     case IrOpcode::kFloat64RoundUp:
+    case IrOpcode::kFloat32RoundTruncate:
     case IrOpcode::kFloat64RoundTruncate:
     case IrOpcode::kFloat64RoundTiesAway:
+    case IrOpcode::kFloat32RoundTiesEven:
     case IrOpcode::kFloat64RoundTiesEven:
     case IrOpcode::kFloat64Equal:
     case IrOpcode::kFloat64LessThan:
@@ -914,7 +918,9 @@ void Verifier::Visitor::Check(Node* node) {
     case IrOpcode::kChangeFloat32ToFloat64:
     case IrOpcode::kChangeFloat64ToInt32:
     case IrOpcode::kChangeFloat64ToUint32:
+    case IrOpcode::kTruncateFloat32ToInt64:
     case IrOpcode::kTruncateFloat64ToInt64:
+    case IrOpcode::kTruncateFloat32ToUint64:
     case IrOpcode::kTruncateFloat64ToUint64:
     case IrOpcode::kFloat64ExtractLowWord32:
     case IrOpcode::kFloat64ExtractHighWord32:

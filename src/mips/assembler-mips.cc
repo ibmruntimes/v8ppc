@@ -296,6 +296,7 @@ void Assembler::GetCode(CodeDesc* desc) {
   desc->instr_size = pc_offset();
   desc->reloc_size = (buffer_ + buffer_size_) - reloc_info_writer.pos();
   desc->origin = this;
+  desc->constant_pool_size = 0;
 }
 
 
@@ -2814,6 +2815,7 @@ void Assembler::GrowBuffer() {
 
   // Set up new buffer.
   desc.buffer = NewArray<byte>(desc.buffer_size);
+  desc.origin = this;
 
   desc.instr_size = pc_offset();
   desc.reloc_size = (buffer_ + buffer_size_) - reloc_info_writer.pos();
@@ -2892,7 +2894,7 @@ void Assembler::emit_code_stub_address(Code* stub) {
 
 void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
   // We do not try to reuse pool constants.
-  RelocInfo rinfo(pc_, rmode, data, NULL);
+  RelocInfo rinfo(isolate(), pc_, rmode, data, NULL);
   if (rmode >= RelocInfo::COMMENT &&
       rmode <= RelocInfo::DEBUG_BREAK_SLOT_AT_CONSTRUCT_CALL) {
     // Adjust code for new modes.
@@ -2909,10 +2911,8 @@ void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
     }
     DCHECK(buffer_space() >= kMaxRelocSize);  // Too late to grow buffer here.
     if (rmode == RelocInfo::CODE_TARGET_WITH_ID) {
-      RelocInfo reloc_info_with_ast_id(pc_,
-                                       rmode,
-                                       RecordedAstId().ToInt(),
-                                       NULL);
+      RelocInfo reloc_info_with_ast_id(isolate(), pc_, rmode,
+                                       RecordedAstId().ToInt(), NULL);
       ClearRecordedAstId();
       reloc_info_writer.Write(&reloc_info_with_ast_id);
     } else {
@@ -3024,7 +3024,7 @@ void Assembler::QuietNaN(HeapObject* object) {
 // There is an optimization below, which emits a nop when the address
 // fits in just 16 bits. This is unlikely to help, and should be benchmarked,
 // and possibly removed.
-void Assembler::set_target_address_at(Address pc,
+void Assembler::set_target_address_at(Isolate* isolate, Address pc,
                                       Address target,
                                       ICacheFlushMode icache_flush_mode) {
   Instr instr2 = instr_at(pc + kInstrSize);
@@ -3046,7 +3046,7 @@ void Assembler::set_target_address_at(Address pc,
 
 
   if (icache_flush_mode != SKIP_ICACHE_FLUSH) {
-    CpuFeatures::FlushICache(pc, 2 * sizeof(int32_t));
+    Assembler::FlushICache(isolate, pc, 2 * sizeof(int32_t));
   }
 }
 

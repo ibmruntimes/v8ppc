@@ -149,6 +149,7 @@ class CallSite {
   T(NotIntlObject, "% is not an i18n object.")                                 \
   T(NotGeneric, "% is not generic")                                            \
   T(NotIterable, "% is not iterable")                                          \
+  T(NotPropertyName, "% is not a valid property name")                         \
   T(NotTypedArray, "this is not a typed array.")                               \
   T(NotSharedTypedArray, "% is not a shared typed array.")                     \
   T(NotIntegerSharedTypedArray, "% is not an integer shared typed array.")     \
@@ -181,8 +182,9 @@ class CallSite {
   T(ProtoObjectOrNull, "Object prototype may only be an Object or null: %")    \
   T(PrototypeParentNotAnObject,                                                \
     "Class extends value does not have valid prototype property %")            \
-  T(ProxyHandlerDeleteFailed,                                                  \
-    "Proxy handler % did not return a boolean value from 'delete' trap")       \
+  T(ProxyDeletePropertyViolatesInvariant,                                      \
+    "Trap 'deleteProperty' returned true but property '%' is not configurable" \
+    " in the proxy target")                                                    \
   T(ProxyHandlerNonObject, "Cannot create proxy with non-object as handler")   \
   T(ProxyHandlerReturned, "Proxy handler % returned % from '%' trap")          \
   T(ProxyHandlerTrapMissing, "Proxy handler % has no '%' trap")                \
@@ -198,6 +200,8 @@ class CallSite {
     "Proxy handler % returned non-configurable descriptor for property '%' "   \
     "from '%' trap")                                                           \
   T(ProxyRepeatedPropName, "Trap '%' returned repeated property name '%'")     \
+  T(ProxyHandlerOrTargetRevoked,                                               \
+    "Cannot create proxy with a revoked proxy as handler or target")           \
   T(ProxyRevoked, "Cannot perform '%' on a proxy that has been revoked")       \
   T(ProxyTargetNotExtensible, "Proxy target is not extensible")                \
   T(ProxyTargetNonObject, "Proxy target is non-object")                        \
@@ -205,6 +209,7 @@ class CallSite {
     "Proxy target property '%' is not configurable")                           \
   T(ProxyTrapFunctionExpected,                                                 \
     "Proxy.createFunction called with non-function for '%' trap")              \
+  T(ProxyTrapResultMustInclude, "Trap result must include %.")                 \
   T(RedefineDisallowed, "Cannot redefine property: %")                         \
   T(RedefineExternalArray,                                                     \
     "Cannot redefine a property of an object with external array elements")    \
@@ -251,7 +256,6 @@ class CallSite {
     "Invalid property descriptor. Cannot both specify accessors and a value "  \
     "or writable attribute, %")                                                \
   T(VarRedeclaration, "Identifier '%' has already been declared")              \
-  T(WithExpression, "% has no properties")                                     \
   T(WrongArgs, "%: Arguments list has wrong type")                             \
   /* ReferenceError */                                                         \
   T(NonMethod, "'super' is referenced from non-method")                        \

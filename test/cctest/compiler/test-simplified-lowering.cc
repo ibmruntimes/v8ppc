@@ -7,6 +7,7 @@
 
 #include <limits>
 
+#include "src/ast/scopes.h"
 #include "src/compiler/access-builder.h"
 #include "src/compiler/change-lowering.h"
 #include "src/compiler/control-builders.h"
@@ -20,9 +21,8 @@
 #include "src/compiler/typer.h"
 #include "src/compiler/verifier.h"
 #include "src/execution.h"
-#include "src/parser.h"
-#include "src/rewriter.h"
-#include "src/scopes.h"
+#include "src/parsing/parser.h"
+#include "src/parsing/rewriter.h"
 #include "test/cctest/cctest.h"
 #include "test/cctest/compiler/codegen-tester.h"
 #include "test/cctest/compiler/function-tester.h"
@@ -1601,22 +1601,6 @@ TEST(RunNumberDivide_minus_1_TruncatingToInt32) {
   FOR_INT32_INPUTS(i) {
     int32_t x = 0 - *i;
     t.CheckNumberCall(static_cast<double>(x), static_cast<double>(*i));
-  }
-}
-
-
-TEST(NumberMultiply_TruncatingToInt32) {
-  int32_t constants[] = {-100, -10, -1, 0, 1, 100, 1000};
-
-  for (size_t i = 0; i < arraysize(constants); i++) {
-    TestingGraph t(Type::Signed32());
-    Node* k = t.jsgraph.Constant(constants[i]);
-    Node* mul = t.graph()->NewNode(t.simplified()->NumberMultiply(), t.p0, k);
-    Node* trunc = t.graph()->NewNode(t.simplified()->NumberToInt32(), mul);
-    t.Return(trunc);
-    t.Lower();
-
-    CHECK_EQ(IrOpcode::kInt32Mul, mul->opcode());
   }
 }
 

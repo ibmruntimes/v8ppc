@@ -12,14 +12,14 @@
 // places where we have to move a previous result in v0 to a0 for the
 // next call: mov(a0, v0). This is not needed on the other architectures.
 
+#include "src/ast/scopes.h"
 #include "src/code-factory.h"
 #include "src/code-stubs.h"
 #include "src/codegen.h"
 #include "src/debug/debug.h"
 #include "src/full-codegen/full-codegen.h"
 #include "src/ic/ic.h"
-#include "src/parser.h"
-#include "src/scopes.h"
+#include "src/parsing/parser.h"
 
 #include "src/mips/code-stubs-mips.h"
 #include "src/mips/macro-assembler-mips.h"
@@ -130,7 +130,7 @@ void FullCodeGenerator::Generate() {
     __ AssertNotSmi(a2);
     __ GetObjectType(a2, a2, a2);
     __ Check(ge, kSloppyFunctionExpectsJSReceiverReceiver, a2,
-             Operand(FIRST_SPEC_OBJECT_TYPE));
+             Operand(FIRST_JS_RECEIVER_TYPE));
   }
 
   // Open a frame scope to indicate that there is a frame on the stack.  The
@@ -217,7 +217,7 @@ void FullCodeGenerator::Generate() {
         // Load parameter from stack.
         __ lw(a0, MemOperand(fp, parameter_offset));
         // Store it in the context.
-        MemOperand target = ContextOperand(cp, var->index());
+        MemOperand target = ContextMemOperand(cp, var->index());
         __ sw(a0, target);
 
         // Update the write barrier.
@@ -714,7 +714,7 @@ MemOperand FullCodeGenerator::VarOperand(Variable* var, Register scratch) {
   if (var->IsContextSlot()) {
     int context_chain_length = scope()->ContextChainLength(var->scope());
     __ LoadContext(scratch, context_chain_length);
-    return ContextOperand(scratch, var->index());
+    return ContextMemOperand(scratch, var->index());
   } else {
     return StackOperand(var);
   }
@@ -820,7 +820,7 @@ void FullCodeGenerator::VisitVariableDeclaration(
         Comment cmnt(masm_, "[ VariableDeclaration");
         EmitDebugCheckDeclarationContext(variable);
           __ LoadRoot(at, Heap::kTheHoleValueRootIndex);
-          __ sw(at, ContextOperand(cp, variable->index()));
+          __ sw(at, ContextMemOperand(cp, variable->index()));
           // No write barrier since the_hole_value is in old space.
           PrepareForBailoutForId(proxy->id(), NO_REGISTERS);
       }
@@ -878,7 +878,7 @@ void FullCodeGenerator::VisitFunctionDeclaration(
       Comment cmnt(masm_, "[ FunctionDeclaration");
       EmitDebugCheckDeclarationContext(variable);
       VisitForAccumulatorValue(declaration->fun());
-      __ sw(result_register(), ContextOperand(cp, variable->index()));
+      __ sw(result_register(), ContextMemOperand(cp, variable->index()));
       int offset = Context::SlotOffset(variable->index());
       // We know that we have written a function, which is not a smi.
       __ RecordWriteContextSlot(cp,
@@ -1044,7 +1044,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   Label convert, done_convert;
   __ JumpIfSmi(a0, &convert);
   __ GetObjectType(a0, a1, a1);
-  __ Branch(&done_convert, ge, a1, Operand(FIRST_SPEC_OBJECT_TYPE));
+  __ Branch(&done_convert, ge, a1, Operand(FIRST_JS_RECEIVER_TYPE));
   __ bind(&convert);
   ToObjectStub stub(isolate());
   __ CallStub(&stub);
@@ -1055,7 +1055,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
   // Check for proxies.
   Label call_runtime;
-  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_SPEC_OBJECT_TYPE);
+  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
   __ GetObjectType(a0, a1, a1);
   __ Branch(&call_runtime, le, a1, Operand(LAST_JS_PROXY_TYPE));
 
@@ -1117,7 +1117,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
   __ li(a1, Operand(Smi::FromInt(1)));  // Smi indicates slow check
   __ lw(a2, MemOperand(sp, 0 * kPointerSize));  // Get enumerated object
-  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_SPEC_OBJECT_TYPE);
+  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
   __ GetObjectType(a2, a3, a3);
   __ Branch(&non_proxy, gt, a3, Operand(LAST_JS_PROXY_TYPE));
   __ li(a1, Operand(Smi::FromInt(0)));  // Zero indicates proxy
@@ -1268,12 +1268,12 @@ void FullCodeGenerator::EmitLoadGlobalCheckExtensions(VariableProxy* proxy,
   while (s != NULL) {
     if (s->num_heap_slots() > 0) {
       if (s->calls_sloppy_eval()) {
-        // Check that extension is NULL.
-        __ lw(temp, ContextOperand(current, Context::EXTENSION_INDEX));
-        __ Branch(slow, ne, temp, Operand(zero_reg));
+        // Check that extension is "the hole".
+        __ lw(temp, ContextMemOperand(current, Context::EXTENSION_INDEX));
+        __ JumpIfNotRoot(temp, Heap::kTheHoleValueRootIndex, slow);
       }
       // Load next context in chain.
-      __ lw(next, ContextOperand(current, Context::PREVIOUS_INDEX));
+      __ lw(next, ContextMemOperand(current, Context::PREVIOUS_INDEX));
       // Walk the rest of the chain without clobbering cp.
       current = next;
     }
@@ -1293,11 +1293,11 @@ void FullCodeGenerator::EmitLoadGlobalCheckExtensions(VariableProxy* proxy,
     __ lw(temp, FieldMemOperand(next, HeapObject::kMapOffset));
     __ LoadRoot(t0, Heap::kNativeContextMapRootIndex);
     __ Branch(&fast, eq, temp, Operand(t0));
-    // Check that extension is NULL.
-    __ lw(temp, ContextOperand(next, Context::EXTENSION_INDEX));
-    __ Branch(slow, ne, temp, Operand(zero_reg));
+    // Check that extension is "the hole".
+    __ lw(temp, ContextMemOperand(next, Context::EXTENSION_INDEX));
+    __ JumpIfNotRoot(temp, Heap::kTheHoleValueRootIndex, slow);
     // Load next context in chain.
-    __ lw(next, ContextOperand(next, Context::PREVIOUS_INDEX));
+    __ lw(next, ContextMemOperand(next, Context::PREVIOUS_INDEX));
     __ Branch(&loop);
     __ bind(&fast);
   }
@@ -1318,23 +1318,23 @@ MemOperand FullCodeGenerator::ContextSlotOperandCheckExtensions(Variable* var,
   for (Scope* s = scope(); s != var->scope(); s = s->outer_scope()) {
     if (s->num_heap_slots() > 0) {
       if (s->calls_sloppy_eval()) {
-        // Check that extension is NULL.
-        __ lw(temp, ContextOperand(context, Context::EXTENSION_INDEX));
-        __ Branch(slow, ne, temp, Operand(zero_reg));
+        // Check that extension is "the hole".
+        __ lw(temp, ContextMemOperand(context, Context::EXTENSION_INDEX));
+        __ JumpIfNotRoot(temp, Heap::kTheHoleValueRootIndex, slow);
       }
-      __ lw(next, ContextOperand(context, Context::PREVIOUS_INDEX));
+      __ lw(next, ContextMemOperand(context, Context::PREVIOUS_INDEX));
       // Walk the rest of the chain without clobbering cp.
       context = next;
     }
   }
-  // Check that last extension is NULL.
-  __ lw(temp, ContextOperand(context, Context::EXTENSION_INDEX));
-  __ Branch(slow, ne, temp, Operand(zero_reg));
+  // Check that last extension is "the hole".
+  __ lw(temp, ContextMemOperand(context, Context::EXTENSION_INDEX));
+  __ JumpIfNotRoot(temp, Heap::kTheHoleValueRootIndex, slow);
 
   // This function is used only for loads, not stores, so it's safe to
   // return an cp-based operand (the write barrier cannot be allowed to
   // destroy the cp register).
-  return ContextOperand(context, var->index());
+  return ContextMemOperand(context, var->index());
 }
 
 
@@ -1377,7 +1377,7 @@ void FullCodeGenerator::EmitGlobalVariableLoad(VariableProxy* proxy,
   Variable* var = proxy->var();
   DCHECK(var->IsUnallocatedOrGlobalSlot() ||
          (var->IsLookupSlot() && var->mode() == DYNAMIC_GLOBAL));
-  __ lw(LoadDescriptor::ReceiverRegister(), GlobalObjectOperand());
+  __ LoadGlobalObject(LoadDescriptor::ReceiverRegister());
   __ li(LoadDescriptor::NameRegister(), Operand(var->name()));
   __ li(LoadDescriptor::SlotRegister(),
         Operand(SmiFromSlot(proxy->VariableFeedbackSlot())));
@@ -1459,49 +1459,12 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy,
 
 void FullCodeGenerator::VisitRegExpLiteral(RegExpLiteral* expr) {
   Comment cmnt(masm_, "[ RegExpLiteral");
-  Label materialized;
-  // Registers will be used as follows:
-  // t1 = materialized value (RegExp literal)
-  // t0 = JS function, literals array
-  // a3 = literal index
-  // a2 = RegExp pattern
-  // a1 = RegExp flags
-  // a0 = RegExp literal clone
-  __ lw(a0, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  __ lw(t0, FieldMemOperand(a0, JSFunction::kLiteralsOffset));
-  int literal_offset = LiteralsArray::OffsetOfLiteralAt(expr->literal_index());
-  __ lw(t1, FieldMemOperand(t0, literal_offset));
-  __ LoadRoot(at, Heap::kUndefinedValueRootIndex);
-  __ Branch(&materialized, ne, t1, Operand(at));
-
-  // Create regexp literal using runtime function.
-  // Result will be in v0.
-  __ li(a3, Operand(Smi::FromInt(expr->literal_index())));
-  __ li(a2, Operand(expr->pattern()));
-  __ li(a1, Operand(expr->flags()));
-  __ Push(t0, a3, a2, a1);
-  __ CallRuntime(Runtime::kMaterializeRegExpLiteral, 4);
-  __ mov(t1, v0);
-
-  __ bind(&materialized);
-  int size = JSRegExp::kSize + JSRegExp::kInObjectFieldCount * kPointerSize;
-  Label allocated, runtime_allocate;
-  __ Allocate(size, v0, a2, a3, &runtime_allocate, TAG_OBJECT);
-  __ jmp(&allocated);
-
-  __ bind(&runtime_allocate);
-  __ li(a0, Operand(Smi::FromInt(size)));
-  __ Push(t1, a0);
-  __ CallRuntime(Runtime::kAllocateInNewSpace, 1);
-  __ pop(t1);
-
-  __ bind(&allocated);
-
-  // After this, registers are used as follows:
-  // v0: Newly allocated regexp.
-  // t1: Materialized regexp.
-  // a2: temp.
-  __ CopyFields(v0, t1, a2.bit(), size / kPointerSize);
+  __ lw(a3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+  __ li(a2, Operand(Smi::FromInt(expr->literal_index())));
+  __ li(a1, Operand(expr->pattern()));
+  __ li(a0, Operand(Smi::FromInt(expr->flags())));
+  FastCloneRegExpStub stub(isolate());
+  __ CallStub(&stub);
   context()->Plug(v0);
 }
 
@@ -2221,9 +2184,7 @@ void FullCodeGenerator::EmitCreateIteratorResult(bool done) {
   __ CallRuntime(Runtime::kAllocateInNewSpace, 1);
 
   __ bind(&done_allocate);
-  __ lw(a1, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-  __ lw(a1, FieldMemOperand(a1, JSGlobalObject::kNativeContextOffset));
-  __ lw(a1, ContextOperand(a1, Context::ITERATOR_RESULT_MAP_INDEX));
+  __ LoadNativeContextSlot(Context::ITERATOR_RESULT_MAP_INDEX, a1);
   __ pop(a2);
   __ LoadRoot(a3,
               done ? Heap::kTrueValueRootIndex : Heap::kFalseValueRootIndex);
@@ -2554,7 +2515,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
     // Global var, const, or let.
     __ mov(StoreDescriptor::ValueRegister(), result_register());
     __ li(StoreDescriptor::NameRegister(), Operand(var->name()));
-    __ lw(StoreDescriptor::ReceiverRegister(), GlobalObjectOperand());
+    __ LoadGlobalObject(StoreDescriptor::ReceiverRegister());
     EmitLoadStoreICSlot(slot);
     CallStoreIC();
 
@@ -3058,7 +3019,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
   __ li(a3, Operand(SmiFromSlot(expr->CallNewFeedbackSlot())));
 
   CallConstructStub stub(isolate());
-  __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
+  __ Call(stub.GetCode(), RelocInfo::CODE_TARGET);
   PrepareForBailoutForId(expr->ReturnId(), TOS_REG);
   // Restore context register.
   __ lw(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
@@ -3093,7 +3054,7 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   __ li(a0, Operand(arg_count));
   __ lw(a1, MemOperand(sp, arg_count * kPointerSize));
 
-  __ Call(isolate()->builtins()->Construct(), RelocInfo::CONSTRUCT_CALL);
+  __ Call(isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
 
   RecordJSReturnSite(expr);
 
@@ -3124,7 +3085,7 @@ void FullCodeGenerator::EmitIsSmi(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitIsSpecObject(CallRuntime* expr) {
+void FullCodeGenerator::EmitIsJSReceiver(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 1);
 
@@ -3140,7 +3101,7 @@ void FullCodeGenerator::EmitIsSpecObject(CallRuntime* expr) {
   __ JumpIfSmi(v0, if_false);
   __ GetObjectType(v0, a1, a1);
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  Split(ge, a1, Operand(FIRST_SPEC_OBJECT_TYPE),
+  Split(ge, a1, Operand(FIRST_JS_RECEIVER_TYPE),
         if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
@@ -3421,15 +3382,15 @@ void FullCodeGenerator::EmitClassOf(CallRuntime* expr) {
   // either end of the type range for JS object types. Saves extra comparisons.
   STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
   __ GetObjectType(v0, v0, a1);  // Map is now in v0.
-  __ Branch(&null, lt, a1, Operand(FIRST_SPEC_OBJECT_TYPE));
+  __ Branch(&null, lt, a1, Operand(FIRST_JS_RECEIVER_TYPE));
 
   STATIC_ASSERT(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                FIRST_SPEC_OBJECT_TYPE + 1);
-  __ Branch(&function, eq, a1, Operand(FIRST_SPEC_OBJECT_TYPE));
+                FIRST_JS_RECEIVER_TYPE + 1);
+  __ Branch(&function, eq, a1, Operand(FIRST_JS_RECEIVER_TYPE));
 
   STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                LAST_SPEC_OBJECT_TYPE - 1);
-  __ Branch(&function, eq, a1, Operand(LAST_SPEC_OBJECT_TYPE));
+                LAST_JS_RECEIVER_TYPE - 1);
+  __ Branch(&function, eq, a1, Operand(LAST_JS_RECEIVER_TYPE));
   // Assume that there is no larger type.
   STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE == LAST_TYPE - 1);
 
@@ -3875,7 +3836,7 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   __ sll(at, a0, kPointerSizeLog2);
   __ Addu(at, at, Operand(sp));
   __ lw(a1, MemOperand(at, 0));
-  __ Call(isolate()->builtins()->Construct(), RelocInfo::CONSTRUCT_CALL);
+  __ Call(isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
 
   // Restore context register.
   __ lw(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
@@ -4175,9 +4136,7 @@ void FullCodeGenerator::EmitCreateIterResultObject(CallRuntime* expr) {
   Label runtime, done;
 
   __ Allocate(JSIteratorResult::kSize, v0, a2, a3, &runtime, TAG_OBJECT);
-  __ lw(a1, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-  __ lw(a1, FieldMemOperand(a1, JSGlobalObject::kNativeContextOffset));
-  __ lw(a1, ContextOperand(a1, Context::ITERATOR_RESULT_MAP_INDEX));
+  __ LoadNativeContextSlot(Context::ITERATOR_RESULT_MAP_INDEX, a1);
   __ Pop(a2, a3);
   __ LoadRoot(t0, Heap::kEmptyFixedArrayRootIndex);
   __ sw(a1, FieldMemOperand(v0, HeapObject::kMapOffset));
@@ -4201,9 +4160,7 @@ void FullCodeGenerator::EmitLoadJSRuntimeFunction(CallRuntime* expr) {
   __ LoadRoot(v0, Heap::kUndefinedValueRootIndex);
   __ push(v0);
 
-  __ lw(v0, GlobalObjectOperand());
-  __ lw(v0, FieldMemOperand(v0, JSGlobalObject::kNativeContextOffset));
-  __ lw(v0, ContextOperand(v0, expr->context_index()));
+  __ LoadNativeContextSlot(expr->context_index(), v0);
 }
 
 
@@ -4294,7 +4251,7 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
         bool is_this = var->HasThisName(isolate());
         DCHECK(is_sloppy(language_mode()) || is_this);
         if (var->IsUnallocatedOrGlobalSlot()) {
-          __ lw(a2, GlobalObjectOperand());
+          __ LoadGlobalObject(a2);
           __ li(a1, Operand(var->name()));
           __ Push(a2, a1);
           __ CallRuntime(Runtime::kDeleteProperty_Sloppy, 2);
@@ -4697,9 +4654,9 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ JumpIfSmi(v0, if_false);
     __ LoadRoot(at, Heap::kNullValueRootIndex);
     __ Branch(if_true, eq, v0, Operand(at));
-    STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
+    STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
     __ GetObjectType(v0, v0, a1);
-    __ Branch(if_false, lt, a1, Operand(FIRST_SPEC_OBJECT_TYPE));
+    __ Branch(if_false, lt, a1, Operand(FIRST_JS_RECEIVER_TYPE));
     // Check for callable or undetectable objects => false.
     __ lbu(a1, FieldMemOperand(v0, Map::kBitFieldOffset));
     __ And(a1, a1,
@@ -4845,7 +4802,7 @@ void FullCodeGenerator::StoreToFrameField(int frame_offset, Register value) {
 
 
 void FullCodeGenerator::LoadContextField(Register dst, int context_index) {
-  __ lw(dst, ContextOperand(cp, context_index));
+  __ lw(dst, ContextMemOperand(cp, context_index));
 }
 
 
@@ -4855,14 +4812,13 @@ void FullCodeGenerator::PushFunctionArgumentForContextAllocation() {
       closure_scope->is_module_scope()) {
     // Contexts nested in the native context have a canonical empty function
     // as their closure, not the anonymous closure containing the global
-    // code.  Pass a smi sentinel and let the runtime look up the empty
-    // function.
-    __ li(at, Operand(Smi::FromInt(0)));
+    // code.
+    __ LoadNativeContextSlot(Context::CLOSURE_INDEX, at);
   } else if (closure_scope->is_eval_scope()) {
     // Contexts created by a call to eval have the same closure as the
     // context calling eval, not the anonymous closure containing the eval
     // code.  Fetch it from the context.
-    __ lw(at, ContextOperand(cp, Context::CLOSURE_INDEX));
+    __ lw(at, ContextMemOperand(cp, Context::CLOSURE_INDEX));
   } else {
     DCHECK(closure_scope->is_function_scope());
     __ lw(at, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
@@ -4945,7 +4901,8 @@ void BackEdgeTable::PatchAt(Code* unoptimized_code,
                             Code* replacement_code) {
   static const int kInstrSize = Assembler::kInstrSize;
   Address branch_address = pc - 6 * kInstrSize;
-  CodePatcher patcher(branch_address, 1);
+  Isolate* isolate = unoptimized_code->GetIsolate();
+  CodePatcher patcher(isolate, branch_address, 1);
 
   switch (target_state) {
     case INTERRUPT:
@@ -4973,7 +4930,7 @@ void BackEdgeTable::PatchAt(Code* unoptimized_code,
   Address pc_immediate_load_address = pc - 4 * kInstrSize;
   // Replace the stack check address in the load-immediate (lui/ori pair)
   // with the entry address of the replacement code.
-  Assembler::set_target_address_at(pc_immediate_load_address,
+  Assembler::set_target_address_at(isolate, pc_immediate_load_address,
                                    replacement_code->entry());
 
   unoptimized_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
