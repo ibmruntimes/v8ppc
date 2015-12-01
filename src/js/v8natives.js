@@ -183,18 +183,10 @@ function ObjectValueOf() {
 }
 
 
-// ECMA-262 - 15.2.4.5
+// ES6 7.3.11
 function ObjectHasOwnProperty(value) {
   var name = TO_NAME(value);
   var object = TO_OBJECT(this);
-
-  if (%_IsJSProxy(object)) {
-    // TODO(rossberg): adjust once there is a story for symbols vs proxies.
-    if (IS_SYMBOL(value)) return false;
-
-    var handler = %GetHandler(object);
-    return CallTrap1(handler, "hasOwn", ProxyDerivedHasOwnTrap, name);
-  }
   return %HasOwnProperty(object, name);
 }
 
@@ -207,16 +199,9 @@ function ObjectIsPrototypeOf(V) {
 }
 
 
-// ECMA-262 - 15.2.4.6
+// ES6 19.1.3.4
 function ObjectPropertyIsEnumerable(V) {
   var P = TO_NAME(V);
-  if (%_IsJSProxy(this)) {
-    // TODO(rossberg): adjust once there is a story for symbols vs proxies.
-    if (IS_SYMBOL(V)) return false;
-
-    var desc = GetOwnPropertyJS(this, P);
-    return IS_UNDEFINED(desc) ? false : desc.isEnumerable();
-  }
   return %IsPropertyEnumerable(TO_OBJECT(this), P);
 }
 
@@ -1290,7 +1275,7 @@ utils.InstallFunctions(GlobalObject, DONT_ENUM, [
 function BooleanConstructor(x) {
   // TODO(bmeurer): Move this to toplevel.
   "use strict";
-  if (%_IsConstructCall()) {
+  if (!IS_UNDEFINED(new.target)) {
     %_SetValueOf(this, TO_BOOLEAN(x));
   } else {
     return TO_BOOLEAN(x);
@@ -1616,7 +1601,7 @@ function FunctionBind(this_arg) { // Length is 1.
     "use strict";
     // This function must not use any object literals (Object, Array, RegExp),
     // since the literals-array is being used to store the bound data.
-    if (%_IsConstructCall()) {
+    if (!IS_UNDEFINED(new.target)) {
       return %NewObjectFromBound(boundFunction);
     }
     var bindings = %BoundFunctionGetBindings(boundFunction);

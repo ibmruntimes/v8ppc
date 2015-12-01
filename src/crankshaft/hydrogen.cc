@@ -5044,7 +5044,8 @@ void HOptimizedGraphBuilder::VisitSwitchStatement(SwitchStatement* stmt) {
     }
 
     // Generate a compare and branch.
-    CHECK_ALIVE(VisitForValue(clause->label()));
+    CHECK_BAILOUT(VisitForValue(clause->label()));
+    if (current_block() == NULL) return Bailout(kUnsupportedSwitchStatement);
     HValue* label_value = Pop();
 
     Type* label_type = clause->label()->bounds().lower;
@@ -8378,6 +8379,13 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
       TraceInline(target, caller, "target uses arguments object");
       return false;
     }
+  }
+
+  // Unsupported variable references present.
+  if (function->scope()->this_function_var() != nullptr ||
+      function->scope()->new_target_var() != nullptr) {
+    TraceInline(target, caller, "target uses new target or this function");
+    return false;
   }
 
   // All declarations must be inlineable.
@@ -12343,22 +12351,6 @@ void HOptimizedGraphBuilder::GenerateHasFastPackedElements(CallRuntime* call) {
   }
   if_not_smi.JoinContinuation(&continuation);
   return ast_context()->ReturnContinuation(&continuation, call->id());
-}
-
-
-// Support for construct call checks.
-void HOptimizedGraphBuilder::GenerateIsConstructCall(CallRuntime* call) {
-  DCHECK(call->arguments()->length() == 0);
-  if (function_state()->outer() != NULL) {
-    // We are generating graph for inlined function.
-    HValue* value = function_state()->inlining_kind() == CONSTRUCT_CALL_RETURN
-        ? graph()->GetConstantTrue()
-        : graph()->GetConstantFalse();
-    return ast_context()->ReturnValue(value);
-  } else {
-    return ast_context()->ReturnControl(New<HIsConstructCallAndBranch>(),
-                                        call->id());
-  }
 }
 
 

@@ -83,6 +83,12 @@ class Marking : public AllStatic {
     markbit.Clear();
   }
 
+  INLINE(static void GreyToWhite(MarkBit markbit)) {
+    DCHECK(IsGrey(markbit));
+    markbit.Clear();
+    markbit.Next().Clear();
+  }
+
   INLINE(static void BlackToGrey(MarkBit markbit)) {
     DCHECK(IsBlack(markbit));
     markbit.Next().Set();
@@ -279,18 +285,11 @@ class CodeFlusher {
     ProcessJSFunctionCandidates();
   }
 
-  void EvictAllCandidates() {
-    EvictJSFunctionCandidates();
-    EvictSharedFunctionInfoCandidates();
-  }
-
   void IteratePointersToFromSpace(ObjectVisitor* v);
 
  private:
   void ProcessJSFunctionCandidates();
   void ProcessSharedFunctionInfoCandidates();
-  void EvictJSFunctionCandidates();
-  void EvictSharedFunctionInfoCandidates();
 
   static inline JSFunction** GetNextCandidateSlot(JSFunction* candidate);
   static inline JSFunction* GetNextCandidate(JSFunction* candidate);
@@ -321,11 +320,6 @@ class ThreadLocalTop;
 // Mark-Compact collector
 class MarkCompactCollector {
  public:
-  enum IterationMode {
-    kKeepMarking,
-    kClearMarkbits,
-  };
-
   static void Initialize();
 
   void SetUp();
@@ -371,7 +365,6 @@ class MarkCompactCollector {
 
   CodeFlusher* code_flusher() { return code_flusher_; }
   inline bool is_code_flushing_enabled() const { return code_flusher_ != NULL; }
-  void EnableCodeFlushing(bool enable);
 
   enum SweeperType {
     CONCURRENT_SWEEPING,
@@ -412,6 +405,8 @@ class MarkCompactCollector {
   void MigrateObject(HeapObject* dst, HeapObject* src, int size,
                      AllocationSpace to_old_space,
                      SlotsBuffer** evacuation_slots_buffer);
+
+  bool TryPromoteObject(HeapObject* object, int object_size);
 
   void InvalidateCode(Code* code);
 
@@ -510,14 +505,9 @@ class MarkCompactCollector {
 
  private:
   class CompactionTask;
-  class EvacuateNewSpaceVisitor;
-  class EvacuateOldSpaceVisitor;
-  class EvacuateVisitorBase;
-  class HeapObjectVisitor;
   class SweeperTask;
 
   explicit MarkCompactCollector(Heap* heap);
-  ~MarkCompactCollector();
 
   bool WillBeDeoptimized(Code* code);
   void EvictPopularEvacuationCandidate(Page* page);
@@ -708,12 +698,13 @@ class MarkCompactCollector {
   // regions to each space's free list.
   void SweepSpaces();
 
-  // Iterates through all live objects on a page using marking information.
-  // Returns whether all objects have successfully been visited.
-  bool IterateLiveObjectsOnPage(MemoryChunk* page, HeapObjectVisitor* visitor,
-                                IterationMode mode);
+  int DiscoverAndEvacuateBlackObjectsOnPage(NewSpace* new_space,
+                                            NewSpacePage* p);
 
   void EvacuateNewSpace();
+
+  bool EvacuateLiveObjectsFromPage(Page* p, PagedSpace* target_space,
+                                   SlotsBuffer** evacuation_slots_buffer);
 
   void AddEvacuationSlotsBufferSynchronized(
       SlotsBuffer* evacuation_slots_buffer);

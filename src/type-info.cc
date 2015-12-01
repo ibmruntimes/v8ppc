@@ -152,7 +152,8 @@ void TypeFeedbackOracle::GetStoreModeAndKeyType(
 
 
 Handle<JSFunction> TypeFeedbackOracle::GetCallTarget(FeedbackVectorSlot slot) {
-  Handle<Object> info = GetInfo(slot);
+  CallICNexus nexus(feedback_vector_, slot);
+  Handle<Object> info = nexus.GetCallFeedback();
   if (info->IsAllocationSite()) {
     return Handle<JSFunction>(isolate()->native_context()->array_function());
   }
@@ -163,7 +164,8 @@ Handle<JSFunction> TypeFeedbackOracle::GetCallTarget(FeedbackVectorSlot slot) {
 
 Handle<JSFunction> TypeFeedbackOracle::GetCallNewTarget(
     FeedbackVectorSlot slot) {
-  Handle<Object> info = GetInfo(slot);
+  ConstructICNexus nexus(feedback_vector_, slot);
+  Handle<Object> info = nexus.GetCallFeedback();
   if (info->IsJSFunction()) {
     return Handle<JSFunction>::cast(info);
   }
@@ -245,9 +247,9 @@ void TypeFeedbackOracle::BinaryType(TypeFeedbackId id,
   BinaryOpICState state(isolate(), code->extra_ic_state());
   DCHECK_EQ(op, state.op());
 
-  *left = state.GetLeftType(zone());
-  *right = state.GetRightType(zone());
-  *result = state.GetResultType(zone());
+  *left = state.GetLeftType();
+  *right = state.GetRightType();
+  *result = state.GetResultType();
   *fixed_right_arg = state.fixed_right_arg();
 
   AllocationSite* first_allocation_site = code->FindFirstAllocationSite();
@@ -265,7 +267,7 @@ Type* TypeFeedbackOracle::CountType(TypeFeedbackId id) {
   Handle<Code> code = Handle<Code>::cast(object);
   DCHECK_EQ(Code::BINARY_OP_IC, code->kind());
   BinaryOpICState state(isolate(), code->extra_ic_state());
-  return state.GetLeftType(zone());
+  return state.GetLeftType();
 }
 
 

@@ -1832,9 +1832,9 @@ class JSReceiver: public HeapObject {
                                 Handle<Object> key, PropertyDescriptor* desc,
                                 ShouldThrow should_throw);
 
-  // "virtual" dispatcher to the correct [[CreateDataProperty]] implementation.
-  MUST_USE_RESULT static Maybe<bool> CreateDataProperty(LookupIterator* it,
-                                                        Handle<Object> value);
+  // ES6 7.3.4 (when passed DONT_THROW)
+  MUST_USE_RESULT static Maybe<bool> CreateDataProperty(
+      LookupIterator* it, Handle<Object> value, ShouldThrow should_throw);
 
   // ES6 9.1.6.1
   static bool OrdinaryDefineOwnProperty(Isolate* isolate,
@@ -4786,6 +4786,7 @@ class Code: public HeapObject {
   V(LOAD_IC)            \
   V(KEYED_LOAD_IC)      \
   V(CALL_IC)            \
+  V(CONSTRUCT_IC)       \
   V(STORE_IC)           \
   V(KEYED_STORE_IC)     \
   V(BINARY_OP_IC)       \
@@ -9530,6 +9531,11 @@ class JSProxy: public JSReceiver {
   // ES6 9.5.1
   static MaybeHandle<Object> GetPrototype(Handle<JSProxy> receiver);
 
+  // ES6 9.5.2
+  MUST_USE_RESULT static Maybe<bool> SetPrototype(Handle<JSProxy> proxy,
+                                                  Handle<Object> value,
+                                                  bool from_javascript,
+                                                  ShouldThrow should_throw);
   // ES6 9.5.3
   MUST_USE_RESULT static Maybe<bool> IsExtensible(Handle<JSProxy> proxy);
 
@@ -9551,6 +9557,18 @@ class JSProxy: public JSReceiver {
                                                  Handle<JSProxy> proxy,
                                                  Handle<Name> name);
 
+  // ES6 9.5.8
+  MUST_USE_RESULT static MaybeHandle<Object> GetProperty(
+      Isolate* isolate, Handle<JSProxy> proxy, Handle<Name> name,
+      Handle<Object> receiver, LanguageMode language_mode);
+
+  // ES6 9.5.9
+  MUST_USE_RESULT static Maybe<bool> SetProperty(Handle<JSProxy> proxy,
+                                                 Handle<Name> name,
+                                                 Handle<Object> value,
+                                                 Handle<Object> receiver,
+                                                 LanguageMode language_mode);
+
   // ES6 9.5.10 (when passed SLOPPY)
   MUST_USE_RESULT static Maybe<bool> DeletePropertyOrElement(
       Handle<JSProxy> proxy, Handle<Name> name, LanguageMode language_mode);
@@ -9570,22 +9588,8 @@ class JSProxy: public JSReceiver {
       Handle<Object> receiver,
       Handle<Name> name);
 
-  // If the handler defines an accessor property with a setter, invoke it.
-  // If it defines an accessor property without a setter, or a data property
-  // that is read-only, fail.  In all these cases set '*done' to true.
-  // Otherwise set it to false, in which case the return value is not
-  // meaningful.
-  MUST_USE_RESULT
-  static Maybe<bool> SetPropertyViaPrototypesWithHandler(
-      Handle<JSProxy> proxy, Handle<Object> receiver, Handle<Name> name,
-      Handle<Object> value, ShouldThrow should_throw, bool* done);
-
   MUST_USE_RESULT static Maybe<PropertyAttributes> GetPropertyAttributes(
       LookupIterator* it);
-
-  MUST_USE_RESULT static Maybe<bool> SetPropertyWithHandler(
-      Handle<JSProxy> proxy, Handle<Object> receiver, Handle<Name> name,
-      Handle<Object> value, ShouldThrow should_throw);
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSProxy)

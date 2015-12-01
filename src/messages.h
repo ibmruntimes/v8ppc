@@ -189,9 +189,9 @@ class CallSite {
   T(ProxyHandlerReturned, "Proxy handler % returned % from '%' trap")          \
   T(ProxyHandlerTrapMissing, "Proxy handler % has no '%' trap")                \
   T(ProxyHandlerTrapMustBeCallable,                                            \
-    "Proxy handler %0 has non-callable '%' trap")                              \
-  T(ProxyIsExtensibleViolatesInvariant,                                        \
-    "Result of trap 'isExtensible' is inconsistent with proxy's target")       \
+    "Proxy handler % has non-callable '%' trap")                               \
+  T(ProxySetPrototypeFailed,                                                   \
+    "Proxy handler returned false when setting prototype '%'")                 \
   T(ProxyNonObjectPropNames, "Trap '%' returned non-object %")                 \
   T(ProxyPreventExtensionsViolatesInvariant,                                   \
     "Trap 'preventExtensions' returned true but the proxy's target is "        \
@@ -210,6 +210,8 @@ class CallSite {
   T(ProxyTrapFunctionExpected,                                                 \
     "Proxy.createFunction called with non-function for '%' trap")              \
   T(ProxyTrapResultMustInclude, "Trap result must include %.")                 \
+  T(ProxyTrapViolatesInvariant,                                                \
+    "Result of trap '%' is inconsistent with proxy's target")                  \
   T(RedefineDisallowed, "Cannot redefine property: %")                         \
   T(RedefineExternalArray,                                                     \
     "Cannot redefine a property of an object with external array elements")    \

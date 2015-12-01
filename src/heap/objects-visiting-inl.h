@@ -464,6 +464,14 @@ void StaticMarkingVisitor<StaticVisitor>::VisitJSFunction(Map* map,
       // non-flushable, because it is required for bailing out from
       // optimized code.
       collector->code_flusher()->AddCandidate(function);
+      // Visit shared function info immediately to avoid double checking
+      // of its flushability later. This is just an optimization because
+      // the shared function info would eventually be visited.
+      SharedFunctionInfo* shared = function->shared();
+      if (StaticVisitor::MarkObjectWithoutPush(heap, shared)) {
+        StaticVisitor::MarkObject(heap, shared->map());
+        VisitSharedFunctionInfoWeakCode(heap, shared);
+      }
       // Treat the reference to the code object weakly.
       VisitJSFunctionWeakCode(map, object);
       return;
@@ -603,11 +611,6 @@ void StaticMarkingVisitor<StaticVisitor>::MarkInlinedFunctionsCode(Heap* heap,
 }
 
 
-inline static bool HasValidNonBuiltinContext(JSFunction* function) {
-  return function->context()->IsContext() && !function->shared()->IsBuiltin();
-}
-
-
 inline static bool HasSourceCode(Heap* heap, SharedFunctionInfo* info) {
   Object* undefined = heap->undefined_value();
   return (info->script() != undefined) &&
@@ -624,11 +627,6 @@ bool StaticMarkingVisitor<StaticVisitor>::IsFlushable(Heap* heap,
   // by optimized version of function.
   MarkBit code_mark = Marking::MarkBitFrom(function->code());
   if (Marking::IsBlackOrGrey(code_mark)) {
-    return false;
-  }
-
-  // The function must have a valid context and not be a builtin.
-  if (!HasValidNonBuiltinContext(function)) {
     return false;
   }
 
@@ -686,6 +684,16 @@ bool StaticMarkingVisitor<StaticVisitor>::IsFlushable(
 
   // If this is a full script wrapped in a function we do not flush the code.
   if (shared_info->is_toplevel()) {
+    return false;
+  }
+
+  // The function must not be a builtin.
+  if (shared_info->IsBuiltin()) {
+    return false;
+  }
+
+  // Maintain debug break slots in the code.
+  if (shared_info->HasDebugCode()) {
     return false;
   }
 

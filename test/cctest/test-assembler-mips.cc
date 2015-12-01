@@ -1812,6 +1812,53 @@ TEST(rint_s)  {
 }
 
 
+TEST(Cvt_d_uw) {
+  if (IsMipsArchVariant(kMips32r2)) {
+    CcTest::InitializeVM();
+    Isolate* isolate = CcTest::i_isolate();
+    HandleScope scope(isolate);
+    MacroAssembler assm(isolate, NULL, 0,
+                        v8::internal::CodeObjectRequired::kYes);
+
+    typedef struct test_struct {
+      unsigned input;
+      uint64_t output;
+    } TestStruct;
+
+    unsigned inputs[] = {
+      0x0, 0xffffffff, 0x80000000, 0x7fffffff
+    };
+
+    uint64_t outputs[] = {
+      0x0, 0x41efffffffe00000,
+      0x41e0000000000000, 0x41dfffffffc00000
+    };
+
+    int kTableLength = sizeof(inputs)/sizeof(inputs[0]);
+
+    TestStruct test;
+
+    __ lw(t1, MemOperand(a0, offsetof(TestStruct, input)));
+    __ Cvt_d_uw(f4, t1, f6);
+    __ sdc1(f4, MemOperand(a0, offsetof(TestStruct, output)));
+    __ jr(ra);
+    __ nop();
+
+    CodeDesc desc;
+    assm.GetCode(&desc);
+    Handle<Code> code = isolate->factory()->NewCode(
+        desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+    F3 f = FUNCTION_CAST<F3>(code->entry());
+    for (int i = 0; i < kTableLength; i++) {
+      test.input = inputs[i];
+      (CALL_GENERATED_CODE(isolate, f, &test, 0, 0, 0, 0));
+      // Check outputs
+      CHECK_EQ(test.output, outputs[i]);
+    }
+  }
+}
+
+
 TEST(mina_maxa) {
   if (IsMipsArchVariant(kMips32r6)) {
     const int kTableLength = 15;
@@ -5056,6 +5103,64 @@ int32_t run_balc(int32_t offset) {
       CALL_GENERATED_CODE(isolate, f, 0, 0, 0, 0, 0));
 
   return res;
+}
+
+
+uint32_t run_aui(uint32_t rs, uint16_t offset) {
+  Isolate* isolate = CcTest::i_isolate();
+  HandleScope scope(isolate);
+
+  MacroAssembler assm(isolate, NULL, 0, v8::internal::CodeObjectRequired::kYes);
+
+  __ li(t0, rs);
+  __ aui(v0, t0, offset);
+  __ jr(ra);
+  __ nop();
+
+  CodeDesc desc;
+  assm.GetCode(&desc);
+  Handle<Code> code = isolate->factory()->NewCode(
+      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
+
+  F2 f = FUNCTION_CAST<F2>(code->entry());
+
+  uint32_t res =
+    reinterpret_cast<uint32_t>
+        (CALL_GENERATED_CODE(isolate, f, 0, 0, 0, 0, 0));
+
+  return res;
+}
+
+
+TEST(r6_aui) {
+  if (IsMipsArchVariant(kMips32r6)) {
+    CcTest::InitializeVM();
+
+    struct TestCaseAui {
+      uint32_t   rs;
+      uint16_t   offset;
+      uint32_t   ref_res;
+    };
+
+    struct TestCaseAui tc[] = {
+      // input, offset, result
+      {0xfffeffff, 1, 0xffffffff},
+      {0xffffffff, 0, 0xffffffff},
+      {0, 0xffff, 0xffff0000},
+      {0x0008ffff, 0xfff7, 0xffffffff},
+      {32767, 32767, 0x7fff7fff},
+      // overflow cases
+      {0xffffffff, 0x1, 0x0000ffff},
+      {0xffffffff, 0xffff, 0xfffeffff},
+    };
+
+    size_t nr_test_cases = sizeof(tc) / sizeof(TestCaseAui);
+    for (size_t i = 0; i < nr_test_cases; ++i) {
+      PC = 0;
+      uint32_t res = run_aui(tc[i].rs, tc[i].offset);
+      CHECK_EQ(tc[i].ref_res, res);
+    }
+  }
 }
 
 

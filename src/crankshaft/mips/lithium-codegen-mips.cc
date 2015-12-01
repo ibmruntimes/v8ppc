@@ -4507,9 +4507,7 @@ void LCodeGen::DoUint32ToDouble(LUint32ToDouble* instr) {
   LOperand* input = instr->value();
   LOperand* output = instr->result();
 
-  FPURegister dbl_scratch = double_scratch0();
-  __ mtc1(ToRegister(input), dbl_scratch);
-  __ Cvt_d_uw(ToDoubleRegister(output), dbl_scratch, f22);
+  __ Cvt_d_uw(ToDoubleRegister(output), ToRegister(input), f22);
 }
 
 
@@ -4594,8 +4592,7 @@ void LCodeGen::DoDeferredNumberTagIU(LInstruction* instr,
     __ mtc1(src, dbl_scratch);
     __ cvt_d_w(dbl_scratch, dbl_scratch);
   } else {
-    __ mtc1(src, dbl_scratch);
-    __ Cvt_d_uw(dbl_scratch, dbl_scratch, f22);
+    __ Cvt_d_uw(dbl_scratch, src, f22);
   }
 
   if (FLAG_inline_new) {
@@ -5461,34 +5458,6 @@ Condition LCodeGen::EmitTypeofIs(Label* true_label,
   }
 
   return final_branch_condition;
-}
-
-
-void LCodeGen::DoIsConstructCallAndBranch(LIsConstructCallAndBranch* instr) {
-  Register temp1 = ToRegister(instr->temp());
-
-  EmitIsConstructCall(temp1, scratch0());
-
-  EmitBranch(instr, eq, temp1,
-             Operand(Smi::FromInt(StackFrame::CONSTRUCT)));
-}
-
-
-void LCodeGen::EmitIsConstructCall(Register temp1, Register temp2) {
-  DCHECK(!temp1.is(temp2));
-  // Get the frame pointer for the calling frame.
-  __ lw(temp1, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
-
-  // Skip the arguments adaptor frame if it exists.
-  Label check_frame_marker;
-  __ lw(temp2, MemOperand(temp1, StandardFrameConstants::kContextOffset));
-  __ Branch(&check_frame_marker, ne, temp2,
-            Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
-  __ lw(temp1, MemOperand(temp1, StandardFrameConstants::kCallerFPOffset));
-
-  // Check the marker in the calling frame.
-  __ bind(&check_frame_marker);
-  __ lw(temp1, MemOperand(temp1, StandardFrameConstants::kMarkerOffset));
 }
 
 
