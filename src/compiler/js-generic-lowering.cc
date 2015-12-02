@@ -225,23 +225,14 @@ void JSGenericLowering::ReplaceWithRuntimeCall(Node* node,
   Operator::Properties properties = node->op()->properties();
   const Runtime::Function* fun = Runtime::FunctionForId(f);
   int nargs = (nargs_override < 0) ? fun->nargs : nargs_override;
-  CallDescriptor* desc =
-      Linkage::GetRuntimeCallDescriptor(zone(), f, nargs, properties);
+  CallDescriptor* desc = Linkage::GetRuntimeCallDescriptor(
+      zone(), f, nargs, properties, CallDescriptor::kNeedsFrameState);
   Node* ref = jsgraph()->ExternalConstant(ExternalReference(f, isolate()));
   Node* arity = jsgraph()->Int32Constant(nargs);
   node->InsertInput(zone(), 0, jsgraph()->CEntryStubConstant(fun->result_size));
   node->InsertInput(zone(), nargs + 1, ref);
   node->InsertInput(zone(), nargs + 2, arity);
   NodeProperties::ChangeOp(node, common()->Call(desc));
-}
-
-
-void JSGenericLowering::LowerJSUnaryNot(Node* node) {
-  CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
-  Callable callable = CodeFactory::ToBoolean(
-      isolate(), ToBooleanStub::RESULT_AS_INVERSE_ODDBALL);
-  ReplaceWithStubCall(node, callable,
-                      CallDescriptor::kPatchableCallSite | flags);
 }
 
 
@@ -254,8 +245,7 @@ void JSGenericLowering::LowerJSTypeOf(Node* node) {
 
 void JSGenericLowering::LowerJSToBoolean(Node* node) {
   CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
-  Callable callable =
-      CodeFactory::ToBoolean(isolate(), ToBooleanStub::RESULT_AS_ODDBALL);
+  Callable callable = CodeFactory::ToBoolean(isolate());
   ReplaceWithStubCall(node, callable,
                       CallDescriptor::kPatchableCallSite | flags);
 }
@@ -626,7 +616,8 @@ void JSGenericLowering::LowerJSForInPrepare(Node* node) {
   Runtime::Function const* function =
       Runtime::FunctionForId(Runtime::kGetPropertyNamesFast);
   CallDescriptor const* descriptor = Linkage::GetRuntimeCallDescriptor(
-      zone(), function->function_id, 1, Operator::kNoProperties);
+      zone(), function->function_id, 1, Operator::kNoProperties,
+      CallDescriptor::kNeedsFrameState);
   Node* cache_type = effect = graph()->NewNode(
       common()->Call(descriptor),
       jsgraph()->CEntryStubConstant(function->result_size), object,

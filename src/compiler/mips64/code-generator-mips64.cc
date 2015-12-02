@@ -678,7 +678,12 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ Or(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
       break;
     case kMips64Nor:
-      __ Nor(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
+      if (instr->InputAt(1)->IsRegister()) {
+        __ Nor(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
+      } else {
+        DCHECK(i.InputOperand(1).immediate() == 0);
+        __ Nor(i.OutputRegister(), i.InputRegister(0), zero_reg);
+      }
       break;
     case kMips64Xor:
       __ Xor(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
@@ -720,9 +725,25 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ Ext(i.OutputRegister(), i.InputRegister(0), i.InputInt8(1),
              i.InputInt8(2));
       break;
+    case kMips64Ins:
+      if (instr->InputAt(1)->IsImmediate() && i.InputInt8(1) == 0) {
+        __ Ins(i.OutputRegister(), zero_reg, i.InputInt8(1), i.InputInt8(2));
+      } else {
+        __ Ins(i.OutputRegister(), i.InputRegister(0), i.InputInt8(1),
+               i.InputInt8(2));
+      }
+      break;
     case kMips64Dext:
       __ Dext(i.OutputRegister(), i.InputRegister(0), i.InputInt8(1),
               i.InputInt8(2));
+      break;
+    case kMips64Dins:
+      if (instr->InputAt(1)->IsImmediate() && i.InputInt8(1) == 0) {
+        __ Dins(i.OutputRegister(), zero_reg, i.InputInt8(1), i.InputInt8(2));
+      } else {
+        __ Dins(i.OutputRegister(), i.InputRegister(0), i.InputInt8(1),
+                i.InputInt8(2));
+      }
       break;
     case kMips64Dshl:
       if (instr->InputAt(1)->IsRegister()) {

@@ -19,6 +19,8 @@
 #include "src/compiler/common-operator-reducer.h"
 #include "src/compiler/control-flow-optimizer.h"
 #include "src/compiler/dead-code-elimination.h"
+#include "src/compiler/escape-analysis.h"
+#include "src/compiler/escape-analysis-reducer.h"
 #include "src/compiler/frame-elider.h"
 #include "src/compiler/graph-replay.h"
 #include "src/compiler/graph-trimmer.h"
@@ -646,6 +648,22 @@ struct BranchEliminationPhase {
 };
 
 
+struct EscapeAnalysisPhase {
+  static const char* phase_name() { return "escape analysis"; }
+
+  void Run(PipelineData* data, Zone* temp_zone) {
+    EscapeAnalysis escape_analysis(data->graph(), data->jsgraph()->common(),
+                                   temp_zone);
+    escape_analysis.Run();
+    JSGraphReducer graph_reducer(data->jsgraph(), temp_zone);
+    EscapeAnalysisReducer escape_reducer(&graph_reducer, data->jsgraph(),
+                                         &escape_analysis, temp_zone);
+    AddReducer(data, &graph_reducer, &escape_reducer);
+    graph_reducer.ReduceGraph();
+  }
+};
+
+
 struct SimplifiedLoweringPhase {
   static const char* phase_name() { return "simplified lowering"; }
 
@@ -1148,6 +1166,11 @@ Handle<Code> Pipeline::GenerateCode() {
       RunPrintAndVerify("Loop peeled");
     }
 
+    if (FLAG_turbo_escape) {
+      Run<EscapeAnalysisPhase>();
+      RunPrintAndVerify("Escape Analysed");
+    }
+
     // Lower simplified operators and insert changes.
     Run<SimplifiedLoweringPhase>();
     RunPrintAndVerify("Lowered simplified");
@@ -1188,10 +1211,13 @@ Handle<Code> Pipeline::GenerateCode() {
 }
 
 
-Handle<Code> Pipeline::GenerateCodeForInterpreter(
-    Isolate* isolate, CallDescriptor* call_descriptor, Graph* graph,
-    Schedule* schedule, const char* bytecode_name) {
-  CompilationInfo info(bytecode_name, isolate, graph->zone());
+Handle<Code> Pipeline::GenerateCodeForCodeStub(Isolate* isolate,
+                                               CallDescriptor* call_descriptor,
+                                               Graph* graph, Schedule* schedule,
+                                               Code::Kind kind,
+                                               const char* code_stub_name) {
+  CompilationInfo info(code_stub_name, isolate, graph->zone());
+  info.set_output_code_kind(kind);
 
   // Construct a pipeline for scheduling and code generation.
   ZonePool zone_pool;

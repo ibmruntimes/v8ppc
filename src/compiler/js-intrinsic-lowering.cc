@@ -83,10 +83,6 @@ Reduction JSIntrinsicLowering::Reduce(Node* node) {
       return ReduceFixedArrayGet(node);
     case Runtime::kInlineFixedArraySet:
       return ReduceFixedArraySet(node);
-    case Runtime::kInlineGetTypeFeedbackVector:
-      return ReduceGetTypeFeedbackVector(node);
-    case Runtime::kInlineGetCallerJSFunction:
-      return ReduceGetCallerJSFunction(node);
     case Runtime::kInlineToInteger:
       return ReduceToInteger(node);
     case Runtime::kInlineToLength:
@@ -247,43 +243,46 @@ Reduction JSIntrinsicLowering::ReduceIsInstanceType(
 
 
 Reduction JSIntrinsicLowering::ReduceIsJSReceiver(Node* node) {
-  // if (%_IsSmi(value)) {
-  //   return false;
-  // } else {
-  //   return FIRST_JS_RECEIVER_TYPE <= %_GetInstanceType(%_GetMap(value))
-  // }
-  STATIC_ASSERT(LAST_TYPE == LAST_JS_RECEIVER_TYPE);
-  MachineType const type = static_cast<MachineType>(kTypeBool | kRepTagged);
-
   Node* value = NodeProperties::GetValueInput(node, 0);
+  Type* value_type = NodeProperties::GetType(value);
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* control = NodeProperties::GetControlInput(node);
+  if (value_type->Is(Type::Receiver())) {
+    value = jsgraph()->TrueConstant();
+  } else if (!value_type->Maybe(Type::Receiver())) {
+    value = jsgraph()->FalseConstant();
+  } else {
+    // if (%_IsSmi(value)) {
+    //   return false;
+    // } else {
+    //   return FIRST_JS_RECEIVER_TYPE <= %_GetInstanceType(%_GetMap(value))
+    // }
+    STATIC_ASSERT(LAST_TYPE == LAST_JS_RECEIVER_TYPE);
 
-  Node* check = graph()->NewNode(simplified()->ObjectIsSmi(), value);
-  Node* branch = graph()->NewNode(common()->Branch(), check, control);
+    Node* check = graph()->NewNode(simplified()->ObjectIsSmi(), value);
+    Node* branch = graph()->NewNode(common()->Branch(), check, control);
 
-  Node* if_true = graph()->NewNode(common()->IfTrue(), branch);
-  Node* etrue = effect;
-  Node* vtrue = jsgraph()->FalseConstant();
+    Node* if_true = graph()->NewNode(common()->IfTrue(), branch);
+    Node* etrue = effect;
+    Node* vtrue = jsgraph()->FalseConstant();
 
-  Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
-  Node* efalse = graph()->NewNode(
-      simplified()->LoadField(AccessBuilder::ForMapInstanceType()),
-      graph()->NewNode(simplified()->LoadField(AccessBuilder::ForMap()), value,
-                       effect, if_false),
-      effect, if_false);
-  Node* vfalse = graph()->NewNode(
-      machine()->Uint32LessThanOrEqual(),
-      jsgraph()->Int32Constant(FIRST_JS_RECEIVER_TYPE), efalse);
+    Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
+    Node* efalse = graph()->NewNode(
+        simplified()->LoadField(AccessBuilder::ForMapInstanceType()),
+        graph()->NewNode(simplified()->LoadField(AccessBuilder::ForMap()),
+                         value, effect, if_false),
+        effect, if_false);
+    Node* vfalse = graph()->NewNode(
+        machine()->Uint32LessThanOrEqual(),
+        jsgraph()->Int32Constant(FIRST_JS_RECEIVER_TYPE), efalse);
 
-  control = graph()->NewNode(common()->Merge(2), if_true, if_false);
-
-  // Replace all effect uses of {node} with the {ephi}.
-  effect = graph()->NewNode(common()->EffectPhi(2), etrue, efalse, control);
+    control = graph()->NewNode(common()->Merge(2), if_true, if_false);
+    effect = graph()->NewNode(common()->EffectPhi(2), etrue, efalse, control);
+    value = graph()->NewNode(common()->Phi(kMachAnyTagged, 2), vtrue, vfalse,
+                             control);
+  }
   ReplaceWithValue(node, node, effect, control);
-
-  // Turn the {node} into a Phi.
-  return Change(node, common()->Phi(type, 2), vtrue, vfalse, control);
+  return Replace(value);
 }
 
 
@@ -456,43 +455,6 @@ Reduction JSIntrinsicLowering::ReduceFixedArraySet(Node* node) {
       index, value, effect, control));
   ReplaceWithValue(node, value, store);
   return Changed(store);
-}
-
-
-Reduction JSIntrinsicLowering::ReduceGetTypeFeedbackVector(Node* node) {
-  Node* func = node->InputAt(0);
-  Node* effect = NodeProperties::GetEffectInput(node);
-  Node* control = NodeProperties::GetControlInput(node);
-  FieldAccess access = AccessBuilder::ForJSFunctionSharedFunctionInfo();
-  Node* load =
-      graph()->NewNode(simplified()->LoadField(access), func, effect, control);
-  access = AccessBuilder::ForSharedFunctionInfoTypeFeedbackVector();
-  return Change(node, simplified()->LoadField(access), load, load, control);
-}
-
-
-Reduction JSIntrinsicLowering::ReduceGetCallerJSFunction(Node* node) {
-  Node* effect = NodeProperties::GetEffectInput(node);
-  Node* control = NodeProperties::GetControlInput(node);
-
-  Node* const frame_state = NodeProperties::GetFrameStateInput(node, 0);
-  Node* outer_frame = frame_state->InputAt(kFrameStateOuterStateInput);
-  if (outer_frame->opcode() == IrOpcode::kFrameState) {
-    // Use the runtime implementation to throw the appropriate error if the
-    // containing function is inlined.
-    return NoChange();
-  }
-
-  // TODO(danno): This implementation forces intrinsic lowering to happen after
-  // inlining, which is fine for now, but eventually the frame-querying logic
-  // probably should go later, e.g. in instruction selection, so that there is
-  // no phase-ordering dependency.
-  FieldAccess access = AccessBuilder::ForFrameCallerFramePtr();
-  Node* fp = graph()->NewNode(machine()->LoadFramePointer());
-  Node* next_fp =
-      graph()->NewNode(simplified()->LoadField(access), fp, effect, control);
-  return Change(node, simplified()->LoadField(AccessBuilder::ForFrameMarker()),
-                next_fp, effect, control);
 }
 
 

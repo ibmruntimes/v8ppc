@@ -21,9 +21,8 @@ void Builtins::Generate_Adaptor(MacroAssembler* masm, CFunctionId id,
                                 BuiltinExtraArguments extra_args) {
   // ----------- S t a t e -------------
   //  -- r3                 : number of arguments excluding receiver
-  //                          (only guaranteed when the called function
-  //                           is not marked as DontAdaptArguments)
-  //  -- r4                 : called function
+  //  -- r4                 : target
+  //  -- r6                 : new.target
   //  -- sp[0]              : last argument
   //  -- ...
   //  -- sp[4 * (argc - 1)] : first argument
@@ -31,41 +30,27 @@ void Builtins::Generate_Adaptor(MacroAssembler* masm, CFunctionId id,
   // -----------------------------------
   __ AssertFunction(r4);
 
-  // Make sure we operate in the context of the called function (for example
-  // ConstructStubs implemented in C++ will be run in the context of the caller
-  // instead of the callee, due to the way that [[Construct]] is defined for
-  // ordinary functions).
-  // TODO(bmeurer): Can we make this more robust?
-  __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
-
   // Insert extra arguments.
   int num_extra_args = 0;
-  if (extra_args == NEEDS_CALLED_FUNCTION) {
-    num_extra_args = 1;
-    __ push(r4);
-  } else {
-    DCHECK(extra_args == NO_EXTRA_ARGUMENTS);
+  switch (extra_args) {
+    case BuiltinExtraArguments::kTarget:
+      __ Push(r4);
+      ++num_extra_args;
+      break;
+    case BuiltinExtraArguments::kNewTarget:
+      __ Push(r6);
+      ++num_extra_args;
+      break;
+    case BuiltinExtraArguments::kTargetAndNewTarget:
+      __ Push(r4, r6);
+      num_extra_args += 2;
+      break;
+    case BuiltinExtraArguments::kNone:
+      break;
   }
 
   // JumpToExternalReference expects r3 to contain the number of arguments
-  // including the receiver and the extra arguments.  But r3 is only valid
-  // if the called function is marked as DontAdaptArguments, otherwise we
-  // need to load the argument count from the SharedFunctionInfo.
-  __ LoadP(r5, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
-  __ LoadWordArith(
-      r5, FieldMemOperand(r5, SharedFunctionInfo::kFormalParameterCountOffset));
-#if !V8_TARGET_ARCH_PPC64
-  __ SmiUntag(r5);
-#endif
-  __ cmpi(r5, Operand(SharedFunctionInfo::kDontAdaptArgumentsSentinel));
-  if (CpuFeatures::IsSupported(ISELECT)) {
-    __ isel(ne, r3, r5, r3);
-  } else {
-    Label skip;
-    __ beq(&skip);
-    __ mr(r3, r5);
-    __ bind(&skip);
-  }
+  // including the receiver and the extra arguments.
   __ addi(r3, r3, Operand(num_extra_args + 1));
 
   __ JumpToExternalReference(ExternalReference(id, masm->isolate()));

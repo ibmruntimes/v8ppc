@@ -27,7 +27,6 @@ var ObserveEndPerformSplice;
 var ObserveEnqueueSpliceRecord;
 var ProxyDelegateCallAndConstruct;
 var ProxyDerivedHasOwnTrap;
-var ProxyDerivedKeysTrap;
 var SameValue = utils.ImportNow("SameValue");
 var StringIndexOf;
 var toStringTagSymbol = utils.ImportNow("to_string_tag_symbol");
@@ -47,7 +46,6 @@ utils.ImportFromExperimental(function(from) {
   FLAG_harmony_tostring = from.FLAG_harmony_tostring;
   ProxyDelegateCallAndConstruct = from.ProxyDelegateCallAndConstruct;
   ProxyDerivedHasOwnTrap = from.ProxyDerivedHasOwnTrap;
-  ProxyDerivedKeysTrap = from.ProxyDerivedKeysTrap;
 });
 
 // ----------------------------------------------------------------------------
@@ -202,7 +200,7 @@ function ObjectIsPrototypeOf(V) {
 // ES6 19.1.3.4
 function ObjectPropertyIsEnumerable(V) {
   var P = TO_NAME(V);
-  return %IsPropertyEnumerable(TO_OBJECT(this), P);
+  return %PropertyIsEnumerable(TO_OBJECT(this), P);
 }
 
 
@@ -259,11 +257,6 @@ function ObjectLookupSetter(name) {
 
 function ObjectKeys(obj) {
   obj = TO_OBJECT(obj);
-  if (%_IsJSProxy(obj)) {
-    var handler = %GetHandler(obj);
-    var names = CallTrap0(handler, "keys", ProxyDerivedKeysTrap);
-    return ToNameArray(names, "keys", false);
-  }
   return %OwnKeys(obj);
 }
 
@@ -1184,7 +1177,7 @@ function ObjectAssign(target, sources) {
 
     for (var j = 0; j < len; ++j) {
       var key = keys[j];
-      if (%IsPropertyEnumerable(from, key)) {
+      if (%PropertyIsEnumerable(from, key)) {
         var propValue = from[key];
         to[key] = propValue;
       }

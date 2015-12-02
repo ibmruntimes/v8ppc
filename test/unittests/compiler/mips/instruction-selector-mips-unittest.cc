@@ -362,6 +362,28 @@ INSTANTIATE_TEST_CASE_P(InstructionSelectorTest, InstructionSelectorLogicalTest,
                         ::testing::ValuesIn(kLogicalInstructions));
 
 
+TEST_F(InstructionSelectorTest, Word32XorMinusOneWithParameter) {
+  {
+    StreamBuilder m(this, kMachInt32, kMachInt32);
+    m.Return(m.Word32Xor(m.Parameter(0), m.Int32Constant(-1)));
+    Stream s = m.Build();
+    ASSERT_EQ(1U, s.size());
+    EXPECT_EQ(kMipsNor, s[0]->arch_opcode());
+    EXPECT_EQ(2U, s[0]->InputCount());
+    EXPECT_EQ(1U, s[0]->OutputCount());
+  }
+  {
+    StreamBuilder m(this, kMachInt32, kMachInt32);
+    m.Return(m.Word32Xor(m.Int32Constant(-1), m.Parameter(0)));
+    Stream s = m.Build();
+    ASSERT_EQ(1U, s.size());
+    EXPECT_EQ(kMipsNor, s[0]->arch_opcode());
+    EXPECT_EQ(2U, s[0]->InputCount());
+    EXPECT_EQ(1U, s[0]->OutputCount());
+  }
+}
+
+
 TEST_F(InstructionSelectorTest, Word32XorMinusOneWithWord32Or) {
   {
     StreamBuilder m(this, kMachInt32, kMachInt32);
@@ -421,6 +443,32 @@ TEST_F(InstructionSelectorTest, Word32AndWithImmediateWithWord32Shr) {
       int32_t actual_width = (lsb + width > 32) ? (32 - lsb) : width;
       EXPECT_EQ(actual_width, s.ToInt32(s[0]->InputAt(2)));
     }
+  }
+}
+
+
+TEST_F(InstructionSelectorTest, Word32AndToClearBits) {
+  TRACED_FORRANGE(int32_t, shift, 1, 31) {
+    int32_t mask = ~((1 << shift) - 1);
+    StreamBuilder m(this, kMachInt32, kMachInt32);
+    m.Return(m.Word32And(m.Parameter(0), m.Int32Constant(mask)));
+    Stream s = m.Build();
+    ASSERT_EQ(1U, s.size());
+    EXPECT_EQ(kMipsIns, s[0]->arch_opcode());
+    ASSERT_EQ(3U, s[0]->InputCount());
+    EXPECT_EQ(0, s.ToInt32(s[0]->InputAt(1)));
+    EXPECT_EQ(shift, s.ToInt32(s[0]->InputAt(2)));
+  }
+  TRACED_FORRANGE(int32_t, shift, 1, 31) {
+    int32_t mask = ~((1 << shift) - 1);
+    StreamBuilder m(this, kMachInt32, kMachInt32);
+    m.Return(m.Word32And(m.Int32Constant(mask), m.Parameter(0)));
+    Stream s = m.Build();
+    ASSERT_EQ(1U, s.size());
+    EXPECT_EQ(kMipsIns, s[0]->arch_opcode());
+    ASSERT_EQ(3U, s[0]->InputCount());
+    EXPECT_EQ(0, s.ToInt32(s[0]->InputAt(1)));
+    EXPECT_EQ(shift, s.ToInt32(s[0]->InputAt(2)));
   }
 }
 

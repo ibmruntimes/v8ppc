@@ -397,9 +397,10 @@ BasicJsonStringifier::Result BasicJsonStringifier::SerializeJSValue(
     DCHECK(value->IsBoolean());
     builder_.AppendCString(value->IsTrue() ? "true" : "false");
   } else {
-    // Fail gracefully for special value wrappers.
-    isolate_->ThrowIllegalOperation();
-    return EXCEPTION;
+    // ES6 24.3.2.1 step 10.c, serialize as an ordinary JSObject.
+    CHECK(!object->IsAccessCheckNeeded());
+    CHECK(!object->IsJSGlobalProxy());
+    return SerializeJSObject(object);
   }
   return SUCCESS;
 }
@@ -567,7 +568,7 @@ BasicJsonStringifier::Result BasicJsonStringifier::SerializeJSObject(
     Handle<FixedArray> contents;
     ASSIGN_RETURN_ON_EXCEPTION_VALUE(
         isolate_, contents,
-        JSReceiver::GetKeys(object, JSReceiver::OWN_ONLY),
+        JSReceiver::GetKeys(object, JSReceiver::OWN_ONLY, ENUMERABLE_STRINGS),
         EXCEPTION);
 
     for (int i = 0; i < contents->length(); i++) {

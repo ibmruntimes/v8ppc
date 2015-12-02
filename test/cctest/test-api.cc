@@ -9209,7 +9209,7 @@ THREADED_TEST(CrossDomainDelete) {
 }
 
 
-THREADED_TEST(CrossDomainIsPropertyEnumerable) {
+THREADED_TEST(CrossDomainPropertyIsEnumerable) {
   LocalContext env1;
   v8::HandleScope handle_scope(env1->GetIsolate());
   v8::Local<Context> env2 = Context::New(env1->GetIsolate());
@@ -10763,8 +10763,8 @@ THREADED_TEST(Regress91517) {
   // Call the runtime version of GetOwnPropertyNames() on the natively
   // created object through JavaScript.
   CHECK(context->Global()->Set(context.local(), v8_str("obj"), o4).FromJust());
-  // PROPERTY_ATTRIBUTES_NONE = 0
-  CompileRun("var names = %GetOwnPropertyNames(obj, 0);");
+  // PROPERTY_ATTRIBUTES_PRIVATE_SYMBOL = 32
+  CompileRun("var names = %GetOwnPropertyNames(obj, 32);");
 
   ExpectInt32("names.length", 1006);
   ExpectTrue("names.indexOf(\"baz\") >= 0");
@@ -10827,8 +10827,8 @@ THREADED_TEST(Regress269562) {
   // the natively created object through JavaScript.
   CHECK(context->Global()->Set(context.local(), v8_str("obj"), o2).FromJust());
   CHECK(context->Global()->Set(context.local(), v8_str("sym"), sym).FromJust());
-  // PROPERTY_ATTRIBUTES_NONE = 0
-  CompileRun("var names = %GetOwnPropertyNames(obj, 0);");
+  // PROPERTY_ATTRIBUTES_PRIVATE_SYMBOL = 32
+  CompileRun("var names = %GetOwnPropertyNames(obj, 32);");
 
   ExpectInt32("names.length", 7);
   ExpectTrue("names.indexOf(\"foo\") >= 0");
@@ -13248,8 +13248,7 @@ static int GetGlobalObjectsCount() {
         count++;
       }
     }
-  // Subtract one to compensate for the code stub context that is always present
-  return count - 1;
+  return count;
 }
 
 
@@ -20176,7 +20175,7 @@ TEST(Regress385349) {
   HandleScope handle_scope(isolate);
   isolate->SetAutorunMicrotasks(false);
   Local<Context> context = Context::New(isolate);
-  v8::Debug::SetDebugEventListener(DebugEventInObserver);
+  v8::Debug::SetDebugEventListener(isolate, DebugEventInObserver);
   {
     Context::Scope context_scope(context);
     CompileRun("var obj = {};"
@@ -20185,7 +20184,7 @@ TEST(Regress385349) {
   }
   isolate->RunMicrotasks();
   isolate->SetAutorunMicrotasks(true);
-  v8::Debug::SetDebugEventListener(NULL);
+  v8::Debug::SetDebugEventListener(isolate, nullptr);
 }
 
 
@@ -21039,7 +21038,7 @@ TEST(AccessCheckThrows) {
   CheckCorrectThrow("%DeleteProperty_Strict(other, '1')");
   CheckCorrectThrow("%HasOwnProperty(other, 'x')");
   CheckCorrectThrow("%HasProperty('x', other)");
-  CheckCorrectThrow("%IsPropertyEnumerable(other, 'x')");
+  CheckCorrectThrow("%PropertyIsEnumerable(other, 'x')");
   // PROPERTY_ATTRIBUTES_NONE = 0
   CheckCorrectThrow("%DefineAccessorPropertyUnchecked("
                         "other, 'x', null, null, 1)");
@@ -22721,7 +22720,7 @@ TEST(StreamingWithDebuggingEnabledLate) {
   v8::ScriptOrigin origin(v8_str("http://foo.com"));
   char* full_source = TestSourceStream::FullSourceString(chunks);
 
-  EnableDebugger();
+  EnableDebugger(isolate);
 
   v8::Local<Script> script = v8::ScriptCompiler::Compile(
       isolate, &source, v8_str(full_source), origin);
@@ -22732,7 +22731,7 @@ TEST(StreamingWithDebuggingEnabledLate) {
 
   delete[] full_source;
 
-  DisableDebugger();
+  DisableDebugger(isolate);
 }
 
 

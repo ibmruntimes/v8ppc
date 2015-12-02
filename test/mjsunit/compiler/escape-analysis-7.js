@@ -25,37 +25,27 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --noalways-opt --turbo-filter=*
+// Flags: --allow-natives-syntax --turbo-escape
+//
 
-var stubs = %GetCodeStubExportsObject();
+function f(a) {
+  "use strict";
+  return arguments;
+}
 
-const kExtraTypeFeedbackMinusZeroSentinel = 1;
-const kFirstJSFunctionTypeFeedbackIndex = 5;
-const kFirstSlotExtraTypeFeedbackIndex = 5;
-
-(function()  {
-  var stub1 = stubs.MathFloorStub("MathFloorStub", 1);
-  var tempForTypeVector = function(d) {
-    return Math.round(d);
+function g(a) {
+  "use strict";
+  var x = f(1,2,3);
+  if (a) {
+    x[1] = 5;
+  } else {
+    x[1] = 7;
   }
-  tempForTypeVector(5);
-  var tv = %GetTypeFeedbackVector(tempForTypeVector);
-  var floorFunc1 = function(v, first) {
-    if (first) return;
-    return stub1(stub1, kFirstSlotExtraTypeFeedbackIndex - 1, tv, undefined, v);
-  };
-  %OptimizeFunctionOnNextCall(stub1);
-  floorFunc1(5, true);
-  %FixedArraySet(tv, kFirstSlotExtraTypeFeedbackIndex - 1, stub1);
-  assertTrue(kExtraTypeFeedbackMinusZeroSentinel !==
-             %FixedArrayGet(tv, kFirstSlotExtraTypeFeedbackIndex));
-  assertEquals(5.0, floorFunc1(5.5));
-  assertTrue(kExtraTypeFeedbackMinusZeroSentinel !==
-             %FixedArrayGet(tv, kFirstSlotExtraTypeFeedbackIndex));
-  // Executing floor such that it returns -0 should set the proper sentinel in
-  // the feedback vector.
-  assertEquals(-Infinity, 1/floorFunc1(-0));
-  assertEquals(kExtraTypeFeedbackMinusZeroSentinel,
-               %FixedArrayGet(tv, kFirstSlotExtraTypeFeedbackIndex));
-  %ClearFunctionTypeFeedback(floorFunc1);
-})();
+
+  return x[1];
+}
+
+assertEquals(7, g());
+assertEquals(7, g());
+%OptimizeFunctionOnNextCall(g);
+assertEquals(7, g());

@@ -673,8 +673,8 @@ void FullCodeGenerator::DoTest(Expression* condition,
   __ mov(a0, result_register());
   Handle<Code> ic = ToBooleanStub::GetUninitialized(isolate());
   CallIC(ic, condition->test_id());
-  __ mov(at, zero_reg);
-  Split(ne, v0, Operand(at), if_true, if_false, fall_through);
+  __ LoadRoot(at, Heap::kTrueValueRootIndex);
+  Split(eq, result_register(), Operand(at), if_true, if_false, fall_through);
 }
 
 
@@ -2051,7 +2051,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       __ mov(a0, v0);
       __ mov(a1, a0);
       __ sw(a1, MemOperand(sp, 2 * kPointerSize));
-      SetCallPosition(expr, 1);
+      SetCallPosition(expr);
       __ li(a0, Operand(1));
       __ Call(
           isolate()->builtins()->Call(ConvertReceiverMode::kNotNullOrUndefined),
@@ -2071,7 +2071,8 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       __ mov(a0, v0);
       Handle<Code> bool_ic = ToBooleanStub::GetUninitialized(isolate());
       CallIC(bool_ic);
-      __ Branch(&l_try, eq, v0, Operand(zero_reg));
+      __ LoadRoot(at, Heap::kTrueValueRootIndex);
+      __ Branch(&l_try, ne, result_register(), Operand(at));
 
       // result.value
       __ pop(load_receiver);                                 // result
@@ -2869,7 +2870,7 @@ void FullCodeGenerator::EmitCall(Call* expr, ConvertReceiverMode mode) {
 
   PrepareForBailoutForId(expr->CallId(), NO_REGISTERS);
   // Record source position of the IC call.
-  SetCallPosition(expr, arg_count);
+  SetCallPosition(expr);
   Handle<Code> ic = CodeFactory::CallIC(isolate(), arg_count, mode).code();
   __ li(a3, Operand(SmiFromSlot(expr->CallFeedbackICSlot())));
   __ lw(a1, MemOperand(sp, (arg_count + 1) * kPointerSize));
@@ -2976,7 +2977,7 @@ void FullCodeGenerator::EmitPossiblyEvalCall(Call* expr) {
 
   PrepareForBailoutForId(expr->EvalId(), NO_REGISTERS);
   // Record source position for debugger.
-  SetCallPosition(expr, arg_count);
+  SetCallPosition(expr);
   __ lw(a1, MemOperand(sp, (arg_count + 1) * kPointerSize));
   __ li(a0, Operand(arg_count));
   __ Call(isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
@@ -3008,7 +3009,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetConstructCallPosition(expr, arg_count);
+  SetConstructCallPosition(expr);
 
   // Load function and argument count into a1 and a0.
   __ li(a0, Operand(arg_count));
@@ -3044,7 +3045,7 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetConstructCallPosition(expr, arg_count);
+  SetConstructCallPosition(expr);
 
   // Load new target into a3.
   VisitForAccumulatorValue(super_call_ref->new_target_var());
@@ -3763,7 +3764,7 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetConstructCallPosition(expr, 0);
+  SetConstructCallPosition(expr);
 
   // Load new target into a3.
   __ lw(a3, MemOperand(sp, 1 * kPointerSize));
@@ -4137,7 +4138,7 @@ void FullCodeGenerator::EmitCallJSRuntimeFunction(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   int arg_count = args->length();
 
-  SetCallPosition(expr, arg_count);
+  SetCallPosition(expr);
   __ lw(a1, MemOperand(sp, (arg_count + 1) * kPointerSize));
   __ li(a0, Operand(arg_count));
   __ Call(isolate()->builtins()->Call(ConvertReceiverMode::kNullOrUndefined),

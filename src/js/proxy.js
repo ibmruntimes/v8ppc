@@ -15,21 +15,12 @@ var GlobalProxy = global.Proxy;
 var GlobalFunction = global.Function;
 var GlobalObject = global.Object;
 var MakeTypeError;
-var ToNameArray;
 
 utils.Import(function(from) {
   MakeTypeError = from.MakeTypeError;
-  ToNameArray = from.ToNameArray;
 });
 
 //----------------------------------------------------------------------------
-
-function ProxyCreate(target, handler) {
-  if (IS_UNDEFINED(new.target)) {
-    throw MakeTypeError(kConstructorNotFunction, "Proxy");
-  }
-  return %CreateJSProxy(target, handler);
-}
 
 function ProxyCreateFunction(handler, callTrap, constructTrap) {
   if (!IS_SPEC_OBJECT(handler))
@@ -122,19 +113,6 @@ function DerivedHasOwnTrap(name) {
   return !!this.getOwnPropertyDescriptor(name)
 }
 
-function DerivedKeysTrap() {
-  var names = this.getOwnPropertyNames()
-  var enumerableNames = []
-  for (var i = 0, count = 0; i < names.length; ++i) {
-    var name = names[i]
-    if (IS_SYMBOL(name)) continue
-    var desc = this.getOwnPropertyDescriptor(TO_STRING(name))
-    if (!IS_UNDEFINED(desc) && desc.enumerable) {
-      enumerableNames[count++] = names[i]
-    }
-  }
-  return enumerableNames
-}
 
 // Implements part of ES6 9.5.11 Proxy.[[Enumerate]]:
 // Call the trap, which should return an iterator, exhaust the iterator,
@@ -163,7 +141,6 @@ function ProxyEnumerate(trap, handler, target) {
 }
 
 //-------------------------------------------------------------------
-%SetCode(GlobalProxy, ProxyCreate);
 
 //Set up non-enumerable properties of the Proxy object.
 utils.InstallFunctions(GlobalProxy, DONT_ENUM, [
@@ -176,7 +153,6 @@ utils.InstallFunctions(GlobalProxy, DONT_ENUM, [
 utils.Export(function(to) {
   to.ProxyDelegateCallAndConstruct = DelegateCallAndConstruct;
   to.ProxyDerivedHasOwnTrap = DerivedHasOwnTrap;
-  to.ProxyDerivedKeysTrap = DerivedKeysTrap;
 });
 
 %InstallToContext([

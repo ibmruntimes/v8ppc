@@ -674,7 +674,8 @@ void FullCodeGenerator::DoTest(Expression* condition,
                                Label* fall_through) {
   Handle<Code> ic = ToBooleanStub::GetUninitialized(isolate());
   CallIC(ic, condition->test_id());
-  __ CompareAndSplit(result_register(), 0, ne, if_true, if_false, fall_through);
+  __ CompareRoot(result_register(), Heap::kTrueValueRootIndex);
+  Split(eq, if_true, if_false, fall_through);
 }
 
 
@@ -2584,7 +2585,7 @@ void FullCodeGenerator::EmitCall(Call* expr, ConvertReceiverMode mode) {
   }
 
   PrepareForBailoutForId(expr->CallId(), NO_REGISTERS);
-  SetCallPosition(expr, arg_count);
+  SetCallPosition(expr);
 
   Handle<Code> ic = CodeFactory::CallIC(isolate(), arg_count, mode).code();
   __ Mov(x3, SmiFromSlot(expr->CallFeedbackICSlot()));
@@ -2693,7 +2694,7 @@ void FullCodeGenerator::EmitPossiblyEvalCall(Call* expr) {
   PrepareForBailoutForId(expr->EvalId(), NO_REGISTERS);
 
   // Record source position for debugger.
-  SetCallPosition(expr, arg_count);
+  SetCallPosition(expr);
 
   // Call the evaluated function.
   __ Peek(x1, (arg_count + 1) * kXRegSize);
@@ -2727,7 +2728,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetConstructCallPosition(expr, arg_count);
+  SetConstructCallPosition(expr);
 
   // Load function and argument count into x1 and x0.
   __ Mov(x0, arg_count);
@@ -2763,7 +2764,7 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetConstructCallPosition(expr, arg_count);
+  SetConstructCallPosition(expr);
 
   // Load new target into x3.
   VisitForAccumulatorValue(super_call_ref->new_target_var());
@@ -3462,7 +3463,7 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetConstructCallPosition(expr, 0);
+  SetConstructCallPosition(expr);
 
   // Load new target into x3.
   __ Peek(x3, 1 * kPointerSize);
@@ -3827,7 +3828,7 @@ void FullCodeGenerator::EmitCallJSRuntimeFunction(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   int arg_count = args->length();
 
-  SetCallPosition(expr, arg_count);
+  SetCallPosition(expr);
   __ Peek(x1, (arg_count + 1) * kPointerSize);
   __ Mov(x0, arg_count);
   __ Call(isolate()->builtins()->Call(ConvertReceiverMode::kNullOrUndefined),
@@ -4588,7 +4589,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       CallIC(ic, TypeFeedbackId::None());
       __ Mov(x1, x0);
       __ Poke(x1, 2 * kPointerSize);
-      SetCallPosition(expr, 1);
+      SetCallPosition(expr);
       __ Mov(x0, 1);
       __ Call(
           isolate()->builtins()->Call(ConvertReceiverMode::kNotNullOrUndefined),
@@ -4609,7 +4610,8 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       // The ToBooleanStub argument (result.done) is in x0.
       Handle<Code> bool_ic = ToBooleanStub::GetUninitialized(isolate());
       CallIC(bool_ic);
-      __ Cbz(x0, &l_try);
+      __ CompareRoot(result_register(), Heap::kTrueValueRootIndex);
+      __ B(ne, &l_try);
 
       // result.value
       __ Pop(load_receiver);                                 // result

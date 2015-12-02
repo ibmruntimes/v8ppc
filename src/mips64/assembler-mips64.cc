@@ -2312,6 +2312,14 @@ void Assembler::ins_(Register rt, Register rs, uint16_t pos, uint16_t size) {
 }
 
 
+void Assembler::dins_(Register rt, Register rs, uint16_t pos, uint16_t size) {
+  // Should be called via MacroAssembler::Dins.
+  // Dext instr has 'rt' field as dest, and two uint5: msb, lsb.
+  DCHECK(kArchVariant == kMips64r2 || kArchVariant == kMips64r6);
+  GenInstrRegister(SPECIAL3, rs, rt, pos + size - 1, pos, DINS);
+}
+
+
 void Assembler::ext_(Register rt, Register rs, uint16_t pos, uint16_t size) {
   // Should be called via MacroAssembler::Ext.
   // Ext instr has 'rt' field as dest, and two uint5: msb, lsb.
@@ -2321,7 +2329,7 @@ void Assembler::ext_(Register rt, Register rs, uint16_t pos, uint16_t size) {
 
 
 void Assembler::dext_(Register rt, Register rs, uint16_t pos, uint16_t size) {
-  // Should be called via MacroAssembler::Ext.
+  // Should be called via MacroAssembler::Dext.
   // Dext instr has 'rt' field as dest, and two uint5: msb, lsb.
   DCHECK(kArchVariant == kMips64r2 || kArchVariant == kMips64r6);
   GenInstrRegister(SPECIAL3, rs, rt, size - 1, pos, DEXT);
@@ -3106,7 +3114,7 @@ void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
   // We do not try to reuse pool constants.
   RelocInfo rinfo(isolate(), pc_, rmode, data, NULL);
   if (rmode >= RelocInfo::COMMENT &&
-      rmode <= RelocInfo::DEBUG_BREAK_SLOT_AT_CONSTRUCT_CALL) {
+      rmode <= RelocInfo::DEBUG_BREAK_SLOT_AT_CALL) {
     // Adjust code for new modes.
     DCHECK(RelocInfo::IsDebugBreakSlot(rmode)
            || RelocInfo::IsComment(rmode)

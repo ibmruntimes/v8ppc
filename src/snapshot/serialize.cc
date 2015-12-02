@@ -540,8 +540,7 @@ void Deserializer::Deserialize(Isolate* isolate) {
   }
 
   isolate_->heap()->set_native_contexts_list(
-      isolate_->heap()->code_stub_context());
-
+      isolate_->heap()->undefined_value());
   // The allocation site list is build during root iteration, but if no sites
   // were encountered then it needs to be initialized to undefined.
   if (isolate_->heap()->allocation_sites_list() == Smi::FromInt(0)) {
@@ -552,7 +551,6 @@ void Deserializer::Deserialize(Isolate* isolate) {
   // Update data pointers to the external strings containing natives sources.
   Natives::UpdateSourceCache(isolate_->heap());
   ExtraNatives::UpdateSourceCache(isolate_->heap());
-  CodeStubNatives::UpdateSourceCache(isolate_->heap());
 
   // Issue code events for newly deserialized code objects.
   LOG_CODE_EVENT(isolate_, LogCodeObjects());
@@ -561,8 +559,7 @@ void Deserializer::Deserialize(Isolate* isolate) {
 
 
 MaybeHandle<Object> Deserializer::DeserializePartial(
-    Isolate* isolate, Handle<JSGlobalProxy> global_proxy,
-    Handle<FixedArray>* outdated_contexts_out) {
+    Isolate* isolate, Handle<JSGlobalProxy> global_proxy) {
   Initialize(isolate);
   if (!ReserveSpace()) {
     V8::FatalProcessOutOfMemory("deserialize context");
@@ -579,18 +576,13 @@ MaybeHandle<Object> Deserializer::DeserializePartial(
   OldSpace* code_space = isolate_->heap()->code_space();
   Address start_address = code_space->top();
   Object* root;
-  Object* outdated_contexts;
   VisitPointer(&root);
   DeserializeDeferredObjects();
-  VisitPointer(&outdated_contexts);
 
   // There's no code deserialized here. If this assert fires then that's
   // changed and logging should be added to notify the profiler et al of the
   // new code, which also has to be flushed from instruction cache.
   CHECK_EQ(start_address, code_space->top());
-  CHECK(outdated_contexts->IsFixedArray());
-  *outdated_contexts_out =
-      Handle<FixedArray>(FixedArray::cast(outdated_contexts), isolate);
   return Handle<Object>(root, isolate);
 }
 
@@ -1174,11 +1166,6 @@ bool Deserializer::ReadData(Object** current, Object** limit, int source_space,
             ExtraNatives::GetScriptSource(source_.Get()), current);
         break;
 
-      case kCodeStubNativesStringResource:
-        current = CopyInNativesSource(
-            CodeStubNatives::GetScriptSource(source_.Get()), current);
-        break;
-
       // Deserialize raw data of variable length.
       case kVariableRawData: {
         int size_in_bytes = source_.GetInt();
@@ -1484,36 +1471,7 @@ void PartialSerializer::Serialize(Object** o) {
   }
   VisitPointer(o);
   SerializeDeferredObjects();
-  SerializeOutdatedContextsAsFixedArray();
   Pad();
-}
-
-
-void PartialSerializer::SerializeOutdatedContextsAsFixedArray() {
-  int length = outdated_contexts_.length();
-  if (length == 0) {
-    FixedArray* empty = isolate_->heap()->empty_fixed_array();
-    SerializeObject(empty, kPlain, kStartOfObject, 0);
-  } else {
-    // Serialize an imaginary fixed array containing outdated contexts.
-    int size = FixedArray::SizeFor(length);
-    Allocate(NEW_SPACE, size);
-    sink_->Put(kNewObject + NEW_SPACE, "emulated FixedArray");
-    sink_->PutInt(size >> kObjectAlignmentBits, "FixedArray size in words");
-    Map* map = isolate_->heap()->fixed_array_map();
-    SerializeObject(map, kPlain, kStartOfObject, 0);
-    Smi* length_smi = Smi::FromInt(length);
-    sink_->Put(kOnePointerRawData, "Smi");
-    for (int i = 0; i < kPointerSize; i++) {
-      sink_->Put(reinterpret_cast<byte*>(&length_smi)[i], "Byte");
-    }
-    for (int i = 0; i < length; i++) {
-      Context* context = outdated_contexts_[i];
-      BackReference back_reference = back_reference_map_.Lookup(context);
-      sink_->Put(kBackref + back_reference.space(), "BackRef");
-      PutBackReference(context, back_reference);
-    }
-  }
 }
 
 
@@ -1714,10 +1672,7 @@ StartupSerializer::StartupSerializer(Isolate* isolate, SnapshotByteSink* sink)
 
 void StartupSerializer::SerializeObject(HeapObject* obj, HowToCode how_to_code,
                                         WhereToPoint where_to_point, int skip) {
-  // Make sure that all functions are derived from the code-stub context
-  DCHECK(!obj->IsJSFunction() ||
-         JSFunction::cast(obj)->GetCreationContext() ==
-             isolate()->heap()->code_stub_context());
+  DCHECK(!obj->IsJSFunction());
 
   int root_index = root_index_map_.Lookup(obj);
   // We can only encode roots as such if it has already been serialized.
@@ -1852,15 +1807,6 @@ void PartialSerializer::SerializeObject(HeapObject* obj, HowToCode how_to_code,
   // Object has not yet been serialized.  Serialize it here.
   ObjectSerializer serializer(this, obj, sink_, how_to_code, where_to_point);
   serializer.Serialize();
-
-  // TODO(yangguo): We probably only need ScriptContext here for post-
-  // processing in Genesis::HookUpGlobalThisBinding.
-  if (obj->IsContext() &&
-      Context::cast(obj)->global_object() == global_object_) {
-    // Context refers to the current global object. This reference will
-    // become outdated after deserialization.
-    outdated_contexts_.Add(Context::cast(obj));
-  }
 }
 
 
@@ -2249,12 +2195,6 @@ void Serializer::ObjectSerializer::VisitExternalOneByteString(
           ExtraNatives::GetBuiltinsCount(), resource_pointer,
           ExtraNatives::GetSourceCache(serializer_->isolate()->heap()),
           kExtraNativesStringResource)) {
-    return;
-  }
-  if (SerializeExternalNativeSourceString(
-          CodeStubNatives::GetBuiltinsCount(), resource_pointer,
-          CodeStubNatives::GetSourceCache(serializer_->isolate()->heap()),
-          kCodeStubNativesStringResource)) {
     return;
   }
   // One of the strings in the natives cache should match the resource.  We

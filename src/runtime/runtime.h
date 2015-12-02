@@ -350,9 +350,6 @@ namespace internal {
   F(IS_VAR, 1, 1)                             \
   F(IncrementStatsCounter, 1, 1)              \
   F(HarmonyToString, 0, 1)                    \
-  F(GetTypeFeedbackVector, 1, 1)              \
-  F(GetCallerJSFunction, 0, 1)                \
-  F(GetCodeStubExportsObject, 0, 1)           \
   F(ThrowConstructedNonConstructable, 1, 1)   \
   F(ThrowCalledNonCallable, 1, 1)
 
@@ -453,7 +450,7 @@ namespace internal {
   F(DeleteProperty_Strict, 2, 1)                     \
   F(HasOwnProperty, 2, 1)                            \
   F(HasProperty, 2, 1)                               \
-  F(IsPropertyEnumerable, 2, 1)                      \
+  F(PropertyIsEnumerable, 2, 1)                      \
   F(GetPropertyNamesFast, 1, 1)                      \
   F(GetOwnPropertyNames, 2, 1)                       \
   F(GetOwnElementNames, 1, 1)                        \
@@ -545,7 +542,6 @@ namespace internal {
   F(BitwiseXor_Strong, 2, 1)
 
 #define FOR_EACH_INTRINSIC_PROXY(F) \
-  F(CreateJSProxy, 2, 1)            \
   F(CreateJSFunctionProxy, 5, 1)    \
   F(IsJSProxy, 1, 1)                \
   F(IsJSFunctionProxy, 1, 1)        \
