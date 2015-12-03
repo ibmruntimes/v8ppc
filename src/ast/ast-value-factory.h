@@ -252,7 +252,6 @@ class AstValue : public ZoneObject {
   F(dot_generator, ".generator")                \
   F(dot_generator_object, ".generator_object")  \
   F(dot_iterator, ".iterator")                  \
-  F(dot_module, ".module")                      \
   F(dot_result, ".result")                      \
   F(dot_switch_tag, ".switch_tag")              \
   F(dot_catch, ".catch")                        \
@@ -264,7 +263,6 @@ class AstValue : public ZoneObject {
   F(next, "next")                               \
   F(proto, "__proto__")                         \
   F(prototype, "prototype")                     \
-  F(rest_parameter, ".rest_parameter")          \
   F(this, "this")                               \
   F(this_function, ".this_function")            \
   F(undefined, "undefined")                     \

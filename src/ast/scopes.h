@@ -420,17 +420,6 @@ class Scope: public ZoneObject {
 
   int num_parameters() const { return params_.length(); }
 
-  // A function can have at most one rest parameter. Returns Variable* or NULL.
-  Variable* rest_parameter(int* index) const {
-    *index = rest_index_;
-    if (rest_index_ < 0) return NULL;
-    return rest_parameter_;
-  }
-
-  bool has_rest_parameter() const {
-    return rest_index_ >= 0;
-  }
-
   bool has_simple_parameters() const {
     return has_simple_parameters_;
   }
@@ -509,12 +498,6 @@ class Scope: public ZoneObject {
   int StackLocalCount() const;
   int ContextLocalCount() const;
   int ContextGlobalCount() const;
-
-  // For script scopes, the number of module literals (including nested ones).
-  int num_modules() const { return num_modules_; }
-
-  // For module scopes, the host scope's internal variable binding this module.
-  Variable* module_var() const { return module_var_; }
 
   // Make sure this scope and all outer scopes are eagerly compiled.
   void ForceEagerCompilation()  { force_eager_compilation_ = true; }
@@ -692,17 +675,10 @@ class Scope: public ZoneObject {
   int num_heap_slots_;
   int num_global_slots_;
 
-  // The number of modules (including nested ones).
-  int num_modules_;
-
-  // For module scopes, the host scope's temporary variable binding this module.
-  Variable* module_var_;
-
   // Info about the parameter list of a function.
   int arity_;
   bool has_simple_parameters_;
   Variable* rest_parameter_;
-  int rest_index_;
 
   // Serialized scope info support.
   Handle<ScopeInfo> scope_info_;
@@ -794,7 +770,6 @@ class Scope: public ZoneObject {
   void AllocateVariablesRecursively(Isolate* isolate);
   void AllocateParameter(Variable* var, int index);
   void AllocateReceiver();
-  void AllocateModules();
 
   // Resolve and fill in the allocation information for all variables
   // in this scopes. Must be called *after* all scopes have been

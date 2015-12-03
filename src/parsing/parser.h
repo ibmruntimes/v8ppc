@@ -784,7 +784,8 @@ class ParserTraits {
                                        Scope* scope, AstNodeFactory* factory);
   Expression* ExpressionFromString(int pos, Scanner* scanner,
                                    AstNodeFactory* factory);
-  Expression* GetIterator(Expression* iterable, AstNodeFactory* factory);
+  Expression* GetIterator(Expression* iterable, AstNodeFactory* factory,
+                          int pos);
   ZoneList<v8::internal::Expression*>* NewExpressionList(int size, Zone* zone) {
     return new(zone) ZoneList<v8::internal::Expression*>(size, zone);
   }
@@ -959,10 +960,6 @@ class Parser : public ParserBase<ParserTraits> {
   bool produce_cached_parse_data() const {
     return compile_options_ == ScriptCompiler::kProduceParserCache;
   }
-  Scope* DeclarationScope(VariableMode mode) {
-    return IsLexicalVariableMode(mode)
-        ? scope_ : scope_->DeclarationScope();
-  }
 
   // All ParseXXX functions take as the last argument an *ok parameter
   // which is set to false if parsing failed; it is unchanged otherwise.
@@ -999,11 +996,9 @@ class Parser : public ParserBase<ParserTraits> {
   struct DeclarationDescriptor {
     enum Kind { NORMAL, PARAMETER };
     Parser* parser;
-    Scope* declaration_scope;
     Scope* scope;
     Scope* hoist_scope;
     VariableMode mode;
-    bool is_const;
     bool needs_init;
     int declaration_pos;
     int initialization_pos;

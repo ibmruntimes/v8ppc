@@ -202,7 +202,6 @@ class Genesis BASE_EMBEDDED {
   HARMONY_INPROGRESS(DECLARE_FEATURE_INITIALIZATION)
   HARMONY_STAGED(DECLARE_FEATURE_INITIALIZATION)
   HARMONY_SHIPPING(DECLARE_FEATURE_INITIALIZATION)
-  DECLARE_FEATURE_INITIALIZATION(promise_extra, "")
 #undef DECLARE_FEATURE_INITIALIZATION
 
   Handle<JSFunction> InstallInternalArray(Handle<JSObject> target,
@@ -1015,6 +1014,20 @@ void Genesis::HookUpGlobalObject(Handle<JSGlobalObject> global_object) {
 }
 
 
+static void SimpleInstallFunction(Handle<JSObject> base, Handle<Name> name,
+                                  Builtins::Name call, int len, bool adapt) {
+  Handle<JSFunction> fun =
+      InstallFunction(base, name, JS_OBJECT_TYPE, JSObject::kHeaderSize,
+                      MaybeHandle<JSObject>(), call, DONT_ENUM);
+  if (adapt) {
+    fun->shared()->set_internal_formal_parameter_count(len);
+  } else {
+    fun->shared()->DontAdaptArguments();
+  }
+  fun->shared()->set_length(len);
+}
+
+
 // This is only called if we are not using snapshots.  The equivalent
 // work in the snapshot case is done in HookUpGlobalObject.
 void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
@@ -1101,6 +1114,10 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
         Map::Copy(initial_map, "SetInstancePrototype");
     initial_strong_map->set_is_strong();
     CacheInitialJSArrayMaps(native_context(), initial_strong_map);
+
+    SimpleInstallFunction(array_function,
+        factory->NewStringFromAsciiChecked("isArray"),
+        Builtins::kArrayIsArray, 1, true);
   }
 
   {  // --- N u m b e r ---
@@ -1468,7 +1485,6 @@ void Genesis::InitializeExperimentalGlobal() {
   HARMONY_INPROGRESS(FEATURE_INITIALIZE_GLOBAL)
   HARMONY_STAGED(FEATURE_INITIALIZE_GLOBAL)
   HARMONY_SHIPPING(FEATURE_INITIALIZE_GLOBAL)
-  FEATURE_INITIALIZE_GLOBAL(promise_extra, "")
 #undef FEATURE_INITIALIZE_GLOBAL
 }
 
@@ -1969,21 +1985,6 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_completion)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_tolength)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_do_expressions)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexp_lookbehind)
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(promise_extra)
-
-
-static void SimpleInstallFunction(Handle<JSObject> base, Handle<Name> name,
-                                  Builtins::Name call, int len, bool adapt) {
-  Handle<JSFunction> fun =
-      InstallFunction(base, name, JS_OBJECT_TYPE, JSObject::kHeaderSize,
-                      MaybeHandle<JSObject>(), call, DONT_ENUM);
-  if (adapt) {
-    fun->shared()->set_internal_formal_parameter_count(len);
-  } else {
-    fun->shared()->DontAdaptArguments();
-  }
-  fun->shared()->set_length(len);
-}
 
 
 void InstallPublicSymbol(Factory* factory, Handle<Context> native_context,
@@ -2480,8 +2481,6 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_do_expressions_natives[] = {nullptr};
   static const char* harmony_regexp_subclass_natives[] = {nullptr};
   static const char* harmony_regexp_lookbehind_natives[] = {nullptr};
-  static const char* promise_extra_natives[] = {"native promise-extra.js",
-                                                nullptr};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {
@@ -2500,7 +2499,6 @@ bool Genesis::InstallExperimentalNatives() {
     HARMONY_INPROGRESS(INSTALL_EXPERIMENTAL_NATIVES);
     HARMONY_STAGED(INSTALL_EXPERIMENTAL_NATIVES);
     HARMONY_SHIPPING(INSTALL_EXPERIMENTAL_NATIVES);
-    INSTALL_EXPERIMENTAL_NATIVES(promise_extra, "");
 #undef INSTALL_EXPERIMENTAL_NATIVES
   }
 

@@ -621,9 +621,8 @@ void FullCodeGenerator::DoTest(Expression* condition,
                                Label* fall_through) {
   Handle<Code> ic = ToBooleanStub::GetUninitialized(isolate());
   CallIC(ic, condition->test_id());
-  __ test(result_register(), result_register());
-  // The stub returns nonzero for true.
-  Split(not_zero, if_true, if_false, fall_through);
+  __ CompareRoot(result_register(), Heap::kTrueValueRootIndex);
+  Split(equal, if_true, if_false, fall_through);
 }
 
 
@@ -1977,8 +1976,8 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       CallLoadIC(NOT_INSIDE_TYPEOF);  // result.done in eax
       Handle<Code> bool_ic = ToBooleanStub::GetUninitialized(isolate());
       CallIC(bool_ic);
-      __ test(eax, eax);
-      __ j(zero, &l_try);
+      __ CompareRoot(result_register(), Heap::kTrueValueRootIndex);
+      __ j(not_equal, &l_try);
 
       // result.value
       __ pop(load_receiver);                              // result
@@ -2891,7 +2890,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetConstructCallPosition(expr, arg_count);
+  SetConstructCallPosition(expr);
 
   // Load function and argument count into edi and eax.
   __ Move(eax, Immediate(arg_count));
@@ -2927,7 +2926,7 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetConstructCallPosition(expr, arg_count);
+  SetConstructCallPosition(expr);
 
   // Load new target into edx.
   VisitForAccumulatorValue(super_call_ref->new_target_var());
@@ -3634,7 +3633,7 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
 
   // Call the construct call builtin that handles allocation and
   // constructor invocation.
-  SetConstructCallPosition(expr, 0);
+  SetConstructCallPosition(expr);
 
   // Check if the calling frame is an arguments adaptor frame.
   Label adaptor_frame, args_set_up, runtime;

@@ -134,6 +134,14 @@ bool Object::IsFixedArrayBase() const {
 }
 
 
+bool Object::IsFixedArray() const {
+  if (!IsHeapObject()) return false;
+  InstanceType instance_type = HeapObject::cast(this)->map()->instance_type();
+  return instance_type == FIXED_ARRAY_TYPE ||
+         instance_type == TRANSITION_ARRAY_TYPE;
+}
+
+
 // External objects are not extensible, so the map check is enough.
 bool Object::IsExternal() const {
   return Object::IsHeapObject() &&
@@ -704,9 +712,9 @@ TYPE_CHECKER(JSWeakMap, JS_WEAK_MAP_TYPE)
 TYPE_CHECKER(JSWeakSet, JS_WEAK_SET_TYPE)
 TYPE_CHECKER(JSContextExtensionObject, JS_CONTEXT_EXTENSION_OBJECT_TYPE)
 TYPE_CHECKER(Map, MAP_TYPE)
-TYPE_CHECKER(FixedArray, FIXED_ARRAY_TYPE)
 TYPE_CHECKER(FixedDoubleArray, FIXED_DOUBLE_ARRAY_TYPE)
 TYPE_CHECKER(WeakFixedArray, FIXED_ARRAY_TYPE)
+TYPE_CHECKER(TransitionArray, TRANSITION_ARRAY_TYPE)
 
 
 bool Object::IsJSWeakCollection() const {
@@ -724,11 +732,6 @@ bool Object::IsArrayList() const { return IsFixedArray(); }
 
 bool Object::IsLayoutDescriptor() const {
   return IsSmi() || IsFixedTypedArrayBase();
-}
-
-
-bool Object::IsTransitionArray() const {
-  return IsFixedArray();
 }
 
 
@@ -1190,16 +1193,10 @@ MaybeHandle<Object> Object::GetPrototype(Isolate* isolate,
       !isolate->MayAccess(context, Handle<JSObject>::cast(receiver))) {
     return isolate->factory()->null_value();
   }
-  if (receiver->IsJSProxy()) {
-    return JSProxy::GetPrototype(Handle<JSProxy>::cast(receiver));
-  }
   PrototypeIterator iter(isolate, receiver,
                          PrototypeIterator::START_AT_RECEIVER);
   do {
-    iter.AdvanceIgnoringProxies();
-    if (PrototypeIterator::GetCurrent(iter)->IsJSProxy()) {
-      return PrototypeIterator::GetCurrent(iter);
-    }
+    if (!iter.AdvanceFollowingProxies()) return MaybeHandle<Object>();
   } while (!iter.IsAtEnd(PrototypeIterator::END_AT_NON_HIDDEN));
   return PrototypeIterator::GetCurrent(iter);
 }
@@ -2033,7 +2030,10 @@ Object* WeakCell::value() const { return READ_FIELD(this, kValueOffset); }
 
 
 void WeakCell::clear() {
-  DCHECK(GetHeap()->gc_state() == Heap::MARK_COMPACT);
+  // Either the garbage collector is clearing the cell or we are simply
+  // initializing the root empty weak cell.
+  DCHECK(GetHeap()->gc_state() == Heap::MARK_COMPACT ||
+         this == GetHeap()->empty_weak_cell());
   WRITE_FIELD(this, kValueOffset, Smi::FromInt(0));
 }
 
@@ -2393,7 +2393,7 @@ void FixedArray::set(int index, Smi* value) {
 
 void FixedArray::set(int index, Object* value) {
   DCHECK_NE(GetHeap()->fixed_cow_array_map(), map());
-  DCHECK_EQ(FIXED_ARRAY_TYPE, map()->instance_type());
+  DCHECK(IsFixedArray());
   DCHECK(index >= 0 && index < this->length());
   int offset = kHeaderSize + index * kPointerSize;
   WRITE_FIELD(this, offset, value);
@@ -4443,7 +4443,8 @@ int HeapObject::SizeFromMap(Map* map) {
   if (instance_size != kVariableSizeSentinel) return instance_size;
   // Only inline the most frequent cases.
   InstanceType instance_type = map->instance_type();
-  if (instance_type == FIXED_ARRAY_TYPE) {
+  if (instance_type == FIXED_ARRAY_TYPE ||
+      instance_type == TRANSITION_ARRAY_TYPE) {
     return FixedArray::SizeFor(
         reinterpret_cast<FixedArray*>(this)->synchronized_length());
   }
@@ -4748,6 +4749,14 @@ void Map::set_is_strong() {
 bool Map::is_strong() {
   return IsStrong::decode(bit_field3());
 }
+
+
+void Map::set_new_target_is_base(bool value) {
+  set_bit_field3(NewTargetIsBase::update(bit_field3(), value));
+}
+
+
+bool Map::new_target_is_base() { return NewTargetIsBase::decode(bit_field3()); }
 
 
 void Map::set_counter(int value) {
@@ -6186,9 +6195,25 @@ bool JSFunction::IsInOptimizationQueue() {
 }
 
 
-bool JSFunction::IsInobjectSlackTrackingInProgress() {
-  return has_initial_map() &&
-         initial_map()->counter() >= Map::kSlackTrackingCounterEnd;
+void JSFunction::CompleteInobjectSlackTrackingIfActive() {
+  if (has_initial_map() && initial_map()->IsInobjectSlackTrackingInProgress()) {
+    initial_map()->CompleteInobjectSlackTracking();
+  }
+}
+
+
+bool Map::IsInobjectSlackTrackingInProgress() {
+  return counter() >= Map::kSlackTrackingCounterEnd;
+}
+
+
+void Map::InobjectSlackTrackingStep() {
+  if (!IsInobjectSlackTrackingInProgress()) return;
+  int counter = this->counter();
+  set_counter(counter - 1);
+  if (counter == kSlackTrackingCounterEnd) {
+    CompleteInobjectSlackTracking();
+  }
 }
 
 

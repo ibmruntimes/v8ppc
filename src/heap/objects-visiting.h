@@ -76,6 +76,7 @@ class StaticVisitorBase : public AllStatic {
   V(Cell)                  \
   V(PropertyCell)          \
   V(WeakCell)              \
+  V(TransitionArray)       \
   V(SharedFunctionInfo)    \
   V(JSFunction)            \
   V(JSWeakCollection)      \
@@ -347,6 +348,7 @@ class StaticMarkingVisitor : public StaticVisitorBase {
 
   INLINE(static void VisitPropertyCell(Map* map, HeapObject* object));
   INLINE(static void VisitWeakCell(Map* map, HeapObject* object));
+  INLINE(static void VisitTransitionArray(Map* map, HeapObject* object));
   INLINE(static void VisitCodeEntry(Heap* heap, HeapObject* object,
                                     Address entry_address));
   INLINE(static void VisitEmbeddedPointer(Heap* heap, RelocInfo* rinfo));
@@ -376,10 +378,6 @@ class StaticMarkingVisitor : public StaticVisitorBase {
   // treating transitions or back pointers weak.
   static void MarkMapContents(Heap* heap, Map* map);
   static void MarkTransitionArray(Heap* heap, TransitionArray* transitions);
-
-  // Mark pointers in the optimized code map that should act as strong
-  // references, possibly treating some entries weak.
-  static void MarkOptimizedCodeMap(Heap* heap, FixedArray* code_map);
 
   // Mark non-optimized code for functions inlined into the given optimized
   // code. This will prevent it from being flushed.

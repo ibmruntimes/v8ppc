@@ -76,6 +76,9 @@ void HeapObject::HeapObjectPrint(std::ostream& os) {  // NOLINT
     case BYTECODE_ARRAY_TYPE:
       BytecodeArray::cast(this)->BytecodeArrayPrint(os);
       break;
+    case TRANSITION_ARRAY_TYPE:
+      TransitionArray::cast(this)->TransitionArrayPrint(os);
+      break;
     case FREE_SPACE_TYPE:
       FreeSpace::cast(this)->FreeSpacePrint(os);
       break;
@@ -428,17 +431,6 @@ void JSModule::JSModulePrint(std::ostream& os) {  // NOLINT
 }
 
 
-static const char* TypeToString(InstanceType type) {
-  switch (type) {
-#define TYPE_TO_STRING(TYPE) case TYPE: return #TYPE;
-  INSTANCE_TYPE_LIST(TYPE_TO_STRING)
-#undef TYPE_TO_STRING
-  }
-  UNREACHABLE();
-  return "UNKNOWN";  // Keep the compiler happy.
-}
-
-
 void Symbol::SymbolPrint(std::ostream& os) {  // NOLINT
   HeapObject::PrintHeader(os, "Symbol");
   os << " - hash: " << Hash();
@@ -453,7 +445,7 @@ void Symbol::SymbolPrint(std::ostream& os) {  // NOLINT
 
 void Map::MapPrint(std::ostream& os) {  // NOLINT
   HeapObject::PrintHeader(os, "Map");
-  os << " - type: " << TypeToString(instance_type()) << "\n";
+  os << " - type: " << instance_type() << "\n";
   os << " - instance size: " << instance_size() << "\n";
   if (IsJSObjectMap()) {
     os << " - inobject properties: " << GetInObjectProperties() << "\n";
@@ -495,6 +487,7 @@ void Map::MapPrint(std::ostream& os) {  // NOLINT
   os << "\n - constructor: " << Brief(GetConstructor());
   os << "\n - code cache: " << Brief(code_cache());
   os << "\n - dependent code: " << Brief(dependent_code());
+  os << "\n - counter: " << counter();
   os << "\n";
 }
 
@@ -548,6 +541,19 @@ void FixedDoubleArray::FixedDoubleArrayPrint(std::ostream& os) {  // NOLINT
     } else {
       os << get_scalar(i);
     }
+  }
+  os << "\n";
+}
+
+
+void TransitionArray::TransitionArrayPrint(std::ostream& os) {  // NOLINT
+  HeapObject::PrintHeader(os, "TransitionArray");
+  os << " - capacity: " << length();
+  for (int i = 0; i < length(); i++) {
+    os << "\n  [" << i << "]: " << Brief(get(i));
+    if (i == kNextLinkIndex) os << " (next link)";
+    if (i == kPrototypeTransitionsIndex) os << " (prototype transitions)";
+    if (i == kTransitionLengthIndex) os << " (number of transitions)";
   }
   os << "\n";
 }

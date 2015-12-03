@@ -411,6 +411,7 @@ const int kStubMinorKeyBits = kSmiValueSize - kStubMajorKeyBits - 1;
   V(FIXED_DOUBLE_ARRAY_TYPE)                                    \
   V(SHARED_FUNCTION_INFO_TYPE)                                  \
   V(WEAK_CELL_TYPE)                                             \
+  V(TRANSITION_ARRAY_TYPE)                                      \
                                                                 \
   V(JS_MESSAGE_OBJECT_TYPE)                                     \
                                                                 \
@@ -701,6 +702,7 @@ enum InstanceType {
   SHARED_FUNCTION_INFO_TYPE,
   CELL_TYPE,
   WEAK_CELL_TYPE,
+  TRANSITION_ARRAY_TYPE,
   PROPERTY_CELL_TYPE,
   PROTOTYPE_INFO_TYPE,
   SLOPPY_BLOCK_WITH_EVAL_CONTEXT_EXTENSION_TYPE,
@@ -777,6 +779,9 @@ STATIC_ASSERT(ODDBALL_TYPE == Internals::kOddballType);
 STATIC_ASSERT(FOREIGN_TYPE == Internals::kForeignType);
 
 
+std::ostream& operator<<(std::ostream& os, InstanceType instance_type);
+
+
 #define FIXED_ARRAY_SUB_INSTANCE_TYPE_LIST(V) \
   V(FAST_ELEMENTS_SUB_TYPE)                   \
   V(DICTIONARY_ELEMENTS_SUB_TYPE)             \
@@ -785,14 +790,13 @@ STATIC_ASSERT(FOREIGN_TYPE == Internals::kForeignType);
   V(MAP_CODE_CACHE_SUB_TYPE)                  \
   V(SCOPE_INFO_SUB_TYPE)                      \
   V(STRING_TABLE_SUB_TYPE)                    \
-  V(DESCRIPTOR_ARRAY_SUB_TYPE)                \
-  V(TRANSITION_ARRAY_SUB_TYPE)
+  V(DESCRIPTOR_ARRAY_SUB_TYPE)
 
 enum FixedArraySubInstanceType {
 #define DEFINE_FIXED_ARRAY_SUB_INSTANCE_TYPE(name) name,
   FIXED_ARRAY_SUB_INSTANCE_TYPE_LIST(DEFINE_FIXED_ARRAY_SUB_INSTANCE_TYPE)
 #undef DEFINE_FIXED_ARRAY_SUB_INSTANCE_TYPE
-  LAST_FIXED_ARRAY_SUB_TYPE = TRANSITION_ARRAY_SUB_TYPE
+      LAST_FIXED_ARRAY_SUB_TYPE = DESCRIPTOR_ARRAY_SUB_TYPE
 };
 
 
@@ -860,6 +864,7 @@ class StringStream;
 class TypeFeedbackInfo;
 class TypeFeedbackVector;
 class WeakCell;
+class TransitionArray;
 
 // We cannot just say "class HeapType;" if it is created from a template... =8-?
 template<class> class TypeImpl;
@@ -1051,6 +1056,9 @@ class Object {
   INLINE(bool Is##Name() const);
   STRUCT_LIST(DECLARE_STRUCT_PREDICATE)
 #undef DECLARE_STRUCT_PREDICATE
+
+  // ES6, section 7.2.2 IsArray.  NOT to be confused with %_IsArray.
+  MUST_USE_RESULT static Maybe<bool> IsArray(Handle<Object> object);
 
   // ES6, section 7.2.3 IsCallable.
   INLINE(bool IsCallable() const);
@@ -1305,7 +1313,9 @@ class Object {
   static inline MaybeHandle<Object> GetPrototype(Isolate* isolate,
                                                  Handle<Object> receiver);
 
-  bool HasInPrototypeChain(Isolate* isolate, Object* object);
+  MUST_USE_RESULT static Maybe<bool> HasInPrototypeChain(Isolate* isolate,
+                                                         Handle<Object> object,
+                                                         Handle<Object> proto);
 
   // Returns the permanent hash code associated with this object. May return
   // undefined if not yet created.
@@ -4001,6 +4011,9 @@ class ScopeInfo : public FixedArray {
   // or context-allocated?
   bool HasAllocatedReceiver();
 
+  // Does this scope declare a "new.target" binding?
+  bool HasNewTarget();
+
   // Is this scope the scope of a named function expression?
   bool HasFunctionName();
 
@@ -4209,9 +4222,10 @@ class ScopeInfo : public FixedArray {
   class ReceiverVariableField
       : public BitField<VariableAllocationInfo, DeclarationScopeField::kNext,
                         2> {};
+  class HasNewTargetField
+      : public BitField<bool, ReceiverVariableField::kNext, 1> {};
   class FunctionVariableField
-      : public BitField<VariableAllocationInfo, ReceiverVariableField::kNext,
-                        2> {};
+      : public BitField<VariableAllocationInfo, HasNewTargetField::kNext, 2> {};
   class FunctionVariableMode
       : public BitField<VariableMode, FunctionVariableField::kNext, 3> {};
   class AsmModuleField : public BitField<bool, FunctionVariableMode::kNext, 1> {
@@ -5485,7 +5499,7 @@ class Map: public HeapObject {
   class IsUnstable : public BitField<bool, 24, 1> {};
   class IsMigrationTarget : public BitField<bool, 25, 1> {};
   class IsStrong : public BitField<bool, 26, 1> {};
-  // Bit 27 is free.
+  class NewTargetIsBase : public BitField<bool, 27, 1> {};
 
   // Keep this bit field at the very end for better code in
   // Builtins::kJSConstructStubGeneric stub.
@@ -5497,6 +5511,49 @@ class Map: public HeapObject {
   static const int kSlackTrackingCounterEnd = 8;
   static const int kRetainingCounterStart = kSlackTrackingCounterEnd - 1;
   static const int kRetainingCounterEnd = 0;
+
+
+  // Inobject slack tracking is the way to reclaim unused inobject space.
+  //
+  // The instance size is initially determined by adding some slack to
+  // expected_nof_properties (to allow for a few extra properties added
+  // after the constructor). There is no guarantee that the extra space
+  // will not be wasted.
+  //
+  // Here is the algorithm to reclaim the unused inobject space:
+  // - Detect the first constructor call for this JSFunction.
+  //   When it happens enter the "in progress" state: initialize construction
+  //   counter in the initial_map.
+  // - While the tracking is in progress initialize unused properties of a new
+  //   object with one_pointer_filler_map instead of undefined_value (the "used"
+  //   part is initialized with undefined_value as usual). This way they can
+  //   be resized quickly and safely.
+  // - Once enough objects have been created  compute the 'slack'
+  //   (traverse the map transition tree starting from the
+  //   initial_map and find the lowest value of unused_property_fields).
+  // - Traverse the transition tree again and decrease the instance size
+  //   of every map. Existing objects will resize automatically (they are
+  //   filled with one_pointer_filler_map). All further allocations will
+  //   use the adjusted instance size.
+  // - SharedFunctionInfo's expected_nof_properties left unmodified since
+  //   allocations made using different closures could actually create different
+  //   kind of objects (see prototype inheritance pattern).
+  //
+  //  Important: inobject slack tracking is not attempted during the snapshot
+  //  creation.
+
+  static const int kGenerousAllocationCount =
+      kSlackTrackingCounterStart - kSlackTrackingCounterEnd + 1;
+
+  // Starts the tracking by initializing object constructions countdown counter.
+  void StartInobjectSlackTracking();
+
+  // True if the object constructions countdown counter is a range
+  // [kSlackTrackingCounterEnd, kSlackTrackingCounterStart].
+  inline bool IsInobjectSlackTrackingInProgress();
+
+  // Does the tracking step.
+  inline void InobjectSlackTrackingStep();
 
   // Completes inobject slack tracking for the transition tree starting at this
   // initial map.
@@ -5548,6 +5605,8 @@ class Map: public HeapObject {
 
   inline void set_is_strong();
   inline bool is_strong();
+  inline void set_new_target_is_base(bool value);
+  inline bool new_target_is_base();
   inline void set_is_extensible(bool value);
   inline bool is_extensible();
   inline void set_is_prototype_map(bool value);
@@ -7247,46 +7306,8 @@ class JSFunction: public JSObject {
   // Tells whether or not the function is on the concurrent recompilation queue.
   inline bool IsInOptimizationQueue();
 
-  // Inobject slack tracking is the way to reclaim unused inobject space.
-  //
-  // The instance size is initially determined by adding some slack to
-  // expected_nof_properties (to allow for a few extra properties added
-  // after the constructor). There is no guarantee that the extra space
-  // will not be wasted.
-  //
-  // Here is the algorithm to reclaim the unused inobject space:
-  // - Detect the first constructor call for this JSFunction.
-  //   When it happens enter the "in progress" state: initialize construction
-  //   counter in the initial_map.
-  // - While the tracking is in progress create objects filled with
-  //   one_pointer_filler_map instead of undefined_value. This way they can be
-  //   resized quickly and safely.
-  // - Once enough objects have been created  compute the 'slack'
-  //   (traverse the map transition tree starting from the
-  //   initial_map and find the lowest value of unused_property_fields).
-  // - Traverse the transition tree again and decrease the instance size
-  //   of every map. Existing objects will resize automatically (they are
-  //   filled with one_pointer_filler_map). All further allocations will
-  //   use the adjusted instance size.
-  // - SharedFunctionInfo's expected_nof_properties left unmodified since
-  //   allocations made using different closures could actually create different
-  //   kind of objects (see prototype inheritance pattern).
-  //
-  //  Important: inobject slack tracking is not attempted during the snapshot
-  //  creation.
-
-  // True if the initial_map is set and the object constructions countdown
-  // counter is not zero.
-  static const int kGenerousAllocationCount =
-      Map::kSlackTrackingCounterStart - Map::kSlackTrackingCounterEnd + 1;
-  inline bool IsInobjectSlackTrackingInProgress();
-
-  // Starts the tracking.
-  // Initializes object constructions countdown counter in the initial map.
-  void StartInobjectSlackTracking();
-
-  // Completes the tracking.
-  void CompleteInobjectSlackTracking();
+  // Completes inobject slack tracking on initial map if it is active.
+  inline void CompleteInobjectSlackTrackingIfActive();
 
   // [literals_or_bindings]: Fixed array holding either
   // the materialized literals or the bindings of a bound function.
@@ -9519,7 +9540,7 @@ class JSProxy: public JSReceiver {
 
   DECLARE_CAST(JSProxy)
 
-  bool IsRevoked();
+  bool IsRevoked() const;
 
   // ES6 9.5.1
   static MaybeHandle<Object> GetPrototype(Handle<JSProxy> receiver);
@@ -9607,12 +9628,6 @@ class JSProxy: public JSReceiver {
 
   MUST_USE_RESULT static MaybeHandle<Object> GetTrap(Handle<JSProxy> proxy,
                                                      Handle<String> trap);
-
-  // Invoke a trap by name. If the trap does not exist on this's handler,
-  // but derived_trap is non-NULL, invoke that instead.  May cause GC.
-  MUST_USE_RESULT static MaybeHandle<Object> CallTrap(
-      Handle<JSProxy> proxy, const char* name, Handle<Object> derived_trap,
-      int argc, Handle<Object> args[]);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSProxy);
 };

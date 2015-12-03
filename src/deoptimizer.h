@@ -335,6 +335,7 @@ class OptimizedFunctionVisitor BASE_EMBEDDED {
   V(kInsufficientTypeFeedbackForRHSOfBinaryOperation,                          \
     "Insufficient type feedback for RHS of binary operation")                  \
   V(kKeyIsNegative, "key is negative")                                         \
+  V(kLiteralsWereDisposed, "literals have been disposed")                      \
   V(kLostPrecision, "lost precision")                                          \
   V(kLostPrecisionOrNaN, "lost precision or NaN")                              \
   V(kMementoFound, "memento found")                                            \
@@ -355,6 +356,7 @@ class OptimizedFunctionVisitor BASE_EMBEDDED {
   V(kOutOfBounds, "out of bounds")                                             \
   V(kOutsideOfRange, "Outside of range")                                       \
   V(kOverflow, "overflow")                                                     \
+  V(kProxy, "proxy")                                                           \
   V(kReceiverWasAGlobalObject, "receiver was a global object")                 \
   V(kSmi, "Smi")                                                               \
   V(kTooManyArguments, "too many arguments")                                   \

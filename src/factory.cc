@@ -728,6 +728,8 @@ Handle<Context> Factory::NewNativeContext() {
   context->set_native_context(*context);
   context->set_js_array_maps(*undefined_value());
   context->set_errors_thrown(Smi::FromInt(0));
+  Handle<WeakCell> weak_cell = NewWeakCell(context);
+  context->set_self_weak_cell(*weak_cell);
   DCHECK(context->IsNativeContext());
   return context;
 }
@@ -963,6 +965,13 @@ Handle<WeakCell> Factory::NewWeakCell(Handle<HeapObject> value) {
   AllowDeferredHandleDereference convert_to_cell;
   CALL_HEAP_FUNCTION(isolate(), isolate()->heap()->AllocateWeakCell(*value),
                      WeakCell);
+}
+
+
+Handle<TransitionArray> Factory::NewTransitionArray(int capacity) {
+  CALL_HEAP_FUNCTION(isolate(),
+                     isolate()->heap()->AllocateTransitionArray(capacity),
+                     TransitionArray);
 }
 
 
@@ -1653,7 +1662,7 @@ Handle<JSGeneratorObject> Factory::NewJSGeneratorObject(
   DCHECK(function->shared()->is_generator());
   JSFunction::EnsureHasInitialMap(function);
   Handle<Map> map(function->initial_map());
-  DCHECK(map->instance_type() == JS_GENERATOR_OBJECT_TYPE);
+  DCHECK_EQ(JS_GENERATOR_OBJECT_TYPE, map->instance_type());
   CALL_HEAP_FUNCTION(
       isolate(),
       isolate()->heap()->AllocateJSObjectFromMap(*map),

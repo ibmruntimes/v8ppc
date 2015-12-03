@@ -668,10 +668,8 @@ class MarkCompactCollector {
   void ProcessAndClearWeakCells();
   void AbortWeakCells();
 
-  // After all reachable objects have been marked, those entries within
-  // optimized code maps that became unreachable are removed, potentially
-  // trimming or clearing out the entire optimized code map.
-  void ProcessAndClearOptimizedCodeMaps();
+  void ProcessAndClearTransitionArrays();
+  void AbortTransitionArrays();
 
   // Process non-live references in maps and optimized code.
   void ProcessWeakReferences();

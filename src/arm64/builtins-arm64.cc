@@ -389,31 +389,6 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         __ CompareInstanceType(init_map, x10, JS_FUNCTION_TYPE);
         __ B(eq, &rt_call);
 
-        Register constructon_count = x14;
-        if (!is_api_function) {
-          Label allocate;
-          MemOperand bit_field3 =
-              FieldMemOperand(init_map, Map::kBitField3Offset);
-          // Check if slack tracking is enabled.
-          __ Ldr(x4, bit_field3);
-          __ DecodeField<Map::Counter>(constructon_count, x4);
-          __ Cmp(constructon_count, Operand(Map::kSlackTrackingCounterEnd));
-          __ B(lt, &allocate);
-          // Decrease generous allocation count.
-          __ Subs(x4, x4, Operand(1 << Map::Counter::kShift));
-          __ Str(x4, bit_field3);
-          __ Cmp(constructon_count, Operand(Map::kSlackTrackingCounterEnd));
-          __ B(ne, &allocate);
-
-          // Push the constructor, new_target and map to the stack, and
-          // the map again as an argument to the runtime call.
-          __ Push(constructor, new_target, init_map, init_map);
-          __ CallRuntime(Runtime::kFinalizeInstanceSize, 1);
-          __ Pop(init_map, new_target, constructor);
-          __ Mov(constructon_count, Operand(Map::kSlackTrackingCounterEnd - 1));
-          __ Bind(&allocate);
-        }
-
         // Now allocate the JSObject on the heap.
         Register obj_size = x10;
         Register new_obj = x4;
@@ -436,6 +411,10 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
                MemOperand(write_address, 2 * kPointerSize, PostIndex));
         STATIC_ASSERT(3 * kPointerSize == JSObject::kHeaderSize);
 
+        // Add the object tag to make the JSObject real, so that we can continue
+        // and jump into the continuation code at any time from now on.
+        __ Add(new_obj, new_obj, kHeapObjectTag);
+
         // Fill all of the in-object properties with the appropriate filler.
         Register filler = x7;
         __ LoadRoot(filler, Heap::kUndefinedValueRootIndex);
@@ -443,10 +422,17 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         if (!is_api_function) {
           Label no_inobject_slack_tracking;
 
+          Register constructon_count = x14;
+          MemOperand bit_field3 =
+              FieldMemOperand(init_map, Map::kBitField3Offset);
           // Check if slack tracking is enabled.
+          __ Ldr(x11, bit_field3);
+          __ DecodeField<Map::Counter>(constructon_count, x11);
           __ Cmp(constructon_count, Operand(Map::kSlackTrackingCounterEnd));
           __ B(lt, &no_inobject_slack_tracking);
-          constructon_count = NoReg;
+          // Decrease generous allocation count.
+          __ Subs(x11, x11, Operand(1 << Map::Counter::kShift));
+          __ Str(x11, bit_field3);
 
           // Allocate object with a slack.
           Register unused_props = x11;
@@ -471,16 +457,24 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 
           // Fill the remaining fields with one pointer filler map.
           __ LoadRoot(filler, Heap::kOnePointerFillerMapRootIndex);
+          __ InitializeFieldsWithFiller(write_address, next_obj, filler);
+
+          __ Cmp(constructon_count, Operand(Map::kSlackTrackingCounterEnd));
+          __ B(ne, &allocated);
+
+          // Push the constructor, new_target and the object to the stack,
+          // and then the initial map as an argument to the runtime call.
+          __ Push(constructor, new_target, new_obj, init_map);
+          __ CallRuntime(Runtime::kFinalizeInstanceSize, 1);
+          __ Pop(new_obj, new_target, constructor);
+
+          // Continue with JSObject being successfully allocated.
+          __ B(&allocated);
 
           __ bind(&no_inobject_slack_tracking);
         }
 
-        // Fill all of the property fields with undef.
         __ InitializeFieldsWithFiller(write_address, next_obj, filler);
-
-        // Add the object tag to make the JSObject real, so that we can continue
-        // and jump into the continuation code at any time from now on.
-        __ Add(new_obj, new_obj, kHeapObjectTag);
 
         // Continue with JSObject being successfully allocated.
         __ B(&allocated);
@@ -512,15 +506,12 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 
     __ SmiUntag(argc);
 
-    // Push new.target onto the construct frame. This is stored just below the
-    // receiver on the stack.
     if (create_implicit_receiver) {
       // Push the allocated receiver to the stack. We need two copies
       // because we may have to return the original one and the calling
       // conventions dictate that the called function pops the receiver.
-      __ Push(new_target, x4, x4);
+      __ Push(x4, x4);
     } else {
-      __ push(new_target);
       __ PushRoot(Heap::kTheHoleValueRootIndex);
     }
 
@@ -535,8 +526,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // x3: new target
     // jssp[0]: receiver
     // jssp[1]: receiver
-    // jssp[2]: new.target
-    // jssp[3]: number of arguments (smi-tagged)
+    // jssp[2]: number of arguments (smi-tagged)
     // Compute the start address of the copy in x3.
     __ Add(x4, x2, Operand(argc, LSL, kPointerSizeLog2));
     Label loop, entry, done_copying_arguments;
@@ -576,8 +566,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // Restore the context from the frame.
     // x0: result
     // jssp[0]: receiver
-    // jssp[1]: new.target
-    // jssp[2]: number of arguments (smi-tagged)
+    // jssp[1]: number of arguments (smi-tagged)
     __ Ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
 
     if (create_implicit_receiver) {
@@ -606,11 +595,10 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ Bind(&exit);
       // x0: result
       // jssp[0]: receiver (newly allocated object)
-      // jssp[1]: new target
-      // jssp[2]: number of arguments (smi-tagged)
-      __ Peek(x1, 2 * kXRegSize);
+      // jssp[1]: number of arguments (smi-tagged)
+      __ Peek(x1, 1 * kXRegSize);
     } else {
-      __ Peek(x1, kXRegSize);
+      __ Peek(x1, 0);
     }
 
     // Leave construct frame.
