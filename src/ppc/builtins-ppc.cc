@@ -416,15 +416,13 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         if (!is_api_function) {
           Label no_inobject_slack_tracking;
 
-          // Check if slack tracking is enabled.
           MemOperand bit_field3 = FieldMemOperand(r5, Map::kBitField3Offset);
           // Check if slack tracking is enabled.
           __ lwz(r3, bit_field3);
-          __ DecodeField<Map::Counter>(r0, r3);
-          // r0: slack tracking counter
-          __ cmpi(r0, Operand(Map::kSlackTrackingCounterEnd));
+          __ DecodeField<Map::Counter>(r11, r3);
+          // r11: slack tracking counter
+          __ cmpi(r11, Operand(Map::kSlackTrackingCounterEnd));
           __ blt(&no_inobject_slack_tracking);
-          __ push(r0);  // Save allocation count value.
           // Decrease generous allocation count.
           __ Add(r3, r3, -(1 << Map::Counter::kShift), r0);
           __ stw(r3, bit_field3);
@@ -445,12 +443,12 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
           __ LoadRoot(r9, Heap::kOnePointerFillerMapRootIndex);
           __ InitializeFieldsWithFiller(r8, r10, r9);
 
-          __ pop(r3);  // Restore allocation count value before decreasing.
-          __ cmpi(r3, Operand(Map::kSlackTrackingCounterEnd));
+          // r11: slack tracking counter value before decreasing.
+          __ cmpi(r11, Operand(Map::kSlackTrackingCounterEnd));
           __ bne(&allocated);
 
-          // Push the constructor, new target and map to the stack, and
-          // the map again as an argument to the runtime call.
+          // Push the constructor, new_target and the object to the stack,
+          // and then the initial map as an argument to the runtime call.
           __ Push(r4, r6, r7, r5);
           __ CallRuntime(Runtime::kFinalizeInstanceSize, 1);
           __ Pop(r4, r6, r7);
