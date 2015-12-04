@@ -131,9 +131,6 @@ void HeapObject::HeapObjectPrint(std::ostream& os) {  // NOLINT
     case JS_PROXY_TYPE:
       JSProxy::cast(this)->JSProxyPrint(os);
       break;
-    case JS_FUNCTION_PROXY_TYPE:
-      JSFunctionProxy::cast(this)->JSFunctionProxyPrint(os);
-      break;
     case JS_SET_TYPE:
       JSSet::cast(this)->JSSetPrint(os);
       break;
@@ -625,11 +622,6 @@ void TypeFeedbackVector::TypeFeedbackVectorPrint(std::ostream& os) {  // NOLINT
         os << Code::ICState2String(nexus.StateFromFeedback());
         break;
       }
-      case FeedbackVectorSlotKind::CONSTRUCT_IC: {
-        ConstructICNexus nexus(this, slot);
-        os << Code::ICState2String(nexus.StateFromFeedback());
-        break;
-      }
       case FeedbackVectorSlotKind::STORE_IC: {
         StoreICNexus nexus(this, slot);
         os << Code::ICState2String(nexus.StateFromFeedback());
@@ -752,19 +744,6 @@ void JSProxy::JSProxyPrint(std::ostream& os) {  // NOLINT
   handler()->ShortPrint(os);
   os << "\n - hash = ";
   hash()->ShortPrint(os);
-  os << "\n";
-}
-
-
-void JSFunctionProxy::JSFunctionProxyPrint(std::ostream& os) {  // NOLINT
-  HeapObject::PrintHeader(os, "JSFunctionProxy");
-  os << " - map = " << reinterpret_cast<void*>(map()) << "\n";
-  os << " - handler = ";
-  handler()->Print(os);
-  os << "\n - call_trap = ";
-  call_trap()->Print(os);
-  os << "\n - construct_trap = ";
-  construct_trap()->Print(os);
   os << "\n";
 }
 

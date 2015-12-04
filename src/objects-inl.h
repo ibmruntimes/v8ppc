@@ -702,7 +702,6 @@ bool Object::IsJSProxy() const {
 }
 
 
-TYPE_CHECKER(JSFunctionProxy, JS_FUNCTION_PROXY_TYPE)
 TYPE_CHECKER(JSSet, JS_SET_TYPE)
 TYPE_CHECKER(JSMap, JS_MAP_TYPE)
 TYPE_CHECKER(JSSetIterator, JS_SET_ITERATOR_TYPE)
@@ -2030,10 +2029,7 @@ Object* WeakCell::value() const { return READ_FIELD(this, kValueOffset); }
 
 
 void WeakCell::clear() {
-  // Either the garbage collector is clearing the cell or we are simply
-  // initializing the root empty weak cell.
-  DCHECK(GetHeap()->gc_state() == Heap::MARK_COMPACT ||
-         this == GetHeap()->empty_weak_cell());
+  DCHECK(GetHeap()->gc_state() == Heap::MARK_COMPACT);
   WRITE_FIELD(this, kValueOffset, Smi::FromInt(0));
 }
 
@@ -3225,7 +3221,6 @@ CAST_ACCESSOR(JSArrayBufferView)
 CAST_ACCESSOR(JSDataView)
 CAST_ACCESSOR(JSDate)
 CAST_ACCESSOR(JSFunction)
-CAST_ACCESSOR(JSFunctionProxy)
 CAST_ACCESSOR(JSGeneratorObject)
 CAST_ACCESSOR(JSGlobalObject)
 CAST_ACCESSOR(JSGlobalProxy)
@@ -4825,10 +4820,7 @@ bool Map::IsJSObjectMap() {
 bool Map::IsJSArrayMap() { return instance_type() == JS_ARRAY_TYPE; }
 bool Map::IsJSFunctionMap() { return instance_type() == JS_FUNCTION_TYPE; }
 bool Map::IsStringMap() { return instance_type() < FIRST_NONSTRING_TYPE; }
-bool Map::IsJSProxyMap() {
-  InstanceType type = instance_type();
-  return FIRST_JS_PROXY_TYPE <= type && type <= LAST_JS_PROXY_TYPE;
-}
+bool Map::IsJSProxyMap() { return instance_type() == JS_PROXY_TYPE; }
 bool Map::IsJSGlobalProxyMap() {
   return instance_type() == JS_GLOBAL_PROXY_TYPE;
 }
@@ -4915,7 +4907,7 @@ bool Code::IsCodeStubOrIC() {
          kind() == KEYED_LOAD_IC || kind() == CALL_IC || kind() == STORE_IC ||
          kind() == KEYED_STORE_IC || kind() == BINARY_OP_IC ||
          kind() == COMPARE_IC || kind() == COMPARE_NIL_IC ||
-         kind() == CONSTRUCT_IC || kind() == TO_BOOLEAN_IC;
+         kind() == TO_BOOLEAN_IC;
 }
 
 
@@ -5326,8 +5318,7 @@ bool Code::IsWeakObjectInOptimizedCode(Object* object) {
   } else if (object->IsPropertyCell()) {
     object = PropertyCell::cast(object)->value();
   }
-  if (object->IsJSObject() || object->IsJSProxy()) {
-    // JSProxy is handled like JSObject because it can morph into one.
+  if (object->IsJSReceiver()) {
     return FLAG_weak_embedded_objects_in_optimized_code;
   }
   if (object->IsFixedArray()) {
@@ -6372,13 +6363,11 @@ int JSFunction::NumberOfLiterals() {
 }
 
 
-ACCESSORS(JSProxy, target, Object, kTargetOffset)
 ACCESSORS(JSProxy, handler, Object, kHandlerOffset)
+ACCESSORS(JSProxy, target, JSReceiver, kTargetOffset)
 ACCESSORS(JSProxy, hash, Object, kHashOffset)
 
-ACCESSORS(JSFunctionProxy, call_trap, JSReceiver, kCallTrapOffset)
-ACCESSORS(JSFunctionProxy, construct_trap, Object, kConstructTrapOffset)
-
+bool JSProxy::IsRevoked() const { return !handler()->IsJSReceiver(); }
 
 ACCESSORS(JSCollection, table, Object, kTableOffset)
 

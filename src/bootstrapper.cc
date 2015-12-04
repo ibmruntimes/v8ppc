@@ -1978,6 +1978,7 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy_let)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_rest_parameters)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_default_parameters)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_destructuring_bind)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_destructuring_assignment)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_object_observe)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexps)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_unicode_regexps)
@@ -2044,7 +2045,7 @@ void Genesis::InitializeGlobal_harmony_reflect() {
   SimpleInstallFunction(reflect, factory->deleteProperty_string(),
                         Builtins::kReflectDeleteProperty, 2, true);
   SimpleInstallFunction(reflect, factory->get_string(),
-                        Builtins::kReflectGet, 3, false);
+                        Builtins::kReflectGet, 2, false);
   SimpleInstallFunction(reflect, factory->getOwnPropertyDescriptor_string(),
                         Builtins::kReflectGetOwnPropertyDescriptor, 2, true);
   SimpleInstallFunction(reflect, factory->getPrototypeOf_string(),
@@ -2469,6 +2470,7 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_reflect_natives[] = {"native harmony-reflect.js",
                                                   nullptr};
   static const char* harmony_destructuring_bind_natives[] = {nullptr};
+  static const char* harmony_destructuring_assignment_natives[] = {nullptr};
   static const char* harmony_object_observe_natives[] = {
       "native harmony-object-observe.js", nullptr};
   static const char* harmony_sharedarraybuffer_natives[] = {

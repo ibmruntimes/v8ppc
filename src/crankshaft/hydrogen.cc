@@ -7039,6 +7039,7 @@ void HOptimizedGraphBuilder::VisitAssignment(Assignment* expr) {
   DCHECK(!HasStackOverflow());
   DCHECK(current_block() != NULL);
   DCHECK(current_block()->HasPredecessor());
+
   VariableProxy* proxy = expr->target()->AsVariableProxy();
   Property* prop = expr->target()->AsProperty();
   DCHECK(proxy == NULL || prop == NULL);
@@ -12133,6 +12134,12 @@ void HOptimizedGraphBuilder::VisitExportDeclaration(
 }
 
 
+void HOptimizedGraphBuilder::VisitRewritableAssignmentExpression(
+    RewritableAssignmentExpression* node) {
+  CHECK_ALIVE(Visit(node->expression()));
+}
+
+
 // Generators for inline runtime functions.
 // Support for types.
 void HOptimizedGraphBuilder::GenerateIsSmi(CallRuntime* call) {
@@ -12314,10 +12321,7 @@ void HOptimizedGraphBuilder::GenerateIsJSProxy(CallRuntime* call) {
   HValue* instance_type =
       Add<HLoadNamedField>(map, nullptr, HObjectAccess::ForMapInstanceType());
   if_proxy.If<HCompareNumericAndBranch>(
-      instance_type, Add<HConstant>(FIRST_JS_PROXY_TYPE), Token::GTE);
-  if_proxy.And();
-  if_proxy.If<HCompareNumericAndBranch>(
-      instance_type, Add<HConstant>(LAST_JS_PROXY_TYPE), Token::LTE);
+      instance_type, Add<HConstant>(JS_PROXY_TYPE), Token::EQ);
 
   if_proxy.CaptureContinuation(&continuation);
   return ast_context()->ReturnContinuation(&continuation, call->id());

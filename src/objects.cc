@@ -758,16 +758,14 @@ MaybeHandle<Object> JSProxy::GetProperty(Isolate* isolate,
   // 2. Let handler be the value of the [[ProxyHandler]] internal slot of O.
   Handle<Object> handler(proxy->handler(), isolate);
   // 3. If handler is null, throw a TypeError exception.
+  // 4. Assert: Type(handler) is Object.
   if (proxy->IsRevoked()) {
     THROW_NEW_ERROR(isolate,
                     NewTypeError(MessageTemplate::kProxyRevoked, trap_name),
                     Object);
   }
-  // 4. Assert: Type(handler) is Object.
-  DCHECK(handler->IsJSReceiver());
-  DCHECK(proxy->target()->IsJSReceiver());
   // 5. Let target be the value of the [[ProxyTarget]] internal slot of O.
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()), isolate);
+  Handle<JSReceiver> target(proxy->target(), isolate);
   // 6. Let trap be ? GetMethod(handler, "get").
   Handle<Object> trap;
   ASSIGN_RETURN_ON_EXCEPTION(
@@ -957,22 +955,22 @@ Handle<FixedArray> JSObject::EnsureWritableFastElements(
 // static
 MaybeHandle<Object> JSProxy::GetPrototype(Handle<JSProxy> proxy) {
   Isolate* isolate = proxy->GetIsolate();
+  Handle<String> trap_name = isolate->factory()->getPrototypeOf_string();
+
   // 1. Let handler be the value of the [[ProxyHandler]] internal slot.
-  Handle<Object> raw_handler(proxy->handler(), isolate);
   // 2. If handler is null, throw a TypeError exception.
   // 3. Assert: Type(handler) is Object.
-  if (!raw_handler->IsJSReceiver()) {
-    // TODO(cbruni): Throw correct error message.
-    THROW_NEW_ERROR(
-        isolate, NewTypeError(MessageTemplate::kProxyHandlerNonObject), Object);
-  }
-  Handle<JSReceiver> handler = Handle<JSReceiver>::cast(raw_handler);
   // 4. Let target be the value of the [[ProxyTarget]] internal slot.
-  // TODO(cbruni): Change target type to JSReceiver by default.
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()), isolate);
+  if (proxy->IsRevoked()) {
+    THROW_NEW_ERROR(isolate,
+                    NewTypeError(MessageTemplate::kProxyRevoked, trap_name),
+                    Object);
+  }
+  Handle<JSReceiver> target(proxy->target(), isolate);
+  Handle<JSReceiver> handler(JSReceiver::cast(proxy->handler()), isolate);
+
   // 5. Let trap be ? GetMethod(handler, "getPrototypeOf").
   Handle<Object> trap;
-  Handle<String> trap_name = isolate->factory()->getPrototypeOf_string();
   ASSIGN_RETURN_ON_EXCEPTION(isolate, trap, GetMethod(handler, trap_name),
                              Object);
   // 6. If trap is undefined, then return target.[[GetPrototypeOf]]().
@@ -1010,15 +1008,6 @@ MaybeHandle<Object> JSProxy::GetPrototype(Handle<JSProxy> proxy) {
   }
   // 13. Return handlerProto.
   return handler_proto;
-}
-
-
-bool JSProxy::IsRevoked() const {
-  // TODO(neis): Decide on how to represent revocation.  For now, revocation is
-  // unsupported.
-  DCHECK(target()->IsJSReceiver());
-  DCHECK(handler()->IsJSReceiver());
-  return false;
 }
 
 
@@ -2113,9 +2102,6 @@ void HeapObject::HeapObjectShortPrint(std::ostream& os) {  // NOLINT
     case JS_PROXY_TYPE:
       os << "<JSProxy>";
       break;
-    case JS_FUNCTION_PROXY_TYPE:
-      os << "<JSFunctionProxy>";
-      break;
     case FOREIGN_TYPE:
       os << "<Foreign>";
       break;
@@ -2299,7 +2285,7 @@ void Simd128Value::CopyBits(void* destination) const {
 
 
 String* JSReceiver::class_name() {
-  if (IsJSFunction() || IsJSFunctionProxy()) {
+  if (IsJSFunction()) {
     return GetHeap()->Function_string();
   }
   Object* maybe_constructor = map()->GetConstructor();
@@ -4100,8 +4086,8 @@ Maybe<bool> Object::RedefineIncompatibleProperty(Isolate* isolate,
 
 
 Maybe<bool> Object::SetDataProperty(LookupIterator* it, Handle<Object> value) {
-  // Proxies are handled on the WithHandler path. Other non-JSObjects cannot
-  // have own properties.
+  // Proxies are handled elsewhere. Other non-JSObjects cannot have own
+  // properties.
   Handle<JSObject> receiver = Handle<JSObject>::cast(it->GetReceiver());
 
   // Store on the holder which may be hidden behind the receiver.
@@ -4620,22 +4606,27 @@ Handle<Map> JSObject::GetElementsTransitionMap(Handle<JSObject> object,
 }
 
 
+void JSProxy::Revoke(Handle<JSProxy> proxy) {
+  Isolate* isolate = proxy->GetIsolate();
+  if (!proxy->IsRevoked()) proxy->set_handler(isolate->heap()->null_value());
+  DCHECK(proxy->IsRevoked());
+}
+
+
 Maybe<bool> JSProxy::HasProperty(Isolate* isolate, Handle<JSProxy> proxy,
                                  Handle<Name> name) {
   // 1. (Assert)
   // 2. Let handler be the value of the [[ProxyHandler]] internal slot of O.
   Handle<Object> handler(proxy->handler(), isolate);
   // 3. If handler is null, throw a TypeError exception.
+  // 4. Assert: Type(handler) is Object.
   if (proxy->IsRevoked()) {
     isolate->Throw(*isolate->factory()->NewTypeError(
         MessageTemplate::kProxyRevoked, isolate->factory()->has_string()));
     return Nothing<bool>();
   }
-  // 4. Assert: Type(handler) is Object.
-  DCHECK(handler->IsJSReceiver());
-  DCHECK(proxy->target()->IsJSReceiver());
   // 5. Let target be the value of the [[ProxyTarget]] internal slot of O.
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()), isolate);
+  Handle<JSReceiver> target(proxy->target(), isolate);
   // 6. Let trap be ? GetMethod(handler, "has").
   Handle<Object> trap;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
@@ -4700,8 +4691,7 @@ Maybe<bool> JSProxy::SetProperty(Handle<JSProxy> proxy, Handle<Name> name,
         *factory->NewTypeError(MessageTemplate::kProxyRevoked, trap_name));
     return Nothing<bool>();
   }
-
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()), isolate);
+  Handle<JSReceiver> target(proxy->target(), isolate);
   Handle<JSReceiver> handler(JSReceiver::cast(proxy->handler()), isolate);
 
   Handle<Object> trap;
@@ -4762,8 +4752,7 @@ Maybe<bool> JSProxy::DeletePropertyOrElement(Handle<JSProxy> proxy,
         *factory->NewTypeError(MessageTemplate::kProxyRevoked, trap_name));
     return Nothing<bool>();
   }
-
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()), isolate);
+  Handle<JSReceiver> target(proxy->target(), isolate);
   Handle<JSReceiver> handler(JSReceiver::cast(proxy->handler()), isolate);
 
   Handle<Object> trap;
@@ -4806,12 +4795,8 @@ MaybeHandle<Context> JSProxy::GetFunctionRealm(Handle<JSProxy> proxy) {
     THROW_NEW_ERROR(proxy->GetIsolate(),
                     NewTypeError(MessageTemplate::kProxyRevoked), Context);
   }
-
-  // TODO(verwaest): Get rid of JSFunctionProxies.
-  Object* target = proxy->IsJSFunctionProxy()
-                       ? JSFunctionProxy::cast(*proxy)->construct_trap()
-                       : proxy->target();
-  return JSReceiver::GetFunctionRealm(handle(JSReceiver::cast(target)));
+  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()));
+  return JSReceiver::GetFunctionRealm(target);
 }
 
 
@@ -6835,17 +6820,14 @@ bool JSProxy::DefineOwnProperty(Isolate* isolate, Handle<JSProxy> proxy,
   // 2. Let handler be the value of the [[ProxyHandler]] internal slot of O.
   Handle<Object> handler(proxy->handler(), isolate);
   // 3. If handler is null, throw a TypeError exception.
+  // 4. Assert: Type(handler) is Object.
   if (proxy->IsRevoked()) {
     isolate->Throw(*isolate->factory()->NewTypeError(
         MessageTemplate::kProxyRevoked, trap_name));
     return false;
   }
-  // 4. Assert: Type(handler) is Object.
-  DCHECK(handler->IsJSReceiver());
-  // If the handler is not null, the target can't be null either.
-  DCHECK(proxy->target()->IsJSReceiver());
   // 5. Let target be the value of the [[ProxyTarget]] internal slot of O.
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()), isolate);
+  Handle<JSReceiver> target(proxy->target(), isolate);
   // 6. Let trap be ? GetMethod(handler, "defineProperty").
   Handle<Object> trap;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
@@ -7019,17 +7001,14 @@ bool JSProxy::GetOwnPropertyDescriptor(Isolate* isolate, Handle<JSProxy> proxy,
   // 2. Let handler be the value of the [[ProxyHandler]] internal slot of O.
   Handle<Object> handler(proxy->handler(), isolate);
   // 3. If handler is null, throw a TypeError exception.
+  // 4. Assert: Type(handler) is Object.
   if (proxy->IsRevoked()) {
     isolate->Throw(*isolate->factory()->NewTypeError(
         MessageTemplate::kProxyRevoked, trap_name));
     return false;
   }
-  // 4. Assert: Type(handler) is Object.
-  DCHECK(handler->IsJSReceiver());
-  // If the handler is not null, the target can't be null either.
-  DCHECK(proxy->target()->IsJSReceiver());
   // 5. Let target be the value of the [[ProxyTarget]] internal slot of O.
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()), isolate);
+  Handle<JSReceiver> target(proxy->target(), isolate);
   // 6. Let trap be ? GetMethod(handler, "getOwnPropertyDescriptor").
   Handle<Object> trap;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
@@ -7277,8 +7256,7 @@ Maybe<bool> JSProxy::PreventExtensions(Handle<JSProxy> proxy,
         *factory->NewTypeError(MessageTemplate::kProxyRevoked, trap_name));
     return Nothing<bool>();
   }
-
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()), isolate);
+  Handle<JSReceiver> target(proxy->target(), isolate);
   Handle<JSReceiver> handler(JSReceiver::cast(proxy->handler()), isolate);
 
   Handle<Object> trap;
@@ -7387,8 +7365,7 @@ Maybe<bool> JSProxy::IsExtensible(Handle<JSProxy> proxy) {
         *factory->NewTypeError(MessageTemplate::kProxyRevoked, trap_name));
     return Nothing<bool>();
   }
-
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()), isolate);
+  Handle<JSReceiver> target(proxy->target(), isolate);
   Handle<JSReceiver> handler(JSReceiver::cast(proxy->handler()), isolate);
 
   Handle<Object> trap;
@@ -8175,11 +8152,10 @@ static bool GetKeysFromInterceptor(Isolate* isolate,
 
 
 static bool GetKeysFromJSObject(Isolate* isolate, Handle<JSReceiver> receiver,
-                                Handle<JSObject> object, PropertyFilter filter,
+                                Handle<JSObject> object, PropertyFilter* filter,
                                 JSReceiver::KeyCollectionType type,
                                 KeyAccumulator* accumulator) {
   accumulator->NextPrototype();
-  bool keep_going = true;
   // Check access rights if required.
   if (object->IsAccessCheckNeeded() &&
       !isolate->MayAccess(handle(isolate->context()), object)) {
@@ -8190,20 +8166,19 @@ static bool GetKeysFromJSObject(Isolate* isolate, Handle<JSReceiver> receiver,
     }
     // ...whereas [[OwnPropertyKeys]] shall return whitelisted properties.
     DCHECK(type == JSReceiver::OWN_ONLY);
-    filter = static_cast<PropertyFilter>(filter | ONLY_ALL_CAN_READ);
-    keep_going = false;
+    *filter = static_cast<PropertyFilter>(*filter | ONLY_ALL_CAN_READ);
   }
 
-  JSObject::CollectOwnElementKeys(object, accumulator, filter);
+  JSObject::CollectOwnElementKeys(object, accumulator, *filter);
 
   // Add the element keys from the interceptor.
   if (!GetKeysFromInterceptor<v8::IndexedPropertyEnumeratorCallback, kIndexed>(
-          isolate, receiver, object, filter, accumulator)) {
+          isolate, receiver, object, *filter, accumulator)) {
     DCHECK(isolate->has_pending_exception());
     return false;
   }
 
-  if (filter == ENUMERABLE_STRINGS) {
+  if (*filter == ENUMERABLE_STRINGS) {
     // We can cache the computed property keys if access checks are
     // not needed and no interceptors are involved.
     //
@@ -8225,17 +8200,17 @@ static bool GetKeysFromJSObject(Isolate* isolate, Handle<JSReceiver> receiver,
         JSObject::GetEnumPropertyKeys(object, cache_enum_length);
     accumulator->AddKeys(enum_keys);
   } else {
-    object->CollectOwnPropertyNames(accumulator, filter);
+    object->CollectOwnPropertyNames(accumulator, *filter);
   }
 
   // Add the property keys from the interceptor.
   if (!GetKeysFromInterceptor<v8::GenericNamedPropertyEnumeratorCallback,
-                              kNamed>(isolate, receiver, object, filter,
+                              kNamed>(isolate, receiver, object, *filter,
                                       accumulator)) {
     DCHECK(isolate->has_pending_exception());
     return false;
   }
-  return keep_going;
+  return true;
 }
 
 
@@ -8268,7 +8243,7 @@ static bool GetKeys_Internal(Isolate* isolate, Handle<JSReceiver> receiver,
     } else {
       DCHECK(current->IsJSObject());
       result = GetKeysFromJSObject(isolate, receiver,
-                                   Handle<JSObject>::cast(current), filter,
+                                   Handle<JSObject>::cast(current), &filter,
                                    type, accumulator);
     }
     if (!result) {
@@ -8291,16 +8266,15 @@ bool JSProxy::Enumerate(Isolate* isolate, Handle<JSReceiver> receiver,
   // 1. Let handler be the value of the [[ProxyHandler]] internal slot of O.
   Handle<Object> handler(proxy->handler(), isolate);
   // 2. If handler is null, throw a TypeError exception.
+  // 3. Assert: Type(handler) is Object.
   if (proxy->IsRevoked()) {
     isolate->Throw(*isolate->factory()->NewTypeError(
         MessageTemplate::kProxyRevoked,
         isolate->factory()->enumerate_string()));
     return false;
   }
-  // 3. Assert: Type(handler) is Object.
-  DCHECK(handler->IsJSReceiver());
   // 4. Let target be the value of the [[ProxyTarget]] internal slot of O.
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()), isolate);
+  Handle<JSReceiver> target(proxy->target(), isolate);
   // 5. Let trap be ? GetMethod(handler, "enumerate").
   Handle<Object> trap;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
@@ -8397,15 +8371,14 @@ bool JSProxy::OwnPropertyKeys(Isolate* isolate, Handle<JSReceiver> receiver,
   // 1. Let handler be the value of the [[ProxyHandler]] internal slot of O.
   Handle<Object> handler(proxy->handler(), isolate);
   // 2. If handler is null, throw a TypeError exception.
+  // 3. Assert: Type(handler) is Object.
   if (proxy->IsRevoked()) {
     isolate->Throw(*isolate->factory()->NewTypeError(
         MessageTemplate::kProxyRevoked, isolate->factory()->ownKeys_string()));
     return false;
   }
-  // 3. Assert: Type(handler) is Object.
-  DCHECK(handler->IsJSReceiver());
   // 4. Let target be the value of the [[ProxyTarget]] internal slot of O.
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()), isolate);
+  Handle<JSReceiver> target(proxy->target(), isolate);
   // 5. Let trap be ? GetMethod(handler, "ownKeys").
   Handle<Object> trap;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
@@ -11889,8 +11862,7 @@ void SharedFunctionInfo::AddSharedCodeToOptimizedCodeMap(
   DCHECK(code->kind() == Code::OPTIMIZED_FUNCTION);
   // Empty code maps are unsupported.
   if (shared->OptimizedCodeMapIsCleared()) return;
-  Handle<WeakCell> cell = isolate->factory()->NewWeakCell(code);
-  shared->optimized_code_map()->set(kSharedCodeIndex, *cell);
+  shared->optimized_code_map()->set(kSharedCodeIndex, *code);
 }
 
 
@@ -11908,74 +11880,45 @@ void SharedFunctionInfo::AddToOptimizedCodeMap(
   STATIC_ASSERT(kEntryLength == 4);
   Handle<FixedArray> new_code_map;
   int entry;
-
   if (shared->OptimizedCodeMapIsCleared()) {
     new_code_map = isolate->factory()->NewFixedArray(kInitialLength, TENURED);
-    new_code_map->set(kSharedCodeIndex, *isolate->factory()->empty_weak_cell(),
-                      SKIP_WRITE_BARRIER);
     entry = kEntriesStart;
   } else {
     Handle<FixedArray> old_code_map(shared->optimized_code_map(), isolate);
     entry = shared->SearchOptimizedCodeMapEntry(*native_context, osr_ast_id);
     if (entry > kSharedCodeIndex) {
       // Found an existing context-specific entry, it must not contain any code.
-      DCHECK(WeakCell::cast(old_code_map->get(entry + kCachedCodeOffset))
-                 ->cleared());
+      DCHECK_EQ(isolate->heap()->undefined_value(),
+                old_code_map->get(entry + kCachedCodeOffset));
       // Just set the code and literals to the entry.
-      Handle<WeakCell> code_cell = code->IsUndefined()
-                                       ? isolate->factory()->empty_weak_cell()
-                                       : isolate->factory()->NewWeakCell(code);
-      Handle<WeakCell> literals_cell =
-          isolate->factory()->NewWeakCell(literals);
-      old_code_map->set(entry + kCachedCodeOffset, *code_cell);
-      old_code_map->set(entry + kLiteralsOffset, *literals_cell);
+      old_code_map->set(entry + kCachedCodeOffset, *code);
+      old_code_map->set(entry + kLiteralsOffset, *literals);
       return;
     }
 
-    // Can we reuse an entry?
-    DCHECK(entry < kEntriesStart);
-    int length = old_code_map->length();
-    for (int i = kEntriesStart; i < length; i += kEntryLength) {
-      if (WeakCell::cast(old_code_map->get(i + kContextOffset))->cleared()) {
-        entry = i;
-        break;
-      }
-    }
-
-    if (entry < kEntriesStart) {
-      // Copy old optimized code map and append one new entry.
-      new_code_map = isolate->factory()->CopyFixedArrayAndGrow(
-          old_code_map, kEntryLength, TENURED);
-      // TODO(mstarzinger): Temporary workaround. The allocation above might
-      // have flushed the optimized code map and the copy we created is full of
-      // holes. For now we just give up on adding the entry and pretend it got
-      // flushed.
-      if (shared->OptimizedCodeMapIsCleared()) return;
-      entry = old_code_map->length();
-    }
+    // Copy old optimized code map and append one new entry.
+    new_code_map = isolate->factory()->CopyFixedArrayAndGrow(
+        old_code_map, kEntryLength, TENURED);
+    // TODO(mstarzinger): Temporary workaround. The allocation above might have
+    // flushed the optimized code map and the copy we created is full of holes.
+    // For now we just give up on adding the entry and pretend it got flushed.
+    if (shared->OptimizedCodeMapIsCleared()) return;
+    entry = old_code_map->length();
   }
-
-  Handle<WeakCell> code_cell = code->IsUndefined()
-                                   ? isolate->factory()->empty_weak_cell()
-                                   : isolate->factory()->NewWeakCell(code);
-  Handle<WeakCell> literals_cell = isolate->factory()->NewWeakCell(literals);
-  WeakCell* context_cell = native_context->self_weak_cell();
-
-  new_code_map->set(entry + kContextOffset, context_cell);
-  new_code_map->set(entry + kCachedCodeOffset, *code_cell);
-  new_code_map->set(entry + kLiteralsOffset, *literals_cell);
+  new_code_map->set(entry + kContextOffset, *native_context);
+  new_code_map->set(entry + kCachedCodeOffset, *code);
+  new_code_map->set(entry + kLiteralsOffset, *literals);
   new_code_map->set(entry + kOsrAstIdOffset, Smi::FromInt(osr_ast_id.ToInt()));
 
 #ifdef DEBUG
   for (int i = kEntriesStart; i < new_code_map->length(); i += kEntryLength) {
-    WeakCell* cell = WeakCell::cast(new_code_map->get(i + kContextOffset));
-    DCHECK(cell->cleared() || cell->value()->IsNativeContext());
-    cell = WeakCell::cast(new_code_map->get(i + kCachedCodeOffset));
-    DCHECK(cell->cleared() ||
-           (cell->value()->IsCode() &&
-            Code::cast(cell->value())->kind() == Code::OPTIMIZED_FUNCTION));
-    cell = WeakCell::cast(new_code_map->get(i + kLiteralsOffset));
-    DCHECK(cell->cleared() || cell->value()->IsFixedArray());
+    DCHECK(new_code_map->get(i + kContextOffset)->IsNativeContext());
+    Object* code = new_code_map->get(i + kCachedCodeOffset);
+    if (code != isolate->heap()->undefined_value()) {
+      DCHECK(code->IsCode());
+      DCHECK(Code::cast(code)->kind() == Code::OPTIMIZED_FUNCTION);
+    }
+    DCHECK(new_code_map->get(i + kLiteralsOffset)->IsFixedArray());
     DCHECK(new_code_map->get(i + kOsrAstIdOffset)->IsSmi());
   }
 #endif
@@ -12012,10 +11955,8 @@ void SharedFunctionInfo::EvictFromOptimizedCodeMap(Code* optimized_code,
   int dst = kEntriesStart;
   int length = code_map->length();
   for (int src = kEntriesStart; src < length; src += kEntryLength) {
-    DCHECK(WeakCell::cast(code_map->get(src))->cleared() ||
-           WeakCell::cast(code_map->get(src))->value()->IsNativeContext());
-    if (WeakCell::cast(code_map->get(src + kCachedCodeOffset))->value() ==
-        optimized_code) {
+    DCHECK(code_map->get(src)->IsNativeContext());
+    if (code_map->get(src + kCachedCodeOffset) == optimized_code) {
       BailoutId osr(Smi::cast(code_map->get(src + kOsrAstIdOffset))->value());
       if (FLAG_trace_opt) {
         PrintF("[evicting entry from optimizing code map (%s) for ", reason);
@@ -12032,8 +11973,7 @@ void SharedFunctionInfo::EvictFromOptimizedCodeMap(Code* optimized_code,
       }
       // In case of non-OSR entry just clear the code in order to proceed
       // sharing literals.
-      code_map->set(src + kCachedCodeOffset, heap->empty_weak_cell(),
-                    SKIP_WRITE_BARRIER);
+      code_map->set_undefined(src + kCachedCodeOffset);
     }
 
     // Keep the src entry by copying it to the dst entry.
@@ -12048,11 +11988,9 @@ void SharedFunctionInfo::EvictFromOptimizedCodeMap(Code* optimized_code,
     }
     dst += kEntryLength;
   }
-  if (WeakCell::cast(code_map->get(kSharedCodeIndex))->value() ==
-      optimized_code) {
+  if (code_map->get(kSharedCodeIndex) == optimized_code) {
     // Evict context-independent code as well.
-    code_map->set(kSharedCodeIndex, heap->empty_weak_cell(),
-                  SKIP_WRITE_BARRIER);
+    code_map->set_undefined(kSharedCodeIndex);
     if (FLAG_trace_opt) {
       PrintF("[evicting entry from optimizing code map (%s) for ", reason);
       ShortPrint();
@@ -12064,7 +12002,7 @@ void SharedFunctionInfo::EvictFromOptimizedCodeMap(Code* optimized_code,
     heap->RightTrimFixedArray<Heap::CONCURRENT_TO_SWEEPER>(code_map,
                                                            length - dst);
     if (code_map->length() == kEntriesStart &&
-        WeakCell::cast(code_map->get(kSharedCodeIndex))->cleared()) {
+        code_map->get(kSharedCodeIndex)->IsUndefined()) {
       ClearOptimizedCodeMap();
     }
   }
@@ -12079,7 +12017,7 @@ void SharedFunctionInfo::TrimOptimizedCodeMap(int shrink_by) {
   GetHeap()->RightTrimFixedArray<Heap::SEQUENTIAL_TO_SWEEPER>(code_map,
                                                               shrink_by);
   if (code_map->length() == kEntriesStart &&
-      WeakCell::cast(code_map->get(kSharedCodeIndex))->cleared()) {
+      code_map->get(kSharedCodeIndex)->IsUndefined()) {
     ClearOptimizedCodeMap();
   }
 }
@@ -12570,7 +12508,6 @@ bool CanSubclassHaveInobjectProperties(InstanceType instance_type) {
     case JS_FUNCTION_TYPE:
       return true;
 
-    case JS_FUNCTION_PROXY_TYPE:
     case JS_PROXY_TYPE:
     case JS_GLOBAL_PROXY_TYPE:
     case JS_GLOBAL_OBJECT_TYPE:
@@ -12666,86 +12603,75 @@ MaybeHandle<Map> JSFunction::GetDerivedMap(Isolate* isolate,
   Handle<Map> constructor_initial_map(constructor->initial_map(), isolate);
   if (*new_target == *constructor) return constructor_initial_map;
 
+  // Fast case, new.target is a subclass of constructor. The map is cacheable
+  // (and may already have been cached). new.target.prototype is guaranteed to
+  // be a JSReceiver.
+  if (new_target->IsJSFunction()) {
+    Handle<JSFunction> function = Handle<JSFunction>::cast(new_target);
+
+    // Check that |function|'s initial map still in sync with the |constructor|,
+    // otherwise we must create a new initial map for |function|.
+    if (function->has_initial_map() &&
+        function->initial_map()->GetConstructor() == *constructor) {
+      return handle(function->initial_map(), isolate);
+    }
+
+    // Create a new map with the size and number of in-object properties
+    // suggested by |function|.
+
+    // Link initial map and constructor function if the new.target is actually a
+    // subclass constructor.
+    if (IsSubclassConstructor(function->shared()->kind())) {
+      Handle<Object> prototype(function->instance_prototype(), isolate);
+      InstanceType instance_type = constructor_initial_map->instance_type();
+      DCHECK(CanSubclassHaveInobjectProperties(instance_type));
+      int internal_fields =
+          JSObject::GetInternalFieldCount(*constructor_initial_map);
+      int pre_allocated = constructor_initial_map->GetInObjectProperties() -
+                          constructor_initial_map->unused_property_fields();
+      int instance_size;
+      int in_object_properties;
+      function->CalculateInstanceSizeForDerivedClass(
+          instance_type, internal_fields, &instance_size,
+          &in_object_properties);
+
+      int unused_property_fields = in_object_properties - pre_allocated;
+      Handle<Map> map =
+          Map::CopyInitialMap(constructor_initial_map, instance_size,
+                              in_object_properties, unused_property_fields);
+      map->set_new_target_is_base(false);
+
+      JSFunction::SetInitialMap(function, map, prototype);
+      map->SetConstructor(*constructor);
+      map->StartInobjectSlackTracking();
+      return map;
+    }
+  }
+
+  // Slow path, new.target is either a proxy or can't cache the map.
+  // new.target.prototype is not guaranteed to be a JSReceiver, and may need to
+  // fall back to the intrinsicDefaultProto.
+  Handle<Object> prototype;
   if (new_target->IsJSProxy()) {
     Handle<JSProxy> new_target_proxy = Handle<JSProxy>::cast(new_target);
-    Handle<Object> prototype;
     Handle<String> prototype_string = isolate->factory()->prototype_string();
     ASSIGN_RETURN_ON_EXCEPTION(
         isolate, prototype,
         JSReceiver::GetProperty(new_target_proxy, prototype_string), Map);
-    Handle<Map> map = Map::CopyInitialMap(constructor_initial_map);
-    map->set_new_target_is_base(false);
-
-    if (!prototype->IsJSReceiver()) {
-      Handle<Context> context;
-      ASSIGN_RETURN_ON_EXCEPTION(
-          isolate, context, JSProxy::GetFunctionRealm(new_target_proxy), Map);
-      DCHECK(context->IsNativeContext());
-      // TODO(verwaest): Use the intrinsicDefaultProto instead.
-      prototype = handle(context->initial_object_prototype(), isolate);
-    }
-
-    if (map->prototype() != *prototype) {
-      Map::SetPrototype(map, prototype, FAST_PROTOTYPE);
-    }
-
-    map->SetConstructor(*constructor);
-    return map;
-  }
-
-  Handle<JSFunction> new_target_function = Handle<JSFunction>::cast(new_target);
-
-  // Check that |new_target_function|'s initial map still in sync with
-  // the |constructor|, otherwise we must create a new initial map for
-  // |new_target_function|.
-  if (new_target_function->has_initial_map() &&
-      new_target_function->initial_map()->GetConstructor() == *constructor) {
-    return handle(new_target_function->initial_map(), isolate);
-  }
-
-  // Create a new map with the size and number of in-object properties suggested
-  // by the function.
-
-  // Link initial map and constructor function if the original constructor is
-  // actually a subclass constructor.
-  if (IsSubclassConstructor(new_target_function->shared()->kind())) {
-    Handle<Object> prototype(new_target_function->instance_prototype(),
-                             isolate);
-    InstanceType instance_type = constructor_initial_map->instance_type();
-    DCHECK(CanSubclassHaveInobjectProperties(instance_type));
-    int internal_fields =
-        JSObject::GetInternalFieldCount(*constructor_initial_map);
-    int pre_allocated = constructor_initial_map->GetInObjectProperties() -
-                        constructor_initial_map->unused_property_fields();
-    int instance_size;
-    int in_object_properties;
-    new_target_function->CalculateInstanceSizeForDerivedClass(
-        instance_type, internal_fields, &instance_size, &in_object_properties);
-
-    int unused_property_fields = in_object_properties - pre_allocated;
-    Handle<Map> map =
-        Map::CopyInitialMap(constructor_initial_map, instance_size,
-                            in_object_properties, unused_property_fields);
-    map->set_new_target_is_base(false);
-
-    JSFunction::SetInitialMap(new_target_function, map, prototype);
-    map->SetConstructor(*constructor);
-    map->StartInobjectSlackTracking();
-    return map;
-  }
-
-  // Fetch the prototype.
-  Handle<Object> prototype;
-  if (new_target_function->map()->has_non_instance_prototype()) {
-    // TODO(verwaest): In case of non-instance prototype, use the
-    // intrinsicDefaultProto instead.
-    prototype = handle(new_target_function->context()
-                           ->native_context()
-                           ->initial_object_prototype());
   } else {
-    // Make sure the prototype is cached on new_target_function.
-    EnsureHasInitialMap(new_target_function);
-    prototype = handle(new_target_function->instance_prototype(), isolate);
+    Handle<JSFunction> function = Handle<JSFunction>::cast(new_target);
+    // Make sure the new.target.prototype is cached.
+    EnsureHasInitialMap(function);
+    prototype = handle(function->prototype(), isolate);
+  }
+
+  if (!prototype->IsJSReceiver()) {
+    Handle<Context> context;
+    ASSIGN_RETURN_ON_EXCEPTION(isolate, context,
+                               JSReceiver::GetFunctionRealm(new_target), Map);
+    DCHECK(context->IsNativeContext());
+    // TODO(verwaest): Use the intrinsicDefaultProto instead.
+    prototype = handle(context->initial_object_prototype(), isolate);
   }
 
   Handle<Map> map = Map::CopyInitialMap(constructor_initial_map);
@@ -13324,14 +13250,12 @@ int SharedFunctionInfo::SearchOptimizedCodeMapEntry(Context* native_context,
     int length = optimized_code_map->length();
     Smi* osr_ast_id_smi = Smi::FromInt(osr_ast_id.ToInt());
     for (int i = kEntriesStart; i < length; i += kEntryLength) {
-      if (WeakCell::cast(optimized_code_map->get(i + kContextOffset))
-                  ->value() == native_context &&
+      if (optimized_code_map->get(i + kContextOffset) == native_context &&
           optimized_code_map->get(i + kOsrAstIdOffset) == osr_ast_id_smi) {
         return i;
       }
     }
-    Object* shared_code =
-        WeakCell::cast(optimized_code_map->get(kSharedCodeIndex))->value();
+    Object* shared_code = optimized_code_map->get(kSharedCodeIndex);
     if (shared_code->IsCode() && osr_ast_id.IsNone()) {
       return kSharedCodeIndex;
     }
@@ -13347,22 +13271,13 @@ CodeAndLiterals SharedFunctionInfo::SearchOptimizedCodeMap(
   if (entry != kNotFound) {
     FixedArray* code_map = optimized_code_map();
     if (entry == kSharedCodeIndex) {
-      // We know the weak cell isn't cleared because we made sure of it in
-      // SearchOptimizedCodeMapEntry and performed no allocations since that
-      // call.
-      result = {
-          Code::cast(WeakCell::cast(code_map->get(kSharedCodeIndex))->value()),
-          nullptr};
+      result = {Code::cast(code_map->get(kSharedCodeIndex)), nullptr};
+
     } else {
       DCHECK_LE(entry + kEntryLength, code_map->length());
-      WeakCell* cell = WeakCell::cast(code_map->get(entry + kCachedCodeOffset));
-      WeakCell* literals_cell =
-          WeakCell::cast(code_map->get(entry + kLiteralsOffset));
-
-      result = {cell->cleared() ? nullptr : Code::cast(cell->value()),
-                literals_cell->cleared()
-                    ? nullptr
-                    : LiteralsArray::cast(literals_cell->value())};
+      Object* code = code_map->get(entry + kCachedCodeOffset);
+      result = {code->IsUndefined() ? nullptr : Code::cast(code),
+                LiteralsArray::cast(code_map->get(entry + kLiteralsOffset))};
     }
   }
   if (FLAG_trace_opt && !OptimizedCodeMapIsCleared() &&
@@ -14943,28 +14858,26 @@ Maybe<bool> JSProxy::SetPrototype(Handle<JSProxy> proxy, Handle<Object> value,
                                   bool from_javascript,
                                   ShouldThrow should_throw) {
   Isolate* isolate = proxy->GetIsolate();
-  Handle<JSReceiver> handle;
   Handle<Name> trap_name = isolate->factory()->setPrototypeOf_string();
   // 1. Assert: Either Type(V) is Object or Type(V) is Null.
   DCHECK(value->IsJSReceiver() || value->IsNull());
   // 2. Let handler be the value of the [[ProxyHandler]] internal slot of O.
-  Handle<Object> raw_handler(proxy->handler(), isolate);
+  Handle<Object> handler(proxy->handler(), isolate);
   // 3. If handler is null, throw a TypeError exception.
   // 4. Assert: Type(handler) is Object.
   if (proxy->IsRevoked()) {
-    DCHECK(raw_handler->IsNull());
-    DCHECK(proxy->target()->IsNull());
-    isolate->Throw(
-        *isolate->factory()->NewTypeError(MessageTemplate::kProxyRevoked));
+    isolate->Throw(*isolate->factory()->NewTypeError(
+        MessageTemplate::kProxyRevoked, trap_name));
     return Nothing<bool>();
   }
-  Handle<JSReceiver> handler = Handle<JSReceiver>::cast(raw_handler);
   // 5. Let target be the value of the [[ProxyTarget]] internal slot.
-  Handle<JSReceiver> target(JSReceiver::cast(proxy->target()), isolate);
+  Handle<JSReceiver> target(proxy->target(), isolate);
   // 6. Let trap be ? GetMethod(handler, "getPrototypeOf").
   Handle<Object> trap;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-      isolate, trap, Object::GetMethod(handler, trap_name), Nothing<bool>());
+      isolate, trap,
+      Object::GetMethod(Handle<JSReceiver>::cast(handler), trap_name),
+      Nothing<bool>());
   // 7. If trap is undefined, then return target.[[SetPrototypeOf]]().
   if (trap->IsUndefined()) {
     return JSReceiver::SetPrototype(target, value, from_javascript,
@@ -15703,58 +15616,6 @@ MaybeHandle<Object> JSObject::GetPropertyWithInterceptor(LookupIterator* it,
   *done = true;
   // Rebox handle before return
   return handle(*result_internal, isolate);
-}
-
-
-// Compute the property keys from the interceptor.
-// TODO(jkummerow): Deprecated.
-MaybeHandle<JSObject> JSObject::GetKeysForNamedInterceptor(
-    Handle<JSObject> object, Handle<JSReceiver> receiver) {
-  Isolate* isolate = receiver->GetIsolate();
-  Handle<InterceptorInfo> interceptor(object->GetNamedInterceptor());
-  PropertyCallbackArguments
-      args(isolate, interceptor->data(), *receiver, *object);
-  v8::Local<v8::Object> result;
-  if (!interceptor->enumerator()->IsUndefined()) {
-    v8::GenericNamedPropertyEnumeratorCallback enum_fun =
-        v8::ToCData<v8::GenericNamedPropertyEnumeratorCallback>(
-            interceptor->enumerator());
-    LOG(isolate, ApiObjectAccess("interceptor-named-enum", *object));
-    result = args.Call(enum_fun);
-  }
-  if (result.IsEmpty()) return MaybeHandle<JSObject>();
-  DCHECK(v8::Utils::OpenHandle(*result)->IsJSArray() ||
-         (v8::Utils::OpenHandle(*result)->IsJSObject() &&
-          Handle<JSObject>::cast(v8::Utils::OpenHandle(*result))
-              ->HasSloppyArgumentsElements()));
-  // Rebox before returning.
-  return handle(JSObject::cast(*v8::Utils::OpenHandle(*result)), isolate);
-}
-
-
-// Compute the element keys from the interceptor.
-// TODO(jkummerow): Deprecated.
-MaybeHandle<JSObject> JSObject::GetKeysForIndexedInterceptor(
-    Handle<JSObject> object, Handle<JSReceiver> receiver) {
-  Isolate* isolate = receiver->GetIsolate();
-  Handle<InterceptorInfo> interceptor(object->GetIndexedInterceptor());
-  PropertyCallbackArguments
-      args(isolate, interceptor->data(), *receiver, *object);
-  v8::Local<v8::Object> result;
-  if (!interceptor->enumerator()->IsUndefined()) {
-    v8::IndexedPropertyEnumeratorCallback enum_fun =
-        v8::ToCData<v8::IndexedPropertyEnumeratorCallback>(
-            interceptor->enumerator());
-    LOG(isolate, ApiObjectAccess("interceptor-indexed-enum", *object));
-    result = args.Call(enum_fun);
-  }
-  if (result.IsEmpty()) return MaybeHandle<JSObject>();
-  DCHECK(v8::Utils::OpenHandle(*result)->IsJSArray() ||
-         (v8::Utils::OpenHandle(*result)->IsJSObject() &&
-          Handle<JSObject>::cast(v8::Utils::OpenHandle(*result))
-              ->HasSloppyArgumentsElements()));
-  // Rebox before returning.
-  return handle(JSObject::cast(*v8::Utils::OpenHandle(*result)), isolate);
 }
 
 
@@ -17961,6 +17822,9 @@ void Dictionary<Derived, Shape, Key>::CollectKeysTo(
       if (filter & ONLY_ALL_CAN_READ) {
         if (details.kind() != kAccessor) continue;
         Object* accessors = raw_dict->ValueAt(i);
+        if (accessors->IsPropertyCell()) {
+          accessors = PropertyCell::cast(accessors)->value();
+        }
         if (!accessors->IsAccessorInfo()) continue;
         if (!AccessorInfo::cast(accessors)->all_can_read()) continue;
       }

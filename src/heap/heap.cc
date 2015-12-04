@@ -762,11 +762,8 @@ void Heap::HandleGCRequest() {
       IncrementalMarking::COMPLETE_MARKING) {
     CollectAllGarbage(current_gc_flags_, "GC interrupt",
                       current_gc_callback_flags_);
-    return;
-  }
-  DCHECK(FLAG_finalize_marking_incrementally);
-  if (incremental_marking()->IsMarking() &&
-      !incremental_marking()->finalize_marking_completed()) {
+  } else if (incremental_marking()->IsMarking() &&
+             !incremental_marking()->finalize_marking_completed()) {
     FinalizeIncrementalMarking("GC interrupt: finalize incremental marking");
   }
 }
@@ -2780,14 +2777,8 @@ void Heap::CreateInitialObjects() {
   }
 
   {
-    Handle<WeakCell> cell = factory->NewWeakCell(factory->undefined_value());
-    set_empty_weak_cell(*cell);
-    cell->clear();
-
     Handle<FixedArray> cleared_optimized_code_map =
         factory->NewFixedArray(SharedFunctionInfo::kEntriesStart, TENURED);
-    cleared_optimized_code_map->set(SharedFunctionInfo::kSharedCodeIndex,
-                                    *cell);
     STATIC_ASSERT(SharedFunctionInfo::kEntriesStart == 1 &&
                   SharedFunctionInfo::kSharedCodeIndex == 0);
     set_cleared_optimized_code_map(*cleared_optimized_code_map);
@@ -4038,8 +4029,7 @@ void Heap::ReduceNewSpaceSize() {
 
 
 void Heap::FinalizeIncrementalMarkingIfComplete(const char* comment) {
-  if (FLAG_finalize_marking_incrementally &&
-      incremental_marking()->IsMarking() &&
+  if (incremental_marking()->IsMarking() &&
       (incremental_marking()->IsReadyToOverApproximateWeakClosure() ||
        (!incremental_marking()->finalize_marking_completed() &&
         mark_compact_collector()->marking_deque()->IsEmpty()))) {
@@ -4056,12 +4046,11 @@ bool Heap::TryFinalizeIdleIncrementalMarking(double idle_time_in_ms) {
   size_t final_incremental_mark_compact_speed_in_bytes_per_ms =
       static_cast<size_t>(
           tracer()->FinalIncrementalMarkCompactSpeedInBytesPerMillisecond());
-  if (FLAG_finalize_marking_incrementally &&
-      (incremental_marking()->IsReadyToOverApproximateWeakClosure() ||
-       (!incremental_marking()->finalize_marking_completed() &&
-        mark_compact_collector()->marking_deque()->IsEmpty() &&
-        gc_idle_time_handler_->ShouldDoOverApproximateWeakClosure(
-            static_cast<size_t>(idle_time_in_ms))))) {
+  if (incremental_marking()->IsReadyToOverApproximateWeakClosure() ||
+      (!incremental_marking()->finalize_marking_completed() &&
+       mark_compact_collector()->marking_deque()->IsEmpty() &&
+       gc_idle_time_handler_->ShouldDoOverApproximateWeakClosure(
+           static_cast<size_t>(idle_time_in_ms)))) {
     FinalizeIncrementalMarking(
         "Idle notification: finalize incremental marking");
     return true;
@@ -4920,6 +4909,10 @@ void Heap::SetOldGenerationAllocationLimit(intptr_t old_gen_size,
 
   if (FLAG_stress_compaction || ShouldReduceMemory()) {
     factor = kMinHeapGrowingFactor;
+  }
+
+  if (FLAG_heap_growing_percent > 0) {
+    factor = 1.0 + FLAG_heap_growing_percent / 100.0;
   }
 
   old_generation_allocation_limit_ =

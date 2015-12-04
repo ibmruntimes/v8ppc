@@ -203,7 +203,8 @@ DEFINE_IMPLICATION(es_staging, harmony_destructuring_bind)
   V(harmony_simd, "harmony simd")                                     \
   V(harmony_do_expressions, "harmony do-expressions")                 \
   V(harmony_regexp_subclass, "harmony regexp subclassing")            \
-  V(harmony_regexp_lookbehind, "harmony regexp lookbehind")
+  V(harmony_regexp_lookbehind, "harmony regexp lookbehind")           \
+  V(harmony_destructuring_assignment, "harmony destructuring assignment")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                     \
@@ -670,8 +671,6 @@ DEFINE_BOOL(age_code, true,
             "track un-executed functions to age code and flush only "
             "old code (required for code flushing)")
 DEFINE_BOOL(incremental_marking, true, "use incremental marking")
-DEFINE_BOOL(finalize_marking_incrementally, true,
-            "finalize marking in incremental steps")
 DEFINE_INT(min_progress_during_incremental_marking_finalization, 32,
            "keep finalizing incremental marking as long as we discover at "
            "least this many unmarked objects")
@@ -697,6 +696,8 @@ DEFINE_BOOL(verify_heap, false, "verify heap pointers before and after GC")
 DEFINE_BOOL(memory_reducer, true, "use memory reducer")
 DEFINE_BOOL(scavenge_reclaim_unmodified_objects, false,
             "remove unmodified and unreferenced objects")
+DEFINE_INT(heap_growing_percent, 0,
+           "specifies heap growing factor as (1 + heap_growing_percent/100)")
 
 // counters.cc
 DEFINE_INT(histogram_interval, 600000,

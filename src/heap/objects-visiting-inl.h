@@ -44,8 +44,15 @@ void StaticNewSpaceVisitor<StaticVisitor>::Initialize() {
                                        FixedArray::BodyDescriptor, int>::Visit);
 
   table_.Register(kVisitFixedDoubleArray, &VisitFixedDoubleArray);
-  table_.Register(kVisitFixedTypedArray, &VisitFixedTypedArray);
-  table_.Register(kVisitFixedFloat64Array, &VisitFixedTypedArray);
+  table_.Register(
+      kVisitFixedTypedArray,
+      &FlexibleBodyVisitor<StaticVisitor, FixedTypedArrayBase::BodyDescriptor,
+                           int>::Visit);
+
+  table_.Register(
+      kVisitFixedFloat64Array,
+      &FlexibleBodyVisitor<StaticVisitor, FixedTypedArrayBase::BodyDescriptor,
+                           int>::Visit);
 
   table_.Register(
       kVisitNativeContext,
@@ -135,9 +142,15 @@ void StaticMarkingVisitor<StaticVisitor>::Initialize() {
 
   table_.Register(kVisitFixedDoubleArray, &DataObjectVisitor::Visit);
 
-  table_.Register(kVisitFixedTypedArray, &DataObjectVisitor::Visit);
+  table_.Register(
+      kVisitFixedTypedArray,
+      &FlexibleBodyVisitor<StaticVisitor, FixedTypedArrayBase::BodyDescriptor,
+                           void>::Visit);
 
-  table_.Register(kVisitFixedFloat64Array, &DataObjectVisitor::Visit);
+  table_.Register(
+      kVisitFixedFloat64Array,
+      &FlexibleBodyVisitor<StaticVisitor, FixedTypedArrayBase::BodyDescriptor,
+                           void>::Visit);
 
   table_.Register(kVisitNativeContext, &VisitNativeContext);
 
@@ -442,6 +455,14 @@ void StaticMarkingVisitor<StaticVisitor>::VisitSharedFunctionInfo(
       // Always flush the optimized code map if requested by flag.
       shared->ClearOptimizedCodeMap();
     }
+  } else {
+    if (!shared->OptimizedCodeMapIsCleared()) {
+      // Treat some references within the code map weakly by marking the
+      // code map itself but not pushing it onto the marking deque. The
+      // map will be processed after marking.
+      FixedArray* code_map = shared->optimized_code_map();
+      MarkOptimizedCodeMap(heap, code_map);
+    }
   }
   MarkCompactCollector* collector = heap->mark_compact_collector();
   if (collector->is_code_flushing_enabled()) {
@@ -576,6 +597,23 @@ void StaticMarkingVisitor<StaticVisitor>::MarkTransitionArray(
   int num_transitions = TransitionArray::NumberOfTransitions(transitions);
   for (int i = 0; i < num_transitions; ++i) {
     StaticVisitor::VisitPointer(heap, transitions, transitions->GetKeySlot(i));
+  }
+}
+
+
+template <typename StaticVisitor>
+void StaticMarkingVisitor<StaticVisitor>::MarkOptimizedCodeMap(
+    Heap* heap, FixedArray* code_map) {
+  if (!StaticVisitor::MarkObjectWithoutPush(heap, code_map)) return;
+
+  // Mark the context-independent entry in the optimized code map. Depending on
+  // the age of the code object, we treat it as a strong or a weak reference.
+  Object* shared_object = code_map->get(SharedFunctionInfo::kSharedCodeIndex);
+  if (FLAG_turbo_preserve_shared_code && shared_object->IsCode() &&
+      FLAG_age_code && !Code::cast(shared_object)->IsOld()) {
+    StaticVisitor::VisitPointer(
+        heap, code_map,
+        code_map->RawFieldOfElementAt(SharedFunctionInfo::kSharedCodeIndex));
   }
 }
 

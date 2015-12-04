@@ -624,7 +624,6 @@ void IncrementalMarking::StartMarking() {
 
 
 void IncrementalMarking::MarkRoots() {
-  DCHECK(FLAG_finalize_marking_incrementally);
   DCHECK(!finalize_marking_completed_);
   DCHECK(IsMarking());
 
@@ -634,7 +633,6 @@ void IncrementalMarking::MarkRoots() {
 
 
 void IncrementalMarking::MarkObjectGroups() {
-  DCHECK(FLAG_finalize_marking_incrementally);
   DCHECK(!finalize_marking_completed_);
   DCHECK(IsMarking());
 
@@ -648,7 +646,6 @@ void IncrementalMarking::MarkObjectGroups() {
 
 
 void IncrementalMarking::ProcessWeakCells() {
-  DCHECK(FLAG_finalize_marking_incrementally);
   DCHECK(!finalize_marking_completed_);
   DCHECK(IsMarking());
 
@@ -686,9 +683,10 @@ void IncrementalMarking::ProcessWeakCells() {
 
 
 void IncrementalMarking::FinalizeIncrementally() {
-  DCHECK(FLAG_finalize_marking_incrementally);
   DCHECK(!finalize_marking_completed_);
   DCHECK(IsMarking());
+
+  double start = heap_->MonotonicallyIncreasingTimeInMs();
 
   int old_marking_deque_top =
       heap_->mark_compact_collector()->marking_deque()->top();
@@ -706,6 +704,18 @@ void IncrementalMarking::FinalizeIncrementally() {
   int marking_progress =
       abs(old_marking_deque_top -
           heap_->mark_compact_collector()->marking_deque()->top());
+
+  double end = heap_->MonotonicallyIncreasingTimeInMs();
+  double delta = end - start;
+  heap_->tracer()->AddMarkingTime(delta);
+  heap_->tracer()->AddIncrementalMarkingFinalizationStep(delta);
+  if (FLAG_trace_incremental_marking) {
+    PrintF(
+        "[IncrementalMarking] Finalize incrementally round %d, "
+        "spent %d ms, marking progress %d.\n",
+        static_cast<int>(delta), incremental_marking_finalization_rounds_,
+        marking_progress);
+  }
 
   ++incremental_marking_finalization_rounds_;
   if ((incremental_marking_finalization_rounds_ >=
@@ -927,7 +937,6 @@ void IncrementalMarking::Finalize() {
 
 
 void IncrementalMarking::FinalizeMarking(CompletionAction action) {
-  DCHECK(FLAG_finalize_marking_incrementally);
   DCHECK(!finalize_marking_completed_);
   if (FLAG_trace_incremental_marking) {
     PrintF(
@@ -1140,8 +1149,7 @@ intptr_t IncrementalMarking::Step(intptr_t allocated_bytes,
       if (heap_->mark_compact_collector()->marking_deque()->IsEmpty()) {
         if (completion == FORCE_COMPLETION ||
             IsIdleMarkingDelayCounterLimitReached()) {
-          if (FLAG_finalize_marking_incrementally &&
-              !finalize_marking_completed_) {
+          if (!finalize_marking_completed_) {
             FinalizeMarking(action);
           } else {
             MarkingComplete(action);

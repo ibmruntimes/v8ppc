@@ -69,7 +69,6 @@
 //           - JSDate
 //         - JSMessageObject
 //       - JSProxy
-//         - JSFunctionProxy
 //     - FixedArrayBase
 //       - ByteArray
 //       - BytecodeArray
@@ -439,7 +438,6 @@ const int kStubMinorKeyBits = kSmiValueSize - kStubMajorKeyBits - 1;
   V(JS_REGEXP_TYPE)                                             \
                                                                 \
   V(JS_FUNCTION_TYPE)                                           \
-  V(JS_FUNCTION_PROXY_TYPE)                                     \
   V(DEBUG_INFO_TYPE)                                            \
   V(BREAK_POINT_INFO_TYPE)
 
@@ -711,9 +709,8 @@ enum InstanceType {
   // objects in the JS sense. The first and the last type in this range are
   // the two forms of function. This organization enables using the same
   // compares for checking the JS_RECEIVER and the NONCALLABLE_JS_OBJECT range.
-  JS_FUNCTION_PROXY_TYPE,  // FIRST_JS_RECEIVER_TYPE, FIRST_JS_PROXY_TYPE
-  JS_PROXY_TYPE,           // LAST_JS_PROXY_TYPE
-  JS_VALUE_TYPE,           // FIRST_JS_OBJECT_TYPE
+  JS_PROXY_TYPE,  // FIRST_JS_RECEIVER_TYPE
+  JS_VALUE_TYPE,  // FIRST_JS_OBJECT_TYPE
   JS_MESSAGE_OBJECT_TYPE,
   JS_DATE_TYPE,
   JS_OBJECT_TYPE,
@@ -757,16 +754,13 @@ enum InstanceType {
   // are not continuous in this enum! The enum ranges instead reflect the
   // external class names, where proxies are treated as either ordinary objects,
   // or functions.
-  FIRST_JS_RECEIVER_TYPE = JS_FUNCTION_PROXY_TYPE,
+  FIRST_JS_RECEIVER_TYPE = JS_PROXY_TYPE,
   LAST_JS_RECEIVER_TYPE = LAST_TYPE,
   // Boundaries for testing the types represented as JSObject
   FIRST_JS_OBJECT_TYPE = JS_VALUE_TYPE,
   LAST_JS_OBJECT_TYPE = LAST_TYPE,
-  // Boundaries for testing the types represented as JSProxy
-  FIRST_JS_PROXY_TYPE = JS_FUNCTION_PROXY_TYPE,
-  LAST_JS_PROXY_TYPE = JS_PROXY_TYPE,
   //
-  FIRST_NONCALLABLE_SPEC_OBJECT_TYPE = JS_PROXY_TYPE,
+  FIRST_NONCALLABLE_SPEC_OBJECT_TYPE = JS_VALUE_TYPE,
   LAST_NONCALLABLE_SPEC_OBJECT_TYPE = JS_REGEXP_TYPE,
   // Note that the types for which typeof is "function" are not continuous.
   // Define this so that we can put assertions on discrete checks.
@@ -975,7 +969,6 @@ template <class C> inline bool Is(Object* obj);
   V(JSTypedArray)                  \
   V(JSDataView)                    \
   V(JSProxy)                       \
-  V(JSFunctionProxy)               \
   V(JSSet)                         \
   V(JSMap)                         \
   V(JSSetIterator)                 \
@@ -2227,15 +2220,6 @@ class JSObject: public JSReceiver {
   inline bool HasNamedInterceptor();
   inline bool HasIndexedInterceptor();
 
-  // Computes the enumerable keys from interceptors. Used for debug mirrors and
-  // by JSReceiver::GetKeys.
-  MUST_USE_RESULT static MaybeHandle<JSObject> GetKeysForNamedInterceptor(
-      Handle<JSObject> object,
-      Handle<JSReceiver> receiver);
-  MUST_USE_RESULT static MaybeHandle<JSObject> GetKeysForIndexedInterceptor(
-      Handle<JSObject> object,
-      Handle<JSReceiver> receiver);
-
   // Support functions for v8 api (needed for correct interceptor behavior).
   MUST_USE_RESULT static Maybe<bool> HasRealNamedProperty(
       Handle<JSObject> object, Handle<Name> name);
@@ -2277,12 +2261,6 @@ class JSObject: public JSReceiver {
   static void CollectOwnElementKeys(Handle<JSObject> object,
                                     KeyAccumulator* keys,
                                     PropertyFilter filter);
-  // Count and fill in the enumerable elements into storage.
-  // (storage->length() == NumberOfEnumElements()).
-  // If storage is NULL, will count the elements without adding
-  // them to any storage.
-  // Returns the number of enumerable elements.
-  int GetEnumElementKeys(FixedArray* storage);
 
   static Handle<FixedArray> GetEnumPropertyKeys(Handle<JSObject> object,
                                                 bool cache_result);
@@ -4793,7 +4771,6 @@ class Code: public HeapObject {
   V(LOAD_IC)            \
   V(KEYED_LOAD_IC)      \
   V(CALL_IC)            \
-  V(CONSTRUCT_IC)       \
   V(STORE_IC)           \
   V(KEYED_STORE_IC)     \
   V(BINARY_OP_IC)       \
@@ -9532,7 +9509,7 @@ class JSProxy: public JSReceiver {
   // [handler]: The handler property.
   DECL_ACCESSORS(handler, Object)
   // [target]: The target property.
-  DECL_ACCESSORS(target, Object)
+  DECL_ACCESSORS(target, JSReceiver)
   // [hash]: The hash code property (undefined if not initialized yet).
   DECL_ACCESSORS(hash, Object)
 
@@ -9540,7 +9517,8 @@ class JSProxy: public JSReceiver {
 
   DECLARE_CAST(JSProxy)
 
-  bool IsRevoked() const;
+  INLINE(bool IsRevoked() const);
+  static void Revoke(Handle<JSProxy> proxy);
 
   // ES6 9.5.1
   static MaybeHandle<Object> GetPrototype(Handle<JSProxy> receiver);
@@ -9597,11 +9575,6 @@ class JSProxy: public JSReceiver {
                               Handle<JSProxy> proxy, PropertyFilter filter,
                               KeyAccumulator* accumulator);
 
-  MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithHandler(
-      Handle<JSProxy> proxy,
-      Handle<Object> receiver,
-      Handle<Name> name);
-
   MUST_USE_RESULT static Maybe<PropertyAttributes> GetPropertyAttributes(
       LookupIterator* it);
 
@@ -9630,32 +9603,6 @@ class JSProxy: public JSReceiver {
                                                      Handle<String> trap);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSProxy);
-};
-
-
-class JSFunctionProxy: public JSProxy {
- public:
-  // [call_trap]: The call trap.
-  DECL_ACCESSORS(call_trap, JSReceiver)
-
-  // [construct_trap]: The construct trap.
-  DECL_ACCESSORS(construct_trap, Object)
-
-  DECLARE_CAST(JSFunctionProxy)
-
-  // Dispatched behavior.
-  DECLARE_PRINTER(JSFunctionProxy)
-  DECLARE_VERIFIER(JSFunctionProxy)
-
-  // Layout description.
-  static const int kCallTrapOffset = JSProxy::kSize;
-  static const int kConstructTrapOffset = kCallTrapOffset + kPointerSize;
-  static const int kSize = kConstructTrapOffset + kPointerSize;
-
-  typedef FixedBodyDescriptor<kTargetOffset, kSize, kSize> BodyDescriptor;
-
- private:
-  DISALLOW_IMPLICIT_CONSTRUCTORS(JSFunctionProxy);
 };
 
 

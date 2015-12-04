@@ -6,6 +6,7 @@
 
 #include "src/api.h"
 #include "src/ast/ast.h"
+#include "src/ast/ast-expression-visitor.h"
 #include "src/ast/ast-literal-reindexer.h"
 #include "src/ast/scopeinfo.h"
 #include "src/bailout-reason.h"
@@ -551,49 +552,52 @@ bool ParserTraits::ShortcutNumericLiteralBinaryExpression(
       y->AsLiteral() && y->AsLiteral()->raw_value()->IsNumber()) {
     double x_val = (*x)->AsLiteral()->raw_value()->AsNumber();
     double y_val = y->AsLiteral()->raw_value()->AsNumber();
+    bool x_has_dot = (*x)->AsLiteral()->raw_value()->ContainsDot();
+    bool y_has_dot = y->AsLiteral()->raw_value()->ContainsDot();
+    bool has_dot = x_has_dot || y_has_dot;
     switch (op) {
       case Token::ADD:
-        *x = factory->NewNumberLiteral(x_val + y_val, pos);
+        *x = factory->NewNumberLiteral(x_val + y_val, pos, has_dot);
         return true;
       case Token::SUB:
-        *x = factory->NewNumberLiteral(x_val - y_val, pos);
+        *x = factory->NewNumberLiteral(x_val - y_val, pos, has_dot);
         return true;
       case Token::MUL:
-        *x = factory->NewNumberLiteral(x_val * y_val, pos);
+        *x = factory->NewNumberLiteral(x_val * y_val, pos, has_dot);
         return true;
       case Token::DIV:
-        *x = factory->NewNumberLiteral(x_val / y_val, pos);
+        *x = factory->NewNumberLiteral(x_val / y_val, pos, has_dot);
         return true;
       case Token::BIT_OR: {
         int value = DoubleToInt32(x_val) | DoubleToInt32(y_val);
-        *x = factory->NewNumberLiteral(value, pos);
+        *x = factory->NewNumberLiteral(value, pos, has_dot);
         return true;
       }
       case Token::BIT_AND: {
         int value = DoubleToInt32(x_val) & DoubleToInt32(y_val);
-        *x = factory->NewNumberLiteral(value, pos);
+        *x = factory->NewNumberLiteral(value, pos, has_dot);
         return true;
       }
       case Token::BIT_XOR: {
         int value = DoubleToInt32(x_val) ^ DoubleToInt32(y_val);
-        *x = factory->NewNumberLiteral(value, pos);
+        *x = factory->NewNumberLiteral(value, pos, has_dot);
         return true;
       }
       case Token::SHL: {
         int value = DoubleToInt32(x_val) << (DoubleToInt32(y_val) & 0x1f);
-        *x = factory->NewNumberLiteral(value, pos);
+        *x = factory->NewNumberLiteral(value, pos, has_dot);
         return true;
       }
       case Token::SHR: {
         uint32_t shift = DoubleToInt32(y_val) & 0x1f;
         uint32_t value = DoubleToUint32(x_val) >> shift;
-        *x = factory->NewNumberLiteral(value, pos);
+        *x = factory->NewNumberLiteral(value, pos, has_dot);
         return true;
       }
       case Token::SAR: {
         uint32_t shift = DoubleToInt32(y_val) & 0x1f;
         int value = ArithmeticShiftRight(DoubleToInt32(x_val), shift);
-        *x = factory->NewNumberLiteral(value, pos);
+        *x = factory->NewNumberLiteral(value, pos, has_dot);
         return true;
       }
       default:
@@ -617,13 +621,14 @@ Expression* ParserTraits::BuildUnaryExpression(Expression* expression,
     } else if (literal->IsNumber()) {
       // Compute some expressions involving only number literals.
       double value = literal->AsNumber();
+      bool has_dot = literal->ContainsDot();
       switch (op) {
         case Token::ADD:
           return expression;
         case Token::SUB:
-          return factory->NewNumberLiteral(-value, pos);
+          return factory->NewNumberLiteral(-value, pos, has_dot);
         case Token::BIT_NOT:
-          return factory->NewNumberLiteral(~DoubleToInt32(value), pos);
+          return factory->NewNumberLiteral(~DoubleToInt32(value), pos, has_dot);
         default:
           break;
       }
@@ -919,6 +924,8 @@ Parser::Parser(ParseInfo* info)
   set_allow_harmony_rest_parameters(FLAG_harmony_rest_parameters);
   set_allow_harmony_default_parameters(FLAG_harmony_default_parameters);
   set_allow_harmony_destructuring_bind(FLAG_harmony_destructuring_bind);
+  set_allow_harmony_destructuring_assignment(
+      FLAG_harmony_destructuring_assignment);
   set_allow_strong_mode(FLAG_strong_mode);
   set_allow_legacy_const(FLAG_legacy_const);
   set_allow_harmony_do_expressions(FLAG_harmony_do_expressions);
@@ -1089,6 +1096,7 @@ FunctionLiteral* Parser::DoParseProgram(ParseInfo* info) {
     }
 
     if (ok) {
+      ParserTraits::RewriteDestructuringAssignments();
       result = factory()->NewFunctionLiteral(
           ast_value_factory()->empty_string(), ast_value_factory(), scope_,
           body, function_state.materialized_literal_count(),
@@ -4400,6 +4408,11 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
         allow_harmony_destructuring_bind()) {
       CheckConflictingVarDeclarations(scope, CHECK_OK);
     }
+
+    if (body) {
+      // If body can be inspected, rewrite queued destructuring assignments
+      ParserTraits::RewriteDestructuringAssignments();
+    }
   }
 
   bool has_duplicate_parameters =
@@ -4528,6 +4541,38 @@ Statement* Parser::BuildAssertIsCoercible(Variable* var) {
 }
 
 
+class InitializerRewriter : public AstExpressionVisitor {
+ public:
+  InitializerRewriter(uintptr_t stack_limit, Expression* root, Parser* parser,
+                      Scope* scope)
+      : AstExpressionVisitor(stack_limit, root),
+        parser_(parser),
+        scope_(scope) {}
+
+ private:
+  void VisitExpression(Expression* expr) {
+    RewritableAssignmentExpression* to_rewrite =
+        expr->AsRewritableAssignmentExpression();
+    if (to_rewrite == nullptr || to_rewrite->is_rewritten()) return;
+
+    bool ok = true;
+    Parser::PatternRewriter::RewriteDestructuringAssignment(parser_, to_rewrite,
+                                                            scope_, &ok);
+    DCHECK(ok);
+  }
+
+ private:
+  Parser* parser_;
+  Scope* scope_;
+};
+
+
+void Parser::RewriteParameterInitializer(Expression* expr, Scope* scope) {
+  InitializerRewriter rewriter(stack_limit_, expr, this, scope);
+  rewriter.Run();
+}
+
+
 Block* Parser::BuildParameterInitializationBlock(
     const ParserFormalParameters& parameters, bool* ok) {
   DCHECK(!parameters.is_simple);
@@ -4558,6 +4603,10 @@ Block* Parser::BuildParameterInitializationBlock(
     if (parameter.initializer != nullptr) {
       // IS_UNDEFINED($param) ? initializer : $param
       DCHECK(!parameter.is_rest);
+
+      // Ensure initializer is rewritten
+      RewriteParameterInitializer(parameter.initializer, scope_);
+
       auto condition = factory()->NewCompareOperation(
           Token::EQ_STRICT,
           factory()->NewVariableProxy(parameters.scope->parameter(i)),
@@ -6460,6 +6509,42 @@ void Parser::RaiseLanguageMode(LanguageMode mode) {
   SetLanguageMode(scope_,
                   static_cast<LanguageMode>(scope_->language_mode() | mode));
 }
+
+
+void ParserTraits::RewriteDestructuringAssignments() {
+  parser_->RewriteDestructuringAssignments();
+}
+
+
+void Parser::RewriteDestructuringAssignments() {
+  FunctionState* func = function_state_;
+  if (!allow_harmony_destructuring_assignment()) return;
+  const List<DestructuringAssignment>& assignments =
+      func->destructuring_assignments_to_rewrite();
+  for (int i = assignments.length() - 1; i >= 0; --i) {
+    // Rewrite list in reverse, so that nested assignment patterns are rewritten
+    // correctly.
+    DestructuringAssignment pair = assignments.at(i);
+    RewritableAssignmentExpression* to_rewrite =
+        pair.assignment->AsRewritableAssignmentExpression();
+    Scope* scope = pair.scope;
+    DCHECK_NOT_NULL(to_rewrite);
+    if (!to_rewrite->is_rewritten()) {
+      bool ok = true;
+      PatternRewriter::RewriteDestructuringAssignment(this, to_rewrite, scope,
+                                                      &ok);
+      DCHECK(ok);
+    }
+  }
+}
+
+
+void ParserTraits::QueueDestructuringAssignmentForRewriting(Expression* expr) {
+  DCHECK(expr->IsRewritableAssignmentExpression());
+  parser_->function_state_->AddDestructuringAssignment(
+      Parser::DestructuringAssignment(expr, parser_->scope_));
+}
+
 
 }  // namespace internal
 }  // namespace v8

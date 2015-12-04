@@ -1171,60 +1171,6 @@ void LCodeGen::DeoptimizeIf(Condition cc, LInstruction* instr,
 }
 
 
-void LCodeGen::PopulateDeoptimizationData(Handle<Code> code) {
-  int length = deoptimizations_.length();
-  if (length == 0) return;
-  Handle<DeoptimizationInputData> data =
-      DeoptimizationInputData::New(isolate(), length, TENURED);
-
-  Handle<ByteArray> translations =
-      translations_.CreateByteArray(isolate()->factory());
-  data->SetTranslationByteArray(*translations);
-  data->SetInlinedFunctionCount(Smi::FromInt(inlined_function_count_));
-  data->SetOptimizationId(Smi::FromInt(info_->optimization_id()));
-  if (info_->IsOptimizing()) {
-    // Reference to shared function info does not change between phases.
-    AllowDeferredHandleDereference allow_handle_dereference;
-    data->SetSharedFunctionInfo(*info_->shared_info());
-  } else {
-    data->SetSharedFunctionInfo(Smi::FromInt(0));
-  }
-  data->SetWeakCellCache(Smi::FromInt(0));
-
-  Handle<FixedArray> literals =
-      factory()->NewFixedArray(deoptimization_literals_.length(), TENURED);
-  { AllowDeferredHandleDereference copy_handles;
-    for (int i = 0; i < deoptimization_literals_.length(); i++) {
-      literals->set(i, *deoptimization_literals_[i]);
-    }
-    data->SetLiteralArray(*literals);
-  }
-
-  data->SetOsrAstId(Smi::FromInt(info_->osr_ast_id().ToInt()));
-  data->SetOsrPcOffset(Smi::FromInt(osr_pc_offset_));
-
-  // Populate the deoptimization entries.
-  for (int i = 0; i < length; i++) {
-    LEnvironment* env = deoptimizations_[i];
-    data->SetAstId(i, env->ast_id());
-    data->SetTranslationIndex(i, Smi::FromInt(env->translation_index()));
-    data->SetArgumentsStackHeight(i,
-                                  Smi::FromInt(env->arguments_stack_height()));
-    data->SetPc(i, Smi::FromInt(env->pc_offset()));
-  }
-  code->set_deoptimization_data(*data);
-}
-
-
-void LCodeGen::PopulateDeoptimizationLiteralsWithInlinedFunctions() {
-  DCHECK_EQ(0, deoptimization_literals_.length());
-  for (auto function : chunk()->inlined_functions()) {
-    DefineDeoptimizationLiteral(function);
-  }
-  inlined_function_count_ = deoptimization_literals_.length();
-}
-
-
 void LCodeGen::RecordSafepointWithLazyDeopt(
     LInstruction* instr, SafepointMode safepoint_mode) {
   if (safepoint_mode == RECORD_SIMPLE_SAFEPOINT) {
@@ -2880,6 +2826,8 @@ void LCodeGen::DoHasInPrototypeChainAndBranch(
   __ mov(object_map, FieldOperand(object, HeapObject::kMapOffset));
   Label loop;
   __ bind(&loop);
+  __ CmpInstanceType(object_map, JS_PROXY_TYPE);
+  DeoptimizeIf(equal, instr, Deoptimizer::kProxy);
   __ mov(object_prototype, FieldOperand(object_map, Map::kPrototypeOffset));
   __ cmp(object_prototype, prototype);
   EmitTrueBranch(instr, equal);
@@ -5985,8 +5933,8 @@ void LCodeGen::DoForInPrepareMap(LForInPrepareMap* instr) {
   __ test(eax, Immediate(kSmiTagMask));
   DeoptimizeIf(zero, instr, Deoptimizer::kSmi);
 
-  STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
-  __ CmpObjectType(eax, LAST_JS_PROXY_TYPE, ecx);
+  STATIC_ASSERT(JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
+  __ CmpObjectType(eax, JS_PROXY_TYPE, ecx);
   DeoptimizeIf(below_equal, instr, Deoptimizer::kWrongInstanceType);
 
   Label use_cache, call_runtime;

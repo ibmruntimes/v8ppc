@@ -248,7 +248,9 @@ class StaticNewSpaceVisitor : public StaticVisitorBase {
 
   INLINE(static void VisitPointers(Heap* heap, HeapObject* object,
                                    Object** start, Object** end)) {
-    for (Object** p = start; p < end; p++) StaticVisitor::VisitPointer(heap, p);
+    for (Object** p = start; p < end; p++) {
+      StaticVisitor::VisitPointer(heap, object, p);
+    }
   }
 
   // Although we are using the JSFunction body descriptor which does not
@@ -267,10 +269,6 @@ class StaticNewSpaceVisitor : public StaticVisitorBase {
   INLINE(static int VisitFixedDoubleArray(Map* map, HeapObject* object)) {
     int length = reinterpret_cast<FixedDoubleArray*>(object)->length();
     return FixedDoubleArray::SizeFor(length);
-  }
-
-  INLINE(static int VisitFixedTypedArray(Map* map, HeapObject* object)) {
-    return reinterpret_cast<FixedTypedArrayBase*>(object)->size();
   }
 
   INLINE(static int VisitJSObject(Map* map, HeapObject* object)) {
@@ -378,6 +376,10 @@ class StaticMarkingVisitor : public StaticVisitorBase {
   // treating transitions or back pointers weak.
   static void MarkMapContents(Heap* heap, Map* map);
   static void MarkTransitionArray(Heap* heap, TransitionArray* transitions);
+
+  // Mark pointers in the optimized code map that should act as strong
+  // references, possibly treating some entries weak.
+  static void MarkOptimizedCodeMap(Heap* heap, FixedArray* code_map);
 
   // Mark non-optimized code for functions inlined into the given optimized
   // code. This will prevent it from being flushed.

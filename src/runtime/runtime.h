@@ -452,12 +452,8 @@ namespace internal {
   F(HasProperty, 2, 1)                               \
   F(PropertyIsEnumerable, 2, 1)                      \
   F(GetPropertyNamesFast, 1, 1)                      \
-  F(GetOwnPropertyNames, 2, 1)                       \
-  F(GetOwnElementNames, 1, 1)                        \
+  F(GetOwnPropertyKeys, 2, 1)                        \
   F(GetInterceptorInfo, 1, 1)                        \
-  F(GetNamedInterceptorPropertyNames, 1, 1)          \
-  F(GetIndexedInterceptorElementNames, 1, 1)         \
-  F(OwnKeys, 1, 1)                                   \
   F(ToFastProperties, 1, 1)                          \
   F(AllocateHeapNumber, 0, 1)                        \
   F(NewObject, 2, 1)                                 \
@@ -542,13 +538,9 @@ namespace internal {
   F(BitwiseXor_Strong, 2, 1)
 
 #define FOR_EACH_INTRINSIC_PROXY(F) \
-  F(CreateJSFunctionProxy, 5, 1)    \
   F(IsJSProxy, 1, 1)                \
-  F(IsJSFunctionProxy, 1, 1)        \
   F(GetHandler, 1, 1)               \
-  F(GetCallTrap, 1, 1)              \
-  F(GetConstructTrap, 1, 1)
-
+  F(RevokeProxy, 1, 1)
 
 #define FOR_EACH_INTRINSIC_REGEXP(F)           \
   F(StringReplaceGlobalRegExpWithString, 4, 1) \

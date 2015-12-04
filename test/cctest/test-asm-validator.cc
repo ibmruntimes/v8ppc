@@ -400,8 +400,8 @@ TEST(ValidateMinimum) {
 
 namespace {
 
-void CheckStdlibShortcuts(Zone* zone, ZoneVector<ExpressionTypeEntry>& types,
-                          size_t& index, int& depth, TypeCache& cache) {
+void CheckStdlibShortcuts1(Zone* zone, ZoneVector<ExpressionTypeEntry>& types,
+                           size_t& index, int& depth, TypeCache& cache) {
   // var exp = stdlib.*; (D * 12)
   CHECK_VAR_SHORTCUT(Infinity, Bounds(cache.kAsmDouble));
   CHECK_VAR_SHORTCUT(NaN, Bounds(cache.kAsmDouble));
@@ -426,6 +426,11 @@ void CheckStdlibShortcuts(Zone* zone, ZoneVector<ExpressionTypeEntry>& types,
   CHECK_VAR_MATH_SHORTCUT(abs, FUNC_N2N_TYPE);
   CHECK_VAR_MATH_SHORTCUT(imul, FUNC_II2I_TYPE);
   CHECK_VAR_MATH_SHORTCUT(fround, FUNC_N2F_TYPE);
+}
+
+
+void CheckStdlibShortcuts2(Zone* zone, ZoneVector<ExpressionTypeEntry>& types,
+                           size_t& index, int& depth, TypeCache& cache) {
   // var exp = stdlib.Math.*; (D * 12)
   CHECK_VAR_MATH_SHORTCUT(E, Bounds(cache.kAsmDouble));
   CHECK_VAR_MATH_SHORTCUT(LN10, Bounds(cache.kAsmDouble));
@@ -463,11 +468,12 @@ void CheckStdlibShortcuts(Zone* zone, ZoneVector<ExpressionTypeEntry>& types,
   CHECK_TYPES_BEGIN {                                  \
     /* Module. */                                      \
     CHECK_EXPR(FunctionLiteral, Bounds::Unbounded()) {
-#define CHECK_FUNC_TYPES_END_1()                   \
-  /* "use asm"; */                                 \
-  CHECK_EXPR(Literal, Bounds(Type::String(zone))); \
-  /* stdlib shortcuts. */                          \
-  CheckStdlibShortcuts(zone, types, index, depth, cache);
+#define CHECK_FUNC_TYPES_END_1()                           \
+  /* "use asm"; */                                         \
+  CHECK_EXPR(Literal, Bounds(Type::String(zone)));         \
+  /* stdlib shortcuts. */                                  \
+  CheckStdlibShortcuts1(zone, types, index, depth, cache); \
+  CheckStdlibShortcuts2(zone, types, index, depth, cache);
 
 
 #define CHECK_FUNC_TYPES_END_2()                   \
@@ -1771,6 +1777,38 @@ TEST(NestedAssignmentInHeap) {
           }
         }
         CHECK_EXPR(Literal, Bounds(cache.kAsmFixnum));
+      }
+    }
+    CHECK_SKIP();
+  }
+  CHECK_FUNC_TYPES_END
+}
+
+
+TEST(NegativeDouble) {
+  CHECK_FUNC_TYPES_BEGIN(
+      "function bar() { var x = -123.2; }\n"
+      "function foo() { bar(); }") {
+    CHECK_EXPR(FunctionLiteral, FUNC_V_TYPE) {
+      CHECK_EXPR(Assignment, Bounds(cache.kAsmDouble)) {
+        CHECK_VAR(x, Bounds(cache.kAsmDouble));
+        CHECK_EXPR(Literal, Bounds(cache.kAsmDouble));
+      }
+    }
+    CHECK_SKIP();
+  }
+  CHECK_FUNC_TYPES_END
+}
+
+
+TEST(NegativeInteger) {
+  CHECK_FUNC_TYPES_BEGIN(
+      "function bar() { var x = -123; }\n"
+      "function foo() { bar(); }") {
+    CHECK_EXPR(FunctionLiteral, FUNC_V_TYPE) {
+      CHECK_EXPR(Assignment, Bounds(cache.kAsmInt)) {
+        CHECK_VAR(x, Bounds(cache.kAsmInt));
+        CHECK_EXPR(Literal, Bounds(cache.kAsmSigned));
       }
     }
     CHECK_SKIP();
