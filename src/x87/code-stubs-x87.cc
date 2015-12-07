@@ -1644,7 +1644,6 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
   // edi : the function to call
   Isolate* isolate = masm->isolate();
   Label initialize, done, miss, megamorphic, not_array_function;
-  Label done_increment_count;
 
   // Load the cache state into ecx.
   __ mov(ecx, FieldOperand(ebx, edx, times_half_pointer_size,
@@ -1657,7 +1656,7 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
   // type-feedback-vector.h).
   Label check_allocation_site;
   __ cmp(edi, FieldOperand(ecx, WeakCell::kValueOffset));
-  __ j(equal, &done_increment_count, Label::kFar);
+  __ j(equal, &done, Label::kFar);
   __ CompareRoot(ecx, Heap::kmegamorphic_symbolRootIndex);
   __ j(equal, &done, Label::kFar);
   __ CompareRoot(FieldOperand(ecx, HeapObject::kMapOffset),
@@ -1680,7 +1679,7 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
   __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, ecx);
   __ cmp(edi, ecx);
   __ j(not_equal, &megamorphic);
-  __ jmp(&done_increment_count, Label::kFar);
+  __ jmp(&done, Label::kFar);
 
   __ bind(&miss);
 
@@ -1699,12 +1698,6 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
   // An uninitialized cache is patched with the function or sentinel to
   // indicate the ElementsKind if function is the Array constructor.
   __ bind(&initialize);
-
-  // Initialize the call counter.
-  __ mov(FieldOperand(ebx, edx, times_half_pointer_size,
-                      FixedArray::kHeaderSize + kPointerSize),
-         Immediate(Smi::FromInt(ConstructICNexus::kCallCountIncrement)));
-
   // Make sure the function is the Array() function
   __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, ecx);
   __ cmp(edi, ecx);
@@ -1720,18 +1713,11 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
   __ bind(&not_array_function);
   CreateWeakCellStub weak_cell_stub(isolate);
   CallStubInRecordCallTarget(masm, &weak_cell_stub);
-  __ jmp(&done);
-
-  __ bind(&done_increment_count);
-  __ add(FieldOperand(ebx, edx, times_half_pointer_size,
-                      FixedArray::kHeaderSize + kPointerSize),
-         Immediate(Smi::FromInt(ConstructICNexus::kCallCountIncrement)));
-
   __ bind(&done);
 }
 
 
-void ConstructICStub::Generate(MacroAssembler* masm) {
+void CallConstructStub::Generate(MacroAssembler* masm) {
   // eax : number of arguments
   // ebx : feedback vector
   // edx : slot in feedback vector (Smi, for RecordCallTarget)
@@ -2300,27 +2286,39 @@ void InstanceOfStub::Generate(MacroAssembler* masm) {
 
   // Loop through the prototype chain looking for the {function} prototype.
   // Assume true, and change to false if not found.
-  Register const object_prototype = object_map;
-  Label done, loop;
+  Label done, loop, proxy_case;
   __ mov(eax, isolate()->factory()->true_value());
   __ bind(&loop);
-  __ mov(object_prototype, FieldOperand(object_map, Map::kPrototypeOffset));
-  __ cmp(object_prototype, function_prototype);
+  __ CmpInstanceType(object_map, JS_PROXY_TYPE);
+  __ j(equal, &proxy_case, Label::kNear);
+  __ mov(object, FieldOperand(object_map, Map::kPrototypeOffset));
+  __ cmp(object, function_prototype);
   __ j(equal, &done, Label::kNear);
-  __ cmp(object_prototype, isolate()->factory()->null_value());
-  __ mov(object_map, FieldOperand(object_prototype, HeapObject::kMapOffset));
+  __ cmp(object, isolate()->factory()->null_value());
+  __ mov(object_map, FieldOperand(object, HeapObject::kMapOffset));
   __ j(not_equal, &loop);
   __ mov(eax, isolate()->factory()->false_value());
   __ bind(&done);
   __ StoreRoot(eax, scratch, Heap::kInstanceofCacheAnswerRootIndex);
   __ ret(0);
 
-  // Slow-case: Call the runtime function.
+  // Proxy-case: Call the %HasInPrototypeChain runtime function.
+  __ bind(&proxy_case);
+  __ PopReturnAddressTo(scratch);
+  __ Push(object);
+  __ Push(function_prototype);
+  __ PushReturnAddressFrom(scratch);
+  // Invalidate the instanceof cache.
+  __ Move(eax, Immediate(Smi::FromInt(0)));
+  __ StoreRoot(eax, scratch, Heap::kInstanceofCacheFunctionRootIndex);
+  __ TailCallRuntime(Runtime::kHasInPrototypeChain, 2, 1);
+
+  // Slow-case: Call the %InstanceOf runtime function.
   __ bind(&slow_case);
-  __ pop(scratch);    // Pop return address.
-  __ push(object);    // Push {object}.
-  __ push(function);  // Push {function}.
-  __ push(scratch);   // Push return address.
+  __ PopReturnAddressTo(scratch);
+  __ Push(object);
+  __ Push(function);
+  __ PushReturnAddressFrom(scratch);
   __ TailCallRuntime(Runtime::kInstanceOf, 2, 1);
 }
 
@@ -3308,19 +3306,20 @@ void CompareICStub::GenerateStrings(MacroAssembler* masm) {
 }
 
 
-void CompareICStub::GenerateObjects(MacroAssembler* masm) {
-  DCHECK(state() == CompareICState::OBJECT);
+void CompareICStub::GenerateReceivers(MacroAssembler* masm) {
+  DCHECK_EQ(CompareICState::RECEIVER, state());
   Label miss;
   __ mov(ecx, edx);
   __ and_(ecx, eax);
   __ JumpIfSmi(ecx, &miss, Label::kNear);
 
-  __ CmpObjectType(eax, JS_OBJECT_TYPE, ecx);
-  __ j(not_equal, &miss, Label::kNear);
-  __ CmpObjectType(edx, JS_OBJECT_TYPE, ecx);
-  __ j(not_equal, &miss, Label::kNear);
+  STATIC_ASSERT(LAST_TYPE == LAST_JS_RECEIVER_TYPE);
+  __ CmpObjectType(eax, FIRST_JS_RECEIVER_TYPE, ecx);
+  __ j(below, &miss, Label::kNear);
+  __ CmpObjectType(edx, FIRST_JS_RECEIVER_TYPE, ecx);
+  __ j(below, &miss, Label::kNear);
 
-  DCHECK(GetCondition() == equal);
+  DCHECK_EQ(equal, GetCondition());
   __ sub(eax, edx);
   __ ret(0);
 
@@ -3329,7 +3328,7 @@ void CompareICStub::GenerateObjects(MacroAssembler* masm) {
 }
 
 
-void CompareICStub::GenerateKnownObjects(MacroAssembler* masm) {
+void CompareICStub::GenerateKnownReceivers(MacroAssembler* masm) {
   Label miss;
   Handle<WeakCell> cell = Map::WeakCellForMap(known_map_);
   __ mov(ecx, edx);

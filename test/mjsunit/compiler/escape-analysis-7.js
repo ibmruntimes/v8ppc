@@ -28,24 +28,25 @@
 // Flags: --allow-natives-syntax --turbo-escape
 //
 
-function f(a) {
-  "use strict";
-  return arguments;
+function f() {
+  this.x=0;
 }
 
 function g(a) {
   "use strict";
-  var x = f(1,2,3);
+  var o = new f();
   if (a) {
-    x[1] = 5;
+    o.x = 5;
   } else {
-    x[1] = 7;
+    o.x = 7;
   }
 
-  return x[1];
+  return o.x;
 }
 
-assertEquals(7, g());
-assertEquals(7, g());
+assertEquals(5, g(true));
+assertEquals(7, g(false));
 %OptimizeFunctionOnNextCall(g);
+assertEquals(5, g(true));
+assertEquals(7, g(false));
 assertEquals(7, g());

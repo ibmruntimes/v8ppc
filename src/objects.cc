@@ -4801,7 +4801,7 @@ MaybeHandle<Context> JSProxy::GetFunctionRealm(Handle<JSProxy> proxy) {
 
 
 // static
-MaybeHandle<Context> JSFunction::GetFunctionRealm(Handle<JSFunction> function) {
+Handle<Context> JSFunction::GetFunctionRealm(Handle<JSFunction> function) {
   DCHECK(function->map()->is_constructor());
   return handle(function->context()->native_context());
 }
@@ -7233,6 +7233,102 @@ bool JSObject::ReferencesObject(Object* obj) {
 }
 
 
+Maybe<bool> JSReceiver::SetIntegrityLevel(Handle<JSReceiver> receiver,
+                                          IntegrityLevel level,
+                                          ShouldThrow should_throw) {
+  DCHECK(level == SEALED || level == FROZEN);
+
+  if (receiver->IsJSObject()) {
+    Handle<JSObject> object = Handle<JSObject>::cast(receiver);
+    if (!object->HasSloppyArgumentsElements() &&
+        !object->map()->is_observed() &&
+        (!object->map()->is_strong() || level == SEALED)) {  // Fast path.
+      if (level == SEALED) {
+        return JSObject::PreventExtensionsWithTransition<SEALED>(object,
+                                                                 should_throw);
+      } else {
+        return JSObject::PreventExtensionsWithTransition<FROZEN>(object,
+                                                                 should_throw);
+      }
+    }
+  }
+
+  Isolate* isolate = receiver->GetIsolate();
+
+  MAYBE_RETURN(JSReceiver::PreventExtensions(receiver, should_throw),
+               Nothing<bool>());
+
+  Handle<FixedArray> keys;
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+      isolate, keys, JSReceiver::OwnPropertyKeys(receiver), Nothing<bool>());
+
+  PropertyDescriptor no_conf;
+  no_conf.set_configurable(false);
+
+  PropertyDescriptor no_conf_no_write;
+  no_conf_no_write.set_configurable(false);
+  no_conf_no_write.set_writable(false);
+
+  if (level == SEALED) {
+    for (int i = 0; i < keys->length(); ++i) {
+      Handle<Object> key(keys->get(i), isolate);
+      DefineOwnProperty(isolate, receiver, key, &no_conf, THROW_ON_ERROR);
+      if (isolate->has_pending_exception()) return Nothing<bool>();
+    }
+    return Just(true);
+  }
+
+  for (int i = 0; i < keys->length(); ++i) {
+    Handle<Object> key(keys->get(i), isolate);
+    PropertyDescriptor current_desc;
+    bool owned = JSReceiver::GetOwnPropertyDescriptor(isolate, receiver, key,
+                                                      &current_desc);
+    if (isolate->has_pending_exception()) return Nothing<bool>();
+    if (owned) {
+      PropertyDescriptor desc =
+          PropertyDescriptor::IsAccessorDescriptor(&current_desc)
+              ? no_conf
+              : no_conf_no_write;
+      DefineOwnProperty(isolate, receiver, key, &desc, THROW_ON_ERROR);
+      if (isolate->has_pending_exception()) return Nothing<bool>();
+    }
+  }
+  return Just(true);
+}
+
+
+Maybe<bool> JSReceiver::TestIntegrityLevel(Handle<JSReceiver> object,
+                                           IntegrityLevel level) {
+  DCHECK(level == SEALED || level == FROZEN);
+  Isolate* isolate = object->GetIsolate();
+
+  Maybe<bool> extensible = JSReceiver::IsExtensible(object);
+  MAYBE_RETURN(extensible, Nothing<bool>());
+  if (extensible.FromJust()) return Just(false);
+
+  Handle<FixedArray> keys;
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+      isolate, keys, JSReceiver::OwnPropertyKeys(object), Nothing<bool>());
+
+  for (int i = 0; i < keys->length(); ++i) {
+    Handle<Object> key(keys->get(i), isolate);
+    PropertyDescriptor current_desc;
+    bool owned = JSReceiver::GetOwnPropertyDescriptor(isolate, object, key,
+                                                      &current_desc);
+    if (isolate->has_pending_exception()) return Nothing<bool>();
+    if (owned) {
+      if (current_desc.configurable()) return Just(false);
+      if (level == FROZEN &&
+          PropertyDescriptor::IsDataDescriptor(&current_desc) &&
+          current_desc.writable()) {
+        return Just(false);
+      }
+    }
+  }
+  return Just(true);
+}
+
+
 Maybe<bool> JSReceiver::PreventExtensions(Handle<JSReceiver> object,
                                           ShouldThrow should_throw) {
   if (object->IsJSProxy()) {
@@ -7552,20 +7648,6 @@ Maybe<bool> JSObject::PreventExtensionsWithTransition(
   }
 
   return Just(true);
-}
-
-
-MaybeHandle<Object> JSObject::Freeze(Handle<JSObject> object) {
-  MAYBE_RETURN_NULL(
-      PreventExtensionsWithTransition<FROZEN>(object, THROW_ON_ERROR));
-  return object;
-}
-
-
-MaybeHandle<Object> JSObject::Seal(Handle<JSObject> object) {
-  MAYBE_RETURN_NULL(
-      PreventExtensionsWithTransition<SEALED>(object, THROW_ON_ERROR));
-  return object;
 }
 
 
@@ -8409,11 +8491,8 @@ bool JSProxy::OwnPropertyKeys(Isolate* isolate, Handle<JSReceiver> receiver,
   bool extensible_target = maybe_extensible.FromJust();
   // 10. Let targetKeys be ? target.[[OwnPropertyKeys]]().
   Handle<FixedArray> target_keys;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-      isolate, target_keys,
-      JSReceiver::GetKeys(target, JSReceiver::OWN_ONLY, ALL_PROPERTIES,
-                          CONVERT_TO_STRING),
-      false);
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, target_keys,
+                                   JSReceiver::OwnPropertyKeys(target), false);
   // 11. (Assert)
   // 12. Let targetConfigurableKeys be an empty List.
   // To save memory, we're re-using target_keys and will modify it in-place.
@@ -12665,13 +12744,21 @@ MaybeHandle<Map> JSFunction::GetDerivedMap(Isolate* isolate,
     prototype = handle(function->prototype(), isolate);
   }
 
+  // If prototype is not a JSReceiver, fetch the intrinsicDefaultProto from the
+  // correct realm. Rather than directly fetching the .prototype, we fetch the
+  // constructor that points to the .prototype. This relies on
+  // constructor.prototype being FROZEN for those constructors.
   if (!prototype->IsJSReceiver()) {
     Handle<Context> context;
     ASSIGN_RETURN_ON_EXCEPTION(isolate, context,
                                JSReceiver::GetFunctionRealm(new_target), Map);
     DCHECK(context->IsNativeContext());
-    // TODO(verwaest): Use the intrinsicDefaultProto instead.
-    prototype = handle(context->initial_object_prototype(), isolate);
+    Handle<Object> maybe_index = JSReceiver::GetDataProperty(
+        constructor, isolate->factory()->native_context_index_symbol());
+    int index = maybe_index->IsSmi() ? Smi::cast(*maybe_index)->value()
+                                     : Context::OBJECT_FUNCTION_INDEX;
+    Handle<JSFunction> realm_constructor(JSFunction::cast(context->get(index)));
+    prototype = handle(realm_constructor->prototype(), isolate);
   }
 
   Handle<Map> map = Map::CopyInitialMap(constructor_initial_map);
@@ -14111,8 +14198,10 @@ void DeoptimizationInputData::DeoptimizationInputDataPrint(
         }
 
         case Translation::LITERAL: {
-          unsigned literal_index = iterator.Next();
-          os << "{literal_id=" << literal_index << "}";
+          int literal_index = iterator.Next();
+          Object* literal_value = LiteralArray()->get(literal_index);
+          os << "{literal_id=" << literal_index << " (" << Brief(literal_value)
+             << ")}";
           break;
         }
 

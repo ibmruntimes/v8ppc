@@ -105,33 +105,29 @@ void DebugCodegen::GenerateDebugBreakStub(MacroAssembler* masm,
 }
 
 
-void DebugCodegen::GeneratePlainReturnLiveEdit(MacroAssembler* masm) {
-  masm->ret(0);
-}
-
-
 void DebugCodegen::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
-  ExternalReference restarter_frame_function_slot =
-      ExternalReference::debug_restarter_frame_function_pointer_address(
-          masm->isolate());
-  __ mov(Operand::StaticVariable(restarter_frame_function_slot), Immediate(0));
-
   // We do not know our frame height, but set esp based on ebp.
   __ lea(esp, Operand(ebp, -1 * kPointerSize));
 
   __ pop(edi);  // Function.
   __ pop(ebp);
 
+  ParameterCount dummy(0);
+  __ FloodFunctionIfStepping(edi, no_reg, dummy, dummy);
+
   // Load context from the function.
   __ mov(esi, FieldOperand(edi, JSFunction::kContextOffset));
 
+  // Clear new.target register as a safety measure.
+  __ mov(edx, masm->isolate()->factory()->undefined_value());
+
   // Get function code.
-  __ mov(edx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
-  __ mov(edx, FieldOperand(edx, SharedFunctionInfo::kCodeOffset));
-  __ lea(edx, FieldOperand(edx, Code::kHeaderSize));
+  __ mov(ebx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+  __ mov(ebx, FieldOperand(ebx, SharedFunctionInfo::kCodeOffset));
+  __ lea(ebx, FieldOperand(ebx, Code::kHeaderSize));
 
   // Re-run JSFunction, edi is function, esi is context.
-  __ jmp(edx);
+  __ jmp(ebx);
 }
 
 

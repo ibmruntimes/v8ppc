@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(jochen): Remove this after the setting is turned on globally.
+#define V8_IMMINENT_DEPRECATION_WARNINGS
+
 #include <stdlib.h>
 #include <sstream>
 #include <utility>
@@ -99,7 +102,7 @@ static double GetDoubleFieldValue(JSObject* obj, FieldIndex field_index) {
     return obj->RawFastDoublePropertyAt(field_index);
   } else {
     Object* value = obj->RawFastPropertyAt(field_index);
-    DCHECK(value->IsMutableHeapNumber());
+    CHECK(value->IsMutableHeapNumber());
     return HeapNumber::cast(value)->value();
   }
 }
@@ -578,7 +581,7 @@ static void TestClassHierarchy(const std::vector<int>& hierarchy_desc, int n) {
     fields_count += fields_count_at_current_level;
 
     // This test is not suitable for in-object properties count overflow case.
-    DCHECK_LT(fields_count, kMaxInobjectProperties);
+    CHECK_LT(fields_count, kMaxInobjectProperties);
 
     // Create |class_name| objects and check slack tracking.
     v8::Local<v8::Script> new_script = GetNewObjectScript(class_name);

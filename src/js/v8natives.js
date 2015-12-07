@@ -25,8 +25,6 @@ var NaN = %GetRootNaN();
 var ObserveBeginPerformSplice;
 var ObserveEndPerformSplice;
 var ObserveEnqueueSpliceRecord;
-var ProxyDelegateCallAndConstruct;
-var ProxyDerivedHasOwnTrap;
 var SameValue = utils.ImportNow("SameValue");
 var StringIndexOf;
 var toStringTagSymbol = utils.ImportNow("to_string_tag_symbol");
@@ -44,8 +42,6 @@ utils.Import(function(from) {
 
 utils.ImportFromExperimental(function(from) {
   FLAG_harmony_tostring = from.FLAG_harmony_tostring;
-  ProxyDelegateCallAndConstruct = from.ProxyDelegateCallAndConstruct;
-  ProxyDerivedHasOwnTrap = from.ProxyDerivedHasOwnTrap;
 });
 
 // ----------------------------------------------------------------------------
@@ -514,11 +510,6 @@ function GetTrap(handler, name, defaultTrap) {
 }
 
 
-function CallTrap0(handler, name, defaultTrap) {
-  return %_Call(GetTrap(handler, name, defaultTrap), handler);
-}
-
-
 function CallTrap1(handler, name, defaultTrap, x) {
   return %_Call(GetTrap(handler, name, defaultTrap), handler, x);
 }
@@ -926,109 +917,42 @@ function ObjectDefineProperties(obj, properties) {
 }
 
 
-// ES5 section 15.2.3.8.
+// ES6 19.1.2.17
 function ObjectSealJS(obj) {
   if (!IS_SPEC_OBJECT(obj)) return obj;
-  var isProxy = %_IsJSProxy(obj);
-  if (isProxy || %HasSloppyArgumentsElements(obj) || %IsObserved(obj)) {
-    // TODO(neis): For proxies, must call preventExtensions trap first.
-    var names = OwnPropertyKeys(obj);
-    for (var i = 0; i < names.length; i++) {
-      var name = names[i];
-      var desc = GetOwnPropertyJS(obj, name);
-      if (desc.isConfigurable()) {
-        desc.setConfigurable(false);
-        DefineOwnProperty(obj, name, desc, true);
-      }
-    }
-    %PreventExtensions(obj);
-  } else {
-    // TODO(adamk): Is it worth going to this fast path if the
-    // object's properties are already in dictionary mode?
-    %ObjectSeal(obj);
-  }
-  return obj;
+  return %ObjectSeal(obj);
 }
 
 
-// ES5 section 15.2.3.9.
+// ES6 19.1.2.5
 function ObjectFreezeJS(obj) {
   if (!IS_SPEC_OBJECT(obj)) return obj;
-  var isProxy = %_IsJSProxy(obj);
-  // TODO(conradw): Investigate modifying the fast path to accommodate strong
-  // objects.
-  if (isProxy || %HasSloppyArgumentsElements(obj) || %IsObserved(obj) ||
-      IS_STRONG(obj)) {
-    // TODO(neis): For proxies, must call preventExtensions trap first.
-    var names = OwnPropertyKeys(obj);
-    for (var i = 0; i < names.length; i++) {
-      var name = names[i];
-      var desc = GetOwnPropertyJS(obj, name);
-      if (desc.isWritable() || desc.isConfigurable()) {
-        if (IsDataDescriptor(desc)) desc.setWritable(false);
-        desc.setConfigurable(false);
-        DefineOwnProperty(obj, name, desc, true);
-      }
-    }
-    %PreventExtensions(obj);
-  } else {
-    // TODO(adamk): Is it worth going to this fast path if the
-    // object's properties are already in dictionary mode?
-    %ObjectFreeze(obj);
-  }
-  return obj;
+  return %ObjectFreeze(obj);
 }
 
 
-// ES5 section 15.2.3.10
+// ES6 19.1.2.15
 function ObjectPreventExtension(obj) {
   if (!IS_SPEC_OBJECT(obj)) return obj;
   return %PreventExtensions(obj);
 }
 
 
-// ES5 section 15.2.3.11
+// ES6 19.1.2.13
 function ObjectIsSealed(obj) {
   if (!IS_SPEC_OBJECT(obj)) return true;
-  if (%_IsJSProxy(obj)) {
-    return false;  // TODO(neis): Must call isExtensible trap and ownKeys trap.
-  }
-  if (%IsExtensible(obj)) {
-    return false;
-  }
-  var names = OwnPropertyKeys(obj);
-  for (var i = 0; i < names.length; i++) {
-    var name = names[i];
-    var desc = GetOwnPropertyJS(obj, name);
-    if (desc.isConfigurable()) {
-      return false;
-    }
-  }
-  return true;
+  return %ObjectIsSealed(obj);
 }
 
 
-// ES5 section 15.2.3.12
+// ES6 19.1.2.12
 function ObjectIsFrozen(obj) {
   if (!IS_SPEC_OBJECT(obj)) return true;
-  if (%_IsJSProxy(obj)) {
-    return false;  // TODO(neis): Must call isExtensible trap and ownKeys trap.
-  }
-  if (%IsExtensible(obj)) {
-    return false;
-  }
-  var names = OwnPropertyKeys(obj);
-  for (var i = 0; i < names.length; i++) {
-    var name = names[i];
-    var desc = GetOwnPropertyJS(obj, name);
-    if (IsDataDescriptor(desc) && desc.isWritable()) return false;
-    if (desc.isConfigurable()) return false;
-  }
-  return true;
+  return %ObjectIsFrozen(obj);
 }
 
 
-// ES5 section 15.2.3.13
+// ES6 19.1.2.11
 function ObjectIsExtensible(obj) {
   if (!IS_SPEC_OBJECT(obj)) return false;
   return %IsExtensible(obj);
@@ -1614,8 +1538,6 @@ utils.Export(function(to) {
   "global_eval_fun", GlobalEval,
   "object_value_of", ObjectValueOf,
   "object_to_string", ObjectToString,
-  "object_get_own_property_descriptor", ObjectGetOwnPropertyDescriptor,
-  "to_complete_property_descriptor", ToCompletePropertyDescriptor,
 ]);
 
 })

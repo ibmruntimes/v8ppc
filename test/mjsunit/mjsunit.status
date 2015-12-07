@@ -91,7 +91,6 @@
   'es6/regress/regress-cr493566': [SKIP],
   'for-in-opt': [SKIP],
   'harmony/proxies-example-membrane': [SKIP],
-  'harmony/proxies-hash': [SKIP],
   'harmony/proxies-json': [SKIP],
   'harmony/proxies': [SKIP],
   'harmony/proxies-symbols': [SKIP],
@@ -173,9 +172,9 @@
   'compiler/escape-analysis-3': [PASS, NO_VARIANTS],
   'compiler/escape-analysis-4': [PASS, NO_VARIANTS],
   'compiler/escape-analysis-5': [PASS, NO_VARIANTS],
-  'compiler/escape-analysis-7': [PASS, NO_VARIANTS],
-  # TODO(sigurds): Tests that fail because of incomplete phi handling.
   'compiler/escape-analysis-6': [PASS, NO_VARIANTS],
+  'compiler/escape-analysis-7': [PASS, NO_VARIANTS],
+  'compiler/escape-analysis-9': [PASS, NO_VARIANTS],
   # TODO(sigurds): Tests that fail because of incomplete use handling (i.e. select).
   'compiler/escape-analysis-8': [PASS, NO_VARIANTS],
 
@@ -1050,6 +1049,7 @@
   'regress/regress-crbug-506956': [SKIP],
   'regress/regress-crbug-505907': [SKIP],
 
+  'regress/typed-array-lifetime': [SKIP],
 }],  # ignition == True
 
 ['ignition == True and (arch == arm or arch == arm64)', {
