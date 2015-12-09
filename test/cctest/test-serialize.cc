@@ -25,9 +25,6 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// TODO(mythria): Remove this define after this flag is turned on globally
-#define V8_IMMINENT_DEPRECATION_WARNINGS
-
 #include <signal.h>
 
 #include <sys/stat.h>
@@ -46,6 +43,7 @@
 #include "src/snapshot/serialize.h"
 #include "src/snapshot/snapshot.h"
 #include "test/cctest/cctest.h"
+#include "test/cctest/heap/utils-inl.h"
 
 using namespace v8::internal;
 

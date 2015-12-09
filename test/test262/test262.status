@@ -103,9 +103,6 @@
   'built-ins/Symbol/species/builtin-getter-name': [FAIL],
   'built-ins/Symbol/species/subclassing': [FAIL],
 
-  # https://code.google.com/p/v8/issues/detail?id=4002
-  'built-ins/Error/prototype/S15.11.4_A2': [FAIL],
-
   # https://code.google.com/p/v8/issues/detail?id=4163
   'built-ins/GeneratorPrototype/next/context-constructor-invocation': [FAIL],
 
@@ -304,13 +301,12 @@
   'language/literals/regexp/u-surrogate-pairs': [FAIL],
   'language/literals/regexp/u-case-mapping': [FAIL],
   'language/literals/regexp/u-astral': [FAIL],
+  'built-ins/RegExp/valid-flags-y': [FAIL],
 
-  # https://code.google.com/p/v8/issues/detail?id=4342
+   # https://code.google.com/p/v8/issues/detail?id=4602
   'built-ins/RegExp/prototype/exec/get-sticky-coerce': [FAIL],
   'built-ins/RegExp/prototype/exec/get-sticky-err': [FAIL],
-  'built-ins/RegExp/prototype/test/get-sticky-coerce': [FAIL],
   'built-ins/RegExp/prototype/test/get-sticky-err': [FAIL],
-  'built-ins/RegExp/valid-flags-y': [FAIL],
 
   # https://code.google.com/p/v8/issues/detail?id=4504
   'built-ins/RegExp/prototype/exec/y-fail-lastindex-no-write': [PASS, FAIL],
@@ -404,10 +400,8 @@
   'intl402/DateTimeFormat/12.1.2': [PASS, FAIL],
   'intl402/DateTimeFormat/12.1.2.1_4': [FAIL],
   'intl402/DateTimeFormat/12.2.3_b': [FAIL],
-  'intl402/DateTimeFormat/prototype/12.3.2_FDT_7_a_iv': [FAIL],
   'intl402/DateTimeFormat/prototype/12.3.3': [FAIL],
   'intl402/DateTimeFormat/prototype/12.3_a': [FAIL],
-  'intl402/DateTimeFormat/prototype/format/12.3.2_FDT_7_a_iv': [FAIL],
   'intl402/Number/prototype/toLocaleString/13.2.1_5': [PASS, FAIL],
   'intl402/NumberFormat/11.1.1_20_c': [FAIL],
   'intl402/NumberFormat/11.1.1_a': [FAIL],

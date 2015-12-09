@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(mythria): Remove this define after this flag is turned on globally
-#define V8_IMMINENT_DEPRECATION_WARNINGS
-
 #include <stdlib.h>
 #include <utility>
 
@@ -18,7 +15,7 @@
 #include "src/ic/ic.h"
 #include "src/macro-assembler.h"
 #include "test/cctest/cctest.h"
-#include "test/cctest/heap-tester.h"
+#include "test/cctest/heap/utils-inl.h"
 
 using namespace v8::base;
 using namespace v8::internal;

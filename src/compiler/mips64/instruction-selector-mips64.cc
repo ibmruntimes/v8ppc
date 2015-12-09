@@ -722,7 +722,7 @@ void InstructionSelector::VisitInt32Div(Node* node) {
       }
     }
   }
-  Emit(kMips64Div, g.DefineAsRegister(node), g.UseRegister(m.left().node()),
+  Emit(kMips64Div, g.DefineSameAsFirst(node), g.UseRegister(m.left().node()),
        g.UseRegister(m.right().node()));
 }
 
@@ -730,7 +730,7 @@ void InstructionSelector::VisitInt32Div(Node* node) {
 void InstructionSelector::VisitUint32Div(Node* node) {
   Mips64OperandGenerator g(this);
   Int32BinopMatcher m(node);
-  Emit(kMips64DivU, g.DefineAsRegister(node), g.UseRegister(m.left().node()),
+  Emit(kMips64DivU, g.DefineSameAsFirst(node), g.UseRegister(m.left().node()),
        g.UseRegister(m.right().node()));
 }
 
@@ -769,7 +769,7 @@ void InstructionSelector::VisitUint32Mod(Node* node) {
 void InstructionSelector::VisitInt64Div(Node* node) {
   Mips64OperandGenerator g(this);
   Int64BinopMatcher m(node);
-  Emit(kMips64Ddiv, g.DefineAsRegister(node), g.UseRegister(m.left().node()),
+  Emit(kMips64Ddiv, g.DefineSameAsFirst(node), g.UseRegister(m.left().node()),
        g.UseRegister(m.right().node()));
 }
 
@@ -777,7 +777,7 @@ void InstructionSelector::VisitInt64Div(Node* node) {
 void InstructionSelector::VisitUint64Div(Node* node) {
   Mips64OperandGenerator g(this);
   Int64BinopMatcher m(node);
-  Emit(kMips64DdivU, g.DefineAsRegister(node), g.UseRegister(m.left().node()),
+  Emit(kMips64DdivU, g.DefineSameAsFirst(node), g.UseRegister(m.left().node()),
        g.UseRegister(m.right().node()));
 }
 
@@ -814,6 +814,33 @@ void InstructionSelector::VisitChangeUint32ToFloat64(Node* node) {
 
 
 void InstructionSelector::VisitChangeFloat64ToInt32(Node* node) {
+  Mips64OperandGenerator g(this);
+  Node* value = node->InputAt(0);
+  // Match ChangeFloat64ToInt32(Float64Round##OP) to corresponding instruction
+  // which does rounding and conversion to integer format.
+  if (CanCover(node, value)) {
+    switch (value->opcode()) {
+      case IrOpcode::kFloat64RoundDown:
+        Emit(kMips64FloorWD, g.DefineAsRegister(node),
+             g.UseRegister(value->InputAt(0)));
+        return;
+      case IrOpcode::kFloat64RoundUp:
+        Emit(kMips64CeilWD, g.DefineAsRegister(node),
+             g.UseRegister(value->InputAt(0)));
+        return;
+      case IrOpcode::kFloat64RoundTiesEven:
+        Emit(kMips64RoundWD, g.DefineAsRegister(node),
+             g.UseRegister(value->InputAt(0)));
+        return;
+      case IrOpcode::kFloat64RoundTruncate:
+        Emit(kMips64TruncWD, g.DefineAsRegister(node),
+             g.UseRegister(value->InputAt(0)));
+        return;
+      default:
+        VisitRR(this, kMips64TruncWD, node);
+        return;
+    }
+  }
   VisitRR(this, kMips64TruncWD, node);
 }
 
@@ -829,11 +856,18 @@ void InstructionSelector::VisitTruncateFloat32ToInt64(Node* node) {
 
 
 void InstructionSelector::VisitTryTruncateFloat64ToInt64(Node* node) {
-  if (NodeProperties::FindProjection(node, 1)) {
-    // TODO(mips): implement the second return value.
-    UNIMPLEMENTED();
+  Mips64OperandGenerator g(this);
+  InstructionOperand inputs[] = {g.UseRegister(node->InputAt(0))};
+  InstructionOperand outputs[2];
+  size_t output_count = 0;
+  outputs[output_count++] = g.DefineAsRegister(node);
+
+  Node* success_output = NodeProperties::FindProjection(node, 1);
+  if (success_output) {
+    outputs[output_count++] = g.DefineAsRegister(success_output);
   }
-  VisitRR(this, kMips64TruncLD, node);
+
+  Emit(kMips64TruncLD, output_count, outputs, 1, inputs);
 }
 
 
@@ -842,8 +876,20 @@ void InstructionSelector::VisitTruncateFloat32ToUint64(Node* node) {
 }
 
 
-void InstructionSelector::VisitTruncateFloat64ToUint64(Node* node) {
-  VisitRR(this, kMips64TruncUlD, node);
+void InstructionSelector::VisitTryTruncateFloat64ToUint64(Node* node) {
+  Mips64OperandGenerator g(this);
+
+  InstructionOperand inputs[] = {g.UseRegister(node->InputAt(0))};
+  InstructionOperand outputs[2];
+  size_t output_count = 0;
+  outputs[output_count++] = g.DefineAsRegister(node);
+
+  Node* success_output = NodeProperties::FindProjection(node, 1);
+  if (success_output) {
+    outputs[output_count++] = g.DefineAsRegister(success_output);
+  }
+
+  Emit(kMips64TruncUlD, output_count, outputs, 1, inputs);
 }
 
 
@@ -1708,6 +1754,8 @@ void InstructionSelector::VisitFloat64InsertHighWord32(Node* node) {
 MachineOperatorBuilder::Flags
 InstructionSelector::SupportedMachineOperatorFlags() {
   return MachineOperatorBuilder::kWord32ShiftIsSafe |
+         MachineOperatorBuilder::kInt32DivIsSafe |
+         MachineOperatorBuilder::kUint32DivIsSafe |
          MachineOperatorBuilder::kFloat64Min |
          MachineOperatorBuilder::kFloat64Max |
          MachineOperatorBuilder::kFloat32Min |

@@ -185,16 +185,16 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
           Label no_inobject_slack_tracking;
 
           // The code below relies on these assumptions.
-          STATIC_ASSERT(Map::Counter::kShift + Map::Counter::kSize == 32);
+          STATIC_ASSERT(Map::kNoSlackTracking == 0);
+          STATIC_ASSERT(Map::ConstructionCounter::kNext == 32);
           // Check if slack tracking is enabled.
           __ movl(rsi, FieldOperand(rax, Map::kBitField3Offset));
-          __ shrl(rsi, Immediate(Map::Counter::kShift));
-          __ cmpl(rsi, Immediate(Map::kSlackTrackingCounterEnd));
-          __ j(less, &no_inobject_slack_tracking);
+          __ shrl(rsi, Immediate(Map::ConstructionCounter::kShift));
+          __ j(zero, &no_inobject_slack_tracking);  // Map::kNoSlackTracking
           __ Push(rsi);  // Save allocation count value.
           // Decrease generous allocation count.
           __ subl(FieldOperand(rax, Map::kBitField3Offset),
-                  Immediate(1 << Map::Counter::kShift));
+                  Immediate(1 << Map::ConstructionCounter::kShift));
 
           // Allocate object with a slack.
           __ movzxbp(rsi, FieldOperand(rax, Map::kUnusedPropertyFieldsOffset));
@@ -1745,8 +1745,16 @@ void Builtins::Generate_Call(MacroAssembler* masm, ConvertReceiverMode mode) {
   __ CmpInstanceType(rcx, JS_PROXY_TYPE);
   __ j(not_equal, &non_function);
 
-  // 1. Call to function proxy.
-  // TODO(neis): Implement [[Call]] on proxies.
+  // 1. Runtime fallback for Proxy [[Call]].
+  __ PopReturnAddressTo(kScratchRegister);
+  __ Push(rdi);
+  __ PushReturnAddressFrom(kScratchRegister);
+  // Increase the arguments size to include the pushed function and the
+  // existing receiver on the stack.
+  __ addp(rax, Immediate(2));
+  // Tail-call to the runtime.
+  __ JumpToExternalReference(
+      ExternalReference(Runtime::kJSProxyCall, masm->isolate()), 1);
 
   // 2. Call to something else, which might have a [[Call]] internal method (if
   // not we raise an exception).
@@ -1799,13 +1807,20 @@ void Builtins::Generate_ConstructFunction(MacroAssembler* masm) {
 void Builtins::Generate_ConstructProxy(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- rax : the number of arguments (not including the receiver)
+  //  -- rdi : the constructor to call (checked to be a JSProxy)
   //  -- rdx : the new target (either the same as the constructor or
   //           the JSFunction on which new was invoked initially)
-  //  -- rdi : the constructor to call (checked to be a JSProxy)
   // -----------------------------------
 
-  // TODO(neis): This doesn't match the ES6 spec for [[Construct]] on proxies.
-  __ Jump(masm->isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
+  // Call into the Runtime for Proxy [[Construct]].
+  __ PopReturnAddressTo(kScratchRegister);
+  __ Push(rdi);
+  __ Push(rdx);
+  __ PushReturnAddressFrom(kScratchRegister);
+  // Include the pushed new_target, constructor and the receiver.
+  __ addp(rax, Immediate(3));
+  __ JumpToExternalReference(
+      ExternalReference(Runtime::kJSProxyConstruct, masm->isolate()), 1);
 }
 
 
@@ -1827,14 +1842,16 @@ void Builtins::Generate_Construct(MacroAssembler* masm) {
   __ CmpObjectType(rdi, JS_FUNCTION_TYPE, rcx);
   __ j(equal, masm->isolate()->builtins()->ConstructFunction(),
        RelocInfo::CODE_TARGET);
-  __ CmpInstanceType(rcx, JS_PROXY_TYPE);
-  __ j(equal, masm->isolate()->builtins()->ConstructProxy(),
-       RelocInfo::CODE_TARGET);
 
   // Check if target has a [[Construct]] internal method.
   __ testb(FieldOperand(rcx, Map::kBitFieldOffset),
            Immediate(1 << Map::kIsConstructor));
   __ j(zero, &non_constructor, Label::kNear);
+
+  // Only dispatch to proxies after checking whether they are constructors.
+  __ CmpInstanceType(rcx, JS_PROXY_TYPE);
+  __ j(equal, masm->isolate()->builtins()->ConstructProxy(),
+       RelocInfo::CODE_TARGET);
 
   // Called Construct on an exotic Object with a [[Construct]] internal method.
   {

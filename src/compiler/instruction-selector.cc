@@ -12,6 +12,7 @@
 #include "src/compiler/pipeline.h"
 #include "src/compiler/schedule.h"
 #include "src/compiler/state-values-utils.h"
+#include "src/deoptimizer.h"
 
 namespace v8 {
 namespace internal {
@@ -307,7 +308,8 @@ void AddFrameStateInputs(Node* state, OperandGenerator* g,
   types.reserve(descriptor->GetSize());
 
   size_t value_index = 0;
-  inputs->push_back(OperandForDeopt(g, function, kind));
+  inputs->push_back(
+      OperandForDeopt(g, function, FrameStateInputKind::kStackSlot));
   descriptor->SetType(value_index++, kMachAnyTagged);
   for (StateValuesAccess::TypedNode input_node :
        StateValuesAccess(parameters)) {
@@ -315,7 +317,8 @@ void AddFrameStateInputs(Node* state, OperandGenerator* g,
     descriptor->SetType(value_index++, input_node.type);
   }
   if (descriptor->HasContext()) {
-    inputs->push_back(OperandForDeopt(g, context, kind));
+    inputs->push_back(
+        OperandForDeopt(g, context, FrameStateInputKind::kStackSlot));
     descriptor->SetType(value_index++, kMachAnyTagged);
   }
   for (StateValuesAccess::TypedNode input_node : StateValuesAccess(locals)) {
@@ -631,12 +634,9 @@ void InstructionSelector::VisitControl(BasicBlock* block) {
       return VisitReturn(input);
     }
     case BasicBlock::kDeoptimize: {
-      // If the result itself is a return, return its input.
-      Node* value =
-          (input != nullptr && input->opcode() == IrOpcode::kDeoptimize)
-              ? input->InputAt(0)
-              : input;
-      return VisitDeoptimize(value);
+      DeoptimizeKind kind = DeoptimizeKindOf(input->op());
+      Node* value = input->InputAt(0);
+      return VisitDeoptimize(kind, value);
     }
     case BasicBlock::kThrow:
       DCHECK_EQ(IrOpcode::kThrow, input->opcode());
@@ -832,8 +832,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord64(node), VisitTryTruncateFloat64ToInt64(node);
     case IrOpcode::kTruncateFloat32ToUint64:
       return MarkAsWord64(node), VisitTruncateFloat32ToUint64(node);
-    case IrOpcode::kTruncateFloat64ToUint64:
-      return MarkAsWord64(node), VisitTruncateFloat64ToUint64(node);
+    case IrOpcode::kTryTruncateFloat64ToUint64:
+      return MarkAsWord64(node), VisitTryTruncateFloat64ToUint64(node);
     case IrOpcode::kChangeInt32ToInt64:
       return MarkAsWord64(node), VisitChangeInt32ToInt64(node);
     case IrOpcode::kChangeUint32ToUint64:
@@ -1097,7 +1097,7 @@ void InstructionSelector::VisitTruncateFloat32ToUint64(Node* node) {
 }
 
 
-void InstructionSelector::VisitTruncateFloat64ToUint64(Node* node) {
+void InstructionSelector::VisitTryTruncateFloat64ToUint64(Node* node) {
   UNIMPLEMENTED();
 }
 
@@ -1209,6 +1209,7 @@ void InstructionSelector::VisitProjection(Node* node) {
     case IrOpcode::kInt32AddWithOverflow:
     case IrOpcode::kInt32SubWithOverflow:
     case IrOpcode::kTryTruncateFloat64ToInt64:
+    case IrOpcode::kTryTruncateFloat64ToUint64:
       if (ProjectionIndexOf(node->op()) == 0u) {
         Emit(kArchNop, g.DefineSameAsFirst(node), g.Use(value));
       } else {
@@ -1404,7 +1405,7 @@ void InstructionSelector::VisitReturn(Node* ret) {
 }
 
 
-void InstructionSelector::VisitDeoptimize(Node* value) {
+void InstructionSelector::VisitDeoptimize(DeoptimizeKind kind, Node* value) {
   OperandGenerator g(this);
 
   FrameStateDescriptor* desc = GetFrameStateDescriptor(value);
@@ -1422,7 +1423,16 @@ void InstructionSelector::VisitDeoptimize(Node* value) {
 
   DCHECK_EQ(args.size(), arg_count);
 
-  Emit(kArchDeoptimize, 0, nullptr, arg_count, &args.front(), 0, nullptr);
+  InstructionCode opcode = kArchDeoptimize;
+  switch (kind) {
+    case DeoptimizeKind::kEager:
+      opcode |= MiscField::encode(Deoptimizer::EAGER);
+      break;
+    case DeoptimizeKind::kSoft:
+      opcode |= MiscField::encode(Deoptimizer::SOFT);
+      break;
+  }
+  Emit(opcode, 0, nullptr, arg_count, &args.front(), 0, nullptr);
 }
 
 

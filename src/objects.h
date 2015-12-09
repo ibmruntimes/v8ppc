@@ -2270,12 +2270,13 @@ class JSObject: public JSReceiver {
 
   // Returns the number of properties on this object filtering out properties
   // with the specified attributes (ignoring interceptors).
+  // TODO(jkummerow): Deprecated, only used by Object.observe.
   int NumberOfOwnElements(PropertyFilter filter);
-  // Returns the number of enumerable elements (ignoring interceptors).
-  int NumberOfEnumElements();
   // Returns the number of elements on this object filtering out elements
   // with the specified attributes (ignoring interceptors).
+  // TODO(jkummerow): Deprecated, only used by Object.observe.
   int GetOwnElementKeys(FixedArray* storage, PropertyFilter filter);
+
   static void CollectOwnElementKeys(Handle<JSObject> object,
                                     KeyAccumulator* keys,
                                     PropertyFilter filter);
@@ -2786,6 +2787,7 @@ class ArrayList : public FixedArray {
   inline Object** Slot(int index);
   inline void Set(int index, Object* obj);
   inline void Clear(int index, Object* undefined);
+  bool IsFull();
   DECLARE_CAST(ArrayList)
 
  private:
@@ -5489,17 +5491,18 @@ class Map: public HeapObject {
   class IsMigrationTarget : public BitField<bool, 25, 1> {};
   class IsStrong : public BitField<bool, 26, 1> {};
   class NewTargetIsBase : public BitField<bool, 27, 1> {};
+  // Bit 28 is free.
 
   // Keep this bit field at the very end for better code in
   // Builtins::kJSConstructStubGeneric stub.
-  // This counter is used for in-object slack tracking and for map aging.
+  // This counter is used for in-object slack tracking.
   // The in-object slack tracking is considered enabled when the counter is
-  // in the range [kSlackTrackingCounterStart, kSlackTrackingCounterEnd].
-  class Counter : public BitField<int, 28, 4> {};
-  static const int kSlackTrackingCounterStart = 14;
-  static const int kSlackTrackingCounterEnd = 8;
-  static const int kRetainingCounterStart = kSlackTrackingCounterEnd - 1;
-  static const int kRetainingCounterEnd = 0;
+  // non zero.
+  class ConstructionCounter : public BitField<int, 29, 3> {};
+  static const int kSlackTrackingCounterStart = 7;
+  static const int kSlackTrackingCounterEnd = 1;
+  static const int kNoSlackTracking = 0;
+  STATIC_ASSERT(kSlackTrackingCounterStart <= ConstructionCounter::kMax);
 
 
   // Inobject slack tracking is the way to reclaim unused inobject space.
@@ -5768,8 +5771,8 @@ class Map: public HeapObject {
   inline bool is_stable();
   inline void set_migration_target(bool value);
   inline bool is_migration_target();
-  inline void set_counter(int value);
-  inline int counter();
+  inline void set_construction_counter(int value);
+  inline int construction_counter();
   inline void deprecate();
   inline bool is_deprecated();
   inline bool CanBeDeprecated();
@@ -9494,7 +9497,7 @@ class WeakCell : public HeapObject {
 
   DECL_ACCESSORS(next, Object)
 
-  inline void clear_next(Heap* heap);
+  inline void clear_next(Object* the_hole_value);
 
   inline bool next_cleared();
 

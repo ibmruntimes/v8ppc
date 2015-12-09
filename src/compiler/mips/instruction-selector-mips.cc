@@ -468,7 +468,7 @@ void InstructionSelector::VisitUint32MulHigh(Node* node) {
 void InstructionSelector::VisitInt32Div(Node* node) {
   MipsOperandGenerator g(this);
   Int32BinopMatcher m(node);
-  Emit(kMipsDiv, g.DefineAsRegister(node), g.UseRegister(m.left().node()),
+  Emit(kMipsDiv, g.DefineSameAsFirst(node), g.UseRegister(m.left().node()),
        g.UseRegister(m.right().node()));
 }
 
@@ -476,7 +476,7 @@ void InstructionSelector::VisitInt32Div(Node* node) {
 void InstructionSelector::VisitUint32Div(Node* node) {
   MipsOperandGenerator g(this);
   Int32BinopMatcher m(node);
-  Emit(kMipsDivU, g.DefineAsRegister(node), g.UseRegister(m.left().node()),
+  Emit(kMipsDivU, g.DefineSameAsFirst(node), g.UseRegister(m.left().node()),
        g.UseRegister(m.right().node()));
 }
 
@@ -513,6 +513,33 @@ void InstructionSelector::VisitChangeUint32ToFloat64(Node* node) {
 
 
 void InstructionSelector::VisitChangeFloat64ToInt32(Node* node) {
+  MipsOperandGenerator g(this);
+  Node* value = node->InputAt(0);
+  // Match ChangeFloat64ToInt32(Float64Round##OP) to corresponding instruction
+  // which does rounding and conversion to integer format.
+  if (CanCover(node, value)) {
+    switch (value->opcode()) {
+      case IrOpcode::kFloat64RoundDown:
+        Emit(kMipsFloorWD, g.DefineAsRegister(node),
+             g.UseRegister(value->InputAt(0)));
+        return;
+      case IrOpcode::kFloat64RoundUp:
+        Emit(kMipsCeilWD, g.DefineAsRegister(node),
+             g.UseRegister(value->InputAt(0)));
+        return;
+      case IrOpcode::kFloat64RoundTiesEven:
+        Emit(kMipsRoundWD, g.DefineAsRegister(node),
+             g.UseRegister(value->InputAt(0)));
+        return;
+      case IrOpcode::kFloat64RoundTruncate:
+        Emit(kMipsTruncWD, g.DefineAsRegister(node),
+             g.UseRegister(value->InputAt(0)));
+        return;
+      default:
+        VisitRR(this, kMipsTruncWD, node);
+        return;
+    }
+  }
   VisitRR(this, kMipsTruncWD, node);
 }
 
@@ -1245,7 +1272,9 @@ InstructionSelector::SupportedMachineOperatorFlags() {
              MachineOperatorBuilder::kFloat64RoundTruncate |
              MachineOperatorBuilder::kFloat64RoundTiesEven;
   }
-  return flags | MachineOperatorBuilder::kWord32ShiftIsSafe |
+  return flags | MachineOperatorBuilder::kInt32DivIsSafe |
+         MachineOperatorBuilder::kUint32DivIsSafe |
+         MachineOperatorBuilder::kWord32ShiftIsSafe |
          MachineOperatorBuilder::kFloat64Min |
          MachineOperatorBuilder::kFloat64Max |
          MachineOperatorBuilder::kFloat32Min |

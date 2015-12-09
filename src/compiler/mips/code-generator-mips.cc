@@ -577,7 +577,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArchDeoptimize: {
       int deopt_state_id =
           BuildTranslation(instr, -1, 0, OutputFrameStateCombine::Ignore());
-      AssembleDeoptimizerCall(deopt_state_id, Deoptimizer::EAGER);
+      Deoptimizer::BailoutType bailout_type =
+          Deoptimizer::BailoutType(MiscField::decode(instr->opcode()));
+      AssembleDeoptimizerCall(deopt_state_id, bailout_type);
       break;
     }
     case kArchRet:
@@ -633,9 +635,19 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kMipsDiv:
       __ Div(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
+      if (IsMipsArchVariant(kMips32r6)) {
+        __ selnez(i.OutputRegister(), i.InputRegister(1), i.InputRegister(0));
+      } else {
+        __ Movz(i.OutputRegister(), i.InputRegister(1), i.InputRegister(1));
+      }
       break;
     case kMipsDivU:
       __ Divu(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
+      if (IsMipsArchVariant(kMips32r6)) {
+        __ selnez(i.OutputRegister(), i.InputRegister(1), i.InputRegister(0));
+      } else {
+        __ Movz(i.OutputRegister(), i.InputRegister(1), i.InputRegister(1));
+      }
       break;
     case kMipsMod:
       __ Mod(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
@@ -922,6 +934,24 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kMipsCvtDUw: {
       FPURegister scratch = kScratchDoubleReg;
       __ Cvt_d_uw(i.OutputDoubleRegister(), i.InputRegister(0), scratch);
+      break;
+    }
+    case kMipsFloorWD: {
+      FPURegister scratch = kScratchDoubleReg;
+      __ floor_w_d(scratch, i.InputDoubleRegister(0));
+      __ mfc1(i.OutputRegister(), scratch);
+      break;
+    }
+    case kMipsCeilWD: {
+      FPURegister scratch = kScratchDoubleReg;
+      __ ceil_w_d(scratch, i.InputDoubleRegister(0));
+      __ mfc1(i.OutputRegister(), scratch);
+      break;
+    }
+    case kMipsRoundWD: {
+      FPURegister scratch = kScratchDoubleReg;
+      __ round_w_d(scratch, i.InputDoubleRegister(0));
+      __ mfc1(i.OutputRegister(), scratch);
       break;
     }
     case kMipsTruncWD: {

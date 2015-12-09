@@ -359,9 +359,17 @@ void StaticMarkingVisitor<StaticVisitor>::VisitWeakCell(Map* map,
 template <typename StaticVisitor>
 void StaticMarkingVisitor<StaticVisitor>::VisitTransitionArray(
     Map* map, HeapObject* object) {
-  typedef FlexibleBodyVisitor<StaticVisitor, TransitionArray::BodyDescriptor,
-                              int> TransitionArrayBodyVisitor;
   TransitionArray* array = TransitionArray::cast(object);
+  Heap* heap = array->GetHeap();
+  // Visit strong references.
+  if (array->HasPrototypeTransitions()) {
+    StaticVisitor::VisitPointer(heap, array,
+                                array->GetPrototypeTransitionsSlot());
+  }
+  int num_transitions = TransitionArray::NumberOfTransitions(array);
+  for (int i = 0; i < num_transitions; ++i) {
+    StaticVisitor::VisitPointer(heap, array, array->GetKeySlot(i));
+  }
   // Enqueue the array in linked list of encountered transition arrays if it is
   // not already in the list.
   if (array->next_link()->IsUndefined()) {
@@ -370,8 +378,6 @@ void StaticMarkingVisitor<StaticVisitor>::VisitTransitionArray(
                          UPDATE_WEAK_WRITE_BARRIER);
     heap->set_encountered_transition_arrays(array);
   }
-  // TODO(ulan): Move MarkTransitionArray logic here.
-  TransitionArrayBodyVisitor::Visit(map, object);
 }
 
 
@@ -447,14 +453,6 @@ void StaticMarkingVisitor<StaticVisitor>::VisitSharedFunctionInfo(
     if (!shared->OptimizedCodeMapIsCleared()) {
       // Always flush the optimized code map if requested by flag.
       shared->ClearOptimizedCodeMap();
-    }
-  } else {
-    if (!shared->OptimizedCodeMapIsCleared()) {
-      // Treat some references within the code map weakly by marking the
-      // code map itself but not pushing it onto the marking deque. The
-      // map will be processed after marking.
-      FixedArray* code_map = shared->optimized_code_map();
-      MarkOptimizedCodeMap(heap, code_map);
     }
   }
   MarkCompactCollector* collector = heap->mark_compact_collector();
@@ -540,11 +538,6 @@ void StaticMarkingVisitor<StaticVisitor>::VisitBytecodeArray(
 template <typename StaticVisitor>
 void StaticMarkingVisitor<StaticVisitor>::MarkMapContents(Heap* heap,
                                                           Map* map) {
-  Object* raw_transitions = map->raw_transitions();
-  if (TransitionArray::IsFullTransitionArray(raw_transitions)) {
-    MarkTransitionArray(heap, TransitionArray::cast(raw_transitions));
-  }
-
   // Since descriptor arrays are potentially shared, ensure that only the
   // descriptors that belong to this map are marked. The first time a non-empty
   // descriptor array is marked, its header is also visited. The slot holding
@@ -574,40 +567,6 @@ void StaticMarkingVisitor<StaticVisitor>::MarkMapContents(Heap* heap,
   StaticVisitor::VisitPointers(
       heap, map, HeapObject::RawField(map, Map::kPointerFieldsBeginOffset),
       HeapObject::RawField(map, Map::kPointerFieldsEndOffset));
-}
-
-
-template <typename StaticVisitor>
-void StaticMarkingVisitor<StaticVisitor>::MarkTransitionArray(
-    Heap* heap, TransitionArray* transitions) {
-  if (!StaticVisitor::MarkObjectWithoutPush(heap, transitions)) return;
-
-  if (transitions->HasPrototypeTransitions()) {
-    StaticVisitor::VisitPointer(heap, transitions,
-                                transitions->GetPrototypeTransitionsSlot());
-  }
-
-  int num_transitions = TransitionArray::NumberOfTransitions(transitions);
-  for (int i = 0; i < num_transitions; ++i) {
-    StaticVisitor::VisitPointer(heap, transitions, transitions->GetKeySlot(i));
-  }
-}
-
-
-template <typename StaticVisitor>
-void StaticMarkingVisitor<StaticVisitor>::MarkOptimizedCodeMap(
-    Heap* heap, FixedArray* code_map) {
-  if (!StaticVisitor::MarkObjectWithoutPush(heap, code_map)) return;
-
-  // Mark the context-independent entry in the optimized code map. Depending on
-  // the age of the code object, we treat it as a strong or a weak reference.
-  Object* shared_object = code_map->get(SharedFunctionInfo::kSharedCodeIndex);
-  if (FLAG_turbo_preserve_shared_code && shared_object->IsCode() &&
-      FLAG_age_code && !Code::cast(shared_object)->IsOld()) {
-    StaticVisitor::VisitPointer(
-        heap, code_map,
-        code_map->RawFieldOfElementAt(SharedFunctionInfo::kSharedCodeIndex));
-  }
 }
 
 

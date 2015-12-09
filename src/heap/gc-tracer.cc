@@ -514,13 +514,11 @@ void GCTracer::PrintNVP() const {
                    "mark_prepcodeflush=%.1f "
                    "mark_root=%.1f "
                    "mark_topopt=%.1f "
-                   "mark_retainmaps=%.1f "
                    "mark_weakclosure=%.1f "
                    "mark_stringtable=%.1f "
                    "mark_weakrefs=%.1f "
                    "mark_globalhandles=%.1f "
                    "mark_codeflush=%.1f "
-                   "mark_optimizedcodemaps=%.1f "
                    "store_buffer_clear=%.1f "
                    "slots_buffer_clear=%.1f "
                    "sweep=%.2f "
@@ -541,10 +539,10 @@ void GCTracer::PrintNVP() const {
                    "weakcollection_process=%.1f "
                    "weakcollection_clear=%.1f "
                    "weakcollection_abort=%.1f "
-                   "weakcells=%.1f "
-                   "nonlive_refs=%.1f "
-                   "extract_dependent_code=%.1f "
-                   "deopt_dependent_code=%.1f "
+                   "clear=%1f"
+                   "clear_weakcell=%.1f "
+                   "clear_map=%.1f "
+                   "clear_dependent_code=%.1f "
                    "steps_count=%d "
                    "steps_took=%.1f "
                    "longest_step=%.1f "
@@ -586,13 +584,11 @@ void GCTracer::PrintNVP() const {
                    current_.scopes[Scope::MC_MARK_PREPARE_CODE_FLUSH],
                    current_.scopes[Scope::MC_MARK_ROOT],
                    current_.scopes[Scope::MC_MARK_TOPOPT],
-                   current_.scopes[Scope::MC_MARK_RETAIN_MAPS],
                    current_.scopes[Scope::MC_MARK_WEAK_CLOSURE],
                    current_.scopes[Scope::MC_MARK_STRING_TABLE],
                    current_.scopes[Scope::MC_MARK_WEAK_REFERENCES],
                    current_.scopes[Scope::MC_MARK_GLOBAL_HANDLES],
                    current_.scopes[Scope::MC_MARK_CODE_FLUSH],
-                   current_.scopes[Scope::MC_MARK_OPTIMIZED_CODE_MAPS],
                    current_.scopes[Scope::MC_STORE_BUFFER_CLEAR],
                    current_.scopes[Scope::MC_SLOTS_BUFFER_CLEAR],
                    current_.scopes[Scope::MC_SWEEP],
@@ -613,10 +609,10 @@ void GCTracer::PrintNVP() const {
                    current_.scopes[Scope::MC_WEAKCOLLECTION_PROCESS],
                    current_.scopes[Scope::MC_WEAKCOLLECTION_CLEAR],
                    current_.scopes[Scope::MC_WEAKCOLLECTION_ABORT],
-                   current_.scopes[Scope::MC_WEAKCELL],
-                   current_.scopes[Scope::MC_NONLIVEREFERENCES],
-                   current_.scopes[Scope::MC_EXTRACT_DEPENDENT_CODE],
-                   current_.scopes[Scope::MC_DEOPT_DEPENDENT_CODE],
+                   current_.scopes[Scope::MC_CLEAR],
+                   current_.scopes[Scope::MC_CLEAR_WEAKCELL],
+                   current_.scopes[Scope::MC_CLEAR_MAP],
+                   current_.scopes[Scope::MC_CLEAR_DEPENDENT_CODE],
                    current_.incremental_marking_steps,
                    current_.incremental_marking_duration,
                    current_.longest_incremental_marking_step,

@@ -594,7 +594,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArchDeoptimize: {
       int deopt_state_id =
           BuildTranslation(instr, -1, 0, OutputFrameStateCombine::Ignore());
-      AssembleDeoptimizerCall(deopt_state_id, Deoptimizer::EAGER);
+      Deoptimizer::BailoutType bailout_type =
+          Deoptimizer::BailoutType(MiscField::decode(instr->opcode()));
+      AssembleDeoptimizerCall(deopt_state_id, bailout_type);
       break;
     }
     case kArchRet:
@@ -1052,6 +1054,11 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kArm64Float64ToUint64:
       __ Fcvtzu(i.OutputRegister64(), i.InputDoubleRegister(0));
+      if (i.OutputCount() > 1) {
+        __ Fcmp(i.InputDoubleRegister(0), 0.0);
+        __ Ccmp(i.OutputRegister(0), -1, ZFlag, ge);
+        __ Cset(i.OutputRegister(1), ne);
+      }
       break;
     case kArm64Int32ToFloat64:
       __ Scvtf(i.OutputDoubleRegister(), i.InputRegister32(0));

@@ -87,7 +87,6 @@
 
   # Proxy tests rely on non ES6 version of Proxies
   # TODO(neis,cbruni): figure out which Proxy tests can be reused
-  'es6/classes-proxy' : [SKIP],
   'es6/regress/regress-cr493566': [SKIP],
   'for-in-opt': [SKIP],
   'harmony/proxies-example-membrane': [SKIP],
@@ -1060,6 +1059,7 @@
   'math-floor-part3': [SKIP],
   'mul-exhaustive-part*': [SKIP],
   'regress/regress-1167': [SKIP],
+  'regress/regress-1257': [SKIP],
   'regress/regress-165637': [SKIP],
   'regress/regress-2249': [SKIP],
   'regress/regress-319722-ArrayBuffer': [SKIP],
@@ -1067,6 +1067,7 @@
   'regress/regress-542823': [SKIP],
   'regress/regress-634-debug': [SKIP],
   'regress/regress-78270': [SKIP],
+  'regress/regress-91008': [SKIP],
   'regress/regress-crbug-347903': [SKIP],
   'regress/regress-crbug-505007-1': [SKIP],
   'regress/regress-crbug-505007-2': [SKIP],

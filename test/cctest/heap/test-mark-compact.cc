@@ -25,9 +25,6 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// TODO(jochen): Remove this after the setting is turned on globally.
-#define V8_IMMINENT_DEPRECATION_WARNINGS
-
 #include <stdlib.h>
 
 #ifdef __linux__
@@ -45,7 +42,9 @@
 #include "src/full-codegen/full-codegen.h"
 #include "src/global-handles.h"
 #include "test/cctest/cctest.h"
-#include "test/cctest/heap-tester.h"
+#include "test/cctest/heap/heap-tester.h"
+#include "test/cctest/heap/utils-inl.h"
+
 
 using namespace v8::internal;
 using v8::Just;

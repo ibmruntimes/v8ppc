@@ -12,8 +12,8 @@
  * For other documentation see http://code.google.com/apis/v8/
  */
 
-#ifndef V8_H_
-#define V8_H_
+#ifndef INCLUDE_V8_H_
+#define INCLUDE_V8_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -2456,8 +2456,8 @@ class V8_EXPORT Symbol : public Name {
   Local<Value> Name() const;
 
   // Create a symbol. If name is not empty, it will be used as the description.
-  static Local<Symbol> New(
-      Isolate *isolate, Local<String> name = Local<String>());
+  static Local<Symbol> New(Isolate* isolate,
+                           Local<String> name = Local<String>());
 
   // Access global symbol registry.
   // Note that symbols created this way are never collected, so
@@ -3365,10 +3365,11 @@ class V8_EXPORT Promise : public Object {
    * an argument. If the promise is already resolved/rejected, the handler is
    * invoked at the end of turn.
    */
-  V8_DEPRECATE_SOON("Use maybe version",
+  V8_DEPRECATE_SOON("Use maybe version of Then",
                     Local<Promise> Chain(Local<Function> handler));
-  V8_WARN_UNUSED_RESULT MaybeLocal<Promise> Chain(Local<Context> context,
-                                                  Local<Function> handler);
+  V8_DEPRECATE_SOON("Use Then",
+                    V8_WARN_UNUSED_RESULT MaybeLocal<Promise> Chain(
+                        Local<Context> context, Local<Function> handler));
 
   V8_DEPRECATE_SOON("Use maybe version",
                     Local<Promise> Catch(Local<Function> handler));
@@ -7261,7 +7262,7 @@ class Internals {
   V8_INLINE static void SetEmbedderData(v8::Isolate* isolate,
                                         uint32_t slot,
                                         void* data) {
-    uint8_t *addr = reinterpret_cast<uint8_t *>(isolate) +
+    uint8_t* addr = reinterpret_cast<uint8_t*>(isolate) +
                     kIsolateEmbedderDataOffset + slot * kApiPointerSize;
     *reinterpret_cast<void**>(addr) = data;
   }
@@ -8564,4 +8565,4 @@ void V8::VisitHandlesForPartialDependence(Isolate* isolate,
 #undef TYPE_CHECK
 
 
-#endif  // V8_H_
+#endif  // INCLUDE_V8_H_

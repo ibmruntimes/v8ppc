@@ -218,6 +218,7 @@ class Genesis BASE_EMBEDDED {
   void InstallBuiltinFunctionIds();
   void InstallExperimentalBuiltinFunctionIds();
   void InitializeNormalizedMapCaches();
+  void InstallJSProxyMaps();
 
   enum ExtensionTraversalState {
     UNVISITED, VISITED, INSTALLED
@@ -362,6 +363,20 @@ void Bootstrapper::DetachGlobal(Handle<Context> env) {
 
 namespace {
 
+Handle<JSFunction> InstallFunction(Handle<JSObject> target,
+                                   Handle<Name> property_name,
+                                   Handle<JSFunction> function,
+                                   Handle<String> function_name,
+                                   PropertyAttributes attributes = DONT_ENUM) {
+  JSObject::AddProperty(target, property_name, function, attributes);
+  if (target->IsJSGlobalObject()) {
+    function->shared()->set_instance_class_name(*function_name);
+  }
+  function->shared()->set_native(true);
+  return function;
+}
+
+
 Handle<JSFunction> InstallFunction(Handle<JSObject> target, Handle<Name> name,
                                    InstanceType type, int instance_size,
                                    MaybeHandle<JSObject> maybe_prototype,
@@ -382,12 +397,7 @@ Handle<JSFunction> InstallFunction(Handle<JSObject> target, Handle<Name> name,
                                  kInstallConstructor, strict_function_map)
           : factory->NewFunctionWithoutPrototype(name_string, call_code,
                                                  strict_function_map);
-  JSObject::AddProperty(target, name, function, attributes);
-  if (target->IsJSGlobalObject()) {
-    function->shared()->set_instance_class_name(*name_string);
-  }
-  function->shared()->set_native(true);
-  return function;
+  return InstallFunction(target, name, function, name_string, attributes);
 }
 
 
@@ -1127,8 +1137,8 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     CacheInitialJSArrayMaps(native_context(), initial_strong_map);
 
     SimpleInstallFunction(array_function,
-        factory->NewStringFromAsciiChecked("isArray"),
-        Builtins::kArrayIsArray, 1, true);
+                          isolate->factory()->InternalizeUtf8String("isArray"),
+                          Builtins::kArrayIsArray, 1, true);
   }
 
   {  // --- N u m b e r ---
@@ -1232,6 +1242,62 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     initial_map->set_unused_property_fields(0);
     initial_map->set_instance_size(initial_map->instance_size() +
                                    num_fields * kPointerSize);
+  }
+
+  {  // -- E r r o r
+    Handle<JSFunction> error_fun = InstallFunction(
+        global, "Error", JS_OBJECT_TYPE, JSObject::kHeaderSize,
+        isolate->initial_object_prototype(), Builtins::kIllegal);
+    InstallWithIntrinsicDefaultProto(isolate, error_fun,
+                                     Context::ERROR_FUNCTION_INDEX);
+  }
+
+  {  // -- E v a l E r r o r
+    Handle<JSFunction> eval_error_fun = InstallFunction(
+        global, "EvalError", JS_OBJECT_TYPE, JSObject::kHeaderSize,
+        isolate->initial_object_prototype(), Builtins::kIllegal);
+    InstallWithIntrinsicDefaultProto(isolate, eval_error_fun,
+                                     Context::EVAL_ERROR_FUNCTION_INDEX);
+  }
+
+  {  // -- R a n g e E r r o r
+    Handle<JSFunction> range_error_fun = InstallFunction(
+        global, "RangeError", JS_OBJECT_TYPE, JSObject::kHeaderSize,
+        isolate->initial_object_prototype(), Builtins::kIllegal);
+    InstallWithIntrinsicDefaultProto(isolate, range_error_fun,
+                                     Context::RANGE_ERROR_FUNCTION_INDEX);
+  }
+
+  {  // -- R e f e r e n c e E r r o r
+    Handle<JSFunction> reference_error_fun = InstallFunction(
+        global, "ReferenceError", JS_OBJECT_TYPE, JSObject::kHeaderSize,
+        isolate->initial_object_prototype(), Builtins::kIllegal);
+    InstallWithIntrinsicDefaultProto(isolate, reference_error_fun,
+                                     Context::REFERENCE_ERROR_FUNCTION_INDEX);
+  }
+
+  {  // -- S y n t a x E r r o r
+    Handle<JSFunction> syntax_error_fun = InstallFunction(
+        global, "SyntaxError", JS_OBJECT_TYPE, JSObject::kHeaderSize,
+        isolate->initial_object_prototype(), Builtins::kIllegal);
+    InstallWithIntrinsicDefaultProto(isolate, syntax_error_fun,
+                                     Context::SYNTAX_ERROR_FUNCTION_INDEX);
+  }
+
+  {  // -- T y p e E r r o r
+    Handle<JSFunction> type_error_fun = InstallFunction(
+        global, "TypeError", JS_OBJECT_TYPE, JSObject::kHeaderSize,
+        isolate->initial_object_prototype(), Builtins::kIllegal);
+    InstallWithIntrinsicDefaultProto(isolate, type_error_fun,
+                                     Context::TYPE_ERROR_FUNCTION_INDEX);
+  }
+
+  {  // -- U R I E r r o r
+    Handle<JSFunction> uri_error_fun = InstallFunction(
+        global, "URIError", JS_OBJECT_TYPE, JSObject::kHeaderSize,
+        isolate->initial_object_prototype(), Builtins::kIllegal);
+    InstallWithIntrinsicDefaultProto(isolate, uri_error_fun,
+                                     Context::URI_ERROR_FUNCTION_INDEX);
   }
 
   // Initialize the embedder data slot.
@@ -2144,21 +2210,58 @@ void Genesis::InitializeGlobal_harmony_simd() {
 }
 
 
+void Genesis::InstallJSProxyMaps() {
+  // Allocate the different maps for all Proxy types.
+  // Next to the default proxy, we need maps indicating callable and
+  // constructable proxies.
+
+  Handle<Map> proxy_function_map =
+      Map::Copy(isolate()->sloppy_function_without_prototype_map(), "Proxy");
+  proxy_function_map->set_is_constructor(true);
+  native_context()->set_proxy_function_map(*proxy_function_map);
+
+  Handle<Map> proxy_map =
+      factory()->NewMap(JS_PROXY_TYPE, JSProxy::kSize, FAST_ELEMENTS);
+  native_context()->set_proxy_map(*proxy_map);
+
+  Handle<Map> proxy_callable_map = Map::Copy(proxy_map, "callable Proxy");
+  proxy_callable_map->set_is_callable();
+  native_context()->set_proxy_callable_map(*proxy_callable_map);
+
+  Handle<Map> proxy_constructor_map =
+      Map::Copy(proxy_callable_map, "constructor Proxy");
+  proxy_constructor_map->set_is_constructor(true);
+  native_context()->set_proxy_constructor_map(*proxy_constructor_map);
+}
+
+
 void Genesis::InitializeGlobal_harmony_proxies() {
   if (!FLAG_harmony_proxies) return;
   Handle<JSGlobalObject> global(
       JSGlobalObject::cast(native_context()->global_object()));
   Isolate* isolate = global->GetIsolate();
-  Handle<JSFunction> proxy_fun = InstallFunction(
-      global, "Proxy", JS_PROXY_TYPE, JSProxy::kSize,
-      isolate->initial_object_prototype(), Builtins::kProxyConstructor);
-  // TODO(verwaest): Set to null in InstallFunction.
-  proxy_fun->initial_map()->set_prototype(isolate->heap()->null_value());
-  proxy_fun->shared()->set_construct_stub(
+  Factory* factory = isolate->factory();
+
+  InstallJSProxyMaps();
+
+  // Create the Proxy object.
+  Handle<String> name = factory->Proxy_string();
+  Handle<Code> code(isolate->builtins()->ProxyConstructor());
+
+  Handle<JSFunction> proxy_function =
+      factory->NewFunction(isolate->proxy_function_map(), name, code);
+
+  JSFunction::SetInitialMap(proxy_function,
+                            Handle<Map>(native_context()->proxy_map(), isolate),
+                            factory->null_value());
+
+  proxy_function->shared()->set_construct_stub(
       *isolate->builtins()->ProxyConstructor_ConstructStub());
-  proxy_fun->shared()->set_internal_formal_parameter_count(2);
-  proxy_fun->shared()->set_length(2);
-  native_context()->set_proxy_function(*proxy_fun);
+  proxy_function->shared()->set_internal_formal_parameter_count(2);
+  proxy_function->shared()->set_length(2);
+
+  native_context()->set_proxy_function(*proxy_function);
+  InstallFunction(global, name, proxy_function, name);
 }
 
 
@@ -2664,8 +2767,7 @@ bool Genesis::InstallSpecialObjects(Handle<Context> native_context) {
   Handle<JSGlobalObject> global(JSGlobalObject::cast(
       native_context->global_object()));
 
-  Handle<JSObject> Error = Handle<JSObject>::cast(
-      Object::GetProperty(isolate, global, "Error").ToHandleChecked());
+  Handle<JSObject> Error = isolate->error_function();
   Handle<String> name =
       factory->InternalizeOneByteString(STATIC_CHAR_VECTOR("stackTraceLimit"));
   Handle<Smi> stack_trace_limit(Smi::FromInt(FLAG_stack_trace_limit), isolate);

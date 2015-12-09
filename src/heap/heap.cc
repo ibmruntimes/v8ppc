@@ -1494,12 +1494,13 @@ static bool IsUnscavengedHeapObject(Heap* heap, Object** p) {
 
 static bool IsUnmodifiedHeapObject(Object** p) {
   Object* object = *p;
-  DCHECK(object->IsHeapObject());
+  if (object->IsSmi()) return false;
   HeapObject* heap_object = HeapObject::cast(object);
   if (!object->IsJSObject()) return false;
   Object* obj_constructor = (JSObject::cast(object))->map()->GetConstructor();
   if (!obj_constructor->IsJSFunction()) return false;
   JSFunction* constructor = JSFunction::cast(obj_constructor);
+  if (!constructor->shared()->IsApiFunction()) return false;
   if (constructor != nullptr &&
       constructor->initial_map() == heap_object->map()) {
     return true;
@@ -2040,7 +2041,7 @@ AllocationResult Heap::AllocatePartialMap(InstanceType instance_type,
   reinterpret_cast<Map*>(result)->set_bit_field2(0);
   int bit_field3 = Map::EnumLengthBits::encode(kInvalidEnumCacheSentinel) |
                    Map::OwnsDescriptors::encode(true) |
-                   Map::Counter::encode(Map::kRetainingCounterStart);
+                   Map::ConstructionCounter::encode(Map::kNoSlackTracking);
   reinterpret_cast<Map*>(result)->set_bit_field3(bit_field3);
   reinterpret_cast<Map*>(result)->set_weak_cell_cache(Smi::FromInt(0));
   return result;
@@ -2079,7 +2080,7 @@ AllocationResult Heap::AllocateMap(InstanceType instance_type,
   map->set_bit_field2(1 << Map::kIsExtensible);
   int bit_field3 = Map::EnumLengthBits::encode(kInvalidEnumCacheSentinel) |
                    Map::OwnsDescriptors::encode(true) |
-                   Map::Counter::encode(Map::kRetainingCounterStart);
+                   Map::ConstructionCounter::encode(Map::kNoSlackTracking);
   map->set_bit_field3(bit_field3);
   map->set_elements_kind(elements_kind);
   map->set_new_target_is_base(true);
@@ -2486,7 +2487,7 @@ AllocationResult Heap::AllocateWeakCell(HeapObject* value) {
   }
   result->set_map_no_write_barrier(weak_cell_map());
   WeakCell::cast(result)->initialize(value);
-  WeakCell::cast(result)->clear_next(this);
+  WeakCell::cast(result)->clear_next(the_hole_value());
   return result;
 }
 
@@ -2777,8 +2778,14 @@ void Heap::CreateInitialObjects() {
   }
 
   {
+    Handle<WeakCell> cell = factory->NewWeakCell(factory->undefined_value());
+    set_empty_weak_cell(*cell);
+    cell->clear();
+
     Handle<FixedArray> cleared_optimized_code_map =
         factory->NewFixedArray(SharedFunctionInfo::kEntriesStart, TENURED);
+    cleared_optimized_code_map->set(SharedFunctionInfo::kSharedCodeIndex,
+                                    *cell);
     STATIC_ASSERT(SharedFunctionInfo::kEntriesStart == 1 &&
                   SharedFunctionInfo::kSharedCodeIndex == 0);
     set_cleared_optimized_code_map(*cleared_optimized_code_map);
@@ -5325,12 +5332,44 @@ DependentCode* Heap::LookupWeakObjectToCodeDependency(Handle<HeapObject> obj) {
 void Heap::AddRetainedMap(Handle<Map> map) {
   Handle<WeakCell> cell = Map::WeakCellForMap(map);
   Handle<ArrayList> array(retained_maps(), isolate());
+  if (array->IsFull()) {
+    CompactRetainedMaps(*array);
+  }
   array = ArrayList::Add(
       array, cell, handle(Smi::FromInt(FLAG_retain_maps_for_n_gc), isolate()),
       ArrayList::kReloadLengthAfterAllocation);
   if (*array != retained_maps()) {
     set_retained_maps(*array);
   }
+}
+
+
+void Heap::CompactRetainedMaps(ArrayList* retained_maps) {
+  DCHECK_EQ(retained_maps, this->retained_maps());
+  int length = retained_maps->Length();
+  int new_length = 0;
+  int new_number_of_disposed_maps = 0;
+  // This loop compacts the array by removing cleared weak cells.
+  for (int i = 0; i < length; i += 2) {
+    DCHECK(retained_maps->Get(i)->IsWeakCell());
+    WeakCell* cell = WeakCell::cast(retained_maps->Get(i));
+    Object* age = retained_maps->Get(i + 1);
+    if (cell->cleared()) continue;
+    if (i != new_length) {
+      retained_maps->Set(new_length, cell);
+      retained_maps->Set(new_length + 1, age);
+    }
+    if (i < number_of_disposed_maps_) {
+      new_number_of_disposed_maps += 2;
+    }
+    new_length += 2;
+  }
+  number_of_disposed_maps_ = new_number_of_disposed_maps;
+  Object* undefined = undefined_value();
+  for (int i = new_length; i < length; i++) {
+    retained_maps->Clear(i, undefined);
+  }
+  if (new_length != length) retained_maps->SetLength(new_length);
 }
 
 

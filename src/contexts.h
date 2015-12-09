@@ -220,12 +220,17 @@ enum BindingFlags {
   V(OBJECT_FUNCTION_INDEX, JSFunction, object_function)                        \
   V(OBJECT_FUNCTION_PROTOTYPE_MAP_INDEX, Map, object_function_prototype_map)   \
   V(OPAQUE_REFERENCE_FUNCTION_INDEX, JSFunction, opaque_reference_function)    \
+  V(PROXY_CALLABLE_MAP_INDEX, Map, proxy_callable_map)                         \
+  V(PROXY_CONSTRUCTOR_MAP_INDEX, Map, proxy_constructor_map)                   \
   V(PROXY_FUNCTION_INDEX, JSFunction, proxy_function)                          \
+  V(PROXY_FUNCTION_MAP_INDEX, Map, proxy_function_map)                         \
+  V(PROXY_MAP_INDEX, Map, proxy_map)                                           \
   V(REGEXP_FUNCTION_INDEX, JSFunction, regexp_function)                        \
   V(REGEXP_RESULT_MAP_INDEX, Map, regexp_result_map)                           \
   V(SCRIPT_CONTEXT_TABLE_INDEX, ScriptContextTable, script_context_table)      \
   V(SCRIPT_FUNCTION_INDEX, JSFunction, script_function)                        \
   V(SECURITY_TOKEN_INDEX, Object, security_token)                              \
+  V(SELF_WEAK_CELL_INDEX, WeakCell, self_weak_cell)                            \
   V(SET_ITERATOR_MAP_INDEX, Map, set_iterator_map)                             \
   V(SHARED_ARRAY_BUFFER_FUN_INDEX, JSFunction, shared_array_buffer_fun)        \
   V(SLOPPY_ARGUMENTS_MAP_INDEX, Map, sloppy_arguments_map)                     \

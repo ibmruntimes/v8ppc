@@ -587,7 +587,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArchDeoptimize: {
       int deopt_state_id =
           BuildTranslation(instr, -1, 0, OutputFrameStateCombine::Ignore());
-      AssembleDeoptimizerCall(deopt_state_id, Deoptimizer::EAGER);
+      Deoptimizer::BailoutType bailout_type =
+          Deoptimizer::BailoutType(MiscField::decode(instr->opcode()));
+      AssembleDeoptimizerCall(deopt_state_id, bailout_type);
       break;
     }
     case kArchRet:
@@ -646,9 +648,19 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kMips64Div:
       __ Div(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
+      if (kArchVariant == kMips64r6) {
+        __ selnez(i.OutputRegister(), i.InputRegister(1), i.InputRegister(0));
+      } else {
+        __ Movz(i.OutputRegister(), i.InputRegister(1), i.InputRegister(1));
+      }
       break;
     case kMips64DivU:
       __ Divu(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
+      if (kArchVariant == kMips64r6) {
+        __ selnez(i.OutputRegister(), i.InputRegister(1), i.InputRegister(0));
+      } else {
+        __ Movz(i.OutputRegister(), i.InputRegister(1), i.InputRegister(1));
+      }
       break;
     case kMips64Mod:
       __ Mod(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
@@ -661,9 +673,19 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kMips64Ddiv:
       __ Ddiv(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
+      if (kArchVariant == kMips64r6) {
+        __ selnez(i.OutputRegister(), i.InputRegister(1), i.InputRegister(0));
+      } else {
+        __ Movz(i.OutputRegister(), i.InputRegister(1), i.InputRegister(1));
+      }
       break;
     case kMips64DdivU:
       __ Ddivu(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
+      if (kArchVariant == kMips64r6) {
+        __ selnez(i.OutputRegister(), i.InputRegister(1), i.InputRegister(0));
+      } else {
+        __ Movz(i.OutputRegister(), i.InputRegister(1), i.InputRegister(1));
+      }
       break;
     case kMips64Dmod:
       __ Dmod(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
@@ -1030,6 +1052,24 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ Cvt_s_ul(i.OutputDoubleRegister(), i.InputRegister(0));
       break;
     }
+    case kMips64FloorWD: {
+      FPURegister scratch = kScratchDoubleReg;
+      __ floor_w_d(scratch, i.InputDoubleRegister(0));
+      __ mfc1(i.OutputRegister(), scratch);
+      break;
+    }
+    case kMips64CeilWD: {
+      FPURegister scratch = kScratchDoubleReg;
+      __ ceil_w_d(scratch, i.InputDoubleRegister(0));
+      __ mfc1(i.OutputRegister(), scratch);
+      break;
+    }
+    case kMips64RoundWD: {
+      FPURegister scratch = kScratchDoubleReg;
+      __ round_w_d(scratch, i.InputDoubleRegister(0));
+      __ mfc1(i.OutputRegister(), scratch);
+      break;
+    }
     case kMips64TruncWD: {
       FPURegister scratch = kScratchDoubleReg;
       // Other arches use round to zero here, so we follow.
@@ -1046,9 +1086,30 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     }
     case kMips64TruncLD: {
       FPURegister scratch = kScratchDoubleReg;
+      Register tmp_fcsr = kScratchReg;
+      Register result = kScratchReg2;
+
+      bool load_status = instr->OutputCount() > 1;
+      if (load_status) {
+        // Save FCSR.
+        __ cfc1(tmp_fcsr, FCSR);
+        // Clear FPU flags.
+        __ ctc1(zero_reg, FCSR);
+      }
       // Other arches use round to zero here, so we follow.
       __ trunc_l_d(scratch, i.InputDoubleRegister(0));
-      __ dmfc1(i.OutputRegister(), scratch);
+      __ dmfc1(i.OutputRegister(0), scratch);
+      if (load_status) {
+        __ cfc1(result, FCSR);
+        // Check for overflow and NaNs.
+        __ andi(result, result,
+                (kFCSROverflowFlagMask | kFCSRInvalidOpFlagMask));
+        __ Slt(result, zero_reg, result);
+        __ xori(result, result, 1);
+        __ mov(i.OutputRegister(1), result);
+        // Restore FCSR
+        __ ctc1(tmp_fcsr, FCSR);
+      }
       break;
     }
     case kMips64TruncUwD: {
@@ -1065,8 +1126,10 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     }
     case kMips64TruncUlD: {
       FPURegister scratch = kScratchDoubleReg;
+      Register result = instr->OutputCount() > 1 ? i.OutputRegister(1) : no_reg;
       // TODO(plind): Fix wrong param order of Trunc_ul_d() macro-asm function.
-      __ Trunc_ul_d(i.InputDoubleRegister(0), i.OutputRegister(), scratch);
+      __ Trunc_ul_d(i.InputDoubleRegister(0), i.OutputRegister(0), scratch,
+                    result);
       break;
     }
     case kMips64BitcastDL:

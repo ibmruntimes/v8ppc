@@ -372,14 +372,8 @@ class StaticMarkingVisitor : public StaticVisitorBase {
   INLINE(static void VisitNativeContext(Map* map, HeapObject* object));
   INLINE(static void VisitBytecodeArray(Map* map, HeapObject* object));
 
-  // Mark pointers in a Map and its TransitionArray together, possibly
-  // treating transitions or back pointers weak.
+  // Mark pointers in a Map treating some elements of the descriptor array weak.
   static void MarkMapContents(Heap* heap, Map* map);
-  static void MarkTransitionArray(Heap* heap, TransitionArray* transitions);
-
-  // Mark pointers in the optimized code map that should act as strong
-  // references, possibly treating some entries weak.
-  static void MarkOptimizedCodeMap(Heap* heap, FixedArray* code_map);
 
   // Code flushing support.
   INLINE(static bool IsFlushable(Heap* heap, JSFunction* function));
