@@ -60,8 +60,11 @@ class InterpreterAssembler {
   void SetContext(Node* value);
 
   // Loads from and stores to the interpreter register file.
+  Node* LoadRegister(int offset);
   Node* LoadRegister(interpreter::Register reg);
   Node* LoadRegister(Node* reg_index);
+  Node* StoreRegister(Node* value, int offset);
+  Node* StoreRegister(Node* value, interpreter::Register reg);
   Node* StoreRegister(Node* value, Node* reg_index);
 
   // Returns the location in memory of the register |reg_index| in the
@@ -101,6 +104,9 @@ class InterpreterAssembler {
 
   // Load the TypeFeedbackVector for the current function.
   Node* LoadTypeFeedbackVector();
+
+  // Project the output value at index |index|
+  Node* Projection(int index, Node* node);
 
   // Call constructor |constructor| with |arg_count| arguments (not
   // including receiver) and the first argument located at
@@ -163,6 +169,11 @@ class InterpreterAssembler {
   // Returns a raw pointer to first entry in the interpreter dispatch table.
   Node* DispatchTableRawPointer();
 
+  // Saves and restores interpreter bytecode offset to the interpreter stack
+  // frame when performing a call.
+  void CallPrologue();
+  void CallEpilogue();
+
   // Returns the offset of register |index| relative to RegisterFilePointer().
   Node* RegisterFrameOffset(Node* index);
 
@@ -173,8 +184,6 @@ class InterpreterAssembler {
 
   Node* CallN(CallDescriptor* descriptor, Node* code_target, Node** args);
   Node* CallIC(CallInterfaceDescriptor descriptor, Node* target, Node** args);
-  Node* CallJSBuiltin(int context_index, Node* receiver, Node** js_args,
-                      int js_arg_count);
 
   // Returns BytecodeOffset() advanced by delta bytecodes. Note: this does not
   // update BytecodeOffset() itself.
@@ -193,8 +202,11 @@ class InterpreterAssembler {
 
   interpreter::Bytecode bytecode_;
   base::SmartPointer<RawMachineAssembler> raw_assembler_;
+
   Node* accumulator_;
+  Node* bytecode_offset_;
   Node* context_;
+
   bool code_generated_;
 
   DISALLOW_COPY_AND_ASSIGN(InterpreterAssembler);

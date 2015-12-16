@@ -117,6 +117,14 @@ class BytecodeArrayBuilder {
                                            int feedback_slot,
                                            LanguageMode language_mode);
 
+  // Lookup the variable with |name|.
+  BytecodeArrayBuilder& LoadLookupSlot(const Handle<String> name,
+                                       TypeofMode typeof_mode);
+
+  // Store value in the accumulator into the variable with |name|.
+  BytecodeArrayBuilder& StoreLookupSlot(const Handle<String> name,
+                                        LanguageMode language_mode);
+
   // Create a new closure for the SharedFunctionInfo.
   BytecodeArrayBuilder& CreateClosure(Handle<SharedFunctionInfo> shared_info,
                                       PretenureFlag tenured);
@@ -226,6 +234,7 @@ class BytecodeArrayBuilder {
   static Bytecode BytecodeForLoadGlobal(LanguageMode language_mode,
                                         TypeofMode typeof_mode);
   static Bytecode BytecodeForStoreGlobal(LanguageMode language_mode);
+  static Bytecode BytecodeForStoreLookupSlot(LanguageMode language_mode);
   static Bytecode BytecodeForCreateArguments(CreateArgumentsType type);
   static Bytecode BytecodeForDelete(LanguageMode language_mode);
 
@@ -304,22 +313,24 @@ class BytecodeLabel final {
  public:
   BytecodeLabel() : bound_(false), offset_(kInvalidOffset) {}
 
-  INLINE(bool is_bound() const) { return bound_; }
+  bool is_bound() const { return bound_; }
+  size_t offset() const { return offset_; }
 
  private:
   static const size_t kInvalidOffset = static_cast<size_t>(-1);
 
-  INLINE(void bind_to(size_t offset)) {
+  void bind_to(size_t offset) {
     DCHECK(!bound_ && offset != kInvalidOffset);
     offset_ = offset;
     bound_ = true;
   }
-  INLINE(void set_referrer(size_t offset)) {
+
+  void set_referrer(size_t offset) {
     DCHECK(!bound_ && offset != kInvalidOffset && offset_ == kInvalidOffset);
     offset_ = offset;
   }
-  INLINE(size_t offset() const) { return offset_; }
-  INLINE(bool is_forward_target() const) {
+
+  bool is_forward_target() const {
     return offset() != kInvalidOffset && !is_bound();
   }
 

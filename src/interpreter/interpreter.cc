@@ -17,6 +17,7 @@ namespace internal {
 namespace interpreter {
 
 using compiler::Node;
+
 #define __ assembler->
 
 
@@ -420,6 +421,71 @@ void Interpreter::DoStaContextSlot(compiler::InterpreterAssembler* assembler) {
   Node* slot_index = __ BytecodeOperandIdx(1);
   __ StoreContextSlot(context, slot_index, value);
   __ Dispatch();
+}
+
+
+void Interpreter::DoLoadLookupSlot(Runtime::FunctionId function_id,
+                                   compiler::InterpreterAssembler* assembler) {
+  Node* index = __ BytecodeOperandIdx(0);
+  Node* name = __ LoadConstantPoolEntry(index);
+  Node* context = __ GetContext();
+  Node* result_pair = __ CallRuntime(function_id, context, name);
+  Node* result = __ Projection(0, result_pair);
+  __ SetAccumulator(result);
+  __ Dispatch();
+}
+
+
+// LdaLookupSlot <name_index>
+//
+// Lookup the object with the name in constant pool entry |name_index|
+// dynamically.
+void Interpreter::DoLdaLookupSlot(compiler::InterpreterAssembler* assembler) {
+  DoLoadLookupSlot(Runtime::kLoadLookupSlot, assembler);
+}
+
+
+// LdaLookupSlotInsideTypeof <name_index>
+//
+// Lookup the object with the name in constant pool entry |name_index|
+// dynamically without causing a NoReferenceError.
+void Interpreter::DoLdaLookupSlotInsideTypeof(
+    compiler::InterpreterAssembler* assembler) {
+  DoLoadLookupSlot(Runtime::kLoadLookupSlotNoReferenceError, assembler);
+}
+
+
+void Interpreter::DoStoreLookupSlot(LanguageMode language_mode,
+                                    compiler::InterpreterAssembler* assembler) {
+  Node* value = __ GetAccumulator();
+  Node* index = __ BytecodeOperandIdx(0);
+  Node* name = __ LoadConstantPoolEntry(index);
+  Node* context = __ GetContext();
+  Node* language_mode_node = __ NumberConstant(language_mode);
+  Node* result = __ CallRuntime(Runtime::kStoreLookupSlot, value, context, name,
+                                language_mode_node);
+  __ SetAccumulator(result);
+  __ Dispatch();
+}
+
+
+// StaLookupSlotSloppy <name_index>
+//
+// Store the object in accumulator to the object with the name in constant
+// pool entry |name_index| in sloppy mode.
+void Interpreter::DoStaLookupSlotSloppy(
+    compiler::InterpreterAssembler* assembler) {
+  DoStoreLookupSlot(LanguageMode::SLOPPY, assembler);
+}
+
+
+// StaLookupSlotStrict <name_index>
+//
+// Store the object in accumulator to the object with the name in constant
+// pool entry |name_index| in strict mode.
+void Interpreter::DoStaLookupSlotStrict(
+    compiler::InterpreterAssembler* assembler) {
+  DoStoreLookupSlot(LanguageMode::STRICT, assembler);
 }
 
 
@@ -1188,9 +1254,9 @@ void Interpreter::DoJumpIfFalseConstant(
 void Interpreter::DoJumpIfToBooleanTrue(
     compiler::InterpreterAssembler* assembler) {
   Node* accumulator = __ GetAccumulator();
-  Node* relative_jump = __ BytecodeOperandImm(0);
   Node* to_boolean_value =
       __ CallRuntime(Runtime::kInterpreterToBoolean, accumulator);
+  Node* relative_jump = __ BytecodeOperandImm(0);
   Node* true_value = __ BooleanConstant(true);
   __ JumpIfWordEqual(to_boolean_value, true_value, relative_jump);
 }
@@ -1221,9 +1287,9 @@ void Interpreter::DoJumpIfToBooleanTrueConstant(
 void Interpreter::DoJumpIfToBooleanFalse(
     compiler::InterpreterAssembler* assembler) {
   Node* accumulator = __ GetAccumulator();
-  Node* relative_jump = __ BytecodeOperandImm(0);
   Node* to_boolean_value =
       __ CallRuntime(Runtime::kInterpreterToBoolean, accumulator);
+  Node* relative_jump = __ BytecodeOperandImm(0);
   Node* false_value = __ BooleanConstant(false);
   __ JumpIfWordEqual(to_boolean_value, false_value, relative_jump);
 }
