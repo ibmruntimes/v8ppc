@@ -365,11 +365,6 @@ class MarkCompactCollector {
   CodeFlusher* code_flusher() { return code_flusher_; }
   inline bool is_code_flushing_enabled() const { return code_flusher_ != NULL; }
 
-  enum SweeperType {
-    CONCURRENT_SWEEPING,
-    SEQUENTIAL_SWEEPING
-  };
-
   enum SweepingParallelism { SWEEP_ON_MAIN_THREAD, SWEEP_IN_PARALLEL };
 
 #ifdef VERIFY_HEAP
@@ -574,8 +569,6 @@ class MarkCompactCollector {
   // Marking operations for objects reachable from roots.
   void MarkLiveObjects();
 
-  void AfterMarking();
-
   // Pushes a black object onto the marking stack and accounts for live bytes.
   // Note that this assumes live bytes have not yet been counted.
   INLINE(void PushBlack(HeapObject* obj));
@@ -695,7 +688,6 @@ class MarkCompactCollector {
   // regions to each space's free list.
   void SweepSpaces();
 
-
   void EvacuateNewSpace();
 
   void AddEvacuationSlotsBufferSynchronized(
@@ -716,6 +708,8 @@ class MarkCompactCollector {
 
   void EvacuateNewSpaceAndCandidates();
 
+  void UpdatePointersAfterEvacuation();
+
   // Iterates through all live objects on a page using marking information.
   // Returns whether all objects have successfully been visited.
   bool VisitLiveObjects(MemoryChunk* page, HeapObjectVisitor* visitor,
@@ -731,7 +725,9 @@ class MarkCompactCollector {
   // corresponding space pages list.
   void MoveEvacuationCandidatesToEndOfPagesList();
 
-  void SweepSpace(PagedSpace* space, SweeperType sweeper);
+  // Starts sweeping of a space by contributing on the main thread and setting
+  // up other pages for sweeping.
+  void StartSweepSpace(PagedSpace* space);
 
   // Finalizes the parallel sweeping phase. Marks all the pages that were
   // swept in parallel.
@@ -831,6 +827,14 @@ class MarkBitCellIterator BASE_EMBEDDED {
   inline void Advance() {
     cell_index_++;
     cell_base_ += 32 * kPointerSize;
+  }
+
+  // Return the next mark bit cell. If there is no next it returns 0;
+  inline MarkBit::CellType PeekNext() {
+    if (HasNext()) {
+      return cells_[cell_index_ + 1];
+    }
+    return 0;
   }
 
  private:

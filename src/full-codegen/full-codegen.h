@@ -477,7 +477,6 @@ class FullCodeGenerator: public AstVisitor {
   F(IsRegExp)                           \
   F(IsJSProxy)                          \
   F(Call)                               \
-  F(DefaultConstructorCallSuper)        \
   F(ArgumentsLength)                    \
   F(Arguments)                          \
   F(ValueOf)                            \
@@ -496,6 +495,7 @@ class FullCodeGenerator: public AstVisitor {
   F(IsMinusZero)                        \
   F(HasCachedArrayIndex)                \
   F(GetCachedArrayIndex)                \
+  F(GetSuperConstructor)                \
   F(FastOneByteArrayJoin)               \
   F(GeneratorNext)                      \
   F(GeneratorThrow)                     \
@@ -629,8 +629,6 @@ class FullCodeGenerator: public AstVisitor {
 
   void EmitSetHomeObjectAccumulator(Expression* initializer, int offset,
                                     FeedbackVectorSlot slot);
-
-  void EmitLoadSuperConstructor(SuperCallReference* super_call_ref);
 
   void CallIC(Handle<Code> code,
               TypeFeedbackId id = TypeFeedbackId::None());

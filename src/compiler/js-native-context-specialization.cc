@@ -254,7 +254,7 @@ Reduction JSNativeContextSpecialization::ReduceNamedAccess(
             this_storage, this_effect, this_control);
       }
       FieldAccess field_access = {kTaggedBase, field_index.offset(), name,
-                                  field_type, kMachAnyTagged};
+                                  field_type, MachineType::AnyTagged()};
       if (access_mode == AccessMode::kLoad) {
         if (field_type->Is(Type::UntaggedFloat64())) {
           if (!field_index.is_inobject() || field_index.is_hidden_field() ||
@@ -265,7 +265,7 @@ Reduction JSNativeContextSpecialization::ReduceNamedAccess(
             field_access.offset = HeapNumber::kValueOffset;
             field_access.name = MaybeHandle<Name>();
           }
-          field_access.machine_type = kMachFloat64;
+          field_access.machine_type = MachineType::Float64();
         }
         this_value = this_effect =
             graph()->NewNode(simplified()->LoadField(field_access),
@@ -309,11 +309,11 @@ Reduction JSNativeContextSpecialization::ReduceNamedAccess(
                                    this_storage, this_effect, this_control);
               field_access.offset = HeapNumber::kValueOffset;
               field_access.name = MaybeHandle<Name>();
-              field_access.machine_type = kMachFloat64;
+              field_access.machine_type = MachineType::Float64();
             }
           } else {
             // Unboxed double field, we store directly to the field.
-            field_access.machine_type = kMachFloat64;
+            field_access.machine_type = MachineType::Float64();
           }
         } else if (field_type->Is(Type::TaggedSigned())) {
           Node* check =
@@ -323,6 +323,8 @@ Reduction JSNativeContextSpecialization::ReduceNamedAccess(
           exit_controls.push_back(
               graph()->NewNode(common()->IfFalse(), branch));
           this_control = graph()->NewNode(common()->IfTrue(), branch);
+          this_value = graph()->NewNode(common()->Guard(type_cache_.kSmi),
+                                        this_value, this_control);
         } else if (field_type->Is(Type::TaggedPointer())) {
           Node* check =
               graph()->NewNode(simplified()->ObjectIsSmi(), this_value);
@@ -429,8 +431,9 @@ Reduction JSNativeContextSpecialization::ReduceNamedAccess(
     control = graph()->NewNode(common()->Merge(control_count), control_count,
                                &controls.front());
     values.push_back(control);
-    value = graph()->NewNode(common()->Phi(kMachAnyTagged, control_count),
-                             control_count + 1, &values.front());
+    value = graph()->NewNode(
+        common()->Phi(MachineRepresentation::kTagged, control_count),
+        control_count + 1, &values.front());
     effects.push_back(control);
     effect = graph()->NewNode(common()->EffectPhi(control_count),
                               control_count + 1, &effects.front());
@@ -700,10 +703,10 @@ Reduction JSNativeContextSpecialization::ReduceElementAccess(
 
     // Compute the element access.
     Type* element_type = Type::Any();
-    MachineType element_machine_type = kMachAnyTagged;
+    MachineType element_machine_type = MachineType::AnyTagged();
     if (IsFastDoubleElementsKind(elements_kind)) {
       element_type = type_cache_.kFloat64;
-      element_machine_type = kMachFloat64;
+      element_machine_type = MachineType::Float64();
     } else if (IsFastSmiElementsKind(elements_kind)) {
       element_type = type_cache_.kSmi;
     }
@@ -752,9 +755,9 @@ Reduction JSNativeContextSpecialization::ReduceElementAccess(
           // Turn the hole into undefined.
           this_control =
               graph()->NewNode(common()->Merge(2), if_true, if_false);
-          this_value = graph()->NewNode(common()->Phi(kMachAnyTagged, 2),
-                                        jsgraph()->UndefinedConstant(),
-                                        this_value, this_control);
+          this_value = graph()->NewNode(
+              common()->Phi(MachineRepresentation::kTagged, 2),
+              jsgraph()->UndefinedConstant(), this_value, this_control);
           element_type =
               Type::Union(element_type, Type::Undefined(), graph()->zone());
         } else {
@@ -782,8 +785,9 @@ Reduction JSNativeContextSpecialization::ReduceElementAccess(
           dependencies()->AssumePropertyCell(factory()->array_protector());
           // Turn the hole into undefined.
           this_value = graph()->NewNode(
-              common()->Select(kMachAnyTagged, BranchHint::kFalse), check,
-              jsgraph()->UndefinedConstant(), this_value);
+              common()->Select(MachineRepresentation::kTagged,
+                               BranchHint::kFalse),
+              check, jsgraph()->UndefinedConstant(), this_value);
         } else {
           // Deoptimize in case of the hole.
           Node* branch = graph()->NewNode(common()->Branch(BranchHint::kFalse),
@@ -800,6 +804,8 @@ Reduction JSNativeContextSpecialization::ReduceElementAccess(
                                         check, this_control);
         exit_controls.push_back(graph()->NewNode(common()->IfFalse(), branch));
         this_control = graph()->NewNode(common()->IfTrue(), branch);
+        this_value = graph()->NewNode(common()->Guard(type_cache_.kSmi),
+                                      this_value, this_control);
       } else if (IsFastDoubleElementsKind(elements_kind)) {
         Node* check =
             graph()->NewNode(simplified()->ObjectIsNumber(), this_value);
@@ -857,8 +863,9 @@ Reduction JSNativeContextSpecialization::ReduceElementAccess(
     control = graph()->NewNode(common()->Merge(control_count), control_count,
                                &controls.front());
     values.push_back(control);
-    value = graph()->NewNode(common()->Phi(kMachAnyTagged, control_count),
-                             control_count + 1, &values.front());
+    value = graph()->NewNode(
+        common()->Phi(MachineRepresentation::kTagged, control_count),
+        control_count + 1, &values.front());
     effects.push_back(control);
     effect = graph()->NewNode(common()->EffectPhi(control_count),
                               control_count + 1, &effects.front());

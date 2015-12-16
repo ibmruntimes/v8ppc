@@ -23,6 +23,7 @@ var matchSymbol = utils.ImportNow("match_symbol");
 var RegExpExec;
 var RegExpExecNoTests;
 var RegExpLastMatchInfo;
+var searchSymbol = utils.ImportNow("search_symbol");
 var splitSymbol = utils.ImportNow("split_symbol");
 
 utils.Import(function(from) {
@@ -155,16 +156,13 @@ function StringLocaleCompareJS(other) {
 }
 
 
-// ECMA-262 section 15.5.4.10
+// ES6 21.1.3.11.
 function StringMatchJS(pattern) {
   CHECK_OBJECT_COERCIBLE(this, "String.prototype.match");
 
   if (!IS_NULL_OR_UNDEFINED(pattern)) {
     var matcher = pattern[matchSymbol];
     if (!IS_UNDEFINED(matcher)) {
-      if (!IS_CALLABLE(matcher)) {
-        throw MakeTypeError(kCalledNonCallable, matcher);
-      }
       return %_Call(matcher, pattern, this);
     }
   }
@@ -505,21 +503,20 @@ function StringReplaceNonGlobalRegExpWithFunction(subject, regexp, replace) {
 }
 
 
-// ECMA-262 section 15.5.4.12
-function StringSearch(re) {
+// ES6 21.1.3.15.
+function StringSearch(pattern) {
   CHECK_OBJECT_COERCIBLE(this, "String.prototype.search");
 
-  var regexp;
-  if (IS_REGEXP(re)) {
-    regexp = re;
-  } else {
-    regexp = new GlobalRegExp(re);
+  if (!IS_NULL_OR_UNDEFINED(pattern)) {
+    var searcher = pattern[searchSymbol];
+    if (!IS_UNDEFINED(searcher)) {
+      return %_Call(searcher, pattern, this);
+    }
   }
-  var match = RegExpExec(regexp, TO_STRING(this), 0);
-  if (match) {
-    return match[CAPTURE0];
-  }
-  return -1;
+
+  var subject = TO_STRING(this);
+  var regexp = new GlobalRegExp(pattern);
+  return %_Call(regexp[searchSymbol], regexp, subject);
 }
 
 
@@ -572,9 +569,6 @@ function StringSplitJS(separator, limit) {
   if (!IS_NULL_OR_UNDEFINED(separator)) {
     var splitter = separator[splitSymbol];
     if (!IS_UNDEFINED(splitter)) {
-      if (!IS_CALLABLE(splitter)) {
-        throw MakeTypeError(kCalledNonCallable, splitter);
-      }
       return %_Call(splitter, separator, this, limit);
     }
   }

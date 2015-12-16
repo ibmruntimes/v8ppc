@@ -1425,13 +1425,13 @@ void MacroAssembler::BranchFCommon(SecondaryField sizeField, Label* target,
       if (!IsMipsArchVariant(kMips32r6)) {
         if (long_branch) {
           Label skip;
-          c(UN, D, cmp1, cmp2);
+          c(UN, sizeField, cmp1, cmp2);
           bc1f(&skip);
           nop();
           BranchLong(nan, bd);
           bind(&skip);
         } else {
-          c(UN, D, cmp1, cmp2);
+          c(UN, sizeField, cmp1, cmp2);
           bc1t(nan);
           if (bd == PROTECT) {
             nop();
@@ -1443,13 +1443,13 @@ void MacroAssembler::BranchFCommon(SecondaryField sizeField, Label* target,
         DCHECK(!cmp1.is(kDoubleCompareReg) && !cmp2.is(kDoubleCompareReg));
         if (long_branch) {
           Label skip;
-          cmp(UN, L, kDoubleCompareReg, cmp1, cmp2);
+          cmp(UN, sizeField, kDoubleCompareReg, cmp1, cmp2);
           bc1eqz(&skip, kDoubleCompareReg);
           nop();
           BranchLong(nan, bd);
           bind(&skip);
         } else {
-          cmp(UN, L, kDoubleCompareReg, cmp1, cmp2);
+          cmp(UN, sizeField, kDoubleCompareReg, cmp1, cmp2);
           bc1nez(nan, kDoubleCompareReg);
           if (bd == PROTECT) {
             nop();
@@ -4703,17 +4703,17 @@ void MacroAssembler::LoadTransitionedArrayMapConditional(
     Register map_in_out,
     Register scratch,
     Label* no_map_match) {
+  DCHECK(IsFastElementsKind(expected_kind));
+  DCHECK(IsFastElementsKind(transitioned_kind));
+
   // Check that the function's map is the same as the expected cached map.
-  LoadNativeContextSlot(Context::JS_ARRAY_MAPS_INDEX, scratch);
-  size_t offset = expected_kind * kPointerSize +
-      FixedArrayBase::kHeaderSize;
-  lw(at, FieldMemOperand(scratch, offset));
+  lw(scratch, NativeContextMemOperand());
+  lw(at, ContextMemOperand(scratch, Context::ArrayMapIndex(expected_kind)));
   Branch(no_map_match, ne, map_in_out, Operand(at));
 
   // Use the transitioned cached map.
-  offset = transitioned_kind * kPointerSize +
-      FixedArrayBase::kHeaderSize;
-  lw(map_in_out, FieldMemOperand(scratch, offset));
+  lw(map_in_out,
+     ContextMemOperand(scratch, Context::ArrayMapIndex(transitioned_kind)));
 }
 
 

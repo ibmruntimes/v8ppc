@@ -132,32 +132,31 @@ static void VisitBinop(InstructionSelector* selector, Node* node,
 
 
 void InstructionSelector::VisitLoad(Node* node) {
-  MachineType rep = RepresentationOf(OpParameter<LoadRepresentation>(node));
-  MachineType typ = TypeOf(OpParameter<LoadRepresentation>(node));
+  LoadRepresentation load_rep = LoadRepresentationOf(node->op());
   Mips64OperandGenerator g(this);
   Node* base = node->InputAt(0);
   Node* index = node->InputAt(1);
 
   ArchOpcode opcode;
-  switch (rep) {
-    case kRepFloat32:
+  switch (load_rep.representation()) {
+    case MachineRepresentation::kFloat32:
       opcode = kMips64Lwc1;
       break;
-    case kRepFloat64:
+    case MachineRepresentation::kFloat64:
       opcode = kMips64Ldc1;
       break;
-    case kRepBit:  // Fall through.
-    case kRepWord8:
-      opcode = typ == kTypeUint32 ? kMips64Lbu : kMips64Lb;
+    case MachineRepresentation::kBit:  // Fall through.
+    case MachineRepresentation::kWord8:
+      opcode = load_rep.IsUnsigned() ? kMips64Lbu : kMips64Lb;
       break;
-    case kRepWord16:
-      opcode = typ == kTypeUint32 ? kMips64Lhu : kMips64Lh;
+    case MachineRepresentation::kWord16:
+      opcode = load_rep.IsUnsigned() ? kMips64Lhu : kMips64Lh;
       break;
-    case kRepWord32:
+    case MachineRepresentation::kWord32:
       opcode = kMips64Lw;
       break;
-    case kRepTagged:  // Fall through.
-    case kRepWord64:
+    case MachineRepresentation::kTagged:  // Fall through.
+    case MachineRepresentation::kWord64:
       opcode = kMips64Ld;
       break;
     default:
@@ -185,13 +184,13 @@ void InstructionSelector::VisitStore(Node* node) {
   Node* index = node->InputAt(1);
   Node* value = node->InputAt(2);
 
-  StoreRepresentation store_rep = OpParameter<StoreRepresentation>(node);
+  StoreRepresentation store_rep = StoreRepresentationOf(node->op());
   WriteBarrierKind write_barrier_kind = store_rep.write_barrier_kind();
-  MachineType rep = RepresentationOf(store_rep.machine_type());
+  MachineRepresentation rep = store_rep.representation();
 
   // TODO(mips): I guess this could be done in a better way.
   if (write_barrier_kind != kNoWriteBarrier) {
-    DCHECK_EQ(kRepTagged, rep);
+    DCHECK_EQ(MachineRepresentation::kTagged, rep);
     InstructionOperand inputs[3];
     size_t input_count = 0;
     inputs[input_count++] = g.UseUniqueRegister(base);
@@ -222,24 +221,24 @@ void InstructionSelector::VisitStore(Node* node) {
   } else {
     ArchOpcode opcode;
     switch (rep) {
-      case kRepFloat32:
+      case MachineRepresentation::kFloat32:
         opcode = kMips64Swc1;
         break;
-      case kRepFloat64:
+      case MachineRepresentation::kFloat64:
         opcode = kMips64Sdc1;
         break;
-      case kRepBit:  // Fall through.
-      case kRepWord8:
+      case MachineRepresentation::kBit:  // Fall through.
+      case MachineRepresentation::kWord8:
         opcode = kMips64Sb;
         break;
-      case kRepWord16:
+      case MachineRepresentation::kWord16:
         opcode = kMips64Sh;
         break;
-      case kRepWord32:
+      case MachineRepresentation::kWord32:
         opcode = kMips64Sw;
         break;
-      case kRepTagged:  // Fall through.
-      case kRepWord64:
+      case MachineRepresentation::kTagged:  // Fall through.
+      case MachineRepresentation::kWord64:
         opcode = kMips64Sd;
         break;
       default:
@@ -850,8 +849,19 @@ void InstructionSelector::VisitChangeFloat64ToUint32(Node* node) {
 }
 
 
-void InstructionSelector::VisitTruncateFloat32ToInt64(Node* node) {
-  VisitRR(this, kMips64TruncLS, node);
+void InstructionSelector::VisitTryTruncateFloat32ToInt64(Node* node) {
+  Mips64OperandGenerator g(this);
+  InstructionOperand inputs[] = {g.UseRegister(node->InputAt(0))};
+  InstructionOperand outputs[2];
+  size_t output_count = 0;
+  outputs[output_count++] = g.DefineAsRegister(node);
+
+  Node* success_output = NodeProperties::FindProjection(node, 1);
+  if (success_output) {
+    outputs[output_count++] = g.DefineAsRegister(success_output);
+  }
+
+  this->Emit(kMips64TruncLS, output_count, outputs, 1, inputs);
 }
 
 
@@ -871,8 +881,19 @@ void InstructionSelector::VisitTryTruncateFloat64ToInt64(Node* node) {
 }
 
 
-void InstructionSelector::VisitTruncateFloat32ToUint64(Node* node) {
-  VisitRR(this, kMips64TruncUlS, node);
+void InstructionSelector::VisitTryTruncateFloat32ToUint64(Node* node) {
+  Mips64OperandGenerator g(this);
+  InstructionOperand inputs[] = {g.UseRegister(node->InputAt(0))};
+  InstructionOperand outputs[2];
+  size_t output_count = 0;
+  outputs[output_count++] = g.DefineAsRegister(node);
+
+  Node* success_output = NodeProperties::FindProjection(node, 1);
+  if (success_output) {
+    outputs[output_count++] = g.DefineAsRegister(success_output);
+  }
+
+  Emit(kMips64TruncUlS, output_count, outputs, 1, inputs);
 }
 
 
@@ -1216,30 +1237,29 @@ bool InstructionSelector::IsTailCallAddressImmediate() { return false; }
 
 
 void InstructionSelector::VisitCheckedLoad(Node* node) {
-  MachineType rep = RepresentationOf(OpParameter<MachineType>(node));
-  MachineType typ = TypeOf(OpParameter<MachineType>(node));
+  CheckedLoadRepresentation load_rep = CheckedLoadRepresentationOf(node->op());
   Mips64OperandGenerator g(this);
   Node* const buffer = node->InputAt(0);
   Node* const offset = node->InputAt(1);
   Node* const length = node->InputAt(2);
   ArchOpcode opcode;
-  switch (rep) {
-    case kRepWord8:
-      opcode = typ == kTypeInt32 ? kCheckedLoadInt8 : kCheckedLoadUint8;
+  switch (load_rep.representation()) {
+    case MachineRepresentation::kWord8:
+      opcode = load_rep.IsSigned() ? kCheckedLoadInt8 : kCheckedLoadUint8;
       break;
-    case kRepWord16:
-      opcode = typ == kTypeInt32 ? kCheckedLoadInt16 : kCheckedLoadUint16;
+    case MachineRepresentation::kWord16:
+      opcode = load_rep.IsSigned() ? kCheckedLoadInt16 : kCheckedLoadUint16;
       break;
-    case kRepWord32:
+    case MachineRepresentation::kWord32:
       opcode = kCheckedLoadWord32;
       break;
-    case kRepWord64:
+    case MachineRepresentation::kWord64:
       opcode = kCheckedLoadWord64;
       break;
-    case kRepFloat32:
+    case MachineRepresentation::kFloat32:
       opcode = kCheckedLoadFloat32;
       break;
-    case kRepFloat64:
+    case MachineRepresentation::kFloat64:
       opcode = kCheckedLoadFloat64;
       break;
     default:
@@ -1263,7 +1283,7 @@ void InstructionSelector::VisitCheckedLoad(Node* node) {
 
 
 void InstructionSelector::VisitCheckedStore(Node* node) {
-  MachineType rep = RepresentationOf(OpParameter<MachineType>(node));
+  MachineRepresentation rep = CheckedStoreRepresentationOf(node->op());
   Mips64OperandGenerator g(this);
   Node* const buffer = node->InputAt(0);
   Node* const offset = node->InputAt(1);
@@ -1271,22 +1291,22 @@ void InstructionSelector::VisitCheckedStore(Node* node) {
   Node* const value = node->InputAt(3);
   ArchOpcode opcode;
   switch (rep) {
-    case kRepWord8:
+    case MachineRepresentation::kWord8:
       opcode = kCheckedStoreWord8;
       break;
-    case kRepWord16:
+    case MachineRepresentation::kWord16:
       opcode = kCheckedStoreWord16;
       break;
-    case kRepWord32:
+    case MachineRepresentation::kWord32:
       opcode = kCheckedStoreWord32;
       break;
-    case kRepWord64:
+    case MachineRepresentation::kWord64:
       opcode = kCheckedStoreWord64;
       break;
-    case kRepFloat32:
+    case MachineRepresentation::kFloat32:
       opcode = kCheckedStoreFloat32;
       break;
-    case kRepFloat64:
+    case MachineRepresentation::kFloat64:
       opcode = kCheckedStoreFloat64;
       break;
     default:

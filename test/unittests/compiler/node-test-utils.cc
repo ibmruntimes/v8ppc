@@ -411,7 +411,7 @@ class IsConstantMatcher final : public NodeMatcher {
 
 class IsSelectMatcher final : public NodeMatcher {
  public:
-  IsSelectMatcher(const Matcher<MachineType>& type_matcher,
+  IsSelectMatcher(const Matcher<MachineRepresentation>& type_matcher,
                   const Matcher<Node*>& value0_matcher,
                   const Matcher<Node*>& value1_matcher,
                   const Matcher<Node*>& value2_matcher)
@@ -423,7 +423,7 @@ class IsSelectMatcher final : public NodeMatcher {
 
   void DescribeTo(std::ostream* os) const final {
     NodeMatcher::DescribeTo(os);
-    *os << " whose type (";
+    *os << " whose representation (";
     type_matcher_.DescribeTo(os);
     *os << "), value0 (";
     value0_matcher_.DescribeTo(os);
@@ -435,19 +435,20 @@ class IsSelectMatcher final : public NodeMatcher {
   }
 
   bool MatchAndExplain(Node* node, MatchResultListener* listener) const final {
-    return (NodeMatcher::MatchAndExplain(node, listener) &&
-            PrintMatchAndExplain(OpParameter<SelectParameters>(node).type(),
-                                 "type", type_matcher_, listener) &&
-            PrintMatchAndExplain(NodeProperties::GetValueInput(node, 0),
-                                 "value0", value0_matcher_, listener) &&
-            PrintMatchAndExplain(NodeProperties::GetValueInput(node, 1),
-                                 "value1", value1_matcher_, listener) &&
-            PrintMatchAndExplain(NodeProperties::GetValueInput(node, 2),
-                                 "value2", value2_matcher_, listener));
+    return (
+        NodeMatcher::MatchAndExplain(node, listener) &&
+        PrintMatchAndExplain(SelectParametersOf(node->op()).representation(),
+                             "representation", type_matcher_, listener) &&
+        PrintMatchAndExplain(NodeProperties::GetValueInput(node, 0), "value0",
+                             value0_matcher_, listener) &&
+        PrintMatchAndExplain(NodeProperties::GetValueInput(node, 1), "value1",
+                             value1_matcher_, listener) &&
+        PrintMatchAndExplain(NodeProperties::GetValueInput(node, 2), "value2",
+                             value2_matcher_, listener));
   }
 
  private:
-  const Matcher<MachineType> type_matcher_;
+  const Matcher<MachineRepresentation> type_matcher_;
   const Matcher<Node*> value0_matcher_;
   const Matcher<Node*> value1_matcher_;
   const Matcher<Node*> value2_matcher_;
@@ -456,7 +457,7 @@ class IsSelectMatcher final : public NodeMatcher {
 
 class IsPhiMatcher final : public NodeMatcher {
  public:
-  IsPhiMatcher(const Matcher<MachineType>& type_matcher,
+  IsPhiMatcher(const Matcher<MachineRepresentation>& type_matcher,
                const Matcher<Node*>& value0_matcher,
                const Matcher<Node*>& value1_matcher,
                const Matcher<Node*>& control_matcher)
@@ -468,7 +469,7 @@ class IsPhiMatcher final : public NodeMatcher {
 
   void DescribeTo(std::ostream* os) const final {
     NodeMatcher::DescribeTo(os);
-    *os << " whose type (";
+    *os << " whose representation (";
     type_matcher_.DescribeTo(os);
     *os << "), value0 (";
     value0_matcher_.DescribeTo(os);
@@ -481,8 +482,8 @@ class IsPhiMatcher final : public NodeMatcher {
 
   bool MatchAndExplain(Node* node, MatchResultListener* listener) const final {
     return (NodeMatcher::MatchAndExplain(node, listener) &&
-            PrintMatchAndExplain(OpParameter<MachineType>(node), "type",
-                                 type_matcher_, listener) &&
+            PrintMatchAndExplain(PhiRepresentationOf(node->op()),
+                                 "representation", type_matcher_, listener) &&
             PrintMatchAndExplain(NodeProperties::GetValueInput(node, 0),
                                  "value0", value0_matcher_, listener) &&
             PrintMatchAndExplain(NodeProperties::GetValueInput(node, 1),
@@ -492,7 +493,7 @@ class IsPhiMatcher final : public NodeMatcher {
   }
 
  private:
-  const Matcher<MachineType> type_matcher_;
+  const Matcher<MachineRepresentation> type_matcher_;
   const Matcher<Node*> value0_matcher_;
   const Matcher<Node*> value1_matcher_;
   const Matcher<Node*> control_matcher_;
@@ -501,7 +502,7 @@ class IsPhiMatcher final : public NodeMatcher {
 
 class IsPhi2Matcher final : public NodeMatcher {
  public:
-  IsPhi2Matcher(const Matcher<MachineType>& type_matcher,
+  IsPhi2Matcher(const Matcher<MachineRepresentation>& type_matcher,
                 const Matcher<Node*>& value0_matcher,
                 const Matcher<Node*>& value1_matcher,
                 const Matcher<Node*>& value2_matcher,
@@ -515,7 +516,7 @@ class IsPhi2Matcher final : public NodeMatcher {
 
   void DescribeTo(std::ostream* os) const final {
     NodeMatcher::DescribeTo(os);
-    *os << " whose type (";
+    *os << " whose representation (";
     type_matcher_.DescribeTo(os);
     *os << "), value0 (";
     value0_matcher_.DescribeTo(os);
@@ -530,8 +531,8 @@ class IsPhi2Matcher final : public NodeMatcher {
 
   bool MatchAndExplain(Node* node, MatchResultListener* listener) const final {
     return (NodeMatcher::MatchAndExplain(node, listener) &&
-            PrintMatchAndExplain(OpParameter<MachineType>(node), "type",
-                                 type_matcher_, listener) &&
+            PrintMatchAndExplain(PhiRepresentationOf(node->op()),
+                                 "representation", type_matcher_, listener) &&
             PrintMatchAndExplain(NodeProperties::GetValueInput(node, 0),
                                  "value0", value0_matcher_, listener) &&
             PrintMatchAndExplain(NodeProperties::GetValueInput(node, 1),
@@ -543,7 +544,7 @@ class IsPhi2Matcher final : public NodeMatcher {
   }
 
  private:
-  const Matcher<MachineType> type_matcher_;
+  const Matcher<MachineRepresentation> type_matcher_;
   const Matcher<Node*> value0_matcher_;
   const Matcher<Node*> value1_matcher_;
   const Matcher<Node*> value2_matcher_;
@@ -707,10 +708,18 @@ class IsCallMatcher final : public NodeMatcher {
         return false;
       }
     }
-    return (PrintMatchAndExplain(NodeProperties::GetEffectInput(node), "effect",
-                                 effect_matcher_, listener) &&
-            PrintMatchAndExplain(NodeProperties::GetControlInput(node),
-                                 "control", control_matcher_, listener));
+    Node* effect_node = nullptr;
+    Node* control_node = nullptr;
+    if (NodeProperties::FirstEffectIndex(node) < node->InputCount()) {
+      effect_node = NodeProperties::GetEffectInput(node);
+    }
+    if (NodeProperties::FirstControlIndex(node) < node->InputCount()) {
+      control_node = NodeProperties::GetControlInput(node);
+    }
+    return (PrintMatchAndExplain(effect_node, "effect", effect_matcher_,
+                                 listener) &&
+            PrintMatchAndExplain(control_node, "control", control_matcher_,
+                                 listener));
   }
 
  private:
@@ -765,10 +774,18 @@ class IsTailCallMatcher final : public NodeMatcher {
         return false;
       }
     }
-    return (PrintMatchAndExplain(NodeProperties::GetEffectInput(node), "effect",
-                                 effect_matcher_, listener) &&
-            PrintMatchAndExplain(NodeProperties::GetControlInput(node),
-                                 "control", control_matcher_, listener));
+    Node* effect_node = nullptr;
+    Node* control_node = nullptr;
+    if (NodeProperties::FirstEffectIndex(node) < node->InputCount()) {
+      effect_node = NodeProperties::GetEffectInput(node);
+    }
+    if (NodeProperties::FirstControlIndex(node) < node->InputCount()) {
+      control_node = NodeProperties::GetControlInput(node);
+    }
+    return (PrintMatchAndExplain(effect_node, "effect", effect_matcher_,
+                                 listener) &&
+            PrintMatchAndExplain(control_node, "control", control_matcher_,
+                                 listener));
   }
 
  private:
@@ -1195,6 +1212,14 @@ class IsLoadMatcher final : public NodeMatcher {
   }
 
   bool MatchAndExplain(Node* node, MatchResultListener* listener) const final {
+    Node* effect_node = nullptr;
+    Node* control_node = nullptr;
+    if (NodeProperties::FirstEffectIndex(node) < node->InputCount()) {
+      effect_node = NodeProperties::GetEffectInput(node);
+    }
+    if (NodeProperties::FirstControlIndex(node) < node->InputCount()) {
+      control_node = NodeProperties::GetControlInput(node);
+    }
     return (NodeMatcher::MatchAndExplain(node, listener) &&
             PrintMatchAndExplain(OpParameter<LoadRepresentation>(node), "rep",
                                  rep_matcher_, listener) &&
@@ -1202,10 +1227,10 @@ class IsLoadMatcher final : public NodeMatcher {
                                  base_matcher_, listener) &&
             PrintMatchAndExplain(NodeProperties::GetValueInput(node, 1),
                                  "index", index_matcher_, listener) &&
-            PrintMatchAndExplain(NodeProperties::GetEffectInput(node), "effect",
-                                 effect_matcher_, listener) &&
-            PrintMatchAndExplain(NodeProperties::GetControlInput(node),
-                                 "control", control_matcher_, listener));
+            PrintMatchAndExplain(effect_node, "effect", effect_matcher_,
+                                 listener) &&
+            PrintMatchAndExplain(control_node, "control", control_matcher_,
+                                 listener));
   }
 
  private:
@@ -1251,6 +1276,14 @@ class IsStoreMatcher final : public NodeMatcher {
   }
 
   bool MatchAndExplain(Node* node, MatchResultListener* listener) const final {
+    Node* effect_node = nullptr;
+    Node* control_node = nullptr;
+    if (NodeProperties::FirstEffectIndex(node) < node->InputCount()) {
+      effect_node = NodeProperties::GetEffectInput(node);
+    }
+    if (NodeProperties::FirstControlIndex(node) < node->InputCount()) {
+      control_node = NodeProperties::GetControlInput(node);
+    }
     return (NodeMatcher::MatchAndExplain(node, listener) &&
             PrintMatchAndExplain(OpParameter<StoreRepresentation>(node), "rep",
                                  rep_matcher_, listener) &&
@@ -1260,10 +1293,10 @@ class IsStoreMatcher final : public NodeMatcher {
                                  "index", index_matcher_, listener) &&
             PrintMatchAndExplain(NodeProperties::GetValueInput(node, 2),
                                  "value", value_matcher_, listener) &&
-            PrintMatchAndExplain(NodeProperties::GetEffectInput(node), "effect",
-                                 effect_matcher_, listener) &&
-            PrintMatchAndExplain(NodeProperties::GetControlInput(node),
-                                 "control", control_matcher_, listener));
+            PrintMatchAndExplain(effect_node, "effect", effect_matcher_,
+                                 listener) &&
+            PrintMatchAndExplain(control_node, "control", control_matcher_,
+                                 listener));
   }
 
  private:
@@ -1594,7 +1627,7 @@ Matcher<Node*> IsNumberConstant(const Matcher<double>& value_matcher) {
 }
 
 
-Matcher<Node*> IsSelect(const Matcher<MachineType>& type_matcher,
+Matcher<Node*> IsSelect(const Matcher<MachineRepresentation>& type_matcher,
                         const Matcher<Node*>& value0_matcher,
                         const Matcher<Node*>& value1_matcher,
                         const Matcher<Node*>& value2_matcher) {
@@ -1603,7 +1636,7 @@ Matcher<Node*> IsSelect(const Matcher<MachineType>& type_matcher,
 }
 
 
-Matcher<Node*> IsPhi(const Matcher<MachineType>& type_matcher,
+Matcher<Node*> IsPhi(const Matcher<MachineRepresentation>& type_matcher,
                      const Matcher<Node*>& value0_matcher,
                      const Matcher<Node*>& value1_matcher,
                      const Matcher<Node*>& merge_matcher) {
@@ -1612,7 +1645,7 @@ Matcher<Node*> IsPhi(const Matcher<MachineType>& type_matcher,
 }
 
 
-Matcher<Node*> IsPhi(const Matcher<MachineType>& type_matcher,
+Matcher<Node*> IsPhi(const Matcher<MachineRepresentation>& type_matcher,
                      const Matcher<Node*>& value0_matcher,
                      const Matcher<Node*>& value1_matcher,
                      const Matcher<Node*>& value2_matcher,

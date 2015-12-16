@@ -323,6 +323,9 @@ class MemoryChunk {
     // candidates selection cycle.
     FORCE_EVACUATION_CANDIDATE_FOR_TESTING,
 
+    // This flag is inteded to be used for testing.
+    NEVER_ALLOCATE_ON_PAGE,
+
     // The memory chunk is already logically freed, however the actual freeing
     // still has to be performed.
     PRE_FREED,
@@ -631,13 +634,6 @@ class MemoryChunk {
     }
   }
 
-  bool IsLeftOfProgressBar(Object** slot) {
-    Address slot_address = reinterpret_cast<Address>(slot);
-    DCHECK(slot_address > this->address());
-    return (slot_address - (this->address() + kObjectStartOffset)) <
-           progress_bar();
-  }
-
   size_t size() const { return size_; }
 
   void set_size(size_t size) { size_ = size; }
@@ -687,6 +683,10 @@ class MemoryChunk {
   bool IsEvacuationCandidate() {
     DCHECK(!(IsFlagSet(NEVER_EVACUATE) && IsFlagSet(EVACUATION_CANDIDATE)));
     return IsFlagSet(EVACUATION_CANDIDATE);
+  }
+
+  bool CanAllocate() {
+    return !IsEvacuationCandidate() && !IsFlagSet(NEVER_ALLOCATE_ON_PAGE);
   }
 
   bool ShouldSkipEvacuationSlotRecording() {

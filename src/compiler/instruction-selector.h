@@ -9,6 +9,7 @@
 
 #include "src/compiler/common-operator.h"
 #include "src/compiler/instruction.h"
+#include "src/compiler/instruction-scheduler.h"
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node.h"
 #include "src/zone-containers.h"
@@ -45,6 +46,10 @@ class InstructionSelector final {
 
   // Visit code for the entire graph with the included schedule.
   void SelectInstructions();
+
+  void StartBlock(RpoNumber rpo);
+  void EndBlock(RpoNumber rpo);
+  void AddInstruction(Instruction* instr);
 
   // ===========================================================================
   // ============= Architecture-independent code emission methods. =============
@@ -153,16 +158,27 @@ class InstructionSelector final {
 
   // Inform the register allocation of the representation of the value produced
   // by {node}.
-  void MarkAsRepresentation(MachineType rep, Node* node);
-  void MarkAsWord32(Node* node) { MarkAsRepresentation(kRepWord32, node); }
-  void MarkAsWord64(Node* node) { MarkAsRepresentation(kRepWord64, node); }
-  void MarkAsFloat32(Node* node) { MarkAsRepresentation(kRepFloat32, node); }
-  void MarkAsFloat64(Node* node) { MarkAsRepresentation(kRepFloat64, node); }
-  void MarkAsReference(Node* node) { MarkAsRepresentation(kRepTagged, node); }
+  void MarkAsRepresentation(MachineRepresentation rep, Node* node);
+  void MarkAsWord32(Node* node) {
+    MarkAsRepresentation(MachineRepresentation::kWord32, node);
+  }
+  void MarkAsWord64(Node* node) {
+    MarkAsRepresentation(MachineRepresentation::kWord64, node);
+  }
+  void MarkAsFloat32(Node* node) {
+    MarkAsRepresentation(MachineRepresentation::kFloat32, node);
+  }
+  void MarkAsFloat64(Node* node) {
+    MarkAsRepresentation(MachineRepresentation::kFloat64, node);
+  }
+  void MarkAsReference(Node* node) {
+    MarkAsRepresentation(MachineRepresentation::kTagged, node);
+  }
 
   // Inform the register allocation of the representation of the unallocated
   // operand {op}.
-  void MarkAsRepresentation(MachineType rep, const InstructionOperand& op);
+  void MarkAsRepresentation(MachineRepresentation rep,
+                            const InstructionOperand& op);
 
   enum CallBufferFlag {
     kCallCodeImmediate = 1u << 0,
@@ -242,6 +258,7 @@ class InstructionSelector final {
   BoolVector defined_;
   BoolVector used_;
   IntVector virtual_registers_;
+  InstructionScheduler* scheduler_;
 };
 
 }  // namespace compiler

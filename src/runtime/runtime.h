@@ -91,7 +91,7 @@ namespace internal {
   F(StoreToSuper_Sloppy, 4, 1)              \
   F(StoreKeyedToSuper_Strict, 4, 1)         \
   F(StoreKeyedToSuper_Sloppy, 4, 1)         \
-  F(DefaultConstructorCallSuper, 2, 1)
+  F(GetSuperConstructor, 1, 1)
 
 
 #define FOR_EACH_INTRINSIC_COLLECTIONS(F) \
@@ -183,7 +183,7 @@ namespace internal {
   F(ClearBreakPoint, 1, 1)                     \
   F(ChangeBreakOnException, 2, 1)              \
   F(IsBreakOnException, 1, 1)                  \
-  F(PrepareStep, 4, 1)                         \
+  F(PrepareStep, 2, 1)                         \
   F(ClearStepping, 0, 1)                       \
   F(DebugEvaluate, 6, 1)                       \
   F(DebugEvaluateGlobal, 4, 1)                 \
@@ -335,7 +335,6 @@ namespace internal {
   F(CollectStackTrace, 2, 1)                  \
   F(MessageGetStartPosition, 1, 1)            \
   F(MessageGetScript, 1, 1)                   \
-  F(ErrorToStringRT, 1, 1)                    \
   F(FormatMessageString, 4, 1)                \
   F(CallSiteGetFileNameRT, 1, 1)              \
   F(CallSiteGetFunctionNameRT, 1, 1)          \
@@ -349,7 +348,6 @@ namespace internal {
   F(CallSiteIsConstructorRT, 1, 1)            \
   F(IS_VAR, 1, 1)                             \
   F(IncrementStatsCounter, 1, 1)              \
-  F(HarmonyToString, 0, 1)                    \
   F(ThrowConstructedNonConstructable, 1, 1)   \
   F(ThrowCalledNonCallable, 1, 1)
 
@@ -421,7 +419,9 @@ namespace internal {
   F(SmiLexicographicCompare, 2, 1)     \
   F(MaxSmi, 0, 1)                      \
   F(IsSmi, 1, 1)                       \
-  F(GetRootNaN, 0, 1)
+  F(GetRootNaN, 0, 1)                  \
+  F(GetHoleNaNUpper, 0, 1)             \
+  F(GetHoleNaNLower, 0, 1)
 
 
 #define FOR_EACH_INTRINSIC_OBJECT(F)                 \
@@ -472,8 +472,6 @@ namespace internal {
   F(ValueOf, 1, 1)                                   \
   F(SetValueOf, 2, 1)                                \
   F(JSValueGetValue, 1, 1)                           \
-  F(HeapObjectGetMap, 1, 1)                          \
-  F(MapGetInstanceType, 1, 1)                        \
   F(ObjectEquals, 2, 1)                              \
   F(IsJSReceiver, 1, 1)                              \
   F(IsStrong, 1, 1)                                  \
@@ -893,36 +891,35 @@ namespace internal {
   F(Bool8x16Shuffle, 18, 1)
 
 
-#define FOR_EACH_INTRINSIC_STRINGS(F)           \
-  F(StringReplaceOneCharWithString, 3, 1)       \
-  F(StringIndexOf, 3, 1)                        \
-  F(StringLastIndexOf, 3, 1)                    \
-  F(StringLocaleCompare, 2, 1)                  \
-  F(SubString, 3, 1)                            \
-  F(StringAdd, 2, 1)                            \
-  F(InternalizeString, 1, 1)                    \
-  F(StringMatch, 3, 1)                          \
-  F(StringCharCodeAtRT, 2, 1)                   \
-  F(StringCompare, 2, 1)                        \
-  F(StringBuilderConcat, 3, 1)                  \
-  F(StringBuilderJoin, 3, 1)                    \
-  F(SparseJoinWithSeparator, 3, 1)              \
-  F(StringToArray, 2, 1)                        \
-  F(StringToLowerCase, 1, 1)                    \
-  F(StringToUpperCase, 1, 1)                    \
-  F(StringTrim, 3, 1)                           \
-  F(TruncateString, 2, 1)                       \
-  F(NewString, 2, 1)                            \
-  F(StringEquals, 2, 1)                         \
-  F(FlattenString, 1, 1)                        \
-  F(StringCharFromCode, 1, 1)                   \
-  F(StringCharAt, 2, 1)                         \
-  F(OneByteSeqStringGetChar, 2, 1)              \
-  F(OneByteSeqStringSetChar, 3, 1)              \
-  F(TwoByteSeqStringGetChar, 2, 1)              \
-  F(TwoByteSeqStringSetChar, 3, 1)              \
-  F(StringCharCodeAt, 2, 1)                     \
-  F(StringGetLength, 1, 1)
+#define FOR_EACH_INTRINSIC_STRINGS(F)     \
+  F(StringReplaceOneCharWithString, 3, 1) \
+  F(StringIndexOf, 3, 1)                  \
+  F(StringLastIndexOf, 3, 1)              \
+  F(StringLocaleCompare, 2, 1)            \
+  F(SubString, 3, 1)                      \
+  F(StringAdd, 2, 1)                      \
+  F(InternalizeString, 1, 1)              \
+  F(StringMatch, 3, 1)                    \
+  F(StringCharCodeAtRT, 2, 1)             \
+  F(StringCompare, 2, 1)                  \
+  F(StringBuilderConcat, 3, 1)            \
+  F(StringBuilderJoin, 3, 1)              \
+  F(SparseJoinWithSeparator, 3, 1)        \
+  F(StringToArray, 2, 1)                  \
+  F(StringToLowerCase, 1, 1)              \
+  F(StringToUpperCase, 1, 1)              \
+  F(StringTrim, 3, 1)                     \
+  F(TruncateString, 2, 1)                 \
+  F(NewString, 2, 1)                      \
+  F(StringEquals, 2, 1)                   \
+  F(FlattenString, 1, 1)                  \
+  F(StringCharFromCode, 1, 1)             \
+  F(StringCharAt, 2, 1)                   \
+  F(OneByteSeqStringGetChar, 2, 1)        \
+  F(OneByteSeqStringSetChar, 3, 1)        \
+  F(TwoByteSeqStringGetChar, 2, 1)        \
+  F(TwoByteSeqStringSetChar, 3, 1)        \
+  F(StringCharCodeAt, 2, 1)
 
 
 #define FOR_EACH_INTRINSIC_SYMBOL(F) \

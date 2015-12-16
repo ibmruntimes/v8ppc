@@ -404,15 +404,13 @@ class Debug {
   void ClearAllBreakPoints();
   void FloodWithOneShot(Handle<JSFunction> function,
                         BreakLocatorType type = ALL_BREAK_LOCATIONS);
-  void FloodHandlerWithOneShot();
   void ChangeBreakOnException(ExceptionBreakType type, bool enable);
   bool IsBreakOnException(ExceptionBreakType type);
 
   // Stepping handling.
-  void PrepareStep(StepAction step_action,
-                   int step_count,
-                   StackFrame::Id frame_id);
+  void PrepareStep(StepAction step_action, int step_count);
   void PrepareStepIn(Handle<JSFunction> function);
+  void PrepareStepOnThrow();
   void ClearStepping();
   void ClearStepOut();
   void EnableStepIn();
@@ -439,9 +437,6 @@ class Debug {
   // This function is used in FunctionNameUsing* tests.
   Handle<Object> FindSharedFunctionInfoInScript(Handle<Script> script,
                                                 int position);
-
-  // Returns true if the current stub call is patched to call the debugger.
-  static bool IsDebugBreak(Address addr);
 
   static Handle<Object> GetSourceBreakLocations(
       Handle<SharedFunctionInfo> shared,
@@ -634,9 +629,6 @@ class Debug {
 
     // Frame pointer from last step next or step frame action.
     Address last_fp_;
-
-    // Number of queued steps left to perform before debug event.
-    int queued_step_count_;
 
     // Frame pointer for the frame where debugger should be called when current
     // step out action is completed.

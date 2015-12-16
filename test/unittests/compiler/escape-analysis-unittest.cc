@@ -133,18 +133,18 @@ class EscapeAnalysisTest : public GraphTest {
 
   FieldAccess AccessAtIndex(int offset) {
     FieldAccess access = {kTaggedBase, offset, MaybeHandle<Name>(), Type::Any(),
-                          kMachAnyTagged};
+                          MachineType::AnyTagged()};
     return access;
   }
 
   // ---------------------------------Assertion Helper--------------------------
 
   void ExpectReplacement(Node* node, Node* rep) {
-    EXPECT_EQ(rep, escape_analysis()->GetReplacement(node, node->id()));
+    EXPECT_EQ(rep, escape_analysis()->GetReplacement(node));
   }
 
   void ExpectReplacementPhi(Node* node, Node* left, Node* right) {
-    Node* rep = escape_analysis()->GetReplacement(node, node->id());
+    Node* rep = escape_analysis()->GetReplacement(node);
     ASSERT_NE(nullptr, rep);
     ASSERT_EQ(IrOpcode::kPhi, rep->opcode());
     EXPECT_EQ(left, NodeProperties::GetValueInput(rep, 0));
@@ -270,7 +270,7 @@ TEST_F(EscapeAnalysisTest, BranchNonEscape) {
 
   ExpectVirtual(allocation);
   ExpectReplacementPhi(load, object1, object2);
-  Node* replacement_phi = escape_analysis()->GetReplacement(load, load->id());
+  Node* replacement_phi = escape_analysis()->GetReplacement(load);
 
   Transformation();
 

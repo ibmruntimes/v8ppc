@@ -189,40 +189,45 @@ DEFINE_BOOL(legacy_const, true, "legacy semantics for const in sloppy mode")
 // ES2015 const semantics are staged
 DEFINE_NEG_IMPLICATION(harmony, legacy_const)
 
+DEFINE_BOOL(promise_extra, true, "additional V8 Promise functions")
+// Removing extra Promise functions is staged
+DEFINE_NEG_IMPLICATION(harmony, promise_extra)
+
 // Activate on ClusterFuzz.
-DEFINE_IMPLICATION(es_staging, harmony_destructuring_bind)
+DEFINE_IMPLICATION(es_staging, harmony_proxies)
+DEFINE_IMPLICATION(es_staging, harmony_reflect)
+DEFINE_IMPLICATION(es_staging, harmony_regexp_lookbehind)
 
 // Features that are still work in progress (behind individual flags).
-#define HARMONY_INPROGRESS(V)                                         \
-  V(harmony_modules, "harmony modules")                               \
-  V(harmony_proxies, "harmony proxies")                               \
-  V(harmony_unicode_regexps, "harmony unicode regexps")               \
-  V(harmony_reflect, "harmony Reflect API")                           \
-  V(harmony_sloppy_function, "harmony sloppy function block scoping") \
-  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")           \
-  V(harmony_simd, "harmony simd")                                     \
-  V(harmony_do_expressions, "harmony do-expressions")                 \
-  V(harmony_regexp_subclass, "harmony regexp subclassing")            \
-  V(harmony_regexp_lookbehind, "harmony regexp lookbehind")           \
-  V(harmony_destructuring_assignment, "harmony destructuring assignment")
+#define HARMONY_INPROGRESS(V)                                             \
+  V(harmony_modules, "harmony modules")                                   \
+  V(harmony_proxies, "harmony proxies")                                   \
+  V(harmony_unicode_regexps, "harmony unicode regexps")                   \
+  V(harmony_function_name, "harmony Function name inference")             \
+  V(harmony_reflect, "harmony Reflect API")                               \
+  V(harmony_sloppy_function, "harmony sloppy function block scoping")     \
+  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")               \
+  V(harmony_simd, "harmony simd")                                         \
+  V(harmony_do_expressions, "harmony do-expressions")                     \
+  V(harmony_regexp_subclass, "harmony regexp subclassing")                \
+  V(harmony_regexp_lookbehind, "harmony regexp lookbehind")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
-#define HARMONY_STAGED(V)                                     \
-  V(harmony_regexps, "harmony regular expression extensions") \
-  V(harmony_sloppy, "harmony features in sloppy mode")        \
+#define HARMONY_STAGED(V)                                                 \
+  V(harmony_destructuring_assignment, "harmony destructuring assignment") \
+  V(harmony_sloppy, "harmony features in sloppy mode")                    \
   V(harmony_sloppy_let, "harmony let in sloppy mode")
 
 // Features that are shipping (turned on by default, but internal flag remains).
-#define HARMONY_SHIPPING(V)                                     \
-  V(harmony_array_includes, "harmony Array.prototype.includes") \
-  V(harmony_default_parameters, "harmony default parameters")   \
-  V(harmony_destructuring_bind, "harmony destructuring bind")   \
-  V(harmony_object_observe, "harmony Object.observe")           \
-  V(harmony_rest_parameters, "harmony rest parameters")         \
-  V(harmony_concat_spreadable, "harmony isConcatSpreadable")    \
-  V(harmony_tolength, "harmony ToLength")                       \
-  V(harmony_tostring, "harmony toString")                       \
-  V(harmony_completion, "harmony completion value semantics")
+#define HARMONY_SHIPPING(V)                                   \
+  V(harmony_default_parameters, "harmony default parameters") \
+  V(harmony_destructuring_bind, "harmony destructuring bind") \
+  V(harmony_concat_spreadable, "harmony isConcatSpreadable")  \
+  V(harmony_object_observe, "harmony Object.observe")         \
+  V(harmony_tolength, "harmony ToLength")                     \
+  V(harmony_tostring, "harmony toString")                     \
+  V(harmony_completion, "harmony completion value semantics") \
+  V(harmony_regexps, "harmony regular expression extensions")
 
 // Once a shipping feature has proved stable in the wild, it will be dropped
 // from HARMONY_SHIPPING, all occurrences of the FLAG_ variable are removed,
@@ -462,6 +467,8 @@ DEFINE_BOOL(turbo_cache_shared_code, true, "cache context-independent code")
 DEFINE_BOOL(turbo_preserve_shared_code, false, "keep context-independent code")
 DEFINE_BOOL(turbo_escape, false, "enable escape analysis")
 DEFINE_BOOL(trace_turbo_escape, false, "enable tracing in escape analysis")
+DEFINE_BOOL(turbo_instruction_scheduling, false,
+            "enable instruction scheduling in TurboFan")
 
 #if defined(V8_WASM)
 // Flags for native WebAssembly.
@@ -592,8 +599,7 @@ DEFINE_BOOL(cache_prototype_transitions, true, "cache prototype transitions")
 DEFINE_INT(cpu_profiler_sampling_interval, 1000,
            "CPU profiler sampling interval in microseconds")
 
-// debug.cc
-DEFINE_BOOL(trace_debug_json, false, "trace debugging JSON request/response")
+// Array abuse tracing
 DEFINE_BOOL(trace_js_array_abuse, false,
             "trace out-of-bounds accesses to JS arrays")
 DEFINE_BOOL(trace_external_array_abuse, false,
@@ -602,6 +608,11 @@ DEFINE_BOOL(trace_array_abuse, false,
             "trace out-of-bounds accesses to all arrays")
 DEFINE_IMPLICATION(trace_array_abuse, trace_js_array_abuse)
 DEFINE_IMPLICATION(trace_array_abuse, trace_external_array_abuse)
+
+// debugger
+DEFINE_BOOL(debug_eval_readonly_locals, true,
+            "do not update locals after debug-evaluate")
+DEFINE_BOOL(trace_debug_json, false, "trace debugging JSON request/response")
 DEFINE_BOOL(enable_liveedit, true, "enable liveedit experimental feature")
 DEFINE_BOOL(hard_abort, true, "abort by crashing")
 

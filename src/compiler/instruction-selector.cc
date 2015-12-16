@@ -30,12 +30,13 @@ InstructionSelector::InstructionSelector(
       source_position_mode_(source_position_mode),
       features_(features),
       schedule_(schedule),
-      current_block_(NULL),
+      current_block_(nullptr),
       instructions_(zone),
       defined_(node_count, false, zone),
       used_(node_count, false, zone),
       virtual_registers_(node_count,
-                         InstructionOperand::kInvalidVirtualRegister, zone) {
+                         InstructionOperand::kInvalidVirtualRegister, zone),
+      scheduler_(nullptr) {
   instructions_.reserve(node_count);
 }
 
@@ -62,17 +63,55 @@ void InstructionSelector::SelectInstructions() {
   }
 
   // Schedule the selected instructions.
+  if (FLAG_turbo_instruction_scheduling &&
+      InstructionScheduler::SchedulerSupported()) {
+    scheduler_ = new (zone()) InstructionScheduler(zone(), sequence());
+  }
+
   for (auto const block : *blocks) {
     InstructionBlock* instruction_block =
         sequence()->InstructionBlockAt(RpoNumber::FromInt(block->rpo_number()));
     size_t end = instruction_block->code_end();
     size_t start = instruction_block->code_start();
     DCHECK_LE(end, start);
-    sequence()->StartBlock(RpoNumber::FromInt(block->rpo_number()));
+    StartBlock(RpoNumber::FromInt(block->rpo_number()));
     while (start-- > end) {
-      sequence()->AddInstruction(instructions_[start]);
+      AddInstruction(instructions_[start]);
     }
-    sequence()->EndBlock(RpoNumber::FromInt(block->rpo_number()));
+    EndBlock(RpoNumber::FromInt(block->rpo_number()));
+  }
+}
+
+
+void InstructionSelector::StartBlock(RpoNumber rpo) {
+  if (FLAG_turbo_instruction_scheduling &&
+      InstructionScheduler::SchedulerSupported()) {
+    DCHECK(scheduler_ != nullptr);
+    scheduler_->StartBlock(rpo);
+  } else {
+    sequence()->StartBlock(rpo);
+  }
+}
+
+
+void InstructionSelector::EndBlock(RpoNumber rpo) {
+  if (FLAG_turbo_instruction_scheduling &&
+      InstructionScheduler::SchedulerSupported()) {
+    DCHECK(scheduler_ != nullptr);
+    scheduler_->EndBlock(rpo);
+  } else {
+    sequence()->EndBlock(rpo);
+  }
+}
+
+
+void InstructionSelector::AddInstruction(Instruction* instr) {
+  if (FLAG_turbo_instruction_scheduling &&
+      InstructionScheduler::SchedulerSupported()) {
+    DCHECK(scheduler_ != nullptr);
+    scheduler_->AddInstruction(instr);
+  } else {
+    sequence()->AddInstruction(instr);
   }
 }
 
@@ -241,16 +280,15 @@ void InstructionSelector::MarkAsUsed(Node* node) {
 }
 
 
-void InstructionSelector::MarkAsRepresentation(MachineType rep,
+void InstructionSelector::MarkAsRepresentation(MachineRepresentation rep,
                                                const InstructionOperand& op) {
   UnallocatedOperand unalloc = UnallocatedOperand::cast(op);
-  rep = RepresentationOf(rep);
   sequence()->MarkAsRepresentation(rep, unalloc.virtual_register());
 }
 
 
-void InstructionSelector::MarkAsRepresentation(MachineType rep, Node* node) {
-  rep = RepresentationOf(rep);
+void InstructionSelector::MarkAsRepresentation(MachineRepresentation rep,
+                                               Node* node) {
   sequence()->MarkAsRepresentation(rep, GetVirtualRegister(node));
 }
 
@@ -310,7 +348,7 @@ void AddFrameStateInputs(Node* state, OperandGenerator* g,
   size_t value_index = 0;
   inputs->push_back(
       OperandForDeopt(g, function, FrameStateInputKind::kStackSlot));
-  descriptor->SetType(value_index++, kMachAnyTagged);
+  descriptor->SetType(value_index++, MachineType::AnyTagged());
   for (StateValuesAccess::TypedNode input_node :
        StateValuesAccess(parameters)) {
     inputs->push_back(OperandForDeopt(g, input_node.node, kind));
@@ -319,7 +357,7 @@ void AddFrameStateInputs(Node* state, OperandGenerator* g,
   if (descriptor->HasContext()) {
     inputs->push_back(
         OperandForDeopt(g, context, FrameStateInputKind::kStackSlot));
-    descriptor->SetType(value_index++, kMachAnyTagged);
+    descriptor->SetType(value_index++, MachineType::AnyTagged());
   }
   for (StateValuesAccess::TypedNode input_node : StateValuesAccess(locals)) {
     inputs->push_back(OperandForDeopt(g, input_node.node, kind));
@@ -418,9 +456,10 @@ void InstructionSelector::InitializeCallBuffer(Node* call, CallBuffer* buffer,
 
         Node* output = buffer->output_nodes[i];
         InstructionOperand op =
-            output == NULL ? g.TempLocation(location, type)
-                           : g.DefineAsLocation(output, location, type);
-        MarkAsRepresentation(type, op);
+            output == NULL
+                ? g.TempLocation(location, type.representation())
+                : g.DefineAsLocation(output, location, type.representation());
+        MarkAsRepresentation(type.representation(), op);
 
         buffer->outputs.push_back(op);
       }
@@ -448,7 +487,7 @@ void InstructionSelector::InitializeCallBuffer(Node* call, CallBuffer* buffer,
     case CallDescriptor::kCallJSFunction:
       buffer->instruction_args.push_back(
           g.UseLocation(callee, buffer->descriptor->GetInputLocation(0),
-                        buffer->descriptor->GetInputType(0)));
+                        buffer->descriptor->GetInputType(0).representation()));
       break;
     case CallDescriptor::kLazyBailout:
       // The target is ignored, but we still need to pass a value here.
@@ -495,7 +534,8 @@ void InstructionSelector::InitializeCallBuffer(Node* call, CallBuffer* buffer,
           location, stack_param_delta);
     }
     InstructionOperand op =
-        g.UseLocation(*iter, location, buffer->descriptor->GetInputType(index));
+        g.UseLocation(*iter, location,
+                      buffer->descriptor->GetInputType(index).representation());
     if (UnallocatedOperand::cast(op).HasFixedSlotPolicy() && !call_tail) {
       int stack_index = -UnallocatedOperand::cast(op).fixed_slot_index() - 1;
       if (static_cast<size_t>(stack_index) >= buffer->pushed_nodes.size()) {
@@ -681,14 +721,14 @@ void InstructionSelector::VisitNode(Node* node) {
     case IrOpcode::kParameter: {
       MachineType type =
           linkage()->GetParameterType(ParameterIndexOf(node->op()));
-      MarkAsRepresentation(type, node);
+      MarkAsRepresentation(type.representation(), node);
       return VisitParameter(node);
     }
     case IrOpcode::kOsrValue:
       return MarkAsReference(node), VisitOsrValue(node);
     case IrOpcode::kPhi: {
-      MachineType type = OpParameter<MachineType>(node);
-      MarkAsRepresentation(type, node);
+      MachineRepresentation rep = PhiRepresentationOf(node->op());
+      MarkAsRepresentation(rep, node);
       return VisitPhi(node);
     }
     case IrOpcode::kProjection:
@@ -714,8 +754,8 @@ void InstructionSelector::VisitNode(Node* node) {
     case IrOpcode::kStateValues:
       return;
     case IrOpcode::kLoad: {
-      LoadRepresentation rep = OpParameter<LoadRepresentation>(node);
-      MarkAsRepresentation(rep, node);
+      LoadRepresentation type = LoadRepresentationOf(node->op());
+      MarkAsRepresentation(type.representation(), node);
       return VisitLoad(node);
     }
     case IrOpcode::kStore:
@@ -826,12 +866,12 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord32(node), VisitChangeFloat64ToInt32(node);
     case IrOpcode::kChangeFloat64ToUint32:
       return MarkAsWord32(node), VisitChangeFloat64ToUint32(node);
-    case IrOpcode::kTruncateFloat32ToInt64:
-      return MarkAsWord64(node), VisitTruncateFloat32ToInt64(node);
+    case IrOpcode::kTryTruncateFloat32ToInt64:
+      return MarkAsWord64(node), VisitTryTruncateFloat32ToInt64(node);
     case IrOpcode::kTryTruncateFloat64ToInt64:
       return MarkAsWord64(node), VisitTryTruncateFloat64ToInt64(node);
-    case IrOpcode::kTruncateFloat32ToUint64:
-      return MarkAsWord64(node), VisitTruncateFloat32ToUint64(node);
+    case IrOpcode::kTryTruncateFloat32ToUint64:
+      return MarkAsWord64(node), VisitTryTruncateFloat32ToUint64(node);
     case IrOpcode::kTryTruncateFloat64ToUint64:
       return MarkAsWord64(node), VisitTryTruncateFloat64ToUint64(node);
     case IrOpcode::kChangeInt32ToInt64:
@@ -937,7 +977,8 @@ void InstructionSelector::VisitNode(Node* node) {
     case IrOpcode::kLoadFramePointer:
       return VisitLoadFramePointer(node);
     case IrOpcode::kCheckedLoad: {
-      MachineType rep = OpParameter<MachineType>(node);
+      MachineRepresentation rep =
+          CheckedLoadRepresentationOf(node->op()).representation();
       MarkAsRepresentation(rep, node);
       return VisitCheckedLoad(node);
     }
@@ -1082,7 +1123,7 @@ void InstructionSelector::VisitChangeUint32ToUint64(Node* node) {
 }
 
 
-void InstructionSelector::VisitTruncateFloat32ToInt64(Node* node) {
+void InstructionSelector::VisitTryTruncateFloat32ToInt64(Node* node) {
   UNIMPLEMENTED();
 }
 
@@ -1092,7 +1133,7 @@ void InstructionSelector::VisitTryTruncateFloat64ToInt64(Node* node) {
 }
 
 
-void InstructionSelector::VisitTruncateFloat32ToUint64(Node* node) {
+void InstructionSelector::VisitTryTruncateFloat32ToUint64(Node* node) {
   UNIMPLEMENTED();
 }
 
@@ -1161,8 +1202,9 @@ void InstructionSelector::VisitParameter(Node* node) {
           ? g.DefineAsDualLocation(
                 node, linkage()->GetParameterLocation(index),
                 linkage()->GetParameterSecondaryLocation(index))
-          : g.DefineAsLocation(node, linkage()->GetParameterLocation(index),
-                               linkage()->GetParameterType(index));
+          : g.DefineAsLocation(
+                node, linkage()->GetParameterLocation(index),
+                linkage()->GetParameterType(index).representation());
 
   Emit(kArchNop, op);
 }
@@ -1173,8 +1215,9 @@ void InstructionSelector::VisitIfException(Node* node) {
   Node* call = node->InputAt(1);
   DCHECK_EQ(IrOpcode::kCall, call->opcode());
   const CallDescriptor* descriptor = OpParameter<const CallDescriptor*>(call);
-  Emit(kArchNop, g.DefineAsLocation(node, descriptor->GetReturnLocation(0),
-                                    descriptor->GetReturnType(0)));
+  Emit(kArchNop,
+       g.DefineAsLocation(node, descriptor->GetReturnLocation(0),
+                          descriptor->GetReturnType(0).representation()));
 }
 
 
@@ -1182,7 +1225,7 @@ void InstructionSelector::VisitOsrValue(Node* node) {
   OperandGenerator g(this);
   int index = OpParameter<int>(node);
   Emit(kArchNop, g.DefineAsLocation(node, linkage()->GetOsrValueLocation(index),
-                                    kMachAnyTagged));
+                                    MachineRepresentation::kTagged));
 }
 
 
@@ -1208,7 +1251,9 @@ void InstructionSelector::VisitProjection(Node* node) {
   switch (value->opcode()) {
     case IrOpcode::kInt32AddWithOverflow:
     case IrOpcode::kInt32SubWithOverflow:
+    case IrOpcode::kTryTruncateFloat32ToInt64:
     case IrOpcode::kTryTruncateFloat64ToInt64:
+    case IrOpcode::kTryTruncateFloat32ToUint64:
     case IrOpcode::kTryTruncateFloat64ToUint64:
       if (ProjectionIndexOf(node->op()) == 0u) {
         Emit(kArchNop, g.DefineSameAsFirst(node), g.Use(value));
@@ -1398,7 +1443,7 @@ void InstructionSelector::VisitReturn(Node* ret) {
     for (int i = 0; i < ret_count; ++i) {
       value_locations[i] =
           g.UseLocation(ret->InputAt(i), linkage()->GetReturnLocation(i),
-                        linkage()->GetReturnType(i));
+                        linkage()->GetReturnType(i).representation());
     }
     Emit(kArchRet, 0, nullptr, ret_count, value_locations);
   }
@@ -1438,7 +1483,7 @@ void InstructionSelector::VisitDeoptimize(DeoptimizeKind kind, Node* value) {
 
 void InstructionSelector::VisitThrow(Node* value) {
   OperandGenerator g(this);
-  Emit(kArchNop, g.NoOutput());  // TODO(titzer)
+  Emit(kArchThrowTerminator, g.NoOutput());  // TODO(titzer)
 }
 
 

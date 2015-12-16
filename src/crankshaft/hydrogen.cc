@@ -3427,16 +3427,9 @@ HValue* HGraphBuilder::JSArrayBuilder::EmitMapCode() {
       ? builder()->BuildGetNativeContext(constructor_function_)
       : builder()->BuildGetNativeContext();
 
-  HInstruction* index = builder()->Add<HConstant>(
-      static_cast<int32_t>(Context::JS_ARRAY_MAPS_INDEX));
-
-  HInstruction* map_array = builder()->Add<HLoadKeyed>(
-      native_context, index, nullptr, nullptr, FAST_ELEMENTS);
-
-  HInstruction* kind_index = builder()->Add<HConstant>(kind_);
-
-  return builder()->Add<HLoadKeyed>(map_array, kind_index, nullptr, nullptr,
-                                    FAST_ELEMENTS);
+  HObjectAccess access =
+      HObjectAccess::ForContextSlot(Context::ArrayMapIndex(kind_));
+  return builder()->Add<HLoadNamedField>(native_context, nullptr, access);
 }
 
 
@@ -12599,15 +12592,6 @@ void HOptimizedGraphBuilder::GenerateSubString(CallRuntime* call) {
   CHECK_ALIVE(VisitExpressions(call->arguments()));
   PushArgumentsFromEnvironment(call->arguments()->length());
   HCallStub* result = New<HCallStub>(CodeStub::SubString, 3);
-  return ast_context()->ReturnInstruction(result, call->id());
-}
-
-
-void HOptimizedGraphBuilder::GenerateStringGetLength(CallRuntime* call) {
-  DCHECK(call->arguments()->length() == 1);
-  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
-  HValue* string = Pop();
-  HInstruction* result = BuildLoadStringLength(string);
   return ast_context()->ReturnInstruction(result, call->id());
 }
 

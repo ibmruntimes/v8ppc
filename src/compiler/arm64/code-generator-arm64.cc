@@ -589,6 +589,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       AssembleArchLookupSwitch(instr);
       break;
     case kArchNop:
+    case kArchThrowTerminator:
       // don't emit code for nops.
       break;
     case kArchDeoptimize: {
@@ -1039,6 +1040,13 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kArm64Float32ToInt64:
       __ Fcvtzs(i.OutputRegister64(), i.InputFloat32Register(0));
+      if (i.OutputCount() > 1) {
+        __ Cmp(i.OutputRegister(0), 1);
+        __ Ccmp(i.OutputRegister(0), -1, VFlag, vc);
+        __ Fccmp(i.InputFloat32Register(0), i.InputFloat32Register(0), VFlag,
+                 vc);
+        __ Cset(i.OutputRegister(1), vc);
+      }
       break;
     case kArm64Float64ToInt64:
       __ Fcvtzs(i.OutputRegister(0), i.InputDoubleRegister(0));
@@ -1051,6 +1059,11 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kArm64Float32ToUint64:
       __ Fcvtzu(i.OutputRegister64(), i.InputFloat32Register(0));
+      if (i.OutputCount() > 1) {
+        __ Fcmp(i.InputFloat32Register(0), 0.0);
+        __ Ccmp(i.OutputRegister(0), -1, ZFlag, ge);
+        __ Cset(i.OutputRegister(1), ne);
+      }
       break;
     case kArm64Float64ToUint64:
       __ Fcvtzu(i.OutputRegister64(), i.InputDoubleRegister(0));

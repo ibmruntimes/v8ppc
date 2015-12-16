@@ -201,7 +201,9 @@ function PostNatives(utils) {
     "ObjectDefineProperty",
     "ObserveArrayMethods",
     "ObserveObjectMethods",
-    "OwnPropertyKeys",
+    "PromiseChain",
+    "PromiseDeferred",
+    "PromiseResolved",
     "SameValueZero",
     "SetIterator",
     "SetIteratorNext",
@@ -217,6 +219,7 @@ function PostNatives(utils) {
     "reflect_construct",
     "regexp_flags_symbol",
     "to_string_tag_symbol",
+    "object_to_string",
   ];
 
   var filtered_exports = {};

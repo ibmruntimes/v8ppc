@@ -2542,14 +2542,11 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
     // Assuming the following assertions, we can use the same compares to test
     // for both being a function type and being in the object type range.
     STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
-    STATIC_ASSERT(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                  FIRST_JS_RECEIVER_TYPE + 1);
     STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE ==
                   LAST_JS_RECEIVER_TYPE - 1);
     STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
     __ CompareObjectType(input, temp, temp2, FIRST_JS_RECEIVER_TYPE);
     __ b(lt, is_false);
-    __ b(eq, is_true);
     __ cmp(temp2, Operand(LAST_JS_RECEIVER_TYPE));
     __ b(eq, is_true);
   } else {
@@ -2557,9 +2554,9 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
     // actual type and do a signed compare with the width of the type range.
     __ ldr(temp, FieldMemOperand(input, HeapObject::kMapOffset));
     __ ldrb(temp2, FieldMemOperand(temp, Map::kInstanceTypeOffset));
-    __ sub(temp2, temp2, Operand(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
-    __ cmp(temp2, Operand(LAST_NONCALLABLE_SPEC_OBJECT_TYPE -
-                          FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
+    __ sub(temp2, temp2, Operand(FIRST_JS_RECEIVER_TYPE));
+    __ cmp(temp2,
+           Operand(LAST_NONCALLABLE_SPEC_OBJECT_TYPE - FIRST_JS_RECEIVER_TYPE));
     __ b(gt, is_false);
   }
 
@@ -2645,8 +2642,16 @@ void LCodeGen::DoHasInPrototypeChainAndBranch(
   __ ldr(object_map, FieldMemOperand(object, HeapObject::kMapOffset));
   Label loop;
   __ bind(&loop);
+
+  // Deoptimize if the object needs to be access checked.
+  __ ldrb(object_instance_type,
+          FieldMemOperand(object_map, Map::kBitFieldOffset));
+  __ tst(object_instance_type, Operand(1 << Map::kIsAccessCheckNeeded));
+  DeoptimizeIf(ne, instr, Deoptimizer::kAccessCheck);
+  // Deoptimize for proxies.
   __ CompareInstanceType(object_map, object_instance_type, JS_PROXY_TYPE);
   DeoptimizeIf(eq, instr, Deoptimizer::kProxy);
+
   __ ldr(object_prototype, FieldMemOperand(object_map, Map::kPrototypeOffset));
   __ cmp(object_prototype, prototype);
   EmitTrueBranch(instr, eq);

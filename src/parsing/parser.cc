@@ -361,24 +361,29 @@ FunctionLiteral* Parser::DefaultConstructor(bool call_super, Scope* scope,
 
     body = new (zone()) ZoneList<Statement*>(call_super ? 2 : 1, zone());
     if (call_super) {
-      // %_DefaultConstructorCallSuper(new.target, %GetPrototype(<this-fun>))
+      // $super_constructor = %_GetSuperConstructor(<this-function>)
+      // %reflect_construct($super_constructor, arguments, new.target)
       ZoneList<Expression*>* args =
           new (zone()) ZoneList<Expression*>(2, zone());
-      VariableProxy* new_target_proxy = scope_->NewUnresolved(
-          factory(), ast_value_factory()->new_target_string(), Variable::NORMAL,
-          pos);
-      args->Add(new_target_proxy, zone());
       VariableProxy* this_function_proxy = scope_->NewUnresolved(
           factory(), ast_value_factory()->this_function_string(),
           Variable::NORMAL, pos);
       ZoneList<Expression*>* tmp =
           new (zone()) ZoneList<Expression*>(1, zone());
       tmp->Add(this_function_proxy, zone());
-      Expression* get_prototype =
-          factory()->NewCallRuntime(Runtime::kGetPrototype, tmp, pos);
-      args->Add(get_prototype, zone());
+      Expression* super_constructor = factory()->NewCallRuntime(
+          Runtime::kInlineGetSuperConstructor, tmp, pos);
+      args->Add(super_constructor, zone());
+      VariableProxy* arguments_proxy = scope_->NewUnresolved(
+          factory(), ast_value_factory()->arguments_string(), Variable::NORMAL,
+          pos);
+      args->Add(arguments_proxy, zone());
+      VariableProxy* new_target_proxy = scope_->NewUnresolved(
+          factory(), ast_value_factory()->new_target_string(), Variable::NORMAL,
+          pos);
+      args->Add(new_target_proxy, zone());
       CallRuntime* call = factory()->NewCallRuntime(
-          Runtime::kInlineDefaultConstructorCallSuper, args, pos);
+          Context::REFLECT_CONSTRUCT_INDEX, args, pos);
       body->Add(factory()->NewReturnStatement(call, pos), zone());
     }
 
@@ -921,7 +926,6 @@ Parser::Parser(ParseInfo* info)
   set_allow_harmony_sloppy(FLAG_harmony_sloppy);
   set_allow_harmony_sloppy_function(FLAG_harmony_sloppy_function);
   set_allow_harmony_sloppy_let(FLAG_harmony_sloppy_let);
-  set_allow_harmony_rest_parameters(FLAG_harmony_rest_parameters);
   set_allow_harmony_default_parameters(FLAG_harmony_default_parameters);
   set_allow_harmony_destructuring_bind(FLAG_harmony_destructuring_bind);
   set_allow_harmony_destructuring_assignment(
@@ -929,6 +933,7 @@ Parser::Parser(ParseInfo* info)
   set_allow_strong_mode(FLAG_strong_mode);
   set_allow_legacy_const(FLAG_legacy_const);
   set_allow_harmony_do_expressions(FLAG_harmony_do_expressions);
+  set_allow_harmony_function_name(FLAG_harmony_function_name);
   for (int feature = 0; feature < v8::Isolate::kUseCounterFeatureCount;
        ++feature) {
     use_counts_[feature] = 0;
@@ -2253,10 +2258,8 @@ Statement* Parser::ParseFunctionDeclaration(
   const AstRawString* name = ParseIdentifierOrStrictReservedWord(
       &is_strict_reserved, CHECK_OK);
 
-  if (fni_ != NULL) {
-    fni_->Enter();
-    fni_->PushEnclosingName(name);
-  }
+  FuncNameInferrer::State fni_state(fni_);
+  if (fni_ != NULL) fni_->PushEnclosingName(name);
   FunctionLiteral* fun = ParseFunctionLiteral(
       name, scanner()->location(),
       is_strict_reserved ? kFunctionNameIsStrictReserved
@@ -2265,7 +2268,6 @@ Statement* Parser::ParseFunctionDeclaration(
                    : FunctionKind::kNormalFunction,
       pos, FunctionLiteral::DECLARATION, FunctionLiteral::NORMAL_ARITY,
       language_mode(), CHECK_OK);
-  if (fni_ != NULL) fni_->Leave();
 
   // Even if we're not at the top-level of the global or a function
   // scope, we treat it as such and introduce the function with its
@@ -2495,7 +2497,7 @@ void Parser::ParseVariableDeclarations(VariableDeclarationContext var_context,
   int bindings_start = peek_position();
   bool is_for_iteration_variable;
   do {
-    if (fni_ != NULL) fni_->Enter();
+    FuncNameInferrer::State fni_state(fni_);
 
     // Parse name.
     if (!first_declaration) Consume(Token::COMMA);
@@ -2564,6 +2566,21 @@ void Parser::ParseVariableDeclarations(VariableDeclarationContext var_context,
           fni_->RemoveLastFunction();
         }
       }
+
+      if (allow_harmony_function_name() && single_name) {
+        if (value->IsFunctionLiteral()) {
+          auto function_literal = value->AsFunctionLiteral();
+          if (function_literal->is_anonymous()) {
+            function_literal->set_raw_name(single_name);
+          }
+        } else if (value->IsClassLiteral()) {
+          auto class_literal = value->AsClassLiteral();
+          if (class_literal->raw_name() == nullptr) {
+            class_literal->set_raw_name(single_name);
+          }
+        }
+      }
+
       // End position of the initializer is after the assignment expression.
       initializer_position = scanner()->location().end_pos;
     } else {
@@ -2585,7 +2602,6 @@ void Parser::ParseVariableDeclarations(VariableDeclarationContext var_context,
       value = GetLiteralUndefined(position());
     }
 
-    if (single_name && fni_ != NULL) fni_->Leave();
     parsing_result->declarations.Add(DeclarationParsingResult::Declaration(
         pattern, initializer_position, value));
     first_declaration = false;
@@ -3326,9 +3342,10 @@ Expression* Parser::BuildIteratorNextResult(Expression* iterator,
 
 
 void Parser::InitializeForEachStatement(ForEachStatement* stmt,
-                                        Expression* each,
-                                        Expression* subject,
-                                        Statement* body) {
+                                        Expression* each, Expression* subject,
+                                        Statement* body,
+                                        bool is_destructuring) {
+  DCHECK(!is_destructuring || allow_harmony_destructuring_assignment());
   ForOfStatement* for_of = stmt->AsForOfStatement();
 
   if (for_of != NULL) {
@@ -3379,6 +3396,10 @@ void Parser::InitializeForEachStatement(ForEachStatement* stmt,
           result_proxy, value_literal, RelocInfo::kNoPosition);
       assign_each = factory()->NewAssignment(Token::ASSIGN, each, result_value,
                                              RelocInfo::kNoPosition);
+      if (is_destructuring) {
+        assign_each = PatternRewriter::RewriteDestructuringAssignment(
+            this, assign_each->AsAssignment(), scope_);
+      }
     }
 
     for_of->Initialize(each, subject, body,
@@ -3387,6 +3408,23 @@ void Parser::InitializeForEachStatement(ForEachStatement* stmt,
                        result_done,
                        assign_each);
   } else {
+    if (is_destructuring) {
+      Variable* temp =
+          scope_->NewTemporary(ast_value_factory()->empty_string());
+      VariableProxy* temp_proxy = factory()->NewVariableProxy(temp);
+      Expression* assign_each = PatternRewriter::RewriteDestructuringAssignment(
+          this, factory()->NewAssignment(Token::ASSIGN, each, temp_proxy,
+                                         RelocInfo::kNoPosition),
+          scope_);
+      auto block =
+          factory()->NewBlock(nullptr, 2, false, RelocInfo::kNoPosition);
+      block->statements()->Add(factory()->NewExpressionStatement(
+                                   assign_each, RelocInfo::kNoPosition),
+                               zone());
+      block->statements()->Add(body, zone());
+      body = block;
+      each = factory()->NewVariableProxy(temp);
+    }
     stmt->Initialize(each, subject, body);
   }
 }
@@ -3771,7 +3809,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         body_block->statements()->Add(body, zone());
         VariableProxy* temp_proxy =
             factory()->NewVariableProxy(temp, each_beg_pos, each_end_pos);
-        InitializeForEachStatement(loop, temp_proxy, enumerable, body_block);
+        InitializeForEachStatement(loop, temp_proxy, enumerable, body_block,
+                                   false);
         scope_ = for_scope;
         body_scope->set_end_position(scanner()->location().end_pos);
         body_scope = body_scope->FinalizeBlockScope();
@@ -3822,7 +3861,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
       }
     } else {
       int lhs_beg_pos = peek_position();
-      Expression* expression = ParseExpression(false, CHECK_OK);
+      ExpressionClassifier classifier;
+      Expression* expression = ParseExpression(false, &classifier, CHECK_OK);
       int lhs_end_pos = scanner()->location().end_pos;
       ForEachStatement::VisitMode mode;
       is_let_identifier_expression =
@@ -3830,11 +3870,24 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
           expression->AsVariableProxy()->raw_name() ==
               ast_value_factory()->let_string();
 
-      if (CheckInOrOf(&mode, ok)) {
-        if (!*ok) return nullptr;
-        expression = this->CheckAndRewriteReferenceExpression(
-            expression, lhs_beg_pos, lhs_end_pos,
-            MessageTemplate::kInvalidLhsInFor, kSyntaxError, CHECK_OK);
+      bool is_for_each = CheckInOrOf(&mode, ok);
+      if (!*ok) return nullptr;
+      bool is_destructuring =
+          is_for_each && allow_harmony_destructuring_assignment() &&
+          (expression->IsArrayLiteral() || expression->IsObjectLiteral());
+
+      if (is_destructuring) {
+        ValidateAssignmentPattern(&classifier, CHECK_OK);
+      } else {
+        ValidateExpression(&classifier, CHECK_OK);
+      }
+
+      if (is_for_each) {
+        if (!is_destructuring) {
+          expression = this->CheckAndRewriteReferenceExpression(
+              expression, lhs_beg_pos, lhs_end_pos,
+              MessageTemplate::kInvalidLhsInFor, kSyntaxError, CHECK_OK);
+        }
 
         ForEachStatement* loop =
             factory()->NewForEachStatement(mode, labels, stmt_pos);
@@ -3855,7 +3908,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
             factory()->NewBlock(NULL, 1, false, RelocInfo::kNoPosition);
         Statement* body = ParseSubStatement(NULL, CHECK_OK);
         block->statements()->Add(body, zone());
-        InitializeForEachStatement(loop, expression, enumerable, block);
+        InitializeForEachStatement(loop, expression, enumerable, block,
+                                   is_destructuring);
         scope_ = saved_scope;
         body_scope->set_end_position(scanner()->location().end_pos);
         body_scope = body_scope->FinalizeBlockScope();
@@ -4555,10 +4609,8 @@ class InitializerRewriter : public AstExpressionVisitor {
         expr->AsRewritableAssignmentExpression();
     if (to_rewrite == nullptr || to_rewrite->is_rewritten()) return;
 
-    bool ok = true;
     Parser::PatternRewriter::RewriteDestructuringAssignment(parser_, to_rewrite,
-                                                            scope_, &ok);
-    DCHECK(ok);
+                                                            scope_);
   }
 
  private:
@@ -4868,11 +4920,11 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
     SET_ALLOW(natives);
     SET_ALLOW(harmony_sloppy);
     SET_ALLOW(harmony_sloppy_let);
-    SET_ALLOW(harmony_rest_parameters);
     SET_ALLOW(harmony_default_parameters);
     SET_ALLOW(harmony_destructuring_bind);
     SET_ALLOW(strong_mode);
     SET_ALLOW(harmony_do_expressions);
+    SET_ALLOW(harmony_function_name);
 #undef SET_ALLOW
   }
   PreParser::PreParseResult result = reusable_preparser_->PreParseLazyFunction(
@@ -4943,7 +4995,7 @@ ClassLiteral* Parser::ParseClassLiteral(const AstRawString* name,
   const bool has_extends = extends != nullptr;
   while (peek() != Token::RBRACE) {
     if (Check(Token::SEMICOLON)) continue;
-    if (fni_ != NULL) fni_->Enter();
+    FuncNameInferrer::State fni_state(fni_);
     const bool in_class = true;
     const bool is_static = false;
     bool is_computed_name = false;  // Classes do not care about computed
@@ -4961,10 +5013,7 @@ ClassLiteral* Parser::ParseClassLiteral(const AstRawString* name,
       properties->Add(property, zone());
     }
 
-    if (fni_ != NULL) {
-      fni_->Infer();
-      fni_->Leave();
-    }
+    if (fni_ != NULL) fni_->Infer();
   }
 
   Expect(Token::RBRACE, CHECK_OK);
@@ -5516,8 +5565,11 @@ RegExpTree* RegExpParser::ParseDisjunction() {
         int index = 0;
         if (ParseBackReferenceIndex(&index)) {
           if (state->IsInsideCaptureGroup(index)) {
-            // The backreference is inside the capture group it refers to.
-            // Nothing can possibly have been captured yet.
+            // The back reference is inside the capture group it refers to.
+            // Nothing can possibly have been captured yet, so we use empty
+            // instead. This ensures that, when checking a back reference,
+            // the capture registers of the referenced capture are either
+            // both set or both cleared.
             builder->AddEmpty();
           } else {
             RegExpCapture* capture = GetCapture(index);
@@ -6440,12 +6492,13 @@ Expression* Parser::SpreadCall(Expression* function,
                                int pos) {
   if (function->IsSuperCallReference()) {
     // Super calls
-    // %reflect_construct(%GetPrototype(<this-function>), args, new.target))
+    // $super_constructor = %_GetSuperConstructor(<this-function>)
+    // %reflect_construct($super_constructor, args, new.target)
     ZoneList<Expression*>* tmp = new (zone()) ZoneList<Expression*>(1, zone());
     tmp->Add(function->AsSuperCallReference()->this_function_var(), zone());
-    Expression* get_prototype =
-        factory()->NewCallRuntime(Runtime::kGetPrototype, tmp, pos);
-    args->InsertAt(0, get_prototype, zone());
+    Expression* super_constructor = factory()->NewCallRuntime(
+        Runtime::kInlineGetSuperConstructor, tmp, pos);
+    args->InsertAt(0, super_constructor, zone());
     args->Add(function->AsSuperCallReference()->new_target_var(), zone());
     return factory()->NewCallRuntime(Context::REFLECT_CONSTRUCT_INDEX, args,
                                      pos);
@@ -6530,10 +6583,7 @@ void Parser::RewriteDestructuringAssignments() {
     Scope* scope = pair.scope;
     DCHECK_NOT_NULL(to_rewrite);
     if (!to_rewrite->is_rewritten()) {
-      bool ok = true;
-      PatternRewriter::RewriteDestructuringAssignment(this, to_rewrite, scope,
-                                                      &ok);
-      DCHECK(ok);
+      PatternRewriter::RewriteDestructuringAssignment(this, to_rewrite, scope);
     }
   }
 }

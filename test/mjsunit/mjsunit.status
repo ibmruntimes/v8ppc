@@ -31,11 +31,6 @@
   'bugs/*': [FAIL],
 
   ##############################################################################
-  # Flaky tests.
-  # BUG(v8:2921).
-  'debug-step-4-in-frame': [PASS, FAIL, SLOW],
-
-  ##############################################################################
   # Fails.
   'regress/regress-1119': [FAIL],
 
@@ -87,20 +82,7 @@
 
   # Proxy tests rely on non ES6 version of Proxies
   # TODO(neis,cbruni): figure out which Proxy tests can be reused
-  'es6/regress/regress-cr493566': [SKIP],
-  'for-in-opt': [SKIP],
   'harmony/proxies-example-membrane': [SKIP],
-  'harmony/proxies-json': [SKIP],
-  'harmony/proxies': [SKIP],
-  'harmony/proxies-symbols': [SKIP],
-  'harmony/proxies-with': [SKIP],
-  'harmony/proxies-with-unscopables': [SKIP],
-  'harmony/regress/regress-2219': [SKIP],
-  'harmony/regress/regress-2225': [SKIP],
-  'harmony/regress/regress-405844': [SKIP],
-  'harmony/regress/regress-crbug-461520': [SKIP],
-  'harmony/regress/regress-lookup-transition': [SKIP],
-  'regress/regress-crbug-493568': [SKIP],
   'strong/load-proxy': [SKIP],
 
   # Issue 3660: Replacing activated TurboFan frames by unoptimized code does
@@ -174,6 +156,7 @@
   'compiler/escape-analysis-6': [PASS, NO_VARIANTS],
   'compiler/escape-analysis-7': [PASS, NO_VARIANTS],
   'compiler/escape-analysis-9': [PASS, NO_VARIANTS],
+  'compiler/escape-analysis-10': [PASS, NO_VARIANTS],
   # TODO(sigurds): Tests that fail because of incomplete use handling (i.e. select).
   'compiler/escape-analysis-8': [PASS, NO_VARIANTS],
 
@@ -182,6 +165,9 @@
 
   # issue 4078:
   'allocation-site-info': [PASS, NO_VARIANTS],
+
+  # Native WASM is not yet enabled by default.
+  'wasm/*': [SKIP],
 
   ##############################################################################
   # Too slow in debug mode with --stress-opt mode.
@@ -198,6 +184,9 @@
   ##############################################################################
   # Too slow in debug mode for GC stress mode.
   'regress/regress-crbug-217858': [PASS, ['mode == debug', SKIP]],
+
+  # Too slow in debug mode and under turbofan.
+  'regress/regress-4595': [PASS, NO_VARIANTS, ['mode == debug', SKIP]],
 
   ##############################################################################
   # Only RegExp stuff tested, no need for extensive optimizing compiler tests.
@@ -425,9 +414,6 @@
 
   # BUG(v8:4016)
   'regress/regress-crbug-467047': [SKIP],
-
-  # BUG(v8:4588).
-  'random-bit-correlations': [SKIP],
 
   # Slow tests.
   'array-concat': [PASS, SLOW],
@@ -805,6 +791,9 @@
   'global-load-from-eval-in-with': [SKIP],
   'global-vars-with': [SKIP],
   'instanceof-2': [SKIP],
+  'json': [SKIP],
+  'json-replacer-number-wrapper-tostring': [SKIP],
+  'json-replacer-order': [SKIP],
   'math-floor-of-div-minus-zero': [SKIP],
   'math-min-max': [SKIP],
   'messages': [SKIP],
@@ -859,6 +848,7 @@
   'regress/regress-2163': [SKIP],
   'regress/regress-2318': [SKIP],
   'regress/regress-2339': [SKIP],
+  'regress/regress-2374': [SKIP],
   'regress/regress-2444': [SKIP],
   'regress/regress-244': [SKIP],
   'regress/regress-2593': [SKIP],
@@ -871,6 +861,7 @@
   'regress/regress-2825': [SKIP],
   'regress/regress-286': [SKIP],
   'regress/regress-298269': [SKIP],
+  'regress/regress-3135': [SKIP],
   'regress/regress-3176': [SKIP],
   'regress/regress-318420': [SKIP],
   'regress/regress-320532': [SKIP],
@@ -878,6 +869,7 @@
   'regress/regress-331444': [SKIP],
   'regress/regress-343609': [SKIP],
   'regress/regress-347530': [SKIP],
+  'regress/regress-347914': [SKIP],
   'regress/regress-352982': [SKIP],
   'regress/regress-354357': [SKIP],
   'regress/regress-356053': [SKIP],
@@ -931,6 +923,7 @@
   'regress/regress-69': [SKIP],
   'regress/regress-70066': [SKIP],
   'regress/regress-747': [SKIP],
+  'regress/regress-753': [SKIP],
   'regress/regress-806473': [SKIP],
   'regress/regress-842017': [SKIP],
   'regress/regress-84234': [SKIP],
@@ -958,6 +951,7 @@
   'regress/regress-crbug-245480': [SKIP],
   'regress/regress-crbug-349079': [SKIP],
   'regress/regress-crbug-350864': [SKIP],
+  'regress/regress-crbug-351262': [SKIP],
   'regress/regress-crbug-352058': [SKIP],
   'regress/regress-353551': [SKIP],
   'regress/regress-crbug-357137': [SKIP],
@@ -991,6 +985,10 @@
   'regress/regress-crbug-527364': [SKIP],
   'regress/regress-crbug-530598': [SKIP],
   'regress/regress-crbug-546968': [SKIP],
+  'regress/regress-crbug-568477-1': [SKIP],
+  'regress/regress-crbug-568477-2': [SKIP],
+  'regress/regress-crbug-568477-3': [SKIP],
+  'regress/regress-crbug-568477-4': [SKIP],
   'regress/regress-deopt-gcb': [SKIP],
   'regress/regress-deopt-gc': [SKIP],
   'regress/regress-deopt-in-array-literal-spread': [SKIP],
@@ -1002,6 +1000,7 @@
   'regress/regress-handle-illegal-redeclaration': [SKIP],
   'regress/regress-inline-class-constructor': [SKIP],
   'regress/regress-inlining-function-literal-context': [SKIP],
+  'regress/regress-latin-1': [SKIP],
   'regress/regress-lazy-deopt-reloc': [SKIP],
   'regress/regress-map-invalidation-2': [SKIP],
   'regress/regress-opt-after-debug-deopt': [SKIP],
@@ -1042,13 +1041,27 @@
   'with-parameter-access': [SKIP],
   'with-prototype': [SKIP],
   'with-readonly': [SKIP],
-
-  # TODO(cbruni,neis): Activate Proxy test once we have a more complete
-  # implementation.
-  'regress/regress-crbug-506956': [SKIP],
-  'regress/regress-crbug-505907': [SKIP],
-
   'regress/typed-array-lifetime': [SKIP],
+  'regress/regress-crbug-522895': [SKIP],
+  'regress/regress-crbug-455644': [SKIP],
+  'regress/regress-crbug-109362': [SKIP],
+  'regress/regress-crbug-429159': [SKIP],
+  'regress/regress-crbug-517592': [SKIP],
+  'regress/regress-crbug-405517': [SKIP],
+  'regress/regress-799761': [SKIP],
+  'regress/regress-503565': [SKIP],
+  'regress/regress-3138': [SKIP],
+  'regress/regress-220': [SKIP],
+  'regress/regress-1170187': [SKIP],
+  'regress/regress-1030466': [SKIP],
+  'regress/regress-1853': [SKIP],
+  'with-value': [SKIP],
+  'with-function-expression': [SKIP],
+  'switch': [SKIP],
+  'receiver-in-with-calls': [SKIP],
+  'local-load-from-eval': [SKIP],
+  'deserialize-optimize-inner': [SKIP],
+  'delete-in-with': [SKIP],
 }],  # ignition == True
 
 ['ignition == True and (arch == arm or arch == arm64)', {
@@ -1069,6 +1082,7 @@
   'regress/regress-78270': [SKIP],
   'regress/regress-91008': [SKIP],
   'regress/regress-crbug-347903': [SKIP],
+  'regress/regress-crbug-500497': [SKIP],
   'regress/regress-crbug-505007-1': [SKIP],
   'regress/regress-crbug-505007-2': [SKIP],
   'regress/short-circuit': [SKIP],
@@ -1076,5 +1090,13 @@
   'unicodelctest': [SKIP],
   'unicodelctest-no-optimization': [SKIP],
 }],  # ignition == True and (arch == arm or arch == arm64)
+
+##############################################################################
+['gcov_coverage', {
+  # Tests taking too long.
+  'array-functions-prototype-misc': [SKIP],
+  'strong/implicit-conversions': [SKIP],
+  'strong/load-element-mutate-backing-store': [SKIP],
+}],  # 'gcov_coverage'
 
 ]

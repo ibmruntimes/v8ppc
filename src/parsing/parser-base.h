@@ -111,13 +111,13 @@ class ParserBase : public Traits {
         allow_harmony_sloppy_(false),
         allow_harmony_sloppy_function_(false),
         allow_harmony_sloppy_let_(false),
-        allow_harmony_rest_parameters_(false),
         allow_harmony_default_parameters_(false),
         allow_harmony_destructuring_bind_(false),
         allow_harmony_destructuring_assignment_(false),
         allow_strong_mode_(false),
         allow_legacy_const_(true),
-        allow_harmony_do_expressions_(false) {}
+        allow_harmony_do_expressions_(false),
+        allow_harmony_function_name_(false) {}
 
 #define ALLOW_ACCESSORS(name)                           \
   bool allow_##name() const { return allow_##name##_; } \
@@ -128,13 +128,13 @@ class ParserBase : public Traits {
   ALLOW_ACCESSORS(harmony_sloppy);
   ALLOW_ACCESSORS(harmony_sloppy_function);
   ALLOW_ACCESSORS(harmony_sloppy_let);
-  ALLOW_ACCESSORS(harmony_rest_parameters);
   ALLOW_ACCESSORS(harmony_default_parameters);
   ALLOW_ACCESSORS(harmony_destructuring_bind);
   ALLOW_ACCESSORS(harmony_destructuring_assignment);
   ALLOW_ACCESSORS(strong_mode);
   ALLOW_ACCESSORS(legacy_const);
   ALLOW_ACCESSORS(harmony_do_expressions);
+  ALLOW_ACCESSORS(harmony_function_name);
 #undef ALLOW_ACCESSORS
 
   uintptr_t stack_limit() const { return stack_limit_; }
@@ -916,13 +916,13 @@ class ParserBase : public Traits {
   bool allow_harmony_sloppy_;
   bool allow_harmony_sloppy_function_;
   bool allow_harmony_sloppy_let_;
-  bool allow_harmony_rest_parameters_;
   bool allow_harmony_default_parameters_;
   bool allow_harmony_destructuring_bind_;
   bool allow_harmony_destructuring_assignment_;
   bool allow_strong_mode_;
   bool allow_legacy_const_;
   bool allow_harmony_do_expressions_;
+  bool allow_harmony_function_name_;
 };
 
 
@@ -1329,7 +1329,7 @@ ParserBase<Traits>::ParsePrimaryExpression(ExpressionClassifier* classifier,
                                               MessageTemplate::kUnexpectedToken,
                                               Token::String(Token::RPAREN));
         return factory()->NewEmptyParentheses(beg_pos);
-      } else if (allow_harmony_rest_parameters() && Check(Token::ELLIPSIS)) {
+      } else if (Check(Token::ELLIPSIS)) {
         // (...x)=>x.  The continuation that looks for the => is in
         // ParseAssignmentExpression.
         int ellipsis_pos = position();
@@ -1464,7 +1464,7 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseExpression(
     }
     Consume(Token::COMMA);
     bool is_rest = false;
-    if (allow_harmony_rest_parameters() && peek() == Token::ELLIPSIS) {
+    if (peek() == Token::ELLIPSIS) {
       // 'x, y, ...z' in CoverParenthesizedExpressionAndArrowParameterList only
       // as the formal parameters of'(x, y, ...z) => foo', and is not itself a
       // valid expression or binding pattern.
@@ -1523,8 +1523,14 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseArrayLiteral(
         first_spread_index = values->length();
       }
 
-      CheckDestructuringElement(argument, classifier, start_pos,
-                                scanner()->location().end_pos);
+      if (argument->IsAssignment()) {
+        classifier->RecordPatternError(
+            Scanner::Location(start_pos, scanner()->location().end_pos),
+            MessageTemplate::kInvalidDestructuringTarget);
+      } else {
+        CheckDestructuringElement(argument, classifier, start_pos,
+                                  scanner()->location().end_pos);
+      }
 
       if (peek() == Token::COMMA) {
         classifier->RecordPatternError(
@@ -1534,12 +1540,6 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseArrayLiteral(
     } else {
       elem = this->ParseAssignmentExpression(true, kIsPatternElement,
                                              classifier, CHECK_OK);
-      if (!this->IsValidReferenceExpression(elem) &&
-          !classifier->is_valid_assignment_pattern()) {
-        classifier->RecordPatternError(
-            Scanner::Location(pos, scanner()->location().end_pos),
-            MessageTemplate::kInvalidDestructuringTarget);
-      }
     }
     values->Add(elem, zone_);
     if (peek() != Token::RBRACK) {
@@ -1666,17 +1666,9 @@ ParserBase<Traits>::ParsePropertyDefinition(
                                CHECK_OK_CUSTOM(EmptyObjectLiteralProperty));
       }
       Consume(Token::COLON);
-      int pos = peek_position();
       value = this->ParseAssignmentExpression(
           true, kIsPatternElement, classifier,
           CHECK_OK_CUSTOM(EmptyObjectLiteralProperty));
-
-      if (!this->IsValidReferenceExpression(value) &&
-          !classifier->is_valid_assignment_pattern()) {
-        classifier->RecordPatternError(
-            Scanner::Location(pos, scanner()->location().end_pos),
-            MessageTemplate::kInvalidDestructuringTarget);
-      }
 
       return factory()->NewObjectLiteralProperty(name_expression, value, false,
                                                  *is_computed_name);
@@ -1710,6 +1702,7 @@ ParserBase<Traits>::ParsePropertyDefinition(
 
       ExpressionT lhs = this->ExpressionFromIdentifier(
           name, next_beg_pos, next_end_pos, scope_, factory());
+      CheckDestructuringElement(lhs, classifier, next_beg_pos, next_end_pos);
 
       if (peek() == Token::ASSIGN) {
         Consume(Token::ASSIGN);
@@ -1847,7 +1840,7 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseObjectLiteral(
   Expect(Token::LBRACE, CHECK_OK);
 
   while (peek() != Token::RBRACE) {
-    if (fni_ != nullptr) fni_->Enter();
+    FuncNameInferrer::State fni_state(fni_);
 
     const bool in_class = false;
     const bool is_static = false;
@@ -1878,10 +1871,7 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseObjectLiteral(
       Expect(Token::COMMA, CHECK_OK);
     }
 
-    if (fni_ != nullptr) {
-      fni_->Infer();
-      fni_->Leave();
-    }
+    if (fni_ != nullptr) fni_->Infer();
   }
   Expect(Token::RBRACE, CHECK_OK);
 
@@ -1984,7 +1974,7 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN, int flags,
     return this->ParseYieldExpression(classifier, ok);
   }
 
-  if (fni_ != NULL) fni_->Enter();
+  FuncNameInferrer::State fni_state(fni_);
   ParserBase<Traits>::Checkpoint checkpoint(this);
   ExpressionClassifier arrow_formals_classifier(classifier->duplicate_finder());
   bool parenthesized_formals = peek() == Token::LPAREN;
@@ -2028,6 +2018,9 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN, int flags,
           Scanner::Location(lhs_beg_pos, scanner()->location().end_pos),
           MessageTemplate::kInvalidDestructuringTarget);
     }
+
+    if (fni_ != nullptr) fni_->Infer();
+
     return expression;
   }
 
@@ -2045,17 +2038,12 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN, int flags,
 
   bool maybe_pattern =
       expression->IsObjectLiteral() || expression->IsArrayLiteral();
-  // bool binding_pattern =
-  //    allow_harmony_destructuring_bind() && maybe_pattern && !is_rhs;
 
   if (!Token::IsAssignmentOp(peek())) {
-    if (fni_ != NULL) fni_->Leave();
     // Parsed conditional expression only (no assignment).
-    if (is_pattern_element && !this->IsValidReferenceExpression(expression) &&
-        !maybe_pattern) {
-      classifier->RecordPatternError(
-          Scanner::Location(lhs_beg_pos, scanner()->location().end_pos),
-          MessageTemplate::kInvalidDestructuringTarget);
+    if (is_pattern_element) {
+      CheckDestructuringElement(expression, classifier, lhs_beg_pos,
+                                scanner()->location().end_pos);
     } else if (is_rhs && maybe_pattern) {
       ValidateExpression(classifier, CHECK_OK);
     }
@@ -2078,6 +2066,10 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN, int flags,
         classifier, expression, lhs_beg_pos, scanner()->location().end_pos,
         MessageTemplate::kInvalidLhsInAssignment);
   } else {
+    if (is_pattern_element) {
+      CheckDestructuringElement(expression, classifier, lhs_beg_pos,
+                                scanner()->location().end_pos);
+    }
     expression = this->CheckAndRewriteReferenceExpression(
         expression, lhs_beg_pos, scanner()->location().end_pos,
         MessageTemplate::kInvalidLhsInAssignment, CHECK_OK);
@@ -2125,7 +2117,6 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN, int flags,
     } else {
       fni_->RemoveLastFunction();
     }
-    fni_->Leave();
   }
 
   ExpressionT result = factory()->NewAssignment(op, expression, right, pos);
@@ -2604,7 +2595,7 @@ ParserBase<Traits>::ParseStrongInitializationExpression(
   //  'this' '.' IdentifierName '=' AssignmentExpression
   //  'this' '[' Expression ']' '=' AssignmentExpression
 
-  if (fni_ != NULL) fni_->Enter();
+  FuncNameInferrer::State fni_state(fni_);
 
   Consume(Token::THIS);
   int pos = position();
@@ -2663,7 +2654,6 @@ ParserBase<Traits>::ParseStrongInitializationExpression(
     } else {
       fni_->RemoveLastFunction();
     }
-    fni_->Leave();
   }
 
   if (function_state_->return_location().IsValid()) {
@@ -2933,8 +2923,7 @@ void ParserBase<Traits>::ParseFormalParameterList(
         *ok = false;
         return;
       }
-      parameters->has_rest =
-          allow_harmony_rest_parameters() && Check(Token::ELLIPSIS);
+      parameters->has_rest = Check(Token::ELLIPSIS);
       ParseFormalParameter(parameters, classifier, ok);
       if (!*ok) return;
     } while (!parameters->has_rest && Check(Token::COMMA));
@@ -3287,13 +3276,14 @@ void ParserBase<Traits>::CheckDestructuringElement(
     int end) {
   static const MessageTemplate::Template message =
       MessageTemplate::kInvalidDestructuringTarget;
-  if (!this->IsAssignableIdentifier(expression)) {
-    const Scanner::Location location(begin, end);
+  const Scanner::Location location(begin, end);
+  if (expression->IsArrayLiteral() || expression->IsObjectLiteral() ||
+      expression->IsAssignment())
+    return;
+  if (expression->IsProperty()) {
     classifier->RecordBindingPatternError(location, message);
-    if (!expression->IsProperty() &&
-        !(expression->IsObjectLiteral() || expression->IsArrayLiteral())) {
-      classifier->RecordAssignmentPatternError(location, message);
-    }
+  } else if (!this->IsAssignableIdentifier(expression)) {
+    classifier->RecordPatternError(location, message);
   }
 }
 

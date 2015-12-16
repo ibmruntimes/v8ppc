@@ -71,12 +71,14 @@ class JSTypedLowering final : public AdvancedReducer {
   Reduction ReduceJSCreateArguments(Node* node);
   Reduction ReduceJSCreateArray(Node* node);
   Reduction ReduceJSCreateClosure(Node* node);
+  Reduction ReduceJSCreateIterResultObject(Node* node);
   Reduction ReduceJSCreateLiteralArray(Node* node);
   Reduction ReduceJSCreateLiteralObject(Node* node);
   Reduction ReduceJSCreateFunctionContext(Node* node);
   Reduction ReduceJSCreateWithContext(Node* node);
   Reduction ReduceJSCreateCatchContext(Node* node);
   Reduction ReduceJSCreateBlockContext(Node* node);
+  Reduction ReduceJSCallConstruct(Node* node);
   Reduction ReduceJSCallFunction(Node* node);
   Reduction ReduceJSForInDone(Node* node);
   Reduction ReduceJSForInNext(Node* node);

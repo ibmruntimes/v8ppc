@@ -96,6 +96,7 @@
         'gay-shortest.cc',
         'heap/heap-tester.h',
         'heap/test-alloc.cc',
+        'heap/test-compaction.cc',
         'heap/test-heap.cc',
         'heap/test-incremental-marking.cc',
         'heap/test-mark-compact.cc',
@@ -106,10 +107,9 @@
         'test-accessors.cc',
         'test-api.cc',
         'test-api.h',
-        # TODO(epertoso): re-enable the following test after the API change is
-        # checked in.
-        # 'test-api-accessors.cc',
+        'test-api-accessors.cc',
         'test-api-interceptors.cc',
+        'test-api-fast-accessor-builder.cc',
         'test-array-list.cc',
         'test-ast.cc',
         'test-ast-expression-visitor.cc',
@@ -300,8 +300,10 @@
           'dependencies': ['../../tools/gyp/v8.gyp:v8'],
         }],
         ['v8_wasm!=0', {
-          'dependencies': [
-            '../../third_party/wasm/test/cctest/wasm/wasm.gyp:wasm_cctest'
+          'sources': [
+            'wasm/test-run-wasm.cc',
+            'wasm/test-run-wasm-module.cc',
+            'wasm/test-signatures.h',
           ],
         }],
       ],

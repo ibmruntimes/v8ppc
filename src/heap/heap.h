@@ -282,6 +282,7 @@ namespace internal {
   V(nan_string, "NaN")                                           \
   V(next_string, "next")                                         \
   V(null_string, "null")                                         \
+  V(null_to_string, "[object Null]")                             \
   V(number_string, "number")                                     \
   V(Number_string, "Number")                                     \
   V(object_string, "object")                                     \
@@ -319,6 +320,7 @@ namespace internal {
   V(uint8x16_string, "uint8x16")                                 \
   V(Uint8x16_string, "Uint8x16")                                 \
   V(undefined_string, "undefined")                               \
+  V(undefined_to_string, "[object Undefined]")                   \
   V(valueOf_string, "valueOf")                                   \
   V(value_string, "value")                                       \
   V(WeakMap_string, "WeakMap")                                   \
@@ -348,6 +350,7 @@ namespace internal {
   V(intl_impl_object_symbol)                \
   V(intl_initialized_marker_symbol)         \
   V(megamorphic_symbol)                     \
+  V(native_context_index_symbol)            \
   V(nonexistent_symbol)                     \
   V(nonextensible_symbol)                   \
   V(normal_ic_symbol)                       \
@@ -364,10 +367,11 @@ namespace internal {
   V(promise_value_symbol)                   \
   V(sealed_symbol)                          \
   V(stack_trace_symbol)                     \
+  V(strict_function_transition_symbol)      \
   V(string_iterator_iterated_string_symbol) \
   V(string_iterator_next_index_symbol)      \
-  V(uninitialized_symbol)                   \
-  V(native_context_index_symbol)
+  V(strong_function_transition_symbol)      \
+  V(uninitialized_symbol)
 
 #define PUBLIC_SYMBOL_LIST(V)                 \
   V(has_instance_symbol, Symbol.hasInstance)  \
@@ -813,6 +817,7 @@ class Heap {
   // TODO(hpayer): There is still a missmatch between capacity and actual
   // committed memory size.
   bool CanExpandOldGeneration(int size) {
+    if (force_oom_) return false;
     return (CommittedOldGenerationMemory() + size) < MaxOldGenerationSize();
   }
 
@@ -954,8 +959,6 @@ class Heap {
   void ClearNormalizedMapCaches();
 
   void IncrementDeferredCount(v8::Isolate::UseCounterFeature feature);
-
-  bool concurrent_sweeping_enabled() { return concurrent_sweeping_enabled_; }
 
   inline bool OldGenerationAllocationLimitReached();
 
@@ -2115,6 +2118,8 @@ class Heap {
 
   MUST_USE_RESULT AllocationResult InternalizeString(String* str);
 
+  void set_force_oom(bool value) { force_oom_ = value; }
+
   // The amount of external memory registered through the API kept alive
   // by global handles
   int64_t amount_of_external_allocated_memory_;
@@ -2359,11 +2364,12 @@ class Heap {
 
   bool deserialization_complete_;
 
-  bool concurrent_sweeping_enabled_;
-
   StrongRootsList* strong_roots_list_;
 
   ArrayBufferTracker* array_buffer_tracker_;
+
+  // Used for testing purposes.
+  bool force_oom_;
 
   // Classes in "heap" can be friends.
   friend class AlwaysAllocateScope;

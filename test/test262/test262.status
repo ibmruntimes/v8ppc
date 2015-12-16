@@ -143,9 +143,6 @@
   'language/computed-property-names/class/static/method-symbol': [FAIL, FAIL_SLOPPY],
   'language/computed-property-names/class/static/method-string': [FAIL, FAIL_SLOPPY],
 
-  # https://code.google.com/p/v8/issues/detail?id=3673
-  'language/statements/class/definition/basics': [FAIL],
-
   # https://code.google.com/p/v8/issues/detail?id=3566
   'language/statements/for-of/body-dstr-assign-error': [FAIL],
   'language/statements/for-of/body-put-error': [FAIL],
@@ -188,12 +185,6 @@
   'built-ins/GeneratorPrototype/return/try-finally-within-finally': [FAIL],
   'built-ins/GeneratorPrototype/return/try-finally-within-try': [FAIL],
 
-  # Destructuring assignment
-  # https://code.google.com/p/v8/issues/detail?id=811
-  'language/expressions/assignment/destructuring/*': [SKIP],
-  'language/statements/for-of/body-dstr-assign': [FAIL],
-
-
   # https://code.google.com/p/v8/issues/detail?id=4248
   'language/expressions/compound-assignment/S11.13.2_A5.*': [FAIL],
   'language/expressions/compound-assignment/S11.13.2_A6.*': [FAIL],
@@ -223,6 +214,21 @@
   'language/expressions/assignment/S11.13.1_A6*': [FAIL],
 
   # https://code.google.com/p/v8/issues/detail?id=3699
+  'language/expressions/assignment/destructuring/array-elem-init-fn-name-arrow': [FAIL],
+  'language/expressions/assignment/destructuring/array-elem-init-fn-name-class': [FAIL],
+  'language/expressions/assignment/destructuring/array-elem-init-fn-name-cover': [FAIL],
+  'language/expressions/assignment/destructuring/array-elem-init-fn-name-fn': [FAIL],
+  'language/expressions/assignment/destructuring/array-elem-init-fn-name-gen': [FAIL],
+  'language/expressions/assignment/destructuring/obj-id-init-fn-name-arrow': [FAIL],
+  'language/expressions/assignment/destructuring/obj-id-init-fn-name-class': [FAIL],
+  'language/expressions/assignment/destructuring/obj-id-init-fn-name-cover': [FAIL],
+  'language/expressions/assignment/destructuring/obj-id-init-fn-name-fn': [FAIL],
+  'language/expressions/assignment/destructuring/obj-id-init-fn-name-gen': [FAIL],
+  'language/expressions/assignment/destructuring/obj-prop-elem-init-fn-name-arrow': [FAIL],
+  'language/expressions/assignment/destructuring/obj-prop-elem-init-fn-name-class': [FAIL],
+  'language/expressions/assignment/destructuring/obj-prop-elem-init-fn-name-cover': [FAIL],
+  'language/expressions/assignment/destructuring/obj-prop-elem-init-fn-name-fn': [FAIL],
+  'language/expressions/assignment/destructuring/obj-prop-elem-init-fn-name-gen': [FAIL],
   'language/expressions/assignment/fn-name-arrow': [FAIL],
   'language/expressions/assignment/fn-name-class': [FAIL],
   'language/expressions/assignment/fn-name-cover': [FAIL],
@@ -251,6 +257,7 @@
   'language/expressions/object/method-definition/fn-name-cover': [FAIL],
   'language/expressions/object/method-definition/fn-name-fn': [FAIL],
   'language/expressions/object/method-definition/fn-name-gen': [FAIL],
+  'language/statements/class/definition/basics': [FAIL],
   'language/statements/class/definition/fn-name-accessor-get': [FAIL],
   'language/statements/class/definition/fn-name-accessor-set': [FAIL],
   'language/statements/class/definition/fn-name-gen-method': [FAIL],
@@ -533,6 +540,7 @@
   'built-ins/Array/prototype/reduce/*': [SKIP],
   'built-ins/Array/prototype/reduceRight/*': [SKIP],
   'built-ins/decodeURI*': [SKIP],
+  'built-ins/GeneratorFunction/*': [SKIP],
   'built-ins/GeneratorPrototype/*': [SKIP],
   'built-ins/Map/*': [SKIP],
   'built-ins/MapIteratorPrototype/*': [SKIP],
@@ -544,6 +552,7 @@
   'language/computed-property-names/to-name-side-effects/*': [SKIP],
   'language/directive-prologue/*': [SKIP],
   'language/expressions/arrow-function/*': [SKIP],
+  'language/expressions/assignment/destructuring/*': [SKIP],
   'language/expressions/class/*': [SKIP],
   'language/expressions/generators/*': [SKIP],
   'language/expressions/object/method-definition/yield*': [SKIP],
@@ -568,6 +577,7 @@
   'built-ins/Array/prototype/toString/S15.4.4.2_A1_T4': [SKIP],
   'built-ins/Date/15.9.1.15-1': [SKIP],
   'built-ins/Date/prototype/toISOString/15.9.5.43-0-13': [SKIP],
+  'built-ins/JSON/stringify/*': [SKIP],
   'built-ins/Object/defineProperty/15.2.3.6-4-625gs': [SKIP],
   'built-ins/Object/prototype/hasOwnProperty/S15.2.4.5_A12': [SKIP],
   'built-ins/Object/prototype/isPrototypeOf/S15.2.4.6_A12': [SKIP],
@@ -628,6 +638,13 @@
   'language/statements/function/S13.2.2_A19_T7': [SKIP],
   'language/statements/function/S13.2.2_A19_T8': [SKIP],
   'language/statements/while/S12.6.2_A4_T5': [SKIP],
+  'language/block-scope/leave/nested-block-let-declaration-only-shadows-outer-parameter-value-1': [SKIP],
+  'language/block-scope/leave/nested-block-let-declaration-only-shadows-outer-parameter-value-2': [SKIP],
+  'language/block-scope/leave/verify-context-in-labelled-block': [SKIP],
+  'language/expressions/object/method-definition/name-prop-name-yield-expr': [SKIP],
+  'language/statements/function/S13.2.2_A18_T1': [SKIP],
+  'language/statements/function/S13.2.2_A17_T2': [SKIP],
+  'language/statements/function/S13.2.2_A17_T3': [SKIP],
 }],  # ignition == True
 
 ['ignition == True and (arch == arm or arch == arm64)', {

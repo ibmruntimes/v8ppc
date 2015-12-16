@@ -69,8 +69,7 @@ Matcher<Node*> IsWordOr(const Matcher<Node*>& lhs_matcher,
 Matcher<Node*> InterpreterAssemblerTest::InterpreterAssemblerForTest::IsLoad(
     const Matcher<LoadRepresentation>& rep_matcher,
     const Matcher<Node*>& base_matcher, const Matcher<Node*>& index_matcher) {
-  return ::i::compiler::IsLoad(rep_matcher, base_matcher, index_matcher,
-                               graph()->start(), graph()->start());
+  return ::i::compiler::IsLoad(rep_matcher, base_matcher, index_matcher, _, _);
 }
 
 
@@ -79,16 +78,7 @@ Matcher<Node*> InterpreterAssemblerTest::InterpreterAssemblerForTest::IsStore(
     const Matcher<Node*>& base_matcher, const Matcher<Node*>& index_matcher,
     const Matcher<Node*>& value_matcher) {
   return ::i::compiler::IsStore(rep_matcher, base_matcher, index_matcher,
-                                value_matcher, graph()->start(),
-                                graph()->start());
-}
-
-
-template <class... A>
-Matcher<Node*> InterpreterAssemblerTest::InterpreterAssemblerForTest::IsCall(
-    const Matcher<const CallDescriptor*>& descriptor_matcher, A... args) {
-  return ::i::compiler::IsCall(descriptor_matcher, args..., graph()->start(),
-                               graph()->start());
+                                value_matcher, _, _);
 }
 
 
@@ -96,7 +86,8 @@ Matcher<Node*>
 InterpreterAssemblerTest::InterpreterAssemblerForTest::IsBytecodeOperand(
     int offset) {
   return IsLoad(
-      kMachUint8, IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
+      MachineType::Uint8(),
+      IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
       IsIntPtrAdd(IsParameter(Linkage::kInterpreterBytecodeOffsetParameter),
                   IsInt32Constant(offset)));
 }
@@ -105,7 +96,8 @@ InterpreterAssemblerTest::InterpreterAssemblerForTest::IsBytecodeOperand(
 Matcher<Node*> InterpreterAssemblerTest::InterpreterAssemblerForTest::
     IsBytecodeOperandSignExtended(int offset) {
   Matcher<Node*> load_matcher = IsLoad(
-      kMachInt8, IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
+      MachineType::Int8(),
+      IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
       IsIntPtrAdd(IsParameter(Linkage::kInterpreterBytecodeOffsetParameter),
                   IsInt32Constant(offset)));
   if (kPointerSize == 8) {
@@ -120,16 +112,19 @@ InterpreterAssemblerTest::InterpreterAssemblerForTest::IsBytecodeOperandShort(
     int offset) {
   if (TargetSupportsUnalignedAccess()) {
     return IsLoad(
-        kMachUint16, IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
+        MachineType::Uint16(),
+        IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
         IsIntPtrAdd(IsParameter(Linkage::kInterpreterBytecodeOffsetParameter),
                     IsInt32Constant(offset)));
   } else {
     Matcher<Node*> first_byte = IsLoad(
-        kMachUint8, IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
+        MachineType::Uint8(),
+        IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
         IsIntPtrAdd(IsParameter(Linkage::kInterpreterBytecodeOffsetParameter),
                     IsInt32Constant(offset)));
     Matcher<Node*> second_byte = IsLoad(
-        kMachUint8, IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
+        MachineType::Uint8(),
+        IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
         IsIntPtrAdd(IsParameter(Linkage::kInterpreterBytecodeOffsetParameter),
                     IsInt32Constant(offset + 1)));
 #if V8_TARGET_LITTLE_ENDIAN
@@ -158,13 +153,15 @@ TARGET_TEST_F(InterpreterAssemblerTest, Dispatch) {
     Matcher<Node*> next_bytecode_offset_matcher =
         IsIntPtrAdd(IsParameter(Linkage::kInterpreterBytecodeOffsetParameter),
                     IsInt32Constant(interpreter::Bytecodes::Size(bytecode)));
-    Matcher<Node*> target_bytecode_matcher = m.IsLoad(
-        kMachUint8, IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
-        next_bytecode_offset_matcher);
-    Matcher<Node*> code_target_matcher = m.IsLoad(
-        kMachPtr, IsParameter(Linkage::kInterpreterDispatchTableParameter),
-        IsWord32Shl(target_bytecode_matcher,
-                    IsInt32Constant(kPointerSizeLog2)));
+    Matcher<Node*> target_bytecode_matcher =
+        m.IsLoad(MachineType::Uint8(),
+                 IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
+                 next_bytecode_offset_matcher);
+    Matcher<Node*> code_target_matcher =
+        m.IsLoad(MachineType::Pointer(),
+                 IsParameter(Linkage::kInterpreterDispatchTableParameter),
+                 IsWord32Shl(target_bytecode_matcher,
+                             IsInt32Constant(kPointerSizeLog2)));
 
     EXPECT_EQ(CallDescriptor::kCallCodeObject, m.call_descriptor()->kind());
     EXPECT_TRUE(m.call_descriptor()->flags() & CallDescriptor::kCanUseRoots);
@@ -176,8 +173,7 @@ TARGET_TEST_F(InterpreterAssemblerTest, Dispatch) {
                    next_bytecode_offset_matcher,
                    IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
                    IsParameter(Linkage::kInterpreterDispatchTableParameter),
-                   IsParameter(Linkage::kInterpreterContextParameter),
-                   graph->start(), graph->start()));
+                   IsParameter(Linkage::kInterpreterContextParameter), _, _));
   }
 }
 
@@ -196,13 +192,15 @@ TARGET_TEST_F(InterpreterAssemblerTest, Jump) {
       Matcher<Node*> next_bytecode_offset_matcher =
           IsIntPtrAdd(IsParameter(Linkage::kInterpreterBytecodeOffsetParameter),
                       IsInt32Constant(jump_offset));
-      Matcher<Node*> target_bytecode_matcher = m.IsLoad(
-          kMachUint8, IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
-          next_bytecode_offset_matcher);
-      Matcher<Node*> code_target_matcher = m.IsLoad(
-          kMachPtr, IsParameter(Linkage::kInterpreterDispatchTableParameter),
-          IsWord32Shl(target_bytecode_matcher,
-                      IsInt32Constant(kPointerSizeLog2)));
+      Matcher<Node*> target_bytecode_matcher =
+          m.IsLoad(MachineType::Uint8(),
+                   IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
+                   next_bytecode_offset_matcher);
+      Matcher<Node*> code_target_matcher =
+          m.IsLoad(MachineType::Pointer(),
+                   IsParameter(Linkage::kInterpreterDispatchTableParameter),
+                   IsWord32Shl(target_bytecode_matcher,
+                               IsInt32Constant(kPointerSizeLog2)));
 
       EXPECT_EQ(CallDescriptor::kCallCodeObject, m.call_descriptor()->kind());
       EXPECT_TRUE(m.call_descriptor()->flags() & CallDescriptor::kCanUseRoots);
@@ -214,8 +212,7 @@ TARGET_TEST_F(InterpreterAssemblerTest, Jump) {
                      next_bytecode_offset_matcher,
                      IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
                      IsParameter(Linkage::kInterpreterDispatchTableParameter),
-                     IsParameter(Linkage::kInterpreterContextParameter),
-                     graph->start(), graph->start()));
+                     IsParameter(Linkage::kInterpreterContextParameter), _, _));
     }
   }
 }
@@ -241,13 +238,15 @@ TARGET_TEST_F(InterpreterAssemblerTest, JumpIfWordEqual) {
       Matcher<Node*> next_bytecode_offset_matcher =
           IsIntPtrAdd(IsParameter(Linkage::kInterpreterBytecodeOffsetParameter),
                       IsInt32Constant(jump_offsets[i]));
-      Matcher<Node*> target_bytecode_matcher = m.IsLoad(
-          kMachUint8, IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
-          next_bytecode_offset_matcher);
-      Matcher<Node*> code_target_matcher = m.IsLoad(
-          kMachPtr, IsParameter(Linkage::kInterpreterDispatchTableParameter),
-          IsWord32Shl(target_bytecode_matcher,
-                      IsInt32Constant(kPointerSizeLog2)));
+      Matcher<Node*> target_bytecode_matcher =
+          m.IsLoad(MachineType::Uint8(),
+                   IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
+                   next_bytecode_offset_matcher);
+      Matcher<Node*> code_target_matcher =
+          m.IsLoad(MachineType::Pointer(),
+                   IsParameter(Linkage::kInterpreterDispatchTableParameter),
+                   IsWord32Shl(target_bytecode_matcher,
+                               IsInt32Constant(kPointerSizeLog2)));
       EXPECT_THAT(
           end->InputAt(i),
           IsTailCall(m.call_descriptor(), code_target_matcher,
@@ -256,8 +255,7 @@ TARGET_TEST_F(InterpreterAssemblerTest, JumpIfWordEqual) {
                      next_bytecode_offset_matcher,
                      IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
                      IsParameter(Linkage::kInterpreterDispatchTableParameter),
-                     IsParameter(Linkage::kInterpreterContextParameter),
-                     graph->start(), graph->start()));
+                     IsParameter(Linkage::kInterpreterContextParameter), _, _));
     }
 
     // TODO(oth): test control flow paths.
@@ -287,8 +285,7 @@ TARGET_TEST_F(InterpreterAssemblerTest, Return) {
                    IsParameter(Linkage::kInterpreterBytecodeOffsetParameter),
                    IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
                    IsParameter(Linkage::kInterpreterDispatchTableParameter),
-                   IsParameter(Linkage::kInterpreterContextParameter),
-                   graph->start(), graph->start()));
+                   IsParameter(Linkage::kInterpreterContextParameter), _, _));
   }
 }
 
@@ -357,7 +354,7 @@ TARGET_TEST_F(InterpreterAssemblerTest, GetSetAccumulator) {
 
     EXPECT_THAT(tail_call_node,
                 IsTailCall(m.call_descriptor(), _, accumulator_value_2, _, _, _,
-                           _, graph->start(), graph->start()));
+                           _, _, _));
   }
 }
 
@@ -383,7 +380,7 @@ TARGET_TEST_F(InterpreterAssemblerTest, LoadRegister) {
     Node* load_reg_node = m.LoadRegister(reg_index_node);
     EXPECT_THAT(
         load_reg_node,
-        m.IsLoad(kMachAnyTagged,
+        m.IsLoad(MachineType::AnyTagged(),
                  IsParameter(Linkage::kInterpreterRegisterFileParameter),
                  IsWordShl(reg_index_node, IsInt32Constant(kPointerSizeLog2))));
   }
@@ -398,7 +395,8 @@ TARGET_TEST_F(InterpreterAssemblerTest, StoreRegister) {
     Node* store_reg_node = m.StoreRegister(store_value, reg_index_node);
     EXPECT_THAT(
         store_reg_node,
-        m.IsStore(StoreRepresentation(kMachAnyTagged, kNoWriteBarrier),
+        m.IsStore(StoreRepresentation(MachineRepresentation::kTagged,
+                                      kNoWriteBarrier),
                   IsParameter(Linkage::kInterpreterRegisterFileParameter),
                   IsWordShl(reg_index_node, IsInt32Constant(kPointerSizeLog2)),
                   store_value));
@@ -456,12 +454,12 @@ TARGET_TEST_F(InterpreterAssemblerTest, LoadConstantPoolEntry) {
     Node* index = m.Int32Constant(2);
     Node* load_constant = m.LoadConstantPoolEntry(index);
     Matcher<Node*> constant_pool_matcher = m.IsLoad(
-        kMachAnyTagged,
+        MachineType::AnyTagged(),
         IsParameter(Linkage::kInterpreterBytecodeArrayParameter),
         IsIntPtrConstant(BytecodeArray::kConstantPoolOffset - kHeapObjectTag));
     EXPECT_THAT(
         load_constant,
-        m.IsLoad(kMachAnyTagged, constant_pool_matcher,
+        m.IsLoad(MachineType::AnyTagged(), constant_pool_matcher,
                  IsIntPtrAdd(
                      IsIntPtrConstant(FixedArray::kHeaderSize - kHeapObjectTag),
                      IsWordShl(index, IsInt32Constant(kPointerSizeLog2)))));
@@ -477,7 +475,7 @@ TARGET_TEST_F(InterpreterAssemblerTest, LoadFixedArrayElement) {
     Node* load_element = m.LoadFixedArrayElement(fixed_array, index);
     EXPECT_THAT(
         load_element,
-        m.IsLoad(kMachAnyTagged, fixed_array,
+        m.IsLoad(MachineType::AnyTagged(), fixed_array,
                  IsIntPtrAdd(
                      IsIntPtrConstant(FixedArray::kHeaderSize - kHeapObjectTag),
                      IsWordShl(IsInt32Constant(index),
@@ -493,7 +491,7 @@ TARGET_TEST_F(InterpreterAssemblerTest, LoadObjectField) {
     int offset = 16;
     Node* load_field = m.LoadObjectField(object, offset);
     EXPECT_THAT(load_field,
-                m.IsLoad(kMachAnyTagged, object,
+                m.IsLoad(MachineType::AnyTagged(), object,
                          IsIntPtrConstant(offset - kHeapObjectTag)));
   }
 }
@@ -509,7 +507,8 @@ TARGET_TEST_F(InterpreterAssemblerTest, LoadContextSlot) {
     Matcher<Node*> offset =
         IsIntPtrAdd(IsWordShl(slot_index, IsInt32Constant(kPointerSizeLog2)),
                     IsInt32Constant(Context::kHeaderSize - kHeapObjectTag));
-    EXPECT_THAT(load_context_slot, m.IsLoad(kMachAnyTagged, context, offset));
+    EXPECT_THAT(load_context_slot,
+                m.IsLoad(MachineType::AnyTagged(), context, offset));
   }
 }
 
@@ -525,10 +524,10 @@ TARGET_TEST_F(InterpreterAssemblerTest, StoreContextSlot) {
     Matcher<Node*> offset =
         IsIntPtrAdd(IsWordShl(slot_index, IsInt32Constant(kPointerSizeLog2)),
                     IsInt32Constant(Context::kHeaderSize - kHeapObjectTag));
-    EXPECT_THAT(
-        store_context_slot,
-        m.IsStore(StoreRepresentation(kMachAnyTagged, kFullWriteBarrier),
-                  context, offset, value));
+    EXPECT_THAT(store_context_slot,
+                m.IsStore(StoreRepresentation(MachineRepresentation::kTagged,
+                                              kFullWriteBarrier),
+                          context, offset, value));
   }
 }
 
@@ -539,9 +538,10 @@ TARGET_TEST_F(InterpreterAssemblerTest, CallRuntime2) {
     Node* arg1 = m.Int32Constant(2);
     Node* arg2 = m.Int32Constant(3);
     Node* call_runtime = m.CallRuntime(Runtime::kAdd, arg1, arg2);
-    EXPECT_THAT(call_runtime,
-                m.IsCall(_, _, arg1, arg2, _, IsInt32Constant(2),
-                         IsParameter(Linkage::kInterpreterContextParameter)));
+    EXPECT_THAT(
+        call_runtime,
+        IsCall(_, _, arg1, arg2, _, IsInt32Constant(2),
+               IsParameter(Linkage::kInterpreterContextParameter), _, _));
   }
 }
 
@@ -561,14 +561,15 @@ TARGET_TEST_F(InterpreterAssemblerTest, CallRuntime) {
         function_table,
         IsInt32Mul(function_id, IsInt32Constant(sizeof(Runtime::Function))));
     Matcher<Node*> function_entry =
-        m.IsLoad(kMachPtr, function,
+        m.IsLoad(MachineType::Pointer(), function,
                  IsInt32Constant(offsetof(Runtime::Function, entry)));
 
     Node* call_runtime = m.CallRuntime(function_id, first_arg, arg_count);
-    EXPECT_THAT(call_runtime,
-                m.IsCall(_, IsHeapConstant(builtin.code()), arg_count,
-                         first_arg, function_entry,
-                         IsParameter(Linkage::kInterpreterContextParameter)));
+    EXPECT_THAT(
+        call_runtime,
+        IsCall(_, IsHeapConstant(builtin.code()), arg_count, first_arg,
+               function_entry,
+               IsParameter(Linkage::kInterpreterContextParameter), _, _));
   }
 }
 
@@ -583,9 +584,10 @@ TARGET_TEST_F(InterpreterAssemblerTest, CallIC) {
     Node* arg3 = m.Int32Constant(4);
     Node* arg4 = m.Int32Constant(5);
     Node* call_ic = m.CallIC(descriptor, target, arg1, arg2, arg3, arg4);
-    EXPECT_THAT(call_ic,
-                m.IsCall(_, target, arg1, arg2, arg3, arg4,
-                         IsParameter(Linkage::kInterpreterContextParameter)));
+    EXPECT_THAT(
+        call_ic,
+        IsCall(_, target, arg1, arg2, arg3, arg4,
+               IsParameter(Linkage::kInterpreterContextParameter), _, _));
   }
 }
 
@@ -600,8 +602,9 @@ TARGET_TEST_F(InterpreterAssemblerTest, CallJS) {
     Node* call_js = m.CallJS(function, first_arg, arg_count);
     EXPECT_THAT(
         call_js,
-        m.IsCall(_, IsHeapConstant(builtin.code()), arg_count, first_arg,
-                 function, IsParameter(Linkage::kInterpreterContextParameter)));
+        IsCall(_, IsHeapConstant(builtin.code()), arg_count, first_arg,
+               function, IsParameter(Linkage::kInterpreterContextParameter), _,
+               _));
   }
 }
 
@@ -611,18 +614,19 @@ TARGET_TEST_F(InterpreterAssemblerTest, LoadTypeFeedbackVector) {
     InterpreterAssemblerForTest m(this, bytecode);
     Node* feedback_vector = m.LoadTypeFeedbackVector();
 
-    Matcher<Node*> load_function_matcher = m.IsLoad(
-        kMachAnyTagged, IsParameter(Linkage::kInterpreterRegisterFileParameter),
-        IsIntPtrConstant(
-            InterpreterFrameConstants::kFunctionFromRegisterPointer));
+    Matcher<Node*> load_function_matcher =
+        m.IsLoad(MachineType::AnyTagged(),
+                 IsParameter(Linkage::kInterpreterRegisterFileParameter),
+                 IsIntPtrConstant(
+                     InterpreterFrameConstants::kFunctionFromRegisterPointer));
     Matcher<Node*> load_shared_function_info_matcher =
-        m.IsLoad(kMachAnyTagged, load_function_matcher,
+        m.IsLoad(MachineType::AnyTagged(), load_function_matcher,
                  IsIntPtrConstant(JSFunction::kSharedFunctionInfoOffset -
                                   kHeapObjectTag));
 
     EXPECT_THAT(
         feedback_vector,
-        m.IsLoad(kMachAnyTagged, load_shared_function_info_matcher,
+        m.IsLoad(MachineType::AnyTagged(), load_shared_function_info_matcher,
                  IsIntPtrConstant(SharedFunctionInfo::kFeedbackVectorOffset -
                                   kHeapObjectTag)));
   }

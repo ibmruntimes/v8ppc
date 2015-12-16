@@ -341,7 +341,7 @@ static void ChangeBreakOnExceptionFromJS(v8::Isolate* isolate, bool caught,
 // Prepare to step to next break location.
 static void PrepareStep(StepAction step_action) {
   v8::internal::Debug* debug = CcTest::i_isolate()->debug();
-  debug->PrepareStep(step_action, 1, StackFrame::NO_ID);
+  debug->PrepareStep(step_action, 1);
 }
 
 
@@ -5413,7 +5413,7 @@ static void ThreadedMessageHandler(const v8::Debug::Message& message) {
   if (IsBreakEventMessage(print_buffer)) {
     // Check that we are inside the while loop.
     int source_line = GetSourceLineFromBreakEventMessage(print_buffer);
-    CHECK(8 <= source_line && source_line <= 13);
+    CHECK(4 <= source_line && source_line <= 10);
     threaded_debugging_barriers.barrier_2.Wait();
   }
 }
@@ -5422,10 +5422,6 @@ static void ThreadedMessageHandler(const v8::Debug::Message& message) {
 void V8Thread::Run() {
   const char* source =
       "flag = true;\n"
-      "function bar( new_value ) {\n"
-      "  flag = new_value;\n"
-      "  return \"Return from bar(\" + new_value + \")\";\n"
-      "}\n"
       "\n"
       "function foo() {\n"
       "  var x = 1;\n"
@@ -5468,10 +5464,11 @@ void DebuggerThread::Run() {
   const int kBufSize = 1000;
   uint16_t buffer[kBufSize];
 
-  const char* command_1 = "{\"seq\":102,"
+  const char* command_1 =
+      "{\"seq\":102,"
       "\"type\":\"request\","
       "\"command\":\"evaluate\","
-      "\"arguments\":{\"expression\":\"bar(false)\"}}";
+      "\"arguments\":{\"expression\":\"flag = false\"}}";
   const char* command_2 = "{\"seq\":103,"
       "\"type\":\"request\","
       "\"command\":\"continue\"}";
@@ -7950,6 +7947,7 @@ TEST(DebugPromiseRejectedByCallback) {
 
 
 TEST(DebugBreakOnExceptionInObserveCallback) {
+  i::FLAG_harmony_object_observe = true;
   DebugLocalContext env;
   v8::Isolate* isolate = env->GetIsolate();
   v8::HandleScope scope(isolate);

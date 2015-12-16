@@ -357,7 +357,7 @@ TEST_F(JSTypedLoweringTest, JSToObjectWithAny) {
   Reduction r = Reduce(graph()->NewNode(javascript()->ToObject(), input,
                                         context, frame_state, effect, control));
   ASSERT_TRUE(r.Changed());
-  EXPECT_THAT(r.replacement(), IsPhi(kMachAnyTagged, _, _, _));
+  EXPECT_THAT(r.replacement(), IsPhi(MachineRepresentation::kTagged, _, _, _));
 }
 
 
@@ -387,10 +387,10 @@ TEST_F(JSTypedLoweringTest, JSToStringWithBoolean) {
   Reduction r = Reduce(graph()->NewNode(javascript()->ToString(), input,
                                         context, frame_state, effect, control));
   ASSERT_TRUE(r.Changed());
-  EXPECT_THAT(
-      r.replacement(),
-      IsSelect(kMachAnyTagged, input, IsHeapConstant(factory()->true_string()),
-               IsHeapConstant(factory()->false_string())));
+  EXPECT_THAT(r.replacement(),
+              IsSelect(MachineRepresentation::kTagged, input,
+                       IsHeapConstant(factory()->true_string()),
+                       IsHeapConstant(factory()->false_string())));
 }
 
 
@@ -782,13 +782,6 @@ TEST_F(JSTypedLoweringTest, JSStorePropertyToExternalTypedArrayWithConversion) {
       Matcher<Node*> value_matcher =
           IsToNumber(value, context, effect, control);
       Matcher<Node*> effect_matcher = value_matcher;
-      if (AccessBuilder::ForTypedArrayElement(type, true)
-              .type->Is(Type::Signed32())) {
-        value_matcher = IsNumberToInt32(value_matcher);
-      } else if (AccessBuilder::ForTypedArrayElement(type, true)
-                     .type->Is(Type::Unsigned32())) {
-        value_matcher = IsNumberToUint32(value_matcher);
-      }
 
       ASSERT_TRUE(r.Changed());
       EXPECT_THAT(

@@ -2501,14 +2501,12 @@ void AstGraphBuilder::VisitCallSuper(Call* expr) {
   SuperCallReference* super = expr->expression()->AsSuperCallReference();
   DCHECK_NOT_NULL(super);
 
-  // Prepare the callee to the super call. The super constructor is stored as
-  // the prototype of the constructor we are currently executing.
+  // Prepare the callee to the super call.
   VisitForValue(super->this_function_var());
   Node* this_function = environment()->Pop();
-  const Operator* op = javascript()->CallRuntime(Runtime::kGetPrototype, 1);
+  const Operator* op =
+      javascript()->CallRuntime(Runtime::kInlineGetSuperConstructor, 1);
   Node* super_function = NewNode(op, this_function);
-  // TODO(mstarzinger): This probably needs a proper bailout id.
-  PrepareFrameState(super_function, BailoutId::None());
   environment()->Push(super_function);
 
   // Evaluate all arguments to the super call.
@@ -3015,7 +3013,7 @@ void AstGraphBuilder::VisitNot(UnaryOperation* expr) {
   VisitForValue(expr->expression());
   Node* operand = environment()->Pop();
   Node* input = BuildToBoolean(operand, expr->expression()->test_id());
-  Node* value = NewNode(common()->Select(kMachAnyTagged), input,
+  Node* value = NewNode(common()->Select(MachineRepresentation::kTagged), input,
                         jsgraph()->FalseConstant(), jsgraph()->TrueConstant());
   ast_context()->ProduceValue(value);
 }
@@ -3257,8 +3255,9 @@ Node* AstGraphBuilder::BuildHoleCheckSilent(Node* value, Node* for_hole,
                                             Node* not_hole) {
   Node* the_hole = jsgraph()->TheHoleConstant();
   Node* check = NewNode(javascript()->StrictEqual(), value, the_hole);
-  return NewNode(common()->Select(kMachAnyTagged, BranchHint::kFalse), check,
-                 for_hole, not_hole);
+  return NewNode(
+      common()->Select(MachineRepresentation::kTagged, BranchHint::kFalse),
+      check, for_hole, not_hole);
 }
 
 
@@ -3653,13 +3652,14 @@ Node* AstGraphBuilder::BuildGlobalStore(Handle<Name> name, Node* value,
 
 
 Node* AstGraphBuilder::BuildLoadObjectField(Node* object, int offset) {
-  return NewNode(jsgraph()->machine()->Load(kMachAnyTagged), object,
+  return NewNode(jsgraph()->machine()->Load(MachineType::AnyTagged()), object,
                  jsgraph()->IntPtrConstant(offset - kHeapObjectTag));
 }
 
 
 Node* AstGraphBuilder::BuildLoadImmutableObjectField(Node* object, int offset) {
-  return graph()->NewNode(jsgraph()->machine()->Load(kMachAnyTagged), object,
+  return graph()->NewNode(jsgraph()->machine()->Load(MachineType::AnyTagged()),
+                          object,
                           jsgraph()->IntPtrConstant(offset - kHeapObjectTag),
                           graph()->start(), graph()->start());
 }
@@ -4264,7 +4264,7 @@ void AstGraphBuilder::Environment::PrepareForLoop(BitVector* assigned,
 
 
 Node* AstGraphBuilder::NewPhi(int count, Node* input, Node* control) {
-  const Operator* phi_op = common()->Phi(kMachAnyTagged, count);
+  const Operator* phi_op = common()->Phi(MachineRepresentation::kTagged, count);
   Node** buffer = EnsureInputBufferSize(count + 1);
   MemsetPointer(buffer, input, count);
   buffer[count] = control;
@@ -4326,7 +4326,8 @@ Node* AstGraphBuilder::MergeValue(Node* value, Node* other, Node* control) {
       NodeProperties::GetControlInput(value) == control) {
     // Phi already exists, add input.
     value->InsertInput(graph_zone(), inputs - 1, other);
-    NodeProperties::ChangeOp(value, common()->Phi(kMachAnyTagged, inputs));
+    NodeProperties::ChangeOp(
+        value, common()->Phi(MachineRepresentation::kTagged, inputs));
   } else if (value != other) {
     // Phi does not exist yet, introduce one.
     value = NewPhi(inputs, value, control);

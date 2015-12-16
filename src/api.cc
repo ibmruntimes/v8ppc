@@ -12,8 +12,10 @@
 #include <limits>
 #include <vector>
 #include "include/v8-debug.h"
+#include "include/v8-experimental.h"
 #include "include/v8-profiler.h"
 #include "include/v8-testing.h"
+#include "src/api-experimental.h"
 #include "src/api-natives.h"
 #include "src/assert-scope.h"
 #include "src/background-parsing-task.h"
@@ -999,7 +1001,7 @@ void FunctionTemplate::Inherit(v8::Local<FunctionTemplate> value) {
 
 static Local<FunctionTemplate> FunctionTemplateNew(
     i::Isolate* isolate, FunctionCallback callback,
-    v8::Local<Value> fast_handler, v8::Local<Value> data,
+    experimental::FastAccessorBuilder* fast_handler, v8::Local<Value> data,
     v8::Local<Signature> signature, int length, bool do_not_cache) {
   i::Handle<i::Struct> struct_obj =
       isolate->factory()->NewStruct(i::FUNCTION_TEMPLATE_INFO_TYPE);
@@ -1040,14 +1042,15 @@ Local<FunctionTemplate> FunctionTemplate::New(Isolate* isolate,
   DCHECK(!i_isolate->serializer_enabled());
   LOG_API(i_isolate, "FunctionTemplate::New");
   ENTER_V8(i_isolate);
-  return FunctionTemplateNew(i_isolate, callback, v8::Local<Value>(), data,
-                             signature, length, false);
+  return FunctionTemplateNew(i_isolate, callback, nullptr, data, signature,
+                             length, false);
 }
 
 
 Local<FunctionTemplate> FunctionTemplate::NewWithFastHandler(
-    Isolate* isolate, FunctionCallback callback, v8::Local<Value> fast_handler,
-    v8::Local<Value> data, v8::Local<Signature> signature, int length) {
+    Isolate* isolate, FunctionCallback callback,
+    experimental::FastAccessorBuilder* fast_handler, v8::Local<Value> data,
+    v8::Local<Signature> signature, int length) {
   // TODO(vogelheim): 'fast_handler' should have a more specific type than
   // Local<Value>.
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
@@ -1077,9 +1080,9 @@ Local<AccessorSignature> AccessorSignature::New(
   } while (false)
 
 
-void FunctionTemplate::SetCallHandler(FunctionCallback callback,
-                                      v8::Local<Value> data,
-                                      v8::Local<Value> fast_handler) {
+void FunctionTemplate::SetCallHandler(
+    FunctionCallback callback, v8::Local<Value> data,
+    experimental::FastAccessorBuilder* fast_handler) {
   auto info = Utils::OpenHandle(this);
   EnsureNotInstantiated(info, "v8::FunctionTemplate::SetCallHandler");
   i::Isolate* isolate = info->GetIsolate();
@@ -1090,10 +1093,10 @@ void FunctionTemplate::SetCallHandler(FunctionCallback callback,
   i::Handle<i::CallHandlerInfo> obj =
       i::Handle<i::CallHandlerInfo>::cast(struct_obj);
   SET_FIELD_WRAPPED(obj, set_callback, callback);
-  if (!fast_handler.IsEmpty()) {
-    i::Handle<i::Object> code = Utils::OpenHandle(*fast_handler);
-    CHECK(code->IsCode());
-    obj->set_fast_handler(*code);
+  i::MaybeHandle<i::Code> code =
+      i::experimental::BuildCodeFromFastAccessorBuilder(fast_handler);
+  if (!code.is_null()) {
+    obj->set_fast_handler(*code.ToHandleChecked());
   }
   if (data.IsEmpty()) {
     data = v8::Undefined(reinterpret_cast<v8::Isolate*>(isolate));
@@ -2898,12 +2901,16 @@ Local<String> Value::ToString(Isolate* isolate) const {
 
 
 MaybeLocal<String> Value::ToDetailString(Local<Context> context) const {
-  auto obj = Utils::OpenHandle(this);
+  i::Handle<i::Object> obj = Utils::OpenHandle(this);
   if (obj->IsString()) return ToApiHandle<String>(obj);
   PREPARE_FOR_EXECUTION(context, "ToDetailString", String);
   Local<String> result;
-  has_pending_exception =
-      !ToLocal<String>(i::Execution::ToDetailString(isolate, obj), &result);
+  i::Handle<i::Object> args[] = {obj};
+  has_pending_exception = !ToLocal<String>(
+      i::Execution::TryCall(isolate, isolate->no_side_effects_to_string_fun(),
+                            isolate->factory()->undefined_value(),
+                            arraysize(args), args),
+      &result);
   RETURN_ON_FAILED_EXECUTION(String);
   RETURN_ESCAPED(result);
 }
@@ -3522,11 +3529,11 @@ Maybe<bool> v8::Object::DefineOwnProperty(v8::Local<v8::Context> context,
   desc.set_enumerable(!(attributes & v8::DontEnum));
   desc.set_configurable(!(attributes & v8::DontDelete));
   desc.set_value(value_obj);
-  bool success = i::JSReceiver::DefineOwnProperty(isolate, self, key_obj, &desc,
-                                                  i::Object::DONT_THROW);
+  Maybe<bool> success = i::JSReceiver::DefineOwnProperty(
+      isolate, self, key_obj, &desc, i::Object::DONT_THROW);
   // Even though we said DONT_THROW, there might be accessors that do throw.
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-  return Just(success);
+  return success;
 }
 
 
@@ -3665,11 +3672,11 @@ MaybeLocal<Value> v8::Object::GetOwnPropertyDescriptor(Local<Context> context,
   i::Handle<i::String> key_name = Utils::OpenHandle(*key);
 
   i::PropertyDescriptor desc;
-  bool found =
+  Maybe<bool> found =
       i::JSReceiver::GetOwnPropertyDescriptor(isolate, obj, key_name, &desc);
-  has_pending_exception = isolate->has_pending_exception();
+  has_pending_exception = found.IsNothing();
   RETURN_ON_FAILED_EXECUTION(Value);
-  if (!found) {
+  if (!found.FromJust()) {
     return v8::Undefined(reinterpret_cast<v8::Isolate*>(isolate));
   }
   RETURN_ESCAPED(Utils::ToLocal(desc.ToObject(isolate)));
@@ -3777,63 +3784,13 @@ Local<Array> v8::Object::GetOwnPropertyNames() {
 
 
 MaybeLocal<String> v8::Object::ObjectProtoToString(Local<Context> context) {
-  auto self = Utils::OpenHandle(this);
-  auto isolate = self->GetIsolate();
-  auto v8_isolate = reinterpret_cast<v8::Isolate*>(isolate);
-  i::Handle<i::Object> name(self->class_name(), isolate);
-  i::Handle<i::Object> tag;
-
-  // Native implementation of Object.prototype.toString (v8natives.js):
-  //   var c = %_ClassOf(this);
-  //   if (c === 'Arguments') c  = 'Object';
-  //   return "[object " + c + "]";
-
-  if (!name->IsString()) {
-    return v8::String::NewFromUtf8(v8_isolate, "[object ]",
-                                   NewStringType::kNormal);
-  }
-  auto class_name = i::Handle<i::String>::cast(name);
-  if (i::String::Equals(class_name, isolate->factory()->Arguments_string())) {
-    return v8::String::NewFromUtf8(v8_isolate, "[object Object]",
-                                   NewStringType::kNormal);
-  }
-  if (internal::FLAG_harmony_tostring) {
-    PREPARE_FOR_EXECUTION(context, "v8::Object::ObjectProtoToString()", String);
-    auto toStringTag = isolate->factory()->to_string_tag_symbol();
-    has_pending_exception = !i::Runtime::GetObjectProperty(
-                                 isolate, self, toStringTag).ToHandle(&tag);
-    RETURN_ON_FAILED_EXECUTION(String);
-    if (tag->IsString()) {
-      class_name = Utils::OpenHandle(*handle_scope.Escape(
-          Utils::ToLocal(i::Handle<i::String>::cast(tag))));
-    }
-  }
-  const char* prefix = "[object ";
-  Local<String> str = Utils::ToLocal(class_name);
-  const char* postfix = "]";
-
-  int prefix_len = i::StrLength(prefix);
-  int str_len = str->Utf8Length();
-  int postfix_len = i::StrLength(postfix);
-
-  int buf_len = prefix_len + str_len + postfix_len;
-  i::ScopedVector<char> buf(buf_len);
-
-  // Write prefix.
-  char* ptr = buf.start();
-  i::MemCopy(ptr, prefix, prefix_len * v8::internal::kCharSize);
-  ptr += prefix_len;
-
-  // Write real content.
-  str->WriteUtf8(ptr, str_len);
-  ptr += str_len;
-
-  // Write postfix.
-  i::MemCopy(ptr, postfix, postfix_len * v8::internal::kCharSize);
-
-  // Copy the buffer into a heap-allocated string and return it.
-  return v8::String::NewFromUtf8(v8_isolate, buf.start(),
-                                 NewStringType::kNormal, buf_len);
+  PREPARE_FOR_EXECUTION(context, "v8::Object::ObjectProtoToString", String);
+  auto obj = Utils::OpenHandle(this);
+  Local<String> result;
+  has_pending_exception =
+      !ToLocal<String>(i::JSObject::ObjectProtoToString(isolate, obj), &result);
+  RETURN_ON_FAILED_EXECUTION(String);
+  RETURN_ESCAPED(result);
 }
 
 
@@ -4364,7 +4321,7 @@ MaybeLocal<Function> Function::New(Local<Context> context,
   i::Isolate* isolate = Utils::OpenHandle(*context)->GetIsolate();
   LOG_API(isolate, "Function::New");
   ENTER_V8(isolate);
-  return FunctionTemplateNew(isolate, callback, Local<Value>(), data,
+  return FunctionTemplateNew(isolate, callback, nullptr, data,
                              Local<Signature>(), length, true)
       ->GetFunction(context);
 }

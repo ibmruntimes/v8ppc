@@ -36,11 +36,11 @@ class Schedule;
 // non-schedulable due to missing control and effect dependencies.
 class RawMachineAssembler {
  public:
-  RawMachineAssembler(Isolate* isolate, Graph* graph,
-                      CallDescriptor* call_descriptor,
-                      MachineType word = kMachPtr,
-                      MachineOperatorBuilder::Flags flags =
-                          MachineOperatorBuilder::Flag::kNoFlags);
+  RawMachineAssembler(
+      Isolate* isolate, Graph* graph, CallDescriptor* call_descriptor,
+      MachineRepresentation word = MachineType::PointerRepresentation(),
+      MachineOperatorBuilder::Flags flags =
+          MachineOperatorBuilder::Flag::kNoFlags);
   ~RawMachineAssembler() {}
 
   Isolate* isolate() const { return isolate_; }
@@ -111,17 +111,16 @@ class RawMachineAssembler {
     return Load(rep, base, IntPtrConstant(0));
   }
   Node* Load(MachineType rep, Node* base, Node* index) {
-    return AddNode(machine()->Load(rep), base, index, graph()->start(),
-                   graph()->start());
+    return AddNode(machine()->Load(rep), base, index);
   }
-  Node* Store(MachineType rep, Node* base, Node* value,
+  Node* Store(MachineRepresentation rep, Node* base, Node* value,
               WriteBarrierKind write_barrier) {
     return Store(rep, base, IntPtrConstant(0), value, write_barrier);
   }
-  Node* Store(MachineType rep, Node* base, Node* index, Node* value,
+  Node* Store(MachineRepresentation rep, Node* base, Node* index, Node* value,
               WriteBarrierKind write_barrier) {
     return AddNode(machine()->Store(StoreRepresentation(rep, write_barrier)),
-                   base, index, value, graph()->start(), graph()->start());
+                   base, index, value);
   }
 
   // Arithmetic Operations.
@@ -246,10 +245,10 @@ class RawMachineAssembler {
     return AddNode(machine()->Int32MulHigh(), a, b);
   }
   Node* Int32Div(Node* a, Node* b) {
-    return AddNode(machine()->Int32Div(), a, b, graph()->start());
+    return AddNode(machine()->Int32Div(), a, b);
   }
   Node* Int32Mod(Node* a, Node* b) {
-    return AddNode(machine()->Int32Mod(), a, b, graph()->start());
+    return AddNode(machine()->Int32Mod(), a, b);
   }
   Node* Int32LessThan(Node* a, Node* b) {
     return AddNode(machine()->Int32LessThan(), a, b);
@@ -258,7 +257,7 @@ class RawMachineAssembler {
     return AddNode(machine()->Int32LessThanOrEqual(), a, b);
   }
   Node* Uint32Div(Node* a, Node* b) {
-    return AddNode(machine()->Uint32Div(), a, b, graph()->start());
+    return AddNode(machine()->Uint32Div(), a, b);
   }
   Node* Uint32LessThan(Node* a, Node* b) {
     return AddNode(machine()->Uint32LessThan(), a, b);
@@ -267,7 +266,7 @@ class RawMachineAssembler {
     return AddNode(machine()->Uint32LessThanOrEqual(), a, b);
   }
   Node* Uint32Mod(Node* a, Node* b) {
-    return AddNode(machine()->Uint32Mod(), a, b, graph()->start());
+    return AddNode(machine()->Uint32Mod(), a, b);
   }
   Node* Uint32MulHigh(Node* a, Node* b) {
     return AddNode(machine()->Uint32MulHigh(), a, b);
@@ -428,7 +427,12 @@ class RawMachineAssembler {
     return AddNode(machine()->ChangeFloat64ToUint32(), a);
   }
   Node* TruncateFloat32ToInt64(Node* a) {
-    return AddNode(machine()->TruncateFloat32ToInt64(), a);
+    // TODO(ahaas): Remove this function as soon as it is not used anymore in
+    // WebAssembly.
+    return AddNode(machine()->TryTruncateFloat32ToInt64(), a);
+  }
+  Node* TryTruncateFloat32ToInt64(Node* a) {
+    return AddNode(machine()->TryTruncateFloat32ToInt64(), a);
   }
   Node* TruncateFloat64ToInt64(Node* a) {
     // TODO(ahaas): Remove this function as soon as it is not used anymore in
@@ -439,7 +443,12 @@ class RawMachineAssembler {
     return AddNode(machine()->TryTruncateFloat64ToInt64(), a);
   }
   Node* TruncateFloat32ToUint64(Node* a) {
-    return AddNode(machine()->TruncateFloat32ToUint64(), a);
+    // TODO(ahaas): Remove this function as soon as it is not used anymore in
+    // WebAssembly.
+    return AddNode(machine()->TryTruncateFloat32ToUint64(), a);
+  }
+  Node* TryTruncateFloat32ToUint64(Node* a) {
+    return AddNode(machine()->TryTruncateFloat32ToUint64(), a);
   }
   Node* TruncateFloat64ToUint64(Node* a) {
     // TODO(ahaas): Remove this function as soon as it is not used anymore in
@@ -541,7 +550,7 @@ class RawMachineAssembler {
   Node* LoadFromPointer(void* address, MachineType rep, int32_t offset = 0) {
     return Load(rep, PointerConstant(address), Int32Constant(offset));
   }
-  Node* StoreToPointer(void* address, MachineType rep, Node* node) {
+  Node* StoreToPointer(void* address, MachineRepresentation rep, Node* node) {
     return Store(rep, PointerConstant(address), node, kNoWriteBarrier);
   }
   Node* StringConstant(const char* string) {
@@ -606,14 +615,14 @@ class RawMachineAssembler {
   void Deoptimize(Node* state);
 
   // Variables.
-  Node* Phi(MachineType type, Node* n1, Node* n2) {
-    return AddNode(common()->Phi(type, 2), n1, n2);
+  Node* Phi(MachineRepresentation rep, Node* n1, Node* n2) {
+    return AddNode(common()->Phi(rep, 2), n1, n2);
   }
-  Node* Phi(MachineType type, Node* n1, Node* n2, Node* n3) {
-    return AddNode(common()->Phi(type, 3), n1, n2, n3);
+  Node* Phi(MachineRepresentation rep, Node* n1, Node* n2, Node* n3) {
+    return AddNode(common()->Phi(rep, 3), n1, n2, n3);
   }
-  Node* Phi(MachineType type, Node* n1, Node* n2, Node* n3, Node* n4) {
-    return AddNode(common()->Phi(type, 4), n1, n2, n3, n4);
+  Node* Phi(MachineRepresentation rep, Node* n1, Node* n2, Node* n3, Node* n4) {
+    return AddNode(common()->Phi(rep, 4), n1, n2, n3, n4);
   }
 
   // ===========================================================================

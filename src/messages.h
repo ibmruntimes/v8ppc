@@ -68,7 +68,7 @@ class CallSite {
   Isolate* isolate_;
   Handle<Object> receiver_;
   Handle<JSFunction> fun_;
-  int pos_;
+  int32_t pos_;
 };
 
 
@@ -93,6 +93,8 @@ class CallSite {
   T(CalledNonCallable, "% is not a function")                                  \
   T(CalledOnNonObject, "% called on non-object")                               \
   T(CalledOnNullOrUndefined, "% called on null or undefined")                  \
+  T(CallSiteExpectsFunction,                                                   \
+    "CallSite expects function as second argument, got %")                     \
   T(CannotConvertToPrimitive, "Cannot convert object to primitive value")      \
   T(CannotPreventExt, "Cannot prevent extensions")                             \
   T(CannotFreezeArrayBufferView,                                               \
@@ -183,38 +185,90 @@ class CallSite {
   T(ProtoObjectOrNull, "Object prototype may only be an Object or null: %")    \
   T(PrototypeParentNotAnObject,                                                \
     "Class extends value does not have valid prototype property %")            \
-  T(ProxyDeletePropertyViolatesInvariant,                                      \
-    "Trap 'deleteProperty' returned true but property '%' is not configurable" \
-    " in the proxy target")                                                    \
-  T(ProxyHandlerNonObject, "Cannot create proxy with non-object as handler")   \
-  T(ProxyHandlerReturned, "Proxy handler % returned % from '%' trap")          \
-  T(ProxyHandlerTrapMissing, "Proxy handler % has no '%' trap")                \
-  T(ProxyHandlerTrapMustBeCallable,                                            \
-    "Proxy handler % has non-callable '%' trap")                               \
-  T(ProxySetPrototypeFailed,                                                   \
-    "Proxy handler returned false when setting prototype '%'")                 \
-  T(ProxyNonObjectPropNames, "Trap '%' returned non-object %")                 \
-  T(ProxyPreventExtensionsViolatesInvariant,                                   \
-    "Trap 'preventExtensions' returned true but the proxy's target is "        \
-    "extensible")                                                              \
-  T(ProxyPropNotConfigurable,                                                  \
-    "Proxy handler % returned non-configurable descriptor for property '%' "   \
-    "from '%' trap")                                                           \
-  T(ProxyRepeatedPropName, "Trap '%' returned repeated property name '%'")     \
+  T(ProxyConstructNonObject,                                                   \
+    "'construct' on proxy: trap returned non-object ('%')")                    \
+  T(ProxyDefinePropertyNonConfigurable,                                        \
+    "'defineProperty' on proxy: trap returned truish for defining "            \
+    "non-configurable property '%' which is either non-existant or "           \
+    "configurable in the proxy target")                                        \
+  T(ProxyDefinePropertyNonExtensible,                                          \
+    "'defineProperty' on proxy: trap returned truish for adding property '%' " \
+    " to the non-extensible proxy target")                                     \
+  T(ProxyDefinePropertyIncompatible,                                           \
+    "'defineProperty' on proxy: trap returned truish for adding property '%' " \
+    " that is incompatible with the existing property in the proxy target")    \
+  T(ProxyDeletePropertyNonConfigurable,                                        \
+    "'deleteProperty' on proxy: trap returned truish for property '%' which "  \
+    "is non-configurable in the proxy target")                                 \
+  T(ProxyEnumerateNonObject, "'enumerate' on proxy: trap returned non-object") \
+  T(ProxyEnumerateNonString,                                                   \
+    "'enumerate' on proxy: trap result includes non-string")                   \
+  T(ProxyGetNonConfigurableData,                                               \
+    "'get' on proxy: property '%' is a read-only and "                         \
+    "non-configurable data property on the proxy target but the proxy "        \
+    "did not return its actual value (expected '%' but got '%')")              \
+  T(ProxyGetNonConfigurableAccessor,                                           \
+    "'get' on proxy: property '%' is a non-configurable accessor "             \
+    "property on the proxy target and does not have a getter function, but "   \
+    "the trap did not return 'undefined' (got '%')")                           \
+  T(ProxyGetOwnPropertyDescriptorIncompatible,                                 \
+    "'getOwnPropertyDescriptor' on proxy: trap returned descriptor for "       \
+    "property '%' that is incompatible with the existing property in the "     \
+    "proxy target")                                                            \
+  T(ProxyGetOwnPropertyDescriptorInvalid,                                      \
+    "'getOwnPropertyDescriptor' on proxy: trap returned neither object nor "   \
+    "undefined for property '%'")                                              \
+  T(ProxyGetOwnPropertyDescriptorNonConfigurable,                              \
+    "'getOwnPropertyDescriptor' on proxy: trap reported non-configurability "  \
+    "for property '%' which is either non-existant or configurable in the "    \
+    "proxy target")                                                            \
+  T(ProxyGetOwnPropertyDescriptorNonExtensible,                                \
+    "'getOwnPropertyDescriptor' on proxy: trap returned undefined for "        \
+    "property '%' which exists in the non-extensible proxy target")            \
+  T(ProxyGetOwnPropertyDescriptorUndefined,                                    \
+    "'getOwnPropertyDescriptor' on proxy: trap returned undefined for "        \
+    "property '%' which is non-configurable in the proxy target")              \
+  T(ProxyGetPrototypeOfInvalid,                                                \
+    "'getPrototypeOf' on proxy: trap returned neither object nor null")        \
+  T(ProxyGetPrototypeOfNonExtensible,                                          \
+    "'getPrototypeOf' on proxy: proxy target is non-extensible but the "       \
+    "trap did not return its actual prototype")                                \
   T(ProxyHandlerOrTargetRevoked,                                               \
-    "Cannot create proxy with a revoked proxy as handler or target")           \
+    "Cannot create proxy with a revoked proxy as target or handler")           \
+  T(ProxyHasNonConfigurable,                                                   \
+    "'has' on proxy: trap returned falsish for property '%' which exists in "  \
+    "the proxy target as non-configurable")                                    \
+  T(ProxyHasNonExtensible,                                                     \
+    "'has' on proxy: trap returned falsish for property '%' but the proxy "    \
+    "target is not extensible")                                                \
+  T(ProxyIsExtensibleInconsistent,                                             \
+    "'isExtensible' on proxy: trap result does not reflect extensibility of "  \
+    "proxy target (which is '%')")                                             \
+  T(ProxyNonObject,                                                            \
+    "Cannot create proxy with a non-object as target or handler")              \
+  T(ProxyOwnKeysMissing,                                                       \
+    "'ownKeys' on proxy: trap result did not include '%'")                     \
+  T(ProxyOwnKeysNonExtensible,                                                 \
+    "'ownKeys' on proxy: trap returned extra keys but proxy target is "        \
+    "non-extensible")                                                          \
+  T(ProxyPreventExtensionsExtensible,                                          \
+    "'preventExtensions' on proxy: trap returned truish but the proxy target " \
+    "is extensible")                                                           \
   T(ProxyRevoked, "Cannot perform '%' on a proxy that has been revoked")       \
-  T(ProxyTargetNotExtensible, "Proxy target is not extensible")                \
-  T(ProxyTargetNonObject, "Proxy target is non-object")                        \
-  T(ProxyTargetPropNotConfigurable,                                            \
-    "Proxy target property '%' is not configurable")                           \
-  T(ProxyTrapConstructMustReturnObject,                                        \
-    "Construct trap must return Object, but got ''%s'.")                       \
-  T(ProxyTrapFunctionExpected,                                                 \
-    "Proxy.createFunction called with non-function for '%' trap")              \
-  T(ProxyTrapResultMustInclude, "Trap result must include %.")                 \
-  T(ProxyTrapViolatesInvariant,                                                \
-    "Result of trap '%' is inconsistent with proxy's target")                  \
+  T(ProxySetFrozenData,                                                        \
+    "'set' on proxy: trap returned truish for property '%' which exists in "   \
+    "the proxy target as a non-configurable and non-writable data property "   \
+    "with a different value")                                                  \
+  T(ProxySetFrozenAccessor,                                                    \
+    "'set' on proxy: trap returned truish for property '%' which exists in "   \
+    "the proxy target as a non-configurable and non-writable accessor "        \
+    "property without a setter")                                               \
+  T(ProxySetPrototypeOfNonExtensible,                                          \
+    "'setPrototypeOf' on proxy: trap returned truish for setting a new "       \
+    "prototype on the non-extensible proxy target")                            \
+  T(ProxyTrapReturnedFalsish, "'%' on proxy: trap returned falsish")           \
+  T(ProxyTrapReturnedFalsishFor,                                               \
+    "'%' on proxy: trap returned falsish for property '%'")                    \
   T(RedefineDisallowed, "Cannot redefine property: %")                         \
   T(RedefineExternalArray,                                                     \
     "Cannot redefine a property of an object with external array elements")    \
@@ -486,44 +540,6 @@ class MessageHandler {
 };
 
 
-class ErrorToStringHelper {
- public:
-  ErrorToStringHelper() : visited_(0) {}
-
-  MUST_USE_RESULT MaybeHandle<String> Stringify(Isolate* isolate,
-                                                Handle<JSObject> error);
-
- private:
-  class VisitedScope {
-   public:
-    VisitedScope(ErrorToStringHelper* helper, Handle<JSObject> error)
-        : helper_(helper), has_visited_(false) {
-      for (const Handle<JSObject>& visited : helper->visited_) {
-        if (visited.is_identical_to(error)) {
-          has_visited_ = true;
-          break;
-        }
-      }
-      helper->visited_.Add(error);
-    }
-    ~VisitedScope() { helper_->visited_.RemoveLast(); }
-    bool has_visited() { return has_visited_; }
-
-   private:
-    ErrorToStringHelper* helper_;
-    bool has_visited_;
-  };
-
-  static bool ShadowsInternalError(Isolate* isolate,
-                                   LookupIterator* property_lookup,
-                                   LookupIterator* internal_error_lookup);
-
-  static MUST_USE_RESULT MaybeHandle<String> GetStringifiedProperty(
-      Isolate* isolate, LookupIterator* property_lookup,
-      Handle<String> default_value);
-
-  List<Handle<JSObject> > visited_;
-};
 }  // namespace internal
 }  // namespace v8
 

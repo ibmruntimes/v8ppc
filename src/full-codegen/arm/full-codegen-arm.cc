@@ -1100,21 +1100,13 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ jmp(&exit);
 
   // We got a fixed array in register r0. Iterate through that.
-  Label non_proxy;
   __ bind(&fixed_array);
 
   __ EmitLoadTypeFeedbackVector(r1);
   __ mov(r2, Operand(TypeFeedbackVector::MegamorphicSentinel(isolate())));
   int vector_index = SmiFromSlot(slot)->value();
   __ str(r2, FieldMemOperand(r1, FixedArray::OffsetOfElementAt(vector_index)));
-
-  __ mov(r1, Operand(Smi::FromInt(1)));  // Smi indicates slow check
-  __ ldr(r2, MemOperand(sp, 0 * kPointerSize));  // Get enumerated object
-  STATIC_ASSERT(JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
-  __ CompareObjectType(r2, r3, r3, JS_PROXY_TYPE);
-  __ b(gt, &non_proxy);
-  __ mov(r1, Operand(Smi::FromInt(0)));  // Zero indicates proxy
-  __ bind(&non_proxy);
+  __ mov(r1, Operand(Smi::FromInt(1)));  // Smi(1) indicates slow check
   __ Push(r1, r0);  // Smi and array
   __ ldr(r1, FieldMemOperand(r0, FixedArray::kLengthOffset));
   __ mov(r0, Operand(Smi::FromInt(0)));
@@ -1144,11 +1136,6 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ ldr(r1, MemOperand(sp, 4 * kPointerSize));
   __ ldr(r4, FieldMemOperand(r1, HeapObject::kMapOffset));
   __ cmp(r4, Operand(r2));
-  __ b(eq, &update_each);
-
-  // For proxies, no filtering is done.
-  // TODO(rossberg): What if only a prototype is a proxy? Not specified yet.
-  __ cmp(r2, Operand(Smi::FromInt(0)));
   __ b(eq, &update_each);
 
   // Convert the entry to a string or (smi) 0 if it isn't a property
@@ -3030,8 +3017,15 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
       expr->expression()->AsSuperCallReference();
   DCHECK_NOT_NULL(super_call_ref);
 
-  EmitLoadSuperConstructor(super_call_ref);
-  __ push(result_register());
+  // Push the super constructor target on the stack (may be null,
+  // but the Construct builtin can deal with that properly).
+  VisitForAccumulatorValue(super_call_ref->this_function_var());
+  __ AssertFunction(result_register());
+  __ ldr(result_register(),
+         FieldMemOperand(result_register(), HeapObject::kMapOffset));
+  __ ldr(result_register(),
+         FieldMemOperand(result_register(), Map::kPrototypeOffset));
+  __ Push(result_register());
 
   // Push the arguments ("left-to-right") on the stack.
   ZoneList<Expression*>* args = expr->arguments();
@@ -3339,9 +3333,6 @@ void FullCodeGenerator::EmitClassOf(CallRuntime* expr) {
   __ CompareObjectType(r0, r0, r1, FIRST_JS_RECEIVER_TYPE);
   // Map is now in r0.
   __ b(lt, &null);
-  STATIC_ASSERT(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                FIRST_JS_RECEIVER_TYPE + 1);
-  __ b(eq, &function);
 
   __ cmp(r1, Operand(LAST_JS_RECEIVER_TYPE));
   STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE ==
@@ -3724,63 +3715,6 @@ void FullCodeGenerator::EmitCall(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 2);
-
-  // Evaluate new.target and super constructor.
-  VisitForStackValue(args->at(0));
-  VisitForStackValue(args->at(1));
-
-  // Call the construct call builtin that handles allocation and
-  // constructor invocation.
-  SetConstructCallPosition(expr);
-
-  // Load new target into r3.
-  __ ldr(r3, MemOperand(sp, 1 * kPointerSize));
-
-  // Check if the calling frame is an arguments adaptor frame.
-  Label adaptor_frame, args_set_up, runtime;
-  __ ldr(r2, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
-  __ ldr(r4, MemOperand(r2, StandardFrameConstants::kContextOffset));
-  __ cmp(r4, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
-  __ b(eq, &adaptor_frame);
-  // default constructor has no arguments, so no adaptor frame means no args.
-  __ mov(r0, Operand::Zero());
-  __ b(&args_set_up);
-
-  // Copy arguments from adaptor frame.
-  {
-    __ bind(&adaptor_frame);
-    __ ldr(r1, MemOperand(r2, ArgumentsAdaptorFrameConstants::kLengthOffset));
-    __ SmiUntag(r1, r1);
-    __ mov(r0, r1);
-
-    // Get arguments pointer in r2.
-    __ add(r2, r2, Operand(r1, LSL, kPointerSizeLog2));
-    __ add(r2, r2, Operand(StandardFrameConstants::kCallerSPOffset));
-    Label loop;
-    __ bind(&loop);
-    // Pre-decrement r2 with kPointerSize on each iteration.
-    // Pre-decrement in order to skip receiver.
-    __ ldr(r4, MemOperand(r2, kPointerSize, NegPreIndex));
-    __ Push(r4);
-    __ sub(r1, r1, Operand(1));
-    __ cmp(r1, Operand::Zero());
-    __ b(ne, &loop);
-  }
-
-  __ bind(&args_set_up);
-  __ ldr(r1, MemOperand(sp, r0, LSL, kPointerSizeLog2));
-  __ Call(isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
-
-  // Restore context register.
-  __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
-
-  context()->DropAndPlug(1, r0);
-}
-
-
 void FullCodeGenerator::EmitHasCachedArrayIndex(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   VisitForAccumulatorValue(args->at(0));
@@ -3811,6 +3745,17 @@ void FullCodeGenerator::EmitGetCachedArrayIndex(CallRuntime* expr) {
   __ ldr(r0, FieldMemOperand(r0, String::kHashFieldOffset));
   __ IndexFromHash(r0, r0);
 
+  context()->Plug(r0);
+}
+
+
+void FullCodeGenerator::EmitGetSuperConstructor(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK_EQ(1, args->length());
+  VisitForAccumulatorValue(args->at(0));
+  __ AssertFunction(r0);
+  __ ldr(r0, FieldMemOperand(r0, HeapObject::kMapOffset));
+  __ ldr(r0, FieldMemOperand(r0, Map::kPrototypeOffset));
   context()->Plug(r0);
 }
 

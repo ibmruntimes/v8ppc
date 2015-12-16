@@ -2531,6 +2531,7 @@ class FunctionLiteral final : public Expression {
 
   Handle<String> name() const { return raw_name_->string(); }
   const AstRawString* raw_name() const { return raw_name_; }
+  void set_raw_name(const AstRawString* name) { raw_name_ = name; }
   Scope* scope() const { return scope_; }
   ZoneList<Statement*>* body() const { return body_; }
   void set_function_token_position(int pos) { function_token_position_ = pos; }
@@ -2699,6 +2700,11 @@ class ClassLiteral final : public Expression {
 
   Handle<String> name() const { return raw_name_->string(); }
   const AstRawString* raw_name() const { return raw_name_; }
+  void set_raw_name(const AstRawString* name) {
+    DCHECK_NULL(raw_name_);
+    raw_name_ = name;
+  }
+
   Scope* scope() const { return scope_; }
   VariableProxy* class_variable_proxy() const { return class_variable_proxy_; }
   Expression* extends() const { return extends_; }
@@ -3180,14 +3186,9 @@ class RegExpBackReference final : public RegExpTree {
   RegExpBackReference* AsBackReference() override;
   bool IsBackReference() override;
   int min_match() override { return 0; }
-  // The capture may not be completely parsed yet, if the reference occurs
-  // before the capture. In the ordinary case, nothing has been captured yet,
-  // so the back reference must have the length 0. If the back reference is
-  // inside a lookbehind, effectively making it a forward reference, we return
-  // 0 since lookbehinds have a length of 0.
-  int max_match() override {
-    return capture_->body() ? capture_->max_match() : 0;
-  }
+  // The back reference may be recursive, e.g. /(\2)(\1)/. To avoid infinite
+  // recursion, we give up. Ignorance is bliss.
+  int max_match() override { return kInfinity; }
   int index() { return capture_->index(); }
   RegExpCapture* capture() { return capture_; }
  private:

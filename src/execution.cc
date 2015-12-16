@@ -110,10 +110,6 @@ MUST_USE_RESULT MaybeHandle<Object> Invoke(Isolate* isolate, bool is_construct,
   DCHECK(has_exception == isolate->has_pending_exception());
   if (has_exception) {
     isolate->ReportPendingMessages();
-    // Reset stepping state when script exits with uncaught exception.
-    if (isolate->debug()->is_active()) {
-      isolate->debug()->ClearStepping();
-    }
     return MaybeHandle<Object>();
   } else {
     isolate->clear_pending_message();
@@ -431,12 +427,6 @@ void StackGuard::InitThread(const ExecutionAccess& lock) {
     return Call(isolate, isolate->name##_fun(),                                \
                 isolate->factory()->undefined_value(), arraysize(argv), argv); \
   } while (false)
-
-
-MaybeHandle<Object> Execution::ToDetailString(
-    Isolate* isolate, Handle<Object> obj) {
-  RETURN_NATIVE_CALL(to_detail_string, { obj });
-}
 
 
 MaybeHandle<Object> Execution::NewDate(Isolate* isolate, double time) {

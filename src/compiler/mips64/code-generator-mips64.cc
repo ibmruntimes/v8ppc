@@ -423,8 +423,14 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
   } while (0)
 
 
-#define ASSEMBLE_ROUND_DOUBLE_TO_DOUBLE(asm_instr)                             \
-  do {                                                                         \
+#define ASSEMBLE_ROUND_DOUBLE_TO_DOUBLE(mode)                                  \
+  if (kArchVariant == kMips64r6) {                                             \
+    __ cfc1(kScratchReg, FCSR);                                                \
+    __ li(at, Operand(mode_##mode));                                           \
+    __ ctc1(at, FCSR);                                                         \
+    __ rint_d(i.OutputDoubleRegister(), i.InputDoubleRegister(0));             \
+    __ ctc1(kScratchReg, FCSR);                                                \
+  } else {                                                                     \
     auto ool = new (zone()) OutOfLineRound(this, i.OutputDoubleRegister());    \
     Label done;                                                                \
     __ mfhc1(kScratchReg, i.InputDoubleRegister(0));                           \
@@ -433,16 +439,22 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
     __ Branch(USE_DELAY_SLOT, &done, hs, at,                                   \
               Operand(HeapNumber::kExponentBias + HeapNumber::kMantissaBits)); \
     __ mov_d(i.OutputDoubleRegister(), i.InputDoubleRegister(0));              \
-    __ asm_instr(i.OutputDoubleRegister(), i.InputDoubleRegister(0));          \
+    __ mode##_l_d(i.OutputDoubleRegister(), i.InputDoubleRegister(0));         \
     __ dmfc1(at, i.OutputDoubleRegister());                                    \
     __ Branch(USE_DELAY_SLOT, ool->entry(), eq, at, Operand(zero_reg));        \
     __ cvt_d_l(i.OutputDoubleRegister(), i.OutputDoubleRegister());            \
     __ bind(ool->exit());                                                      \
     __ bind(&done);                                                            \
-  } while (0)
+  }
 
-#define ASSEMBLE_ROUND_FLOAT_TO_FLOAT(asm_instr)                              \
-  do {                                                                        \
+#define ASSEMBLE_ROUND_FLOAT_TO_FLOAT(mode)                                   \
+  if (kArchVariant == kMips64r6) {                                            \
+    __ cfc1(kScratchReg, FCSR);                                               \
+    __ li(at, Operand(mode_##mode));                                          \
+    __ ctc1(at, FCSR);                                                        \
+    __ rint_s(i.OutputDoubleRegister(), i.InputDoubleRegister(0));            \
+    __ ctc1(kScratchReg, FCSR);                                               \
+  } else {                                                                    \
     int32_t kFloat32ExponentBias = 127;                                       \
     int32_t kFloat32MantissaBits = 23;                                        \
     int32_t kFloat32ExponentBits = 8;                                         \
@@ -453,13 +465,13 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
     __ Branch(USE_DELAY_SLOT, &done, hs, at,                                  \
               Operand(kFloat32ExponentBias + kFloat32MantissaBits));          \
     __ mov_s(i.OutputDoubleRegister(), i.InputDoubleRegister(0));             \
-    __ asm_instr(i.OutputDoubleRegister(), i.InputDoubleRegister(0));         \
+    __ mode##_w_s(i.OutputDoubleRegister(), i.InputDoubleRegister(0));        \
     __ mfc1(at, i.OutputDoubleRegister());                                    \
     __ Branch(USE_DELAY_SLOT, ool->entry(), eq, at, Operand(zero_reg));       \
     __ cvt_s_w(i.OutputDoubleRegister(), i.OutputDoubleRegister());           \
     __ bind(ool->exit());                                                     \
     __ bind(&done);                                                           \
-  } while (0)
+  }
 
 void CodeGenerator::AssembleDeconstructActivationRecord(int stack_param_delta) {
   int sp_slot_delta = TailCallFrameStackSlotDelta(stack_param_delta);
@@ -582,6 +594,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       AssembleArchTableSwitch(instr);
       break;
     case kArchNop:
+    case kArchThrowTerminator:
       // don't emit code for nops.
       break;
     case kArchDeoptimize: {
@@ -649,7 +662,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kMips64Div:
       __ Div(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
       if (kArchVariant == kMips64r6) {
-        __ selnez(i.OutputRegister(), i.InputRegister(1), i.InputRegister(0));
+        __ selnez(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
       } else {
         __ Movz(i.OutputRegister(), i.InputRegister(1), i.InputRegister(1));
       }
@@ -657,7 +670,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kMips64DivU:
       __ Divu(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
       if (kArchVariant == kMips64r6) {
-        __ selnez(i.OutputRegister(), i.InputRegister(1), i.InputRegister(0));
+        __ selnez(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
       } else {
         __ Movz(i.OutputRegister(), i.InputRegister(1), i.InputRegister(1));
       }
@@ -674,7 +687,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kMips64Ddiv:
       __ Ddiv(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
       if (kArchVariant == kMips64r6) {
-        __ selnez(i.OutputRegister(), i.InputRegister(1), i.InputRegister(0));
+        __ selnez(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
       } else {
         __ Movz(i.OutputRegister(), i.InputRegister(1), i.InputRegister(1));
       }
@@ -682,7 +695,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kMips64DdivU:
       __ Ddivu(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
       if (kArchVariant == kMips64r6) {
-        __ selnez(i.OutputRegister(), i.InputRegister(1), i.InputRegister(0));
+        __ selnez(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
       } else {
         __ Movz(i.OutputRegister(), i.InputRegister(1), i.InputRegister(1));
       }
@@ -929,35 +942,35 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
                i.InputDoubleRegister(1));
       break;
     case kMips64Float64RoundDown: {
-      ASSEMBLE_ROUND_DOUBLE_TO_DOUBLE(floor_l_d);
+      ASSEMBLE_ROUND_DOUBLE_TO_DOUBLE(floor);
       break;
     }
     case kMips64Float32RoundDown: {
-      ASSEMBLE_ROUND_FLOAT_TO_FLOAT(floor_w_s);
+      ASSEMBLE_ROUND_FLOAT_TO_FLOAT(floor);
       break;
     }
     case kMips64Float64RoundTruncate: {
-      ASSEMBLE_ROUND_DOUBLE_TO_DOUBLE(trunc_l_d);
+      ASSEMBLE_ROUND_DOUBLE_TO_DOUBLE(trunc);
       break;
     }
     case kMips64Float32RoundTruncate: {
-      ASSEMBLE_ROUND_FLOAT_TO_FLOAT(trunc_w_s);
+      ASSEMBLE_ROUND_FLOAT_TO_FLOAT(trunc);
       break;
     }
     case kMips64Float64RoundUp: {
-      ASSEMBLE_ROUND_DOUBLE_TO_DOUBLE(ceil_l_d);
+      ASSEMBLE_ROUND_DOUBLE_TO_DOUBLE(ceil);
       break;
     }
     case kMips64Float32RoundUp: {
-      ASSEMBLE_ROUND_FLOAT_TO_FLOAT(ceil_w_s);
+      ASSEMBLE_ROUND_FLOAT_TO_FLOAT(ceil);
       break;
     }
     case kMips64Float64RoundTiesEven: {
-      ASSEMBLE_ROUND_DOUBLE_TO_DOUBLE(round_l_d);
+      ASSEMBLE_ROUND_DOUBLE_TO_DOUBLE(round);
       break;
     }
     case kMips64Float32RoundTiesEven: {
-      ASSEMBLE_ROUND_FLOAT_TO_FLOAT(round_w_s);
+      ASSEMBLE_ROUND_FLOAT_TO_FLOAT(round);
       break;
     }
     case kMips64Float64Max: {
@@ -1079,9 +1092,30 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     }
     case kMips64TruncLS: {
       FPURegister scratch = kScratchDoubleReg;
+      Register tmp_fcsr = kScratchReg;
+      Register result = kScratchReg2;
+
+      bool load_status = instr->OutputCount() > 1;
+      if (load_status) {
+        // Save FCSR.
+        __ cfc1(tmp_fcsr, FCSR);
+        // Clear FPU flags.
+        __ ctc1(zero_reg, FCSR);
+      }
       // Other arches use round to zero here, so we follow.
       __ trunc_l_s(scratch, i.InputDoubleRegister(0));
       __ dmfc1(i.OutputRegister(), scratch);
+      if (load_status) {
+        __ cfc1(result, FCSR);
+        // Check for overflow and NaNs.
+        __ andi(result, result,
+                (kFCSROverflowFlagMask | kFCSRInvalidOpFlagMask));
+        __ Slt(result, zero_reg, result);
+        __ xori(result, result, 1);
+        __ mov(i.OutputRegister(1), result);
+        // Restore FCSR
+        __ ctc1(tmp_fcsr, FCSR);
+      }
       break;
     }
     case kMips64TruncLD: {
@@ -1120,8 +1154,10 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     }
     case kMips64TruncUlS: {
       FPURegister scratch = kScratchDoubleReg;
+      Register result = instr->OutputCount() > 1 ? i.OutputRegister(1) : no_reg;
       // TODO(plind): Fix wrong param order of Trunc_ul_s() macro-asm function.
-      __ Trunc_ul_s(i.InputDoubleRegister(0), i.OutputRegister(), scratch);
+      __ Trunc_ul_s(i.InputDoubleRegister(0), i.OutputRegister(), scratch,
+                    result);
       break;
     }
     case kMips64TruncUlD: {

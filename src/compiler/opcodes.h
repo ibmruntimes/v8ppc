@@ -105,22 +105,23 @@
   JS_CONVERSION_UNOP_LIST(V)   \
   JS_OTHER_UNOP_LIST(V)
 
-#define JS_OBJECT_OP_LIST(V) \
-  V(JSCreate)                \
-  V(JSCreateArguments)       \
-  V(JSCreateArray)           \
-  V(JSCreateClosure)         \
-  V(JSCreateLiteralArray)    \
-  V(JSCreateLiteralObject)   \
-  V(JSCreateLiteralRegExp)   \
-  V(JSLoadProperty)          \
-  V(JSLoadNamed)             \
-  V(JSLoadGlobal)            \
-  V(JSStoreProperty)         \
-  V(JSStoreNamed)            \
-  V(JSStoreGlobal)           \
-  V(JSDeleteProperty)        \
-  V(JSHasProperty)           \
+#define JS_OBJECT_OP_LIST(V)  \
+  V(JSCreate)                 \
+  V(JSCreateArguments)        \
+  V(JSCreateArray)            \
+  V(JSCreateClosure)          \
+  V(JSCreateIterResultObject) \
+  V(JSCreateLiteralArray)     \
+  V(JSCreateLiteralObject)    \
+  V(JSCreateLiteralRegExp)    \
+  V(JSLoadProperty)           \
+  V(JSLoadNamed)              \
+  V(JSLoadGlobal)             \
+  V(JSStoreProperty)          \
+  V(JSStoreNamed)             \
+  V(JSStoreGlobal)            \
+  V(JSDeleteProperty)         \
+  V(JSHasProperty)            \
   V(JSInstanceOf)
 
 #define JS_CONTEXT_OP_LIST(V) \
@@ -266,9 +267,9 @@
   V(ChangeFloat32ToFloat64)     \
   V(ChangeFloat64ToInt32)       \
   V(ChangeFloat64ToUint32)      \
-  V(TruncateFloat32ToInt64)     \
+  V(TryTruncateFloat32ToInt64)  \
   V(TryTruncateFloat64ToInt64)  \
-  V(TruncateFloat32ToUint64)    \
+  V(TryTruncateFloat32ToUint64) \
   V(TryTruncateFloat64ToUint64) \
   V(ChangeInt32ToFloat64)       \
   V(ChangeInt32ToInt64)         \

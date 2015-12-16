@@ -1187,11 +1187,6 @@ MaybeHandle<Object> Object::GetPrototype(Isolate* isolate,
                                          Handle<Object> receiver) {
   // We don't expect access checks to be needed on JSProxy objects.
   DCHECK(!receiver->IsAccessCheckNeeded() || receiver->IsJSObject());
-  Handle<Context> context(isolate->context());
-  if (receiver->IsAccessCheckNeeded() &&
-      !isolate->MayAccess(context, Handle<JSObject>::cast(receiver))) {
-    return isolate->factory()->null_value();
-  }
   PrototypeIterator iter(isolate, receiver,
                          PrototypeIterator::START_AT_RECEIVER);
   do {
@@ -4429,11 +4424,10 @@ int Map::GetInObjectPropertyOffset(int index) {
 }
 
 
-Handle<Map> Map::CopyInstallDescriptorsForTesting(
-    Handle<Map> map, int new_descriptor, Handle<DescriptorArray> descriptors,
-    Handle<LayoutDescriptor> layout_descriptor) {
-  return CopyInstallDescriptors(map, new_descriptor, descriptors,
-                                layout_descriptor);
+Handle<Map> Map::AddMissingTransitionsForTesting(
+    Handle<Map> split_map, Handle<DescriptorArray> descriptors,
+    Handle<LayoutDescriptor> full_layout_descriptor) {
+  return AddMissingTransitions(split_map, descriptors, full_layout_descriptor);
 }
 
 
@@ -6165,6 +6159,26 @@ bool SharedFunctionInfo::IsSubjectToDebugging() { return !IsBuiltin(); }
 
 bool SharedFunctionInfo::OptimizedCodeMapIsCleared() const {
   return optimized_code_map() == GetHeap()->cleared_optimized_code_map();
+}
+
+
+// static
+void SharedFunctionInfo::AddToOptimizedCodeMap(
+    Handle<SharedFunctionInfo> shared, Handle<Context> native_context,
+    Handle<Code> code, Handle<LiteralsArray> literals, BailoutId osr_ast_id) {
+  AddToOptimizedCodeMapInternal(shared, native_context, code, literals,
+                                osr_ast_id);
+}
+
+
+// static
+void SharedFunctionInfo::AddLiteralsToOptimizedCodeMap(
+    Handle<SharedFunctionInfo> shared, Handle<Context> native_context,
+    Handle<LiteralsArray> literals) {
+  Isolate* isolate = shared->GetIsolate();
+  Handle<Oddball> undefined = isolate->factory()->undefined_value();
+  AddToOptimizedCodeMapInternal(shared, native_context, undefined, literals,
+                                BailoutId::None());
 }
 
 

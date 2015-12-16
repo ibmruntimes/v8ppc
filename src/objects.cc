@@ -1,4 +1,4 @@
-// Copyright 2013 the V8 project authors. All rights reserved.
+// Copyright 2015 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -747,12 +747,24 @@ MaybeHandle<Object> Object::GetProperty(LookupIterator* it,
 }
 
 
+#define STACK_CHECK(result_value)                        \
+  do {                                                   \
+    StackLimitCheck stack_check(isolate);                \
+    if (stack_check.HasOverflowed()) {                   \
+      isolate->Throw(*isolate->factory()->NewRangeError( \
+          MessageTemplate::kStackOverflow));             \
+      return result_value;                               \
+    }                                                    \
+  } while (false)
+
+
 // static
 MaybeHandle<Object> JSProxy::GetProperty(Isolate* isolate,
                                          Handle<JSProxy> proxy,
                                          Handle<Name> name,
                                          Handle<Object> receiver,
                                          LanguageMode language_mode) {
+  STACK_CHECK(MaybeHandle<Object>());
   Handle<Name> trap_name = isolate->factory()->get_string();
   // 1. Assert: IsPropertyKey(P) is true.
   // 2. Let handler be the value of the [[ProxyHandler]] internal slot of O.
@@ -786,11 +798,11 @@ MaybeHandle<Object> JSProxy::GetProperty(Isolate* isolate,
       Execution::Call(isolate, trap, handler, arraysize(args), args), Object);
   // 9. Let targetDesc be ? target.[[GetOwnProperty]](P).
   PropertyDescriptor target_desc;
-  bool target_found =
+  Maybe<bool> target_found =
       JSReceiver::GetOwnPropertyDescriptor(isolate, target, name, &target_desc);
-  if (isolate->has_pending_exception()) return MaybeHandle<Object>();
+  MAYBE_RETURN_NULL(target_found);
   // 10. If targetDesc is not undefined, then
-  if (target_found) {
+  if (target_found.FromJust()) {
     // 10.a. If IsDataDescriptor(targetDesc) and targetDesc.[[Configurable]] is
     //       false and targetDesc.[[Writable]] is false, then
     // 10.a.i. If SameValue(trapResult, targetDesc.[[Value]]) is false,
@@ -799,17 +811,24 @@ MaybeHandle<Object> JSProxy::GetProperty(Isolate* isolate,
                         !target_desc.configurable() &&
                         !target_desc.writable() &&
                         !trap_result->SameValue(*target_desc.value());
+    if (inconsistent) {
+      THROW_NEW_ERROR(
+          isolate, NewTypeError(MessageTemplate::kProxyGetNonConfigurableData,
+                                name, target_desc.value(), trap_result),
+          Object);
+    }
     // 10.b. If IsAccessorDescriptor(targetDesc) and targetDesc.[[Configurable]]
     //       is false and targetDesc.[[Get]] is undefined, then
     // 10.b.i. If trapResult is not undefined, throw a TypeError exception.
-    inconsistent =
-        inconsistent ||
-        (PropertyDescriptor::IsAccessorDescriptor(&target_desc) &&
-         !target_desc.configurable() && target_desc.get()->IsUndefined());
+    inconsistent = PropertyDescriptor::IsAccessorDescriptor(&target_desc) &&
+                   !target_desc.configurable() &&
+                   target_desc.get()->IsUndefined() &&
+                   !trap_result->IsUndefined();
     if (inconsistent) {
       THROW_NEW_ERROR(
           isolate,
-          NewTypeError(MessageTemplate::kProxyTrapViolatesInvariant, trap_name),
+          NewTypeError(MessageTemplate::kProxyGetNonConfigurableAccessor, name,
+                       trap_result),
           Object);
     }
   }
@@ -957,6 +976,8 @@ MaybeHandle<Object> JSProxy::GetPrototype(Handle<JSProxy> proxy) {
   Isolate* isolate = proxy->GetIsolate();
   Handle<String> trap_name = isolate->factory()->getPrototypeOf_string();
 
+  STACK_CHECK(MaybeHandle<Object>());
+
   // 1. Let handler be the value of the [[ProxyHandler]] internal slot.
   // 2. If handler is null, throw a TypeError exception.
   // 3. Assert: Type(handler) is Object.
@@ -986,13 +1007,12 @@ MaybeHandle<Object> JSProxy::GetPrototype(Handle<JSProxy> proxy) {
   // 8. If Type(handlerProto) is neither Object nor Null, throw a TypeError.
   if (!(handler_proto->IsJSReceiver() || handler_proto->IsNull())) {
     THROW_NEW_ERROR(isolate,
-                    NewTypeError(MessageTemplate::kProxyHandlerTrapMissing,
-                                 handler, trap_name),
+                    NewTypeError(MessageTemplate::kProxyGetPrototypeOfInvalid),
                     Object);
   }
   // 9. Let extensibleTarget be ? IsExtensible(target).
   Maybe<bool> is_extensible = JSReceiver::IsExtensible(target);
-  if (is_extensible.IsNothing()) return MaybeHandle<Object>();
+  MAYBE_RETURN_NULL(is_extensible);
   // 10. If extensibleTarget is true, return handlerProto.
   if (is_extensible.FromJust()) return handler_proto;
   // 11. Let targetProto be ? target.[[GetPrototypeOf]]().
@@ -1001,10 +1021,10 @@ MaybeHandle<Object> JSProxy::GetPrototype(Handle<JSProxy> proxy) {
                              Object::GetPrototype(isolate, target), Object);
   // 12. If SameValue(handlerProto, targetProto) is false, throw a TypeError.
   if (!handler_proto->SameValue(*target_proto)) {
-    THROW_NEW_ERROR(isolate,
-                    NewTypeError(MessageTemplate::kProxyHandlerTrapMissing,
-                                 handler, trap_name),
-                    Object);
+    THROW_NEW_ERROR(
+        isolate,
+        NewTypeError(MessageTemplate::kProxyGetPrototypeOfNonExtensible),
+        Object);
   }
   // 13. Return handlerProto.
   return handler_proto;
@@ -1163,6 +1183,18 @@ Maybe<bool> Object::SetPropertyWithDefinedSetter(Handle<Object> receiver,
 
 
 // static
+bool Object::IsErrorObject(Isolate* isolate, Handle<Object> object) {
+  if (!object->IsJSObject()) return false;
+  // Use stack_trace_symbol as proxy for [[ErrorData]].
+  Handle<Name> symbol = isolate->factory()->stack_trace_symbol();
+  Maybe<bool> has_stack_trace =
+      JSReceiver::HasOwnProperty(Handle<JSReceiver>::cast(object), symbol);
+  DCHECK(!has_stack_trace.IsNothing());
+  return has_stack_trace.FromJust();
+}
+
+
+// static
 bool JSObject::AllCanRead(LookupIterator* it) {
   // Skip current iteration, it's in state ACCESS_CHECK or INTERCEPTOR, both of
   // which have already been checked.
@@ -1176,6 +1208,9 @@ bool JSObject::AllCanRead(LookupIterator* it) {
       }
     } else if (it->state() == LookupIterator::INTERCEPTOR) {
       if (it->GetInterceptor()->all_can_read()) return true;
+    } else if (it->state() == LookupIterator::JSPROXY) {
+      // Stop lookupiterating. And no, AllCanNotRead.
+      return false;
     }
   }
   return false;
@@ -2298,6 +2333,18 @@ String* JSReceiver::class_name() {
 }
 
 
+MaybeHandle<String> JSReceiver::BuiltinStringTag(Handle<JSReceiver> object) {
+  Maybe<bool> is_array = Object::IsArray(object);
+  MAYBE_RETURN(is_array, MaybeHandle<String>());
+  if (is_array.FromJust()) {
+    return object->GetIsolate()->factory()->Array_string();
+  }
+  // TODO(adamk): class_name() is expensive, replace with instance type
+  // checks where possible.
+  return handle(object->class_name());
+}
+
+
 // static
 Handle<String> JSReceiver::GetConstructorName(Handle<JSReceiver> receiver) {
   Isolate* isolate = receiver->GetIsolate();
@@ -2903,25 +2950,13 @@ static inline bool EqualImmutableValues(Object* obj1, Object* obj2) {
 }
 
 
-// Invalidates a transition target at |key|, and installs |new_descriptors| over
-// the current instance_descriptors to ensure proper sharing of descriptor
-// arrays.
-// Returns true if the transition target at given key was deprecated.
-bool Map::DeprecateTarget(PropertyKind kind, Name* key,
-                          PropertyAttributes attributes,
-                          DescriptorArray* new_descriptors,
-                          LayoutDescriptor* new_layout_descriptor) {
-  bool transition_target_deprecated = false;
-  Map* maybe_transition =
-      TransitionArray::SearchTransition(this, kind, key, attributes);
-  if (maybe_transition != NULL) {
-    maybe_transition->DeprecateTransitionTree();
-    transition_target_deprecated = true;
-  }
-
+// Installs |new_descriptors| over the current instance_descriptors to ensure
+// proper sharing of descriptor arrays.
+void Map::ReplaceDescriptors(DescriptorArray* new_descriptors,
+                             LayoutDescriptor* new_layout_descriptor) {
   // Don't overwrite the empty descriptor array or initial map's descriptors.
   if (NumberOfOwnDescriptors() == 0 || GetBackPointer()->IsUndefined()) {
-    return transition_target_deprecated;
+    return;
   }
 
   DescriptorArray* to_replace = instance_descriptors();
@@ -2935,7 +2970,6 @@ bool Map::DeprecateTarget(PropertyKind kind, Name* key,
     current = Map::cast(next);
   }
   set_owns_descriptors(false);
-  return transition_target_deprecated;
 }
 
 
@@ -3038,7 +3072,7 @@ void Map::UpdateFieldType(int descriptor, Handle<Name> name,
 }
 
 
-bool FieldTypeIsCleared(Representation rep, Handle<HeapType> type) {
+bool FieldTypeIsCleared(Representation rep, HeapType* type) {
   return type->Is(HeapType::None()) && rep.IsHeapObject();
 }
 
@@ -3052,7 +3086,7 @@ Handle<HeapType> Map::GeneralizeFieldType(Representation rep1,
   // Cleared field types need special treatment. They represent lost knowledge,
   // so we must be conservative, so their generalization with any other type
   // is "Any".
-  if (FieldTypeIsCleared(rep1, type1) || FieldTypeIsCleared(rep2, type2)) {
+  if (FieldTypeIsCleared(rep1, *type1) || FieldTypeIsCleared(rep2, *type2)) {
     return HeapType::Any(isolate);
   }
   if (type1->NowIs(type2)) return type2;
@@ -3075,7 +3109,7 @@ void Map::GeneralizeFieldType(Handle<Map> map, int modify_index,
                                   isolate);
 
   if (old_representation.Equals(new_representation) &&
-      !FieldTypeIsCleared(new_representation, new_field_type) &&
+      !FieldTypeIsCleared(new_representation, *new_field_type) &&
       // Checking old_field_type for being cleared is not necessary because
       // the NowIs check below would fail anyway in that case.
       new_field_type->NowIs(old_field_type)) {
@@ -3601,9 +3635,6 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
   int split_nof = split_map->NumberOfOwnDescriptors();
   DCHECK_NE(old_nof, split_nof);
 
-  Handle<LayoutDescriptor> new_layout_descriptor =
-      LayoutDescriptor::New(split_map, new_descriptors, old_nof);
-
   PropertyKind split_kind;
   PropertyAttributes split_attributes;
   if (modify_index == split_nof) {
@@ -3614,14 +3645,19 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
     split_kind = split_prop_details.kind();
     split_attributes = split_prop_details.attributes();
   }
-  bool transition_target_deprecated = split_map->DeprecateTarget(
-      split_kind, old_descriptors->GetKey(split_nof), split_attributes,
-      *new_descriptors, *new_layout_descriptor);
 
-  // If |transition_target_deprecated| is true then the transition array
-  // already contains entry for given descriptor. This means that the transition
+  // Invalidate a transition target at |key|.
+  Map* maybe_transition = TransitionArray::SearchTransition(
+      *split_map, split_kind, old_descriptors->GetKey(split_nof),
+      split_attributes);
+  if (maybe_transition != NULL) {
+    maybe_transition->DeprecateTransitionTree();
+  }
+
+  // If |maybe_transition| is not NULL then the transition array already
+  // contains entry for given descriptor. This means that the transition
   // could be inserted regardless of whether transitions array is full or not.
-  if (!transition_target_deprecated &&
+  if (maybe_transition == NULL &&
       !TransitionArray::CanHaveMoreTransitions(split_map)) {
     return CopyGeneralizeAllRepresentations(old_map, modify_index, store_mode,
                                             new_kind, new_attributes,
@@ -3652,13 +3688,16 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
         *old_field_type, *new_field_type);
   }
 
-  // Add missing transitions.
-  Handle<Map> new_map = split_map;
-  for (int i = split_nof; i < old_nof; ++i) {
-    new_map = CopyInstallDescriptors(new_map, i, new_descriptors,
-                                     new_layout_descriptor);
-  }
-  new_map->set_owns_descriptors(true);
+  Handle<LayoutDescriptor> new_layout_descriptor =
+      LayoutDescriptor::New(split_map, new_descriptors, old_nof);
+
+  Handle<Map> new_map =
+      AddMissingTransitions(split_map, new_descriptors, new_layout_descriptor);
+
+  // Deprecated part of the transition tree is no longer reachable, so replace
+  // current instance descriptors in the "survived" part of the tree with
+  // the new descriptors to maintain descriptors sharing invariant.
+  split_map->ReplaceDescriptors(*new_descriptors, *new_layout_descriptor);
   return new_map;
 }
 
@@ -3722,10 +3761,16 @@ MaybeHandle<Map> Map::TryUpdate(Handle<Map> old_map) {
     switch (new_details.type()) {
       case DATA: {
         HeapType* new_type = new_descriptors->GetFieldType(i);
+        // Cleared field types need special treatment. They represent lost
+        // knowledge, so we must first generalize the old_type to "Any".
+        if (!FieldTypeIsCleared(new_details.representation(), new_type)) {
+          return MaybeHandle<Map>();
+        }
         PropertyType old_property_type = old_details.type();
         if (old_property_type == DATA) {
           HeapType* old_type = old_descriptors->GetFieldType(i);
-          if (!old_type->NowIs(new_type)) {
+          if (FieldTypeIsCleared(old_details.representation(), old_type) ||
+              !old_type->NowIs(new_type)) {
             return MaybeHandle<Map>();
           }
         } else {
@@ -3989,9 +4034,10 @@ Maybe<bool> Object::SetSuperProperty(LookupIterator* it, Handle<Object> value,
       case LookupIterator::INTERCEPTOR:
       case LookupIterator::JSPROXY: {
         PropertyDescriptor desc;
-        bool owned = JSReceiver::GetOwnPropertyDescriptor(&own_lookup, &desc);
-        if (isolate->has_pending_exception()) return Nothing<bool>();
-        if (!owned) {
+        Maybe<bool> owned =
+            JSReceiver::GetOwnPropertyDescriptor(&own_lookup, &desc);
+        MAYBE_RETURN(owned, Nothing<bool>());
+        if (!owned.FromJust()) {
           return JSReceiver::CreateDataProperty(&own_lookup, value,
                                                 should_throw);
         }
@@ -4003,10 +4049,8 @@ Maybe<bool> Object::SetSuperProperty(LookupIterator* it, Handle<Object> value,
 
         PropertyDescriptor value_desc;
         value_desc.set_value(value);
-        bool result = JSReceiver::DefineOwnProperty(
-            isolate, receiver, it->GetName(), &value_desc, should_throw);
-        if (isolate->has_pending_exception()) return Nothing<bool>();
-        return Just(result);
+        return JSReceiver::DefineOwnProperty(isolate, receiver, it->GetName(),
+                                             &value_desc, should_throw);
       }
 
       case LookupIterator::NOT_FOUND:
@@ -4545,19 +4589,16 @@ Handle<Map> Map::TransitionElementsTo(Handle<Map> map,
       DCHECK_EQ(FAST_SLOPPY_ARGUMENTS_ELEMENTS, to_kind);
       return handle(native_context->fast_aliased_arguments_map());
     }
-  } else {
-    Object* maybe_array_maps = map->is_strong()
-                                   ? native_context->js_array_strong_maps()
-                                   : native_context->js_array_maps();
+  } else if (IsFastElementsKind(from_kind) && IsFastElementsKind(to_kind)) {
     // Reuse map transitions for JSArrays.
-    if (maybe_array_maps->IsFixedArray()) {
-      DisallowHeapAllocation no_gc;
-      FixedArray* array_maps = FixedArray::cast(maybe_array_maps);
-      if (array_maps->get(from_kind) == *map) {
-        Object* maybe_transitioned_map = array_maps->get(to_kind);
-        if (maybe_transitioned_map->IsMap()) {
-          return handle(Map::cast(maybe_transitioned_map));
-        }
+    DisallowHeapAllocation no_gc;
+    Strength strength = map->is_strong() ? Strength::STRONG : Strength::WEAK;
+    if (native_context->get(Context::ArrayMapIndex(from_kind, strength)) ==
+        *map) {
+      Object* maybe_transitioned_map =
+          native_context->get(Context::ArrayMapIndex(to_kind, strength));
+      if (maybe_transitioned_map->IsMap()) {
+        return handle(Map::cast(maybe_transitioned_map), isolate);
       }
     }
   }
@@ -4615,6 +4656,7 @@ void JSProxy::Revoke(Handle<JSProxy> proxy) {
 
 Maybe<bool> JSProxy::HasProperty(Isolate* isolate, Handle<JSProxy> proxy,
                                  Handle<Name> name) {
+  STACK_CHECK(Nothing<bool>());
   // 1. (Assert)
   // 2. Let handler be the value of the [[ProxyHandler]] internal slot of O.
   Handle<Object> handler(proxy->handler(), isolate);
@@ -4650,25 +4692,25 @@ Maybe<bool> JSProxy::HasProperty(Isolate* isolate, Handle<JSProxy> proxy,
   if (!boolean_trap_result) {
     // 9a. Let targetDesc be ? target.[[GetOwnProperty]](P).
     PropertyDescriptor target_desc;
-    bool target_found = JSReceiver::GetOwnPropertyDescriptor(
+    Maybe<bool> target_found = JSReceiver::GetOwnPropertyDescriptor(
         isolate, target, name, &target_desc);
+    MAYBE_RETURN(target_found, Nothing<bool>());
     // 9b. If targetDesc is not undefined, then:
-    if (target_found) {
+    if (target_found.FromJust()) {
       // 9b i. If targetDesc.[[Configurable]] is false, throw a TypeError
       //       exception.
       if (!target_desc.configurable()) {
         isolate->Throw(*isolate->factory()->NewTypeError(
-            MessageTemplate::kProxyTargetPropNotConfigurable, name));
+            MessageTemplate::kProxyHasNonConfigurable, name));
         return Nothing<bool>();
       }
       // 9b ii. Let extensibleTarget be ? IsExtensible(target).
-      Maybe<bool> maybe_extensible = JSReceiver::IsExtensible(target);
-      if (maybe_extensible.IsNothing()) return maybe_extensible;
-      bool extensible_target = maybe_extensible.FromJust();
+      Maybe<bool> extensible_target = JSReceiver::IsExtensible(target);
+      MAYBE_RETURN(extensible_target, Nothing<bool>());
       // 9b iii. If extensibleTarget is false, throw a TypeError exception.
-      if (!extensible_target) {
+      if (!extensible_target.FromJust()) {
         isolate->Throw(*isolate->factory()->NewTypeError(
-            MessageTemplate::kProxyTargetNotExtensible));
+            MessageTemplate::kProxyHasNonExtensible, name));
         return Nothing<bool>();
       }
     }
@@ -4682,6 +4724,7 @@ Maybe<bool> JSProxy::SetProperty(Handle<JSProxy> proxy, Handle<Name> name,
                                  Handle<Object> value, Handle<Object> receiver,
                                  LanguageMode language_mode) {
   Isolate* isolate = proxy->GetIsolate();
+  STACK_CHECK(Nothing<bool>());
   Factory* factory = isolate->factory();
   Handle<String> trap_name = factory->set_string();
   ShouldThrow should_throw =
@@ -4696,8 +4739,8 @@ Maybe<bool> JSProxy::SetProperty(Handle<JSProxy> proxy, Handle<Name> name,
   Handle<JSReceiver> handler(JSReceiver::cast(proxy->handler()), isolate);
 
   Handle<Object> trap;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, trap, GetTrap(proxy, trap_name),
-                                   Nothing<bool>());
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+      isolate, trap, Object::GetMethod(handler, trap_name), Nothing<bool>());
   if (trap->IsUndefined()) {
     LookupIterator it =
         LookupIterator::PropertyOrElement(isolate, receiver, name, target);
@@ -4713,25 +4756,31 @@ Maybe<bool> JSProxy::SetProperty(Handle<JSProxy> proxy, Handle<Name> name,
       Nothing<bool>());
   if (!trap_result->BooleanValue()) {
     RETURN_FAILURE(isolate, should_throw,
-                   NewTypeError(MessageTemplate::kProxyHandlerReturned, handler,
-                                factory->false_string(), trap_name));
+                   NewTypeError(MessageTemplate::kProxyTrapReturnedFalsishFor,
+                                trap_name, name));
   }
 
   // Enforce the invariant.
   PropertyDescriptor target_desc;
-  bool owned =
+  Maybe<bool> owned =
       JSReceiver::GetOwnPropertyDescriptor(isolate, target, name, &target_desc);
-  if (isolate->has_pending_exception()) return Nothing<bool>();
-  if (owned) {
-    bool inconsistent =
-        (PropertyDescriptor::IsDataDescriptor(&target_desc) &&
-         !target_desc.configurable() && !target_desc.writable() &&
-         !value->SameValue(*target_desc.value())) ||
-        (PropertyDescriptor::IsAccessorDescriptor(&target_desc) &&
-         !target_desc.configurable() && target_desc.set()->IsUndefined());
+  MAYBE_RETURN(owned, Nothing<bool>());
+  if (owned.FromJust()) {
+    bool inconsistent = PropertyDescriptor::IsDataDescriptor(&target_desc) &&
+                        !target_desc.configurable() &&
+                        !target_desc.writable() &&
+                        !value->SameValue(*target_desc.value());
     if (inconsistent) {
       isolate->Throw(*isolate->factory()->NewTypeError(
-          MessageTemplate::kProxyTrapViolatesInvariant, trap_name));
+          MessageTemplate::kProxySetFrozenData, name));
+      return Nothing<bool>();
+    }
+    inconsistent = PropertyDescriptor::IsAccessorDescriptor(&target_desc) &&
+                   !target_desc.configurable() &&
+                   target_desc.set()->IsUndefined();
+    if (inconsistent) {
+      isolate->Throw(*isolate->factory()->NewTypeError(
+          MessageTemplate::kProxySetFrozenAccessor, name));
       return Nothing<bool>();
     }
   }
@@ -4745,6 +4794,7 @@ Maybe<bool> JSProxy::DeletePropertyOrElement(Handle<JSProxy> proxy,
   ShouldThrow should_throw =
       is_sloppy(language_mode) ? DONT_THROW : THROW_ON_ERROR;
   Isolate* isolate = proxy->GetIsolate();
+  STACK_CHECK(Nothing<bool>());
   Factory* factory = isolate->factory();
   Handle<String> trap_name = factory->deleteProperty_string();
 
@@ -4757,8 +4807,8 @@ Maybe<bool> JSProxy::DeletePropertyOrElement(Handle<JSProxy> proxy,
   Handle<JSReceiver> handler(JSReceiver::cast(proxy->handler()), isolate);
 
   Handle<Object> trap;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, trap, GetTrap(proxy, trap_name),
-                                   Nothing<bool>());
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+      isolate, trap, Object::GetMethod(handler, trap_name), Nothing<bool>());
   if (trap->IsUndefined()) {
     return JSReceiver::DeletePropertyOrElement(target, name, language_mode);
   }
@@ -4771,18 +4821,18 @@ Maybe<bool> JSProxy::DeletePropertyOrElement(Handle<JSProxy> proxy,
       Nothing<bool>());
   if (!trap_result->BooleanValue()) {
     RETURN_FAILURE(isolate, should_throw,
-                   NewTypeError(MessageTemplate::kProxyHandlerReturned, handler,
-                                factory->false_string(), trap_name));
+                   NewTypeError(MessageTemplate::kProxyTrapReturnedFalsishFor,
+                                trap_name, name));
   }
 
   // Enforce the invariant.
   PropertyDescriptor target_desc;
-  bool owned =
+  Maybe<bool> owned =
       JSReceiver::GetOwnPropertyDescriptor(isolate, target, name, &target_desc);
-  if (isolate->has_pending_exception()) return Nothing<bool>();
-  if (owned && !target_desc.configurable()) {
+  MAYBE_RETURN(owned, Nothing<bool>());
+  if (owned.FromJust() && !target_desc.configurable()) {
     isolate->Throw(*factory->NewTypeError(
-        MessageTemplate::kProxyDeletePropertyViolatesInvariant, name));
+        MessageTemplate::kProxyDeletePropertyNonConfigurable, name));
     return Nothing<bool>();
   }
   return Just(true);
@@ -4834,20 +4884,11 @@ Maybe<PropertyAttributes> JSProxy::GetPropertyAttributes(LookupIterator* it) {
   Isolate* isolate = it->isolate();
   HandleScope scope(isolate);
   PropertyDescriptor desc;
-  bool found = JSProxy::GetOwnPropertyDescriptor(
+  Maybe<bool> found = JSProxy::GetOwnPropertyDescriptor(
       isolate, it->GetHolder<JSProxy>(), it->GetName(), &desc);
-  if (isolate->has_pending_exception()) return Nothing<PropertyAttributes>();
-  if (!found) return Just(ABSENT);
+  MAYBE_RETURN(found, Nothing<PropertyAttributes>());
+  if (!found.FromJust()) return Just(ABSENT);
   return Just(desc.ToAttributes());
-}
-
-
-MaybeHandle<Object> JSProxy::GetTrap(Handle<JSProxy> proxy,
-                                     Handle<String> trap_name) {
-  DCHECK(!proxy->IsRevoked());
-  Isolate* isolate = proxy->GetIsolate();
-  Handle<JSReceiver> handler(JSReceiver::cast(proxy->handler()), isolate);
-  return Object::GetMethod(handler, trap_name);
 }
 
 
@@ -6094,11 +6135,11 @@ Object* JSReceiver::DefineProperty(Isolate* isolate, Handle<Object> object,
     return isolate->heap()->exception();
   }
   // 6. Let success be DefinePropertyOrThrow(O,key, desc).
-  bool success = DefineOwnProperty(isolate, Handle<JSReceiver>::cast(object),
-                                   key, &desc, THROW_ON_ERROR);
+  Maybe<bool> success = DefineOwnProperty(
+      isolate, Handle<JSReceiver>::cast(object), key, &desc, THROW_ON_ERROR);
   // 7. ReturnIfAbrupt(success).
-  if (isolate->has_pending_exception()) return isolate->heap()->exception();
-  CHECK(success == true);
+  MAYBE_RETURN(success, isolate->heap()->exception());
+  CHECK(success.FromJust());
   // 8. Return O.
   return *object;
 }
@@ -6168,11 +6209,12 @@ Object* JSReceiver::DefineProperties(Isolate* isolate, Handle<Object> object,
     // 8a. Let P be the first element of pair.
     // 8b. Let desc be the second element of pair.
     // 8c. Let status be DefinePropertyOrThrow(O, P, desc).
-    bool status = DefineOwnProperty(isolate, Handle<JSReceiver>::cast(object),
-                                    desc->name(), desc, THROW_ON_ERROR);
+    Maybe<bool> status =
+        DefineOwnProperty(isolate, Handle<JSReceiver>::cast(object),
+                          desc->name(), desc, THROW_ON_ERROR);
     // 8d. ReturnIfAbrupt(status).
-    if (isolate->has_pending_exception()) return isolate->heap()->exception();
-    CHECK(status == true);
+    MAYBE_RETURN(status, isolate->heap()->exception());
+    CHECK(status.FromJust());
   }
   // 9. Return o.
   return *object;
@@ -6180,9 +6222,11 @@ Object* JSReceiver::DefineProperties(Isolate* isolate, Handle<Object> object,
 
 
 // static
-bool JSReceiver::DefineOwnProperty(Isolate* isolate, Handle<JSReceiver> object,
-                                   Handle<Object> key, PropertyDescriptor* desc,
-                                   ShouldThrow should_throw) {
+Maybe<bool> JSReceiver::DefineOwnProperty(Isolate* isolate,
+                                          Handle<JSReceiver> object,
+                                          Handle<Object> key,
+                                          PropertyDescriptor* desc,
+                                          ShouldThrow should_throw) {
   if (object->IsJSArray()) {
     return JSArray::DefineOwnProperty(isolate, Handle<JSArray>::cast(object),
                                       key, desc, should_throw);
@@ -6203,11 +6247,11 @@ bool JSReceiver::DefineOwnProperty(Isolate* isolate, Handle<JSReceiver> object,
 
 
 // static
-bool JSReceiver::OrdinaryDefineOwnProperty(Isolate* isolate,
-                                           Handle<JSObject> object,
-                                           Handle<Object> key,
-                                           PropertyDescriptor* desc,
-                                           ShouldThrow should_throw) {
+Maybe<bool> JSReceiver::OrdinaryDefineOwnProperty(Isolate* isolate,
+                                                  Handle<JSObject> object,
+                                                  Handle<Object> key,
+                                                  PropertyDescriptor* desc,
+                                                  ShouldThrow should_throw) {
   bool success = false;
   DCHECK(key->IsName() || key->IsNumber());  // |key| is a PropertyKey...
   LookupIterator it = LookupIterator::PropertyOrElement(
@@ -6218,8 +6262,8 @@ bool JSReceiver::OrdinaryDefineOwnProperty(Isolate* isolate,
   if (it.state() == LookupIterator::ACCESS_CHECK) {
     if (!it.HasAccess()) {
       isolate->ReportFailedAccessCheck(it.GetHolder<JSObject>());
-      RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, false);
-      return false;
+      RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<bool>());
+      return Just(false);
     }
     it.Next();
   }
@@ -6230,17 +6274,15 @@ bool JSReceiver::OrdinaryDefineOwnProperty(Isolate* isolate,
 
 // ES6 9.1.6.1
 // static
-bool JSReceiver::OrdinaryDefineOwnProperty(LookupIterator* it,
-                                           PropertyDescriptor* desc,
-                                           ShouldThrow should_throw) {
+Maybe<bool> JSReceiver::OrdinaryDefineOwnProperty(LookupIterator* it,
+                                                  PropertyDescriptor* desc,
+                                                  ShouldThrow should_throw) {
   Isolate* isolate = it->isolate();
   // 1. Let current be O.[[GetOwnProperty]](P).
   // 2. ReturnIfAbrupt(current).
   PropertyDescriptor current;
-  if (!GetOwnPropertyDescriptor(it, &current) &&
-      isolate->has_pending_exception()) {
-    return false;
-  }
+  MAYBE_RETURN(GetOwnPropertyDescriptor(it, &current), Nothing<bool>());
+
   // TODO(jkummerow/verwaest): It would be nice if we didn't have to reset
   // the iterator every time. Currently, the reasons why we need it are:
   // - handle interceptors correctly
@@ -6257,21 +6299,20 @@ bool JSReceiver::OrdinaryDefineOwnProperty(LookupIterator* it,
 
 // ES6 9.1.6.2
 // static
-bool JSReceiver::IsCompatiblePropertyDescriptor(Isolate* isolate,
-                                                bool extensible,
-                                                PropertyDescriptor* desc,
-                                                PropertyDescriptor* current,
-                                                Handle<Name> property_name) {
+Maybe<bool> JSReceiver::IsCompatiblePropertyDescriptor(
+    Isolate* isolate, bool extensible, PropertyDescriptor* desc,
+    PropertyDescriptor* current, Handle<Name> property_name,
+    ShouldThrow should_throw) {
   // 1. Return ValidateAndApplyPropertyDescriptor(undefined, undefined,
   //    Extensible, Desc, Current).
   return ValidateAndApplyPropertyDescriptor(
-      isolate, NULL, extensible, desc, current, THROW_ON_ERROR, property_name);
+      isolate, NULL, extensible, desc, current, should_throw, property_name);
 }
 
 
 // ES6 9.1.6.3
 // static
-bool JSReceiver::ValidateAndApplyPropertyDescriptor(
+Maybe<bool> JSReceiver::ValidateAndApplyPropertyDescriptor(
     Isolate* isolate, LookupIterator* it, bool extensible,
     PropertyDescriptor* desc, PropertyDescriptor* current,
     ShouldThrow should_throw, Handle<Name> property_name) {
@@ -6289,12 +6330,9 @@ bool JSReceiver::ValidateAndApplyPropertyDescriptor(
   if (current->is_empty()) {
     // 2a. If extensible is false, return false.
     if (!extensible) {
-      if (should_throw == THROW_ON_ERROR) {
-        isolate->Throw(*isolate->factory()->NewTypeError(
-            MessageTemplate::kDefineDisallowed,
-            it != NULL ? it->GetName() : property_name));
-      }
-      return false;
+      RETURN_FAILURE(isolate, should_throw,
+                     NewTypeError(MessageTemplate::kDefineDisallowed,
+                                  it != NULL ? it->GetName() : property_name));
     }
     // 2c. If IsGenericDescriptor(Desc) or IsDataDescriptor(Desc) is true, then:
     // (This is equivalent to !IsAccessorDescriptor(desc).)
@@ -6317,7 +6355,7 @@ bool JSReceiver::ValidateAndApplyPropertyDescriptor(
         MaybeHandle<Object> result =
             JSObject::DefineOwnPropertyIgnoreAttributes(
                 it, value, desc->ToAttributes(), JSObject::DONT_FORCE_FIELD);
-        if (result.is_null()) return false;
+        if (result.is_null()) return Nothing<bool>();
       }
     } else {
       // 2d. Else Desc must be an accessor Property Descriptor,
@@ -6340,11 +6378,11 @@ bool JSReceiver::ValidateAndApplyPropertyDescriptor(
                 : Handle<Object>::cast(isolate->factory()->null_value()));
         MaybeHandle<Object> result =
             JSObject::DefineAccessor(it, getter, setter, desc->ToAttributes());
-        if (result.is_null()) return false;
+        if (result.is_null()) return Nothing<bool>();
       }
     }
     // 2e. Return true.
-    return true;
+    return Just(true);
   }
   // 3. Return true, if every field in Desc is absent.
   // 4. Return true, if every field in Desc also occurs in current and the
@@ -6362,29 +6400,23 @@ bool JSReceiver::ValidateAndApplyPropertyDescriptor(
        (current->has_get() && current->get()->SameValue(*desc->get()))) &&
       (!desc->has_set() ||
        (current->has_set() && current->set()->SameValue(*desc->set())))) {
-    return true;
+    return Just(true);
   }
   // 5. If the [[Configurable]] field of current is false, then
   if (!current->configurable()) {
     // 5a. Return false, if the [[Configurable]] field of Desc is true.
     if (desc->has_configurable() && desc->configurable()) {
-      if (should_throw == THROW_ON_ERROR) {
-        isolate->Throw(*isolate->factory()->NewTypeError(
-            MessageTemplate::kRedefineDisallowed,
-            it != NULL ? it->GetName() : property_name));
-      }
-      return false;
+      RETURN_FAILURE(isolate, should_throw,
+                     NewTypeError(MessageTemplate::kRedefineDisallowed,
+                                  it != NULL ? it->GetName() : property_name));
     }
     // 5b. Return false, if the [[Enumerable]] field of Desc is present and the
     // [[Enumerable]] fields of current and Desc are the Boolean negation of
     // each other.
     if (desc->has_enumerable() && desc->enumerable() != current->enumerable()) {
-      if (should_throw == THROW_ON_ERROR) {
-        isolate->Throw(*isolate->factory()->NewTypeError(
-            MessageTemplate::kRedefineDisallowed,
-            it != NULL ? it->GetName() : property_name));
-      }
-      return false;
+      RETURN_FAILURE(isolate, should_throw,
+                     NewTypeError(MessageTemplate::kRedefineDisallowed,
+                                  it != NULL ? it->GetName() : property_name));
     }
   }
 
@@ -6399,12 +6431,9 @@ bool JSReceiver::ValidateAndApplyPropertyDescriptor(
   } else if (current_is_data_descriptor != desc_is_data_descriptor) {
     // 7a. Return false, if the [[Configurable]] field of current is false.
     if (!current->configurable()) {
-      if (should_throw == THROW_ON_ERROR) {
-        isolate->Throw(*isolate->factory()->NewTypeError(
-            MessageTemplate::kRedefineDisallowed,
-            it != NULL ? it->GetName() : property_name));
-      }
-      return false;
+      RETURN_FAILURE(isolate, should_throw,
+                     NewTypeError(MessageTemplate::kRedefineDisallowed,
+                                  it != NULL ? it->GetName() : property_name));
     }
     // 7b. If IsDataDescriptor(current) is true, then:
     if (current_is_data_descriptor) {
@@ -6432,34 +6461,27 @@ bool JSReceiver::ValidateAndApplyPropertyDescriptor(
       // non-configurable properties.
       if (it != NULL && current->writable() && desc->has_writable() &&
           !desc->writable() && object->map()->is_strong()) {
-        if (should_throw == THROW_ON_ERROR) {
-          isolate->Throw(*isolate->factory()->NewTypeError(
-              MessageTemplate::kStrongRedefineDisallowed, object,
-              it->GetName()));
-        }
-        return false;
+        RETURN_FAILURE(isolate, should_throw,
+                       NewTypeError(MessageTemplate::kStrongRedefineDisallowed,
+                                    object, it->GetName()));
       }
       // 8a i. Return false, if the [[Writable]] field of current is false and
       // the [[Writable]] field of Desc is true.
       if (!current->writable() && desc->has_writable() && desc->writable()) {
-        if (should_throw == THROW_ON_ERROR) {
-          isolate->Throw(*isolate->factory()->NewTypeError(
-              MessageTemplate::kRedefineDisallowed,
-              it != NULL ? it->GetName() : property_name));
-        }
-        return false;
+        RETURN_FAILURE(
+            isolate, should_throw,
+            NewTypeError(MessageTemplate::kRedefineDisallowed,
+                         it != NULL ? it->GetName() : property_name));
       }
       // 8a ii. If the [[Writable]] field of current is false, then:
       if (!current->writable()) {
         // 8a ii 1. Return false, if the [[Value]] field of Desc is present and
         // SameValue(Desc.[[Value]], current.[[Value]]) is false.
         if (desc->has_value() && !desc->value()->SameValue(*current->value())) {
-          if (should_throw == THROW_ON_ERROR) {
-            isolate->Throw(*isolate->factory()->NewTypeError(
-                MessageTemplate::kRedefineDisallowed,
-                it != NULL ? it->GetName() : property_name));
-          }
-          return false;
+          RETURN_FAILURE(
+              isolate, should_throw,
+              NewTypeError(MessageTemplate::kRedefineDisallowed,
+                           it != NULL ? it->GetName() : property_name));
         }
       }
     }
@@ -6473,22 +6495,18 @@ bool JSReceiver::ValidateAndApplyPropertyDescriptor(
       // 9a i. Return false, if the [[Set]] field of Desc is present and
       // SameValue(Desc.[[Set]], current.[[Set]]) is false.
       if (desc->has_set() && !desc->set()->SameValue(*current->set())) {
-        if (should_throw == THROW_ON_ERROR) {
-          isolate->Throw(*isolate->factory()->NewTypeError(
-              MessageTemplate::kRedefineDisallowed,
-              it != NULL ? it->GetName() : property_name));
-        }
-        return false;
+        RETURN_FAILURE(
+            isolate, should_throw,
+            NewTypeError(MessageTemplate::kRedefineDisallowed,
+                         it != NULL ? it->GetName() : property_name));
       }
       // 9a ii. Return false, if the [[Get]] field of Desc is present and
       // SameValue(Desc.[[Get]], current.[[Get]]) is false.
       if (desc->has_get() && !desc->get()->SameValue(*current->get())) {
-        if (should_throw == THROW_ON_ERROR) {
-          isolate->Throw(*isolate->factory()->NewTypeError(
-              MessageTemplate::kRedefineDisallowed,
-              it != NULL ? it->GetName() : property_name));
-        }
-        return false;
+        RETURN_FAILURE(
+            isolate, should_throw,
+            NewTypeError(MessageTemplate::kRedefineDisallowed,
+                         it != NULL ? it->GetName() : property_name));
       }
     }
   }
@@ -6530,7 +6548,7 @@ bool JSReceiver::ValidateAndApplyPropertyDescriptor(
                                         isolate->factory()->undefined_value()));
       MaybeHandle<Object> result = JSObject::DefineOwnPropertyIgnoreAttributes(
           it, value, attrs, JSObject::DONT_FORCE_FIELD);
-      if (result.is_null()) return false;
+      if (result.is_null()) return Nothing<bool>();
     } else {
       DCHECK(desc_is_accessor_descriptor ||
              (desc_is_generic_descriptor &&
@@ -6549,12 +6567,12 @@ bool JSReceiver::ValidateAndApplyPropertyDescriptor(
                     : Handle<Object>::cast(isolate->factory()->null_value()));
       MaybeHandle<Object> result =
           JSObject::DefineAccessor(it, getter, setter, attrs);
-      if (result.is_null()) return false;
+      if (result.is_null()) return Nothing<bool>();
     }
   }
 
   // 11. Return true.
-  return true;
+  return Just(true);
 }
 
 
@@ -6576,18 +6594,15 @@ Maybe<bool> JSReceiver::CreateDataProperty(LookupIterator* it,
   new_desc.set_enumerable(true);
   new_desc.set_configurable(true);
 
-  bool result = JSReceiver::DefineOwnProperty(isolate, receiver, it->GetName(),
-                                              &new_desc, should_throw);
-  if (isolate->has_pending_exception()) return Nothing<bool>();
-  return Just(result);
+  return JSReceiver::DefineOwnProperty(isolate, receiver, it->GetName(),
+                                       &new_desc, should_throw);
 }
 
 
 Maybe<bool> JSObject::CreateDataProperty(LookupIterator* it,
                                          Handle<Object> value) {
   DCHECK(it->GetReceiver()->IsJSObject());
-  Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(it);
-  if (maybe.IsNothing()) return Nothing<bool>();
+  MAYBE_RETURN(JSReceiver::GetPropertyAttributes(it), Nothing<bool>());
 
   if (it->IsFound()) {
     if (!it->IsConfigurable()) return Just(false);
@@ -6622,9 +6637,10 @@ bool PropertyKeyToArrayIndex(Handle<Object> index_obj, uint32_t* output) {
 
 // ES6 9.4.2.1
 // static
-bool JSArray::DefineOwnProperty(Isolate* isolate, Handle<JSArray> o,
-                                Handle<Object> name, PropertyDescriptor* desc,
-                                ShouldThrow should_throw) {
+Maybe<bool> JSArray::DefineOwnProperty(Isolate* isolate, Handle<JSArray> o,
+                                       Handle<Object> name,
+                                       PropertyDescriptor* desc,
+                                       ShouldThrow should_throw) {
   // 1. Assert: IsPropertyKey(P) is true. ("P" is |name|.)
   // 2. If P is "length", then:
   // TODO(jkummerow): Check if we need slow string comparison.
@@ -6637,10 +6653,10 @@ bool JSArray::DefineOwnProperty(Isolate* isolate, Handle<JSArray> o,
   if (PropertyKeyToArrayIndex(name, &index)) {
     // 3a. Let oldLenDesc be OrdinaryGetOwnProperty(A, "length").
     PropertyDescriptor old_len_desc;
-    bool success = GetOwnPropertyDescriptor(
+    Maybe<bool> success = GetOwnPropertyDescriptor(
         isolate, o, isolate->factory()->length_string(), &old_len_desc);
     // 3b. (Assert)
-    DCHECK(success);
+    DCHECK(success.FromJust());
     USE(success);
     // 3c. Let oldLen be oldLenDesc.[[Value]].
     uint32_t old_len = 0;
@@ -6652,30 +6668,31 @@ bool JSArray::DefineOwnProperty(Isolate* isolate, Handle<JSArray> o,
     //     return false.
     if (index >= old_len && old_len_desc.has_writable() &&
         !old_len_desc.writable()) {
-      if (should_throw == THROW_ON_ERROR) {
-        isolate->Throw(*isolate->factory()->NewTypeError(
-            MessageTemplate::kDefineDisallowed, name));
-      }
-      return false;
+      RETURN_FAILURE(isolate, should_throw,
+                     NewTypeError(MessageTemplate::kDefineDisallowed, name));
     }
     // 3g. Let succeeded be OrdinaryDefineOwnProperty(A, P, Desc).
-    bool succeeded =
+    Maybe<bool> succeeded =
         OrdinaryDefineOwnProperty(isolate, o, name, desc, should_throw);
-    // 3h. (Assert)
+    // 3h. Assert: succeeded is not an abrupt completion.
+    //     In our case, if should_throw == THROW_ON_ERROR, it can be!
     // 3i. If succeeded is false, return false.
-    if (!succeeded) return false;
+    if (succeeded.IsNothing() || !succeeded.FromJust()) return succeeded;
     // 3j. If index >= oldLen, then:
     if (index >= old_len) {
       // 3j i. Set oldLenDesc.[[Value]] to index + 1.
       old_len_desc.set_value(isolate->factory()->NewNumberFromUint(index + 1));
       // 3j ii. Let succeeded be
       //        OrdinaryDefineOwnProperty(A, "length", oldLenDesc).
-      OrdinaryDefineOwnProperty(isolate, o, isolate->factory()->length_string(),
-                                &old_len_desc, should_throw);
-      // 3j iii. (Assert)
+      succeeded = OrdinaryDefineOwnProperty(isolate, o,
+                                            isolate->factory()->length_string(),
+                                            &old_len_desc, should_throw);
+      // 3j iii. Assert: succeeded is true.
+      DCHECK(succeeded.FromJust());
+      USE(succeeded);
     }
     // 3k. Return true.
-    return true;
+    return Just(true);
   }
 
   // 4. Return OrdinaryDefineOwnProperty(A, P, Desc).
@@ -6722,9 +6739,9 @@ bool JSArray::AnythingToArrayLength(Isolate* isolate,
 
 // ES6 9.4.2.4
 // static
-bool JSArray::ArraySetLength(Isolate* isolate, Handle<JSArray> a,
-                             PropertyDescriptor* desc,
-                             ShouldThrow should_throw) {
+Maybe<bool> JSArray::ArraySetLength(Isolate* isolate, Handle<JSArray> a,
+                                    PropertyDescriptor* desc,
+                                    ShouldThrow should_throw) {
   // 1. If the [[Value]] field of Desc is absent, then
   if (!desc->has_value()) {
     // 1a. Return OrdinaryDefineOwnProperty(A, "length", Desc).
@@ -6737,20 +6754,17 @@ bool JSArray::ArraySetLength(Isolate* isolate, Handle<JSArray> a,
   // 3. - 7. Convert Desc.[[Value]] to newLen.
   uint32_t new_len = 0;
   if (!AnythingToArrayLength(isolate, desc->value(), &new_len)) {
-    if (should_throw == THROW_ON_ERROR && !isolate->has_pending_exception()) {
-      isolate->Throw(*isolate->factory()->NewTypeError(
-          MessageTemplate::kCannotConvertToPrimitive));
-    }
-    return false;
+    DCHECK(isolate->has_pending_exception());
+    return Nothing<bool>();
   }
   // 8. Set newLenDesc.[[Value]] to newLen.
   // (Done below, if needed.)
   // 9. Let oldLenDesc be OrdinaryGetOwnProperty(A, "length").
   PropertyDescriptor old_len_desc;
-  bool success = GetOwnPropertyDescriptor(
+  Maybe<bool> success = GetOwnPropertyDescriptor(
       isolate, a, isolate->factory()->length_string(), &old_len_desc);
   // 10. (Assert)
-  DCHECK(success);
+  DCHECK(success.FromJust());
   USE(success);
   // 11. Let oldLen be oldLenDesc.[[Value]].
   uint32_t old_len = 0;
@@ -6766,11 +6780,9 @@ bool JSArray::ArraySetLength(Isolate* isolate, Handle<JSArray> a,
   }
   // 13. If oldLenDesc.[[Writable]] is false, return false.
   if (!old_len_desc.writable()) {
-    if (should_throw == THROW_ON_ERROR)
-      isolate->Throw(*isolate->factory()->NewTypeError(
-          MessageTemplate::kRedefineDisallowed,
-          isolate->factory()->length_string()));
-    return false;
+    RETURN_FAILURE(isolate, should_throw,
+                   NewTypeError(MessageTemplate::kRedefineDisallowed,
+                                isolate->factory()->length_string()));
   }
   // 14. If newLenDesc.[[Writable]] is absent or has the value true,
   // let newWritable be true.
@@ -6788,33 +6800,40 @@ bool JSArray::ArraySetLength(Isolate* isolate, Handle<JSArray> a,
   // Most of steps 16 through 19 is implemented by JSArray::SetLength.
   if (JSArray::ObservableSetLength(a, new_len).is_null()) {
     DCHECK(isolate->has_pending_exception());
-    return false;
+    return Nothing<bool>();
   }
   // Steps 19d-ii, 20.
   if (!new_writable) {
     PropertyDescriptor readonly;
     readonly.set_writable(false);
-    OrdinaryDefineOwnProperty(isolate, a, isolate->factory()->length_string(),
-                              &readonly, should_throw);
+    Maybe<bool> success = OrdinaryDefineOwnProperty(
+        isolate, a, isolate->factory()->length_string(), &readonly,
+        should_throw);
+    DCHECK(success.FromJust());
+    USE(success);
   }
   uint32_t actual_new_len = 0;
   CHECK(a->length()->ToArrayLength(&actual_new_len));
   // Steps 19d-v, 21. Return false if there were non-deletable elements.
-  success = actual_new_len == new_len;
-  if (!success && should_throw == THROW_ON_ERROR) {
-    isolate->Throw(*isolate->factory()->NewTypeError(
-        MessageTemplate::kStrictDeleteProperty,
-        isolate->factory()->NewNumberFromUint(actual_new_len - 1), a));
+  bool result = actual_new_len == new_len;
+  if (!result) {
+    RETURN_FAILURE(
+        isolate, should_throw,
+        NewTypeError(MessageTemplate::kStrictDeleteProperty,
+                     isolate->factory()->NewNumberFromUint(actual_new_len - 1),
+                     a));
   }
-  return success;
+  return Just(result);
 }
 
 
 // ES6 9.5.6
 // static
-bool JSProxy::DefineOwnProperty(Isolate* isolate, Handle<JSProxy> proxy,
-                                Handle<Object> key, PropertyDescriptor* desc,
-                                ShouldThrow should_throw) {
+Maybe<bool> JSProxy::DefineOwnProperty(Isolate* isolate, Handle<JSProxy> proxy,
+                                       Handle<Object> key,
+                                       PropertyDescriptor* desc,
+                                       ShouldThrow should_throw) {
+  STACK_CHECK(Nothing<bool>());
   Handle<String> trap_name = isolate->factory()->defineProperty_string();
   // 1. Assert: IsPropertyKey(P) is true.
   DCHECK(key->IsName() || key->IsNumber());
@@ -6825,7 +6844,7 @@ bool JSProxy::DefineOwnProperty(Isolate* isolate, Handle<JSProxy> proxy,
   if (proxy->IsRevoked()) {
     isolate->Throw(*isolate->factory()->NewTypeError(
         MessageTemplate::kProxyRevoked, trap_name));
-    return false;
+    return Nothing<bool>();
   }
   // 5. Let target be the value of the [[ProxyTarget]] internal slot of O.
   Handle<JSReceiver> target(proxy->target(), isolate);
@@ -6833,7 +6852,8 @@ bool JSProxy::DefineOwnProperty(Isolate* isolate, Handle<JSProxy> proxy,
   Handle<Object> trap;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, trap,
-      Object::GetMethod(Handle<JSReceiver>::cast(handler), trap_name), false);
+      Object::GetMethod(Handle<JSReceiver>::cast(handler), trap_name),
+      Nothing<bool>());
   // 7. If trap is undefined, then:
   if (trap->IsUndefined()) {
     // 7a. Return target.[[DefineOwnProperty]](P, Desc).
@@ -6852,25 +6872,22 @@ bool JSProxy::DefineOwnProperty(Isolate* isolate, Handle<JSProxy> proxy,
   Handle<Object> args[] = {target, property_name, desc_obj};
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, trap_result_obj,
-      Execution::Call(isolate, trap, handler, arraysize(args), args), false);
+      Execution::Call(isolate, trap, handler, arraysize(args), args),
+      Nothing<bool>());
   // 10. If booleanTrapResult is false, return false.
   if (!trap_result_obj->BooleanValue()) {
-    if (should_throw == THROW_ON_ERROR) {
-      // TODO(jkummerow): Better error message?
-      isolate->Throw(*isolate->factory()->NewTypeError(
-          MessageTemplate::kProxyHandlerReturned, handler, trap_result_obj,
-          trap_name));
-    }
-    return false;
+    RETURN_FAILURE(isolate, should_throw,
+                   NewTypeError(MessageTemplate::kProxyTrapReturnedFalsishFor,
+                                trap_name, property_name));
   }
   // 11. Let targetDesc be ? target.[[GetOwnProperty]](P).
   PropertyDescriptor target_desc;
-  bool target_found =
+  Maybe<bool> target_found =
       JSReceiver::GetOwnPropertyDescriptor(isolate, target, key, &target_desc);
-  if (isolate->has_pending_exception()) return false;
+  MAYBE_RETURN(target_found, Nothing<bool>());
   // 12. Let extensibleTarget be ? IsExtensible(target).
   Maybe<bool> maybe_extensible = JSReceiver::IsExtensible(target);
-  if (maybe_extensible.IsNothing()) return false;
+  MAYBE_RETURN(maybe_extensible, Nothing<bool>());
   bool extensible_target = maybe_extensible.FromJust();
   // 13. If Desc has a [[Configurable]] field and if Desc.[[Configurable]]
   //     is false, then:
@@ -6878,49 +6895,50 @@ bool JSProxy::DefineOwnProperty(Isolate* isolate, Handle<JSProxy> proxy,
   // 14. Else let settingConfigFalse be false.
   bool setting_config_false = desc->has_configurable() && !desc->configurable();
   // 15. If targetDesc is undefined, then
-  if (!target_found) {
+  if (!target_found.FromJust()) {
     // 15a. If extensibleTarget is false, throw a TypeError exception.
     if (!extensible_target) {
       isolate->Throw(*isolate->factory()->NewTypeError(
-          MessageTemplate::kProxyTargetNotExtensible));
-      return false;
+          MessageTemplate::kProxyDefinePropertyNonExtensible, property_name));
+      return Nothing<bool>();
     }
     // 15b. If settingConfigFalse is true, throw a TypeError exception.
     if (setting_config_false) {
-      // TODO(jkummerow): Better error message?
       isolate->Throw(*isolate->factory()->NewTypeError(
-          MessageTemplate::kRedefineDisallowed, key));
-      return false;
+          MessageTemplate::kProxyDefinePropertyNonConfigurable, property_name));
+      return Nothing<bool>();
     }
   } else {
     // 16. Else targetDesc is not undefined,
     // 16a. If IsCompatiblePropertyDescriptor(extensibleTarget, Desc,
     //      targetDesc) is false, throw a TypeError exception.
-    bool valid = IsCompatiblePropertyDescriptor(
-        isolate, extensible_target, desc, &target_desc, property_name);
-    if (!valid) {
-      DCHECK(isolate->has_pending_exception());
-      return false;
+    Maybe<bool> valid =
+        IsCompatiblePropertyDescriptor(isolate, extensible_target, desc,
+                                       &target_desc, property_name, DONT_THROW);
+    MAYBE_RETURN(valid, Nothing<bool>());
+    if (!valid.FromJust()) {
+      isolate->Throw(*isolate->factory()->NewTypeError(
+          MessageTemplate::kProxyDefinePropertyIncompatible, property_name));
+      return Nothing<bool>();
     }
     // 16b. If settingConfigFalse is true and targetDesc.[[Configurable]] is
     //      true, throw a TypeError exception.
     if (setting_config_false && target_desc.configurable()) {
-      // TODO(jkummerow): Better error message?
       isolate->Throw(*isolate->factory()->NewTypeError(
-          MessageTemplate::kRedefineDisallowed, key));
-      return false;
+          MessageTemplate::kProxyDefinePropertyNonConfigurable, property_name));
+      return Nothing<bool>();
     }
   }
   // 17. Return true.
-  return true;
+  return Just(true);
 }
 
 
 // static
-bool JSReceiver::GetOwnPropertyDescriptor(Isolate* isolate,
-                                          Handle<JSReceiver> object,
-                                          Handle<Object> key,
-                                          PropertyDescriptor* desc) {
+Maybe<bool> JSReceiver::GetOwnPropertyDescriptor(Isolate* isolate,
+                                                 Handle<JSReceiver> object,
+                                                 Handle<Object> key,
+                                                 PropertyDescriptor* desc) {
   bool success = false;
   DCHECK(key->IsName() || key->IsNumber());  // |key| is a PropertyKey...
   LookupIterator it = LookupIterator::PropertyOrElement(
@@ -6930,14 +6948,12 @@ bool JSReceiver::GetOwnPropertyDescriptor(Isolate* isolate,
 }
 
 
-// TODO(jkummerow): Any chance to unify this with
-// "MaybeHandle<Object> GetOwnProperty()" in runtime-object.cc?
-
 // ES6 9.1.5.1
-// Returns true on success; false if there was an exception or no property.
+// Returns true on success, false if the property didn't exist, nothing if
+// an exception was thrown.
 // static
-bool JSReceiver::GetOwnPropertyDescriptor(LookupIterator* it,
-                                          PropertyDescriptor* desc) {
+Maybe<bool> JSReceiver::GetOwnPropertyDescriptor(LookupIterator* it,
+                                                 PropertyDescriptor* desc) {
   Isolate* isolate = it->isolate();
   // "Virtual" dispatch.
   if (it->IsFound() && it->GetHolder<JSReceiver>()->IsJSProxy()) {
@@ -6948,10 +6964,9 @@ bool JSReceiver::GetOwnPropertyDescriptor(LookupIterator* it,
   // 1. (Assert)
   // 2. If O does not have an own property with key P, return undefined.
   Maybe<PropertyAttributes> maybe = JSObject::GetPropertyAttributes(it);
-
-  if (!maybe.IsJust()) return false;
+  MAYBE_RETURN(maybe, Nothing<bool>());
   PropertyAttributes attrs = maybe.FromJust();
-  if (attrs == ABSENT) return false;
+  if (attrs == ABSENT) return Just(false);
   DCHECK(!isolate->has_pending_exception());
 
   // 3. Let D be a newly created Property Descriptor with no fields.
@@ -6965,7 +6980,7 @@ bool JSReceiver::GetOwnPropertyDescriptor(LookupIterator* it,
     Handle<Object> value;
     if (!JSObject::GetProperty(it).ToHandle(&value)) {
       DCHECK(isolate->has_pending_exception());
-      return false;
+      return Nothing<bool>();
     }
     desc->set_value(value);
     // 5b. Set D.[[Writable]] to the value of X's [[Writable]] attribute
@@ -6987,15 +7002,17 @@ bool JSReceiver::GetOwnPropertyDescriptor(LookupIterator* it,
   // 9. Return D.
   DCHECK(PropertyDescriptor::IsAccessorDescriptor(desc) !=
          PropertyDescriptor::IsDataDescriptor(desc));
-  return true;
+  return Just(true);
 }
 
 
 // ES6 9.5.5
 // static
-bool JSProxy::GetOwnPropertyDescriptor(Isolate* isolate, Handle<JSProxy> proxy,
-                                       Handle<Name> name,
-                                       PropertyDescriptor* desc) {
+Maybe<bool> JSProxy::GetOwnPropertyDescriptor(Isolate* isolate,
+                                              Handle<JSProxy> proxy,
+                                              Handle<Name> name,
+                                              PropertyDescriptor* desc) {
+  STACK_CHECK(Nothing<bool>());
   Handle<String> trap_name =
       isolate->factory()->getOwnPropertyDescriptor_string();
   // 1. (Assert)
@@ -7006,7 +7023,7 @@ bool JSProxy::GetOwnPropertyDescriptor(Isolate* isolate, Handle<JSProxy> proxy,
   if (proxy->IsRevoked()) {
     isolate->Throw(*isolate->factory()->NewTypeError(
         MessageTemplate::kProxyRevoked, trap_name));
-    return false;
+    return Nothing<bool>();
   }
   // 5. Let target be the value of the [[ProxyTarget]] internal slot of O.
   Handle<JSReceiver> target(proxy->target(), isolate);
@@ -7014,7 +7031,8 @@ bool JSProxy::GetOwnPropertyDescriptor(Isolate* isolate, Handle<JSProxy> proxy,
   Handle<Object> trap;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, trap,
-      Object::GetMethod(Handle<JSReceiver>::cast(handler), trap_name), false);
+      Object::GetMethod(Handle<JSReceiver>::cast(handler), trap_name),
+      Nothing<bool>());
   // 7. If trap is undefined, then
   if (trap->IsUndefined()) {
     // 7a. Return target.[[GetOwnProperty]](P).
@@ -7025,64 +7043,66 @@ bool JSProxy::GetOwnPropertyDescriptor(Isolate* isolate, Handle<JSProxy> proxy,
   Handle<Object> args[] = {target, name};
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, trap_result_obj,
-      Execution::Call(isolate, trap, handler, arraysize(args), args), false);
+      Execution::Call(isolate, trap, handler, arraysize(args), args),
+      Nothing<bool>());
   // 9. If Type(trapResultObj) is neither Object nor Undefined, throw a
   //    TypeError exception.
   if (!trap_result_obj->IsJSReceiver() && !trap_result_obj->IsUndefined()) {
     isolate->Throw(*isolate->factory()->NewTypeError(
-        MessageTemplate::kProxyHandlerReturned, handler, trap_result_obj,
-        name));
-    return false;
+        MessageTemplate::kProxyGetOwnPropertyDescriptorInvalid, name));
+    return Nothing<bool>();
   }
   // 10. Let targetDesc be ? target.[[GetOwnProperty]](P).
   PropertyDescriptor target_desc;
-  JSReceiver::GetOwnPropertyDescriptor(isolate, target, name, &target_desc);
-  if (isolate->has_pending_exception()) return false;
+  Maybe<bool> found =
+      JSReceiver::GetOwnPropertyDescriptor(isolate, target, name, &target_desc);
+  MAYBE_RETURN(found, Nothing<bool>());
   // 11. If trapResultObj is undefined, then
   if (trap_result_obj->IsUndefined()) {
     // 11a. If targetDesc is undefined, return undefined.
-    if (target_desc.is_empty()) return false;
+    if (!found.FromJust()) return Just(false);
     // 11b. If targetDesc.[[Configurable]] is false, throw a TypeError
     //      exception.
     if (!target_desc.configurable()) {
       isolate->Throw(*isolate->factory()->NewTypeError(
-          MessageTemplate::kProxyTargetPropNotConfigurable, name));
-      return false;
+          MessageTemplate::kProxyGetOwnPropertyDescriptorUndefined, name));
+      return Nothing<bool>();
     }
     // 11c. Let extensibleTarget be ? IsExtensible(target).
-    Maybe<bool> maybe_extensible = JSReceiver::IsExtensible(target);
-    if (maybe_extensible.IsNothing()) return false;
-    bool extensible_target = maybe_extensible.FromJust();
+    Maybe<bool> extensible_target = JSReceiver::IsExtensible(target);
+    MAYBE_RETURN(extensible_target, Nothing<bool>());
     // 11d. (Assert)
     // 11e. If extensibleTarget is false, throw a TypeError exception.
-    if (!extensible_target) {
+    if (!extensible_target.FromJust()) {
       isolate->Throw(*isolate->factory()->NewTypeError(
-          MessageTemplate::kProxyTargetNotExtensible));
-      return false;
+          MessageTemplate::kProxyGetOwnPropertyDescriptorNonExtensible, name));
+      return Nothing<bool>();
     }
     // 11f. Return undefined.
-    return false;  // |desc->is_empty()| is what JavaScript calls "undefined".
+    return Just(false);
   }
   // 12. Let extensibleTarget be ? IsExtensible(target).
-  Maybe<bool> maybe_extensible = JSReceiver::IsExtensible(target);
-  if (maybe_extensible.IsNothing()) return false;
-  bool extensible_target = maybe_extensible.FromJust();
+  Maybe<bool> extensible_target = JSReceiver::IsExtensible(target);
+  MAYBE_RETURN(extensible_target, Nothing<bool>());
   // 13. Let resultDesc be ? ToPropertyDescriptor(trapResultObj).
   if (!PropertyDescriptor::ToPropertyDescriptor(isolate, trap_result_obj,
                                                 desc)) {
     DCHECK(isolate->has_pending_exception());
-    return false;
+    return Nothing<bool>();
   }
   // 14. Call CompletePropertyDescriptor(resultDesc).
   PropertyDescriptor::CompletePropertyDescriptor(isolate, desc);
   // 15. Let valid be IsCompatiblePropertyDescriptor (extensibleTarget,
   //     resultDesc, targetDesc).
-  bool valid = IsCompatiblePropertyDescriptor(isolate, extensible_target, desc,
-                                              &target_desc, name);
+  Maybe<bool> valid =
+      IsCompatiblePropertyDescriptor(isolate, extensible_target.FromJust(),
+                                     desc, &target_desc, name, DONT_THROW);
+  MAYBE_RETURN(valid, Nothing<bool>());
   // 16. If valid is false, throw a TypeError exception.
-  if (!valid) {
-    DCHECK(isolate->has_pending_exception());
-    return false;
+  if (!valid.FromJust()) {
+    isolate->Throw(*isolate->factory()->NewTypeError(
+        MessageTemplate::kProxyGetOwnPropertyDescriptorIncompatible, name));
+    return Nothing<bool>();
   }
   // 17. If resultDesc.[[Configurable]] is false, then
   if (!desc->configurable()) {
@@ -7090,12 +7110,13 @@ bool JSProxy::GetOwnPropertyDescriptor(Isolate* isolate, Handle<JSProxy> proxy,
     if (target_desc.is_empty() || target_desc.configurable()) {
       // 17a i. Throw a TypeError exception.
       isolate->Throw(*isolate->factory()->NewTypeError(
-          MessageTemplate::kRedefineDisallowed, name));
-      return false;
+          MessageTemplate::kProxyGetOwnPropertyDescriptorNonConfigurable,
+          name));
+      return Nothing<bool>();
     }
   }
   // 18. Return resultDesc.
-  return true;
+  return Just(true);
 }
 
 
@@ -7273,8 +7294,9 @@ Maybe<bool> JSReceiver::SetIntegrityLevel(Handle<JSReceiver> receiver,
   if (level == SEALED) {
     for (int i = 0; i < keys->length(); ++i) {
       Handle<Object> key(keys->get(i), isolate);
-      DefineOwnProperty(isolate, receiver, key, &no_conf, THROW_ON_ERROR);
-      if (isolate->has_pending_exception()) return Nothing<bool>();
+      MAYBE_RETURN(
+          DefineOwnProperty(isolate, receiver, key, &no_conf, THROW_ON_ERROR),
+          Nothing<bool>());
     }
     return Just(true);
   }
@@ -7282,16 +7304,17 @@ Maybe<bool> JSReceiver::SetIntegrityLevel(Handle<JSReceiver> receiver,
   for (int i = 0; i < keys->length(); ++i) {
     Handle<Object> key(keys->get(i), isolate);
     PropertyDescriptor current_desc;
-    bool owned = JSReceiver::GetOwnPropertyDescriptor(isolate, receiver, key,
-                                                      &current_desc);
-    if (isolate->has_pending_exception()) return Nothing<bool>();
-    if (owned) {
+    Maybe<bool> owned = JSReceiver::GetOwnPropertyDescriptor(
+        isolate, receiver, key, &current_desc);
+    MAYBE_RETURN(owned, Nothing<bool>());
+    if (owned.FromJust()) {
       PropertyDescriptor desc =
           PropertyDescriptor::IsAccessorDescriptor(&current_desc)
               ? no_conf
               : no_conf_no_write;
-      DefineOwnProperty(isolate, receiver, key, &desc, THROW_ON_ERROR);
-      if (isolate->has_pending_exception()) return Nothing<bool>();
+      MAYBE_RETURN(
+          DefineOwnProperty(isolate, receiver, key, &desc, THROW_ON_ERROR),
+          Nothing<bool>());
     }
   }
   return Just(true);
@@ -7314,10 +7337,10 @@ Maybe<bool> JSReceiver::TestIntegrityLevel(Handle<JSReceiver> object,
   for (int i = 0; i < keys->length(); ++i) {
     Handle<Object> key(keys->get(i), isolate);
     PropertyDescriptor current_desc;
-    bool owned = JSReceiver::GetOwnPropertyDescriptor(isolate, object, key,
-                                                      &current_desc);
-    if (isolate->has_pending_exception()) return Nothing<bool>();
-    if (owned) {
+    Maybe<bool> owned = JSReceiver::GetOwnPropertyDescriptor(
+        isolate, object, key, &current_desc);
+    MAYBE_RETURN(owned, Nothing<bool>());
+    if (owned.FromJust()) {
       if (current_desc.configurable()) return Just(false);
       if (level == FROZEN &&
           PropertyDescriptor::IsDataDescriptor(&current_desc) &&
@@ -7345,6 +7368,7 @@ Maybe<bool> JSReceiver::PreventExtensions(Handle<JSReceiver> object,
 Maybe<bool> JSProxy::PreventExtensions(Handle<JSProxy> proxy,
                                        ShouldThrow should_throw) {
   Isolate* isolate = proxy->GetIsolate();
+  STACK_CHECK(Nothing<bool>());
   Factory* factory = isolate->factory();
   Handle<String> trap_name = factory->preventExtensions_string();
 
@@ -7357,8 +7381,8 @@ Maybe<bool> JSProxy::PreventExtensions(Handle<JSProxy> proxy,
   Handle<JSReceiver> handler(JSReceiver::cast(proxy->handler()), isolate);
 
   Handle<Object> trap;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, trap, GetTrap(proxy, trap_name),
-                                   Nothing<bool>());
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+      isolate, trap, Object::GetMethod(handler, trap_name), Nothing<bool>());
   if (trap->IsUndefined()) {
     return JSReceiver::PreventExtensions(target, should_throw);
   }
@@ -7370,9 +7394,9 @@ Maybe<bool> JSProxy::PreventExtensions(Handle<JSProxy> proxy,
       Execution::Call(isolate, trap, handler, arraysize(args), args),
       Nothing<bool>());
   if (!trap_result->BooleanValue()) {
-    RETURN_FAILURE(isolate, should_throw,
-                   NewTypeError(MessageTemplate::kProxyHandlerReturned, handler,
-                                factory->false_string(), trap_name));
+    RETURN_FAILURE(
+        isolate, should_throw,
+        NewTypeError(MessageTemplate::kProxyTrapReturnedFalsish, trap_name));
   }
 
   // Enforce the invariant.
@@ -7380,7 +7404,7 @@ Maybe<bool> JSProxy::PreventExtensions(Handle<JSProxy> proxy,
   MAYBE_RETURN(target_result, Nothing<bool>());
   if (target_result.FromJust()) {
     isolate->Throw(*factory->NewTypeError(
-        MessageTemplate::kProxyPreventExtensionsViolatesInvariant));
+        MessageTemplate::kProxyPreventExtensionsExtensible));
     return Nothing<bool>();
   }
   return Just(true);
@@ -7454,6 +7478,7 @@ Maybe<bool> JSReceiver::IsExtensible(Handle<JSReceiver> object) {
 
 Maybe<bool> JSProxy::IsExtensible(Handle<JSProxy> proxy) {
   Isolate* isolate = proxy->GetIsolate();
+  STACK_CHECK(Nothing<bool>());
   Factory* factory = isolate->factory();
   Handle<String> trap_name = factory->isExtensible_string();
 
@@ -7466,8 +7491,8 @@ Maybe<bool> JSProxy::IsExtensible(Handle<JSProxy> proxy) {
   Handle<JSReceiver> handler(JSReceiver::cast(proxy->handler()), isolate);
 
   Handle<Object> trap;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, trap, GetTrap(proxy, trap_name),
-                                   Nothing<bool>());
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+      isolate, trap, Object::GetMethod(handler, trap_name), Nothing<bool>());
   if (trap->IsUndefined()) {
     return JSReceiver::IsExtensible(target);
   }
@@ -7483,8 +7508,9 @@ Maybe<bool> JSProxy::IsExtensible(Handle<JSProxy> proxy) {
   Maybe<bool> target_result = JSReceiver::IsExtensible(target);
   MAYBE_RETURN(target_result, Nothing<bool>());
   if (target_result.FromJust() != trap_result->BooleanValue()) {
-    isolate->Throw(*factory->NewTypeError(
-        MessageTemplate::kProxyTrapViolatesInvariant, trap_name));
+    isolate->Throw(
+        *factory->NewTypeError(MessageTemplate::kProxyIsExtensibleInconsistent,
+                               factory->ToBoolean(target_result.FromJust())));
     return Nothing<bool>();
   }
   return target_result;
@@ -7797,20 +7823,18 @@ MaybeHandle<JSObject> JSObjectWalkVisitor<ContextObject>::StructureWalk(
         }
       }
     } else {
-      Handle<FixedArray> names =
-          isolate->factory()->NewFixedArray(copy->NumberOfOwnProperties());
-      copy->GetOwnPropertyNames(*names, 0);
+      // Only deep copy fields from the object literal expression.
+      // In particular, don't try to copy the length attribute of
+      // an array.
+      PropertyFilter filter = static_cast<PropertyFilter>(
+          ONLY_WRITABLE | ONLY_ENUMERABLE | ONLY_CONFIGURABLE);
+      KeyAccumulator accumulator(isolate, filter);
+      accumulator.NextPrototype();
+      copy->CollectOwnPropertyNames(&accumulator, filter);
+      Handle<FixedArray> names = accumulator.GetKeys();
       for (int i = 0; i < names->length(); i++) {
         DCHECK(names->get(i)->IsName());
         Handle<Name> name(Name::cast(names->get(i)));
-        Maybe<PropertyAttributes> maybe =
-            JSReceiver::GetOwnPropertyAttributes(copy, name);
-        DCHECK(maybe.IsJust());
-        PropertyAttributes attributes = maybe.FromJust();
-        // Only deep copy fields from the object literal expression.
-        // In particular, don't try to copy the length attribute of
-        // an array.
-        if (attributes != NONE) continue;
         Handle<Object> value =
             Object::GetProperty(copy, name).ToHandleChecked();
         if (value->IsJSObject()) {
@@ -8031,8 +8055,9 @@ bool HasEnumerableElements(JSObject* object) {
     }
     case FAST_HOLEY_DOUBLE_ELEMENTS: {
       FixedDoubleArray* elements = FixedDoubleArray::cast(object->elements());
-      DCHECK(object->IsJSArray());
-      int length = Smi::cast(JSArray::cast(object)->length())->value();
+      int length = object->IsJSArray()
+                       ? Smi::cast(JSArray::cast(object)->length())->value()
+                       : elements->length();
       for (int i = 0; i < length; i++) {
         if (!elements->is_the_hole(i)) return true;
       }
@@ -8248,24 +8273,24 @@ Handle<FixedArray> JSObject::GetEnumPropertyKeys(Handle<JSObject> object,
 enum IndexedOrNamed { kIndexed, kNamed };
 
 
-// Returns false iff there was an exception.
+// Returns |true| on success, |nothing| on exception.
 template <class Callback, IndexedOrNamed type>
-static bool GetKeysFromInterceptor(Isolate* isolate,
-                                   Handle<JSReceiver> receiver,
-                                   Handle<JSObject> object,
-                                   PropertyFilter filter,
-                                   KeyAccumulator* accumulator) {
+static Maybe<bool> GetKeysFromInterceptor(Isolate* isolate,
+                                          Handle<JSReceiver> receiver,
+                                          Handle<JSObject> object,
+                                          PropertyFilter filter,
+                                          KeyAccumulator* accumulator) {
   if (type == kIndexed) {
-    if (!object->HasIndexedInterceptor()) return true;
+    if (!object->HasIndexedInterceptor()) return Just(true);
   } else {
-    if (!object->HasNamedInterceptor()) return true;
+    if (!object->HasNamedInterceptor()) return Just(true);
   }
   Handle<InterceptorInfo> interceptor(type == kIndexed
                                           ? object->GetIndexedInterceptor()
                                           : object->GetNamedInterceptor(),
                                       isolate);
   if ((filter & ONLY_ALL_CAN_READ) && !interceptor->all_can_read()) {
-    return true;
+    return Just(true);
   }
   PropertyCallbackArguments args(isolate, interceptor->data(), *receiver,
                                  *object);
@@ -8277,8 +8302,8 @@ static bool GetKeysFromInterceptor(Isolate* isolate,
     LOG(isolate, ApiObjectAccess(log_tag, *object));
     result = args.Call(enum_fun);
   }
-  RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, false);
-  if (result.IsEmpty()) return true;
+  RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<bool>());
+  if (result.IsEmpty()) return Just(true);
   DCHECK(v8::Utils::OpenHandle(*result)->IsJSArray() ||
          (v8::Utils::OpenHandle(*result)->IsJSObject() &&
           Handle<JSObject>::cast(v8::Utils::OpenHandle(*result))
@@ -8291,14 +8316,18 @@ static bool GetKeysFromInterceptor(Isolate* isolate,
     accumulator->AddKeys(
         Handle<JSObject>::cast(v8::Utils::OpenHandle(*result)));
   }
-  return true;
+  return Just(true);
 }
 
 
-static bool GetKeysFromJSObject(Isolate* isolate, Handle<JSReceiver> receiver,
-                                Handle<JSObject> object, PropertyFilter* filter,
-                                JSReceiver::KeyCollectionType type,
-                                KeyAccumulator* accumulator) {
+// Returns |true| on success, |false| if prototype walking should be stopped,
+// |nothing| if an exception was thrown.
+static Maybe<bool> GetKeysFromJSObject(Isolate* isolate,
+                                       Handle<JSReceiver> receiver,
+                                       Handle<JSObject> object,
+                                       PropertyFilter* filter,
+                                       JSReceiver::KeyCollectionType type,
+                                       KeyAccumulator* accumulator) {
   accumulator->NextPrototype();
   // Check access rights if required.
   if (object->IsAccessCheckNeeded() &&
@@ -8306,7 +8335,7 @@ static bool GetKeysFromJSObject(Isolate* isolate, Handle<JSReceiver> receiver,
     // The cross-origin spec says that [[Enumerate]] shall return an empty
     // iterator when it doesn't have access...
     if (type == JSReceiver::INCLUDE_PROTOS) {
-      return false;
+      return Just(false);
     }
     // ...whereas [[OwnPropertyKeys]] shall return whitelisted properties.
     DCHECK(type == JSReceiver::OWN_ONLY);
@@ -8316,11 +8345,10 @@ static bool GetKeysFromJSObject(Isolate* isolate, Handle<JSReceiver> receiver,
   JSObject::CollectOwnElementKeys(object, accumulator, *filter);
 
   // Add the element keys from the interceptor.
-  if (!GetKeysFromInterceptor<v8::IndexedPropertyEnumeratorCallback, kIndexed>(
-          isolate, receiver, object, *filter, accumulator)) {
-    DCHECK(isolate->has_pending_exception());
-    return false;
-  }
+  Maybe<bool> success =
+      GetKeysFromInterceptor<v8::IndexedPropertyEnumeratorCallback, kIndexed>(
+          isolate, receiver, object, *filter, accumulator);
+  MAYBE_RETURN(success, Nothing<bool>());
 
   if (*filter == ENUMERABLE_STRINGS) {
     // We can cache the computed property keys if access checks are
@@ -8348,23 +8376,22 @@ static bool GetKeysFromJSObject(Isolate* isolate, Handle<JSReceiver> receiver,
   }
 
   // Add the property keys from the interceptor.
-  if (!GetKeysFromInterceptor<v8::GenericNamedPropertyEnumeratorCallback,
-                              kNamed>(isolate, receiver, object, *filter,
-                                      accumulator)) {
-    DCHECK(isolate->has_pending_exception());
-    return false;
-  }
-  return true;
+  success = GetKeysFromInterceptor<v8::GenericNamedPropertyEnumeratorCallback,
+                                   kNamed>(isolate, receiver, object, *filter,
+                                           accumulator);
+  MAYBE_RETURN(success, Nothing<bool>());
+  return Just(true);
 }
 
 
 // Helper function for JSReceiver::GetKeys() below. Can be called recursively.
-// Returns false iff an exception was thrown.
-static bool GetKeys_Internal(Isolate* isolate, Handle<JSReceiver> receiver,
-                             Handle<JSReceiver> object,
-                             JSReceiver::KeyCollectionType type,
-                             PropertyFilter filter,
-                             KeyAccumulator* accumulator) {
+// Returns |true| or |nothing|.
+static Maybe<bool> GetKeys_Internal(Isolate* isolate,
+                                    Handle<JSReceiver> receiver,
+                                    Handle<JSReceiver> object,
+                                    JSReceiver::KeyCollectionType type,
+                                    PropertyFilter filter,
+                                    KeyAccumulator* accumulator) {
   PrototypeIterator::WhereToEnd end = type == JSReceiver::OWN_ONLY
                                           ? PrototypeIterator::END_AT_NON_HIDDEN
                                           : PrototypeIterator::END_AT_NULL;
@@ -8373,7 +8400,7 @@ static bool GetKeys_Internal(Isolate* isolate, Handle<JSReceiver> receiver,
        !iter.IsAtEnd(end); iter.Advance()) {
     Handle<JSReceiver> current =
         PrototypeIterator::GetCurrent<JSReceiver>(iter);
-    bool result = false;
+    Maybe<bool> result = Just(false);  // Dummy initialization.
     if (current->IsJSProxy()) {
       if (type == JSReceiver::OWN_ONLY) {
         result = JSProxy::OwnPropertyKeys(isolate, receiver,
@@ -8390,23 +8417,20 @@ static bool GetKeys_Internal(Isolate* isolate, Handle<JSReceiver> receiver,
                                    Handle<JSObject>::cast(current), &filter,
                                    type, accumulator);
     }
-    if (!result) {
-      if (isolate->has_pending_exception()) {
-        return false;
-      }
-      // If there was no exception, then "false" means "stop iterating".
-      break;
-    }
+    MAYBE_RETURN(result, Nothing<bool>());
+    if (!result.FromJust()) break;  // |false| means "stop iterating".
   }
-  return true;
+  return Just(true);
 }
 
 
 // ES6 9.5.11
 // Returns false in case of exception.
 // static
-bool JSProxy::Enumerate(Isolate* isolate, Handle<JSReceiver> receiver,
-                        Handle<JSProxy> proxy, KeyAccumulator* accumulator) {
+Maybe<bool> JSProxy::Enumerate(Isolate* isolate, Handle<JSReceiver> receiver,
+                               Handle<JSProxy> proxy,
+                               KeyAccumulator* accumulator) {
+  STACK_CHECK(Nothing<bool>());
   // 1. Let handler be the value of the [[ProxyHandler]] internal slot of O.
   Handle<Object> handler(proxy->handler(), isolate);
   // 2. If handler is null, throw a TypeError exception.
@@ -8415,7 +8439,7 @@ bool JSProxy::Enumerate(Isolate* isolate, Handle<JSReceiver> receiver,
     isolate->Throw(*isolate->factory()->NewTypeError(
         MessageTemplate::kProxyRevoked,
         isolate->factory()->enumerate_string()));
-    return false;
+    return Nothing<bool>();
   }
   // 4. Let target be the value of the [[ProxyTarget]] internal slot of O.
   Handle<JSReceiver> target(proxy->target(), isolate);
@@ -8424,7 +8448,7 @@ bool JSProxy::Enumerate(Isolate* isolate, Handle<JSReceiver> receiver,
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, trap, Object::GetMethod(Handle<JSReceiver>::cast(handler),
                                        isolate->factory()->enumerate_string()),
-      false);
+      Nothing<bool>());
   // 6. If trap is undefined, then
   if (trap->IsUndefined()) {
     // 6a. Return target.[[Enumerate]]().
@@ -8441,10 +8465,10 @@ bool JSProxy::Enumerate(Isolate* isolate, Handle<JSReceiver> receiver,
       Execution::Call(isolate, isolate->proxy_enumerate(),
                       isolate->factory()->undefined_value(), arraysize(args),
                       args),
-      false);
+      Nothing<bool>());
   accumulator->NextPrototype();
   accumulator->AddKeysFromProxy(Handle<JSObject>::cast(trap_result_array));
-  return true;
+  return Just(true);
 }
 
 
@@ -8507,11 +8531,14 @@ static MaybeHandle<FixedArray> CreateListFromArrayLike_StringSymbol(
 
 
 // ES6 9.5.12
-// Returns "false" in case of exception.
+// Returns |true| on success, |nothing| in case of exception.
 // static
-bool JSProxy::OwnPropertyKeys(Isolate* isolate, Handle<JSReceiver> receiver,
-                              Handle<JSProxy> proxy, PropertyFilter filter,
-                              KeyAccumulator* accumulator) {
+Maybe<bool> JSProxy::OwnPropertyKeys(Isolate* isolate,
+                                     Handle<JSReceiver> receiver,
+                                     Handle<JSProxy> proxy,
+                                     PropertyFilter filter,
+                                     KeyAccumulator* accumulator) {
+  STACK_CHECK(Nothing<bool>());
   // 1. Let handler be the value of the [[ProxyHandler]] internal slot of O.
   Handle<Object> handler(proxy->handler(), isolate);
   // 2. If handler is null, throw a TypeError exception.
@@ -8519,7 +8546,7 @@ bool JSProxy::OwnPropertyKeys(Isolate* isolate, Handle<JSReceiver> receiver,
   if (proxy->IsRevoked()) {
     isolate->Throw(*isolate->factory()->NewTypeError(
         MessageTemplate::kProxyRevoked, isolate->factory()->ownKeys_string()));
-    return false;
+    return Nothing<bool>();
   }
   // 4. Let target be the value of the [[ProxyTarget]] internal slot of O.
   Handle<JSReceiver> target(proxy->target(), isolate);
@@ -8528,7 +8555,7 @@ bool JSProxy::OwnPropertyKeys(Isolate* isolate, Handle<JSReceiver> receiver,
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, trap, Object::GetMethod(Handle<JSReceiver>::cast(handler),
                                        isolate->factory()->ownKeys_string()),
-      false);
+      Nothing<bool>());
   // 6. If trap is undefined, then
   if (trap->IsUndefined()) {
     // 6a. Return target.[[OwnPropertyKeys]]().
@@ -8540,21 +8567,24 @@ bool JSProxy::OwnPropertyKeys(Isolate* isolate, Handle<JSReceiver> receiver,
   Handle<Object> args[] = {target};
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, trap_result_array,
-      Execution::Call(isolate, trap, handler, arraysize(args), args), false);
+      Execution::Call(isolate, trap, handler, arraysize(args), args),
+      Nothing<bool>());
   // 8. Let trapResult be ? CreateListFromArrayLike(trapResultArray,
   //    «String, Symbol»).
   Handle<FixedArray> trap_result;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, trap_result,
-      CreateListFromArrayLike_StringSymbol(isolate, trap_result_array), false);
+      CreateListFromArrayLike_StringSymbol(isolate, trap_result_array),
+      Nothing<bool>());
   // 9. Let extensibleTarget be ? IsExtensible(target).
   Maybe<bool> maybe_extensible = JSReceiver::IsExtensible(target);
-  if (maybe_extensible.IsNothing()) return false;
+  MAYBE_RETURN(maybe_extensible, Nothing<bool>());
   bool extensible_target = maybe_extensible.FromJust();
   // 10. Let targetKeys be ? target.[[OwnPropertyKeys]]().
   Handle<FixedArray> target_keys;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, target_keys,
-                                   JSReceiver::OwnPropertyKeys(target), false);
+                                   JSReceiver::OwnPropertyKeys(target),
+                                   Nothing<bool>());
   // 11. (Assert)
   // 12. Let targetConfigurableKeys be an empty List.
   // To save memory, we're re-using target_keys and will modify it in-place.
@@ -8567,11 +8597,11 @@ bool JSProxy::OwnPropertyKeys(Isolate* isolate, Handle<JSReceiver> receiver,
   for (int i = 0; i < target_keys->length(); ++i) {
     // 14a. Let desc be ? target.[[GetOwnProperty]](key).
     PropertyDescriptor desc;
-    bool found = JSReceiver::GetOwnPropertyDescriptor(
+    Maybe<bool> found = JSReceiver::GetOwnPropertyDescriptor(
         isolate, target, handle(target_keys->get(i), isolate), &desc);
-    if (isolate->has_pending_exception()) return false;
+    MAYBE_RETURN(found, Nothing<bool>());
     // 14b. If desc is not undefined and desc.[[Configurable]] is false, then
-    if (found && !desc.configurable()) {
+    if (found.FromJust() && !desc.configurable()) {
       // 14b i. Append key as an element of targetNonconfigurableKeys.
       target_nonconfigurable_keys->set(nonconfigurable_keys_length,
                                        target_keys->get(i));
@@ -8609,8 +8639,8 @@ bool JSProxy::OwnPropertyKeys(Isolate* isolate, Handle<JSReceiver> receiver,
     int* found = unchecked_result_keys.Find(key);
     if (found == nullptr || *found == kGone) {
       isolate->Throw(*isolate->factory()->NewTypeError(
-          MessageTemplate::kProxyTrapResultMustInclude, handle(key, isolate)));
-      return false;
+          MessageTemplate::kProxyOwnKeysMissing, handle(key, isolate)));
+      return Nothing<bool>();
     }
     // 17b. Remove key from uncheckedResultKeys.
     *found = kGone;
@@ -8629,8 +8659,8 @@ bool JSProxy::OwnPropertyKeys(Isolate* isolate, Handle<JSReceiver> receiver,
     int* found = unchecked_result_keys.Find(key);
     if (found == nullptr || *found == kGone) {
       isolate->Throw(*isolate->factory()->NewTypeError(
-          MessageTemplate::kProxyTrapResultMustInclude, handle(key, isolate)));
-      return false;
+          MessageTemplate::kProxyOwnKeysMissing, handle(key, isolate)));
+      return Nothing<bool>();
     }
     // 19b. Remove key from uncheckedResultKeys.
     *found = kGone;
@@ -8640,8 +8670,8 @@ bool JSProxy::OwnPropertyKeys(Isolate* isolate, Handle<JSReceiver> receiver,
   if (unchecked_result_keys_size != 0) {
     DCHECK_GT(unchecked_result_keys_size, 0);
     isolate->Throw(*isolate->factory()->NewTypeError(
-        MessageTemplate::kProxyTargetNotExtensible));
-    return false;
+        MessageTemplate::kProxyOwnKeysNonExtensible));
+    return Nothing<bool>();
   }
   // 21. Return trapResult.
   return accumulator->AddKeysFromProxy(proxy, trap_result);
@@ -8655,10 +8685,9 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
   USE(ContainsOnlyValidKeys);
   Isolate* isolate = object->GetIsolate();
   KeyAccumulator accumulator(isolate, filter);
-  if (!GetKeys_Internal(isolate, object, object, type, filter, &accumulator)) {
-    DCHECK(isolate->has_pending_exception());
-    return MaybeHandle<FixedArray>();
-  }
+  MAYBE_RETURN(
+      GetKeys_Internal(isolate, object, object, type, filter, &accumulator),
+      MaybeHandle<FixedArray>());
   Handle<FixedArray> keys = accumulator.GetKeys(keys_conversion);
   DCHECK(ContainsOnlyValidKeys(keys));
   return keys;
@@ -9014,9 +9043,17 @@ Handle<Map> Map::CopyInitialMap(Handle<Map> map, int instance_size,
                                 int in_object_properties,
                                 int unused_property_fields) {
 #ifdef DEBUG
+  Isolate* isolate = map->GetIsolate();
+  // Strict and strong function maps have Function as a constructor but the
+  // Function's initial map is a sloppy function map. Same holds for
+  // GeneratorFunction and its initial map.
   Object* constructor = map->GetConstructor();
   DCHECK(constructor->IsJSFunction());
-  DCHECK_EQ(*map, JSFunction::cast(constructor)->initial_map());
+  DCHECK(*map == JSFunction::cast(constructor)->initial_map() ||
+         *map == *isolate->strict_function_map() ||
+         *map == *isolate->strong_function_map() ||
+         *map == *isolate->strict_generator_function_map() ||
+         *map == *isolate->strong_generator_function_map());
 #endif
   // Initial maps must always own their descriptors and it's descriptor array
   // does not contain descriptors that do not belong to the map.
@@ -9034,7 +9071,7 @@ Handle<Map> Map::CopyInitialMap(Handle<Map> map, int instance_size,
   if (number_of_own_descriptors > 0) {
     // The copy will use the same descriptors array.
     result->UpdateDescriptors(map->instance_descriptors(),
-                              map->layout_descriptor());
+                              map->GetLayoutDescriptor());
     result->SetNumberOfOwnDescriptors(number_of_own_descriptors);
 
     DCHECK_EQ(result->NumberOfFields(),
@@ -9201,48 +9238,84 @@ Handle<Map> Map::CopyReplaceDescriptors(
 }
 
 
-// Since this method is used to rewrite an existing transition tree, it can
-// always insert transitions without checking.
-Handle<Map> Map::CopyInstallDescriptors(
-    Handle<Map> map, int new_descriptor, Handle<DescriptorArray> descriptors,
+// Creates transition tree starting from |split_map| and adding all descriptors
+// starting from descriptor with index |split_map|.NumberOfOwnDescriptors().
+// The way how it is done is tricky because of GC and special descriptors
+// marking logic.
+Handle<Map> Map::AddMissingTransitions(
+    Handle<Map> split_map, Handle<DescriptorArray> descriptors,
     Handle<LayoutDescriptor> full_layout_descriptor) {
   DCHECK(descriptors->IsSortedNoDuplicates());
+  int split_nof = split_map->NumberOfOwnDescriptors();
+  int nof_descriptors = descriptors->number_of_descriptors();
+  DCHECK_LT(split_nof, nof_descriptors);
 
-  Handle<Map> result = CopyDropDescriptors(map);
+  // Start with creating last map which will own full descriptors array.
+  // This is necessary to guarantee that GC will mark the whole descriptor
+  // array if any of the allocations happening below fail.
+  // Number of unused properties is temporarily incorrect and the layout
+  // descriptor could unnecessarily be in slow mode but we will fix after
+  // all the other intermediate maps are created.
+  Handle<Map> last_map = CopyDropDescriptors(split_map);
+  last_map->InitializeDescriptors(*descriptors, *full_layout_descriptor);
+  last_map->set_unused_property_fields(0);
 
-  result->set_instance_descriptors(*descriptors);
-  result->SetNumberOfOwnDescriptors(new_descriptor + 1);
+  // During creation of intermediate maps we violate descriptors sharing
+  // invariant since the last map is not yet connected to the transition tree
+  // we create here. But it is safe because GC never trims map's descriptors
+  // if there are no dead transitions from that map and this is exactly the
+  // case for all the intermediate maps we create here.
+  Handle<Map> map = split_map;
+  for (int i = split_nof; i < nof_descriptors - 1; ++i) {
+    Handle<Map> new_map = CopyDropDescriptors(map);
+    InstallDescriptors(map, new_map, i, descriptors, full_layout_descriptor);
+    map = new_map;
+  }
+  InstallDescriptors(map, last_map, nof_descriptors - 1, descriptors,
+                     full_layout_descriptor);
+  return last_map;
+}
 
-  int unused_property_fields = map->unused_property_fields();
+
+// Since this method is used to rewrite an existing transition tree, it can
+// always insert transitions without checking.
+void Map::InstallDescriptors(Handle<Map> parent, Handle<Map> child,
+                             int new_descriptor,
+                             Handle<DescriptorArray> descriptors,
+                             Handle<LayoutDescriptor> full_layout_descriptor) {
+  DCHECK(descriptors->IsSortedNoDuplicates());
+
+  child->set_instance_descriptors(*descriptors);
+  child->SetNumberOfOwnDescriptors(new_descriptor + 1);
+
+  int unused_property_fields = parent->unused_property_fields();
   PropertyDetails details = descriptors->GetDetails(new_descriptor);
   if (details.location() == kField) {
-    unused_property_fields = map->unused_property_fields() - 1;
+    unused_property_fields = parent->unused_property_fields() - 1;
     if (unused_property_fields < 0) {
       unused_property_fields += JSObject::kFieldsAdded;
     }
   }
-  result->set_unused_property_fields(unused_property_fields);
+  child->set_unused_property_fields(unused_property_fields);
 
   if (FLAG_unbox_double_fields) {
     Handle<LayoutDescriptor> layout_descriptor =
-        LayoutDescriptor::AppendIfFastOrUseFull(map, details,
+        LayoutDescriptor::AppendIfFastOrUseFull(parent, details,
                                                 full_layout_descriptor);
-    result->set_layout_descriptor(*layout_descriptor);
+    child->set_layout_descriptor(*layout_descriptor);
 #ifdef VERIFY_HEAP
     // TODO(ishell): remove these checks from VERIFY_HEAP mode.
     if (FLAG_verify_heap) {
-      CHECK(result->layout_descriptor()->IsConsistentWithMap(*result));
+      CHECK(child->layout_descriptor()->IsConsistentWithMap(*child));
     }
 #else
-    SLOW_DCHECK(result->layout_descriptor()->IsConsistentWithMap(*result));
+    SLOW_DCHECK(child->layout_descriptor()->IsConsistentWithMap(*child));
 #endif
-    result->set_visitor_id(Heap::GetStaticVisitorIdForMap(*result));
+    child->set_visitor_id(Heap::GetStaticVisitorIdForMap(*child));
   }
 
   Handle<Name> name = handle(descriptors->GetKey(new_descriptor));
-  ConnectTransition(map, result, name, SIMPLE_PROPERTY_TRANSITION);
-
-  return result;
+  ConnectTransition(parent, child, name, SIMPLE_PROPERTY_TRANSITION);
 }
 
 
@@ -9278,6 +9351,57 @@ Handle<Map> Map::CopyAsElementsKind(Handle<Map> map, ElementsKind kind,
   Handle<Map> new_map = Copy(map, "CopyAsElementsKind");
   new_map->set_elements_kind(kind);
   return new_map;
+}
+
+
+Handle<Map> Map::AsLanguageMode(Handle<Map> initial_map,
+                                LanguageMode language_mode, FunctionKind kind) {
+  DCHECK_EQ(JS_FUNCTION_TYPE, initial_map->instance_type());
+  // Initial map for sloppy mode function is stored in the function
+  // constructor. Initial maps for strict and strong modes are cached as
+  // special transitions using |strict_function_transition_symbol| and
+  // |strong_function_transition_symbol| respectively as a key.
+  if (language_mode == SLOPPY) return initial_map;
+  Isolate* isolate = initial_map->GetIsolate();
+  Factory* factory = isolate->factory();
+  Handle<Symbol> transition_symbol;
+
+  int map_index = Context::FunctionMapIndex(language_mode, kind);
+  Handle<Map> function_map(
+      Map::cast(isolate->native_context()->get(map_index)));
+
+  STATIC_ASSERT(LANGUAGE_END == 3);
+  switch (language_mode) {
+    case STRICT:
+      transition_symbol = factory->strict_function_transition_symbol();
+      break;
+    case STRONG:
+      transition_symbol = factory->strong_function_transition_symbol();
+      break;
+    default:
+      UNREACHABLE();
+      break;
+  }
+  Map* maybe_transition =
+      TransitionArray::SearchSpecial(*initial_map, *transition_symbol);
+  if (maybe_transition != NULL) {
+    return handle(maybe_transition, isolate);
+  }
+
+  // Create new map taking descriptors from the |function_map| and all
+  // the other details from the |initial_map|.
+  Handle<Map> map =
+      Map::CopyInitialMap(function_map, initial_map->instance_size(),
+                          initial_map->GetInObjectProperties(),
+                          initial_map->unused_property_fields());
+  map->SetConstructor(initial_map->GetConstructor());
+  map->set_prototype(initial_map->prototype());
+
+  if (TransitionArray::CanHaveMoreTransitions(initial_map)) {
+    Map::ConnectTransition(initial_map, map, transition_symbol,
+                           SPECIAL_TRANSITION);
+  }
+  return map;
 }
 
 
@@ -10424,7 +10548,7 @@ Handle<DescriptorArray> DescriptorArray::Allocate(Isolate* isolate,
   int size = number_of_descriptors + slack;
   if (size == 0) return factory->empty_descriptor_array();
   // Allocate the array of keys.
-  Handle<FixedArray> result = factory->NewFixedArray(LengthFor(size));
+  Handle<FixedArray> result = factory->NewFixedArray(LengthFor(size), TENURED);
 
   result->set(kDescriptorLengthIndex, Smi::FromInt(number_of_descriptors));
   result->set(kEnumCacheIndex, Smi::FromInt(0));
@@ -11290,8 +11414,10 @@ static void CalculateLineEndsImpl(Isolate* isolate,
 
   if (src_len > 0 && cache->IsLineTerminatorSequence(src[src_len - 1], 0)) {
     line_ends->Add(src_len - 1);
-  } else if (include_ending_line) {
-    // Even if the last line misses a line end, it is counted.
+  }
+  if (include_ending_line) {
+    // Include one character beyond the end of script. The rewriter uses that
+    // position for the implicit return statement.
     line_ends->Add(src_len);
   }
 }
@@ -12015,7 +12141,7 @@ void SharedFunctionInfo::AddSharedCodeToOptimizedCodeMap(
 }
 
 
-void SharedFunctionInfo::AddToOptimizedCodeMap(
+void SharedFunctionInfo::AddToOptimizedCodeMapInternal(
     Handle<SharedFunctionInfo> shared, Handle<Context> native_context,
     Handle<HeapObject> code, Handle<LiteralsArray> literals,
     BailoutId osr_ast_id) {
@@ -12039,16 +12165,19 @@ void SharedFunctionInfo::AddToOptimizedCodeMap(
     Handle<FixedArray> old_code_map(shared->optimized_code_map(), isolate);
     entry = shared->SearchOptimizedCodeMapEntry(*native_context, osr_ast_id);
     if (entry > kSharedCodeIndex) {
-      // Found an existing context-specific entry, it must not contain any code.
-      DCHECK(WeakCell::cast(old_code_map->get(entry + kCachedCodeOffset))
+      // Found an existing context-specific entry. If the user provided valid
+      // code, it must not contain any code.
+      DCHECK(code->IsUndefined() ||
+             WeakCell::cast(old_code_map->get(entry + kCachedCodeOffset))
                  ->cleared());
+
       // Just set the code and literals to the entry.
-      Handle<WeakCell> code_cell = code->IsUndefined()
-                                       ? isolate->factory()->empty_weak_cell()
-                                       : isolate->factory()->NewWeakCell(code);
+      if (!code->IsUndefined()) {
+        Handle<WeakCell> code_cell = isolate->factory()->NewWeakCell(code);
+        old_code_map->set(entry + kCachedCodeOffset, *code_cell);
+      }
       Handle<WeakCell> literals_cell =
           isolate->factory()->NewWeakCell(literals);
-      old_code_map->set(entry + kCachedCodeOffset, *code_cell);
       old_code_map->set(entry + kLiteralsOffset, *literals_cell);
       return;
     }
@@ -12490,33 +12619,26 @@ Handle<Object> CacheInitialJSArrayMaps(
     Handle<Context> native_context, Handle<Map> initial_map) {
   // Replace all of the cached initial array maps in the native context with
   // the appropriate transitioned elements kind maps.
-  Factory* factory = native_context->GetIsolate()->factory();
-  Handle<FixedArray> maps = factory->NewFixedArrayWithHoles(
-      kElementsKindCount, TENURED);
-
+  Strength strength =
+      initial_map->is_strong() ? Strength::STRONG : Strength::WEAK;
   Handle<Map> current_map = initial_map;
   ElementsKind kind = current_map->elements_kind();
-  DCHECK(kind == GetInitialFastElementsKind());
-  maps->set(kind, *current_map);
+  DCHECK_EQ(GetInitialFastElementsKind(), kind);
+  native_context->set(Context::ArrayMapIndex(kind, strength), *current_map);
   for (int i = GetSequenceIndexFromFastElementsKind(kind) + 1;
        i < kFastElementsKindCount; ++i) {
     Handle<Map> new_map;
     ElementsKind next_kind = GetFastElementsKindFromSequenceIndex(i);
-    Map* maybe_elements_transition = current_map->ElementsTransitionMap();
-    if (maybe_elements_transition != NULL) {
+    if (Map* maybe_elements_transition = current_map->ElementsTransitionMap()) {
       new_map = handle(maybe_elements_transition);
-      DCHECK(new_map->elements_kind() == next_kind);
     } else {
       new_map = Map::CopyAsElementsKind(
           current_map, next_kind, INSERT_TRANSITION);
     }
-    maps->set(next_kind, *new_map);
+    DCHECK_EQ(next_kind, new_map->elements_kind());
+    native_context->set(Context::ArrayMapIndex(next_kind, strength), *new_map);
     current_map = new_map;
   }
-  if (initial_map->is_strong())
-    native_context->set_js_array_strong_maps(*maps);
-  else
-    native_context->set_js_array_maps(*maps);
   return initial_map;
 }
 
@@ -15053,6 +15175,7 @@ Maybe<bool> JSProxy::SetPrototype(Handle<JSProxy> proxy, Handle<Object> value,
                                   bool from_javascript,
                                   ShouldThrow should_throw) {
   Isolate* isolate = proxy->GetIsolate();
+  STACK_CHECK(Nothing<bool>());
   Handle<Name> trap_name = isolate->factory()->setPrototypeOf_string();
   // 1. Assert: Either Type(V) is Object or Type(V) is Null.
   DCHECK(value->IsJSReceiver() || value->IsNull());
@@ -15090,7 +15213,12 @@ Maybe<bool> JSProxy::SetPrototype(Handle<JSProxy> proxy, Handle<Object> value,
   Maybe<bool> is_extensible = JSReceiver::IsExtensible(target);
   if (is_extensible.IsNothing()) return Nothing<bool>();
   // 10. If extensibleTarget is true, return booleanTrapResult.
-  if (is_extensible.FromJust()) return Just(bool_trap_result);
+  if (is_extensible.FromJust()) {
+    if (bool_trap_result) return Just(true);
+    RETURN_FAILURE(
+        isolate, should_throw,
+        NewTypeError(MessageTemplate::kProxyTrapReturnedFalsish, trap_name));
+  }
   // 11. Let targetProto be ? target.[[GetPrototypeOf]]().
   Handle<Object> target_proto;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, target_proto,
@@ -15100,11 +15228,14 @@ Maybe<bool> JSProxy::SetPrototype(Handle<JSProxy> proxy, Handle<Object> value,
   // throw a TypeError exception.
   if (bool_trap_result && !value->SameValue(*target_proto)) {
     isolate->Throw(*isolate->factory()->NewTypeError(
-        MessageTemplate::kProxyTrapViolatesInvariant, target));
+        MessageTemplate::kProxySetPrototypeOfNonExtensible));
     return Nothing<bool>();
   }
   // 13. Return booleanTrapResult.
-  return Just(bool_trap_result);
+  if (bool_trap_result) return Just(true);
+  RETURN_FAILURE(
+      isolate, should_throw,
+      NewTypeError(MessageTemplate::kProxyTrapReturnedFalsish, trap_name));
 }
 
 
@@ -15841,25 +15972,6 @@ Maybe<bool> JSObject::HasRealNamedCallbackProperty(Handle<JSObject> object,
 }
 
 
-// Private symbols are always filtered out.
-int JSObject::NumberOfOwnProperties(PropertyFilter filter) {
-  if (HasFastProperties()) {
-    Map* map = this->map();
-    if (filter == ENUMERABLE_STRINGS) {
-      // The cached enum length was computed with filter == ENUMERABLE_STRING,
-      // so that's the only filter for which it's valid to retrieve it.
-      int result = map->EnumLength();
-      if (result != kInvalidEnumCacheSentinel) return result;
-    }
-    return map->NumberOfDescribedProperties(OWN_DESCRIPTORS, filter);
-  } else if (IsJSGlobalObject()) {
-    return global_dictionary()->NumberOfElementsFilterAttributes(filter);
-  } else {
-    return property_dictionary()->NumberOfElementsFilterAttributes(filter);
-  }
-}
-
-
 void FixedArray::SwapPairs(FixedArray* numbers, int i, int j) {
   Object* temp = get(i);
   set(i, get(j));
@@ -15969,33 +16081,6 @@ void FixedArray::SortPairs(FixedArray* numbers, uint32_t len) {
   } else {
     HeapSortPairs(this, numbers, len);
     return;
-  }
-}
-
-
-// Fill in the names of own properties into the supplied storage. The main
-// purpose of this function is to provide reflection information for the object
-// mirrors.
-int JSObject::GetOwnPropertyNames(FixedArray* storage, int index,
-                                  PropertyFilter filter) {
-  DCHECK(storage->length() >= (NumberOfOwnProperties(filter) - index));
-  if (HasFastProperties()) {
-    int start_index = index;
-    int real_size = map()->NumberOfOwnDescriptors();
-    DescriptorArray* descs = map()->instance_descriptors();
-    for (int i = 0; i < real_size; i++) {
-      if ((descs->GetDetails(i).attributes() & filter) == 0 &&
-          !descs->GetKey(i)->FilterKey(filter)) {
-        storage->set(index++, descs->GetKey(i));
-      }
-    }
-    return index - start_index;
-  } else if (IsJSGlobalObject()) {
-    return global_dictionary()->CopyKeysTo(storage, index, filter,
-                                           GlobalDictionary::UNSORTED);
-  } else {
-    return property_dictionary()->CopyKeysTo(storage, index, filter,
-                                             NameDictionary::UNSORTED);
   }
 }
 
@@ -16191,6 +16276,39 @@ int JSObject::GetOwnElementKeys(FixedArray* storage, PropertyFilter filter) {
 
   DCHECK(!storage || storage->length() == counter);
   return counter;
+}
+
+
+MaybeHandle<String> Object::ObjectProtoToString(Isolate* isolate,
+                                                Handle<Object> object) {
+  if (object->IsUndefined()) return isolate->factory()->undefined_to_string();
+  if (object->IsNull()) return isolate->factory()->null_to_string();
+
+  Handle<JSReceiver> receiver;
+  CHECK(Object::ToObject(isolate, object).ToHandle(&receiver));
+
+  Handle<String> tag;
+  if (FLAG_harmony_tostring) {
+    Handle<Object> to_string_tag;
+    ASSIGN_RETURN_ON_EXCEPTION(
+        isolate, to_string_tag,
+        GetProperty(receiver, isolate->factory()->to_string_tag_symbol()),
+        String);
+    if (to_string_tag->IsString()) {
+      tag = Handle<String>::cast(to_string_tag);
+    }
+  }
+
+  if (tag.is_null()) {
+    ASSIGN_RETURN_ON_EXCEPTION(isolate, tag,
+                               JSReceiver::BuiltinStringTag(receiver), String);
+  }
+
+  IncrementalStringBuilder builder(isolate);
+  builder.AppendCString("[object ");
+  builder.AppendString(tag);
+  builder.AppendCharacter(']');
+  return builder.Finish();
 }
 
 

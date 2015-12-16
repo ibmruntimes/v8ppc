@@ -1635,20 +1635,6 @@ void LCodeGen::DoConstantS(LConstantS* instr) {
 void LCodeGen::DoConstantD(LConstantD* instr) {
   DCHECK(instr->result()->IsDoubleRegister());
   DoubleRegister result = ToDoubleRegister(instr->result());
-#if V8_HOST_ARCH_IA32
-  // Need some crappy work-around for x87 sNaN -> qNaN breakage in simulator
-  // builds.
-  uint64_t bits = instr->bits();
-  if ((bits & V8_UINT64_C(0x7FF8000000000000)) ==
-      V8_UINT64_C(0x7FF0000000000000)) {
-    uint32_t lo = static_cast<uint32_t>(bits);
-    uint32_t hi = static_cast<uint32_t>(bits >> 32);
-    __ li(at, Operand(lo));
-    __ li(scratch0(), Operand(hi));
-    __ Move(result, at, scratch0());
-    return;
-  }
-#endif
   double v = instr->value();
   __ Move(result, v);
 }
@@ -2467,23 +2453,20 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
     // Assuming the following assertions, we can use the same compares to test
     // for both being a function type and being in the object type range.
     STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
-    STATIC_ASSERT(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                  FIRST_JS_RECEIVER_TYPE + 1);
     STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE ==
                   LAST_JS_RECEIVER_TYPE - 1);
     STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
 
     __ GetObjectType(input, temp, temp2);
     __ Branch(is_false, lt, temp2, Operand(FIRST_JS_RECEIVER_TYPE));
-    __ Branch(is_true, eq, temp2, Operand(FIRST_JS_RECEIVER_TYPE));
     __ Branch(is_true, eq, temp2, Operand(LAST_JS_RECEIVER_TYPE));
   } else {
     // Faster code path to avoid two compares: subtract lower bound from the
     // actual type and do a signed compare with the width of the type range.
     __ GetObjectType(input, temp, temp2);
-    __ Subu(temp2, temp2, Operand(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
+    __ Subu(temp2, temp2, Operand(FIRST_JS_RECEIVER_TYPE));
     __ Branch(is_false, gt, temp2, Operand(LAST_NONCALLABLE_SPEC_OBJECT_TYPE -
-                                           FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
+                                           FIRST_JS_RECEIVER_TYPE));
   }
 
   // Now we are in the FIRST-LAST_NONCALLABLE_SPEC_OBJECT_TYPE range.
