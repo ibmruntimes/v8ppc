@@ -254,7 +254,7 @@ namespace internal {
   F(ThrowStrongModeTooFewArguments, 0, 1)     \
   F(IsConstructor, 1, 1)                      \
   F(SetForceInlineFlag, 1, 1)                 \
-  F(FunctionBindArguments, 4, 1)              \
+  F(FunctionBindArguments, 5, 1)              \
   F(BoundFunctionGetBindings, 1, 1)           \
   F(NewObjectFromBound, 1, 1)                 \
   F(Call, -1 /* >= 2 */, 1)                   \
@@ -319,6 +319,7 @@ namespace internal {
   F(UnwindAndFindExceptionHandler, 0, 1)      \
   F(PromoteScheduledException, 0, 1)          \
   F(ThrowReferenceError, 1, 1)                \
+  F(ThrowApplyNonFunction, 1, 1)              \
   F(NewTypeError, 2, 1)                       \
   F(NewSyntaxError, 2, 1)                     \
   F(NewReferenceError, 2, 1)                  \
@@ -349,7 +350,8 @@ namespace internal {
   F(IS_VAR, 1, 1)                             \
   F(IncrementStatsCounter, 1, 1)              \
   F(ThrowConstructedNonConstructable, 1, 1)   \
-  F(ThrowCalledNonCallable, 1, 1)
+  F(ThrowCalledNonCallable, 1, 1)             \
+  F(CreateListFromArrayLike, 1, 1)
 
 
 #define FOR_EACH_INTRINSIC_JSON(F) \

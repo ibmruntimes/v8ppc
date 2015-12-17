@@ -759,12 +759,6 @@ enum InstanceType {
   // Boundaries for testing the types represented as JSObject
   FIRST_JS_OBJECT_TYPE = JS_VALUE_TYPE,
   LAST_JS_OBJECT_TYPE = LAST_TYPE,
-  //
-  FIRST_NONCALLABLE_SPEC_OBJECT_TYPE = JS_VALUE_TYPE,
-  LAST_NONCALLABLE_SPEC_OBJECT_TYPE = JS_REGEXP_TYPE,
-  // Note that the types for which typeof is "function" are not continuous.
-  // Define this so that we can put assertions on discrete checks.
-  NUM_OF_CALLABLE_SPEC_OBJECT_TYPES = 2
 };
 
 STATIC_ASSERT(JS_OBJECT_TYPE == Internals::kJSObjectType);
@@ -998,6 +992,9 @@ template <class C> inline bool Is(Object* obj);
   V(WeakHashTable)                 \
   V(OrderedHashTable)
 
+// The element types selection for CreateListFromArrayLike.
+enum class ElementTypes { kAll, kStringAndSymbol };
+
 // Object is the abstract superclass for all classes in the
 // object hierarchy.
 // Object does not use any virtual functions to avoid the
@@ -1170,6 +1167,10 @@ class Object {
   // ES6 section 7.3.9 GetMethod
   MUST_USE_RESULT static MaybeHandle<Object> GetMethod(
       Handle<JSReceiver> receiver, Handle<Name> name);
+
+  // ES6 section 7.3.17 CreateListFromArrayLike
+  MUST_USE_RESULT static MaybeHandle<FixedArray> CreateListFromArrayLike(
+      Isolate* isolate, Handle<Object> object, ElementTypes element_types);
 
   // Check whether |object| is an instance of Error or NativeError.
   static bool IsErrorObject(Isolate* isolate, Handle<Object> object);
@@ -1805,12 +1806,11 @@ class JSReceiver: public HeapObject {
   MUST_USE_RESULT static Maybe<bool> HasProperty(LookupIterator* it);
   MUST_USE_RESULT static inline Maybe<bool> HasProperty(
       Handle<JSReceiver> object, Handle<Name> name);
-  MUST_USE_RESULT static inline Maybe<bool> HasOwnProperty(Handle<JSReceiver>,
-                                                           Handle<Name> name);
   MUST_USE_RESULT static inline Maybe<bool> HasElement(
       Handle<JSReceiver> object, uint32_t index);
-  MUST_USE_RESULT static inline Maybe<bool> HasOwnElement(
-      Handle<JSReceiver> object, uint32_t index);
+
+  MUST_USE_RESULT static inline Maybe<bool> HasOwnProperty(
+      Handle<JSReceiver> object, Handle<Name> name);
 
   // Implementation of ES6 [[Delete]]
   MUST_USE_RESULT static Maybe<bool> DeletePropertyOrElement(
@@ -5928,6 +5928,7 @@ class Map: public HeapObject {
 
   inline bool IsBooleanMap();
   inline bool IsPrimitiveMap();
+  inline bool IsJSReceiverMap();
   inline bool IsJSObjectMap();
   inline bool IsJSArrayMap();
   inline bool IsJSFunctionMap();
@@ -6539,7 +6540,6 @@ class SharedFunctionInfo: public HeapObject {
       Handle<SharedFunctionInfo> shared, Handle<Context> native_context,
       Handle<LiteralsArray> literals);
 
- public:
   // Set up the link between shared function info and the script. The shared
   // function info is added to the list on the script.
   static void SetScript(Handle<SharedFunctionInfo> shared,

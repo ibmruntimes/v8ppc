@@ -2570,24 +2570,11 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
 
   __ JumpIfSmi(input, is_false);
 
+  __ GetObjectType(input, temp, temp2);
   if (String::Equals(isolate()->factory()->Function_string(), class_name)) {
-    // Assuming the following assertions, we can use the same compares to test
-    // for both being a function type and being in the object type range.
-    STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
-    STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE ==
-                  LAST_JS_RECEIVER_TYPE - 1);
-    STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
-
-    __ GetObjectType(input, temp, temp2);
-    __ Branch(is_false, lt, temp2, Operand(FIRST_JS_RECEIVER_TYPE));
-    __ Branch(is_true, eq, temp2, Operand(LAST_JS_RECEIVER_TYPE));
+    __ Branch(is_true, eq, temp2, Operand(JS_FUNCTION_TYPE));
   } else {
-    // Faster code path to avoid two compares: subtract lower bound from the
-    // actual type and do a signed compare with the width of the type range.
-    __ GetObjectType(input, temp, temp2);
-    __ Dsubu(temp2, temp2, Operand(FIRST_JS_RECEIVER_TYPE));
-    __ Branch(is_false, gt, temp2, Operand(LAST_NONCALLABLE_SPEC_OBJECT_TYPE -
-                                           FIRST_JS_RECEIVER_TYPE));
+    __ Branch(is_false, eq, temp2, Operand(JS_FUNCTION_TYPE));
   }
 
   // Now we are in the FIRST-LAST_NONCALLABLE_SPEC_OBJECT_TYPE range.
@@ -2674,10 +2661,19 @@ void LCodeGen::DoHasInPrototypeChainAndBranch(
   __ ld(object_map, FieldMemOperand(object, HeapObject::kMapOffset));
   Label loop;
   __ bind(&loop);
+
+  // Deoptimize if the object needs to be access checked.
+  __ lbu(object_instance_type,
+         FieldMemOperand(object_map, Map::kBitFieldOffset));
+  __ And(object_instance_type, object_instance_type,
+         Operand(1 << Map::kIsAccessCheckNeeded));
+  DeoptimizeIf(ne, instr, Deoptimizer::kAccessCheck, object_instance_type,
+               Operand(zero_reg));
   __ lbu(object_instance_type,
          FieldMemOperand(object_map, Map::kInstanceTypeOffset));
   DeoptimizeIf(eq, instr, Deoptimizer::kProxy, object_instance_type,
                Operand(JS_PROXY_TYPE));
+
   __ ld(object_prototype, FieldMemOperand(object_map, Map::kPrototypeOffset));
   EmitTrueBranch(instr, eq, object_prototype, Operand(prototype));
   __ LoadRoot(at, Heap::kNullValueRootIndex);

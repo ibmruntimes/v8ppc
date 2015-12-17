@@ -4813,6 +4813,10 @@ bool Map::IsPrimitiveMap() {
   STATIC_ASSERT(FIRST_PRIMITIVE_TYPE == FIRST_TYPE);
   return instance_type() <= LAST_PRIMITIVE_TYPE;
 }
+bool Map::IsJSReceiverMap() {
+  STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
+  return instance_type() >= FIRST_JS_RECEIVER_TYPE;
+}
 bool Map::IsJSObjectMap() {
   STATIC_ASSERT(LAST_JS_OBJECT_TYPE == LAST_TYPE);
   return instance_type() >= FIRST_JS_OBJECT_TYPE;
@@ -7233,9 +7237,16 @@ Maybe<bool> JSReceiver::HasProperty(Handle<JSReceiver> object,
 
 Maybe<bool> JSReceiver::HasOwnProperty(Handle<JSReceiver> object,
                                        Handle<Name> name) {
-  LookupIterator it = LookupIterator::PropertyOrElement(
-      object->GetIsolate(), object, name, LookupIterator::HIDDEN);
-  return HasProperty(&it);
+  if (object->IsJSObject()) {  // Shortcut
+    LookupIterator it = LookupIterator::PropertyOrElement(
+        object->GetIsolate(), object, name, LookupIterator::HIDDEN);
+    return HasProperty(&it);
+  }
+
+  Maybe<PropertyAttributes> attributes =
+      JSReceiver::GetOwnPropertyAttributes(object, name);
+  MAYBE_RETURN(attributes, Nothing<bool>());
+  return Just(attributes.FromJust() != ABSENT);
 }
 
 
@@ -7257,14 +7268,6 @@ Maybe<PropertyAttributes> JSReceiver::GetOwnPropertyAttributes(
 
 Maybe<bool> JSReceiver::HasElement(Handle<JSReceiver> object, uint32_t index) {
   LookupIterator it(object->GetIsolate(), object, index);
-  return HasProperty(&it);
-}
-
-
-Maybe<bool> JSReceiver::HasOwnElement(Handle<JSReceiver> object,
-                                      uint32_t index) {
-  LookupIterator it(object->GetIsolate(), object, index,
-                    LookupIterator::HIDDEN);
   return HasProperty(&it);
 }
 

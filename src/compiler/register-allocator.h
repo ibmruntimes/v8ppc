@@ -135,6 +135,8 @@ class LifetimePosition final {
     return this->value_ >= that.value_;
   }
 
+  void Print() const;
+
   static inline LifetimePosition Invalid() { return LifetimePosition(); }
 
   static inline LifetimePosition MaxPosition() {
@@ -409,6 +411,8 @@ class LiveRange : public ZoneObject {
   void set_weight(float weight) { weight_ = weight; }
   LiveRangeGroup* group() const { return group_; }
   void set_group(LiveRangeGroup* group) { group_ = group; }
+  void Print(const RegisterConfiguration* config, bool with_children) const;
+  void Print(bool with_children) const;
 
   static const int kInvalidSize = -1;
   static const float kInvalidWeight;
@@ -419,7 +423,6 @@ class LiveRange : public ZoneObject {
   explicit LiveRange(int relative_id, MachineRepresentation rep,
                      TopLevelLiveRange* top_level);
 
-  void AppendAsChild(TopLevelLiveRange* other);
   void UpdateParentForAllChildren(TopLevelLiveRange* new_top_level);
 
   void set_spilled(bool value) { bits_ = SpilledField::update(bits_, value); }
@@ -606,8 +609,6 @@ class TopLevelLiveRange final : public LiveRange {
   SpillMoveInsertionList* spill_move_insertion_locations() const {
     return spill_move_insertion_locations_;
   }
-  void set_last_child(LiveRange* range) { last_child_ = range; }
-  LiveRange* last_child() const { return last_child_; }
   TopLevelLiveRange* splinter() const { return splinter_; }
   void SetSplinter(TopLevelLiveRange* splinter) {
     DCHECK_NULL(splinter_);
@@ -643,7 +644,6 @@ class TopLevelLiveRange final : public LiveRange {
   // just for spill in a single deferred block.
   bool spilled_in_deferred_blocks_;
   int spill_start_index_;
-  LiveRange* last_child_;
   UsePosition* last_pos_;
   TopLevelLiveRange* splinter_;
   bool has_preassigned_slot_;
@@ -688,6 +688,7 @@ class SpillRange final : public ZoneObject {
   ZoneVector<TopLevelLiveRange*>& live_ranges() { return live_ranges_; }
   int byte_width() const { return byte_width_; }
   RegisterKind kind() const { return kind_; }
+  void Print() const;
 
  private:
   LifetimePosition End() const { return end_position_; }
@@ -810,13 +811,6 @@ class RegisterAllocationData final : public ZoneObject {
   RangesWithPreassignedSlots& preassigned_slot_ranges() {
     return preassigned_slot_ranges_;
   }
-
-  void Print(const InstructionSequence* instructionSequence);
-  void Print(const Instruction* instruction);
-  void Print(const LiveRange* range, bool with_children = false);
-  void Print(const InstructionOperand& op);
-  void Print(const MoveOperands* move);
-  void Print(const SpillRange* spill_range);
 
  private:
   int GetNextLiveRangeId();
