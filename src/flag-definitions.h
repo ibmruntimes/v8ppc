@@ -194,17 +194,13 @@ DEFINE_BOOL(promise_extra, true, "additional V8 Promise functions")
 DEFINE_NEG_IMPLICATION(harmony, promise_extra)
 
 // Activate on ClusterFuzz.
-DEFINE_IMPLICATION(es_staging, harmony_proxies)
-DEFINE_IMPLICATION(es_staging, harmony_reflect)
 DEFINE_IMPLICATION(es_staging, harmony_regexp_lookbehind)
 
 // Features that are still work in progress (behind individual flags).
 #define HARMONY_INPROGRESS(V)                                             \
   V(harmony_modules, "harmony modules")                                   \
-  V(harmony_proxies, "harmony proxies")                                   \
   V(harmony_unicode_regexps, "harmony unicode regexps")                   \
   V(harmony_function_name, "harmony Function name inference")             \
-  V(harmony_reflect, "harmony Reflect API")                               \
   V(harmony_sloppy_function, "harmony sloppy function block scoping")     \
   V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")               \
   V(harmony_simd, "harmony simd")                                         \
@@ -215,6 +211,8 @@ DEFINE_IMPLICATION(es_staging, harmony_regexp_lookbehind)
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                                 \
   V(harmony_destructuring_assignment, "harmony destructuring assignment") \
+  V(harmony_proxies, "harmony proxies")                                   \
+  V(harmony_reflect, "harmony Reflect API")                               \
   V(harmony_sloppy, "harmony features in sloppy mode")                    \
   V(harmony_sloppy_let, "harmony let in sloppy mode")                     \
   V(harmony_regexps, "harmony regular expression extensions")
@@ -471,15 +469,13 @@ DEFINE_BOOL(trace_turbo_escape, false, "enable tracing in escape analysis")
 DEFINE_BOOL(turbo_instruction_scheduling, false,
             "enable instruction scheduling in TurboFan")
 
-#if defined(V8_WASM)
 // Flags for native WebAssembly.
-DEFINE_BOOL(expose_wasm, true, "expose WASM interface to JavaScript")
+DEFINE_BOOL(expose_wasm, false, "expose WASM interface to JavaScript")
 DEFINE_BOOL(trace_wasm_decoder, false, "trace decoding of wasm code")
 DEFINE_BOOL(trace_wasm_decode_time, false, "trace decoding time of wasm code")
 DEFINE_BOOL(trace_wasm_compiler, false, "trace compiling of wasm code")
 DEFINE_BOOL(wasm_break_on_decoder_error, false,
             "debug break when wasm decoder encounters an error")
-#endif
 
 DEFINE_INT(typed_array_max_size_in_heap, 64,
            "threshold for in-heap typed array")
@@ -706,6 +702,7 @@ DEFINE_IMPLICATION(trace_detached_contexts, track_detached_contexts)
 #ifdef VERIFY_HEAP
 DEFINE_BOOL(verify_heap, false, "verify heap pointers before and after GC")
 #endif
+DEFINE_BOOL(move_object_start, false, "enable moving of object starts")
 DEFINE_BOOL(memory_reducer, true, "use memory reducer")
 DEFINE_BOOL(scavenge_reclaim_unmodified_objects, false,
             "remove unmodified and unreferenced objects")

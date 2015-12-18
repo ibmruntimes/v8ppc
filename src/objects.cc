@@ -828,6 +828,13 @@ MaybeHandle<Object> JSProxy::GetProperty(Isolate* isolate,
                                          Handle<Name> name,
                                          Handle<Object> receiver,
                                          LanguageMode language_mode) {
+  if (receiver->IsJSGlobalObject()) {
+    THROW_NEW_ERROR(
+        isolate,
+        NewTypeError(MessageTemplate::kReadGlobalReferenceThroughProxy, name),
+        Object);
+  }
+
   STACK_CHECK(MaybeHandle<Object>());
   Handle<Name> trap_name = isolate->factory()->get_string();
   // 1. Assert: IsPropertyKey(P) is true.
@@ -14338,6 +14345,17 @@ void DeoptimizationInputData::DeoptimizationInputDataPrint(
           unsigned height = iterator.Next();
           Object* shared_info = LiteralArray()->get(shared_info_id);
           os << "{ast_id=" << ast_id << ", function="
+             << Brief(SharedFunctionInfo::cast(shared_info)->DebugName())
+             << ", height=" << height << "}";
+          break;
+        }
+
+        case Translation::INTERPRETED_FRAME: {
+          int bytecode_offset = iterator.Next();
+          int shared_info_id = iterator.Next();
+          unsigned height = iterator.Next();
+          Object* shared_info = LiteralArray()->get(shared_info_id);
+          os << "{bytecode_offset=" << bytecode_offset << ", function="
              << Brief(SharedFunctionInfo::cast(shared_info)->DebugName())
              << ", height=" << height << "}";
           break;

@@ -599,6 +599,43 @@ bool MarkCompactCollector::IsSweepingCompleted() {
 }
 
 
+void Marking::TransferMark(Heap* heap, Address old_start, Address new_start) {
+  // This is only used when resizing an object.
+  DCHECK(MemoryChunk::FromAddress(old_start) ==
+         MemoryChunk::FromAddress(new_start));
+
+  if (!heap->incremental_marking()->IsMarking()) return;
+
+  // If the mark doesn't move, we don't check the color of the object.
+  // It doesn't matter whether the object is black, since it hasn't changed
+  // size, so the adjustment to the live data count will be zero anyway.
+  if (old_start == new_start) return;
+
+  MarkBit new_mark_bit = MarkBitFrom(new_start);
+  MarkBit old_mark_bit = MarkBitFrom(old_start);
+
+#ifdef DEBUG
+  ObjectColor old_color = Color(old_mark_bit);
+#endif
+
+  if (Marking::IsBlack(old_mark_bit)) {
+    Marking::BlackToWhite(old_mark_bit);
+    Marking::MarkBlack(new_mark_bit);
+    return;
+  } else if (Marking::IsGrey(old_mark_bit)) {
+    Marking::GreyToWhite(old_mark_bit);
+    heap->incremental_marking()->WhiteToGreyAndPush(
+        HeapObject::FromAddress(new_start), new_mark_bit);
+    heap->incremental_marking()->RestartIfNotMarking();
+  }
+
+#ifdef DEBUG
+  ObjectColor new_color = Color(new_mark_bit);
+  DCHECK(new_color == old_color);
+#endif
+}
+
+
 const char* AllocationSpaceName(AllocationSpace space) {
   switch (space) {
     case NEW_SPACE:
@@ -1570,12 +1607,17 @@ class MarkCompactCollector::EvacuateVisitorBase
 };
 
 
-class MarkCompactCollector::EvacuateNewSpaceVisitor
+class MarkCompactCollector::EvacuateNewSpaceVisitor final
     : public MarkCompactCollector::EvacuateVisitorBase {
  public:
+  static const intptr_t kLabSize = 4 * KB;
+  static const intptr_t kMaxLabObjectSize = 256;
+
   explicit EvacuateNewSpaceVisitor(Heap* heap,
                                    SlotsBuffer** evacuation_slots_buffer)
-      : EvacuateVisitorBase(heap, evacuation_slots_buffer) {}
+      : EvacuateVisitorBase(heap, evacuation_slots_buffer),
+        buffer_(LocalAllocationBuffer::InvalidBuffer()),
+        space_to_allocate_(NEW_SPACE) {}
 
   bool Visit(HeapObject* object) override {
     Heap::UpdateAllocationSiteFeedback(object, Heap::RECORD_SCRATCHPAD_SLOT);
@@ -1591,34 +1633,119 @@ class MarkCompactCollector::EvacuateNewSpaceVisitor
       heap_->IncrementPromotedObjectsSize(size);
       return true;
     }
-
-    AllocationAlignment alignment = object->RequiredAlignment();
-    AllocationResult allocation =
-        heap_->new_space()->AllocateRaw(size, alignment);
-    if (allocation.IsRetry()) {
-      if (!heap_->new_space()->AddFreshPage()) {
-        // Shouldn't happen. We are sweeping linearly, and to-space
-        // has the same number of pages as from-space, so there is
-        // always room unless we are in an OOM situation.
-        FatalProcessOutOfMemory("MarkCompactCollector: semi-space copy\n");
-      }
-      allocation = heap_->new_space()->AllocateRaw(size, alignment);
-      DCHECK(!allocation.IsRetry());
-    }
-    Object* target = allocation.ToObjectChecked();
-
+    HeapObject* target = nullptr;
+    AllocationSpace space = AllocateTargetObject(object, &target);
     heap_->mark_compact_collector()->MigrateObject(
-        HeapObject::cast(target), object, size, NEW_SPACE, nullptr);
+        HeapObject::cast(target), object, size, space,
+        (space == NEW_SPACE) ? nullptr : evacuation_slots_buffer_);
     if (V8_UNLIKELY(target->IsJSArrayBuffer())) {
       heap_->array_buffer_tracker()->MarkLive(JSArrayBuffer::cast(target));
     }
     heap_->IncrementSemiSpaceCopiedObjectSize(size);
     return true;
   }
+
+ private:
+  enum NewSpaceAllocationMode {
+    kNonstickyBailoutOldSpace,
+    kStickyBailoutOldSpace,
+  };
+
+  inline AllocationSpace AllocateTargetObject(HeapObject* old_object,
+                                              HeapObject** target_object) {
+    const int size = old_object->Size();
+    AllocationAlignment alignment = old_object->RequiredAlignment();
+    AllocationResult allocation;
+    if (space_to_allocate_ == NEW_SPACE) {
+      if (size > kMaxLabObjectSize) {
+        allocation =
+            AllocateInNewSpace(size, alignment, kNonstickyBailoutOldSpace);
+      } else {
+        allocation = AllocateInLab(size, alignment);
+      }
+    }
+    if (allocation.IsRetry() || (space_to_allocate_ == OLD_SPACE)) {
+      allocation = AllocateInOldSpace(size, alignment);
+    }
+    bool ok = allocation.To(target_object);
+    DCHECK(ok);
+    USE(ok);
+    return space_to_allocate_;
+  }
+
+  inline bool NewLocalAllocationBuffer() {
+    AllocationResult result =
+        AllocateInNewSpace(kLabSize, kWordAligned, kStickyBailoutOldSpace);
+    LocalAllocationBuffer saved_old_buffer = buffer_;
+    buffer_ = LocalAllocationBuffer::FromResult(heap_, result, kLabSize);
+    if (buffer_.IsValid()) {
+      buffer_.TryMerge(&saved_old_buffer);
+      return true;
+    }
+    return false;
+  }
+
+  inline AllocationResult AllocateInNewSpace(int size_in_bytes,
+                                             AllocationAlignment alignment,
+                                             NewSpaceAllocationMode mode) {
+    AllocationResult allocation =
+        heap_->new_space()->AllocateRawSynchronized(size_in_bytes, alignment);
+    if (allocation.IsRetry()) {
+      if (!heap_->new_space()->AddFreshPageSynchronized()) {
+        if (mode == kStickyBailoutOldSpace) space_to_allocate_ = OLD_SPACE;
+      } else {
+        allocation = heap_->new_space()->AllocateRawSynchronized(size_in_bytes,
+                                                                 alignment);
+        if (allocation.IsRetry()) {
+          if (mode == kStickyBailoutOldSpace) space_to_allocate_ = OLD_SPACE;
+        }
+      }
+    }
+    return allocation;
+  }
+
+  inline AllocationResult AllocateInOldSpace(int size_in_bytes,
+                                             AllocationAlignment alignment) {
+    AllocationResult allocation =
+        heap_->old_space()->AllocateRaw(size_in_bytes, alignment);
+    if (allocation.IsRetry()) {
+      FatalProcessOutOfMemory(
+          "MarkCompactCollector: semi-space copy, fallback in old gen\n");
+    }
+    return allocation;
+  }
+
+  inline AllocationResult AllocateInLab(int size_in_bytes,
+                                        AllocationAlignment alignment) {
+    AllocationResult allocation;
+    if (!buffer_.IsValid()) {
+      if (!NewLocalAllocationBuffer()) {
+        space_to_allocate_ = OLD_SPACE;
+        return AllocationResult::Retry(OLD_SPACE);
+      }
+    }
+    allocation = buffer_.AllocateRawAligned(size_in_bytes, alignment);
+    if (allocation.IsRetry()) {
+      if (!NewLocalAllocationBuffer()) {
+        space_to_allocate_ = OLD_SPACE;
+        return AllocationResult::Retry(OLD_SPACE);
+      } else {
+        allocation = buffer_.AllocateRawAligned(size_in_bytes, alignment);
+        if (allocation.IsRetry()) {
+          space_to_allocate_ = OLD_SPACE;
+          return AllocationResult::Retry(OLD_SPACE);
+        }
+      }
+    }
+    return allocation;
+  }
+
+  LocalAllocationBuffer buffer_;
+  AllocationSpace space_to_allocate_;
 };
 
 
-class MarkCompactCollector::EvacuateOldSpaceVisitor
+class MarkCompactCollector::EvacuateOldSpaceVisitor final
     : public MarkCompactCollector::EvacuateVisitorBase {
  public:
   EvacuateOldSpaceVisitor(Heap* heap,
