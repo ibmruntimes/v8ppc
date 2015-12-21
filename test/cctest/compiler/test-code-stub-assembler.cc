@@ -41,6 +41,17 @@ TEST(SimpleIntPtrReturn) {
   Isolate* isolate(CcTest::InitIsolateOnce());
   VoidDescriptor descriptor(isolate);
   CodeStubAssemblerTester m(isolate, descriptor);
+#if defined(V8_PPC_TAGGING_OPT)
+  // Hack: force alignment -- integer pointer must masquerade as Smi.
+  intptr_t buffer;
+  intptr_t testPtr = reinterpret_cast<intptr_t>(&buffer);
+  CHECK(!(testPtr & kSmiTagMask));
+  m.Return(m.IntPtrConstant(testPtr));
+  Handle<Code> code = m.GenerateCode();
+  FunctionTester ft(descriptor, code);
+  MaybeHandle<Object> result = ft.Call();
+  CHECK_EQ(testPtr, reinterpret_cast<intptr_t>(*result.ToHandleChecked()));
+#else
   int test;
   m.Return(m.IntPtrConstant(reinterpret_cast<intptr_t>(&test)));
   Handle<Code> code = m.GenerateCode();
@@ -48,6 +59,7 @@ TEST(SimpleIntPtrReturn) {
   MaybeHandle<Object> result = ft.Call();
   CHECK_EQ(reinterpret_cast<intptr_t>(&test),
            reinterpret_cast<intptr_t>(*result.ToHandleChecked()));
+#endif
 }
 
 

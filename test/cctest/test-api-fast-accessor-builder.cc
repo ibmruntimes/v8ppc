@@ -125,6 +125,9 @@ TEST(FastAccessorOrReturnNull) {
   LocalContext env;
   v8::Isolate* isolate = env->GetIsolate();
   v8::HandleScope scope(isolate);
+#if defined(V8_PPC_TAGGING_OPT)
+  int flag = 0;
+#endif
 
   v8::Local<v8::ObjectTemplate> foo = v8::ObjectTemplate::New(isolate);
   foo->SetInternalFieldCount(2);
@@ -139,10 +142,20 @@ TEST(FastAccessorOrReturnNull) {
                                  isolate, NativePropertyAccessor, builder));
   }
   {
+#if defined(V8_PPC_TAGGING_OPT)
+    // accessor "maskcheck": Return null if field 1 has a particular bit set.
+#else
     // accessor "maskcheck": Return null if field 1 has 3rd bit set.
+#endif
     auto builder = v8::experimental::FastAccessorBuilder::New(isolate);
     auto val = builder->LoadInternalField(builder->GetReceiver(), 1);
+#if defined(V8_PPC_TAGGING_OPT)
+    // Choose a bit that is outside of the Smi tag mask.
+    flag = 1 << (v8::internal::kSmiTagSize + 2);
+    builder->CheckFlagSetOrReturnNull(val, flag);
+#else
     builder->CheckFlagSetOrReturnNull(val, 0x4);
+#endif
     builder->ReturnValue(builder->IntegerConstant(42));
     foo->SetAccessorProperty(v8_str("maskcheck"),
                              v8::FunctionTemplate::NewWithFastHandler(
@@ -164,9 +177,19 @@ TEST(FastAccessorOrReturnNull) {
   // CheckFlagSetOrReturnNull:
   CompileRun(
       "function maskcheck() { return obj.maskcheck }; " WARMUP("maskcheck()"));
+#if defined(V8_PPC_TAGGING_OPT)
+  int set = (0xff << v8::internal::kSmiTagSize) | flag;
+  int clear = set & ~flag;
+  obj->SetAlignedPointerInInternalField(1, reinterpret_cast<void*>(clear));
+#else
   obj->SetAlignedPointerInInternalField(1, reinterpret_cast<void*>(0xf0));
+#endif
   ExpectInt32("maskcheck()", 42);
+#if defined(V8_PPC_TAGGING_OPT)
+  obj->SetAlignedPointerInInternalField(1, reinterpret_cast<void*>(set));
+#else
   obj->SetAlignedPointerInInternalField(1, reinterpret_cast<void*>(0xfe));
+#endif
   ExpectNull("maskcheck()");
 }
 
