@@ -38,73 +38,6 @@ RUNTIME_FUNCTION(Runtime_FunctionSetName) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_FunctionNameShouldPrintAsAnonymous) {
-  SealHandleScope shs(isolate);
-  DCHECK(args.length() == 1);
-  CONVERT_ARG_CHECKED(JSFunction, f, 0);
-  return isolate->heap()->ToBoolean(
-      f->shared()->name_should_print_as_anonymous());
-}
-
-
-RUNTIME_FUNCTION(Runtime_CompleteFunctionConstruction) {
-  SealHandleScope shs(isolate);
-  DCHECK(args.length() == 3);
-  CONVERT_ARG_HANDLE_CHECKED(JSFunction, func, 0);
-  CONVERT_ARG_HANDLE_CHECKED(JSFunction, constructor, 1);
-  CONVERT_ARG_HANDLE_CHECKED(Object, unchecked_new_target, 2);
-  func->shared()->set_name_should_print_as_anonymous(true);
-
-  if (unchecked_new_target->IsUndefined()) return *func;
-
-  Handle<JSReceiver> new_target =
-      Handle<JSReceiver>::cast(unchecked_new_target);
-  // If new.target is equal to |constructor| then the function |func| created
-  // is already correctly setup and nothing else should be done here.
-  // But if new.target is not equal to |constructor| then we are have a
-  // Function builtin subclassing case and therefore the function |func|
-  // has wrong initial map. To fix that we create a new function object with
-  // correct initial map.
-  if (*constructor == *new_target) return *func;
-
-  // Create a new JSFunction object with correct initial map.
-  HandleScope handle_scope(isolate);
-
-  DCHECK(constructor->has_initial_map());
-  Handle<Map> initial_map;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, initial_map,
-      JSFunction::GetDerivedMap(isolate, constructor, new_target));
-
-  Handle<SharedFunctionInfo> shared_info(func->shared(), isolate);
-  Handle<Map> map = Map::AsLanguageMode(
-      initial_map, shared_info->language_mode(), shared_info->kind());
-
-  Handle<Context> context(func->context(), isolate);
-  Handle<JSFunction> result =
-      isolate->factory()->NewFunctionFromSharedFunctionInfo(
-          map, shared_info, context, NOT_TENURED);
-  DCHECK_EQ(func->IsConstructor(), result->IsConstructor());
-  return *result;
-}
-
-
-RUNTIME_FUNCTION(Runtime_FunctionIsArrow) {
-  SealHandleScope shs(isolate);
-  DCHECK(args.length() == 1);
-  CONVERT_ARG_CHECKED(JSFunction, f, 0);
-  return isolate->heap()->ToBoolean(f->shared()->is_arrow());
-}
-
-
-RUNTIME_FUNCTION(Runtime_FunctionIsConciseMethod) {
-  SealHandleScope shs(isolate);
-  DCHECK(args.length() == 1);
-  CONVERT_ARG_CHECKED(JSFunction, f, 0);
-  return isolate->heap()->ToBoolean(f->shared()->is_concise_method());
-}
-
-
 RUNTIME_FUNCTION(Runtime_FunctionRemovePrototype) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 1);
@@ -207,18 +140,6 @@ RUNTIME_FUNCTION(Runtime_FunctionIsAPIFunction) {
 
   CONVERT_ARG_CHECKED(JSFunction, f, 0);
   return isolate->heap()->ToBoolean(f->shared()->IsApiFunction());
-}
-
-
-RUNTIME_FUNCTION(Runtime_FunctionHidesSource) {
-  SealHandleScope shs(isolate);
-  DCHECK(args.length() == 1);
-  CONVERT_ARG_CHECKED(JSFunction, f, 0);
-
-  SharedFunctionInfo* shared = f->shared();
-  bool hide_source = !shared->script()->IsScript() ||
-                     Script::cast(shared->script())->hide_source();
-  return isolate->heap()->ToBoolean(hide_source);
 }
 
 
@@ -617,6 +538,14 @@ RUNTIME_FUNCTION(Runtime_ThrowStrongModeTooFewArguments) {
   DCHECK(args.length() == 0);
   THROW_NEW_ERROR_RETURN_FAILURE(isolate,
                                  NewTypeError(MessageTemplate::kStrongArity));
+}
+
+
+RUNTIME_FUNCTION(Runtime_FunctionToString) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(1, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+  return *JSFunction::ToString(function);
 }
 
 }  // namespace internal

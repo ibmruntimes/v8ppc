@@ -84,7 +84,6 @@ namespace internal {
   F(DefineClass, 5, 1)                      \
   F(FinalizeClassDefinition, 2, 1)          \
   F(DefineClassMethod, 3, 1)                \
-  F(ClassGetSourceCode, 1, 1)               \
   F(LoadFromSuper, 4, 1)                    \
   F(LoadKeyedFromSuper, 4, 1)               \
   F(StoreToSuper_Strict, 4, 1)              \
@@ -133,7 +132,6 @@ namespace internal {
   F(NotifyDeoptimized, 1, 1)              \
   F(CompileForOnStackReplacement, 1, 1)   \
   F(TryInstallOptimizedCode, 1, 1)        \
-  F(CompileString, 2, 1)                  \
   F(ResolvePossiblyDirectEval, 5, 1)
 
 
@@ -232,36 +230,32 @@ namespace internal {
   F(InterpreterForInPrepare, 1, 1)
 
 
-#define FOR_EACH_INTRINSIC_FUNCTION(F)        \
-  F(FunctionGetName, 1, 1)                    \
-  F(FunctionSetName, 2, 1)                    \
-  F(FunctionNameShouldPrintAsAnonymous, 1, 1) \
-  F(CompleteFunctionConstruction, 3, 1)       \
-  F(FunctionIsArrow, 1, 1)                    \
-  F(FunctionIsConciseMethod, 1, 1)            \
-  F(FunctionRemovePrototype, 1, 1)            \
-  F(FunctionGetScript, 1, 1)                  \
-  F(FunctionGetSourceCode, 1, 1)              \
-  F(FunctionGetScriptSourcePosition, 1, 1)    \
-  F(FunctionGetPositionForOffset, 2, 1)       \
-  F(FunctionSetInstanceClassName, 2, 1)       \
-  F(FunctionSetLength, 2, 1)                  \
-  F(FunctionSetPrototype, 2, 1)               \
-  F(FunctionIsAPIFunction, 1, 1)              \
-  F(FunctionHidesSource, 1, 1)                \
-  F(SetCode, 2, 1)                            \
-  F(SetNativeFlag, 1, 1)                      \
-  F(ThrowStrongModeTooFewArguments, 0, 1)     \
-  F(IsConstructor, 1, 1)                      \
-  F(SetForceInlineFlag, 1, 1)                 \
-  F(FunctionBindArguments, 5, 1)              \
-  F(BoundFunctionGetBindings, 1, 1)           \
-  F(NewObjectFromBound, 1, 1)                 \
-  F(Call, -1 /* >= 2 */, 1)                   \
-  F(TailCall, -1 /* >= 2 */, 1)               \
-  F(Apply, 5, 1)                              \
-  F(ConvertReceiver, 1, 1)                    \
-  F(IsFunction, 1, 1)
+#define FOR_EACH_INTRINSIC_FUNCTION(F)     \
+  F(FunctionGetName, 1, 1)                 \
+  F(FunctionSetName, 2, 1)                 \
+  F(FunctionRemovePrototype, 1, 1)         \
+  F(FunctionGetScript, 1, 1)               \
+  F(FunctionGetSourceCode, 1, 1)           \
+  F(FunctionGetScriptSourcePosition, 1, 1) \
+  F(FunctionGetPositionForOffset, 2, 1)    \
+  F(FunctionSetInstanceClassName, 2, 1)    \
+  F(FunctionSetLength, 2, 1)               \
+  F(FunctionSetPrototype, 2, 1)            \
+  F(FunctionIsAPIFunction, 1, 1)           \
+  F(SetCode, 2, 1)                         \
+  F(SetNativeFlag, 1, 1)                   \
+  F(ThrowStrongModeTooFewArguments, 0, 1)  \
+  F(IsConstructor, 1, 1)                   \
+  F(SetForceInlineFlag, 1, 1)              \
+  F(FunctionBindArguments, 5, 1)           \
+  F(BoundFunctionGetBindings, 1, 1)        \
+  F(NewObjectFromBound, 1, 1)              \
+  F(Call, -1 /* >= 2 */, 1)                \
+  F(TailCall, -1 /* >= 2 */, 1)            \
+  F(Apply, 5, 1)                           \
+  F(ConvertReceiver, 1, 1)                 \
+  F(IsFunction, 1, 1)                      \
+  F(FunctionToString, 1, 1)
 
 
 #define FOR_EACH_INTRINSIC_GENERATOR(F) \
@@ -274,7 +268,6 @@ namespace internal {
   F(GeneratorGetReceiver, 1, 1)         \
   F(GeneratorGetContinuation, 1, 1)     \
   F(GeneratorGetSourcePosition, 1, 1)   \
-  F(FunctionIsGenerator, 1, 1)          \
   F(GeneratorNext, 2, 1)                \
   F(GeneratorThrow, 2, 1)
 
@@ -351,7 +344,8 @@ namespace internal {
   F(IncrementStatsCounter, 1, 1)              \
   F(ThrowConstructedNonConstructable, 1, 1)   \
   F(ThrowCalledNonCallable, 1, 1)             \
-  F(CreateListFromArrayLike, 1, 1)
+  F(CreateListFromArrayLike, 1, 1)            \
+  F(IncrementUseCounter, 1, 1)
 
 
 #define FOR_EACH_INTRINSIC_JSON(F) \
@@ -543,8 +537,9 @@ namespace internal {
   F(IsJSProxy, 1, 1)                    \
   F(JSProxyCall, -1 /* >= 2 */, 1)      \
   F(JSProxyConstruct, -1 /* >= 3 */, 1) \
-  F(GetHandler, 1, 1)                   \
-  F(RevokeProxy, 1, 1)
+  F(JSProxyGetTarget, 1, 1)             \
+  F(JSProxyGetHandler, 1, 1)            \
+  F(JSProxyRevoke, 1, 1)
 
 #define FOR_EACH_INTRINSIC_REGEXP(F)           \
   F(StringReplaceGlobalRegExpWithString, 4, 1) \

@@ -198,7 +198,10 @@ void InstructionSelector::VisitLoad(Node* node) {
       mode = kInt16Imm_4ByteAligned;
       break;
 #endif
-    default:
+#if !V8_TARGET_ARCH_PPC64
+    case MachineRepresentation::kWord64:
+#endif
+    case MachineRepresentation::kNone:
       UNREACHABLE();
       return;
   }
@@ -1611,9 +1614,9 @@ void InstructionSelector::VisitFloat64LessThanOrEqual(Node* node) {
 }
 
 
-void InstructionSelector::EmitPrepareArguments(NodeVector* arguments,
-                                               const CallDescriptor* descriptor,
-                                               Node* node) {
+void InstructionSelector::EmitPrepareArguments(
+    ZoneVector<PushParameter>* arguments, const CallDescriptor* descriptor,
+    Node* node) {
   PPCOperandGenerator g(this);
 
   // Prepare for C function call.
@@ -1624,8 +1627,8 @@ void InstructionSelector::EmitPrepareArguments(NodeVector* arguments,
 
     // Poke any stack arguments.
     int slot = kStackFrameExtraParamSlot;
-    for (Node* node : (*arguments)) {
-      Emit(kPPC_StoreToStackSlot, g.NoOutput(), g.UseRegister(node),
+    for (PushParameter input : (*arguments)) {
+      Emit(kPPC_StoreToStackSlot, g.NoOutput(), g.UseRegister(input.node()),
            g.TempImmediate(slot));
       ++slot;
     }
@@ -1633,15 +1636,15 @@ void InstructionSelector::EmitPrepareArguments(NodeVector* arguments,
     // Push any stack arguments.
     int num_slots = static_cast<int>(descriptor->StackParameterCount());
     int slot = 0;
-    for (Node* input : (*arguments)) {
+    for (PushParameter input : (*arguments)) {
       if (slot == 0) {
-        DCHECK(input);
-        Emit(kPPC_PushFrame, g.NoOutput(), g.UseRegister(input),
+        DCHECK(input.node());
+        Emit(kPPC_PushFrame, g.NoOutput(), g.UseRegister(input.node()),
              g.TempImmediate(num_slots));
       } else {
         // Skip any alignment holes in pushed nodes.
-        if (input) {
-          Emit(kPPC_StoreToStackSlot, g.NoOutput(), g.UseRegister(input),
+        if (input.node()) {
+          Emit(kPPC_StoreToStackSlot, g.NoOutput(), g.UseRegister(input.node()),
                g.TempImmediate(slot));
         }
       }

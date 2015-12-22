@@ -51,49 +51,56 @@ inline bool operator&(BuiltinExtraArguments lhs, BuiltinExtraArguments rhs) {
 
 
 // Define list of builtins implemented in C++.
-#define BUILTIN_LIST_C(V)                       \
-  V(Illegal, kNone)                             \
-                                                \
-  V(EmptyFunction, kNone)                       \
-                                                \
-  V(ArrayConcat, kNone)                         \
-  V(ArrayIsArray, kNone)                        \
-  V(ArrayPop, kNone)                            \
-  V(ArrayPush, kNone)                           \
-  V(ArrayShift, kNone)                          \
-  V(ArraySlice, kNone)                          \
-  V(ArraySplice, kNone)                         \
-  V(ArrayUnshift, kNone)                        \
-                                                \
-  V(DateToPrimitive, kNone)                     \
-                                                \
-  V(ObjectAssign, kNone)                        \
-  V(ObjectProtoToString, kNone)                 \
-                                                \
-  V(ProxyConstructor, kNone)                    \
-  V(ProxyConstructor_ConstructStub, kTarget)    \
-                                                \
-  V(ReflectDefineProperty, kNone)               \
-  V(ReflectDeleteProperty, kNone)               \
-  V(ReflectGet, kNone)                          \
-  V(ReflectGetOwnPropertyDescriptor, kNone)     \
-  V(ReflectGetPrototypeOf, kNone)               \
-  V(ReflectHas, kNone)                          \
-  V(ReflectIsExtensible, kNone)                 \
-  V(ReflectOwnKeys, kNone)                      \
-  V(ReflectPreventExtensions, kNone)            \
-  V(ReflectSet, kNone)                          \
-  V(ReflectSetPrototypeOf, kNone)               \
-                                                \
-  V(SymbolConstructor, kNone)                   \
-  V(SymbolConstructor_ConstructStub, kTarget)   \
-                                                \
-  V(HandleApiCall, kTarget)                     \
-  V(HandleApiCallConstruct, kTarget)            \
-  V(HandleApiCallAsFunction, kNone)             \
-  V(HandleApiCallAsConstructor, kNone)          \
-                                                \
-  V(RestrictedFunctionPropertiesThrower, kNone) \
+#define BUILTIN_LIST_C(V)                              \
+  V(Illegal, kNone)                                    \
+                                                       \
+  V(EmptyFunction, kNone)                              \
+                                                       \
+  V(ArrayConcat, kNone)                                \
+  V(ArrayIsArray, kNone)                               \
+  V(ArrayPop, kNone)                                   \
+  V(ArrayPush, kNone)                                  \
+  V(ArrayShift, kNone)                                 \
+  V(ArraySlice, kNone)                                 \
+  V(ArraySplice, kNone)                                \
+  V(ArrayUnshift, kNone)                               \
+                                                       \
+  V(DateToPrimitive, kNone)                            \
+                                                       \
+  V(FunctionConstructor, kTargetAndNewTarget)          \
+  V(FunctionPrototypeToString, kNone)                  \
+                                                       \
+  V(GeneratorFunctionConstructor, kTargetAndNewTarget) \
+                                                       \
+  V(GlobalEval, kTarget)                               \
+                                                       \
+  V(ObjectAssign, kNone)                               \
+  V(ObjectProtoToString, kNone)                        \
+                                                       \
+  V(ProxyConstructor, kNone)                           \
+  V(ProxyConstructor_ConstructStub, kTarget)           \
+                                                       \
+  V(ReflectDefineProperty, kNone)                      \
+  V(ReflectDeleteProperty, kNone)                      \
+  V(ReflectGet, kNone)                                 \
+  V(ReflectGetOwnPropertyDescriptor, kNone)            \
+  V(ReflectGetPrototypeOf, kNone)                      \
+  V(ReflectHas, kNone)                                 \
+  V(ReflectIsExtensible, kNone)                        \
+  V(ReflectOwnKeys, kNone)                             \
+  V(ReflectPreventExtensions, kNone)                   \
+  V(ReflectSet, kNone)                                 \
+  V(ReflectSetPrototypeOf, kNone)                      \
+                                                       \
+  V(SymbolConstructor, kNone)                          \
+  V(SymbolConstructor_ConstructStub, kTarget)          \
+                                                       \
+  V(HandleApiCall, kTarget)                            \
+  V(HandleApiCallConstruct, kTarget)                   \
+  V(HandleApiCallAsFunction, kNone)                    \
+  V(HandleApiCallAsConstructor, kNone)                 \
+                                                       \
+  V(RestrictedFunctionPropertiesThrower, kNone)        \
   V(RestrictedStrictArgumentsPropertiesThrower, kNone)
 
 // Define list of builtins implemented in assembly.
@@ -168,8 +175,8 @@ inline bool operator&(BuiltinExtraArguments lhs, BuiltinExtraArguments rhs) {
   V(KeyedStoreIC_Megamorphic_Strict, KEYED_STORE_IC, MEGAMORPHIC,              \
     StoreICState::kStrictModeState)                                            \
                                                                                \
-  V(FunctionCall, BUILTIN, UNINITIALIZED, kNoExtraICState)                     \
-  V(FunctionApply, BUILTIN, UNINITIALIZED, kNoExtraICState)                    \
+  V(FunctionPrototypeApply, BUILTIN, UNINITIALIZED, kNoExtraICState)           \
+  V(FunctionPrototypeCall, BUILTIN, UNINITIALIZED, kNoExtraICState)            \
   V(ReflectApply, BUILTIN, UNINITIALIZED, kNoExtraICState)                     \
   V(ReflectConstruct, BUILTIN, UNINITIALIZED, kNoExtraICState)                 \
                                                                                \
@@ -357,8 +364,8 @@ class Builtins {
 
   static void Generate_HandleFastApiCall(MacroAssembler* masm);
 
-  static void Generate_FunctionCall(MacroAssembler* masm);
-  static void Generate_FunctionApply(MacroAssembler* masm);
+  static void Generate_FunctionPrototypeApply(MacroAssembler* masm);
+  static void Generate_FunctionPrototypeCall(MacroAssembler* masm);
   static void Generate_ReflectApply(MacroAssembler* masm);
   static void Generate_ReflectConstruct(MacroAssembler* masm);
 

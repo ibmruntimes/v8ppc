@@ -1117,11 +1117,13 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
   {  // --- F u n c t i o n ---
     Handle<JSFunction> function_function =
         InstallFunction(global, "Function", JS_FUNCTION_TYPE, JSFunction::kSize,
-                        empty_function, Builtins::kIllegal);
+                        empty_function, Builtins::kFunctionConstructor);
     function_function->set_prototype_or_initial_map(
         *sloppy_function_map_writable_prototype_);
+    function_function->shared()->DontAdaptArguments();
     function_function->shared()->set_construct_stub(
-        *isolate->builtins()->JSBuiltinsConstructStub());
+        *isolate->builtins()->FunctionConstructor());
+    function_function->shared()->set_length(1);
     InstallWithIntrinsicDefaultProto(isolate, function_function,
                                      Context::FUNCTION_FUNCTION_INDEX);
 
@@ -1909,14 +1911,16 @@ void Bootstrapper::ExportFromRuntime(Isolate* isolate,
         generator_function_prototype, NONE);
 
     static const bool kUseStrictFunctionMap = true;
-    Handle<JSFunction> generator_function_function =
-        InstallFunction(container, "GeneratorFunction", JS_FUNCTION_TYPE,
-                        JSFunction::kSize, generator_function_prototype,
-                        Builtins::kIllegal, kUseStrictFunctionMap);
+    Handle<JSFunction> generator_function_function = InstallFunction(
+        container, "GeneratorFunction", JS_FUNCTION_TYPE, JSFunction::kSize,
+        generator_function_prototype, Builtins::kGeneratorFunctionConstructor,
+        kUseStrictFunctionMap);
     generator_function_function->set_prototype_or_initial_map(
         native_context->sloppy_generator_function_map());
+    generator_function_function->shared()->DontAdaptArguments();
     generator_function_function->shared()->set_construct_stub(
-        *isolate->builtins()->JSBuiltinsConstructStub());
+        *isolate->builtins()->GeneratorFunctionConstructor());
+    generator_function_function->shared()->set_length(1);
     InstallWithIntrinsicDefaultProto(
         isolate, generator_function_function,
         Context::GENERATOR_FUNCTION_FUNCTION_INDEX);
@@ -2456,6 +2460,14 @@ bool Genesis::InstallNatives(ContextType context_type) {
   native_context()->set_string_function_prototype_map(
       HeapObject::cast(string_function->initial_map()->prototype())->map());
 
+  // Install Global.eval.
+  {
+    Handle<JSFunction> eval = SimpleInstallFunction(
+        handle(native_context()->global_object()), factory()->eval_string(),
+        Builtins::kGlobalEval, 1, true);
+    native_context()->set_global_eval_fun(*eval);
+  }
+
   // Install Date.prototype[@@toPrimitive].
   {
     Handle<String> key = factory()->Date_string();
@@ -2513,7 +2525,7 @@ bool Genesis::InstallNatives(ContextType context_type) {
     // Set the lengths for the functions to satisfy ECMA-262.
     concat->shared()->set_length(1);
   }
-  // Install Function.prototype.call and apply.
+  // Install Function.prototype.apply, call, and toString.
   {
     Handle<String> key = factory()->Function_string();
     Handle<JSFunction> function =
@@ -2522,24 +2534,13 @@ bool Genesis::InstallNatives(ContextType context_type) {
     Handle<JSObject> proto =
         Handle<JSObject>(JSObject::cast(function->instance_prototype()));
 
-    // Install the call and the apply functions.
-    Handle<JSFunction> call =
-        InstallFunction(proto, "call", JS_OBJECT_TYPE, JSObject::kHeaderSize,
-                        MaybeHandle<JSObject>(), Builtins::kFunctionCall);
-    Handle<JSFunction> apply =
-        InstallFunction(proto, "apply", JS_OBJECT_TYPE, JSObject::kHeaderSize,
-                        MaybeHandle<JSObject>(), Builtins::kFunctionApply);
-
-    // Make sure that Function.prototype.call appears to be compiled.
-    // The code will never be called, but inline caching for call will
-    // only work if it appears to be compiled.
-    apply->shared()->DontAdaptArguments();
-    call->shared()->DontAdaptArguments();
-    DCHECK(call->is_compiled());
-
-    // Set the lengths for the functions to satisfy ECMA-262.
-    apply->shared()->set_length(2);
-    call->shared()->set_length(1);
+    // Install the apply, call and toString functions.
+    SimpleInstallFunction(proto, factory()->apply_string(),
+                          Builtins::kFunctionPrototypeApply, 2, false);
+    SimpleInstallFunction(proto, factory()->call_string(),
+                          Builtins::kFunctionPrototypeCall, 1, false);
+    SimpleInstallFunction(proto, factory()->toString_string(),
+                          Builtins::kFunctionPrototypeToString, 0, false);
   }
 
   // Set up the Promise constructor.

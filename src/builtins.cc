@@ -19,6 +19,7 @@
 #include "src/profiler/cpu-profiler.h"
 #include "src/property-descriptor.h"
 #include "src/prototype.h"
+#include "src/string-builder.h"
 #include "src/vm-state-inl.h"
 
 namespace v8 {
@@ -1484,6 +1485,74 @@ BUILTIN(ObjectAssign) {
 }
 
 
+namespace {
+
+bool CodeGenerationFromStringsAllowed(Isolate* isolate,
+                                      Handle<Context> context) {
+  DCHECK(context->allow_code_gen_from_strings()->IsFalse());
+  // Check with callback if set.
+  AllowCodeGenerationFromStringsCallback callback =
+      isolate->allow_code_gen_callback();
+  if (callback == NULL) {
+    // No callback set and code generation disallowed.
+    return false;
+  } else {
+    // Callback set. Let it decide if code generation is allowed.
+    VMState<EXTERNAL> state(isolate);
+    return callback(v8::Utils::ToLocal(context));
+  }
+}
+
+
+MaybeHandle<JSFunction> CompileString(Handle<Context> context,
+                                      Handle<String> source,
+                                      ParseRestriction restriction) {
+  Isolate* const isolate = context->GetIsolate();
+  Handle<Context> native_context(context->native_context(), isolate);
+
+  // Check if native context allows code generation from
+  // strings. Throw an exception if it doesn't.
+  if (native_context->allow_code_gen_from_strings()->IsFalse() &&
+      !CodeGenerationFromStringsAllowed(isolate, native_context)) {
+    Handle<Object> error_message =
+        native_context->ErrorMessageForCodeGenerationFromStrings();
+    THROW_NEW_ERROR(isolate, NewEvalError(MessageTemplate::kCodeGenFromStrings,
+                                          error_message),
+                    JSFunction);
+  }
+
+  // Compile source string in the native context.
+  Handle<SharedFunctionInfo> outer_info(native_context->closure()->shared(),
+                                        isolate);
+  return Compiler::GetFunctionFromEval(source, outer_info, native_context,
+                                       SLOPPY, restriction,
+                                       RelocInfo::kNoPosition);
+}
+
+}  // namespace
+
+
+// ES6 section 18.2.1 eval (x)
+BUILTIN(GlobalEval) {
+  HandleScope scope(isolate);
+  DCHECK_LE(1, args.length());
+  Handle<Object> x = args.at<Object>(1);
+  Handle<JSFunction> target = args.target();
+  Handle<JSObject> target_global_proxy(target->global_proxy(), isolate);
+  if (!x->IsString()) return *x;
+  Handle<JSFunction> function;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, function,
+      CompileString(handle(target->native_context(), isolate),
+                    Handle<String>::cast(x), NO_PARSE_RESTRICTION));
+  Handle<Object> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result,
+      Execution::Call(isolate, function, target_global_proxy, 0, nullptr));
+  return *result;
+}
+
+
 // ES6 section 26.1.3 Reflect.defineProperty
 BUILTIN(ReflectDefineProperty) {
   HandleScope scope(isolate);
@@ -1777,6 +1846,156 @@ BUILTIN(DateToPrimitive) {
 }
 
 
+namespace {
+
+// ES6 section 19.2.1.1.1 CreateDynamicFunction
+MaybeHandle<JSFunction> CreateDynamicFunction(
+    Isolate* isolate,
+    BuiltinArguments<BuiltinExtraArguments::kTargetAndNewTarget> args,
+    const char* token) {
+  // Compute number of arguments, ignoring the receiver.
+  DCHECK_LE(1, args.length());
+  int const argc = args.length() - 1;
+
+  // Build the source string.
+  Handle<String> source;
+  {
+    IncrementalStringBuilder builder(isolate);
+    builder.AppendCharacter('(');
+    builder.AppendCString(token);
+    builder.AppendCharacter('(');
+    bool parenthesis_in_arg_string = false;
+    if (argc > 1) {
+      for (int i = 1; i < argc; ++i) {
+        if (i > 1) builder.AppendCharacter(',');
+        Handle<String> param;
+        ASSIGN_RETURN_ON_EXCEPTION(
+            isolate, param, Object::ToString(isolate, args.at<Object>(i)),
+            JSFunction);
+        param = String::Flatten(param);
+        builder.AppendString(param);
+        // If the formal parameters string include ) - an illegal
+        // character - it may make the combined function expression
+        // compile. We avoid this problem by checking for this early on.
+        DisallowHeapAllocation no_gc;  // Ensure vectors stay valid.
+        String::FlatContent param_content = param->GetFlatContent();
+        for (int i = 0, length = param->length(); i < length; ++i) {
+          if (param_content.Get(i) == ')') {
+            parenthesis_in_arg_string = true;
+            break;
+          }
+        }
+      }
+      // If the formal parameters include an unbalanced block comment, the
+      // function must be rejected. Since JavaScript does not allow nested
+      // comments we can include a trailing block comment to catch this.
+      builder.AppendCString("\n/**/");
+    }
+    builder.AppendCString(") {\n");
+    if (argc > 0) {
+      Handle<String> body;
+      ASSIGN_RETURN_ON_EXCEPTION(
+          isolate, body, Object::ToString(isolate, args.at<Object>(argc)),
+          JSFunction);
+      builder.AppendString(body);
+    }
+    builder.AppendCString("\n})");
+    ASSIGN_RETURN_ON_EXCEPTION(isolate, source, builder.Finish(), JSFunction);
+
+    // The SyntaxError must be thrown after all the (observable) ToString
+    // conversions are done.
+    if (parenthesis_in_arg_string) {
+      THROW_NEW_ERROR(isolate,
+                      NewSyntaxError(MessageTemplate::kParenthesisInArgString),
+                      JSFunction);
+    }
+  }
+
+  // Compile the string in the constructor and not a helper so that errors to
+  // come from here.
+  Handle<JSFunction> target = args.target();
+  Handle<JSObject> target_global_proxy(target->global_proxy(), isolate);
+  Handle<JSFunction> function;
+  {
+    ASSIGN_RETURN_ON_EXCEPTION(
+        isolate, function,
+        CompileString(handle(target->native_context(), isolate), source,
+                      ONLY_SINGLE_FUNCTION_LITERAL),
+        JSFunction);
+    Handle<Object> result;
+    ASSIGN_RETURN_ON_EXCEPTION(
+        isolate, result,
+        Execution::Call(isolate, function, target_global_proxy, 0, nullptr),
+        JSFunction);
+    function = Handle<JSFunction>::cast(result);
+    function->shared()->set_name_should_print_as_anonymous(true);
+  }
+
+  // If new.target is equal to target then the function created
+  // is already correctly setup and nothing else should be done
+  // here. But if new.target is not equal to target then we are
+  // have a Function builtin subclassing case and therefore the
+  // function has wrong initial map. To fix that we create a new
+  // function object with correct initial map.
+  Handle<Object> unchecked_new_target = args.new_target();
+  if (!unchecked_new_target->IsUndefined() &&
+      !unchecked_new_target.is_identical_to(target)) {
+    Handle<JSReceiver> new_target =
+        Handle<JSReceiver>::cast(unchecked_new_target);
+    Handle<Map> initial_map;
+    ASSIGN_RETURN_ON_EXCEPTION(
+        isolate, initial_map,
+        JSFunction::GetDerivedMap(isolate, target, new_target), JSFunction);
+
+    Handle<SharedFunctionInfo> shared_info(function->shared(), isolate);
+    Handle<Map> map = Map::AsLanguageMode(
+        initial_map, shared_info->language_mode(), shared_info->kind());
+
+    Handle<Context> context(function->context(), isolate);
+    function = isolate->factory()->NewFunctionFromSharedFunctionInfo(
+        map, shared_info, context, NOT_TENURED);
+  }
+  return function;
+}
+
+}  // namespace
+
+
+// ES6 section 19.2.1.1 Function ( p1, p2, ... , pn, body )
+BUILTIN(FunctionConstructor) {
+  HandleScope scope(isolate);
+  Handle<JSFunction> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result, CreateDynamicFunction(isolate, args, "function"));
+  return *result;
+}
+
+
+// ES6 section 19.2.3.5 Function.prototype.toString ( )
+BUILTIN(FunctionPrototypeToString) {
+  HandleScope scope(isolate);
+  Handle<Object> receiver = args.receiver();
+
+  if (receiver->IsJSFunction()) {
+    return *JSFunction::ToString(Handle<JSFunction>::cast(receiver));
+  }
+  THROW_NEW_ERROR_RETURN_FAILURE(
+      isolate, NewTypeError(MessageTemplate::kNotGeneric,
+                            isolate->factory()->NewStringFromAsciiChecked(
+                                "Function.prototype.toString")));
+}
+
+
+// ES6 section 25.2.1.1 GeneratorFunction (p1, p2, ... , pn, body)
+BUILTIN(GeneratorFunctionConstructor) {
+  HandleScope scope(isolate);
+  Handle<JSFunction> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result, CreateDynamicFunction(isolate, args, "function*"));
+  return *result;
+}
+
+
 // ES6 section 19.4.1.1 Symbol ( [ description ] ) for the [[Call]] case.
 BUILTIN(SymbolConstructor) {
   HandleScope scope(isolate);
@@ -1817,31 +2036,6 @@ BUILTIN(ObjectProtoToString) {
 
 namespace {
 
-// ES6 section 9.5.15 ProxyCreate (target, handler)
-MaybeHandle<JSProxy> ProxyCreate(Isolate* isolate, Handle<Object> target,
-                                 Handle<Object> handler) {
-  if (!target->IsJSReceiver()) {
-    THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kProxyNonObject),
-                    JSProxy);
-  }
-  if (target->IsJSProxy() && JSProxy::cast(*target)->IsRevoked()) {
-    THROW_NEW_ERROR(isolate,
-                    NewTypeError(MessageTemplate::kProxyHandlerOrTargetRevoked),
-                    JSProxy);
-  }
-  if (!handler->IsJSReceiver()) {
-    THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kProxyNonObject),
-                    JSProxy);
-  }
-  if (handler->IsJSProxy() && JSProxy::cast(*handler)->IsRevoked()) {
-    THROW_NEW_ERROR(isolate,
-                    NewTypeError(MessageTemplate::kProxyHandlerOrTargetRevoked),
-                    JSProxy);
-  }
-  return isolate->factory()->NewJSProxy(Handle<JSReceiver>::cast(target),
-                                        Handle<JSReceiver>::cast(handler));
-}
-
 }  // namespace
 
 
@@ -1876,7 +2070,7 @@ BUILTIN(ProxyConstructor_ConstructStub) {
   isolate->set_context(args.target()->context());
   Handle<JSProxy> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
-                                     ProxyCreate(isolate, target, handler));
+                                     JSProxy::New(isolate, target, handler));
   return *result;
 }
 
