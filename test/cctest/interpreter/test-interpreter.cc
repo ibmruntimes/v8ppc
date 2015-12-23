@@ -774,9 +774,8 @@ TEST(InterpreterLoadNamedProperty) {
   builder.set_locals_count(0);
   builder.set_context_count(0);
   builder.set_parameter_count(1);
-  size_t name_index = builder.GetConstantPoolEntry(name);
-  builder.LoadNamedProperty(builder.Parameter(0), name_index,
-                            vector->GetIndex(slot), i::SLOPPY)
+  builder.LoadNamedProperty(builder.Parameter(0), name, vector->GetIndex(slot),
+                            i::SLOPPY)
       .Return();
   Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -876,10 +875,9 @@ TEST(InterpreterStoreNamedProperty) {
   builder.set_locals_count(0);
   builder.set_context_count(0);
   builder.set_parameter_count(1);
-  size_t name_index = builder.GetConstantPoolEntry(name);
   builder.LoadLiteral(Smi::FromInt(999))
-      .StoreNamedProperty(builder.Parameter(0), name_index,
-                          vector->GetIndex(slot), i::STRICT)
+      .StoreNamedProperty(builder.Parameter(0), name, vector->GetIndex(slot),
+                          i::STRICT)
       .Return();
   Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -991,9 +989,7 @@ TEST(InterpreterCall) {
     builder.set_locals_count(1);
     builder.set_context_count(0);
     builder.set_parameter_count(1);
-    size_t name_index = builder.GetConstantPoolEntry(name);
-    builder.LoadNamedProperty(builder.Parameter(0), name_index, slot_index,
-                              i::SLOPPY)
+    builder.LoadNamedProperty(builder.Parameter(0), name, slot_index, i::SLOPPY)
         .StoreAccumulatorInRegister(Register(0))
         .Call(Register(0), builder.Parameter(0), 0, 0)
         .Return();
@@ -1014,9 +1010,7 @@ TEST(InterpreterCall) {
     builder.set_locals_count(1);
     builder.set_context_count(0);
     builder.set_parameter_count(1);
-    size_t name_index = builder.GetConstantPoolEntry(name);
-    builder.LoadNamedProperty(builder.Parameter(0), name_index, slot_index,
-                              i::SLOPPY)
+    builder.LoadNamedProperty(builder.Parameter(0), name, slot_index, i::SLOPPY)
         .StoreAccumulatorInRegister(Register(0))
         .Call(Register(0), builder.Parameter(0), 0, 0)
         .Return();
@@ -1040,9 +1034,7 @@ TEST(InterpreterCall) {
     builder.set_locals_count(4);
     builder.set_context_count(0);
     builder.set_parameter_count(1);
-    size_t name_index = builder.GetConstantPoolEntry(name);
-    builder.LoadNamedProperty(builder.Parameter(0), name_index, slot_index,
-                              i::SLOPPY)
+    builder.LoadNamedProperty(builder.Parameter(0), name, slot_index, i::SLOPPY)
         .StoreAccumulatorInRegister(Register(0))
         .LoadAccumulatorWithRegister(builder.Parameter(0))
         .StoreAccumulatorInRegister(Register(1))
@@ -1071,9 +1063,7 @@ TEST(InterpreterCall) {
     builder.set_locals_count(12);
     builder.set_context_count(0);
     builder.set_parameter_count(1);
-    size_t name_index = builder.GetConstantPoolEntry(name);
-    builder.LoadNamedProperty(builder.Parameter(0), name_index, slot_index,
-                              i::SLOPPY)
+    builder.LoadNamedProperty(builder.Parameter(0), name, slot_index, i::SLOPPY)
         .StoreAccumulatorInRegister(Register(0))
         .LoadAccumulatorWithRegister(builder.Parameter(0))
         .StoreAccumulatorInRegister(Register(1))
@@ -3160,6 +3150,47 @@ TEST(TemporaryRegisterAllocation) {
 
     Handle<i::Object> return_value = callable().ToHandleChecked();
     CHECK(return_value->SameValue(*reg_tests[i].second));
+  }
+}
+
+
+TEST(InterpreterDeleteLookupSlot) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  // TODO(mythria): Add more tests when we have support for eval/with.
+  const char* function_prologue = "var f;"
+                                  "var x = 1;"
+                                  "y = 10;"
+                                  "var obj = {val:10};"
+                                  "var z = 30;"
+                                  "function f1() {"
+                                  "  var z = 20;"
+                                  "  eval(\"function t() {";
+  const char* function_epilogue = "        }; f = t;\");"
+                                  "}"
+                                  "f1();";
+
+
+  std::pair<const char*, Handle<Object>> delete_lookup_slot[] = {
+      {"return delete x;", factory->false_value()},
+      {"return delete y;", factory->true_value()},
+      {"return delete z;", factory->false_value()},
+      {"return delete obj.val;", factory->true_value()},
+      {"'use strict'; return delete obj.val;", factory->true_value()},
+  };
+
+  for (size_t i = 0; i < arraysize(delete_lookup_slot); i++) {
+    std::string script = std::string(function_prologue) +
+                         std::string(delete_lookup_slot[i].first) +
+                         std::string(function_epilogue);
+
+    InterpreterTester tester(handles.main_isolate(), script.c_str(), "t");
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*delete_lookup_slot[i].second));
   }
 }
 

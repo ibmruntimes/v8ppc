@@ -1026,25 +1026,25 @@ TEST(PropertyStores) {
        2,
        8,
        {
-           B(LdaConstant), U8(1),                                          //
-           B(StoreICSloppy), A(1, 2), U8(0), U8(vector->GetIndex(slot1)),  //
+           B(LdaConstant), U8(0),                                          //
+           B(StoreICSloppy), A(1, 2), U8(1), U8(vector->GetIndex(slot1)),  //
            B(LdaUndefined),                                                //
            B(Return),                                                      //
        },
        2,
-       {"name", "val"}},
+       {"val", "name"}},
       {"function f(a) { a[\"key\"] = \"val\"; }\nf({key : \"test\"})",
        0,
        2,
        8,
        {
-           B(LdaConstant), U8(1),                                          //
-           B(StoreICSloppy), A(1, 2), U8(0), U8(vector->GetIndex(slot1)),  //
+           B(LdaConstant), U8(0),                                          //
+           B(StoreICSloppy), A(1, 2), U8(1), U8(vector->GetIndex(slot1)),  //
            B(LdaUndefined),                                                //
            B(Return),                                                      //
        },
        2,
-       {"key", "val"}},
+       {"val", "key"}},
       {"function f(a) { a[100] = \"val\"; }\nf({100 : \"test\"})",
        kPointerSize,
        2,
@@ -1093,13 +1093,13 @@ TEST(PropertyStores) {
        2,
        8,
        {
-           B(LdaConstant), U8(1),                                          //
-           B(StoreICStrict), A(1, 2), U8(0), U8(vector->GetIndex(slot1)),  //
+           B(LdaConstant), U8(0),                                          //
+           B(StoreICStrict), A(1, 2), U8(1), U8(vector->GetIndex(slot1)),  //
            B(LdaUndefined),                                                //
            B(Return),                                                      //
        },
        2,
-       {"name", "val"}},
+       {"val", "name"}},
       {"function f(a, b) { \"use strict\"; a[b] = \"val\"; }\n"
        "f({arg : \"test\"}, \"arg\")",
        0,
@@ -3334,15 +3334,15 @@ TEST(ObjectLiterals) {
        {
            B(CreateObjectLiteral), U8(0), U8(0), U8(deep_elements_flags),  //
            B(Star), R(0),                                                  //
-           B(CreateClosure), U8(2), U8(0),                                 //
-           B(StoreICSloppy), R(0), U8(1), U8(vector->GetIndex(slot1)),     //
+           B(CreateClosure), U8(1), U8(0),                                 //
+           B(StoreICSloppy), R(0), U8(2), U8(vector->GetIndex(slot1)),     //
            B(Ldar), R(0),                                                  //
            B(Return),                                                      //
        },
        3,
        {InstanceType::FIXED_ARRAY_TYPE,
-        InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE,
-        InstanceType::SHARED_FUNCTION_INFO_TYPE}},
+        InstanceType::SHARED_FUNCTION_INFO_TYPE,
+        InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE}},
       {"return { func(a) { return a; } };",
        1 * kPointerSize,
        1,
@@ -3350,15 +3350,15 @@ TEST(ObjectLiterals) {
        {
            B(CreateObjectLiteral), U8(0), U8(0), U8(deep_elements_flags),  //
            B(Star), R(0),                                                  //
-           B(CreateClosure), U8(2), U8(0),                                 //
-           B(StoreICSloppy), R(0), U8(1), U8(vector->GetIndex(slot1)),     //
+           B(CreateClosure), U8(1), U8(0),                                 //
+           B(StoreICSloppy), R(0), U8(2), U8(vector->GetIndex(slot1)),     //
            B(Ldar), R(0),                                                  //
            B(Return),                                                      //
        },
        3,
        {InstanceType::FIXED_ARRAY_TYPE,
-        InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE,
-        InstanceType::SHARED_FUNCTION_INFO_TYPE}},
+        InstanceType::SHARED_FUNCTION_INFO_TYPE,
+        InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE}},
       {"return { get a() { return 2; } };",
        5 * kPointerSize,
        1,
@@ -3659,8 +3659,8 @@ TEST(TopLevelObjectLiterals) {
            B(Star), R(2),                                                    //
            B(CreateObjectLiteral), U8(2), U8(0), U8(has_function_flags),     //
            B(Star), R(4),                                                    //
-           B(CreateClosure), U8(4), U8(1),                                   //
-           B(StoreICSloppy), R(4), U8(3), U8(3),                             //
+           B(CreateClosure), U8(3), U8(1),                                   //
+           B(StoreICSloppy), R(4), U8(4), U8(3),                             //
            B(CallRuntime), U16(Runtime::kToFastProperties), R(4), U8(1),     //
            B(Ldar), R(4),                                                    //
            B(Star), R(3),                                                    //
@@ -3672,8 +3672,8 @@ TEST(TopLevelObjectLiterals) {
        {InstanceType::FIXED_ARRAY_TYPE,
         InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE,
         InstanceType::FIXED_ARRAY_TYPE,
-        InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE,
-        InstanceType::SHARED_FUNCTION_INFO_TYPE}},
+        InstanceType::SHARED_FUNCTION_INFO_TYPE,
+        InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE}},
   };
 
   for (size_t i = 0; i < arraysize(snippets); i++) {
@@ -5788,6 +5788,66 @@ TEST(LookupSlotInEval) {
                          std::string(function_epilogue);
     // TODO(mythria): use * as filter when function declarations are supported
     // inside eval.
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecode(script.c_str(), "t", "f");
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
+}
+
+
+TEST(DeleteLookupSlot) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
+  const char* function_prologue = "var f;"
+                                  "var x = 1;"
+                                  "z = 10;"
+                                  "function f1() {"
+                                  "  var y;"
+                                  "  eval(\"function t() {";
+  const char* function_epilogue = "        }; f = t; f();\");"
+                                  "}"
+                                  "f1();";
+
+  ExpectedSnippet<const char*> snippets[] = {
+      {"delete x;",
+       0 * kPointerSize,
+       1,
+       5,
+       {
+           B(LdaConstant), U8(0),  //
+           B(DeleteLookupSlot),    //
+           B(LdaUndefined),        //
+           B(Return)               //
+       },
+       1,
+       {"x"}},
+      {"return delete y;",
+       0 * kPointerSize,
+       1,
+       2,
+       {
+           B(LdaFalse),        //
+           B(Return)           //
+       },
+       0},
+      {"return delete z;",
+       0 * kPointerSize,
+       1,
+       4,
+       {
+           B(LdaConstant), U8(0),  //
+           B(DeleteLookupSlot),    //
+           B(Return)               //
+       },
+       1,
+       {"z"}},
+  };
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    std::string script = std::string(function_prologue) +
+                         std::string(snippets[i].code_snippet) +
+                         std::string(function_epilogue);
     Handle<BytecodeArray> bytecode_array =
         helper.MakeBytecode(script.c_str(), "t", "f");
     CheckBytecodeArrayEqual(snippets[i], bytecode_array);
