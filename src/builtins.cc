@@ -47,6 +47,13 @@ class BuiltinArguments : public Arguments {
     return Arguments::at<S>(index);
   }
 
+  Handle<Object> atOrUndefined(Isolate* isolate, int index) {
+    if (index >= length()) {
+      return isolate->factory()->undefined_value();
+    }
+    return at<Object>(index);
+  }
+
   Handle<Object> receiver() {
     return Arguments::at<Object>(0);
   }
@@ -1430,10 +1437,7 @@ BUILTIN(ArrayIsArray) {
 // ES6 19.1.2.1 Object.assign
 BUILTIN(ObjectAssign) {
   HandleScope scope(isolate);
-  Handle<Object> target =
-      args.length() > 1
-          ? args.at<Object>(1)
-          : Handle<Object>::cast(isolate->factory()->undefined_value());
+  Handle<Object> target = args.atOrUndefined(isolate, 1);
 
   // 1. Let to be ? ToObject(target).
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, target,
@@ -1535,8 +1539,7 @@ MaybeHandle<JSFunction> CompileString(Handle<Context> context,
 // ES6 section 18.2.1 eval (x)
 BUILTIN(GlobalEval) {
   HandleScope scope(isolate);
-  DCHECK_LE(1, args.length());
-  Handle<Object> x = args.at<Object>(1);
+  Handle<Object> x = args.atOrUndefined(isolate, 1);
   Handle<JSFunction> target = args.target();
   Handle<JSObject> target_global_proxy(target->global_proxy(), isolate);
   if (!x->IsString()) return *x;
@@ -1613,9 +1616,8 @@ BUILTIN(ReflectDeleteProperty) {
 // ES6 section 26.1.6 Reflect.get
 BUILTIN(ReflectGet) {
   HandleScope scope(isolate);
-  Handle<Object> undef = isolate->factory()->undefined_value();
-  Handle<Object> target = args.length() > 1 ? args.at<Object>(1) : undef;
-  Handle<Object> key = args.length() > 2 ? args.at<Object>(2) : undef;
+  Handle<Object> target = args.atOrUndefined(isolate, 1);
+  Handle<Object> key = args.atOrUndefined(isolate, 2);
   Handle<Object> receiver = args.length() > 3 ? args.at<Object>(3) : target;
 
   if (!target->IsJSReceiver()) {
@@ -1774,10 +1776,9 @@ BUILTIN(ReflectPreventExtensions) {
 // ES6 section 26.1.13 Reflect.set
 BUILTIN(ReflectSet) {
   HandleScope scope(isolate);
-  Handle<Object> undef = isolate->factory()->undefined_value();
-  Handle<Object> target = args.length() > 1 ? args.at<Object>(1) : undef;
-  Handle<Object> key = args.length() > 2 ? args.at<Object>(2) : undef;
-  Handle<Object> value = args.length() > 3 ? args.at<Object>(3) : undef;
+  Handle<Object> target = args.atOrUndefined(isolate, 1);
+  Handle<Object> key = args.atOrUndefined(isolate, 2);
+  Handle<Object> value = args.atOrUndefined(isolate, 3);
   Handle<Object> receiver = args.length() > 4 ? args.at<Object>(4) : target;
 
   if (!target->IsJSReceiver()) {
@@ -1971,12 +1972,77 @@ BUILTIN(FunctionConstructor) {
 }
 
 
+// ES6 section 19.2.3.2 Function.prototype.bind ( thisArg, ...args )
+BUILTIN(FunctionPrototypeBind) {
+  HandleScope scope(isolate);
+  DCHECK_LE(1, args.length());
+  if (!args.receiver()->IsCallable()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kFunctionBind));
+  }
+
+  // Allocate the bound function with the given {this_arg} and {args}.
+  Handle<JSReceiver> target = args.at<JSReceiver>(0);
+  Handle<Object> this_arg = isolate->factory()->undefined_value();
+  ScopedVector<Handle<Object>> argv(std::max(0, args.length() - 2));
+  if (args.length() > 1) {
+    this_arg = args.at<Object>(1);
+    for (int i = 2; i < args.length(); ++i) {
+      argv[i - 2] = args.at<Object>(i);
+    }
+  }
+  Handle<JSBoundFunction> function;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, function,
+      isolate->factory()->NewJSBoundFunction(target, this_arg, argv));
+
+  // TODO(bmeurer): Optimize the rest for the common cases where {target} is
+  // a function with some initial map or even a bound function.
+  // Setup the "length" property based on the "length" of the {target}.
+  Handle<Object> length(Smi::FromInt(0), isolate);
+  Maybe<bool> target_has_length =
+      JSReceiver::HasOwnProperty(target, isolate->factory()->length_string());
+  if (!target_has_length.IsJust()) {
+    return isolate->heap()->exception();
+  } else if (target_has_length.FromJust()) {
+    Handle<Object> target_length;
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, target_length,
+        JSReceiver::GetProperty(target, isolate->factory()->length_string()));
+    if (target_length->IsNumber()) {
+      length = isolate->factory()->NewNumber(std::max(
+          0.0, DoubleToInteger(target_length->Number()) - argv.length()));
+    }
+  }
+  function->set_length(*length);
+
+  // Setup the "name" property based on the "name" of the {target}.
+  Handle<Object> target_name;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, target_name,
+      JSReceiver::GetProperty(target, isolate->factory()->name_string()));
+  Handle<String> name;
+  if (!target_name->IsString()) {
+    name = isolate->factory()->bound__string();
+  } else {
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, name, Name::ToFunctionName(Handle<String>::cast(target_name)));
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, name, isolate->factory()->NewConsString(
+                           isolate->factory()->bound__string(), name));
+  }
+  function->set_name(*name);
+  return *function;
+}
+
+
 // ES6 section 19.2.3.5 Function.prototype.toString ( )
 BUILTIN(FunctionPrototypeToString) {
   HandleScope scope(isolate);
   Handle<Object> receiver = args.receiver();
-
-  if (receiver->IsJSFunction()) {
+  if (receiver->IsJSBoundFunction()) {
+    return *JSBoundFunction::ToString(Handle<JSBoundFunction>::cast(receiver));
+  } else if (receiver->IsJSFunction()) {
     return *JSFunction::ToString(Handle<JSFunction>::cast(receiver));
   }
   THROW_NEW_ERROR_RETURN_FAILURE(
@@ -1999,9 +2065,8 @@ BUILTIN(GeneratorFunctionConstructor) {
 // ES6 section 19.4.1.1 Symbol ( [ description ] ) for the [[Call]] case.
 BUILTIN(SymbolConstructor) {
   HandleScope scope(isolate);
-  DCHECK_EQ(2, args.length());
   Handle<Symbol> result = isolate->factory()->NewSymbol();
-  Handle<Object> description = args.at<Object>(1);
+  Handle<Object> description = args.atOrUndefined(isolate, 1);
   if (!description->IsUndefined()) {
     ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, description,
                                        Object::ToString(isolate, description));
@@ -2014,9 +2079,6 @@ BUILTIN(SymbolConstructor) {
 // ES6 section 19.4.1.1 Symbol ( [ description ] ) for the [[Construct]] case.
 BUILTIN(SymbolConstructor_ConstructStub) {
   HandleScope scope(isolate);
-  // The ConstructStub is executed in the context of the caller, so we need
-  // to enter the callee context first before raising an exception.
-  isolate->set_context(args.target()->context());
   THROW_NEW_ERROR_RETURN_FAILURE(
       isolate, NewTypeError(MessageTemplate::kNotConstructor,
                             isolate->factory()->Symbol_string()));
@@ -2034,11 +2096,6 @@ BUILTIN(ObjectProtoToString) {
 }
 
 
-namespace {
-
-}  // namespace
-
-
 // ES6 section 26.2.1.1 Proxy ( target, handler ) for the [[Call]] case.
 BUILTIN(ProxyConstructor) {
   HandleScope scope(isolate);
@@ -2053,21 +2110,8 @@ BUILTIN(ProxyConstructor) {
 BUILTIN(ProxyConstructor_ConstructStub) {
   HandleScope scope(isolate);
   DCHECK(isolate->proxy_function()->IsConstructor());
-  Handle<Object> target;
-  if (args.length() < 2) {
-    target = isolate->factory()->undefined_value();
-  } else {
-    target = args.at<Object>(1);
-  }
-  Handle<Object> handler;
-  if (args.length() < 3) {
-    handler = isolate->factory()->undefined_value();
-  } else {
-    handler = args.at<Object>(2);
-  }
-  // The ConstructStub is executed in the context of the caller, so we need
-  // to enter the callee context first before raising an exception.
-  isolate->set_context(args.target()->context());
+  Handle<Object> target = args.atOrUndefined(isolate, 1);
+  Handle<Object> handler = args.atOrUndefined(isolate, 2);
   Handle<JSProxy> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
                                      JSProxy::New(isolate, target, handler));

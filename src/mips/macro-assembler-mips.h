@@ -99,14 +99,11 @@ Register GetRegisterThatIsNotOneOf(Register reg1,
                                    Register reg5 = no_reg,
                                    Register reg6 = no_reg);
 
-bool AreAliased(Register reg1,
-                Register reg2,
-                Register reg3 = no_reg,
-                Register reg4 = no_reg,
-                Register reg5 = no_reg,
-                Register reg6 = no_reg,
-                Register reg7 = no_reg,
-                Register reg8 = no_reg);
+bool AreAliased(Register reg1, Register reg2, Register reg3 = no_reg,
+                Register reg4 = no_reg, Register reg5 = no_reg,
+                Register reg6 = no_reg, Register reg7 = no_reg,
+                Register reg8 = no_reg, Register reg9 = no_reg,
+                Register reg10 = no_reg);
 
 
 // -----------------------------------------------------------------------------
@@ -1475,6 +1472,10 @@ const Operand& rt = Operand(zero_reg), BranchDelaySlot bd = PROTECT
 
   // Abort execution if argument is not a JSFunction, enabled via --debug-code.
   void AssertFunction(Register object);
+
+  // Abort execution if argument is not a JSBoundFunction,
+  // enabled via --debug-code.
+  void AssertBoundFunction(Register object);
 
   // Abort execution if argument is not undefined or an AllocationSite, enabled
   // via --debug-code.

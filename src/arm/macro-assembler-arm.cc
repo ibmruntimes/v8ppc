@@ -2091,6 +2091,7 @@ void MacroAssembler::StoreNumberToDoubleElements(
                                       LowDwVfpRegister double_scratch,
                                       Label* fail,
                                       int elements_offset) {
+  DCHECK(!AreAliased(value_reg, key_reg, elements_reg, scratch1));
   Label smi_value, store;
 
   // Handle smi values specially.
@@ -2811,6 +2812,19 @@ void MacroAssembler::AssertFunction(Register object) {
     CompareObjectType(object, object, object, JS_FUNCTION_TYPE);
     pop(object);
     Check(eq, kOperandIsNotAFunction);
+  }
+}
+
+
+void MacroAssembler::AssertBoundFunction(Register object) {
+  if (emit_debug_code()) {
+    STATIC_ASSERT(kSmiTag == 0);
+    tst(object, Operand(kSmiTagMask));
+    Check(ne, kOperandIsASmiAndNotABoundFunction);
+    push(object);
+    CompareObjectType(object, object, object, JS_BOUND_FUNCTION_TYPE);
+    pop(object);
+    Check(eq, kOperandIsNotABoundFunction);
   }
 }
 

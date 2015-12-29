@@ -316,6 +316,11 @@
   'language/literals/regexp/u-case-mapping': [FAIL],
   'language/literals/regexp/u-astral': [FAIL],
   'built-ins/RegExp/valid-flags-y': [FAIL],
+  'built-ins/RegExp/prototype/unicode/length': [FAIL],
+  'built-ins/RegExp/prototype/unicode/name': [FAIL],
+  'built-ins/RegExp/prototype/unicode/prop-desc': [FAIL],
+  'built-ins/RegExp/prototype/unicode/this-invald-obj': [FAIL],
+  'built-ins/RegExp/prototype/unicode/this-non-obj': [FAIL],
 
    # https://code.google.com/p/v8/issues/detail?id=4602
   'built-ins/RegExp/prototype/exec/get-sticky-coerce': [FAIL],
@@ -400,10 +405,6 @@
   # https://bugs.chromium.org/p/v8/issues/detail?id=4628
   'language/eval-code/non-definable-function-with-variable': [FAIL],
   'language/eval-code/non-definable-function-with-function': [FAIL],
-
-  # https://bugs.chromium.org/p/v8/issues/detail?id=4629
-  'built-ins/ArrayBuffer/data-allocation-after-object-creation': [FAIL],
-  'built-ins/ArrayBuffer/prototype-from-newtarget': [FAIL],
 
   # https://bugs.chromium.org/p/v8/issues/detail?id=4592
   'built-ins/ArrayBuffer/length-is-absent': [FAIL],
@@ -735,6 +736,8 @@
   'built-ins/decodeURI/S15.1.3.1_A1.13_T1': [SKIP],
   'built-ins/decodeURI/S15.1.3.1_A1.2_T1': [SKIP],
   'built-ins/decodeURI/S15.1.3.1_A1.2_T2': [SKIP],
+  'built-ins/decodeURI/S15.1.3.1_A1.13_T2': [SKIP],
+  'built-ins/decodeURI/S15.1.3.1_A1.14_T2': [SKIP],
   'built-ins/decodeURI/S15.1.3.2_A1.10_T1': [SKIP],
   'built-ins/decodeURI/S15.1.3.2_A1.12_T2': [SKIP],
   'built-ins/decodeURI/S15.1.3.2_A1.12_T3': [SKIP],
@@ -746,6 +749,8 @@
   'built-ins/decodeURIComponent/S15.1.3.2_A1.12_T2': [SKIP],
   'built-ins/decodeURIComponent/S15.1.3.2_A1.12_T3': [SKIP],
   'built-ins/decodeURIComponent/S15.1.3.2_A1.13_T1': [SKIP],
+  'built-ins/decodeURIComponent/S15.1.3.2_A1.13_T2': [SKIP],
+  'built-ins/decodeURIComponent/S15.1.3.2_A1.14_T2': [SKIP],
   'built-ins/decodeURIComponent/S15.1.3.2_A1.2_T1': [SKIP],
   'built-ins/decodeURIComponent/S15.1.3.2_A1.2_T2': [SKIP],
   'built-ins/encodeURI*': [SKIP],

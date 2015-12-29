@@ -793,6 +793,18 @@ void MacroAssembler::AssertFunction(Register object) {
 }
 
 
+void MacroAssembler::AssertBoundFunction(Register object) {
+  if (emit_debug_code()) {
+    test(object, Immediate(kSmiTagMask));
+    Check(not_equal, kOperandIsASmiAndNotABoundFunction);
+    Push(object);
+    CmpObjectType(object, JS_BOUND_FUNCTION_TYPE, object);
+    Pop(object);
+    Check(equal, kOperandIsNotABoundFunction);
+  }
+}
+
+
 void MacroAssembler::AssertUndefinedOrAllocationSite(Register object) {
   if (emit_debug_code()) {
     Label done_checking;
@@ -2829,7 +2841,7 @@ void MacroAssembler::JumpIfWhite(Register value, Register bitmap_scratch,
   // Since both black and grey have a 1 in the first position and white does
   // not have a 1 there we only need to check one bit.
   test(mask_scratch, Operand(bitmap_scratch, MemoryChunk::kHeaderSize));
-  j(zero, &value_is_white, Label::kNear);
+  j(zero, value_is_white, Label::kNear);
 }
 
 

@@ -114,6 +114,9 @@ void HeapObject::HeapObjectVerify() {
     case JS_DATE_TYPE:
       JSDate::cast(this)->JSDateVerify();
       break;
+    case JS_BOUND_FUNCTION_TYPE:
+      JSBoundFunction::cast(this)->JSBoundFunctionVerify();
+      break;
     case JS_FUNCTION_TYPE:
       JSFunction::cast(this)->JSFunctionVerify();
       break;
@@ -330,6 +333,8 @@ void Map::MapVerify() {
   CHECK(instance_size() == kVariableSizeSentinel ||
          (kPointerSize <= instance_size() &&
           instance_size() < heap->Capacity()));
+  CHECK(GetBackPointer()->IsUndefined() ||
+        !Map::cast(GetBackPointer())->is_stable());
   VerifyHeapPointer(prototype());
   VerifyHeapPointer(instance_descriptors());
   SLOW_DCHECK(instance_descriptors()->IsSortedNoDuplicates());
@@ -539,6 +544,23 @@ void SlicedString::SlicedStringVerify() {
   CHECK(!this->parent()->IsConsString());
   CHECK(!this->parent()->IsSlicedString());
   CHECK(this->length() >= SlicedString::kMinLength);
+}
+
+
+void JSBoundFunction::JSBoundFunctionVerify() {
+  CHECK(IsJSBoundFunction());
+  if (HasFastProperties()) {
+    VerifyObjectField(kLengthOffset);
+    VerifyObjectField(kNameOffset);
+  }
+  VerifyObjectField(kBoundThisOffset);
+  VerifyObjectField(kBoundTargetFunctionOffset);
+  VerifyObjectField(kBoundArgumentsOffset);
+  VerifyObjectField(kCreationContextOffset);
+  CHECK(bound_target_function()->IsCallable());
+  CHECK(creation_context()->IsNativeContext());
+  CHECK(IsCallable());
+  CHECK_EQ(IsConstructor(), bound_target_function()->IsConstructor());
 }
 
 
@@ -816,8 +838,14 @@ void JSRegExp::JSRegExpVerify() {
 
 void JSProxy::JSProxyVerify() {
   CHECK(IsJSProxy());
+  VerifyPointer(target());
   VerifyPointer(handler());
+  CHECK_EQ(target()->IsCallable(), map()->is_callable());
+  CHECK_EQ(target()->IsConstructor(), map()->is_constructor());
   CHECK(hash()->IsSmi() || hash()->IsUndefined());
+  CHECK(map()->prototype()->IsNull());
+  // There should be no properties on a Proxy.
+  CHECK_EQ(0, map()->NumberOfOwnDescriptors());
 }
 
 

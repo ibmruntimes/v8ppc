@@ -853,6 +853,32 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
 }
 
 
+void RestParamAccessStub::GenerateNew(MacroAssembler* masm) {
+  // esp[0] : return address
+  // esp[4] : language mode
+  // esp[8] : index of rest parameter
+  // esp[12] : number of parameters
+  // esp[16] : receiver displacement
+
+  // Check if the calling frame is an arguments adaptor frame.
+  Label runtime;
+  __ mov(edx, Operand(ebp, StandardFrameConstants::kCallerFPOffset));
+  __ mov(ecx, Operand(edx, StandardFrameConstants::kContextOffset));
+  __ cmp(ecx, Immediate(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
+  __ j(not_equal, &runtime);
+
+  // Patch the arguments.length and the parameters pointer.
+  __ mov(ecx, Operand(edx, ArgumentsAdaptorFrameConstants::kLengthOffset));
+  __ mov(Operand(esp, 3 * kPointerSize), ecx);
+  __ lea(edx,
+         Operand(edx, ecx, times_2, StandardFrameConstants::kCallerSPOffset));
+  __ mov(Operand(esp, 4 * kPointerSize), edx);
+
+  __ bind(&runtime);
+  __ TailCallRuntime(Runtime::kNewRestParam, 4, 1);
+}
+
+
 void RegExpExecStub::Generate(MacroAssembler* masm) {
   // Just jump directly to runtime if native RegExp is not selected at compile
   // time or if regexp entry in generated code is turned off runtime switch or
@@ -2241,14 +2267,6 @@ void InstanceOfStub::Generate(MacroAssembler* masm) {
   // Ensure that {function} has an instance prototype.
   __ test_b(FieldOperand(function_map, Map::kBitFieldOffset),
             static_cast<uint8_t>(1 << Map::kHasNonInstancePrototype));
-  __ j(not_zero, &slow_case);
-
-  // Ensure that {function} is not bound.
-  Register const shared_info = scratch;
-  __ mov(shared_info,
-         FieldOperand(function, JSFunction::kSharedFunctionInfoOffset));
-  __ BooleanBitTest(shared_info, SharedFunctionInfo::kCompilerHintsOffset,
-                    SharedFunctionInfo::kBoundFunction);
   __ j(not_zero, &slow_case);
 
   // Get the "prototype" (or initial map) of the {function}.

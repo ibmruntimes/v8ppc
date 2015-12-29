@@ -105,14 +105,11 @@ Register GetRegisterThatIsNotOneOf(Register reg1,
                                    Register reg5 = no_reg,
                                    Register reg6 = no_reg);
 
-bool AreAliased(Register reg1,
-                Register reg2,
-                Register reg3 = no_reg,
-                Register reg4 = no_reg,
-                Register reg5 = no_reg,
-                Register reg6 = no_reg,
-                Register reg7 = no_reg,
-                Register reg8 = no_reg);
+bool AreAliased(Register reg1, Register reg2, Register reg3 = no_reg,
+                Register reg4 = no_reg, Register reg5 = no_reg,
+                Register reg6 = no_reg, Register reg7 = no_reg,
+                Register reg8 = no_reg, Register reg9 = no_reg,
+                Register reg10 = no_reg);
 
 
 // -----------------------------------------------------------------------------
@@ -1266,12 +1263,48 @@ class MacroAssembler: public Assembler {
                                 const Operand& right, Register overflow_dst,
                                 Register scratch);
 
+  inline void DaddBranchOvf(Register dst, Register left, const Operand& right,
+                            Label* overflow_label, Register scratch = at) {
+    DaddBranchOvf(dst, left, right, overflow_label, nullptr, scratch);
+  }
+
+  inline void DaddBranchNoOvf(Register dst, Register left, const Operand& right,
+                              Label* no_overflow_label, Register scratch = at) {
+    DaddBranchOvf(dst, left, right, nullptr, no_overflow_label, scratch);
+  }
+
+  void DaddBranchOvf(Register dst, Register left, const Operand& right,
+                     Label* overflow_label, Label* no_overflow_label,
+                     Register scratch = at);
+
+  void DaddBranchOvf(Register dst, Register left, Register right,
+                     Label* overflow_label, Label* no_overflow_label,
+                     Register scratch = at);
+
   void DsubuAndCheckForOverflow(Register dst, Register left, Register right,
                                 Register overflow_dst, Register scratch = at);
 
   void DsubuAndCheckForOverflow(Register dst, Register left,
                                 const Operand& right, Register overflow_dst,
                                 Register scratch);
+
+  inline void DsubBranchOvf(Register dst, Register left, const Operand& right,
+                            Label* overflow_label, Register scratch = at) {
+    DsubBranchOvf(dst, left, right, overflow_label, nullptr, scratch);
+  }
+
+  inline void DsubBranchNoOvf(Register dst, Register left, const Operand& right,
+                              Label* no_overflow_label, Register scratch = at) {
+    DsubBranchOvf(dst, left, right, nullptr, no_overflow_label, scratch);
+  }
+
+  void DsubBranchOvf(Register dst, Register left, const Operand& right,
+                     Label* overflow_label, Label* no_overflow_label,
+                     Register scratch = at);
+
+  void DsubBranchOvf(Register dst, Register left, Register right,
+                     Label* overflow_label, Label* no_overflow_label,
+                     Register scratch = at);
 
   void BranchOnOverflow(Label* label,
                         Register overflow_check,
@@ -1591,6 +1624,10 @@ const Operand& rt = Operand(zero_reg), BranchDelaySlot bd = PROTECT
 
   // Abort execution if argument is not a JSFunction, enabled via --debug-code.
   void AssertFunction(Register object);
+
+  // Abort execution if argument is not a JSBoundFunction,
+  // enabled via --debug-code.
+  void AssertBoundFunction(Register object);
 
   // Abort execution if argument is not undefined or an AllocationSite, enabled
   // via --debug-code.

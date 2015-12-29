@@ -251,6 +251,27 @@ void FullCodeGenerator::Generate() {
     SetVar(new_target_var, edx, ebx, ecx);
   }
 
+  // Possibly allocate RestParameters
+  int rest_index;
+  Variable* rest_param = scope()->rest_parameter(&rest_index);
+  if (rest_param) {
+    Comment cmnt(masm_, "[ Allocate rest parameter array");
+
+    int num_parameters = info->scope()->num_parameters();
+    int offset = num_parameters * kPointerSize;
+
+    __ lea(edx, Operand(ebp, StandardFrameConstants::kCallerSPOffset + offset));
+    __ push(edx);
+    __ push(Immediate(Smi::FromInt(num_parameters)));
+    __ push(Immediate(Smi::FromInt(rest_index)));
+    __ push(Immediate(Smi::FromInt(language_mode())));
+    function_in_register = false;
+
+    RestParamAccessStub stub(isolate());
+    __ CallStub(&stub);
+    SetVar(rest_param, eax, ebx, edx);
+  }
+
   Variable* arguments = scope()->arguments();
   if (arguments != NULL) {
     // Function uses arguments object.
@@ -3003,9 +3024,9 @@ void FullCodeGenerator::EmitIsFunction(CallRuntime* expr) {
                          &if_true, &if_false, &fall_through);
 
   __ JumpIfSmi(eax, if_false);
-  __ CmpObjectType(eax, JS_FUNCTION_TYPE, ebx);
+  __ CmpObjectType(eax, FIRST_FUNCTION_TYPE, ebx);
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  Split(equal, if_true, if_false, fall_through);
+  Split(above_equal, if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
 }
