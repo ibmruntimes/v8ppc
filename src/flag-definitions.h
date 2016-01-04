@@ -198,14 +198,15 @@ DEFINE_IMPLICATION(es_staging, harmony_regexp_lookbehind)
 DEFINE_IMPLICATION(es_staging, move_object_start)
 
 // Features that are still work in progress (behind individual flags).
-#define HARMONY_INPROGRESS(V)                                         \
-  V(harmony_modules, "harmony modules")                               \
-  V(harmony_unicode_regexps, "harmony unicode regexps")               \
-  V(harmony_function_name, "harmony Function name inference")         \
-  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")           \
-  V(harmony_simd, "harmony simd")                                     \
-  V(harmony_do_expressions, "harmony do-expressions")                 \
-  V(harmony_regexp_subclass, "harmony regexp subclassing")
+#define HARMONY_INPROGRESS(V)                                 \
+  V(harmony_modules, "harmony modules")                       \
+  V(harmony_unicode_regexps, "harmony unicode regexps")       \
+  V(harmony_function_name, "harmony Function name inference") \
+  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")   \
+  V(harmony_simd, "harmony simd")                             \
+  V(harmony_do_expressions, "harmony do-expressions")         \
+  V(harmony_regexp_subclass, "harmony regexp subclassing")    \
+  V(harmony_species, "harmony Symbol.species")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                                 \
@@ -295,7 +296,7 @@ DEFINE_BOOL(string_slices, true, "use string slices")
 
 // Flags for Ignition.
 DEFINE_BOOL(ignition, false, "use ignition interpreter")
-DEFINE_STRING(ignition_filter, "~~", "filter for ignition interpreter")
+DEFINE_STRING(ignition_filter, "*", "filter for ignition interpreter")
 DEFINE_BOOL(ignition_fake_try_catch, false,
             "enable fake try-catch-finally blocks in ignition for testing")
 DEFINE_BOOL(ignition_fallback_on_eval_and_catch, false,
