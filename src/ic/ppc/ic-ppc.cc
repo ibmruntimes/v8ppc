@@ -319,8 +319,7 @@ void LoadIC::GenerateMiss(MacroAssembler* masm) {
   LoadIC_PushArgs(masm);
 
   // Perform tail call to the entry.
-  int arg_count = 4;
-  __ TailCallRuntime(Runtime::kLoadIC_Miss, arg_count, 1);
+  __ TailCallRuntime(Runtime::kLoadIC_Miss);
 }
 
 
@@ -333,8 +332,7 @@ void LoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm,
 
   // Do tail-call to runtime routine.
   __ TailCallRuntime(is_strong(language_mode) ? Runtime::kGetPropertyStrong
-                                              : Runtime::kGetProperty,
-                     2, 1);
+                                              : Runtime::kGetProperty);
 }
 
 
@@ -349,8 +347,7 @@ void KeyedLoadIC::GenerateMiss(MacroAssembler* masm) {
   LoadIC_PushArgs(masm);
 
   // Perform tail call to the entry.
-  int arg_count = 4;
-  __ TailCallRuntime(Runtime::kKeyedLoadIC_Miss, arg_count, 1);
+  __ TailCallRuntime(Runtime::kKeyedLoadIC_Miss);
 }
 
 
@@ -362,8 +359,7 @@ void KeyedLoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm,
 
   // Do tail-call to runtime routine.
   __ TailCallRuntime(is_strong(language_mode) ? Runtime::kKeyedGetPropertyStrong
-                                              : Runtime::kKeyedGetProperty,
-                     2, 1);
+                                              : Runtime::kKeyedGetProperty);
 }
 
 
@@ -482,7 +478,7 @@ static void StoreIC_PushArgs(MacroAssembler* masm) {
 void KeyedStoreIC::GenerateMiss(MacroAssembler* masm) {
   StoreIC_PushArgs(masm);
 
-  __ TailCallRuntime(Runtime::kKeyedStoreIC_Miss, 5, 1);
+  __ TailCallRuntime(Runtime::kKeyedStoreIC_Miss);
 }
 
 
@@ -516,8 +512,7 @@ static void KeyedStoreGenerateMegamorphicHelper(
   __ addi(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ SmiToPtrArrayOffset(scratch, key);
   __ LoadPX(scratch, MemOperand(address, scratch));
-  __ Cmpi(scratch, Operand(masm->isolate()->factory()->the_hole_value()),
-          r0);
+  __ Cmpi(scratch, Operand(masm->isolate()->factory()->the_hole_value()), r0);
   __ bne(&holecheck_passed1);
   __ JumpIfDictionaryInPrototypeChain(receiver, elements_map, scratch, slow);
 
@@ -530,8 +525,7 @@ static void KeyedStoreGenerateMegamorphicHelper(
   if (increment_length == kIncrementLength) {
     // Add 1 to receiver->length.
     __ AddSmiLiteral(scratch, key, Smi::FromInt(1), r0);
-    __ StoreP(scratch, FieldMemOperand(receiver, JSArray::kLengthOffset),
-              r0);
+    __ StoreP(scratch, FieldMemOperand(receiver, JSArray::kLengthOffset), r0);
   }
   // It's irrelevant whether array is smi-only or not when writing a smi.
   __ addi(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
@@ -548,8 +542,7 @@ static void KeyedStoreGenerateMegamorphicHelper(
   if (increment_length == kIncrementLength) {
     // Add 1 to receiver->length.
     __ AddSmiLiteral(scratch, key, Smi::FromInt(1), r0);
-    __ StoreP(scratch, FieldMemOperand(receiver, JSArray::kLengthOffset),
-              r0);
+    __ StoreP(scratch, FieldMemOperand(receiver, JSArray::kLengthOffset), r0);
   }
   __ addi(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ SmiToPtrArrayOffset(scratch, key);
@@ -586,8 +579,7 @@ static void KeyedStoreGenerateMegamorphicHelper(
   if (increment_length == kIncrementLength) {
     // Add 1 to receiver->length.
     __ AddSmiLiteral(scratch, key, Smi::FromInt(1), r0);
-    __ StoreP(scratch, FieldMemOperand(receiver, JSArray::kLengthOffset),
-              r0);
+    __ StoreP(scratch, FieldMemOperand(receiver, JSArray::kLengthOffset), r0);
   }
   __ Ret();
 
@@ -785,7 +777,7 @@ void StoreIC::GenerateMiss(MacroAssembler* masm) {
   StoreIC_PushArgs(masm);
 
   // Perform tail call to the entry.
-  __ TailCallRuntime(Runtime::kStoreIC_Miss, 5, 1);
+  __ TailCallRuntime(Runtime::kStoreIC_Miss);
 }
 
 

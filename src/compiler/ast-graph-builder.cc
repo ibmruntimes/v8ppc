@@ -1793,7 +1793,8 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
             javascript()->CallRuntime(Runtime::kInternalSetPrototype, 2);
         Node* set_prototype = NewNode(op, receiver, value);
         // SetPrototype should not lazy deopt on an object literal.
-        PrepareFrameState(set_prototype, BailoutId::None());
+        PrepareFrameState(set_prototype,
+                          expr->GetIdForPropertySet(property_index));
         break;
       }
       case ObjectLiteral::Property::GETTER:
@@ -1848,14 +1849,14 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
       const Operator* op =
           javascript()->CallRuntime(Runtime::kInternalSetPrototype, 2);
       Node* call = NewNode(op, receiver, value);
-      PrepareFrameState(call, BailoutId::None());
+      PrepareFrameState(call, expr->GetIdForPropertySet(property_index));
       continue;
     }
 
     environment()->Push(environment()->Top());  // Duplicate receiver.
     VisitForValue(property->key());
     Node* name = BuildToName(environment()->Pop(),
-                             expr->GetIdForProperty(property_index));
+                             expr->GetIdForPropertyName(property_index));
     environment()->Push(name);
     VisitForValue(property->value());
     Node* value = environment()->Pop();
@@ -3229,9 +3230,19 @@ Node* AstGraphBuilder::BuildArgumentsObject(Variable* arguments) {
 Node* AstGraphBuilder::BuildRestArgumentsArray(Variable* rest, int index) {
   if (rest == NULL) return NULL;
 
-  // TODO(mvstanton): Handle rest arguments.
-  SetStackOverflow();
-  return jsgraph()->UndefinedConstant();
+  // Allocate and initialize a new arguments object.
+  CreateArgumentsParameters::Type type = CreateArgumentsParameters::kRestArray;
+  const Operator* op = javascript()->CreateArguments(type, index);
+  Node* object = NewNode(op, GetFunctionClosure());
+  PrepareFrameState(object, BailoutId::None());
+
+  // Assign the object to the {rest} variable. This should never lazy
+  // deopt, so it is fine to send invalid bailout id.
+  DCHECK(rest->IsContextSlot() || rest->IsStackAllocated());
+  FrameStateBeforeAndAfter states(this, BailoutId::None());
+  BuildVariableAssignment(rest, object, Token::ASSIGN, VectorSlotPair(),
+                          BailoutId::None(), states);
+  return object;
 }
 
 

@@ -205,6 +205,8 @@ class Genesis BASE_EMBEDDED {
   DECLARE_FEATURE_INITIALIZATION(promise_extra, "")
 #undef DECLARE_FEATURE_INITIALIZATION
 
+  Handle<JSFunction> InstallArrayBuffer(Handle<JSObject> target,
+                                        const char* name);
   Handle<JSFunction> InstallInternalArray(Handle<JSObject> target,
                                           const char* name,
                                           ElementsKind elements_kind);
@@ -670,7 +672,6 @@ Handle<JSFunction> Genesis::GetThrowTypeErrorIntrinsic(
   Handle<Code> code(isolate()->builtins()->builtin(builtin_name));
   Handle<JSFunction> function =
       factory()->NewFunctionWithoutPrototype(name, code);
-  function->set_map(native_context()->sloppy_function_map());
   function->shared()->DontAdaptArguments();
 
   // %ThrowTypeError% must not have a name property.
@@ -1042,6 +1043,16 @@ static Handle<JSFunction> SimpleInstallFunction(Handle<JSObject> base,
 }
 
 
+static Handle<JSFunction> SimpleInstallFunction(Handle<JSObject> base,
+                                                const char* name,
+                                                Builtins::Name call, int len,
+                                                bool adapt) {
+  Factory* const factory = base->GetIsolate()->factory();
+  return SimpleInstallFunction(base, factory->InternalizeUtf8String(name), call,
+                               len, adapt);
+}
+
+
 static void InstallWithIntrinsicDefaultProto(Isolate* isolate,
                                              Handle<JSFunction> function,
                                              int context_index) {
@@ -1076,12 +1087,33 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
   native_context()->set_script_context_table(*script_context_table);
   InstallGlobalThisBinding();
 
-  Handle<String> object_name = factory->Object_string();
-  JSObject::AddProperty(
-      global_object, object_name, isolate->object_function(), DONT_ENUM);
-  SimpleInstallFunction(isolate->object_function(),
-                        isolate->factory()->InternalizeUtf8String("assign"),
-                        Builtins::kObjectAssign, 2, false);
+  {  // --- O b j e c t ---
+    Handle<String> object_name = factory->Object_string();
+    Handle<JSFunction> object_function = isolate->object_function();
+    JSObject::AddProperty(global_object, object_name, object_function,
+                          DONT_ENUM);
+    SimpleInstallFunction(object_function, factory->assign_string(),
+                          Builtins::kObjectAssign, 2, false);
+    SimpleInstallFunction(object_function, factory->create_string(),
+                          Builtins::kObjectCreate, 2, false);
+    Handle<JSFunction> object_freeze = SimpleInstallFunction(
+        object_function, "freeze", Builtins::kObjectFreeze, 1, false);
+    native_context()->set_object_freeze(*object_freeze);
+    Handle<JSFunction> object_is_extensible =
+        SimpleInstallFunction(object_function, "isExtensible",
+                              Builtins::kObjectIsExtensible, 1, false);
+    native_context()->set_object_is_extensible(*object_is_extensible);
+    Handle<JSFunction> object_is_frozen = SimpleInstallFunction(
+        object_function, "isFrozen", Builtins::kObjectIsFrozen, 1, false);
+    native_context()->set_object_is_frozen(*object_is_frozen);
+    Handle<JSFunction> object_is_sealed = SimpleInstallFunction(
+        object_function, "isSealed", Builtins::kObjectIsSealed, 1, false);
+    native_context()->set_object_is_sealed(*object_is_sealed);
+    SimpleInstallFunction(object_function, "preventExtensions",
+                          Builtins::kObjectPreventExtensions, 1, false);
+    SimpleInstallFunction(object_function, "seal", Builtins::kObjectSeal, 1,
+                          false);
+  }
 
   Handle<JSObject> global(native_context()->global_object());
 
@@ -1344,11 +1376,7 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
 
   {  // -- A r r a y B u f f e r
     Handle<JSFunction> array_buffer_fun =
-        InstallFunction(
-            global, "ArrayBuffer", JS_ARRAY_BUFFER_TYPE,
-            JSArrayBuffer::kSizeWithInternalFields,
-            isolate->initial_object_prototype(),
-            Builtins::kIllegal);
+        InstallArrayBuffer(global, "ArrayBuffer");
     InstallWithIntrinsicDefaultProto(isolate, array_buffer_fun,
                                      Context::ARRAY_BUFFER_FUN_INDEX);
   }
@@ -2236,13 +2264,9 @@ void Genesis::InitializeGlobal_harmony_reflect() {
 void Genesis::InitializeGlobal_harmony_sharedarraybuffer() {
   if (!FLAG_harmony_sharedarraybuffer) return;
 
-  Handle<JSGlobalObject> global(
-      JSGlobalObject::cast(native_context()->global_object()));
-
-  Handle<JSFunction> shared_array_buffer_fun = InstallFunction(
-      global, "SharedArrayBuffer", JS_ARRAY_BUFFER_TYPE,
-      JSArrayBuffer::kSizeWithInternalFields,
-      isolate()->initial_object_prototype(), Builtins::kIllegal);
+  Handle<JSGlobalObject> global(native_context()->global_object());
+  Handle<JSFunction> shared_array_buffer_fun =
+      InstallArrayBuffer(global, "SharedArrayBuffer");
   native_context()->set_shared_array_buffer_fun(*shared_array_buffer_fun);
 }
 
@@ -2331,6 +2355,36 @@ void Genesis::InitializeGlobal_harmony_proxies() {
 
   native_context()->set_proxy_function(*proxy_function);
   InstallFunction(global, name, proxy_function, factory->Object_string());
+}
+
+
+Handle<JSFunction> Genesis::InstallArrayBuffer(Handle<JSObject> target,
+                                               const char* name) {
+  // Setup the {prototype} with the given {name} for @@toStringTag.
+  Handle<JSObject> prototype =
+      factory()->NewJSObject(isolate()->object_function(), TENURED);
+  JSObject::AddProperty(prototype, factory()->to_string_tag_symbol(),
+                        factory()->NewStringFromAsciiChecked(name),
+                        static_cast<PropertyAttributes>(DONT_ENUM | READ_ONLY));
+
+  // Allocate the constructor with the given {prototype}.
+  Handle<JSFunction> array_buffer_fun =
+      InstallFunction(target, name, JS_ARRAY_BUFFER_TYPE,
+                      JSArrayBuffer::kSizeWithInternalFields, prototype,
+                      Builtins::kArrayBufferConstructor);
+  array_buffer_fun->shared()->set_construct_stub(
+      *isolate()->builtins()->ArrayBufferConstructor_ConstructStub());
+  array_buffer_fun->shared()->DontAdaptArguments();
+  array_buffer_fun->shared()->set_length(1);
+
+  // Install the "constructor" property on the {prototype}.
+  JSObject::AddProperty(prototype, factory()->constructor_string(),
+                        array_buffer_fun, DONT_ENUM);
+
+  SimpleInstallFunction(array_buffer_fun, factory()->isView_string(),
+                        Builtins::kArrayBufferIsView, 1, true);
+
+  return array_buffer_fun;
 }
 
 

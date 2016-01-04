@@ -725,8 +725,7 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
   __ Push(lhs, rhs);
   // Figure out which native to call and setup the arguments.
   if (cc == eq) {
-    __ TailCallRuntime(strict() ? Runtime::kStrictEquals : Runtime::kEquals, 2,
-                       1);
+    __ TailCallRuntime(strict() ? Runtime::kStrictEquals : Runtime::kEquals);
   } else {
     int ncr;  // NaN compare result.
     if (cc == lt || cc == le) {
@@ -740,9 +739,8 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
 
     // Call the native; it returns -1 (less), 0 (equal), or 1 (greater)
     // tagged as a small integer.
-    __ TailCallRuntime(
-        is_strong(strength()) ? Runtime::kCompare_Strong : Runtime::kCompare, 3,
-        1);
+    __ TailCallRuntime(is_strong(strength()) ? Runtime::kCompare_Strong
+                                             : Runtime::kCompare);
   }
 
   __ bind(&miss);
@@ -977,7 +975,7 @@ void MathPowStub::Generate(MacroAssembler* masm) {
   if (exponent_type() == ON_STACK) {
     // The arguments are still on the stack.
     __ bind(&call_runtime);
-    __ TailCallRuntime(Runtime::kMathPowRT, 2, 1);
+    __ TailCallRuntime(Runtime::kMathPowRT);
 
     // The stub is called from non-optimized code, which expects the result
     // as heap number in exponent.
@@ -1535,12 +1533,12 @@ void InstanceOfStub::Generate(MacroAssembler* masm) {
   // Invalidate the instanceof cache.
   DCHECK(Smi::FromInt(0) == 0);
   __ StoreRoot(zero_reg, Heap::kInstanceofCacheFunctionRootIndex);
-  __ TailCallRuntime(Runtime::kHasInPrototypeChain, 2, 1);
+  __ TailCallRuntime(Runtime::kHasInPrototypeChain);
 
   // Slow-case: Call the %InstanceOf runtime function.
   __ bind(&slow_case);
   __ Push(object, function);
-  __ TailCallRuntime(Runtime::kInstanceOf, 2, 1);
+  __ TailCallRuntime(Runtime::kInstanceOf);
 }
 
 
@@ -1611,7 +1609,7 @@ void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
   // by calling the runtime system.
   __ bind(&slow);
   __ push(a1);
-  __ TailCallRuntime(Runtime::kArguments, 1, 1);
+  __ TailCallRuntime(Runtime::kArguments);
 }
 
 
@@ -1639,7 +1637,7 @@ void ArgumentsAccessStub::GenerateNewSloppySlow(MacroAssembler* masm) {
 
   __ bind(&runtime);
   __ Push(a1, a3, a2);
-  __ TailCallRuntime(Runtime::kNewSloppyArguments, 3, 1);
+  __ TailCallRuntime(Runtime::kNewSloppyArguments);
 }
 
 
@@ -1853,7 +1851,7 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   // a5 = argument count (tagged)
   __ bind(&runtime);
   __ Push(a1, a3, a5);
-  __ TailCallRuntime(Runtime::kNewSloppyArguments, 3, 1);
+  __ TailCallRuntime(Runtime::kNewSloppyArguments);
 }
 
 
@@ -1872,7 +1870,7 @@ void LoadIndexedInterceptorStub::Generate(MacroAssembler* masm) {
   __ Push(receiver, key);  // Receiver, key.
 
   // Perform tail call to the entry.
-  __ TailCallRuntime(Runtime::kLoadElementWithInterceptor, 2, 1);
+  __ TailCallRuntime(Runtime::kLoadElementWithInterceptor);
 
   __ bind(&slow);
   PropertyAccessCompiler::TailCallBuiltin(
@@ -1966,36 +1964,34 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   // Do the runtime call to allocate the arguments object.
   __ bind(&runtime);
   __ Push(a1, a3, a2);
-  __ TailCallRuntime(Runtime::kNewStrictArguments, 3, 1);
+  __ TailCallRuntime(Runtime::kNewStrictArguments);
 }
 
 
 void RestParamAccessStub::GenerateNew(MacroAssembler* masm) {
-  // sp[0] : language mode
-  // sp[4] : index of rest parameter
-  // sp[8] : number of parameters
-  // sp[12] : receiver displacement
+  // a2 : number of parameters (tagged)
+  // a3 : parameters pointer
+  // a4 : rest parameter index (tagged)
+  // a1 : language mode (tagged)
   // Check if the calling frame is an arguments adaptor frame.
 
   Label runtime;
-  __ ld(a2, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
-  __ ld(a3, MemOperand(a2, StandardFrameConstants::kContextOffset));
-  __ Branch(&runtime, ne, a3,
+  __ ld(a0, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  __ ld(a5, MemOperand(a0, StandardFrameConstants::kContextOffset));
+  __ Branch(&runtime, ne, a5,
             Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
 
   // Patch the arguments.length and the parameters pointer.
-  __ ld(a1, MemOperand(a2, ArgumentsAdaptorFrameConstants::kLengthOffset));
-  __ sd(a1, MemOperand(sp, 2 * kPointerSize));
-  __ SmiScale(at, a1, kPointerSizeLog2);
+  __ ld(a2, MemOperand(a0, ArgumentsAdaptorFrameConstants::kLengthOffset));
+  __ SmiScale(at, a2, kPointerSizeLog2);
 
-  __ Daddu(a3, a2, Operand(at));
-
+  __ Daddu(a3, a0, Operand(at));
   __ Daddu(a3, a3, Operand(StandardFrameConstants::kCallerSPOffset));
-  __ sd(a3, MemOperand(sp, 3 * kPointerSize));
 
   // Do the runtime call to allocate the arguments object.
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kNewRestParam, 4, 1);
+  __ Push(a2, a3, a4, a1);
+  __ TailCallRuntime(Runtime::kNewRestParam);
 }
 
 
@@ -2004,7 +2000,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // time or if regexp entry in generated code is turned off runtime switch or
   // at compilation.
 #ifdef V8_INTERPRETED_REGEXP
-  __ TailCallRuntime(Runtime::kRegExpExec, 4, 1);
+  __ TailCallRuntime(Runtime::kRegExpExec);
 #else  // V8_INTERPRETED_REGEXP
 
   // Stack frame on entry.
@@ -2321,7 +2317,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ Branch(&runtime, eq, v0, Operand(a1));
 
   // For exception, throw the exception again.
-  __ TailCallRuntime(Runtime::kRegExpExecReThrow, 4, 1);
+  __ TailCallRuntime(Runtime::kRegExpExecReThrow);
 
   __ bind(&failure);
   // For failure and exception return null.
@@ -2417,7 +2413,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // Do the runtime call to execute the regexp.
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kRegExpExec, 4, 1);
+  __ TailCallRuntime(Runtime::kRegExpExec);
 
   // Deferred code for string handling.
   // (6) Not a long external string?  If yes, go to (8).
@@ -2825,7 +2821,7 @@ void CallICStub::GenerateMiss(MacroAssembler* masm) {
   __ Push(a1, a2, a3);
 
   // Call the entry.
-  __ CallRuntime(Runtime::kCallIC_Miss, 3);
+  __ CallRuntime(Runtime::kCallIC_Miss);
 
   // Move result to a1 and exit the internal frame.
   __ mov(a1, v0);
@@ -2854,11 +2850,11 @@ void StringCharCodeAtGenerator::GenerateSlow(
     __ Push(object_, index_);
   }
   if (index_flags_ == STRING_INDEX_IS_NUMBER) {
-    __ CallRuntime(Runtime::kNumberToIntegerMapMinusZero, 1);
+    __ CallRuntime(Runtime::kNumberToIntegerMapMinusZero);
   } else {
     DCHECK(index_flags_ == STRING_INDEX_IS_ARRAY_INDEX);
     // NumberToSmi discards numbers that are not exact integers.
-    __ CallRuntime(Runtime::kNumberToSmi, 1);
+    __ CallRuntime(Runtime::kNumberToSmi);
   }
 
   // Save the conversion result before the pop instructions below
@@ -2887,7 +2883,7 @@ void StringCharCodeAtGenerator::GenerateSlow(
   call_helper.BeforeCall(masm);
   __ SmiTag(index_);
   __ Push(object_, index_);
-  __ CallRuntime(Runtime::kStringCharCodeAtRT, 2);
+  __ CallRuntime(Runtime::kStringCharCodeAtRT);
 
   __ Move(result_, v0);
 
@@ -2926,7 +2922,7 @@ void StringCharFromCodeGenerator::GenerateSlow(
   __ bind(&slow_case_);
   call_helper.BeforeCall(masm);
   __ push(code_);
-  __ CallRuntime(Runtime::kStringCharFromCode, 1);
+  __ CallRuntime(Runtime::kStringCharFromCode);
   __ Move(result_, v0);
 
   call_helper.AfterCall(masm);
@@ -3188,7 +3184,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
 
   // Just jump to runtime to create the sub string.
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kSubString, 3, 1);
+  __ TailCallRuntime(Runtime::kSubString);
 
   __ bind(&single_char);
   // v0: original string
@@ -3233,7 +3229,7 @@ void ToNumberStub::Generate(MacroAssembler* masm) {
   __ mov(v0, a0);
   __ bind(&slow_string);
   __ push(a0);  // Push argument.
-  __ TailCallRuntime(Runtime::kStringToNumber, 1, 1);
+  __ TailCallRuntime(Runtime::kStringToNumber);
   __ bind(&not_string);
 
   Label not_oddball;
@@ -3243,7 +3239,7 @@ void ToNumberStub::Generate(MacroAssembler* masm) {
   __ bind(&not_oddball);
 
   __ push(a0);  // Push argument.
-  __ TailCallRuntime(Runtime::kToNumber, 1, 1);
+  __ TailCallRuntime(Runtime::kToNumber);
 }
 
 
@@ -3260,7 +3256,7 @@ void ToLengthStub::Generate(MacroAssembler* masm) {
   __ bind(&not_smi);
 
   __ push(a0);  // Push argument.
-  __ TailCallRuntime(Runtime::kToLength, 1, 1);
+  __ TailCallRuntime(Runtime::kToLength);
 }
 
 
@@ -3292,7 +3288,7 @@ void ToStringStub::Generate(MacroAssembler* masm) {
   __ bind(&not_oddball);
 
   __ push(a0);  // Push argument.
-  __ TailCallRuntime(Runtime::kToString, 1, 1);
+  __ TailCallRuntime(Runtime::kToString);
 }
 
 
@@ -3430,7 +3426,7 @@ void StringCompareStub::Generate(MacroAssembler* masm) {
 
   __ bind(&runtime);
   __ Push(a1, a0);
-  __ TailCallRuntime(Runtime::kStringCompare, 2, 1);
+  __ TailCallRuntime(Runtime::kStringCompare);
 }
 
 
@@ -3469,7 +3465,7 @@ void CompareICStub::GenerateBooleans(MacroAssembler* masm) {
   __ CheckMap(a1, a2, Heap::kBooleanMapRootIndex, &miss, DO_SMI_CHECK);
   __ CheckMap(a0, a3, Heap::kBooleanMapRootIndex, &miss, DO_SMI_CHECK);
   if (op() != Token::EQ_STRICT && is_strong(strength())) {
-    __ TailCallRuntime(Runtime::kThrowStrongModeImplicitConversion, 0, 1);
+    __ TailCallRuntime(Runtime::kThrowStrongModeImplicitConversion);
   } else {
     if (!Token::IsEqualityOp(op())) {
       __ ld(a1, FieldMemOperand(a1, Oddball::kToNumberOffset));
@@ -3762,9 +3758,9 @@ void CompareICStub::GenerateStrings(MacroAssembler* masm) {
   __ bind(&runtime);
   __ Push(left, right);
   if (equality) {
-    __ TailCallRuntime(Runtime::kStringEquals, 2, 1);
+    __ TailCallRuntime(Runtime::kStringEquals);
   } else {
-    __ TailCallRuntime(Runtime::kStringCompare, 2, 1);
+    __ TailCallRuntime(Runtime::kStringCompare);
   }
 
   __ bind(&miss);
@@ -3808,7 +3804,7 @@ void CompareICStub::GenerateKnownReceivers(MacroAssembler* masm) {
     __ Ret(USE_DELAY_SLOT);
     __ dsubu(v0, a0, a1);
   } else if (is_strong(strength())) {
-    __ TailCallRuntime(Runtime::kThrowStrongModeImplicitConversion, 0, 1);
+    __ TailCallRuntime(Runtime::kThrowStrongModeImplicitConversion);
   } else {
     if (op() == Token::LT || op() == Token::LTE) {
       __ li(a2, Operand(Smi::FromInt(GREATER)));
@@ -3816,7 +3812,7 @@ void CompareICStub::GenerateKnownReceivers(MacroAssembler* masm) {
       __ li(a2, Operand(Smi::FromInt(LESS)));
     }
     __ Push(a1, a0, a2);
-    __ TailCallRuntime(Runtime::kCompare, 3, 1);
+    __ TailCallRuntime(Runtime::kCompare);
   }
 
   __ bind(&miss);
@@ -5202,7 +5198,7 @@ void LoadGlobalViaContextStub::Generate(MacroAssembler* masm) {
   __ bind(&slow_case);
   __ SmiTag(slot_reg);
   __ Push(slot_reg);
-  __ TailCallRuntime(Runtime::kLoadGlobalViaContext, 1, 1);
+  __ TailCallRuntime(Runtime::kLoadGlobalViaContext);
 }
 
 
@@ -5316,8 +5312,7 @@ void StoreGlobalViaContextStub::Generate(MacroAssembler* masm) {
   __ Push(slot_reg, value_reg);
   __ TailCallRuntime(is_strict(language_mode())
                          ? Runtime::kStoreGlobalViaContext_Strict
-                         : Runtime::kStoreGlobalViaContext_Sloppy,
-                     2, 1);
+                         : Runtime::kStoreGlobalViaContext_Sloppy);
 }
 
 
@@ -5442,7 +5437,7 @@ static void CallApiFunctionAndReturn(
 
   // Re-throw by promoting a scheduled exception.
   __ bind(&promote_scheduled_exception);
-  __ TailCallRuntime(Runtime::kPromoteScheduledException, 0, 1);
+  __ TailCallRuntime(Runtime::kPromoteScheduledException);
 
   // HandleScope limit has changed. Delete allocated extensions.
   __ bind(&delete_allocated_handles);

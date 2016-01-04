@@ -1450,12 +1450,12 @@ void VisitWordCompareZero(InstructionSelector* selector, Node* user,
 #if V8_TARGET_ARCH_PPC64
               case IrOpcode::kInt64AddWithOverflow:
                 cont->OverwriteAndNegateIfEqual(kOverflow);
-                return VisitBinop<Int64BinopMatcher>(
-                    selector, node, kPPC_Add, kInt16Imm, cont);
+                return VisitBinop<Int64BinopMatcher>(selector, node, kPPC_Add,
+                                                     kInt16Imm, cont);
               case IrOpcode::kInt64SubWithOverflow:
                 cont->OverwriteAndNegateIfEqual(kOverflow);
-                return VisitBinop<Int64BinopMatcher>(
-                    selector, node, kPPC_Sub, kInt16Imm_Negate, cont);
+                return VisitBinop<Int64BinopMatcher>(selector, node, kPPC_Sub,
+                                                     kInt16Imm_Negate, cont);
 #endif
               default:
                 break;

@@ -662,39 +662,30 @@ void MacroAssembler::CallExternalReference(const ExternalReference& ext,
 }
 
 
-void MacroAssembler::TailCallExternalReference(const ExternalReference& ext,
-                                               int num_arguments,
-                                               int result_size) {
+void MacroAssembler::TailCallRuntime(Runtime::FunctionId fid) {
   // ----------- S t a t e -------------
   //  -- rsp[0]                 : return address
   //  -- rsp[8]                 : argument num_arguments - 1
   //  ...
   //  -- rsp[8 * num_arguments] : argument 0 (receiver)
+  //
+  //  For runtime functions with variable arguments:
+  //  -- rax                    : number of  arguments
   // -----------------------------------
 
-  // TODO(1236192): Most runtime routines don't need the number of
-  // arguments passed in because it is constant. At some point we
-  // should remove this need and make the runtime routine entry code
-  // smarter.
-  Set(rax, num_arguments);
-  JumpToExternalReference(ext, result_size);
+  const Runtime::Function* function = Runtime::FunctionForId(fid);
+  DCHECK_EQ(1, function->result_size);
+  if (function->nargs >= 0) {
+    Set(rax, function->nargs);
+  }
+  JumpToExternalReference(ExternalReference(fid, isolate()));
 }
 
 
-void MacroAssembler::TailCallRuntime(Runtime::FunctionId fid,
-                                     int num_arguments,
-                                     int result_size) {
-  TailCallExternalReference(ExternalReference(fid, isolate()),
-                            num_arguments,
-                            result_size);
-}
-
-
-void MacroAssembler::JumpToExternalReference(const ExternalReference& ext,
-                                             int result_size) {
+void MacroAssembler::JumpToExternalReference(const ExternalReference& ext) {
   // Set the entry point and jump to the C entry runtime stub.
   LoadAddress(rbx, ext);
-  CEntryStub ces(isolate(), result_size);
+  CEntryStub ces(isolate(), 1);
   jmp(ces.GetCode(), RelocInfo::CODE_TARGET);
 }
 

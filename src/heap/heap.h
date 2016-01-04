@@ -212,6 +212,7 @@ namespace internal {
 #define INTERNALIZED_STRING_LIST(V)                              \
   V(anonymous_string, "anonymous")                               \
   V(apply_string, "apply")                                       \
+  V(assign_string, "assign")                                     \
   V(arguments_string, "arguments")                               \
   V(Arguments_string, "Arguments")                               \
   V(Array_string, "Array")                                       \
@@ -237,6 +238,7 @@ namespace internal {
   V(configurable_string, "configurable")                         \
   V(constructor_string, "constructor")                           \
   V(construct_string, "construct")                               \
+  V(create_string, "create")                                     \
   V(Date_string, "Date")                                         \
   V(default_string, "default")                                   \
   V(defineProperty_string, "defineProperty")                     \
@@ -274,6 +276,7 @@ namespace internal {
   V(int8x16_string, "int8x16")                                   \
   V(Int8x16_string, "Int8x16")                                   \
   V(isExtensible_string, "isExtensible")                         \
+  V(isView_string, "isView")                                     \
   V(KeyedLoadMonomorphic_string, "KeyedLoadMonomorphic")         \
   V(KeyedStoreMonomorphic_string, "KeyedStoreMonomorphic")       \
   V(last_index_string, "lastIndex")                              \
