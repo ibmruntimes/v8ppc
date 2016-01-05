@@ -10,6 +10,11 @@
 
 namespace v8 {
 namespace internal {
+
+// Forward declarations.
+class Counters;
+
+
 namespace compiler {
 
 // Forward declarations.
@@ -30,12 +35,16 @@ class EscapeAnalysisReducer final : public AdvancedReducer {
   Reduction ReduceFinishRegion(Node* node);
   Reduction ReduceReferenceEqual(Node* node);
   Reduction ReduceObjectIsSmi(Node* node);
-
-  Reduction ReplaceWithDeoptDummy(Node* node);
+  Reduction ReduceFrameStateUses(Node* node);
+  Node* ReduceFrameState(Node* node, Node* effect, bool multiple_users);
+  Node* ReduceStateValueInputs(Node* node, Node* effect, bool multiple_users);
+  Node* ReduceStateValueInput(Node* node, int node_index, Node* effect,
+                              bool multiple_users);
 
   JSGraph* jsgraph() const { return jsgraph_; }
   EscapeAnalysis* escape_analysis() const { return escape_analysis_; }
   Zone* zone() const { return zone_; }
+  Counters* counters() const;
 
   JSGraph* const jsgraph_;
   EscapeAnalysis* escape_analysis_;

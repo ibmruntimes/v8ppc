@@ -59,6 +59,7 @@ class EscapeStatusAnalysis {
   bool HasEntry(Node* node);
   void Resize();
   size_t size();
+  bool IsAllocationPhi(Node* node);
 
   Graph* graph() const { return graph_; }
   Zone* zone() const { return zone_; }
@@ -76,28 +77,8 @@ class EscapeStatusAnalysis {
 DEFINE_OPERATORS_FOR_FLAGS(EscapeStatusAnalysis::EscapeStatusFlags)
 
 
-class MergeCache {
- public:
-  explicit MergeCache(Zone* zone)
-      : states_(zone), objects_(zone), fields_(zone) {
-    states_.reserve(4);
-    objects_.reserve(4);
-    fields_.reserve(4);
-  }
-  ZoneVector<VirtualState*>& states() { return states_; }
-  ZoneVector<VirtualObject*>& objects() { return objects_; }
-  ZoneVector<Node*>& fields() { return fields_; }
-  void Clear() {
-    states_.clear();
-    objects_.clear();
-    fields_.clear();
-  }
-
- private:
-  ZoneVector<VirtualState*> states_;
-  ZoneVector<VirtualObject*> objects_;
-  ZoneVector<Node*> fields_;
-};
+// Forward Declaration.
+class MergeCache;
 
 
 // EscapeObjectAnalysis simulates stores to determine values of loads if
@@ -112,6 +93,8 @@ class EscapeAnalysis {
   Node* GetReplacement(Node* node);
   bool IsVirtual(Node* node);
   bool IsEscaped(Node* node);
+  bool CompareVirtualObjects(Node* left, Node* right);
+  Node* GetOrCreateObjectState(Node* effect, Node* node);
 
  private:
   void RunObjectAnalysis();
@@ -130,7 +113,6 @@ class EscapeAnalysis {
                           VirtualState* states);
 
   void ForwardVirtualState(Node* node);
-
   bool IsEffectBranchPoint(Node* node);
   bool IsDanglingEffectNode(Node* node);
   int OffsetFromAccess(Node* node);
@@ -161,7 +143,7 @@ class EscapeAnalysis {
   ZoneVector<VirtualState*> virtual_states_;
   ZoneVector<Node*> replacements_;
   EscapeStatusAnalysis escape_status_;
-  MergeCache cache_;
+  MergeCache* cache_;
 
   DISALLOW_COPY_AND_ASSIGN(EscapeAnalysis);
 };

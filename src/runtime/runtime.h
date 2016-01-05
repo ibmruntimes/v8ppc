@@ -141,9 +141,7 @@ namespace internal {
   F(IsDate, 1, 1)                  \
   F(ThrowNotDateError, 0, 1)       \
   F(DateCurrentTime, 0, 1)         \
-  F(DateParseString, 2, 1)         \
   F(DateLocalTimezone, 1, 1)       \
-  F(DateToUTC, 1, 1)               \
   F(DateCacheVersion, 0, 1)        \
   F(DateField, 2 /* date object, field index */, 1)
 
@@ -557,8 +555,8 @@ namespace internal {
   F(NewRestArguments_Generic, 2, 1)        \
   F(NewSloppyArguments, 3, 1)              \
   F(NewStrictArguments, 3, 1)              \
-  F(NewRestParam, 4, 1)                    \
-  F(NewRestParamSlow, 2, 1)                \
+  F(NewRestParam, 3, 1)                    \
+  F(NewRestParamSlow, 1, 1)                \
   F(NewClosure, 1, 1)                      \
   F(NewClosure_Tenured, 1, 1)              \
   F(NewScriptContext, 2, 1)                \

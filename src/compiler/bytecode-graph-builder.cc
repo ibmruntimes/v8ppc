@@ -261,16 +261,18 @@ void BytecodeGraphBuilder::Environment::PrepareForLoop() {
 
 bool BytecodeGraphBuilder::Environment::StateValuesRequireUpdate(
     Node** state_values, int offset, int count) {
-  Node** env_values = (count == 0) ? nullptr : &values()->at(offset);
+  if (!builder()->info()->is_deoptimization_enabled()) {
+    return false;
+  }
   if (*state_values == nullptr) {
     return true;
-  } else {
-    DCHECK_EQ((*state_values)->InputCount(), count);
-    DCHECK_LE(static_cast<size_t>(offset + count), values()->size());
-    for (int i = 0; i < count; i++) {
-      if ((*state_values)->InputAt(i) != env_values[i]) {
-        return true;
-      }
+  }
+  DCHECK_EQ((*state_values)->InputCount(), count);
+  DCHECK_LE(static_cast<size_t>(offset + count), values()->size());
+  Node** env_values = (count == 0) ? nullptr : &values()->at(offset);
+  for (int i = 0; i < count; i++) {
+    if ((*state_values)->InputAt(i) != env_values[i]) {
+      return true;
     }
   }
   return false;
@@ -765,6 +767,18 @@ void BytecodeGraphBuilder::BuildStaLookupSlot(
 }
 
 
+void BytecodeGraphBuilder::VisitLdaLookupSlotWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  VisitLdaLookupSlot(iterator);
+}
+
+
+void BytecodeGraphBuilder::VisitLdaLookupSlotInsideTypeofWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  VisitLdaLookupSlotInsideTypeof(iterator);
+}
+
+
 void BytecodeGraphBuilder::VisitStaLookupSlotSloppy(
     const interpreter::BytecodeArrayIterator& iterator) {
   BuildStaLookupSlot(LanguageMode::SLOPPY, iterator);
@@ -774,6 +788,18 @@ void BytecodeGraphBuilder::VisitStaLookupSlotSloppy(
 void BytecodeGraphBuilder::VisitStaLookupSlotStrict(
     const interpreter::BytecodeArrayIterator& iterator) {
   BuildStaLookupSlot(LanguageMode::STRICT, iterator);
+}
+
+
+void BytecodeGraphBuilder::VisitStaLookupSlotSloppyWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  VisitStaLookupSlotSloppy(iterator);
+}
+
+
+void BytecodeGraphBuilder::VisitStaLookupSlotStrictWide(
+    const interpreter::BytecodeArrayIterator& iterator) {
+  VisitStaLookupSlotStrict(iterator);
 }
 
 
