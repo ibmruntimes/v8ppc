@@ -97,6 +97,7 @@
         'interpreter/bytecodes-unittest.cc',
         'interpreter/bytecode-array-builder-unittest.cc',
         'interpreter/bytecode-array-iterator-unittest.cc',
+        'interpreter/constant-array-builder-unittest.cc',
         'libplatform/default-platform-unittest.cc',
         'libplatform/task-queue-unittest.cc',
         'libplatform/worker-thread-unittest.cc',
@@ -110,6 +111,10 @@
         'runtime/runtime-interpreter-unittest.cc',
         'test-utils.h',
         'test-utils.cc',
+        'wasm/ast-decoder-unittest.cc',
+        'wasm/encoder-unittest.cc',
+        'wasm/module-decoder-unittest.cc',
+        'wasm/wasm-macro-gen-unittest.cc',
       ],
       'conditions': [
         ['v8_target_arch=="arm"', {
@@ -168,14 +173,6 @@
               '-pedantic',
             ],
           },
-        }],
-        ['v8_wasm!=0', {
-          'sources': [
-            'wasm/ast-decoder-unittest.cc',
-            'wasm/encoder-unittest.cc',
-            'wasm/module-decoder-unittest.cc',
-            'wasm/wasm-macro-gen-unittest.cc',
-          ],
         }],
       ],
     },
