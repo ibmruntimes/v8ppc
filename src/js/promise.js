@@ -227,15 +227,22 @@ function NewPromiseCapability(C) {
       resolve: callbacks.resolve,
       reject: callbacks.reject
     };
-  } else {
-    var result = {promise: UNDEFINED, resolve: UNDEFINED, reject: UNDEFINED };
-    result.promise = new C(function(resolve, reject) {
-      // TODO(littledan): Check for resolve and reject being not undefined
-      result.resolve = resolve;
-      result.reject = reject;
-    });
-    return result;
   }
+
+  var result = {promise: UNDEFINED, resolve: UNDEFINED, reject: UNDEFINED };
+  result.promise = new C(function(resolve, reject) {
+    if (!IS_UNDEFINED(result.resolve) || !IS_UNDEFINED(result.reject))
+        throw MakeTypeError(kPromiseExecutorAlreadyInvoked);
+    result.resolve = resolve;
+    result.reject = reject;
+  });
+
+  if (!IS_CALLABLE(result.resolve))
+      throw MakeTypeError(kCalledNonCallable, "promiseCapability.[[Resolve]]");
+  if (!IS_CALLABLE(result.reject))
+      throw MakeTypeError(kCalledNonCallable, "promiseCapability.[[Reject]]");
+
+  return result;
 }
 
 function PromiseDeferred() {
@@ -250,32 +257,33 @@ function PromiseRejected(r) {
   if (!IS_RECEIVER(this)) {
     throw MakeTypeError(kCalledOnNonObject, PromiseRejected);
   }
-  var promise;
   if (this === GlobalPromise) {
     // Optimized case, avoid extra closure.
-    promise = PromiseCreateAndSet(-1, r);
+    var promise = PromiseCreateAndSet(-1, r);
     // The debug event for this would always be an uncaught promise reject,
     // which is usually simply noise. Do not trigger that debug event.
     %PromiseRejectEvent(promise, r, false);
+    return promise;
   } else {
-    promise = new this(function(resolve, reject) { reject(r) });
+    var promiseCapability = NewPromiseCapability(this);
+    %_Call(promiseCapability.reject, UNDEFINED, r);
+    return promiseCapability.promise;
   }
-  return promise;
 }
 
 // Multi-unwrapped chaining with thenable coercion.
 
 function PromiseThen(onResolve, onReject) {
+  var status = GET_PRIVATE(this, promiseStatusSymbol);
+  if (IS_UNDEFINED(status)) {
+    throw MakeTypeError(kNotAPromise, this);
+  }
+
   var constructor = this.constructor;
   onResolve = IS_CALLABLE(onResolve) ? onResolve : PromiseIdResolveHandler;
   onReject = IS_CALLABLE(onReject) ? onReject : PromiseIdRejectHandler;
   var deferred = NewPromiseCapability(constructor);
-  switch (GET_PRIVATE(this, promiseStatusSymbol)) {
-    case UNDEFINED:
-      // TODO(littledan): The type check should be called before
-      // constructing NewPromiseCapability; this is observable when
-      // erroneously copying this method to other classes.
-      throw MakeTypeError(kNotAPromise, this);
+  switch (status) {
     case 0:  // Pending
       GET_PRIVATE(this, promiseOnResolveSymbol).push(onResolve, deferred);
       GET_PRIVATE(this, promiseOnRejectSymbol).push(onReject, deferred);
@@ -317,7 +325,7 @@ function PromiseCatch(onReject) {
 
 function PromiseCast(x) {
   if (!IS_RECEIVER(this)) {
-    throw MakeTypeError(kCalledOnNonObject, "Promise.resolve");
+    throw MakeTypeError(kCalledOnNonObject, PromiseCast);
   }
   if (IsPromise(x) && x.constructor === this) return x;
 
@@ -359,6 +367,10 @@ function PromiseAll(iterable) {
 }
 
 function PromiseRace(iterable) {
+  if (!IS_RECEIVER(this)) {
+    throw MakeTypeError(kCalledOnNonObject, PromiseRace);
+  }
+
   var deferred = NewPromiseCapability(this);
   try {
     for (var value of iterable) {

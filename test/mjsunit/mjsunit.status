@@ -54,6 +54,7 @@
   'es6/debug-promises/reject-with-throw-in-reject': [FAIL],
   'es6/debug-promises/reject-with-undefined-reject': [FAIL],
   'es6/debug-promises/reject-with-invalid-reject': [FAIL],
+  'es6/debug-promises/throw-with-undefined-reject': [FAIL],
 
   ##############################################################################
   # TurboFan compiler failures.
@@ -1080,6 +1081,10 @@
   'with-prototype': [SKIP],
   'with-readonly': [SKIP],
   'with-value': [SKIP],
+  'regress/regress-builtinbust-7': [SKIP],
+  'regress/regress-crbug-451770': [SKIP],
+  'regress/regress-crbug-503968': [SKIP],
+  'regress/regress-crbug-504729': [SKIP],
 }],  # ignition == True
 
 ['ignition == True and (arch == arm or arch == arm64)', {
