@@ -1105,6 +1105,9 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     Handle<JSFunction> object_is_sealed = SimpleInstallFunction(
         object_function, "isSealed", Builtins::kObjectIsSealed, 1, false);
     native_context()->set_object_is_sealed(*object_is_sealed);
+    Handle<JSFunction> object_keys = SimpleInstallFunction(
+        object_function, "keys", Builtins::kObjectKeys, 1, false);
+    native_context()->set_object_keys(*object_keys);
     SimpleInstallFunction(object_function, "preventExtensions",
                           Builtins::kObjectPreventExtensions, 1, false);
     SimpleInstallFunction(object_function, "seal", Builtins::kObjectSeal, 1,
@@ -2549,6 +2552,42 @@ bool Genesis::InstallNatives(ContextType context_type) {
     // Install the toISOString and valueOf functions.
     SimpleInstallFunction(prototype, "toISOString",
                           Builtins::kDatePrototypeToISOString, 0, false);
+    SimpleInstallFunction(prototype, "getDate", Builtins::kDatePrototypeGetDate,
+                          0, true);
+    SimpleInstallFunction(prototype, "getDay", Builtins::kDatePrototypeGetDay,
+                          0, true);
+    SimpleInstallFunction(prototype, "getFullYear",
+                          Builtins::kDatePrototypeGetFullYear, 0, true);
+    SimpleInstallFunction(prototype, "getHours",
+                          Builtins::kDatePrototypeGetHours, 0, true);
+    SimpleInstallFunction(prototype, "getMilliseconds",
+                          Builtins::kDatePrototypeGetMilliseconds, 0, true);
+    SimpleInstallFunction(prototype, "getMinutes",
+                          Builtins::kDatePrototypeGetMinutes, 0, true);
+    SimpleInstallFunction(prototype, "getMonth",
+                          Builtins::kDatePrototypeGetMonth, 0, true);
+    SimpleInstallFunction(prototype, "getSeconds",
+                          Builtins::kDatePrototypeGetSeconds, 0, true);
+    SimpleInstallFunction(prototype, "getTime", Builtins::kDatePrototypeGetTime,
+                          0, true);
+    SimpleInstallFunction(prototype, "getTimezoneOffset",
+                          Builtins::kDatePrototypeGetTimezoneOffset, 0, true);
+    SimpleInstallFunction(prototype, "getUTCDate",
+                          Builtins::kDatePrototypeGetUTCDate, 0, true);
+    SimpleInstallFunction(prototype, "getUTCDay",
+                          Builtins::kDatePrototypeGetUTCDay, 0, true);
+    SimpleInstallFunction(prototype, "getUTCFullYear",
+                          Builtins::kDatePrototypeGetUTCFullYear, 0, true);
+    SimpleInstallFunction(prototype, "getUTCHours",
+                          Builtins::kDatePrototypeGetUTCHours, 0, true);
+    SimpleInstallFunction(prototype, "getUTCMilliseconds",
+                          Builtins::kDatePrototypeGetUTCMilliseconds, 0, true);
+    SimpleInstallFunction(prototype, "getUTCMinutes",
+                          Builtins::kDatePrototypeGetUTCMinutes, 0, true);
+    SimpleInstallFunction(prototype, "getUTCMonth",
+                          Builtins::kDatePrototypeGetUTCMonth, 0, true);
+    SimpleInstallFunction(prototype, "getUTCSeconds",
+                          Builtins::kDatePrototypeGetUTCSeconds, 0, true);
     SimpleInstallFunction(prototype, "valueOf", Builtins::kDatePrototypeValueOf,
                           0, false);
 

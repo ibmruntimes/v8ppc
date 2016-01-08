@@ -458,6 +458,14 @@ BUILTIN(ArraySlice) {
   int relative_end = 0;
   bool is_sloppy_arguments = false;
 
+  // TODO(littledan): Look up @@species only once, not once here and
+  // again in the JS builtin. Pass the species out?
+  Handle<Object> species;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, species, Object::ArraySpeciesConstructor(isolate, receiver));
+  if (*species != isolate->context()->native_context()->array_function()) {
+    return CallJsIntrinsic(isolate, isolate->array_slice(), args);
+  }
   if (receiver->IsJSArray()) {
     DisallowHeapAllocation no_gc;
     JSArray* array = JSArray::cast(*receiver);
@@ -541,6 +549,14 @@ BUILTIN(ArraySplice) {
       EnsureJSArrayWithWritableFastElements(isolate, receiver, &args, 3);
   Handle<FixedArrayBase> elms_obj;
   if (!maybe_elms_obj.ToHandle(&elms_obj)) {
+    return CallJsIntrinsic(isolate, isolate->array_splice(), args);
+  }
+  // TODO(littledan): Look up @@species only once, not once here and
+  // again in the JS builtin. Pass the species out?
+  Handle<Object> species;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, species, Object::ArraySpeciesConstructor(isolate, receiver));
+  if (*species != isolate->context()->native_context()->array_function()) {
     return CallJsIntrinsic(isolate, isolate->array_splice(), args);
   }
   Handle<JSArray> array = Handle<JSArray>::cast(receiver);
@@ -1586,6 +1602,22 @@ BUILTIN(ObjectIsSealed) {
 }
 
 
+// ES6 section 19.1.2.14 Object.keys ( O )
+BUILTIN(ObjectKeys) {
+  HandleScope scope(isolate);
+  Handle<Object> object = args.atOrUndefined(isolate, 1);
+  Handle<JSReceiver> receiver;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, receiver,
+                                     Execution::ToObject(isolate, object));
+  Handle<FixedArray> keys;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, keys,
+      JSReceiver::GetKeys(receiver, JSReceiver::OWN_ONLY, ENUMERABLE_STRINGS,
+                          CONVERT_TO_STRING));
+  return *isolate->factory()->NewJSArrayWithElements(keys);
+}
+
+
 // ES6 section 19.1.2.15 Object.preventExtensions ( O )
 BUILTIN(ObjectPreventExtensions) {
   HandleScope scope(isolate);
@@ -2080,7 +2112,9 @@ double ParseDateTimeString(Handle<String> str) {
                                tmp->get(5)->Number(), tmp->get(6)->Number());
   double date = MakeDate(day, time);
   if (tmp->get(7)->IsNull()) {
-    date = isolate->date_cache()->ToUTC(static_cast<int64_t>(date));
+    if (!std::isnan(date)) {
+      date = isolate->date_cache()->ToUTC(static_cast<int64_t>(date));
+    }
   } else {
     date -= tmp->get(7)->Number() * 1000.0;
   }
@@ -2333,6 +2367,114 @@ BUILTIN(DatePrototypeToPrimitive) {
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
                                      JSDate::ToPrimitive(receiver, hint));
   return *result;
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetDate(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kDay);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetDay(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kWeekday);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetFullYear(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kYear);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetHours(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kHour);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetMilliseconds(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kMillisecond);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetMinutes(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kMinute);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetMonth(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kMonth);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetSeconds(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kSecond);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetTime(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kDateValue);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetTimezoneOffset(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kTimezoneOffset);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetUTCDate(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kDayUTC);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetUTCDay(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kWeekdayUTC);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetUTCFullYear(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kYearUTC);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetUTCHours(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kHourUTC);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetUTCMilliseconds(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kMillisecondUTC);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetUTCMinutes(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kMinuteUTC);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetUTCMonth(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kMonthUTC);
+}
+
+
+// static
+void Builtins::Generate_DatePrototypeGetUTCSeconds(MacroAssembler* masm) {
+  Generate_DatePrototype_GetField(masm, JSDate::kSecondUTC);
 }
 
 

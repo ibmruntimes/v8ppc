@@ -50,7 +50,8 @@ namespace internal {
   F(GetCachedArrayIndex, 1, 1)       \
   F(FixedArrayGet, 2, 1)             \
   F(FixedArraySet, 3, 1)             \
-  F(FastOneByteArrayJoin, 2, 1)
+  F(FastOneByteArrayJoin, 2, 1)      \
+  F(ArraySpeciesConstructor, 1, 1)
 
 
 #define FOR_EACH_INTRINSIC_ATOMICS(F) \
@@ -556,7 +557,6 @@ namespace internal {
   F(NewSloppyArguments, 3, 1)              \
   F(NewStrictArguments, 3, 1)              \
   F(NewRestParam, 3, 1)                    \
-  F(NewRestParamSlow, 1, 1)                \
   F(NewClosure, 1, 1)                      \
   F(NewClosure_Tenured, 1, 1)              \
   F(NewScriptContext, 2, 1)                \
@@ -1182,15 +1182,6 @@ class Runtime : public AllStatic {
 
   static MaybeHandle<JSArray> GetInternalProperties(Isolate* isolate,
                                                     Handle<Object>);
-
-  // Find the arguments of the JavaScript function invocation that called
-  // into C++ code. Collect these in a newly allocated array of handles
-  // (possibly prefixed by a number of empty handles).
-  // TODO(mstarzinger): Temporary workaround until this is only used by the
-  // %_Arguments and %_ArgumentsLength intrinsics. Make this function local to
-  // runtime-scopes.cc then.
-  static base::SmartArrayPointer<Handle<Object>> GetCallerArguments(
-      Isolate* isolate, int prefix_argc, int* total_argc);
 };
 
 

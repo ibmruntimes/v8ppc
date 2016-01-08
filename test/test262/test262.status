@@ -410,27 +410,12 @@
   # https://bugs.chromium.org/p/v8/issues/detail?id=4632
   'built-ins/Promise/race/same-resolve-function': [FAIL],
   'built-ins/Promise/race/same-reject-function': [FAIL],
-  'built-ins/Promise/all/same-resolve-function': [FAIL],
-  'built-ins/Promise/all/same-reject-function': [FAIL],
 
   # https://bugs.chromium.org/p/v8/issues/detail?id=4633
-  'built-ins/Promise/prototype/then/deferred-is-resolved-value': [SKIP],
-  'built-ins/Promise/exception-after-resolve-in-executor': [FAIL],
   'built-ins/Promise/reject-function-name': [FAIL],
-  'built-ins/Promise/reject-function-nonconstructor': [FAIL],
   'built-ins/Promise/resolve-function-name': [FAIL],
-  'built-ins/Promise/resolve-function-nonconstructor': [FAIL],
-  'built-ins/Promise/all/call-resolve-element-after-return': [FAIL],
-  'built-ins/Promise/all/call-resolve-element': [FAIL],
-  'built-ins/Promise/all/call-resolve-element-items': [FAIL],
-  'built-ins/Promise/all/resolve-before-loop-exit-from-same': [FAIL],
   'built-ins/Promise/all/resolve-element-function-name': [FAIL],
-  'built-ins/Promise/all/resolve-element-function-nonconstructor': [FAIL],
-  'built-ins/Promise/exception-after-resolve-in-thenable-job': [FAIL],
-  'built-ins/Promise/all/resolve-before-loop-exit': [FAIL],
   'built-ins/Promise/executor-function-name': [FAIL],
-  'built-ins/Promise/executor-function-nonconstructor': [FAIL],
-  'built-ins/Promise/all/resolve-from-same-thenable': [FAIL],
 
   # https://bugs.chromium.org/p/v8/issues/detail?id=4634
   'built-ins/DataView/prototype/setFloat64/index-check-before-value-conversion': [FAIL],
@@ -591,6 +576,12 @@
   'built-ins/encodeURIComponent/S15.1.3.4_A2.3_T1': [SKIP],
 }],  # 'arch == arm or arch == mipsel or arch == mips or arch == arm64'
 
+['asan == True', {
+  # BUG(v8:4653): Test262 tests which rely on quit() are not compatible with
+  # asan's --omit-quit flag.
+  'built-ins/Promise/prototype/then/deferred-is-resolved-value': [SKIP],
+}],
+
 ['ignition == True', {
   'annexB/B.2.3.*': [SKIP],
   'built-ins/Array/prototype/reduce/*': [SKIP],
@@ -601,6 +592,7 @@
   'built-ins/MapIteratorPrototype/*': [SKIP],
   'built-ins/Promise/prototype/then/capability-executor-called-twice': [SKIP],
   'built-ins/Promise/prototype/then/capability-executor-not-callable': [SKIP],
+  'built-ins/Promise/prototype/then/deferred-is-resolved-value': [SKIP],
   'built-ins/Proxy/has/*': [SKIP],
   'built-ins/Reflect/enumerate/*': [SKIP],
   'built-ins/Set/*': [SKIP],
@@ -752,6 +744,10 @@
   'built-ins/decodeURIComponent/S15.1.3.2_A1.2_T2': [SKIP],
   'built-ins/encodeURI*': [SKIP],
   'intl402/9.2.2': [SKIP],
+  'language/statements/let/fn-name-arrow': [SKIP],
+  'language/statements/let/fn-name-cover': [SKIP],
+  'language/statements/let/fn-name-fn': [SKIP],
+  'language/statements/let/fn-name-gen': [SKIP],
 }],  # ignition == True and (arch == arm or arch == arm64)
 
 ]

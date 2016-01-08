@@ -37,13 +37,13 @@ var lastMicrotaskId = 0;
 function CreateResolvingFunctions(promise) {
   var alreadyResolved = false;
 
-  var resolve = function(value) {
+  var resolve = value => {
     if (alreadyResolved === true) return;
     alreadyResolved = true;
     PromiseResolve(promise, value);
   };
 
-  var reject = function(reason) {
+  var reject = reason => {
     if (alreadyResolved === true) return;
     alreadyResolved = true;
     PromiseReject(promise, reason);
@@ -66,13 +66,13 @@ var GlobalPromise = function Promise(resolver) {
     throw MakeTypeError(kResolverNotAFunction, resolver);
 
   var promise = PromiseInit(%NewObject(GlobalPromise, new.target));
+  var callbacks = CreateResolvingFunctions(promise);
 
   try {
     %DebugPushPromise(promise, Promise);
-    var callbacks = CreateResolvingFunctions(promise);
     resolver(callbacks.resolve, callbacks.reject);
   } catch (e) {
-    PromiseReject(promise, e);
+    %_Call(callbacks.reject, UNDEFINED, e);
   } finally {
     %DebugPopPromise();
   }
@@ -181,11 +181,11 @@ function PromiseResolve(promise, x) {
         if (instrumenting) {
           %DebugAsyncTaskEvent({ type: "willHandle", id: id, name: name });
         }
+        var callbacks = CreateResolvingFunctions(promise);
         try {
-          var callbacks = CreateResolvingFunctions(promise);
           %_Call(then, x, callbacks.resolve, callbacks.reject);
         } catch (e) {
-          PromiseReject(promise, e);
+          %_Call(callbacks.reject, UNDEFINED, e);
         }
         if (instrumenting) {
           %DebugAsyncTaskEvent({ type: "didHandle", id: id, name: name });
@@ -230,7 +230,7 @@ function NewPromiseCapability(C) {
   }
 
   var result = {promise: UNDEFINED, resolve: UNDEFINED, reject: UNDEFINED };
-  result.promise = new C(function(resolve, reject) {
+  result.promise = new C((resolve, reject) => {
     if (!IS_UNDEFINED(result.resolve) || !IS_UNDEFINED(result.reject))
         throw MakeTypeError(kPromiseExecutorAlreadyInvoked);
     result.resolve = resolve;
@@ -246,10 +246,12 @@ function NewPromiseCapability(C) {
 }
 
 function PromiseDeferred() {
+  %IncrementUseCounter(kPromiseDefer);
   return NewPromiseCapability(this);
 }
 
 function PromiseResolved(x) {
+  %IncrementUseCounter(kPromiseAccept);
   return %_Call(PromiseCast, this, x);
 }
 
@@ -314,6 +316,7 @@ function PromiseThen(onResolve, onReject) {
 
 // Chain is left around for now as an alias for then
 function PromiseChain(onResolve, onReject) {
+  %IncrementUseCounter(kPromiseChain);
   return %_Call(PromiseThen, this, onResolve, onReject);
 }
 
@@ -335,33 +338,50 @@ function PromiseCast(x) {
 }
 
 function PromiseAll(iterable) {
+  if (!IS_RECEIVER(this)) {
+    throw MakeTypeError(kCalledOnNonObject, "Promise.all");
+  }
+
   var deferred = NewPromiseCapability(this);
-  var resolutions = [];
+  var resolutions = new InternalArray();
+  var count;
+
+  function CreateResolveElementFunction(index, values, promiseCapability) {
+    var alreadyCalled = false;
+    return (x) => {
+      if (alreadyCalled === true) return;
+      alreadyCalled = true;
+      values[index] = x;
+      if (--count === 0) {
+        var valuesArray = [];
+        %MoveArrayContents(values, valuesArray);
+        %_Call(promiseCapability.resolve, UNDEFINED, valuesArray);
+      }
+    };
+  }
+
   try {
-    var count = 0;
     var i = 0;
+    count = 1;
     for (var value of iterable) {
-      var reject = function(r) { deferred.reject(r) };
-      this.resolve(value).then(
-          // Nested scope to get closure over current i.
-          // TODO(arv): Use an inner let binding once available.
-          (function(i) {
-            return function(x) {
-              resolutions[i] = x;
-              if (--count === 0) deferred.resolve(resolutions);
-            }
-          })(i), reject);
-      SET_PRIVATE(reject, promiseCombinedDeferredSymbol, deferred);
-      ++i;
+      var nextPromise = this.resolve(value);
       ++count;
+      nextPromise.then(
+          CreateResolveElementFunction(i, resolutions, deferred),
+          deferred.reject);
+      SET_PRIVATE(deferred.reject, promiseCombinedDeferredSymbol, deferred);
+      ++i;
     }
 
-    if (count === 0) {
-      deferred.resolve(resolutions);
+    // 6.d
+    if (--count === 0) {
+      var valuesArray = [];
+      %MoveArrayContents(resolutions, valuesArray);
+      %_Call(deferred.resolve, UNDEFINED, valuesArray);
     }
 
   } catch (e) {
-    deferred.reject(e)
+    %_Call(deferred.reject, UNDEFINED, e);
   }
   return deferred.promise;
 }
@@ -374,8 +394,8 @@ function PromiseRace(iterable) {
   var deferred = NewPromiseCapability(this);
   try {
     for (var value of iterable) {
-      var reject = function(r) { deferred.reject(r) };
-      this.resolve(value).then(function(x) { deferred.resolve(x) }, reject);
+      var reject = reason => { deferred.reject(reason); };
+      this.resolve(value).then((x) => { deferred.resolve(x) }, reject);
       SET_PRIVATE(reject, promiseCombinedDeferredSymbol, deferred);
     }
   } catch (e) {
