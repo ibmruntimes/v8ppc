@@ -137,14 +137,9 @@ namespace internal {
 
 
 #define FOR_EACH_INTRINSIC_DATE(F) \
-  F(DateMakeDay, 2, 1)             \
-  F(DateSetValue, 3, 1)            \
   F(IsDate, 1, 1)                  \
-  F(ThrowNotDateError, 0, 1)       \
   F(DateCurrentTime, 0, 1)         \
-  F(DateLocalTimezone, 1, 1)       \
-  F(DateCacheVersion, 0, 1)        \
-  F(DateField, 2 /* date object, field index */, 1)
+  F(ThrowNotDateError, 0, 1)
 
 
 #define FOR_EACH_INTRINSIC_DEBUG(F)            \
@@ -971,7 +966,7 @@ namespace internal {
 
 #define FOR_EACH_INTRINSIC_TYPEDARRAY(F)     \
   F(ArrayBufferGetByteLength, 1, 1)          \
-  F(ArrayBufferSliceImpl, 3, 1)              \
+  F(ArrayBufferSliceImpl, 4, 1)              \
   F(ArrayBufferNeuter, 1, 1)                 \
   F(TypedArrayInitialize, 6, 1)              \
   F(TypedArrayInitializeFromArrayLike, 4, 1) \

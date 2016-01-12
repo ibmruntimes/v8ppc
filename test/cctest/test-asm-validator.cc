@@ -309,6 +309,52 @@ TEST(ValidateMinimum) {
 }
 
 
+TEST(MissingUseAsm) {
+  const char test_function[] =
+      "function foo() {\n"
+      "  function bar() {}\n"
+      "  return { bar: bar };\n"
+      "}\n";
+  v8::V8::Initialize();
+  HandleAndZoneScope handles;
+  Zone* zone = handles.main_zone();
+  ZoneVector<ExpressionTypeEntry> types(zone);
+  CHECK_EQ("asm: line 1: missing \"use asm\"\n",
+           Validate(zone, test_function, &types));
+}
+
+
+TEST(WrongUseAsm) {
+  const char test_function[] =
+      "function foo() {\n"
+      "  \"use wasm\"\n"
+      "  function bar() {}\n"
+      "  return { bar: bar };\n"
+      "}\n";
+  v8::V8::Initialize();
+  HandleAndZoneScope handles;
+  Zone* zone = handles.main_zone();
+  ZoneVector<ExpressionTypeEntry> types(zone);
+  CHECK_EQ("asm: line 1: missing \"use asm\"\n",
+           Validate(zone, test_function, &types));
+}
+
+
+TEST(MissingReturnExports) {
+  const char test_function[] =
+      "function foo() {\n"
+      "  \"use asm\"\n"
+      "  function bar() {}\n"
+      "}\n";
+  v8::V8::Initialize();
+  HandleAndZoneScope handles;
+  Zone* zone = handles.main_zone();
+  ZoneVector<ExpressionTypeEntry> types(zone);
+  CHECK_EQ("asm: line 2: last statement in module is not a return\n",
+           Validate(zone, test_function, &types));
+}
+
+
 #define HARNESS_STDLIB()                 \
   "var Infinity = stdlib.Infinity;\n"    \
   "var NaN = stdlib.NaN;\n"              \
@@ -1931,4 +1977,74 @@ TEST(TypeConsistency) {
   CHECK(!cache.kAsmDouble->Is(cache.kAsmSigned));
   CHECK(!cache.kAsmDouble->Is(cache.kAsmFixnum));
   CHECK(!cache.kAsmDouble->Is(cache.kAsmFloat));
+}
+
+
+TEST(SwitchTest) {
+  CHECK_FUNC_TYPES_BEGIN(
+      "function switcher(x) {\n"
+      "  x = x|0;\n"
+      "  switch (x|0) {\n"
+      "    case 1: return 23;\n"
+      "    case 2: return 43;\n"
+      "    default: return 66;\n"
+      "  }\n"
+      "  return 0;\n"
+      "}\n"
+      "function foo() { switcher(1); }") {
+    CHECK_EXPR(FunctionLiteral, FUNC_I2I_TYPE) {
+      CHECK_EXPR(Assignment, Bounds(cache.kAsmInt)) {
+        CHECK_VAR(x, Bounds(cache.kAsmInt));
+        CHECK_EXPR(BinaryOperation, Bounds(cache.kAsmSigned)) {
+          CHECK_VAR(x, Bounds(cache.kAsmInt));
+          CHECK_EXPR(Literal, Bounds(cache.kAsmFixnum));
+        }
+      }
+      CHECK_EXPR(Assignment, Bounds(cache.kAsmInt)) {
+        CHECK_VAR(.switch_tag, Bounds(cache.kAsmInt));
+        CHECK_EXPR(BinaryOperation, Bounds(cache.kAsmSigned)) {
+          CHECK_VAR(x, Bounds(cache.kAsmInt));
+          CHECK_EXPR(Literal, Bounds(cache.kAsmFixnum));
+        }
+      }
+      CHECK_EXPR(Literal, Bounds(Type::Undefined(zone)));
+      CHECK_VAR(.switch_tag, Bounds(cache.kAsmSigned));
+      // case 1: return 23;
+      CHECK_EXPR(Literal, Bounds(cache.kAsmFixnum));
+      CHECK_EXPR(Literal, Bounds(cache.kAsmSigned));
+      // case 2: return 43;
+      CHECK_EXPR(Literal, Bounds(cache.kAsmFixnum));
+      CHECK_EXPR(Literal, Bounds(cache.kAsmSigned));
+      // default: return 66;
+      CHECK_EXPR(Literal, Bounds(cache.kAsmSigned));
+      // return 0;
+      CHECK_EXPR(Literal, Bounds(cache.kAsmSigned));
+    }
+    CHECK_SKIP();
+  }
+  CHECK_FUNC_TYPES_END
+}
+
+
+TEST(BadSwitchRange) {
+  CHECK_FUNC_ERROR(
+      "function bar() { switch (1) { case -1: case 0x7fffffff: } }\n"
+      "function foo() { bar(); }",
+      "asm: line 39: case range too large\n");
+}
+
+
+TEST(DuplicateSwitchCase) {
+  CHECK_FUNC_ERROR(
+      "function bar() { switch (1) { case 0: case 0: } }\n"
+      "function foo() { bar(); }",
+      "asm: line 39: duplicate case value\n");
+}
+
+
+TEST(BadSwitchOrder) {
+  CHECK_FUNC_ERROR(
+      "function bar() { switch (1) { default: case 0: } }\n"
+      "function foo() { bar(); }",
+      "asm: line 39: default case out of order\n");
 }

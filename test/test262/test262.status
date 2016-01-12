@@ -62,10 +62,6 @@
   # https://code.google.com/p/v8/issues/detail?id=4405
   'language/block-scope/leave/outermost-binding-updated-in-catch-block-nested-block-let-declaration-unseen-outside-of-block': [PASS, FAIL],
 
-  # https://code.google.com/p/v8/issues/detail?id=3305
-  # This times out in sloppy mode because sloppy const assignment does not throw.
-  'language/statements/const/syntax/const-invalid-assignment-next-expression-for': [SKIP],
-
   # It's unclear what the right behavior for [[Enumerate]] is; we're awaiting
   # clarification in the spec. Currently, our for-in implementation for
   # Proxies checks all trap result values for being strings...
@@ -389,10 +385,6 @@
   'intl402/String/prototype/toLocaleUpperCase/special_casing_Lithuanian': [FAIL],
   'intl402/String/prototype/toLocaleUpperCase/special_casing_Turkish': [FAIL],
 
-  # https://bugs.chromium.org/p/v8/issues/detail?id=4627
-  'language/rest-parameters/object-pattern': [FAIL],
-  'language/rest-parameters/array-pattern': [FAIL],
-
   # https://bugs.chromium.org/p/v8/issues/detail?id=4628
   'language/eval-code/non-definable-function-with-variable': [FAIL],
   'language/eval-code/non-definable-function-with-function': [FAIL],
@@ -407,15 +399,17 @@
   'language/expressions/generators/invoke-as-constructor': [FAIL],
   'language/expressions/object/method-definition/generator-invoke-ctor': [FAIL],
 
-  # https://bugs.chromium.org/p/v8/issues/detail?id=4632
-  'built-ins/Promise/race/same-resolve-function': [FAIL],
-  'built-ins/Promise/race/same-reject-function': [FAIL],
-
   # https://bugs.chromium.org/p/v8/issues/detail?id=4633
   'built-ins/Promise/reject-function-name': [FAIL],
   'built-ins/Promise/resolve-function-name': [FAIL],
   'built-ins/Promise/all/resolve-element-function-name': [FAIL],
   'built-ins/Promise/executor-function-name': [FAIL],
+  'built-ins/Promise/all/capability-executor-not-callable': [FAIL],
+  'built-ins/Promise/reject/capability-executor-not-callable': [FAIL],
+  'built-ins/Promise/race/capability-executor-not-callable': [FAIL],
+  'built-ins/Promise/prototype/then/capability-executor-not-callable': [FAIL],
+  'built-ins/Promise/resolve/capability-executor-not-callable': [FAIL],
+  'built-ins/Promise/race/S25.4.4.3_A3.1_T2': [FAIL],
 
   # https://bugs.chromium.org/p/v8/issues/detail?id=4634
   'built-ins/DataView/prototype/setFloat64/index-check-before-value-conversion': [FAIL],
@@ -644,6 +638,7 @@
   'built-ins/Promise/race/ctx-ctor': [SKIP],
   'built-ins/Promise/reject/ctx-ctor': [SKIP],
   'built-ins/Promise/resolve/ctx-ctor': [SKIP],
+  'built-ins/Promise/reject/S25.4.4.4_A3.1_T1': [SKIP],
   'built-ins/String/prototype/codePointAt/this-is-undefined-throws': [SKIP],
   'built-ins/String/prototype/concat/S15.5.4.6_A2': [SKIP],
   'built-ins/String/prototype/endsWith/this-is-undefined-throws': [SKIP],

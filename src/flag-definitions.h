@@ -185,9 +185,9 @@ DEFINE_BOOL(harmony, false, "enable all completed harmony features")
 DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
 DEFINE_IMPLICATION(es_staging, harmony)
 
-DEFINE_BOOL(legacy_const, true, "legacy semantics for const in sloppy mode")
-// ES2015 const semantics are staged
-DEFINE_NEG_IMPLICATION(harmony, legacy_const)
+DEFINE_BOOL(legacy_const, false, "legacy semantics for const in sloppy mode")
+// ES2015 const semantics are shipped
+DEFINE_NEG_VALUE_IMPLICATION(harmony_shipping, legacy_const, true)
 
 DEFINE_BOOL(promise_extra, true, "additional V8 Promise functions")
 // Removing extra Promise functions is staged
@@ -212,9 +212,6 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
 #define HARMONY_STAGED(V)                                                 \
   V(harmony_proxies, "harmony proxies")                                   \
   V(harmony_reflect, "harmony Reflect API")                               \
-  V(harmony_sloppy, "harmony features in sloppy mode")                    \
-  V(harmony_sloppy_let, "harmony let in sloppy mode")                     \
-  V(harmony_sloppy_function, "harmony sloppy function block scoping")     \
   V(harmony_regexp_lookbehind, "harmony regexp lookbehind")
 
 // Features that are shipping (turned on by default, but internal flag remains).
@@ -227,7 +224,10 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_tolength, "harmony ToLength")                                 \
   V(harmony_tostring, "harmony toString")                                 \
   V(harmony_completion, "harmony completion value semantics")             \
-  V(harmony_regexps, "harmony regular expression extensions")
+  V(harmony_regexps, "harmony regular expression extensions")             \
+  V(harmony_sloppy, "harmony features in sloppy mode")                    \
+  V(harmony_sloppy_let, "harmony let in sloppy mode")                     \
+  V(harmony_sloppy_function, "harmony sloppy function block scoping")
 
 
 // Once a shipping feature has proved stable in the wild, it will be dropped
@@ -962,6 +962,7 @@ DEFINE_BOOL(regexp_possessive_quantifier, false,
 DEFINE_BOOL(trace_regexp_bytecodes, false, "trace regexp bytecode execution")
 DEFINE_BOOL(trace_regexp_assembler, false,
             "trace regexp macro assembler calls.")
+DEFINE_BOOL(trace_regexp_parser, false, "trace regexp parsing")
 
 //
 // Logging and profiling flags

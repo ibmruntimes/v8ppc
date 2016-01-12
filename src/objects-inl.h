@@ -1599,7 +1599,7 @@ SIMD128_BOOLEAN_LANE_FNS(Bool8x16, int8_t, 16, INT8, kCharSize)
 #undef SIMD128_WRITE_LANE
 
 
-ACCESSORS(JSObject, properties, FixedArray, kPropertiesOffset)
+ACCESSORS(JSReceiver, properties, FixedArray, kPropertiesOffset)
 
 
 Object** FixedArray::GetFirstElementAddress() {
@@ -1773,12 +1773,12 @@ void AllocationSite::set_memento_create_count(int count) {
 }
 
 
-inline bool AllocationSite::IncrementMementoFoundCount() {
+bool AllocationSite::IncrementMementoFoundCount(int increment) {
   if (IsZombie()) return false;
 
   int value = memento_found_count();
-  set_memento_found_count(value + 1);
-  return memento_found_count() == kPretenureMinimumCreated;
+  set_memento_found_count(value + increment);
+  return memento_found_count() >= kPretenureMinimumCreated;
 }
 
 
@@ -1832,11 +1832,12 @@ inline bool AllocationSite::DigestPretenuringFeedback(
   }
 
   if (FLAG_trace_pretenuring_statistics) {
-    PrintF(
-        "AllocationSite(%p): (created, found, ratio) (%d, %d, %f) %s => %s\n",
-         static_cast<void*>(this), create_count, found_count, ratio,
-         PretenureDecisionName(current_decision),
-         PretenureDecisionName(pretenure_decision()));
+    PrintIsolate(GetIsolate(),
+                 "pretenuring: AllocationSite(%p): (created, found, ratio) "
+                 "(%d, %d, %f) %s => %s\n",
+                 this, create_count, found_count, ratio,
+                 PretenureDecisionName(current_decision),
+                 PretenureDecisionName(pretenure_decision()));
   }
 
   // Clear feedback calculation fields until the next gc.
@@ -1965,12 +1966,6 @@ void JSObject::SetMapAndElements(Handle<JSObject> object,
 void JSObject::set_elements(FixedArrayBase* value, WriteBarrierMode mode) {
   WRITE_FIELD(this, kElementsOffset, value);
   CONDITIONAL_WRITE_BARRIER(GetHeap(), this, kElementsOffset, value, mode);
-}
-
-
-void JSObject::initialize_properties() {
-  DCHECK(!GetHeap()->InNewSpace(GetHeap()->empty_fixed_array()));
-  WRITE_FIELD(this, kPropertiesOffset, GetHeap()->empty_fixed_array());
 }
 
 
@@ -2311,12 +2306,6 @@ void JSObject::InitializeBody(Map* map, int start_offset,
     WRITE_FIELD(this, offset, filler_value);
     offset += kPointerSize;
   }
-}
-
-
-bool JSObject::HasFastProperties() {
-  DCHECK(properties()->IsDictionary() == map()->is_dictionary_map());
-  return !properties()->IsDictionary();
 }
 
 
@@ -6795,13 +6784,6 @@ bool JSObject::HasIndexedInterceptor() {
 }
 
 
-NameDictionary* JSObject::property_dictionary() {
-  DCHECK(!HasFastProperties());
-  DCHECK(!IsJSGlobalObject());
-  return NameDictionary::cast(properties());
-}
-
-
 GlobalDictionary* JSObject::global_dictionary() {
   DCHECK(!HasFastProperties());
   DCHECK(IsJSGlobalObject());
@@ -7134,6 +7116,25 @@ MaybeHandle<Object> Object::GetPropertyOrElement(Handle<JSReceiver> holder,
   LookupIterator it = LookupIterator::PropertyOrElement(
       name->GetIsolate(), receiver, name, holder);
   return GetProperty(&it, language_mode);
+}
+
+
+void JSReceiver::initialize_properties() {
+  DCHECK(!GetHeap()->InNewSpace(GetHeap()->empty_fixed_array()));
+  WRITE_FIELD(this, kPropertiesOffset, GetHeap()->empty_fixed_array());
+}
+
+
+bool JSReceiver::HasFastProperties() {
+  DCHECK(properties()->IsDictionary() == map()->is_dictionary_map());
+  return !properties()->IsDictionary();
+}
+
+
+NameDictionary* JSReceiver::property_dictionary() {
+  DCHECK(!HasFastProperties());
+  DCHECK(!IsJSGlobalObject());
+  return NameDictionary::cast(properties());
 }
 
 

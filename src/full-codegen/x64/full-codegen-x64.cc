@@ -119,7 +119,7 @@ void FullCodeGenerator::Generate() {
   FrameScope frame_scope(masm_, StackFrame::MANUAL);
 
   info->set_prologue_offset(masm_->pc_offset());
-  __ Prologue(info->IsCodePreAgingActive());
+  __ Prologue(info->GeneratePreagedPrologue());
 
   { Comment cmnt(masm_, "[ Allocate locals");
     int locals_count = info->scope()->num_stack_slots();
@@ -3295,49 +3295,6 @@ void FullCodeGenerator::EmitIsDate(CallRuntime* expr) {
   Split(equal, if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
-}
-
-
-void FullCodeGenerator::EmitDateField(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 2);
-  DCHECK_NOT_NULL(args->at(1)->AsLiteral());
-  Smi* index = Smi::cast(*(args->at(1)->AsLiteral()->value()));
-
-  VisitForAccumulatorValue(args->at(0));  // Load the object.
-
-  Register object = rax;
-  Register result = rax;
-  Register scratch = rcx;
-
-  if (FLAG_debug_code) {
-    __ AssertNotSmi(object);
-    __ CmpObjectType(object, JS_DATE_TYPE, scratch);
-    __ Check(equal, kOperandIsNotADate);
-  }
-
-  if (index->value() == 0) {
-    __ movp(result, FieldOperand(object, JSDate::kValueOffset));
-  } else {
-    Label runtime, done;
-    if (index->value() < JSDate::kFirstUncachedField) {
-      __ Load(scratch, ExternalReference::date_cache_stamp(isolate()));
-      __ cmpp(scratch, FieldOperand(object, JSDate::kCacheStampOffset));
-      __ j(not_equal, &runtime, Label::kNear);
-      __ movp(result, FieldOperand(object, JSDate::kValueOffset +
-                                           kPointerSize * index->value()));
-      __ jmp(&done, Label::kNear);
-    }
-    __ bind(&runtime);
-    __ PrepareCallCFunction(2);
-    __ movp(arg_reg_1, object);
-    __ Move(arg_reg_2, index, Assembler::RelocInfoNone());
-    __ CallCFunction(ExternalReference::get_date_field_function(isolate()), 2);
-    __ movp(rsi, Operand(rbp, StandardFrameConstants::kContextOffset));
-    __ bind(&done);
-  }
-
-  context()->Plug(rax);
 }
 
 

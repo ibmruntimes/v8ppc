@@ -830,6 +830,17 @@ class ParserBase : public Traits {
     return true;
   }
 
+  // Keep track of eval() calls since they disable all local variable
+  // optimizations. This checks if expression is an eval call, and if yes,
+  // forwards the information to scope.
+  void CheckPossibleEvalCall(ExpressionT expression, Scope* scope) {
+    if (Traits::IsIdentifier(expression) &&
+        Traits::IsEval(Traits::AsIdentifier(expression))) {
+      scope->DeclarationScope()->RecordEvalCall();
+      scope->RecordEvalCall();
+    }
+  }
+
   // Used to validate property names in object literals and class literals
   enum PropertyKind {
     kAccessorProperty,
@@ -1336,18 +1347,8 @@ ParserBase<Traits>::ParsePrimaryExpression(ExpressionClassifier* classifier,
                                           MessageTemplate::kUnexpectedToken,
                                           Token::String(Token::ELLIPSIS));
         classifier->RecordNonSimpleParameter();
-        Scanner::Location expr_loc = scanner()->peek_location();
-        Token::Value tok = peek();
         ExpressionT expr =
             this->ParseAssignmentExpression(true, classifier, CHECK_OK);
-        // Patterns are not allowed as rest parameters.  There is no way we can
-        // succeed so go ahead and use the convenient ReportUnexpectedToken
-        // interface.
-        if (!Traits::IsIdentifier(expr)) {
-          ReportUnexpectedTokenAt(expr_loc, tok);
-          *ok = false;
-          return this->EmptyExpression();
-        }
         if (peek() == Token::COMMA) {
           ReportMessageAt(scanner()->peek_location(),
                           MessageTemplate::kParamAfterRest);
@@ -1365,6 +1366,7 @@ ParserBase<Traits>::ParsePrimaryExpression(ExpressionClassifier* classifier,
       Expect(Token::RPAREN, CHECK_OK);
       if (peek() != Token::ARROW) {
         ValidateExpression(classifier, CHECK_OK);
+        expr->set_is_parenthesized();
       }
       return expr;
     }
@@ -1758,8 +1760,8 @@ ParserBase<Traits>::ParsePropertyDefinition(
 
     value = this->ParseFunctionLiteral(
         *name, scanner()->location(), kSkipFunctionNameCheck, kind,
-        RelocInfo::kNoPosition, FunctionLiteral::ANONYMOUS_EXPRESSION,
-        FunctionLiteral::NORMAL_ARITY, language_mode(),
+        RelocInfo::kNoPosition, FunctionLiteral::kAnonymousExpression,
+        FunctionLiteral::kNormalArity, language_mode(),
         CHECK_OK_CUSTOM(EmptyObjectLiteralProperty));
 
     return factory()->NewObjectLiteralProperty(name_expression, value,
@@ -1798,8 +1800,8 @@ ParserBase<Traits>::ParsePropertyDefinition(
     if (!in_class) kind = WithObjectLiteralBit(kind);
     typename Traits::Type::FunctionLiteral value = this->ParseFunctionLiteral(
         *name, scanner()->location(), kSkipFunctionNameCheck, kind,
-        RelocInfo::kNoPosition, FunctionLiteral::ANONYMOUS_EXPRESSION,
-        is_get ? FunctionLiteral::GETTER_ARITY : FunctionLiteral::SETTER_ARITY,
+        RelocInfo::kNoPosition, FunctionLiteral::kAnonymousExpression,
+        is_get ? FunctionLiteral::kGetterArity : FunctionLiteral::kSetterArity,
         language_mode(), CHECK_OK_CUSTOM(EmptyObjectLiteralProperty));
 
     // Make sure the name expression is a string since we need a Name for
@@ -2041,7 +2043,8 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN, int flags,
           ExpressionClassifier::CoverInitializedNameProduction);
 
   bool maybe_pattern =
-      expression->IsObjectLiteral() || expression->IsArrayLiteral();
+      (expression->IsObjectLiteral() || expression->IsArrayLiteral()) &&
+      !expression->is_parenthesized();
 
   if (!Token::IsAssignmentOp(peek())) {
     // Parsed conditional expression only (no assignment).
@@ -2564,12 +2567,12 @@ ParserBase<Traits>::ParseMemberExpression(ExpressionClassifier* classifier,
     bool is_strict_reserved_name = false;
     Scanner::Location function_name_location = Scanner::Location::invalid();
     FunctionLiteral::FunctionType function_type =
-        FunctionLiteral::ANONYMOUS_EXPRESSION;
+        FunctionLiteral::kAnonymousExpression;
     if (peek_any_identifier()) {
       name = ParseIdentifierOrStrictReservedWord(
           is_generator, &is_strict_reserved_name, CHECK_OK);
       function_name_location = scanner()->location();
-      function_type = FunctionLiteral::NAMED_EXPRESSION;
+      function_type = FunctionLiteral::kNamedExpression;
     }
     result = this->ParseFunctionLiteral(
         name, function_name_location,
@@ -2577,7 +2580,7 @@ ParserBase<Traits>::ParseMemberExpression(ExpressionClassifier* classifier,
                                 : kFunctionNameValidityUnknown,
         is_generator ? FunctionKind::kGeneratorFunction
                      : FunctionKind::kNormalFunction,
-        function_token_position, function_type, FunctionLiteral::NORMAL_ARITY,
+        function_token_position, function_type, FunctionLiteral::kNormalArity,
         language_mode(), CHECK_OK);
   } else if (peek() == Token::SUPER) {
     const bool is_new = false;
@@ -2867,7 +2870,7 @@ void ParserBase<Traits>::ParseFormalParameter(
   if (!*ok) return;
 
   if (!Traits::IsIdentifier(pattern)) {
-    if (is_rest || !allow_harmony_destructuring_bind()) {
+    if (!allow_harmony_destructuring_bind()) {
       ReportUnexpectedToken(next);
       *ok = false;
       return;
@@ -2950,14 +2953,14 @@ void ParserBase<Traits>::CheckArityRestrictions(
     int param_count, FunctionLiteral::ArityRestriction arity_restriction,
     bool has_rest, int formals_start_pos, int formals_end_pos, bool* ok) {
   switch (arity_restriction) {
-    case FunctionLiteral::GETTER_ARITY:
+    case FunctionLiteral::kGetterArity:
       if (param_count != 0) {
         ReportMessageAt(Scanner::Location(formals_start_pos, formals_end_pos),
                         MessageTemplate::kBadGetterArity);
         *ok = false;
       }
       break;
-    case FunctionLiteral::SETTER_ARITY:
+    case FunctionLiteral::kSetterArity:
       if (param_count != 1) {
         ReportMessageAt(Scanner::Location(formals_start_pos, formals_end_pos),
                         MessageTemplate::kBadSetterArity);
@@ -3045,7 +3048,7 @@ ParserBase<Traits>::ParseArrowFunctionLiteral(
       } else {
         body = this->ParseEagerFunctionBody(
             this->EmptyIdentifier(), RelocInfo::kNoPosition, formal_parameters,
-            kArrowFunction, FunctionLiteral::ANONYMOUS_EXPRESSION, CHECK_OK);
+            kArrowFunction, FunctionLiteral::kAnonymousExpression, CHECK_OK);
         materialized_literal_count =
             function_state.materialized_literal_count();
         expected_property_count = function_state.expected_property_count();
@@ -3089,11 +3092,10 @@ ParserBase<Traits>::ParseArrowFunctionLiteral(
   }
 
   FunctionLiteralT function_literal = factory()->NewFunctionLiteral(
-      this->EmptyIdentifierString(), ast_value_factory(),
-      formal_parameters.scope, body, materialized_literal_count,
-      expected_property_count, num_parameters,
+      this->EmptyIdentifierString(), formal_parameters.scope, body,
+      materialized_literal_count, expected_property_count, num_parameters,
       FunctionLiteral::kNoDuplicateParameters,
-      FunctionLiteral::ANONYMOUS_EXPRESSION, FunctionLiteral::kIsFunction,
+      FunctionLiteral::kAnonymousExpression,
       FunctionLiteral::kShouldLazyCompile, FunctionKind::kArrowFunction,
       formal_parameters.scope->start_position());
 

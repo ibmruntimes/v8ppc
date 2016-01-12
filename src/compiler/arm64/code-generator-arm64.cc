@@ -205,7 +205,7 @@ class Arm64OperandConverter final : public InstructionOperandConverter {
   }
 
   MemOperand ToMemOperand(InstructionOperand* op, MacroAssembler* masm) const {
-    DCHECK(op != NULL);
+    DCHECK_NOT_NULL(op);
     DCHECK(op->IsStackSlot() || op->IsDoubleStackSlot());
     FrameOffset offset = frame_access_state()->GetFrameOffset(
         AllocatedOperand::cast(op)->index());
@@ -1346,9 +1346,8 @@ void CodeGenerator::AssemblePrologue() {
     __ Push(lr, fp);
     __ Mov(fp, csp);
   } else if (descriptor->IsJSFunctionCall()) {
-    CompilationInfo* info = this->info();
     __ SetStackPointer(jssp);
-    __ Prologue(info->IsCodePreAgingActive());
+    __ Prologue(this->info()->GeneratePreagedPrologue());
   } else if (frame()->needs_frame()) {
     if (descriptor->UseNativeStack()) {
       __ SetStackPointer(csp);
@@ -1461,7 +1460,7 @@ void CodeGenerator::AssembleReturn() {
 
 void CodeGenerator::AssembleMove(InstructionOperand* source,
                                  InstructionOperand* destination) {
-  Arm64OperandConverter g(this, NULL);
+  Arm64OperandConverter g(this, nullptr);
   // Dispatch on the source and destination operand kinds.  Not all
   // combinations are possible.
   if (source->IsRegister()) {
@@ -1558,7 +1557,7 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
 
 void CodeGenerator::AssembleSwap(InstructionOperand* source,
                                  InstructionOperand* destination) {
-  Arm64OperandConverter g(this, NULL);
+  Arm64OperandConverter g(this, nullptr);
   // Dispatch on the source and destination operand kinds.  Not all
   // combinations are possible.
   if (source->IsRegister()) {

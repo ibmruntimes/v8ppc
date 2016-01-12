@@ -1410,13 +1410,13 @@ TEST(DiscardFunctionBody) {
   // See comments in ParseFunctionLiteral in parser.cc.
   const char* discard_sources[] = {
       "(function f() { function g() { var a; } })();",
+      "(function f() { function g() { { function h() { } } } })();",
       /* TODO(conradw): In future it may be possible to apply this optimisation
        * to these productions.
       "(function f() { 0, function g() { var a; } })();",
       "(function f() { 0, { g() { var a; } } })();",
       "(function f() { 0, class c { g() { var a; } } })();", */
-      NULL
-  };
+      NULL};
 
   i::Isolate* isolate = CcTest::i_isolate();
   i::Factory* factory = isolate->factory();
@@ -1448,6 +1448,7 @@ TEST(DiscardFunctionBody) {
     } else {
       // TODO(conradw): This path won't be hit until the other test cases can be
       // uncommented.
+      UNREACHABLE();
       CHECK_NOT_NULL(inner->body());
       CHECK_GE(2, inner->body()->length());
       i::Expression* exp = inner->body()->at(1)->AsExpressionStatement()->
@@ -3570,6 +3571,7 @@ TEST(UseAsmUseCount) {
 
 
 TEST(UseConstLegacyCount) {
+  i::FLAG_legacy_const = true;
   i::Isolate* isolate = CcTest::i_isolate();
   i::HandleScope scope(isolate);
   LocalContext env;
@@ -5294,21 +5296,27 @@ TEST(ParseRestParameters) {
                                     "/regexp/, 'str', function(){});"},
                                   {NULL, NULL}};
 
-  const char* data[] = {
-    "...args",
-    "a, ...args",
-    "...   args",
-    "a, ...   args",
-    "...\targs",
-    "a, ...\targs",
-    "...\r\nargs",
-    "a, ...\r\nargs",
-    "...\rargs",
-    "a, ...\rargs",
-    "...\t\n\t\t\n  args",
-    "a, ...  \n  \n  args",
-    NULL};
-  RunParserSyncTest(context_data, data, kSuccess);
+  const char* data[] = {"...args",
+                        "a, ...args",
+                        "...   args",
+                        "a, ...   args",
+                        "...\targs",
+                        "a, ...\targs",
+                        "...\r\nargs",
+                        "a, ...\r\nargs",
+                        "...\rargs",
+                        "a, ...\rargs",
+                        "...\t\n\t\t\n  args",
+                        "a, ...  \n  \n  args",
+                        "...{ length, 0: a, 1: b}",
+                        "...{}",
+                        "...[a, b]",
+                        "...[]",
+                        "...[...[a, b, ...c]]",
+                        NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonyDestructuring};
+  RunParserSyncTest(context_data, data, kSuccess, nullptr, 0, always_flags,
+                    arraysize(always_flags));
 }
 
 
@@ -6418,6 +6426,7 @@ TEST(ArrowFunctionASIErrors) {
 
 TEST(StrongModeFreeVariablesDeclaredByPreviousScript) {
   i::FLAG_strong_mode = true;
+  i::FLAG_legacy_const = true;
   v8::V8::Initialize();
   v8::HandleScope scope(CcTest::isolate());
   v8::Context::Scope context_scope(v8::Context::New(CcTest::isolate()));
@@ -7042,6 +7051,21 @@ TEST(DestructuringAssignmentNegativeTests) {
     "[...x,]",
     "[x, y, ...z = 1]",
     "[...z = 1]",
+
+    // v8:4657
+    "({ x: x4, x: (x+=1e4) })",
+    "(({ x: x4, x: (x+=1e4) }))",
+    "({ x: x4, x: (x+=1e4) } = {})",
+    "(({ x: x4, x: (x+=1e4) } = {}))",
+    "(({ x: x4, x: (x+=1e4) }) = {})",
+    "({ x: y } = {})",
+    "(({ x: y } = {}))",
+    "(({ x: y }) = {})",
+    "([a])",
+    "(([a]))",
+    "([a] = [])",
+    "(([a] = []))",
+    "(([a]) = [])",
     NULL};
   // clang-format on
   static const ParserFlag always_flags[] = {
@@ -7179,30 +7203,6 @@ TEST(DestructuringDisallowPatternsInSingleParamArrows) {
   const char* error_data[] = {
     "var f = {x} => {};",
     "var f = {x,y} => {};",
-    nullptr};
-  // clang-format on
-  RunParserSyncTest(context_data, error_data, kError, NULL, 0, always_flags,
-                    arraysize(always_flags));
-}
-
-
-TEST(DestructuringDisallowPatternsInRestParams) {
-  i::FLAG_harmony_destructuring_bind = true;
-  static const ParserFlag always_flags[] = {kAllowHarmonyDestructuring};
-  const char* context_data[][2] = {{"'use strict';", ""},
-                                   {"function outer() { 'use strict';", "}"},
-                                   {"", ""},
-                                   {"function outer() { ", "}"},
-                                   {nullptr, nullptr}};
-
-  // clang-format off
-  const char* error_data[] = {
-    "function(...{}) {}",
-    "function(...{x}) {}",
-    "function(...[x]) {}",
-    "(...{}) => {}",
-    "(...{x}) => {}",
-    "(...[x]) => {}",
     nullptr};
   // clang-format on
   RunParserSyncTest(context_data, error_data, kError, NULL, 0, always_flags,

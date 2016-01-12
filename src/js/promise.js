@@ -23,10 +23,12 @@ var promiseOnResolveSymbol =
 var promiseRawSymbol = utils.ImportNow("promise_raw_symbol");
 var promiseStatusSymbol = utils.ImportNow("promise_status_symbol");
 var promiseValueSymbol = utils.ImportNow("promise_value_symbol");
+var SpeciesConstructor;
 var toStringTagSymbol = utils.ImportNow("to_string_tag_symbol");
 
 utils.Import(function(from) {
   MakeTypeError = from.MakeTypeError;
+  SpeciesConstructor = from.SpeciesConstructor;
 });
 
 // -------------------------------------------------------------------
@@ -237,11 +239,6 @@ function NewPromiseCapability(C) {
     result.reject = reject;
   });
 
-  if (!IS_CALLABLE(result.resolve))
-      throw MakeTypeError(kCalledNonCallable, "promiseCapability.[[Resolve]]");
-  if (!IS_CALLABLE(result.reject))
-      throw MakeTypeError(kCalledNonCallable, "promiseCapability.[[Reject]]");
-
   return result;
 }
 
@@ -281,7 +278,7 @@ function PromiseThen(onResolve, onReject) {
     throw MakeTypeError(kNotAPromise, this);
   }
 
-  var constructor = this.constructor;
+  var constructor = SpeciesConstructor(this, GlobalPromise);
   onResolve = IS_CALLABLE(onResolve) ? onResolve : PromiseIdResolveHandler;
   onReject = IS_CALLABLE(onReject) ? onReject : PromiseIdRejectHandler;
   var deferred = NewPromiseCapability(constructor);
@@ -394,9 +391,8 @@ function PromiseRace(iterable) {
   var deferred = NewPromiseCapability(this);
   try {
     for (var value of iterable) {
-      var reject = reason => { deferred.reject(reason); };
-      this.resolve(value).then((x) => { deferred.resolve(x) }, reject);
-      SET_PRIVATE(reject, promiseCombinedDeferredSymbol, deferred);
+      this.resolve(value).then(deferred.resolve, deferred.reject);
+      SET_PRIVATE(deferred.reject, promiseCombinedDeferredSymbol, deferred);
     }
   } catch (e) {
     deferred.reject(e)

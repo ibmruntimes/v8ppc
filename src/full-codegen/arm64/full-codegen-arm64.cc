@@ -134,7 +134,7 @@ void FullCodeGenerator::Generate() {
   //  Push(lr, fp, cp, x1);
   //  Add(fp, jssp, 2 * kPointerSize);
   info->set_prologue_offset(masm_->pc_offset());
-  __ Prologue(info->IsCodePreAgingActive());
+  __ Prologue(info->GeneratePreagedPrologue());
 
   // Reserve space on the stack for locals.
   { Comment cmnt(masm_, "[ Allocate locals");
@@ -2440,6 +2440,7 @@ void FullCodeGenerator::CallIC(Handle<Code> code,
 
 // Code common for calls using the IC.
 void FullCodeGenerator::EmitCallWithLoadIC(Call* expr) {
+  ASM_LOCATION("FullCodeGenerator::EmitCallWithLoadIC");
   Expression* callee = expr->expression();
 
   // Get the target function.
@@ -2476,6 +2477,7 @@ void FullCodeGenerator::EmitCallWithLoadIC(Call* expr) {
 
 
 void FullCodeGenerator::EmitSuperCallWithLoadIC(Call* expr) {
+  ASM_LOCATION("FullCodeGenerator::EmitSuperCallWithLoadIC");
   Expression* callee = expr->expression();
   DCHECK(callee->IsProperty());
   Property* prop = callee->AsProperty();
@@ -2518,6 +2520,7 @@ void FullCodeGenerator::EmitSuperCallWithLoadIC(Call* expr) {
 // Code common for calls using the IC.
 void FullCodeGenerator::EmitKeyedCallWithLoadIC(Call* expr,
                                                 Expression* key) {
+  ASM_LOCATION("FullCodeGenerator::EmitKeyedCallWithLoadIC");
   // Load the key.
   VisitForAccumulatorValue(key);
 
@@ -2539,6 +2542,7 @@ void FullCodeGenerator::EmitKeyedCallWithLoadIC(Call* expr,
 
 
 void FullCodeGenerator::EmitKeyedSuperCallWithLoadIC(Call* expr) {
+  ASM_LOCATION("FullCodeGenerator::EmitKeyedSuperCallWithLoadIC");
   Expression* callee = expr->expression();
   DCHECK(callee->IsProperty());
   Property* prop = callee->AsProperty();
@@ -2577,6 +2581,7 @@ void FullCodeGenerator::EmitKeyedSuperCallWithLoadIC(Call* expr) {
 
 
 void FullCodeGenerator::EmitCall(Call* expr, ConvertReceiverMode mode) {
+  ASM_LOCATION("FullCodeGenerator::EmitCall");
   // Load the arguments.
   ZoneList<Expression*>* args = expr->arguments();
   int arg_count = args->length();
@@ -2669,6 +2674,7 @@ void FullCodeGenerator::PushCalleeAndWithBaseObject(Call* expr) {
 
 
 void FullCodeGenerator::EmitPossiblyEvalCall(Call* expr) {
+  ASM_LOCATION("FullCodeGenerator::EmitPossiblyEvalCall");
   // In a call to eval, we first call RuntimeHidden_ResolvePossiblyDirectEval
   // to resolve the function we need to call.  Then we call the resolved
   // function using the given arguments.
@@ -2748,6 +2754,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
 
 void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
+  ASM_LOCATION("FullCodeGenerator::EmitSuperConstructorCall");
   SuperCallReference* super_call_ref =
       expr->expression()->AsSuperCallReference();
   DCHECK_NOT_NULL(super_call_ref);
@@ -3142,45 +3149,6 @@ void FullCodeGenerator::EmitIsDate(CallRuntime* expr) {
   Split(eq, if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
-}
-
-
-void FullCodeGenerator::EmitDateField(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 2);
-  DCHECK_NOT_NULL(args->at(1)->AsLiteral());
-  Smi* index = Smi::cast(*(args->at(1)->AsLiteral()->value()));
-
-  VisitForAccumulatorValue(args->at(0));  // Load the object.
-
-  Register object = x0;
-  Register result = x0;
-  Register stamp_addr = x10;
-  Register stamp_cache = x11;
-
-  if (index->value() == 0) {
-    __ Ldr(result, FieldMemOperand(object, JSDate::kValueOffset));
-  } else {
-    Label runtime, done;
-    if (index->value() < JSDate::kFirstUncachedField) {
-      ExternalReference stamp = ExternalReference::date_cache_stamp(isolate());
-      __ Mov(stamp_addr, stamp);
-      __ Ldr(stamp_addr, MemOperand(stamp_addr));
-      __ Ldr(stamp_cache, FieldMemOperand(object, JSDate::kCacheStampOffset));
-      __ Cmp(stamp_addr, stamp_cache);
-      __ B(ne, &runtime);
-      __ Ldr(result, FieldMemOperand(object, JSDate::kValueOffset +
-                                             kPointerSize * index->value()));
-      __ B(&done);
-    }
-
-    __ Bind(&runtime);
-    __ Mov(x1, index);
-    __ CallCFunction(ExternalReference::get_date_field_function(isolate()), 2);
-    __ Bind(&done);
-  }
-
-  context()->Plug(result);
 }
 
 

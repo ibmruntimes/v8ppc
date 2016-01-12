@@ -662,7 +662,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       InstructionOperand* source = instr->InputAt(0);
       InstructionOperand* destination = instr->Output();
       DCHECK(source->IsConstant());
-      X87OperandConverter g(this, NULL);
+      X87OperandConverter g(this, nullptr);
       Constant src_constant = g.ToConstant(source);
 
       DCHECK_EQ(Constant::kFloat64, src_constant.type());
@@ -1681,8 +1681,7 @@ void CodeGenerator::AssemblePrologue() {
   } else if (descriptor->IsJSFunctionCall()) {
     // TODO(turbofan): this prologue is redundant with OSR, but needed for
     // code aging.
-    CompilationInfo* info = this->info();
-    __ Prologue(info->IsCodePreAgingActive());
+    __ Prologue(this->info()->GeneratePreagedPrologue());
   } else if (frame()->needs_frame()) {
     __ StubPrologue();
   } else {
@@ -1765,7 +1764,7 @@ void CodeGenerator::AssembleReturn() {
 
 void CodeGenerator::AssembleMove(InstructionOperand* source,
                                  InstructionOperand* destination) {
-  X87OperandConverter g(this, NULL);
+  X87OperandConverter g(this, nullptr);
   // Dispatch on the source and destination operand kinds.  Not all
   // combinations are possible.
   if (source->IsRegister()) {
@@ -1909,7 +1908,7 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
 
 void CodeGenerator::AssembleSwap(InstructionOperand* source,
                                  InstructionOperand* destination) {
-  X87OperandConverter g(this, NULL);
+  X87OperandConverter g(this, nullptr);
   // Dispatch on the source and destination operand kinds.  Not all
   // combinations are possible.
   if (source->IsRegister() && destination->IsRegister()) {

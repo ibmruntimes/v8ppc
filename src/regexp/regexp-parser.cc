@@ -56,6 +56,16 @@ void RegExpParser::Advance() {
     } else {
       current_ = in()->Get(next_pos_);
       next_pos_++;
+      // Read the whole surrogate pair in case of unicode flag, if possible.
+      if (unicode_ && next_pos_ < in()->length() &&
+          unibrow::Utf16::IsLeadSurrogate(static_cast<uc16>(current_))) {
+        uc16 trail = in()->Get(next_pos_);
+        if (unibrow::Utf16::IsTrailSurrogate(trail)) {
+          current_ = unibrow::Utf16::CombineSurrogatePair(
+              static_cast<uc16>(current_), trail);
+          next_pos_++;
+        }
+      }
     }
   } else {
     current_ = kEndMarker;
@@ -417,7 +427,7 @@ RegExpTree* RegExpParser::ParseDisjunction() {
             Advance(2);
             uc32 value;
             if (ParseUnicodeEscape(&value)) {
-              builder->AddCharacter(value);
+              builder->AddUnicodeCharacter(value);
             } else if (!unicode_) {
               builder->AddCharacter('u');
             } else {
@@ -451,7 +461,7 @@ RegExpTree* RegExpParser::ParseDisjunction() {
         // fallthrough
       }
       default:
-        builder->AddCharacter(current());
+        builder->AddUnicodeCharacter(current());
         Advance();
         break;
     }  // end switch(current())
@@ -986,6 +996,11 @@ bool RegExpParser::ParseRegExp(Isolate* isolate, Zone* zone,
   } else {
     DCHECK(tree != NULL);
     DCHECK(result->error.is_null());
+    if (FLAG_trace_regexp_parser) {
+      OFStream os(stdout);
+      tree->Print(os, zone);
+      os << "\n";
+    }
     result->tree = tree;
     int capture_count = parser.captures_started();
     result->simple = tree->IsAtom() && parser.simple() && capture_count == 0;
@@ -1044,6 +1059,19 @@ void RegExpBuilder::AddCharacter(uc16 c) {
   }
   characters_->Add(c, zone());
   LAST(ADD_CHAR);
+}
+
+
+void RegExpBuilder::AddUnicodeCharacter(uc32 c) {
+  if (c > unibrow::Utf16::kMaxNonSurrogateCharCode) {
+    ZoneList<uc16> surrogate_pair(2, zone());
+    surrogate_pair.Add(unibrow::Utf16::LeadSurrogate(c), zone());
+    surrogate_pair.Add(unibrow::Utf16::TrailSurrogate(c), zone());
+    RegExpAtom* atom = new (zone()) RegExpAtom(surrogate_pair.ToConstVector());
+    AddAtom(atom);
+  } else {
+    AddCharacter(static_cast<uc16>(c));
+  }
 }
 
 

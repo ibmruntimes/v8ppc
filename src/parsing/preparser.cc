@@ -451,8 +451,8 @@ PreParser::Statement PreParser::ParseFunctionDeclaration(bool* ok) {
                                           : kFunctionNameValidityUnknown,
                        is_generator ? FunctionKind::kGeneratorFunction
                                     : FunctionKind::kNormalFunction,
-                       pos, FunctionLiteral::DECLARATION,
-                       FunctionLiteral::NORMAL_ARITY, language_mode(),
+                       pos, FunctionLiteral::kDeclaration,
+                       FunctionLiteral::kNormalArity, language_mode(),
                        CHECK_OK);
   return Statement::FunctionDeclaration();
 }
@@ -591,7 +591,8 @@ PreParser::Statement PreParser::ParseVariableDeclarations(
       }
     }
 
-    is_pattern = pattern.IsObjectLiteral() || pattern.IsArrayLiteral();
+    is_pattern = (pattern.IsObjectLiteral() || pattern.IsArrayLiteral()) &&
+                 !pattern.is_parenthesized();
 
     bool is_for_iteration_variable =
         var_context == kForStatement &&

@@ -851,6 +851,7 @@ void BytecodeGenerator::VisitForInAssignment(Expression* expr,
       builder()->StoreAccumulatorInRegister(value);
       Register object = VisitForRegisterValue(property->obj());
       Handle<String> name = property->key()->AsLiteral()->AsPropertyName();
+      builder()->LoadAccumulatorWithRegister(value);
       builder()->StoreNamedProperty(object, name, feedback_index(slot),
                                     language_mode());
       break;
@@ -1606,13 +1607,14 @@ void BytecodeGenerator::VisitCall(Call* expr) {
 
   // Prepare the callee and the receiver to the function call. This depends on
   // the semantics of the underlying call type.
-  Register callee = execution_result()->NewRegister();
 
   // The receiver and arguments need to be allocated consecutively for
-  // Call(). Future optimizations could avoid this there are no
+  // Call(). We allocate the callee and receiver consecutively for calls to
+  // kLoadLookupSlot. Future optimizations could avoid this there are no
   // arguments or the receiver and arguments are already consecutive.
   ZoneList<Expression*>* args = expr->arguments();
-  execution_result()->PrepareForConsecutiveAllocations(args->length() + 1);
+  execution_result()->PrepareForConsecutiveAllocations(args->length() + 2);
+  Register callee = execution_result()->NextConsecutiveRegister();
   Register receiver = execution_result()->NextConsecutiveRegister();
 
   switch (call_type) {
@@ -1635,6 +1637,27 @@ void BytecodeGenerator::VisitCall(Call* expr) {
       builder()->StoreAccumulatorInRegister(callee);
       break;
     }
+    case Call::LOOKUP_SLOT_CALL:
+    case Call::POSSIBLY_EVAL_CALL: {
+      if (callee_expr->AsVariableProxy()->var()->IsLookupSlot()) {
+        TemporaryRegisterScope temporary_register_scope(builder());
+        temporary_register_scope.PrepareForConsecutiveAllocations(2);
+        Register context = temporary_register_scope.NextConsecutiveRegister();
+        Register name = temporary_register_scope.NextConsecutiveRegister();
+
+        // Call LoadLookupSlot to get the callee and receiver.
+        DCHECK(Register::AreContiguous(callee, receiver));
+        Variable* variable = callee_expr->AsVariableProxy()->var();
+        builder()
+            ->MoveRegister(Register::function_context(), context)
+            .LoadLiteral(variable->name())
+            .StoreAccumulatorInRegister(name)
+            .CallRuntimeForPair(Runtime::kLoadLookupSlot, context, 2, callee);
+        break;
+      }
+      // Fall through.
+      DCHECK_EQ(call_type, Call::POSSIBLY_EVAL_CALL);
+    }
     case Call::OTHER_CALL: {
       builder()->LoadUndefined().StoreAccumulatorInRegister(receiver);
       VisitForAccumulatorValue(callee_expr);
@@ -1643,9 +1666,7 @@ void BytecodeGenerator::VisitCall(Call* expr) {
     }
     case Call::NAMED_SUPER_PROPERTY_CALL:
     case Call::KEYED_SUPER_PROPERTY_CALL:
-    case Call::LOOKUP_SLOT_CALL:
     case Call::SUPER_CALL:
-    case Call::POSSIBLY_EVAL_CALL:
       UNIMPLEMENTED();
   }
 
@@ -1654,7 +1675,37 @@ void BytecodeGenerator::VisitCall(Call* expr) {
   Register arg = VisitArguments(args);
   CHECK(args->length() == 0 || arg.index() == receiver.index() + 1);
 
-  // TODO(rmcilroy): Deal with possible direct eval here?
+  // Resolve callee for a potential direct eval call. This block will mutate the
+  // callee value.
+  if (call_type == Call::POSSIBLY_EVAL_CALL && args->length() > 0) {
+    TemporaryRegisterScope temporary_register_scope(builder());
+    temporary_register_scope.PrepareForConsecutiveAllocations(5);
+    Register callee_for_eval =
+        temporary_register_scope.NextConsecutiveRegister();
+    Register source = temporary_register_scope.NextConsecutiveRegister();
+    Register function = temporary_register_scope.NextConsecutiveRegister();
+    Register language = temporary_register_scope.NextConsecutiveRegister();
+    Register position = temporary_register_scope.NextConsecutiveRegister();
+
+    // Set up arguments for ResolvePossiblyDirectEval by copying callee, source
+    // strings and function closure, and loading language and
+    // position.
+    builder()
+        ->MoveRegister(callee, callee_for_eval)
+        .MoveRegister(arg, source)
+        .MoveRegister(Register::function_closure(), function)
+        .LoadLiteral(Smi::FromInt(language_mode()))
+        .StoreAccumulatorInRegister(language)
+        .LoadLiteral(
+            Smi::FromInt(execution_context()->scope()->start_position()))
+        .StoreAccumulatorInRegister(position);
+
+    // Call ResolvePossiblyDirectEval and modify the callee.
+    builder()
+        ->CallRuntime(Runtime::kResolvePossiblyDirectEval, callee_for_eval, 5)
+        .StoreAccumulatorInRegister(callee);
+  }
+
   // TODO(rmcilroy): Use CallIC to allow call type feedback.
   builder()->Call(callee, receiver, args->length(),
                   feedback_index(expr->CallFeedbackICSlot()));
@@ -1690,8 +1741,6 @@ void BytecodeGenerator::VisitCallRuntime(CallRuntime* expr) {
     DCHECK(args->length() == 0 || first_arg.index() == receiver.index() + 1);
     builder()->CallJSRuntime(expr->context_index(), receiver, args->length());
   } else {
-    // TODO(rmcilroy): support multiple return values.
-    DCHECK_LE(expr->function()->result_size, 1);
     Runtime::FunctionId function_id = expr->function()->function_id;
     builder()->CallRuntime(function_id, first_arg, args->length());
   }
@@ -2054,7 +2103,12 @@ void BytecodeGenerator::VisitBuildLocalActivationContext() {
   Scope* scope = this->scope();
 
   if (scope->has_this_declaration() && scope->receiver()->IsContextSlot()) {
-    UNIMPLEMENTED();
+    Variable* variable = scope->receiver();
+    Register receiver(builder()->Parameter(0));
+    // Context variable (at bottom of the context chain).
+    DCHECK_EQ(0, scope->ContextChainLength(variable->scope()));
+    builder()->LoadAccumulatorWithRegister(receiver).StoreContextSlot(
+        execution_context()->reg(), variable->index());
   }
 
   // Copy parameters into context if necessary.

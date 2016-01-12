@@ -54,11 +54,6 @@
   'es6/debug-promises/reject-with-throw-in-reject': [FAIL],
   'es6/debug-promises/reject-with-undefined-reject': [FAIL],
   'es6/debug-promises/reject-with-invalid-reject': [FAIL],
-  'es6/debug-promises/throw-with-undefined-reject': [FAIL],
-
-  # Issue 4093: This test will be updated in the course of implementing
-  # @@species, when TypedArray support is added.
-  'regress/regress-544991': [SKIP],
 
   ##############################################################################
   # TurboFan compiler failures.
@@ -999,6 +994,7 @@
   'regress/regress-520029': [SKIP],
   'regress/regress-542099': [SKIP],
   'regress/regress-542100': [SKIP],
+  'regress/regress-544991': [SKIP],
   'regress/regress-568765': [SKIP],
   'regress/regress-580': [SKIP],
   'regress/regress-618': [SKIP],
@@ -1135,6 +1131,10 @@
   'with-prototype': [SKIP],
   'with-readonly': [SKIP],
   'with-value': [SKIP],
+  'regress/regress-builtinbust-7': [SKIP],
+  'regress/regress-crbug-451770': [SKIP],
+  'regress/regress-crbug-503968': [SKIP],
+  'regress/regress-crbug-504729': [SKIP],
 }],  # ignition == True
 
 ['ignition == True and (arch == arm or arch == arm64)', {

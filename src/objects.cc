@@ -836,6 +836,7 @@ MaybeHandle<Object> JSProxy::GetProperty(Isolate* isolate,
         Object);
   }
 
+  DCHECK(!name->IsPrivate());
   STACK_CHECK(MaybeHandle<Object>());
   Handle<Name> trap_name = isolate->factory()->get_string();
   // 1. Assert: IsPropertyKey(P) is true.
@@ -1365,7 +1366,7 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithFailedAccessCheck(
 
 // static
 bool JSObject::AllCanWrite(LookupIterator* it) {
-  for (; it->IsFound(); it->Next()) {
+  for (; it->IsFound() && it->state() != LookupIterator::JSPROXY; it->Next()) {
     if (it->state() == LookupIterator::ACCESSOR) {
       Handle<Object> accessors = it->GetAccessors();
       if (accessors->IsAccessorInfo()) {
@@ -1747,6 +1748,7 @@ bool String::MakeExternal(v8::String::ExternalStringResource* resource) {
   // Externalizing twice leaks the external resource, so it's
   // prohibited by the API.
   DCHECK(!this->IsExternalString());
+  DCHECK(!resource->IsCompressible());
 #ifdef ENABLE_SLOW_DCHECKS
   if (FLAG_enable_slow_asserts) {
     // Assert that the resource and the string are equivalent.
@@ -1809,6 +1811,7 @@ bool String::MakeExternal(v8::String::ExternalOneByteStringResource* resource) {
   // Externalizing twice leaks the external resource, so it's
   // prohibited by the API.
   DCHECK(!this->IsExternalString());
+  DCHECK(!resource->IsCompressible());
 #ifdef ENABLE_SLOW_DCHECKS
   if (FLAG_enable_slow_asserts) {
     // Assert that the resource and the string are equivalent.
@@ -4017,6 +4020,7 @@ Maybe<bool> JSObject::SetPropertyWithInterceptor(LookupIterator* it,
     result = args.Call(setter, index, v8::Utils::ToLocal(value));
   } else {
     Handle<Name> name = it->name();
+    DCHECK(!name->IsPrivate());
 
     if (name->IsSymbol() && !interceptor->can_intercept_symbols()) {
       return Just(false);
@@ -4157,6 +4161,10 @@ Maybe<bool> Object::SetProperty(LookupIterator* it, Handle<Object> value,
   if (found) return result;
   ShouldThrow should_throw =
       is_sloppy(language_mode) ? DONT_THROW : THROW_ON_ERROR;
+  if (it->GetReceiver()->IsJSProxy() && it->GetName()->IsPrivate()) {
+    RETURN_FAILURE(it->isolate(), should_throw,
+                   NewTypeError(MessageTemplate::kProxyPrivate));
+  }
   return AddDataProperty(it, value, NONE, should_throw, store_mode);
 }
 
@@ -4172,6 +4180,10 @@ Maybe<bool> Object::SetSuperProperty(LookupIterator* it, Handle<Object> value,
   Maybe<bool> result =
       SetPropertyInternal(it, value, language_mode, store_mode, &found);
   if (found) return result;
+  if (it->GetReceiver()->IsJSProxy() && it->GetName()->IsPrivate()) {
+    RETURN_FAILURE(isolate, should_throw,
+                   NewTypeError(MessageTemplate::kProxyPrivate));
+  }
 
   // The property either doesn't exist on the holder or exists there as a data
   // property.
@@ -4833,6 +4845,7 @@ void JSProxy::Revoke(Handle<JSProxy> proxy) {
 
 Maybe<bool> JSProxy::HasProperty(Isolate* isolate, Handle<JSProxy> proxy,
                                  Handle<Name> name) {
+  DCHECK(!name->IsPrivate());
   STACK_CHECK(Nothing<bool>());
   // 1. (Assert)
   // 2. Let handler be the value of the [[ProxyHandler]] internal slot of O.
@@ -4857,6 +4870,8 @@ Maybe<bool> JSProxy::HasProperty(Isolate* isolate, Handle<JSProxy> proxy,
     // 7a. Return target.[[HasProperty]](P).
     return JSReceiver::HasProperty(target, name);
   }
+  // Do not leak private property names.
+  if (name->IsPrivate()) return Just(false);
   // 8. Let booleanTrapResult be ToBoolean(? Call(trap, handler, «target, P»)).
   Handle<Object> trap_result_obj;
   Handle<Object> args[] = {target, name};
@@ -4900,6 +4915,7 @@ Maybe<bool> JSProxy::HasProperty(Isolate* isolate, Handle<JSProxy> proxy,
 Maybe<bool> JSProxy::SetProperty(Handle<JSProxy> proxy, Handle<Name> name,
                                  Handle<Object> value, Handle<Object> receiver,
                                  LanguageMode language_mode) {
+  DCHECK(!name->IsPrivate());
   Isolate* isolate = proxy->GetIsolate();
   STACK_CHECK(Nothing<bool>());
   Factory* factory = isolate->factory();
@@ -4968,6 +4984,7 @@ Maybe<bool> JSProxy::SetProperty(Handle<JSProxy> proxy, Handle<Name> name,
 Maybe<bool> JSProxy::DeletePropertyOrElement(Handle<JSProxy> proxy,
                                              Handle<Name> name,
                                              LanguageMode language_mode) {
+  DCHECK(!name->IsPrivate());
   ShouldThrow should_throw =
       is_sloppy(language_mode) ? DONT_THROW : THROW_ON_ERROR;
   Isolate* isolate = proxy->GetIsolate();
@@ -5388,6 +5405,7 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
       result = args.Call(query, index);
     } else {
       Handle<Name> name = it->name();
+      DCHECK(!name->IsPrivate());
       v8::GenericNamedPropertyQueryCallback query =
           v8::ToCData<v8::GenericNamedPropertyQueryCallback>(
               interceptor->query());
@@ -5413,7 +5431,7 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
       result = args.Call(getter, index);
     } else {
       Handle<Name> name = it->name();
-
+      DCHECK(!name->IsPrivate());
       v8::GenericNamedPropertyGetterCallback getter =
           v8::ToCData<v8::GenericNamedPropertyGetterCallback>(
               interceptor->getter());
@@ -6157,6 +6175,7 @@ Maybe<bool> JSObject::DeletePropertyWithInterceptor(LookupIterator* it) {
     return Nothing<bool>();
   } else {
     Handle<Name> name = it->name();
+    DCHECK(!name->IsPrivate());
     v8::GenericNamedPropertyDeleterCallback deleter =
         v8::ToCData<v8::GenericNamedPropertyDeleterCallback>(
             interceptor->deleter());
@@ -6212,6 +6231,11 @@ Maybe<bool> JSReceiver::DeleteProperty(LookupIterator* it,
                                             it->GetName(), language_mode);
   }
 
+  if (it->GetReceiver()->IsJSProxy()) {
+    DCHECK(it->state() == LookupIterator::NOT_FOUND);
+    DCHECK(it->GetName()->IsPrivate());
+    return Just(true);
+  }
   Handle<JSObject> receiver = Handle<JSObject>::cast(it->GetReceiver());
 
   bool is_observed =
@@ -7088,6 +7112,11 @@ Maybe<bool> JSProxy::DefineOwnProperty(Isolate* isolate, Handle<JSProxy> proxy,
       key->IsName()
           ? Handle<Name>::cast(key)
           : Handle<Name>::cast(isolate->factory()->NumberToString(key));
+  // Do not leak private property names.
+  if (property_name->IsPrivate()) {
+    RETURN_FAILURE(isolate, should_throw,
+                   NewTypeError(MessageTemplate::kProxyPrivate));
+  }
   Handle<Object> trap_result_obj;
   Handle<Object> args[] = {target, property_name, desc_obj};
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
@@ -7232,7 +7261,9 @@ Maybe<bool> JSProxy::GetOwnPropertyDescriptor(Isolate* isolate,
                                               Handle<JSProxy> proxy,
                                               Handle<Name> name,
                                               PropertyDescriptor* desc) {
+  DCHECK(!name->IsPrivate());
   STACK_CHECK(Nothing<bool>());
+
   Handle<String> trap_name =
       isolate->factory()->getOwnPropertyDescriptor_string();
   // 1. (Assert)
@@ -9979,7 +10010,7 @@ Handle<DescriptorArray> DescriptorArray::CopyUpToAddAttributes(
       Name* key = desc->GetKey(i);
       PropertyDetails details = desc->GetDetails(i);
       // Bulk attribute changes never affect private properties.
-      if (!key->IsSymbol() || !Symbol::cast(key)->is_private()) {
+      if (!key->IsPrivate()) {
         int mask = DONT_DELETE | DONT_ENUM;
         // READ_ONLY is an invalid attribute for JS setters/getters.
         if (details.type() != ACCESSOR_CONSTANT || !value->IsAccessorPair()) {
@@ -16144,6 +16175,7 @@ MaybeHandle<Object> JSObject::GetPropertyWithInterceptor(LookupIterator* it,
     result = args.Call(getter, index);
   } else {
     Handle<Name> name = it->name();
+    DCHECK(!name->IsPrivate());
 
     if (name->IsSymbol() && !interceptor->can_intercept_symbols()) {
       return isolate->factory()->undefined_value();
@@ -19298,6 +19330,16 @@ Object* JSDate::GetUTCField(FieldIndex index,
 
   UNREACHABLE();
   return NULL;
+}
+
+
+// static
+Handle<Object> JSDate::SetValue(Handle<JSDate> date, double v) {
+  Isolate* const isolate = date->GetIsolate();
+  Handle<Object> value = isolate->factory()->NewNumber(v);
+  bool value_is_nan = std::isnan(v);
+  date->SetValue(*value, value_is_nan);
+  return value;
 }
 
 

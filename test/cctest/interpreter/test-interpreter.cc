@@ -66,6 +66,7 @@ class InterpreterTester {
         feedback_vector_(feedback_vector) {
     i::FLAG_ignition = true;
     i::FLAG_ignition_fake_try_catch = true;
+    i::FLAG_ignition_fallback_on_eval_and_catch = false;
     i::FLAG_always_opt = false;
     // Set ignition filter flag via SetFlagsFromString to avoid double-free
     // (or potential leak with StrDup() based on ownership confusion).
@@ -1943,7 +1944,11 @@ TEST(InterpreterContextVariables) {
   HandleAndZoneScope handles;
   i::Isolate* isolate = handles.main_isolate();
 
-  std::pair<const char*, Handle<Object>> context_vars[] = {
+  std::ostringstream unique_vars;
+  for (int i = 0; i < 250; i++) {
+    unique_vars << "var a" << i << " = 0;";
+  }
+  std::pair<std::string, Handle<Object>> context_vars[] = {
       std::make_pair("var a; (function() { a = 1; })(); return a;",
                      handle(Smi::FromInt(1), isolate)),
       std::make_pair("var a = 10; (function() { a; })(); return a;",
@@ -1958,10 +1963,14 @@ TEST(InterpreterContextVariables) {
                      "{ let b = 20; var c = function() { [a, b] };\n"
                      "  return a + b; }",
                      handle(Smi::FromInt(30), isolate)),
+      std::make_pair("'use strict';" + unique_vars.str() +
+                     "eval(); var b = 100; return b;",
+                     handle(Smi::FromInt(100), isolate)),
   };
 
   for (size_t i = 0; i < arraysize(context_vars); i++) {
-    std::string source(InterpreterTester::SourceForBody(context_vars[i].first));
+    std::string source(
+        InterpreterTester::SourceForBody(context_vars[i].first.c_str()));
     InterpreterTester tester(handles.main_isolate(), source.c_str());
     auto callable = tester.GetCallable<>();
 
@@ -2854,7 +2863,27 @@ TEST(InterpreterForIn) {
        "  }\n"
        "  return flags;\n"
        "  }",
-       0}};
+       0},
+      {"function f() {\n"
+       " var data = {x:23, y:34};\n"
+       " var result = 0;\n"
+       " var o = {};\n"
+       " var arr = [o];\n"
+       " for (arr[0].p in data)\n"      // This is to test if value is loaded
+       "  result += data[arr[0].p];\n"  // back from accumulator before storing
+       " return result;\n"              // named properties.
+       "}",
+       57},
+      {"function f() {\n"
+       " var data = {x:23, y:34};\n"
+       " var result = 0;\n"
+       " var o = {};\n"
+       " var i = 0;\n"
+       " for (o[i++] in data)\n"      // This is to test if value is loaded
+       "  result += data[o[i-1]];\n"  // back from accumulator before
+       " return result;\n"            // storing keyed properties.
+       "}",
+       57}};
 
   for (size_t i = 0; i < arraysize(for_in_samples); i++) {
     InterpreterTester tester(handles.main_isolate(), for_in_samples[i].first);
@@ -3195,6 +3224,40 @@ TEST(InterpreterToName) {
 }
 
 
+TEST(TemporaryRegisterAllocation) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  std::pair<const char*, Handle<Object>> reg_tests[] = {
+      {"function add(a, b, c) {"
+       "   return a + b + c;"
+       "}"
+       "function f() {"
+       "  var a = 10, b = 10;"
+       "   return add(a, b++, b);"
+       "}",
+       factory->NewNumberFromInt(31)},
+      {"function add(a, b, c, d) {"
+       "  return a + b + c + d;"
+       "}"
+       "function f() {"
+       "  var x = 10, y = 20, z = 30;"
+       "  return x + add(x, (y= x++), x, z);"
+       "}",
+       factory->NewNumberFromInt(71)},
+  };
+
+  for (size_t i = 0; i < arraysize(reg_tests); i++) {
+    InterpreterTester tester(handles.main_isolate(), reg_tests[i].first);
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*reg_tests[i].second));
+  }
+}
+
+
 TEST(InterpreterLookupSlot) {
   HandleAndZoneScope handles;
   i::Isolate* isolate = handles.main_isolate();
@@ -3228,6 +3291,33 @@ TEST(InterpreterLookupSlot) {
 
     Handle<i::Object> return_value = callable().ToHandleChecked();
     CHECK(return_value->SameValue(*lookup_slot[i].second));
+  }
+}
+
+
+TEST(InterpreterCallLookupSlot) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+
+  std::pair<const char*, Handle<Object>> call_lookup[] = {
+      {"g = function(){ return 2 }; eval(''); return g();",
+       handle(Smi::FromInt(2), isolate)},
+      {"g = function(){ return 2 }; eval('g = function() {return 3}');\n"
+       "return g();",
+       handle(Smi::FromInt(3), isolate)},
+      {"g = { x: function(){ return this.y }, y: 20 };\n"
+       "eval('g = { x: g.x, y: 30 }');\n"
+       "return g.x();",
+       handle(Smi::FromInt(30), isolate)},
+  };
+
+  for (size_t i = 0; i < arraysize(call_lookup); i++) {
+    std::string source(InterpreterTester::SourceForBody(call_lookup[i].first));
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*call_lookup[i].second));
   }
 }
 
@@ -3272,40 +3362,6 @@ TEST(InterpreterLookupSlotWide) {
 
     Handle<i::Object> return_value = callable().ToHandleChecked();
     CHECK(return_value->SameValue(*lookup_slot[i].second));
-  }
-}
-
-
-TEST(TemporaryRegisterAllocation) {
-  HandleAndZoneScope handles;
-  i::Isolate* isolate = handles.main_isolate();
-  i::Factory* factory = isolate->factory();
-
-  std::pair<const char*, Handle<Object>> reg_tests[] = {
-      {"function add(a, b, c) {"
-       "   return a + b + c;"
-       "}"
-       "function f() {"
-       "  var a = 10, b = 10;"
-       "   return add(a, b++, b);"
-       "}",
-       factory->NewNumberFromInt(31)},
-      {"function add(a, b, c, d) {"
-       "  return a + b + c + d;"
-       "}"
-       "function f() {"
-       "  var x = 10, y = 20, z = 30;"
-       "  return x + add(x, (y= x++), x, z);"
-       "}",
-       factory->NewNumberFromInt(71)},
-  };
-
-  for (size_t i = 0; i < arraysize(reg_tests); i++) {
-    InterpreterTester tester(handles.main_isolate(), reg_tests[i].first);
-    auto callable = tester.GetCallable<>();
-
-    Handle<i::Object> return_value = callable().ToHandleChecked();
-    CHECK(return_value->SameValue(*reg_tests[i].second));
   }
 }
 
@@ -3384,6 +3440,112 @@ TEST(JumpWithConstantsAndWideConstants) {
       static const int results[] = {11, 12, 2};
       CHECK_EQ(Handle<Smi>::cast(return_val)->value(), results[a]);
     }
+  }
+}
+
+
+TEST(InterpreterEval) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  std::pair<const char*, Handle<Object>> eval[] = {
+      {"return eval('1;');", handle(Smi::FromInt(1), isolate)},
+      {"return eval('100 * 20;');", handle(Smi::FromInt(2000), isolate)},
+      {"var x = 10; return eval('x + 20;');",
+       handle(Smi::FromInt(30), isolate)},
+      {"var x = 10; eval('x = 33;'); return x;",
+       handle(Smi::FromInt(33), isolate)},
+      {"'use strict'; var x = 20; var z = 0;\n"
+       "eval('var x = 33; z = x;'); return x + z;",
+       handle(Smi::FromInt(53), isolate)},
+      {"eval('var x = 33;'); eval('var y = x + 20'); return x + y;",
+       handle(Smi::FromInt(86), isolate)},
+      {"var x = 1; eval('for(i = 0; i < 10; i++) x = x + 1;'); return x",
+       handle(Smi::FromInt(11), isolate)},
+      {"var x = 10; eval('var x = 20;'); return x;",
+       handle(Smi::FromInt(20), isolate)},
+      {"var x = 1; eval('\"use strict\"; var x = 2;'); return x;",
+       handle(Smi::FromInt(1), isolate)},
+      {"'use strict'; var x = 1; eval('var x = 2;'); return x;",
+       handle(Smi::FromInt(1), isolate)},
+      {"var x = 10; eval('x + 20;'); return typeof x;",
+       factory->NewStringFromStaticChars("number")},
+      {"eval('var y = 10;'); return typeof unallocated;",
+       factory->NewStringFromStaticChars("undefined")},
+      {"'use strict'; eval('var y = 10;'); return typeof unallocated;",
+       factory->NewStringFromStaticChars("undefined")},
+      {"eval('var x = 10;'); return typeof x;",
+       factory->NewStringFromStaticChars("number")},
+      {"var x = {}; eval('var x = 10;'); return typeof x;",
+       factory->NewStringFromStaticChars("number")},
+      {"'use strict'; var x = {}; eval('var x = 10;'); return typeof x;",
+       factory->NewStringFromStaticChars("object")},
+  };
+
+  for (size_t i = 0; i < arraysize(eval); i++) {
+    std::string source(InterpreterTester::SourceForBody(eval[i].first));
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*eval[i].second));
+  }
+}
+
+
+TEST(InterpreterEvalParams) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+
+  std::pair<const char*, Handle<Object>> eval_params[] = {
+      {"var x = 10; return eval('x + p1;');",
+       handle(Smi::FromInt(30), isolate)},
+      {"var x = 10; eval('p1 = x;'); return p1;",
+       handle(Smi::FromInt(10), isolate)},
+      {"var a = 10;"
+       "function inner() { return eval('a + p1;');}"
+       "return inner();",
+       handle(Smi::FromInt(30), isolate)},
+  };
+
+  for (size_t i = 0; i < arraysize(eval_params); i++) {
+    std::string source = "function " + InterpreterTester::function_name() +
+                         "(p1) {" + eval_params[i].first + "}";
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<Handle<Object>>();
+
+    Handle<i::Object> return_value =
+        callable(handle(Smi::FromInt(20), isolate)).ToHandleChecked();
+    CHECK(return_value->SameValue(*eval_params[i].second));
+  }
+}
+
+
+TEST(InterpreterEvalGlobal) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  i::Factory* factory = isolate->factory();
+
+  std::pair<const char*, Handle<Object>> eval_global[] = {
+      {"function add_global() { eval('function test() { z = 33; }; test()'); };"
+       "function f() { add_global(); return z; }; f();",
+       handle(Smi::FromInt(33), isolate)},
+      {"function add_global() {\n"
+       " eval('\"use strict\"; function test() { y = 33; };"
+       "      try { test() } catch(e) {}');\n"
+       "}\n"
+       "function f() { add_global(); return typeof y; } f();",
+       factory->NewStringFromStaticChars("undefined")},
+  };
+
+  for (size_t i = 0; i < arraysize(eval_global); i++) {
+    InterpreterTester tester(handles.main_isolate(), eval_global[i].first,
+                             "test");
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*eval_global[i].second));
   }
 }
 

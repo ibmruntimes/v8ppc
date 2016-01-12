@@ -1,4 +1,4 @@
-// Copyright 2012 the V8 project authors. All rights reserved.
+// Copyright 2015 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -27,8 +27,21 @@
 
 // Flags: --allow-natives-syntax
 
-var _d = new Date();
-_d.setHours(0,0,0,0);
-_d.setHours(0,0,0,0);
-%OptimizeFunctionOnNextCall(_d.setHours);
-_d.setHours(0,0,0,0);
+function g() {
+  return 100;
+}
+
+function getter() {
+  // Test that we can deopt during the CallRuntimeForPair call to LoadLookupSlot
+  %DeoptimizeFunction(f);
+  return g;
+}
+
+Object.defineProperty(this, "eval", {get: getter });
+
+function f() {
+  return eval("200");
+}
+
+%OptimizeFunctionOnNextCall(f);
+assertEquals(100, f());
