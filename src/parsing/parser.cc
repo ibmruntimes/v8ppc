@@ -2196,7 +2196,8 @@ Statement* Parser::ParseClassDeclaration(ZoneList<const AstRawString*>* names,
 }
 
 
-Block* Parser::ParseBlock(ZoneList<const AstRawString*>* labels, bool* ok) {
+Block* Parser::ParseBlock(ZoneList<const AstRawString*>* labels,
+                          bool finalize_block_scope, bool* ok) {
   // The harmony mode uses block elements instead of statements.
   //
   // Block ::
@@ -2222,9 +2223,16 @@ Block* Parser::ParseBlock(ZoneList<const AstRawString*>* labels, bool* ok) {
   }
   Expect(Token::RBRACE, CHECK_OK);
   block_scope->set_end_position(scanner()->location().end_pos);
-  block_scope = block_scope->FinalizeBlockScope();
+  if (finalize_block_scope) {
+    block_scope = block_scope->FinalizeBlockScope();
+  }
   body->set_scope(block_scope);
   return body;
+}
+
+
+Block* Parser::ParseBlock(ZoneList<const AstRawString*>* labels, bool* ok) {
+  return ParseBlock(labels, true, ok);
 }
 
 
@@ -3992,12 +4000,13 @@ DoExpression* Parser::ParseDoExpression(bool* ok) {
   Expect(Token::DO, CHECK_OK);
   Variable* result =
       scope_->NewTemporary(ast_value_factory()->dot_result_string());
-  Block* block = ParseBlock(nullptr, CHECK_OK);
+  Block* block = ParseBlock(nullptr, false, CHECK_OK);
   DoExpression* expr = factory()->NewDoExpression(block, result, pos);
   if (!Rewriter::Rewrite(this, expr, ast_value_factory())) {
     *ok = false;
     return nullptr;
   }
+  block->set_scope(block->scope()->FinalizeBlockScope());
   return expr;
 }
 
@@ -5189,7 +5198,6 @@ Expression* Parser::CloseTemplateLiteral(TemplateLiteralState* state, int start,
     Smi* hash_obj = Smi::cast(Internals::IntToSmi(static_cast<int>(hash)));
     args->Add(factory()->NewSmiLiteral(hash_obj->value(), pos), zone());
 
-    this->CheckPossibleEvalCall(tag, scope_);
     Expression* call_site = factory()->NewCallRuntime(
         Context::GET_TEMPLATE_CALL_SITE_INDEX, args, start);
 

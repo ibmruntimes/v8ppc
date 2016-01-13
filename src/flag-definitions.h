@@ -210,8 +210,6 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                                 \
-  V(harmony_proxies, "harmony proxies")                                   \
-  V(harmony_reflect, "harmony Reflect API")                               \
   V(harmony_regexp_lookbehind, "harmony regexp lookbehind")
 
 // Features that are shipping (turned on by default, but internal flag remains).
@@ -227,7 +225,9 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_regexps, "harmony regular expression extensions")             \
   V(harmony_sloppy, "harmony features in sloppy mode")                    \
   V(harmony_sloppy_let, "harmony let in sloppy mode")                     \
-  V(harmony_sloppy_function, "harmony sloppy function block scoping")
+  V(harmony_sloppy_function, "harmony sloppy function block scoping")     \
+  V(harmony_proxies, "harmony proxies")                                   \
+  V(harmony_reflect, "harmony Reflect API")
 
 
 // Once a shipping feature has proved stable in the wild, it will be dropped
@@ -407,7 +407,7 @@ DEFINE_INT(concurrent_recompilation_delay, 0,
            "artificial compilation delay in ms")
 DEFINE_BOOL(block_concurrent_recompilation, false,
             "block queued jobs until released")
-DEFINE_BOOL(concurrent_osr, true, "concurrent on-stack replacement")
+DEFINE_BOOL(concurrent_osr, false, "concurrent on-stack replacement")
 DEFINE_IMPLICATION(concurrent_osr, concurrent_recompilation)
 
 DEFINE_BOOL(omit_map_checks_for_leaf_maps, true,

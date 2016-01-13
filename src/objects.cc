@@ -4870,8 +4870,6 @@ Maybe<bool> JSProxy::HasProperty(Isolate* isolate, Handle<JSProxy> proxy,
     // 7a. Return target.[[HasProperty]](P).
     return JSReceiver::HasProperty(target, name);
   }
-  // Do not leak private property names.
-  if (name->IsPrivate()) return Just(false);
   // 8. Let booleanTrapResult be ToBoolean(? Call(trap, handler, «target, P»)).
   Handle<Object> trap_result_obj;
   Handle<Object> args[] = {target, name};
@@ -6507,7 +6505,7 @@ Maybe<bool> JSReceiver::OrdinaryDefineOwnProperty(Isolate* isolate,
     if (!it.HasAccess()) {
       isolate->ReportFailedAccessCheck(it.GetHolder<JSObject>());
       RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<bool>());
-      return Just(false);
+      return Just(true);
     }
     it.Next();
   }
@@ -7674,7 +7672,6 @@ Maybe<bool> JSObject::PreventExtensions(Handle<JSObject> object,
       !isolate->MayAccess(handle(isolate->context()), object)) {
     isolate->ReportFailedAccessCheck(object);
     RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<bool>());
-    UNREACHABLE();
     RETURN_FAILURE(isolate, should_throw,
                    NewTypeError(MessageTemplate::kNoAccess));
   }
@@ -7822,7 +7819,6 @@ Maybe<bool> JSObject::PreventExtensionsWithTransition(
       !isolate->MayAccess(handle(isolate->context()), object)) {
     isolate->ReportFailedAccessCheck(object);
     RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<bool>());
-    UNREACHABLE();
     RETURN_FAILURE(isolate, should_throw,
                    NewTypeError(MessageTemplate::kNoAccess));
   }
@@ -12171,12 +12167,6 @@ void String::PrintOn(FILE* file) {
 }
 
 
-inline static uint32_t ObjectAddressForHashing(Object* object) {
-  uint32_t value = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(object));
-  return value & MemoryChunk::kAlignmentMask;
-}
-
-
 int Map::Hash() {
   // For performance reasons we only hash the 3 most variable fields of a map:
   // constructor, prototype and bit_field2. For predictability reasons we
@@ -15542,7 +15532,8 @@ Maybe<bool> JSObject::SetPrototypeUnobserved(Handle<JSObject> object,
         !isolate->MayAccess(handle(isolate->context()), object)) {
       isolate->ReportFailedAccessCheck(object);
       RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<bool>());
-      UNREACHABLE();
+      RETURN_FAILURE(isolate, should_throw,
+                     NewTypeError(MessageTemplate::kNoAccess));
     }
   } else {
     DCHECK(!object->IsAccessCheckNeeded());

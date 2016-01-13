@@ -1443,6 +1443,115 @@ void Builtins::Generate_ArrayCode(MacroAssembler* masm) {
 
 
 // static
+void Builtins::Generate_NumberConstructor(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- rax                 : number of arguments
+  //  -- rdi                 : constructor function
+  //  -- rsp[0]              : return address
+  //  -- rsp[(argc - n) * 8] : arg[n] (zero-based)
+  //  -- rsp[(argc + 1) * 8] : receiver
+  // -----------------------------------
+
+  // 1. Load the first argument into rax and get rid of the rest (including the
+  // receiver).
+  Label no_arguments;
+  {
+    StackArgumentsAccessor args(rsp, rax);
+    __ testp(rax, rax);
+    __ j(zero, &no_arguments, Label::kNear);
+    __ movp(rbx, args.GetArgumentOperand(1));
+    __ PopReturnAddressTo(rcx);
+    __ leap(rsp, Operand(rsp, rax, times_pointer_size, kPointerSize));
+    __ PushReturnAddressFrom(rcx);
+    __ movp(rax, rbx);
+  }
+
+  // 2a. Convert the first argument to a number.
+  ToNumberStub stub(masm->isolate());
+  __ TailCallStub(&stub);
+
+  // 2b. No arguments, return +0 (already in rax).
+  __ bind(&no_arguments);
+  __ ret(1 * kPointerSize);
+}
+
+
+// static
+void Builtins::Generate_NumberConstructor_ConstructStub(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- rax                 : number of arguments
+  //  -- rdi                 : constructor function
+  //  -- rdx                 : new target
+  //  -- rsp[0]              : return address
+  //  -- rsp[(argc - n) * 8] : arg[n] (zero-based)
+  //  -- rsp[(argc + 1) * 8] : receiver
+  // -----------------------------------
+
+  // 1. Make sure we operate in the context of the called function.
+  __ movp(rsi, FieldOperand(rdi, JSFunction::kContextOffset));
+
+  // 2. Load the first argument into rbx and get rid of the rest (including the
+  // receiver).
+  {
+    StackArgumentsAccessor args(rsp, rax);
+    Label no_arguments, done;
+    __ testp(rax, rax);
+    __ j(zero, &no_arguments, Label::kNear);
+    __ movp(rbx, args.GetArgumentOperand(1));
+    __ jmp(&done, Label::kNear);
+    __ bind(&no_arguments);
+    __ Move(rbx, Smi::FromInt(0));
+    __ bind(&done);
+    __ PopReturnAddressTo(rcx);
+    __ leap(rsp, Operand(rsp, rax, times_pointer_size, kPointerSize));
+    __ PushReturnAddressFrom(rcx);
+  }
+
+  // 3. Make sure rbx is a number.
+  {
+    Label done_convert;
+    __ JumpIfSmi(rbx, &done_convert);
+    __ CompareRoot(FieldOperand(rbx, HeapObject::kMapOffset),
+                   Heap::kHeapNumberMapRootIndex);
+    __ j(equal, &done_convert);
+    {
+      FrameScope scope(masm, StackFrame::INTERNAL);
+      __ Push(rdx);
+      __ Push(rdi);
+      __ Move(rax, rbx);
+      ToNumberStub stub(masm->isolate());
+      __ CallStub(&stub);
+      __ Move(rbx, rax);
+      __ Pop(rdi);
+      __ Pop(rdx);
+    }
+    __ bind(&done_convert);
+  }
+
+  // 4. Check if new target and constructor differ.
+  Label new_object;
+  __ cmpp(rdx, rdi);
+  __ j(not_equal, &new_object);
+
+  // 5. Allocate a JSValue wrapper for the number.
+  __ AllocateJSValue(rax, rdi, rbx, rcx, &new_object);
+  __ Ret();
+
+  // 6. Fallback to the runtime to create new object.
+  __ bind(&new_object);
+  {
+    FrameScope scope(masm, StackFrame::INTERNAL);
+    __ Push(rbx);  // the first argument
+    __ Push(rdi);  // constructor function
+    __ Push(rdx);  // new target
+    __ CallRuntime(Runtime::kNewObject);
+    __ Pop(FieldOperand(rax, JSValue::kValueOffset));
+  }
+  __ Ret();
+}
+
+
+// static
 void Builtins::Generate_StringConstructor(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- rax                 : number of arguments
@@ -1514,7 +1623,10 @@ void Builtins::Generate_StringConstructor_ConstructStub(MacroAssembler* masm) {
   //  -- rsp[(argc + 1) * 8] : receiver
   // -----------------------------------
 
-  // 1. Load the first argument into rbx and get rid of the rest (including the
+  // 1. Make sure we operate in the context of the called function.
+  __ movp(rsi, FieldOperand(rdi, JSFunction::kContextOffset));
+
+  // 2. Load the first argument into rbx and get rid of the rest (including the
   // receiver).
   {
     StackArgumentsAccessor args(rsp, rax);
@@ -1531,7 +1643,7 @@ void Builtins::Generate_StringConstructor_ConstructStub(MacroAssembler* masm) {
     __ PushReturnAddressFrom(rcx);
   }
 
-  // 2. Make sure rbx is a string.
+  // 3. Make sure rbx is a string.
   {
     Label convert, done_convert;
     __ JumpIfSmi(rbx, &convert, Label::kNear);
@@ -1552,32 +1664,16 @@ void Builtins::Generate_StringConstructor_ConstructStub(MacroAssembler* masm) {
     __ bind(&done_convert);
   }
 
-  // 3. Check if new target and constructor differ.
+  // 4. Check if new target and constructor differ.
   Label new_object;
   __ cmpp(rdx, rdi);
   __ j(not_equal, &new_object);
 
-  // 4. Allocate a JSValue wrapper for the string.
-  {
-    // ----------- S t a t e -------------
-    //  -- rbx : the first argument
-    //  -- rdi : constructor function
-    //  -- rdx : new target
-    // -----------------------------------
-    __ Allocate(JSValue::kSize, rax, rcx, no_reg, &new_object, TAG_OBJECT);
+  // 5. Allocate a JSValue wrapper for the string.
+  __ AllocateJSValue(rax, rdi, rbx, rcx, &new_object);
+  __ Ret();
 
-    // Initialize the JSValue in rax.
-    __ LoadGlobalFunctionInitialMap(rdi, rcx);
-    __ movp(FieldOperand(rax, HeapObject::kMapOffset), rcx);
-    __ LoadRoot(rcx, Heap::kEmptyFixedArrayRootIndex);
-    __ movp(FieldOperand(rax, JSObject::kPropertiesOffset), rcx);
-    __ movp(FieldOperand(rax, JSObject::kElementsOffset), rcx);
-    __ movp(FieldOperand(rax, JSValue::kValueOffset), rbx);
-    STATIC_ASSERT(JSValue::kSize == 4 * kPointerSize);
-    __ Ret();
-  }
-
-  // 5. Fallback to the runtime to create new object.
+  // 6. Fallback to the runtime to create new object.
   __ bind(&new_object);
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
@@ -2332,10 +2428,6 @@ static void CompatibleReceiverCheck(MacroAssembler* masm, Register receiver,
   Register map = scratch1;
   Register constructor = scratch2;
 
-  // If the receiver is not an object, jump to receiver_check_failed.
-  __ CmpObjectType(receiver, FIRST_JS_OBJECT_TYPE, kScratchRegister);
-  __ j(below, receiver_check_failed);
-
   // If there is no signature, return the holder.
   __ movp(signature, FieldOperand(function_template_info,
                                   FunctionTemplateInfo::kSignatureOffset));
@@ -2408,13 +2500,6 @@ void Builtins::Generate_HandleFastApiCall(MacroAssembler* masm) {
   // -----------------------------------
 
   StackArgumentsAccessor args(rsp, rax);
-  __ movp(rcx, args.GetReceiverOperand());
-
-  // Update the receiver if this is a contextual call.
-  Label set_global_proxy, valid_receiver;
-  __ CompareRoot(rcx, Heap::kUndefinedValueRootIndex);
-  __ j(equal, &set_global_proxy);
-  __ bind(&valid_receiver);
 
   // Load the FunctionTemplateInfo.
   __ movp(rbx, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
@@ -2422,6 +2507,7 @@ void Builtins::Generate_HandleFastApiCall(MacroAssembler* masm) {
 
   // Do the compatible receiver check.
   Label receiver_check_failed;
+  __ movp(rcx, args.GetReceiverOperand());
   CompatibleReceiverCheck(masm, rcx, rbx, rdx, r8, r9, &receiver_check_failed);
 
   // Get the callback offset from the FunctionTemplateInfo, and jump to the
@@ -2430,12 +2516,6 @@ void Builtins::Generate_HandleFastApiCall(MacroAssembler* masm) {
   __ movp(rdx, FieldOperand(rdx, CallHandlerInfo::kFastHandlerOffset));
   __ addp(rdx, Immediate(Code::kHeaderSize - kHeapObjectTag));
   __ jmp(rdx);
-
-  __ bind(&set_global_proxy);
-  __ movp(rcx, NativeContextOperand());
-  __ movp(rcx, ContextOperand(rcx, Context::GLOBAL_PROXY_INDEX));
-  __ movp(args.GetReceiverOperand(), rcx);
-  __ jmp(&valid_receiver, Label::kNear);
 
   // Compatible receiver check failed: pop return address, arguments and
   // receiver and throw an Illegal Invocation exception.
