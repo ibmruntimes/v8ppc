@@ -6,6 +6,7 @@
 
 #include "src/api.h"
 #include "src/ast/ast.h"
+#include "src/ast/ast-expression-rewriter.h"
 #include "src/ast/ast-expression-visitor.h"
 #include "src/ast/ast-literal-reindexer.h"
 #include "src/ast/scopeinfo.h"
@@ -1036,9 +1037,19 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info,
     bool ok = true;
 
     if (shared_info->is_arrow()) {
+      // TODO(adamk): We should construct this scope from the ScopeInfo.
       Scope* scope =
           NewScope(scope_, FUNCTION_SCOPE, FunctionKind::kArrowFunction);
+
+      // These two bits only need to be explicitly set because we're
+      // not passing the ScopeInfo to the Scope constructor.
+      // TODO(adamk): Remove these calls once the above NewScope call
+      // passes the ScopeInfo.
+      if (shared_info->scope_info()->CallsEval()) {
+        scope->RecordEvalCall();
+      }
       SetLanguageMode(scope, shared_info->language_mode());
+
       scope->set_start_position(shared_info->start_position());
       ExpressionClassifier formals_classifier;
       ParserFormalParameters formals(scope);
@@ -3317,7 +3328,6 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
   //  }
 
   DCHECK(names->length() > 0);
-  Scope* for_scope = scope_;
   ZoneList<Variable*> temps(names->length(), zone());
 
   Block* outer_block = factory()->NewBlock(NULL, names->length() + 4, false,
@@ -3370,150 +3380,156 @@ Statement* Parser::DesugarLexicalBindingsInForStatement(
   ForStatement* outer_loop =
       factory()->NewForStatement(NULL, RelocInfo::kNoPosition);
   outer_block->statements()->Add(outer_loop, zone());
-
-  outer_block->set_scope(for_scope);
-  scope_ = inner_scope;
+  outer_block->set_scope(scope_);
 
   Block* inner_block =
       factory()->NewBlock(NULL, 3, false, RelocInfo::kNoPosition);
-  Block* ignore_completion_block = factory()->NewBlock(
-      NULL, names->length() + 3, true, RelocInfo::kNoPosition);
-  ZoneList<Variable*> inner_vars(names->length(), zone());
-  // For each let variable x:
-  //    make statement: let/const x = temp_x.
-  VariableMode mode = is_const ? CONST : LET;
-  for (int i = 0; i < names->length(); i++) {
-    VariableProxy* proxy = NewUnresolved(names->at(i), mode);
-    Declaration* declaration = factory()->NewVariableDeclaration(
-        proxy, mode, scope_, RelocInfo::kNoPosition);
-    Declare(declaration, DeclarationDescriptor::NORMAL, true, CHECK_OK);
-    inner_vars.Add(declaration->proxy()->var(), zone());
-    VariableProxy* temp_proxy = factory()->NewVariableProxy(temps.at(i));
-    Assignment* assignment = factory()->NewAssignment(
-        Token::INIT, proxy, temp_proxy, RelocInfo::kNoPosition);
-    Statement* assignment_statement =
-        factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
-    DCHECK(init->position() != RelocInfo::kNoPosition);
-    proxy->var()->set_initializer_position(init->position());
-    ignore_completion_block->statements()->Add(assignment_statement, zone());
-  }
-
-  // Make statement: if (first == 1) { first = 0; } else { next; }
-  if (next) {
-    DCHECK(first);
-    Expression* compare = NULL;
-    // Make compare expression: first == 1.
-    {
-      Expression* const1 = factory()->NewSmiLiteral(1, RelocInfo::kNoPosition);
-      VariableProxy* first_proxy = factory()->NewVariableProxy(first);
-      compare = factory()->NewCompareOperation(Token::EQ, first_proxy, const1,
-                                               RelocInfo::kNoPosition);
-    }
-    Statement* clear_first = NULL;
-    // Make statement: first = 0.
-    {
-      VariableProxy* first_proxy = factory()->NewVariableProxy(first);
-      Expression* const0 = factory()->NewSmiLiteral(0, RelocInfo::kNoPosition);
-      Assignment* assignment = factory()->NewAssignment(
-          Token::ASSIGN, first_proxy, const0, RelocInfo::kNoPosition);
-      clear_first =
-          factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
-    }
-    Statement* clear_first_or_next = factory()->NewIfStatement(
-        compare, clear_first, next, RelocInfo::kNoPosition);
-    ignore_completion_block->statements()->Add(clear_first_or_next, zone());
-  }
-
-  Variable* flag = scope_->NewTemporary(temp_name);
-  // Make statement: flag = 1.
   {
-    VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
-    Expression* const1 = factory()->NewSmiLiteral(1, RelocInfo::kNoPosition);
-    Assignment* assignment = factory()->NewAssignment(
-        Token::ASSIGN, flag_proxy, const1, RelocInfo::kNoPosition);
-    Statement* assignment_statement =
-        factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
-    ignore_completion_block->statements()->Add(assignment_statement, zone());
-  }
+    BlockState block_state(&scope_, inner_scope);
 
-  // Make statement: if (!cond) break.
-  if (cond) {
-    Statement* stop =
-        factory()->NewBreakStatement(outer_loop, RelocInfo::kNoPosition);
-    Statement* noop = factory()->NewEmptyStatement(RelocInfo::kNoPosition);
-    ignore_completion_block->statements()->Add(
-        factory()->NewIfStatement(cond, noop, stop, cond->position()), zone());
-  }
-
-  inner_block->statements()->Add(ignore_completion_block, zone());
-  // Make cond expression for main loop: flag == 1.
-  Expression* flag_cond = NULL;
-  {
-    Expression* const1 = factory()->NewSmiLiteral(1, RelocInfo::kNoPosition);
-    VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
-    flag_cond = factory()->NewCompareOperation(Token::EQ, flag_proxy, const1,
-                                               RelocInfo::kNoPosition);
-  }
-
-  // Create chain of expressions "flag = 0, temp_x = x, ..."
-  Statement* compound_next_statement = NULL;
-  {
-    Expression* compound_next = NULL;
-    // Make expression: flag = 0.
-    {
-      VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
-      Expression* const0 = factory()->NewSmiLiteral(0, RelocInfo::kNoPosition);
-      compound_next = factory()->NewAssignment(Token::ASSIGN, flag_proxy,
-                                               const0, RelocInfo::kNoPosition);
-    }
-
-    // Make the comma-separated list of temp_x = x assignments.
-    int inner_var_proxy_pos = scanner()->location().beg_pos;
+    Block* ignore_completion_block = factory()->NewBlock(
+        NULL, names->length() + 3, true, RelocInfo::kNoPosition);
+    ZoneList<Variable*> inner_vars(names->length(), zone());
+    // For each let variable x:
+    //    make statement: let/const x = temp_x.
+    VariableMode mode = is_const ? CONST : LET;
     for (int i = 0; i < names->length(); i++) {
+      VariableProxy* proxy = NewUnresolved(names->at(i), mode);
+      Declaration* declaration = factory()->NewVariableDeclaration(
+          proxy, mode, scope_, RelocInfo::kNoPosition);
+      Declare(declaration, DeclarationDescriptor::NORMAL, true, CHECK_OK);
+      inner_vars.Add(declaration->proxy()->var(), zone());
       VariableProxy* temp_proxy = factory()->NewVariableProxy(temps.at(i));
-      VariableProxy* proxy =
-          factory()->NewVariableProxy(inner_vars.at(i), inner_var_proxy_pos);
       Assignment* assignment = factory()->NewAssignment(
-          Token::ASSIGN, temp_proxy, proxy, RelocInfo::kNoPosition);
-      compound_next = factory()->NewBinaryOperation(
-          Token::COMMA, compound_next, assignment, RelocInfo::kNoPosition);
+          Token::INIT, proxy, temp_proxy, RelocInfo::kNoPosition);
+      Statement* assignment_statement =
+          factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
+      DCHECK(init->position() != RelocInfo::kNoPosition);
+      proxy->var()->set_initializer_position(init->position());
+      ignore_completion_block->statements()->Add(assignment_statement, zone());
     }
 
-    compound_next_statement = factory()->NewExpressionStatement(
-        compound_next, RelocInfo::kNoPosition);
-  }
+    // Make statement: if (first == 1) { first = 0; } else { next; }
+    if (next) {
+      DCHECK(first);
+      Expression* compare = NULL;
+      // Make compare expression: first == 1.
+      {
+        Expression* const1 =
+            factory()->NewSmiLiteral(1, RelocInfo::kNoPosition);
+        VariableProxy* first_proxy = factory()->NewVariableProxy(first);
+        compare = factory()->NewCompareOperation(Token::EQ, first_proxy, const1,
+                                                 RelocInfo::kNoPosition);
+      }
+      Statement* clear_first = NULL;
+      // Make statement: first = 0.
+      {
+        VariableProxy* first_proxy = factory()->NewVariableProxy(first);
+        Expression* const0 =
+            factory()->NewSmiLiteral(0, RelocInfo::kNoPosition);
+        Assignment* assignment = factory()->NewAssignment(
+            Token::ASSIGN, first_proxy, const0, RelocInfo::kNoPosition);
+        clear_first = factory()->NewExpressionStatement(assignment,
+                                                        RelocInfo::kNoPosition);
+      }
+      Statement* clear_first_or_next = factory()->NewIfStatement(
+          compare, clear_first, next, RelocInfo::kNoPosition);
+      ignore_completion_block->statements()->Add(clear_first_or_next, zone());
+    }
 
-  // Make statement: labels: for (; flag == 1; flag = 0, temp_x = x)
-  // Note that we re-use the original loop node, which retains its labels
-  // and ensures that any break or continue statements in body point to
-  // the right place.
-  loop->Initialize(NULL, flag_cond, compound_next_statement, body);
-  inner_block->statements()->Add(loop, zone());
+    Variable* flag = scope_->NewTemporary(temp_name);
+    // Make statement: flag = 1.
+    {
+      VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
+      Expression* const1 = factory()->NewSmiLiteral(1, RelocInfo::kNoPosition);
+      Assignment* assignment = factory()->NewAssignment(
+          Token::ASSIGN, flag_proxy, const1, RelocInfo::kNoPosition);
+      Statement* assignment_statement =
+          factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
+      ignore_completion_block->statements()->Add(assignment_statement, zone());
+    }
 
-  // Make statement: {{if (flag == 1) break;}}
-  {
-    Expression* compare = NULL;
-    // Make compare expresion: flag == 1.
+    // Make statement: if (!cond) break.
+    if (cond) {
+      Statement* stop =
+          factory()->NewBreakStatement(outer_loop, RelocInfo::kNoPosition);
+      Statement* noop = factory()->NewEmptyStatement(RelocInfo::kNoPosition);
+      ignore_completion_block->statements()->Add(
+          factory()->NewIfStatement(cond, noop, stop, cond->position()),
+          zone());
+    }
+
+    inner_block->statements()->Add(ignore_completion_block, zone());
+    // Make cond expression for main loop: flag == 1.
+    Expression* flag_cond = NULL;
     {
       Expression* const1 = factory()->NewSmiLiteral(1, RelocInfo::kNoPosition);
       VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
-      compare = factory()->NewCompareOperation(Token::EQ, flag_proxy, const1,
-                                               RelocInfo::kNoPosition);
+      flag_cond = factory()->NewCompareOperation(Token::EQ, flag_proxy, const1,
+                                                 RelocInfo::kNoPosition);
     }
-    Statement* stop =
-        factory()->NewBreakStatement(outer_loop, RelocInfo::kNoPosition);
-    Statement* empty = factory()->NewEmptyStatement(RelocInfo::kNoPosition);
-    Statement* if_flag_break =
-        factory()->NewIfStatement(compare, stop, empty, RelocInfo::kNoPosition);
-    Block* ignore_completion_block =
-        factory()->NewBlock(NULL, 1, true, RelocInfo::kNoPosition);
-    ignore_completion_block->statements()->Add(if_flag_break, zone());
-    inner_block->statements()->Add(ignore_completion_block, zone());
-  }
 
-  inner_scope->set_end_position(scanner()->location().end_pos);
-  inner_block->set_scope(inner_scope);
-  scope_ = for_scope;
+    // Create chain of expressions "flag = 0, temp_x = x, ..."
+    Statement* compound_next_statement = NULL;
+    {
+      Expression* compound_next = NULL;
+      // Make expression: flag = 0.
+      {
+        VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
+        Expression* const0 =
+            factory()->NewSmiLiteral(0, RelocInfo::kNoPosition);
+        compound_next = factory()->NewAssignment(
+            Token::ASSIGN, flag_proxy, const0, RelocInfo::kNoPosition);
+      }
+
+      // Make the comma-separated list of temp_x = x assignments.
+      int inner_var_proxy_pos = scanner()->location().beg_pos;
+      for (int i = 0; i < names->length(); i++) {
+        VariableProxy* temp_proxy = factory()->NewVariableProxy(temps.at(i));
+        VariableProxy* proxy =
+            factory()->NewVariableProxy(inner_vars.at(i), inner_var_proxy_pos);
+        Assignment* assignment = factory()->NewAssignment(
+            Token::ASSIGN, temp_proxy, proxy, RelocInfo::kNoPosition);
+        compound_next = factory()->NewBinaryOperation(
+            Token::COMMA, compound_next, assignment, RelocInfo::kNoPosition);
+      }
+
+      compound_next_statement = factory()->NewExpressionStatement(
+          compound_next, RelocInfo::kNoPosition);
+    }
+
+    // Make statement: labels: for (; flag == 1; flag = 0, temp_x = x)
+    // Note that we re-use the original loop node, which retains its labels
+    // and ensures that any break or continue statements in body point to
+    // the right place.
+    loop->Initialize(NULL, flag_cond, compound_next_statement, body);
+    inner_block->statements()->Add(loop, zone());
+
+    // Make statement: {{if (flag == 1) break;}}
+    {
+      Expression* compare = NULL;
+      // Make compare expresion: flag == 1.
+      {
+        Expression* const1 =
+            factory()->NewSmiLiteral(1, RelocInfo::kNoPosition);
+        VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
+        compare = factory()->NewCompareOperation(Token::EQ, flag_proxy, const1,
+                                                 RelocInfo::kNoPosition);
+      }
+      Statement* stop =
+          factory()->NewBreakStatement(outer_loop, RelocInfo::kNoPosition);
+      Statement* empty = factory()->NewEmptyStatement(RelocInfo::kNoPosition);
+      Statement* if_flag_break = factory()->NewIfStatement(
+          compare, stop, empty, RelocInfo::kNoPosition);
+      Block* ignore_completion_block =
+          factory()->NewBlock(NULL, 1, true, RelocInfo::kNoPosition);
+      ignore_completion_block->statements()->Add(if_flag_break, zone());
+      inner_block->statements()->Add(ignore_completion_block, zone());
+    }
+
+    inner_scope->set_end_position(scanner()->location().end_pos);
+    inner_block->set_scope(inner_scope);
+  }
 
   outer_loop->Initialize(NULL, NULL, NULL, inner_block);
   return outer_block;
@@ -3531,9 +3547,9 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
   ZoneList<const AstRawString*> lexical_bindings(1, zone());
 
   // Create an in-between scope for let-bound iteration variables.
-  Scope* saved_scope = scope_;
   Scope* for_scope = NewScope(scope_, BLOCK_SCOPE);
-  scope_ = for_scope;
+
+  BlockState block_state(&scope_, for_scope);
   Expect(Token::FOR, CHECK_OK);
   Expect(Token::LPAREN, CHECK_OK);
   for_scope->set_start_position(scanner()->location().beg_pos);
@@ -3616,8 +3632,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         //     let x;  // for TDZ
         //   }
 
-        Variable* temp = scope_->NewTemporary(
-            ast_value_factory()->dot_for_string());
+        Variable* temp =
+            scope_->NewTemporary(ast_value_factory()->dot_for_string());
         ForEachStatement* loop =
             factory()->NewForEachStatement(mode, labels, stmt_pos);
         Target target(&this->target_stack_, loop);
@@ -3628,70 +3644,68 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
 
         Scope* body_scope = NewScope(scope_, BLOCK_SCOPE);
         body_scope->set_start_position(scanner()->location().beg_pos);
-        scope_ = body_scope;
-
-        Statement* body = ParseSubStatement(NULL, CHECK_OK);
 
         Block* body_block =
             factory()->NewBlock(NULL, 3, false, RelocInfo::kNoPosition);
 
-        auto each_initialization_block =
-            factory()->NewBlock(nullptr, 1, true, RelocInfo::kNoPosition);
         {
-          auto descriptor = parsing_result.descriptor;
-          descriptor.declaration_pos = RelocInfo::kNoPosition;
-          descriptor.initialization_pos = RelocInfo::kNoPosition;
-          decl.initializer = factory()->NewVariableProxy(temp);
+          BlockState block_state(&scope_, body_scope);
 
-          PatternRewriter::DeclareAndInitializeVariables(
-              each_initialization_block, &descriptor, &decl,
-              IsLexicalVariableMode(descriptor.mode) ? &lexical_bindings
-                                                     : nullptr,
-              CHECK_OK);
+          Statement* body = ParseSubStatement(NULL, CHECK_OK);
+
+          auto each_initialization_block =
+              factory()->NewBlock(nullptr, 1, true, RelocInfo::kNoPosition);
+          {
+            auto descriptor = parsing_result.descriptor;
+            descriptor.declaration_pos = RelocInfo::kNoPosition;
+            descriptor.initialization_pos = RelocInfo::kNoPosition;
+            decl.initializer = factory()->NewVariableProxy(temp);
+
+            PatternRewriter::DeclareAndInitializeVariables(
+                each_initialization_block, &descriptor, &decl,
+                IsLexicalVariableMode(descriptor.mode) ? &lexical_bindings
+                                                       : nullptr,
+                CHECK_OK);
+          }
+
+          body_block->statements()->Add(each_initialization_block, zone());
+          body_block->statements()->Add(body, zone());
+          VariableProxy* temp_proxy =
+              factory()->NewVariableProxy(temp, each_beg_pos, each_end_pos);
+          InitializeForEachStatement(loop, temp_proxy, enumerable, body_block,
+                                     false);
         }
-
-        body_block->statements()->Add(each_initialization_block, zone());
-        body_block->statements()->Add(body, zone());
-        VariableProxy* temp_proxy =
-            factory()->NewVariableProxy(temp, each_beg_pos, each_end_pos);
-        InitializeForEachStatement(loop, temp_proxy, enumerable, body_block,
-                                   false);
-        scope_ = for_scope;
         body_scope->set_end_position(scanner()->location().end_pos);
         body_scope = body_scope->FinalizeBlockScope();
-        if (body_scope != nullptr) {
           body_block->set_scope(body_scope);
-        }
 
-        // Create a TDZ for any lexically-bound names.
-        if (IsLexicalVariableMode(parsing_result.descriptor.mode)) {
-          DCHECK_NULL(init_block);
+          // Create a TDZ for any lexically-bound names.
+          if (IsLexicalVariableMode(parsing_result.descriptor.mode)) {
+            DCHECK_NULL(init_block);
 
-          init_block =
-              factory()->NewBlock(nullptr, 1, false, RelocInfo::kNoPosition);
+            init_block =
+                factory()->NewBlock(nullptr, 1, false, RelocInfo::kNoPosition);
 
-          for (int i = 0; i < lexical_bindings.length(); ++i) {
-            // TODO(adamk): This needs to be some sort of special
-            // INTERNAL variable that's invisible to the debugger
-            // but visible to everything else.
-            VariableProxy* tdz_proxy = NewUnresolved(lexical_bindings[i], LET);
-            Declaration* tdz_decl = factory()->NewVariableDeclaration(
-                tdz_proxy, LET, scope_, RelocInfo::kNoPosition);
-            Variable* tdz_var = Declare(tdz_decl, DeclarationDescriptor::NORMAL,
-                                        true, CHECK_OK);
-            tdz_var->set_initializer_position(position());
+            for (int i = 0; i < lexical_bindings.length(); ++i) {
+              // TODO(adamk): This needs to be some sort of special
+              // INTERNAL variable that's invisible to the debugger
+              // but visible to everything else.
+              VariableProxy* tdz_proxy =
+                  NewUnresolved(lexical_bindings[i], LET);
+              Declaration* tdz_decl = factory()->NewVariableDeclaration(
+                  tdz_proxy, LET, scope_, RelocInfo::kNoPosition);
+              Variable* tdz_var = Declare(
+                  tdz_decl, DeclarationDescriptor::NORMAL, true, CHECK_OK);
+              tdz_var->set_initializer_position(position());
+            }
           }
-        }
 
-        scope_ = saved_scope;
         for_scope->set_end_position(scanner()->location().end_pos);
         for_scope = for_scope->FinalizeBlockScope();
         // Parsed for-in loop w/ variable declarations.
         if (init_block != nullptr) {
           init_block->statements()->Add(loop, zone());
-          if (for_scope != nullptr) {
-            init_block->set_scope(for_scope);
-          }
+          init_block->set_scope(for_scope);
           return init_block;
         } else {
           DCHECK_NULL(for_scope);
@@ -3749,19 +3763,16 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         // expressions in head of the loop should actually have variables
         // resolved in the outer scope.
         Scope* body_scope = NewScope(for_scope, BLOCK_SCOPE);
-        scope_ = body_scope;
+        BlockState block_state(&scope_, body_scope);
         Block* block =
             factory()->NewBlock(NULL, 1, false, RelocInfo::kNoPosition);
         Statement* body = ParseSubStatement(NULL, CHECK_OK);
         block->statements()->Add(body, zone());
         InitializeForEachStatement(loop, expression, enumerable, block,
                                    is_destructuring);
-        scope_ = saved_scope;
         body_scope->set_end_position(scanner()->location().end_pos);
         body_scope = body_scope->FinalizeBlockScope();
-        if (body_scope != nullptr) {
-          block->set_scope(body_scope);
-        }
+        block->set_scope(body_scope);
         for_scope->set_end_position(scanner()->location().end_pos);
         for_scope = for_scope->FinalizeBlockScope();
         DCHECK(for_scope == nullptr);
@@ -3788,40 +3799,42 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
   }
   Expect(Token::SEMICOLON, CHECK_OK);
 
+  Expression* cond = NULL;
+  Statement* next = NULL;
+  Statement* body = NULL;
+
   // If there are let bindings, then condition and the next statement of the
   // for loop must be parsed in a new scope.
-  Scope* inner_scope = NULL;
+  Scope* inner_scope = scope_;
   if (lexical_bindings.length() > 0) {
     inner_scope = NewScope(for_scope, BLOCK_SCOPE);
     inner_scope->set_start_position(scanner()->location().beg_pos);
-    scope_ = inner_scope;
   }
+  {
+    BlockState block_state(&scope_, inner_scope);
 
-  Expression* cond = NULL;
-  if (peek() != Token::SEMICOLON) {
-    cond = ParseExpression(true, CHECK_OK);
+    if (peek() != Token::SEMICOLON) {
+      cond = ParseExpression(true, CHECK_OK);
+    }
+    Expect(Token::SEMICOLON, CHECK_OK);
+
+    if (peek() != Token::RPAREN) {
+      Expression* exp = ParseExpression(true, CHECK_OK);
+      next = factory()->NewExpressionStatement(exp, exp->position());
+    }
+    Expect(Token::RPAREN, CHECK_OK);
+
+    body = ParseSubStatement(NULL, CHECK_OK);
   }
-  Expect(Token::SEMICOLON, CHECK_OK);
-
-  Statement* next = NULL;
-  if (peek() != Token::RPAREN) {
-    Expression* exp = ParseExpression(true, CHECK_OK);
-    next = factory()->NewExpressionStatement(exp, exp->position());
-  }
-  Expect(Token::RPAREN, CHECK_OK);
-
-  Statement* body = ParseSubStatement(NULL, CHECK_OK);
 
   Statement* result = NULL;
   if (lexical_bindings.length() > 0) {
-    scope_ = for_scope;
+    BlockState block_state(&scope_, for_scope);
     result = DesugarLexicalBindingsInForStatement(
                  inner_scope, is_const, &lexical_bindings, loop, init, cond,
                  next, body, CHECK_OK);
-    scope_ = saved_scope;
     for_scope->set_end_position(scanner()->location().end_pos);
   } else {
-    scope_ = saved_scope;
     for_scope->set_end_position(scanner()->location().end_pos);
     for_scope = for_scope->FinalizeBlockScope();
     if (for_scope) {
@@ -5411,20 +5424,61 @@ ObjectLiteralProperty* ParserTraits::RewriteNonPatternObjectLiteralProperty(
 }
 
 
+class NonPatternRewriter : public AstExpressionRewriter {
+ public:
+  NonPatternRewriter(uintptr_t stack_limit, Parser* parser)
+      : AstExpressionRewriter(stack_limit), parser_(parser) {}
+  ~NonPatternRewriter() override {}
+
+ private:
+  bool RewriteExpression(Expression* expr) override {
+    // Rewrite only what could have been a pattern but is not.
+    if (expr->IsArrayLiteral()) {
+      // Spread rewriting in array literals.
+      ArrayLiteral* lit = expr->AsArrayLiteral();
+      VisitExpressions(lit->values());
+      replacement_ = parser_->RewriteSpreads(lit);
+      return false;
+    }
+    if (expr->IsObjectLiteral()) {
+      return true;
+    }
+    if (expr->IsBinaryOperation() &&
+        expr->AsBinaryOperation()->op() == Token::COMMA) {
+      return true;
+    }
+    // Everything else does not need rewriting.
+    return false;
+  }
+
+  Parser* parser_;
+};
+
+
 Expression* Parser::RewriteNonPattern(Expression* expr,
                                       const ExpressionClassifier* classifier,
                                       bool* ok) {
-  // For the time being, this does no rewriting at all.
   ValidateExpression(classifier, ok);
-  return expr;
+  if (!*ok) return expr;
+  NonPatternRewriter rewriter(stack_limit_, this);
+  Expression* result = reinterpret_cast<Expression*>(rewriter.Rewrite(expr));
+  DCHECK_NOT_NULL(result);
+  return result;
 }
 
 
 ZoneList<Expression*>* Parser::RewriteNonPatternArguments(
     ZoneList<Expression*>* args, const ExpressionClassifier* classifier,
     bool* ok) {
-  // For the time being, this does no rewriting at all.
   ValidateExpression(classifier, ok);
+  if (!*ok) return args;
+  for (int i = 0; i < args->length(); i++) {
+    NonPatternRewriter rewriter(stack_limit_, this);
+    Expression* result =
+        reinterpret_cast<Expression*>(rewriter.Rewrite(args->at(i)));
+    DCHECK_NOT_NULL(result);
+    args->Set(i, result);
+  }
   return args;
 }
 
@@ -5459,6 +5513,125 @@ void Parser::RewriteDestructuringAssignments() {
       PatternRewriter::RewriteDestructuringAssignment(this, to_rewrite, scope);
     }
   }
+}
+
+
+Expression* Parser::RewriteSpreads(ArrayLiteral* lit) {
+  // Array literals containing spreads are rewritten using do expressions, e.g.
+  //    [1, 2, 3, ...x, 4, ...y, 5]
+  // is roughly rewritten as:
+  //    do {
+  //      $R = [1, 2, 3];
+  //      for ($i of x) %AppendElement($R, $i);
+  //      %AppendElement($R, 4);
+  //      for ($j of y) %AppendElement($R, $j);
+  //      %AppendElement($R, 5);
+  //      $R
+  //    }
+  // where $R, $i and $j are fresh temporary variables.
+  ZoneList<Expression*>::iterator s = lit->FirstSpread();
+  if (s == lit->EndValue()) return nullptr;  // no spread, no rewriting...
+  Variable* result =
+      scope_->NewTemporary(ast_value_factory()->dot_result_string());
+  // NOTE: The value assigned to R is the whole original array literal,
+  // spreads included. This will be fixed before the rewritten AST is returned.
+  // $R = lit
+  Expression* init_result =
+      factory()->NewAssignment(Token::INIT, factory()->NewVariableProxy(result),
+                               lit, RelocInfo::kNoPosition);
+  Block* do_block =
+      factory()->NewBlock(nullptr, 16, false, RelocInfo::kNoPosition);
+  do_block->statements()->Add(
+      factory()->NewExpressionStatement(init_result, RelocInfo::kNoPosition),
+      zone());
+  // Traverse the array literal starting from the first spread.
+  while (s != lit->EndValue()) {
+    Expression* value = *s++;
+    Spread* spread = value->AsSpread();
+    if (spread == nullptr) {
+      // If the element is not a spread, we're adding a single:
+      // %AppendElement($R, value)
+      ZoneList<Expression*>* append_element_args = NewExpressionList(2, zone());
+      append_element_args->Add(factory()->NewVariableProxy(result), zone());
+      append_element_args->Add(value, zone());
+      do_block->statements()->Add(
+          factory()->NewExpressionStatement(
+              factory()->NewCallRuntime(Runtime::kAppendElement,
+                                        append_element_args,
+                                        RelocInfo::kNoPosition),
+              RelocInfo::kNoPosition),
+          zone());
+    } else {
+      // If it's a spread, we're adding a for/of loop iterating through it.
+      Variable* each =
+          scope_->NewTemporary(ast_value_factory()->dot_for_string());
+      Expression* subject = spread->expression();
+      Variable* iterator =
+          scope_->NewTemporary(ast_value_factory()->dot_iterator_string());
+      Variable* element =
+          scope_->NewTemporary(ast_value_factory()->dot_result_string());
+      // iterator = subject[Symbol.iterator]()
+      Expression* assign_iterator = factory()->NewAssignment(
+          Token::ASSIGN, factory()->NewVariableProxy(iterator),
+          GetIterator(subject, factory(), spread->expression_position()),
+          subject->position());
+      // !%_IsJSReceiver(element = iterator.next()) &&
+      //     %ThrowIteratorResultNotAnObject(element)
+      Expression* next_element;
+      {
+        // element = iterator.next()
+        Expression* iterator_proxy = factory()->NewVariableProxy(iterator);
+        next_element = BuildIteratorNextResult(iterator_proxy, element,
+                                               spread->expression_position());
+      }
+      // element.done
+      Expression* element_done;
+      {
+        Expression* done_literal = factory()->NewStringLiteral(
+            ast_value_factory()->done_string(), RelocInfo::kNoPosition);
+        Expression* element_proxy = factory()->NewVariableProxy(element);
+        element_done = factory()->NewProperty(element_proxy, done_literal,
+                                              RelocInfo::kNoPosition);
+      }
+      // each = element.value
+      Expression* assign_each;
+      {
+        Expression* value_literal = factory()->NewStringLiteral(
+            ast_value_factory()->value_string(), RelocInfo::kNoPosition);
+        Expression* element_proxy = factory()->NewVariableProxy(element);
+        Expression* element_value = factory()->NewProperty(
+            element_proxy, value_literal, RelocInfo::kNoPosition);
+        assign_each = factory()->NewAssignment(
+            Token::ASSIGN, factory()->NewVariableProxy(each), element_value,
+            RelocInfo::kNoPosition);
+      }
+      // %AppendElement($R, each)
+      Statement* append_body;
+      {
+        ZoneList<Expression*>* append_element_args =
+            NewExpressionList(2, zone());
+        append_element_args->Add(factory()->NewVariableProxy(result), zone());
+        append_element_args->Add(factory()->NewVariableProxy(each), zone());
+        append_body = factory()->NewExpressionStatement(
+            factory()->NewCallRuntime(Runtime::kAppendElement,
+                                      append_element_args,
+                                      RelocInfo::kNoPosition),
+            RelocInfo::kNoPosition);
+      }
+      // for (each of spread) %AppendElement($R, each)
+      ForEachStatement* loop = factory()->NewForEachStatement(
+          ForEachStatement::ITERATE, nullptr, RelocInfo::kNoPosition);
+      ForOfStatement* for_of = loop->AsForOfStatement();
+      for_of->Initialize(factory()->NewVariableProxy(each), subject,
+                         append_body, assign_iterator, next_element,
+                         element_done, assign_each);
+      do_block->statements()->Add(for_of, zone());
+    }
+  }
+  // Now, rewind the original array literal to truncate everything from the
+  // first spread (included) until the end. This fixes $R's initialization.
+  lit->RewindSpreads();
+  return factory()->NewDoExpression(do_block, result, lit->position());
 }
 
 
