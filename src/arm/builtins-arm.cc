@@ -1028,7 +1028,8 @@ void Builtins::Generate_InterpreterPushArgsAndConstruct(MacroAssembler* masm) {
   __ sub(r4, r2, r4);
 
   // Push a slot for the receiver to be constructed.
-  __ push(r0);
+  __ mov(ip, Operand::Zero());
+  __ push(ip);
 
   // Push the arguments.
   Generate_InterpreterPushArgs(masm, r2, r4, r5);
@@ -1306,16 +1307,9 @@ static void CompatibleReceiverCheck(MacroAssembler* masm, Register receiver,
   __ b(eq, &receiver_check_passed);
 
   // Walk the prototype chain.
+  __ ldr(map, FieldMemOperand(receiver, HeapObject::kMapOffset));
   Label prototype_loop_start;
   __ bind(&prototype_loop_start);
-
-  // End if the receiver is null or if it's a hidden type.
-  __ CompareRoot(receiver, Heap::kNullValueRootIndex);
-  __ b(eq, receiver_check_failed);
-  __ ldr(map, FieldMemOperand(receiver, HeapObject::kMapOffset));
-  __ ldr(ip, FieldMemOperand(map, Map::kBitField3Offset));
-  __ tst(ip, Operand(Map::IsHiddenPrototype::kMask));
-  __ b(ne, receiver_check_failed);
 
   // Get the constructor, if any.
   __ GetMapConstructor(constructor, map, ip, ip);
@@ -1346,9 +1340,17 @@ static void CompatibleReceiverCheck(MacroAssembler* masm, Register receiver,
          eq);
   __ b(&function_template_loop, eq);
 
-  // Load the next prototype and iterate.
+  // Load the next prototype.
   __ bind(&next_prototype);
   __ ldr(receiver, FieldMemOperand(map, Map::kPrototypeOffset));
+  // End if the prototype is null or not hidden.
+  __ CompareRoot(receiver, Heap::kNullValueRootIndex);
+  __ b(eq, receiver_check_failed);
+  __ ldr(map, FieldMemOperand(receiver, HeapObject::kMapOffset));
+  __ ldr(ip, FieldMemOperand(map, Map::kBitField3Offset));
+  __ tst(ip, Operand(Map::IsHiddenPrototype::kMask));
+  __ b(eq, receiver_check_failed);
+  // Iterate.
   __ b(&prototype_loop_start);
 
   __ bind(&receiver_check_passed);

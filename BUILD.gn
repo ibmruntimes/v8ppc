@@ -171,12 +171,22 @@ config("toolchain") {
   if (v8_target_arch == "mips64el") {
     defines += [ "V8_TARGET_ARCH_MIPS64" ]
   }
+  if (v8_target_arch == "s390") {
+    defines += [ "V8_TARGET_ARCH_S390" ]
+  } 
+  if (v8_target_arch == "s390x") {
+    defines += [
+      "V8_TARGET_ARCH_S390",
+      "V8_TARGET_ARCH_S390X",
+    ]
+  }
   if (v8_target_arch == "x86") {
     defines += [ "V8_TARGET_ARCH_IA32" ]
   }
   if (v8_target_arch == "x64") {
     defines += [ "V8_TARGET_ARCH_X64" ]
   }
+     
   if (is_win) {
     defines += [ "WIN32" ]
     # TODO(jochen): Support v8_enable_prof.
@@ -1087,6 +1097,8 @@ source_set("v8_base") {
     "src/interpreter/bytecode-array-iterator.h",
     "src/interpreter/bytecode-generator.cc",
     "src/interpreter/bytecode-generator.h",
+    "src/interpreter/bytecode-register-allocator.cc",
+    "src/interpreter/bytecode-register-allocator.h",
     "src/interpreter/bytecode-traits.h",
     "src/interpreter/constant-array-builder.cc",
     "src/interpreter/constant-array-builder.h",
@@ -1135,6 +1147,7 @@ source_set("v8_base") {
     "src/parsing/json-parser.h",
     "src/parsing/parameter-initializer-rewriter.cc",
     "src/parsing/parameter-initializer-rewriter.h",
+    "src/parsing/parser-base.h",
     "src/parsing/parser.cc",
     "src/parsing/parser.h",
     "src/parsing/pattern-rewriter.cc",

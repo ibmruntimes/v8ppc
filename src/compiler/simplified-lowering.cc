@@ -948,11 +948,16 @@ class RepresentationSelector {
       }
       case IrOpcode::kNumberAdd:
       case IrOpcode::kNumberSubtract: {
-        // Add and subtract reduce to Int32Add/Sub if the inputs
-        // are safe integers and all uses are truncating.
-        if (BothInputsAre(node, type_cache_.kAdditiveSafeInteger) &&
-            truncation.TruncatesToWord32()) {
+        if (BothInputsAre(node, Type::Signed32()) &&
+            NodeProperties::GetType(node)->Is(Type::Signed32())) {
+          // int32 + int32 = int32
           // => signed Int32Add/Sub
+          VisitInt32Binop(node);
+          if (lower()) NodeProperties::ChangeOp(node, Int32Op(node));
+        } else if (BothInputsAre(node, type_cache_.kAdditiveSafeInteger) &&
+                   truncation.TruncatesToWord32()) {
+          // safe-int + safe-int = x (truncated to int32)
+          // => signed Int32Add/Sub (truncated)
           VisitWord32TruncatingBinop(node);
           if (lower()) NodeProperties::ChangeOp(node, Int32Op(node));
         } else {
@@ -1046,21 +1051,30 @@ class RepresentationSelector {
         break;
       }
       case IrOpcode::kNumberShiftLeft: {
+        Type* rhs_type = GetInfo(node->InputAt(1))->output_type();
         VisitBinop(node, UseInfo::TruncatingWord32(),
                    UseInfo::TruncatingWord32(), NodeOutputInfo::Int32());
-        if (lower()) lowering->DoShift(node, lowering->machine()->Word32Shl());
+        if (lower()) {
+          lowering->DoShift(node, lowering->machine()->Word32Shl(), rhs_type);
+        }
         break;
       }
       case IrOpcode::kNumberShiftRight: {
+        Type* rhs_type = GetInfo(node->InputAt(1))->output_type();
         VisitBinop(node, UseInfo::TruncatingWord32(),
                    UseInfo::TruncatingWord32(), NodeOutputInfo::Int32());
-        if (lower()) lowering->DoShift(node, lowering->machine()->Word32Sar());
+        if (lower()) {
+          lowering->DoShift(node, lowering->machine()->Word32Sar(), rhs_type);
+        }
         break;
       }
       case IrOpcode::kNumberShiftRightLogical: {
+        Type* rhs_type = GetInfo(node->InputAt(1))->output_type();
         VisitBinop(node, UseInfo::TruncatingWord32(),
                    UseInfo::TruncatingWord32(), NodeOutputInfo::Uint32());
-        if (lower()) lowering->DoShift(node, lowering->machine()->Word32Shr());
+        if (lower()) {
+          lowering->DoShift(node, lowering->machine()->Word32Shr(), rhs_type);
+        }
         break;
       }
       case IrOpcode::kNumberToInt32: {
@@ -1406,7 +1420,7 @@ class RepresentationSelector {
           replacement->op()->mnemonic());
 
     if (replacement->id() < count_ &&
-        GetInfo(replacement)->output_type() == GetInfo(node)->output_type()) {
+        GetInfo(node)->output_type()->Is(GetInfo(replacement)->output_type())) {
       // Replace with a previously existing node eagerly only if the type is the
       // same.
       node->ReplaceUses(replacement);
@@ -1868,9 +1882,9 @@ Node* SimplifiedLowering::Uint32Mod(Node* const node) {
 }
 
 
-void SimplifiedLowering::DoShift(Node* node, Operator const* op) {
+void SimplifiedLowering::DoShift(Node* node, Operator const* op,
+                                 Type* rhs_type) {
   Node* const rhs = NodeProperties::GetValueInput(node, 1);
-  Type* const rhs_type = NodeProperties::GetType(rhs);
   if (!rhs_type->Is(type_cache_.kZeroToThirtyOne)) {
     node->ReplaceInput(1, graph()->NewNode(machine()->Word32And(), rhs,
                                            jsgraph()->Int32Constant(0x1f)));
