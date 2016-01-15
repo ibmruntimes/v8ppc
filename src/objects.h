@@ -1135,8 +1135,8 @@ class Object {
 
   // Convert to a JSObject if needed.
   // native_context is used when creating wrapper object.
-  static inline MaybeHandle<JSReceiver> ToObject(Isolate* isolate,
-                                                 Handle<Object> object);
+  MUST_USE_RESULT static inline MaybeHandle<JSReceiver> ToObject(
+      Isolate* isolate, Handle<Object> object);
   MUST_USE_RESULT static MaybeHandle<JSReceiver> ToObject(
       Isolate* isolate, Handle<Object> object, Handle<Context> context);
 
@@ -3221,6 +3221,9 @@ class HashTable : public HashTableBase {
       Key key,
       PretenureFlag pretenure = NOT_TENURED);
 
+  // Returns true if this table has sufficient capacity for adding n elements.
+  bool HasSufficientCapacity(int n);
+
   // Sets the capacity of the hash table.
   void SetCapacity(int capacity) {
     // To scale a computed hash code to fit within the hash table, we
@@ -3419,6 +3422,9 @@ class Dictionary: public HashTable<Derived, Shape, Key> {
       Isolate* isolate,
       int at_least_space_for,
       PretenureFlag pretenure = NOT_TENURED);
+
+  // Ensures that a new dictionary is created when the capacity is checked.
+  void SetRequiresCopyOnCapacityChange();
 
   // Ensure enough space for n additional elements.
   static Handle<Derived> EnsureCapacity(Handle<Derived> obj, int n, Key key);
@@ -7269,12 +7275,6 @@ class JSBoundFunction : public JSObject {
   // arguments to any call to the wrapped function.
   DECL_ACCESSORS(bound_arguments, FixedArray)
 
-  // [creation_context]: The native context in which the function was bound.
-  // TODO(bmeurer, verwaest): Can we (mis)use (unused) constructor field in
-  // the Map instead of putting this into the object? Only required for
-  // JSReceiver::GetCreationContext() anyway.
-  DECL_ACCESSORS(creation_context, Context)
-
   static MaybeHandle<Context> GetFunctionRealm(
       Handle<JSBoundFunction> function);
 
@@ -7292,9 +7292,7 @@ class JSBoundFunction : public JSObject {
   static const int kBoundTargetFunctionOffset = JSObject::kHeaderSize;
   static const int kBoundThisOffset = kBoundTargetFunctionOffset + kPointerSize;
   static const int kBoundArgumentsOffset = kBoundThisOffset + kPointerSize;
-  static const int kCreationContextOffset =
-      kBoundArgumentsOffset + kPointerSize;
-  static const int kLengthOffset = kCreationContextOffset + kPointerSize;
+  static const int kLengthOffset = kBoundArgumentsOffset + kPointerSize;
   static const int kNameOffset = kLengthOffset + kPointerSize;
   static const int kSize = kNameOffset + kPointerSize;
 

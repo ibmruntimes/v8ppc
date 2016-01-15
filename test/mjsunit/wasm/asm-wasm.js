@@ -17,6 +17,7 @@ function EmptyTest() {
 
 assertEquals(11, _WASMEXP_.asmCompileRun(EmptyTest.toString()));
 
+
 function IntTest() {
   "use asm";
   function sum(a, b) {
@@ -36,6 +37,7 @@ function IntTest() {
 }
 
 assertEquals(101, _WASMEXP_.asmCompileRun(IntTest.toString()));
+
 
 function Float64Test() {
   "use asm";
@@ -61,6 +63,7 @@ function Float64Test() {
 
 assertEquals(1, _WASMEXP_.asmCompileRun(Float64Test.toString()));
 
+
 function BadModule() {
   "use asm";
   function caller(a, b) {
@@ -81,6 +84,7 @@ assertThrows(function() {
   _WASMEXP_.asmCompileRun(BadModule.toString())
 });
 
+
 function TestReturnInBlock() {
   "use asm";
 
@@ -100,6 +104,7 @@ function TestReturnInBlock() {
 
 assertEquals(1, _WASMEXP_.asmCompileRun(TestReturnInBlock.toString()));
 
+
 function TestWhileSimple() {
   "use asm";
 
@@ -116,6 +121,7 @@ function TestWhileSimple() {
 
 assertEquals(5, _WASMEXP_.asmCompileRun(TestWhileSimple.toString()));
 
+
 function TestWhileWithoutBraces() {
   "use asm";
 
@@ -130,6 +136,7 @@ function TestWhileWithoutBraces() {
 }
 
 assertEquals(4, _WASMEXP_.asmCompileRun(TestWhileWithoutBraces.toString()));
+
 
 function TestReturnInWhile() {
   "use asm";
@@ -148,6 +155,7 @@ function TestReturnInWhile() {
 
 assertEquals(6, _WASMEXP_.asmCompileRun(TestReturnInWhile.toString()));
 
+
 function TestReturnInWhileWithoutBraces() {
   "use asm";
 
@@ -161,7 +169,9 @@ function TestReturnInWhileWithoutBraces() {
   return {caller: caller};
 }
 
-assertEquals(7, _WASMEXP_.asmCompileRun(TestReturnInWhileWithoutBraces.toString()));
+assertEquals(
+    7, _WASMEXP_.asmCompileRun(TestReturnInWhileWithoutBraces.toString()));
+
 
 function TestBreakInWhile() {
   "use asm";
@@ -177,6 +187,7 @@ function TestBreakInWhile() {
 }
 
 assertEquals(8, _WASMEXP_.asmCompileRun(TestBreakInWhile.toString()));
+
 
 function TestBreakInNestedWhile() {
   "use asm";
@@ -200,6 +211,7 @@ function TestBreakInNestedWhile() {
 
 assertEquals(9, _WASMEXP_.asmCompileRun(TestBreakInNestedWhile.toString()));
 
+
 function TestBreakInBlock() {
   "use asm";
 
@@ -220,6 +232,7 @@ function TestBreakInBlock() {
 
 assertEquals(10, _WASMEXP_.asmCompileRun(TestBreakInBlock.toString()));
 
+
 function TestBreakInNamedWhile() {
   "use asm";
 
@@ -238,6 +251,7 @@ function TestBreakInNamedWhile() {
 }
 
 assertEquals(11, _WASMEXP_.asmCompileRun(TestBreakInNamedWhile.toString()));
+
 
 function TestContinue() {
   "use asm";
@@ -259,6 +273,7 @@ function TestContinue() {
 }
 
 assertEquals(-5, _WASMEXP_.asmCompileRun(TestContinue.toString()));
+
 
 function TestContinueInNamedWhile() {
   "use asm";
@@ -286,6 +301,7 @@ function TestContinueInNamedWhile() {
 
 assertEquals(20, _WASMEXP_.asmCompileRun(TestContinueInNamedWhile.toString()));
 
+
 function TestNot() {
   "use asm";
 
@@ -298,6 +314,7 @@ function TestNot() {
 }
 
 assertEquals(1, _WASMEXP_.asmCompileRun(TestNot.toString()));
+
 
 function TestNotEquals() {
   "use asm";
@@ -315,6 +332,7 @@ function TestNotEquals() {
 
 assertEquals(21, _WASMEXP_.asmCompileRun(TestNotEquals.toString()));
 
+
 function TestUnsignedComparison() {
   "use asm";
 
@@ -330,6 +348,7 @@ function TestUnsignedComparison() {
 }
 
 assertEquals(22, _WASMEXP_.asmCompileRun(TestUnsignedComparison.toString()));
+
 
 function TestMixedAdd() {
   "use asm";
@@ -352,6 +371,7 @@ function TestMixedAdd() {
 
 assertEquals(23, _WASMEXP_.asmCompileRun(TestMixedAdd.toString()));
 
+
 function TestInt32HeapAccess(stdlib, foreign, buffer) {
   "use asm";
 
@@ -370,24 +390,45 @@ function TestInt32HeapAccess(stdlib, foreign, buffer) {
 
 assertEquals(7, _WASMEXP_.asmCompileRun(TestInt32HeapAccess.toString()));
 
+
+function TestInt32HeapAccessExternal() {
+  var memory = new ArrayBuffer(1024);
+  var memory_int32 = new Int32Array(memory);
+  var module = _WASMEXP_.instantiateModuleFromAsm(
+      TestInt32HeapAccess.toString(), null, memory);
+  module.__init__();
+  assertEquals(7, module.caller());
+  assertEquals(7, memory_int32[2]);
+}
+
+TestInt32HeapAccessExternal();
+
+
 function TestHeapAccessIntTypes() {
   var types = [
-    ['Int8Array', '>> 0'],
-    ['Uint8Array', '>> 0'],
-    ['Int16Array', '>> 1'],
-    ['Uint16Array', '>> 1'],
-    ['Int32Array', '>> 2'],
-    ['Uint32Array', '>> 2'],
+    [Int8Array, 'Int8Array', '>> 0'],
+    [Uint8Array, 'Uint8Array', '>> 0'],
+    [Int16Array, 'Int16Array', '>> 1'],
+    [Uint16Array, 'Uint16Array', '>> 1'],
+    [Int32Array, 'Int32Array', '>> 2'],
+    [Uint32Array, 'Uint32Array', '>> 2'],
   ];
   for (var i = 0; i < types.length; i++) {
     var code = TestInt32HeapAccess.toString();
-    code = code.replace('Int32Array', types[i][0]);
-    code = code.replace(/>> 2/g, types[i][1]);
+    code = code.replace('Int32Array', types[i][1]);
+    code = code.replace(/>> 2/g, types[i][2]);
+    var memory = new ArrayBuffer(1024);
+    var memory_view = new types[i][0](memory);
+    var module = _WASMEXP_.instantiateModuleFromAsm(code, null, memory);
+    module.__init__();
+    assertEquals(7, module.caller());
+    assertEquals(7, memory_view[2]);
     assertEquals(7, _WASMEXP_.asmCompileRun(code));
   }
 }
 
 TestHeapAccessIntTypes();
+
 
 function TestFloatHeapAccess(stdlib, foreign, buffer) {
   "use asm";
@@ -413,6 +454,20 @@ function TestFloatHeapAccess(stdlib, foreign, buffer) {
 
 assertEquals(1, _WASMEXP_.asmCompileRun(TestFloatHeapAccess.toString()));
 
+
+function TestFloatHeapAccessExternal() {
+  var memory = new ArrayBuffer(1024);
+  var memory_float64 = new Float64Array(memory);
+  var module = _WASMEXP_.instantiateModuleFromAsm(
+      TestFloatHeapAccess.toString(), null, memory);
+  module.__init__();
+  assertEquals(1, module.caller());
+  assertEquals(9.0, memory_float64[1]);
+}
+
+TestFloatHeapAccessExternal();
+
+
 function TestConvertI32() {
   "use asm";
 
@@ -429,6 +484,7 @@ function TestConvertI32() {
 
 assertEquals(24, _WASMEXP_.asmCompileRun(TestConvertI32.toString()));
 
+
 function TestConvertF64FromInt() {
   "use asm";
 
@@ -444,6 +500,7 @@ function TestConvertF64FromInt() {
 }
 
 assertEquals(25, _WASMEXP_.asmCompileRun(TestConvertF64FromInt.toString()));
+
 
 function TestConvertF64FromUnsigned() {
   "use asm";
@@ -463,6 +520,7 @@ function TestConvertF64FromUnsigned() {
 
 assertEquals(26, _WASMEXP_.asmCompileRun(TestConvertF64FromUnsigned.toString()));
 
+
 function TestModInt() {
   "use asm";
 
@@ -477,6 +535,7 @@ function TestModInt() {
 
 assertEquals(-27, _WASMEXP_.asmCompileRun(TestModInt.toString()));
 
+
 function TestModUnsignedInt() {
   "use asm";
 
@@ -490,6 +549,7 @@ function TestModUnsignedInt() {
 }
 
 assertEquals(8, _WASMEXP_.asmCompileRun(TestModUnsignedInt.toString()));
+
 
 function TestModDouble() {
   "use asm";
@@ -507,6 +567,7 @@ function TestModDouble() {
 }
 
 assertEquals(28, _WASMEXP_.asmCompileRun(TestModDouble.toString()));
+
 
 /*
 TODO: Fix parsing of negative doubles
@@ -528,6 +589,7 @@ function TestModDoubleNegative() {
 
 assertEquals(28, _WASMEXP_.asmCompileRun(TestModDoubleNegative.toString()));
 */
+
 
 function TestNamedFunctions() {
   "use asm";
@@ -552,6 +614,7 @@ var module = _WASMEXP_.instantiateModuleFromAsm(TestNamedFunctions.toString());
 module.init();
 assertEquals(77.5, module.add());
 
+
 function TestGlobalsWithInit() {
   "use asm";
 
@@ -568,6 +631,7 @@ function TestGlobalsWithInit() {
 var module = _WASMEXP_.instantiateModuleFromAsm(TestGlobalsWithInit.toString());
 module.__init__();
 assertEquals(77.5, module.add());
+
 
 function TestForLoop() {
   "use asm"
@@ -586,6 +650,7 @@ function TestForLoop() {
 
 assertEquals(54, _WASMEXP_.asmCompileRun(TestForLoop.toString()));
 
+
 function TestForLoopWithoutInit() {
   "use asm"
 
@@ -602,6 +667,7 @@ function TestForLoopWithoutInit() {
 }
 
 assertEquals(100, _WASMEXP_.asmCompileRun(TestForLoopWithoutInit.toString()));
+
 
 function TestForLoopWithoutCondition() {
   "use asm"
@@ -623,6 +689,7 @@ function TestForLoopWithoutCondition() {
 
 assertEquals(66, _WASMEXP_.asmCompileRun(TestForLoopWithoutCondition.toString()));
 
+
 function TestForLoopWithoutNext() {
   "use asm"
 
@@ -639,6 +706,7 @@ function TestForLoopWithoutNext() {
 
 assertEquals(41, _WASMEXP_.asmCompileRun(TestForLoopWithoutNext.toString()));
 
+
 function TestForLoopWithoutBody() {
   "use asm"
 
@@ -653,6 +721,7 @@ function TestForLoopWithoutBody() {
 }
 
 assertEquals(45, _WASMEXP_.asmCompileRun(TestForLoopWithoutBody.toString()));
+
 
 function TestDoWhile() {
   "use asm"
@@ -672,6 +741,7 @@ function TestDoWhile() {
 
 assertEquals(84, _WASMEXP_.asmCompileRun(TestDoWhile.toString()));
 
+
 function TestConditional() {
   "use asm"
 
@@ -684,6 +754,7 @@ function TestConditional() {
 }
 
 assertEquals(41, _WASMEXP_.asmCompileRun(TestConditional.toString()));
+
 
 function TestSwitch() {
   "use asm"
@@ -712,6 +783,7 @@ function TestSwitch() {
 
 assertEquals(23, _WASMEXP_.asmCompileRun(TestSwitch.toString()));
 
+
 function TestSwitchFallthrough() {
   "use asm"
 
@@ -732,6 +804,7 @@ function TestSwitchFallthrough() {
 }
 
 assertEquals(42, _WASMEXP_.asmCompileRun(TestSwitchFallthrough.toString()));
+
 
 function TestNestedSwitch() {
   "use asm"
@@ -758,6 +831,7 @@ function TestNestedSwitch() {
 
 assertEquals(43, _WASMEXP_.asmCompileRun(TestNestedSwitch.toString()));
 
+
 function TestInitFunctionWithNoGlobals() {
   "use asm";
   function caller() {
@@ -770,6 +844,7 @@ var module = _WASMEXP_.instantiateModuleFromAsm(
     TestInitFunctionWithNoGlobals.toString());
 module.__init__();
 assertEquals(51, module.caller());
+
 
 function TestExportNameDifferentFromFunctionName() {
   "use asm";

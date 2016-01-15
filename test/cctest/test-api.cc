@@ -7709,7 +7709,6 @@ static void ArgumentsTestCallback(
   ApiTestFuzzer::Fuzz();
   v8::Isolate* isolate = args.GetIsolate();
   Local<Context> context = isolate->GetCurrentContext();
-  CHECK(args_fun->Equals(context, args.Callee()).FromJust());
   CHECK_EQ(3, args.Length());
   CHECK(v8::Integer::New(isolate, 1)->Equals(context, args[0]).FromJust());
   CHECK(v8::Integer::New(isolate, 2)->Equals(context, args[1]).FromJust());
@@ -19704,7 +19703,7 @@ THREADED_TEST(CreationContextOfJsBoundFunction) {
   Context::Scope scope(other_context);
   CHECK(bound_function1->CreationContext() == context1);
   CheckContextId(bound_function1, 1);
-  CHECK(bound_function2->CreationContext() == context2);
+  CHECK(bound_function2->CreationContext() == context1);
   CheckContextId(bound_function2, 1);
 }
 
@@ -21958,7 +21957,6 @@ class ApiCallOptimizationChecker {
 
   static void OptimizationCallback(
       const v8::FunctionCallbackInfo<v8::Value>& info) {
-    CHECK(callee == info.Callee());
     CHECK(data == info.Data());
     CHECK(receiver == info.This());
     if (info.Length() == 1) {

@@ -38,7 +38,6 @@
 #include "src/allocation.h"
 #include "src/builtins.h"
 #include "src/isolate.h"
-#include "src/parsing/token.h"
 #include "src/runtime/runtime.h"
 
 namespace v8 {
@@ -49,7 +48,6 @@ class ApiFunction;
 namespace internal {
 
 // Forward declarations.
-class SourcePosition;
 class StatsCounter;
 
 // -----------------------------------------------------------------------------
@@ -816,7 +814,8 @@ class ExternalReference BASE_EMBEDDED {
   // Used in the simulator to support different native api calls.
   enum Type {
     // Builtin call.
-    // Object* f(v8::internal::Arguments).
+    // Object* f(v8::internal::Arguments) or
+    // ObjectPair f(v8::internal::Arguments).
     BUILTIN_CALL,  // default
 
 #if defined(V8_PPC_SIMULATOR)
@@ -824,6 +823,10 @@ class ExternalReference BASE_EMBEDDED {
     // ObjectPair* f(v8::internal::Arguments).
     BUILTIN_OBJECTPAIR_CALL,
 #endif
+
+    // Builtin call that returns .
+    // ObjectTriple f(v8::internal::Arguments).
+    BUILTIN_CALL_TRIPLE,
 
     // Builtin that takes float arguments and returns an int.
     // int f(double, double).
@@ -1125,8 +1128,6 @@ inline int NumberOfBitsSet(uint32_t x) {
   }
   return num_bits_set;
 }
-
-bool EvalComparison(Token::Value op, double op1, double op2);
 
 // Computes pow(x, y) with the special cases in the spec for Math.pow.
 double power_helper(Isolate* isolate, double x, double y);

@@ -98,7 +98,9 @@ MaybeHandle<JSReceiver> Object::ToObject(Isolate* isolate,
     int constructor_function_index =
         Handle<HeapObject>::cast(object)->map()->GetConstructorFunctionIndex();
     if (constructor_function_index == Map::kNoConstructorFunctionIndex) {
-      return MaybeHandle<JSReceiver>();
+      THROW_NEW_ERROR(isolate,
+                      NewTypeError(MessageTemplate::kUndefinedOrNullToObject),
+                      JSReceiver);
     }
     constructor = handle(
         JSFunction::cast(native_context->get(constructor_function_index)),
@@ -2569,18 +2571,19 @@ Handle<String> JSReceiver::GetConstructorName(Handle<JSReceiver> receiver) {
 
 
 Context* JSReceiver::GetCreationContext() {
-  if (IsJSBoundFunction()) {
-    return JSBoundFunction::cast(this)->creation_context();
+  JSReceiver* receiver = this;
+  while (receiver->IsJSBoundFunction()) {
+    receiver = JSBoundFunction::cast(receiver)->bound_target_function();
   }
-  Object* constructor = map()->GetConstructor();
+  Object* constructor = receiver->map()->GetConstructor();
   JSFunction* function;
   if (constructor->IsJSFunction()) {
     function = JSFunction::cast(constructor);
   } else {
     // Functions have null as a constructor,
     // but any JSFunction knows its context immediately.
-    CHECK(IsJSFunction());
-    function = JSFunction::cast(this);
+    CHECK(receiver->IsJSFunction());
+    function = JSFunction::cast(receiver);
   }
 
   return function->context()->native_context();
@@ -16553,8 +16556,8 @@ MaybeHandle<String> Object::ObjectProtoToString(Isolate* isolate,
   if (object->IsUndefined()) return isolate->factory()->undefined_to_string();
   if (object->IsNull()) return isolate->factory()->null_to_string();
 
-  Handle<JSReceiver> receiver;
-  CHECK(Object::ToObject(isolate, object).ToHandle(&receiver));
+  Handle<JSReceiver> receiver =
+      Object::ToObject(isolate, object).ToHandleChecked();
 
   Handle<String> tag;
   if (FLAG_harmony_tostring) {
@@ -17182,14 +17185,8 @@ Handle<Derived> HashTable<Derived, Shape, Key>::EnsureCapacity(
   Isolate* isolate = table->GetIsolate();
   int capacity = table->Capacity();
   int nof = table->NumberOfElements() + n;
-  int nod = table->NumberOfDeletedElements();
-  // Return if:
-  //   50% is still free after adding n elements and
-  //   at most 50% of the free elements are deleted elements.
-  if (nod <= (capacity - nof) >> 1) {
-    int needed_free = nof >> 1;
-    if (nof + needed_free <= capacity) return table;
-  }
+
+  if (table->HasSufficientCapacity(n)) return table;
 
   const int kMinCapacityForPretenure = 256;
   bool should_pretenure = pretenure == TENURED ||
@@ -17203,6 +17200,22 @@ Handle<Derived> HashTable<Derived, Shape, Key>::EnsureCapacity(
 
   table->Rehash(new_table, key);
   return new_table;
+}
+
+
+template <typename Derived, typename Shape, typename Key>
+bool HashTable<Derived, Shape, Key>::HasSufficientCapacity(int n) {
+  int capacity = Capacity();
+  int nof = NumberOfElements() + n;
+  int nod = NumberOfDeletedElements();
+  // Return true if:
+  //   50% is still free after adding n elements and
+  //   at most 50% of the free elements are deleted elements.
+  if (nod <= (capacity - nof) >> 1) {
+    int needed_free = nof >> 1;
+    if (nof + needed_free <= capacity) return true;
+  }
+  return false;
 }
 
 
@@ -17371,6 +17384,9 @@ Dictionary<SeededNumberDictionary, SeededNumberDictionaryShape, uint32_t>::
 template Handle<UnseededNumberDictionary>
 Dictionary<UnseededNumberDictionary, UnseededNumberDictionaryShape, uint32_t>::
     EnsureCapacity(Handle<UnseededNumberDictionary>, int, uint32_t);
+
+template void Dictionary<NameDictionary, NameDictionaryShape,
+                         Handle<Name> >::SetRequiresCopyOnCapacityChange();
 
 template Handle<NameDictionary>
 Dictionary<NameDictionary, NameDictionaryShape, Handle<Name> >::
@@ -18100,7 +18116,17 @@ Dictionary<Derived, Shape, Key>::GenerateNewEnumerationIndices(
 }
 
 
-template<typename Derived, typename Shape, typename Key>
+template <typename Derived, typename Shape, typename Key>
+void Dictionary<Derived, Shape, Key>::SetRequiresCopyOnCapacityChange() {
+  DCHECK_EQ(0, DerivedHashTable::NumberOfElements());
+  DCHECK_EQ(0, DerivedHashTable::NumberOfDeletedElements());
+  // Make sure that HashTable::EnsureCapacity will create a copy.
+  DerivedHashTable::SetNumberOfDeletedElements(DerivedHashTable::Capacity());
+  DCHECK(!DerivedHashTable::HasSufficientCapacity(1));
+}
+
+
+template <typename Derived, typename Shape, typename Key>
 Handle<Derived> Dictionary<Derived, Shape, Key>::EnsureCapacity(
     Handle<Derived> dictionary, int n, Key key) {
   // Check whether there are enough enumeration indices to add n elements.

@@ -705,6 +705,12 @@ void Builtins::Generate_JSBuiltinsConstructStub(MacroAssembler* masm) {
 }
 
 
+void Builtins::Generate_JSBuiltinsConstructStubForDerived(
+    MacroAssembler* masm) {
+  Generate_JSConstructStubHelper(masm, false, false);
+}
+
+
 void Builtins::Generate_ConstructedNonConstructable(MacroAssembler* masm) {
   FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
   __ push(r4);
@@ -1350,7 +1356,7 @@ void CompatibleReceiverCheck(MacroAssembler* masm, Register receiver,
   // End if the prototype is null or not hidden.
   __ JumpIfRoot(receiver, Heap::kNullValueRootIndex, receiver_check_failed);
   __ LoadP(map, FieldMemOperand(receiver, HeapObject::kMapOffset));
-  __ LoadP(scratch, FieldMemOperand(map, Map::kBitField3Offset));
+  __ lwz(scratch, FieldMemOperand(map, Map::kBitField3Offset));
   __ DecodeField<Map::IsHiddenPrototype>(scratch, SetRC);
   __ beq(receiver_check_failed, cr0);
   // Iterate.

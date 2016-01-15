@@ -2766,9 +2766,7 @@ bool Value::IsSharedArrayBuffer() const {
 }
 
 
-bool Value::IsObject() const {
-  return Utils::OpenHandle(this)->IsJSObject();
-}
+bool Value::IsObject() const { return Utils::OpenHandle(this)->IsJSReceiver(); }
 
 
 bool Value::IsNumber() const {
@@ -2931,11 +2929,11 @@ Local<String> Value::ToDetailString(Isolate* isolate) const {
 
 MaybeLocal<Object> Value::ToObject(Local<Context> context) const {
   auto obj = Utils::OpenHandle(this);
-  if (obj->IsJSObject()) return ToApiHandle<Object>(obj);
+  if (obj->IsJSReceiver()) return ToApiHandle<Object>(obj);
   PREPARE_FOR_EXECUTION(context, "ToObject", Object);
   Local<Object> result;
   has_pending_exception =
-      !ToLocal<Object>(i::Execution::ToObject(isolate, obj), &result);
+      !ToLocal<Object>(i::Object::ToObject(isolate, obj), &result);
   RETURN_ON_FAILED_EXECUTION(Object);
   RETURN_ESCAPED(result);
 }

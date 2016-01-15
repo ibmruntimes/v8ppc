@@ -51,7 +51,6 @@
 #include "src/ic/ic.h"
 #include "src/ic/stub-cache.h"
 #include "src/ostreams.h"
-#include "src/parsing/token.h"
 #include "src/profiler/cpu-profiler.h"
 #include "src/regexp/jsregexp.h"
 #include "src/regexp/regexp-macro-assembler.h"
@@ -1025,23 +1024,21 @@ ExternalReference::ExternalReference(Builtins::Name name, Isolate* isolate)
 
 
 ExternalReference::ExternalReference(Runtime::FunctionId id, Isolate* isolate)
-#if defined(V8_PPC_SIMULATOR)
-    : address_(Redirect(isolate, Runtime::FunctionForId(id)->entry,
-                        (Runtime::FunctionForId(id)->result_size == 2) ?
-                        BUILTIN_OBJECTPAIR_CALL : BUILTIN_CALL)) {}
-#else
-    : address_(Redirect(isolate, Runtime::FunctionForId(id)->entry)) {}
-#endif
+    : ExternalReference(Runtime::FunctionForId(id), isolate) {}
 
 
 ExternalReference::ExternalReference(const Runtime::Function* f,
                                      Isolate* isolate)
 #if defined(V8_PPC_SIMULATOR)
-    : address_(Redirect(isolate, f->entry,
-                        ((f->result_size == 2) ?
-                         BUILTIN_OBJECTPAIR_CALL : BUILTIN_CALL))) {}
+    : address_(Redirect(isolate, f->entry, f->result_size == 3
+                                               ? BUILTIN_CALL_TRIPLE
+                                               : (f->result_size == 2
+                                                    ? BUILTIN_OBJECTPAIR_CALL
+                                                    : BUILTIN_CALL))) {}
 #else
-    : address_(Redirect(isolate, f->entry)) {}
+    : address_(Redirect(isolate, f->entry, f->result_size == 3
+                                               ? BUILTIN_CALL_TRIPLE
+                                               : BUILTIN_CALL)) {}
 #endif
 
 
@@ -1533,23 +1530,6 @@ ExternalReference ExternalReference::power_double_int_function(
 }
 
 
-bool EvalComparison(Token::Value op, double op1, double op2) {
-  DCHECK(Token::IsCompareOp(op));
-  switch (op) {
-    case Token::EQ:
-    case Token::EQ_STRICT: return (op1 == op2);
-    case Token::NE: return (op1 != op2);
-    case Token::LT: return (op1 < op2);
-    case Token::GT: return (op1 > op2);
-    case Token::LTE: return (op1 <= op2);
-    case Token::GTE: return (op1 >= op2);
-    default:
-      UNREACHABLE();
-      return false;
-  }
-}
-
-
 ExternalReference ExternalReference::mod_two_doubles_operation(
     Isolate* isolate) {
   return ExternalReference(Redirect(isolate,
@@ -1849,11 +1829,9 @@ int ConstantPoolBuilder::Emit(Assembler* assm) {
 // Platform specific but identical code for all the platforms.
 
 
-void Assembler::RecordDeoptReason(const int reason,
-                                  const SourcePosition position) {
+void Assembler::RecordDeoptReason(const int reason, int raw_position) {
   if (FLAG_trace_deopt || isolate()->cpu_profiler()->is_profiling()) {
     EnsureSpace ensure_space(this);
-    int raw_position = position.IsUnknown() ? 0 : position.raw();
     RecordRelocInfo(RelocInfo::POSITION, raw_position);
     RecordRelocInfo(RelocInfo::DEOPT_REASON, reason);
   }

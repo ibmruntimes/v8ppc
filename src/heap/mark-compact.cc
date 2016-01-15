@@ -1224,9 +1224,6 @@ class MarkCompactMarkingVisitor
   }
 
  private:
-  template <int id>
-  static inline void TrackObjectStatsAndVisit(Map* map, HeapObject* obj);
-
   // Code flushing support.
 
   static const int kRegExpCodeThreshold = 5;
@@ -3100,13 +3097,12 @@ HashMap* MarkCompactCollector::EvacuateNewSpaceInParallel() {
     USE(ok);
     DCHECK(ok);
   }
-  heap_->IncrementPromotedObjectsSize(
-      static_cast<int>(new_space_visitor.promoted_size()));
+  heap_->IncrementPromotedObjectsSize(new_space_visitor.promoted_size());
   heap_->IncrementSemiSpaceCopiedObjectSize(
-      static_cast<int>(new_space_visitor.semispace_copied_size()));
+      new_space_visitor.semispace_copied_size());
   heap_->IncrementYoungSurvivorsCounter(
-      static_cast<int>(new_space_visitor.promoted_size()) +
-      static_cast<int>(new_space_visitor.semispace_copied_size()));
+      new_space_visitor.promoted_size() +
+      new_space_visitor.semispace_copied_size());
   return local_pretenuring_feedback;
 }
 
