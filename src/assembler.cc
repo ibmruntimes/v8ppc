@@ -1033,7 +1033,7 @@ ExternalReference::ExternalReference(const Runtime::Function* f,
     : address_(Redirect(isolate, f->entry, f->result_size == 3
                                                ? BUILTIN_CALL_TRIPLE
                                                : (f->result_size == 2
-                                                    ? BUILTIN_OBJECTPAIR_CALL
+                                                    ? BUILTIN_CALL_PAIR
                                                     : BUILTIN_CALL))) {}
 #else
     : address_(Redirect(isolate, f->entry, f->result_size == 3

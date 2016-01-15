@@ -821,7 +821,7 @@ class ExternalReference BASE_EMBEDDED {
 #if defined(V8_PPC_SIMULATOR)
     // Builtin call returning object pair.
     // ObjectPair* f(v8::internal::Arguments).
-    BUILTIN_OBJECTPAIR_CALL,
+    BUILTIN_CALL_PAIR,
 #endif
 
     // Builtin call that returns .
