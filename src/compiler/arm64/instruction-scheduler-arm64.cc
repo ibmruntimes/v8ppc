@@ -106,12 +106,14 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kArm64Float32RoundUp:
     case kArm64Float32ToFloat64:
     case kArm64Float64ToFloat32:
+    case kArm64Float32ToInt32:
     case kArm64Float64ToInt32:
     case kArm64Float64ToUint32:
     case kArm64Float32ToInt64:
     case kArm64Float64ToInt64:
     case kArm64Float32ToUint64:
     case kArm64Float64ToUint64:
+    case kArm64Int32ToFloat32:
     case kArm64Int32ToFloat64:
     case kArm64Int64ToFloat32:
     case kArm64Int64ToFloat64:
@@ -141,8 +143,10 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kArm64Ldr:
       return kIsLoadOperation;
 
-    case kArm64ClaimForCallArguments:
-    case kArm64Poke:
+    case kArm64ClaimCSP:
+    case kArm64ClaimJSSP:
+    case kArm64PokeCSP:
+    case kArm64PokeJSSP:
     case kArm64PokePair:
     case kArm64StrS:
     case kArm64StrD:

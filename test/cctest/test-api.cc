@@ -2135,7 +2135,7 @@ static void ThrowingSymbolAccessorGetter(
 }
 
 
-THREADED_TEST(ExecutableAccessorIsPreservedOnAttributeChange) {
+THREADED_TEST(AccessorIsPreservedOnAttributeChange) {
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope scope(isolate);
   LocalContext env;
@@ -2145,11 +2145,11 @@ THREADED_TEST(ExecutableAccessorIsPreservedOnAttributeChange) {
   CHECK_GT(i::FixedArray::cast(a->map()->instance_descriptors())->length(), 0);
   CompileRun("Object.defineProperty(a, 'length', { writable: false });");
   CHECK_EQ(i::FixedArray::cast(a->map()->instance_descriptors())->length(), 0);
-  // But we should still have an ExecutableAccessorInfo.
+  // But we should still have an AccessorInfo.
   i::Handle<i::String> name(v8::Utils::OpenHandle(*v8_str("length")));
   i::LookupIterator it(a, name, i::LookupIterator::OWN_SKIP_INTERCEPTOR);
   CHECK_EQ(i::LookupIterator::ACCESSOR, it.state());
-  CHECK(it.GetAccessors()->IsExecutableAccessorInfo());
+  CHECK(it.GetAccessors()->IsAccessorInfo());
 }
 
 
@@ -2759,6 +2759,106 @@ THREADED_TEST(SymbolTemplateProperties) {
       foo->InstanceTemplate()->NewInstance(env.local()).ToLocalChecked();
   CHECK(!new_instance.IsEmpty());
   CHECK(new_instance->Has(env.local(), name).FromJust());
+}
+
+
+THREADED_TEST(PrivatePropertiesOnProxies) {
+  i::FLAG_harmony_proxies = true;
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::HandleScope scope(isolate);
+
+  v8::Local<v8::Object> target = CompileRun("({})").As<v8::Object>();
+  v8::Local<v8::Object> handler = CompileRun("({})").As<v8::Object>();
+
+  v8::Local<v8::Proxy> proxy =
+      v8::Proxy::New(env.local(), target, handler).ToLocalChecked();
+
+  v8::Local<v8::Private> priv1 = v8::Private::New(isolate);
+  v8::Local<v8::Private> priv2 =
+      v8::Private::New(isolate, v8_str("my-private"));
+
+  CcTest::heap()->CollectAllGarbage();
+
+  CHECK(priv2->Name()
+            ->Equals(env.local(),
+                     v8::String::NewFromUtf8(isolate, "my-private",
+                                             v8::NewStringType::kNormal)
+                         .ToLocalChecked())
+            .FromJust());
+
+  // Make sure delete of a non-existent private symbol property works.
+  proxy->DeletePrivate(env.local(), priv1).FromJust();
+  CHECK(!proxy->HasPrivate(env.local(), priv1).FromJust());
+
+  CHECK(proxy->SetPrivate(env.local(), priv1, v8::Integer::New(isolate, 1503))
+            .FromJust());
+  CHECK(proxy->HasPrivate(env.local(), priv1).FromJust());
+  CHECK_EQ(1503, proxy->GetPrivate(env.local(), priv1)
+                     .ToLocalChecked()
+                     ->Int32Value(env.local())
+                     .FromJust());
+  CHECK(proxy->SetPrivate(env.local(), priv1, v8::Integer::New(isolate, 2002))
+            .FromJust());
+  CHECK(proxy->HasPrivate(env.local(), priv1).FromJust());
+  CHECK_EQ(2002, proxy->GetPrivate(env.local(), priv1)
+                     .ToLocalChecked()
+                     ->Int32Value(env.local())
+                     .FromJust());
+
+  CHECK_EQ(0u,
+           proxy->GetOwnPropertyNames(env.local()).ToLocalChecked()->Length());
+  unsigned num_props =
+      proxy->GetPropertyNames(env.local()).ToLocalChecked()->Length();
+  CHECK(proxy->Set(env.local(), v8::String::NewFromUtf8(
+                                    isolate, "bla", v8::NewStringType::kNormal)
+                                    .ToLocalChecked(),
+                   v8::Integer::New(isolate, 20))
+            .FromJust());
+  CHECK_EQ(1u,
+           proxy->GetOwnPropertyNames(env.local()).ToLocalChecked()->Length());
+  CHECK_EQ(num_props + 1,
+           proxy->GetPropertyNames(env.local()).ToLocalChecked()->Length());
+
+  CcTest::heap()->CollectAllGarbage();
+
+  // Add another property and delete it afterwards to force the object in
+  // slow case.
+  CHECK(proxy->SetPrivate(env.local(), priv2, v8::Integer::New(isolate, 2008))
+            .FromJust());
+  CHECK_EQ(2002, proxy->GetPrivate(env.local(), priv1)
+                     .ToLocalChecked()
+                     ->Int32Value(env.local())
+                     .FromJust());
+  CHECK_EQ(2008, proxy->GetPrivate(env.local(), priv2)
+                     .ToLocalChecked()
+                     ->Int32Value(env.local())
+                     .FromJust());
+  CHECK_EQ(2002, proxy->GetPrivate(env.local(), priv1)
+                     .ToLocalChecked()
+                     ->Int32Value(env.local())
+                     .FromJust());
+  CHECK_EQ(1u,
+           proxy->GetOwnPropertyNames(env.local()).ToLocalChecked()->Length());
+
+  CHECK(proxy->HasPrivate(env.local(), priv1).FromJust());
+  CHECK(proxy->HasPrivate(env.local(), priv2).FromJust());
+  CHECK(proxy->DeletePrivate(env.local(), priv2).FromJust());
+  CHECK(proxy->HasPrivate(env.local(), priv1).FromJust());
+  CHECK(!proxy->HasPrivate(env.local(), priv2).FromJust());
+  CHECK_EQ(2002, proxy->GetPrivate(env.local(), priv1)
+                     .ToLocalChecked()
+                     ->Int32Value(env.local())
+                     .FromJust());
+  CHECK_EQ(1u,
+           proxy->GetOwnPropertyNames(env.local()).ToLocalChecked()->Length());
+
+  // Private properties are not inherited (for the time being).
+  v8::Local<v8::Object> child = v8::Object::New(isolate);
+  CHECK(child->SetPrototype(env.local(), proxy).FromJust());
+  CHECK(!child->HasPrivate(env.local(), priv1).FromJust());
+  CHECK_EQ(0u,
+           child->GetOwnPropertyNames(env.local()).ToLocalChecked()->Length());
 }
 
 

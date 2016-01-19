@@ -936,7 +936,7 @@ void MacroAssembler::EnterExitFrameEpilogue(int argc, bool save_doubles) {
 }
 
 
-void MacroAssembler::EnterExitFrame(bool save_doubles) {
+void MacroAssembler::EnterExitFrame(int argc, bool save_doubles) {
   EnterExitFramePrologue();
 
   // Set up argc and argv in callee-saved registers.
@@ -945,7 +945,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles) {
   lea(esi, Operand(ebp, eax, times_4, offset));
 
   // Reserve space for argc, argv and isolate.
-  EnterExitFrameEpilogue(3, save_doubles);
+  EnterExitFrameEpilogue(argc, save_doubles);
 }
 
 
@@ -2009,7 +2009,7 @@ void MacroAssembler::FloodFunctionIfStepping(Register fun, Register new_target,
     }
     Push(fun);
     Push(fun);
-    CallRuntime(Runtime::kDebugPrepareStepInIfStepping, 1);
+    CallRuntime(Runtime::kDebugPrepareStepInIfStepping);
     Pop(fun);
     if (new_target.is_valid()) {
       Pop(new_target);
@@ -2524,9 +2524,9 @@ void MacroAssembler::Abort(BailoutReason reason) {
     // We don't actually want to generate a pile of code for this, so just
     // claim there is a stack frame, without generating one.
     FrameScope scope(this, StackFrame::NONE);
-    CallRuntime(Runtime::kAbort, 1);
+    CallRuntime(Runtime::kAbort);
   } else {
-    CallRuntime(Runtime::kAbort, 1);
+    CallRuntime(Runtime::kAbort);
   }
   // will not return here
   int3();

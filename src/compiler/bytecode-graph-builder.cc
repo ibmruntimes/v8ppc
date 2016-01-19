@@ -829,7 +829,7 @@ void BytecodeGraphBuilder::BuildStaLookupSlot(
   Node* value = environment()->LookupAccumulator();
   Node* name = jsgraph()->Constant(iterator.GetConstantForIndexOperand(0));
   Node* language = jsgraph()->Constant(language_mode);
-  const Operator* op = javascript()->CallRuntime(Runtime::kStoreLookupSlot, 4);
+  const Operator* op = javascript()->CallRuntime(Runtime::kStoreLookupSlot);
   Node* store = NewNode(op, value, environment()->Context(), name, language);
   environment()->BindAccumulator(store, &states);
 }
@@ -1321,7 +1321,7 @@ void BytecodeGraphBuilder::VisitThrow(
   Node* value = environment()->LookupAccumulator();
   // TODO(mythria): Change to Runtime::kThrow when we have deoptimization
   // information support in the interpreter.
-  NewNode(javascript()->CallRuntime(Runtime::kReThrow, 1), value);
+  NewNode(javascript()->CallRuntime(Runtime::kReThrow), value);
   Node* control = NewNode(common()->Throw(), value);
   environment()->RecordAfterState(control, &states);
   UpdateControlDependencyToLeaveFunction(control);
@@ -1485,7 +1485,7 @@ void BytecodeGraphBuilder::VisitDeleteLookupSlot(
     const interpreter::BytecodeArrayIterator& iterator) {
   FrameStateBeforeAndAfter states(this, iterator);
   Node* name = environment()->LookupAccumulator();
-  const Operator* op = javascript()->CallRuntime(Runtime::kDeleteLookupSlot, 2);
+  const Operator* op = javascript()->CallRuntime(Runtime::kDeleteLookupSlot);
   Node* result = NewNode(op, environment()->Context(), name);
   environment()->BindAccumulator(result, &states);
 }
@@ -1724,19 +1724,11 @@ void BytecodeGraphBuilder::VisitReturn(
 
 void BytecodeGraphBuilder::VisitForInPrepare(
     const interpreter::BytecodeArrayIterator& iterator) {
-  Node* prepare = nullptr;
-  {
-    FrameStateBeforeAndAfter states(this, iterator);
-    Node* receiver = environment()->LookupAccumulator();
-    prepare = NewNode(javascript()->ForInPrepare(), receiver);
-    environment()->RecordAfterState(prepare, &states);
-  }
-  // Project cache_type, cache_array, cache_length into register
-  // operands 1, 2, 3.
-  for (int i = 0; i < 3; i++) {
-    environment()->BindRegister(iterator.GetRegisterOperand(i),
-                                NewNode(common()->Projection(i), prepare));
-  }
+  FrameStateBeforeAndAfter states(this, iterator);
+  Node* receiver = environment()->LookupAccumulator();
+  Node* prepare = NewNode(javascript()->ForInPrepare(), receiver);
+  environment()->BindRegistersToProjections(iterator.GetRegisterOperand(0),
+                                            prepare, &states);
 }
 
 
@@ -1756,11 +1748,13 @@ void BytecodeGraphBuilder::VisitForInNext(
   FrameStateBeforeAndAfter states(this, iterator);
   Node* receiver =
       environment()->LookupRegister(iterator.GetRegisterOperand(0));
-  Node* cache_type =
-      environment()->LookupRegister(iterator.GetRegisterOperand(1));
-  Node* cache_array =
-      environment()->LookupRegister(iterator.GetRegisterOperand(2));
-  Node* index = environment()->LookupRegister(iterator.GetRegisterOperand(3));
+  Node* index = environment()->LookupRegister(iterator.GetRegisterOperand(1));
+  int catch_reg_pair_index = iterator.GetRegisterOperand(2).index();
+  Node* cache_type = environment()->LookupRegister(
+      interpreter::Register(catch_reg_pair_index));
+  Node* cache_array = environment()->LookupRegister(
+      interpreter::Register(catch_reg_pair_index + 1));
+
   Node* value = NewNode(javascript()->ForInNext(), receiver, cache_array,
                         cache_type, index);
   environment()->BindAccumulator(value, &states);

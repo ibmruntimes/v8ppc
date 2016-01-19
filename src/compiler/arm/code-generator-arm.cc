@@ -831,6 +831,13 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
     }
+    case kArmVcvtF32S32: {
+      SwVfpRegister scratch = kScratchDoubleReg.low();
+      __ vmov(scratch, i.InputRegister(0));
+      __ vcvt_f32_s32(i.OutputFloat32Register(), scratch);
+      DCHECK_EQ(LeaveCC, i.OutputSBit());
+      break;
+    }
     case kArmVcvtF64S32: {
       SwVfpRegister scratch = kScratchDoubleReg.low();
       __ vmov(scratch, i.InputRegister(0));
@@ -842,6 +849,13 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       SwVfpRegister scratch = kScratchDoubleReg.low();
       __ vmov(scratch, i.InputRegister(0));
       __ vcvt_f64_u32(i.OutputFloat64Register(), scratch);
+      DCHECK_EQ(LeaveCC, i.OutputSBit());
+      break;
+    }
+    case kArmVcvtS32F32: {
+      SwVfpRegister scratch = kScratchDoubleReg.low();
+      __ vcvt_s32_f32(scratch, i.InputFloat32Register(0));
+      __ vmov(i.OutputRegister(), scratch);
       DCHECK_EQ(LeaveCC, i.OutputSBit());
       break;
     }

@@ -345,12 +345,11 @@ namespace internal {
   F(ParseJson, 1, 1)
 
 
-#define FOR_EACH_INTRINSIC_LITERALS(F)   \
-  F(CreateRegExpLiteral, 4, 1)           \
-  F(CreateObjectLiteral, 4, 1)           \
-  F(CreateArrayLiteral, 4, 1)            \
-  F(CreateArrayLiteralStubBailout, 3, 1) \
-  F(StoreArrayLiteralElement, 5, 1)
+#define FOR_EACH_INTRINSIC_LITERALS(F) \
+  F(CreateRegExpLiteral, 4, 1)         \
+  F(CreateObjectLiteral, 4, 1)         \
+  F(CreateArrayLiteral, 4, 1)          \
+  F(CreateArrayLiteralStubBailout, 3, 1)
 
 
 #define FOR_EACH_INTRINSIC_LIVEEDIT(F)              \
@@ -415,7 +414,6 @@ namespace internal {
   F(GetPrototype, 1, 1)                              \
   F(InternalSetPrototype, 2, 1)                      \
   F(SetPrototype, 2, 1)                              \
-  F(GetOwnProperty, 2, 1)                            \
   F(GetOwnProperty_Legacy, 2, 1)                     \
   F(OptimizeObjectForAddingMultipleProperties, 2, 1) \
   F(GetProperty, 2, 1)                               \

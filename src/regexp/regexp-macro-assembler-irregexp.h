@@ -5,12 +5,12 @@
 #ifndef V8_REGEXP_REGEXP_MACRO_ASSEMBLER_IRREGEXP_H_
 #define V8_REGEXP_REGEXP_MACRO_ASSEMBLER_IRREGEXP_H_
 
+#ifdef V8_INTERPRETED_REGEXP
+
 #include "src/regexp/regexp-macro-assembler.h"
 
 namespace v8 {
 namespace internal {
-
-#ifdef V8_INTERPRETED_REGEXP
 
 // A light-weight assembler for the Irregexp byte code.
 class RegExpMacroAssemblerIrregexp: public RegExpMacroAssembler {
@@ -82,6 +82,12 @@ class RegExpMacroAssemblerIrregexp: public RegExpMacroAssembler {
                                         uc16 to,
                                         Label* on_not_in_range);
   virtual void CheckBitInTable(Handle<ByteArray> table, Label* on_bit_set);
+  virtual void CheckPosition(int cp_offset, Label* on_outside_input) {
+    LoadCurrentCharacter(cp_offset, on_outside_input, true);
+  }
+  virtual bool CheckSpecialCharacterClass(uc16 type, Label* on_no_match) {
+    return false;  // No custom support for character classes.
+  }
   virtual void CheckNotBackReference(int start_reg, bool read_backward,
                                      Label* on_no_match);
   virtual void CheckNotBackReferenceIgnoreCase(int start_reg,
@@ -125,9 +131,9 @@ class RegExpMacroAssemblerIrregexp: public RegExpMacroAssembler {
   DISALLOW_IMPLICIT_CONSTRUCTORS(RegExpMacroAssemblerIrregexp);
 };
 
-#endif  // V8_INTERPRETED_REGEXP
-
 }  // namespace internal
 }  // namespace v8
+
+#endif  // V8_INTERPRETED_REGEXP
 
 #endif  // V8_REGEXP_REGEXP_MACRO_ASSEMBLER_IRREGEXP_H_

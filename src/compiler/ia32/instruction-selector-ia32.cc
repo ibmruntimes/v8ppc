@@ -695,6 +695,11 @@ void InstructionSelector::VisitChangeFloat32ToFloat64(Node* node) {
 }
 
 
+void InstructionSelector::VisitRoundInt32ToFloat32(Node* node) {
+  VisitRO(this, node, kSSEInt32ToFloat32);
+}
+
+
 void InstructionSelector::VisitChangeInt32ToFloat64(Node* node) {
   VisitRO(this, node, kSSEInt32ToFloat64);
 }
@@ -702,6 +707,11 @@ void InstructionSelector::VisitChangeInt32ToFloat64(Node* node) {
 
 void InstructionSelector::VisitChangeUint32ToFloat64(Node* node) {
   VisitRO(this, node, kSSEUint32ToFloat64);
+}
+
+
+void InstructionSelector::VisitTruncateFloat32ToInt32(Node* node) {
+  VisitRO(this, node, kSSEFloat32ToInt32);
 }
 
 

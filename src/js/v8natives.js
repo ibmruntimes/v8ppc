@@ -148,7 +148,7 @@ function ObjectHasOwnProperty(value) {
 function ObjectIsPrototypeOf(V) {
   if (!IS_RECEIVER(V)) return false;
   var O = TO_OBJECT(this);
-  return %_HasInPrototypeChain(V, O);
+  return %HasInPrototypeChain(V, O);
 }
 
 
@@ -772,19 +772,6 @@ function ObjectSetPrototypeOf(obj, proto) {
 }
 
 
-// ES6 section 19.1.2.6
-function ObjectGetOwnPropertyDescriptor(obj, p) {
-  return %GetOwnProperty(obj, p);
-}
-
-
-// ES5 section 15.2.3.4.
-function ObjectGetOwnPropertyNames(obj) {
-  obj = TO_OBJECT(obj);
-  return %GetOwnPropertyKeys(obj, PROPERTY_FILTER_SKIP_SYMBOLS);
-}
-
-
 // ES5 section 15.2.3.6.
 function ObjectDefineProperty(obj, p, attributes) {
   // The new pure-C++ implementation doesn't support O.o.
@@ -802,11 +789,6 @@ function ObjectDefineProperty(obj, p, attributes) {
 }
 
 
-function GetOwnEnumerablePropertyNames(object) {
-  return %GetOwnPropertyKeys(object, PROPERTY_FILTER_ONLY_ENUMERABLE);
-}
-
-
 // ES5 section 15.2.3.7.
 function ObjectDefineProperties(obj, properties) {
   // The new pure-C++ implementation doesn't support O.o.
@@ -816,7 +798,7 @@ function ObjectDefineProperties(obj, properties) {
       throw MakeTypeError(kCalledOnNonObject, "Object.defineProperties");
     }
     var props = TO_OBJECT(properties);
-    var names = GetOwnEnumerablePropertyNames(props);
+    var names = %GetOwnPropertyKeys(props, PROPERTY_FILTER_ONLY_ENUMERABLE);
     var descriptors = new InternalArray();
     for (var i = 0; i < names.length; i++) {
       descriptors.push(ToPropertyDescriptor(props[names[i]]));
@@ -889,8 +871,6 @@ utils.InstallFunctions(GlobalObject, DONT_ENUM, [
   "defineProperties", ObjectDefineProperties,
   "getPrototypeOf", ObjectGetPrototypeOf,
   "setPrototypeOf", ObjectSetPrototypeOf,
-  "getOwnPropertyDescriptor", ObjectGetOwnPropertyDescriptor,
-  "getOwnPropertyNames", ObjectGetOwnPropertyNames,
   // getOwnPropertySymbols is added in symbol.js.
   "is", SameValue,  // ECMA-262, Edition 6, section 19.1.2.10
   // deliverChangeRecords, getNotifier, observe and unobserve are added

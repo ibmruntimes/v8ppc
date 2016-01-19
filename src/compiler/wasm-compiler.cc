@@ -696,9 +696,7 @@ Node* WasmGraphBuilder::Unop(wasm::WasmOpcode opcode, Node* input) {
       op = m->ChangeUint32ToFloat64();
       break;
     case wasm::kExprF32SConvertI32:
-      op = m->ChangeInt32ToFloat64();  // TODO(titzer): two conversions
-      input = graph()->NewNode(op, input);
-      op = m->TruncateFloat64ToFloat32();
+      op = m->RoundInt32ToFloat32();
       break;
     case wasm::kExprF32UConvertI32:
       op = m->ChangeUint32ToFloat64();
@@ -1121,14 +1119,12 @@ Node* WasmGraphBuilder::BuildI32SConvertF32(Node* input) {
   MachineOperatorBuilder* m = jsgraph()->machine();
   // Truncation of the input value is needed for the overflow check later.
   Node* trunc = Unop(wasm::kExprF32Trunc, input);
-  // TODO(titzer): two conversions
-  Node* f64_trunc = graph()->NewNode(m->ChangeFloat32ToFloat64(), trunc);
-  Node* result = graph()->NewNode(m->ChangeFloat64ToInt32(), f64_trunc);
+  Node* result = graph()->NewNode(m->TruncateFloat32ToInt32(), trunc);
 
   // Convert the result back to f64. If we end up at a different value than the
   // truncated input value, then there has been an overflow and we trap.
-  Node* check = Unop(wasm::kExprF64SConvertI32, result);
-  Node* overflow = Binop(wasm::kExprF64Ne, f64_trunc, check);
+  Node* check = Unop(wasm::kExprF32SConvertI32, result);
+  Node* overflow = Binop(wasm::kExprF32Ne, trunc, check);
   trap_->AddTrapIfTrue(kTrapFloatUnrepresentable, overflow);
 
   return result;
@@ -1137,6 +1133,10 @@ Node* WasmGraphBuilder::BuildI32SConvertF32(Node* input) {
 
 Node* WasmGraphBuilder::BuildI32SConvertF64(Node* input) {
   MachineOperatorBuilder* m = jsgraph()->machine();
+  if (module_ && module_->asm_js) {
+    return graph()->NewNode(
+        m->TruncateFloat64ToInt32(TruncationMode::kJavaScript), input);
+  }
   // Truncation of the input value is needed for the overflow check later.
   Node* trunc = Unop(wasm::kExprF64Trunc, input);
   Node* result = graph()->NewNode(m->ChangeFloat64ToInt32(), trunc);
@@ -1171,6 +1171,10 @@ Node* WasmGraphBuilder::BuildI32UConvertF32(Node* input) {
 
 Node* WasmGraphBuilder::BuildI32UConvertF64(Node* input) {
   MachineOperatorBuilder* m = jsgraph()->machine();
+  if (module_ && module_->asm_js) {
+    return graph()->NewNode(
+        m->TruncateFloat64ToInt32(TruncationMode::kJavaScript), input);
+  }
   // Truncation of the input value is needed for the overflow check later.
   Node* trunc = Unop(wasm::kExprF64Trunc, input);
   Node* result = graph()->NewNode(m->ChangeFloat64ToUint32(), trunc);

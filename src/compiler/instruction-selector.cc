@@ -956,6 +956,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord32(node), VisitChangeFloat64ToInt32(node);
     case IrOpcode::kChangeFloat64ToUint32:
       return MarkAsWord32(node), VisitChangeFloat64ToUint32(node);
+    case IrOpcode::kTruncateFloat32ToInt32:
+      return MarkAsWord32(node), VisitTruncateFloat32ToInt32(node);
     case IrOpcode::kTryTruncateFloat32ToInt64:
       return MarkAsWord64(node), VisitTryTruncateFloat32ToInt64(node);
     case IrOpcode::kTryTruncateFloat64ToInt64:
@@ -976,6 +978,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord32(node), VisitTruncateInt64ToInt32(node);
     case IrOpcode::kRoundInt64ToFloat32:
       return MarkAsFloat32(node), VisitRoundInt64ToFloat32(node);
+    case IrOpcode::kRoundInt32ToFloat32:
+      return MarkAsFloat32(node), VisitRoundInt32ToFloat32(node);
     case IrOpcode::kRoundInt64ToFloat64:
       return MarkAsFloat64(node), VisitRoundInt64ToFloat64(node);
     case IrOpcode::kBitcastFloat32ToInt32:
@@ -1411,6 +1415,13 @@ void InstructionSelector::VisitCall(Node* node, BasicBlock* handler) {
     flags |= CallDescriptor::kHasExceptionHandler;
     buffer.instruction_args.push_back(g.Label(handler));
   }
+
+  // (arm64 only) caller uses JSSP but callee might destroy it.
+  if (descriptor->UseNativeStack() &&
+      !linkage()->GetIncomingDescriptor()->UseNativeStack()) {
+    flags |= CallDescriptor::kRestoreJSSP;
+  }
+
 
   // Select the appropriate opcode based on the call type.
   InstructionCode opcode = kArchNop;

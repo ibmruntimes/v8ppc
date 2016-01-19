@@ -15,7 +15,7 @@ namespace v8 {
 namespace internal {
 
 // Forward declarations.
-class ExecutableAccessorInfo;
+class AccessorInfo;
 
 // The list of accessor descriptors. This is a second-order macro
 // taking a macro to be applied to all accessor descriptor names.
@@ -100,10 +100,6 @@ class Accessors : public AllStatic {
       AccessorNameGetterCallback getter,
       AccessorNameSetterCallback setter,
       PropertyAttributes attributes);
-
-  static Handle<ExecutableAccessorInfo> CloneAccessor(
-      Isolate* isolate,
-      Handle<ExecutableAccessorInfo> accessor);
 };
 
 }  // namespace internal

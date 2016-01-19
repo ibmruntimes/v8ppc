@@ -6069,9 +6069,7 @@ void HOptimizedGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
 
   for (int i = 0; i < length; i++) {
     Expression* subexpr = subexprs->at(i);
-    if (subexpr->IsSpread()) {
-      return Bailout(kSpread);
-    }
+    DCHECK(!subexpr->IsSpread());
 
     // If the subexpression is a literal or a simple materialized literal it
     // is already set in the cloned array.
@@ -12737,18 +12735,6 @@ void HOptimizedGraphBuilder::GenerateMathSqrt(CallRuntime* call) {
   HValue* value = Pop();
   HInstruction* result = NewUncasted<HUnaryMathOperation>(value, kMathSqrt);
   return ast_context()->ReturnInstruction(result, call->id());
-}
-
-
-void HOptimizedGraphBuilder::GenerateHasInPrototypeChain(CallRuntime* call) {
-  DCHECK_EQ(2, call->arguments()->length());
-  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
-  CHECK_ALIVE(VisitForValue(call->arguments()->at(1)));
-  HValue* prototype = Pop();
-  HValue* object = Pop();
-  HHasInPrototypeChainAndBranch* result =
-      New<HHasInPrototypeChainAndBranch>(object, prototype);
-  return ast_context()->ReturnControl(result, call->id());
 }
 
 

@@ -761,8 +761,7 @@ static bool CompileUnoptimizedCode(CompilationInfo* info) {
 // TODO(rmcilroy): Remove this temporary work-around when ignition supports
 // catch and eval.
 static bool IgnitionShouldFallbackToFullCodeGen(Scope* scope) {
-  if (scope->is_eval_scope() || scope->is_catch_scope() ||
-      scope->calls_eval()) {
+  if (scope->is_catch_scope()) {
     return true;
   }
   for (auto inner_scope : *scope->inner_scopes()) {
@@ -779,7 +778,7 @@ static bool UseIgnition(CompilationInfo* info) {
   }
 
   // Checks whether the scope chain is supported.
-  if (FLAG_ignition_fallback_on_eval_and_catch &&
+  if (FLAG_ignition_fallback_on_catch &&
       IgnitionShouldFallbackToFullCodeGen(info->scope())) {
     return false;
   }
@@ -1056,9 +1055,8 @@ MaybeHandle<Code> Compiler::GetLazyCode(Handle<JSFunction> function) {
 
   if (FLAG_always_opt) {
     Handle<Code> opt_code;
-    if (Compiler::GetOptimizedCode(
-            function, result,
-            Compiler::NOT_CONCURRENT).ToHandle(&opt_code)) {
+    if (Compiler::GetOptimizedCode(function, Compiler::NOT_CONCURRENT)
+            .ToHandle(&opt_code)) {
       result = opt_code;
     }
   }
@@ -1692,7 +1690,6 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfo(
 
 
 MaybeHandle<Code> Compiler::GetOptimizedCode(Handle<JSFunction> function,
-                                             Handle<Code> current_code,
                                              ConcurrencyMode mode,
                                              BailoutId osr_ast_id,
                                              JavaScriptFrame* osr_frame) {
@@ -1716,6 +1713,7 @@ MaybeHandle<Code> Compiler::GetOptimizedCode(Handle<JSFunction> function,
 
   DCHECK(AllowCompilation::IsAllowed(isolate));
 
+  Handle<Code> current_code(shared->code());
   if (!shared->is_compiled() ||
       shared->scope_info() == ScopeInfo::Empty(isolate)) {
     // The function was never compiled. Compile it unoptimized first.

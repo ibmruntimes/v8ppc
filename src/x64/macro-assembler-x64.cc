@@ -589,9 +589,9 @@ void MacroAssembler::Abort(BailoutReason reason) {
     // We don't actually want to generate a pile of code for this, so just
     // claim there is a stack frame, without generating one.
     FrameScope scope(this, StackFrame::NONE);
-    CallRuntime(Runtime::kAbort, 1);
+    CallRuntime(Runtime::kAbort);
   } else {
-    CallRuntime(Runtime::kAbort, 1);
+    CallRuntime(Runtime::kAbort);
   }
   // Control will not return here.
   int3();
@@ -823,6 +823,30 @@ void MacroAssembler::Cvtlsi2sd(XMMRegister dst, const Operand& src) {
 }
 
 
+void MacroAssembler::Cvtlsi2ss(XMMRegister dst, Register src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vxorps(dst, dst, dst);
+    vcvtlsi2ss(dst, dst, src);
+  } else {
+    xorps(dst, dst);
+    cvtlsi2ss(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvtlsi2ss(XMMRegister dst, const Operand& src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vxorps(dst, dst, dst);
+    vcvtlsi2ss(dst, dst, src);
+  } else {
+    xorps(dst, dst);
+    cvtlsi2ss(dst, src);
+  }
+}
+
+
 void MacroAssembler::Cvtqsi2ss(XMMRegister dst, Register src) {
   if (CpuFeatures::IsSupported(AVX)) {
     CpuFeatureScope scope(this, AVX);
@@ -914,6 +938,26 @@ void MacroAssembler::Cvtsd2si(Register dst, XMMRegister src) {
     vcvtsd2si(dst, src);
   } else {
     cvtsd2si(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvttss2si(Register dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vcvttss2si(dst, src);
+  } else {
+    cvttss2si(dst, src);
+  }
+}
+
+
+void MacroAssembler::Cvttss2si(Register dst, const Operand& src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vcvttss2si(dst, src);
+  } else {
+    cvttss2si(dst, src);
   }
 }
 
@@ -4168,7 +4212,7 @@ void MacroAssembler::FloodFunctionIfStepping(Register fun, Register new_target,
     }
     Push(fun);
     Push(fun);
-    CallRuntime(Runtime::kDebugPrepareStepInIfStepping, 1);
+    CallRuntime(Runtime::kDebugPrepareStepInIfStepping);
     Pop(fun);
     if (new_target.is_valid()) {
       Pop(new_target);

@@ -655,6 +655,13 @@ void InstructionSelector::VisitChangeFloat32ToFloat64(Node* node) {
 }
 
 
+void InstructionSelector::VisitRoundInt32ToFloat32(Node* node) {
+  X87OperandGenerator g(this);
+  Emit(kX87Int32ToFloat32, g.DefineAsFixed(node, stX_0),
+       g.Use(node->InputAt(0)));
+}
+
+
 void InstructionSelector::VisitChangeInt32ToFloat64(Node* node) {
   X87OperandGenerator g(this);
   Emit(kX87Int32ToFloat64, g.DefineAsFixed(node, stX_0),
@@ -666,6 +673,12 @@ void InstructionSelector::VisitChangeUint32ToFloat64(Node* node) {
   X87OperandGenerator g(this);
   Emit(kX87Uint32ToFloat64, g.DefineAsFixed(node, stX_0),
        g.UseRegister(node->InputAt(0)));
+}
+
+
+void InstructionSelector::VisitTruncateFloat32ToInt32(Node* node) {
+  X87OperandGenerator g(this);
+  Emit(kX87Float32ToInt32, g.DefineAsRegister(node), g.Use(node->InputAt(0)));
 }
 
 

@@ -27,7 +27,7 @@ Handle<AccessorInfo> Accessors::MakeAccessor(
     AccessorNameSetterCallback setter,
     PropertyAttributes attributes) {
   Factory* factory = isolate->factory();
-  Handle<ExecutableAccessorInfo> info = factory->NewExecutableAccessorInfo();
+  Handle<AccessorInfo> info = factory->NewAccessorInfo();
   info->set_property_attributes(attributes);
   info->set_all_can_read(false);
   info->set_all_can_write(false);
@@ -37,21 +37,6 @@ Handle<AccessorInfo> Accessors::MakeAccessor(
   Handle<Object> set = v8::FromCData(isolate, setter);
   info->set_getter(*get);
   info->set_setter(*set);
-  return info;
-}
-
-
-Handle<ExecutableAccessorInfo> Accessors::CloneAccessor(
-    Isolate* isolate,
-    Handle<ExecutableAccessorInfo> accessor) {
-  Factory* factory = isolate->factory();
-  Handle<ExecutableAccessorInfo> info = factory->NewExecutableAccessorInfo();
-  info->set_name(accessor->name());
-  info->set_flag(accessor->flag());
-  info->set_expected_receiver_type(accessor->expected_receiver_type());
-  info->set_getter(accessor->getter());
-  info->set_setter(accessor->setter());
-  info->set_data(accessor->data());
   return info;
 }
 
@@ -1386,9 +1371,8 @@ Handle<AccessorInfo> Accessors::FunctionCallerInfo(
 // Accessors::MakeModuleExport
 //
 
-static void ModuleGetExport(
-    v8::Local<v8::String> property,
-    const v8::PropertyCallbackInfo<v8::Value>& info) {
+static void ModuleGetExport(v8::Local<v8::Name> property,
+                            const v8::PropertyCallbackInfo<v8::Value>& info) {
   JSModule* instance = JSModule::cast(*v8::Utils::OpenHandle(*info.Holder()));
   Context* context = Context::cast(instance->context());
   DCHECK(context->IsModuleContext());
@@ -1397,7 +1381,7 @@ static void ModuleGetExport(
                  ->Int32Value(info.GetIsolate()->GetCurrentContext())
                  .FromMaybe(-1);
   if (slot < 0 || slot >= context->length()) {
-    Handle<String> name = v8::Utils::OpenHandle(*property);
+    Handle<Name> name = v8::Utils::OpenHandle(*property);
 
     Handle<Object> exception = isolate->factory()->NewReferenceError(
         MessageTemplate::kNotDefined, name);
@@ -1406,7 +1390,7 @@ static void ModuleGetExport(
   }
   Object* value = context->get(slot);
   if (value->IsTheHole()) {
-    Handle<String> name = v8::Utils::OpenHandle(*property);
+    Handle<Name> name = v8::Utils::OpenHandle(*property);
 
     Handle<Object> exception = isolate->factory()->NewReferenceError(
         MessageTemplate::kNotDefined, name);
@@ -1417,33 +1401,14 @@ static void ModuleGetExport(
 }
 
 
-static void ModuleSetExport(
-    v8::Local<v8::String> property,
-    v8::Local<v8::Value> value,
-    const v8::PropertyCallbackInfo<v8::Value>& info) {
-  JSModule* instance = JSModule::cast(*v8::Utils::OpenHandle(*info.Holder()));
-  Context* context = Context::cast(instance->context());
-  DCHECK(context->IsModuleContext());
-  Isolate* isolate = instance->GetIsolate();
-  int slot = info.Data()
-                 ->Int32Value(info.GetIsolate()->GetCurrentContext())
-                 .FromMaybe(-1);
-  if (slot < 0 || slot >= context->length()) {
-    Handle<String> name = v8::Utils::OpenHandle(*property);
-    Handle<Object> exception = isolate->factory()->NewReferenceError(
-        MessageTemplate::kNotDefined, name);
-    isolate->ScheduleThrow(*exception);
-    return;
-  }
-  Object* old_value = context->get(slot);
-  if (old_value->IsTheHole()) {
-    Handle<String> name = v8::Utils::OpenHandle(*property);
-    Handle<Object> exception = isolate->factory()->NewReferenceError(
-        MessageTemplate::kNotDefined, name);
-    isolate->ScheduleThrow(*exception);
-    return;
-  }
-  context->set(slot, *v8::Utils::OpenHandle(*value));
+static void ModuleSetExport(v8::Local<v8::Name> property,
+                            v8::Local<v8::Value> value,
+                            const v8::PropertyCallbackInfo<void>& info) {
+  Handle<Name> name = v8::Utils::OpenHandle(*property);
+  Isolate* isolate = name->GetIsolate();
+  Handle<Object> exception =
+      isolate->factory()->NewTypeError(MessageTemplate::kNotDefined, name);
+  isolate->ScheduleThrow(*exception);
 }
 
 
@@ -1452,17 +1417,9 @@ Handle<AccessorInfo> Accessors::MakeModuleExport(
     int index,
     PropertyAttributes attributes) {
   Isolate* isolate = name->GetIsolate();
-  Factory* factory = isolate->factory();
-  Handle<ExecutableAccessorInfo> info = factory->NewExecutableAccessorInfo();
-  info->set_property_attributes(attributes);
-  info->set_all_can_read(true);
-  info->set_all_can_write(true);
-  info->set_name(*name);
+  Handle<AccessorInfo> info = MakeAccessor(isolate, name, &ModuleGetExport,
+                                           &ModuleSetExport, attributes);
   info->set_data(Smi::FromInt(index));
-  Handle<Object> getter = v8::FromCData(isolate, &ModuleGetExport);
-  Handle<Object> setter = v8::FromCData(isolate, &ModuleSetExport);
-  info->set_getter(*getter);
-  if (!(attributes & ReadOnly)) info->set_setter(*setter);
   return info;
 }
 
