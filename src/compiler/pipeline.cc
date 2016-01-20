@@ -664,6 +664,8 @@ struct EscapeAnalysisPhase {
     JSGraphReducer graph_reducer(data->jsgraph(), temp_zone);
     EscapeAnalysisReducer escape_reducer(&graph_reducer, data->jsgraph(),
                                          &escape_analysis, temp_zone);
+    escape_reducer.SetExistsVirtualAllocate(
+        escape_analysis.ExistsVirtualAllocate());
     AddReducer(data, &graph_reducer, &escape_reducer);
     graph_reducer.ReduceGraph();
   }
@@ -1205,10 +1207,9 @@ Handle<Code> Pipeline::GenerateCode() {
 Handle<Code> Pipeline::GenerateCodeForCodeStub(Isolate* isolate,
                                                CallDescriptor* call_descriptor,
                                                Graph* graph, Schedule* schedule,
-                                               Code::Kind kind,
+                                               Code::Flags flags,
                                                const char* debug_name) {
-  CompilationInfo info(debug_name, isolate, graph->zone());
-  info.set_output_code_kind(kind);
+  CompilationInfo info(debug_name, isolate, graph->zone(), flags);
 
   // Construct a pipeline for scheduling and code generation.
   ZonePool zone_pool;

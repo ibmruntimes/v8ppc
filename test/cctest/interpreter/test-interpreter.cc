@@ -65,7 +65,6 @@ class InterpreterTester {
         bytecode_(bytecode),
         feedback_vector_(feedback_vector) {
     i::FLAG_ignition = true;
-    i::FLAG_ignition_fake_try_catch = true;
     i::FLAG_ignition_fallback_on_catch = false;
     i::FLAG_always_opt = false;
     // Set ignition filter flag via SetFlagsFromString to avoid double-free
@@ -358,117 +357,6 @@ TEST(InterpreterLoadStoreRegisters) {
     auto callable = tester.GetCallable<>();
     Handle<Object> return_val = callable().ToHandleChecked();
     CHECK(return_val.is_identical_to(true_value));
-  }
-}
-
-
-TEST(InterpreterExchangeRegisters) {
-  for (int locals_count = 2; locals_count < 300; locals_count += 126) {
-    HandleAndZoneScope handles;
-    for (int exchanges = 1; exchanges < 4; exchanges++) {
-      BytecodeArrayBuilder builder(handles.main_isolate(), handles.main_zone());
-      builder.set_locals_count(locals_count);
-      builder.set_context_count(0);
-      builder.set_parameter_count(0);
-
-      Register r0(0);
-      Register r1(locals_count - 1);
-      builder.LoadTrue();
-      builder.StoreAccumulatorInRegister(r0);
-      builder.ExchangeRegisters(r0, r1);
-      builder.LoadFalse();
-      builder.StoreAccumulatorInRegister(r0);
-
-      bool expected = false;
-      for (int i = 0; i < exchanges; i++) {
-        builder.ExchangeRegisters(r0, r1);
-        expected = !expected;
-      }
-      builder.LoadAccumulatorWithRegister(r0);
-      builder.Return();
-      Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
-      InterpreterTester tester(handles.main_isolate(), bytecode_array);
-      auto callable = tester.GetCallable<>();
-      Handle<Object> return_val = callable().ToHandleChecked();
-      Handle<Object> expected_val =
-          handles.main_isolate()->factory()->ToBoolean(expected);
-      CHECK(return_val.is_identical_to(expected_val));
-    }
-  }
-}
-
-
-TEST(InterpreterExchangeRegistersWithParameter) {
-  for (int locals_count = 2; locals_count < 300; locals_count += 126) {
-    HandleAndZoneScope handles;
-    for (int exchanges = 1; exchanges < 4; exchanges++) {
-      BytecodeArrayBuilder builder(handles.main_isolate(), handles.main_zone());
-      builder.set_locals_count(locals_count);
-      builder.set_context_count(0);
-      builder.set_parameter_count(3);
-
-      Register r0 = Register::FromParameterIndex(2, 3);
-      Register r1(locals_count - 1);
-      builder.LoadTrue();
-      builder.StoreAccumulatorInRegister(r0);
-      builder.ExchangeRegisters(r0, r1);
-      builder.LoadFalse();
-      builder.StoreAccumulatorInRegister(r0);
-
-      bool expected = false;
-      for (int i = 0; i < exchanges; i++) {
-        builder.ExchangeRegisters(r0, r1);
-        expected = !expected;
-      }
-      builder.LoadAccumulatorWithRegister(r0);
-      builder.Return();
-      Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
-      InterpreterTester tester(handles.main_isolate(), bytecode_array);
-      auto callable = tester.GetCallable<>();
-      Handle<Object> return_val = callable().ToHandleChecked();
-      Handle<Object> expected_val =
-          handles.main_isolate()->factory()->ToBoolean(expected);
-      CHECK(return_val.is_identical_to(expected_val));
-    }
-  }
-}
-
-
-TEST(InterpreterExchangeWideRegisters) {
-  for (int locals_count = 3; locals_count < 300; locals_count += 126) {
-    HandleAndZoneScope handles;
-    for (int exchanges = 0; exchanges < 7; exchanges++) {
-      BytecodeArrayBuilder builder(handles.main_isolate(), handles.main_zone());
-      builder.set_locals_count(locals_count);
-      builder.set_context_count(0);
-      builder.set_parameter_count(0);
-
-      Register r0(0);
-      Register r1(locals_count - 1);
-      Register r2(locals_count - 2);
-      builder.LoadLiteral(Smi::FromInt(200));
-      builder.StoreAccumulatorInRegister(r0);
-      builder.ExchangeRegisters(r0, r1);
-      builder.LoadLiteral(Smi::FromInt(100));
-      builder.StoreAccumulatorInRegister(r0);
-      builder.ExchangeRegisters(r0, r2);
-      builder.LoadLiteral(Smi::FromInt(0));
-      builder.StoreAccumulatorInRegister(r0);
-      for (int i = 0; i < exchanges; i++) {
-        builder.ExchangeRegisters(r1, r2);
-        builder.ExchangeRegisters(r0, r1);
-      }
-      builder.LoadAccumulatorWithRegister(r0);
-      builder.Return();
-      Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
-      InterpreterTester tester(handles.main_isolate(), bytecode_array);
-      auto callable = tester.GetCallable<>();
-      Handle<Object> return_val = callable().ToHandleChecked();
-      Handle<Object> expected_val =
-          handles.main_isolate()->factory()->NewNumberFromInt(100 *
-                                                              (exchanges % 3));
-      CHECK(return_val.is_identical_to(expected_val));
-    }
   }
 }
 
@@ -2133,15 +2021,25 @@ TEST(InterpreterLogicalAnd) {
 
 TEST(InterpreterTryCatch) {
   HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
 
-  // TODO(rmcilroy): modify tests when we have real try catch support.
-  std::string source(InterpreterTester::SourceForBody(
-      "var a = 1; try { a = a + 1; } catch(e) { a = a + 2; }; return a;"));
-  InterpreterTester tester(handles.main_isolate(), source.c_str());
-  auto callable = tester.GetCallable<>();
+  std::pair<const char*, Handle<Object>> catches[] = {
+      std::make_pair("var a = 1; try { a = 2 } catch(e) { a = 3 }; return a;",
+                     handle(Smi::FromInt(2), isolate)),
+      std::make_pair("var a; try { undef.x } catch(e) { a = 2 }; return a;",
+                     handle(Smi::FromInt(2), isolate)),
+      std::make_pair("var a; try { throw 1 } catch(e) { a = e + 2 }; return a;",
+                     handle(Smi::FromInt(3), isolate)),
+  };
 
-  Handle<Object> return_val = callable().ToHandleChecked();
-  CHECK_EQ(Smi::cast(*return_val), Smi::FromInt(2));
+  for (size_t i = 0; i < arraysize(catches); i++) {
+    std::string source(InterpreterTester::SourceForBody(catches[i].first));
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*catches[i].second));
+  }
 }
 
 
@@ -2164,7 +2062,6 @@ TEST(InterpreterThrow) {
   i::Isolate* isolate = handles.main_isolate();
   i::Factory* factory = isolate->factory();
 
-  // TODO(rmcilroy): modify tests when we have real try catch support.
   std::pair<const char*, Handle<Object>> throws[] = {
       std::make_pair("throw undefined;\n",
                      factory->undefined_value()),

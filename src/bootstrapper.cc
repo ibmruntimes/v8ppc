@@ -1098,10 +1098,6 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     Handle<JSFunction> object_freeze = SimpleInstallFunction(
         object_function, "freeze", Builtins::kObjectFreeze, 1, false);
     native_context()->set_object_freeze(*object_freeze);
-    SimpleInstallFunction(object_function, "getOwnPropertyDescriptor",
-                          Builtins::kObjectGetOwnPropertyDescriptor, 2, false);
-    SimpleInstallFunction(object_function, "getOwnPropertyNames",
-                          Builtins::kObjectGetOwnPropertyNames, 1, false);
     SimpleInstallFunction(object_function, "getOwnPropertySymbols",
                           Builtins::kObjectGetOwnPropertySymbols, 1, false);
     Handle<JSFunction> object_is_extensible =
@@ -2731,6 +2727,89 @@ bool Genesis::InstallNatives(ContextType context_type) {
   }
 
   InstallBuiltinFunctionIds();
+
+  // Create a map for accessor property descriptors (a variant of JSObject
+  // that predefines four properties get, set, configurable and enumerable).
+  {
+    // AccessorPropertyDescriptor initial map.
+    Handle<Map> map =
+        factory()->NewMap(JS_OBJECT_TYPE, JSAccessorPropertyDescriptor::kSize);
+    // Create the descriptor array for the property descriptor object.
+    Map::EnsureDescriptorSlack(map, 4);
+
+    {  // get
+      DataDescriptor d(factory()->get_string(),
+                       JSAccessorPropertyDescriptor::kGetIndex, NONE,
+                       Representation::Tagged());
+      map->AppendDescriptor(&d);
+    }
+    {  // set
+      DataDescriptor d(factory()->set_string(),
+                       JSAccessorPropertyDescriptor::kSetIndex, NONE,
+                       Representation::Tagged());
+      map->AppendDescriptor(&d);
+    }
+    {  // enumerable
+      DataDescriptor d(factory()->enumerable_string(),
+                       JSAccessorPropertyDescriptor::kEnumerableIndex, NONE,
+                       Representation::Tagged());
+      map->AppendDescriptor(&d);
+    }
+    {  // configurable
+      DataDescriptor d(factory()->configurable_string(),
+                       JSAccessorPropertyDescriptor::kConfigurableIndex, NONE,
+                       Representation::Tagged());
+      map->AppendDescriptor(&d);
+    }
+
+    Map::SetPrototype(map, isolate()->initial_object_prototype());
+    map->SetInObjectProperties(4);
+    map->set_unused_property_fields(0);
+
+    native_context()->set_accessor_property_descriptor_map(*map);
+  }
+
+  // Create a map for data property descriptors (a variant of JSObject
+  // that predefines four properties value, writable, configurable and
+  // enumerable).
+  {
+    // DataPropertyDescriptor initial map.
+    Handle<Map> map =
+        factory()->NewMap(JS_OBJECT_TYPE, JSDataPropertyDescriptor::kSize);
+    // Create the descriptor array for the property descriptor object.
+    Map::EnsureDescriptorSlack(map, 4);
+
+    {  // value
+      DataDescriptor d(factory()->value_string(),
+                       JSDataPropertyDescriptor::kValueIndex, NONE,
+                       Representation::Tagged());
+      map->AppendDescriptor(&d);
+    }
+    {  // writable
+      DataDescriptor d(factory()->writable_string(),
+                       JSDataPropertyDescriptor::kWritableIndex, NONE,
+                       Representation::Tagged());
+      map->AppendDescriptor(&d);
+    }
+    {  // enumerable
+      DataDescriptor d(factory()->enumerable_string(),
+                       JSDataPropertyDescriptor::kEnumerableIndex, NONE,
+                       Representation::Tagged());
+      map->AppendDescriptor(&d);
+    }
+    {  // configurable
+      DataDescriptor d(factory()->configurable_string(),
+                       JSDataPropertyDescriptor::kConfigurableIndex, NONE,
+                       Representation::Tagged());
+      map->AppendDescriptor(&d);
+    }
+
+    Map::SetPrototype(map, isolate()->initial_object_prototype());
+    map->SetInObjectProperties(4);
+    map->set_unused_property_fields(0);
+
+    native_context()->set_data_property_descriptor_map(*map);
+  }
 
   // Create a constructor for RegExp results (a variant of Array that
   // predefines the two properties index and match).

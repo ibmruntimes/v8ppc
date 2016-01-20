@@ -409,7 +409,7 @@ void BytecodeGenerator::MakeBytecodeBody() {
 
   // Visit illegal re-declaration and bail out if it exists.
   if (scope()->HasIllegalRedeclaration()) {
-    Visit(scope()->GetIllegalRedeclaration());
+    VisitForEffect(scope()->GetIllegalRedeclaration());
     return;
   }
 
@@ -422,24 +422,24 @@ void BytecodeGenerator::MakeBytecodeBody() {
 
 
 void BytecodeGenerator::VisitBlock(Block* stmt) {
-  BlockBuilder block_builder(this->builder());
-  ControlScopeForBreakable execution_control(this, stmt, &block_builder);
-
-  if (stmt->scope() == NULL) {
-    // Visit statements in the same scope, no declarations.
-    VisitStatements(stmt->statements());
+  // Visit declarations and statements.
+  if (stmt->scope() != nullptr && stmt->scope()->NeedsContext()) {
+    VisitNewLocalBlockContext(stmt->scope());
+    ContextScope scope(this, stmt->scope());
+    VisitBlockDeclarationsAndStatements(stmt);
   } else {
-    // Visit declarations and statements in a block scope.
-    if (stmt->scope()->NeedsContext()) {
-      VisitNewLocalBlockContext(stmt->scope());
-      ContextScope scope(this, stmt->scope());
-      VisitDeclarations(stmt->scope()->declarations());
-      VisitStatements(stmt->statements());
-    } else {
-      VisitDeclarations(stmt->scope()->declarations());
-      VisitStatements(stmt->statements());
-    }
+    VisitBlockDeclarationsAndStatements(stmt);
   }
+}
+
+
+void BytecodeGenerator::VisitBlockDeclarationsAndStatements(Block* stmt) {
+  BlockBuilder block_builder(builder());
+  ControlScopeForBreakable execution_control(this, stmt, &block_builder);
+  if (stmt->scope() != nullptr) {
+    VisitDeclarations(stmt->scope()->declarations());
+  }
+  VisitStatements(stmt->statements());
   if (stmt->labels() != nullptr) block_builder.EndBlock();
 }
 
@@ -899,21 +899,53 @@ void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
 
 
 void BytecodeGenerator::VisitTryCatchStatement(TryCatchStatement* stmt) {
-  if (FLAG_ignition_fake_try_catch) {
-    Visit(stmt->try_block());
-    return;
-  }
-  UNIMPLEMENTED();
+  TryCatchBuilder try_control_builder(builder());
+
+  // Preserve the context in a dedicated register, so that it can be restored
+  // when the handler is entered by the stack-unwinding machinery.
+  // TODO(mstarzinger): Be smarter about register allocation.
+  Register context = register_allocator()->NewRegister();
+
+  // Evaluate the try-block inside a control scope. This simulates a handler
+  // that is intercepting 'throw' control commands.
+  try_control_builder.BeginTry(context);
+  // TODO(mstarzinger): Control scope is missing!
+  Visit(stmt->try_block());
+  try_control_builder.EndTry();
+
+  // Clear message object as we enter the catch block.
+  // TODO(mstarzinger): Implement this!
+
+  // Create a catch scope that binds the exception.
+  VisitNewLocalCatchContext(stmt->variable());
+
+  // Evaluate the catch-block.
+  VisitInScope(stmt->catch_block(), stmt->scope());
+  try_control_builder.EndCatch();
 }
 
 
 void BytecodeGenerator::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
-  if (FLAG_ignition_fake_try_catch) {
-    Visit(stmt->try_block());
-    Visit(stmt->finally_block());
-    return;
-  }
-  UNIMPLEMENTED();
+  TryFinallyBuilder try_control_builder(builder());
+
+  // Preserve the context in a dedicated register, so that it can be restored
+  // when the handler is entered by the stack-unwinding machinery.
+  // TODO(mstarzinger): Be smarter about register allocation.
+  Register context = register_allocator()->NewRegister();
+
+  // Evaluate the try-block inside a control scope. This simulates a handler
+  // that is intercepting all control commands.
+  try_control_builder.BeginTry(context);
+  // TODO(mstarzinger): Control scope is missing!
+  Visit(stmt->try_block());
+  try_control_builder.EndTry();
+
+  // Clear message object as we enter the finally block.
+  // TODO(mstarzinger): Implement this!
+
+  // Evaluate the finally-block.
+  Visit(stmt->finally_block());
+  try_control_builder.EndFinally();
 }
 
 
@@ -1477,6 +1509,11 @@ void BytecodeGenerator::VisitYield(Yield* expr) { UNIMPLEMENTED(); }
 void BytecodeGenerator::VisitThrow(Throw* expr) {
   VisitForAccumulatorValue(expr->exception());
   builder()->Throw();
+  // Throw statments are modeled as expression instead of statments. These are
+  // converted from assignment statements in Rewriter::ReWrite pass. An
+  // assignment statement expects a value in the accumulator. This is a hack to
+  // avoid DCHECK fails assert accumulator has been set.
+  execution_result()->SetResultInAccumulator();
 }
 
 
@@ -2081,6 +2118,27 @@ void BytecodeGenerator::VisitNewLocalBlockContext(Scope* scope) {
 }
 
 
+void BytecodeGenerator::VisitNewLocalCatchContext(Variable* variable) {
+  AccumulatorResultScope accumulator_execution_result(this);
+  DCHECK(variable->IsContextSlot());
+
+  // Allocate a new local block context.
+  register_allocator()->PrepareForConsecutiveAllocations(3);
+  Register name = register_allocator()->NextConsecutiveRegister();
+  Register exception = register_allocator()->NextConsecutiveRegister();
+  Register closure = register_allocator()->NextConsecutiveRegister();
+
+  builder()
+      ->StoreAccumulatorInRegister(exception)
+      .LoadLiteral(variable->name())
+      .StoreAccumulatorInRegister(name);
+  VisitFunctionClosureForContext();
+  builder()->StoreAccumulatorInRegister(closure).CallRuntime(
+      Runtime::kPushCatchContext, name, 3);
+  execution_result()->SetResultInAccumulator();
+}
+
+
 void BytecodeGenerator::VisitObjectLiteralAccessor(
     Register home_object, ObjectLiteralProperty* property, Register value_out) {
   // TODO(rmcilroy): Replace value_out with VisitForRegister();
@@ -2182,6 +2240,13 @@ Register BytecodeGenerator::VisitForRegisterValue(Expression* expr) {
   RegisterResultScope register_scope(this);
   Visit(expr);
   return register_scope.ResultRegister();
+}
+
+
+void BytecodeGenerator::VisitInScope(Statement* stmt, Scope* scope) {
+  ContextScope context_scope(this, scope);
+  DCHECK(scope->declarations()->is_empty());
+  Visit(stmt);
 }
 
 

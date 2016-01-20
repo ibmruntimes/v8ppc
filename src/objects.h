@@ -2284,9 +2284,6 @@ class JSObject: public JSReceiver {
   inline void SetInternalField(int index, Object* value);
   inline void SetInternalField(int index, Smi* value);
 
-  void CollectOwnPropertyNames(KeyAccumulator* keys,
-                               PropertyFilter filter = ALL_PROPERTIES);
-
   // Returns the number of properties on this object filtering out properties
   // with the specified attributes (ignoring interceptors).
   // TODO(jkummerow): Deprecated, only used by Object.observe.
@@ -2296,12 +2293,15 @@ class JSObject: public JSReceiver {
   // TODO(jkummerow): Deprecated, only used by Object.observe.
   int GetOwnElementKeys(FixedArray* storage, PropertyFilter filter);
 
+  void CollectOwnPropertyKeys(
+      KeyAccumulator* keys, PropertyFilter filter = ALL_PROPERTIES,
+      JSReceiver::KeyCollectionType type = JSReceiver::OWN_ONLY);
+
   static void CollectOwnElementKeys(Handle<JSObject> object,
                                     KeyAccumulator* keys,
                                     PropertyFilter filter);
-
-  static Handle<FixedArray> GetEnumPropertyKeys(Handle<JSObject> object,
-                                                bool cache_result);
+  static Handle<FixedArray> GetOwnEnumPropertyKeys(Handle<JSObject> object,
+                                                   bool cache_result);
 
   // Returns a new map with all transitions dropped from the object's current
   // map and the ElementsKind set.
@@ -2555,7 +2555,56 @@ class JSObject: public JSReceiver {
       Handle<JSObject> object, Handle<Object> value, bool from_javascript,
       ShouldThrow should_throw);
 
+  void CollectFastPropertyKeysTo(KeyAccumulator* keys, PropertyFilter filter,
+                                 JSReceiver::KeyCollectionType type);
+
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSObject);
+};
+
+
+// JSAccessorPropertyDescriptor is just a JSObject with a specific initial
+// map. This initial map adds in-object properties for "get", "set",
+// "enumerable" and "configurable" properties, as assigned by the
+// FromPropertyDescriptor function for regular accessor properties.
+class JSAccessorPropertyDescriptor: public JSObject {
+ public:
+  // Offsets of object fields.
+  static const int kGetOffset = JSObject::kHeaderSize;
+  static const int kSetOffset = kGetOffset + kPointerSize;
+  static const int kEnumerableOffset = kSetOffset + kPointerSize;
+  static const int kConfigurableOffset = kEnumerableOffset + kPointerSize;
+  static const int kSize = kConfigurableOffset + kPointerSize;
+  // Indices of in-object properties.
+  static const int kGetIndex = 0;
+  static const int kSetIndex = 1;
+  static const int kEnumerableIndex = 2;
+  static const int kConfigurableIndex = 3;
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(JSAccessorPropertyDescriptor);
+};
+
+
+// JSDataPropertyDescriptor is just a JSObject with a specific initial map.
+// This initial map adds in-object properties for "value", "writable",
+// "enumerable" and "configurable" properties, as assigned by the
+// FromPropertyDescriptor function for regular data properties.
+class JSDataPropertyDescriptor: public JSObject {
+ public:
+  // Offsets of object fields.
+  static const int kValueOffset = JSObject::kHeaderSize;
+  static const int kWritableOffset = kValueOffset + kPointerSize;
+  static const int kEnumerableOffset = kWritableOffset + kPointerSize;
+  static const int kConfigurableOffset = kEnumerableOffset + kPointerSize;
+  static const int kSize = kConfigurableOffset + kPointerSize;
+  // Indices of in-object properties.
+  static const int kValueIndex = 0;
+  static const int kWritableIndex = 1;
+  static const int kEnumerableIndex = 2;
+  static const int kConfigurableIndex = 3;
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(JSDataPropertyDescriptor);
 };
 
 
@@ -4376,6 +4425,10 @@ class BytecodeArray : public FixedArrayBase {
   // Accessors for handler table containing offsets of exception handlers.
   DECL_ACCESSORS(handler_table, FixedArray)
 
+  // Accessors for source position table containing mappings between byte code
+  // offset and source position.
+  DECL_ACCESSORS(source_position_table, FixedArray)
+
   DECLARE_CAST(BytecodeArray)
 
   // Dispatched behavior.
@@ -4391,7 +4444,9 @@ class BytecodeArray : public FixedArrayBase {
   static const int kParameterSizeOffset = kFrameSizeOffset + kIntSize;
   static const int kConstantPoolOffset = kParameterSizeOffset + kIntSize;
   static const int kHandlerTableOffset = kConstantPoolOffset + kPointerSize;
-  static const int kHeaderSize = kHandlerTableOffset + kPointerSize;
+  static const int kSourcePositionTableOffset =
+      kHandlerTableOffset + kPointerSize;
+  static const int kHeaderSize = kSourcePositionTableOffset + kPointerSize;
 
   static const int kAlignedSize = OBJECT_POINTER_ALIGN(kHeaderSize);
 
@@ -4650,7 +4705,7 @@ class DeoptimizationOutputData: public FixedArray {
 
   DECLARE_CAST(DeoptimizationOutputData)
 
-#if defined(OBJECT_PRINT) || defined(ENABLE_DISASSEMBLER)
+#ifdef ENABLE_DISASSEMBLER
   void DeoptimizationOutputDataPrint(std::ostream& os);  // NOLINT
 #endif
 };
@@ -4728,7 +4783,7 @@ class HandlerTable : public FixedArray {
 
   DECLARE_CAST(HandlerTable)
 
-#if defined(OBJECT_PRINT) || defined(ENABLE_DISASSEMBLER)
+#ifdef ENABLE_DISASSEMBLER
   void HandlerTableRangePrint(std::ostream& os);   // NOLINT
   void HandlerTableReturnPrint(std::ostream& os);  // NOLINT
 #endif
