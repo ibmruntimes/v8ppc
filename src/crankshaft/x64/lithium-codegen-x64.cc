@@ -1660,13 +1660,6 @@ void LCodeGen::DoConstantT(LConstantT* instr) {
 }
 
 
-void LCodeGen::DoMapEnumLength(LMapEnumLength* instr) {
-  Register result = ToRegister(instr->result());
-  Register map = ToRegister(instr->value());
-  __ EnumLength(result, map);
-}
-
-
 Operand LCodeGen::BuildSeqStringOperand(Register string,
                                         LOperand* index,
                                         String::Encoding encoding) {
@@ -5520,17 +5513,8 @@ void LCodeGen::DoOsrEntry(LOsrEntry* instr) {
 void LCodeGen::DoForInPrepareMap(LForInPrepareMap* instr) {
   DCHECK(ToRegister(instr->context()).is(rsi));
 
-  Condition cc = masm()->CheckSmi(rax);
-  DeoptimizeIf(cc, instr, Deoptimizer::kSmi);
-
-  STATIC_ASSERT(JS_PROXY_TYPE == FIRST_JS_RECEIVER_TYPE);
-  __ CmpObjectType(rax, JS_PROXY_TYPE, rcx);
-  DeoptimizeIf(below_equal, instr, Deoptimizer::kWrongInstanceType);
-
   Label use_cache, call_runtime;
-  Register null_value = rdi;
-  __ LoadRoot(null_value, Heap::kNullValueRootIndex);
-  __ CheckEnumCache(null_value, &call_runtime);
+  __ CheckEnumCache(&call_runtime);
 
   __ movp(rax, FieldOperand(rax, HeapObject::kMapOffset));
   __ jmp(&use_cache, Label::kNear);
@@ -5539,10 +5523,6 @@ void LCodeGen::DoForInPrepareMap(LForInPrepareMap* instr) {
   __ bind(&call_runtime);
   __ Push(rax);
   CallRuntime(Runtime::kGetPropertyNamesFast, instr);
-
-  __ CompareRoot(FieldOperand(rax, HeapObject::kMapOffset),
-                 Heap::kMetaMapRootIndex);
-  DeoptimizeIf(not_equal, instr, Deoptimizer::kWrongMap);
   __ bind(&use_cache);
 }
 

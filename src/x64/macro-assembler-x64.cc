@@ -690,18 +690,6 @@ void MacroAssembler::JumpToExternalReference(const ExternalReference& ext) {
 }
 
 
-void MacroAssembler::InvokeBuiltin(int native_context_index, InvokeFlag flag,
-                                   const CallWrapper& call_wrapper) {
-  // You can't call a builtin without a valid frame.
-  DCHECK(flag == JUMP_FUNCTION || has_frame());
-
-  // Fake a parameter count to avoid emitting code to do the check.
-  ParameterCount expected(0);
-  LoadNativeContextSlot(native_context_index, rdi);
-  InvokeFunctionCode(rdi, no_reg, expected, expected, flag, call_wrapper);
-}
-
-
 #define REG(Name) \
   { Register::kCode_##Name }
 
@@ -5407,7 +5395,7 @@ void MacroAssembler::JumpIfWhite(Register value, Register bitmap_scratch,
 }
 
 
-void MacroAssembler::CheckEnumCache(Register null_value, Label* call_runtime) {
+void MacroAssembler::CheckEnumCache(Label* call_runtime) {
   Label next, start;
   Register empty_fixed_array_value = r8;
   LoadRoot(empty_fixed_array_value, Heap::kEmptyFixedArrayRootIndex);
@@ -5448,9 +5436,10 @@ void MacroAssembler::CheckEnumCache(Register null_value, Label* call_runtime) {
 
   bind(&no_elements);
   movp(rcx, FieldOperand(rbx, Map::kPrototypeOffset));
-  cmpp(rcx, null_value);
+  CompareRoot(rcx, Heap::kNullValueRootIndex);
   j(not_equal, &next);
 }
+
 
 void MacroAssembler::TestJSArrayForAllocationMemento(
     Register receiver_reg,

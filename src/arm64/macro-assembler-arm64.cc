@@ -1488,18 +1488,15 @@ void MacroAssembler::LoadAccessor(Register dst, Register holder,
 }
 
 
-void MacroAssembler::CheckEnumCache(Register object,
-                                    Register null_value,
-                                    Register scratch0,
-                                    Register scratch1,
-                                    Register scratch2,
-                                    Register scratch3,
+void MacroAssembler::CheckEnumCache(Register object, Register scratch0,
+                                    Register scratch1, Register scratch2,
+                                    Register scratch3, Register scratch4,
                                     Label* call_runtime) {
-  DCHECK(!AreAliased(object, null_value, scratch0, scratch1, scratch2,
-                     scratch3));
+  DCHECK(!AreAliased(object, scratch0, scratch1, scratch2, scratch3, scratch4));
 
   Register empty_fixed_array_value = scratch0;
   Register current_object = scratch1;
+  Register null_value = scratch4;
 
   LoadRoot(empty_fixed_array_value, Heap::kEmptyFixedArrayRootIndex);
   Label next, start;
@@ -1516,6 +1513,7 @@ void MacroAssembler::CheckEnumCache(Register object,
   Cmp(enum_length, kInvalidEnumCacheSentinel);
   B(eq, call_runtime);
 
+  LoadRoot(null_value, Heap::kNullValueRootIndex);
   B(&start);
 
   Bind(&next);
@@ -1724,19 +1722,6 @@ void MacroAssembler::JumpToExternalReference(const ExternalReference& builtin) {
   Mov(x1, builtin);
   CEntryStub stub(isolate(), 1);
   Jump(stub.GetCode(), RelocInfo::CODE_TARGET);
-}
-
-
-void MacroAssembler::InvokeBuiltin(int native_context_index, InvokeFlag flag,
-                                   const CallWrapper& call_wrapper) {
-  ASM_LOCATION("MacroAssembler::InvokeBuiltin");
-  // You can't call a builtin without a valid frame.
-  DCHECK(flag == JUMP_FUNCTION || has_frame());
-
-  // Fake a parameter count to avoid emitting code to do the check.
-  ParameterCount expected(0);
-  LoadNativeContextSlot(native_context_index, x1);
-  InvokeFunctionCode(x1, no_reg, expected, expected, flag, call_wrapper);
 }
 
 

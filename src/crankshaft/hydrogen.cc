@@ -1275,6 +1275,14 @@ HValue* HGraphBuilder::BuildGetElementsKind(HValue* object) {
 }
 
 
+HValue* HGraphBuilder::BuildEnumLength(HValue* map) {
+  NoObservableSideEffectsScope scope(this);
+  HValue* bit_field3 =
+      Add<HLoadNamedField>(map, nullptr, HObjectAccess::ForMapBitField3());
+  return BuildDecodeField<Map::EnumLengthBits>(bit_field3);
+}
+
+
 HValue* HGraphBuilder::BuildCheckHeapObject(HValue* obj) {
   if (obj->type().IsHeapObject()) return obj;
   return Add<HCheckHeapObject>(obj);
@@ -5311,40 +5319,61 @@ void HOptimizedGraphBuilder::VisitForInStatement(ForInStatement* stmt) {
 void HOptimizedGraphBuilder::BuildForInBody(ForInStatement* stmt,
                                             Variable* each_var,
                                             HValue* enumerable) {
-  HInstruction* map;
-  HInstruction* array;
-  HInstruction* enum_length;
+  HValue* map;
+  HValue* array;
+  HValue* enum_length;
+  Handle<Map> meta_map = isolate()->factory()->meta_map();
   bool fast = stmt->for_in_type() == ForInStatement::FAST_FOR_IN;
+  BuildCheckHeapObject(enumerable);
+  Add<HCheckInstanceType>(enumerable, HCheckInstanceType::IS_JS_RECEIVER);
+  Add<HSimulate>(stmt->ToObjectId());
   if (fast) {
     map = Add<HForInPrepareMap>(enumerable);
-    Add<HSimulate>(stmt->PrepareId());
+    Push(map);
+    Add<HSimulate>(stmt->EnumId());
+    Drop(1);
+    Add<HCheckMaps>(map, meta_map);
 
     array = Add<HForInCacheArray>(enumerable, map,
                                   DescriptorArray::kEnumCacheBridgeCacheIndex);
-    enum_length = Add<HMapEnumLength>(map);
+    enum_length = BuildEnumLength(map);
 
     HInstruction* index_cache = Add<HForInCacheArray>(
         enumerable, map, DescriptorArray::kEnumCacheBridgeIndicesCacheIndex);
     HForInCacheArray::cast(array)
         ->set_index_cache(HForInCacheArray::cast(index_cache));
   } else {
-    Add<HSimulate>(stmt->PrepareId());
-    {
-      NoObservableSideEffectsScope no_effects(this);
-      BuildJSObjectCheck(enumerable, 0);
-    }
-    Add<HSimulate>(stmt->ToObjectId());
-
-    map = graph()->GetConstant1();
     Runtime::FunctionId function_id = Runtime::kGetPropertyNamesFast;
     Add<HPushArguments>(enumerable);
     array = Add<HCallRuntime>(Runtime::FunctionForId(function_id), 1);
     Push(array);
     Add<HSimulate>(stmt->EnumId());
     Drop(1);
-    Handle<Map> array_map = isolate()->factory()->fixed_array_map();
-    HValue* check = Add<HCheckMaps>(array, array_map);
-    enum_length = AddLoadFixedArrayLength(array, check);
+    {
+      NoObservableSideEffectsScope scope(this);
+      IfBuilder if_fast(this);
+      if_fast.If<HCompareMap>(array, meta_map);
+      if_fast.Then();
+      {
+        HValue* cache_map = array;
+        HForInCacheArray* cache = Add<HForInCacheArray>(
+            enumerable, cache_map, DescriptorArray::kEnumCacheBridgeCacheIndex);
+        enum_length = BuildEnumLength(cache_map);
+        Push(cache_map);
+        Push(cache);
+        Push(enum_length);
+      }
+      if_fast.Else();
+      {
+        Push(graph()->GetConstant1());
+        Push(array);
+        Push(AddLoadFixedArrayLength(array));
+      }
+      if_fast.End();
+      enum_length = Pop();
+      array = Pop();
+      map = Pop();
+    }
   }
 
   HInstruction* start_index = Add<HConstant>(0);

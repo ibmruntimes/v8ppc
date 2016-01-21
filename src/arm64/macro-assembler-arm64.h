@@ -1139,10 +1139,6 @@ class MacroAssembler : public Assembler {
                              int num_arguments);
 
 
-  // Invoke specified builtin JavaScript function.
-  void InvokeBuiltin(int native_context_index, InvokeFlag flag,
-                     const CallWrapper& call_wrapper = NullCallWrapper());
-
   void Jump(Register target);
   void Jump(Address target, RelocInfo::Mode rmode, Condition cond = al);
   void Jump(Handle<Code> code, RelocInfo::Mode rmode, Condition cond = al);
@@ -1587,12 +1583,8 @@ class MacroAssembler : public Assembler {
   void LeaveFrame(StackFrame::Type type);
 
   // Returns map with validated enum cache in object register.
-  void CheckEnumCache(Register object,
-                      Register null_value,
-                      Register scratch0,
-                      Register scratch1,
-                      Register scratch2,
-                      Register scratch3,
+  void CheckEnumCache(Register object, Register scratch0, Register scratch1,
+                      Register scratch2, Register scratch3, Register scratch4,
                       Label* call_runtime);
 
   // AllocationMemento support. Arrays may have an associated
