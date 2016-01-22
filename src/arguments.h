@@ -152,17 +152,19 @@ class PropertyCallbackArguments
   static const int kReturnValueDefaultValueIndex =
       T::kReturnValueDefaultValueIndex;
   static const int kIsolateIndex = T::kIsolateIndex;
+  static const int kShouldThrowOnErrorIndex = T::kShouldThrowOnErrorIndex;
 
-  PropertyCallbackArguments(Isolate* isolate,
-                            Object* data,
-                            Object* self,
-                            JSObject* holder)
+  PropertyCallbackArguments(Isolate* isolate, Object* data, Object* self,
+                            JSObject* holder, Object::ShouldThrow should_throw)
       : Super(isolate) {
     Object** values = this->begin();
     values[T::kThisIndex] = self;
     values[T::kHolderIndex] = holder;
     values[T::kDataIndex] = data;
     values[T::kIsolateIndex] = reinterpret_cast<Object*>(isolate);
+    values[T::kShouldThrowOnErrorIndex] =
+        Smi::FromInt(should_throw == Object::THROW_ON_ERROR ? 1 : 0);
+
     // Here the hole is set as default value.
     // It cannot escape into js as it's remove in Call below.
     values[T::kReturnValueDefaultValueIndex] =
@@ -272,14 +274,29 @@ double ClobberDoubleRegisters(double x1, double x2, double x3, double x4);
 #endif
 
 
-#define RUNTIME_FUNCTION_RETURNS_TYPE(Type, Name)                        \
-static INLINE(Type __RT_impl_##Name(Arguments args, Isolate* isolate));  \
-Type Name(int args_length, Object** args_object, Isolate* isolate) {     \
-  CLOBBER_DOUBLE_REGISTERS();                                            \
-  Arguments args(args_length, args_object);                              \
-  return __RT_impl_##Name(args, isolate);                                \
-}                                                                        \
-static Type __RT_impl_##Name(Arguments args, Isolate* isolate)
+#define RUNTIME_FUNCTION_RETURNS_TYPE(Type, Name)                             \
+  static INLINE(Type __RT_impl_##Name(Arguments args, Isolate* isolate));     \
+  Type Name(int args_length, Object** args_object, Isolate* isolate) {        \
+    CLOBBER_DOUBLE_REGISTERS();                                               \
+    RuntimeCallStats* stats = isolate->runtime_state()->runtime_call_stats(); \
+    stats->Count_##Name++;                                                    \
+    base::ElapsedTimer timer;                                                 \
+    bool timing = false;                                                      \
+    if (FLAG_runtime_call_stats && !stats->in_runtime_call) {                 \
+      stats->in_runtime_call = true;                                          \
+      timing = true;                                                          \
+      timer.Start();                                                          \
+    }                                                                         \
+    Arguments args(args_length, args_object);                                 \
+    Type value = __RT_impl_##Name(args, isolate);                             \
+    if (timing) {                                                             \
+      stats->in_runtime_call = false;                                         \
+      isolate->runtime_state()->runtime_call_stats()->Time_##Name +=          \
+          timer.Elapsed();                                                    \
+    }                                                                         \
+    return value;                                                             \
+  }                                                                           \
+  static Type __RT_impl_##Name(Arguments args, Isolate* isolate)
 
 
 #define RUNTIME_FUNCTION(Name) RUNTIME_FUNCTION_RETURNS_TYPE(Object*, Name)

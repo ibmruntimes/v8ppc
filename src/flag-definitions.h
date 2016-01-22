@@ -206,7 +206,8 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_simd, "harmony simd")                             \
   V(harmony_do_expressions, "harmony do-expressions")         \
   V(harmony_regexp_subclass, "harmony regexp subclassing")    \
-  V(harmony_species, "harmony Symbol.species")
+  V(harmony_species, "harmony Symbol.species")                \
+  V(harmony_object_values_entries, "harmony Object.values / Object.entries")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                                 \
@@ -391,8 +392,6 @@ DEFINE_BOOL(inline_arguments, true, "inline functions with arguments object")
 DEFINE_BOOL(inline_accessors, true, "inline JavaScript accessors")
 DEFINE_INT(escape_analysis_iterations, 2,
            "maximum number of escape analysis fix-point iterations")
-
-DEFINE_BOOL(optimize_for_in, true, "optimize functions containing for-in loops")
 
 DEFINE_BOOL(concurrent_recompilation, true,
             "optimizing hot functions asynchronously on a separate thread")
@@ -802,6 +801,9 @@ DEFINE_BOOL(randomize_hashes, true,
 DEFINE_INT(hash_seed, 0,
            "Fixed seed to use to hash property keys (0 means random)"
            "(with snapshots this option cannot override the baked-in seed)")
+
+// runtime.cc
+DEFINE_BOOL(runtime_call_stats, false, "report runtime call counts and times")
 
 // snapshot-common.cc
 DEFINE_BOOL(profile_deserialization, false,

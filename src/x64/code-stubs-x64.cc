@@ -3075,6 +3075,42 @@ void ToStringStub::Generate(MacroAssembler* masm) {
 }
 
 
+void ToNameStub::Generate(MacroAssembler* masm) {
+  // The ToName stub takes one argument in rax.
+  Label is_number;
+  __ JumpIfSmi(rax, &is_number, Label::kNear);
+
+  Label not_name;
+  STATIC_ASSERT(FIRST_NAME_TYPE == FIRST_TYPE);
+  __ CmpObjectType(rax, LAST_NAME_TYPE, rdi);
+  // rax: receiver
+  // rdi: receiver map
+  __ j(above, &not_name, Label::kNear);
+  __ Ret();
+  __ bind(&not_name);
+
+  Label not_heap_number;
+  __ CompareRoot(rdi, Heap::kHeapNumberMapRootIndex);
+  __ j(not_equal, &not_heap_number, Label::kNear);
+  __ bind(&is_number);
+  NumberToStringStub stub(isolate());
+  __ TailCallStub(&stub);
+  __ bind(&not_heap_number);
+
+  Label not_oddball;
+  __ CmpInstanceType(rdi, ODDBALL_TYPE);
+  __ j(not_equal, &not_oddball, Label::kNear);
+  __ movp(rax, FieldOperand(rax, Oddball::kToStringOffset));
+  __ Ret();
+  __ bind(&not_oddball);
+
+  __ PopReturnAddressTo(rcx);     // Pop return address.
+  __ Push(rax);                   // Push argument.
+  __ PushReturnAddressFrom(rcx);  // Push return address.
+  __ TailCallRuntime(Runtime::kToName);
+}
+
+
 void StringHelper::GenerateFlatOneByteStringEquals(MacroAssembler* masm,
                                                    Register left,
                                                    Register right,
@@ -5368,11 +5404,11 @@ void CallApiAccessorStub::Generate(MacroAssembler* masm) {
 
 void CallApiGetterStub::Generate(MacroAssembler* masm) {
   // ----------- S t a t e -------------
-  //  -- rsp[0]                  : return address
-  //  -- rsp[8]                  : name
-  //  -- rsp[16 - kArgsLength*8] : PropertyCallbackArguments object
+  //  -- rsp[0]                          : return address
+  //  -- rsp[8]                          : name
+  //  -- rsp[16 .. (16 + kArgsLength*8)] : v8::PropertyCallbackInfo::args_
   //  -- ...
-  //  -- r8                    : api_function_address
+  //  -- r8                              : api_function_address
   // -----------------------------------
 
 #if defined(__MINGW64__) || defined(_WIN64)
@@ -5388,23 +5424,25 @@ void CallApiGetterStub::Generate(MacroAssembler* masm) {
   DCHECK(api_function_address.is(r8));
   Register scratch = rax;
 
-  // v8::Arguments::values_ and handler for name.
-  const int kStackSpace = PropertyCallbackArguments::kArgsLength + 1;
+  // v8::PropertyCallbackInfo::args_ array and name handle.
+  const int kStackUnwindSpace = PropertyCallbackArguments::kArgsLength + 1;
 
-  // Allocate v8::AccessorInfo in non-GCed stack space.
+  // Allocate v8::PropertyCallbackInfo in non-GCed stack space.
   const int kArgStackSpace = 1;
 
-  __ leap(name_arg, Operand(rsp, kPCOnStackSize));
+  // Load address of v8::PropertyAccessorInfo::args_ array.
+  __ leap(scratch, Operand(rsp, 2 * kPointerSize));
 
   PrepareCallApiFunction(masm, kArgStackSpace);
-  __ leap(scratch, Operand(name_arg, 1 * kPointerSize));
+  // Create v8::PropertyCallbackInfo object on the stack and initialize
+  // it's args_ field.
+  Operand info_object = StackSpaceOperand(0);
+  __ movp(info_object, scratch);
 
-  // v8::PropertyAccessorInfo::args_.
-  __ movp(StackSpaceOperand(0), scratch);
-
+  __ leap(name_arg, Operand(scratch, -kPointerSize));
   // The context register (rsi) has been saved in PrepareCallApiFunction and
   // could be used to pass arguments.
-  __ leap(accessor_info_arg, StackSpaceOperand(0));
+  __ leap(accessor_info_arg, info_object);
 
   ExternalReference thunk_ref =
       ExternalReference::invoke_accessor_getter_callback(isolate());
@@ -5414,13 +5452,12 @@ void CallApiGetterStub::Generate(MacroAssembler* masm) {
   DCHECK(!api_function_address.is(accessor_info_arg) &&
          !api_function_address.is(name_arg));
 
-  // The name handler is counted as an argument.
-  StackArgumentsAccessor args(rbp, PropertyCallbackArguments::kArgsLength);
-  Operand return_value_operand = args.GetArgumentOperand(
-      PropertyCallbackArguments::kArgsLength - 1 -
-      PropertyCallbackArguments::kReturnValueOffset);
+  // +3 is to skip prolog, return address and name handle.
+  Operand return_value_operand(
+      rbp, (PropertyCallbackArguments::kReturnValueOffset + 3) * kPointerSize);
   CallApiFunctionAndReturn(masm, api_function_address, thunk_ref, getter_arg,
-                           kStackSpace, nullptr, return_value_operand, NULL);
+                           kStackUnwindSpace, nullptr, return_value_operand,
+                           NULL);
 }
 
 

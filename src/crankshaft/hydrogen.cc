@@ -5290,10 +5290,6 @@ void HOptimizedGraphBuilder::VisitForInStatement(ForInStatement* stmt) {
   DCHECK(current_block() != NULL);
   DCHECK(current_block()->HasPredecessor());
 
-  if (!FLAG_optimize_for_in) {
-    return Bailout(kForInStatementOptimizationIsDisabled);
-  }
-
   if (!stmt->each()->IsVariableProxy() ||
       !stmt->each()->AsVariableProxy()->var()->IsStackLocal()) {
     return Bailout(kForInStatementWithNonLocalEachVariable);
@@ -5448,7 +5444,10 @@ void HOptimizedGraphBuilder::BuildForInBody(ForInStatement* stmt,
     set_current_block(body_exit);
 
     HValue* current_index = Pop();
-    Push(AddUncasted<HAdd>(current_index, graph()->GetConstant1()));
+    HValue* increment =
+        AddUncasted<HAdd>(current_index, graph()->GetConstant1());
+    increment->ClearFlag(HValue::kCanOverflow);
+    Push(increment);
     body_exit = current_block();
   }
 
@@ -12291,6 +12290,30 @@ void HOptimizedGraphBuilder::GenerateToInteger(CallRuntime* call) {
 }
 
 
+void HOptimizedGraphBuilder::GenerateToName(CallRuntime* call) {
+  DCHECK_EQ(1, call->arguments()->length());
+  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
+  HValue* input = Pop();
+  if (input->type().IsSmi()) {
+    HValue* result = BuildNumberToString(input, Type::SignedSmall(zone()));
+    return ast_context()->ReturnValue(result);
+  } else if (input->type().IsTaggedNumber()) {
+    HValue* result = BuildNumberToString(input, Type::Number(zone()));
+    return ast_context()->ReturnValue(result);
+  } else if (input->type().IsString()) {
+    return ast_context()->ReturnValue(input);
+  } else {
+    Callable callable = CodeFactory::ToName(isolate());
+    HValue* stub = Add<HConstant>(callable.code());
+    HValue* values[] = {context(), input};
+    HInstruction* result =
+        New<HCallWithDescriptor>(stub, 0, callable.descriptor(),
+                                 Vector<HValue*>(values, arraysize(values)));
+    return ast_context()->ReturnInstruction(result, call->id());
+  }
+}
+
+
 void HOptimizedGraphBuilder::GenerateToObject(CallRuntime* call) {
   DCHECK_EQ(1, call->arguments()->length());
   CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
@@ -12303,11 +12326,11 @@ void HOptimizedGraphBuilder::GenerateToObject(CallRuntime* call) {
 void HOptimizedGraphBuilder::GenerateToString(CallRuntime* call) {
   DCHECK_EQ(1, call->arguments()->length());
   CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
-  Callable callable = CodeFactory::ToString(isolate());
   HValue* input = Pop();
   if (input->type().IsString()) {
     return ast_context()->ReturnValue(input);
   } else {
+    Callable callable = CodeFactory::ToString(isolate());
     HValue* stub = Add<HConstant>(callable.code());
     HValue* values[] = {context(), input};
     HInstruction* result =
