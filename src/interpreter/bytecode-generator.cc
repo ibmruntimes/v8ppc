@@ -209,8 +209,7 @@ class BytecodeGenerator::ControlScopeForTopLevel final
         generator()->builder()->Return();
         return true;
       case CMD_RETHROW:
-        // TODO(mstarzinger): Should be a ReThrow instead.
-        generator()->builder()->Throw();
+        generator()->builder()->ReThrow();
         return true;
     }
     return false;
@@ -291,7 +290,7 @@ class BytecodeGenerator::ControlScopeForTryCatch final
  public:
   ControlScopeForTryCatch(BytecodeGenerator* generator,
                           TryCatchBuilder* try_catch_builder)
-      : ControlScope(generator), try_catch_builder_(try_catch_builder) {}
+      : ControlScope(generator) {}
 
  protected:
   bool Execute(Command command, Statement* statement) override {
@@ -301,16 +300,11 @@ class BytecodeGenerator::ControlScopeForTryCatch final
       case CMD_RETURN:
         break;
       case CMD_RETHROW:
-        // TODO(mstarzinger): Test and implement this!
-        USE(try_catch_builder_);
-        UNIMPLEMENTED();
+        generator()->builder()->ReThrow();
         return true;
     }
     return false;
   }
-
- private:
-  TryCatchBuilder* try_catch_builder_;
 };
 
 
@@ -1082,7 +1076,21 @@ void BytecodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
 
 void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
-  UNIMPLEMENTED();
+  LoopBuilder loop_builder(builder());
+  ControlScopeForIteration control_scope(this, stmt, &loop_builder);
+
+  VisitForEffect(stmt->assign_iterator());
+
+  loop_builder.LoopHeader();
+  loop_builder.Next();
+  VisitForEffect(stmt->next_result());
+  VisitForAccumulatorValue(stmt->result_done());
+  loop_builder.BreakIfTrue();
+
+  VisitForEffect(stmt->assign_each());
+  Visit(stmt->body());
+  loop_builder.JumpToHeader();
+  loop_builder.EndLoop();
 }
 
 
