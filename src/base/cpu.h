@@ -50,9 +50,6 @@ class CPU final {
   int variant() const { return variant_; }
   static const int NVIDIA_DENVER = 0x0;
   int part() const { return part_; }
-#ifdef V8_PPC_CACHE_LINE_SIZE_OPT
-  int cache_line_size() const { return cache_line_size_; }
-#endif
 
   // ARM-specific part codes
   static const int ARM_CORTEX_A5 = 0xc05;
@@ -78,6 +75,9 @@ class CPU final {
 
   // General features
   bool has_fpu() const { return has_fpu_; }
+  int icache_line_size() const { return icache_line_size_; }
+  int dcache_line_size() const { return dcache_line_size_; }
+  static const int UNKNOWN_CACHE_LINE_SIZE = 0;
 
   // x86 features
   bool has_cmov() const { return has_cmov_; }
@@ -121,9 +121,8 @@ class CPU final {
   int architecture_;
   int variant_;
   int part_;
-#ifdef V8_PPC_CACHE_LINE_SIZE_OPT
-  int cache_line_size_;
-#endif
+  int icache_line_size_;
+  int dcache_line_size_;
   bool has_fpu_;
   bool has_cmov_;
   bool has_sahf_;

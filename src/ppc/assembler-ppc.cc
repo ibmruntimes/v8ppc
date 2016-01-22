@@ -55,7 +55,7 @@ static unsigned CpuFeaturesImpliedByCompiler() {
 
 void CpuFeatures::ProbeImpl(bool cross_compile) {
   supported_ |= CpuFeaturesImpliedByCompiler();
-  cache_line_size_ = 128;
+  icache_line_size_ = 128;
 
   // Only use statically determined features for cross compile (snapshot).
   if (cross_compile) return;
@@ -85,11 +85,9 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
     // Assume support
     supported_ |= (1u << FPU);
   }
-#ifdef V8_PPC_CACHE_LINE_SIZE_OPT
-  if (cpu.cache_line_size() != 0) {
-    cache_line_size_ = cpu.cache_line_size();
+  if (cpu.icache_line_size() != base::CPU::UNKNOWN_CACHE_LINE_SIZE) {
+    icache_line_size_ = cpu.icache_line_size();
   }
-#endif
 #elif V8_OS_AIX
   // Assume support FP support and default cache line size
   supported_ |= (1u << FPU);
