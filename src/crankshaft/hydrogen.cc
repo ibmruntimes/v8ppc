@@ -5315,69 +5315,62 @@ void HOptimizedGraphBuilder::VisitForInStatement(ForInStatement* stmt) {
 void HOptimizedGraphBuilder::BuildForInBody(ForInStatement* stmt,
                                             Variable* each_var,
                                             HValue* enumerable) {
-  HValue* map;
-  HValue* array;
-  HValue* enum_length;
   Handle<Map> meta_map = isolate()->factory()->meta_map();
   bool fast = stmt->for_in_type() == ForInStatement::FAST_FOR_IN;
   BuildCheckHeapObject(enumerable);
   Add<HCheckInstanceType>(enumerable, HCheckInstanceType::IS_JS_RECEIVER);
   Add<HSimulate>(stmt->ToObjectId());
   if (fast) {
-    map = Add<HForInPrepareMap>(enumerable);
+    HForInPrepareMap* map = Add<HForInPrepareMap>(enumerable);
     Push(map);
     Add<HSimulate>(stmt->EnumId());
     Drop(1);
     Add<HCheckMaps>(map, meta_map);
 
-    array = Add<HForInCacheArray>(enumerable, map,
-                                  DescriptorArray::kEnumCacheBridgeCacheIndex);
-    enum_length = BuildEnumLength(map);
+    HForInCacheArray* array = Add<HForInCacheArray>(
+        enumerable, map, DescriptorArray::kEnumCacheBridgeCacheIndex);
+    HValue* enum_length = BuildEnumLength(map);
 
-    HInstruction* index_cache = Add<HForInCacheArray>(
+    HForInCacheArray* index_cache = Add<HForInCacheArray>(
         enumerable, map, DescriptorArray::kEnumCacheBridgeIndicesCacheIndex);
-    HForInCacheArray::cast(array)
-        ->set_index_cache(HForInCacheArray::cast(index_cache));
+    array->set_index_cache(index_cache);
+
+    Push(map);
+    Push(array);
+    Push(enum_length);
+    Add<HSimulate>(stmt->PrepareId());
   } else {
-    Runtime::FunctionId function_id = Runtime::kGetPropertyNamesFast;
+    Runtime::FunctionId function_id = Runtime::kForInEnumerate;
     Add<HPushArguments>(enumerable);
-    array = Add<HCallRuntime>(Runtime::FunctionForId(function_id), 1);
+    HCallRuntime* array =
+        Add<HCallRuntime>(Runtime::FunctionForId(function_id), 1);
     Push(array);
     Add<HSimulate>(stmt->EnumId());
     Drop(1);
+
+    IfBuilder if_fast(this);
+    if_fast.If<HCompareMap>(array, meta_map);
+    if_fast.Then();
     {
-      NoObservableSideEffectsScope scope(this);
-      IfBuilder if_fast(this);
-      if_fast.If<HCompareMap>(array, meta_map);
-      if_fast.Then();
-      {
-        HValue* cache_map = array;
-        HForInCacheArray* cache = Add<HForInCacheArray>(
-            enumerable, cache_map, DescriptorArray::kEnumCacheBridgeCacheIndex);
-        enum_length = BuildEnumLength(cache_map);
-        Push(cache_map);
-        Push(cache);
-        Push(enum_length);
-      }
-      if_fast.Else();
-      {
-        Push(graph()->GetConstant1());
-        Push(array);
-        Push(AddLoadFixedArrayLength(array));
-      }
-      if_fast.End();
-      enum_length = Pop();
-      array = Pop();
-      map = Pop();
+      HValue* cache_map = array;
+      HForInCacheArray* cache = Add<HForInCacheArray>(
+          enumerable, cache_map, DescriptorArray::kEnumCacheBridgeCacheIndex);
+      HValue* enum_length = BuildEnumLength(cache_map);
+      Push(cache_map);
+      Push(cache);
+      Push(enum_length);
+      Add<HSimulate>(stmt->PrepareId(), FIXED_SIMULATE);
+    }
+    if_fast.Else();
+    {
+      Push(graph()->GetConstant1());
+      Push(array);
+      Push(AddLoadFixedArrayLength(array));
+      Add<HSimulate>(stmt->PrepareId(), FIXED_SIMULATE);
     }
   }
 
-  HInstruction* start_index = Add<HConstant>(0);
-
-  Push(map);
-  Push(array);
-  Push(enum_length);
-  Push(start_index);
+  Push(graph()->GetConstant0());
 
   HBasicBlock* loop_entry = BuildLoopEntry(stmt);
 
@@ -6367,14 +6360,14 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::LoadFieldMaps(
   field_type_ = HType::Tagged();
 
   // Figure out the field type from the accessor map.
-  Handle<HeapType> field_type = GetFieldTypeFromMap(map);
+  Handle<FieldType> field_type = GetFieldTypeFromMap(map);
 
   // Collect the (stable) maps from the field type.
-  int num_field_maps = field_type->NumClasses();
+  int num_field_maps = field_type->ClassCount();
   if (num_field_maps > 0) {
     DCHECK(access_.representation().IsHeapObject());
     field_maps_.Reserve(num_field_maps, zone());
-    HeapType::Iterator<Map> it = field_type->Classes();
+    FieldType::Iterator it = field_type->Classes();
     while (!it.Done()) {
       Handle<Map> field_map = it.Current();
       if (!field_map->is_stable()) {
@@ -6388,14 +6381,14 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::LoadFieldMaps(
 
   if (field_maps_.is_empty()) {
     // Store is not safe if the field map was cleared.
-    return IsLoad() || !field_type->Is(HeapType::None());
+    return IsLoad() || !field_type->IsNone();
   }
 
   field_maps_.Sort();
   DCHECK_EQ(num_field_maps, field_maps_.length());
 
-  // Determine field HType from field HeapType.
-  field_type_ = HType::FromType<HeapType>(field_type);
+  // Determine field HType from field type.
+  field_type_ = HType::FromFieldType(field_type, zone());
   DCHECK(field_type_.IsHeapObject());
 
   // Add dependency on the map that introduced the field.
@@ -6602,7 +6595,8 @@ HValue* HOptimizedGraphBuilder::BuildMonomorphicAccess(
       HValue* function = Add<HConstant>(info->accessor());
       PushArgumentsFromEnvironment(argument_count);
       return New<HCallFunction>(function, argument_count,
-                                ConvertReceiverMode::kNotNullOrUndefined);
+                                ConvertReceiverMode::kNotNullOrUndefined,
+                                TailCallMode::kDisallow);
     } else if (FLAG_inline_accessors && can_inline_accessor) {
       bool success = info->IsLoad()
           ? TryInlineGetter(info->accessor(), info->map(), ast_id, return_id)
@@ -8177,7 +8171,8 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(Call* expr,
       HInstruction* call =
           needs_wrapping ? NewUncasted<HCallFunction>(
                                function, argument_count,
-                               ConvertReceiverMode::kNotNullOrUndefined)
+                               ConvertReceiverMode::kNotNullOrUndefined,
+                               expr->tail_call_mode())
                          : BuildCallConstantFunction(target, argument_count);
       PushArgumentsFromEnvironment(argument_count);
       AddInstruction(call);
@@ -8208,7 +8203,8 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(Call* expr,
     CHECK_ALIVE(VisitExpressions(expr->arguments()));
 
     HInstruction* call = New<HCallFunction>(
-        function, argument_count, ConvertReceiverMode::kNotNullOrUndefined);
+        function, argument_count, ConvertReceiverMode::kNotNullOrUndefined,
+        expr->tail_call_mode());
 
     PushArgumentsFromEnvironment(argument_count);
 
@@ -9735,7 +9731,8 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
         // TODO(verwaest): Support creation of value wrappers directly in
         // HWrapReceiver.
         call = New<HCallFunction>(function, argument_count,
-                                  ConvertReceiverMode::kNotNullOrUndefined);
+                                  ConvertReceiverMode::kNotNullOrUndefined,
+                                  expr->tail_call_mode());
       } else if (TryInlineCall(expr)) {
         return;
       } else {
@@ -9759,7 +9756,8 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
 
       CHECK_ALIVE(VisitExpressions(expr->arguments(), arguments_flag));
       call = New<HCallFunction>(function, argument_count,
-                                ConvertReceiverMode::kNotNullOrUndefined);
+                                ConvertReceiverMode::kNotNullOrUndefined,
+                                expr->tail_call_mode());
     }
     PushArgumentsFromEnvironment(argument_count);
 
@@ -9810,7 +9808,8 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
     } else {
       PushArgumentsFromEnvironment(argument_count);
       HCallFunction* call_function = New<HCallFunction>(
-          function, argument_count, ConvertReceiverMode::kNullOrUndefined);
+          function, argument_count, ConvertReceiverMode::kNullOrUndefined,
+          expr->tail_call_mode());
       call = call_function;
       if (expr->is_uninitialized() &&
           expr->IsUsingCallFeedbackICSlot(isolate())) {

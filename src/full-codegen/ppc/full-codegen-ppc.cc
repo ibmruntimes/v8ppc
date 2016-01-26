@@ -1037,7 +1037,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // Get the set of properties to enumerate.
   __ bind(&call_runtime);
   __ push(r3);  // Duplicate the enumerable object on the stack.
-  __ CallRuntime(Runtime::kGetPropertyNamesFast);
+  __ CallRuntime(Runtime::kForInEnumerate);
   PrepareForBailoutForId(stmt->EnumId(), TOS_REG);
 
   // If we got a map from the runtime call, we can do a fast
@@ -1084,8 +1084,10 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ LoadSmiLiteral(r4, Smi::FromInt(1));  // Smi(1) indicates slow check
   __ Push(r4, r3);  // Smi and array
   __ LoadP(r4, FieldMemOperand(r3, FixedArray::kLengthOffset));
+  __ Push(r4);  // Fixed array length (as smi).
+  PrepareForBailoutForId(stmt->PrepareId(), NO_REGISTERS);
   __ LoadSmiLiteral(r3, Smi::FromInt(0));
-  __ Push(r4, r3);  // Fixed array length (as smi) and initial index.
+  __ Push(r3);  // Initial index.
 
   // Generate code for doing the condition check.
   __ bind(&loop);

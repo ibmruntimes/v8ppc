@@ -1080,7 +1080,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // Get the set of properties to enumerate.
   __ bind(&call_runtime);
   __ push(r0);  // Duplicate the enumerable object on the stack.
-  __ CallRuntime(Runtime::kGetPropertyNamesFast);
+  __ CallRuntime(Runtime::kForInEnumerate);
   PrepareForBailoutForId(stmt->EnumId(), TOS_REG);
 
   // If we got a map from the runtime call, we can do a fast
@@ -1125,8 +1125,10 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ mov(r1, Operand(Smi::FromInt(1)));  // Smi(1) indicates slow check
   __ Push(r1, r0);  // Smi and array
   __ ldr(r1, FieldMemOperand(r0, FixedArray::kLengthOffset));
+  __ Push(r1);  // Fixed array length (as smi).
+  PrepareForBailoutForId(stmt->PrepareId(), NO_REGISTERS);
   __ mov(r0, Operand(Smi::FromInt(0)));
-  __ Push(r1, r0);  // Fixed array length (as smi) and initial index.
+  __ Push(r0);  // Initial index.
 
   // Generate code for doing the condition check.
   __ bind(&loop);
@@ -2867,7 +2869,9 @@ void FullCodeGenerator::EmitCall(Call* expr, ConvertReceiverMode mode) {
 
   PrepareForBailoutForId(expr->CallId(), NO_REGISTERS);
   SetCallPosition(expr);
-  Handle<Code> ic = CodeFactory::CallIC(isolate(), arg_count, mode).code();
+  Handle<Code> ic =
+      CodeFactory::CallIC(isolate(), arg_count, mode, expr->tail_call_mode())
+          .code();
   __ mov(r3, Operand(SmiFromSlot(expr->CallFeedbackICSlot())));
   __ ldr(r1, MemOperand(sp, (arg_count + 1) * kPointerSize));
   // Don't assign a type feedback id to the IC, since type feedback is provided

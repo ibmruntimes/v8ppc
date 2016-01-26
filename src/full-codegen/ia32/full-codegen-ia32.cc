@@ -1013,7 +1013,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // Get the set of properties to enumerate.
   __ bind(&call_runtime);
   __ push(eax);
-  __ CallRuntime(Runtime::kGetPropertyNamesFast);
+  __ CallRuntime(Runtime::kForInEnumerate);
   PrepareForBailoutForId(stmt->EnumId(), TOS_REG);
   __ cmp(FieldOperand(eax, HeapObject::kMapOffset),
          isolate()->factory()->meta_map());
@@ -1055,6 +1055,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ push(eax);  // Array
   __ mov(eax, FieldOperand(eax, FixedArray::kLengthOffset));
   __ push(eax);  // Fixed array length (as smi).
+  PrepareForBailoutForId(stmt->PrepareId(), NO_REGISTERS);
   __ push(Immediate(Smi::FromInt(0)));  // Initial index.
 
   // Generate code for doing the condition check.
@@ -2751,7 +2752,9 @@ void FullCodeGenerator::EmitCall(Call* expr, ConvertReceiverMode mode) {
 
   PrepareForBailoutForId(expr->CallId(), NO_REGISTERS);
   SetCallPosition(expr);
-  Handle<Code> ic = CodeFactory::CallIC(isolate(), arg_count, mode).code();
+  Handle<Code> ic =
+      CodeFactory::CallIC(isolate(), arg_count, mode, expr->tail_call_mode())
+          .code();
   __ Move(edx, Immediate(SmiFromSlot(expr->CallFeedbackICSlot())));
   __ mov(edi, Operand(esp, (arg_count + 1) * kPointerSize));
   // Don't assign a type feedback id to the IC, since type feedback is provided

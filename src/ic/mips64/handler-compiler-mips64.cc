@@ -383,8 +383,7 @@ void NamedStoreHandlerCompiler::GenerateConstantCheck(Register map_reg,
   __ Branch(miss_label, ne, value_reg, Operand(scratch));
 }
 
-
-void NamedStoreHandlerCompiler::GenerateFieldTypeChecks(HeapType* field_type,
+void NamedStoreHandlerCompiler::GenerateFieldTypeChecks(FieldType* field_type,
                                                         Register value_reg,
                                                         Label* miss_label) {
   Register map_reg = scratch1();
@@ -392,7 +391,7 @@ void NamedStoreHandlerCompiler::GenerateFieldTypeChecks(HeapType* field_type,
   DCHECK(!value_reg.is(map_reg));
   DCHECK(!value_reg.is(scratch));
   __ JumpIfSmi(value_reg, miss_label);
-  HeapType::Iterator<Map> it = field_type->Classes();
+  FieldType::Iterator it = field_type->Classes();
   if (!it.Done()) {
     __ ld(map_reg, FieldMemOperand(value_reg, HeapObject::kMapOffset));
     Label do_store;
@@ -602,7 +601,7 @@ void NamedLoadHandlerCompiler::GenerateLoadCallback(
   // Here and below +1 is for name() pushed after the args_ array.
   typedef PropertyCallbackArguments PCA;
   __ Dsubu(sp, sp, (PCA::kArgsLength + 1) * kPointerSize);
-  __ sw(receiver(), MemOperand(sp, (PCA::kThisIndex + 1) * kPointerSize));
+  __ sd(receiver(), MemOperand(sp, (PCA::kThisIndex + 1) * kPointerSize));
   Handle<Object> data(callback->data(), isolate());
   if (data->IsUndefined() || data->IsSmi()) {
     __ li(scratch2(), data);

@@ -740,28 +740,9 @@ static bool CompileUnoptimizedCode(CompilationInfo* info) {
 }
 
 
-// TODO(rmcilroy): Remove this temporary work-around when ignition supports
-// catch and eval.
-static bool IgnitionShouldFallbackToFullCodeGen(Scope* scope) {
-  if (scope->is_catch_scope()) {
-    return true;
-  }
-  for (auto inner_scope : *scope->inner_scopes()) {
-    if (IgnitionShouldFallbackToFullCodeGen(inner_scope)) return true;
-  }
-  return false;
-}
-
-
 static bool UseIgnition(CompilationInfo* info) {
   // Cannot use Ignition when the {function_data} is already used.
   if (info->has_shared_info() && info->shared_info()->HasBuiltinFunctionId()) {
-    return false;
-  }
-
-  // Checks whether the scope chain is supported.
-  if (FLAG_ignition_fallback_on_catch &&
-      IgnitionShouldFallbackToFullCodeGen(info->scope())) {
     return false;
   }
 
@@ -1670,6 +1651,37 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfo(
   return existing;
 }
 
+Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForNative(
+    v8::Extension* extension, Handle<String> name) {
+  Isolate* isolate = name->GetIsolate();
+  v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate);
+
+  // Compute the function template for the native function.
+  v8::Local<v8::FunctionTemplate> fun_template =
+      extension->GetNativeFunctionTemplate(v8_isolate,
+                                           v8::Utils::ToLocal(name));
+  DCHECK(!fun_template.IsEmpty());
+
+  // Instantiate the function and create a shared function info from it.
+  Handle<JSFunction> fun = Handle<JSFunction>::cast(Utils::OpenHandle(
+      *fun_template->GetFunction(v8_isolate->GetCurrentContext())
+           .ToLocalChecked()));
+  const int literals = fun->NumberOfLiterals();
+  Handle<Code> code = Handle<Code>(fun->shared()->code());
+  Handle<Code> construct_stub = Handle<Code>(fun->shared()->construct_stub());
+  Handle<SharedFunctionInfo> shared = isolate->factory()->NewSharedFunctionInfo(
+      name, literals, FunctionKind::kNormalFunction, code,
+      Handle<ScopeInfo>(fun->shared()->scope_info()),
+      Handle<TypeFeedbackVector>(fun->shared()->feedback_vector()));
+  shared->set_construct_stub(*construct_stub);
+
+  // Copy the function data to the shared function info.
+  shared->set_function_data(fun->shared()->function_data());
+  int parameters = fun->shared()->internal_formal_parameter_count();
+  shared->set_internal_formal_parameter_count(parameters);
+
+  return shared;
+}
 
 MaybeHandle<Code> Compiler::GetOptimizedCode(Handle<JSFunction> function,
                                              ConcurrencyMode mode,

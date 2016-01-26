@@ -155,8 +155,8 @@ Node* BytecodeGraphBuilder::Environment::LookupAccumulator() const {
 
 Node* BytecodeGraphBuilder::Environment::LookupRegister(
     interpreter::Register the_register) const {
-  if (the_register.is_function_context()) {
-    return builder()->GetFunctionContext();
+  if (the_register.is_current_context()) {
+    return Context();
   } else if (the_register.is_function_closure()) {
     return builder()->GetFunctionClosure();
   } else if (the_register.is_new_target()) {
@@ -1034,9 +1034,10 @@ void BytecodeGraphBuilder::VisitKeyedStoreICStrictWide(
 
 void BytecodeGraphBuilder::VisitPushContext(
     const interpreter::BytecodeArrayIterator& iterator) {
-  Node* context = environment()->LookupAccumulator();
-  environment()->BindRegister(iterator.GetRegisterOperand(0), context);
-  environment()->SetContext(context);
+  Node* new_context = environment()->LookupAccumulator();
+  environment()->BindRegister(iterator.GetRegisterOperand(0),
+                              environment()->Context());
+  environment()->SetContext(new_context);
 }
 
 
@@ -1196,6 +1197,7 @@ void BytecodeGraphBuilder::BuildCall(
   size_t arg_count = iterator.GetCountOperand(2);
   VectorSlotPair feedback = CreateVectorSlotPair(iterator.GetIndexOperand(3));
 
+  // TODO(ishell): provide correct tail_call_mode value to CallFunction.
   const Operator* call = javascript()->CallFunction(
       arg_count + 2, language_mode(), feedback, receiver_hint);
   Node* value = ProcessCallArguments(call, callee, receiver, arg_count + 2);
@@ -1359,11 +1361,9 @@ void BytecodeGraphBuilder::VisitThrow(
     const interpreter::BytecodeArrayIterator& iterator) {
   FrameStateBeforeAndAfter states(this, iterator);
   Node* value = environment()->LookupAccumulator();
-  // TODO(mythria): Change to Runtime::kThrow when we have deoptimization
-  // information support in the interpreter.
-  NewNode(javascript()->CallRuntime(Runtime::kReThrow), value);
+  Node* call = NewNode(javascript()->CallRuntime(Runtime::kThrow), value);
+  environment()->RecordAfterState(call, &states);
   Node* control = NewNode(common()->Throw(), value);
-  environment()->RecordAfterState(control, &states);
   UpdateControlDependencyToLeaveFunction(control);
 }
 
@@ -1372,9 +1372,9 @@ void BytecodeGraphBuilder::VisitReThrow(
     const interpreter::BytecodeArrayIterator& iterator) {
   FrameStateBeforeAndAfter states(this, iterator);
   Node* value = environment()->LookupAccumulator();
-  NewNode(javascript()->CallRuntime(Runtime::kReThrow), value);
+  Node* call = NewNode(javascript()->CallRuntime(Runtime::kReThrow), value);
+  environment()->RecordAfterState(call, &states);
   Node* control = NewNode(common()->Throw(), value);
-  environment()->RecordAfterState(control, &states);
   UpdateControlDependencyToLeaveFunction(control);
 }
 

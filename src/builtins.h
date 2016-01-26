@@ -159,11 +159,22 @@ inline bool operator&(BuiltinExtraArguments lhs, BuiltinExtraArguments rhs) {
   V(CallFunction_ReceiverIsNotNullOrUndefined, BUILTIN, UNINITIALIZED,         \
     kNoExtraICState)                                                           \
   V(CallFunction_ReceiverIsAny, BUILTIN, UNINITIALIZED, kNoExtraICState)       \
+  V(TailCallFunction_ReceiverIsNullOrUndefined, BUILTIN, UNINITIALIZED,        \
+    kNoExtraICState)                                                           \
+  V(TailCallFunction_ReceiverIsNotNullOrUndefined, BUILTIN, UNINITIALIZED,     \
+    kNoExtraICState)                                                           \
+  V(TailCallFunction_ReceiverIsAny, BUILTIN, UNINITIALIZED, kNoExtraICState)   \
   V(CallBoundFunction, BUILTIN, UNINITIALIZED, kNoExtraICState)                \
+  V(TailCallBoundFunction, BUILTIN, UNINITIALIZED, kNoExtraICState)            \
   V(Call_ReceiverIsNullOrUndefined, BUILTIN, UNINITIALIZED, kNoExtraICState)   \
   V(Call_ReceiverIsNotNullOrUndefined, BUILTIN, UNINITIALIZED,                 \
     kNoExtraICState)                                                           \
   V(Call_ReceiverIsAny, BUILTIN, UNINITIALIZED, kNoExtraICState)               \
+  V(TailCall_ReceiverIsNullOrUndefined, BUILTIN, UNINITIALIZED,                \
+    kNoExtraICState)                                                           \
+  V(TailCall_ReceiverIsNotNullOrUndefined, BUILTIN, UNINITIALIZED,             \
+    kNoExtraICState)                                                           \
+  V(TailCall_ReceiverIsAny, BUILTIN, UNINITIALIZED, kNoExtraICState)           \
                                                                                \
   V(ConstructFunction, BUILTIN, UNINITIALIZED, kNoExtraICState)                \
   V(ConstructBoundFunction, BUILTIN, UNINITIALIZED, kNoExtraICState)           \
@@ -198,7 +209,7 @@ inline bool operator&(BuiltinExtraArguments lhs, BuiltinExtraArguments rhs) {
   V(InterpreterNotifyDeoptimized, BUILTIN, UNINITIALIZED, kNoExtraICState)     \
   V(InterpreterNotifySoftDeoptimized, BUILTIN, UNINITIALIZED, kNoExtraICState) \
   V(InterpreterNotifyLazyDeoptimized, BUILTIN, UNINITIALIZED, kNoExtraICState) \
-  V(InterpreterEnterExceptionHandler, BUILTIN, UNINITIALIZED, kNoExtraICState) \
+  V(InterpreterEnterBytecodeDispatch, BUILTIN, UNINITIALIZED, kNoExtraICState) \
                                                                                \
   V(LoadIC_Miss, BUILTIN, UNINITIALIZED, kNoExtraICState)                      \
   V(KeyedLoadIC_Miss, BUILTIN, UNINITIALIZED, kNoExtraICState)                 \
@@ -339,8 +350,12 @@ class Builtins {
 #undef DECLARE_BUILTIN_ACCESSOR_A
 
   // Convenience wrappers.
-  Handle<Code> CallFunction(ConvertReceiverMode = ConvertReceiverMode::kAny);
-  Handle<Code> Call(ConvertReceiverMode = ConvertReceiverMode::kAny);
+  Handle<Code> CallFunction(
+      ConvertReceiverMode = ConvertReceiverMode::kAny,
+      TailCallMode tail_call_mode = TailCallMode::kDisallow);
+  Handle<Code> Call(ConvertReceiverMode = ConvertReceiverMode::kAny,
+                    TailCallMode tail_call_mode = TailCallMode::kDisallow);
+  Handle<Code> CallBoundFunction(TailCallMode tail_call_mode);
 
   Code* builtin(Name name) {
     // Code::cast cannot be used here since we access builtins
@@ -405,30 +420,71 @@ class Builtins {
 
   // ES6 section 9.2.1 [[Call]] ( thisArgument, argumentsList)
   static void Generate_CallFunction(MacroAssembler* masm,
-                                    ConvertReceiverMode mode);
+                                    ConvertReceiverMode mode,
+                                    TailCallMode tail_call_mode);
   static void Generate_CallFunction_ReceiverIsNullOrUndefined(
       MacroAssembler* masm) {
-    Generate_CallFunction(masm, ConvertReceiverMode::kNullOrUndefined);
+    Generate_CallFunction(masm, ConvertReceiverMode::kNullOrUndefined,
+                          TailCallMode::kDisallow);
   }
   static void Generate_CallFunction_ReceiverIsNotNullOrUndefined(
       MacroAssembler* masm) {
-    Generate_CallFunction(masm, ConvertReceiverMode::kNotNullOrUndefined);
+    Generate_CallFunction(masm, ConvertReceiverMode::kNotNullOrUndefined,
+                          TailCallMode::kDisallow);
   }
   static void Generate_CallFunction_ReceiverIsAny(MacroAssembler* masm) {
-    Generate_CallFunction(masm, ConvertReceiverMode::kAny);
+    Generate_CallFunction(masm, ConvertReceiverMode::kAny,
+                          TailCallMode::kDisallow);
+  }
+  static void Generate_TailCallFunction_ReceiverIsNullOrUndefined(
+      MacroAssembler* masm) {
+    Generate_CallFunction(masm, ConvertReceiverMode::kNullOrUndefined,
+                          TailCallMode::kAllow);
+  }
+  static void Generate_TailCallFunction_ReceiverIsNotNullOrUndefined(
+      MacroAssembler* masm) {
+    Generate_CallFunction(masm, ConvertReceiverMode::kNotNullOrUndefined,
+                          TailCallMode::kAllow);
+  }
+  static void Generate_TailCallFunction_ReceiverIsAny(MacroAssembler* masm) {
+    Generate_CallFunction(masm, ConvertReceiverMode::kAny,
+                          TailCallMode::kAllow);
   }
   // ES6 section 9.4.1.1 [[Call]] ( thisArgument, argumentsList)
-  static void Generate_CallBoundFunction(MacroAssembler* masm);
+  static void Generate_CallBoundFunctionImpl(MacroAssembler* masm,
+                                             TailCallMode tail_call_mode);
+  static void Generate_CallBoundFunction(MacroAssembler* masm) {
+    Generate_CallBoundFunctionImpl(masm, TailCallMode::kDisallow);
+  }
+  static void Generate_TailCallBoundFunction(MacroAssembler* masm) {
+    Generate_CallBoundFunctionImpl(masm, TailCallMode::kAllow);
+  }
   // ES6 section 7.3.12 Call(F, V, [argumentsList])
-  static void Generate_Call(MacroAssembler* masm, ConvertReceiverMode mode);
+  static void Generate_Call(MacroAssembler* masm, ConvertReceiverMode mode,
+                            TailCallMode tail_call_mode);
   static void Generate_Call_ReceiverIsNullOrUndefined(MacroAssembler* masm) {
-    Generate_Call(masm, ConvertReceiverMode::kNullOrUndefined);
+    Generate_Call(masm, ConvertReceiverMode::kNullOrUndefined,
+                  TailCallMode::kDisallow);
   }
   static void Generate_Call_ReceiverIsNotNullOrUndefined(MacroAssembler* masm) {
-    Generate_Call(masm, ConvertReceiverMode::kNotNullOrUndefined);
+    Generate_Call(masm, ConvertReceiverMode::kNotNullOrUndefined,
+                  TailCallMode::kDisallow);
   }
   static void Generate_Call_ReceiverIsAny(MacroAssembler* masm) {
-    Generate_Call(masm, ConvertReceiverMode::kAny);
+    Generate_Call(masm, ConvertReceiverMode::kAny, TailCallMode::kDisallow);
+  }
+  static void Generate_TailCall_ReceiverIsNullOrUndefined(
+      MacroAssembler* masm) {
+    Generate_Call(masm, ConvertReceiverMode::kNullOrUndefined,
+                  TailCallMode::kAllow);
+  }
+  static void Generate_TailCall_ReceiverIsNotNullOrUndefined(
+      MacroAssembler* masm) {
+    Generate_Call(masm, ConvertReceiverMode::kNotNullOrUndefined,
+                  TailCallMode::kAllow);
+  }
+  static void Generate_TailCall_ReceiverIsAny(MacroAssembler* masm) {
+    Generate_Call(masm, ConvertReceiverMode::kAny, TailCallMode::kAllow);
   }
 
   // ES6 section 9.2.2 [[Construct]] ( argumentsList, newTarget)
@@ -509,7 +565,7 @@ class Builtins {
   static void Generate_InterpreterNotifyDeoptimized(MacroAssembler* masm);
   static void Generate_InterpreterNotifySoftDeoptimized(MacroAssembler* masm);
   static void Generate_InterpreterNotifyLazyDeoptimized(MacroAssembler* masm);
-  static void Generate_InterpreterEnterExceptionHandler(MacroAssembler* masm);
+  static void Generate_InterpreterEnterBytecodeDispatch(MacroAssembler* masm);
 
 #define DECLARE_CODE_AGE_BUILTIN_GENERATOR(C)                \
   static void Generate_Make##C##CodeYoungAgainEvenMarking(   \

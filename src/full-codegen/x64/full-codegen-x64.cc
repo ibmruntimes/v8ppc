@@ -1029,7 +1029,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // Get the set of properties to enumerate.
   __ bind(&call_runtime);
   __ Push(rax);  // Duplicate the enumerable object on the stack.
-  __ CallRuntime(Runtime::kGetPropertyNamesFast);
+  __ CallRuntime(Runtime::kForInEnumerate);
   PrepareForBailoutForId(stmt->EnumId(), TOS_REG);
 
   // If we got a map from the runtime call, we can do a fast
@@ -1077,6 +1077,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ Push(rax);  // Array
   __ movp(rax, FieldOperand(rax, FixedArray::kLengthOffset));
   __ Push(rax);  // Fixed array length (as smi).
+  PrepareForBailoutForId(stmt->PrepareId(), NO_REGISTERS);
   __ Push(Smi::FromInt(0));  // Initial index.
 
   // Generate code for doing the condition check.
@@ -2736,7 +2737,9 @@ void FullCodeGenerator::EmitCall(Call* expr, ConvertReceiverMode mode) {
 
   PrepareForBailoutForId(expr->CallId(), NO_REGISTERS);
   SetCallPosition(expr);
-  Handle<Code> ic = CodeFactory::CallIC(isolate(), arg_count, mode).code();
+  Handle<Code> ic =
+      CodeFactory::CallIC(isolate(), arg_count, mode, expr->tail_call_mode())
+          .code();
   __ Move(rdx, SmiFromSlot(expr->CallFeedbackICSlot()));
   __ movp(rdi, Operand(rsp, (arg_count + 1) * kPointerSize));
   // Don't assign a type feedback id to the IC, since type feedback is provided

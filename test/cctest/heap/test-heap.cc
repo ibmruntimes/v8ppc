@@ -3514,6 +3514,13 @@ TEST(ReleaseOverReservedPages) {
   // The optimizer can allocate stuff, messing up the test.
   i::FLAG_crankshaft = false;
   i::FLAG_always_opt = false;
+  // Parallel compaction increases fragmentation, depending on how existing
+  // memory is distributed. Since this is non-deterministic because of
+  // concurrent sweeping, we disable it for this test.
+  i::FLAG_parallel_compaction = false;
+  // Concurrent sweeping adds non determinism, depending on when memory is
+  // available for further reuse.
+  i::FLAG_concurrent_sweeping = false;
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
   Factory* factory = isolate->factory();
@@ -5571,33 +5578,6 @@ TEST(Regress507979) {
 }
 
 
-TEST(ArrayShiftSweeping) {
-  i::FLAG_expose_gc = true;
-  CcTest::InitializeVM();
-  v8::HandleScope scope(CcTest::isolate());
-  Isolate* isolate = CcTest::i_isolate();
-  Heap* heap = isolate->heap();
-
-  v8::Local<v8::Value> result = CompileRun(
-      "var array = new Array(400);"
-      "var tmp = new Array(1000);"
-      "array[0] = 10;"
-      "gc();"
-      "gc();"
-      "array.shift();"
-      "array;");
-
-  Handle<JSObject> o = Handle<JSObject>::cast(
-      v8::Utils::OpenHandle(*v8::Local<v8::Object>::Cast(result)));
-  CHECK(heap->InOldSpace(o->elements()));
-  CHECK(heap->InOldSpace(*o));
-  Page* page = Page::FromAddress(o->elements()->address());
-  CHECK(page->parallel_sweeping_state().Value() <=
-            MemoryChunk::kSweepingFinalize ||
-        Marking::IsBlack(Marking::MarkBitFrom(o->elements())));
-}
-
-
 UNINITIALIZED_TEST(PromotionQueue) {
   i::FLAG_expose_gc = true;
   i::FLAG_max_semi_space_size = 2 * (Page::kPageSize / MB);
@@ -5683,8 +5663,9 @@ TEST(Regress388880) {
   Handle<Map> map1 = Map::Create(isolate, 1);
   Handle<Map> map2 =
       Map::CopyWithField(map1, factory->NewStringFromStaticChars("foo"),
-                         HeapType::Any(isolate), NONE, Representation::Tagged(),
-                         OMIT_TRANSITION).ToHandleChecked();
+                         FieldType::Any(isolate), NONE,
+                         Representation::Tagged(), OMIT_TRANSITION)
+          .ToHandleChecked();
 
   int desired_offset = Page::kPageSize - map1->instance_size();
 

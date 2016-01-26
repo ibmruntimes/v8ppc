@@ -1855,6 +1855,9 @@ AllocationSite* AllocationMemento::GetAllocationSite() {
   return AllocationSite::cast(allocation_site());
 }
 
+Address AllocationMemento::GetAllocationSiteUnchecked() {
+  return reinterpret_cast<Address>(allocation_site());
+}
 
 void JSObject::EnsureCanContainHeapObjectElements(Handle<JSObject> object) {
   JSObject::ValidateElements(object);
@@ -2973,15 +2976,14 @@ int DescriptorArray::GetFieldIndex(int descriptor_number) {
   return GetDetails(descriptor_number).field_index();
 }
 
-
-HeapType* DescriptorArray::GetFieldType(int descriptor_number) {
+FieldType* DescriptorArray::GetFieldType(int descriptor_number) {
   DCHECK(GetDetails(descriptor_number).location() == kField);
   Object* value = GetValue(descriptor_number);
   if (value->IsWeakCell()) {
-    if (WeakCell::cast(value)->cleared()) return HeapType::None();
+    if (WeakCell::cast(value)->cleared()) return FieldType::None();
     value = WeakCell::cast(value)->value();
   }
-  return HeapType::cast(value);
+  return FieldType::cast(value);
 }
 
 
@@ -4899,6 +4901,13 @@ inline bool Code::is_interpreter_entry_trampoline() {
   Handle<Code> interpreter_entry =
       GetIsolate()->builtins()->InterpreterEntryTrampoline();
   return interpreter_entry.location() != nullptr && *interpreter_entry == this;
+}
+
+inline bool Code::is_interpreter_enter_bytecode_dispatch() {
+  Handle<Code> interpreter_handler =
+      GetIsolate()->builtins()->InterpreterEnterBytecodeDispatch();
+  return interpreter_handler.location() != nullptr &&
+         *interpreter_handler == this;
 }
 
 inline void Code::set_is_crankshafted(bool value) {

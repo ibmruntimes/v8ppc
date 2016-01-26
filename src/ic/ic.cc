@@ -1561,18 +1561,18 @@ MaybeHandle<Object> StoreIC::Store(Handle<Object> object, Handle<Name> name,
   return value;
 }
 
-
 Handle<Code> CallIC::initialize_stub(Isolate* isolate, int argc,
-                                     ConvertReceiverMode mode) {
-  CallICTrampolineStub stub(isolate, CallICState(argc, mode));
+                                     ConvertReceiverMode mode,
+                                     TailCallMode tail_call_mode) {
+  CallICTrampolineStub stub(isolate, CallICState(argc, mode, tail_call_mode));
   Handle<Code> code = stub.GetCode();
   return code;
 }
 
-
 Handle<Code> CallIC::initialize_stub_in_optimized_code(
-    Isolate* isolate, int argc, ConvertReceiverMode mode) {
-  CallICStub stub(isolate, CallICState(argc, mode));
+    Isolate* isolate, int argc, ConvertReceiverMode mode,
+    TailCallMode tail_call_mode) {
+  CallICStub stub(isolate, CallICState(argc, mode, tail_call_mode));
   Handle<Code> code = stub.GetCode();
   return code;
 }
@@ -1797,8 +1797,8 @@ Handle<Code> StoreIC::CompileHandler(LookupIterator* lookup,
         bool use_stub = true;
         if (lookup->representation().IsHeapObject()) {
           // Only use a generic stub if no types need to be tracked.
-          Handle<HeapType> field_type = lookup->GetFieldType();
-          HeapType::Iterator<Map> it = field_type->Classes();
+          Handle<FieldType> field_type = lookup->GetFieldType();
+          FieldType::Iterator it = field_type->Classes();
           use_stub = it.Done();
         }
         if (use_stub) {

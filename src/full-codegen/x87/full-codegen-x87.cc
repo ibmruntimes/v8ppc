@@ -1005,7 +1005,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // Get the set of properties to enumerate.
   __ bind(&call_runtime);
   __ push(eax);
-  __ CallRuntime(Runtime::kGetPropertyNamesFast);
+  __ CallRuntime(Runtime::kForInEnumerate);
   PrepareForBailoutForId(stmt->EnumId(), TOS_REG);
   __ cmp(FieldOperand(eax, HeapObject::kMapOffset),
          isolate()->factory()->meta_map());
@@ -1047,6 +1047,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ push(eax);  // Array
   __ mov(eax, FieldOperand(eax, FixedArray::kLengthOffset));
   __ push(eax);  // Fixed array length (as smi).
+  PrepareForBailoutForId(stmt->PrepareId(), NO_REGISTERS);
   __ push(Immediate(Smi::FromInt(0)));  // Initial index.
 
   // Generate code for doing the condition check.
@@ -3403,27 +3404,6 @@ void FullCodeGenerator::EmitToInteger(CallRuntime* expr) {
   __ JumpIfSmi(eax, &done_convert, Label::kNear);
   __ Push(eax);
   __ CallRuntime(Runtime::kToInteger);
-  __ bind(&done_convert);
-  context()->Plug(eax);
-}
-
-
-void FullCodeGenerator::EmitToName(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK_EQ(1, args->length());
-
-  // Load the argument into eax and convert it.
-  VisitForAccumulatorValue(args->at(0));
-
-  // Convert the object to a name.
-  Label convert, done_convert;
-  __ JumpIfSmi(eax, &convert, Label::kNear);
-  STATIC_ASSERT(FIRST_NAME_TYPE == FIRST_TYPE);
-  __ CmpObjectType(eax, LAST_NAME_TYPE, ecx);
-  __ j(below_equal, &done_convert, Label::kNear);
-  __ bind(&convert);
-  __ Push(eax);
-  __ CallRuntime(Runtime::kToName);
   __ bind(&done_convert);
   context()->Plug(eax);
 }
