@@ -8,6 +8,7 @@
 #include "src/allocation.h"
 #include "src/assembler.h"
 #include "src/regexp/regexp-ast.h"
+#include "src/regexp/regexp-macro-assembler.h"
 
 namespace v8 {
 namespace internal {
@@ -121,7 +122,6 @@ class RegExpImpl {
    public:
     GlobalCache(Handle<JSRegExp> regexp,
                 Handle<String> subject,
-                bool is_global,
                 Isolate* isolate);
 
     INLINE(~GlobalCache());
@@ -137,6 +137,8 @@ class RegExpImpl {
     INLINE(bool HasException()) { return num_matches_ < 0; }
 
    private:
+    int AdvanceZeroLength(int last_index);
+
     int num_matches_;
     int max_matches_;
     int current_match_index_;
@@ -1478,9 +1480,9 @@ FOR_EACH_NODE_TYPE(DECLARE_VISIT)
 //   +-------+        +------------+
 class Analysis: public NodeVisitor {
  public:
-  Analysis(Isolate* isolate, bool ignore_case, bool is_one_byte)
+  Analysis(Isolate* isolate, JSRegExp::Flags flags, bool is_one_byte)
       : isolate_(isolate),
-        ignore_case_(ignore_case),
+        flags_(flags),
         is_one_byte_(is_one_byte),
         error_message_(NULL) {}
   void EnsureAnalyzed(RegExpNode* node);
@@ -1502,9 +1504,12 @@ FOR_EACH_NODE_TYPE(DECLARE_VISIT)
 
   Isolate* isolate() const { return isolate_; }
 
+  bool ignore_case() const { return (flags_ & JSRegExp::kIgnoreCase) != 0; }
+  bool unicode() const { return (flags_ & JSRegExp::kUnicode) != 0; }
+
  private:
   Isolate* isolate_;
-  bool ignore_case_;
+  JSRegExp::Flags flags_;
   bool is_one_byte_;
   const char* error_message_;
 

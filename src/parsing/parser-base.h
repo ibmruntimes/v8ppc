@@ -2108,7 +2108,8 @@ ParserBase<Traits>::ParseYieldExpression(ExpressionClassifier* classifier,
   // YieldExpression ::
   //   'yield' ([no line terminator] '*'? AssignmentExpression)?
   int pos = peek_position();
-  BindingPatternUnexpectedToken(classifier);
+  classifier->RecordPatternError(scanner()->peek_location(),
+                                 MessageTemplate::kInvalidDestructuringTarget);
   FormalParameterInitializerUnexpectedToken(classifier);
   Expect(Token::YIELD, CHECK_OK);
   ExpressionT generator_object =
@@ -3026,7 +3027,7 @@ ParserBase<Traits>::ParseArrowFunctionLiteral(
       // Multiple statement body
       Consume(Token::LBRACE);
       bool is_lazily_parsed =
-          (mode() == PARSE_LAZILY && scope_->AllowsLazyCompilation());
+          (mode() == PARSE_LAZILY && scope_->AllowsLazyParsing());
       if (is_lazily_parsed) {
         body = this->NewStatementList(0, zone());
         this->SkipLazyFunctionBody(&materialized_literal_count,

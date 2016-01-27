@@ -205,14 +205,14 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")   \
   V(harmony_simd, "harmony simd")                             \
   V(harmony_do_expressions, "harmony do-expressions")         \
-  V(harmony_regexp_subclass, "harmony regexp subclassing")    \
   V(harmony_tailcalls, "harmony tail calls")                  \
   V(harmony_species, "harmony Symbol.species")                \
   V(harmony_object_values_entries, "harmony Object.values / Object.entries")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
-#define HARMONY_STAGED(V)                                                 \
-  V(harmony_regexp_lookbehind, "harmony regexp lookbehind")
+#define HARMONY_STAGED(V)                                   \
+  V(harmony_regexp_lookbehind, "harmony regexp lookbehind") \
+  V(harmony_regexp_subclass, "harmony regexp subclassing")
 
 // Features that are shipping (turned on by default, but internal flag remains).
 #define HARMONY_SHIPPING(V)                                               \
@@ -866,6 +866,10 @@ DEFINE_BOOL(manual_evacuation_candidates_selection, false,
 DEFINE_INT(external_allocation_limit_incremental_time, 1,
            "Time spent in incremental marking steps (in ms) once the external "
            "allocation limit is reached")
+
+DEFINE_BOOL(disable_old_api_accessors, false,
+            "Disable old-style API accessors whose setters trigger through the "
+            "prototype chain")
 
 //
 // Dev shell flags

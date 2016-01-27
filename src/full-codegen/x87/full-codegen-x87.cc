@@ -1860,10 +1860,6 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
     }
 
     case Yield::kFinal: {
-      VisitForAccumulatorValue(expr->generator_object());
-      __ mov(FieldOperand(result_register(),
-                          JSGeneratorObject::kContinuationOffset),
-             Immediate(Smi::FromInt(JSGeneratorObject::kGeneratorClosed)));
       // Pop value from top-of-stack slot, box result into result register.
       EmitCreateIteratorResult(true);
       EmitUnwindBeforeReturn();
@@ -2744,7 +2740,9 @@ void FullCodeGenerator::EmitCall(Call* expr, ConvertReceiverMode mode) {
 
   PrepareForBailoutForId(expr->CallId(), NO_REGISTERS);
   SetCallPosition(expr);
-  Handle<Code> ic = CodeFactory::CallIC(isolate(), arg_count, mode).code();
+  Handle<Code> ic =
+      CodeFactory::CallIC(isolate(), arg_count, mode, expr->tail_call_mode())
+          .code();
   __ Move(edx, Immediate(SmiFromSlot(expr->CallFeedbackICSlot())));
   __ mov(edi, Operand(esp, (arg_count + 1) * kPointerSize));
   // Don't assign a type feedback id to the IC, since type feedback is provided

@@ -568,22 +568,24 @@ void Heap::ProcessPretenuringFeedback() {
     bool maximum_size_scavenge = MaximumSizeScavenge();
     for (HashMap::Entry* e = global_pretenuring_feedback_->Start();
          e != nullptr; e = global_pretenuring_feedback_->Next(e)) {
+      allocation_sites++;
       site = reinterpret_cast<AllocationSite*>(e->key);
       int found_count = site->memento_found_count();
-      // The fact that we have an entry in the storage means that we've found
-      // the site at least once.
-      DCHECK_GT(found_count, 0);
-      DCHECK(site->IsAllocationSite());
-      allocation_sites++;
-      active_allocation_sites++;
-      allocation_mementos_found += found_count;
-      if (site->DigestPretenuringFeedback(maximum_size_scavenge)) {
-        trigger_deoptimization = true;
-      }
-      if (site->GetPretenureMode() == TENURED) {
-        tenure_decisions++;
-      } else {
-        dont_tenure_decisions++;
+      // An entry in the storage does not imply that the count is > 0 because
+      // allocation sites might have been reset due to too many objects dying
+      // in old space.
+      if (found_count > 0) {
+        DCHECK(site->IsAllocationSite());
+        active_allocation_sites++;
+        allocation_mementos_found += found_count;
+        if (site->DigestPretenuringFeedback(maximum_size_scavenge)) {
+          trigger_deoptimization = true;
+        }
+        if (site->GetPretenureMode() == TENURED) {
+          tenure_decisions++;
+        } else {
+          dont_tenure_decisions++;
+        }
       }
     }
 
