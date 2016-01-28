@@ -643,6 +643,19 @@ Expression* ParserTraits::NewTargetExpression(Scope* scope,
 }
 
 
+Expression* ParserTraits::FunctionSentExpression(Scope* scope,
+                                                 AstNodeFactory* factory,
+                                                 int pos) {
+  // We desugar function.sent into %GeneratorGetInput(generator).
+  Zone* zone = parser_->zone();
+  ZoneList<Expression*>* args = new (zone) ZoneList<Expression*>(1, zone);
+  VariableProxy* generator = factory->NewVariableProxy(
+      parser_->function_state_->generator_object_variable());
+  args->Add(generator, zone);
+  return factory->NewCallRuntime(Runtime::kGeneratorGetInput, args, pos);
+}
+
+
 Expression* ParserTraits::DefaultConstructor(bool call_super, Scope* scope,
                                              int pos, int end_pos,
                                              LanguageMode mode) {
@@ -5146,6 +5159,12 @@ void Parser::Internalize(Isolate* isolate, Handle<Script> script, bool error) {
        ++feature) {
     for (int i = 0; i < use_counts_[feature]; ++i) {
       isolate->CountUsage(v8::Isolate::UseCounterFeature(feature));
+    }
+  }
+  if (scanner_.FoundHtmlComment()) {
+    isolate->CountUsage(v8::Isolate::kHtmlComment);
+    if (script->line_offset() == 0 && script->column_offset() == 0) {
+      isolate->CountUsage(v8::Isolate::kHtmlCommentInExternalScript);
     }
   }
   isolate->counters()->total_preparse_skipped()->Increment(

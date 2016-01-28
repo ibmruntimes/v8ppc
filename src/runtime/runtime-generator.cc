@@ -177,6 +177,16 @@ RUNTIME_FUNCTION(Runtime_GeneratorGetReceiver) {
 }
 
 
+// Returns input of generator activation.
+RUNTIME_FUNCTION(Runtime_GeneratorGetInput) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(JSGeneratorObject, generator, 0);
+
+  return generator->input();
+}
+
+
 // Returns generator continuation as a PC offset, or the magic -1 or 0 values.
 RUNTIME_FUNCTION(Runtime_GeneratorGetContinuation) {
   HandleScope scope(isolate);
@@ -195,11 +205,8 @@ RUNTIME_FUNCTION(Runtime_GeneratorGetSourcePosition) {
   if (generator->is_suspended()) {
     Handle<Code> code(generator->function()->code(), isolate);
     int offset = generator->continuation();
-
-    RUNTIME_ASSERT(0 <= offset && offset < code->Size());
-    Address pc = code->address() + offset;
-
-    return Smi::FromInt(code->SourcePosition(pc));
+    RUNTIME_ASSERT(0 <= offset && offset < code->instruction_size());
+    return Smi::FromInt(code->SourcePosition(offset));
   }
 
   return isolate->heap()->undefined_value();

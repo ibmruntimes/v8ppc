@@ -515,11 +515,9 @@
 
   # TODO(mstarzinger,4674): Support exception handlers in BytecodeGraphBuilder.
   'test-run-deopt/DeoptExceptionHandlerCatch': [FAIL],
-  'test-run-jsexceptions/Catch': [FAIL],
-  'test-run-jsexceptions/CatchBreak': [FAIL],
-  'test-run-jsexceptions/CatchCall': [FAIL],
-  'test-run-jsexceptions/CatchNested': [FAIL],
-  'test-run-jsexceptions/DeoptCatch': [FAIL],
+
+  # TODO(mstarzinger,4674): Bug in control flow modeling. Investigate and fix.
+  'test-run-jsexceptions/ThrowMessageIndirectly': [FAIL],
 
   'test-api-interceptors/InterceptorCallICInvalidatedConstantFunctionViaGlobal': [SKIP],
   'test-api-interceptors/InterceptorLoadICInvalidatedCallbackViaGlobal': [SKIP],
@@ -529,6 +527,7 @@
   'test-compiler/OptimizedCodeSharing2': [SKIP],
   'test-compiler/OptimizedCodeSharing3': [SKIP],
   'test-decls/CrossScriptDynamicLookup': [SKIP],
+  'test-decls/CrossScriptReferences_Simple2': [SKIP],
   'test-decls/Regress425510': [SKIP],
   'test-feedback-vector/VectorCallICStates': [SKIP],
   'test-heap/CanonicalSharedFunctionInfo': [SKIP],
@@ -548,6 +547,8 @@
   'test-heap/TestCodeFlushingPreAged': [SKIP],
   'test-heap/TestCodeFlushing': [SKIP],
   'test-heap/WeakFunctionInConstructor': [SKIP],
+  'test-lockers/IsolateLockingStress': [SKIP],
+  'test-lockers/SeparateIsolatesLocksNonexclusive': [SKIP],
   'test-log-stack-tracer/CFromJSStackTrace': [SKIP],
   'test-log-stack-tracer/PureJSStackTrace': [SKIP],
   'test-parsing/DestructuringNegativeTests': [SKIP],
@@ -560,7 +561,6 @@
   'test-profile-generator/RecordStackTraceAtStartProfiling': [SKIP],
   'test-run-inlining/InlineTwice': [SKIP],
   'test-run-jscalls/LookupCall': [SKIP],
-  'test-run-jsexceptions/DeoptFinallyReturn': [SKIP],
   'test-run-jsexceptions/ThrowMessageDirectly': [SKIP],
   'test-run-jsexceptions/ThrowMessagePosition': [SKIP],
   'test-run-jsobjects/ArgumentsRest': [SKIP],

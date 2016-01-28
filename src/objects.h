@@ -127,6 +127,7 @@
 //     - Cell
 //     - PropertyCell
 //     - Code
+//     - AbstractCode, a wrapper around Code or BytecodeArray
 //     - Map
 //     - Oddball
 //     - Foreign
@@ -943,6 +944,7 @@ template <class C> inline bool Is(Object* obj);
   V(JSBoundFunction)               \
   V(JSFunction)                    \
   V(Code)                          \
+  V(AbstractCode)                  \
   V(Oddball)                       \
   V(SharedFunctionInfo)            \
   V(JSValue)                       \
@@ -4428,6 +4430,10 @@ class BytecodeArray : public FixedArrayBase {
   // Dispatched behavior.
   inline int BytecodeArraySize();
 
+  inline int instruction_size();
+
+  int SourcePosition(int offset);
+
   DECLARE_PRINTER(BytecodeArray)
   DECLARE_VERIFIER(BytecodeArray)
 
@@ -4755,13 +4761,18 @@ class HandlerTable : public FixedArray {
   // undecidable it is merely an approximation (e.g. useful for debugger).
   enum CatchPrediction { UNCAUGHT, CAUGHT };
 
-  // Accessors for handler table based on ranges.
+  // Getters for handler table based on ranges.
+  inline int GetRangeStart(int index) const;
+  inline int GetRangeEnd(int index) const;
+  inline int GetRangeHandler(int index) const;
+
+  // Setters for handler table based on ranges.
   inline void SetRangeStart(int index, int value);
   inline void SetRangeEnd(int index, int value);
   inline void SetRangeHandler(int index, int offset, CatchPrediction pred);
   inline void SetRangeDepth(int index, int value);
 
-  // Accessors for handler table based on return addresses.
+  // Setters for handler table based on return addresses.
   inline void SetReturnOffset(int index, int value);
   inline void SetReturnHandler(int index, int offset, CatchPrediction pred);
 
@@ -4770,6 +4781,9 @@ class HandlerTable : public FixedArray {
 
   // Lookup handler in a table based on return addresses.
   int LookupReturn(int pc_offset, CatchPrediction* prediction);
+
+  // Returns the number of entries in the table.
+  inline int NumberOfRangeEntries() const;
 
   // Returns the required length of the underlying fixed array.
   static int LengthForRange(int entries) { return entries * kRangeEntrySize; }
@@ -5145,8 +5159,8 @@ class Code: public HeapObject {
   inline int ExecutableSize();
 
   // Locating source position.
-  int SourcePosition(Address pc);
-  int SourceStatementPosition(Address pc);
+  int SourcePosition(int code_offset);
+  int SourceStatementPosition(int code_offset);
 
   DECLARE_CAST(Code)
 
@@ -5343,6 +5357,14 @@ class Code: public HeapObject {
   DISALLOW_IMPLICIT_CONSTRUCTORS(Code);
 };
 
+class AbstractCode : public HeapObject {
+ public:
+  int SourcePosition(int offset);
+
+  DECLARE_CAST(AbstractCode)
+  inline Code* GetCode();
+  inline BytecodeArray* GetBytecodeArray();
+};
 
 // Dependent code is a singly linked list of fixed arrays. Each array contains
 // code objects in weak cells for one dependent group. The suffix of the array
@@ -6379,17 +6401,17 @@ class Script: public Struct {
   // resource is accessible. Otherwise, always return true.
   inline bool HasValidSource();
 
-  // Convert code position into column number.
-  static int GetColumnNumber(Handle<Script> script, int code_pos);
+  // Convert code offset into column number.
+  static int GetColumnNumber(Handle<Script> script, int code_offset);
 
-  // Convert code position into (zero-based) line number.
+  // Convert code offset into (zero-based) line number.
   // The non-handlified version does not allocate, but may be much slower.
-  static int GetLineNumber(Handle<Script> script, int code_pos);
+  static int GetLineNumber(Handle<Script> script, int code_offset);
   int GetLineNumber(int code_pos);
 
   static Handle<Object> GetNameOrSourceURL(Handle<Script> script);
 
-  // Init line_ends array with code positions of line ends inside script source.
+  // Init line_ends array with source code positions of line ends.
   static void InitLineEnds(Handle<Script> script);
 
   // Get the JS object wrapping the given script; create it if none exists.
@@ -6525,6 +6547,7 @@ class SharedFunctionInfo: public HeapObject {
 
   // [code]: Function code.
   DECL_ACCESSORS(code, Code)
+
   inline void ReplaceCode(Code* code);
 
   // [optimized_code_map]: Map from native context to optimized code
@@ -7234,6 +7257,9 @@ class JSGeneratorObject: public JSObject {
   // [receiver]: The receiver of the suspended computation.
   DECL_ACCESSORS(receiver, Object)
 
+  // [input]: The most recent input value.
+  DECL_ACCESSORS(input, Object)
+
   // [continuation]: Offset into code of continuation.
   //
   // A positive offset indicates a suspended generator.  The special
@@ -7262,7 +7288,8 @@ class JSGeneratorObject: public JSObject {
   static const int kFunctionOffset = JSObject::kHeaderSize;
   static const int kContextOffset = kFunctionOffset + kPointerSize;
   static const int kReceiverOffset = kContextOffset + kPointerSize;
-  static const int kContinuationOffset = kReceiverOffset + kPointerSize;
+  static const int kInputOffset = kReceiverOffset + kPointerSize;
+  static const int kContinuationOffset = kInputOffset + kPointerSize;
   static const int kOperandStackOffset = kContinuationOffset + kPointerSize;
   static const int kSize = kOperandStackOffset + kPointerSize;
 
@@ -10611,20 +10638,19 @@ class DebugInfo: public Struct {
   // Fixed array holding status information for each active break point.
   DECL_ACCESSORS(break_points, FixedArray)
 
-  // Check if there is a break point at a code position.
-  bool HasBreakPoint(int code_position);
-  // Get the break point info object for a code position.
-  Object* GetBreakPointInfo(int code_position);
+  // Check if there is a break point at a code offset.
+  bool HasBreakPoint(int code_offset);
+  // Get the break point info object for a code offset.
+  Object* GetBreakPointInfo(int code_offset);
   // Clear a break point.
-  static void ClearBreakPoint(Handle<DebugInfo> debug_info,
-                              int code_position,
+  static void ClearBreakPoint(Handle<DebugInfo> debug_info, int code_offset,
                               Handle<Object> break_point_object);
   // Set a break point.
-  static void SetBreakPoint(Handle<DebugInfo> debug_info, int code_position,
+  static void SetBreakPoint(Handle<DebugInfo> debug_info, int code_offset,
                             int source_position, int statement_position,
                             Handle<Object> break_point_object);
-  // Get the break point objects for a code position.
-  Handle<Object> GetBreakPointObjects(int code_position);
+  // Get the break point objects for a code offset.
+  Handle<Object> GetBreakPointObjects(int code_offset);
   // Find the break point info holding this break point object.
   static Handle<Object> FindBreakPointInfo(Handle<DebugInfo> debug_info,
                                            Handle<Object> break_point_object);
@@ -10647,8 +10673,8 @@ class DebugInfo: public Struct {
  private:
   static const int kNoBreakPointInfo = -1;
 
-  // Lookup the index in the break_points array for a code position.
-  int GetBreakPointInfoIndex(int code_position);
+  // Lookup the index in the break_points array for a code offset.
+  int GetBreakPointInfoIndex(int code_offset);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(DebugInfo);
 };
@@ -10659,8 +10685,8 @@ class DebugInfo: public Struct {
 // position with one or more break points.
 class BreakPointInfo: public Struct {
  public:
-  // The position in the code for the break point.
-  DECL_INT_ACCESSORS(code_position)
+  // The code offset for the break point.
+  DECL_INT_ACCESSORS(code_offset)
   // The position in the source for the break position.
   DECL_INT_ACCESSORS(source_position)
   // The position in the source for the last statement before this break
@@ -10678,7 +10704,7 @@ class BreakPointInfo: public Struct {
   // Check if break point info has this break point object.
   static bool HasBreakPointObject(Handle<BreakPointInfo> info,
                                   Handle<Object> break_point_object);
-  // Get the number of break points for this code position.
+  // Get the number of break points for this code offset.
   int GetBreakPointCount();
 
   DECLARE_CAST(BreakPointInfo)
@@ -10687,8 +10713,8 @@ class BreakPointInfo: public Struct {
   DECLARE_PRINTER(BreakPointInfo)
   DECLARE_VERIFIER(BreakPointInfo)
 
-  static const int kCodePositionIndex = Struct::kHeaderSize;
-  static const int kSourcePositionIndex = kCodePositionIndex + kPointerSize;
+  static const int kCodeOffsetIndex = Struct::kHeaderSize;
+  static const int kSourcePositionIndex = kCodeOffsetIndex + kPointerSize;
   static const int kStatementPositionIndex =
       kSourcePositionIndex + kPointerSize;
   static const int kBreakPointObjectsIndex =

@@ -846,6 +846,7 @@ TYPE_CHECKER(JSValue, JS_VALUE_TYPE)
 TYPE_CHECKER(JSDate, JS_DATE_TYPE)
 TYPE_CHECKER(JSMessageObject, JS_MESSAGE_OBJECT_TYPE)
 
+bool Object::IsAbstractCode() const { return IsBytecodeArray() || IsCode(); }
 
 bool Object::IsStringWrapper() const {
   return IsJSValue() && JSValue::cast(this)->value()->IsString();
@@ -3179,7 +3180,7 @@ void SeededNumberDictionary::set_requires_slow_elements() {
 // ------------------------------------
 // Cast operations
 
-
+CAST_ACCESSOR(AbstractCode)
 CAST_ACCESSOR(ArrayList)
 CAST_ACCESSOR(Bool16x8)
 CAST_ACCESSOR(Bool32x4)
@@ -3416,6 +3417,18 @@ int LiteralsArray::literals_count() const {
   return length() - kFirstLiteralIndex;
 }
 
+int HandlerTable::GetRangeStart(int index) const {
+  return Smi::cast(get(index * kRangeEntrySize + kRangeStartIndex))->value();
+}
+
+int HandlerTable::GetRangeEnd(int index) const {
+  return Smi::cast(get(index * kRangeEntrySize + kRangeEndIndex))->value();
+}
+
+int HandlerTable::GetRangeHandler(int index) const {
+  return HandlerOffsetField::decode(
+      Smi::cast(get(index * kRangeEntrySize + kRangeHandlerIndex))->value());
+}
 
 void HandlerTable::SetRangeStart(int index, int value) {
   set(index * kRangeEntrySize + kRangeStartIndex, Smi::FromInt(value));
@@ -3452,6 +3465,9 @@ void HandlerTable::SetReturnHandler(int index, int offset,
   set(index * kReturnEntrySize + kReturnHandlerIndex, Smi::FromInt(value));
 }
 
+int HandlerTable::NumberOfRangeEntries() const {
+  return length() / kRangeEntrySize;
+}
 
 #define MAKE_STRUCT_CAST(NAME, Name, name) CAST_ACCESSOR(Name)
   STRUCT_LIST(MAKE_STRUCT_CAST)
@@ -5286,6 +5302,10 @@ class Code::FindAndReplacePattern {
   friend class Code;
 };
 
+Code* AbstractCode::GetCode() { return Code::cast(this); }
+BytecodeArray* AbstractCode::GetBytecodeArray() {
+  return BytecodeArray::cast(this);
+}
 
 Object* Map::prototype() const {
   return READ_FIELD(this, kPrototypeOffset);
@@ -5615,7 +5635,7 @@ ACCESSORS(DebugInfo, shared, SharedFunctionInfo, kSharedFunctionInfoIndex)
 ACCESSORS(DebugInfo, code, Code, kCodeIndex)
 ACCESSORS(DebugInfo, break_points, FixedArray, kBreakPointsStateIndex)
 
-SMI_ACCESSORS(BreakPointInfo, code_position, kCodePositionIndex)
+SMI_ACCESSORS(BreakPointInfo, code_offset, kCodeOffsetIndex)
 SMI_ACCESSORS(BreakPointInfo, source_position, kSourcePositionIndex)
 SMI_ACCESSORS(BreakPointInfo, statement_position, kStatementPositionIndex)
 ACCESSORS(BreakPointInfo, break_point_objects, Object, kBreakPointObjectsIndex)
@@ -6341,6 +6361,7 @@ void Foreign::set_foreign_address(Address value) {
 ACCESSORS(JSGeneratorObject, function, JSFunction, kFunctionOffset)
 ACCESSORS(JSGeneratorObject, context, Context, kContextOffset)
 ACCESSORS(JSGeneratorObject, receiver, Object, kReceiverOffset)
+ACCESSORS(JSGeneratorObject, input, Object, kInputOffset)
 SMI_ACCESSORS(JSGeneratorObject, continuation, kContinuationOffset)
 ACCESSORS(JSGeneratorObject, operand_stack, FixedArray, kOperandStackOffset)
 

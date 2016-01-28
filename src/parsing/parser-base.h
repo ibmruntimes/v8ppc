@@ -1677,6 +1677,10 @@ ParserBase<Traits>::ParsePropertyDefinition(
         classifier->RecordCoverInitializedNameError(
             Scanner::Location(next_beg_pos, scanner()->location().end_pos),
             MessageTemplate::kInvalidCoverInitializedName);
+
+        if (allow_harmony_function_name()) {
+          Traits::SetFunctionNameFromIdentifierRef(rhs, lhs);
+        }
       } else {
         value = lhs;
       }
@@ -2544,6 +2548,24 @@ ParserBase<Traits>::ParseMemberExpression(ExpressionClassifier* classifier,
 
     Consume(Token::FUNCTION);
     int function_token_position = position();
+
+    if (FLAG_harmony_function_sent && Check(Token::PERIOD)) {
+      // function.sent
+
+      int pos = position();
+      ExpectContextualKeyword(CStrVector("sent"), CHECK_OK);
+
+      if (!is_generator()) {
+        // TODO(neis): allow escaping into closures?
+        ReportMessageAt(scanner()->location(),
+                        MessageTemplate::kUnexpectedFunctionSent);
+        *ok = false;
+        return this->EmptyExpression();
+      }
+
+      return this->FunctionSentExpression(scope_, factory(), pos);
+    }
+
     bool is_generator = Check(Token::MUL);
     IdentifierT name = this->EmptyIdentifier();
     bool is_strict_reserved_name = false;
@@ -2882,6 +2904,10 @@ void ParserBase<Traits>::ParseFormalParameter(
     if (!*ok) return;
     parameters->is_simple = false;
     classifier->RecordNonSimpleParameter();
+
+    if (allow_harmony_function_name()) {
+      Traits::SetFunctionNameFromIdentifierRef(initializer, pattern);
+    }
   }
 
   Traits::AddFormalParameter(parameters, pattern, initializer,
