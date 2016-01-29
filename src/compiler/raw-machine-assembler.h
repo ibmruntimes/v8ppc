@@ -79,6 +79,9 @@ class RawMachineAssembler {
   Node* Int32Constant(int32_t value) {
     return AddNode(common()->Int32Constant(value));
   }
+  Node* StackSlot(MachineRepresentation rep) {
+    return AddNode(machine()->StackSlot(rep));
+  }
   Node* Int64Constant(int64_t value) {
     return AddNode(common()->Int64Constant(value));
   }
@@ -569,6 +572,9 @@ class RawMachineAssembler {
   // Call to a runtime function with two arguments.
   Node* CallRuntime2(Runtime::FunctionId function, Node* arg1, Node* arg2,
                      Node* context);
+  // Call to a runtime function with three arguments.
+  Node* CallRuntime3(Runtime::FunctionId function, Node* arg1, Node* arg2,
+                     Node* arg3, Node* context);
   // Call to a runtime function with four arguments.
   Node* CallRuntime4(Runtime::FunctionId function, Node* arg1, Node* arg2,
                      Node* arg3, Node* arg4, Node* context);

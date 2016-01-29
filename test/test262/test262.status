@@ -33,9 +33,6 @@
   'intl402/11.2.3_b': [FAIL],
   'intl402/12.2.3_b': [FAIL],
 
-  # Unicode canonicalization is not available with i18n turned off.
-  'built-ins/String/prototype/localeCompare/15.5.4.9_CE': [['no_i18n', SKIP]],
-
   ###################### NEEDS INVESTIGATION #######################
 
   # Possibly same cause as S8.5_A2.1, below: floating-point tests.
@@ -269,26 +266,6 @@
   # https://code.google.com/p/v8/issues/detail?id=4253
   'language/asi/S7.9_A5.7_T1': [PASS, FAIL_OK],
 
-  # https://code.google.com/p/v8/issues/detail?id=2952
-  'built-ins/RegExp/prototype/exec/u-lastindex-adv': [FAIL],
-  'built-ins/RegExp/prototype/exec/u-captured-value': [FAIL],
-  'built-ins/RegExp/prototype/exec/u-lastindex-value': [FAIL],
-  'built-ins/RegExp/prototype/test/u-captured-value': [FAIL],
-  'built-ins/RegExp/prototype/test/u-lastindex-adv': [FAIL],
-  'built-ins/RegExp/prototype/test/u-lastindex-value': [FAIL],
-  'built-ins/RegExp/prototype/unicode/this-regexp': [FAIL],
-  'built-ins/RegExp/unicode_identity_escape': [FAIL],
-  'language/literals/regexp/u-unicode-esc': [FAIL],
-  'language/literals/regexp/u-surrogate-pairs': [FAIL],
-  'language/literals/regexp/u-case-mapping': [FAIL],
-  'language/literals/regexp/u-astral': [FAIL],
-  'built-ins/RegExp/valid-flags-y': [FAIL],
-  'built-ins/RegExp/prototype/unicode/length': [FAIL],
-  'built-ins/RegExp/prototype/unicode/name': [FAIL],
-  'built-ins/RegExp/prototype/unicode/prop-desc': [FAIL],
-  'built-ins/RegExp/prototype/unicode/this-invald-obj': [FAIL],
-  'built-ins/RegExp/prototype/unicode/this-non-obj': [FAIL],
-
    # https://code.google.com/p/v8/issues/detail?id=4602
   'built-ins/RegExp/prototype/exec/get-sticky-coerce': [FAIL],
   'built-ins/RegExp/prototype/exec/get-sticky-err': [FAIL],
@@ -316,9 +293,6 @@
 
   # https://code.google.com/p/v8/issues/detail?id=4345
   'built-ins/RegExp/prototype/Symbol.split/*': [SKIP],
-
-  # https://code.google.com/p/v8/issues/detail?id=4346
-  'built-ins/RegExp/prototype/flags/u': [FAIL],
 
   # https://code.google.com/p/v8/issues/detail?id=4360
   'intl402/Collator/10.1.1_1': [FAIL],
@@ -508,12 +482,18 @@
   'intl402/NumberFormat/prototype/format/11.3.2_TRP': [SKIP],
 }],  # system == macos
 
-['no_i18n == True and mode == debug', {
+['no_i18n == True', {
+  # Unicode canonicalization is not available with i18n turned off.
+  'built-ins/String/prototype/localeCompare/15.5.4.9_CE': [SKIP],
+
+  # Unicode regexp case mapping is not available with i18n turned off.
+  'language/literals/regexp/u-case-mapping': [SKIP],
+
   # BUG(v8:4437).
   'built-ins/String/prototype/normalize/return-normalized-string': [SKIP],
   'built-ins/String/prototype/normalize/return-normalized-string-from-coerced-form': [SKIP],
   'built-ins/String/prototype/normalize/return-normalized-string-using-default-parameter': [SKIP],
-}],  # no_i18n == True and mode == debug
+}],  # no_i18n == True
 
 
 ['arch == arm or arch == mipsel or arch == mips or arch == arm64 or arch == mips64 or arch == mips64el', {

@@ -5377,9 +5377,11 @@ void HOptimizedGraphBuilder::BuildForInBody(ForInStatement* stmt,
   // Reload the values to ensure we have up-to-date values inside of the loop.
   // This is relevant especially for OSR where the values don't come from the
   // computation above, but from the OSR entry block.
-  enumerable = environment()->ExpressionStackAt(4);
   HValue* index = environment()->ExpressionStackAt(0);
   HValue* limit = environment()->ExpressionStackAt(1);
+  HValue* array = environment()->ExpressionStackAt(2);
+  HValue* type = environment()->ExpressionStackAt(3);
+  enumerable = environment()->ExpressionStackAt(4);
 
   // Check that we still have more keys.
   HCompareNumericAndBranch* compare_index =
@@ -5399,32 +5401,67 @@ void HOptimizedGraphBuilder::BuildForInBody(ForInStatement* stmt,
 
   set_current_block(loop_body);
 
-  HValue* key =
-      Add<HLoadKeyed>(environment()->ExpressionStackAt(2),  // Enum cache.
-                      index, index, nullptr, FAST_ELEMENTS);
+  // Compute the next enumerated value.
+  HValue* key = Add<HLoadKeyed>(array, index, index, nullptr, FAST_ELEMENTS);
 
+  HBasicBlock* continue_block = nullptr;
   if (fast) {
-    // Check if the expected map still matches that of the enumerable.
-    // If not just deoptimize.
-    Add<HCheckMapValue>(enumerable, environment()->ExpressionStackAt(3));
-    Bind(each_var, key);
-  } else {
-    Add<HPushArguments>(enumerable, key);
-    Runtime::FunctionId function_id = Runtime::kForInFilter;
-    key = Add<HCallRuntime>(Runtime::FunctionForId(function_id), 2);
-    Push(key);
+    // Check if expected map still matches that of the enumerable.
+    Add<HCheckMapValue>(enumerable, type);
     Add<HSimulate>(stmt->FilterId());
+  } else {
+    // We need the continue block here to be able to skip over invalidated keys.
+    continue_block = graph()->CreateBasicBlock();
+
+    // We cannot use the IfBuilder here, since we need to be able to jump
+    // over the loop body in case of undefined result from %ForInFilter,
+    // and the poor soul that is the IfBuilder get's really confused about
+    // such "advanced control flow requirements".
+    HBasicBlock* if_fast = graph()->CreateBasicBlock();
+    HBasicBlock* if_slow = graph()->CreateBasicBlock();
+    HBasicBlock* if_slow_pass = graph()->CreateBasicBlock();
+    HBasicBlock* if_slow_skip = graph()->CreateBasicBlock();
+    HBasicBlock* if_join = graph()->CreateBasicBlock();
+
+    // Check if expected map still matches that of the enumerable.
+    HValue* enumerable_map =
+        Add<HLoadNamedField>(enumerable, nullptr, HObjectAccess::ForMap());
+    FinishCurrentBlock(
+        New<HCompareObjectEqAndBranch>(enumerable_map, type, if_fast, if_slow));
+    set_current_block(if_fast);
+    {
+      // The enum cache for enumerable is still valid, no need to check key.
+      Push(key);
+      Goto(if_join);
+    }
+    set_current_block(if_slow);
+    {
+      // Check if key is still valid for enumerable.
+      Add<HPushArguments>(enumerable, key);
+      Runtime::FunctionId function_id = Runtime::kForInFilter;
+      Push(Add<HCallRuntime>(Runtime::FunctionForId(function_id), 2));
+      Add<HSimulate>(stmt->FilterId());
+      FinishCurrentBlock(New<HCompareObjectEqAndBranch>(
+          Top(), graph()->GetConstantUndefined(), if_slow_skip, if_slow_pass));
+    }
+    set_current_block(if_slow_pass);
+    { Goto(if_join); }
+    set_current_block(if_slow_skip);
+    {
+      // The key is no longer valid for enumerable, skip it.
+      Drop(1);
+      Goto(continue_block);
+    }
+    if_join->SetJoinId(stmt->FilterId());
+    set_current_block(if_join);
     key = Pop();
-    Bind(each_var, key);
-    IfBuilder if_undefined(this);
-    if_undefined.If<HCompareObjectEqAndBranch>(key,
-                                               graph()->GetConstantUndefined());
-    if_undefined.ThenDeopt(Deoptimizer::kUndefined);
-    if_undefined.End();
-    Add<HSimulate>(stmt->AssignmentId());
   }
 
+  Bind(each_var, key);
+  Add<HSimulate>(stmt->AssignmentId());
+
   BreakAndContinueInfo break_info(stmt, scope(), 5);
+  break_info.set_continue_block(continue_block);
   {
     BreakAndContinueScope push(&break_info, this);
     CHECK_BAILOUT(VisitLoopBody(stmt, loop_entry));

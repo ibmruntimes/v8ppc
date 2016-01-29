@@ -276,11 +276,8 @@ class PipelineData {
         info()->isolate(), instruction_zone(), instruction_blocks);
   }
 
-  void InitializeRegisterAllocationData(const RegisterConfiguration* config,
-                                        CallDescriptor* descriptor,
-                                        const char* debug_name) {
+  void InitializeFrameData(CallDescriptor* descriptor) {
     DCHECK(frame_ == nullptr);
-    DCHECK(register_allocation_data_ == nullptr);
     int fixed_frame_size = 0;
     if (descriptor != nullptr) {
       fixed_frame_size = (descriptor->IsCFunctionCall())
@@ -289,6 +286,12 @@ class PipelineData {
                              : StandardFrameConstants::kFixedSlotCount;
     }
     frame_ = new (instruction_zone()) Frame(fixed_frame_size, descriptor);
+  }
+
+  void InitializeRegisterAllocationData(const RegisterConfiguration* config,
+                                        CallDescriptor* descriptor,
+                                        const char* debug_name) {
+    DCHECK(register_allocation_data_ == nullptr);
     register_allocation_data_ = new (register_allocation_zone())
         RegisterAllocationData(config, register_allocation_zone(), frame(),
                                sequence(), debug_name);
@@ -816,7 +819,7 @@ struct InstructionSelectionPhase {
   void Run(PipelineData* data, Zone* temp_zone, Linkage* linkage) {
     InstructionSelector selector(
         temp_zone, data->graph()->NodeCount(), linkage, data->sequence(),
-        data->schedule(), data->source_positions(),
+        data->schedule(), data->source_positions(), data->frame(),
         data->info()->is_source_positions_enabled()
             ? InstructionSelector::kAllSourcePositions
             : InstructionSelector::kCallSourcePositions);
@@ -982,9 +985,10 @@ struct FrameElisionPhase {
 struct JumpThreadingPhase {
   static const char* phase_name() { return "jump threading"; }
 
-  void Run(PipelineData* data, Zone* temp_zone) {
+  void Run(PipelineData* data, Zone* temp_zone, bool frame_at_start) {
     ZoneVector<RpoNumber> result(temp_zone);
-    if (JumpThreading::ComputeForwarding(temp_zone, result, data->sequence())) {
+    if (JumpThreading::ComputeForwarding(temp_zone, result, data->sequence(),
+                                         frame_at_start)) {
       JumpThreading::ApplyForwarding(result, data->sequence());
     }
   }
@@ -1281,6 +1285,7 @@ bool Pipeline::AllocateRegistersForTesting(const RegisterConfiguration* config,
   PipelineData data(&zone_pool, &info, sequence);
   Pipeline pipeline(&info);
   pipeline.data_ = &data;
+  pipeline.data_->InitializeFrameData(nullptr);
   pipeline.AllocateRegisters(config, nullptr, run_verifier);
   return !data.compilation_failed();
 }
@@ -1303,6 +1308,7 @@ Handle<Code> Pipeline::ScheduleAndGenerateCode(
 
   data->InitializeInstructionSequence();
 
+  data->InitializeFrameData(call_descriptor);
   // Select and schedule instructions covering the scheduled graph.
   Linkage linkage(call_descriptor);
   Run<InstructionSelectionPhase>(&linkage);
@@ -1324,6 +1330,7 @@ Handle<Code> Pipeline::ScheduleAndGenerateCode(
   BeginPhaseKind("register allocation");
 
   bool run_verifier = FLAG_turbo_verify_allocation;
+
   // Allocate registers.
   AllocateRegisters(
       RegisterConfiguration::ArchDefault(RegisterConfiguration::TURBOFAN),
@@ -1334,10 +1341,16 @@ Handle<Code> Pipeline::ScheduleAndGenerateCode(
   }
 
   BeginPhaseKind("code generation");
-
+  // TODO(mtrofin): move this off to the register allocator.
+  bool generate_frame_at_start =
+      !FLAG_turbo_frame_elision || !data_->info()->IsStub() ||
+      !data_->frame()->needs_frame() ||
+      data_->sequence()->instruction_blocks().front()->needs_frame() ||
+      linkage.GetIncomingDescriptor()->CalleeSavedFPRegisters() != 0 ||
+      linkage.GetIncomingDescriptor()->CalleeSavedRegisters() != 0;
   // Optimimize jumps.
   if (FLAG_turbo_jt) {
-    Run<JumpThreadingPhase>();
+    Run<JumpThreadingPhase>(generate_frame_at_start);
   }
 
   // Generate final machine code.

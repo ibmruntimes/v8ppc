@@ -29,6 +29,9 @@
 
 #include "src/code-factory.h"
 #include "src/code-stubs.h"
+#include "src/factory.h"
+#include "src/log-inl.h"
+#include "src/profiler/cpu-profiler.h"
 
 #include "src/wasm/ast-decoder.h"
 #include "src/wasm/wasm-module.h"
@@ -105,6 +108,9 @@ class WasmTrapHelper : public ZoneObject {
   // Make the current control path trap to unreachable.
   void Unreachable() { ConnectTrap(kTrapUnreachable); }
 
+  // Always trap with the given reason.
+  void TrapAlways(TrapReason reason) { ConnectTrap(reason); }
+
   // Add a check that traps if {node} is equal to {val}.
   Node* TrapIfEq32(TrapReason reason, Node* node, int32_t val) {
     Int32Matcher m(node);
@@ -163,6 +169,28 @@ class WasmTrapHelper : public ZoneObject {
     ConnectTrap(reason);
     *control_ptr = iftrue ? if_false : if_true;
     *effect_ptr = before;
+  }
+
+  Node* GetTrapValue(wasm::FunctionSig* sig) {
+    if (sig->return_count() > 0) {
+      switch (sig->GetReturn()) {
+        case wasm::kAstI32:
+          return jsgraph()->Int32Constant(0xdeadbeef);
+        case wasm::kAstI64:
+          return jsgraph()->Int64Constant(0xdeadbeefdeadbeef);
+        case wasm::kAstF32:
+          return jsgraph()->Float32Constant(bit_cast<float>(0xdeadbeef));
+        case wasm::kAstF64:
+          return jsgraph()->Float64Constant(
+              bit_cast<double>(0xdeadbeefdeadbeef));
+          break;
+        default:
+          UNREACHABLE();
+          return nullptr;
+      }
+    } else {
+      return jsgraph()->Int32Constant(0xdeadbeef);
+    }
   }
 
  private:
@@ -227,29 +255,7 @@ class WasmTrapHelper : public ZoneObject {
       end = thrw;
     } else {
       // End the control flow with returning 0xdeadbeef
-      Node* ret_value;
-      if (builder_->GetFunctionSignature()->return_count() > 0) {
-        switch (builder_->GetFunctionSignature()->GetReturn()) {
-          case wasm::kAstI32:
-            ret_value = jsgraph()->Int32Constant(0xdeadbeef);
-            break;
-          case wasm::kAstI64:
-            ret_value = jsgraph()->Int64Constant(0xdeadbeefdeadbeef);
-            break;
-          case wasm::kAstF32:
-            ret_value = jsgraph()->Float32Constant(bit_cast<float>(0xdeadbeef));
-            break;
-          case wasm::kAstF64:
-            ret_value = jsgraph()->Float64Constant(
-                bit_cast<double>(0xdeadbeefdeadbeef));
-            break;
-          default:
-            UNREACHABLE();
-            ret_value = nullptr;
-        }
-      } else {
-        ret_value = jsgraph()->Int32Constant(0xdeadbeef);
-      }
+      Node* ret_value = GetTrapValue(builder_->GetFunctionSignature());
       end = graph()->NewNode(jsgraph()->common()->Return(), ret_value,
                              *effect_ptr, *control_ptr);
     }
@@ -1465,20 +1471,26 @@ Node* WasmGraphBuilder::CallDirect(uint32_t index, Node** args) {
 
 Node* WasmGraphBuilder::CallIndirect(uint32_t index, Node** args) {
   DCHECK_NOT_NULL(args[0]);
+  DCHECK(module_ && module_->instance);
 
   MachineOperatorBuilder* machine = jsgraph()->machine();
 
   // Compute the code object by loading it from the function table.
   Node* key = args[0];
-  Node* table = FunctionTable();
 
   // Bounds check the index.
   int table_size = static_cast<int>(module_->FunctionTableSize());
-  {
+  if (table_size > 0) {
+    // Bounds check against the table size.
     Node* size = Int32Constant(static_cast<int>(table_size));
     Node* in_bounds = graph()->NewNode(machine->Uint32LessThan(), key, size);
     trap_->AddTrapIfFalse(kTrapFuncInvalid, in_bounds);
+  } else {
+    // No function table. Generate a trap and return a constant.
+    trap_->AddTrapIfFalse(kTrapFuncInvalid, Int32Constant(0));
+    return trap_->GetTrapValue(module_->GetSignature(index));
   }
+  Node* table = FunctionTable();
 
   // Load signature from the table and check.
   // The table is a FixedArray; signatures are encoded as SMIs.
@@ -1862,6 +1874,28 @@ Node* WasmGraphBuilder::String(const char* string) {
 Graph* WasmGraphBuilder::graph() { return jsgraph()->graph(); }
 
 
+static void RecordFunctionCompilation(Logger::LogEventsAndTags tag,
+                                      CompilationInfo* info,
+                                      const char* message, uint32_t index,
+                                      const char* func_name) {
+  Isolate* isolate = info->isolate();
+  if (isolate->logger()->is_logging_code_events() ||
+      isolate->cpu_profiler()->is_profiling()) {
+    ScopedVector<char> buffer(128);
+    SNPrintF(buffer, "%s#%d:%s", message, index, func_name);
+    Handle<String> name_str =
+        isolate->factory()->NewStringFromAsciiChecked(buffer.start());
+    Handle<String> script_str =
+        isolate->factory()->NewStringFromAsciiChecked("(WASM)");
+    Handle<Code> code = info->code();
+    Handle<SharedFunctionInfo> shared =
+        isolate->factory()->NewSharedFunctionInfo(name_str, code, false);
+    PROFILE(isolate,
+            CodeCreateEvent(tag, *code, *shared, info, *script_str, 0, 0));
+  }
+}
+
+
 Handle<JSFunction> CompileJSToWasmWrapper(
     Isolate* isolate, wasm::ModuleEnv* module, Handle<String> name,
     Handle<Code> wasm_code, Handle<JSObject> module_object, uint32_t index) {
@@ -1933,21 +1967,8 @@ Handle<JSFunction> CompileJSToWasmWrapper(
     CompilationInfo info("js-to-wasm", isolate, &zone, flags);
     Handle<Code> code =
         Pipeline::GenerateCodeForTesting(&info, incoming, &graph, nullptr);
-
-#ifdef ENABLE_DISASSEMBLER
-    // Disassemble the wrapper code for debugging.
-    if (!code.is_null() && FLAG_print_opt_code) {
-      Vector<char> buffer;
-      const char* name = "";
-      if (func->name_offset > 0) {
-        const byte* ptr = module->module->module_start + func->name_offset;
-        name = reinterpret_cast<const char*>(ptr);
-      }
-      SNPrintF(buffer, "JS->WASM function wrapper #%d:%s", index, name);
-      OFStream os(stdout);
-      code->Disassemble(buffer.start(), os);
-    }
-#endif
+    RecordFunctionCompilation(Logger::FUNCTION_TAG, &info, "js-to-wasm", index,
+                              module->module->GetName(func->name_offset));
     // Set the JSFunction's machine code.
     function->set_code(*code);
   }
@@ -2008,20 +2029,8 @@ Handle<Code> CompileWasmToJSWrapper(Isolate* isolate, wasm::ModuleEnv* module,
     CompilationInfo info("wasm-to-js", isolate, &zone, flags);
     code = Pipeline::GenerateCodeForTesting(&info, incoming, &graph, nullptr);
 
-#ifdef ENABLE_DISASSEMBLER
-    // Disassemble the wrapper code for debugging.
-    if (!code.is_null() && FLAG_print_opt_code) {
-      Vector<char> buffer;
-      const char* name = "";
-      if (func->name_offset > 0) {
-        const byte* ptr = module->module->module_start + func->name_offset;
-        name = reinterpret_cast<const char*>(ptr);
-      }
-      SNPrintF(buffer, "WASM->JS function wrapper #%d:%s", index, name);
-      OFStream os(stdout);
-      code->Disassemble(buffer.start(), os);
-    }
-#endif
+    RecordFunctionCompilation(Logger::FUNCTION_TAG, &info, "wasm-to-js", index,
+                              module->module->GetName(func->name_offset));
   }
   return code;
 }
@@ -2072,7 +2081,7 @@ Handle<Code> CompileWasmFunction(wasm::ErrorThrower& thrower, Isolate* isolate,
       os << "Compilation failed: " << result << std::endl;
     }
     // Add the function as another context for the exception
-    Vector<char> buffer;
+    ScopedVector<char> buffer(128);
     SNPrintF(buffer, "Compiling WASM function #%d:%s failed:", index,
              module_env->module->GetName(function.name_offset));
     thrower.Failed(buffer.start(), result);
@@ -2083,24 +2092,29 @@ Handle<Code> CompileWasmFunction(wasm::ErrorThrower& thrower, Isolate* isolate,
   CallDescriptor* descriptor = const_cast<CallDescriptor*>(
       module_env->GetWasmCallDescriptor(&zone, function.sig));
   Code::Flags flags = Code::ComputeFlags(Code::WASM_FUNCTION);
-  CompilationInfo info("wasm", isolate, &zone, flags);
+  // add flags here if a meaningful name is helpful for debugging.
+  bool debugging =
+      FLAG_print_opt_code || FLAG_trace_turbo || FLAG_trace_turbo_graph;
+  const char* func_name = "wasm";
+  Vector<char> buffer;
+  if (debugging) {
+    buffer = Vector<char>::New(128);
+    SNPrintF(buffer, "WASM_function_#%d:%s", index,
+             module_env->module->GetName(function.name_offset));
+    func_name = buffer.start();
+  }
+  CompilationInfo info(func_name, isolate, &zone, flags);
   Handle<Code> code =
       Pipeline::GenerateCodeForTesting(&info, descriptor, &graph);
-
-#ifdef ENABLE_DISASSEMBLER
-  // Disassemble the code for debugging.
-  if (!code.is_null() && FLAG_print_opt_code) {
-    Vector<char> buffer;
-    const char* name = "";
-    if (function.name_offset > 0) {
-      const byte* ptr = module_env->module->module_start + function.name_offset;
-      name = reinterpret_cast<const char*>(ptr);
-    }
-    SNPrintF(buffer, "WASM function #%d:%s", index, name);
-    OFStream os(stdout);
-    code->Disassemble(buffer.start(), os);
+  if (debugging) {
+    buffer.Dispose();
   }
-#endif
+  if (!code.is_null()) {
+    RecordFunctionCompilation(
+        Logger::FUNCTION_TAG, &info, "WASM_function", index,
+        module_env->module->GetName(function.name_offset));
+  }
+
   return code;
 }
 
