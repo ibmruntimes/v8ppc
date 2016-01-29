@@ -1058,7 +1058,8 @@ MaybeHandle<JSObject> JSObject::New(Handle<JSFunction> constructor,
 
 Handle<FixedArray> JSObject::EnsureWritableFastElements(
     Handle<JSObject> object) {
-  DCHECK(object->HasFastSmiOrObjectElements());
+  DCHECK(object->HasFastSmiOrObjectElements() ||
+         object->HasFastStringWrapperElements());
   Isolate* isolate = object->GetIsolate();
   Handle<FixedArray> elems(FixedArray::cast(object->elements()), isolate);
   if (elems->map() != isolate->heap()->fixed_cow_array_map()) return elems;
@@ -5337,29 +5338,32 @@ Maybe<bool> JSObject::DefineOwnPropertyIgnoreAttributes(
                          CERTAINLY_NOT_STORE_FROM_KEYED);
 }
 
+
 MaybeHandle<Object> JSObject::SetOwnPropertyIgnoreAttributes(
     Handle<JSObject> object, Handle<Name> name, Handle<Object> value,
-    PropertyAttributes attributes) {
+    PropertyAttributes attributes, AccessorInfoHandling handling) {
   DCHECK(!value->IsTheHole());
   LookupIterator it(object, name, LookupIterator::OWN);
-  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes);
+  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes, handling);
 }
+
 
 MaybeHandle<Object> JSObject::SetOwnElementIgnoreAttributes(
     Handle<JSObject> object, uint32_t index, Handle<Object> value,
-    PropertyAttributes attributes) {
+    PropertyAttributes attributes, AccessorInfoHandling handling) {
   Isolate* isolate = object->GetIsolate();
   LookupIterator it(isolate, object, index, LookupIterator::OWN);
-  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes);
+  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes, handling);
 }
+
 
 MaybeHandle<Object> JSObject::DefinePropertyOrElementIgnoreAttributes(
     Handle<JSObject> object, Handle<Name> name, Handle<Object> value,
-    PropertyAttributes attributes) {
+    PropertyAttributes attributes, AccessorInfoHandling handling) {
   Isolate* isolate = object->GetIsolate();
   LookupIterator it = LookupIterator::PropertyOrElement(isolate, object, name,
                                                         LookupIterator::OWN);
-  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes);
+  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes, handling);
 }
 
 
@@ -5873,14 +5877,18 @@ Handle<SeededNumberDictionary> JSObject::NormalizeElements(
 
   DCHECK(object->HasFastSmiOrObjectElements() ||
          object->HasFastDoubleElements() ||
-         object->HasFastArgumentsElements());
+         object->HasFastArgumentsElements() ||
+         object->HasFastStringWrapperElements());
 
   Handle<SeededNumberDictionary> dictionary =
       GetNormalizedElementDictionary(object, elements);
 
   // Switch to using the dictionary as the backing storage for elements.
-  ElementsKind target_kind =
-      is_arguments ? SLOW_SLOPPY_ARGUMENTS_ELEMENTS : DICTIONARY_ELEMENTS;
+  ElementsKind target_kind = is_arguments
+                                 ? SLOW_SLOPPY_ARGUMENTS_ELEMENTS
+                                 : object->HasFastStringWrapperElements()
+                                       ? SLOW_STRING_WRAPPER_ELEMENTS
+                                       : DICTIONARY_ELEMENTS;
   Handle<Map> new_map = JSObject::GetElementsTransitionMap(object, target_kind);
   // Set the new map first to satify the elements type assert in set_elements().
   JSObject::MigrateToMap(object, new_map);
@@ -5901,7 +5909,9 @@ Handle<SeededNumberDictionary> JSObject::NormalizeElements(
   }
 #endif
 
-  DCHECK(object->HasDictionaryElements() || object->HasSlowArgumentsElements());
+  DCHECK(object->HasDictionaryElements() ||
+         object->HasSlowArgumentsElements() ||
+         object->HasSlowStringWrapperElements());
   return dictionary;
 }
 
@@ -6591,8 +6601,8 @@ Maybe<bool> JSReceiver::ValidateAndApplyPropertyDescriptor(
                 ? desc->value()
                 : Handle<Object>::cast(isolate->factory()->undefined_value()));
         MaybeHandle<Object> result =
-            JSObject::DefineOwnPropertyIgnoreAttributes(it, value,
-                                                        desc->ToAttributes());
+            JSObject::DefineOwnPropertyIgnoreAttributes(
+                it, value, desc->ToAttributes(), JSObject::DONT_FORCE_FIELD);
         if (result.is_null()) return Nothing<bool>();
       }
     } else {
@@ -6784,8 +6794,8 @@ Maybe<bool> JSReceiver::ValidateAndApplyPropertyDescriptor(
                                   ? current->value()
                                   : Handle<Object>::cast(
                                         isolate->factory()->undefined_value()));
-      MaybeHandle<Object> result =
-          JSObject::DefineOwnPropertyIgnoreAttributes(it, value, attrs);
+      MaybeHandle<Object> result = JSObject::DefineOwnPropertyIgnoreAttributes(
+          it, value, attrs, JSObject::DONT_FORCE_FIELD);
       if (result.is_null()) return Nothing<bool>();
     } else {
       DCHECK(desc_is_accessor_descriptor ||
@@ -6849,9 +6859,10 @@ Maybe<bool> JSObject::CreateDataProperty(LookupIterator* it,
       return Just(false);
   }
 
-  RETURN_ON_EXCEPTION_VALUE(it->isolate(),
-                            DefineOwnPropertyIgnoreAttributes(it, value, NONE),
-                            Nothing<bool>());
+  RETURN_ON_EXCEPTION_VALUE(
+      it->isolate(),
+      DefineOwnPropertyIgnoreAttributes(it, value, NONE, DONT_FORCE_FIELD),
+      Nothing<bool>());
 
   return Just(true);
 }
@@ -7403,9 +7414,7 @@ Maybe<bool> JSProxy::GetOwnPropertyDescriptor(Isolate* isolate,
 bool JSObject::ReferencesObjectFromElements(FixedArray* elements,
                                             ElementsKind kind,
                                             Object* object) {
-  DCHECK(IsFastObjectElementsKind(kind) ||
-         kind == DICTIONARY_ELEMENTS);
-  if (IsFastObjectElementsKind(kind)) {
+  if (IsFastObjectElementsKind(kind) || kind == FAST_STRING_WRAPPER_ELEMENTS) {
     int length = IsJSArray()
         ? Smi::cast(JSArray::cast(this)->length())->value()
         : elements->length();
@@ -7414,6 +7423,7 @@ bool JSObject::ReferencesObjectFromElements(FixedArray* elements,
       if (!element->IsTheHole() && element == object) return true;
     }
   } else {
+    DCHECK(kind == DICTIONARY_ELEMENTS || kind == SLOW_STRING_WRAPPER_ELEMENTS);
     Object* key =
         SeededNumberDictionary::cast(elements)->SlowReverseLookup(object);
     if (!key->IsUndefined()) return true;
@@ -7464,7 +7474,9 @@ bool JSObject::ReferencesObject(Object* obj) {
       break;
     case FAST_ELEMENTS:
     case FAST_HOLEY_ELEMENTS:
-    case DICTIONARY_ELEMENTS: {
+    case DICTIONARY_ELEMENTS:
+    case FAST_STRING_WRAPPER_ELEMENTS:
+    case SLOW_STRING_WRAPPER_ELEMENTS: {
       FixedArray* elements = FixedArray::cast(this->elements());
       if (ReferencesObjectFromElements(elements, kind, obj)) return true;
       break;
@@ -7485,6 +7497,8 @@ bool JSObject::ReferencesObject(Object* obj) {
       if (ReferencesObjectFromElements(arguments, kind, obj)) return true;
       break;
     }
+    case NO_ELEMENTS:
+      break;
   }
 
   // For functions check the context.
@@ -7866,7 +7880,8 @@ Maybe<bool> JSObject::PreventExtensionsWithTransition(
 
   Handle<SeededNumberDictionary> new_element_dictionary;
   if (!object->HasFixedTypedArrayElements() &&
-      !object->HasDictionaryElements()) {
+      !object->HasDictionaryElements() &&
+      !object->HasSlowStringWrapperElements()) {
     int length =
         object->IsJSArray()
             ? Smi::cast(Handle<JSArray>::cast(object)->length())->value()
@@ -7913,7 +7928,11 @@ Maybe<bool> JSObject::PreventExtensionsWithTransition(
         Map::Copy(handle(object->map()), "SlowCopyForPreventExtensions");
     new_map->set_is_extensible(false);
     if (!new_element_dictionary.is_null()) {
-      new_map->set_elements_kind(DICTIONARY_ELEMENTS);
+      ElementsKind new_kind =
+          IsStringWrapperElementsKind(old_map->elements_kind())
+              ? SLOW_STRING_WRAPPER_ELEMENTS
+              : DICTIONARY_ELEMENTS;
+      new_map->set_elements_kind(new_kind);
     }
     JSObject::MigrateToMap(object, new_map);
 
@@ -7938,7 +7957,8 @@ Maybe<bool> JSObject::PreventExtensionsWithTransition(
     return Just(true);
   }
 
-  DCHECK(object->map()->has_dictionary_elements());
+  DCHECK(object->map()->has_dictionary_elements() ||
+         object->map()->elements_kind() == SLOW_STRING_WRAPPER_ELEMENTS);
   if (!new_element_dictionary.is_null()) {
     object->set_elements(*new_element_dictionary);
   }
@@ -8130,12 +8150,8 @@ MaybeHandle<JSObject> JSObjectWalkVisitor<ContextObject>::StructureWalk(
     }
 
     // Deep copy own elements.
-    // Pixel elements cannot be created using an object literal.
-    DCHECK(!copy->HasFixedTypedArrayElements());
     switch (kind) {
-      case FAST_SMI_ELEMENTS:
       case FAST_ELEMENTS:
-      case FAST_HOLEY_SMI_ELEMENTS:
       case FAST_HOLEY_ELEMENTS: {
         Handle<FixedArray> elements(FixedArray::cast(copy->elements()));
         if (elements->map() == isolate->heap()->fixed_cow_array_map()) {
@@ -8147,9 +8163,6 @@ MaybeHandle<JSObject> JSObjectWalkVisitor<ContextObject>::StructureWalk(
         } else {
           for (int i = 0; i < elements->length(); i++) {
             Handle<Object> value(elements->get(i), isolate);
-            DCHECK(value->IsSmi() ||
-                   value->IsTheHole() ||
-                   (IsFastObjectElementsKind(copy->GetElementsKind())));
             if (value->IsJSObject()) {
               Handle<JSObject> result;
               ASSIGN_RETURN_ON_EXCEPTION(
@@ -8190,16 +8203,25 @@ MaybeHandle<JSObject> JSObjectWalkVisitor<ContextObject>::StructureWalk(
       case SLOW_SLOPPY_ARGUMENTS_ELEMENTS:
         UNIMPLEMENTED();
         break;
-
+      case FAST_STRING_WRAPPER_ELEMENTS:
+      case SLOW_STRING_WRAPPER_ELEMENTS:
+        UNREACHABLE();
+        break;
 
 #define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size)                        \
       case TYPE##_ELEMENTS:                                                    \
 
       TYPED_ARRAYS(TYPED_ARRAY_CASE)
 #undef TYPED_ARRAY_CASE
+      // Typed elements cannot be created using an object literal.
+      UNREACHABLE();
+      break;
 
+      case FAST_SMI_ELEMENTS:
+      case FAST_HOLEY_SMI_ELEMENTS:
       case FAST_DOUBLE_ELEMENTS:
       case FAST_HOLEY_DOUBLE_ELEMENTS:
+      case NO_ELEMENTS:
         // No contained objects, nothing to do.
         break;
     }
@@ -8305,12 +8327,6 @@ MaybeHandle<Object> JSReceiver::OrdinaryToPrimitive(
 
 // TODO(cbruni/jkummerow): Consider moving this into elements.cc.
 bool HasEnumerableElements(JSObject* object) {
-  if (object->IsJSValue()) {
-    Object* value = JSValue::cast(object)->value();
-    if (value->IsString()) {
-      if (String::cast(value)->length() > 0) return true;
-    }
-  }
   switch (object->GetElementsKind()) {
     case FAST_SMI_ELEMENTS:
     case FAST_ELEMENTS:
@@ -8362,6 +8378,14 @@ bool HasEnumerableElements(JSObject* object) {
     case SLOW_SLOPPY_ARGUMENTS_ELEMENTS:
       // We're approximating non-empty arguments objects here.
       return true;
+    case FAST_STRING_WRAPPER_ELEMENTS:
+    case SLOW_STRING_WRAPPER_ELEMENTS:
+      if (String::cast(JSValue::cast(object)->value())->length() > 0) {
+        return true;
+      }
+      return object->elements()->length() > 0;
+    case NO_ELEMENTS:
+      return false;
   }
   UNREACHABLE();
   return true;
@@ -8594,8 +8618,8 @@ static Maybe<bool> GetKeysFromInterceptor(Isolate* isolate,
     accumulator->AddElementKeysFromInterceptor(
         Handle<JSObject>::cast(v8::Utils::OpenHandle(*result)));
   } else {
-    accumulator->AddKeys(
-        Handle<JSObject>::cast(v8::Utils::OpenHandle(*result)));
+    accumulator->AddKeys(Handle<JSObject>::cast(v8::Utils::OpenHandle(*result)),
+                         DO_NOT_CONVERT);
   }
   return Just(true);
 }
@@ -8651,7 +8675,7 @@ static Maybe<bool> GetKeysFromJSObject(Isolate* isolate,
     // Compute the property keys and cache them if possible.
     Handle<FixedArray> enum_keys =
         JSObject::GetEnumPropertyKeys(object, cache_enum_length);
-    accumulator->AddKeys(enum_keys);
+    accumulator->AddKeys(enum_keys, DO_NOT_CONVERT);
   } else {
     object->CollectOwnPropertyNames(accumulator, *filter);
   }
@@ -9744,7 +9768,10 @@ Handle<Map> Map::CopyForPreventExtensions(Handle<Map> map,
       transition_marker, reason, SPECIAL_TRANSITION);
   new_map->set_is_extensible(false);
   if (!IsFixedTypedArrayElementsKind(map->elements_kind())) {
-    new_map->set_elements_kind(DICTIONARY_ELEMENTS);
+    ElementsKind new_kind = IsStringWrapperElementsKind(map->elements_kind())
+                                ? SLOW_STRING_WRAPPER_ELEMENTS
+                                : DICTIONARY_ELEMENTS;
+    new_map->set_elements_kind(new_kind);
   }
   return new_map;
 }
@@ -15779,6 +15806,9 @@ static ElementsKind BestFittingFastElementsKind(JSObject* object) {
   if (object->HasSloppyArgumentsElements()) {
     return FAST_SLOPPY_ARGUMENTS_ELEMENTS;
   }
+  if (object->HasStringWrapperElements()) {
+    return FAST_STRING_WRAPPER_ELEMENTS;
+  }
   DCHECK(object->HasDictionaryElements());
   SeededNumberDictionary* dictionary = object->element_dictionary();
   ElementsKind kind = FAST_HOLEY_SMI_ELEMENTS;
@@ -15862,6 +15892,8 @@ Maybe<bool> JSObject::AddDataElement(Handle<JSObject> object, uint32_t index,
   if (IsSloppyArgumentsElements(kind)) {
     elements = FixedArrayBase::cast(FixedArray::cast(elements)->get(1));
     dictionary_kind = SLOW_SLOPPY_ARGUMENTS_ELEMENTS;
+  } else if (IsStringWrapperElementsKind(kind)) {
+    dictionary_kind = SLOW_STRING_WRAPPER_ELEMENTS;
   }
 
   if (attributes != NONE) {
@@ -16157,13 +16189,16 @@ int JSObject::GetFastElementsUsage() {
     // Fall through.
     case FAST_HOLEY_SMI_ELEMENTS:
     case FAST_HOLEY_ELEMENTS:
+    case FAST_STRING_WRAPPER_ELEMENTS:
       return FastHoleyElementsUsage(this, FixedArray::cast(store));
     case FAST_HOLEY_DOUBLE_ELEMENTS:
       if (elements()->length() == 0) return 0;
       return FastHoleyElementsUsage(this, FixedDoubleArray::cast(store));
 
     case SLOW_SLOPPY_ARGUMENTS_ELEMENTS:
+    case SLOW_STRING_WRAPPER_ELEMENTS:
     case DICTIONARY_ELEMENTS:
+    case NO_ELEMENTS:
 #define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size)                      \
     case TYPE##_ELEMENTS:                                                    \
 
@@ -16435,7 +16470,7 @@ void JSObject::CollectOwnPropertyNames(KeyAccumulator* keys,
       }
       Name* key = descs->GetKey(i);
       if (key->FilterKey(filter)) continue;
-      keys->AddKey(key);
+      keys->AddKey(key, DO_NOT_CONVERT);
     }
   } else if (IsJSGlobalObject()) {
     GlobalDictionary::CollectKeysTo(handle(global_dictionary()), keys, filter);
@@ -16464,21 +16499,6 @@ void JSObject::CollectOwnElementKeys(Handle<JSObject> object,
                                      KeyAccumulator* keys,
                                      PropertyFilter filter) {
   if (filter & SKIP_STRINGS) return;
-  uint32_t string_keys = 0;
-
-  // If this is a String wrapper, add the string indices first,
-  // as they're guaranteed to precede the elements in numerical order
-  // and ascending order is required by ECMA-262, 6th, 9.1.12.
-  if (object->IsJSValue()) {
-    Object* val = JSValue::cast(*object)->value();
-    if (val->IsString() && (filter & ONLY_ALL_CAN_READ) == 0) {
-      String* str = String::cast(val);
-      string_keys = str->length();
-      for (uint32_t i = 0; i < string_keys; i++) {
-        keys->AddKey(i);
-      }
-    }
-  }
   ElementsAccessor* accessor = object->GetElementsAccessor();
   accessor->CollectElementIndices(object, keys, kMaxUInt32, filter, 0);
 }
@@ -16507,7 +16527,8 @@ int JSObject::GetOwnElementKeys(FixedArray* storage, PropertyFilter filter) {
     case FAST_SMI_ELEMENTS:
     case FAST_ELEMENTS:
     case FAST_HOLEY_SMI_ELEMENTS:
-    case FAST_HOLEY_ELEMENTS: {
+    case FAST_HOLEY_ELEMENTS:
+    case FAST_STRING_WRAPPER_ELEMENTS: {
       int length = IsJSArray() ?
           Smi::cast(JSArray::cast(this)->length())->value() :
           FixedArray::cast(elements())->length();
@@ -16556,7 +16577,8 @@ int JSObject::GetOwnElementKeys(FixedArray* storage, PropertyFilter filter) {
       break;
     }
 
-    case DICTIONARY_ELEMENTS: {
+    case DICTIONARY_ELEMENTS:
+    case SLOW_STRING_WRAPPER_ELEMENTS: {
       if (storage != NULL) {
         element_dictionary()->CopyKeysTo(storage, counter, filter,
                                          SeededNumberDictionary::SORTED);
@@ -16606,6 +16628,8 @@ int JSObject::GetOwnElementKeys(FixedArray* storage, PropertyFilter filter) {
       }
       break;
     }
+    case NO_ELEMENTS:
+      break;
   }
 
   DCHECK(!storage || storage->length() == counter);
@@ -18503,7 +18527,7 @@ void Dictionary<Derived, Shape, Key>::CollectKeysTo(
 
   for (int i = 0; i < array_size; i++) {
     int index = Smi::cast(array->get(i))->value();
-    keys->AddKey(dictionary->KeyAt(index));
+    keys->AddKey(dictionary->KeyAt(index), DO_NOT_CONVERT);
   }
 }
 
