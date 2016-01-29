@@ -2154,8 +2154,8 @@ void MacroAssembler::TestHeapNumberIsMinusZero(Register input,
   rotldi(scratch1, scratch1, 1);
   cmpi(scratch1, Operand(1));
 #else
-  lwz(scratch1, FieldMemOperand(value, HeapNumber::kExponentOffset));
-  lwz(scratch2, FieldMemOperand(value, HeapNumber::kMantissaOffset));
+  lwz(scratch1, FieldMemOperand(input, HeapNumber::kExponentOffset));
+  lwz(scratch2, FieldMemOperand(input, HeapNumber::kMantissaOffset));
   Label done;
   cmpi(scratch2, Operand::Zero());
   bne(&done);
@@ -2178,7 +2178,7 @@ void MacroAssembler::TestHeapNumberSign(Register input, Register scratch) {
 #if V8_TARGET_ARCH_PPC64
   LoadP(scratch, FieldMemOperand(input, HeapNumber::kValueOffset));
 #else
-  lwz(scratch, FieldMemOperand(value, HeapNumber::kExponentOffset));
+  lwz(scratch, FieldMemOperand(input, HeapNumber::kExponentOffset));
 #endif
   cmpi(scratch, Operand::Zero());
 }
