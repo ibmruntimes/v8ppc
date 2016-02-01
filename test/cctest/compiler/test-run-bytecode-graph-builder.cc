@@ -1418,9 +1418,8 @@ TEST(BytecodeGraphBuilderTryCatch) {
   Zone* zone = scope.main_zone();
 
   ExpectedSnippet<0> snippets[] = {
-      // TODO(mstarzinger): Fix cases where nothing throws.
-      // {"var a = 1; try { a = 2 } catch(e) { a = 3 }; return a;",
-      //  {handle(Smi::FromInt(2), isolate)}},
+      {"var a = 1; try { a = 2 } catch(e) { a = 3 }; return a;",
+       {handle(Smi::FromInt(2), isolate)}},
       {"var a; try { undef.x } catch(e) { a = 2 }; return a;",
        {handle(Smi::FromInt(2), isolate)}},
       {"var a; try { throw 1 } catch(e) { a = e + 2 }; return a;",
@@ -1451,23 +1450,22 @@ TEST(BytecodeGraphBuilderTryFinally1) {
   ExpectedSnippet<0> snippets[] = {
       {"var a = 1; try { a = a + 1; } finally { a = a + 2; }; return a;",
        {handle(Smi::FromInt(4), isolate)}},
-      // TODO(mstarzinger): Fix cases where nothing throws.
-      // {"var a = 1; try { a = 2; return 23; } finally { a = 3 }; return a;",
-      //  {handle(Smi::FromInt(23), isolate)}},
+      {"var a = 1; try { a = 2; return 23; } finally { a = 3 }; return a;",
+       {handle(Smi::FromInt(23), isolate)}},
       {"var a = 1; try { a = 2; throw 23; } finally { return a; };",
        {handle(Smi::FromInt(2), isolate)}},
-      // {"var a = 1; for (var i = 10; i < 20; i += 5) {"
-      //  "  try { a = 2; break; } finally { a = 3; }"
-      //  "} return a + i;",
-      //  {handle(Smi::FromInt(13), isolate)}},
-      // {"var a = 1; for (var i = 10; i < 20; i += 5) {"
-      //  "  try { a = 2; continue; } finally { a = 3; }"
-      //  "} return a + i;",
-      //  {handle(Smi::FromInt(23), isolate)}},
-      // {"var a = 1; try { a = 2;"
-      //  "  try { a = 3; throw 23; } finally { a = 4; }"
-      //  "} catch(e) { a = a + e; } return a;",
-      //  {handle(Smi::FromInt(27), isolate)}},
+      {"var a = 1; for (var i = 10; i < 20; i += 5) {"
+       "  try { a = 2; break; } finally { a = 3; }"
+       "} return a + i;",
+       {handle(Smi::FromInt(13), isolate)}},
+      {"var a = 1; for (var i = 10; i < 20; i += 5) {"
+       "  try { a = 2; continue; } finally { a = 3; }"
+       "} return a + i;",
+       {handle(Smi::FromInt(23), isolate)}},
+      {"var a = 1; try { a = 2;"
+       "  try { a = 3; throw 23; } finally { a = 4; }"
+       "} catch(e) { a = a + e; } return a;",
+       {handle(Smi::FromInt(27), isolate)}},
   };
 
   size_t num_snippets = sizeof(snippets) / sizeof(snippets[0]);

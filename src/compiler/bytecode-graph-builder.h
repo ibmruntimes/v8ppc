@@ -107,9 +107,6 @@ class BytecodeGraphBuilder {
   Node* MakeNode(const Operator* op, int value_input_count, Node** value_inputs,
                  bool incomplete);
 
-  // Helper to indicate a node exits the function body.
-  void UpdateControlDependencyToLeaveFunction(Node* exit);
-
   Node** EnsureInputBufferSize(int size);
 
   Node* ProcessCallArguments(const Operator* call_op, Node* callee,
@@ -139,25 +136,27 @@ class BytecodeGraphBuilder {
   void BuildCallRuntime();
   void BuildCallRuntimeForPair();
   void BuildCallConstruct();
+  void BuildThrow();
   void BuildBinaryOp(const Operator* op);
   void BuildCompareOp(const Operator* op);
   void BuildDelete();
-  void BuildCastOperator(const Operator* js_op);
+  void BuildCastOperator(const Operator* op);
   void BuildForInPrepare();
   void BuildForInNext();
 
   // Control flow plumbing.
-  void BuildJump(int source_offset, int target_offset);
   void BuildJump();
   void BuildConditionalJump(Node* condition);
   void BuildJumpIfEqual(Node* comperand);
   void BuildJumpIfToBooleanEqual(Node* boolean_comperand);
 
-  // Constructing merge and loop headers.
-  void MergeEnvironmentsOfBackwardBranches(int source_offset,
-                                           int target_offset);
-  void MergeEnvironmentsOfForwardBranches(int source_offset);
-  void BuildLoopHeaderForBackwardBranches(int source_offset);
+  // Simulates control flow by forward-propagating environments.
+  void MergeIntoSuccessorEnvironment(int target_offset);
+  void BuildLoopHeaderEnvironment(int current_offset);
+  void SwitchToMergeEnvironment(int current_offset);
+
+  // Simulates control flow that exits the function body.
+  void MergeControlToLeaveFunction(Node* exit);
 
   // Simulates entry and exit of exception handlers.
   void EnterAndExitExceptionHandlers(int current_offset);
@@ -233,13 +232,10 @@ class BytecodeGraphBuilder {
   BytecodeBranchAnalysis* branch_analysis_;  // TODO(mstarzinger): Make const.
   Environment* environment_;
 
-  // Merge environments are snapshots of the environment at a particular
-  // bytecode offset to be merged into a later environment.
+  // Merge environments are snapshots of the environment at points where the
+  // control flow merges. This models a forward data flow propagation of all
+  // values from all predecessors of the merge in question.
   ZoneMap<int, Environment*> merge_environments_;
-
-  // Loop header environments are environments created for bytecodes
-  // where it is known there are back branches, ie a loop header.
-  ZoneMap<int, Environment*> loop_header_environments_;
 
   // Exception handlers currently entered by the iteration.
   ZoneStack<ExceptionHandler> exception_handlers_;
