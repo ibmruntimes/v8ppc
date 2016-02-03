@@ -365,7 +365,11 @@ class BitsetType {
   static bitset UnsignedSmall();
 
   bitset Bitset() {
+#if defined(V8_PPC_TAGGING_OPT)
+    return static_cast<bitset>(reinterpret_cast<uintptr_t>(this) >> 1);
+#else
     return static_cast<bitset>(reinterpret_cast<uintptr_t>(this) ^ 1u);
+#endif
   }
 
   static bool IsInhabited(bitset bits) {
@@ -410,7 +414,11 @@ class BitsetType {
   friend class Type;
 
   static Type* New(bitset bits) {
+#if defined(V8_PPC_TAGGING_OPT)
+    return reinterpret_cast<Type*>((static_cast<uintptr_t>(bits) << 1) | 1u);
+#else
     return reinterpret_cast<Type*>(static_cast<uintptr_t>(bits | 1u));
+#endif
   }
 
   struct Boundary {
