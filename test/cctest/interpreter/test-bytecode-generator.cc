@@ -4266,20 +4266,24 @@ TEST(TryCatch) {
       {"try { return 1; } catch(e) { return 2; }",
        5 * kPointerSize,
        1,
-       27,
+       36,
        {
-           B(LdaSmi8), U8(1),                                             //
-           B(Return),                                                     //
-           B(Star), R(3),                                                 //
-           B(LdaConstant), U8(0),                                         //
-           B(Star), R(2),                                                 //
-           B(Ldar), R(closure),                                           //
-           B(Star), R(4),                                                 //
-           B(CallRuntime), U16(Runtime::kPushCatchContext), R(2), U8(3),  //
-           B(PushContext), R(0),                                          //
-           B(LdaSmi8), U8(2),                                             //
-           B(PopContext), R(0),                                     //
-           B(Return),                                                     //
+           B(LdaSmi8), U8(1),                                              //
+           B(Return),                                                      //
+           B(Star), R(3),                                                  //
+           B(LdaConstant), U8(0),                                          //
+           B(Star), R(2),                                                  //
+           B(Ldar), R(closure),                                            //
+           B(Star), R(4),                                                  //
+           B(CallRuntime), U16(Runtime::kPushCatchContext), R(2), U8(3),   //
+           B(Star), R(1),                                                  //
+           B(CallRuntime), U16(Runtime::kInterpreterClearPendingMessage),  //
+           /*           */ R(0), U8(0),                                    //
+           B(Ldar), R(1),                                                  //
+           B(PushContext), R(0),                                           //
+           B(LdaSmi8), U8(2),                                              //
+           B(PopContext), R(0),                                            //
+           B(Return),                                                      //
            // TODO(mstarzinger): Potential optimization, elide next bytes.
            B(LdaUndefined),  //
            B(Return),        //
@@ -4291,39 +4295,47 @@ TEST(TryCatch) {
       {"var a; try { a = 1 } catch(e1) {}; try { a = 2 } catch(e2) { a = 3 }",
        6 * kPointerSize,
        1,
-       56,
+       74,
        {
-           B(LdaSmi8), U8(1),                                             //
-           B(Star), R(0),                                                 //
-           B(Jump), U8(21),                                               //
-           B(Star), R(4),                                                 //
-           B(LdaConstant), U8(0),                                         //
-           B(Star), R(3),                                                 //
-           B(Ldar), R(closure),                                           //
-           B(Star), R(5),                                                 //
-           B(CallRuntime), U16(Runtime::kPushCatchContext), R(3), U8(3),  //
-           B(PushContext), R(1),                                          //
-           B(PopContext), R(1),                                           //
-           B(LdaSmi8), U8(2),                                             //
-           B(Star), R(0),                                                 //
-           B(Jump), U8(25),                                               //
-           B(Star), R(4),                                                 //
-           B(LdaConstant), U8(1),                                         //
-           B(Star), R(3),                                                 //
-           B(Ldar), R(closure),                                           //
-           B(Star), R(5),                                                 //
-           B(CallRuntime), U16(Runtime::kPushCatchContext), R(3), U8(3),  //
-           B(PushContext), R(1),                                          //
-           B(LdaSmi8), U8(3),                                             //
-           B(Star), R(0),                                                 //
-           B(PopContext), R(1),                                           //
-           B(LdaUndefined),                                               //
-           B(Return),                                                     //
+           B(LdaSmi8), U8(1),                                              //
+           B(Star), R(0),                                                  //
+           B(Jump), U8(30),                                                //
+           B(Star), R(4),                                                  //
+           B(LdaConstant), U8(0),                                          //
+           B(Star), R(3),                                                  //
+           B(Ldar), R(closure),                                            //
+           B(Star), R(5),                                                  //
+           B(CallRuntime), U16(Runtime::kPushCatchContext), R(3), U8(3),   //
+           B(Star), R(2),                                                  //
+           B(CallRuntime), U16(Runtime::kInterpreterClearPendingMessage),  //
+           /*           */ R(0), U8(0),                                    //
+           B(Ldar), R(2),                                                  //
+           B(PushContext), R(1),                                           //
+           B(PopContext), R(1),                                            //
+           B(LdaSmi8), U8(2),                                              //
+           B(Star), R(0),                                                  //
+           B(Jump), U8(34),                                                //
+           B(Star), R(4),                                                  //
+           B(LdaConstant), U8(1),                                          //
+           B(Star), R(3),                                                  //
+           B(Ldar), R(closure),                                            //
+           B(Star), R(5),                                                  //
+           B(CallRuntime), U16(Runtime::kPushCatchContext), R(3), U8(3),   //
+           B(Star), R(2),                                                  //
+           B(CallRuntime), U16(Runtime::kInterpreterClearPendingMessage),  //
+           /*           */ R(0), U8(0),                                    //
+           B(Ldar), R(2),                                                  //
+           B(PushContext), R(1),                                           //
+           B(LdaSmi8), U8(3),                                              //
+           B(Star), R(0),                                                  //
+           B(PopContext), R(1),                                            //
+           B(LdaUndefined),                                                //
+           B(Return),                                                      //
        },
        2,
        {"e1", "e2"},
        2,
-       {{0, 4, 6}, {25, 29, 31}}},
+       {{0, 4, 6}, {34, 38, 40}}},
   };
 
   for (size_t i = 0; i < arraysize(snippets); i++) {
@@ -4344,28 +4356,33 @@ TEST(TryFinally) {
       {"var a = 1; try { a = 2; } finally { a = 3; }",
        4 * kPointerSize,
        1,
-       35,
+       47,
        {
-           B(LdaSmi8), U8(1),         //
-           B(Star), R(0),             //
-           B(LdaSmi8), U8(2),         //
-           B(Star), R(0),             //
-           B(LdaSmi8), U8(-1),        //
-           B(Star), R(1),             //
-           B(Jump), U8(7),            //
-           B(Star), R(2),             //
-           B(LdaZero),                //
-           B(Star), R(1),             //
-           B(LdaSmi8), U8(3),         //
-           B(Star), R(0),             //
-           B(LdaZero),                //
-           B(TestEqualStrict), R(1),  //
-           B(JumpIfTrue), U8(4),      //
-           B(Jump), U8(5),            //
-           B(Ldar), R(2),             //
-           B(ReThrow),                //
-           B(LdaUndefined),           //
-           B(Return),                 //
+           B(LdaSmi8), U8(1),                                              //
+           B(Star), R(0),                                                  //
+           B(LdaSmi8), U8(2),                                              //
+           B(Star), R(0),                                                  //
+           B(LdaSmi8), U8(-1),                                             //
+           B(Star), R(1),                                                  //
+           B(Jump), U8(7),                                                 //
+           B(Star), R(2),                                                  //
+           B(LdaZero),                                                     //
+           B(Star), R(1),                                                  //
+           B(CallRuntime), U16(Runtime::kInterpreterClearPendingMessage),  //
+           /*           */ R(0), U8(0),                                    //
+           B(Star), R(3),                                                  //
+           B(LdaSmi8), U8(3),                                              //
+           B(Star), R(0),                                                  //
+           B(CallRuntime), U16(Runtime::kInterpreterSetPendingMessage),    //
+           /*           */ R(3), U8(1),                                    //
+           B(LdaZero),                                                     //
+           B(TestEqualStrict), R(1),                                       //
+           B(JumpIfTrue), U8(4),                                           //
+           B(Jump), U8(5),                                                 //
+           B(Ldar), R(2),                                                  //
+           B(ReThrow),                                                     //
+           B(LdaUndefined),                                                //
+           B(Return),                                                      //
        },
        0,
        {},
@@ -4374,96 +4391,118 @@ TEST(TryFinally) {
       {"var a = 1; try { a = 2; } catch(e) { a = 20 } finally { a = 3; }",
        9 * kPointerSize,
        1,
-       60,
+       81,
        {
-           B(LdaSmi8), U8(1),                                             //
-           B(Star), R(0),                                                 //
-           B(LdaSmi8), U8(2),                                             //
-           B(Star), R(0),                                                 //
-           B(Jump), U8(25),                                               //
-           B(Star), R(7),                                                 //
-           B(LdaConstant), U8(0),                                         //
-           B(Star), R(6),                                                 //
-           B(Ldar), R(closure),                                           //
-           B(Star), R(8),                                                 //
-           B(CallRuntime), U16(Runtime::kPushCatchContext), R(6), U8(3),  //
-           B(PushContext), R(1),                                          //
-           B(LdaSmi8), U8(20),                                            //
-           B(Star), R(0),                                                 //
-           B(PopContext), R(1),                                           //
-           B(LdaSmi8), U8(-1),                                            //
-           B(Star), R(2),                                                 //
-           B(Jump), U8(7),                                                //
-           B(Star), R(3),                                                 //
-           B(LdaZero),                                                    //
-           B(Star), R(2),                                                 //
-           B(LdaSmi8), U8(3),                                             //
-           B(Star), R(0),                                                 //
-           B(LdaZero),                                                    //
-           B(TestEqualStrict), R(2),                                      //
-           B(JumpIfTrue), U8(4),                                          //
-           B(Jump), U8(5),                                                //
-           B(Ldar), R(3),                                                 //
-           B(ReThrow),                                                    //
-           B(LdaUndefined),                                               //
-           B(Return),                                                     //
+           B(LdaSmi8), U8(1),                                              //
+           B(Star), R(0),                                                  //
+           B(LdaSmi8), U8(2),                                              //
+           B(Star), R(0),                                                  //
+           B(Jump), U8(34),                                                //
+           B(Star), R(7),                                                  //
+           B(LdaConstant), U8(0),                                          //
+           B(Star), R(6),                                                  //
+           B(Ldar), R(closure),                                            //
+           B(Star), R(8),                                                  //
+           B(CallRuntime), U16(Runtime::kPushCatchContext), R(6), U8(3),   //
+           B(Star), R(5),                                                  //
+           B(CallRuntime), U16(Runtime::kInterpreterClearPendingMessage),  //
+           /*           */ R(0), U8(0),                                    //
+           B(Ldar), R(5),                                                  //
+           B(PushContext), R(1),                                           //
+           B(LdaSmi8), U8(20),                                             //
+           B(Star), R(0),                                                  //
+           B(PopContext), R(1),                                            //
+           B(LdaSmi8), U8(-1),                                             //
+           B(Star), R(2),                                                  //
+           B(Jump), U8(7),                                                 //
+           B(Star), R(3),                                                  //
+           B(LdaZero),                                                     //
+           B(Star), R(2),                                                  //
+           B(CallRuntime), U16(Runtime::kInterpreterClearPendingMessage),  //
+           /*           */ R(0), U8(0),                                    //
+           B(Star), R(4),                                                  //
+           B(LdaSmi8), U8(3),                                              //
+           B(Star), R(0),                                                  //
+           B(CallRuntime), U16(Runtime::kInterpreterSetPendingMessage),    //
+           /*           */ R(4), U8(1),                                    //
+           B(LdaZero),                                                     //
+           B(TestEqualStrict), R(2),                                       //
+           B(JumpIfTrue), U8(4),                                           //
+           B(Jump), U8(5),                                                 //
+           B(Ldar), R(3),                                                  //
+           B(ReThrow),                                                     //
+           B(LdaUndefined),                                                //
+           B(Return),                                                      //
        },
        1,
        {"e"},
        2,
-       {{4, 33, 39}, {4, 8, 10}}},
+       {{4, 42, 48}, {4, 8, 10}}},
       {"var a; try {"
        "  try { a = 1 } catch(e) { a = 2 }"
        "} catch(e) { a = 20 } finally { a = 3; }",
        10 * kPointerSize,
        1,
-       81,
+       111,
        {
-           B(LdaSmi8), U8(1),                                             //
-           B(Star), R(0),                                                 //
-           B(Jump), U8(25),                                               //
-           B(Star), R(8),                                                 //
-           B(LdaConstant), U8(0),                                         //
-           B(Star), R(7),                                                 //
-           B(Ldar), R(closure),                                           //
-           B(Star), R(9),                                                 //
-           B(CallRuntime), U16(Runtime::kPushCatchContext), R(7), U8(3),  //
-           B(PushContext), R(1),                                          //
-           B(LdaSmi8), U8(2),                                             //
-           B(Star), R(0),                                                 //
-           B(PopContext), R(1),                                           //
-           B(Jump), U8(25),                                               //
-           B(Star), R(7),                                                 //
-           B(LdaConstant), U8(0),                                         //
-           B(Star), R(6),                                                 //
-           B(Ldar), R(closure),                                           //
-           B(Star), R(8),                                                 //
-           B(CallRuntime), U16(Runtime::kPushCatchContext), R(6), U8(3),  //
-           B(PushContext), R(1),                                          //
-           B(LdaSmi8), U8(20),                                            //
-           B(Star), R(0),                                                 //
-           B(PopContext), R(1),                                           //
-           B(LdaSmi8), U8(-1),                                            //
-           B(Star), R(2),                                                 //
-           B(Jump), U8(7),                                                //
-           B(Star), R(3),                                                 //
-           B(LdaZero),                                                    //
-           B(Star), R(2),                                                 //
-           B(LdaSmi8), U8(3),                                             //
-           B(Star), R(0),                                                 //
-           B(LdaZero),                                                    //
-           B(TestEqualStrict), R(2),                                      //
-           B(JumpIfTrue), U8(4),                                          //
-           B(Jump), U8(5),                                                //
-           B(Ldar), R(3),                                                 //
-           B(ReThrow),                                                    //
-           B(LdaUndefined),                                               //
-           B(Return),                                                     //
+           B(LdaSmi8), U8(1),                                              //
+           B(Star), R(0),                                                  //
+           B(Jump), U8(34),                                                //
+           B(Star), R(8),                                                  //
+           B(LdaConstant), U8(0),                                          //
+           B(Star), R(7),                                                  //
+           B(Ldar), R(closure),                                            //
+           B(Star), R(9),                                                  //
+           B(CallRuntime), U16(Runtime::kPushCatchContext), R(7), U8(3),   //
+           B(Star), R(6),                                                  //
+           B(CallRuntime), U16(Runtime::kInterpreterClearPendingMessage),  //
+           /*           */ R(0), U8(0),                                    //
+           B(Ldar), R(6),                                                  //
+           B(PushContext), R(1),                                           //
+           B(LdaSmi8), U8(2),                                              //
+           B(Star), R(0),                                                  //
+           B(PopContext), R(1),                                            //
+           B(Jump), U8(34),                                                //
+           B(Star), R(7),                                                  //
+           B(LdaConstant), U8(0),                                          //
+           B(Star), R(6),                                                  //
+           B(Ldar), R(closure),                                            //
+           B(Star), R(8),                                                  //
+           B(CallRuntime), U16(Runtime::kPushCatchContext), R(6), U8(3),   //
+           B(Star), R(5),                                                  //
+           B(CallRuntime), U16(Runtime::kInterpreterClearPendingMessage),  //
+           /*           */ R(0), U8(0),                                    //
+           B(Ldar), R(5),                                                  //
+           B(PushContext), R(1),                                           //
+           B(LdaSmi8), U8(20),                                             //
+           B(Star), R(0),                                                  //
+           B(PopContext), R(1),                                            //
+           B(LdaSmi8), U8(-1),                                             //
+           B(Star), R(2),                                                  //
+           B(Jump), U8(7),                                                 //
+           B(Star), R(3),                                                  //
+           B(LdaZero),                                                     //
+           B(Star), R(2),                                                  //
+           B(CallRuntime), U16(Runtime::kInterpreterClearPendingMessage),  //
+           /*           */ R(0), U8(0),                                    //
+           B(Star), R(4),                                                  //
+           B(LdaSmi8), U8(3),                                              //
+           B(Star), R(0),                                                  //
+           B(CallRuntime), U16(Runtime::kInterpreterSetPendingMessage),    //
+           /*           */ R(4), U8(1),                                    //
+           B(LdaZero),                                                     //
+           B(TestEqualStrict), R(2),                                       //
+           B(JumpIfTrue), U8(4),                                           //
+           B(Jump), U8(5),                                                 //
+           B(Ldar), R(3),                                                  //
+           B(ReThrow),                                                     //
+           B(LdaUndefined),                                                //
+           B(Return),                                                      //
        },
        1,
        {"e"},
        3,
-       {{0, 54, 60}, {0, 29, 31}, {0, 4, 6}}},
+       {{0, 72, 78}, {0, 38, 40}, {0, 4, 6}}},
   };
 
   for (size_t i = 0; i < arraysize(snippets); i++) {
@@ -7276,9 +7315,6 @@ TEST(DeleteLookupSlotInEval) {
 }
 
 TEST(WideRegisters) {
-  InitializedHandleScope handle_scope;
-  BytecodeGeneratorHelper helper;
-
   // Prepare prologue that creates frame for lots of registers.
   std::ostringstream os;
   for (size_t i = 0; i < 157; ++i) {
@@ -7493,6 +7529,9 @@ TEST(WideRegisters) {
            B(Return),                                                //
        }}};
 
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
   for (size_t i = 0; i < arraysize(snippets); ++i) {
     std::string body = prologue + snippets[i].code_snippet;
     Handle<BytecodeArray> bytecode_array =
@@ -7561,6 +7600,55 @@ TEST(DoExpression) {
     CheckBytecodeArrayEqual(snippets[i], bytecode_array);
   }
   FLAG_harmony_do_expressions = old_flag;
+}
+
+TEST(WithStatement) {
+  InitializedHandleScope handle_scope;
+  BytecodeGeneratorHelper helper;
+
+  int deep_elements_flags =
+      ObjectLiteral::kFastElements | ObjectLiteral::kDisableMementos;
+  int context = Register::current_context().index();
+  int closure = Register::function_closure().index();
+  int new_target = Register::new_target().index();
+
+  ExpectedSnippet<InstanceType> snippets[] = {
+      {"with ({x:42}) { return x; }",
+       5 * kPointerSize,
+       1,
+       46,
+       {
+           B(CallRuntime), U16(Runtime::kNewFunctionContext), R(closure),  //
+                           U8(1),                                          //
+           B(PushContext), R(0),                                           //
+           B(Ldar), THIS(1),                                               //
+           B(StaContextSlot), R(context), U8(4),                           //
+           B(CreateMappedArguments),                                       //
+           B(StaContextSlot), R(context), U8(5),                           //
+           B(Ldar), R(new_target),                                         //
+           B(StaContextSlot), R(context), U8(6),                           //
+           B(CreateObjectLiteral), U8(0), U8(0), U8(deep_elements_flags),  //
+           B(Star), R(2),                                                  //
+           B(ToObject),                                                    //
+           B(Star), R(3),                                                  //
+           B(Ldar), R(closure),                                            //
+           B(Star), R(4),                                                  //
+           B(CallRuntime), U16(Runtime::kPushWithContext), R(3), U8(2),    //
+           B(PushContext), R(1),                                           //
+           B(LdaLookupSlot), U8(1),                                        //
+           B(PopContext), R(0),                                            //
+           B(Return),                                                      //
+       },
+       2,
+       {InstanceType::FIXED_ARRAY_TYPE,
+        InstanceType::ONE_BYTE_INTERNALIZED_STRING_TYPE}},
+  };
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    Handle<BytecodeArray> bytecode_array =
+        helper.MakeBytecodeForFunctionBody(snippets[i].code_snippet);
+    CheckBytecodeArrayEqual(snippets[i], bytecode_array);
+  }
 }
 
 }  // namespace interpreter

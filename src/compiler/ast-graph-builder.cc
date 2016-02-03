@@ -610,13 +610,6 @@ void AstGraphBuilder::CreateGraphBody(bool stack_check) {
   // Visit statements in the function body.
   VisitStatements(info()->literal()->body());
 
-  // Emit tracing call if requested to do so.
-  if (FLAG_trace) {
-    // TODO(mstarzinger): Only traces implicit return.
-    Node* return_value = jsgraph()->UndefinedConstant();
-    NewNode(javascript()->CallRuntime(Runtime::kTraceExit), return_value);
-  }
-
   // Return 'undefined' in case we can fall off the end.
   BuildReturn(jsgraph()->UndefinedConstant());
 }
@@ -1558,22 +1551,16 @@ void AstGraphBuilder::VisitClassLiteral(ClassLiteral* expr) {
 
 
 void AstGraphBuilder::VisitClassLiteralContents(ClassLiteral* expr) {
-  Node* class_name = expr->raw_name() ? jsgraph()->Constant(expr->name())
-                                      : jsgraph()->UndefinedConstant();
-
-  // The class name is expected on the operand stack.
-  environment()->Push(class_name);
   VisitForValueOrTheHole(expr->extends());
   VisitForValue(expr->constructor());
 
   // Create node to instantiate a new class.
   Node* constructor = environment()->Pop();
   Node* extends = environment()->Pop();
-  Node* name = environment()->Pop();
   Node* start = jsgraph()->Constant(expr->start_position());
   Node* end = jsgraph()->Constant(expr->end_position());
   const Operator* opc = javascript()->CallRuntime(Runtime::kDefineClass);
-  Node* literal = NewNode(opc, name, extends, constructor, start, end);
+  Node* literal = NewNode(opc, extends, constructor, start, end);
   PrepareFrameState(literal, expr->CreateLiteralId(),
                     OutputFrameStateCombine::Push());
 
@@ -3797,6 +3784,11 @@ Node* AstGraphBuilder::BuildThrowUnsupportedSuperError(BailoutId bailout_id) {
 
 
 Node* AstGraphBuilder::BuildReturn(Node* return_value) {
+  // Emit tracing call if requested to do so.
+  if (FLAG_trace) {
+    return_value =
+        NewNode(javascript()->CallRuntime(Runtime::kTraceExit), return_value);
+  }
   Node* control = NewNode(common()->Return(), return_value);
   UpdateControlDependencyToLeaveFunction(control);
   return control;
@@ -3899,10 +3891,15 @@ Node* AstGraphBuilder::TryLoadDynamicVariable(
       fast_block.BreakUnless(check, BranchHint::kTrue);
     }
 
-    // Fast case, because variable is not shadowed. Perform global slot load.
-    Node* fast = BuildGlobalLoad(name, feedback, typeof_mode);
-    states.AddToNode(fast, bailout_id, combine);
-    environment()->Push(fast);
+    // Fast case, because variable is not shadowed.
+    if (Node* constant = TryLoadGlobalConstant(name)) {
+      environment()->Push(constant);
+    } else {
+      // Perform global slot load.
+      Node* fast = BuildGlobalLoad(name, feedback, typeof_mode);
+      states.AddToNode(fast, bailout_id, combine);
+      environment()->Push(fast);
+    }
     slow_block.Break();
     environment()->Pop();
     fast_block.EndBlock();

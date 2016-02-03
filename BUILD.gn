@@ -1303,7 +1303,6 @@ source_set("v8_base") {
     "src/type-feedback-vector.h",
     "src/type-info.cc",
     "src/type-info.h",
-    "src/types-inl.h",
     "src/types.cc",
     "src/types.h",
     "src/typing-asm.cc",
@@ -1934,6 +1933,24 @@ if ((current_toolchain == host_toolchain && v8_toolset_for_d8 == "host") ||
       deps += [ "//third_party/icu" ]
     }
   }
+}
+
+source_set("json_fuzzer") {
+  sources = [
+    "test/fuzzer/json.cc",
+  ]
+
+  deps = [
+    ":fuzzer_support",
+  ]
+
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
+  configs += [
+    ":internal_config",
+    ":features",
+    ":toolchain",
+  ]
 }
 
 source_set("parser_fuzzer") {

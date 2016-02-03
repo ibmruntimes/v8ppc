@@ -10,11 +10,11 @@ deps = {
   "v8/build/gyp":
     Var("git_url") + "/external/gyp.git" + "@" + "aa0301be5a241c2972f90ce2a08097b63c916390",
   "v8/third_party/icu":
-    Var("git_url") + "/chromium/deps/icu.git" + "@" + "8d342a405be5ae8aacb1e16f0bc31c3a4fbf26a2",
+    Var("git_url") + "/chromium/deps/icu.git" + "@" + "8f91ea3a7e0413df3312204058da856058a8099b",
   "v8/buildtools":
     Var("git_url") + "/chromium/buildtools.git" + "@" + "389b7143dbd63da3a9725e304d286b02805fc170",
   "v8/base/trace_event/common":
-    Var("git_url") + "/chromium/src/base/trace_event/common.git" + "@" + "3b14e6554b07defdad00c17d162c6e7121f71fbf",
+    Var("git_url") + "/chromium/src/base/trace_event/common.git" + "@" + "4b09207e447ae5bd34643b4c6321bee7b76d35f9",
   "v8/tools/swarming_client":
     Var('git_url') + '/external/swarming.client.git' + '@' + "0b908f18767c8304dc089454bc1c91755d21f1f5",
   "v8/testing/gtest":
@@ -27,9 +27,9 @@ deps = {
     Var("git_url") + "/v8/deps/third_party/mozilla-tests.git" + "@" + "f6c578a10ea707b1a8ab0b88943fe5115ce2b9be",
   "v8/test/simdjs/data": Var("git_url") + "/external/github.com/tc39/ecmascript_simd.git" + "@" + "c8ef63c728283debc25891123eb00482fee4b8cd",
   "v8/test/test262/data":
-    Var("git_url") + "/external/github.com/tc39/test262.git" + "@" + "67ba34b03a46bac4254223ae25f42c7b959540f0",
+    Var("git_url") + "/external/github.com/tc39/test262.git" + "@" + "738a24b109f3fa71be44d5c3701d73141d494510",
   "v8/tools/clang":
-    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "667833c8778efe12d3d749f5f5dfd4b10a1388a0",
+    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "003558cb5f46e54fdbf5d14507f5c233d2ea91e6",
 }
 
 deps_os = {
@@ -134,6 +134,40 @@ hooks = [
                 '--no_auth',
                 '--bucket', 'chromium-luci',
                 '-d', 'v8/tools/luci-go/linux64',
+    ],
+  },
+  # Pull GN using checked-in hashes.
+  {
+    "name": "gn_win",
+    "pattern": ".",
+    "action": [ "download_from_google_storage",
+                "--no_resume",
+                "--platform=win32",
+                "--no_auth",
+                "--bucket", "chromium-gn",
+                "-s", "v8/buildtools/win/gn.exe.sha1",
+    ],
+  },
+  {
+    "name": "gn_mac",
+    "pattern": ".",
+    "action": [ "download_from_google_storage",
+                "--no_resume",
+                "--platform=darwin",
+                "--no_auth",
+                "--bucket", "chromium-gn",
+                "-s", "v8/buildtools/mac/gn.sha1",
+    ],
+  },
+  {
+    "name": "gn_linux",
+    "pattern": ".",
+    "action": [ "download_from_google_storage",
+                "--no_resume",
+                "--platform=linux*",
+                "--no_auth",
+                "--bucket", "chromium-gn",
+                "-s", "v8/buildtools/linux64/gn.sha1",
     ],
   },
   {

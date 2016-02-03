@@ -84,6 +84,7 @@ class BytecodeGenerator final : public AstVisitor {
   void VisitBlockDeclarationsAndStatements(Block* stmt);
   void VisitNewLocalBlockContext(Scope* scope);
   void VisitNewLocalCatchContext(Variable* variable);
+  void VisitNewLocalWithContext();
   void VisitFunctionClosureForContext();
   void VisitSetHomeObject(Register value, Register home_object,
                           ObjectLiteralProperty* property, int slot_number = 0);
@@ -105,7 +106,8 @@ class BytecodeGenerator final : public AstVisitor {
   void RecordStoreToRegister(Register reg);
   Register LoadFromAliasedRegister(Register reg);
 
-  inline BytecodeArrayBuilder* builder() { return &builder_; }
+  inline void set_builder(BytecodeArrayBuilder* builder) { builder_ = builder; }
+  inline BytecodeArrayBuilder* builder() const { return builder_; }
 
   inline Isolate* isolate() const { return isolate_; }
   inline Zone* zone() const { return zone_; }
@@ -142,7 +144,7 @@ class BytecodeGenerator final : public AstVisitor {
 
   Isolate* isolate_;
   Zone* zone_;
-  BytecodeArrayBuilder builder_;
+  BytecodeArrayBuilder* builder_;
   CompilationInfo* info_;
   Scope* scope_;
   ZoneVector<Handle<Object>> globals_;

@@ -2559,8 +2559,6 @@ TEST(BytecodeGraphBuilderForOf) {
 
 
 TEST(JumpWithConstantsAndWideConstants) {
-  HandleAndZoneScope scope;
-  auto isolate = scope.main_isolate();
   const int kStep = 19;
   int start = 7;
   for (int constants = start; constants < 256 + 3 * kStep; constants += kStep) {
@@ -2585,6 +2583,9 @@ TEST(JumpWithConstantsAndWideConstants) {
     script_os << "}\n";
     script_os << kFunctionName << "(0);\n";
     std::string script(script_os.str());
+
+    HandleAndZoneScope scope;
+    auto isolate = scope.main_isolate();
     auto factory = isolate->factory();
     auto zone = scope.main_zone();
     for (int a = 0; a < 3; a++) {
@@ -2629,6 +2630,43 @@ TEST(BytecodeGraphBuilderDoExpressions) {
   }
 
   FLAG_harmony_do_expressions = old_flag;
+}
+
+TEST(BytecodeGraphBuilderWithStatement) {
+  HandleAndZoneScope scope;
+  Isolate* isolate = scope.main_isolate();
+  Zone* zone = scope.main_zone();
+
+  ExpectedSnippet<0> snippets[] = {
+      {"with({x:42}) return x;", {handle(Smi::FromInt(42), isolate)}},
+      {"with({}) { var y = 10; return y;}",
+       {handle(Smi::FromInt(10), isolate)}},
+      {"var y = {x:42};"
+       " function inner() {"
+       "   var x = 20;"
+       "   with(y) return x;"
+       "}"
+       "return inner();",
+       {handle(Smi::FromInt(42), isolate)}},
+      {"var y = {x:42};"
+       " function inner(o) {"
+       "   var x = 20;"
+       "   with(o) return x;"
+       "}"
+       "return inner(y);",
+       {handle(Smi::FromInt(42), isolate)}},
+  };
+
+  for (size_t i = 0; i < arraysize(snippets); i++) {
+    ScopedVector<char> script(1024);
+    SNPrintF(script, "function %s() { %s }\n%s();", kFunctionName,
+             snippets[i].code_snippet, kFunctionName);
+
+    BytecodeGraphTester tester(isolate, zone, script.start());
+    auto callable = tester.GetCallable<>();
+    Handle<Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*snippets[i].return_value()));
+  }
 }
 
 }  // namespace compiler

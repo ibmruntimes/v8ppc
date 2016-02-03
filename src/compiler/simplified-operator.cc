@@ -7,7 +7,7 @@
 #include "src/base/lazy-instance.h"
 #include "src/compiler/opcodes.h"
 #include "src/compiler/operator.h"
-#include "src/types-inl.h"
+#include "src/types.h"
 
 namespace v8 {
 namespace internal {
@@ -187,6 +187,7 @@ const ElementAccess& ElementAccessOf(const Operator* op) {
   V(ChangeBoolToBit, Operator::kNoProperties, 1)         \
   V(ChangeBitToBool, Operator::kNoProperties, 1)         \
   V(ObjectIsNumber, Operator::kNoProperties, 1)          \
+  V(ObjectIsReceiver, Operator::kNoProperties, 1)        \
   V(ObjectIsSmi, Operator::kNoProperties, 1)
 
 #define NO_THROW_OP_LIST(V)                 \

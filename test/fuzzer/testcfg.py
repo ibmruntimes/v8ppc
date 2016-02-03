@@ -8,8 +8,17 @@ from testrunner.local import testsuite
 from testrunner.objects import testcase
 
 
+class FuzzerVariantGenerator(testsuite.VariantGenerator):
+  # Only run the fuzzer with standard variant.
+  def FilterVariantsByTest(self, testcase):
+    return self.standard_variant
+
+  def GetFlagSets(self, testcase, variant):
+    return testsuite.FAST_VARIANT_FLAGS[variant]
+
+
 class FuzzerTestSuite(testsuite.TestSuite):
-  SUB_TESTS = ( 'parser', 'regexp', )
+  SUB_TESTS = ( 'json', 'parser', 'regexp', )
 
   def __init__(self, name, root):
     super(FuzzerTestSuite, self).__init__(name, root)
@@ -30,6 +39,9 @@ class FuzzerTestSuite(testsuite.TestSuite):
   def GetFlagsForTestCase(self, testcase, context):
     suite, name = testcase.path.split('/')
     return [os.path.join(self.root, suite, name)]
+
+  def _VariantGeneratorFactory(self):
+    return FuzzerVariantGenerator
 
 
 def GetSuite(name, root):
