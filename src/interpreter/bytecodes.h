@@ -142,6 +142,9 @@ namespace interpreter {
   V(KeyedStoreICStrictWide, OperandType::kReg8, OperandType::kReg8,            \
     OperandType::kIdx16)                                                       \
                                                                                \
+  /* Class information */                                                      \
+  V(LdaInitialMap, OperandType::kNone)                                         \
+                                                                               \
   /* Binary Operators */                                                       \
   V(Add, OperandType::kReg8)                                                   \
   V(Sub, OperandType::kReg8)                                                   \
@@ -225,6 +228,7 @@ namespace interpreter {
   /* Arguments allocation */                                                   \
   V(CreateMappedArguments, OperandType::kNone)                                 \
   V(CreateUnmappedArguments, OperandType::kNone)                               \
+  V(CreateRestArguments, OperandType::kIdx8)                                   \
                                                                                \
   /* Control Flow */                                                           \
   V(Jump, OperandType::kImm8)                                                  \
@@ -258,10 +262,16 @@ namespace interpreter {
     OperandType::kRegPair16)                                                   \
   V(ForInStep, OperandType::kReg8)                                             \
                                                                                \
+  /* Perform a stack guard check */                                            \
+  V(StackCheck, OperandType::kNone)                                            \
+                                                                               \
   /* Non-local flow control */                                                 \
   V(Throw, OperandType::kNone)                                                 \
   V(ReThrow, OperandType::kNone)                                               \
-  V(Return, OperandType::kNone)
+  V(Return, OperandType::kNone)                                                \
+                                                                               \
+  /* Debugger */                                                               \
+  V(Debugger, OperandType::kNone)
 
 // Enumeration of the size classes of operand types used by bytecodes.
 enum class OperandSize : uint8_t {
@@ -303,10 +313,7 @@ class Register {
  public:
   explicit Register(int index = kInvalidIndex) : index_(index) {}
 
-  int index() const {
-    DCHECK(index_ != kInvalidIndex);
-    return index_;
-  }
+  int index() const { return index_; }
   bool is_parameter() const { return index() < 0; }
   bool is_valid() const { return index_ != kInvalidIndex; }
   bool is_byte_operand() const;

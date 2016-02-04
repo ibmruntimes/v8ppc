@@ -13,6 +13,8 @@ namespace v8 {
 namespace internal {
 namespace interpreter {
 
+class LoopBuilder;
+
 class BytecodeGenerator final : public AstVisitor {
  public:
   BytecodeGenerator(Isolate* isolate, Zone* zone);
@@ -77,6 +79,12 @@ class BytecodeGenerator final : public AstVisitor {
   void VisitVariableAssignment(Variable* variable, FeedbackVectorSlot slot);
 
   void VisitArgumentsObject(Variable* variable);
+  void VisitRestArgumentsArray(Variable* rest, int index);
+  void VisitClassLiteralContents(ClassLiteral* expr);
+  void VisitClassLiteralForRuntimeDefinition(ClassLiteral* expr);
+  void VisitClassLiteralProperties(ClassLiteral* expr, Register literal,
+                                   Register prototype);
+  void VisitClassLiteralStaticPrototypeWithComputedName(Register name);
   void VisitThisFunctionVariable(Variable* variable);
   void VisitNewTargetVariable(Variable* variable);
   void VisitNewLocalFunctionContext();
@@ -93,14 +101,18 @@ class BytecodeGenerator final : public AstVisitor {
                                   Register value_out);
   void VisitForInAssignment(Expression* expr, FeedbackVectorSlot slot);
 
+  // Visit the body of a loop iteration.
+  void VisitIterationBody(IterationStatement* stmt, LoopBuilder* loop_builder);
+
   // Visit a statement and switch scopes, the context is in the accumulator.
   void VisitInScope(Statement* stmt, Scope* scope);
 
   // Visitors for obtaining expression result in the accumulator, in a
   // register, or just getting the effect.
-  void VisitForAccumulatorValue(Expression* expression);
-  MUST_USE_RESULT Register VisitForRegisterValue(Expression* expression);
-  void VisitForEffect(Expression* node);
+  void VisitForAccumulatorValue(Expression* expr);
+  void VisitForAccumulatorValueOrTheHole(Expression* expr);
+  MUST_USE_RESULT Register VisitForRegisterValue(Expression* expr);
+  void VisitForEffect(Expression* expr);
 
   // Methods for tracking and remapping register.
   void RecordStoreToRegister(Register reg);

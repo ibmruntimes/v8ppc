@@ -1261,7 +1261,6 @@ bool IterateElements(Isolate* isolate, Handle<JSReceiver> receiver,
 
 bool HasConcatSpreadableModifier(Isolate* isolate, Handle<JSArray> obj) {
   DCHECK(isolate->IsFastArrayConstructorPrototypeChainIntact());
-  if (!FLAG_harmony_concat_spreadable) return false;
   Handle<Symbol> key(isolate->factory()->is_concat_spreadable_symbol());
   Maybe<bool> maybe = JSReceiver::HasProperty(obj, key);
   return maybe.FromMaybe(false);
@@ -1271,14 +1270,12 @@ bool HasConcatSpreadableModifier(Isolate* isolate, Handle<JSArray> obj) {
 static Maybe<bool> IsConcatSpreadable(Isolate* isolate, Handle<Object> obj) {
   HandleScope handle_scope(isolate);
   if (!obj->IsJSReceiver()) return Just(false);
-  if (FLAG_harmony_concat_spreadable) {
-    Handle<Symbol> key(isolate->factory()->is_concat_spreadable_symbol());
-    Handle<Object> value;
-    MaybeHandle<Object> maybeValue =
-        i::Runtime::GetObjectProperty(isolate, obj, key);
-    if (!maybeValue.ToHandle(&value)) return Nothing<bool>();
-    if (!value->IsUndefined()) return Just(value->BooleanValue());
-  }
+  Handle<Symbol> key(isolate->factory()->is_concat_spreadable_symbol());
+  Handle<Object> value;
+  MaybeHandle<Object> maybeValue =
+      i::Runtime::GetObjectProperty(isolate, obj, key);
+  if (!maybeValue.ToHandle(&value)) return Nothing<bool>();
+  if (!value->IsUndefined()) return Just(value->BooleanValue());
   return Object::IsArray(obj);
 }
 
@@ -1588,8 +1585,8 @@ BUILTIN(ObjectAssign) {
     // 4b ii. Let keys be ? from.[[OwnPropertyKeys]]().
     Handle<FixedArray> keys;
     ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-        isolate, keys, JSReceiver::GetKeys(from, JSReceiver::OWN_ONLY,
-                                           ALL_PROPERTIES, KEEP_NUMBERS));
+        isolate, keys,
+        JSReceiver::GetKeys(from, OWN_ONLY, ALL_PROPERTIES, KEEP_NUMBERS));
     // 4c. Repeat for each element nextKey of keys in List order,
     for (int j = 0; j < keys->length(); ++j) {
       Handle<Object> next_key(keys->get(j), isolate);
@@ -1676,8 +1673,8 @@ Object* GetOwnPropertyKeys(Isolate* isolate,
                                      Object::ToObject(isolate, object));
   Handle<FixedArray> keys;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, keys, JSReceiver::GetKeys(receiver, JSReceiver::OWN_ONLY, filter,
-                                         CONVERT_TO_STRING));
+      isolate, keys,
+      JSReceiver::GetKeys(receiver, OWN_ONLY, filter, CONVERT_TO_STRING));
   return *isolate->factory()->NewJSArrayWithElements(keys);
 }
 
@@ -1744,9 +1741,8 @@ BUILTIN(ObjectKeys) {
                                      Object::ToObject(isolate, object));
   Handle<FixedArray> keys;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, keys,
-      JSReceiver::GetKeys(receiver, JSReceiver::OWN_ONLY, ENUMERABLE_STRINGS,
-                          CONVERT_TO_STRING));
+      isolate, keys, JSReceiver::GetKeys(receiver, OWN_ONLY, ENUMERABLE_STRINGS,
+                                         CONVERT_TO_STRING));
   return *isolate->factory()->NewJSArrayWithElements(keys);
 }
 
@@ -1759,9 +1755,8 @@ BUILTIN(ObjectValues) {
                                      Object::ToObject(isolate, object));
   Handle<FixedArray> keys;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, keys,
-      JSReceiver::GetKeys(receiver, JSReceiver::OWN_ONLY, ENUMERABLE_STRINGS,
-                          CONVERT_TO_STRING));
+      isolate, keys, JSReceiver::GetKeys(receiver, OWN_ONLY, ENUMERABLE_STRINGS,
+                                         CONVERT_TO_STRING));
 
   for (int i = 0; i < keys->length(); ++i) {
     auto key = Handle<Name>::cast(FixedArray::get(*keys, i, isolate));
@@ -1785,9 +1780,8 @@ BUILTIN(ObjectEntries) {
                                      Object::ToObject(isolate, object));
   Handle<FixedArray> keys;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, keys,
-      JSReceiver::GetKeys(receiver, JSReceiver::OWN_ONLY, ENUMERABLE_STRINGS,
-                          CONVERT_TO_STRING));
+      isolate, keys, JSReceiver::GetKeys(receiver, OWN_ONLY, ENUMERABLE_STRINGS,
+                                         CONVERT_TO_STRING));
 
   for (int i = 0; i < keys->length(); ++i) {
     auto key = Handle<Name>::cast(FixedArray::get(*keys, i, isolate));
@@ -2090,9 +2084,9 @@ BUILTIN(ReflectOwnKeys) {
 
   Handle<FixedArray> keys;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, keys, JSReceiver::GetKeys(Handle<JSReceiver>::cast(target),
-                                         JSReceiver::OWN_ONLY, ALL_PROPERTIES,
-                                         CONVERT_TO_STRING));
+      isolate, keys,
+      JSReceiver::GetKeys(Handle<JSReceiver>::cast(target), OWN_ONLY,
+                          ALL_PROPERTIES, CONVERT_TO_STRING));
   return *isolate->factory()->NewJSArrayWithElements(keys);
 }
 

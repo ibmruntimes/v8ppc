@@ -514,10 +514,10 @@ Node* BytecodeGraphBuilder::BuildLoadNativeContextField(int index) {
 Node* BytecodeGraphBuilder::BuildLoadFeedbackVector() {
   if (!feedback_vector_.is_set()) {
     Node* closure = GetFunctionClosure();
-    Node* shared = BuildLoadImmutableObjectField(
-        closure, JSFunction::kSharedFunctionInfoOffset);
+    Node* literals =
+        BuildLoadImmutableObjectField(closure, JSFunction::kLiteralsOffset);
     Node* vector = BuildLoadImmutableObjectField(
-        shared, SharedFunctionInfo::kFeedbackVectorOffset);
+        literals, LiteralsArray::kFeedbackVectorOffset);
     feedback_vector_.set(vector);
   }
   return feedback_vector_.get();
@@ -525,7 +525,8 @@ Node* BytecodeGraphBuilder::BuildLoadFeedbackVector() {
 
 
 VectorSlotPair BytecodeGraphBuilder::CreateVectorSlotPair(int slot_id) {
-  Handle<TypeFeedbackVector> feedback_vector = info()->feedback_vector();
+  Handle<TypeFeedbackVector> feedback_vector =
+      handle(info()->closure()->feedback_vector());
   FeedbackVectorSlot slot;
   if (slot_id >= TypeFeedbackVector::kReservedIndexCount) {
     slot = feedback_vector->ToSlot(slot_id);
@@ -533,8 +534,7 @@ VectorSlotPair BytecodeGraphBuilder::CreateVectorSlotPair(int slot_id) {
   return VectorSlotPair(feedback_vector, slot);
 }
 
-
-bool BytecodeGraphBuilder::CreateGraph(bool stack_check) {
+bool BytecodeGraphBuilder::CreateGraph() {
   // Set up the basic structure of the graph. Outputs for {Start} are
   // the formal parameters (including the receiver) plus context and
   // closure.
@@ -550,7 +550,7 @@ bool BytecodeGraphBuilder::CreateGraph(bool stack_check) {
                   GetFunctionContext());
   set_environment(&env);
 
-  CreateGraphBody(stack_check);
+  VisitBytecodes();
 
   // Finish the basic structure of the graph.
   DCHECK_NE(0u, exit_controls_.size());
@@ -561,20 +561,6 @@ bool BytecodeGraphBuilder::CreateGraph(bool stack_check) {
 
   return true;
 }
-
-
-void BytecodeGraphBuilder::CreateGraphBody(bool stack_check) {
-  // TODO(oth): Review ast-graph-builder equivalent, i.e. arguments
-  // object setup, this function variable if used, tracing hooks.
-
-  if (stack_check) {
-    Node* node = NewNode(javascript()->StackCheck());
-    PrepareEntryFrameState(node);
-  }
-
-  VisitBytecodes();
-}
-
 
 void BytecodeGraphBuilder::VisitBytecodes() {
   BytecodeBranchAnalysis analysis(bytecode_array(), local_zone());
@@ -978,6 +964,13 @@ void BytecodeGraphBuilder::VisitKeyedStoreICStrictWide() {
   BuildKeyedStore();
 }
 
+void BytecodeGraphBuilder::VisitLdaInitialMap() {
+  Node* js_function = environment()->LookupAccumulator();
+  Node* load = BuildLoadObjectField(js_function,
+                                    JSFunction::kPrototypeOrInitialMapOffset);
+  environment()->BindAccumulator(load);
+}
+
 void BytecodeGraphBuilder::VisitPushContext() {
   Node* new_context = environment()->LookupAccumulator();
   environment()->BindRegister(bytecode_iterator().GetRegisterOperand(0),
@@ -1004,19 +997,25 @@ void BytecodeGraphBuilder::VisitCreateClosure() {
 void BytecodeGraphBuilder::VisitCreateClosureWide() { VisitCreateClosure(); }
 
 void BytecodeGraphBuilder::BuildCreateArguments(
-    CreateArgumentsParameters::Type type) {
+    CreateArgumentsParameters::Type type, int rest_index) {
   FrameStateBeforeAndAfter states(this);
-  const Operator* op = javascript()->CreateArguments(type, 0);
+  const Operator* op = javascript()->CreateArguments(type, rest_index);
   Node* object = NewNode(op, GetFunctionClosure());
   environment()->BindAccumulator(object, &states);
 }
 
 void BytecodeGraphBuilder::VisitCreateMappedArguments() {
-  BuildCreateArguments(CreateArgumentsParameters::kMappedArguments);
+  BuildCreateArguments(CreateArgumentsParameters::kMappedArguments, 0);
 }
 
 void BytecodeGraphBuilder::VisitCreateUnmappedArguments() {
-  BuildCreateArguments(CreateArgumentsParameters::kUnmappedArguments);
+  BuildCreateArguments(CreateArgumentsParameters::kUnmappedArguments, 0);
+}
+
+void BytecodeGraphBuilder::VisitCreateRestArguments() {
+  int index =
+      Smi::cast(*bytecode_iterator().GetConstantForIndexOperand(0))->value();
+  BuildCreateArguments(CreateArgumentsParameters::kRestArray, index);
 }
 
 void BytecodeGraphBuilder::BuildCreateLiteral(const Operator* op) {
@@ -1111,8 +1110,8 @@ void BytecodeGraphBuilder::BuildCall() {
 
   // TODO(ishell): provide correct tail_call_mode value to CallFunction.
   const Operator* call = javascript()->CallFunction(
-      arg_count + 2, language_mode(), feedback, receiver_hint);
-  Node* value = ProcessCallArguments(call, callee, receiver, arg_count + 2);
+      arg_count + 1, language_mode(), feedback, receiver_hint);
+  Node* value = ProcessCallArguments(call, callee, receiver, arg_count + 1);
   environment()->BindAccumulator(value, &states);
 }
 
@@ -1129,8 +1128,8 @@ void BytecodeGraphBuilder::BuildCallJSRuntime() {
 
   // Create node to perform the JS runtime call.
   const Operator* call =
-      javascript()->CallFunction(arg_count + 2, language_mode());
-  Node* value = ProcessCallArguments(call, callee, receiver, arg_count + 2);
+      javascript()->CallFunction(arg_count + 1, language_mode());
+  Node* value = ProcessCallArguments(call, callee, receiver, arg_count + 1);
   environment()->BindAccumulator(value, &states);
 }
 
@@ -1515,10 +1514,23 @@ void BytecodeGraphBuilder::VisitJumpIfUndefinedConstantWide() {
   BuildJumpIfEqual(jsgraph()->UndefinedConstant());
 }
 
+void BytecodeGraphBuilder::VisitStackCheck() {
+  FrameStateBeforeAndAfter states(this);
+  Node* node = NewNode(javascript()->StackCheck());
+  environment()->RecordAfterState(node, &states);
+}
+
 void BytecodeGraphBuilder::VisitReturn() {
   Node* control =
       NewNode(common()->Return(), environment()->LookupAccumulator());
   MergeControlToLeaveFunction(control);
+}
+
+void BytecodeGraphBuilder::VisitDebugger() {
+  FrameStateBeforeAndAfter states(this);
+  Node* call =
+      NewNode(javascript()->CallRuntime(Runtime::kHandleDebuggerStatement));
+  environment()->BindAccumulator(call, &states);
 }
 
 void BytecodeGraphBuilder::BuildForInPrepare() {
@@ -1666,20 +1678,14 @@ void BytecodeGraphBuilder::EnterAndExitExceptionHandlers(int current_offset) {
     if (current_offset < next_start) break;  // Not yet covered by range.
     int next_end = table->GetRangeEnd(current_exception_handler_);
     int next_handler = table->GetRangeHandler(current_exception_handler_);
-    exception_handlers_.push({next_start, next_end, next_handler});
+    // TODO(mstarzinger): We are hijacking the "depth" field in the exception
+    // handler table to hold the context register. We should rename the field.
+    int context_register = table->GetRangeDepth(current_exception_handler_);
+    exception_handlers_.push(
+        {next_start, next_end, next_handler, context_register});
     current_exception_handler_++;
   }
 }
-
-void BytecodeGraphBuilder::PrepareEntryFrameState(Node* node) {
-  DCHECK_EQ(1, OperatorProperties::GetFrameStateInputCount(node->op()));
-  DCHECK_EQ(IrOpcode::kDead,
-            NodeProperties::GetFrameStateInput(node, 0)->opcode());
-  NodeProperties::ReplaceFrameStateInput(
-      node, 0, environment()->Checkpoint(BailoutId(0),
-                                         OutputFrameStateCombine::Ignore()));
-}
-
 
 Node* BytecodeGraphBuilder::MakeNode(const Operator* op, int value_input_count,
                                      Node** value_inputs, bool incomplete) {
@@ -1733,15 +1739,19 @@ Node* BytecodeGraphBuilder::MakeNode(const Operator* op, int value_input_count,
     // Add implicit exception continuation for throwing nodes.
     if (!result->op()->HasProperty(Operator::kNoThrow) && inside_handler) {
       int handler_offset = exception_handlers_.top().handler_offset_;
+      int context_index = exception_handlers_.top().context_register_;
+      interpreter::Register context_register(context_index);
       // TODO(mstarzinger): Thread through correct prediction!
       IfExceptionHint hint = IfExceptionHint::kLocallyCaught;
       Environment* success_env = environment()->CopyForConditional();
       const Operator* op = common()->IfException(hint);
       Node* effect = environment()->GetEffectDependency();
       Node* on_exception = graph()->NewNode(op, effect, result);
+      Node* context = environment()->LookupRegister(context_register);
       environment()->UpdateControlDependency(on_exception);
       environment()->UpdateEffectDependency(on_exception);
       environment()->BindAccumulator(on_exception);
+      environment()->SetContext(context);
       MergeIntoSuccessorEnvironment(handler_offset);
       set_environment(success_env);
     }

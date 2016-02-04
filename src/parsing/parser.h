@@ -656,8 +656,14 @@ class ParserTraits {
       ObjectLiteralProperty* property, const ExpressionClassifier* classifier,
       bool* ok);
 
+  Expression* RewriteYieldStar(
+      Expression* generator, Expression* expression, int pos);
+
  private:
   Parser* parser_;
+
+  void BuildIteratorClose(ZoneList<Statement*>* statements, Variable* iterator,
+                          Maybe<Variable*> input, Maybe<Variable*> output);
 };
 
 
@@ -754,6 +760,7 @@ class Parser : public ParserBase<ParserTraits> {
                                 ZoneList<const AstRawString*>* names,
                                 bool* ok);
   DoExpression* ParseDoExpression(bool* ok);
+  Expression* ParseYieldStarExpression(bool* ok);
 
   struct DeclarationDescriptor {
     enum Kind { NORMAL, PARAMETER };
@@ -761,7 +768,6 @@ class Parser : public ParserBase<ParserTraits> {
     Scope* scope;
     Scope* hoist_scope;
     VariableMode mode;
-    bool needs_init;
     int declaration_pos;
     int initialization_pos;
     Kind declaration_kind;
@@ -910,9 +916,9 @@ class Parser : public ParserBase<ParserTraits> {
                                   Expression* subject, Statement* body,
                                   bool is_destructuring);
   Statement* DesugarLexicalBindingsInForStatement(
-      Scope* inner_scope, bool is_const, ZoneList<const AstRawString*>* names,
-      ForStatement* loop, Statement* init, Expression* cond, Statement* next,
-      Statement* body, bool* ok);
+      Scope* inner_scope, VariableMode mode,
+      ZoneList<const AstRawString*>* names, ForStatement* loop, Statement* init,
+      Expression* cond, Statement* next, Statement* body, bool* ok);
 
   void RewriteDoExpression(Expression* expr, bool* ok);
 

@@ -591,12 +591,7 @@ PreParser::Statement PreParser::ParseVariableDeclarations(
       }
     }
 
-    is_pattern = (pattern.IsObjectLiteral() || pattern.IsArrayLiteral()) &&
-                 !pattern.is_parenthesized();
-
-    bool is_for_iteration_variable =
-        var_context == kForStatement &&
-        (peek() == Token::IN || PeekContextualKeyword(CStrVector("of")));
+    is_pattern = pattern.IsObjectLiteral() || pattern.IsArrayLiteral();
 
     Scanner::Location variable_loc = scanner()->location();
     nvars++;
@@ -611,7 +606,7 @@ PreParser::Statement PreParser::ParseVariableDeclarations(
         *first_initializer_loc = variable_loc;
       }
     } else if ((require_initializer || is_pattern) &&
-               !is_for_iteration_variable) {
+               (var_context != kForStatement || !PeekInOrOf())) {
       PreParserTraits::ReportMessageAt(
           Scanner::Location(decl_pos, scanner()->location().end_pos),
           MessageTemplate::kDeclarationMissingInitializer,
@@ -924,29 +919,21 @@ PreParser::Statement PreParser::ParseForStatement(bool* ok) {
       ParseVariableDeclarations(kForStatement, &decl_count, &is_lexical,
                                 &is_binding_pattern, &first_initializer_loc,
                                 &bindings_loc, CHECK_OK);
-      bool accept_IN = decl_count >= 1;
-      if (accept_IN && CheckInOrOf(&mode, ok)) {
+      if (CheckInOrOf(&mode, ok)) {
         if (!*ok) return Statement::Default();
         if (decl_count != 1) {
-          const char* loop_type =
-              mode == ForEachStatement::ITERATE ? "for-of" : "for-in";
           PreParserTraits::ReportMessageAt(
               bindings_loc, MessageTemplate::kForInOfLoopMultiBindings,
-              loop_type);
+              ForEachStatement::VisitModeString(mode));
           *ok = false;
           return Statement::Default();
         }
         if (first_initializer_loc.IsValid() &&
             (is_strict(language_mode()) || mode == ForEachStatement::ITERATE ||
              is_lexical || is_binding_pattern)) {
-          if (mode == ForEachStatement::ITERATE) {
-            ReportMessageAt(first_initializer_loc,
-                            MessageTemplate::kForOfLoopInitializer);
-          } else {
-            // TODO(caitp): This should be an error in sloppy mode, too.
-            ReportMessageAt(first_initializer_loc,
-                            MessageTemplate::kForInLoopInitializer);
-          }
+          PreParserTraits::ReportMessageAt(
+              first_initializer_loc, MessageTemplate::kForInOfLoopInitializer,
+              ForEachStatement::VisitModeString(mode));
           *ok = false;
           return Statement::Default();
         }

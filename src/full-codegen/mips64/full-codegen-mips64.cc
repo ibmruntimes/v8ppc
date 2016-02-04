@@ -1218,11 +1218,8 @@ void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
   // flag, we need to use the runtime function so that the new function
   // we are creating here gets a chance to have its code optimized and
   // doesn't just get a copy of the existing unoptimized code.
-  if (!FLAG_always_opt &&
-      !FLAG_prepare_always_opt &&
-      !pretenure &&
-      scope()->is_function_scope() &&
-      info->num_literals() == 0) {
+  if (!FLAG_always_opt && !FLAG_prepare_always_opt && !pretenure &&
+      scope()->is_function_scope()) {
     FastNewClosureStub stub(isolate(), info->language_mode(), info->kind());
     __ li(a2, Operand(info));
     __ CallStub(&stub);
@@ -1939,8 +1936,17 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
 
       __ jmp(&suspend);
       __ bind(&continuation);
+      // When we arrive here, the stack top is the resume mode and
+      // result_register() holds the input value (the argument given to the
+      // respective resume operation).
       __ RecordGeneratorContinuation();
-      __ jmp(&resume);
+      __ pop(a1);
+      __ Branch(&resume, ne, a1,
+                Operand(Smi::FromInt(JSGeneratorObject::RETURN)));
+      __ push(result_register());
+      EmitCreateIteratorResult(true);
+      EmitUnwindBeforeReturn();
+      EmitReturnSequence();
 
       __ bind(&suspend);
       VisitForAccumulatorValue(expr->generator_object());
@@ -2157,6 +2163,7 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
     __ Daddu(a3, a3, Operand(a2));
     __ li(a2, Operand(Smi::FromInt(JSGeneratorObject::kGeneratorExecuting)));
     __ sd(a2, FieldMemOperand(a1, JSGeneratorObject::kContinuationOffset));
+    __ Push(Smi::FromInt(resume_mode));  // Consumed in continuation.
     __ Jump(a3);
     __ bind(&slow_resume);
   }
@@ -2170,6 +2177,7 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
   __ push(a2);
   __ Branch(&push_operand_holes);
   __ bind(&call_resume);
+  __ Push(Smi::FromInt(resume_mode));  // Consumed in continuation.
   DCHECK(!result_register().is(a1));
   __ Push(a1, result_register());
   __ Push(Smi::FromInt(resume_mode));

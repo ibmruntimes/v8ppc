@@ -850,6 +850,7 @@ class SafepointEntry;
 class SharedFunctionInfo;
 class StringStream;
 class TypeFeedbackInfo;
+class TypeFeedbackMetadata;
 class TypeFeedbackVector;
 class WeakCell;
 class TransitionArray;
@@ -1785,6 +1786,7 @@ enum AccessorComponent {
 
 enum GetKeysConversion { KEEP_NUMBERS, CONVERT_TO_STRING };
 
+enum KeyCollectionType { OWN_ONLY, INCLUDE_PROTOS };
 
 // JSReceiver includes types on which properties can be defined, i.e.,
 // JSObject and JSProxy.
@@ -1946,13 +1948,10 @@ class JSReceiver: public HeapObject {
   inline static Handle<Smi> GetOrCreateIdentityHash(
       Handle<JSReceiver> object);
 
-  enum KeyCollectionType { OWN_ONLY, INCLUDE_PROTOS };
-
   // ES6 [[OwnPropertyKeys]] (modulo return type)
   MUST_USE_RESULT static MaybeHandle<FixedArray> OwnPropertyKeys(
       Handle<JSReceiver> object) {
-    return GetKeys(object, JSReceiver::OWN_ONLY, ALL_PROPERTIES,
-                   CONVERT_TO_STRING);
+    return GetKeys(object, OWN_ONLY, ALL_PROPERTIES, CONVERT_TO_STRING);
   }
 
   // Computes the enumerable keys for a JSObject. Used for implementing
@@ -2066,36 +2065,35 @@ class JSObject: public JSReceiver {
   MUST_USE_RESULT static Maybe<bool> SetPropertyWithInterceptor(
       LookupIterator* it, ShouldThrow should_throw, Handle<Object> value);
 
-  // SetLocalPropertyIgnoreAttributes converts callbacks to fields. We need to
-  // grant an exemption to AccessorInfo callbacks in some cases.
-  enum AccessorInfoHandling { DEFAULT_HANDLING, DONT_FORCE_FIELD };
+  // The API currently still wants DefineOwnPropertyIgnoreAttributes to convert
+  // AccessorInfo objects to data fields. We allow FORCE_FIELD as an exception
+  // to the default behavior that calls the setter.
+  enum AccessorInfoHandling { FORCE_FIELD, DONT_FORCE_FIELD };
 
   MUST_USE_RESULT static MaybeHandle<Object> DefineOwnPropertyIgnoreAttributes(
       LookupIterator* it, Handle<Object> value, PropertyAttributes attributes,
-      AccessorInfoHandling handling = DEFAULT_HANDLING);
+      AccessorInfoHandling handling = DONT_FORCE_FIELD);
 
   MUST_USE_RESULT static Maybe<bool> DefineOwnPropertyIgnoreAttributes(
       LookupIterator* it, Handle<Object> value, PropertyAttributes attributes,
       ShouldThrow should_throw,
-      AccessorInfoHandling handling = DEFAULT_HANDLING);
+      AccessorInfoHandling handling = DONT_FORCE_FIELD);
 
   MUST_USE_RESULT static MaybeHandle<Object> SetOwnPropertyIgnoreAttributes(
       Handle<JSObject> object, Handle<Name> name, Handle<Object> value,
-      PropertyAttributes attributes,
-      AccessorInfoHandling handling = DEFAULT_HANDLING);
+      PropertyAttributes attributes);
 
   MUST_USE_RESULT static MaybeHandle<Object> SetOwnElementIgnoreAttributes(
       Handle<JSObject> object, uint32_t index, Handle<Object> value,
-      PropertyAttributes attributes,
-      AccessorInfoHandling handling = DEFAULT_HANDLING);
+      PropertyAttributes attributes);
 
   // Equivalent to one of the above depending on whether |name| can be converted
   // to an array index.
   MUST_USE_RESULT static MaybeHandle<Object>
-  DefinePropertyOrElementIgnoreAttributes(
-      Handle<JSObject> object, Handle<Name> name, Handle<Object> value,
-      PropertyAttributes attributes = NONE,
-      AccessorInfoHandling handling = DEFAULT_HANDLING);
+  DefinePropertyOrElementIgnoreAttributes(Handle<JSObject> object,
+                                          Handle<Name> name,
+                                          Handle<Object> value,
+                                          PropertyAttributes attributes = NONE);
 
   // Adds or reconfigures a property to attributes NONE. It will fail when it
   // cannot.
@@ -4716,8 +4714,8 @@ class LiteralsArray : public FixedArray {
  public:
   static const int kVectorIndex = 0;
   static const int kFirstLiteralIndex = 1;
-  static const int kOffsetToFirstLiteral =
-      FixedArray::kHeaderSize + kPointerSize;
+  static const int kFeedbackVectorOffset = FixedArray::kHeaderSize;
+  static const int kOffsetToFirstLiteral = kFeedbackVectorOffset + kPointerSize;
 
   static int OffsetOfLiteralAt(int index) {
     return SizeFor(index + kFirstLiteralIndex);
@@ -4727,6 +4725,7 @@ class LiteralsArray : public FixedArray {
   inline void set_feedback_vector(TypeFeedbackVector* vector);
   inline Object* literal(int literal_index) const;
   inline void set_literal(int literal_index, Object* literal);
+  inline void set_literal_undefined(int literal_index);
   inline int literals_count() const;
 
   static Handle<LiteralsArray> New(Isolate* isolate,
@@ -4764,6 +4763,7 @@ class HandlerTable : public FixedArray {
   inline int GetRangeStart(int index) const;
   inline int GetRangeEnd(int index) const;
   inline int GetRangeHandler(int index) const;
+  inline int GetRangeDepth(int index) const;
 
   // Setters for handler table based on ranges.
   inline void SetRangeStart(int index, int value);
@@ -6564,6 +6564,9 @@ class SharedFunctionInfo: public HeapObject {
   // Clear optimized code map.
   void ClearOptimizedCodeMap();
 
+  // Like ClearOptimizedCodeMap, but preserves literals.
+  void ClearCodeFromOptimizedCodeMap();
+
   // We have a special root FixedArray with the right shape and values
   // to represent the cleared optimized code map. This predicate checks
   // if that root is installed.
@@ -6576,6 +6579,9 @@ class SharedFunctionInfo: public HeapObject {
 
   // Trims the optimized code map after entries have been removed.
   void TrimOptimizedCodeMap(int shrink_by);
+
+  static Handle<LiteralsArray> FindOrCreateLiterals(
+      Handle<SharedFunctionInfo> shared, Handle<Context> native_context);
 
   // Add a new entry to the optimized code map for context-independent code.
   static void AddSharedCodeToOptimizedCodeMap(Handle<SharedFunctionInfo> shared,
@@ -6611,6 +6617,13 @@ class SharedFunctionInfo: public HeapObject {
 
   static const int kNotFound = -1;
 
+  // Helpers for assembly code that does a backwards walk of the optimized code
+  // map.
+  static inline int OffsetToPreviousContext();
+  static inline int OffsetToPreviousCachedCode();
+  static inline int OffsetToPreviousLiterals();
+  static inline int OffsetToPreviousOsrAstId();
+
   // [scope_info]: Scope info.
   DECL_ACCESSORS(scope_info, ScopeInfo)
 
@@ -6639,16 +6652,10 @@ class SharedFunctionInfo: public HeapObject {
   inline int expected_nof_properties() const;
   inline void set_expected_nof_properties(int value);
 
-  // [feedback_vector] - accumulates ast node feedback from full-codegen and
+  // [feedback_metadata] - describes ast node feedback from full-codegen and
   // (increasingly) from crankshafted code where sufficient feedback isn't
   // available.
-  DECL_ACCESSORS(feedback_vector, TypeFeedbackVector)
-
-  // Unconditionally clear the type feedback vector (including vector ICs).
-  void ClearTypeFeedbackInfo();
-
-  // Clear the type feedback vector with a more subtle policy at GC time.
-  void ClearTypeFeedbackInfoAtGCTime();
+  DECL_ACCESSORS(feedback_metadata, TypeFeedbackMetadata)
 
 #if TRACE_MAPS
   // [unique_id] - For --trace-maps purposes, an identifier that's persistent
@@ -6942,15 +6949,14 @@ class SharedFunctionInfo: public HeapObject {
   static const int kScriptOffset = kFunctionDataOffset + kPointerSize;
   static const int kDebugInfoOffset = kScriptOffset + kPointerSize;
   static const int kInferredNameOffset = kDebugInfoOffset + kPointerSize;
-  static const int kFeedbackVectorOffset =
-      kInferredNameOffset + kPointerSize;
+  static const int kFeedbackMetadataOffset = kInferredNameOffset + kPointerSize;
 #if TRACE_MAPS
-  static const int kUniqueIdOffset = kFeedbackVectorOffset + kPointerSize;
+  static const int kUniqueIdOffset = kFeedbackMetadataOffset + kPointerSize;
   static const int kLastPointerFieldOffset = kUniqueIdOffset;
 #else
   // Just to not break the postmortrem support with conditional offsets
-  static const int kUniqueIdOffset = kFeedbackVectorOffset;
-  static const int kLastPointerFieldOffset = kFeedbackVectorOffset;
+  static const int kUniqueIdOffset = kFeedbackMetadataOffset;
+  static const int kLastPointerFieldOffset = kFeedbackMetadataOffset;
 #endif
 
 #if V8_HOST_ARCH_32_BIT
@@ -7294,7 +7300,7 @@ class JSGeneratorObject: public JSObject {
   static const int kSize = kOperandStackOffset + kPointerSize;
 
   // Resume mode, for use by runtime functions.
-  enum ResumeMode { NEXT, THROW };
+  enum ResumeMode { NEXT, RETURN, THROW };
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSGeneratorObject);
@@ -7402,6 +7408,7 @@ class JSFunction: public JSObject {
   inline void set_code(Code* code);
   inline void set_code_no_write_barrier(Code* code);
   inline void ReplaceCode(Code* code);
+  static void EnsureLiterals(Handle<JSFunction> function);
 
   // Tells whether this function inlines the given shared function info.
   bool Inlines(SharedFunctionInfo* candidate);
@@ -7422,6 +7429,12 @@ class JSFunction: public JSObject {
   // Tells whether or not the function is on the concurrent recompilation queue.
   inline bool IsInOptimizationQueue();
 
+  // Unconditionally clear the type feedback vector (including vector ICs).
+  void ClearTypeFeedbackInfo();
+
+  // Clear the type feedback vector with a more subtle policy at GC time.
+  void ClearTypeFeedbackInfoAtGCTime();
+
   // Completes inobject slack tracking on initial map if it is active.
   inline void CompleteInobjectSlackTrackingIfActive();
 
@@ -7435,6 +7448,8 @@ class JSFunction: public JSObject {
   // using the functions from a new context that we should not have
   // access to.
   DECL_ACCESSORS(literals, LiteralsArray)
+
+  inline TypeFeedbackVector* feedback_vector();
 
   // The initial map for an object created by this constructor.
   inline Map* initial_map();

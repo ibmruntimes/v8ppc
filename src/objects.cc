@@ -30,6 +30,7 @@
 #include "src/ic/ic.h"
 #include "src/identity-map.h"
 #include "src/interpreter/bytecodes.h"
+#include "src/interpreter/source-position-table.h"
 #include "src/isolate-inl.h"
 #include "src/key-accumulator.h"
 #include "src/list.h"
@@ -5338,32 +5339,29 @@ Maybe<bool> JSObject::DefineOwnPropertyIgnoreAttributes(
                          CERTAINLY_NOT_STORE_FROM_KEYED);
 }
 
-
 MaybeHandle<Object> JSObject::SetOwnPropertyIgnoreAttributes(
     Handle<JSObject> object, Handle<Name> name, Handle<Object> value,
-    PropertyAttributes attributes, AccessorInfoHandling handling) {
+    PropertyAttributes attributes) {
   DCHECK(!value->IsTheHole());
   LookupIterator it(object, name, LookupIterator::OWN);
-  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes, handling);
+  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes);
 }
-
 
 MaybeHandle<Object> JSObject::SetOwnElementIgnoreAttributes(
     Handle<JSObject> object, uint32_t index, Handle<Object> value,
-    PropertyAttributes attributes, AccessorInfoHandling handling) {
+    PropertyAttributes attributes) {
   Isolate* isolate = object->GetIsolate();
   LookupIterator it(isolate, object, index, LookupIterator::OWN);
-  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes, handling);
+  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes);
 }
-
 
 MaybeHandle<Object> JSObject::DefinePropertyOrElementIgnoreAttributes(
     Handle<JSObject> object, Handle<Name> name, Handle<Object> value,
-    PropertyAttributes attributes, AccessorInfoHandling handling) {
+    PropertyAttributes attributes) {
   Isolate* isolate = object->GetIsolate();
   LookupIterator it = LookupIterator::PropertyOrElement(isolate, object, name,
                                                         LookupIterator::OWN);
-  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes, handling);
+  return DefineOwnPropertyIgnoreAttributes(&it, value, attributes);
 }
 
 
@@ -6415,8 +6413,8 @@ MaybeHandle<Object> JSReceiver::DefineProperties(Isolate* isolate,
   // 5. ReturnIfAbrupt(keys).
   Handle<FixedArray> keys;
   ASSIGN_RETURN_ON_EXCEPTION(
-      isolate, keys,
-      JSReceiver::GetKeys(props, JSReceiver::OWN_ONLY, ALL_PROPERTIES), Object);
+      isolate, keys, JSReceiver::GetKeys(props, OWN_ONLY, ALL_PROPERTIES),
+      Object);
   // 6. Let descriptors be an empty List.
   int capacity = keys->length();
   std::vector<PropertyDescriptor> descriptors(capacity);
@@ -6601,8 +6599,8 @@ Maybe<bool> JSReceiver::ValidateAndApplyPropertyDescriptor(
                 ? desc->value()
                 : Handle<Object>::cast(isolate->factory()->undefined_value()));
         MaybeHandle<Object> result =
-            JSObject::DefineOwnPropertyIgnoreAttributes(
-                it, value, desc->ToAttributes(), JSObject::DONT_FORCE_FIELD);
+            JSObject::DefineOwnPropertyIgnoreAttributes(it, value,
+                                                        desc->ToAttributes());
         if (result.is_null()) return Nothing<bool>();
       }
     } else {
@@ -6794,8 +6792,8 @@ Maybe<bool> JSReceiver::ValidateAndApplyPropertyDescriptor(
                                   ? current->value()
                                   : Handle<Object>::cast(
                                         isolate->factory()->undefined_value()));
-      MaybeHandle<Object> result = JSObject::DefineOwnPropertyIgnoreAttributes(
-          it, value, attrs, JSObject::DONT_FORCE_FIELD);
+      MaybeHandle<Object> result =
+          JSObject::DefineOwnPropertyIgnoreAttributes(it, value, attrs);
       if (result.is_null()) return Nothing<bool>();
     } else {
       DCHECK(desc_is_accessor_descriptor ||
@@ -6859,10 +6857,9 @@ Maybe<bool> JSObject::CreateDataProperty(LookupIterator* it,
       return Just(false);
   }
 
-  RETURN_ON_EXCEPTION_VALUE(
-      it->isolate(),
-      DefineOwnPropertyIgnoreAttributes(it, value, NONE, DONT_FORCE_FIELD),
-      Nothing<bool>());
+  RETURN_ON_EXCEPTION_VALUE(it->isolate(),
+                            DefineOwnPropertyIgnoreAttributes(it, value, NONE),
+                            Nothing<bool>());
 
   return Just(true);
 }
@@ -8127,7 +8124,7 @@ MaybeHandle<JSObject> JSObjectWalkVisitor<ContextObject>::StructureWalk(
       // an array.
       PropertyFilter filter = static_cast<PropertyFilter>(
           ONLY_WRITABLE | ONLY_ENUMERABLE | ONLY_CONFIGURABLE);
-      KeyAccumulator accumulator(isolate, filter);
+      KeyAccumulator accumulator(isolate, OWN_ONLY, filter);
       accumulator.NextPrototype();
       copy->CollectOwnPropertyNames(&accumulator, filter);
       Handle<FixedArray> names = accumulator.GetKeys();
@@ -8632,7 +8629,7 @@ static Maybe<bool> GetKeysFromJSObject(Isolate* isolate,
                                        Handle<JSReceiver> receiver,
                                        Handle<JSObject> object,
                                        PropertyFilter* filter,
-                                       JSReceiver::KeyCollectionType type,
+                                       KeyCollectionType type,
                                        KeyAccumulator* accumulator) {
   accumulator->NextPrototype();
   // Check access rights if required.
@@ -8640,11 +8637,11 @@ static Maybe<bool> GetKeysFromJSObject(Isolate* isolate,
       !isolate->MayAccess(handle(isolate->context()), object)) {
     // The cross-origin spec says that [[Enumerate]] shall return an empty
     // iterator when it doesn't have access...
-    if (type == JSReceiver::INCLUDE_PROTOS) {
+    if (type == INCLUDE_PROTOS) {
       return Just(false);
     }
     // ...whereas [[OwnPropertyKeys]] shall return whitelisted properties.
-    DCHECK(type == JSReceiver::OWN_ONLY);
+    DCHECK_EQ(OWN_ONLY, type);
     *filter = static_cast<PropertyFilter>(*filter | ONLY_ALL_CAN_READ);
   }
 
@@ -8695,10 +8692,10 @@ static Maybe<bool> GetKeysFromJSObject(Isolate* isolate,
 static Maybe<bool> GetKeys_Internal(Isolate* isolate,
                                     Handle<JSReceiver> receiver,
                                     Handle<JSReceiver> object,
-                                    JSReceiver::KeyCollectionType type,
+                                    KeyCollectionType type,
                                     PropertyFilter filter,
                                     KeyAccumulator* accumulator) {
-  PrototypeIterator::WhereToEnd end = type == JSReceiver::OWN_ONLY
+  PrototypeIterator::WhereToEnd end = type == OWN_ONLY
                                           ? PrototypeIterator::END_AT_NON_HIDDEN
                                           : PrototypeIterator::END_AT_NULL;
   for (PrototypeIterator iter(isolate, object,
@@ -8708,12 +8705,12 @@ static Maybe<bool> GetKeys_Internal(Isolate* isolate,
         PrototypeIterator::GetCurrent<JSReceiver>(iter);
     Maybe<bool> result = Just(false);  // Dummy initialization.
     if (current->IsJSProxy()) {
-      if (type == JSReceiver::OWN_ONLY) {
+      if (type == OWN_ONLY) {
         result = JSProxy::OwnPropertyKeys(isolate, receiver,
                                           Handle<JSProxy>::cast(current),
                                           filter, accumulator);
       } else {
-        DCHECK(type == JSReceiver::INCLUDE_PROTOS);
+        DCHECK(type == INCLUDE_PROTOS);
         result = JSProxy::Enumerate(
             isolate, receiver, Handle<JSProxy>::cast(current), accumulator);
       }
@@ -8875,10 +8872,15 @@ Maybe<bool> JSProxy::OwnPropertyKeys(Isolate* isolate,
   const int kPresent = 1;
   const int kGone = 0;
   IdentityMap<int> unchecked_result_keys(isolate->heap(), &set_zone);
-  int unchecked_result_keys_size = trap_result->length();
+  int unchecked_result_keys_size = 0;
   for (int i = 0; i < trap_result->length(); ++i) {
     DCHECK(trap_result->get(i)->IsUniqueName());
-    unchecked_result_keys.Set(trap_result->get(i), kPresent);
+    Object* key = trap_result->get(i);
+    int* entry = unchecked_result_keys.Get(key);
+    if (*entry != kPresent) {
+      *entry = kPresent;
+      unchecked_result_keys_size++;
+    }
   }
   // 17. Repeat, for each key that is an element of targetNonconfigurableKeys:
   for (int i = 0; i < nonconfigurable_keys_length; ++i) {
@@ -8933,7 +8935,7 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
                                             GetKeysConversion keys_conversion) {
   USE(ContainsOnlyValidKeys);
   Isolate* isolate = object->GetIsolate();
-  KeyAccumulator accumulator(isolate, filter);
+  KeyAccumulator accumulator(isolate, type, filter);
   MAYBE_RETURN(
       GetKeys_Internal(isolate, object, object, type, filter, &accumulator),
       MaybeHandle<FixedArray>());
@@ -12369,6 +12371,22 @@ void JSFunction::AttemptConcurrentOptimization() {
   // No write barrier required, since the builtin is part of the root set.
 }
 
+// static
+Handle<LiteralsArray> SharedFunctionInfo::FindOrCreateLiterals(
+    Handle<SharedFunctionInfo> shared, Handle<Context> native_context) {
+  Isolate* isolate = shared->GetIsolate();
+  CodeAndLiterals result =
+      shared->SearchOptimizedCodeMap(*native_context, BailoutId::None());
+  if (result.literals != nullptr) {
+    return handle(result.literals, isolate);
+  }
+  Handle<TypeFeedbackVector> feedback_vector =
+      TypeFeedbackVector::New(isolate, handle(shared->feedback_metadata()));
+  Handle<LiteralsArray> literals = LiteralsArray::New(
+      isolate, feedback_vector, shared->num_literals(), TENURED);
+  AddLiteralsToOptimizedCodeMap(shared, native_context, literals);
+  return literals;
+}
 
 void SharedFunctionInfo::AddSharedCodeToOptimizedCodeMap(
     Handle<SharedFunctionInfo> shared, Handle<Code> code) {
@@ -12572,6 +12590,14 @@ void SharedFunctionInfo::TrimOptimizedCodeMap(int shrink_by) {
   }
 }
 
+// static
+void JSFunction::EnsureLiterals(Handle<JSFunction> function) {
+  Handle<SharedFunctionInfo> shared(function->shared());
+  Handle<Context> native_context(function->context()->native_context());
+  Handle<LiteralsArray> literals =
+      SharedFunctionInfo::FindOrCreateLiterals(shared, native_context);
+  function->set_literals(*literals);
+}
 
 static void GetMinInobjectSlack(Map* map, void* data) {
   int slack = map->unused_property_fields();
@@ -13849,9 +13875,6 @@ void Map::StartInobjectSlackTracking() {
 
 void SharedFunctionInfo::ResetForNewContext(int new_ic_age) {
   code()->ClearInlineCaches();
-  // If we clear ICs, we need to clear the type feedback vector too, since
-  // CallICs are synced with a feedback vector slot.
-  ClearTypeFeedbackInfo();
   set_ic_age(new_ic_age);
   if (code()->kind() == Code::FUNCTION) {
     code()->set_profiler_ticks(0);
@@ -13890,6 +13913,19 @@ int SharedFunctionInfo::SearchOptimizedCodeMapEntry(Context* native_context,
   return -1;
 }
 
+void SharedFunctionInfo::ClearCodeFromOptimizedCodeMap() {
+  if (!OptimizedCodeMapIsCleared()) {
+    FixedArray* optimized_code_map = this->optimized_code_map();
+    int length = optimized_code_map->length();
+    WeakCell* empty_weak_cell = GetHeap()->empty_weak_cell();
+    for (int i = kEntriesStart; i < length; i += kEntryLength) {
+      optimized_code_map->set(i + kCachedCodeOffset, empty_weak_cell,
+                              SKIP_WRITE_BARRIER);
+    }
+    optimized_code_map->set(kSharedCodeIndex, empty_weak_cell,
+                            SKIP_WRITE_BARRIER);
+  }
+}
 
 CodeAndLiterals SharedFunctionInfo::SearchOptimizedCodeMap(
     Context* native_context, BailoutId osr_ast_id) {
@@ -14333,13 +14369,12 @@ int AbstractCode::SourcePosition(int offset) {
   return GetCode()->SourcePosition(offset);
 }
 
-void SharedFunctionInfo::ClearTypeFeedbackInfo() {
-  feedback_vector()->ClearSlots(this);
+void JSFunction::ClearTypeFeedbackInfo() {
+  feedback_vector()->ClearSlots(shared());
 }
 
-
-void SharedFunctionInfo::ClearTypeFeedbackInfoAtGCTime() {
-  feedback_vector()->ClearSlotsAtGCTime(this);
+void JSFunction::ClearTypeFeedbackInfoAtGCTime() {
+  feedback_vector()->ClearSlotsAtGCTime(shared());
 }
 
 
@@ -15025,8 +15060,8 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
 #endif  // ENABLE_DISASSEMBLER
 
 int BytecodeArray::SourcePosition(int offset) {
-  // TODO(yangguo): implement this.
-  return 0;
+  return interpreter::SourcePositionTableIterator::PositionFromBytecodeOffset(
+      this, offset);
 }
 
 void BytecodeArray::Disassemble(std::ostream& os) {
@@ -15036,11 +15071,22 @@ void BytecodeArray::Disassemble(std::ostream& os) {
 
   const uint8_t* first_bytecode_address = GetFirstBytecodeAddress();
   int bytecode_size = 0;
+
+  interpreter::SourcePositionTableIterator source_positions(this);
+
   for (int i = 0; i < this->length(); i += bytecode_size) {
     const uint8_t* bytecode_start = &first_bytecode_address[i];
     interpreter::Bytecode bytecode =
         interpreter::Bytecodes::FromByte(bytecode_start[0]);
     bytecode_size = interpreter::Bytecodes::Size(bytecode);
+
+    if (!source_positions.done() && i == source_positions.bytecode_offset()) {
+      os << std::setw(5) << source_positions.source_position();
+      os << (source_positions.is_statement() ? " S> " : " E> ");
+      source_positions.Advance();
+    } else {
+      os << "         ";
+    }
 
     SNPrintF(buf, "%p", bytecode_start);
     os << buf.start() << " : ";
@@ -15064,7 +15110,8 @@ void BytecodeArray::Disassemble(std::ostream& os) {
       SNPrintF(buf, " (%p)", bytecode_start + offset);
       os << buf.start();
     }
-    os << "\n";
+
+    os << std::endl;
   }
 
   if (constant_pool()->length() > 0) {

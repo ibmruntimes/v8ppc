@@ -149,9 +149,6 @@
   'built-ins/Array/prototype/values/iteration-mutable': [FAIL],
   'built-ins/Array/prototype/Symbol.unscopables/value': [FAIL],
 
-  # https://code.google.com/p/v8/issues/detail?id=3566
-  'built-ins/GeneratorPrototype/return/*': [SKIP],
-
   # https://code.google.com/p/v8/issues/detail?id=4248
   'language/expressions/compound-assignment/S11.13.2_A5.*': [FAIL],
   'language/expressions/compound-assignment/S11.13.2_A6.*': [FAIL],
@@ -453,6 +450,10 @@
   'built-ins/Array/prototype/indexOf/15.4.4.14-5-9': [FAIL],
   'built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-9': [FAIL],
 
+  # https://github.com/tc39/test262/issues/489
+  # Test will pass in 0 or -GMT, but fail in +GMT
+  'language/statements/class/subclass/builtin-objects/Date/regular-subclassing': [PASS, FAIL_OK],
+
   ############################ SKIPPED TESTS #############################
 
   # These tests take a looong time to run.
@@ -651,13 +652,6 @@
   'language/object-literal/getter': [SKIP],
   'language/object-literal/method': [SKIP],
   'language/object-literal/setter': [SKIP],
-  'language/rest-parameters/arrow-function': [SKIP],
-  'language/rest-parameters/expected-argument-count': [SKIP],
-  'language/rest-parameters/no-alias-arguments': [SKIP],
-  'language/rest-parameters/rest-index': [SKIP],
-  'language/rest-parameters/rest-parameters-apply': [SKIP],
-  'language/rest-parameters/rest-parameters-call': [SKIP],
-  'language/rest-parameters/rest-parameters-produce-an-array': [SKIP],
   'language/rest-parameters/with-new-target': [SKIP],
   'language/statements/do-while/S12.6.1_A4_T5': [SKIP],
   'language/statements/let/block-local-closure-get-before-initialization': [SKIP],

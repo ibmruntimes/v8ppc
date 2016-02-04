@@ -371,6 +371,9 @@ Node* InterpreterAssembler::IntPtrSub(Node* a, Node* b) {
   return raw_assembler_->IntPtrSub(a, b);
 }
 
+Node* InterpreterAssembler::Int32Sub(Node* a, Node* b) {
+  return raw_assembler_->Int32Sub(a, b);
+}
 
 Node* InterpreterAssembler::WordShl(Node* value, int shift) {
   return raw_assembler_->WordShl(value, Int32Constant(shift));
@@ -432,10 +435,9 @@ Node* InterpreterAssembler::LoadTypeFeedbackVector() {
   Node* function = raw_assembler_->Load(
       MachineType::AnyTagged(), RegisterFileRawPointer(),
       IntPtrConstant(InterpreterFrameConstants::kFunctionFromRegisterPointer));
-  Node* shared_info =
-      LoadObjectField(function, JSFunction::kSharedFunctionInfoOffset);
+  Node* literals = LoadObjectField(function, JSFunction::kLiteralsOffset);
   Node* vector =
-      LoadObjectField(shared_info, SharedFunctionInfo::kFeedbackVectorOffset);
+      LoadObjectField(literals, LiteralsArray::kFeedbackVectorOffset);
   return vector;
 }
 
@@ -581,6 +583,11 @@ Node* InterpreterAssembler::CallRuntime(Node* function_id, Node* first_arg,
   return CallN(descriptor, code_target, args);
 }
 
+Node* InterpreterAssembler::CallRuntime(Runtime::FunctionId function_id) {
+  CallPrologue();
+  Node* return_val = raw_assembler_->CallRuntime0(function_id, GetContext());
+  return return_val;
+}
 
 Node* InterpreterAssembler::CallRuntime(Runtime::FunctionId function_id,
                                         Node* arg1) {
@@ -699,6 +706,20 @@ void InterpreterAssembler::DispatchTo(Node* new_bytecode_offset) {
   raw_assembler_->TailCallN(call_descriptor(), target_code_object, args);
 }
 
+void InterpreterAssembler::StackCheck() {
+  RawMachineLabel ok, stack_guard;
+  Node* sp = raw_assembler_->LoadStackPointer();
+  Node* stack_limit = raw_assembler_->Load(
+      MachineType::Pointer(),
+      raw_assembler_->ExternalConstant(
+          ExternalReference::address_of_stack_limit(isolate())));
+  Node* condition = raw_assembler_->UintPtrGreaterThanOrEqual(sp, stack_limit);
+  raw_assembler_->Branch(condition, &ok, &stack_guard);
+  raw_assembler_->Bind(&stack_guard);
+  CallRuntime(Runtime::kStackGuard);
+  raw_assembler_->Goto(&ok);
+  raw_assembler_->Bind(&ok);
+}
 
 void InterpreterAssembler::Abort(BailoutReason bailout_reason) {
   Node* abort_id = SmiTag(Int32Constant(bailout_reason));

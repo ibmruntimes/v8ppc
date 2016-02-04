@@ -3561,7 +3561,8 @@ static i::MaybeHandle<i::Object> DefineObjectProperty(
       isolate, js_object, key, &success, i::LookupIterator::OWN);
   if (!success) return i::MaybeHandle<i::Object>();
 
-  return i::JSObject::DefineOwnPropertyIgnoreAttributes(&it, value, attrs);
+  return i::JSObject::DefineOwnPropertyIgnoreAttributes(
+      &it, value, attrs, i::JSObject::FORCE_FIELD);
 }
 
 
@@ -3755,8 +3756,7 @@ MaybeLocal<Array> v8::Object::GetPropertyNames(Local<Context> context) {
   auto self = Utils::OpenHandle(this);
   i::Handle<i::FixedArray> value;
   has_pending_exception =
-      !i::JSReceiver::GetKeys(self, i::JSReceiver::INCLUDE_PROTOS,
-                              i::ENUMERABLE_STRINGS)
+      !i::JSReceiver::GetKeys(self, i::INCLUDE_PROTOS, i::ENUMERABLE_STRINGS)
            .ToHandle(&value);
   RETURN_ON_FAILED_EXECUTION(Array);
   // Because we use caching to speed up enumeration it is important
@@ -3778,9 +3778,9 @@ MaybeLocal<Array> v8::Object::GetOwnPropertyNames(Local<Context> context) {
   PREPARE_FOR_EXECUTION(context, "v8::Object::GetOwnPropertyNames()", Array);
   auto self = Utils::OpenHandle(this);
   i::Handle<i::FixedArray> value;
-  has_pending_exception = !i::JSReceiver::GetKeys(self, i::JSReceiver::OWN_ONLY,
-                                                  i::ENUMERABLE_STRINGS)
-                               .ToHandle(&value);
+  has_pending_exception =
+      !i::JSReceiver::GetKeys(self, i::OWN_ONLY, i::ENUMERABLE_STRINGS)
+           .ToHandle(&value);
   RETURN_ON_FAILED_EXECUTION(Array);
   // Because we use caching to speed up enumeration it is important
   // to never change the result of the basic enumeration function so

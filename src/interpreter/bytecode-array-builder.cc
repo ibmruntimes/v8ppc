@@ -73,6 +73,7 @@ BytecodeArrayBuilder::BytecodeArrayBuilder(Isolate* isolate, Zone* zone,
       bytecode_generated_(false),
       constant_array_builder_(isolate, zone),
       handler_table_builder_(isolate, zone),
+      source_position_table_builder_(isolate, zone),
       last_block_end_(0),
       last_bytecode_start_(~0),
       exit_seen_in_block_(false),
@@ -122,10 +123,13 @@ Handle<BytecodeArray> BytecodeArrayBuilder::ToBytecodeArray() {
   int frame_size = register_count * kPointerSize;
   Handle<FixedArray> constant_pool = constant_array_builder()->ToFixedArray();
   Handle<FixedArray> handler_table = handler_table_builder()->ToHandlerTable();
+  Handle<FixedArray> source_position_table =
+      source_position_table_builder()->ToFixedArray();
   Handle<BytecodeArray> output = isolate_->factory()->NewBytecodeArray(
       bytecode_size, &bytecodes_.front(), frame_size, parameter_count(),
       constant_pool);
   output->set_handler_table(*handler_table);
+  output->set_source_position_table(*source_position_table);
   bytecode_generated_ = true;
   return output;
 }
@@ -322,6 +326,10 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadBooleanConstant(bool value) {
   return *this;
 }
 
+BytecodeArrayBuilder& BytecodeArrayBuilder::LoadPrototypeOrInitialMap() {
+  Output(Bytecode::kLdaInitialMap);
+  return *this;
+}
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::LoadAccumulatorWithRegister(
     Register reg) {
@@ -575,6 +583,16 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::CreateArguments(
   return *this;
 }
 
+BytecodeArrayBuilder& BytecodeArrayBuilder::CreateRestArguments(int index) {
+  size_t index_entry =
+      GetConstantPoolEntry(Handle<Object>(Smi::FromInt(index), isolate_));
+  // This will always be the first entry in the constant pool, since the rest
+  // arguments object is created at the start of the function just after
+  // creating the arguments object.
+  CHECK(FitsInIdx8Operand(index_entry));
+  Output(Bytecode::kCreateRestArguments, static_cast<uint8_t>(index_entry));
+  return *this;
+}
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::CreateRegExpLiteral(
     Handle<String> pattern, int literal_index, int flags) {
@@ -950,6 +968,10 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfUndefined(
   return OutputJump(Bytecode::kJumpIfUndefined, label);
 }
 
+BytecodeArrayBuilder& BytecodeArrayBuilder::StackCheck() {
+  Output(Bytecode::kStackCheck);
+  return *this;
+}
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::Throw() {
   Output(Bytecode::kThrow);
@@ -971,6 +993,10 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::Return() {
   return *this;
 }
 
+BytecodeArrayBuilder& BytecodeArrayBuilder::Debugger() {
+  Output(Bytecode::kDebugger);
+  return *this;
+}
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::ForInPrepare(
     Register cache_info_triple) {
@@ -1051,21 +1077,24 @@ void BytecodeArrayBuilder::EnsureReturn() {
   }
 }
 
-
 BytecodeArrayBuilder& BytecodeArrayBuilder::Call(Register callable,
-                                                 Register receiver,
-                                                 size_t arg_count,
+                                                 Register receiver_args,
+                                                 size_t receiver_args_count,
                                                  int feedback_slot) {
-  if (FitsInReg8Operand(callable) && FitsInReg8Operand(receiver) &&
-      FitsInIdx8Operand(arg_count) && FitsInIdx8Operand(feedback_slot)) {
-    Output(Bytecode::kCall, callable.ToRawOperand(), receiver.ToRawOperand(),
-           static_cast<uint8_t>(arg_count),
+  if (FitsInReg8Operand(callable) && FitsInReg8Operand(receiver_args) &&
+      FitsInIdx8Operand(receiver_args_count) &&
+      FitsInIdx8Operand(feedback_slot)) {
+    Output(Bytecode::kCall, callable.ToRawOperand(),
+           receiver_args.ToRawOperand(),
+           static_cast<uint8_t>(receiver_args_count),
            static_cast<uint8_t>(feedback_slot));
-  } else if (FitsInReg16Operand(callable) && FitsInReg16Operand(receiver) &&
-             FitsInIdx16Operand(arg_count) &&
+  } else if (FitsInReg16Operand(callable) &&
+             FitsInReg16Operand(receiver_args) &&
+             FitsInIdx16Operand(receiver_args_count) &&
              FitsInIdx16Operand(feedback_slot)) {
     Output(Bytecode::kCallWide, callable.ToRawOperand(),
-           receiver.ToRawOperand(), static_cast<uint16_t>(arg_count),
+           receiver_args.ToRawOperand(),
+           static_cast<uint16_t>(receiver_args_count),
            static_cast<uint16_t>(feedback_slot));
   } else {
     UNIMPLEMENTED();
@@ -1142,17 +1171,19 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::CallRuntimeForPair(
   return *this;
 }
 
-
-BytecodeArrayBuilder& BytecodeArrayBuilder::CallJSRuntime(int context_index,
-                                                          Register receiver,
-                                                          size_t arg_count) {
+BytecodeArrayBuilder& BytecodeArrayBuilder::CallJSRuntime(
+    int context_index, Register receiver_args, size_t receiver_args_count) {
   DCHECK(FitsInIdx16Operand(context_index));
-  if (FitsInReg8Operand(receiver) && FitsInIdx8Operand(arg_count)) {
+  if (FitsInReg8Operand(receiver_args) &&
+      FitsInIdx8Operand(receiver_args_count)) {
     Output(Bytecode::kCallJSRuntime, static_cast<uint16_t>(context_index),
-           receiver.ToRawOperand(), static_cast<uint8_t>(arg_count));
-  } else if (FitsInReg16Operand(receiver) && FitsInIdx16Operand(arg_count)) {
+           receiver_args.ToRawOperand(),
+           static_cast<uint8_t>(receiver_args_count));
+  } else if (FitsInReg16Operand(receiver_args) &&
+             FitsInIdx16Operand(receiver_args_count)) {
     Output(Bytecode::kCallJSRuntimeWide, static_cast<uint16_t>(context_index),
-           receiver.ToRawOperand(), static_cast<uint16_t>(arg_count));
+           receiver_args.ToRawOperand(),
+           static_cast<uint16_t>(receiver_args_count));
   } else {
     UNIMPLEMENTED();
   }
@@ -1175,6 +1206,18 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::DeleteLookupSlot() {
 
 size_t BytecodeArrayBuilder::GetConstantPoolEntry(Handle<Object> object) {
   return constant_array_builder()->Insert(object);
+}
+
+void BytecodeArrayBuilder::SetStatementPosition(Statement* stmt) {
+  if (stmt->position() == RelocInfo::kNoPosition) return;
+  source_position_table_builder_.AddStatementPosition(
+      static_cast<int>(bytecodes_.size()), stmt->position());
+}
+
+void BytecodeArrayBuilder::SetExpressionPosition(Expression* expr) {
+  if (expr->position() == RelocInfo::kNoPosition) return;
+  source_position_table_builder_.AddExpressionPosition(
+      static_cast<int>(bytecodes_.size()), expr->position());
 }
 
 bool BytecodeArrayBuilder::TemporaryRegisterIsLive(Register reg) const {

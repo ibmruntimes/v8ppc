@@ -23,13 +23,12 @@ class BytecodeGraphBuilder {
                        JSGraph* jsgraph);
 
   // Creates a graph by visiting bytecodes.
-  bool CreateGraph(bool stack_check = true);
+  bool CreateGraph();
 
  private:
   class Environment;
   class FrameStateBeforeAndAfter;
 
-  void CreateGraphBody(bool stack_check);
   void VisitBytecodes();
 
   // Get or create the node that represents the outer function closure.
@@ -122,7 +121,7 @@ class BytecodeGraphBuilder {
   void BuildCreateRegExpLiteral();
   void BuildCreateArrayLiteral();
   void BuildCreateObjectLiteral();
-  void BuildCreateArguments(CreateArgumentsParameters::Type type);
+  void BuildCreateArguments(CreateArgumentsParameters::Type type, int index);
   void BuildLoadGlobal(TypeofMode typeof_mode);
   void BuildStoreGlobal();
   void BuildNamedLoad();
@@ -161,9 +160,6 @@ class BytecodeGraphBuilder {
   // Simulates entry and exit of exception handlers.
   void EnterAndExitExceptionHandlers(int current_offset);
 
-  // Attaches a frame state to |node| for the entry to the function.
-  void PrepareEntryFrameState(Node* node);
-
   // Growth increment for the temporary buffer used to construct input lists to
   // new nodes.
   static const int kInputBufferSizeIncrement = 64;
@@ -173,9 +169,10 @@ class BytecodeGraphBuilder {
   // underlying bytecode. The exception handlers within the bytecode are
   // well scoped, hence will form a stack during iteration.
   struct ExceptionHandler {
-    int start_offset_;    // Start offset of the handled area in the bytecode.
-    int end_offset_;      // End offset of the handled area in the bytecode.
-    int handler_offset_;  // Handler entry offset within the bytecode.
+    int start_offset_;      // Start offset of the handled area in the bytecode.
+    int end_offset_;        // End offset of the handled area in the bytecode.
+    int handler_offset_;    // Handler entry offset within the bytecode.
+    int context_register_;  // Index of register holding handler context.
   };
 
   // Field accessors

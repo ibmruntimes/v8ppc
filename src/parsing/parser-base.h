@@ -461,6 +461,10 @@ class ParserBase : public Traits {
     return false;
   }
 
+  bool PeekInOrOf() {
+    return peek() == Token::IN || PeekContextualKeyword(CStrVector("of"));
+  }
+
   // Checks whether an octal literal was last seen between beg_pos and end_pos.
   // If so, reports an error. Only called for strict mode and template strings.
   void CheckOctalLiteral(int beg_pos, int end_pos,
@@ -1308,7 +1312,9 @@ ParserBase<Traits>::ParsePrimaryExpression(ExpressionClassifier* classifier,
       if (!classifier->is_valid_binding_pattern()) {
         ArrowFormalParametersUnexpectedToken(classifier);
       }
-      BindingPatternUnexpectedToken(classifier);
+      classifier->RecordPatternError(scanner()->peek_location(),
+                                     MessageTemplate::kUnexpectedToken,
+                                     Token::String(Token::LPAREN));
       Consume(Token::LPAREN);
       if (Check(Token::RPAREN)) {
         // ()=>x.  The continuation that looks for the => is in
@@ -1352,9 +1358,6 @@ ParserBase<Traits>::ParsePrimaryExpression(ExpressionClassifier* classifier,
       ExpressionT expr = this->ParseExpression(true, kIsPossibleArrowFormals,
                                                classifier, CHECK_OK);
       Expect(Token::RPAREN, CHECK_OK);
-      if (peek() != Token::ARROW) {
-        expr->set_is_parenthesized();
-      }
       return expr;
     }
 
@@ -2021,8 +2024,7 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN, int flags,
           ExpressionClassifier::CoverInitializedNameProduction);
 
   bool maybe_pattern =
-      (expression->IsObjectLiteral() || expression->IsArrayLiteral()) &&
-      !expression->is_parenthesized();
+      expression->IsObjectLiteral() || expression->IsArrayLiteral();
 
   if (!Token::IsAssignmentOp(peek())) {
     // Parsed conditional expression only (no assignment).
@@ -2160,10 +2162,7 @@ ParserBase<Traits>::ParseYieldExpression(ExpressionClassifier* classifier,
     }
   }
   if (kind == Yield::kDelegating) {
-    // var iterator = subject[Symbol.iterator]();
-    // Hackily disambiguate o from o.next and o [Symbol.iterator]().
-    // TODO(verwaest): Come up with a better solution.
-    expression = this->GetIterator(expression, factory(), pos + 1);
+    return Traits::RewriteYieldStar(generator_object, expression, pos);
   }
   // Hackily disambiguate o from o.next and o [Symbol.iterator]().
   // TODO(verwaest): Come up with a better solution.
@@ -3310,9 +3309,6 @@ void ParserBase<Traits>::CheckDestructuringElement(
   const Scanner::Location location(begin, end);
   if (expression->IsArrayLiteral() || expression->IsObjectLiteral() ||
       expression->IsAssignment()) {
-    if (expression->is_parenthesized()) {
-      classifier->RecordPatternError(location, message);
-    }
     return;
   }
 

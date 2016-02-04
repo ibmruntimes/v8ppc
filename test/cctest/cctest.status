@@ -511,16 +511,12 @@
 
   # TODO(yangguo,4690): Required DebuggerStatement support.
   'test-profile-generator/BailoutReason': [FAIL],
-  'test-api/Regress385349': [FAIL],
 
   # TODO(mstarzinger,4674): Support exception handlers in BytecodeGraphBuilder.
   'test-run-deopt/DeoptExceptionHandlerCatch': [PASS, FAIL],
 
   # TODO(rmcilroy,4680): Check failed: toplevel_test_code_event_found.
   'test-serialize/SerializeToplevelIsolates': [FAIL],
-
-  # TODO(rmcilroy,4680): Exception message doesn't match in release mode.
-  'test-run-jsexceptions/ThrowMessageIndirectly': [FAIL, PASS],
 
   # TODO(rmcilroy,4682): Requires support for classes.
   'test-inobject-slack-tracking/SubclassBasicNoBaseClassInstancesNoInlineNew': [FAIL],
@@ -560,8 +556,10 @@
   'test-inobject-slack-tracking/SubclassPromiseBuiltin': [FAIL],
   'test-api/Regress470113': [FAIL],
   'test-api/SubclassGetConstructorName': [FAIL],
-  'test-api/ClassPrototypeCreationContext': [FAIL],
-  'test-run-jsops/ClassLiteral': [FAIL],
+
+  # BUG(4333). Function name inferrer does not work for ES6 clases.
+  'test-func-name-inference/UpperCaseClass': [TIMEOUT],
+  'test-func-name-inference/LowerCaseClass': [TIMEOUT],
 
   # TODO(rmcilroy,4681): Requires support for generators.
   'test-inobject-slack-tracking/JSGeneratorObjectBasic': [FAIL],
@@ -599,47 +597,39 @@
   'test-compiler/OptimizedCodeSharing3': [FAIL],
 
   # TODO(rmcilroy,4689): Stack trace line number failures.
-  'test-api/CaptureStackTrace': [FAIL],
-  'test-api/GetStackTraceForUncaughtExceptionFromSimpleStackTrace': [FAIL],
   'test-api/CaptureStackTraceForUncaughtException': [FAIL],
   'test-api/GetStackTraceContainsFunctionsWithFunctionName': [FAIL],
   'test-run-jsexceptions/ThrowMessagePosition': [FAIL],
+  'test-api/TryCatchMixedNesting': [PASS, FAIL],
 
   # TODO(rmcilroy,4689): Stack frame calling frame is_javascript() failure.
   'test-log-stack-tracer/CFromJSStackTrace': [FAIL],
   'test-log-stack-tracer/PureJSStackTrace': [FAIL],
 
   # TODO(rmcilroy,4680): Exception message assert failure.
-  'test-api/CallICFastApi_SimpleSignature_Miss2': [FAIL],
-  'test-api/CallICFastApi_SimpleSignature_Miss2WithProfiler': [FAIL],
-  'test-api/InterceptorCallICFastApi_SimpleSignature_Miss3': [FAIL],
-  'test-api/InterceptorCallICFastApi_SimpleSignature_Miss3WithProfiler': [FAIL],
+  'test-api/CallICFastApi_SimpleSignature_Miss2WithProfiler': [PASS, FAIL],
+  'test-api/InterceptorCallICFastApi_SimpleSignature_Miss3WithProfiler': [PASS, FAIL],
 
   # TODO(rmcilroy,4680): Test assert errors.
   'test-cpu-profiler/CodeEvents': [FAIL],
   'test-cpu-profiler/TickEvents': [FAIL],
-  'test-cpu-profiler/CallCollectSample': [FAIL],
+  'test-cpu-profiler/CollectSampleAPI': [FAIL],
   'test-cpu-profiler/FunctionDetails': [FAIL],
+  'test-cpu-profiler/JsNativeJsRuntimeJsSampleMultiple': [FAIL],
   'test-cpu-profiler/NativeMethodUninitializedIC': [FAIL],
   'test-cpu-profiler/NativeMethodMonomorphicIC': [FAIL],
   'test-cpu-profiler/NativeAccessorUninitializedIC': [FAIL],
-  'test-cpu-profiler/ NativeAccessorMonomorphicIC': [FAIL],
+  'test-cpu-profiler/NativeAccessorMonomorphicIC': [FAIL],
   'test-sampler-api/StackFramesConsistent': [FAIL],
   'test-profile-generator/LineNumber': [FAIL],
   'test-profile-generator/ProfileNodeScriptId': [FAIL],
   'test-profile-generator/RecordStackTraceAtStartProfiling': [FAIL],
   'test-feedback-vector/VectorCallICStates': [FAIL],
-  'test-cpu-profiler/NativeAccessorMonomorphicIC': [FAIL],
-  'test-cpu-profiler/CollectSampleAPI': [FAIL],
   'test-compiler/FeedbackVectorPreservedAcrossRecompiles': [FAIL],
-  'test-api/ExceptionInNativeScript': [FAIL],
-  'test-api/ExceptionCreateMessage': [FAIL],
-  'test-api/TryFinallyMessage': [FAIL],
   'test-api/DynamicWithSourceURLInStackTraceString': [FAIL],
   'test-api/PromiseRejectCallback': [FAIL],
   'test-api/RethrowBogusErrorStackTrace': [FAIL],
   'test-api/RethrowPrimitiveStackTrace': [FAIL],
-  'test-api/RethrowStackTrace': [FAIL],
   'test-api/TryCatchSourceInfo': [FAIL],
   'test-api/SetJitCodeEventHandler': [FAIL],
   'test-heap/WeakFunctionInConstructor': [FAIL],
@@ -650,7 +640,6 @@
   'test-heap/CompilationCacheCachingBehavior': [FAIL],
   'test-heap/CellsInOptimizedCodeAreWeak': [FAIL],
   'test-run-inlining/InlineTwice': [FAIL],
-  'test-run-jsobjects/ArgumentsRest': [FAIL],
   'test-decls/Regress425510': [FAIL],
 
   # TODO(rmcilroy,4680): Fail on some bot configurations.
@@ -661,8 +650,11 @@
   'test-serialize/SerializeInternalReference': [PASS, FAIL],
 
   # TODO(rmcilroy,4680): Test crashes.
-  'test-pipeline/PipelineGeneric': [SKIP],
-  'test-pipeline/PipelineTyped': [SKIP],
+  'test-serialize/PerIsolateSnapshotBlobs': [SKIP],
+  'test-serialize/PerIsolateSnapshotBlobsWithLocker': [SKIP],
+  'test-serialize/PerIsolateSnapshotBlobsOutdatedContextWithOverflow': [SKIP],
+  'test-serialize/SnapshotBlobsStackOverflow': [SKIP],
+  'test-decls/CrossScriptReferencesHarmony': [SKIP],
 
   # TODO(rmcilroy,4680): DCHECK(shared->function_data()->IsUndefined()) in
   # compiler.cc GetUnoptimizedCodeCommon() or timeout in release mode.
@@ -690,21 +682,6 @@
   'test-func-name-inference/MethodAssignmentInAnonymousFunctionCall': [SKIP],
   'test-func-name-inference/AssignmentAndCall': [SKIP],
   'test-func-name-inference/ReturnAnonymousFunction': [SKIP],
-
-  # TODO(rmcilroy,4680): Test timeouts.
-  'test-thread-termination/TerminateOnlyV8ThreadFromThreadItself': [SKIP],
-  'test-thread-termination/TerminateOnlyV8ThreadFromThreadItselfNoLoop': [SKIP],
-  'test-thread-termination/TerminateOnlyV8ThreadFromOtherThread': [SKIP],
-  'test-thread-termination/TerminateAndReenterFromThreadItself': [SKIP],
-  'test-thread-termination/TerminateCancelTerminateFromThreadItself': [SKIP],
-  'test-thread-termination/TerminationInInnerTryCall': [SKIP],
-  'test-thread-termination/TerminateFromOtherThreadWhileMicrotaskRunning': [SKIP],
-  'test-api/RequestInterruptTestWithFunctionCall': [SKIP],
-  'test-api/RequestInterruptTestWithAccessor': [SKIP],
-  'test-api/RequestInterruptTestWithNativeAccessor': [SKIP],
-  'test-api/RequestInterruptTestWithMethodCall': [SKIP],
-  'test-api/RequestMultipleInterrupts': [SKIP],
-  'test-api/RequestInterruptTestWithMethodCallAndInterceptor': [SKIP],
 }],  # ignition == True
 
 ['ignition == True and mode == debug and arch == x64', {
@@ -717,15 +694,10 @@
   'test-api/CallAsFunction': [PASS, FAIL],
   'test-api/ConstructorForObject': [PASS, FAIL],
   'test-api/Regress528': [PASS, FAIL],
-  'test-api/TryCatchMixedNesting': [PASS, FAIL],
 }],
 
 ['ignition == True and arch == x64', {
   # TODO(rmcilroy,4680): The function_data field should be a BytecodeArray on interpreter entry
-  'test-serialize/PerIsolateSnapshotBlobsOutdatedContextWithOverflow': [PASS, ['mode == debug', FAIL]],
-  'test-serialize/PerIsolateSnapshotBlobsWithLocker': [PASS, ['mode == debug', FAIL]],
-  'test-serialize/SnapshotBlobsStackOverflow': [PASS, ['mode == debug', FAIL]],
-  'test-serialize/PerIsolateSnapshotBlobs': [PASS, ['mode == debug', FAIL]],
   'test-serialize/SerializationMemoryStats': [PASS, ['mode == debug', FAIL]],
 
   # TODO(rmcilroy,4680): Test assert errors.
@@ -734,8 +706,9 @@
 }],
 
 ['ignition == True and arch == arm64', {
-  # TODO(rmcilroy,4680): Arm64 specific test failures.
-  'test-heap/NoWeakHashTableLeakWithIncrementalMarking': [FAIL],
+  # TODO(rmcilroy,4680): Arm64 specific crashes.
+  'test-api/ExternalWrap': [SKIP],
+  'test-heap/NoWeakHashTableLeakWithIncrementalMarking': [SKIP],
 
   # TODO(rmcilroy,4680): Arm64 flakes.
   'test-serialize/SerializeInternalReference': [PASS, FAIL],
@@ -743,8 +716,8 @@
   'test-api/InitializeDefaultIsolateOnSecondaryThread1': [PASS, FAIL],
   'test-heap/Regress538257': [PASS, FAIL],
   'test-heap/AddInstructionChangesNewSpacePromotion': [PASS, FAIL],
-  'test-api/ExternalWrap': [PASS, FAIL],
   'test-decls/CrossScriptReferencesHarmony': [PASS, FAIL],
+  'test-lockers/IsolateNestedLocking': [PASS, FAIL],
 }],  # ignition == True and arch == arm64
 
 ]

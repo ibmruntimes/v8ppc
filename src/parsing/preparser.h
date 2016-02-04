@@ -279,12 +279,6 @@ class PreParserExpression {
   int position() const { return RelocInfo::kNoPosition; }
   void set_function_token_position(int position) {}
 
-  // Parenthesized expressions in the form `( Expression )`.
-  void set_is_parenthesized() {
-    code_ = ParenthesizedField::update(code_, true);
-  }
-  bool is_parenthesized() const { return ParenthesizedField::decode(code_); }
-
  private:
   enum Type {
     kExpression,
@@ -941,6 +935,9 @@ class PreParserTraits {
       PreParserExpression property, const ExpressionClassifier* classifier,
       bool* ok);
 
+  inline PreParserExpression RewriteYieldStar(
+      PreParserExpression generator, PreParserExpression expr, int pos);
+
  private:
   PreParser* pre_parser_;
 };
@@ -1135,6 +1132,13 @@ PreParserExpression PreParserTraits::RewriteNonPatternObjectLiteralProperty(
     bool* ok) {
   pre_parser_->ValidateExpression(classifier, ok);
   return property;
+}
+
+
+PreParserExpression PreParserTraits::RewriteYieldStar(
+    PreParserExpression generator, PreParserExpression expression, int pos) {
+  return pre_parser_->factory()->NewYield(
+      generator, expression, Yield::kDelegating, pos);
 }
 
 

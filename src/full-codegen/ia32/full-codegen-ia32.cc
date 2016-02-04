@@ -1144,11 +1144,8 @@ void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
   // flag, we need to use the runtime function so that the new function
   // we are creating here gets a chance to have its code optimized and
   // doesn't just get a copy of the existing unoptimized code.
-  if (!FLAG_always_opt &&
-      !FLAG_prepare_always_opt &&
-      !pretenure &&
-      scope()->is_function_scope() &&
-      info->num_literals() == 0) {
+  if (!FLAG_always_opt && !FLAG_prepare_always_opt && !pretenure &&
+      scope()->is_function_scope()) {
     FastNewClosureStub stub(isolate(), info->language_mode(), info->kind());
     __ mov(ebx, Immediate(info));
     __ CallStub(&stub);
@@ -1849,8 +1846,17 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
 
       __ jmp(&suspend);
       __ bind(&continuation);
+      // When we arrive here, the stack top is the resume mode and
+      // result_register() holds the input value (the argument given to the
+      // respective resume operation).
       __ RecordGeneratorContinuation();
-      __ jmp(&resume);
+      __ pop(ebx);
+      __ cmp(ebx, Immediate(Smi::FromInt(JSGeneratorObject::RETURN)));
+      __ j(not_equal, &resume);
+      __ push(result_register());
+      EmitCreateIteratorResult(true);
+      EmitUnwindBeforeReturn();
+      EmitReturnSequence();
 
       __ bind(&suspend);
       VisitForAccumulatorValue(expr->generator_object());
@@ -2063,6 +2069,7 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
     __ add(edx, ecx);
     __ mov(FieldOperand(ebx, JSGeneratorObject::kContinuationOffset),
            Immediate(Smi::FromInt(JSGeneratorObject::kGeneratorExecuting)));
+    __ Push(Smi::FromInt(resume_mode));  // Consumed in continuation.
     __ jmp(edx);
     __ bind(&slow_resume);
   }
@@ -2076,6 +2083,7 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
   __ push(ecx);
   __ jmp(&push_operand_holes);
   __ bind(&call_resume);
+  __ Push(Smi::FromInt(resume_mode));  // Consumed in continuation.
   __ push(ebx);
   __ push(result_register());
   __ Push(Smi::FromInt(resume_mode));

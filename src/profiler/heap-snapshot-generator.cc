@@ -1390,9 +1390,9 @@ void V8HeapExplorer::ExtractSharedFunctionInfoReferences(
   SetInternalReference(obj, entry,
                        "optimized_code_map", shared->optimized_code_map(),
                        SharedFunctionInfo::kOptimizedCodeMapOffset);
-  SetInternalReference(obj, entry,
-                       "feedback_vector", shared->feedback_vector(),
-                       SharedFunctionInfo::kFeedbackVectorOffset);
+  SetInternalReference(obj, entry, "feedback_metadata",
+                       shared->feedback_metadata(),
+                       SharedFunctionInfo::kFeedbackMetadataOffset);
 }
 
 
@@ -1868,7 +1868,6 @@ bool V8HeapExplorer::IterateAndExtractSinglePass() {
 bool V8HeapExplorer::IsEssentialObject(Object* object) {
   return object->IsHeapObject() && !object->IsOddball() &&
          object != heap_->empty_byte_array() &&
-         object != heap_->empty_bytecode_array() &&
          object != heap_->empty_fixed_array() &&
          object != heap_->empty_descriptor_array() &&
          object != heap_->fixed_array_map() && object != heap_->cell_map() &&

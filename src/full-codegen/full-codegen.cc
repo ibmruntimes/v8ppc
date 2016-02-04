@@ -29,7 +29,7 @@ bool FullCodeGenerator::MakeCode(CompilationInfo* info) {
   TimerEventScope<TimerEventCompileFullCode> timer(info->isolate());
 
   // Ensure that the feedback vector is large enough.
-  info->EnsureFeedbackVector();
+  info->EnsureFeedbackMetadata();
 
   Handle<Script> script = info->script();
   if (!script->IsUndefined() && !script->source()->IsUndefined()) {
@@ -630,6 +630,13 @@ void FullCodeGenerator::EmitGeneratorNext(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 2);
   EmitGeneratorResume(args->at(0), args->at(1), JSGeneratorObject::NEXT);
+}
+
+
+void FullCodeGenerator::EmitGeneratorReturn(CallRuntime* expr) {
+  ZoneList<Expression*>* args = expr->arguments();
+  DCHECK(args->length() == 2);
+  EmitGeneratorResume(args->at(0), args->at(1), JSGeneratorObject::RETURN);
 }
 
 

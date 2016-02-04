@@ -11,6 +11,7 @@
 #include "src/interpreter/constant-array-builder.h"
 #include "src/interpreter/handler-table-builder.h"
 #include "src/interpreter/register-translator.h"
+#include "src/interpreter/source-position-table.h"
 #include "src/zone-containers.h"
 
 namespace v8 {
@@ -94,6 +95,9 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   BytecodeArrayBuilder& LoadFalse();
   BytecodeArrayBuilder& LoadBooleanConstant(bool value);
 
+  // Load object prototype (or initial map).
+  BytecodeArrayBuilder& LoadPrototypeOrInitialMap();
+
   // Global loads to the accumulator and stores from the accumulator.
   BytecodeArrayBuilder& LoadGlobal(const Handle<String> name, int feedback_slot,
                                    LanguageMode language_mode,
@@ -148,6 +152,9 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   // Create a new arguments object in the accumulator.
   BytecodeArrayBuilder& CreateArguments(CreateArgumentsType type);
 
+  // Create a new rest arguments object starting at |index| in the accumulator.
+  BytecodeArrayBuilder& CreateRestArguments(int index);
+
   // Literals creation.  Constant elements should be in the accumulator.
   BytecodeArrayBuilder& CreateRegExpLiteral(Handle<String> pattern,
                                             int literal_index, int flags);
@@ -164,11 +171,11 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   BytecodeArrayBuilder& PopContext(Register context);
 
   // Call a JS function. The JSFunction or Callable to be called should be in
-  // |callable|, the receiver should be in |receiver| and all subsequent
-  // arguments should be in registers <receiver + 1> to
-  // <receiver + 1 + arg_count>.
-  BytecodeArrayBuilder& Call(Register callable, Register receiver,
-                             size_t arg_count, int feedback_slot);
+  // |callable|, the receiver should be in |receiver_args| and all subsequent
+  // arguments should be in registers <receiver_args + 1> to
+  // <receiver_args + receiver_arg_count - 1>.
+  BytecodeArrayBuilder& Call(Register callable, Register receiver_args,
+                             size_t receiver_arg_count, int feedback_slot);
 
   // Call the new operator. The |constructor| register is followed by
   // |arg_count| consecutive registers containing arguments to be
@@ -178,23 +185,23 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
 
   // Call the runtime function with |function_id|. The first argument should be
   // in |first_arg| and all subsequent arguments should be in registers
-  // <first_arg + 1> to <first_arg + 1 + arg_count>.
+  // <first_arg + 1> to <first_arg + arg_count - 1>.
   BytecodeArrayBuilder& CallRuntime(Runtime::FunctionId function_id,
                                     Register first_arg, size_t arg_count);
 
   // Call the runtime function with |function_id| that returns a pair of values.
   // The first argument should be in |first_arg| and all subsequent arguments
-  // should be in registers <first_arg + 1> to <first_arg + 1 + arg_count>. The
+  // should be in registers <first_arg + 1> to <first_arg + arg_count - 1>. The
   // return values will be returned in <first_return> and <first_return + 1>.
   BytecodeArrayBuilder& CallRuntimeForPair(Runtime::FunctionId function_id,
                                            Register first_arg, size_t arg_count,
                                            Register first_return);
 
   // Call the JS runtime function with |context_index|. The the receiver should
-  // be in |receiver| and all subsequent arguments should be in registers
-  // <receiver + 1> to <receiver + 1 + arg_count>.
-  BytecodeArrayBuilder& CallJSRuntime(int context_index, Register receiver,
-                                      size_t arg_count);
+  // be in |receiver_args| and all subsequent arguments should be in registers
+  // <receiver + 1> to <receiver + receiver_args_count - 1>.
+  BytecodeArrayBuilder& CallJSRuntime(int context_index, Register receiver_args,
+                                      size_t receiver_args_count);
 
   // Operators (register holds the lhs value, accumulator holds the rhs value).
   BytecodeArrayBuilder& BinaryOperation(Token::Value binop, Register reg,
@@ -232,9 +239,14 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   BytecodeArrayBuilder& JumpIfNull(BytecodeLabel* label);
   BytecodeArrayBuilder& JumpIfUndefined(BytecodeLabel* label);
 
+  BytecodeArrayBuilder& StackCheck();
+
   BytecodeArrayBuilder& Throw();
   BytecodeArrayBuilder& ReThrow();
   BytecodeArrayBuilder& Return();
+
+  // Debugger.
+  BytecodeArrayBuilder& Debugger();
 
   // Complex flow control.
   BytecodeArrayBuilder& ForInPrepare(Register cache_info_triple);
@@ -251,6 +263,9 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   // Creates a new handler table entry and returns a {hander_id} identifying the
   // entry, so that it can be referenced by above exception handling support.
   int NewHandlerEntry() { return handler_table_builder()->NewHandlerEntry(); }
+
+  void SetStatementPosition(Statement* stmt);
+  void SetExpressionPosition(Expression* expr);
 
   // Accessors
   Zone* zone() const { return zone_; }
@@ -342,6 +357,9 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   HandlerTableBuilder* handler_table_builder() {
     return &handler_table_builder_;
   }
+  SourcePositionTableBuilder* source_position_table_builder() {
+    return &source_position_table_builder_;
+  }
   RegisterTranslator* register_translator() { return &register_translator_; }
 
   Isolate* isolate_;
@@ -350,6 +368,7 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   bool bytecode_generated_;
   ConstantArrayBuilder constant_array_builder_;
   HandlerTableBuilder handler_table_builder_;
+  SourcePositionTableBuilder source_position_table_builder_;
   size_t last_block_end_;
   size_t last_bytecode_start_;
   bool exit_seen_in_block_;

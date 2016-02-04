@@ -2564,6 +2564,7 @@ void AstGraphBuilder::VisitCallRuntime(CallRuntime* expr) {
 
   // TODO(mstarzinger): This bailout is a gigantic hack, the owner is ashamed.
   if (function->function_id == Runtime::kInlineGeneratorNext ||
+      function->function_id == Runtime::kInlineGeneratorReturn ||
       function->function_id == Runtime::kInlineGeneratorThrow) {
     ast_context()->ProduceValue(jsgraph()->TheHoleConstant());
     return SetStackOverflow();
@@ -3041,7 +3042,7 @@ LanguageMode AstGraphBuilder::language_mode() const {
 
 VectorSlotPair AstGraphBuilder::CreateVectorSlotPair(
     FeedbackVectorSlot slot) const {
-  return VectorSlotPair(handle(info()->shared_info()->feedback_vector()), slot);
+  return VectorSlotPair(handle(info()->closure()->feedback_vector()), slot);
 }
 
 
@@ -3677,10 +3678,10 @@ Node* AstGraphBuilder::BuildLoadNativeContextField(int index) {
 Node* AstGraphBuilder::BuildLoadFeedbackVector() {
   if (!feedback_vector_.is_set()) {
     Node* closure = GetFunctionClosure();
-    Node* shared = BuildLoadImmutableObjectField(
-        closure, JSFunction::kSharedFunctionInfoOffset);
+    Node* literals =
+        BuildLoadImmutableObjectField(closure, JSFunction::kLiteralsOffset);
     Node* vector = BuildLoadImmutableObjectField(
-        shared, SharedFunctionInfo::kFeedbackVectorOffset);
+        literals, LiteralsArray::kFeedbackVectorOffset);
     feedback_vector_.set(vector);
   }
   return feedback_vector_.get();

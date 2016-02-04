@@ -320,6 +320,10 @@ ExternalReferenceTable::ExternalReferenceTable(Isolate* isolate) {
   Add(ExternalReference::incremental_marking_record_write_function(isolate)
           .address(),
       "IncrementalMarking::RecordWrite");
+  Add(ExternalReference::incremental_marking_record_write_code_entry_function(
+          isolate)
+          .address(),
+      "IncrementalMarking::RecordWriteOfCodeEntryFromCode");
   Add(ExternalReference::store_buffer_overflow_function(isolate).address(),
       "StoreBuffer::StoreBufferOverflow");
 
@@ -643,6 +647,10 @@ void Deserializer::VisitPointers(Object** start, Object** end) {
   ReadData(start, end, NEW_SPACE, NULL);
 }
 
+void Deserializer::Synchronize(VisitorSynchronization::SyncTag tag) {
+  static const byte expected = kSynchronize;
+  CHECK_EQ(expected, source_.Get());
+}
 
 void Deserializer::DeserializeDeferredObjects() {
   for (int code = source_.Get(); code != kSynchronize; code = source_.Get()) {
@@ -1676,9 +1684,10 @@ bool Serializer::SerializeKnownObject(HeapObject* obj, HowToCode how_to_code,
   return false;
 }
 
-
 StartupSerializer::StartupSerializer(Isolate* isolate, SnapshotByteSink* sink)
-    : Serializer(isolate, sink), root_index_wave_front_(0) {
+    : Serializer(isolate, sink),
+      root_index_wave_front_(0),
+      serializing_builtins_(false) {
   // Clear the cache of objects used by the partial snapshot.  After the
   // strong roots have been serialized we can create a partial snapshot
   // which will repopulate the cache with objects needed by that partial
@@ -1692,6 +1701,19 @@ void StartupSerializer::SerializeObject(HeapObject* obj, HowToCode how_to_code,
                                         WhereToPoint where_to_point, int skip) {
   DCHECK(!obj->IsJSFunction());
 
+  if (obj->IsCode()) {
+    Code* code = Code::cast(obj);
+    // If the function code is compiled (either as native code or bytecode),
+    // replace it with lazy-compile builtin. Only exception is when we are
+    // serializing the canonical interpreter-entry-trampoline builtin.
+    if (code->kind() == Code::FUNCTION ||
+        (!serializing_builtins_ && code->is_interpreter_entry_trampoline())) {
+      obj = isolate()->builtins()->builtin(Builtins::kCompileLazy);
+    }
+  } else if (obj->IsBytecodeArray()) {
+    obj = isolate()->heap()->undefined_value();
+  }
+
   int root_index = root_index_map_.Lookup(obj);
   // We can only encode roots as such if it has already been serialized.
   // That applies to root indices below the wave front.
@@ -1699,10 +1721,6 @@ void StartupSerializer::SerializeObject(HeapObject* obj, HowToCode how_to_code,
       root_index < root_index_wave_front_) {
     PutRoot(root_index, obj, how_to_code, where_to_point, skip);
     return;
-  }
-
-  if (obj->IsCode() && Code::cast(obj)->kind() == Code::FUNCTION) {
-    obj = isolate()->builtins()->builtin(Builtins::kCompileLazy);
   }
 
   if (SerializeKnownObject(obj, how_to_code, where_to_point, skip)) return;
@@ -1729,6 +1747,12 @@ void StartupSerializer::SerializeWeakReferencesAndDeferred() {
   Pad();
 }
 
+void StartupSerializer::Synchronize(VisitorSynchronization::SyncTag tag) {
+  // We expect the builtins tag after builtins have been serialized.
+  DCHECK(!serializing_builtins_ || tag == VisitorSynchronization::kBuiltins);
+  serializing_builtins_ = (tag == VisitorSynchronization::kHandleScope);
+  sink_->Put(kSynchronize, "Synchronize");
+}
 
 void Serializer::PutRoot(int root_index,
                          HeapObject* object,
@@ -1818,8 +1842,15 @@ void PartialSerializer::SerializeObject(HeapObject* obj, HowToCode how_to_code,
 
   // Clear literal boilerplates.
   if (obj->IsJSFunction()) {
-    FixedArray* literals = JSFunction::cast(obj)->literals();
-    for (int i = 0; i < literals->length(); i++) literals->set_undefined(i);
+    LiteralsArray* literals = JSFunction::cast(obj)->literals();
+    for (int i = 0; i < literals->literals_count(); i++) {
+      literals->set_undefined(i);
+    }
+    // TODO(mvstanton): remove this line when the vector moves to the closure.
+    // We need to clear the vector so the serializer doesn't try to serialize
+    // the vector in the startup snapshot and the partial snapshot(s).
+    literals->set_feedback_vector(
+        TypeFeedbackVector::cast(isolate_->heap()->empty_fixed_array()));
   }
 
   // Object has not yet been serialized.  Serialize it here.

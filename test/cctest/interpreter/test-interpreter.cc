@@ -148,7 +148,7 @@ class InterpreterTester {
       function->shared()->set_function_data(*bytecode_.ToHandleChecked());
     }
     if (!feedback_vector_.is_null()) {
-      function->shared()->set_feedback_vector(
+      function->literals()->set_feedback_vector(
           *feedback_vector_.ToHandleChecked());
     }
     return function;
@@ -941,7 +941,7 @@ TEST(InterpreterCall) {
                                  0, 1);
     builder.LoadNamedProperty(builder.Parameter(0), name, slot_index, i::SLOPPY)
         .StoreAccumulatorInRegister(Register(0))
-        .Call(Register(0), builder.Parameter(0), 0, 0)
+        .Call(Register(0), builder.Parameter(0), 1, 0)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -960,7 +960,7 @@ TEST(InterpreterCall) {
                                  0, 1);
     builder.LoadNamedProperty(builder.Parameter(0), name, slot_index, i::SLOPPY)
         .StoreAccumulatorInRegister(Register(0))
-        .Call(Register(0), builder.Parameter(0), 0, 0)
+        .Call(Register(0), builder.Parameter(0), 1, 0)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -988,7 +988,7 @@ TEST(InterpreterCall) {
         .StoreAccumulatorInRegister(Register(2))
         .LoadLiteral(Smi::FromInt(11))
         .StoreAccumulatorInRegister(Register(3))
-        .Call(Register(0), Register(1), 2, 0)
+        .Call(Register(0), Register(1), 3, 0)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -1031,7 +1031,7 @@ TEST(InterpreterCall) {
         .StoreAccumulatorInRegister(Register(10))
         .LoadLiteral(factory->NewStringFromAsciiChecked("j"))
         .StoreAccumulatorInRegister(Register(11))
-        .Call(Register(0), Register(1), 10, 0)
+        .Call(Register(0), Register(1), 11, 0)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -2213,6 +2213,15 @@ TEST(InterpreterCreateArguments) {
                      1),
       std::make_pair("function f(a, b, c, d) {"
                      "  'use strict'; c = b; return arguments[2]; }",
+                     2),
+      // check rest parameters
+      std::make_pair("function f(...restArray) { return restArray[0]; }", 0),
+      std::make_pair("function f(a, ...restArray) { return restArray[0]; }", 1),
+      std::make_pair("function f(a, ...restArray) { return arguments[0]; }", 0),
+      std::make_pair("function f(a, ...restArray) { return arguments[1]; }", 1),
+      std::make_pair("function f(a, ...restArray) { return restArray[1]; }", 2),
+      std::make_pair("function f(a, ...arguments) { return arguments[0]; }", 1),
+      std::make_pair("function f(a, b, ...restArray) { return restArray[0]; }",
                      2),
   };
 
@@ -3780,6 +3789,67 @@ TEST(InterpreterWithStatement) {
 
     Handle<i::Object> return_value = callable().ToHandleChecked();
     CHECK(return_value->SameValue(*with_stmt[i].second));
+  }
+}
+
+TEST(InterpreterClassLiterals) {
+  HandleAndZoneScope handles;
+  i::Isolate* isolate = handles.main_isolate();
+  std::pair<const char*, Handle<Object>> examples[] = {
+      {"class C {\n"
+       "  constructor(x) { this.x_ = x; }\n"
+       "  method() { return this.x_; }\n"
+       "}\n"
+       "return new C(99).method();",
+       handle(Smi::FromInt(99), isolate)},
+      {"class C {\n"
+       "  constructor(x) { this.x_ = x; }\n"
+       "  static static_method(x) { return x; }\n"
+       "}\n"
+       "return C.static_method(101);",
+       handle(Smi::FromInt(101), isolate)},
+      {"class C {\n"
+       "  get x() { return 102; }\n"
+       "}\n"
+       "return new C().x",
+       handle(Smi::FromInt(102), isolate)},
+      {"class C {\n"
+       "  static get x() { return 103; }\n"
+       "}\n"
+       "return C.x",
+       handle(Smi::FromInt(103), isolate)},
+      {"class C {\n"
+       "  constructor() { this.x_ = 0; }"
+       "  set x(value) { this.x_ = value; }\n"
+       "  get x() { return this.x_; }\n"
+       "}\n"
+       "var c = new C();"
+       "c.x = 104;"
+       "return c.x;",
+       handle(Smi::FromInt(104), isolate)},
+      {"var x = 0;"
+       "class C {\n"
+       "  static set x(value) { x = value; }\n"
+       "  static get x() { return x; }\n"
+       "}\n"
+       "C.x = 105;"
+       "return C.x;",
+       handle(Smi::FromInt(105), isolate)},
+      {"var method = 'f';"
+       "class C {\n"
+       "  [method]() { return 106; }\n"
+       "}\n"
+       "return new C().f();",
+       handle(Smi::FromInt(106), isolate)},
+  };
+
+  for (size_t i = 0; i < arraysize(examples); ++i) {
+    std::string source(InterpreterTester::SourceForBody(examples[i].first));
+    InterpreterTester tester(handles.main_isolate(), source.c_str());
+    auto callable = tester.GetCallable<>();
+
+    Handle<i::Object> return_value = callable().ToHandleChecked();
+    CHECK(return_value->SameValue(*examples[i].second));
   }
 }
 
