@@ -435,9 +435,10 @@ Node* InterpreterAssembler::LoadTypeFeedbackVector() {
   Node* function = raw_assembler_->Load(
       MachineType::AnyTagged(), RegisterFileRawPointer(),
       IntPtrConstant(InterpreterFrameConstants::kFunctionFromRegisterPointer));
-  Node* literals = LoadObjectField(function, JSFunction::kLiteralsOffset);
+  Node* shared_info =
+      LoadObjectField(function, JSFunction::kSharedFunctionInfoOffset);
   Node* vector =
-      LoadObjectField(literals, LiteralsArray::kFeedbackVectorOffset);
+      LoadObjectField(shared_info, SharedFunctionInfo::kFeedbackVectorOffset);
   return vector;
 }
 
@@ -707,7 +708,7 @@ void InterpreterAssembler::DispatchTo(Node* new_bytecode_offset) {
 }
 
 void InterpreterAssembler::StackCheck() {
-  RawMachineLabel ok, stack_guard;
+  RawMachineLabel end, ok, stack_guard;
   Node* sp = raw_assembler_->LoadStackPointer();
   Node* stack_limit = raw_assembler_->Load(
       MachineType::Pointer(),
@@ -717,8 +718,10 @@ void InterpreterAssembler::StackCheck() {
   raw_assembler_->Branch(condition, &ok, &stack_guard);
   raw_assembler_->Bind(&stack_guard);
   CallRuntime(Runtime::kStackGuard);
-  raw_assembler_->Goto(&ok);
+  raw_assembler_->Goto(&end);
   raw_assembler_->Bind(&ok);
+  raw_assembler_->Goto(&end);
+  raw_assembler_->Bind(&end);
 }
 
 void InterpreterAssembler::Abort(BailoutReason bailout_reason) {

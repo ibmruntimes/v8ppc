@@ -84,7 +84,6 @@ namespace internal {
   F(HomeObjectSymbol, 0, 1)                 \
   F(DefineClass, 4, 1)                      \
   F(FinalizeClassDefinition, 2, 1)          \
-  F(DefineClassMethod, 3, 1)                \
   F(LoadFromSuper, 4, 1)                    \
   F(LoadKeyedFromSuper, 4, 1)               \
   F(StoreToSuper_Strict, 4, 1)              \
@@ -252,7 +251,7 @@ namespace internal {
 
 #define FOR_EACH_INTRINSIC_GENERATOR(F) \
   F(CreateJSGeneratorObject, 0, 1)      \
-  F(SuspendJSGeneratorObject, -1, 1)    \
+  F(SuspendJSGeneratorObject, 1, 1)     \
   F(ResumeJSGeneratorObject, 3, 1)      \
   F(GeneratorClose, 1, 1)               \
   F(GeneratorGetFunction, 1, 1)         \
@@ -414,12 +413,10 @@ namespace internal {
   F(GetHoleNaNUpper, 0, 1)             \
   F(GetHoleNaNLower, 0, 1)
 
-
 #define FOR_EACH_INTRINSIC_OBJECT(F)                 \
   F(GetPrototype, 1, 1)                              \
   F(InternalSetPrototype, 2, 1)                      \
   F(SetPrototype, 2, 1)                              \
-  F(GetOwnProperty, 2, 1)                            \
   F(GetOwnProperty_Legacy, 2, 1)                     \
   F(OptimizeObjectForAddingMultipleProperties, 2, 1) \
   F(GetProperty, 2, 1)                               \
@@ -451,6 +448,7 @@ namespace internal {
   F(IsJSGlobalProxy, 1, 1)                           \
   F(DefineAccessorPropertyUnchecked, 5, 1)           \
   F(DefineDataPropertyUnchecked, 4, 1)               \
+  F(DefineDataPropertyInLiteral, 5, 1)               \
   F(GetDataProperty, 2, 1)                           \
   F(HasFastPackedElements, 1, 1)                     \
   F(ValueOf, 1, 1)                                   \
@@ -481,7 +479,6 @@ namespace internal {
   F(IsAccessCheckNeeded, 1, 1)                       \
   F(ObjectDefineProperties, 2, 1)                    \
   F(ObjectDefineProperty, 3, 1)
-
 
 #define FOR_EACH_INTRINSIC_OBSERVE(F)            \
   F(IsObserved, 1, 1)                            \
@@ -541,6 +538,7 @@ namespace internal {
   F(RegExpExecReThrow, 4, 1)                   \
   F(IsRegExp, 1, 1)
 
+
 #define FOR_EACH_INTRINSIC_SCOPES(F)       \
   F(ThrowConstAssignError, 0, 1)           \
   F(DeclareGlobals, 2, 1)                  \
@@ -553,7 +551,6 @@ namespace internal {
   F(NewRestArguments_Generic, 2, 1)        \
   F(NewSloppyArguments, 3, 1)              \
   F(NewStrictArguments, 3, 1)              \
-  F(InstallLiterals, 1, 1)                 \
   F(NewRestParam, 3, 1)                    \
   F(NewClosure, 1, 1)                      \
   F(NewClosure_Tenured, 1, 1)              \
@@ -569,6 +566,7 @@ namespace internal {
   F(StoreLookupSlot, 4, 1)                 \
   F(ArgumentsLength, 0, 1)                 \
   F(Arguments, 1, 1)
+
 
 #define FOR_EACH_INTRINSIC_SIMD(F)     \
   F(IsSimdValue, 1, 1)                 \

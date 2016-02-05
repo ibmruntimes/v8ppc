@@ -82,6 +82,8 @@ ExternalReferenceTable::ExternalReferenceTable(Isolate* isolate) {
   Add(ExternalReference::address_of_one_half().address(),
       "LDoubleConstant::one_half");
   Add(ExternalReference::isolate_address(isolate).address(), "isolate");
+  Add(ExternalReference::interpreter_dispatch_table_address(isolate).address(),
+      "Interpreter::dispatch_table_address");
   Add(ExternalReference::address_of_negative_infinity().address(),
       "LDoubleConstant::negative_infinity");
   Add(ExternalReference::power_double_double_function(isolate).address(),
@@ -1842,15 +1844,8 @@ void PartialSerializer::SerializeObject(HeapObject* obj, HowToCode how_to_code,
 
   // Clear literal boilerplates.
   if (obj->IsJSFunction()) {
-    LiteralsArray* literals = JSFunction::cast(obj)->literals();
-    for (int i = 0; i < literals->literals_count(); i++) {
-      literals->set_undefined(i);
-    }
-    // TODO(mvstanton): remove this line when the vector moves to the closure.
-    // We need to clear the vector so the serializer doesn't try to serialize
-    // the vector in the startup snapshot and the partial snapshot(s).
-    literals->set_feedback_vector(
-        TypeFeedbackVector::cast(isolate_->heap()->empty_fixed_array()));
+    FixedArray* literals = JSFunction::cast(obj)->literals();
+    for (int i = 0; i < literals->length(); i++) literals->set_undefined(i);
   }
 
   // Object has not yet been serialized.  Serialize it here.

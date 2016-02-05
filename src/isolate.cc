@@ -828,11 +828,11 @@ bool Isolate::MayAccess(Handle<Context> accessing_context,
     if (!access_check_info) return false;
     Object* fun_obj = access_check_info->callback();
     callback = v8::ToCData<v8::AccessCheckCallback>(fun_obj);
+    data = handle(access_check_info->data(), this);
     if (!callback) {
       fun_obj = access_check_info->named_callback();
       named_callback = v8::ToCData<v8::NamedSecurityCallback>(fun_obj);
       if (!named_callback) return false;
-      data = handle(access_check_info->data(), this);
     }
   }
 
@@ -1199,10 +1199,8 @@ Isolate::CatchType Isolate::PredictExceptionCatcher() {
     // For JavaScript frames we perform a lookup in the handler table.
     if (frame->is_java_script()) {
       JavaScriptFrame* js_frame = static_cast<JavaScriptFrame*>(frame);
-      int stack_slots = 0;  // The computed stack slot count is not used.
       HandlerTable::CatchPrediction prediction;
-      if (js_frame->LookupExceptionHandlerInTable(&stack_slots, &prediction) >
-          0) {
+      if (js_frame->LookupExceptionHandlerInTable(nullptr, &prediction) > 0) {
         // We are conservative with our prediction: try-finally is considered
         // to always rethrow, to meet the expectation of the debugger.
         if (prediction == HandlerTable::CAUGHT) return CAUGHT_BY_JAVASCRIPT;
@@ -1612,8 +1610,7 @@ Handle<Object> Isolate::GetPromiseOnStackOnThrow() {
   if (PredictExceptionCatcher() != CAUGHT_BY_JAVASCRIPT) return undefined;
   for (JavaScriptFrameIterator it(this); !it.done(); it.Advance()) {
     JavaScriptFrame* frame = it.frame();
-    int stack_slots = 0;  // The computed stack slot count is not used.
-    if (frame->LookupExceptionHandlerInTable(&stack_slots, NULL) > 0) {
+    if (frame->LookupExceptionHandlerInTable(nullptr, nullptr) > 0) {
       // Throwing inside a Promise only leads to a reject if not caught by an
       // inner try-catch or try-finally.
       if (frame->function() == *promise_function) {
@@ -1929,9 +1926,6 @@ void Isolate::Deinit() {
   Sampler* sampler = logger_->sampler();
   if (sampler && sampler->IsActive()) sampler->Stop();
 
-  delete interpreter_;
-  interpreter_ = NULL;
-
   delete deoptimizer_data_;
   deoptimizer_data_ = NULL;
   builtins_.TearDown();
@@ -1950,6 +1944,9 @@ void Isolate::Deinit() {
 
   heap_.TearDown();
   logger_->TearDown();
+
+  delete interpreter_;
+  interpreter_ = NULL;
 
   cancelable_task_manager()->CancelAndWait();
 

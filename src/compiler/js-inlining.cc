@@ -205,6 +205,7 @@ Reduction JSInliner::InlineCall(Node* call, Node* new_target, Node* context,
       case IrOpcode::kThrow:
         NodeProperties::MergeControlToEnd(jsgraph_->graph(), jsgraph_->common(),
                                           input);
+        Revisit(jsgraph_->graph()->end());
         break;
       default:
         UNREACHABLE();
@@ -409,9 +410,6 @@ Reduction JSInliner::ReduceJSCall(Node* node, Handle<JSFunction> function) {
   // after we ensure deoptimization support so that the code flusher
   // does not remove the code with the deoptimization support.
   info_->AddInlinedFunction(info.shared_info());
-
-  // If function was lazily compiled, it's literals array may not yet be set up.
-  JSFunction::EnsureLiterals(function);
 
   // ----------------------------------------------------------------
   // After this point, we've made a decision to inline this function.

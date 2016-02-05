@@ -266,31 +266,6 @@ RUNTIME_FUNCTION(Runtime_GetOwnProperty_Legacy) {
 }
 
 
-// ES6 19.1.2.6
-RUNTIME_FUNCTION(Runtime_GetOwnProperty) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 2);
-  CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
-  CONVERT_ARG_HANDLE_CHECKED(Object, raw_name, 1);
-  // 1. Let obj be ? ToObject(O).
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, object,
-                                     Object::ToObject(isolate, object));
-  // 2. Let key be ? ToPropertyKey(P).
-  Handle<Name> key;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, key,
-                                     Object::ToName(isolate, raw_name));
-
-  // 3. Let desc be ? obj.[[GetOwnProperty]](key).
-  PropertyDescriptor desc;
-  Maybe<bool> found = JSReceiver::GetOwnPropertyDescriptor(
-      isolate, Handle<JSReceiver>::cast(object), key, &desc);
-  MAYBE_RETURN(found, isolate->heap()->exception());
-  // 4. Return FromPropertyDescriptor(desc).
-  if (!found.FromJust()) return isolate->heap()->undefined_value();
-  return *desc.ToObject(isolate);
-}
-
-
 RUNTIME_FUNCTION(Runtime_OptimizeObjectForAddingMultipleProperties) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 2);
@@ -915,6 +890,30 @@ RUNTIME_FUNCTION(Runtime_DefineDataPropertyUnchecked) {
   return *result;
 }
 
+RUNTIME_FUNCTION(Runtime_DefineDataPropertyInLiteral) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 5);
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Name, name, 1);
+  CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
+  CONVERT_PROPERTY_ATTRIBUTES_CHECKED(attrs, 3);
+  CONVERT_SMI_ARG_CHECKED(set_function_name, 4);
+
+  if (FLAG_harmony_function_name && set_function_name) {
+    DCHECK(value->IsJSFunction());
+    JSFunction::SetName(Handle<JSFunction>::cast(value), name,
+                        isolate->factory()->empty_string());
+  }
+
+  LookupIterator it = LookupIterator::PropertyOrElement(isolate, object, name,
+                                                        LookupIterator::OWN);
+  // Cannot fail since this should only be called when
+  // creating an object literal.
+  CHECK(JSObject::DefineOwnPropertyIgnoreAttributes(&it, value, attrs,
+                                                    Object::DONT_THROW)
+            .IsJust());
+  return *object;
+}
 
 // Return property without being observable by accessors or interceptors.
 RUNTIME_FUNCTION(Runtime_GetDataProperty) {
@@ -1006,6 +1005,11 @@ RUNTIME_FUNCTION(Runtime_DefineGetterPropertyUnchecked) {
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, getter, 2);
   CONVERT_PROPERTY_ATTRIBUTES_CHECKED(attrs, 3);
 
+  if (FLAG_harmony_function_name &&
+      String::cast(getter->shared()->name())->length() == 0) {
+    JSFunction::SetName(getter, name, isolate->factory()->get_string());
+  }
+
   RETURN_FAILURE_ON_EXCEPTION(
       isolate,
       JSObject::DefineAccessor(object, name, getter,
@@ -1021,6 +1025,11 @@ RUNTIME_FUNCTION(Runtime_DefineSetterPropertyUnchecked) {
   CONVERT_ARG_HANDLE_CHECKED(Name, name, 1);
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, setter, 2);
   CONVERT_PROPERTY_ATTRIBUTES_CHECKED(attrs, 3);
+
+  if (FLAG_harmony_function_name &&
+      String::cast(setter->shared()->name())->length() == 0) {
+    JSFunction::SetName(setter, name, isolate->factory()->set_string());
+  }
 
   RETURN_FAILURE_ON_EXCEPTION(
       isolate,

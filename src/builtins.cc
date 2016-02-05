@@ -134,17 +134,17 @@ BUILTIN_LIST_C(DEF_ARG_TYPE)
 // In the body of the builtin function the arguments can be accessed
 // through the BuiltinArguments object args.
 
-#define BUILTIN(name)                                            \
-  MUST_USE_RESULT static Object* Builtin_Impl_##name(            \
-      name##ArgumentsType args, Isolate* isolate);               \
-  MUST_USE_RESULT static Object* Builtin_##name(                 \
-      int args_length, Object** args_object, Isolate* isolate) { \
-    name##ArgumentsType args(args_length, args_object);          \
-    return Builtin_Impl_##name(args, isolate);                   \
-  }                                                              \
-  MUST_USE_RESULT static Object* Builtin_Impl_##name(            \
-      name##ArgumentsType args, Isolate* isolate)
-
+#define BUILTIN(name)                                                          \
+  MUST_USE_RESULT static Object* Builtin_Impl_##name(name##ArgumentsType args, \
+                                                     Isolate* isolate);        \
+  MUST_USE_RESULT static Object* Builtin_##name(                               \
+      int args_length, Object** args_object, Isolate* isolate) {               \
+    name##ArgumentsType args(args_length, args_object);                        \
+    isolate->counters()->runtime_calls()->Increment();                         \
+    return Builtin_Impl_##name(args, isolate);                                 \
+  }                                                                            \
+  MUST_USE_RESULT static Object* Builtin_Impl_##name(name##ArgumentsType args, \
+                                                     Isolate* isolate)
 
 // ----------------------------------------------------------------------------
 
@@ -1661,6 +1661,30 @@ BUILTIN(ObjectFreeze) {
 }
 
 
+// ES6 section 19.1.2.6 Object.getOwnPropertyDescriptor ( O, P )
+BUILTIN(ObjectGetOwnPropertyDescriptor) {
+  HandleScope scope(isolate);
+  // 1. Let obj be ? ToObject(O).
+  Handle<Object> object = args.atOrUndefined(isolate, 1);
+  Handle<JSReceiver> receiver;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, receiver,
+                                     Object::ToObject(isolate, object));
+  // 2. Let key be ? ToPropertyKey(P).
+  Handle<Object> property = args.atOrUndefined(isolate, 2);
+  Handle<Name> key;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, key,
+                                     Object::ToName(isolate, property));
+  // 3. Let desc be ? obj.[[GetOwnProperty]](key).
+  PropertyDescriptor desc;
+  Maybe<bool> found =
+      JSReceiver::GetOwnPropertyDescriptor(isolate, receiver, key, &desc);
+  MAYBE_RETURN(found, isolate->heap()->exception());
+  // 4. Return FromPropertyDescriptor(desc).
+  if (!found.FromJust()) return isolate->heap()->undefined_value();
+  return *desc.ToObject(isolate);
+}
+
+
 namespace {
 
 Object* GetOwnPropertyKeys(Isolate* isolate,
@@ -1800,6 +1824,43 @@ BUILTIN(ObjectEntries) {
   return *isolate->factory()->NewJSArrayWithElements(keys);
 }
 
+BUILTIN(ObjectGetOwnPropertyDescriptors) {
+  HandleScope scope(isolate);
+  Handle<Object> object = args.atOrUndefined(isolate, 1);
+  Handle<Object> undefined = isolate->factory()->undefined_value();
+
+  Handle<JSReceiver> receiver;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, receiver,
+                                     Object::ToObject(isolate, object));
+
+  Handle<FixedArray> keys;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, keys, JSReceiver::GetKeys(receiver, OWN_ONLY, ALL_PROPERTIES,
+                                         CONVERT_TO_STRING));
+
+  Handle<Object> descriptors =
+      isolate->factory()->NewJSObject(isolate->object_function());
+
+  for (int i = 0; i < keys->length(); ++i) {
+    Handle<Name> key = Handle<Name>::cast(FixedArray::get(*keys, i, isolate));
+    PropertyDescriptor descriptor;
+    Maybe<bool> did_get_descriptor = JSReceiver::GetOwnPropertyDescriptor(
+        isolate, receiver, key, &descriptor);
+    MAYBE_RETURN(did_get_descriptor, isolate->heap()->exception());
+
+    Handle<Object> from_descriptor = did_get_descriptor.FromJust()
+                                         ? descriptor.ToObject(isolate)
+                                         : undefined;
+
+    LookupIterator it = LookupIterator::PropertyOrElement(
+        isolate, descriptors, key, LookupIterator::OWN);
+    Maybe<bool> success = JSReceiver::CreateDataProperty(&it, from_descriptor,
+                                                         Object::DONT_THROW);
+    CHECK(success.FromJust());
+  }
+
+  return *descriptors;
+}
 
 // ES6 section 19.1.2.15 Object.preventExtensions ( O )
 BUILTIN(ObjectPreventExtensions) {

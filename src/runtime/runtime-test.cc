@@ -232,7 +232,7 @@ RUNTIME_FUNCTION(Runtime_ClearFunctionTypeFeedback) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
-  function->ClearTypeFeedbackInfo();
+  function->shared()->ClearTypeFeedbackInfo();
   Code* unoptimized = function->shared()->code();
   if (unoptimized->kind() == Code::FUNCTION) {
     unoptimized->ClearInlineCaches();
@@ -377,8 +377,7 @@ RUNTIME_FUNCTION(Runtime_AbortJS) {
 
 RUNTIME_FUNCTION(Runtime_NativeScriptsCount) {
   DCHECK(args.length() == 0);
-  return Smi::FromInt(Natives::GetBuiltinsCount() +
-                      ExtraNatives::GetBuiltinsCount());
+  return Smi::FromInt(Natives::GetBuiltinsCount());
 }
 
 

@@ -2792,11 +2792,6 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
           is_undefined, ThisExpression(scope_, factory(), pos),
           is_object_conditional, pos);
     }
-
-    // ES6 14.6.1 Static Semantics: IsInTailPosition
-    if (FLAG_harmony_tailcalls && !is_sloppy(language_mode())) {
-      return_value->MarkTail();
-    }
   }
   ExpectSemicolon(CHECK_OK);
 
@@ -4750,6 +4745,13 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
                     RelocInfo::kNoPosition));
   }
 
+  // ES6 14.6.1 Static Semantics: IsInTailPosition
+  if (FLAG_harmony_tailcalls && !is_sloppy(language_mode())) {
+    for (int i = 0; i < body->length(); i++) {
+      Statement* stmt = body->at(i);
+      stmt->MarkTail();
+    }
+  }
   return result;
 }
 
@@ -5706,8 +5708,9 @@ void ParserTraits::SetFunctionNameFromPropertyName(
   Expression* value = property->value();
   if (!value->IsAnonymousFunctionDefinition()) return;
 
-  // TODO(adamk): Support computed names.
+  // Computed name setting must happen at runtime.
   if (property->is_computed_name()) return;
+
   DCHECK_NOT_NULL(name);
 
   // Ignore "__proto__" as a name when it's being used to set the [[Prototype]]

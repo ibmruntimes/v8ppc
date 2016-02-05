@@ -473,7 +473,10 @@ class Block final : public BreakableStatement {
   }
 
   void MarkTail() override {
-    if (!statements_.is_empty()) statements_.last()->MarkTail();
+    for (int i = 0; i < statements_.length(); i++) {
+      Statement* stmt = statements_.at(i);
+      stmt->MarkTail();
+    }
   }
 
   Scope* scope() const { return scope_; }
@@ -962,7 +965,6 @@ class ExpressionStatement final : public Statement {
   void set_expression(Expression* e) { expression_ = e; }
   Expression* expression() const { return expression_; }
   bool IsJump() const override { return expression_->IsThrow(); }
-  void MarkTail() override { expression_->MarkTail(); }
 
  protected:
   ExpressionStatement(Zone* zone, Expression* expression, int pos)
@@ -1019,6 +1021,8 @@ class ReturnStatement final : public JumpStatement {
   Expression* expression() const { return expression_; }
 
   void set_expression(Expression* e) { expression_ = e; }
+
+  void MarkTail() override { expression_->MarkTail(); }
 
  protected:
   explicit ReturnStatement(Zone* zone, Expression* expression, int pos)
@@ -1089,7 +1093,10 @@ class CaseClause final : public Expression {
   TypeFeedbackId CompareId() { return TypeFeedbackId(local_id(1)); }
 
   void MarkTail() override {
-    if (!statements_->is_empty()) statements_->last()->MarkTail();
+    for (int i = 0; i < statements_->length(); i++) {
+      Statement* stmt = statements_->at(i);
+      stmt->MarkTail();
+    }
   }
 
   Type* compare_type() { return compare_type_; }
@@ -1125,7 +1132,10 @@ class SwitchStatement final : public BreakableStatement {
   void set_tag(Expression* t) { tag_ = t; }
 
   void MarkTail() override {
-    if (!cases_->is_empty()) cases_->last()->MarkTail();
+    for (int i = 0; i < cases_->length(); i++) {
+      CaseClause* clause = cases_->at(i);
+      clause->MarkTail();
+    }
   }
 
  protected:
@@ -1476,6 +1486,10 @@ class ObjectLiteralProperty final : public ZoneObject {
   }
 
   void set_receiver_type(Handle<Map> map) { receiver_type_ = map; }
+
+  bool NeedsSetFunctionName() const {
+    return is_computed_name_ && value_->IsAnonymousFunctionDefinition();
+  }
 
  protected:
   friend class AstNodeFactory;
@@ -2582,26 +2596,6 @@ class Yield final : public Expression {
   void set_generator_object(Expression* e) { generator_object_ = e; }
   void set_expression(Expression* e) { expression_ = e; }
 
-  // Type feedback information.
-  bool HasFeedbackSlots() const { return yield_kind() == kDelegating; }
-  void AssignFeedbackVectorSlots(Isolate* isolate, FeedbackVectorSpec* spec,
-                                 FeedbackVectorSlotCache* cache) override {
-    if (HasFeedbackSlots()) {
-      yield_first_feedback_slot_ = spec->AddKeyedLoadICSlot();
-      keyed_load_feedback_slot_ = spec->AddLoadICSlot();
-      done_feedback_slot_ = spec->AddLoadICSlot();
-    }
-  }
-
-  FeedbackVectorSlot KeyedLoadFeedbackSlot() {
-    DCHECK(!HasFeedbackSlots() || !yield_first_feedback_slot_.IsInvalid());
-    return yield_first_feedback_slot_;
-  }
-
-  FeedbackVectorSlot DoneFeedbackSlot() { return keyed_load_feedback_slot_; }
-
-  FeedbackVectorSlot ValueFeedbackSlot() { return done_feedback_slot_; }
-
  protected:
   Yield(Zone* zone, Expression* generator_object, Expression* expression,
         Kind yield_kind, int pos)
@@ -2614,9 +2608,6 @@ class Yield final : public Expression {
   Expression* generator_object_;
   Expression* expression_;
   Kind yield_kind_;
-  FeedbackVectorSlot yield_first_feedback_slot_;
-  FeedbackVectorSlot keyed_load_feedback_slot_;
-  FeedbackVectorSlot done_feedback_slot_;
 };
 
 

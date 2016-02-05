@@ -149,13 +149,20 @@ BreakLocation BreakLocation::FromCodeOffset(Handle<DebugInfo> debug_info,
   return it.GetBreakLocation();
 }
 
+// Move GetFirstFrameSummary Definition to here as FromFrame use it.
+FrameSummary GetFirstFrameSummary(JavaScriptFrame* frame) {
+  List<FrameSummary> frames(FLAG_max_inlining_levels + 1);
+  frame->Summarize(&frames);
+  return frames.first();
+}
+
 BreakLocation BreakLocation::FromFrame(Handle<DebugInfo> debug_info,
                                        JavaScriptFrame* frame) {
   // Code offset to the instruction after the current one, possibly a break
   // location as well. So the "- 1" to exclude it from the search.
-  Code* code = frame->LookupCode();
-  int code_offset = static_cast<int>(frame->pc() - code->instruction_start());
-  return FromCodeOffset(debug_info, code_offset - 1);
+  // Get code offset from the unoptimized code.
+  FrameSummary summary = GetFirstFrameSummary(frame);
+  return FromCodeOffset(debug_info, summary.code_offset() - 1);
 }
 
 // Find the break point at the supplied address, or the closest one before
@@ -794,13 +801,6 @@ bool Debug::IsBreakOnException(ExceptionBreakType type) {
 }
 
 
-FrameSummary GetFirstFrameSummary(JavaScriptFrame* frame) {
-  List<FrameSummary> frames(FLAG_max_inlining_levels + 1);
-  frame->Summarize(&frames);
-  return frames.first();
-}
-
-
 void Debug::PrepareStepIn(Handle<JSFunction> function) {
   if (!is_active()) return;
   if (last_step_action() < StepIn) return;
@@ -822,8 +822,7 @@ void Debug::PrepareStepOnThrow() {
   JavaScriptFrameIterator it(isolate_);
   while (!it.done()) {
     JavaScriptFrame* frame = it.frame();
-    int stack_slots = 0;  // The computed stack slot count is not used.
-    if (frame->LookupExceptionHandlerInTable(&stack_slots, NULL) > 0) break;
+    if (frame->LookupExceptionHandlerInTable(nullptr, nullptr) > 0) break;
     it.Advance();
   }
 
@@ -1157,13 +1156,15 @@ bool Debug::PrepareFunctionForBreakPoints(Handle<SharedFunctionInfo> shared) {
   List<Handle<JSFunction> > functions;
   List<Handle<JSGeneratorObject> > suspended_generators;
 
-  // Flush all optimized code. Note that the below heap iteration does not
+  // Flush all optimized code maps. Note that the below heap iteration does not
   // cover this, because the given function might have been inlined into code
   // for which no JSFunction exists.
   {
     SharedFunctionInfo::Iterator iterator(isolate_);
     while (SharedFunctionInfo* shared = iterator.Next()) {
-      shared->ClearCodeFromOptimizedCodeMap();
+      if (!shared->OptimizedCodeMapIsCleared()) {
+        shared->ClearOptimizedCodeMap();
+      }
     }
   }
 
@@ -1205,7 +1206,6 @@ bool Debug::PrepareFunctionForBreakPoints(Handle<SharedFunctionInfo> shared) {
 
   for (Handle<JSFunction> const function : functions) {
     function->ReplaceCode(shared->code());
-    JSFunction::EnsureLiterals(function);
   }
 
   for (Handle<JSGeneratorObject> const generator_obj : suspended_generators) {

@@ -9251,7 +9251,7 @@ Handle<Map> Map::Normalize(Handle<Map> fast_map, PropertyNormalizationMode mode,
     new_map = Map::CopyNormalized(fast_map, mode);
     if (use_cache) {
       cache->Set(fast_map, new_map);
-      isolate->counters()->normalized_maps()->Increment();
+      isolate->counters()->maps_normalized()->Increment();
     }
 #if TRACE_MAPS
     if (FLAG_trace_maps) {
@@ -10977,8 +10977,7 @@ Handle<LiteralsArray> LiteralsArray::New(Isolate* isolate,
   return casted_literals;
 }
 
-
-int HandlerTable::LookupRange(int pc_offset, int* stack_depth_out,
+int HandlerTable::LookupRange(int pc_offset, int* data_out,
                               CatchPrediction* prediction_out) {
   int innermost_handler = -1;
 #ifdef DEBUG
@@ -10993,7 +10992,7 @@ int HandlerTable::LookupRange(int pc_offset, int* stack_depth_out,
     int handler_field = Smi::cast(get(i + kRangeHandlerIndex))->value();
     int handler_offset = HandlerOffsetField::decode(handler_field);
     CatchPrediction prediction = HandlerPredictionField::decode(handler_field);
-    int stack_depth = Smi::cast(get(i + kRangeDepthIndex))->value();
+    int handler_data = Smi::cast(get(i + kRangeDataIndex))->value();
     if (pc_offset > start_offset && pc_offset <= end_offset) {
       DCHECK_GE(start_offset, innermost_start);
       DCHECK_LT(end_offset, innermost_end);
@@ -11002,7 +11001,7 @@ int HandlerTable::LookupRange(int pc_offset, int* stack_depth_out,
       innermost_start = start_offset;
       innermost_end = end_offset;
 #endif
-      *stack_depth_out = stack_depth;
+      if (data_out) *data_out = handler_data;
       if (prediction_out) *prediction_out = prediction;
     }
   }
@@ -12371,22 +12370,6 @@ void JSFunction::AttemptConcurrentOptimization() {
   // No write barrier required, since the builtin is part of the root set.
 }
 
-// static
-Handle<LiteralsArray> SharedFunctionInfo::FindOrCreateLiterals(
-    Handle<SharedFunctionInfo> shared, Handle<Context> native_context) {
-  Isolate* isolate = shared->GetIsolate();
-  CodeAndLiterals result =
-      shared->SearchOptimizedCodeMap(*native_context, BailoutId::None());
-  if (result.literals != nullptr) {
-    return handle(result.literals, isolate);
-  }
-  Handle<TypeFeedbackVector> feedback_vector =
-      TypeFeedbackVector::New(isolate, handle(shared->feedback_metadata()));
-  Handle<LiteralsArray> literals = LiteralsArray::New(
-      isolate, feedback_vector, shared->num_literals(), TENURED);
-  AddLiteralsToOptimizedCodeMap(shared, native_context, literals);
-  return literals;
-}
 
 void SharedFunctionInfo::AddSharedCodeToOptimizedCodeMap(
     Handle<SharedFunctionInfo> shared, Handle<Code> code) {
@@ -12590,14 +12573,6 @@ void SharedFunctionInfo::TrimOptimizedCodeMap(int shrink_by) {
   }
 }
 
-// static
-void JSFunction::EnsureLiterals(Handle<JSFunction> function) {
-  Handle<SharedFunctionInfo> shared(function->shared());
-  Handle<Context> native_context(function->context()->native_context());
-  Handle<LiteralsArray> literals =
-      SharedFunctionInfo::FindOrCreateLiterals(shared, native_context);
-  function->set_literals(*literals);
-}
 
 static void GetMinInobjectSlack(Map* map, void* data) {
   int slack = map->unused_property_fields();
@@ -13317,6 +13292,22 @@ Handle<String> JSFunction::GetDebugName(Handle<JSFunction> function) {
   return JSFunction::GetName(function);
 }
 
+void JSFunction::SetName(Handle<JSFunction> function, Handle<Name> name,
+                         Handle<String> prefix) {
+  Isolate* isolate = function->GetIsolate();
+  Handle<String> function_name = Name::ToFunctionName(name).ToHandleChecked();
+  if (prefix->length() > 0) {
+    IncrementalStringBuilder builder(isolate);
+    builder.AppendString(prefix);
+    builder.AppendCharacter(' ');
+    builder.AppendString(function_name);
+    function_name = builder.Finish().ToHandleChecked();
+  }
+  JSObject::DefinePropertyOrElementIgnoreAttributes(
+      function, isolate->factory()->name_string(), function_name,
+      static_cast<PropertyAttributes>(DONT_ENUM | READ_ONLY))
+      .ToHandleChecked();
+}
 
 namespace {
 
@@ -13875,6 +13866,9 @@ void Map::StartInobjectSlackTracking() {
 
 void SharedFunctionInfo::ResetForNewContext(int new_ic_age) {
   code()->ClearInlineCaches();
+  // If we clear ICs, we need to clear the type feedback vector too, since
+  // CallICs are synced with a feedback vector slot.
+  ClearTypeFeedbackInfo();
   set_ic_age(new_ic_age);
   if (code()->kind() == Code::FUNCTION) {
     code()->set_profiler_ticks(0);
@@ -13913,19 +13907,6 @@ int SharedFunctionInfo::SearchOptimizedCodeMapEntry(Context* native_context,
   return -1;
 }
 
-void SharedFunctionInfo::ClearCodeFromOptimizedCodeMap() {
-  if (!OptimizedCodeMapIsCleared()) {
-    FixedArray* optimized_code_map = this->optimized_code_map();
-    int length = optimized_code_map->length();
-    WeakCell* empty_weak_cell = GetHeap()->empty_weak_cell();
-    for (int i = kEntriesStart; i < length; i += kEntryLength) {
-      optimized_code_map->set(i + kCachedCodeOffset, empty_weak_cell,
-                              SKIP_WRITE_BARRIER);
-    }
-    optimized_code_map->set(kSharedCodeIndex, empty_weak_cell,
-                            SKIP_WRITE_BARRIER);
-  }
-}
 
 CodeAndLiterals SharedFunctionInfo::SearchOptimizedCodeMap(
     Context* native_context, BailoutId osr_ast_id) {
@@ -14369,12 +14350,13 @@ int AbstractCode::SourcePosition(int offset) {
   return GetCode()->SourcePosition(offset);
 }
 
-void JSFunction::ClearTypeFeedbackInfo() {
-  feedback_vector()->ClearSlots(shared());
+void SharedFunctionInfo::ClearTypeFeedbackInfo() {
+  feedback_vector()->ClearSlots(this);
 }
 
-void JSFunction::ClearTypeFeedbackInfoAtGCTime() {
-  feedback_vector()->ClearSlotsAtGCTime(shared());
+
+void SharedFunctionInfo::ClearTypeFeedbackInfoAtGCTime() {
+  feedback_vector()->ClearSlotsAtGCTime(this);
 }
 
 
@@ -14848,10 +14830,10 @@ void HandlerTable::HandlerTableRangePrint(std::ostream& os) {
     int handler_field = Smi::cast(get(i + kRangeHandlerIndex))->value();
     int handler_offset = HandlerOffsetField::decode(handler_field);
     CatchPrediction prediction = HandlerPredictionField::decode(handler_field);
-    int depth = Smi::cast(get(i + kRangeDepthIndex))->value();
+    int data = Smi::cast(get(i + kRangeDataIndex))->value();
     os << "  (" << std::setw(4) << pc_start << "," << std::setw(4) << pc_end
        << ")  ->  " << std::setw(4) << handler_offset
-       << " (prediction=" << prediction << ", depth=" << depth << ")\n";
+       << " (prediction=" << prediction << ", data=" << data << ")\n";
   }
 }
 
@@ -17634,6 +17616,11 @@ Handle<Object> JSObject::PrepareElementsForSort(Handle<JSObject> object,
   if (object->HasSloppyArgumentsElements() ||
       object->map()->is_observed()) {
     return handle(Smi::FromInt(-1), isolate);
+  }
+
+  if (object->HasStringWrapperElements()) {
+    int len = String::cast(Handle<JSValue>::cast(object)->value())->length();
+    return handle(Smi::FromInt(len), isolate);
   }
 
   if (object->HasDictionaryElements()) {

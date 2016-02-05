@@ -2101,6 +2101,7 @@ AllocationResult Heap::AllocateMap(InstanceType instance_type,
   AllocationResult allocation = AllocateRaw(Map::kSize, MAP_SPACE);
   if (!allocation.To(&result)) return allocation;
 
+  isolate()->counters()->maps_created()->Increment();
   result->set_map_no_write_barrier(meta_map());
   Map* map = Map::cast(result);
   map->set_instance_type(instance_type);
@@ -2821,14 +2822,6 @@ void Heap::CreateInitialObjects() {
   }
 
   {
-    Handle<FixedArray> empty_literals_array =
-        factory->NewFixedArray(1, TENURED);
-    empty_literals_array->set(0, *factory->empty_fixed_array(),
-                              SKIP_WRITE_BARRIER);
-    set_empty_literals_array(*empty_literals_array);
-  }
-
-  {
     Handle<WeakCell> cell = factory->NewWeakCell(factory->undefined_value());
     set_empty_weak_cell(*cell);
     cell->clear();
@@ -2877,11 +2870,6 @@ void Heap::CreateInitialObjects() {
   set_weak_stack_trace_list(Smi::FromInt(0));
 
   set_noscript_shared_function_infos(Smi::FromInt(0));
-
-  // Will be filled in by Interpreter::Initialize().
-  set_interpreter_table(
-      *interpreter::Interpreter::CreateUninitializedInterpreterTable(
-          isolate()));
 
   // Initialize keyed lookup cache.
   isolate_->keyed_lookup_cache()->Clear();
@@ -4612,8 +4600,10 @@ void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
   // on scavenge collections.
   if (mode != VISIT_ALL_IN_SCAVENGE) {
     isolate_->builtins()->IterateBuiltins(v);
+    v->Synchronize(VisitorSynchronization::kBuiltins);
+    isolate_->interpreter()->IterateDispatchTable(v);
+    v->Synchronize(VisitorSynchronization::kDispatchTable);
   }
-  v->Synchronize(VisitorSynchronization::kBuiltins);
 
   // Iterate over global handles.
   switch (mode) {

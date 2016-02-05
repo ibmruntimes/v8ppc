@@ -19,7 +19,7 @@
 namespace v8 {
 namespace internal {
 
-#define __ ACCESS_MASM(masm_)
+#define __ ACCESS_MASM(masm())
 
 // A patch site is a location in the code which it is possible to patch. This
 // class has a number of methods to emit the code which is patchable and the
@@ -74,6 +74,7 @@ class JumpPatchSite BASE_EMBEDDED {
   }
 
  private:
+  MacroAssembler* masm() { return masm_; }
   MacroAssembler* masm_;
   Label patch_site_;
 #ifdef DEBUG
@@ -1606,9 +1607,9 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
         case ObjectLiteral::Property::MATERIALIZED_LITERAL:
         case ObjectLiteral::Property::COMPUTED:
           if (property->emit_store()) {
-            __ LoadSmiLiteral(r3, Smi::FromInt(NONE));
-            __ push(r3);
-            __ CallRuntime(Runtime::kDefineDataPropertyUnchecked);
+            __ Push(Smi::FromInt(NONE));
+            __ Push(Smi::FromInt(property->NeedsSetFunctionName()));
+            __ CallRuntime(Runtime::kDefineDataPropertyInLiteral);
           } else {
             __ Drop(3);
           }
@@ -1619,14 +1620,12 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
           break;
 
         case ObjectLiteral::Property::GETTER:
-          __ mov(r3, Operand(Smi::FromInt(NONE)));
-          __ push(r3);
+          __ Push(Smi::FromInt(NONE));
           __ CallRuntime(Runtime::kDefineGetterPropertyUnchecked);
           break;
 
         case ObjectLiteral::Property::SETTER:
-          __ mov(r3, Operand(Smi::FromInt(NONE)));
-          __ push(r3);
+          __ Push(Smi::FromInt(NONE));
           __ CallRuntime(Runtime::kDefineSetterPropertyUnchecked);
           break;
       }
@@ -1904,8 +1903,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       __ bne(&resume);
       __ push(result_register());
       EmitCreateIteratorResult(true);
-      EmitUnwindBeforeReturn();
-      EmitReturnSequence();
+      EmitUnwindAndReturn();
 
       __ bind(&suspend);
       VisitForAccumulatorValue(expr->generator_object());
@@ -1935,117 +1933,12 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
     case Yield::kFinal: {
       // Pop value from top-of-stack slot, box result into result register.
       EmitCreateIteratorResult(true);
-      EmitUnwindBeforeReturn();
-      EmitReturnSequence();
+      EmitUnwindAndReturn();
       break;
     }
 
-    case Yield::kDelegating: {
-      VisitForStackValue(expr->generator_object());
-
-      // Initial stack layout is as follows:
-      // [sp + 1 * kPointerSize] iter
-      // [sp + 0 * kPointerSize] g
-
-      Label l_catch, l_try, l_suspend, l_continuation, l_resume;
-      Label l_next, l_call;
-      Register load_receiver = LoadDescriptor::ReceiverRegister();
-      Register load_name = LoadDescriptor::NameRegister();
-
-      // Initial send value is undefined.
-      __ LoadRoot(r3, Heap::kUndefinedValueRootIndex);
-      __ b(&l_next);
-
-      // catch (e) { receiver = iter; f = 'throw'; arg = e; goto l_call; }
-      __ bind(&l_catch);
-      __ LoadRoot(load_name, Heap::kthrow_stringRootIndex);  // "throw"
-      __ LoadP(r6, MemOperand(sp, 1 * kPointerSize));        // iter
-      __ Push(load_name, r6, r3);  // "throw", iter, except
-      __ b(&l_call);
-
-      // try { received = %yield result }
-      // Shuffle the received result above a try handler and yield it without
-      // re-boxing.
-      __ bind(&l_try);
-      __ pop(r3);  // result
-      int handler_index = NewHandlerTableEntry();
-      EnterTryBlock(handler_index, &l_catch);
-      const int try_block_size = TryCatch::kElementCount * kPointerSize;
-      __ push(r3);  // result
-
-      __ b(&l_suspend);
-      __ bind(&l_continuation);
-      __ RecordGeneratorContinuation();
-      __ b(&l_resume);
-
-      __ bind(&l_suspend);
-      const int generator_object_depth = kPointerSize + try_block_size;
-      __ LoadP(r3, MemOperand(sp, generator_object_depth));
-      __ push(r3);  // g
-      __ Push(Smi::FromInt(handler_index));  // handler-index
-      DCHECK(l_continuation.pos() > 0 && Smi::IsValid(l_continuation.pos()));
-      __ LoadSmiLiteral(r4, Smi::FromInt(l_continuation.pos()));
-      __ StoreP(r4, FieldMemOperand(r3, JSGeneratorObject::kContinuationOffset),
-                r0);
-      __ StoreP(cp, FieldMemOperand(r3, JSGeneratorObject::kContextOffset), r0);
-      __ mr(r4, cp);
-      __ RecordWriteField(r3, JSGeneratorObject::kContextOffset, r4, r5,
-                          kLRHasBeenSaved, kDontSaveFPRegs);
-      __ CallRuntime(Runtime::kSuspendJSGeneratorObject, 2);
-      __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
-      __ pop(r3);  // result
-      EmitReturnSequence();
-      __ bind(&l_resume);  // received in r3
-      ExitTryBlock(handler_index);
-
-      // receiver = iter; f = 'next'; arg = received;
-      __ bind(&l_next);
-
-      __ LoadRoot(load_name, Heap::knext_stringRootIndex);  // "next"
-      __ LoadP(r6, MemOperand(sp, 1 * kPointerSize));       // iter
-      __ Push(load_name, r6, r3);  // "next", iter, received
-
-      // result = receiver[f](arg);
-      __ bind(&l_call);
-      __ LoadP(load_receiver, MemOperand(sp, kPointerSize));
-      __ LoadP(load_name, MemOperand(sp, 2 * kPointerSize));
-      __ mov(LoadDescriptor::SlotRegister(),
-             Operand(SmiFromSlot(expr->KeyedLoadFeedbackSlot())));
-      Handle<Code> ic = CodeFactory::KeyedLoadIC(isolate(), SLOPPY).code();
-      CallIC(ic, TypeFeedbackId::None());
-      __ mr(r4, r3);
-      __ StoreP(r4, MemOperand(sp, 2 * kPointerSize));
-      SetCallPosition(expr);
-      __ li(r3, Operand(1));
-      __ Call(
-          isolate()->builtins()->Call(ConvertReceiverMode::kNotNullOrUndefined),
-          RelocInfo::CODE_TARGET);
-
-      __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
-      __ Drop(1);  // The function is still on the stack; drop it.
-
-      // if (!result.done) goto l_try;
-      __ Move(load_receiver, r3);
-
-      __ push(load_receiver);                               // save result
-      __ LoadRoot(load_name, Heap::kdone_stringRootIndex);  // "done"
-      __ mov(LoadDescriptor::SlotRegister(),
-             Operand(SmiFromSlot(expr->DoneFeedbackSlot())));
-      CallLoadIC(NOT_INSIDE_TYPEOF);  // r0=result.done
-      Handle<Code> bool_ic = ToBooleanStub::GetUninitialized(isolate());
-      CallIC(bool_ic);
-      __ CompareRoot(result_register(), Heap::kTrueValueRootIndex);
-      __ bne(&l_try);
-
-      // result.value
-      __ pop(load_receiver);                                 // result
-      __ LoadRoot(load_name, Heap::kvalue_stringRootIndex);  // "value"
-      __ mov(LoadDescriptor::SlotRegister(),
-             Operand(SmiFromSlot(expr->ValueFeedbackSlot())));
-      CallLoadIC(NOT_INSIDE_TYPEOF);  // r3=result.value
-      context()->DropAndPlug(2, r3);  // drop iter and g
-      break;
-    }
+    case Yield::kDelegating:
+      UNREACHABLE();
   }
 }
 
@@ -2399,18 +2292,18 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
       case ObjectLiteral::Property::PROTOTYPE:
         UNREACHABLE();
       case ObjectLiteral::Property::COMPUTED:
-        __ CallRuntime(Runtime::kDefineClassMethod);
+        __ Push(Smi::FromInt(DONT_ENUM));
+        __ Push(Smi::FromInt(property->NeedsSetFunctionName()));
+        __ CallRuntime(Runtime::kDefineDataPropertyInLiteral);
         break;
 
       case ObjectLiteral::Property::GETTER:
-        __ mov(r3, Operand(Smi::FromInt(DONT_ENUM)));
-        __ push(r3);
+        __ Push(Smi::FromInt(DONT_ENUM));
         __ CallRuntime(Runtime::kDefineGetterPropertyUnchecked);
         break;
 
       case ObjectLiteral::Property::SETTER:
-        __ mov(r3, Operand(Smi::FromInt(DONT_ENUM)));
-        __ push(r3);
+        __ Push(Smi::FromInt(DONT_ENUM));
         __ CallRuntime(Runtime::kDefineSetterPropertyUnchecked);
         break;
 

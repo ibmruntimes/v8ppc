@@ -1098,6 +1098,8 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     Handle<JSFunction> object_freeze = SimpleInstallFunction(
         object_function, "freeze", Builtins::kObjectFreeze, 1, false);
     native_context()->set_object_freeze(*object_freeze);
+    SimpleInstallFunction(object_function, "getOwnPropertyDescriptor",
+                          Builtins::kObjectGetOwnPropertyDescriptor, 2, false);
     SimpleInstallFunction(object_function, "getOwnPropertyNames",
                           Builtins::kObjectGetOwnPropertyNames, 1, false);
     SimpleInstallFunction(object_function, "getOwnPropertySymbols",
@@ -1821,7 +1823,7 @@ bool Bootstrapper::CompileBuiltin(Isolate* isolate, int index) {
   Handle<Object> args[] = {global, utils, extras_utils};
 
   return Bootstrapper::CompileNative(isolate, name, source_code,
-                                     arraysize(args), args);
+                                     arraysize(args), args, NATIVES_CODE);
 }
 
 
@@ -1834,7 +1836,7 @@ bool Bootstrapper::CompileExperimentalBuiltin(Isolate* isolate, int index) {
   Handle<Object> utils = isolate->natives_utils_object();
   Handle<Object> args[] = {global, utils};
   return Bootstrapper::CompileNative(isolate, name, source_code,
-                                     arraysize(args), args);
+                                     arraysize(args), args, NATIVES_CODE);
 }
 
 
@@ -1848,7 +1850,7 @@ bool Bootstrapper::CompileExtraBuiltin(Isolate* isolate, int index) {
   Handle<Object> extras_utils = isolate->extras_utils_object();
   Handle<Object> args[] = {global, binding, extras_utils};
   return Bootstrapper::CompileNative(isolate, name, source_code,
-                                     arraysize(args), args);
+                                     arraysize(args), args, EXTENSION_CODE);
 }
 
 
@@ -1863,13 +1865,13 @@ bool Bootstrapper::CompileExperimentalExtraBuiltin(Isolate* isolate,
   Handle<Object> extras_utils = isolate->extras_utils_object();
   Handle<Object> args[] = {global, binding, extras_utils};
   return Bootstrapper::CompileNative(isolate, name, source_code,
-                                     arraysize(args), args);
+                                     arraysize(args), args, EXTENSION_CODE);
 }
-
 
 bool Bootstrapper::CompileNative(Isolate* isolate, Vector<const char> name,
                                  Handle<String> source, int argc,
-                                 Handle<Object> argv[]) {
+                                 Handle<Object> argv[],
+                                 NativesFlag natives_flag) {
   SuppressDebug compiling_natives(isolate->debug());
   // During genesis, the boilerplate for stack overflow won't work until the
   // environment has been at least partially initialized. Add a stack check
@@ -1886,7 +1888,7 @@ bool Bootstrapper::CompileNative(Isolate* isolate, Vector<const char> name,
       isolate->factory()->NewStringFromUtf8(name).ToHandleChecked();
   Handle<SharedFunctionInfo> function_info = Compiler::CompileScript(
       source, script_name, 0, 0, ScriptOriginOptions(), Handle<Object>(),
-      context, NULL, NULL, ScriptCompiler::kNoCompileOptions, NATIVES_CODE,
+      context, NULL, NULL, ScriptCompiler::kNoCompileOptions, natives_flag,
       false);
   if (function_info.is_null()) return false;
 
@@ -1944,7 +1946,7 @@ bool Genesis::CompileExtension(Isolate* isolate, v8::Extension* extension) {
     function_info = Compiler::CompileScript(
         source, script_name, 0, 0, ScriptOriginOptions(), Handle<Object>(),
         context, extension, NULL, ScriptCompiler::kNoCompileOptions,
-        NOT_NATIVES_CODE, false);
+        EXTENSION_CODE, false);
     if (function_info.is_null()) return false;
     cache->Add(name, function_info);
   }
@@ -2459,6 +2461,19 @@ void Genesis::InitializeGlobal_harmony_object_values_entries() {
                         Builtins::kObjectValues, 1, false);
 }
 
+void Genesis::InitializeGlobal_harmony_object_own_property_descriptors() {
+  if (!FLAG_harmony_object_own_property_descriptors) return;
+
+  Handle<JSGlobalObject> global(
+      JSGlobalObject::cast(native_context()->global_object()));
+  Isolate* isolate = global->GetIsolate();
+  Factory* factory = isolate->factory();
+
+  Handle<JSFunction> object_function = isolate->object_function();
+  SimpleInstallFunction(object_function,
+                        factory->getOwnPropertyDescriptors_string(),
+                        Builtins::kObjectGetOwnPropertyDescriptors, 1, false);
+}
 
 void Genesis::InstallJSProxyMaps() {
   // Allocate the different maps for all Proxy types.
@@ -2948,6 +2963,8 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* promise_extra_natives[] = {"native promise-extra.js",
                                                 nullptr};
   static const char* harmony_object_values_entries_natives[] = {nullptr};
+  static const char* harmony_object_own_property_descriptors_natives[] = {
+      nullptr};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {

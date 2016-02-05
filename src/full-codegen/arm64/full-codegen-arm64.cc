@@ -20,7 +20,7 @@
 namespace v8 {
 namespace internal {
 
-#define __ ACCESS_MASM(masm_)
+#define __ ACCESS_MASM(masm())
 
 class JumpPatchSite BASE_EMBEDDED {
  public:
@@ -76,6 +76,7 @@ class JumpPatchSite BASE_EMBEDDED {
   }
 
  private:
+  MacroAssembler* masm() { return masm_; }
   MacroAssembler* masm_;
   Label patch_site_;
   Register reg_;
@@ -1215,8 +1216,11 @@ void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
   // runtime function so that the new function we are creating here gets a
   // chance to have its code optimized and doesn't just get a copy of the
   // existing unoptimized code.
-  if (!FLAG_always_opt && !FLAG_prepare_always_opt && !pretenure &&
-      scope()->is_function_scope()) {
+  if (!FLAG_always_opt &&
+      !FLAG_prepare_always_opt &&
+      !pretenure &&
+      scope()->is_function_scope() &&
+      info->num_literals() == 0) {
     FastNewClosureStub stub(isolate(), info->language_mode(), info->kind());
     __ Mov(x2, Operand(info));
     __ CallStub(&stub);
@@ -1633,9 +1637,9 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
         case ObjectLiteral::Property::MATERIALIZED_LITERAL:
         case ObjectLiteral::Property::COMPUTED:
           if (property->emit_store()) {
-            __ Mov(x0, Smi::FromInt(NONE));
-            __ Push(x0);
-            __ CallRuntime(Runtime::kDefineDataPropertyUnchecked);
+            __ Push(Smi::FromInt(NONE));
+            __ Push(Smi::FromInt(property->NeedsSetFunctionName()));
+            __ CallRuntime(Runtime::kDefineDataPropertyInLiteral);
           } else {
             __ Drop(3);
           }
@@ -1646,14 +1650,12 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
           break;
 
         case ObjectLiteral::Property::GETTER:
-          __ Mov(x0, Smi::FromInt(NONE));
-          __ Push(x0);
+          __ Push(Smi::FromInt(NONE));
           __ CallRuntime(Runtime::kDefineGetterPropertyUnchecked);
           break;
 
         case ObjectLiteral::Property::SETTER:
-          __ Mov(x0, Smi::FromInt(NONE));
-          __ Push(x0);
+          __ Push(Smi::FromInt(NONE));
           __ CallRuntime(Runtime::kDefineSetterPropertyUnchecked);
           break;
       }
@@ -2101,18 +2103,18 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
       case ObjectLiteral::Property::PROTOTYPE:
         UNREACHABLE();
       case ObjectLiteral::Property::COMPUTED:
-        __ CallRuntime(Runtime::kDefineClassMethod);
+        __ Push(Smi::FromInt(DONT_ENUM));
+        __ Push(Smi::FromInt(property->NeedsSetFunctionName()));
+        __ CallRuntime(Runtime::kDefineDataPropertyInLiteral);
         break;
 
       case ObjectLiteral::Property::GETTER:
-        __ Mov(x0, Smi::FromInt(DONT_ENUM));
-        __ Push(x0);
+        __ Push(Smi::FromInt(DONT_ENUM));
         __ CallRuntime(Runtime::kDefineGetterPropertyUnchecked);
         break;
 
       case ObjectLiteral::Property::SETTER:
-        __ Mov(x0, Smi::FromInt(DONT_ENUM));
-        __ Push(x0);
+        __ Push(Smi::FromInt(DONT_ENUM));
         __ CallRuntime(Runtime::kDefineSetterPropertyUnchecked);
         break;
 
@@ -4352,8 +4354,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       __ B(ne, &resume);
       __ Push(result_register());
       EmitCreateIteratorResult(true);
-      EmitUnwindBeforeReturn();
-      EmitReturnSequence();
+      EmitUnwindAndReturn();
 
       __ Bind(&suspend);
       VisitForAccumulatorValue(expr->generator_object());
@@ -4382,121 +4383,12 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
     case Yield::kFinal: {
       // Pop value from top-of-stack slot, box result into result register.
       EmitCreateIteratorResult(true);
-      EmitUnwindBeforeReturn();
-      EmitReturnSequence();
+      EmitUnwindAndReturn();
       break;
     }
 
-    case Yield::kDelegating: {
-      VisitForStackValue(expr->generator_object());
-
-      // Initial stack layout is as follows:
-      // [sp + 1 * kPointerSize] iter
-      // [sp + 0 * kPointerSize] g
-
-      Label l_catch, l_try, l_suspend, l_continuation, l_resume;
-      Label l_next, l_call, l_loop;
-      Register load_receiver = LoadDescriptor::ReceiverRegister();
-      Register load_name = LoadDescriptor::NameRegister();
-
-      // Initial send value is undefined.
-      __ LoadRoot(x0, Heap::kUndefinedValueRootIndex);
-      __ B(&l_next);
-
-      // catch (e) { receiver = iter; f = 'throw'; arg = e; goto l_call; }
-      __ Bind(&l_catch);
-      __ LoadRoot(load_name, Heap::kthrow_stringRootIndex);  // "throw"
-      __ Peek(x3, 1 * kPointerSize);                         // iter
-      __ Push(load_name, x3, x0);                       // "throw", iter, except
-      __ B(&l_call);
-
-      // try { received = %yield result }
-      // Shuffle the received result above a try handler and yield it without
-      // re-boxing.
-      __ Bind(&l_try);
-      __ Pop(x0);                                        // result
-      int handler_index = NewHandlerTableEntry();
-      EnterTryBlock(handler_index, &l_catch);
-      const int try_block_size = TryCatch::kElementCount * kPointerSize;
-      __ Push(x0);                                       // result
-
-      __ B(&l_suspend);
-      // TODO(jbramley): This label is bound here because the following code
-      // looks at its pos(). Is it possible to do something more efficient here,
-      // perhaps using Adr?
-      __ Bind(&l_continuation);
-      __ RecordGeneratorContinuation();
-      __ B(&l_resume);
-
-      __ Bind(&l_suspend);
-      const int generator_object_depth = kPointerSize + try_block_size;
-      __ Peek(x0, generator_object_depth);
-      __ Push(x0);                                       // g
-      __ Push(Smi::FromInt(handler_index));              // handler-index
-      DCHECK((l_continuation.pos() > 0) && Smi::IsValid(l_continuation.pos()));
-      __ Mov(x1, Smi::FromInt(l_continuation.pos()));
-      __ Str(x1, FieldMemOperand(x0, JSGeneratorObject::kContinuationOffset));
-      __ Str(cp, FieldMemOperand(x0, JSGeneratorObject::kContextOffset));
-      __ Mov(x1, cp);
-      __ RecordWriteField(x0, JSGeneratorObject::kContextOffset, x1, x2,
-                          kLRHasBeenSaved, kDontSaveFPRegs);
-      __ CallRuntime(Runtime::kSuspendJSGeneratorObject, 2);
-      __ Ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
-      __ Pop(x0);                                        // result
-      EmitReturnSequence();
-      __ Bind(&l_resume);                                // received in x0
-      ExitTryBlock(handler_index);
-
-      // receiver = iter; f = 'next'; arg = received;
-      __ Bind(&l_next);
-
-      __ LoadRoot(load_name, Heap::knext_stringRootIndex);  // "next"
-      __ Peek(x3, 1 * kPointerSize);                        // iter
-      __ Push(load_name, x3, x0);                      // "next", iter, received
-
-      // result = receiver[f](arg);
-      __ Bind(&l_call);
-      __ Peek(load_receiver, 1 * kPointerSize);
-      __ Peek(load_name, 2 * kPointerSize);
-      __ Mov(LoadDescriptor::SlotRegister(),
-             SmiFromSlot(expr->KeyedLoadFeedbackSlot()));
-      Handle<Code> ic = CodeFactory::KeyedLoadIC(isolate(), SLOPPY).code();
-      CallIC(ic, TypeFeedbackId::None());
-      __ Mov(x1, x0);
-      __ Poke(x1, 2 * kPointerSize);
-      SetCallPosition(expr);
-      __ Mov(x0, 1);
-      __ Call(
-          isolate()->builtins()->Call(ConvertReceiverMode::kNotNullOrUndefined),
-          RelocInfo::CODE_TARGET);
-
-      __ Ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
-      __ Drop(1);  // The function is still on the stack; drop it.
-
-      // if (!result.done) goto l_try;
-      __ Bind(&l_loop);
-      __ Move(load_receiver, x0);
-
-      __ Push(load_receiver);                               // save result
-      __ LoadRoot(load_name, Heap::kdone_stringRootIndex);  // "done"
-      __ Mov(LoadDescriptor::SlotRegister(),
-             SmiFromSlot(expr->DoneFeedbackSlot()));
-      CallLoadIC(NOT_INSIDE_TYPEOF);  // x0=result.done
-      // The ToBooleanStub argument (result.done) is in x0.
-      Handle<Code> bool_ic = ToBooleanStub::GetUninitialized(isolate());
-      CallIC(bool_ic);
-      __ CompareRoot(result_register(), Heap::kTrueValueRootIndex);
-      __ B(ne, &l_try);
-
-      // result.value
-      __ Pop(load_receiver);                                 // result
-      __ LoadRoot(load_name, Heap::kvalue_stringRootIndex);  // "value"
-      __ Mov(LoadDescriptor::SlotRegister(),
-             SmiFromSlot(expr->ValueFeedbackSlot()));
-      CallLoadIC(NOT_INSIDE_TYPEOF);                         // x0=result.value
-      context()->DropAndPlug(2, x0);                         // drop iter and g
-      break;
-    }
+    case Yield::kDelegating:
+      UNREACHABLE();
   }
 }
 
@@ -4695,12 +4587,6 @@ void FullCodeGenerator::PushFunctionArgumentForContextAllocation() {
 void FullCodeGenerator::EnterFinallyBlock() {
   ASM_LOCATION("FullCodeGenerator::EnterFinallyBlock");
   DCHECK(!result_register().is(x10));
-  // Preserve the result register while executing finally block.
-  // Also cook the return address in lr to the stack (smi encoded Code* delta).
-  __ Sub(x10, lr, Operand(masm_->CodeObject()));
-  __ SmiTag(x10);
-  __ Push(result_register(), x10);
-
   // Store pending message while executing finally block.
   ExternalReference pending_message_obj =
       ExternalReference::address_of_pending_message_obj(isolate());
@@ -4722,14 +4608,6 @@ void FullCodeGenerator::ExitFinallyBlock() {
       ExternalReference::address_of_pending_message_obj(isolate());
   __ Mov(x13, pending_message_obj);
   __ Str(x10, MemOperand(x13));
-
-  // Restore result register and cooked return address from the stack.
-  __ Pop(x10, result_register());
-
-  // Uncook the return address (see EnterFinallyBlock).
-  __ SmiUntag(x10);
-  __ Add(x11, x10, Operand(masm_->CodeObject()));
-  __ Br(x11);
 }
 
 
@@ -4748,6 +4626,30 @@ void FullCodeGenerator::EmitLoadStoreICSlot(FeedbackVectorSlot slot) {
   __ Mov(VectorStoreICTrampolineDescriptor::SlotRegister(), SmiFromSlot(slot));
 }
 
+void FullCodeGenerator::DeferredCommands::EmitCommands() {
+  __ Pop(result_register(), x1);  // Restore the accumulator and get the token.
+  for (DeferredCommand cmd : commands_) {
+    Label skip;
+    __ Cmp(x1, Operand(Smi::FromInt(cmd.token)));
+    __ B(ne, &skip);
+    switch (cmd.command) {
+      case kReturn:
+        codegen_->EmitUnwindAndReturn();
+        break;
+      case kThrow:
+        __ Push(result_register());
+        __ CallRuntime(Runtime::kReThrow);
+        break;
+      case kContinue:
+        codegen_->EmitContinue(cmd.target);
+        break;
+      case kBreak:
+        codegen_->EmitBreak(cmd.target);
+        break;
+    }
+    __ bind(&skip);
+  }
+}
 
 #undef __
 

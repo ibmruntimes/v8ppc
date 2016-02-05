@@ -8972,6 +8972,8 @@ static bool SecurityTestCallback(Local<v8::Context> accessing_context,
                                  Local<v8::Object> accessed_object,
                                  Local<v8::Value> data) {
   printf("a\n");
+  CHECK(!data.IsEmpty() && data->IsInt32());
+  CHECK_EQ(42, data->Int32Value(accessing_context).FromJust());
   return g_security_callback_result;
 }
 
@@ -8982,7 +8984,7 @@ TEST(SecurityHandler) {
   v8::HandleScope scope0(isolate);
   v8::Local<v8::ObjectTemplate> global_template =
       v8::ObjectTemplate::New(isolate);
-  global_template->SetAccessCheckCallback(SecurityTestCallback);
+  global_template->SetAccessCheckCallback(SecurityTestCallback, v8_num(42));
   // Create an environment
   v8::Local<Context> context0 = Context::New(isolate, NULL, global_template);
   context0->Enter();
@@ -24199,6 +24201,37 @@ static void ExtrasBindingTestRuntimeFunction(
   args.GetReturnValue().Set(v8_num(7));
 }
 
+TEST(ExtrasFunctionSource) {
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope handle_scope(isolate);
+  LocalContext env;
+
+  v8::Local<v8::Object> binding = env->GetExtrasBindingObject();
+
+  // Functions defined in extras do not expose source code.
+  auto func = binding->Get(env.local(), v8_str("testFunctionToString"))
+                  .ToLocalChecked()
+                  .As<v8::Function>();
+  auto undefined = v8::Undefined(isolate);
+  auto result = func->Call(env.local(), undefined, 0, {})
+                    .ToLocalChecked()
+                    .As<v8::String>();
+  CHECK(result->StrictEquals(v8_str("function foo() { [native code] }")));
+
+  // Functions defined in extras do not show up in the stack trace.
+  auto wrapper = binding->Get(env.local(), v8_str("testStackTrace"))
+                     .ToLocalChecked()
+                     .As<v8::Function>();
+  CHECK(env->Global()->Set(env.local(), v8_str("wrapper"), wrapper).FromJust());
+  ExpectString(
+      "function f(x) { return wrapper(x) }"
+      "function g() { return new Error().stack; }"
+      "f(g)",
+      "Error\n"
+      "    at g (<anonymous>:1:58)\n"
+      "    at f (<anonymous>:1:24)\n"
+      "    at <anonymous>:1:78");
+}
 
 TEST(ExtrasBindingObject) {
   v8::Isolate* isolate = CcTest::isolate();
