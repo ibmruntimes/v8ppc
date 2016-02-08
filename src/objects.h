@@ -429,7 +429,6 @@ const int kStubMinorKeyBits = kSmiValueSize - kStubMajorKeyBits - 1;
   V(JS_MAP_TYPE)                                                \
   V(JS_SET_ITERATOR_TYPE)                                       \
   V(JS_MAP_ITERATOR_TYPE)                                       \
-  V(JS_ITERATOR_RESULT_TYPE)                                    \
   V(JS_WEAK_MAP_TYPE)                                           \
   V(JS_WEAK_SET_TYPE)                                           \
   V(JS_PROMISE_TYPE)                                            \
@@ -723,7 +722,6 @@ enum InstanceType {
   JS_MAP_TYPE,
   JS_SET_ITERATOR_TYPE,
   JS_MAP_ITERATOR_TYPE,
-  JS_ITERATOR_RESULT_TYPE,
   JS_WEAK_MAP_TYPE,
   JS_WEAK_SET_TYPE,
   JS_PROMISE_TYPE,
@@ -963,7 +961,6 @@ template <class C> inline bool Is(Object* obj);
   V(JSMap)                         \
   V(JSSetIterator)                 \
   V(JSMapIterator)                 \
-  V(JSIteratorResult)              \
   V(JSWeakCollection)              \
   V(JSWeakMap)                     \
   V(JSWeakSet)                     \
@@ -1305,14 +1302,6 @@ class Object {
       Isolate* isolate, Handle<Object> object, uint32_t index,
       Handle<Object> value, LanguageMode language_mode);
 
-  // Get the first non-hidden prototype.
-  static inline MaybeHandle<Object> GetPrototype(Isolate* isolate,
-                                                 Handle<Object> receiver);
-
-  MUST_USE_RESULT static Maybe<bool> HasInPrototypeChain(Isolate* isolate,
-                                                         Handle<Object> object,
-                                                         Handle<Object> proto);
-
   // Returns the permanent hash code associated with this object. May return
   // undefined if not yet created.
   Object* GetHash();
@@ -1389,7 +1378,7 @@ class Object {
 
  private:
   friend class LookupIterator;
-  friend class PrototypeIterator;
+  friend class StringStream;
 
   // Return the map of the root of object's prototype chain.
   Map* GetRootMap(Isolate* isolate);
@@ -1815,6 +1804,13 @@ class JSReceiver: public HeapObject {
 
   static MaybeHandle<Context> GetFunctionRealm(Handle<JSReceiver> receiver);
 
+  // Get the first non-hidden prototype.
+  static inline MaybeHandle<Object> GetPrototype(Isolate* isolate,
+                                                 Handle<JSReceiver> receiver);
+
+  MUST_USE_RESULT static Maybe<bool> HasInPrototypeChain(
+      Isolate* isolate, Handle<JSReceiver> object, Handle<Object> proto);
+
   // Implementation of [[HasProperty]], ECMA-262 5th edition, section 8.12.6.
   MUST_USE_RESULT static Maybe<bool> HasProperty(LookupIterator* it);
   MUST_USE_RESULT static inline Maybe<bool> HasProperty(
@@ -1958,6 +1954,12 @@ class JSReceiver: public HeapObject {
   MUST_USE_RESULT static MaybeHandle<FixedArray> GetKeys(
       Handle<JSReceiver> object, KeyCollectionType type, PropertyFilter filter,
       GetKeysConversion keys_conversion = KEEP_NUMBERS);
+
+  MUST_USE_RESULT static MaybeHandle<FixedArray> GetOwnValues(
+      Handle<JSReceiver> object, PropertyFilter filter);
+
+  MUST_USE_RESULT static MaybeHandle<FixedArray> GetOwnEntries(
+      Handle<JSReceiver> object, PropertyFilter filter);
 
   // Layout description.
   static const int kPropertiesOffset = HeapObject::kHeaderSize;
@@ -2385,6 +2387,10 @@ class JSObject: public JSReceiver {
       Handle<JSObject> object,
       AllocationSiteUsageContext* site_context,
       DeepCopyHints hints = kNoHints);
+  // Deep copies given object with special handling for JSFunctions which
+  // 1) must be Api functions and 2) are not copied but left as is.
+  MUST_USE_RESULT static MaybeHandle<JSObject> DeepCopyApiBoilerplate(
+      Handle<JSObject> object);
   MUST_USE_RESULT static MaybeHandle<JSObject> DeepWalk(
       Handle<JSObject> object,
       AllocationSiteCreationContext* site_context);
@@ -2597,6 +2603,24 @@ class JSDataPropertyDescriptor: public JSObject {
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSDataPropertyDescriptor);
+};
+
+
+// JSIteratorResult is just a JSObject with a specific initial map.
+// This initial map adds in-object properties for "done" and "value,
+// as specified by ES6 section 25.1.1.3 The IteratorResult Interface
+class JSIteratorResult: public JSObject {
+ public:
+  // Offsets of object fields.
+  static const int kValueOffset = JSObject::kHeaderSize;
+  static const int kDoneOffset = kValueOffset + kPointerSize;
+  static const int kSize = kDoneOffset + kPointerSize;
+  // Indices of in-object properties.
+  static const int kValueIndex = 0;
+  static const int kDoneIndex = 1;
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(JSIteratorResult);
 };
 
 
@@ -5543,7 +5567,7 @@ class Map: public HeapObject {
   STATIC_ASSERT(kDescriptorIndexBitCount + kDescriptorIndexBitCount == 20);
   class DictionaryMap : public BitField<bool, 20, 1> {};
   class OwnsDescriptors : public BitField<bool, 21, 1> {};
-  class IsHiddenPrototype : public BitField<bool, 22, 1> {};
+  class HasHiddenPrototype : public BitField<bool, 22, 1> {};
   class Deprecated : public BitField<bool, 23, 1> {};
   class IsUnstable : public BitField<bool, 24, 1> {};
   class IsMigrationTarget : public BitField<bool, 25, 1> {};
@@ -5622,10 +5646,9 @@ class Map: public HeapObject {
   inline void set_is_constructor(bool value);
   inline bool is_constructor() const;
 
-  // Tells whether the instance with this map should be ignored by the
-  // Object.getPrototypeOf() function and the __proto__ accessor.
-  inline void set_is_hidden_prototype();
-  inline bool is_hidden_prototype() const;
+  // Tells whether the instance with this map has a hidden prototype.
+  inline void set_has_hidden_prototype(bool value);
+  inline bool has_hidden_prototype() const;
 
   // Records and queries whether the instance has a named interceptor.
   inline void set_has_named_interceptor();
@@ -9911,40 +9934,6 @@ class JSMapIterator: public OrderedHashTableIterator<JSMapIterator,
 };
 
 
-// ES6 section 25.1.1.3 The IteratorResult Interface
-class JSIteratorResult final : public JSObject {
- public:
-  // [done]: This is the result status of an iterator next method call.  If the
-  // end of the iterator was reached done is true.  If the end was not reached
-  // done is false and a [value] is available.
-  DECL_ACCESSORS(done, Object)
-
-  // [value]: If [done] is false, this is the current iteration element value.
-  // If [done] is true, this is the return value of the iterator, if it supplied
-  // one.  If the iterator does not have a return value, value is undefined.
-  // In that case, the value property may be absent from the conforming object
-  // if it does not inherit an explicit value property.
-  DECL_ACCESSORS(value, Object)
-
-  // Dispatched behavior.
-  DECLARE_PRINTER(JSIteratorResult)
-  DECLARE_VERIFIER(JSIteratorResult)
-
-  DECLARE_CAST(JSIteratorResult)
-
-  static const int kValueOffset = JSObject::kHeaderSize;
-  static const int kDoneOffset = kValueOffset + kPointerSize;
-  static const int kSize = kDoneOffset + kPointerSize;
-
-  // Indices of in-object properties.
-  static const int kValueIndex = 0;
-  static const int kDoneIndex = 1;
-
- private:
-  DISALLOW_IMPLICIT_CONSTRUCTORS(JSIteratorResult);
-};
-
-
 // Base class for both JSWeakMap and JSWeakSet
 class JSWeakCollection: public JSObject {
  public:
@@ -10511,15 +10500,16 @@ class CallHandlerInfo: public Struct {
 class TemplateInfo: public Struct {
  public:
   DECL_ACCESSORS(tag, Object)
-  inline int number_of_properties() const;
-  inline void set_number_of_properties(int value);
+  DECL_ACCESSORS(serial_number, Object)
+  DECL_INT_ACCESSORS(number_of_properties)
   DECL_ACCESSORS(property_list, Object)
   DECL_ACCESSORS(property_accessors, Object)
 
   DECLARE_VERIFIER(TemplateInfo)
 
   static const int kTagOffset = HeapObject::kHeaderSize;
-  static const int kNumberOfProperties = kTagOffset + kPointerSize;
+  static const int kSerialNumberOffset = kTagOffset + kPointerSize;
+  static const int kNumberOfProperties = kSerialNumberOffset + kPointerSize;
   static const int kPropertyListOffset = kNumberOfProperties + kPointerSize;
   static const int kPropertyAccessorsOffset =
       kPropertyListOffset + kPointerSize;
@@ -10534,7 +10524,6 @@ class TemplateInfo: public Struct {
 
 class FunctionTemplateInfo: public TemplateInfo {
  public:
-  DECL_ACCESSORS(serial_number, Object)
   DECL_ACCESSORS(call_code, Object)
   DECL_ACCESSORS(prototype_template, Object)
   DECL_ACCESSORS(parent_template, Object)
@@ -10568,8 +10557,7 @@ class FunctionTemplateInfo: public TemplateInfo {
   DECLARE_PRINTER(FunctionTemplateInfo)
   DECLARE_VERIFIER(FunctionTemplateInfo)
 
-  static const int kSerialNumberOffset = TemplateInfo::kHeaderSize;
-  static const int kCallCodeOffset = kSerialNumberOffset + kPointerSize;
+  static const int kCallCodeOffset = TemplateInfo::kHeaderSize;
   static const int kPrototypeTemplateOffset =
       kCallCodeOffset + kPointerSize;
   static const int kParentTemplateOffset =

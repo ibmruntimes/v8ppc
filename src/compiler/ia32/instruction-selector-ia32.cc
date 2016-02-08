@@ -701,6 +701,14 @@ void InstructionSelector::VisitRoundInt32ToFloat32(Node* node) {
 }
 
 
+void InstructionSelector::VisitRoundUint32ToFloat32(Node* node) {
+  IA32OperandGenerator g(this);
+  InstructionOperand temps[] = {g.TempRegister(), g.TempRegister()};
+  Emit(kSSEUint32ToFloat32, g.DefineAsRegister(node), g.Use(node->InputAt(0)),
+       arraysize(temps), temps);
+}
+
+
 void InstructionSelector::VisitChangeInt32ToFloat64(Node* node) {
   VisitRO(this, node, kSSEInt32ToFloat64);
 }
@@ -713,6 +721,11 @@ void InstructionSelector::VisitChangeUint32ToFloat64(Node* node) {
 
 void InstructionSelector::VisitTruncateFloat32ToInt32(Node* node) {
   VisitRO(this, node, kSSEFloat32ToInt32);
+}
+
+
+void InstructionSelector::VisitTruncateFloat32ToUint32(Node* node) {
+  VisitRO(this, node, kSSEFloat32ToUint32);
 }
 
 

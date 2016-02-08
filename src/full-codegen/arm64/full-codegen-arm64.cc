@@ -110,13 +110,6 @@ void FullCodeGenerator::Generate() {
 
   ProfileEntryHookStub::MaybeCallEntryHook(masm_);
 
-#ifdef DEBUG
-  if (strlen(FLAG_stop_at) > 0 &&
-      info->literal()->name()->IsUtf8EqualTo(CStrVector(FLAG_stop_at))) {
-    __ Debug("stop-at", __LINE__, BREAK);
-  }
-#endif
-
   if (FLAG_debug_code && info->ExpectsJSReceiverAsReceiver()) {
     int receiver_offset = info->scope()->num_parameters() * kXRegSize;
     __ Peek(x10, receiver_offset);
@@ -268,21 +261,12 @@ void FullCodeGenerator::Generate() {
   Variable* rest_param = scope()->rest_parameter(&rest_index);
   if (rest_param) {
     Comment cmnt(masm_, "[ Allocate rest parameter array");
-
-    int num_parameters = info->scope()->num_parameters();
-    int offset = num_parameters * kPointerSize;
-    __ Mov(RestParamAccessDescriptor::parameter_count(),
-           Smi::FromInt(num_parameters));
-    __ Add(RestParamAccessDescriptor::parameter_pointer(), fp,
-           StandardFrameConstants::kCallerSPOffset + offset);
-    __ Mov(RestParamAccessDescriptor::rest_parameter_index(),
-           Smi::FromInt(rest_index));
-
-    function_in_register_x1 = false;
-
-    RestParamAccessStub stub(isolate());
+    if (!function_in_register_x1) {
+      __ Ldr(x1, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+    }
+    FastNewRestParameterStub stub(isolate());
     __ CallStub(&stub);
-
+    function_in_register_x1 = false;
     SetVar(rest_param, x0, x1, x2);
   }
 
@@ -2060,21 +2044,11 @@ void FullCodeGenerator::EmitBinaryOp(BinaryOperation* expr, Token::Value op) {
 
 
 void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
-  // Constructor is in x0.
-  DCHECK(lit != NULL);
-  __ push(x0);
-
-  // No access check is needed here since the constructor is created by the
-  // class literal.
-  Register scratch = x1;
-  __ Ldr(scratch,
-         FieldMemOperand(x0, JSFunction::kPrototypeOrInitialMapOffset));
-  __ Push(scratch);
-
   for (int i = 0; i < lit->properties()->length(); i++) {
     ObjectLiteral::Property* property = lit->properties()->at(i);
     Expression* value = property->value();
 
+    Register scratch = x1;
     if (property->is_static()) {
       __ Peek(scratch, kPointerSize);  // constructor
     } else {
@@ -2122,10 +2096,6 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
         UNREACHABLE();
     }
   }
-
-  // Set both the prototype and constructor to have fast properties, and also
-  // freeze them in strong mode.
-  __ CallRuntime(Runtime::kFinalizeClassDefinition);
 }
 
 

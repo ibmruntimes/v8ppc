@@ -1489,7 +1489,7 @@ MaybeHandle<JSArray> Fast_ArrayConcat(Isolate* isolate, Arguments* args) {
       if (!arg->IsJSArray()) return MaybeHandle<JSArray>();
       Handle<JSArray> array(JSArray::cast(arg), isolate);
       if (!array->HasFastElements()) return MaybeHandle<JSArray>();
-      PrototypeIterator iter(isolate, arg);
+      PrototypeIterator iter(isolate, *array);
       if (iter.GetCurrent() != array_proto) return MaybeHandle<JSArray>();
       if (HasConcatSpreadableModifier(isolate, array)) {
         return MaybeHandle<JSArray>();
@@ -1777,22 +1777,10 @@ BUILTIN(ObjectValues) {
   Handle<JSReceiver> receiver;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, receiver,
                                      Object::ToObject(isolate, object));
-  Handle<FixedArray> keys;
+  Handle<FixedArray> values;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, keys, JSReceiver::GetKeys(receiver, OWN_ONLY, ENUMERABLE_STRINGS,
-                                         CONVERT_TO_STRING));
-
-  for (int i = 0; i < keys->length(); ++i) {
-    auto key = Handle<Name>::cast(FixedArray::get(*keys, i, isolate));
-    Handle<Object> value;
-
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-        isolate, value, Object::GetPropertyOrElement(receiver, key, STRICT));
-
-    keys->set(i, *value);
-  }
-
-  return *isolate->factory()->NewJSArrayWithElements(keys);
+      isolate, values, JSReceiver::GetOwnValues(receiver, ENUMERABLE_STRINGS));
+  return *isolate->factory()->NewJSArrayWithElements(values);
 }
 
 
@@ -1802,26 +1790,11 @@ BUILTIN(ObjectEntries) {
   Handle<JSReceiver> receiver;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, receiver,
                                      Object::ToObject(isolate, object));
-  Handle<FixedArray> keys;
+  Handle<FixedArray> entries;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, keys, JSReceiver::GetKeys(receiver, OWN_ONLY, ENUMERABLE_STRINGS,
-                                         CONVERT_TO_STRING));
-
-  for (int i = 0; i < keys->length(); ++i) {
-    auto key = Handle<Name>::cast(FixedArray::get(*keys, i, isolate));
-    Handle<Object> value;
-
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-        isolate, value, Object::GetPropertyOrElement(receiver, key, STRICT));
-
-    auto entry_storage = isolate->factory()->NewUninitializedFixedArray(2);
-    entry_storage->set(0, *key);
-    entry_storage->set(1, *value);
-    auto entry = isolate->factory()->NewJSArrayWithElements(entry_storage);
-    keys->set(i, *entry);
-  }
-
-  return *isolate->factory()->NewJSArrayWithElements(keys);
+      isolate, entries,
+      JSReceiver::GetOwnEntries(receiver, ENUMERABLE_STRINGS));
+  return *isolate->factory()->NewJSArrayWithElements(entries);
 }
 
 BUILTIN(ObjectGetOwnPropertyDescriptors) {
@@ -2079,8 +2052,9 @@ BUILTIN(ReflectGetPrototypeOf) {
                                   "Reflect.getPrototypeOf")));
   }
   Handle<Object> prototype;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, prototype,
-                                     Object::GetPrototype(isolate, target));
+  Handle<JSReceiver> receiver = Handle<JSReceiver>::cast(target);
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, prototype, JSReceiver::GetPrototype(isolate, receiver));
   return *prototype;
 }
 
@@ -3614,22 +3588,33 @@ MUST_USE_RESULT MaybeHandle<Object> HandleApiCallHelper(
     Isolate* isolate, BuiltinArguments<BuiltinExtraArguments::kTarget> args) {
   HandleScope scope(isolate);
   Handle<JSFunction> function = args.target();
-  DCHECK(args.receiver()->IsJSReceiver());
+  Handle<JSReceiver> receiver;
   // TODO(ishell): turn this back to a DCHECK.
   CHECK(function->shared()->IsApiFunction());
 
   Handle<FunctionTemplateInfo> fun_data(
       function->shared()->get_api_func_data(), isolate);
   if (is_construct) {
-    ASSIGN_RETURN_ON_EXCEPTION(
-        isolate, fun_data,
-        ApiNatives::ConfigureInstance(isolate, fun_data,
-                                      Handle<JSObject>::cast(args.receiver())),
-        Object);
+    DCHECK(args.receiver()->IsTheHole());
+    if (fun_data->instance_template()->IsUndefined()) {
+      v8::Local<ObjectTemplate> templ =
+          ObjectTemplate::New(reinterpret_cast<v8::Isolate*>(isolate),
+                              ToApiHandle<v8::FunctionTemplate>(fun_data));
+      fun_data->set_instance_template(*Utils::OpenHandle(*templ));
+    }
+    Handle<ObjectTemplateInfo> instance_template(
+        ObjectTemplateInfo::cast(fun_data->instance_template()), isolate);
+    ASSIGN_RETURN_ON_EXCEPTION(isolate, receiver,
+                               ApiNatives::InstantiateObject(instance_template),
+                               Object);
+    args[0] = *receiver;
+    DCHECK_EQ(*receiver, *args.receiver());
+  } else {
+    DCHECK(args.receiver()->IsJSReceiver());
+    receiver = args.at<JSReceiver>(0);
   }
 
   if (!is_construct && !fun_data->accept_any_receiver()) {
-    Handle<JSReceiver> receiver = args.at<JSReceiver>(0);
     if (receiver->IsJSObject() && receiver->IsAccessCheckNeeded()) {
       Handle<JSObject> js_receiver = Handle<JSObject>::cast(receiver);
       if (!isolate->MayAccess(handle(isolate->context()), js_receiver)) {
@@ -3639,7 +3624,7 @@ MUST_USE_RESULT MaybeHandle<Object> HandleApiCallHelper(
     }
   }
 
-  Object* raw_holder = fun_data->GetCompatibleReceiver(isolate, args[0]);
+  Object* raw_holder = fun_data->GetCompatibleReceiver(isolate, *receiver);
 
   if (raw_holder->IsNull()) {
     // This function cannot be called with the given receiver.  Abort!
@@ -3683,7 +3668,7 @@ MUST_USE_RESULT MaybeHandle<Object> HandleApiCallHelper(
     }
   }
 
-  return scope.CloseAndEscape(args.receiver());
+  return scope.CloseAndEscape(receiver);
 }
 
 }  // namespace

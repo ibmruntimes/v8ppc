@@ -27,11 +27,10 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
   CHECK_EQ(builder.context_count(), 1);
   CHECK_EQ(builder.fixed_register_count(), 132);
 
-  // Emit argument creation operations. CreateRestArguments should
-  // be output before any bytecodes that change constant pool.
+  // Emit argument creation operations.
   builder.CreateArguments(CreateArgumentsType::kMappedArguments)
       .CreateArguments(CreateArgumentsType::kUnmappedArguments)
-      .CreateRestArguments(0);
+      .CreateArguments(CreateArgumentsType::kRestParameter);
 
   // Emit constant loads.
   builder.LoadLiteral(Smi::FromInt(0))
@@ -54,9 +53,6 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
   // Emit register-register transfer.
   builder.MoveRegister(reg, other);
   builder.MoveRegister(reg, wide);
-
-  // Prototype info for classes.
-  builder.LoadPrototypeOrInitialMap();
 
   // Emit global load / store operations.
   Factory* factory = isolate()->factory();
@@ -166,7 +162,11 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
   BytecodeLabel start;
   builder.Bind(&start);
   // Short jumps with Imm8 operands
-  builder.Jump(&start).JumpIfNull(&start).JumpIfUndefined(&start);
+  builder.Jump(&start)
+      .JumpIfNull(&start)
+      .JumpIfUndefined(&start)
+      .JumpIfHole(&start)
+      .JumpIfNotHole(&start);
   // Perform an operation that returns boolean value to
   // generate JumpIfTrue/False
   builder.CompareOperation(Token::Value::EQ, reg, Strength::WEAK)

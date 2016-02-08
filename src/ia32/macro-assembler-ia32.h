@@ -356,6 +356,8 @@ class MacroAssembler: public Assembler {
   void Cvtsi2sd(XMMRegister dst, Register src) { Cvtsi2sd(dst, Operand(src)); }
   void Cvtsi2sd(XMMRegister dst, const Operand& src);
 
+  void Cvtui2ss(XMMRegister dst, Register src, Register tmp);
+
   // Support for constant splitting.
   bool IsUnsafeImmediate(const Immediate& x);
   void SafeMove(Register dst, const Immediate& x);
@@ -788,6 +790,7 @@ class MacroAssembler: public Assembler {
   // Move an immediate into an XMM register.
   void Move(XMMRegister dst, uint32_t src);
   void Move(XMMRegister dst, uint64_t src);
+  void Move(XMMRegister dst, float src) { Move(dst, bit_cast<uint32_t>(src)); }
   void Move(XMMRegister dst, double src) { Move(dst, bit_cast<uint64_t>(src)); }
 
   void Move(Register dst, Smi* source) { Move(dst, Immediate(source)); }

@@ -108,6 +108,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kArm64Float64ToFloat32:
     case kArm64Float32ToInt32:
     case kArm64Float64ToInt32:
+    case kArm64Float32ToUint32:
     case kArm64Float64ToUint32:
     case kArm64Float32ToInt64:
     case kArm64Float64ToInt64:
@@ -117,6 +118,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kArm64Int32ToFloat64:
     case kArm64Int64ToFloat32:
     case kArm64Int64ToFloat64:
+    case kArm64Uint32ToFloat32:
     case kArm64Uint32ToFloat64:
     case kArm64Uint64ToFloat32:
     case kArm64Uint64ToFloat64:

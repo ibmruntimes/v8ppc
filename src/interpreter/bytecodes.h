@@ -142,9 +142,6 @@ namespace interpreter {
   V(KeyedStoreICStrictWide, OperandType::kReg8, OperandType::kReg8,            \
     OperandType::kIdx16)                                                       \
                                                                                \
-  /* Class information */                                                      \
-  V(LdaInitialMap, OperandType::kNone)                                         \
-                                                                               \
   /* Binary Operators */                                                       \
   V(Add, OperandType::kReg8)                                                   \
   V(Sub, OperandType::kReg8)                                                   \
@@ -228,7 +225,7 @@ namespace interpreter {
   /* Arguments allocation */                                                   \
   V(CreateMappedArguments, OperandType::kNone)                                 \
   V(CreateUnmappedArguments, OperandType::kNone)                               \
-  V(CreateRestArguments, OperandType::kIdx8)                                   \
+  V(CreateRestParameter, OperandType::kNone)                                   \
                                                                                \
   /* Control Flow */                                                           \
   V(Jump, OperandType::kImm8)                                                  \
@@ -252,6 +249,9 @@ namespace interpreter {
   V(JumpIfUndefined, OperandType::kImm8)                                       \
   V(JumpIfUndefinedConstant, OperandType::kIdx8)                               \
   V(JumpIfUndefinedConstantWide, OperandType::kIdx16)                          \
+  /* TODO(mythria): Replace with opcodes that throw on a hole */               \
+  V(JumpIfHole, OperandType::kImm8)                                            \
+  V(JumpIfNotHole, OperandType::kImm8)                                         \
                                                                                \
   /* Complex flow control For..in */                                           \
   V(ForInPrepare, OperandType::kRegOutTriple8)                                 \

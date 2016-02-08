@@ -398,10 +398,20 @@ void InstructionSelector::VisitStore(Node* node) {
   // TODO(arm64): I guess this could be done in a better way.
   if (write_barrier_kind != kNoWriteBarrier) {
     DCHECK_EQ(MachineRepresentation::kTagged, rep);
+    AddressingMode addressing_mode;
     InstructionOperand inputs[3];
     size_t input_count = 0;
     inputs[input_count++] = g.UseUniqueRegister(base);
-    inputs[input_count++] = g.UseUniqueRegister(index);
+    // OutOfLineRecordWrite uses the index in an arithmetic instruction, so we
+    // must check kArithmeticImm as well as kLoadStoreImm64.
+    if (g.CanBeImmediate(index, kArithmeticImm) &&
+        g.CanBeImmediate(index, kLoadStoreImm64)) {
+      inputs[input_count++] = g.UseImmediate(index);
+      addressing_mode = kMode_MRI;
+    } else {
+      inputs[input_count++] = g.UseUniqueRegister(index);
+      addressing_mode = kMode_MRR;
+    }
     inputs[input_count++] = (write_barrier_kind == kMapWriteBarrier)
                                 ? g.UseRegister(value)
                                 : g.UseUniqueRegister(value);
@@ -423,6 +433,7 @@ void InstructionSelector::VisitStore(Node* node) {
     InstructionOperand temps[] = {g.TempRegister(), g.TempRegister()};
     size_t const temp_count = arraysize(temps);
     InstructionCode code = kArchStoreWithWriteBarrier;
+    code |= AddressingModeField::encode(addressing_mode);
     code |= MiscField::encode(static_cast<int>(record_write_mode));
     Emit(code, 0, nullptr, input_count, inputs, temp_count, temps);
   } else {
@@ -1224,6 +1235,11 @@ void InstructionSelector::VisitRoundInt32ToFloat32(Node* node) {
 }
 
 
+void InstructionSelector::VisitRoundUint32ToFloat32(Node* node) {
+  VisitRR(this, kArm64Uint32ToFloat32, node);
+}
+
+
 void InstructionSelector::VisitChangeInt32ToFloat64(Node* node) {
   VisitRR(this, kArm64Int32ToFloat64, node);
 }
@@ -1241,6 +1257,11 @@ void InstructionSelector::VisitTruncateFloat32ToInt32(Node* node) {
 
 void InstructionSelector::VisitChangeFloat64ToInt32(Node* node) {
   VisitRR(this, kArm64Float64ToInt32, node);
+}
+
+
+void InstructionSelector::VisitTruncateFloat32ToUint32(Node* node) {
+  VisitRR(this, kArm64Float32ToUint32, node);
 }
 
 

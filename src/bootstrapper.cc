@@ -955,7 +955,6 @@ Handle<JSGlobalObject> Genesis::CreateNewGlobals(
   }
 
   js_global_object_function->initial_map()->set_is_prototype_map(true);
-  js_global_object_function->initial_map()->set_is_hidden_prototype();
   js_global_object_function->initial_map()->set_dictionary_map(true);
   Handle<JSGlobalObject> global_object =
       factory()->NewJSGlobalObject(js_global_object_function);
@@ -976,10 +975,10 @@ Handle<JSGlobalObject> Genesis::CreateNewGlobals(
         isolate(), global_constructor, factory()->the_hole_value(),
         ApiNatives::GlobalProxyType);
   }
-
   Handle<String> global_name = factory()->global_string();
   global_proxy_function->shared()->set_instance_class_name(*global_name);
   global_proxy_function->initial_map()->set_is_access_check_needed(true);
+  global_proxy_function->initial_map()->set_has_hidden_prototype(true);
 
   // Set global_proxy.__proto__ to js_global after ConfigureGlobalObjects
   // Return the global proxy.
@@ -1575,7 +1574,7 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
 
   {  // -- I t e r a t o r R e s u l t
     Handle<Map> map =
-        factory->NewMap(JS_ITERATOR_RESULT_TYPE, JSIteratorResult::kSize);
+        factory->NewMap(JS_OBJECT_TYPE, JSIteratorResult::kSize);
     Map::SetPrototype(map, isolate->initial_object_prototype());
     Map::EnsureDescriptorSlack(map, 2);
 
@@ -1591,6 +1590,7 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
       map->AppendDescriptor(&d);
     }
 
+    map->SetConstructor(native_context()->object_function());
     map->SetInObjectProperties(2);
     native_context()->set_iterator_result_map(*map);
   }
@@ -2673,10 +2673,11 @@ bool Genesis::InstallNatives(GlobalContextType context_type) {
 
   if (!CallUtilsFunction(isolate(), "PostNatives")) return false;
 
-  auto function_cache =
+  auto template_instantiations_cache =
       ObjectHashTable::New(isolate(), ApiNatives::kInitialFunctionCacheSize,
                            USE_CUSTOM_MINIMUM_CAPACITY);
-  native_context()->set_function_cache(*function_cache);
+  native_context()->set_template_instantiations_cache(
+      *template_instantiations_cache);
 
   // Store the map for the %ObjectPrototype% after the natives has been compiled
   // and the Object function has been set up.
@@ -2788,6 +2789,7 @@ bool Genesis::InstallNatives(GlobalContextType context_type) {
     }
 
     Map::SetPrototype(map, isolate()->initial_object_prototype());
+    map->SetConstructor(native_context()->object_function());
     map->SetInObjectProperties(4);
     map->set_unused_property_fields(0);
 
@@ -2830,6 +2832,7 @@ bool Genesis::InstallNatives(GlobalContextType context_type) {
     }
 
     Map::SetPrototype(map, isolate()->initial_object_prototype());
+    map->SetConstructor(native_context()->object_function());
     map->SetInObjectProperties(4);
     map->set_unused_property_fields(0);
 

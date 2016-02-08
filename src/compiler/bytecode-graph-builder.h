@@ -41,7 +41,6 @@ class BytecodeGraphBuilder {
   Node* GetNewTarget();
 
   // Builder for accessing a (potentially immutable) object field.
-  Node* BuildLoadObjectField(Node* object, int offset);
   Node* BuildLoadImmutableObjectField(Node* object, int offset);
 
   // Builder for accessing type feedback vector.
@@ -121,7 +120,7 @@ class BytecodeGraphBuilder {
   void BuildCreateRegExpLiteral();
   void BuildCreateArrayLiteral();
   void BuildCreateObjectLiteral();
-  void BuildCreateArguments(CreateArgumentsParameters::Type type, int index);
+  void BuildCreateArguments(CreateArgumentsType type);
   void BuildLoadGlobal(TypeofMode typeof_mode);
   void BuildStoreGlobal();
   void BuildNamedLoad();

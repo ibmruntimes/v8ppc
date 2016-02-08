@@ -459,6 +459,9 @@ class RawMachineAssembler {
   Node* TruncateFloat32ToInt32(Node* a) {
     return AddNode(machine()->TruncateFloat32ToInt32(), a);
   }
+  Node* TruncateFloat32ToUint32(Node* a) {
+    return AddNode(machine()->TruncateFloat32ToUint32(), a);
+  }
   Node* TryTruncateFloat32ToInt64(Node* a) {
     return AddNode(machine()->TryTruncateFloat32ToInt64(), a);
   }
@@ -504,6 +507,9 @@ class RawMachineAssembler {
   }
   Node* RoundInt64ToFloat64(Node* a) {
     return AddNode(machine()->RoundInt64ToFloat64(), a);
+  }
+  Node* RoundUint32ToFloat32(Node* a) {
+    return AddNode(machine()->RoundUint32ToFloat32(), a);
   }
   Node* RoundUint64ToFloat32(Node* a) {
     return AddNode(machine()->RoundUint64ToFloat32(), a);

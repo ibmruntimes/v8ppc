@@ -966,6 +966,15 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ Cvttss2si(i.OutputRegister(), i.InputOperand(0));
       }
       break;
+    case kSSEFloat32ToUint32: {
+      if (instr->InputAt(0)->IsDoubleRegister()) {
+        __ Cvttss2siq(i.OutputRegister(), i.InputDoubleRegister(0));
+      } else {
+        __ Cvttss2siq(i.OutputRegister(), i.InputOperand(0));
+      }
+      __ AssertZeroExtended(i.OutputRegister());
+      break;
+    }
     case kSSEFloat64Cmp:
       ASSEMBLE_SSE_BINOP(Ucomisd);
       break;
@@ -1262,6 +1271,14 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ movl(kScratchRegister, i.InputOperand(0));
       }
       __ Cvtqsi2sd(i.OutputDoubleRegister(), kScratchRegister);
+      break;
+    case kSSEUint32ToFloat32:
+      if (instr->InputAt(0)->IsRegister()) {
+        __ movl(kScratchRegister, i.InputRegister(0));
+      } else {
+        __ movl(kScratchRegister, i.InputOperand(0));
+      }
+      __ Cvtqsi2ss(i.OutputDoubleRegister(), kScratchRegister);
       break;
     case kSSEFloat64ExtractLowWord32:
       if (instr->InputAt(0)->IsDoubleStackSlot()) {

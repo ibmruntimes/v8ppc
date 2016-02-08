@@ -488,12 +488,6 @@ Node* BytecodeGraphBuilder::GetFunctionClosure() {
 }
 
 
-Node* BytecodeGraphBuilder::BuildLoadObjectField(Node* object, int offset) {
-  return NewNode(jsgraph()->machine()->Load(MachineType::AnyTagged()), object,
-                 jsgraph()->IntPtrConstant(offset - kHeapObjectTag));
-}
-
-
 Node* BytecodeGraphBuilder::BuildLoadImmutableObjectField(Node* object,
                                                           int offset) {
   return graph()->NewNode(jsgraph()->machine()->Load(MachineType::AnyTagged()),
@@ -963,13 +957,6 @@ void BytecodeGraphBuilder::VisitKeyedStoreICStrictWide() {
   BuildKeyedStore();
 }
 
-void BytecodeGraphBuilder::VisitLdaInitialMap() {
-  Node* js_function = environment()->LookupAccumulator();
-  Node* load = BuildLoadObjectField(js_function,
-                                    JSFunction::kPrototypeOrInitialMapOffset);
-  environment()->BindAccumulator(load);
-}
-
 void BytecodeGraphBuilder::VisitPushContext() {
   Node* new_context = environment()->LookupAccumulator();
   environment()->BindRegister(bytecode_iterator().GetRegisterOperand(0),
@@ -995,26 +982,23 @@ void BytecodeGraphBuilder::VisitCreateClosure() {
 
 void BytecodeGraphBuilder::VisitCreateClosureWide() { VisitCreateClosure(); }
 
-void BytecodeGraphBuilder::BuildCreateArguments(
-    CreateArgumentsParameters::Type type, int rest_index) {
+void BytecodeGraphBuilder::BuildCreateArguments(CreateArgumentsType type) {
   FrameStateBeforeAndAfter states(this);
-  const Operator* op = javascript()->CreateArguments(type, rest_index);
+  const Operator* op = javascript()->CreateArguments(type);
   Node* object = NewNode(op, GetFunctionClosure());
   environment()->BindAccumulator(object, &states);
 }
 
 void BytecodeGraphBuilder::VisitCreateMappedArguments() {
-  BuildCreateArguments(CreateArgumentsParameters::kMappedArguments, 0);
+  BuildCreateArguments(CreateArgumentsType::kMappedArguments);
 }
 
 void BytecodeGraphBuilder::VisitCreateUnmappedArguments() {
-  BuildCreateArguments(CreateArgumentsParameters::kUnmappedArguments, 0);
+  BuildCreateArguments(CreateArgumentsType::kUnmappedArguments);
 }
 
-void BytecodeGraphBuilder::VisitCreateRestArguments() {
-  int index =
-      Smi::cast(*bytecode_iterator().GetConstantForIndexOperand(0))->value();
-  BuildCreateArguments(CreateArgumentsParameters::kRestArray, index);
+void BytecodeGraphBuilder::VisitCreateRestParameter() {
+  BuildCreateArguments(CreateArgumentsType::kRestParameter);
 }
 
 void BytecodeGraphBuilder::BuildCreateLiteral(const Operator* op) {
@@ -1511,6 +1495,20 @@ void BytecodeGraphBuilder::VisitJumpIfUndefinedConstant() {
 
 void BytecodeGraphBuilder::VisitJumpIfUndefinedConstantWide() {
   BuildJumpIfEqual(jsgraph()->UndefinedConstant());
+}
+
+void BytecodeGraphBuilder::VisitJumpIfHole() {
+  BuildJumpIfEqual(jsgraph()->TheHoleConstant());
+}
+
+void BytecodeGraphBuilder::VisitJumpIfNotHole() {
+  Node* accumulator = environment()->LookupAccumulator();
+  Node* condition = NewNode(javascript()->StrictEqual(), accumulator,
+                            jsgraph()->TheHoleConstant());
+  Node* node =
+      NewNode(common()->Select(MachineRepresentation::kTagged), condition,
+              jsgraph()->FalseConstant(), jsgraph()->TrueConstant());
+  BuildConditionalJump(node);
 }
 
 void BytecodeGraphBuilder::VisitStackCheck() {

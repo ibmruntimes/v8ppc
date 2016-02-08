@@ -332,11 +332,6 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadBooleanConstant(bool value) {
   return *this;
 }
 
-BytecodeArrayBuilder& BytecodeArrayBuilder::LoadPrototypeOrInitialMap() {
-  Output(Bytecode::kLdaInitialMap);
-  return *this;
-}
-
 BytecodeArrayBuilder& BytecodeArrayBuilder::LoadAccumulatorWithRegister(
     Register reg) {
   if (!IsRegisterInAccumulator(reg)) {
@@ -589,16 +584,6 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::CreateArguments(
   return *this;
 }
 
-BytecodeArrayBuilder& BytecodeArrayBuilder::CreateRestArguments(int index) {
-  size_t index_entry =
-      GetConstantPoolEntry(Handle<Object>(Smi::FromInt(index), isolate_));
-  // This will always be the first entry in the constant pool, since the rest
-  // arguments object is created at the start of the function just after
-  // creating the arguments object.
-  CHECK(FitsInIdx8Operand(index_entry));
-  Output(Bytecode::kCreateRestArguments, static_cast<uint8_t>(index_entry));
-  return *this;
-}
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::CreateRegExpLiteral(
     Handle<String> pattern, int literal_index, int flags) {
@@ -817,6 +802,8 @@ Bytecode BytecodeArrayBuilder::GetJumpWithToBoolean(Bytecode jump_bytecode) {
     case Bytecode::kJump:
     case Bytecode::kJumpIfNull:
     case Bytecode::kJumpIfUndefined:
+    case Bytecode::kJumpIfHole:
+    case Bytecode::kJumpIfNotHole:
       return jump_bytecode;
     case Bytecode::kJumpIfTrue:
       return Bytecode::kJumpIfToBooleanTrue;
@@ -980,6 +967,15 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfUndefined(
 BytecodeArrayBuilder& BytecodeArrayBuilder::StackCheck() {
   Output(Bytecode::kStackCheck);
   return *this;
+}
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfHole(BytecodeLabel* label) {
+  return OutputJump(Bytecode::kJumpIfHole, label);
+}
+
+BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfNotHole(
+    BytecodeLabel* label) {
+  return OutputJump(Bytecode::kJumpIfNotHole, label);
 }
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::Throw() {
@@ -1617,7 +1613,6 @@ Bytecode BytecodeArrayBuilder::BytecodeForStoreLookupSlot(
   return static_cast<Bytecode>(-1);
 }
 
-
 // static
 Bytecode BytecodeArrayBuilder::BytecodeForCreateArguments(
     CreateArgumentsType type) {
@@ -1626,9 +1621,10 @@ Bytecode BytecodeArrayBuilder::BytecodeForCreateArguments(
       return Bytecode::kCreateMappedArguments;
     case CreateArgumentsType::kUnmappedArguments:
       return Bytecode::kCreateUnmappedArguments;
-    default:
-      UNREACHABLE();
+    case CreateArgumentsType::kRestParameter:
+      return Bytecode::kCreateRestParameter;
   }
+  UNREACHABLE();
   return static_cast<Bytecode>(-1);
 }
 

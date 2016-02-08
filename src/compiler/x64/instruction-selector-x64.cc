@@ -864,6 +864,12 @@ void InstructionSelector::VisitTruncateFloat32ToInt32(Node* node) {
 }
 
 
+void InstructionSelector::VisitTruncateFloat32ToUint32(Node* node) {
+  X64OperandGenerator g(this);
+  Emit(kSSEFloat32ToUint32, g.DefineAsRegister(node), g.Use(node->InputAt(0)));
+}
+
+
 void InstructionSelector::VisitTryTruncateFloat32ToInt64(Node* node) {
   X64OperandGenerator g(this);
   InstructionOperand inputs[] = {g.UseRegister(node->InputAt(0))};
@@ -1068,6 +1074,12 @@ void InstructionSelector::VisitRoundInt64ToFloat32(Node* node) {
 void InstructionSelector::VisitRoundInt64ToFloat64(Node* node) {
   X64OperandGenerator g(this);
   Emit(kSSEInt64ToFloat64, g.DefineAsRegister(node), g.Use(node->InputAt(0)));
+}
+
+
+void InstructionSelector::VisitRoundUint32ToFloat32(Node* node) {
+  X64OperandGenerator g(this);
+  Emit(kSSEUint32ToFloat32, g.DefineAsRegister(node), g.Use(node->InputAt(0)));
 }
 
 

@@ -1737,16 +1737,6 @@ Handle<JSSetIterator> Factory::NewJSSetIterator() {
 }
 
 
-Handle<JSIteratorResult> Factory::NewJSIteratorResult(Handle<Object> value,
-                                                      Handle<Object> done) {
-  Handle<JSIteratorResult> result = Handle<JSIteratorResult>::cast(
-      NewJSObjectFromMap(isolate()->iterator_result_map()));
-  result->set_value(*value);
-  result->set_done(*done);
-  return result;
-}
-
-
 namespace {
 
 ElementsKind GetExternalArrayElementsKind(ExternalArrayType type) {
@@ -1966,9 +1956,9 @@ MaybeHandle<JSBoundFunction> Factory::NewJSBoundFunction(
 
   // Determine the prototype of the {target_function}.
   Handle<Object> prototype;
-  ASSIGN_RETURN_ON_EXCEPTION(isolate(), prototype,
-                             Object::GetPrototype(isolate(), target_function),
-                             JSBoundFunction);
+  ASSIGN_RETURN_ON_EXCEPTION(
+      isolate(), prototype,
+      JSReceiver::GetPrototype(isolate(), target_function), JSBoundFunction);
 
   // Create the [[BoundArguments]] for the result.
   Handle<FixedArray> bound_arguments;

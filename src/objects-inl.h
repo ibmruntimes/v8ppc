@@ -710,7 +710,6 @@ TYPE_CHECKER(JSSet, JS_SET_TYPE)
 TYPE_CHECKER(JSMap, JS_MAP_TYPE)
 TYPE_CHECKER(JSSetIterator, JS_SET_ITERATOR_TYPE)
 TYPE_CHECKER(JSMapIterator, JS_MAP_ITERATOR_TYPE)
-TYPE_CHECKER(JSIteratorResult, JS_ITERATOR_RESULT_TYPE)
 TYPE_CHECKER(JSWeakMap, JS_WEAK_MAP_TYPE)
 TYPE_CHECKER(JSWeakSet, JS_WEAK_SET_TYPE)
 TYPE_CHECKER(JSContextExtensionObject, JS_CONTEXT_EXTENSION_OBJECT_TYPE)
@@ -1187,16 +1186,16 @@ MaybeHandle<Object> Object::SetElement(Isolate* isolate, Handle<Object> object,
   return value;
 }
 
-
-MaybeHandle<Object> Object::GetPrototype(Isolate* isolate,
-                                         Handle<Object> receiver) {
+MaybeHandle<Object> JSReceiver::GetPrototype(Isolate* isolate,
+                                             Handle<JSReceiver> receiver) {
   // We don't expect access checks to be needed on JSProxy objects.
   DCHECK(!receiver->IsAccessCheckNeeded() || receiver->IsJSObject());
   PrototypeIterator iter(isolate, receiver,
-                         PrototypeIterator::START_AT_RECEIVER);
+                         PrototypeIterator::START_AT_RECEIVER,
+                         PrototypeIterator::END_AT_NON_HIDDEN);
   do {
     if (!iter.AdvanceFollowingProxies()) return MaybeHandle<Object>();
-  } while (!iter.IsAtEnd(PrototypeIterator::END_AT_NON_HIDDEN));
+  } while (!iter.IsAtEnd());
   return PrototypeIterator::GetCurrent(iter);
 }
 
@@ -2112,8 +2111,6 @@ int JSObject::GetHeaderSize(InstanceType type) {
       return JSSetIterator::kSize;
     case JS_MAP_ITERATOR_TYPE:
       return JSMapIterator::kSize;
-    case JS_ITERATOR_RESULT_TYPE:
-      return JSIteratorResult::kSize;
     case JS_WEAK_MAP_TYPE:
       return JSWeakMap::kSize;
     case JS_WEAK_SET_TYPE:
@@ -2375,7 +2372,8 @@ void FixedArray::set(int index, Smi* value) {
 void FixedArray::set(int index, Object* value) {
   DCHECK_NE(GetHeap()->fixed_cow_array_map(), map());
   DCHECK(IsFixedArray());
-  DCHECK(index >= 0 && index < this->length());
+  DCHECK_GE(index, 0);
+  DCHECK_LT(index, this->length());
   int offset = kHeaderSize + index * kPointerSize;
   WRITE_FIELD(this, offset, value);
   WRITE_BARRIER(GetHeap(), this, offset, value);
@@ -3216,7 +3214,6 @@ CAST_ACCESSOR(JSReceiver)
 CAST_ACCESSOR(JSRegExp)
 CAST_ACCESSOR(JSSet)
 CAST_ACCESSOR(JSSetIterator)
-CAST_ACCESSOR(JSIteratorResult)
 CAST_ACCESSOR(JSTypedArray)
 CAST_ACCESSOR(JSValue)
 CAST_ACCESSOR(JSWeakMap)
@@ -4486,14 +4483,12 @@ bool Map::is_constructor() const {
   return ((1 << kIsConstructor) & bit_field()) != 0;
 }
 
-
-void Map::set_is_hidden_prototype() {
-  set_bit_field3(IsHiddenPrototype::update(bit_field3(), true));
+void Map::set_has_hidden_prototype(bool value) {
+  set_bit_field3(HasHiddenPrototype::update(bit_field3(), value));
 }
 
-
-bool Map::is_hidden_prototype() const {
-  return IsHiddenPrototype::decode(bit_field3());
+bool Map::has_hidden_prototype() const {
+  return HasHiddenPrototype::decode(bit_field3());
 }
 
 
@@ -5536,11 +5531,11 @@ ACCESSORS(CallHandlerInfo, data, Object, kDataOffset)
 ACCESSORS(CallHandlerInfo, fast_handler, Object, kFastHandlerOffset)
 
 ACCESSORS(TemplateInfo, tag, Object, kTagOffset)
+ACCESSORS(TemplateInfo, serial_number, Object, kSerialNumberOffset)
 SMI_ACCESSORS(TemplateInfo, number_of_properties, kNumberOfProperties)
 ACCESSORS(TemplateInfo, property_list, Object, kPropertyListOffset)
 ACCESSORS(TemplateInfo, property_accessors, Object, kPropertyAccessorsOffset)
 
-ACCESSORS(FunctionTemplateInfo, serial_number, Object, kSerialNumberOffset)
 ACCESSORS(FunctionTemplateInfo, call_code, Object, kCallCodeOffset)
 ACCESSORS(FunctionTemplateInfo, prototype_template, Object,
           kPrototypeTemplateOffset)
@@ -7790,10 +7785,6 @@ Object* JSMapIterator::CurrentValue() {
   DCHECK(!value->IsTheHole());
   return value;
 }
-
-
-ACCESSORS(JSIteratorResult, done, Object, kDoneOffset)
-ACCESSORS(JSIteratorResult, value, Object, kValueOffset)
 
 
 String::SubStringRange::SubStringRange(String* string, int first, int length)
