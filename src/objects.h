@@ -2983,9 +2983,9 @@ class DescriptorArray: public FixedArray {
 
   // Allocates a DescriptorArray, but returns the singleton
   // empty descriptor array object if number_of_descriptors is 0.
-  static Handle<DescriptorArray> Allocate(Isolate* isolate,
-                                          int number_of_descriptors,
-                                          int slack = 0);
+  static Handle<DescriptorArray> Allocate(
+      Isolate* isolate, int number_of_descriptors, int slack,
+      PretenureFlag pretenure = NOT_TENURED);
 
   DECLARE_CAST(DescriptorArray)
 
@@ -10382,7 +10382,8 @@ class AccessorPair: public Struct {
   inline void set(AccessorComponent component, Object* value);
 
   // Note: Returns undefined instead in case of a hole.
-  Object* GetComponent(AccessorComponent component);
+  static Handle<Object> GetComponent(Handle<AccessorPair> accessor_pair,
+                                     AccessorComponent component);
 
   // Set both components, skipping arguments which are a JavaScript null.
   inline void SetComponents(Object* getter, Object* setter);

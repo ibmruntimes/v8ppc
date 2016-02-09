@@ -300,8 +300,10 @@ function NAMESubArray(begin, end) {
   var newLength = endInt - beginInt;
   var beginByteOffset =
       %_ArrayBufferViewGetByteOffset(this) + beginInt * ELEMENT_SIZE;
-  return TypedArraySpeciesCreate(this, %TypedArrayGetBuffer(this),
-                                 beginByteOffset, newLength, true);
+  // BUG(v8:4665): For web compatibility, subarray needs to always build an
+  // instance of the default constructor.
+  // TODO(littledan): Switch to the standard or standardize the fix
+  return new GlobalNAME(%TypedArrayGetBuffer(this), beginByteOffset, newLength);
 }
 endmacro
 
@@ -565,22 +567,20 @@ function TypedArrayReverse() {
 
 
 function TypedArrayComparefn(x, y) {
-  if (IsNaN(x) && IsNaN(y)) {
-    return IsNaN(y) ? 0 : 1;
+  if (x === 0 && x === y) {
+    x = 1 / x;
+    y = 1 / y;
   }
-  if (IsNaN(x)) {
+  if (x < y) {
+    return -1;
+  } else if (x > y) {
+    return 1;
+  } else if (IsNaN(x) && IsNaN(y)) {
+    return IsNaN(y) ? 0 : 1;
+  } else if (IsNaN(x)) {
     return 1;
   }
-  if (x === 0 && x === y) {
-    if (%_IsMinusZero(x)) {
-      if (!%_IsMinusZero(y)) {
-        return -1;
-      }
-    } else if (%_IsMinusZero(y)) {
-      return 1;
-    }
-  }
-  return x - y;
+  return 0;
 }
 
 
