@@ -771,6 +771,9 @@ RelocIterator::RelocIterator(const CodeDesc& desc, int mode_mask)
 // -----------------------------------------------------------------------------
 // Implementation of RelocInfo
 
+bool RelocInfo::IsPatchedDebugBreakSlotSequence() {
+  return DebugCodegen::DebugBreakSlotIsPatched(pc_);
+}
 
 #ifdef DEBUG
 bool RelocInfo::RequiresRelocation(const CodeDesc& desc) {
@@ -1267,12 +1270,6 @@ ExternalReference ExternalReference::new_space_start(Isolate* isolate) {
 
 ExternalReference ExternalReference::store_buffer_top(Isolate* isolate) {
   return ExternalReference(isolate->heap()->store_buffer_top_address());
-}
-
-
-ExternalReference ExternalReference::new_space_mask(Isolate* isolate) {
-  return ExternalReference(reinterpret_cast<Address>(
-      isolate->heap()->NewSpaceMask()));
 }
 
 

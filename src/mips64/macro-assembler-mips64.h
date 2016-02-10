@@ -391,7 +391,7 @@ class MacroAssembler: public Assembler {
   void JumpIfNotInNewSpace(Register object,
                            Register scratch,
                            Label* branch) {
-    InNewSpace(object, scratch, ne, branch);
+    InNewSpace(object, scratch, eq, branch);
   }
 
   // Check if object is in new space.  Jumps if the object is in new space.
@@ -399,7 +399,7 @@ class MacroAssembler: public Assembler {
   void JumpIfInNewSpace(Register object,
                         Register scratch,
                         Label* branch) {
-    InNewSpace(object, scratch, eq, branch);
+    InNewSpace(object, scratch, ne, branch);
   }
 
   // Check if an object has a given incremental marking color.
@@ -1132,6 +1132,11 @@ class MacroAssembler: public Assembler {
                      Register map,
                      Register type_reg);
 
+  void GetInstanceType(Register object_map, Register object_instance_type) {
+    lbu(object_instance_type,
+        FieldMemOperand(object_map, Map::kInstanceTypeOffset));
+  }
+
   // Check if a map for a JSObject indicates that the object has fast elements.
   // Jump to the specified label if it does not.
   void CheckFastElements(Register map,
@@ -1843,9 +1848,8 @@ const Operand& rt = Operand(zero_reg), BranchDelaySlot bd = PROTECT
                            Register scratch2);
 
   // Helper for implementing JumpIfNotInNewSpace and JumpIfInNewSpace.
-  void InNewSpace(Register object,
-                  Register scratch,
-                  Condition cond,  // eq for new space, ne otherwise.
+  void InNewSpace(Register object, Register scratch,
+                  Condition cond,  // ne for new space, eq otherwise.
                   Label* branch);
 
   // Helper for finding the mark bits for an address.  Afterwards, the

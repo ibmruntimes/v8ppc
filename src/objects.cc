@@ -413,10 +413,10 @@ bool Object::StrictEquals(Object* that) {
 // static
 Handle<String> Object::TypeOf(Isolate* isolate, Handle<Object> object) {
   if (object->IsNumber()) return isolate->factory()->number_string();
-  if (object->IsUndefined() || object->IsUndetectableObject()) {
+  if (object->IsOddball()) return handle(Oddball::cast(*object)->type_of());
+  if (object->IsUndetectableObject()) {
     return isolate->factory()->undefined_string();
   }
-  if (object->IsBoolean()) return isolate->factory()->boolean_string();
   if (object->IsString()) return isolate->factory()->string_string();
   if (object->IsSymbol()) return isolate->factory()->symbol_string();
   if (object->IsString()) return isolate->factory()->string_string();
@@ -8742,7 +8742,8 @@ static Maybe<bool> GetKeysFromJSObject(Isolate* isolate,
     bool cache_enum_length =
         ((object->map()->GetConstructor() != *arguments_function) &&
          !object->IsJSValue() && !object->IsAccessCheckNeeded() &&
-         !object->HasNamedInterceptor() && !object->HasIndexedInterceptor());
+         !object->HasNamedInterceptor() && !object->HasIndexedInterceptor() &&
+         !object->map()->has_hidden_prototype());
     // Compute the property keys and cache them if possible.
     Handle<FixedArray> enum_keys =
         JSObject::GetEnumPropertyKeys(object, cache_enum_length);
@@ -14498,8 +14499,13 @@ void Code::ClearInlineCaches(Code::Kind* kind) {
 }
 
 int AbstractCode::SourcePosition(int offset) {
-  if (IsBytecodeArray()) return GetBytecodeArray()->SourcePosition(offset);
-  return GetCode()->SourcePosition(offset);
+  return IsBytecodeArray() ? GetBytecodeArray()->SourcePosition(offset)
+                           : GetCode()->SourcePosition(offset);
+}
+
+int AbstractCode::SourceStatementPosition(int offset) {
+  return IsBytecodeArray() ? GetBytecodeArray()->SourceStatementPosition(offset)
+                           : GetCode()->SourceStatementPosition(offset);
 }
 
 void SharedFunctionInfo::ClearTypeFeedbackInfo() {
@@ -15194,8 +15200,32 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
 #endif  // ENABLE_DISASSEMBLER
 
 int BytecodeArray::SourcePosition(int offset) {
-  return interpreter::SourcePositionTableIterator::PositionFromBytecodeOffset(
-      this, offset);
+  int last_position = 0;
+  for (interpreter::SourcePositionTableIterator iterator(this);
+       !iterator.done() && iterator.bytecode_offset() <= offset;
+       iterator.Advance()) {
+    last_position = iterator.source_position();
+  }
+  return last_position;
+}
+
+int BytecodeArray::SourceStatementPosition(int offset) {
+  // First find the position as close as possible using all position
+  // information.
+  int position = SourcePosition(offset);
+  // Now find the closest statement position before the position.
+  int statement_position = 0;
+  interpreter::SourcePositionTableIterator iterator(this);
+  while (!iterator.done()) {
+    if (iterator.is_statement()) {
+      int p = iterator.source_position();
+      if (statement_position < p && p <= position) {
+        statement_position = p;
+      }
+    }
+    iterator.Advance();
+  }
+  return statement_position;
 }
 
 void BytecodeArray::Disassemble(std::ostream& os) {
@@ -15748,33 +15778,35 @@ Maybe<bool> JSProxy::SetPrototype(Handle<JSProxy> proxy, Handle<Object> value,
       Execution::Call(isolate, trap, handler, arraysize(argv), argv),
       Nothing<bool>());
   bool bool_trap_result = trap_result->BooleanValue();
-  // 9. Let extensibleTarget be ? IsExtensible(target).
+  // 9. If booleanTrapResult is false, return false.
+  if (!bool_trap_result) {
+    RETURN_FAILURE(
+        isolate, should_throw,
+        NewTypeError(MessageTemplate::kProxyTrapReturnedFalsish, trap_name));
+  }
+  // 10. Let extensibleTarget be ? IsExtensible(target).
   Maybe<bool> is_extensible = JSReceiver::IsExtensible(target);
   if (is_extensible.IsNothing()) return Nothing<bool>();
-  // 10. If extensibleTarget is true, return booleanTrapResult.
+  // 11. If extensibleTarget is true, return true.
   if (is_extensible.FromJust()) {
     if (bool_trap_result) return Just(true);
     RETURN_FAILURE(
         isolate, should_throw,
         NewTypeError(MessageTemplate::kProxyTrapReturnedFalsish, trap_name));
   }
-  // 11. Let targetProto be ? target.[[GetPrototypeOf]]().
+  // 12. Let targetProto be ? target.[[GetPrototypeOf]]().
   Handle<Object> target_proto;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, target_proto,
                                    JSReceiver::GetPrototype(isolate, target),
                                    Nothing<bool>());
-  // 12. If booleanTrapResult is true and SameValue(V, targetProto) is false,
-  // throw a TypeError exception.
+  // 13. If SameValue(V, targetProto) is false, throw a TypeError exception.
   if (bool_trap_result && !value->SameValue(*target_proto)) {
     isolate->Throw(*isolate->factory()->NewTypeError(
         MessageTemplate::kProxySetPrototypeOfNonExtensible));
     return Nothing<bool>();
   }
-  // 13. Return booleanTrapResult.
-  if (bool_trap_result) return Just(true);
-  RETURN_FAILURE(
-      isolate, should_throw,
-      NewTypeError(MessageTemplate::kProxyTrapReturnedFalsish, trap_name));
+  // 14. Return true.
+  return Just(true);
 }
 
 

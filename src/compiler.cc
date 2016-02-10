@@ -279,9 +279,12 @@ void CompilationInfo::LogDeoptCallPosition(int pc_offset, int inlining_id) {
 
 
 base::SmartArrayPointer<char> CompilationInfo::GetDebugName() const {
-  if (parse_info()) {
+  if (parse_info() && parse_info()->literal()) {
     AllowHandleDereference allow_deref;
     return parse_info()->literal()->debug_name()->ToCString();
+  }
+  if (parse_info() && !parse_info()->shared_info().is_null()) {
+    return parse_info()->shared_info()->DebugName()->ToCString();
   }
   const char* str = debug_name_ ? debug_name_ : "unknown";
   size_t len = strlen(str) + 1;
@@ -1021,7 +1024,7 @@ MaybeHandle<Code> Compiler::GetLazyCode(Handle<JSFunction> function) {
     VMState<COMPILER> state(isolate);
     PostponeInterruptsScope postpone(isolate);
 
-    info.SetOptimizing(BailoutId::None(), handle(function->shared()->code()));
+    info.SetOptimizing();
 
     if (GetOptimizedCodeNow(&info)) {
       DCHECK(function->shared()->is_compiled());
@@ -1768,7 +1771,7 @@ MaybeHandle<Code> Compiler::GetOptimizedCode(Handle<JSFunction> function,
   DCHECK(!isolate->has_pending_exception());
   PostponeInterruptsScope postpone(isolate);
 
-  info->SetOptimizing(osr_ast_id, current_code);
+  info->SetOptimizingForOsr(osr_ast_id, current_code);
 
   if (mode == CONCURRENT) {
     if (GetOptimizedCodeLater(info.get())) {

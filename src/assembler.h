@@ -618,13 +618,9 @@ class RelocInfo {
   template<typename StaticVisitor> inline void Visit(Heap* heap);
   inline void Visit(Isolate* isolate, ObjectVisitor* v);
 
-  // Check whether this return sequence has been patched
-  // with a call to the debugger.
-  INLINE(bool IsPatchedReturnSequence());
-
   // Check whether this debug break slot has been patched with a call to the
   // debugger.
-  INLINE(bool IsPatchedDebugBreakSlotSequence());
+  bool IsPatchedDebugBreakSlotSequence();
 
 #ifdef DEBUG
   // Check whether the given code contains relocation information that
@@ -958,7 +954,6 @@ class ExternalReference BASE_EMBEDDED {
 
   // Static variable Heap::NewSpaceStart()
   static ExternalReference new_space_start(Isolate* isolate);
-  static ExternalReference new_space_mask(Isolate* isolate);
 
   // Write barrier.
   static ExternalReference store_buffer_top(Isolate* isolate);
