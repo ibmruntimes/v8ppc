@@ -260,18 +260,37 @@ bool Bytecodes::IsJump(Bytecode bytecode) {
 
 
 // static
+bool Bytecodes::IsCallOrNew(Bytecode bytecode) {
+  return bytecode == Bytecode::kCall || bytecode == Bytecode::kNew ||
+         bytecode == Bytecode::kCallWide || bytecode == Bytecode::kNewWide;
+}
+
+// static
 bool Bytecodes::IsJumpOrReturn(Bytecode bytecode) {
   return bytecode == Bytecode::kReturn || IsJump(bytecode);
 }
 
-bool Bytecodes::IsMaybeRegisterOperandType(OperandType operand_type) {
-  return (operand_type == OperandType::kMaybeReg8 ||
-          operand_type == OperandType::kMaybeReg16);
+// static
+bool Bytecodes::IsIndexOperandType(OperandType operand_type) {
+  return operand_type == OperandType::kIdx8 ||
+         operand_type == OperandType::kIdx16;
 }
 
+// static
+bool Bytecodes::IsImmediateOperandType(OperandType operand_type) {
+  return operand_type == OperandType::kImm8;
+}
+
+// static
 bool Bytecodes::IsRegisterCountOperandType(OperandType operand_type) {
   return (operand_type == OperandType::kRegCount8 ||
           operand_type == OperandType::kRegCount16);
+}
+
+// static
+bool Bytecodes::IsMaybeRegisterOperandType(OperandType operand_type) {
+  return (operand_type == OperandType::kMaybeReg8 ||
+          operand_type == OperandType::kMaybeReg16);
 }
 
 // static

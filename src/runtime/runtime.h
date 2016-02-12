@@ -453,7 +453,6 @@ namespace internal {
   F(ValueOf, 1, 1)                                   \
   F(SetValueOf, 2, 1)                                \
   F(JSValueGetValue, 1, 1)                           \
-  F(ObjectEquals, 2, 1)                              \
   F(IsJSReceiver, 1, 1)                              \
   F(IsStrong, 1, 1)                                  \
   F(ClassOf, 1, 1)                                   \
@@ -537,7 +536,6 @@ namespace internal {
   F(RegExpExecReThrow, 4, 1)                   \
   F(IsRegExp, 1, 1)
 
-
 #define FOR_EACH_INTRINSIC_SCOPES(F)       \
   F(ThrowConstAssignError, 0, 1)           \
   F(DeclareGlobals, 2, 1)                  \
@@ -546,10 +544,9 @@ namespace internal {
   F(DeclareLookupSlot, 3, 1)               \
   F(InitializeLegacyConstLookupSlot, 3, 1) \
   F(NewSloppyArguments_Generic, 1, 1)      \
-  F(NewStrictArguments_Generic, 1, 1)      \
-  F(NewRestParameter, 1, 1)        \
+  F(NewStrictArguments, 1, 1)              \
+  F(NewRestParameter, 1, 1)                \
   F(NewSloppyArguments, 3, 1)              \
-  F(NewStrictArguments, 3, 1)              \
   F(NewClosure, 1, 1)                      \
   F(NewClosure_Tenured, 1, 1)              \
   F(NewScriptContext, 2, 1)                \
@@ -560,11 +557,11 @@ namespace internal {
   F(IsJSModule, 1, 1)                      \
   F(PushModuleContext, 2, 1)               \
   F(DeclareModules, 1, 1)                  \
-  F(DeleteLookupSlot, 2, 1)                \
-  F(StoreLookupSlot, 4, 1)                 \
-  F(ArgumentsLength, 0, 1)                 \
-  F(Arguments, 1, 1)
-
+  F(DeleteLookupSlot, 1, 1)                \
+  F(LoadLookupSlot, 1, 1)                  \
+  F(LoadLookupSlotInsideTypeof, 1, 1)      \
+  F(StoreLookupSlot_Sloppy, 2, 1)          \
+  F(StoreLookupSlot_Strict, 2, 1)
 
 #define FOR_EACH_INTRINSIC_SIMD(F)     \
   F(IsSimdValue, 1, 1)                 \
@@ -918,7 +915,6 @@ namespace internal {
   F(SymbolRegistry, 0, 1)            \
   F(SymbolIsPrivate, 1, 1)
 
-
 #define FOR_EACH_INTRINSIC_TEST(F)            \
   F(DeoptimizeFunction, 1, 1)                 \
   F(DeoptimizeNow, 0, 1)                      \
@@ -946,6 +942,7 @@ namespace internal {
   F(DisassembleFunction, 1, 1)                \
   F(TraceEnter, 0, 1)                         \
   F(TraceExit, 1, 1)                          \
+  F(TraceTailCall, 0, 1)                      \
   F(HaveSameMap, 2, 1)                        \
   F(InNewSpace, 1, 1)                         \
   F(HasFastSmiElements, 1, 1)                 \
@@ -966,7 +963,6 @@ namespace internal {
   F(HasFixedFloat32Elements, 1, 1)            \
   F(HasFixedFloat64Elements, 1, 1)            \
   F(HasFixedUint8ClampedElements, 1, 1)
-
 
 #define FOR_EACH_INTRINSIC_TYPEDARRAY(F)     \
   F(ArrayBufferGetByteLength, 1, 1)          \
@@ -1008,10 +1004,8 @@ namespace internal {
   F(URIEscape, 1, 1)              \
   F(URIUnescape, 1, 1)
 
-
 #define FOR_EACH_INTRINSIC_RETURN_PAIR(F) \
-  F(LoadLookupSlot, 2, 2)                 \
-  F(LoadLookupSlotNoReferenceError, 2, 2)
+  F(LoadLookupSlotForCall, 1, 2)
 
 #define FOR_EACH_INTRINSIC_RETURN_TRIPLE(F) \
   F(ForInPrepare, 1, 3)
@@ -1187,26 +1181,6 @@ class Runtime : public AllStatic {
 };
 
 
-struct RuntimeCallStats {
-#define CALL_RUNTIME_COUNTER(name, nargs, ressize) \
-  uint32_t Count_Runtime_##name;                   \
-  base::TimeDelta Time_Runtime_##name;
-  FOR_EACH_INTRINSIC(CALL_RUNTIME_COUNTER)
-#undef CALL_RUNTIME_COUNTER
-
-  // Dummy counter for the unexpected stub miss.
-  uint32_t Count_UnexpectedStubMiss;
-  base::TimeDelta Time_UnexpectedStubMiss;
-
-  bool in_runtime_call = false;
-
-  void Reset();
-  void Print(std::ostream& os);
-
-  RuntimeCallStats() { Reset(); }
-};
-
-
 class RuntimeState {
  public:
   unibrow::Mapping<unibrow::ToUppercase, 128>* to_upper_mapping() {
@@ -1225,14 +1199,11 @@ class RuntimeState {
     redirected_intrinsic_functions_.Reset(redirected_intrinsic_functions);
   }
 
-  RuntimeCallStats* runtime_call_stats() { return &runtime_call_stats_; }
-
  private:
   RuntimeState() {}
   unibrow::Mapping<unibrow::ToUppercase, 128> to_upper_mapping_;
   unibrow::Mapping<unibrow::ToLowercase, 128> to_lower_mapping_;
 
-  RuntimeCallStats runtime_call_stats_;
 
   base::SmartArrayPointer<Runtime::Function> redirected_intrinsic_functions_;
 

@@ -96,6 +96,8 @@ class FullCodeGenerator: public AstVisitor {
 #error Unsupported target architecture.
 #endif
 
+  static Register result_register();
+
  private:
   class Breakable;
   class Iteration;
@@ -505,6 +507,7 @@ class FullCodeGenerator: public AstVisitor {
 
   // Platform-specific return sequence
   void EmitReturnSequence();
+  void EmitProfilingCounterHandlingForReturnSequence(bool is_tail_call);
 
   // Platform-specific code sequences for calls
   void EmitCall(Call* expr, ConvertReceiverMode = ConvertReceiverMode::kAny);
@@ -522,8 +525,6 @@ class FullCodeGenerator: public AstVisitor {
   F(IsRegExp)                           \
   F(IsJSProxy)                          \
   F(Call)                               \
-  F(ArgumentsLength)                    \
-  F(Arguments)                          \
   F(ValueOf)                            \
   F(SetValueOf)                         \
   F(IsDate)                             \
@@ -531,7 +532,6 @@ class FullCodeGenerator: public AstVisitor {
   F(StringCharAt)                       \
   F(OneByteSeqStringSetChar)            \
   F(TwoByteSeqStringSetChar)            \
-  F(ObjectEquals)                       \
   F(IsJSReceiver)                       \
   F(IsSimdValue)                        \
   F(MathPow)                            \
@@ -740,7 +740,6 @@ class FullCodeGenerator: public AstVisitor {
   FunctionLiteral* literal() const { return info_->literal(); }
   Scope* scope() { return scope_; }
 
-  static Register result_register();
   static Register context_register();
 
   // Set fields in the stack frame. Offsets are the frame pointer relative

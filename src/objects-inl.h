@@ -1143,8 +1143,8 @@ bool Object::FitsRepresentation(Representation representation) {
 // static
 MaybeHandle<JSReceiver> Object::ToObject(Isolate* isolate,
                                          Handle<Object> object) {
-  return ToObject(
-      isolate, object, handle(isolate->context()->native_context(), isolate));
+  if (object->IsJSReceiver()) return Handle<JSReceiver>::cast(object);
+  return ToObject(isolate, object, isolate->native_context());
 }
 
 
@@ -1383,8 +1383,9 @@ void HeapObject::VerifySmiField(int offset) {
 
 
 Heap* HeapObject::GetHeap() const {
-  Heap* heap =
-      MemoryChunk::FromAddress(reinterpret_cast<const byte*>(this))->heap();
+  Heap* heap = MemoryChunk::FromAddress(
+                   reinterpret_cast<Address>(const_cast<HeapObject*>(this)))
+                   ->heap();
   SLOW_DCHECK(heap != NULL);
   return heap;
 }
@@ -3408,6 +3409,12 @@ int HandlerTable::GetRangeHandler(int index) const {
 
 int HandlerTable::GetRangeData(int index) const {
   return Smi::cast(get(index * kRangeEntrySize + kRangeDataIndex))->value();
+}
+
+HandlerTable::CatchPrediction HandlerTable::GetRangePrediction(
+    int index) const {
+  return HandlerPredictionField::decode(
+      Smi::cast(get(index * kRangeEntrySize + kRangeHandlerIndex))->value());
 }
 
 void HandlerTable::SetRangeStart(int index, int value) {
@@ -5979,7 +5986,8 @@ DebugInfo* SharedFunctionInfo::GetDebugInfo() {
 
 
 bool SharedFunctionInfo::HasDebugCode() {
-  return code()->kind() == Code::FUNCTION && code()->has_debug_break_slots();
+  return HasBytecodeArray() ||
+         (code()->kind() == Code::FUNCTION && code()->has_debug_break_slots());
 }
 
 

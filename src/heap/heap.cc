@@ -3446,7 +3446,6 @@ void Heap::InitializeJSObjectBody(JSObject* obj, Map* map, int start_offset) {
   if (start_offset == map->instance_size()) return;
   DCHECK_LT(start_offset, map->instance_size());
 
-  Object* filler;
   // We cannot always fill with one_pointer_filler_map because objects
   // created from API functions expect their internal fields to be initialized
   // with undefined_value.
@@ -3456,15 +3455,17 @@ void Heap::InitializeJSObjectBody(JSObject* obj, Map* map, int start_offset) {
 
   // In case of Array subclassing the |map| could already be transitioned
   // to different elements kind from the initial map on which we track slack.
-  Map* initial_map = map->FindRootMap();
-  if (initial_map->IsInobjectSlackTrackingInProgress()) {
-    // We might want to shrink the object later.
-    filler = Heap::one_pointer_filler_map();
+  bool in_progress = map->IsInobjectSlackTrackingInProgress();
+  Object* filler;
+  if (in_progress) {
+    filler = one_pointer_filler_map();
   } else {
-    filler = Heap::undefined_value();
+    filler = undefined_value();
   }
   obj->InitializeBody(map, start_offset, Heap::undefined_value(), filler);
-  initial_map->InobjectSlackTrackingStep();
+  if (in_progress) {
+    map->FindRootMap()->InobjectSlackTrackingStep();
+  }
 }
 
 
@@ -3781,18 +3782,41 @@ AllocationResult Heap::CopyFixedArrayAndGrow(FixedArray* src, int grow_by,
     AllocationResult allocation = AllocateRawFixedArray(new_len, pretenure);
     if (!allocation.To(&obj)) return allocation;
   }
+
   obj->set_map_no_write_barrier(fixed_array_map());
   FixedArray* result = FixedArray::cast(obj);
   result->set_length(new_len);
 
   // Copy the content.
   DisallowHeapAllocation no_gc;
-  WriteBarrierMode mode = result->GetWriteBarrierMode(no_gc);
+  WriteBarrierMode mode = obj->GetWriteBarrierMode(no_gc);
   for (int i = 0; i < old_len; i++) result->set(i, src->get(i), mode);
   MemsetPointer(result->data_start() + old_len, undefined_value(), grow_by);
   return result;
 }
 
+AllocationResult Heap::CopyFixedArrayUpTo(FixedArray* src, int new_len,
+                                          PretenureFlag pretenure) {
+  if (new_len == 0) return empty_fixed_array();
+
+  DCHECK_LE(new_len, src->length());
+
+  HeapObject* obj = nullptr;
+  {
+    AllocationResult allocation = AllocateRawFixedArray(new_len, pretenure);
+    if (!allocation.To(&obj)) return allocation;
+  }
+  obj->set_map_no_write_barrier(fixed_array_map());
+
+  FixedArray* result = FixedArray::cast(obj);
+  result->set_length(new_len);
+
+  // Copy the content.
+  DisallowHeapAllocation no_gc;
+  WriteBarrierMode mode = result->GetWriteBarrierMode(no_gc);
+  for (int i = 0; i < new_len; i++) result->set(i, src->get(i), mode);
+  return result;
+}
 
 AllocationResult Heap::CopyFixedArrayWithMap(FixedArray* src, Map* map) {
   int len = src->length();
@@ -3801,13 +3825,12 @@ AllocationResult Heap::CopyFixedArrayWithMap(FixedArray* src, Map* map) {
     AllocationResult allocation = AllocateRawFixedArray(len, NOT_TENURED);
     if (!allocation.To(&obj)) return allocation;
   }
+  obj->set_map_no_write_barrier(map);
   if (InNewSpace(obj)) {
-    obj->set_map_no_write_barrier(map);
     CopyBlock(obj->address() + kPointerSize, src->address() + kPointerSize,
               FixedArray::SizeFor(len) - kPointerSize);
     return obj;
   }
-  obj->set_map_no_write_barrier(map);
   FixedArray* result = FixedArray::cast(obj);
   result->set_length(len);
 
@@ -4593,10 +4616,6 @@ void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
   Relocatable::Iterate(isolate_, v);
   v->Synchronize(VisitorSynchronization::kRelocatable);
 
-  if (isolate_->deoptimizer_data() != NULL) {
-    isolate_->deoptimizer_data()->Iterate(v);
-  }
-  v->Synchronize(VisitorSynchronization::kDebug);
   isolate_->compilation_cache()->Iterate(v);
   v->Synchronize(VisitorSynchronization::kCompilationCache);
 

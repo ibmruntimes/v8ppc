@@ -205,7 +205,6 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
 // Features that are still work in progress (behind individual flags).
 #define HARMONY_INPROGRESS(V)                                                \
   V(harmony_modules, "harmony modules")                                      \
-  V(harmony_function_name, "harmony Function name inference")                \
   V(harmony_function_sent, "harmony function.sent")                          \
   V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")                  \
   V(harmony_simd, "harmony simd")                                            \
@@ -217,10 +216,10 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_regexp_property, "harmony unicode regexp property classes")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
-#define HARMONY_STAGED(V)                                   \
-  V(harmony_regexp_lookbehind, "harmony regexp lookbehind") \
-  V(harmony_species, "harmony Symbol.species")              \
-  V(harmony_unicode_regexps, "harmony unicode regexps")
+#define HARMONY_STAGED(V)                                     \
+  V(harmony_function_name, "harmony Function name inference") \
+  V(harmony_regexp_lookbehind, "harmony regexp lookbehind")   \
+  V(harmony_species, "harmony Symbol.species")
 
 // Features that are shipping (turned on by default, but internal flag remains).
 #define HARMONY_SHIPPING(V)                                               \
@@ -230,6 +229,7 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_object_observe, "harmony Object.observe")                     \
   V(harmony_tostring, "harmony toString")                                 \
   V(harmony_regexps, "harmony regular expression extensions")             \
+  V(harmony_unicode_regexps, "harmony unicode regexps")                   \
   V(harmony_sloppy, "harmony features in sloppy mode")                    \
   V(harmony_sloppy_let, "harmony let in sloppy mode")                     \
   V(harmony_sloppy_function, "harmony sloppy function block scoping")     \
@@ -968,6 +968,8 @@ DEFINE_BOOL(trace_lazy, false, "trace lazy compilation")
 DEFINE_BOOL(collect_heap_spill_statistics, false,
             "report heap spill statistics along with heap_stats "
             "(requires heap_stats)")
+DEFINE_BOOL(trace_live_bytes, false,
+            "trace incrementing and resetting of live bytes")
 
 DEFINE_BOOL(trace_isolates, false, "trace isolate state changes")
 

@@ -207,7 +207,6 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   // Deletes property from an object. This expects that accumulator contains
   // the key to be deleted and the register contains a reference to the object.
   BytecodeArrayBuilder& Delete(Register object, LanguageMode language_mode);
-  BytecodeArrayBuilder& DeleteLookupSlot();
 
   // Tests.
   BytecodeArrayBuilder& CompareOperation(Token::Value op, Register reg,
@@ -256,6 +255,7 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   // entry, so that it can be referenced by above exception handling support.
   int NewHandlerEntry() { return handler_table_builder()->NewHandlerEntry(); }
 
+  void SetReturnPosition(FunctionLiteral* fun);
   void SetStatementPosition(Statement* stmt);
   void SetExpressionPosition(Expression* expr);
 
@@ -267,6 +267,8 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   const TemporaryRegisterAllocator* temporary_register_allocator() const {
     return &temporary_allocator_;
   }
+
+  void EnsureReturn(FunctionLiteral* literal);
 
  private:
   class PreviousBytecodeHelper;
@@ -324,7 +326,6 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
       const ZoneVector<uint8_t>::iterator& jump_location, int delta);
 
   void LeaveBasicBlock();
-  void EnsureReturn();
 
   bool OperandIsValid(Bytecode bytecode, int operand_index,
                       uint32_t operand_value) const;

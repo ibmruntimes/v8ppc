@@ -974,10 +974,11 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
 
   __ Push(ra, fp, cp, a1);
   __ Addu(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
-  __ Push(a3);
 
-  // Push zero for bytecode array offset.
-  __ Push(zero_reg);
+  // Push new.target, dispatch table pointer and zero for bytecode array offset.
+  __ li(a0, Operand(ExternalReference::interpreter_dispatch_table_address(
+                masm->isolate())));
+  __ Push(a3, a0, zero_reg);
 
   // Get the bytecode array from the function object and load the pointer to the
   // first entry into kInterpreterBytecodeRegister.
@@ -1035,9 +1036,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
           Operand(InterpreterFrameConstants::kRegisterFilePointerFromFp));
   __ li(kInterpreterBytecodeOffsetRegister,
         Operand(BytecodeArray::kHeaderSize - kHeapObjectTag));
-  __ li(kInterpreterDispatchTableRegister,
-        Operand(ExternalReference::interpreter_dispatch_table_address(
-            masm->isolate())));
+  __ lw(kInterpreterDispatchTableRegister,
+        MemOperand(fp, InterpreterFrameConstants::kDispatchTableFromFp));
 
   // Dispatch to the first bytecode handler for the function.
   __ Addu(a0, kInterpreterBytecodeArrayRegister,
@@ -1965,9 +1965,7 @@ void Builtins::Generate_Apply(MacroAssembler* masm) {
 
     // Try to create the list from an arguments object.
     __ bind(&create_arguments);
-    __ lw(a2,
-          FieldMemOperand(a0, JSObject::kHeaderSize +
-                                  Heap::kArgumentsLengthIndex * kPointerSize));
+    __ lw(a2, FieldMemOperand(a0, JSArgumentsObject::kLengthOffset));
     __ lw(t0, FieldMemOperand(a0, JSObject::kElementsOffset));
     __ lw(at, FieldMemOperand(t0, FixedArray::kLengthOffset));
     __ Branch(&create_runtime, ne, a2, Operand(at));

@@ -301,7 +301,12 @@ class BytecodeGenerator::ControlScopeForTryCatch final
  public:
   ControlScopeForTryCatch(BytecodeGenerator* generator,
                           TryCatchBuilder* try_catch_builder)
-      : ControlScope(generator) {}
+      : ControlScope(generator) {
+    generator->try_catch_nesting_level_++;
+  }
+  virtual ~ControlScopeForTryCatch() {
+    generator()->try_catch_nesting_level_--;
+  }
 
  protected:
   bool Execute(Command command, Statement* statement) override {
@@ -328,7 +333,12 @@ class BytecodeGenerator::ControlScopeForTryFinally final
                             DeferredCommands* commands)
       : ControlScope(generator),
         try_finally_builder_(try_finally_builder),
-        commands_(commands) {}
+        commands_(commands) {
+    generator->try_finally_nesting_level_++;
+  }
+  virtual ~ControlScopeForTryFinally() {
+    generator()->try_finally_nesting_level_--;
+  }
 
  protected:
   bool Execute(Command command, Statement* statement) override {
@@ -543,7 +553,9 @@ BytecodeGenerator::BytecodeGenerator(Isolate* isolate, Zone* zone)
       execution_control_(nullptr),
       execution_context_(nullptr),
       execution_result_(nullptr),
-      register_allocator_(nullptr) {
+      register_allocator_(nullptr),
+      try_catch_nesting_level_(0),
+      try_finally_nesting_level_(0) {
   InitializeAstVisitor(isolate);
 }
 
@@ -574,6 +586,7 @@ Handle<BytecodeArray> BytecodeGenerator::MakeBytecode(CompilationInfo* info) {
     MakeBytecodeBody();
   }
 
+  builder()->EnsureReturn(info->literal());
   set_scope(nullptr);
   set_info(nullptr);
   return builder()->ToBytecodeArray();
@@ -805,6 +818,7 @@ void BytecodeGenerator::VisitStatements(ZoneList<Statement*>* statements) {
 
 
 void BytecodeGenerator::VisitExpressionStatement(ExpressionStatement* stmt) {
+  builder()->SetStatementPosition(stmt);
   VisitForEffect(stmt->expression());
 }
 
@@ -860,6 +874,7 @@ void BytecodeGenerator::VisitBreakStatement(BreakStatement* stmt) {
 
 void BytecodeGenerator::VisitReturnStatement(ReturnStatement* stmt) {
   VisitForAccumulatorValue(stmt->expression());
+  builder()->SetReturnPosition(info_->literal());
   execution_control()->ReturnAccumulator();
 }
 
@@ -1150,7 +1165,7 @@ void BytecodeGenerator::VisitTryCatchStatement(TryCatchStatement* stmt) {
 
 
 void BytecodeGenerator::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
-  TryFinallyBuilder try_control_builder(builder());
+  TryFinallyBuilder try_control_builder(builder(), IsInsideTryCatch());
   Register no_reg;
 
   // We keep a record of all paths that enter the finally-block to be able to
@@ -1215,6 +1230,7 @@ void BytecodeGenerator::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
 
 
 void BytecodeGenerator::VisitDebuggerStatement(DebuggerStatement* stmt) {
+  builder()->SetStatementPosition(stmt);
   builder()->Debugger();
 }
 
@@ -2175,8 +2191,8 @@ void BytecodeGenerator::VisitCall(Call* expr) {
 
   // The receiver and arguments need to be allocated consecutively for
   // Call(). We allocate the callee and receiver consecutively for calls to
-  // kLoadLookupSlot. Future optimizations could avoid this there are no
-  // arguments or the receiver and arguments are already consecutive.
+  // %LoadLookupSlotForCall. Future optimizations could avoid this there are
+  // no arguments or the receiver and arguments are already consecutive.
   ZoneList<Expression*>* args = expr->arguments();
   register_allocator()->PrepareForConsecutiveAllocations(args->length() + 2);
   Register callee = register_allocator()->NextConsecutiveRegister();
@@ -2206,18 +2222,16 @@ void BytecodeGenerator::VisitCall(Call* expr) {
     case Call::POSSIBLY_EVAL_CALL: {
       if (callee_expr->AsVariableProxy()->var()->IsLookupSlot()) {
         RegisterAllocationScope inner_register_scope(this);
-        register_allocator()->PrepareForConsecutiveAllocations(2);
-        Register context = register_allocator()->NextConsecutiveRegister();
-        Register name = register_allocator()->NextConsecutiveRegister();
+        Register name = register_allocator()->NewRegister();
 
-        // Call LoadLookupSlot to get the callee and receiver.
+        // Call %LoadLookupSlotForCall to get the callee and receiver.
         DCHECK(Register::AreContiguous(callee, receiver));
         Variable* variable = callee_expr->AsVariableProxy()->var();
         builder()
-            ->MoveRegister(Register::current_context(), context)
-            .LoadLiteral(variable->name())
+            ->LoadLiteral(variable->name())
             .StoreAccumulatorInRegister(name)
-            .CallRuntimeForPair(Runtime::kLoadLookupSlot, context, 2, callee);
+            .CallRuntimeForPair(Runtime::kLoadLookupSlotForCall, name, 1,
+                                callee);
         break;
       }
       // Fall through.
@@ -2409,7 +2423,11 @@ void BytecodeGenerator::VisitDelete(UnaryOperation* expr) {
         break;
       }
       case VariableLocation::LOOKUP: {
-        builder()->LoadLiteral(variable->name()).DeleteLookupSlot();
+        Register name_reg = register_allocator()->NewRegister();
+        builder()
+            ->LoadLiteral(variable->name())
+            .StoreAccumulatorInRegister(name_reg)
+            .CallRuntime(Runtime::kDeleteLookupSlot, name_reg, 1);
         break;
       }
       default:

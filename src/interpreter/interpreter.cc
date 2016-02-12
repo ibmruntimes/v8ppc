@@ -467,8 +467,7 @@ void Interpreter::DoLoadLookupSlot(Runtime::FunctionId function_id,
   Node* index = __ BytecodeOperandIdx(0);
   Node* name = __ LoadConstantPoolEntry(index);
   Node* context = __ GetContext();
-  Node* result_pair = __ CallRuntime(function_id, context, context, name);
-  Node* result = __ Projection(0, result_pair);
+  Node* result = __ CallRuntime(function_id, context, name);
   __ SetAccumulator(result);
   __ Dispatch();
 }
@@ -488,7 +487,7 @@ void Interpreter::DoLdaLookupSlot(InterpreterAssembler* assembler) {
 // Lookup the object with the name in constant pool entry |name_index|
 // dynamically without causing a NoReferenceError.
 void Interpreter::DoLdaLookupSlotInsideTypeof(InterpreterAssembler* assembler) {
-  DoLoadLookupSlot(Runtime::kLoadLookupSlotNoReferenceError, assembler);
+  DoLoadLookupSlot(Runtime::kLoadLookupSlotInsideTypeof, assembler);
 }
 
 
@@ -516,9 +515,10 @@ void Interpreter::DoStoreLookupSlot(LanguageMode language_mode,
   Node* index = __ BytecodeOperandIdx(0);
   Node* name = __ LoadConstantPoolEntry(index);
   Node* context = __ GetContext();
-  Node* language_mode_node = __ NumberConstant(language_mode);
-  Node* result = __ CallRuntime(Runtime::kStoreLookupSlot, context, value,
-                                context, name, language_mode_node);
+  Node* result = __ CallRuntime(is_strict(language_mode)
+                                    ? Runtime::kStoreLookupSlot_Strict
+                                    : Runtime::kStoreLookupSlot_Sloppy,
+                                context, name, value);
   __ SetAccumulator(result);
   __ Dispatch();
 }
@@ -1019,19 +1019,6 @@ void Interpreter::DoDeletePropertySloppy(InterpreterAssembler* assembler) {
   DoDelete(Runtime::kDeleteProperty_Sloppy, assembler);
 }
 
-
-// DeleteLookupSlot
-//
-// Delete the variable with the name specified in the accumulator by dynamically
-// looking it up.
-void Interpreter::DoDeleteLookupSlot(InterpreterAssembler* assembler) {
-  Node* name = __ GetAccumulator();
-  Node* context = __ GetContext();
-  Node* result =
-      __ CallRuntime(Runtime::kDeleteLookupSlot, context, context, name);
-  __ SetAccumulator(result);
-  __ Dispatch();
-}
 
 void Interpreter::DoJSCall(InterpreterAssembler* assembler) {
   Node* function_reg = __ BytecodeOperandReg(0);
@@ -1731,10 +1718,11 @@ void Interpreter::DoCreateMappedArguments(InterpreterAssembler* assembler) {
 //
 // Creates a new unmapped arguments object.
 void Interpreter::DoCreateUnmappedArguments(InterpreterAssembler* assembler) {
-  Node* closure = __ LoadRegister(Register::function_closure());
+  Callable callable = CodeFactory::FastNewStrictArguments(isolate_);
+  Node* target = __ HeapConstant(callable.code());
   Node* context = __ GetContext();
-  Node* result =
-      __ CallRuntime(Runtime::kNewStrictArguments_Generic, context, closure);
+  Node* closure = __ LoadRegister(Register::function_closure());
+  Node* result = __ CallStub(callable.descriptor(), target, context, closure);
   __ SetAccumulator(result);
   __ Dispatch();
 }
@@ -1743,10 +1731,11 @@ void Interpreter::DoCreateUnmappedArguments(InterpreterAssembler* assembler) {
 //
 // Creates a new rest parameter array.
 void Interpreter::DoCreateRestParameter(InterpreterAssembler* assembler) {
-  // TODO(ignition): Use FastNewRestParameterStub here.
+  Callable callable = CodeFactory::FastNewRestParameter(isolate_);
+  Node* target = __ HeapConstant(callable.code());
   Node* closure = __ LoadRegister(Register::function_closure());
   Node* context = __ GetContext();
-  Node* result = __ CallRuntime(Runtime::kNewRestParameter, context, closure);
+  Node* result = __ CallStub(callable.descriptor(), target, context, closure);
   __ SetAccumulator(result);
   __ Dispatch();
 }

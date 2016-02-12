@@ -103,8 +103,8 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
       .Call(reg, wide, 1, 0)
       .CallRuntime(Runtime::kIsArray, reg, 1)
       .CallRuntime(Runtime::kIsArray, wide, 1)
-      .CallRuntimeForPair(Runtime::kLoadLookupSlot, reg, 1, other)
-      .CallRuntimeForPair(Runtime::kLoadLookupSlot, wide, 1, other)
+      .CallRuntimeForPair(Runtime::kLoadLookupSlotForCall, reg, 1, other)
+      .CallRuntimeForPair(Runtime::kLoadLookupSlotForCall, wide, 1, other)
       .CallJSRuntime(Context::SPREAD_ITERABLE_INDEX, reg, 1)
       .CallJSRuntime(Context::SPREAD_ITERABLE_INDEX, wide, 1);
 
@@ -133,9 +133,7 @@ TEST_F(BytecodeArrayBuilderTest, AllBytecodesGenerated) {
   builder.LogicalNot().TypeOf();
 
   // Emit delete
-  builder.Delete(reg, LanguageMode::SLOPPY)
-      .Delete(reg, LanguageMode::STRICT)
-      .DeleteLookupSlot();
+  builder.Delete(reg, LanguageMode::SLOPPY).Delete(reg, LanguageMode::STRICT);
 
   // Emit new.
   builder.New(reg, reg, 0);
@@ -394,7 +392,8 @@ TEST_F(BytecodeArrayBuilderTest, Constants) {
       .LoadLiteral(large_smi)
       .LoadLiteral(heap_num_1)
       .LoadLiteral(heap_num_1)
-      .LoadLiteral(heap_num_2_copy);
+      .LoadLiteral(heap_num_2_copy)
+      .Return();
 
   Handle<BytecodeArray> array = builder.ToBytecodeArray();
   // Should only have one entry for each identical constant.

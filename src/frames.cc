@@ -969,11 +969,9 @@ void OptimizedFrame::Summarize(List<FrameSummary>* frames) {
       JSFunction* function;
       if (opcode == Translation::LITERAL) {
         function = JSFunction::cast(literal_array->get(it.Next()));
-      } else if (opcode == Translation::STACK_SLOT) {
-        function = JSFunction::cast(StackSlotAt(it.Next()));
       } else {
-        CHECK_EQ(Translation::JS_FRAME_FUNCTION, opcode);
-        function = this->function();
+        CHECK_EQ(opcode, Translation::STACK_SLOT);
+        function = JSFunction::cast(StackSlotAt(it.Next()));
       }
       DCHECK_EQ(shared_info, function->shared());
 
@@ -987,8 +985,6 @@ void OptimizedFrame::Summarize(List<FrameSummary>* frames) {
         receiver = literal_array->get(it.Next());
       } else if (opcode == Translation::STACK_SLOT) {
         receiver = StackSlotAt(it.Next());
-      } else if (opcode == Translation::JS_FRAME_FUNCTION) {
-        receiver = this->function();
       } else {
         // The receiver is not in a stack slot nor in a literal.  We give up.
         it.Skip(Translation::NumberOfOperandsFor(opcode));
@@ -1112,11 +1108,9 @@ void OptimizedFrame::GetFunctions(List<JSFunction*>* functions) const {
       Object* function;
       if (opcode == Translation::LITERAL) {
         function = literal_array->get(it.Next());
-      } else if (opcode == Translation::STACK_SLOT) {
-        function = StackSlotAt(it.Next());
       } else {
-        CHECK_EQ(Translation::JS_FRAME_FUNCTION, opcode);
-        function = this->function();
+        CHECK_EQ(Translation::STACK_SLOT, opcode);
+        function = StackSlotAt(it.Next());
       }
       functions->Add(JSFunction::cast(function));
     }
@@ -1142,7 +1136,6 @@ int InterpretedFrame::LookupExceptionHandlerInTable(
   return table->LookupRange(pc_offset, context_register, prediction);
 }
 
-
 int InterpretedFrame::GetBytecodeOffset() const {
   const int index = InterpreterFrameConstants::kBytecodeOffsetExpressionIndex;
   DCHECK_EQ(InterpreterFrameConstants::kBytecodeOffsetFromFp,
@@ -1150,7 +1143,6 @@ int InterpretedFrame::GetBytecodeOffset() const {
   int raw_offset = Smi::cast(GetExpression(index))->value();
   return raw_offset - BytecodeArray::kHeaderSize + kHeapObjectTag;
 }
-
 
 void InterpretedFrame::PatchBytecodeOffset(int new_offset) {
   const int index = InterpreterFrameConstants::kBytecodeOffsetExpressionIndex;
@@ -1165,6 +1157,17 @@ Object* InterpretedFrame::GetInterpreterRegister(int register_index) const {
   DCHECK_EQ(InterpreterFrameConstants::kRegisterFilePointerFromFp,
             StandardFrameConstants::kExpressionsOffset - index * kPointerSize);
   return GetExpression(index + register_index);
+}
+
+Address InterpretedFrame::GetDispatchTable() const {
+  return Memory::Address_at(
+      fp() + InterpreterFrameConstants::kDispatchTableFromFp);
+}
+
+void InterpretedFrame::PatchDispatchTable(Address dispatch_table) {
+  Address* dispatch_table_address = reinterpret_cast<Address*>(
+      fp() + InterpreterFrameConstants::kDispatchTableFromFp);
+  *dispatch_table_address = dispatch_table;
 }
 
 void InterpretedFrame::Summarize(List<FrameSummary>* functions) {
@@ -1418,6 +1421,22 @@ void JavaScriptFrame::Iterate(ObjectVisitor* v) const {
   IteratePc(v, pc_address(), constant_pool_address(), LookupCode());
 }
 
+void InterpretedFrame::Iterate(ObjectVisitor* v) const {
+  // Visit tagged pointers in the fixed frame.
+  Object** fixed_frame_base =
+      &Memory::Object_at(fp() + InterpreterFrameConstants::kNewTargetFromFp);
+  Object** fixed_frame_limit =
+      &Memory::Object_at(fp() + StandardFrameConstants::kLastObjectOffset) + 1;
+  v->VisitPointers(fixed_frame_base, fixed_frame_limit);
+
+  // Visit the expressions.
+  Object** expression_base = &Memory::Object_at(sp());
+  Object** expression_limit = &Memory::Object_at(
+      fp() + InterpreterFrameConstants::kBytecodeOffsetFromFp) + 1;
+  v->VisitPointers(expression_base, expression_limit);
+
+  IteratePc(v, pc_address(), constant_pool_address(), LookupCode());
+}
 
 void InternalFrame::Iterate(ObjectVisitor* v) const {
   // Internal frames only have object pointers on the expression stack

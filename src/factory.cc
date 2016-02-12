@@ -1041,6 +1041,13 @@ Handle<FixedArray> Factory::CopyFixedArrayAndGrow(Handle<FixedArray> array,
                      FixedArray);
 }
 
+Handle<FixedArray> Factory::CopyFixedArrayUpTo(Handle<FixedArray> array,
+                                               int new_len,
+                                               PretenureFlag pretenure) {
+  CALL_HEAP_FUNCTION(isolate(), isolate()->heap()->CopyFixedArrayUpTo(
+                                    *array, new_len, pretenure),
+                     FixedArray);
+}
 
 Handle<FixedArray> Factory::CopyFixedArray(Handle<FixedArray> array) {
   CALL_HEAP_FUNCTION(isolate(),
@@ -2112,6 +2119,10 @@ Handle<JSMessageObject> Factory::NewJSMessageObject(
 
 Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfo(
     Handle<String> name, MaybeHandle<Code> maybe_code, bool is_constructor) {
+  // Function names are assumed to be flat elsewhere. Must flatten before
+  // allocating SharedFunctionInfo to avoid GC seeing the uninitialized SFI.
+  name = String::Flatten(name, TENURED);
+
   Handle<Map> map = shared_function_info_map();
   Handle<SharedFunctionInfo> share = New<SharedFunctionInfo>(map, OLD_SPACE);
 

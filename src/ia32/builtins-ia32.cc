@@ -546,6 +546,10 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ push(edi);  // Callee's JS function.
   __ push(edx);  // Callee's new target.
 
+  // Push dispatch table pointer.
+  __ mov(eax, Immediate(ExternalReference::interpreter_dispatch_table_address(
+                  masm->isolate())));
+  __ push(eax);
   // Push zero for bytecode array offset.
   __ push(Immediate(0));
 
@@ -608,8 +612,7 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
          Immediate(InterpreterFrameConstants::kRegisterFilePointerFromFp));
   __ mov(kInterpreterBytecodeOffsetRegister,
          Immediate(BytecodeArray::kHeaderSize - kHeapObjectTag));
-  __ mov(ebx, Immediate(ExternalReference::interpreter_dispatch_table_address(
-                  masm->isolate())));
+  __ mov(ebx, Operand(ebp, InterpreterFrameConstants::kDispatchTableFromFp));
 
   // Push dispatch table as a stack located parameter to the bytecode handler.
   DCHECK_EQ(-1, kInterpreterDispatchTableSpillSlot);
@@ -1863,9 +1866,7 @@ void Builtins::Generate_Apply(MacroAssembler* masm) {
 
     // Try to create the list from an arguments object.
     __ bind(&create_arguments);
-    __ mov(ebx,
-           FieldOperand(eax, JSObject::kHeaderSize +
-                                 Heap::kArgumentsLengthIndex * kPointerSize));
+    __ mov(ebx, FieldOperand(eax, JSArgumentsObject::kLengthOffset));
     __ mov(ecx, FieldOperand(eax, JSObject::kElementsOffset));
     __ cmp(ebx, FieldOperand(ecx, FixedArray::kLengthOffset));
     __ j(not_equal, &create_runtime);

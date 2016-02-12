@@ -278,28 +278,32 @@ void FullCodeGenerator::Generate() {
   if (arguments != NULL) {
     // Function uses arguments object.
     Comment cmnt(masm_, "[ Allocate arguments object");
-    DCHECK(a1.is(ArgumentsAccessNewDescriptor::function()));
     if (!function_in_register_a1) {
       // Load this again, if it's used by the local context below.
       __ ld(a1, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
     }
-    // Receiver is just before the parameters on the caller's stack.
-    int num_parameters = info->scope()->num_parameters();
-    int offset = num_parameters * kPointerSize;
-    __ li(ArgumentsAccessNewDescriptor::parameter_count(),
-          Operand(Smi::FromInt(num_parameters)));
-    __ Daddu(ArgumentsAccessNewDescriptor::parameter_pointer(), fp,
-             Operand(StandardFrameConstants::kCallerSPOffset + offset));
+    if (is_strict(language_mode()) || !has_simple_parameters()) {
+      FastNewStrictArgumentsStub stub(isolate());
+      __ CallStub(&stub);
+    } else {
+      DCHECK(a1.is(ArgumentsAccessNewDescriptor::function()));
+      // Receiver is just before the parameters on the caller's stack.
+      int num_parameters = info->scope()->num_parameters();
+      int offset = num_parameters * kPointerSize;
+      __ li(ArgumentsAccessNewDescriptor::parameter_count(),
+            Operand(Smi::FromInt(num_parameters)));
+      __ Daddu(ArgumentsAccessNewDescriptor::parameter_pointer(), fp,
+               Operand(StandardFrameConstants::kCallerSPOffset + offset));
 
-    // Arguments to ArgumentsAccessStub:
-    //   function, parameter pointer, parameter count.
-    // The stub will rewrite parameter pointer and parameter count if the
-    // previous stack frame was an arguments adapter frame.
-    bool is_unmapped = is_strict(language_mode()) || !has_simple_parameters();
-    ArgumentsAccessStub::Type type = ArgumentsAccessStub::ComputeType(
-        is_unmapped, literal()->has_duplicate_parameters());
-    ArgumentsAccessStub stub(isolate(), type);
-    __ CallStub(&stub);
+      // Arguments to ArgumentsAccessStub:
+      //   function, parameter pointer, parameter count.
+      // The stub will rewrite parameter pointer and parameter count if the
+      // previous stack frame was an arguments adapter frame.
+      ArgumentsAccessStub::Type type = ArgumentsAccessStub::ComputeType(
+          literal()->has_duplicate_parameters());
+      ArgumentsAccessStub stub(isolate(), type);
+      __ CallStub(&stub);
+    }
 
     SetVar(arguments, v0, a1, a2);
   }
@@ -414,6 +418,30 @@ void FullCodeGenerator::EmitBackEdgeBookkeeping(IterationStatement* stmt,
   PrepareForBailoutForId(stmt->OsrEntryId(), NO_REGISTERS);
 }
 
+void FullCodeGenerator::EmitProfilingCounterHandlingForReturnSequence(
+    bool is_tail_call) {
+  // Pretend that the exit is a backwards jump to the entry.
+  int weight = 1;
+  if (info_->ShouldSelfOptimize()) {
+    weight = FLAG_interrupt_budget / FLAG_self_opt_count;
+  } else {
+    int distance = masm_->pc_offset();
+    weight = Min(kMaxBackEdgeWeight, Max(1, distance / kCodeSizeMultiplier));
+  }
+  EmitProfilingCounterDecrement(weight);
+  Label ok;
+  __ Branch(&ok, ge, a3, Operand(zero_reg));
+  // Don't need to save result register if we are going to do a tail call.
+  if (!is_tail_call) {
+    __ push(v0);
+  }
+  __ Call(isolate()->builtins()->InterruptCheck(), RelocInfo::CODE_TARGET);
+  if (!is_tail_call) {
+    __ pop(v0);
+  }
+  EmitProfilingCounterReset();
+  __ bind(&ok);
+}
 
 void FullCodeGenerator::EmitReturnSequence() {
   Comment cmnt(masm_, "[ Return sequence");
@@ -427,24 +455,7 @@ void FullCodeGenerator::EmitReturnSequence() {
       __ push(v0);
       __ CallRuntime(Runtime::kTraceExit);
     }
-    // Pretend that the exit is a backwards jump to the entry.
-    int weight = 1;
-    if (info_->ShouldSelfOptimize()) {
-      weight = FLAG_interrupt_budget / FLAG_self_opt_count;
-    } else {
-      int distance = masm_->pc_offset();
-      weight = Min(kMaxBackEdgeWeight,
-                   Max(1, distance / kCodeSizeMultiplier));
-    }
-    EmitProfilingCounterDecrement(weight);
-    Label ok;
-    __ Branch(&ok, ge, a3, Operand(zero_reg));
-    __ push(v0);
-    __ Call(isolate()->builtins()->InterruptCheck(),
-            RelocInfo::CODE_TARGET);
-    __ pop(v0);
-    EmitProfilingCounterReset();
-    __ bind(&ok);
+    EmitProfilingCounterHandlingForReturnSequence(false);
 
     // Make sure that the constant pool is not emitted inside of the return
     // sequence.
@@ -1432,12 +1443,11 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy,
       // by eval-introduced variables.
       EmitDynamicLookupFastCase(proxy, typeof_mode, &slow, &done);
       __ bind(&slow);
-      __ li(a1, Operand(var->name()));
-      __ Push(cp, a1);  // Context and name.
+      __ Push(var->name());
       Runtime::FunctionId function_id =
           typeof_mode == NOT_INSIDE_TYPEOF
               ? Runtime::kLoadLookupSlot
-              : Runtime::kLoadLookupSlotNoReferenceError;
+              : Runtime::kLoadLookupSlotInsideTypeof;
       __ CallRuntime(function_id);
       __ bind(&done);
       context()->Plug(v0);
@@ -2447,15 +2457,11 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
   } else if (!var->is_const_mode() ||
              (var->mode() == CONST && op == Token::INIT)) {
     if (var->IsLookupSlot()) {
-      // Assignment to var.
-      __ li(a4, Operand(var->name()));
-      __ li(a3, Operand(Smi::FromInt(language_mode())));
-      // jssp[0]  : language mode.
-      // jssp[8]  : name.
-      // jssp[16] : context.
-      // jssp[24] : value.
-      __ Push(v0, cp, a4, a3);
-      __ CallRuntime(Runtime::kStoreLookupSlot);
+      __ Push(var->name());
+      __ Push(v0);
+      __ CallRuntime(is_strict(language_mode())
+                         ? Runtime::kStoreLookupSlot_Strict
+                         : Runtime::kStoreLookupSlot_Sloppy);
     } else {
       // Assignment to var or initializing assignment to let/const in harmony
       // mode.
@@ -2752,6 +2758,14 @@ void FullCodeGenerator::EmitCall(Call* expr, ConvertReceiverMode mode) {
   PrepareForBailoutForId(expr->CallId(), NO_REGISTERS);
   // Record source position of the IC call.
   SetCallPosition(expr);
+  if (expr->tail_call_mode() == TailCallMode::kAllow) {
+    if (FLAG_trace) {
+      __ CallRuntime(Runtime::kTraceTailCall);
+    }
+    // Update profiling counters before the tail call since we will
+    // not return to this function.
+    EmitProfilingCounterHandlingForReturnSequence(true);
+  }
   Handle<Code> ic =
       CodeFactory::CallIC(isolate(), arg_count, mode, expr->tail_call_mode())
           .code();
@@ -2804,10 +2818,8 @@ void FullCodeGenerator::PushCalleeAndWithBaseObject(Call* expr) {
     __ bind(&slow);
     // Call the runtime to find the function to call (returned in v0)
     // and the object holding it (returned in v1).
-    DCHECK(!context_register().is(a2));
-    __ li(a2, Operand(callee->name()));
-    __ Push(context_register(), a2);
-    __ CallRuntime(Runtime::kLoadLookupSlot);
+    __ Push(callee->name());
+    __ CallRuntime(Runtime::kLoadLookupSlotForCall);
     __ Push(v0, v1);  // Function, receiver.
     PrepareForBailoutForId(expr->LookupId(), NO_REGISTERS);
 
@@ -3106,65 +3118,6 @@ void FullCodeGenerator::EmitIsJSProxy(CallRuntime* expr) {
   Split(eq, a1, Operand(JS_PROXY_TYPE), if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
-}
-
-
-void FullCodeGenerator::EmitObjectEquals(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 2);
-
-  // Load the two objects into registers and perform the comparison.
-  VisitForStackValue(args->at(0));
-  VisitForAccumulatorValue(args->at(1));
-
-  Label materialize_true, materialize_false;
-  Label* if_true = NULL;
-  Label* if_false = NULL;
-  Label* fall_through = NULL;
-  context()->PrepareTest(&materialize_true, &materialize_false,
-                         &if_true, &if_false, &fall_through);
-
-  __ pop(a1);
-  PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  Split(eq, v0, Operand(a1), if_true, if_false, fall_through);
-
-  context()->Plug(if_true, if_false);
-}
-
-
-void FullCodeGenerator::EmitArguments(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 1);
-
-  // ArgumentsAccessStub expects the key in a1 and the formal
-  // parameter count in a0.
-  VisitForAccumulatorValue(args->at(0));
-  __ mov(a1, v0);
-  __ li(a0, Operand(Smi::FromInt(info_->scope()->num_parameters())));
-  ArgumentsAccessStub stub(isolate(), ArgumentsAccessStub::READ_ELEMENT);
-  __ CallStub(&stub);
-  context()->Plug(v0);
-}
-
-
-void FullCodeGenerator::EmitArgumentsLength(CallRuntime* expr) {
-  DCHECK(expr->arguments()->length() == 0);
-  Label exit;
-  // Get the number of formal parameters.
-  __ li(v0, Operand(Smi::FromInt(info_->scope()->num_parameters())));
-
-  // Check if the calling frame is an arguments adaptor frame.
-  __ ld(a2, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
-  __ ld(a3, MemOperand(a2, StandardFrameConstants::kContextOffset));
-  __ Branch(&exit, ne, a3,
-            Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
-
-  // Arguments adaptor case: Read the arguments length from the
-  // adaptor frame.
-  __ ld(v0, MemOperand(a2, ArgumentsAdaptorFrameConstants::kLengthOffset));
-
-  __ bind(&exit);
-  context()->Plug(v0);
 }
 
 
@@ -3942,8 +3895,7 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
           // Non-global variable.  Call the runtime to try to delete from the
           // context where the variable was introduced.
           DCHECK(!context_register().is(a2));
-          __ li(a2, Operand(var->name()));
-          __ Push(context_register(), a2);
+          __ Push(var->name());
           __ CallRuntime(Runtime::kDeleteLookupSlot);
           context()->Plug(v0);
         }

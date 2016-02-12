@@ -522,21 +522,6 @@ void JSGenericLowering::LowerJSStoreContext(Node* node) {
 }
 
 
-void JSGenericLowering::LowerJSLoadDynamic(Node* node) {
-  const DynamicAccess& access = DynamicAccessOf(node->op());
-  Runtime::FunctionId function_id =
-      (access.typeof_mode() == NOT_INSIDE_TYPEOF)
-          ? Runtime::kLoadLookupSlot
-          : Runtime::kLoadLookupSlotNoReferenceError;
-  Node* projection = graph()->NewNode(common()->Projection(0), node);
-  NodeProperties::ReplaceUses(node, projection, node, node, node);
-  node->RemoveInput(NodeProperties::FirstValueIndex(node));
-  node->InsertInput(zone(), 1, jsgraph()->Constant(access.name()));
-  ReplaceWithRuntimeCall(node, function_id);
-  projection->ReplaceInput(0, node);
-}
-
-
 void JSGenericLowering::LowerJSCreate(Node* node) {
   ReplaceWithRuntimeCall(node, Runtime::kNewObject);
 }
@@ -549,7 +534,7 @@ void JSGenericLowering::LowerJSCreateArguments(Node* node) {
       ReplaceWithRuntimeCall(node, Runtime::kNewSloppyArguments_Generic);
       break;
     case CreateArgumentsType::kUnmappedArguments:
-      ReplaceWithRuntimeCall(node, Runtime::kNewStrictArguments_Generic);
+      ReplaceWithRuntimeCall(node, Runtime::kNewStrictArguments);
       break;
     case CreateArgumentsType::kRestParameter:
       ReplaceWithRuntimeCall(node, Runtime::kNewRestParameter);

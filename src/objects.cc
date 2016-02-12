@@ -8530,22 +8530,27 @@ static bool ContainsOnlyValidKeys(Handle<FixedArray> array) {
 
 static Handle<FixedArray> ReduceFixedArrayTo(
     Handle<FixedArray> array, int length) {
-  DCHECK(array->length() >= length);
+  DCHECK_LE(length, array->length());
   if (array->length() == length) return array;
-
-  Handle<FixedArray> new_array =
-      array->GetIsolate()->factory()->NewFixedArray(length);
-  for (int i = 0; i < length; ++i) new_array->set(i, array->get(i));
-  return new_array;
+  return array->GetIsolate()->factory()->CopyFixedArrayUpTo(array, length);
 }
 
+bool Map::OnlyHasSimpleProperties() {
+  // Wrapped string elements aren't explicitly stored in the elements backing
+  // store, but are loaded indirectly from the underlying string.
+  return !IsStringWrapperElementsKind(elements_kind()) &&
+         !is_access_check_needed() && !has_named_interceptor() &&
+         !has_indexed_interceptor() && !has_hidden_prototype() &&
+         !is_dictionary_map();
+}
 
 namespace {
 
 Handle<FixedArray> GetFastEnumPropertyKeys(Isolate* isolate,
-                                           Handle<JSObject> object,
-                                           bool cache_enum_length) {
+                                           Handle<JSObject> object) {
   Handle<Map> map(object->map());
+  bool cache_enum_length = map->OnlyHasSimpleProperties();
+
   Handle<DescriptorArray> descs =
       Handle<DescriptorArray>(map->instance_descriptors(), isolate);
   int own_property_count = map->EnumLength();
@@ -8618,12 +8623,10 @@ Handle<FixedArray> GetFastEnumPropertyKeys(Isolate* isolate,
 
 }  // namespace
 
-
-Handle<FixedArray> JSObject::GetEnumPropertyKeys(Handle<JSObject> object,
-                                                 bool cache_enum_length) {
+Handle<FixedArray> JSObject::GetEnumPropertyKeys(Handle<JSObject> object) {
   Isolate* isolate = object->GetIsolate();
   if (object->HasFastProperties()) {
-    return GetFastEnumPropertyKeys(isolate, object, cache_enum_length);
+    return GetFastEnumPropertyKeys(isolate, object);
   } else if (object->IsJSGlobalObject()) {
     Handle<GlobalDictionary> dictionary(object->global_dictionary());
     int length = dictionary->NumberOfEnumElements();
@@ -8727,26 +8730,7 @@ static Maybe<bool> GetKeysFromJSObject(Isolate* isolate,
   MAYBE_RETURN(success, Nothing<bool>());
 
   if (*filter == ENUMERABLE_STRINGS) {
-    // We can cache the computed property keys if access checks are
-    // not needed and no interceptors are involved.
-    //
-    // We do not use the cache if the object has elements and
-    // therefore it does not make sense to cache the property names
-    // for arguments objects.  Arguments objects will always have
-    // elements.
-    // Wrapped strings have elements, but don't have an elements
-    // array or dictionary.  So the fast inline test for whether to
-    // use the cache says yes, so we should not create a cache.
-    Handle<JSFunction> arguments_function(
-        JSFunction::cast(isolate->sloppy_arguments_map()->GetConstructor()));
-    bool cache_enum_length =
-        ((object->map()->GetConstructor() != *arguments_function) &&
-         !object->IsJSValue() && !object->IsAccessCheckNeeded() &&
-         !object->HasNamedInterceptor() && !object->HasIndexedInterceptor() &&
-         !object->map()->has_hidden_prototype());
-    // Compute the property keys and cache them if possible.
-    Handle<FixedArray> enum_keys =
-        JSObject::GetEnumPropertyKeys(object, cache_enum_length);
+    Handle<FixedArray> enum_keys = JSObject::GetEnumPropertyKeys(object);
     accumulator->AddKeys(enum_keys, DO_NOT_CONVERT);
   } else {
     object->CollectOwnPropertyNames(accumulator, *filter);
@@ -9326,8 +9310,6 @@ Handle<Map> Map::RawCopy(Handle<Map> map, int instance_size) {
   if (!map->is_dictionary_map()) {
     new_bit_field3 = IsUnstable::update(new_bit_field3, false);
   }
-  new_bit_field3 =
-      ConstructionCounter::update(new_bit_field3, kNoSlackTracking);
   result->set_bit_field3(new_bit_field3);
   return result;
 }
@@ -9414,6 +9396,7 @@ Handle<Map> Map::CopyNormalized(Handle<Map> map,
 
   result->set_dictionary_map(true);
   result->set_migration_target(false);
+  result->set_construction_counter(kNoSlackTracking);
 
 #ifdef VERIFY_HEAP
   if (FLAG_verify_heap) result->DictionaryMapVerify();
@@ -12729,6 +12712,7 @@ static void ShrinkInstanceSize(Map* map, void* data) {
   map->SetInObjectProperties(map->GetInObjectProperties() - slack);
   map->set_unused_property_fields(map->unused_property_fields() - slack);
   map->set_instance_size(map->instance_size() - slack * kPointerSize);
+  map->set_construction_counter(Map::kNoSlackTracking);
 
   // Visitor id might depend on the instance size, recalculate it.
   map->set_visitor_id(Heap::GetStaticVisitorIdForMap(map));
@@ -12738,8 +12722,6 @@ static void ShrinkInstanceSize(Map* map, void* data) {
 void Map::CompleteInobjectSlackTracking() {
   // Has to be an initial map.
   DCHECK(GetBackPointer()->IsUndefined());
-
-  set_construction_counter(kNoSlackTracking);
 
   int slack = unused_property_fields();
   TransitionArray::TraverseTransitionTree(this, &GetMinInobjectSlack, &slack);
@@ -13332,6 +13314,7 @@ MaybeHandle<Map> JSFunction::GetDerivedMap(Isolate* isolate,
 
       JSFunction::SetInitialMap(function, map, prototype);
       map->SetConstructor(*constructor);
+      map->set_construction_counter(Map::kNoSlackTracking);
       map->StartInobjectSlackTracking();
       return map;
     }
@@ -14839,11 +14822,6 @@ void DeoptimizationInputData::DeoptimizationInputDataPrint(
           os << "{bytecode_offset=" << bytecode_offset << ", function="
              << Brief(SharedFunctionInfo::cast(shared_info)->DebugName())
              << ", height=" << height << "}";
-          break;
-        }
-
-        case Translation::JS_FRAME_FUNCTION: {
-          os << "{function}";
           break;
         }
 

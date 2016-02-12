@@ -996,11 +996,12 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   FrameScope frame_scope(masm, StackFrame::MANUAL);
   __ Push(lr, fp, cp, x1);
   __ Add(fp, jssp, StandardFrameConstants::kFixedFrameSizeFromFp);
-  __ Push(x3);
 
-  // Push zero for bytecode array offset.
+  // Push dispatch table pointer.
   __ Mov(x0, Operand(0));
-  __ Push(x0);
+  __ Mov(x2, Operand(ExternalReference::interpreter_dispatch_table_address(
+                 masm->isolate())));
+  __ Push(x3, x2, x0);
 
   // Get the bytecode array from the function object and load the pointer to the
   // first entry into kInterpreterBytecodeRegister.
@@ -1057,9 +1058,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
          Operand(InterpreterFrameConstants::kRegisterFilePointerFromFp));
   __ Mov(kInterpreterBytecodeOffsetRegister,
          Operand(BytecodeArray::kHeaderSize - kHeapObjectTag));
-  __ Mov(kInterpreterDispatchTableRegister,
-         Operand(ExternalReference::interpreter_dispatch_table_address(
-             masm->isolate())));
+  __ Ldr(kInterpreterDispatchTableRegister,
+         MemOperand(fp, InterpreterFrameConstants::kDispatchTableFromFp));
 
   // Dispatch to the first bytecode handler for the function.
   __ Ldrb(x1, MemOperand(kInterpreterBytecodeArrayRegister,
@@ -1974,10 +1974,8 @@ void Builtins::Generate_Apply(MacroAssembler* masm) {
 
     // Try to create the list from an arguments object.
     __ Bind(&create_arguments);
-    __ Ldrsw(len, UntagSmiFieldMemOperand(
-                      arguments_list,
-                      JSObject::kHeaderSize +
-                          Heap::kArgumentsLengthIndex * kPointerSize));
+    __ Ldrsw(len, UntagSmiFieldMemOperand(arguments_list,
+                                          JSArgumentsObject::kLengthOffset));
     __ Ldr(x10, FieldMemOperand(arguments_list, JSObject::kElementsOffset));
     __ Ldrsw(x11, UntagSmiFieldMemOperand(x10, FixedArray::kLengthOffset));
     __ CompareAndBranch(len, x11, ne, &create_runtime);

@@ -142,10 +142,21 @@ BUILTIN_LIST_C(DEF_ARG_TYPE)
                                                      Isolate* isolate);        \
   MUST_USE_RESULT static Object* Builtin_##name(                               \
       int args_length, Object** args_object, Isolate* isolate) {               \
-    name##ArgumentsType args(args_length, args_object);                        \
     isolate->counters()->runtime_calls()->Increment();                         \
-    return Builtin_Impl_##name(args, isolate);                                 \
+    base::ElapsedTimer timer;                                                  \
+    if (FLAG_runtime_call_stats) {                                             \
+      RuntimeCallStats* stats = isolate->counters()->runtime_call_stats();     \
+      stats->Enter(&stats->Builtin_##name);                                    \
+      timer.Start();                                                           \
+    }                                                                          \
+    name##ArgumentsType args(args_length, args_object);                        \
+    Object* value = Builtin_Impl_##name(args, isolate);                        \
+    if (FLAG_runtime_call_stats) {                                             \
+      isolate->counters()->runtime_call_stats()->Leave(timer.Elapsed());       \
+    }                                                                          \
+    return value;                                                              \
   }                                                                            \
+                                                                               \
   MUST_USE_RESULT static Object* Builtin_Impl_##name(name##ArgumentsType args, \
                                                      Isolate* isolate)
 
@@ -197,7 +208,7 @@ inline bool GetSloppyArgumentsLength(Isolate* isolate, Handle<JSObject> object,
   Map* arguments_map = isolate->native_context()->sloppy_arguments_map();
   if (object->map() != arguments_map) return false;
   DCHECK(object->HasFastElements());
-  Object* len_obj = object->InObjectPropertyAt(Heap::kArgumentsLengthIndex);
+  Object* len_obj = object->InObjectPropertyAt(JSArgumentsObject::kLengthIndex);
   if (!len_obj->IsSmi()) return false;
   *out = Max(0, Smi::cast(len_obj)->value());
   return *out <= object->elements()->length();
@@ -1562,6 +1573,75 @@ BUILTIN(ArrayIsArray) {
   return *isolate->factory()->ToBoolean(result.FromJust());
 }
 
+namespace {
+
+MUST_USE_RESULT Maybe<bool> FastAssign(Handle<JSReceiver> to,
+                                       Handle<Object> next_source) {
+  // Non-empty strings are the only non-JSReceivers that need to be handled
+  // explicitly by Object.assign.
+  if (!next_source->IsJSReceiver()) {
+    return Just(!next_source->IsString() ||
+                String::cast(*next_source)->length() == 0);
+  }
+
+  Isolate* isolate = to->GetIsolate();
+  Handle<Map> map(JSReceiver::cast(*next_source)->map(), isolate);
+
+  if (!map->IsJSObjectMap()) return Just(false);
+  if (!map->OnlyHasSimpleProperties()) return Just(false);
+
+  Handle<JSObject> from = Handle<JSObject>::cast(next_source);
+  if (from->elements() != isolate->heap()->empty_fixed_array()) {
+    return Just(false);
+  }
+
+  Handle<DescriptorArray> descriptors(map->instance_descriptors(), isolate);
+  int length = map->NumberOfOwnDescriptors();
+
+  for (int i = 0; i < length; i++) {
+    Handle<Name> next_key(descriptors->GetKey(i), isolate);
+    Handle<Object> prop_value;
+    // Directly decode from the descriptor array if |from| did not change shape.
+    if (from->map() == *map) {
+      PropertyDetails details = descriptors->GetDetails(i);
+      if (!details.IsEnumerable()) continue;
+      if (details.kind() == kData) {
+        if (details.location() == kDescriptor) {
+          prop_value = handle(descriptors->GetValue(i), isolate);
+        } else {
+          Representation representation = details.representation();
+          FieldIndex index = FieldIndex::ForDescriptor(*map, i);
+          prop_value = JSObject::FastPropertyAt(from, representation, index);
+        }
+      } else {
+        ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+            isolate, prop_value, Object::GetProperty(from, next_key, STRICT),
+            Nothing<bool>());
+      }
+    } else {
+      // If the map did change, do a slower lookup. We are still guaranteed that
+      // the object has a simple shape, and that the key is a name.
+      LookupIterator it(from, next_key, LookupIterator::OWN_SKIP_INTERCEPTOR);
+      if (!it.IsFound()) continue;
+      DCHECK(it.state() == LookupIterator::DATA ||
+             it.state() == LookupIterator::ACCESSOR);
+      if (!it.IsEnumerable()) continue;
+      ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, prop_value,
+                                       Object::GetProperty(&it, STRICT),
+                                       Nothing<bool>());
+    }
+    Handle<Object> status;
+    ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+        isolate, status,
+        Object::SetProperty(to, next_key, prop_value, STRICT,
+                            Object::CERTAINLY_NOT_STORE_FROM_KEYED),
+        Nothing<bool>());
+  }
+
+  return Just(true);
+}
+
+}  // namespace
 
 // ES6 19.1.2.1 Object.assign
 BUILTIN(ObjectAssign) {
@@ -1579,10 +1659,13 @@ BUILTIN(ObjectAssign) {
   // 4. For each element nextSource of sources, in ascending index order,
   for (int i = 2; i < args.length(); ++i) {
     Handle<Object> next_source = args.at<Object>(i);
+    Maybe<bool> fast_assign = FastAssign(to, next_source);
+    if (fast_assign.IsNothing()) return isolate->heap()->exception();
+    if (fast_assign.FromJust()) continue;
     // 4a. If nextSource is undefined or null, let keys be an empty List.
-    if (next_source->IsUndefined() || next_source->IsNull()) continue;
     // 4b. Else,
     // 4b i. Let from be ToObject(nextSource).
+    // Only non-empty strings and JSReceivers have enumerable properties.
     Handle<JSReceiver> from =
         Object::ToObject(isolate, next_source).ToHandleChecked();
     // 4b ii. Let keys be ? from.[[OwnPropertyKeys]]().
@@ -1769,27 +1852,22 @@ BUILTIN(ObjectKeys) {
 
   Handle<FixedArray> keys;
   int enum_length = receiver->map()->EnumLength();
-  if (enum_length != kInvalidEnumCacheSentinel) {
+  if (enum_length != kInvalidEnumCacheSentinel &&
+      JSObject::cast(*receiver)->elements() ==
+          isolate->heap()->empty_fixed_array()) {
     DCHECK(receiver->IsJSObject());
-    Handle<JSObject> js_object = Handle<JSObject>::cast(receiver);
-    DCHECK(!js_object->HasNamedInterceptor());
-    DCHECK(!js_object->IsAccessCheckNeeded());
-    DCHECK(!js_object->map()->has_hidden_prototype());
-    DCHECK(js_object->HasFastProperties());
-    if (js_object->elements() == isolate->heap()->empty_fixed_array()) {
-      keys = isolate->factory()->NewFixedArray(enum_length);
-      if (enum_length != 0) {
-        Handle<FixedArray> cache(
-            js_object->map()->instance_descriptors()->GetEnumCache());
-        keys = isolate->factory()->NewFixedArray(enum_length);
-        for (int i = 0; i < enum_length; i++) {
-          keys->set(i, cache->get(i));
-        }
-      }
+    DCHECK(!JSObject::cast(*receiver)->HasNamedInterceptor());
+    DCHECK(!JSObject::cast(*receiver)->IsAccessCheckNeeded());
+    DCHECK(!receiver->map()->has_hidden_prototype());
+    DCHECK(JSObject::cast(*receiver)->HasFastProperties());
+    if (enum_length == 0) {
+      keys = isolate->factory()->empty_fixed_array();
+    } else {
+      Handle<FixedArray> cache(
+          receiver->map()->instance_descriptors()->GetEnumCache());
+      keys = isolate->factory()->CopyFixedArrayUpTo(cache, enum_length);
     }
-  }
-
-  if (keys.is_null()) {
+  } else {
     ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
         isolate, keys,
         JSReceiver::GetKeys(receiver, OWN_ONLY, ENUMERABLE_STRINGS,
@@ -3467,6 +3545,45 @@ BUILTIN(GeneratorFunctionConstructor) {
   return *result;
 }
 
+// ES6 section 19.2.3.6 Function.prototype[@@hasInstance](V)
+BUILTIN(FunctionHasInstance) {
+  HandleScope scope(isolate);
+  Handle<Object> callable = args.receiver();
+  Handle<Object> object = args.atOrUndefined(isolate, 1);
+
+  // {callable} must have a [[Call]] internal method.
+  if (!callable->IsCallable()) {
+    return isolate->heap()->false_value();
+  }
+  // If {object} is not a receiver, return false.
+  if (!object->IsJSReceiver()) {
+    return isolate->heap()->false_value();
+  }
+  // Check if {callable} is bound, if so, get [[BoundTargetFunction]] from it
+  // and use that instead of {callable}.
+  while (callable->IsJSBoundFunction()) {
+    callable =
+        handle(Handle<JSBoundFunction>::cast(callable)->bound_target_function(),
+               isolate);
+  }
+  DCHECK(callable->IsCallable());
+  // Get the "prototype" of {callable}; raise an error if it's not a receiver.
+  Handle<Object> prototype;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, prototype,
+      Object::GetProperty(callable, isolate->factory()->prototype_string()));
+  if (!prototype->IsJSReceiver()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate,
+        NewTypeError(MessageTemplate::kInstanceofNonobjectProto, prototype));
+  }
+  // Return whether or not {prototype} is in the prototype chain of {object}.
+  Handle<JSReceiver> receiver = Handle<JSReceiver>::cast(object);
+  Maybe<bool> result =
+      JSReceiver::HasInPrototypeChain(isolate, receiver, prototype);
+  MAYBE_RETURN(result, isolate->heap()->exception());
+  return isolate->heap()->ToBoolean(result.FromJust());
+}
 
 // ES6 section 19.4.1.1 Symbol ( [ description ] ) for the [[Call]] case.
 BUILTIN(SymbolConstructor) {

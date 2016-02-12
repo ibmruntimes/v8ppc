@@ -2297,8 +2297,7 @@ class JSObject: public JSReceiver {
                                     KeyAccumulator* keys,
                                     PropertyFilter filter);
 
-  static Handle<FixedArray> GetEnumPropertyKeys(Handle<JSObject> object,
-                                                bool cache_result);
+  static Handle<FixedArray> GetEnumPropertyKeys(Handle<JSObject> object);
 
   // Returns a new map with all transitions dropped from the object's current
   // map and the ElementsKind set.
@@ -2607,7 +2606,7 @@ class JSDataPropertyDescriptor: public JSObject {
 
 
 // JSIteratorResult is just a JSObject with a specific initial map.
-// This initial map adds in-object properties for "done" and "value,
+// This initial map adds in-object properties for "done" and "value",
 // as specified by ES6 section 25.1.1.3 The IteratorResult Interface
 class JSIteratorResult: public JSObject {
  public:
@@ -2621,6 +2620,47 @@ class JSIteratorResult: public JSObject {
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSIteratorResult);
+};
+
+
+// Common superclass for JSSloppyArgumentsObject and JSStrictArgumentsObject.
+class JSArgumentsObject: public JSObject {
+ public:
+  // Offsets of object fields.
+  static const int kLengthOffset = JSObject::kHeaderSize;
+  static const int kHeaderSize = kLengthOffset + kPointerSize;
+  // Indices of in-object properties.
+  static const int kLengthIndex = 0;
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(JSArgumentsObject);
+};
+
+
+// JSSloppyArgumentsObject is just a JSObject with specific initial map.
+// This initial map adds in-object properties for "length" and "callee".
+class JSSloppyArgumentsObject: public JSArgumentsObject {
+ public:
+  // Offsets of object fields.
+  static const int kCalleeOffset = JSArgumentsObject::kHeaderSize;
+  static const int kSize = kCalleeOffset + kPointerSize;
+  // Indices of in-object properties.
+  static const int kCalleeIndex = 1;
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(JSSloppyArgumentsObject);
+};
+
+
+// JSStrictArgumentsObject is just a JSObject with specific initial map.
+// This initial map adds an in-object property for "length".
+class JSStrictArgumentsObject: public JSArgumentsObject {
+ public:
+  // Offsets of object fields.
+  static const int kSize = JSArgumentsObject::kHeaderSize;
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(JSStrictArgumentsObject);
 };
 
 
@@ -4804,6 +4844,9 @@ class HandlerTable : public FixedArray {
   // Lookup handler in a table based on return addresses.
   int LookupReturn(int pc_offset, CatchPrediction* prediction);
 
+  // Returns the conservative catch predication.
+  inline CatchPrediction GetRangePrediction(int index) const;
+
   // Returns the number of entries in the table.
   inline int NumberOfRangeEntries() const;
 
@@ -5582,7 +5625,11 @@ class Map: public HeapObject {
   // Builtins::kJSConstructStubGeneric stub.
   // This counter is used for in-object slack tracking.
   // The in-object slack tracking is considered enabled when the counter is
-  // non zero.
+  // non zero. The counter only has a valid count for initial maps. For
+  // transitioned maps only kNoSlackTracking has a meaning, namely that inobject
+  // slack tracking already finished for the transition tree. Any other value
+  // indicates that either inobject slack tracking is still in progress, or that
+  // the map isn't part of the transition tree anymore.
   class ConstructionCounter : public BitField<int, 29, 3> {};
   static const int kSlackTrackingCounterStart = 7;
   static const int kSlackTrackingCounterEnd = 1;
@@ -5847,6 +5894,10 @@ class Map: public HeapObject {
 
   inline Cell* RetrieveDescriptorsPointer();
 
+  // Checks whether all properties are stored either in the map or on the object
+  // (inobject, properties, or elements backing store), requiring no special
+  // checks.
+  bool OnlyHasSimpleProperties();
   inline int EnumLength();
   inline void SetEnumLength(int length);
 
