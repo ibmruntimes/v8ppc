@@ -1114,6 +1114,49 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       }
       break;
     }
+    case kX87Uint32ToFloat32: {
+      InstructionOperand* input = instr->InputAt(0);
+      DCHECK(input->IsRegister() || input->IsStackSlot());
+      if (FLAG_debug_code && FLAG_enable_slow_asserts) {
+        __ VerifyX87StackDepth(1);
+      }
+      __ fstp(0);
+      Label msb_set_src;
+      Label jmp_return;
+      // Put input integer into eax(tmporarilly)
+      __ push(eax);
+      if (input->IsRegister())
+        __ mov(eax, i.InputRegister(0));
+      else
+        __ mov(eax, i.InputOperand(0));
+
+      __ test(eax, eax);
+      __ j(sign, &msb_set_src, Label::kNear);
+      __ push(eax);
+      __ fild_s(Operand(esp, 0));
+      __ pop(eax);
+
+      __ jmp(&jmp_return, Label::kNear);
+      __ bind(&msb_set_src);
+      // Need another temp reg
+      __ push(ebx);
+      __ mov(ebx, eax);
+      __ shr(eax, 1);
+      // Recover the least significant bit to avoid rounding errors.
+      __ and_(ebx, Immediate(1));
+      __ or_(eax, ebx);
+      __ push(eax);
+      __ fild_s(Operand(esp, 0));
+      __ pop(eax);
+      __ fld(0);
+      __ faddp();
+      // Restore the ebx
+      __ pop(ebx);
+      __ bind(&jmp_return);
+      // Restore the eax
+      __ pop(eax);
+      break;
+    }
     case kX87Int32ToFloat64: {
       InstructionOperand* input = instr->InputAt(0);
       DCHECK(input->IsRegister() || input->IsStackSlot());
@@ -1161,6 +1204,26 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ fld_s(i.InputOperand(0));
       }
       __ TruncateX87TOSToI(i.OutputRegister(0));
+      if (!instr->InputAt(0)->IsDoubleRegister()) {
+        __ fstp(0);
+      }
+      break;
+    }
+    case kX87Float32ToUint32: {
+      if (!instr->InputAt(0)->IsDoubleRegister()) {
+        __ fld_s(i.InputOperand(0));
+      }
+      Label success;
+      __ TruncateX87TOSToI(i.OutputRegister(0));
+      __ test(i.OutputRegister(0), i.OutputRegister(0));
+      __ j(positive, &success);
+      __ push(Immediate(INT32_MIN));
+      __ fild_s(Operand(esp, 0));
+      __ lea(esp, Operand(esp, kPointerSize));
+      __ faddp();
+      __ TruncateX87TOSToI(i.OutputRegister(0));
+      __ or_(i.OutputRegister(0), Immediate(0x80000000));
+      __ bind(&success);
       if (!instr->InputAt(0)->IsDoubleRegister()) {
         __ fstp(0);
       }
@@ -1879,8 +1942,6 @@ void CodeGenerator::AssemblePrologue() {
     // remaining stack slots.
     if (FLAG_code_comments) __ RecordComment("-- OSR entrypoint --");
     osr_pc_offset_ = __ pc_offset();
-    // TODO(titzer): cannot address target function == local #-1
-    __ mov(edi, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
     stack_shrink_slots -= OsrHelper(info()).UnoptimizedFrameSlots();
   }
 

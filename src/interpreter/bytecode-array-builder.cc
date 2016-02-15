@@ -484,9 +484,8 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::StoreLookupSlot(
   return *this;
 }
 
-
 BytecodeArrayBuilder& BytecodeArrayBuilder::LoadNamedProperty(
-    Register object, const Handle<String> name, int feedback_slot,
+    Register object, const Handle<Name> name, int feedback_slot,
     LanguageMode language_mode) {
   Bytecode bytecode = BytecodeForLoadIC(language_mode);
   size_t name_index = GetConstantPoolEntry(name);
@@ -520,9 +519,8 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadKeyedProperty(
   return *this;
 }
 
-
 BytecodeArrayBuilder& BytecodeArrayBuilder::StoreNamedProperty(
-    Register object, const Handle<String> name, int feedback_slot,
+    Register object, const Handle<Name> name, int feedback_slot,
     LanguageMode language_mode) {
   Bytecode bytecode = BytecodeForStoreIC(language_mode);
   size_t name_index = GetConstantPoolEntry(name);
@@ -761,6 +759,8 @@ Bytecode BytecodeArrayBuilder::GetJumpWithConstantOperand(
       return Bytecode::kJumpIfToBooleanTrueConstant;
     case Bytecode::kJumpIfToBooleanFalse:
       return Bytecode::kJumpIfToBooleanFalseConstant;
+    case Bytecode::kJumpIfNotHole:
+      return Bytecode::kJumpIfNotHoleConstant;
     case Bytecode::kJumpIfNull:
       return Bytecode::kJumpIfNullConstant;
     case Bytecode::kJumpIfUndefined:
@@ -786,6 +786,8 @@ Bytecode BytecodeArrayBuilder::GetJumpWithConstantWideOperand(
       return Bytecode::kJumpIfToBooleanTrueConstantWide;
     case Bytecode::kJumpIfToBooleanFalse:
       return Bytecode::kJumpIfToBooleanFalseConstantWide;
+    case Bytecode::kJumpIfNotHole:
+      return Bytecode::kJumpIfNotHoleConstantWide;
     case Bytecode::kJumpIfNull:
       return Bytecode::kJumpIfNullConstantWide;
     case Bytecode::kJumpIfUndefined:
@@ -803,7 +805,6 @@ Bytecode BytecodeArrayBuilder::GetJumpWithToBoolean(Bytecode jump_bytecode) {
     case Bytecode::kJump:
     case Bytecode::kJumpIfNull:
     case Bytecode::kJumpIfUndefined:
-    case Bytecode::kJumpIfHole:
     case Bytecode::kJumpIfNotHole:
       return jump_bytecode;
     case Bytecode::kJumpIfTrue:
@@ -970,10 +971,6 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::StackCheck() {
   return *this;
 }
 
-BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfHole(BytecodeLabel* label) {
-  return OutputJump(Bytecode::kJumpIfHole, label);
-}
-
 BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfNotHole(
     BytecodeLabel* label) {
   return OutputJump(Bytecode::kJumpIfNotHole, label);
@@ -1107,7 +1104,6 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::Call(Register callable,
   }
   return *this;
 }
-
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::New(Register constructor,
                                                 Register first_arg,

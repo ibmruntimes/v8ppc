@@ -103,8 +103,8 @@ class BytecodeGraphBuilder {
 
   Node* ProcessCallArguments(const Operator* call_op, Node* callee,
                              interpreter::Register receiver, size_t arity);
-  Node* ProcessCallNewArguments(const Operator* call_new_op,
-                                interpreter::Register callee,
+  Node* ProcessCallNewArguments(const Operator* call_new_op, Node* callee,
+                                Node* new_target,
                                 interpreter::Register first_arg, size_t arity);
   Node* ProcessCallRuntimeArguments(const Operator* call_runtime_op,
                                     interpreter::Register first_arg,
@@ -141,6 +141,7 @@ class BytecodeGraphBuilder {
   void BuildConditionalJump(Node* condition);
   void BuildJumpIfEqual(Node* comperand);
   void BuildJumpIfToBooleanEqual(Node* boolean_comperand);
+  void BuildJumpIfNotHole();
 
   // Simulates control flow by forward-propagating environments.
   void MergeIntoSuccessorEnvironment(int target_offset);

@@ -1097,3 +1097,142 @@ function TestForeignFunctionMultipleUse() {
 }
 
 TestForeignFunctionMultipleUse();
+
+
+function TestForeignVariables() {
+  function AsmModule(stdlib, foreign, buffer) {
+    "use asm";
+
+    var i1 = foreign.foo | 0;
+    var f1 = +foreign.bar;
+    var i2 = foreign.baz | 0;
+    var f2 = +foreign.baz;
+
+    function geti1() {
+      return i1|0;
+    }
+
+    function getf1() {
+      return +f1;
+    }
+
+    function geti2() {
+      return i2|0;
+    }
+
+    function getf2() {
+      return +f2;
+    }
+
+    return {geti1:geti1, getf1:getf1, geti2:geti2, getf2:getf2};
+  }
+
+  function TestCase(env, i1, f1, i2, f2) {
+    var module = _WASMEXP_.instantiateModuleFromAsm(
+        AsmModule.toString(), env);
+    module.__init__();
+    assertEquals(i1, module.geti1());
+    assertEquals(f1, module.getf1());
+    assertEquals(i2, module.geti2());
+    assertEquals(f2, module.getf2());
+  }
+
+  // Check normal operation.
+  TestCase({foo: 123, bar: 234.5, baz: 345.7}, 123, 234.5, 345, 345.7);
+  // Check partial operation.
+  TestCase({baz: 345.7}, 0, NaN, 345, 345.7);
+  // Check that undefined values are converted to proper defaults.
+  TestCase({qux: 999}, 0, NaN, 0, NaN);
+  // Check that an undefined ffi is ok.
+  TestCase(undefined, 0, NaN, 0, NaN);
+  // Check that true values are converted properly.
+  TestCase({foo: true, bar: true, baz: true}, 1, 1.0, 1, 1.0);
+  // Check that false values are converted properly.
+  TestCase({foo: false, bar: false, baz: false}, 0, 0, 0, 0);
+  // Check that null values are converted properly.
+  TestCase({foo: null, bar: null, baz: null}, 0, 0, 0, 0);
+  // Check that string values are converted properly.
+  TestCase({foo: 'hi', bar: 'there', baz: 'dude'}, 0, NaN, 0, NaN);
+  TestCase({foo: '0xff', bar: '234', baz: '456.1'}, 255, 234, 456, 456.1, 456);
+  // Check that Date values are converted properly.
+  TestCase({foo: new Date(123), bar: new Date(456),
+            baz: new Date(789)}, 123, 456, 789, 789);
+  // Check that list values are converted properly.
+  TestCase({foo: [], bar: [], baz: []}, 0, 0, 0, 0);
+  // Check that object values are converted properly.
+  TestCase({foo: {}, bar: {}, baz: {}}, 0, NaN, 0, NaN);
+  // Check that getter object values are converted properly.
+  var o = {
+    get foo() {
+      return 123.4;
+    }
+  };
+  TestCase({foo: o.foo, bar: o.foo, baz: o.foo}, 123, 123.4, 123, 123.4);
+  // Check that getter object values are converted properly.
+  var o = {
+    get baz() {
+      return 123.4;
+    }
+  };
+  TestCase(o, 0, NaN, 123, 123.4);
+  // Check that objects with valueOf are converted properly.
+  var o = {
+    valueOf: function() { return 99; }
+  };
+  TestCase({foo: o, bar: o, baz: o}, 99, 99, 99, 99);
+  // Check that function values are converted properly.
+  TestCase({foo: TestCase, bar: TestCase, qux: TestCase}, 0, NaN, 0, NaN);
+  // Check that a missing ffi object is safe.
+  TestCase(undefined, 0, NaN, 0, NaN);
+}
+
+TestForeignVariables();
+
+
+(function() {
+  function TestByteHeapAccessCompat(stdlib, foreign, buffer) {
+    "use asm";
+
+    var HEAP8 = new stdlib.Uint8Array(buffer);
+    var HEAP32 = new stdlib.Int32Array(buffer);
+
+    function store(i, v) {
+      i = i | 0;
+      v = v | 0;
+      HEAP32[i >> 2] = v;
+    }
+
+    function storeb(i, v) {
+      i = i | 0;
+      v = v | 0;
+      HEAP8[i | 0] = v;
+    }
+
+    function load(i) {
+      i = i | 0;
+      return HEAP8[i] | 0;
+    }
+
+    function iload(i) {
+      i = i | 0;
+      return HEAP8[HEAP32[i >> 2] | 0] | 0;
+    }
+
+    return {load: load, iload: iload, store: store, storeb: storeb};
+  }
+
+  var m = _WASMEXP_.instantiateModuleFromAsm(
+      TestByteHeapAccessCompat.toString());
+  m.store(0, 20);
+  m.store(4, 21);
+  m.store(8, 22);
+  m.storeb(20, 123);
+  m.storeb(21, 42);
+  m.storeb(22, 77);
+  assertEquals(123, m.load(20));
+  assertEquals(42, m.load(21));
+  assertEquals(77, m.load(22));
+  assertEquals(123, m.iload(0));
+  assertEquals(42, m.iload(4));
+  assertEquals(77, m.iload(8));
+})();
