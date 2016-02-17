@@ -733,14 +733,23 @@ void InstructionSelector::VisitWord32Sar(Node* node) {
   Int32BinopMatcher m(node);
   if (CanCover(m.node(), m.left().node()) && m.left().IsWord32Shl()) {
     Int32BinopMatcher mleft(m.left().node());
-    if (mleft.right().Is(16) && m.right().Is(16)) {
-      Emit(kArmSxth, g.DefineAsRegister(node),
-           g.UseRegister(mleft.left().node()), g.TempImmediate(0));
-      return;
-    } else if (mleft.right().Is(24) && m.right().Is(24)) {
-      Emit(kArmSxtb, g.DefineAsRegister(node),
-           g.UseRegister(mleft.left().node()), g.TempImmediate(0));
-      return;
+    if (m.right().HasValue() && mleft.right().HasValue()) {
+      uint32_t sar = m.right().Value();
+      uint32_t shl = mleft.right().Value();
+      if ((sar == shl) && (sar == 16)) {
+        Emit(kArmSxth, g.DefineAsRegister(node),
+             g.UseRegister(mleft.left().node()), g.TempImmediate(0));
+        return;
+      } else if ((sar == shl) && (sar == 24)) {
+        Emit(kArmSxtb, g.DefineAsRegister(node),
+             g.UseRegister(mleft.left().node()), g.TempImmediate(0));
+        return;
+      } else if (IsSupported(ARMv7) && (sar >= shl)) {
+        Emit(kArmSbfx, g.DefineAsRegister(node),
+             g.UseRegister(mleft.left().node()), g.TempImmediate(sar - shl),
+             g.TempImmediate(32 - sar));
+        return;
+      }
     }
   }
   VisitShift(this, node, TryMatchASR);
@@ -758,6 +767,12 @@ void InstructionSelector::VisitWord32Clz(Node* node) {
 
 
 void InstructionSelector::VisitWord32Ctz(Node* node) { UNREACHABLE(); }
+
+
+void InstructionSelector::VisitWord32ReverseBits(Node* node) {
+  DCHECK(IsSupported(ARMv7));
+  VisitRR(this, kArmRbit, node);
+}
 
 
 void InstructionSelector::VisitWord32Popcnt(Node* node) { UNREACHABLE(); }
@@ -1645,6 +1660,9 @@ InstructionSelector::SupportedMachineOperatorFlags() {
   MachineOperatorBuilder::Flags flags =
       MachineOperatorBuilder::kInt32DivIsSafe |
       MachineOperatorBuilder::kUint32DivIsSafe;
+  if (CpuFeatures::IsSupported(ARMv7)) {
+    flags |= MachineOperatorBuilder::kWord32ReverseBits;
+  }
   if (CpuFeatures::IsSupported(ARMv8)) {
     flags |= MachineOperatorBuilder::kFloat32RoundDown |
              MachineOperatorBuilder::kFloat64RoundDown |

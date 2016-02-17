@@ -178,8 +178,7 @@ class BytecodeGenerator::ControlScope::DeferredCommands final {
     for (size_t i = 0; i < deferred_.size(); ++i) {
       Entry& entry = deferred_[i];
       builder()->LoadLiteral(Smi::FromInt(entry.token));
-      builder()->CompareOperation(Token::EQ_STRICT, token_register_,
-                                  Strength::WEAK);
+      builder()->CompareOperation(Token::EQ_STRICT, token_register_);
       dispatch.Case(static_cast<int>(i));
     }
     dispatch.DefaultAt(static_cast<int>(deferred_.size()));
@@ -935,8 +934,7 @@ void BytecodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
 
     // Perform label comparison as if via '===' with tag.
     VisitForAccumulatorValue(clause->label());
-    builder()->CompareOperation(Token::Value::EQ_STRICT, tag,
-                                language_mode_strength());
+    builder()->CompareOperation(Token::Value::EQ_STRICT, tag);
     switch_builder.Case(i);
   }
 
@@ -1314,7 +1312,7 @@ void BytecodeGenerator::VisitClassLiteralContents(ClassLiteral* expr) {
   FeedbackVectorSlot slot = expr->PrototypeSlot();
   builder()
       ->StoreAccumulatorInRegister(literal)
-      .LoadNamedProperty(literal, name, feedback_index(slot), language_mode())
+      .LoadNamedProperty(literal, name, feedback_index(slot))
       .StoreAccumulatorInRegister(prototype);
 
   VisitClassLiteralProperties(expr, literal, prototype);
@@ -1433,7 +1431,7 @@ void BytecodeGenerator::VisitClassLiteralStaticPrototypeWithComputedName(
   BytecodeLabel done;
   builder()
       ->LoadLiteral(isolate()->factory()->prototype_string())
-      .CompareOperation(Token::Value::EQ_STRICT, key, Strength::WEAK)
+      .CompareOperation(Token::Value::EQ_STRICT, key)
       .JumpIfFalse(&done)
       .CallRuntime(Runtime::kThrowStaticPrototypeError, Register(0), 0)
       .Bind(&done);
@@ -1783,7 +1781,7 @@ void BytecodeGenerator::VisitVariableLoad(Variable* variable,
     case VariableLocation::GLOBAL:
     case VariableLocation::UNALLOCATED: {
       builder()->LoadGlobal(variable->name(), feedback_index(slot),
-                            language_mode(), typeof_mode);
+                            typeof_mode);
       execution_result()->SetResultInAccumulator();
       break;
     }
@@ -1866,20 +1864,15 @@ void BytecodeGenerator::PrepareKeyedSuperPropertyArguments(
 
 void BytecodeGenerator::BuildNamedSuperPropertyLoad(
     SuperPropertyArguments* super_args) {
-  builder()
-      ->LoadLiteral(Smi::FromInt(static_cast<int>(language_mode())))
-      .StoreAccumulatorInRegister(super_args->language_mode());
-  builder()->CallRuntime(Runtime::kLoadFromSuper, super_args->receiver(),
-                         super_args->count());
+  // TODO(oth): Abstraction not suitable for 3 args, will over-allocate regs.
+  builder()->CallRuntime(Runtime::kLoadFromSuper, super_args->receiver(), 3);
 }
 
 void BytecodeGenerator::BuildKeyedSuperPropertyLoad(
     SuperPropertyArguments* super_args) {
-  builder()
-      ->LoadLiteral(Smi::FromInt(static_cast<int>(language_mode())))
-      .StoreAccumulatorInRegister(super_args->language_mode());
+  // TODO(oth): Abstraction not suitable for 3 args, will over-allocate regs.
   builder()->CallRuntime(Runtime::kLoadKeyedFromSuper, super_args->receiver(),
-                         super_args->count());
+                         3);
 }
 
 void BytecodeGenerator::BuildNamedSuperPropertyStore(
@@ -2170,8 +2163,7 @@ void BytecodeGenerator::VisitAssignment(Assignment* expr) {
         FeedbackVectorSlot slot = property->PropertyFeedbackSlot();
         old_value = register_allocator()->NewRegister();
         builder()
-            ->LoadNamedProperty(object, name, feedback_index(slot),
-                                language_mode())
+            ->LoadNamedProperty(object, name, feedback_index(slot))
             .StoreAccumulatorInRegister(old_value);
         break;
       }
@@ -2181,7 +2173,7 @@ void BytecodeGenerator::VisitAssignment(Assignment* expr) {
         FeedbackVectorSlot slot = property->PropertyFeedbackSlot();
         old_value = register_allocator()->NewRegister();
         builder()
-            ->LoadKeyedProperty(object, feedback_index(slot), language_mode())
+            ->LoadKeyedProperty(object, feedback_index(slot))
             .StoreAccumulatorInRegister(old_value);
         break;
       }
@@ -2199,8 +2191,7 @@ void BytecodeGenerator::VisitAssignment(Assignment* expr) {
       }
     }
     VisitForAccumulatorValue(expr->value());
-    builder()->BinaryOperation(expr->binary_op(), old_value,
-                               language_mode_strength());
+    builder()->BinaryOperation(expr->binary_op(), old_value);
   } else {
     VisitForAccumulatorValue(expr->value());
   }
@@ -2259,12 +2250,12 @@ void BytecodeGenerator::VisitPropertyLoad(Register obj, Property* expr) {
     case NAMED_PROPERTY: {
       builder()->LoadNamedProperty(obj,
                                    expr->key()->AsLiteral()->AsPropertyName(),
-                                   feedback_index(slot), language_mode());
+                                   feedback_index(slot));
       break;
     }
     case KEYED_PROPERTY: {
       VisitForAccumulatorValue(expr->key());
-      builder()->LoadKeyedProperty(obj, feedback_index(slot), language_mode());
+      builder()->LoadKeyedProperty(obj, feedback_index(slot));
       break;
     }
     case NAMED_SUPER_PROPERTY:
@@ -2471,7 +2462,8 @@ void BytecodeGenerator::VisitCall(Call* expr) {
 
   builder()->SetExpressionPosition(expr);
   builder()->Call(callee, receiver, 1 + args->length(),
-                  feedback_index(expr->CallFeedbackICSlot()));
+                  feedback_index(expr->CallFeedbackICSlot()),
+                  expr->tail_call_mode());
   execution_result()->SetResultInAccumulator();
 }
 
@@ -2683,8 +2675,7 @@ void BytecodeGenerator::VisitCountOperation(CountOperation* expr) {
       FeedbackVectorSlot slot = property->PropertyFeedbackSlot();
       object = VisitForRegisterValue(property->obj());
       name = property->key()->AsLiteral()->AsPropertyName();
-      builder()->LoadNamedProperty(object, name, feedback_index(slot),
-                                   language_mode());
+      builder()->LoadNamedProperty(object, name, feedback_index(slot));
       break;
     }
     case KEYED_PROPERTY: {
@@ -2695,7 +2686,7 @@ void BytecodeGenerator::VisitCountOperation(CountOperation* expr) {
       key = register_allocator()->NewRegister();
       VisitForAccumulatorValue(property->key());
       builder()->StoreAccumulatorInRegister(key).LoadKeyedProperty(
-          object, feedback_index(slot), language_mode());
+          object, feedback_index(slot));
       break;
     }
     case NAMED_SUPER_PROPERTY: {
@@ -2726,7 +2717,7 @@ void BytecodeGenerator::VisitCountOperation(CountOperation* expr) {
   }
 
   // Perform +1/-1 operation.
-  builder()->CountOperation(expr->binary_op(), language_mode_strength());
+  builder()->CountOperation(expr->binary_op());
 
   // Store the value.
   FeedbackVectorSlot feedback_slot = expr->CountSlot();
@@ -2786,7 +2777,7 @@ void BytecodeGenerator::VisitBinaryOperation(BinaryOperation* binop) {
 void BytecodeGenerator::VisitCompareOperation(CompareOperation* expr) {
   Register lhs = VisitForRegisterValue(expr->left());
   VisitForAccumulatorValue(expr->right());
-  builder()->CompareOperation(expr->op(), lhs, language_mode_strength());
+  builder()->CompareOperation(expr->op(), lhs);
   execution_result()->SetResultInAccumulator();
 }
 
@@ -2794,7 +2785,7 @@ void BytecodeGenerator::VisitCompareOperation(CompareOperation* expr) {
 void BytecodeGenerator::VisitArithmeticExpression(BinaryOperation* expr) {
   Register lhs = VisitForRegisterValue(expr->left());
   VisitForAccumulatorValue(expr->right());
-  builder()->BinaryOperation(expr->op(), lhs, language_mode_strength());
+  builder()->BinaryOperation(expr->op(), lhs);
   execution_result()->SetResultInAccumulator();
 }
 
@@ -3118,11 +3109,6 @@ void BytecodeGenerator::VisitInScope(Statement* stmt, Scope* scope) {
 
 LanguageMode BytecodeGenerator::language_mode() const {
   return info()->language_mode();
-}
-
-
-Strength BytecodeGenerator::language_mode_strength() const {
-  return strength(language_mode());
 }
 
 

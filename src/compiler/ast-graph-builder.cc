@@ -1449,14 +1449,6 @@ void AstGraphBuilder::VisitTryCatchStatement(TryCatchStatement* stmt) {
   }
   try_control.EndTry();
 
-  // Insert lazy bailout point.
-  // TODO(mstarzinger): We are only using a 'call' to get a lazy bailout
-  // point. Ideally, we whould not re-enter optimized code when deoptimized
-  // lazily. Tracked by issue v8:4195.
-  NewNode(common()->LazyBailout(),
-          jsgraph()->ZeroConstant(),                      // dummy target.
-          environment()->Checkpoint(stmt->HandlerId()));  // frame state.
-
   // Clear message object as we enter the catch block.
   Node* the_hole = jsgraph()->TheHoleConstant();
   NewNode(javascript()->StoreMessage(), the_hole);
@@ -1500,14 +1492,6 @@ void AstGraphBuilder::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
     environment()->Pop();
   }
   try_control.EndTry(commands->GetFallThroughToken(), fallthrough_result);
-
-  // Insert lazy bailout point.
-  // TODO(mstarzinger): We are only using a 'call' to get a lazy bailout
-  // point. Ideally, we whould not re-enter optimized code when deoptimized
-  // lazily. Tracked by issue v8:4195.
-  NewNode(common()->LazyBailout(),
-          jsgraph()->ZeroConstant(),                      // dummy target.
-          environment()->Checkpoint(stmt->HandlerId()));  // frame state.
 
   // The result value semantics depend on how the block was entered:
   //  - ReturnStatement: It represents the return value being returned.
@@ -2499,9 +2483,8 @@ void AstGraphBuilder::VisitCall(Call* expr) {
 
   // Create node to perform the function call.
   VectorSlotPair feedback = CreateVectorSlotPair(expr->CallFeedbackICSlot());
-  const Operator* call =
-      javascript()->CallFunction(args->length() + 2, language_mode(), feedback,
-                                 receiver_hint, expr->tail_call_mode());
+  const Operator* call = javascript()->CallFunction(
+      args->length() + 2, feedback, receiver_hint, expr->tail_call_mode());
   FrameStateBeforeAndAfter states(this, expr->CallId());
   Node* value = ProcessArguments(call, args->length() + 2);
   environment()->Push(value->InputAt(0));  // The callee passed to the call.
@@ -2579,8 +2562,7 @@ void AstGraphBuilder::VisitCallJSRuntime(CallRuntime* expr) {
   VisitForValues(args);
 
   // Create node to perform the JS runtime call.
-  const Operator* call =
-      javascript()->CallFunction(args->length() + 2, language_mode());
+  const Operator* call = javascript()->CallFunction(args->length() + 2);
   FrameStateBeforeAndAfter states(this, expr->CallId());
   Node* value = ProcessArguments(call, args->length() + 2);
   states.AddToNode(value, expr->id(), ast_context()->GetStateCombine());
@@ -2857,16 +2839,16 @@ void AstGraphBuilder::VisitCompareOperation(CompareOperation* expr) {
       op = javascript()->StrictNotEqual();
       break;
     case Token::LT:
-      op = javascript()->LessThan(language_mode());
+      op = javascript()->LessThan();
       break;
     case Token::GT:
-      op = javascript()->GreaterThan(language_mode());
+      op = javascript()->GreaterThan();
       break;
     case Token::LTE:
-      op = javascript()->LessThanOrEqual(language_mode());
+      op = javascript()->LessThanOrEqual();
       break;
     case Token::GTE:
-      op = javascript()->GreaterThanOrEqual(language_mode());
+      op = javascript()->GreaterThanOrEqual();
       break;
     case Token::INSTANCEOF:
       op = javascript()->InstanceOf();
@@ -3586,7 +3568,7 @@ Node* AstGraphBuilder::BuildVariableAssignment(
 
 Node* AstGraphBuilder::BuildKeyedLoad(Node* object, Node* key,
                                       const VectorSlotPair& feedback) {
-  const Operator* op = javascript()->LoadProperty(language_mode(), feedback);
+  const Operator* op = javascript()->LoadProperty(feedback);
   Node* node = NewNode(op, object, key, GetFunctionClosure());
   return node;
 }
@@ -3594,7 +3576,7 @@ Node* AstGraphBuilder::BuildKeyedLoad(Node* object, Node* key,
 
 Node* AstGraphBuilder::BuildNamedLoad(Node* object, Handle<Name> name,
                                       const VectorSlotPair& feedback) {
-  const Operator* op = javascript()->LoadNamed(language_mode(), name, feedback);
+  const Operator* op = javascript()->LoadNamed(name, feedback);
   Node* node = NewNode(op, object, GetFunctionClosure());
   return node;
 }
@@ -3622,9 +3604,8 @@ Node* AstGraphBuilder::BuildNamedSuperLoad(Node* receiver, Node* home_object,
                                            Handle<Name> name,
                                            const VectorSlotPair& feedback) {
   Node* name_node = jsgraph()->Constant(name);
-  Node* language = jsgraph()->Constant(language_mode());
   const Operator* op = javascript()->CallRuntime(Runtime::kLoadFromSuper);
-  Node* node = NewNode(op, receiver, home_object, name_node, language);
+  Node* node = NewNode(op, receiver, home_object, name_node);
   return node;
 }
 
@@ -3632,9 +3613,8 @@ Node* AstGraphBuilder::BuildNamedSuperLoad(Node* receiver, Node* home_object,
 Node* AstGraphBuilder::BuildKeyedSuperLoad(Node* receiver, Node* home_object,
                                            Node* key,
                                            const VectorSlotPair& feedback) {
-  Node* language = jsgraph()->Constant(language_mode());
   const Operator* op = javascript()->CallRuntime(Runtime::kLoadKeyedFromSuper);
-  Node* node = NewNode(op, receiver, home_object, key, language);
+  Node* node = NewNode(op, receiver, home_object, key);
   return node;
 }
 
@@ -3841,37 +3821,37 @@ Node* AstGraphBuilder::BuildBinaryOp(Node* left, Node* right, Token::Value op,
   }
   switch (op) {
     case Token::BIT_OR:
-      js_op = javascript()->BitwiseOr(language_mode(), hints);
+      js_op = javascript()->BitwiseOr(hints);
       break;
     case Token::BIT_AND:
-      js_op = javascript()->BitwiseAnd(language_mode(), hints);
+      js_op = javascript()->BitwiseAnd(hints);
       break;
     case Token::BIT_XOR:
-      js_op = javascript()->BitwiseXor(language_mode(), hints);
+      js_op = javascript()->BitwiseXor(hints);
       break;
     case Token::SHL:
-      js_op = javascript()->ShiftLeft(language_mode(), hints);
+      js_op = javascript()->ShiftLeft(hints);
       break;
     case Token::SAR:
-      js_op = javascript()->ShiftRight(language_mode(), hints);
+      js_op = javascript()->ShiftRight(hints);
       break;
     case Token::SHR:
-      js_op = javascript()->ShiftRightLogical(language_mode(), hints);
+      js_op = javascript()->ShiftRightLogical(hints);
       break;
     case Token::ADD:
-      js_op = javascript()->Add(language_mode(), hints);
+      js_op = javascript()->Add(hints);
       break;
     case Token::SUB:
-      js_op = javascript()->Subtract(language_mode(), hints);
+      js_op = javascript()->Subtract(hints);
       break;
     case Token::MUL:
-      js_op = javascript()->Multiply(language_mode(), hints);
+      js_op = javascript()->Multiply(hints);
       break;
     case Token::DIV:
-      js_op = javascript()->Divide(language_mode(), hints);
+      js_op = javascript()->Divide(hints);
       break;
     case Token::MOD:
-      js_op = javascript()->Modulus(language_mode(), hints);
+      js_op = javascript()->Modulus(hints);
       break;
     default:
       UNREACHABLE();

@@ -56,7 +56,6 @@ class LookupIterator final BASE_EMBEDDED {
         index_(kMaxUInt32),
         receiver_(receiver),
         holder_(GetRoot(isolate_, receiver)),
-        holder_map_(holder_->map(), isolate_),
         initial_holder_(holder_),
         number_(DescriptorArray::kNotFound) {
 #ifdef DEBUG
@@ -79,7 +78,6 @@ class LookupIterator final BASE_EMBEDDED {
         index_(kMaxUInt32),
         receiver_(receiver),
         holder_(holder),
-        holder_map_(holder_->map(), isolate_),
         initial_holder_(holder_),
         number_(DescriptorArray::kNotFound) {
 #ifdef DEBUG
@@ -100,7 +98,6 @@ class LookupIterator final BASE_EMBEDDED {
         index_(index),
         receiver_(receiver),
         holder_(GetRoot(isolate, receiver, index)),
-        holder_map_(holder_->map(), isolate_),
         initial_holder_(holder_),
         number_(DescriptorArray::kNotFound) {
     // kMaxUInt32 isn't a valid index.
@@ -120,7 +117,6 @@ class LookupIterator final BASE_EMBEDDED {
         index_(index),
         receiver_(receiver),
         holder_(holder),
-        holder_map_(holder_->map(), isolate_),
         initial_holder_(holder_),
         number_(DescriptorArray::kNotFound) {
     // kMaxUInt32 isn't a valid index.
@@ -189,7 +185,7 @@ class LookupIterator final BASE_EMBEDDED {
   Factory* factory() const { return isolate_->factory(); }
   Handle<Object> GetReceiver() const { return receiver_; }
   Handle<JSObject> GetStoreTarget() const;
-  bool is_dictionary_holder() const { return holder_map_->is_dictionary_map(); }
+  bool is_dictionary_holder() const { return !holder_->HasFastProperties(); }
   Handle<Map> transition_map() const {
     DCHECK_EQ(TRANSITION, state_);
     return Handle<Map>::cast(transition_);
@@ -210,17 +206,23 @@ class LookupIterator final BASE_EMBEDDED {
   bool HasAccess() const;
 
   /* PROPERTY */
+  bool ExtendingNonExtensible(Handle<JSObject> receiver) {
+    DCHECK(receiver.is_identical_to(GetStoreTarget()));
+    return !receiver->map()->is_extensible() &&
+           (IsElement() || !name_->IsPrivate());
+  }
   void PrepareForDataProperty(Handle<Object> value);
-  void PrepareTransitionToDataProperty(Handle<Object> value,
+  void PrepareTransitionToDataProperty(Handle<JSObject> receiver,
+                                       Handle<Object> value,
                                        PropertyAttributes attributes,
                                        Object::StoreFromKeyed store_mode);
   bool IsCacheableTransition() {
-    if (state_ != TRANSITION) return false;
+    DCHECK_EQ(TRANSITION, state_);
     return transition_->IsPropertyCell() ||
            (!transition_map()->is_dictionary_map() &&
             transition_map()->GetBackPointer()->IsMap());
   }
-  void ApplyTransitionToDataProperty();
+  void ApplyTransitionToDataProperty(Handle<JSObject> receiver);
   void ReconfigureDataProperty(Handle<Object> value,
                                PropertyAttributes attributes);
   void Delete();
@@ -255,7 +257,6 @@ class LookupIterator final BASE_EMBEDDED {
   Handle<Object> GetDataValue() const;
   void WriteDataValue(Handle<Object> value);
   void InternalizeName();
-  void ReloadHolderMap();
 
  private:
   enum class InterceptorState {
@@ -289,13 +290,13 @@ class LookupIterator final BASE_EMBEDDED {
   int descriptor_number() const {
     DCHECK(!IsElement());
     DCHECK(has_property_);
-    DCHECK(!holder_map_->is_dictionary_map());
+    DCHECK(holder_->HasFastProperties());
     return number_;
   }
   int dictionary_entry() const {
     DCHECK(!IsElement());
     DCHECK(has_property_);
-    DCHECK(holder_map_->is_dictionary_map());
+    DCHECK(!holder_->HasFastProperties());
     return number_;
   }
 
@@ -333,7 +334,6 @@ class LookupIterator final BASE_EMBEDDED {
   Handle<Object> transition_;
   const Handle<Object> receiver_;
   Handle<JSReceiver> holder_;
-  Handle<Map> holder_map_;
   const Handle<JSReceiver> initial_holder_;
   uint32_t number_;
 };

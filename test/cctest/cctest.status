@@ -89,6 +89,10 @@
   'test-func-name-inference/UpperCaseClass': [FAIL],
   'test-func-name-inference/LowerCaseClass': [FAIL],
 
+  # BUG(3956). Strong mode is being deprecated. Decide about these tests.
+  'test-api/StrongModeAccessCheckAllowed': [FAIL],
+  'test-api/StrongModeAccessCheckBlocked': [FAIL],
+
   ##############################################################################
   # TurboFan compiler failures.
 
@@ -514,22 +518,22 @@
   'test-api/IsGeneratorFunctionOrObject': [FAIL],
 
   # TODO(rmcilroy,4680): Strong mode failures.
-  'test-parsing/StrongModeFreeVariablesDeclaredByLanguage': [FAIL],
-  'test-parsing/StrongModeFreeVariablesDeclaredInGlobalPrototype': [FAIL],
-  'test-parsing/StrongModeFreeVariablesDeclaredByPreviousScript': [FAIL],
-  'test-api/StrongModeAccessCheckBlocked': [FAIL],
   'test-api/AccessorShouldThrowOnError': [FAIL],
   'test-api/InterceptorShouldThrowOnError': [FAIL],
-  'test-api/StrongModeAccessCheckAllowed': [FAIL],
 
   # TODO(rmcilroy,4680): The function_data field should be a BytecodeArray on interpreter entry
   'test-api/SetFunctionEntryHook': [FAIL],
+
+  # TODO(rmcilroy,4680): Fail on shared_function_data()->IsUndefined in
+  #compiler.cc
+  'test-heap/CanonicalSharedFunctionInfo': [PASS, ['mode == debug or dcheck_always_on == True', FAIL]],
 
   # TODO(rmcilroy,4680): Check failed: !function->shared()->is_compiled() || function->IsOptimized().
   'test-heap/TestCodeFlushingPreAged': [FAIL],
   'test-heap/TestCodeFlushingIncrementalScavenge': [FAIL],
   'test-heap/TestCodeFlushing': [FAIL],
   'test-heap/TestCodeFlushingIncremental': [FAIL],
+  'test-heap/TestCodeFlushingIncrementalAbort': [PASS, ['mode == debug or dcheck_always_on == True', FAIL]],
 
   # TODO(rmcilroy,4680): Check failed: fun1->IsOptimized() || !CcTest::i_isolate()->use_crankshaft().
   'test-compiler/OptimizedCodeSharing2': [FAIL],
@@ -537,11 +541,7 @@
 
   # TODO(rmcilroy,4689): Stack trace line number failures.
   'test-run-jsexceptions/ThrowMessagePosition': [FAIL],
-  'test-api/TryCatchMixedNesting': [PASS, FAIL],
-
-  # TODO(rmcilroy,4680): Exception message assert failure.
-  'test-api/CallICFastApi_SimpleSignature_Miss2WithProfiler': [PASS, FAIL],
-  'test-api/InterceptorCallICFastApi_SimpleSignature_Miss3WithProfiler': [PASS, FAIL],
+  'test-api/TryCatchMixedNesting': [FAIL],
 
   # TODO(rmcilroy,4680): Test assert errors.
   'test-cpu-profiler/CodeEvents': [FAIL],
@@ -579,20 +579,8 @@
   'test-heap/CompilationCacheCachingBehavior': [FAIL],
   'test-heap/CellsInOptimizedCodeAreWeak': [FAIL],
   'test-run-inlining/InlineTwice': [FAIL],
-
-  # TODO(rmcilroy,4680): Fail on some bot configurations.
-  'test-heap/CanonicalSharedFunctionInfo': [PASS, FAIL],
-  'test-heap/TestCodeFlushingIncrementalAbort': [PASS, FAIL],
-  'test-cpu-profiler/SourceLocation': [PASS, FAIL],
-  'test-serialize/SerializeInternalReference': [PASS, FAIL],
+  'test-serialize/SerializeInternalReference': [FAIL, ['arch == arm or arch == arm64', PASS]],
 }],  # ignition == True
-
-['ignition == True and mode == debug and arch == x64', {
-  # TODO(rmcilroy,4680): Flaky failures.
-  'test-api/CallAsFunction': [PASS, FAIL],
-  'test-api/ConstructorForObject': [PASS, FAIL],
-  'test-api/Regress528': [PASS, FAIL],
-}],
 
 ['ignition == True and arch == x64', {
   # TODO(rmcilroy,4680): The function_data field should be a BytecodeArray on interpreter entry
@@ -606,22 +594,5 @@
   'test-heap-profiler/HeapSnapshotSimd': [PASS, ['mode == debug', FAIL]],
   'test-api/InitializeDefaultIsolateOnSecondaryThread1': [PASS, ['mode == debug', FAIL]],
 }],
-
-['ignition == True and arch == arm64', {
-  # TODO(rmcilroy,4680): Arm64 specific crashes.
-  'test-api/ExternalWrap': [SKIP],
-  'test-api/Regress470113': [SKIP],
-  'test-heap/NoWeakHashTableLeakWithIncrementalMarking': [SKIP],
-
-  # TODO(rmcilroy,4680): Arm64 flakes.
-  'test-serialize/SerializeInternalReference': [PASS, FAIL],
-  'test-spaces/SizeOfFirstPageIsLargeEnough': [PASS, FAIL],
-  'test-api/InitializeDefaultIsolateOnSecondaryThread1': [PASS, FAIL],
-  'test-api/FastReturnValuesWithProfiler': [PASS, FAIL],
-  'test-heap/Regress538257': [PASS, FAIL],
-  'test-heap/AddInstructionChangesNewSpacePromotion': [PASS, FAIL],
-  'test-decls/CrossScriptReferencesHarmony': [PASS, FAIL],
-  'test-lockers/IsolateNestedLocking': [PASS, FAIL],
-}],  # ignition == True and arch == arm64
 
 ]

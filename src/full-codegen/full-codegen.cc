@@ -181,10 +181,8 @@ void FullCodeGenerator::PrepareForBailout(Expression* node, State state) {
 
 
 void FullCodeGenerator::CallLoadIC(TypeofMode typeof_mode,
-                                   LanguageMode language_mode,
                                    TypeFeedbackId id) {
-  Handle<Code> ic =
-      CodeFactory::LoadIC(isolate(), typeof_mode, language_mode).code();
+  Handle<Code> ic = CodeFactory::LoadIC(isolate(), typeof_mode).code();
   CallIC(ic, id);
 }
 
@@ -1168,7 +1166,6 @@ void FullCodeGenerator::VisitTryCatchStatement(TryCatchStatement* stmt) {
   Label try_entry, handler_entry, exit;
   __ jmp(&try_entry);
   __ bind(&handler_entry);
-  PrepareForBailoutForId(stmt->HandlerId(), NO_REGISTERS);
   ClearPendingMessage();
 
   // Exception handler code, the exception is in the result register.
@@ -1237,7 +1234,6 @@ void FullCodeGenerator::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
   // Jump to try-handler setup and try-block code.
   __ jmp(&try_entry);
   __ bind(&handler_entry);
-  PrepareForBailoutForId(stmt->HandlerId(), NO_REGISTERS);
 
   // Exception handler code.  This code is only executed when an exception
   // is thrown.  Record the continuation and jump to the finally block.

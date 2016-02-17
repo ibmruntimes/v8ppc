@@ -1500,7 +1500,6 @@ i::Handle<i::String> FormatMessage(i::Vector<unsigned> data) {
   return i::MessageTemplate::FormatMessage(isolate, message, arg_object);
 }
 
-
 enum ParserFlag {
   kAllowLazy,
   kAllowNatives,
@@ -1511,9 +1510,9 @@ enum ParserFlag {
   kAllowHarmonyDestructuringAssignment,
   kAllowHarmonyNewTarget,
   kAllowStrongMode,
-  kNoLegacyConst
+  kNoLegacyConst,
+  kAllowHarmonyFunctionSent
 };
-
 
 enum ParserSyncTestResult {
   kSuccessOrError,
@@ -1536,6 +1535,8 @@ void SetParserFlags(i::ParserBase<Traits>* parser,
       flags.Contains(kAllowHarmonyDestructuringAssignment));
   parser->set_allow_strong_mode(flags.Contains(kAllowStrongMode));
   parser->set_allow_legacy_const(!flags.Contains(kNoLegacyConst));
+  parser->set_allow_harmony_function_sent(
+      flags.Contains(kAllowHarmonyFunctionSent));
 }
 
 
@@ -8006,4 +8007,39 @@ TEST(MiscSyntaxErrors) {
   // clang-format on
 
   RunParserSyncTest(context_data, error_data, kError, NULL, 0, NULL, 0);
+}
+
+TEST(FunctionSentErrors) {
+  // clang-format off
+  const char* context_data[][2] = {
+    { "'use strict'", "" },
+    { "", "" },
+    { NULL, NULL }
+  };
+  const char* error_data[] = {
+    "var x = function.sent",
+    "function* g() { yield function.s\\u0065nt; }",
+    NULL
+  };
+  // clang-format on
+
+  static const ParserFlag always_flags[] = {kAllowHarmonyFunctionSent};
+  RunParserSyncTest(context_data, error_data, kError, always_flags,
+                    arraysize(always_flags));
+}
+
+TEST(NewTargetErrors) {
+  // clang-format off
+  const char* context_data[][2] = {
+    { "'use strict'", "" },
+    { "", "" },
+    { NULL, NULL }
+  };
+  const char* error_data[] = {
+    "var x = new.target",
+    "function f() { return new.t\\u0061rget; }",
+    NULL
+  };
+  // clang-format on
+  RunParserSyncTest(context_data, error_data, kError);
 }

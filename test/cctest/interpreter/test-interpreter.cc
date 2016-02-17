@@ -423,7 +423,7 @@ TEST(InterpreterShiftOpsSmi) {
         builder.LoadLiteral(Smi::FromInt(lhs))
             .StoreAccumulatorInRegister(reg)
             .LoadLiteral(Smi::FromInt(rhs))
-            .BinaryOperation(kShiftOperators[o], reg, Strength::WEAK)
+            .BinaryOperation(kShiftOperators[o], reg)
             .Return();
         Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -455,7 +455,7 @@ TEST(InterpreterBinaryOpsSmi) {
         builder.LoadLiteral(Smi::FromInt(lhs))
             .StoreAccumulatorInRegister(reg)
             .LoadLiteral(Smi::FromInt(rhs))
-            .BinaryOperation(kArithmeticOperators[o], reg, Strength::WEAK)
+            .BinaryOperation(kArithmeticOperators[o], reg)
             .Return();
         Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -488,7 +488,7 @@ TEST(InterpreterBinaryOpsHeapNumber) {
         builder.LoadLiteral(factory->NewNumber(lhs))
             .StoreAccumulatorInRegister(reg)
             .LoadLiteral(factory->NewNumber(rhs))
-            .BinaryOperation(kArithmeticOperators[o], reg, Strength::WEAK)
+            .BinaryOperation(kArithmeticOperators[o], reg)
             .Return();
         Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -543,7 +543,7 @@ TEST(InterpreterStringAdd) {
     builder.LoadLiteral(test_cases[i].lhs)
         .StoreAccumulatorInRegister(reg)
         .LoadLiteral(test_cases[i].rhs)
-        .BinaryOperation(Token::Value::ADD, reg, Strength::WEAK)
+        .BinaryOperation(Token::Value::ADD, reg)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -582,13 +582,13 @@ TEST(InterpreterParameter8) {
   BytecodeArrayBuilder builder(handles.main_isolate(), handles.main_zone(), 8,
                                0, 0);
   builder.LoadAccumulatorWithRegister(builder.Parameter(0))
-      .BinaryOperation(Token::Value::ADD, builder.Parameter(1), Strength::WEAK)
-      .BinaryOperation(Token::Value::ADD, builder.Parameter(2), Strength::WEAK)
-      .BinaryOperation(Token::Value::ADD, builder.Parameter(3), Strength::WEAK)
-      .BinaryOperation(Token::Value::ADD, builder.Parameter(4), Strength::WEAK)
-      .BinaryOperation(Token::Value::ADD, builder.Parameter(5), Strength::WEAK)
-      .BinaryOperation(Token::Value::ADD, builder.Parameter(6), Strength::WEAK)
-      .BinaryOperation(Token::Value::ADD, builder.Parameter(7), Strength::WEAK)
+      .BinaryOperation(Token::Value::ADD, builder.Parameter(1))
+      .BinaryOperation(Token::Value::ADD, builder.Parameter(2))
+      .BinaryOperation(Token::Value::ADD, builder.Parameter(3))
+      .BinaryOperation(Token::Value::ADD, builder.Parameter(4))
+      .BinaryOperation(Token::Value::ADD, builder.Parameter(5))
+      .BinaryOperation(Token::Value::ADD, builder.Parameter(6))
+      .BinaryOperation(Token::Value::ADD, builder.Parameter(7))
       .Return();
   Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -744,8 +744,7 @@ TEST(InterpreterLoadNamedProperty) {
 
   BytecodeArrayBuilder builder(handles.main_isolate(), handles.main_zone(), 1,
                                0, 0);
-  builder.LoadNamedProperty(builder.Parameter(0), name, vector->GetIndex(slot),
-                            i::SLOPPY)
+  builder.LoadNamedProperty(builder.Parameter(0), name, vector->GetIndex(slot))
       .Return();
   Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -799,8 +798,7 @@ TEST(InterpreterLoadKeyedProperty) {
   BytecodeArrayBuilder builder(handles.main_isolate(), handles.main_zone(), 1,
                                0, 1);
   builder.LoadLiteral(key)
-      .LoadKeyedProperty(builder.Parameter(0), vector->GetIndex(slot),
-                         i::STRICT)
+      .LoadKeyedProperty(builder.Parameter(0), vector->GetIndex(slot))
       .Return();
   Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -930,8 +928,7 @@ TEST(InterpreterStoreKeyedProperty) {
   CHECK_EQ(Smi::cast(*result), Smi::FromInt(999));
 }
 
-
-TEST(InterpreterCall) {
+static void TestInterpreterCall(TailCallMode tail_call_mode) {
   HandleAndZoneScope handles;
   i::Isolate* isolate = handles.main_isolate();
   i::Factory* factory = isolate->factory();
@@ -951,9 +948,9 @@ TEST(InterpreterCall) {
   {
     BytecodeArrayBuilder builder(handles.main_isolate(), handles.main_zone(), 1,
                                  0, 1);
-    builder.LoadNamedProperty(builder.Parameter(0), name, slot_index, i::SLOPPY)
+    builder.LoadNamedProperty(builder.Parameter(0), name, slot_index)
         .StoreAccumulatorInRegister(Register(0))
-        .Call(Register(0), builder.Parameter(0), 1, 0)
+        .Call(Register(0), builder.Parameter(0), 1, 0, tail_call_mode)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -970,9 +967,9 @@ TEST(InterpreterCall) {
   {
     BytecodeArrayBuilder builder(handles.main_isolate(), handles.main_zone(), 1,
                                  0, 1);
-    builder.LoadNamedProperty(builder.Parameter(0), name, slot_index, i::SLOPPY)
+    builder.LoadNamedProperty(builder.Parameter(0), name, slot_index)
         .StoreAccumulatorInRegister(Register(0))
-        .Call(Register(0), builder.Parameter(0), 1, 0)
+        .Call(Register(0), builder.Parameter(0), 1, 0, tail_call_mode)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -992,7 +989,7 @@ TEST(InterpreterCall) {
   {
     BytecodeArrayBuilder builder(handles.main_isolate(), handles.main_zone(), 1,
                                  0, 4);
-    builder.LoadNamedProperty(builder.Parameter(0), name, slot_index, i::SLOPPY)
+    builder.LoadNamedProperty(builder.Parameter(0), name, slot_index)
         .StoreAccumulatorInRegister(Register(0))
         .LoadAccumulatorWithRegister(builder.Parameter(0))
         .StoreAccumulatorInRegister(Register(1))
@@ -1000,7 +997,7 @@ TEST(InterpreterCall) {
         .StoreAccumulatorInRegister(Register(2))
         .LoadLiteral(Smi::FromInt(11))
         .StoreAccumulatorInRegister(Register(3))
-        .Call(Register(0), Register(1), 3, 0)
+        .Call(Register(0), Register(1), 3, 0, tail_call_mode)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -1019,7 +1016,7 @@ TEST(InterpreterCall) {
   {
     BytecodeArrayBuilder builder(handles.main_isolate(), handles.main_zone(), 1,
                                  0, 12);
-    builder.LoadNamedProperty(builder.Parameter(0), name, slot_index, i::SLOPPY)
+    builder.LoadNamedProperty(builder.Parameter(0), name, slot_index)
         .StoreAccumulatorInRegister(Register(0))
         .LoadAccumulatorWithRegister(builder.Parameter(0))
         .StoreAccumulatorInRegister(Register(1))
@@ -1043,7 +1040,7 @@ TEST(InterpreterCall) {
         .StoreAccumulatorInRegister(Register(10))
         .LoadLiteral(factory->NewStringFromAsciiChecked("j"))
         .StoreAccumulatorInRegister(Register(11))
-        .Call(Register(0), Register(1), 11, 0)
+        .Call(Register(0), Register(1), 11, 0, tail_call_mode)
         .Return();
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
 
@@ -1064,6 +1061,9 @@ TEST(InterpreterCall) {
   }
 }
 
+TEST(InterpreterCall) { TestInterpreterCall(TailCallMode::kDisallow); }
+
+TEST(InterpreterTailCall) { TestInterpreterCall(TailCallMode::kAllow); }
 
 static BytecodeArrayBuilder& SetRegister(BytecodeArrayBuilder& builder,
                                          Register reg, int value,
@@ -1080,7 +1080,7 @@ static BytecodeArrayBuilder& IncrementRegister(BytecodeArrayBuilder& builder,
                                                Register scratch) {
   return builder.StoreAccumulatorInRegister(scratch)
       .LoadLiteral(Smi::FromInt(value))
-      .BinaryOperation(Token::Value::ADD, reg, Strength::WEAK)
+      .BinaryOperation(Token::Value::ADD, reg)
       .StoreAccumulatorInRegister(reg)
       .LoadAccumulatorWithRegister(scratch);
 }
@@ -1240,7 +1240,7 @@ TEST(InterpreterSmiComparisons) {
         builder.LoadLiteral(Smi::FromInt(inputs[i]))
             .StoreAccumulatorInRegister(r0)
             .LoadLiteral(Smi::FromInt(inputs[j]))
-            .CompareOperation(comparison, r0, Strength::WEAK)
+            .CompareOperation(comparison, r0)
             .Return();
 
         Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
@@ -1276,7 +1276,7 @@ TEST(InterpreterHeapNumberComparisons) {
         builder.LoadLiteral(factory->NewHeapNumber(inputs[i]))
             .StoreAccumulatorInRegister(r0)
             .LoadLiteral(factory->NewHeapNumber(inputs[j]))
-            .CompareOperation(comparison, r0, Strength::WEAK)
+            .CompareOperation(comparison, r0)
             .Return();
 
         Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
@@ -1309,7 +1309,7 @@ TEST(InterpreterStringComparisons) {
         builder.LoadLiteral(factory->NewStringFromAsciiChecked(lhs))
             .StoreAccumulatorInRegister(r0)
             .LoadLiteral(factory->NewStringFromAsciiChecked(rhs))
-            .CompareOperation(comparison, r0, Strength::WEAK)
+            .CompareOperation(comparison, r0)
             .Return();
 
         Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
@@ -1355,14 +1355,14 @@ TEST(InterpreterMixedComparisons) {
             builder.LoadLiteral(factory->NewNumber(lhs))
                 .StoreAccumulatorInRegister(r0)
                 .LoadLiteral(factory->NewStringFromAsciiChecked(rhs_cstr))
-                .CompareOperation(comparison, r0, Strength::WEAK)
+                .CompareOperation(comparison, r0)
                 .Return();
           } else {
             // Comparison with HeapNumber on the rhs and String on the lhs
             builder.LoadLiteral(factory->NewStringFromAsciiChecked(lhs_cstr))
                 .StoreAccumulatorInRegister(r0)
                 .LoadLiteral(factory->NewNumber(rhs))
-                .CompareOperation(comparison, r0, Strength::WEAK)
+                .CompareOperation(comparison, r0)
                 .Return();
           }
 
@@ -1396,7 +1396,7 @@ TEST(InterpreterInstanceOf) {
     builder.LoadLiteral(cases[i]);
     builder.StoreAccumulatorInRegister(r0)
         .LoadLiteral(func)
-        .CompareOperation(Token::Value::INSTANCEOF, r0, Strength::WEAK)
+        .CompareOperation(Token::Value::INSTANCEOF, r0)
         .Return();
 
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();
@@ -1425,7 +1425,7 @@ TEST(InterpreterTestIn) {
     builder.LoadLiteral(factory->NewStringFromAsciiChecked(properties[i]))
         .StoreAccumulatorInRegister(r0)
         .LoadLiteral(Handle<Object>::cast(array))
-        .CompareOperation(Token::Value::IN, r0, Strength::WEAK)
+        .CompareOperation(Token::Value::IN, r0)
         .Return();
 
     Handle<BytecodeArray> bytecode_array = builder.ToBytecodeArray();

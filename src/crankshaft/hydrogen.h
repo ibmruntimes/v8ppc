@@ -346,13 +346,6 @@ class HGraph final : public ZoneObject {
   bool IsStandardConstant(HConstant* constant);
 
   HBasicBlock* CreateBasicBlock();
-  HArgumentsObject* GetArgumentsObject() const {
-    return arguments_object_.get();
-  }
-
-  void SetArgumentsObject(HArgumentsObject* object) {
-    arguments_object_.set(object);
-  }
 
   int GetMaximumValueID() const { return values_.length(); }
   int GetNextBlockID() { return next_block_id_++; }
@@ -482,7 +475,6 @@ class HGraph final : public ZoneObject {
   SetOncePointer<HConstant> constant_the_hole_;
   SetOncePointer<HConstant> constant_null_;
   SetOncePointer<HConstant> constant_invalid_context_;
-  SetOncePointer<HArgumentsObject> arguments_object_;
 
   HOsrBuilder* osr_;
 
@@ -1329,6 +1321,7 @@ class HGraphBuilder {
                                    bool is_jsarray);
 
   HValue* BuildNumberToString(HValue* object, Type* type);
+  HValue* BuildToNumber(HValue* input, Type* input_type);
   HValue* BuildToObject(HValue* receiver);
 
   void BuildJSObjectCheck(HValue* receiver,
@@ -1355,8 +1348,7 @@ class HGraphBuilder {
 
   HValue* BuildUncheckedDictionaryElementLoad(HValue* receiver,
                                               HValue* elements, HValue* key,
-                                              HValue* hash,
-                                              LanguageMode language_mode);
+                                              HValue* hash);
 
   // ES6 section 7.4.7 CreateIterResultObject ( value, done )
   HValue* BuildCreateIterResultObject(HValue* value, HValue* done);
@@ -1435,7 +1427,6 @@ class HGraphBuilder {
                                Type* left_type, Type* right_type,
                                Type* result_type, Maybe<int> fixed_right_arg,
                                HAllocationMode allocation_mode,
-                               Strength strength,
                                BailoutId opt_id = BailoutId::None());
 
   HLoadNamedField* AddLoadFixedArrayLength(HValue *object,
@@ -2208,8 +2199,6 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(IsJSProxy)                         \
   F(Call)                              \
   F(ValueOf)                           \
-  F(SetValueOf)                        \
-  F(IsDate)                            \
   F(StringCharFromCode)                \
   F(StringCharAt)                      \
   F(OneByteSeqStringSetChar)           \
@@ -2224,7 +2213,6 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(MathPow)                           \
   F(HasCachedArrayIndex)               \
   F(GetCachedArrayIndex)               \
-  F(FastOneByteArrayJoin)              \
   F(DebugBreakInOptimizedCode)         \
   F(StringCharCodeAt)                  \
   F(SubString)                         \
@@ -2265,9 +2253,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   /* ES6 Iterators */                  \
   F(CreateIterResultObject)            \
   /* Arrays */                         \
-  F(HasFastPackedElements)             \
-  /* JSValue */                        \
-  F(JSValueGetValue)
+  F(HasFastPackedElements)
 
 #define GENERATOR_DECLARATION(Name) void Generate##Name(CallRuntime* call);
   FOR_EACH_HYDROGEN_INTRINSIC(GENERATOR_DECLARATION)
@@ -2630,12 +2616,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
     Handle<Object> GetAccessorsFromMap(Handle<Map> map) const {
       return GetConstantFromMap(map);
     }
-    Handle<FieldType> GetFieldTypeFromMap(Handle<Map> map) const {
-      DCHECK(IsFound());
-      DCHECK(number_ < map->NumberOfOwnDescriptors());
-      return handle(map->instance_descriptors()->GetFieldType(number_),
-                    isolate());
-    }
+    Handle<FieldType> GetFieldTypeFromMap(Handle<Map> map) const;
     Handle<Map> GetFieldOwnerFromMap(Handle<Map> map) const {
       DCHECK(IsFound());
       DCHECK(number_ < map->NumberOfOwnDescriptors());
@@ -2651,7 +2632,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
 
     void LookupDescriptor(Map* map, Name* name) {
       DescriptorArray* descriptors = map->instance_descriptors();
-      int number = descriptors->SearchWithCache(name, map);
+      int number = descriptors->SearchWithCache(isolate(), name, map);
       if (number == DescriptorArray::kNotFound) return NotFound();
       lookup_type_ = DESCRIPTOR_TYPE;
       details_ = descriptors->GetDetails(number);

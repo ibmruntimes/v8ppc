@@ -44,7 +44,6 @@
   'regress/regress-crbug-160010': [SKIP],
 
   # Issue 4698: not fully supported by Turbofan yet
-  'es6/tail-call-simple': [SKIP],
   'es6/tail-call': [PASS, NO_VARIANTS],
 
   # Issue 3389: deopt_every_n_garbage_collections is unsafe
@@ -122,7 +121,18 @@
   'debug-listbreakpoints': [PASS, NO_VARIANTS],  # arm64 nosnap with turbofan
   'debug-enable-disable-breakpoints': [PASS, NO_VARIANTS],  #arm64 nosnap with turbofan.
 
-  # TODO(rossberg)
+  # Issue 3956: Strong mode is deprecating. The expectations inside the
+  # following tests should be updated once deprecation is complete.
+  'strong/destructuring': [SKIP],
+  'strong/implicit-conversions': [SKIP],
+  'strong/implicit-conversions-count': [SKIP],
+  'strong/implicit-conversions-inlining': [SKIP],
+  'strong/load-builtins': [SKIP],
+  'strong/load-element': [SKIP],
+  'strong/load-element-mutate-backing-store': [SKIP],
+  'strong/load-property': [SKIP],
+  'strong/load-property-mutate-backing-store': [SKIP],
+  'strong/load-super': [SKIP],
   'strong/literals': [SKIP], # Rest arguments do not respect strongness in Turbofan.
 
   # Issue 4035: unexpected frame->context() in debugger
@@ -285,8 +295,6 @@
   'readonly': [PASS, SLOW],
   'regress/regress-1200351': [PASS, ['mode == debug', SLOW]],
   'regress/regress-crbug-474297': [PASS, ['mode == debug', SLOW]],
-  'strong/implicit-conversions': [PASS, SLOW],
-  'strong/load-element-mutate-backing-store': [PASS, SLOW],
 
   # TODO(titzer): correct WASM adapter frame alignment on arm64
   'wasm/*': [PASS, ['arch == arm64', SKIP]],
@@ -764,10 +772,6 @@
   'regress/debug*': [SKIP],
   'regress/regress-debug*': [SKIP],
 
-  # TODO(yangguo,4690): debug-scopes.cc failure in ScopeIterator::Type
-  # DCHECK(context_->IsFunctionContext() || !scope_info->HasContext());
-  'regress/regress-crbug-582051': [SKIP],
-
   # TODO(yangguo,4690): Check failure in debug.cc BreakLocation::SetBreakPoint
   # DCHECK(IsDebugBreak() || IsDebuggerStatement());
   'regress/regress-1523': [FAIL],
@@ -837,7 +841,7 @@
   'regress/regress-123919': [FAIL],
 
   # TODO(rmcilroy,4680): Pass on debug, fail on release.
-  'compiler/regress-stacktrace-methods': [PASS, FAIL],
+  'compiler/regress-stacktrace-methods': [PASS, ['mode == release', FAIL]],
 
   # TODO(rmcilroy,4680): Test assert failures.
   'array-literal-feedback': [FAIL],
@@ -845,9 +849,6 @@
   'debug-liveedit-2': [FAIL],
   'compiler/deopt-tonumber-compare': [FAIL],
   'es6/string-search': [FAIL],
-  'es6/tail-call-proxies': [FAIL],
-  'es6/tail-call': [FAIL],
-  'es6/tail-call-simple': [FAIL],
   'es6/mirror-collections': [FAIL],
   'es6/regress/regress-468661': [FAIL],
   'harmony/string-replace': [FAIL],
@@ -858,19 +859,12 @@
   'regress/regress-4266': [FAIL],
   'harmony/simd': [FAIL],
   'regress/regress-crbug-109362': [FAIL],
-  'regress/regress-1170187': [FAIL],
   'regress/regress-131994': [FAIL],
   'regress/regress-crbug-568477-2': [FAIL],
   'regress/regress-crbug-568477-3': [FAIL],
   'regress/regress-crbug-568477-1': [FAIL],
   'regress/regress-2318': [FAIL],
-
-  # TODO(rmcilroy,4680): Test crashes.
-  'compiler/regress-funarguments': [SKIP],
-  'regress/regress-3985': [SKIP],
-  'regress/regress-457935': [SKIP],
-  'regress/regress-arg-materialize-store': [SKIP],
-  'regress/regress-514362': [SKIP],
+  'regress/regress-crbug-582051': [FAIL],
 
   # TODO(rmcilroy,4680): Test timeouts.
   'array-literal-transitions': [SKIP],
@@ -897,68 +891,13 @@
 }], # ignition == True and mode == debug
 
 ['ignition == True and arch == arm64', {
-  # TODO(rmcilroy,4680): Arm64 specific failures.
-  'apply': [SKIP],
-  'array-constructor': [SKIP],
-  'array-functions-prototype-misc': [SKIP],
-  'array-sort': [SKIP],
-  'array-store-and-grow': [SKIP],
-  'asm/construct-double': [SKIP],
-  'compiler/division-by-constant': [SKIP],
-  'compiler/osr-big': [SKIP],
-  'compiler/osr-nested': [SKIP],
-  'compiler/osr-one': [SKIP],
-  'compiler/osr-two': [SKIP],
-  'copy-on-write-assert': [SKIP],
-  'es6/block-conflicts': [SKIP],
-  'es6/block-const-assign': [SKIP],
-  'es6/block-let-declaration': [SKIP],
-  'es6/block-scoping-top-level': [SKIP],
-  'es6/classes-derived-return-type': [SKIP],
-  'es6/regress/regress-2506': [SKIP],
-  'es6/regress/regress-474783': [SKIP],
-  'es6/typedarray-proto': [SKIP],
-  'es6/unscopables': [SKIP],
-  'harmony/arraybuffer-species': [SKIP],
-  'harmony/array-species': [SKIP],
-  'harmony/block-conflicts-sloppy': [SKIP],
-  'harmony/block-const-assign-sloppy': [SKIP],
-  'harmony/block-let-declaration-sloppy': [SKIP],
-  'harmony/block-scoping-top-level-sloppy': [SKIP],
-  'harmony/species': [SKIP],
-  'harmony/typedarray-species': [SKIP],
-  'mirror-object': [SKIP],
-  'mul-exhaustive-part*': [SKIP],
-  'readonly': [SKIP],
-  'regress/regress-165637': [SKIP],
-  'regress/regress-2185': [SKIP],
-  'regress/regress-2249': [SKIP],
-  'regress/regress-298269': [SKIP],
-  'regress/regress-319722-ArrayBuffer': [SKIP],
-  'regress/regress-347914': [SKIP],
-  'regress/regress-411210': [SKIP],
-  'regress/regress-4509-Class-constructor-typeerror-realm': [SKIP],
-  'regress/regress-4521': [SKIP],
-  'regress/regress-568765': [SKIP],
-  'regress/regress-85177': [SKIP],
-  'regress/regress-crbug-405517': [SKIP],
-  'regress/regress-crbug-474297': [SKIP],
-  'regress/regress-crbug-498022': [SKIP],
-  'regress/regress-crbug-505007-1': [SKIP],
-  'regress/regress-crbug-505007-2': [SKIP],
-  'regress/regress-crbug-513507': [SKIP],
-  'regress/regress-crbug-514081': [SKIP],
-  'regress/regress-deep-proto': [SKIP],
-  'regress/regress-put-prototype-transition': [SKIP],
-  'regress/regress-transcendental': [SKIP],
-  'stack-traces-overflow': [SKIP],
-  'try': [SKIP],
-  'unicodelctest': [SKIP],
-  'unicodelctest-no-optimization': [SKIP],
+  # TODO(rmcilroy,4680): Fails on Arm64 due to expecting to take less than 3
+  # seconds.
+  'regress/regress-165637': [FAIL],
 }],  # ignition == True and arch == arm64
 
-['ignition == True and arch == arm', {
-  # TODO(rmcilroy,4680): Arm specific timeouts.
+['ignition == True and (arch == arm or arch == arm64)', {
+  # TODO(rmcilroy,4680): Arm / Arm64 specific timeouts.
   'asm/construct-double': [SKIP],
   'compiler/osr-nested': [SKIP],
   'compiler/osr-one': [SKIP],
@@ -969,7 +908,7 @@
   'regress/regress-91008': [SKIP],
   'unicodelctest': [SKIP],
   'unicodelctest-no-optimization': [SKIP],
-}],  # ignition == True and arch == arm
+}],  # ignition == True and (arch == arm or arch == arm64)
 
 ##############################################################################
 ['gcov_coverage', {

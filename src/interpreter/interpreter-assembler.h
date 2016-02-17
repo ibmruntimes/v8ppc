@@ -84,7 +84,8 @@ class InterpreterAssembler : public compiler::CodeStubAssembler {
   // arguments (not including receiver) and the first argument
   // located at |first_arg|.
   compiler::Node* CallJS(compiler::Node* function, compiler::Node* context,
-                         compiler::Node* first_arg, compiler::Node* arg_count);
+                         compiler::Node* first_arg, compiler::Node* arg_count,
+                         TailCallMode tail_call_mode);
 
   // Call constructor |constructor| with |arg_count| arguments (not
   // including receiver) and the first argument located at
@@ -178,7 +179,7 @@ class InterpreterAssembler : public compiler::CodeStubAssembler {
   Bytecode bytecode_;
   CodeStubAssembler::Variable accumulator_;
   CodeStubAssembler::Variable context_;
-  CodeStubAssembler::Variable dispatch_table_;
+  CodeStubAssembler::Variable bytecode_array_;
 
   bool disable_stack_check_across_call_;
   compiler::Node* stack_pointer_before_call_;

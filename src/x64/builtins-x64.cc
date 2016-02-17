@@ -620,13 +620,6 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ Push(rdi);  // Callee's JS function.
   __ Push(rdx);  // Callee's new target.
 
-  // Push dispatch table pointer.
-  __ Move(rax, ExternalReference::interpreter_dispatch_table_address(
-                   masm->isolate()));
-  __ Push(rax);
-  // Push zero for bytecode array offset.
-  __ Push(Immediate(0));
-
   // Get the bytecode array from the function object and load the pointer to the
   // first entry into edi (InterpreterBytecodeRegister).
   __ movp(rax, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
@@ -640,6 +633,11 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
                      rax);
     __ Assert(equal, kFunctionDataShouldBeBytecodeArrayOnInterpreterEntry);
   }
+
+  // Push bytecode array.
+  __ Push(kInterpreterBytecodeArrayRegister);
+  // Push zero for bytecode array offset.
+  __ Push(Immediate(0));
 
   // Allocate the local and temporary register file on the stack.
   {
@@ -684,8 +682,9 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
           Immediate(InterpreterFrameConstants::kRegisterFilePointerFromFp));
   __ movp(kInterpreterBytecodeOffsetRegister,
           Immediate(BytecodeArray::kHeaderSize - kHeapObjectTag));
-  __ movp(kInterpreterDispatchTableRegister,
-          Operand(rbp, InterpreterFrameConstants::kDispatchTableFromFp));
+  __ Move(
+      kInterpreterDispatchTableRegister,
+      ExternalReference::interpreter_dispatch_table_address(masm->isolate()));
 
   // Dispatch to the first bytecode handler for the function.
   __ movzxbp(rbx, Operand(kInterpreterBytecodeArrayRegister,
@@ -756,7 +755,8 @@ static void Generate_InterpreterPushArgs(MacroAssembler* masm,
 
 
 // static
-void Builtins::Generate_InterpreterPushArgsAndCall(MacroAssembler* masm) {
+void Builtins::Generate_InterpreterPushArgsAndCallImpl(
+    MacroAssembler* masm, TailCallMode tail_call_mode) {
   // ----------- S t a t e -------------
   //  -- rax : the number of arguments (not including the receiver)
   //  -- rbx : the address of the first argument to be pushed. Subsequent
@@ -772,7 +772,9 @@ void Builtins::Generate_InterpreterPushArgsAndCall(MacroAssembler* masm) {
 
   // Call the target.
   __ PushReturnAddressFrom(kScratchRegister);  // Re-push return address.
-  __ Jump(masm->isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
+  __ Jump(masm->isolate()->builtins()->Call(ConvertReceiverMode::kAny,
+                                            tail_call_mode),
+          RelocInfo::CODE_TARGET);
 }
 
 
@@ -819,12 +821,10 @@ static void Generate_EnterBytecodeDispatch(MacroAssembler* masm) {
                   InterpreterFrameConstants::kContextFromRegisterPointer));
 
   // Get the bytecode array pointer from the frame.
-  __ movp(rbx,
-          Operand(kInterpreterRegisterFileRegister,
-                  InterpreterFrameConstants::kFunctionFromRegisterPointer));
-  __ movp(rbx, FieldOperand(rbx, JSFunction::kSharedFunctionInfoOffset));
-  __ movp(kInterpreterBytecodeArrayRegister,
-          FieldOperand(rbx, SharedFunctionInfo::kFunctionDataOffset));
+  __ movp(
+      kInterpreterBytecodeArrayRegister,
+      Operand(kInterpreterRegisterFileRegister,
+              InterpreterFrameConstants::kBytecodeArrayFromRegisterPointer));
 
   if (FLAG_debug_code) {
     // Check function data field is actually a BytecodeArray object.
@@ -2190,7 +2190,17 @@ void PrepareForTailCall(MacroAssembler* masm, Register args_reg,
       ExternalReference::debug_is_active_address(masm->isolate());
   __ Move(kScratchRegister, debug_is_active);
   __ cmpb(Operand(kScratchRegister, 0), Immediate(0));
-  __ j(not_equal, &done, Label::kNear);
+  __ j(not_equal, &done);
+
+  // Drop possible interpreter handler/stub frame.
+  {
+    Label no_interpreter_frame;
+    __ Cmp(Operand(rbp, StandardFrameConstants::kMarkerOffset),
+           Smi::FromInt(StackFrame::STUB));
+    __ j(not_equal, &no_interpreter_frame, Label::kNear);
+    __ movp(rbp, Operand(rbp, StandardFrameConstants::kCallerFPOffset));
+    __ bind(&no_interpreter_frame);
+  }
 
   // Check if next frame is an arguments adaptor frame.
   Label no_arguments_adaptor, formal_parameter_count_loaded;

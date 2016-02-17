@@ -51,34 +51,6 @@ ConvertReceiverMode ConvertReceiverModeOf(Operator const* op);
 ToBooleanHints ToBooleanHintsOf(Operator const* op);
 
 
-// Defines the language mode and hints for a JavaScript binary operations.
-// This is used as parameter by JSAdd, JSSubtract, etc. operators.
-class BinaryOperationParameters final {
- public:
-  BinaryOperationParameters(LanguageMode language_mode,
-                            BinaryOperationHints hints)
-      : language_mode_(language_mode), hints_(hints) {}
-
-  LanguageMode language_mode() const { return language_mode_; }
-  BinaryOperationHints hints() const { return hints_; }
-
- private:
-  LanguageMode const language_mode_;
-  BinaryOperationHints const hints_;
-};
-
-bool operator==(BinaryOperationParameters const&,
-                BinaryOperationParameters const&);
-bool operator!=(BinaryOperationParameters const&,
-                BinaryOperationParameters const&);
-
-size_t hash_value(BinaryOperationParameters const&);
-
-std::ostream& operator<<(std::ostream&, BinaryOperationParameters const&);
-
-BinaryOperationParameters const& BinaryOperationParametersOf(Operator const*);
-
-
 // Defines the arity and the feedback for a JavaScript constructor call. This is
 // used as a parameter by JSCallConstruct operators.
 class CallConstructParameters final {
@@ -108,20 +80,15 @@ CallConstructParameters const& CallConstructParametersOf(Operator const*);
 // used as a parameter by JSCallFunction operators.
 class CallFunctionParameters final {
  public:
-  CallFunctionParameters(size_t arity, LanguageMode language_mode,
-                         VectorSlotPair const& feedback,
+  CallFunctionParameters(size_t arity, VectorSlotPair const& feedback,
                          TailCallMode tail_call_mode,
                          ConvertReceiverMode convert_mode)
       : bit_field_(ArityField::encode(arity) |
                    ConvertReceiverModeField::encode(convert_mode) |
-                   LanguageModeField::encode(language_mode) |
                    TailCallModeField::encode(tail_call_mode)),
         feedback_(feedback) {}
 
   size_t arity() const { return ArityField::decode(bit_field_); }
-  LanguageMode language_mode() const {
-    return LanguageModeField::decode(bit_field_);
-  }
   ConvertReceiverMode convert_mode() const {
     return ConvertReceiverModeField::decode(bit_field_);
   }
@@ -143,9 +110,8 @@ class CallFunctionParameters final {
     return base::hash_combine(p.bit_field_, p.feedback_);
   }
 
-  typedef BitField<size_t, 0, 27> ArityField;
-  typedef BitField<ConvertReceiverMode, 27, 2> ConvertReceiverModeField;
-  typedef BitField<LanguageMode, 29, 2> LanguageModeField;
+  typedef BitField<size_t, 0, 29> ArityField;
+  typedef BitField<ConvertReceiverMode, 29, 2> ConvertReceiverModeField;
   typedef BitField<TailCallMode, 31, 1> TailCallModeField;
 
   const uint32_t bit_field_;
@@ -418,31 +384,21 @@ class JSOperatorBuilder final : public ZoneObject {
   const Operator* NotEqual();
   const Operator* StrictEqual();
   const Operator* StrictNotEqual();
-  const Operator* LessThan(LanguageMode language_mode);
-  const Operator* GreaterThan(LanguageMode language_mode);
-  const Operator* LessThanOrEqual(LanguageMode language_mode);
-  const Operator* GreaterThanOrEqual(LanguageMode language_mode);
-  const Operator* BitwiseOr(LanguageMode language_mode,
-                            BinaryOperationHints hints);
-  const Operator* BitwiseXor(LanguageMode language_mode,
-                             BinaryOperationHints hints);
-  const Operator* BitwiseAnd(LanguageMode language_mode,
-                             BinaryOperationHints hints);
-  const Operator* ShiftLeft(LanguageMode language_mode,
-                            BinaryOperationHints hints);
-  const Operator* ShiftRight(LanguageMode language_mode,
-                             BinaryOperationHints hints);
-  const Operator* ShiftRightLogical(LanguageMode language_mode,
-                                    BinaryOperationHints hints);
-  const Operator* Add(LanguageMode language_mode, BinaryOperationHints hints);
-  const Operator* Subtract(LanguageMode language_mode,
-                           BinaryOperationHints hints);
-  const Operator* Multiply(LanguageMode language_mode,
-                           BinaryOperationHints hints);
-  const Operator* Divide(LanguageMode language_mode,
-                         BinaryOperationHints hints);
-  const Operator* Modulus(LanguageMode language_mode,
-                          BinaryOperationHints hints);
+  const Operator* LessThan();
+  const Operator* GreaterThan();
+  const Operator* LessThanOrEqual();
+  const Operator* GreaterThanOrEqual();
+  const Operator* BitwiseOr(BinaryOperationHints hints);
+  const Operator* BitwiseXor(BinaryOperationHints hints);
+  const Operator* BitwiseAnd(BinaryOperationHints hints);
+  const Operator* ShiftLeft(BinaryOperationHints hints);
+  const Operator* ShiftRight(BinaryOperationHints hints);
+  const Operator* ShiftRightLogical(BinaryOperationHints hints);
+  const Operator* Add(BinaryOperationHints hints);
+  const Operator* Subtract(BinaryOperationHints hints);
+  const Operator* Multiply(BinaryOperationHints hints);
+  const Operator* Divide(BinaryOperationHints hints);
+  const Operator* Modulus(BinaryOperationHints hints);
 
   const Operator* ToBoolean(ToBooleanHints hints);
   const Operator* ToNumber();
@@ -465,8 +421,7 @@ class JSOperatorBuilder final : public ZoneObject {
                                       int literal_flags, int literal_index);
 
   const Operator* CallFunction(
-      size_t arity, LanguageMode language_mode,
-      VectorSlotPair const& feedback = VectorSlotPair(),
+      size_t arity, VectorSlotPair const& feedback = VectorSlotPair(),
       ConvertReceiverMode convert_mode = ConvertReceiverMode::kAny,
       TailCallMode tail_call_mode = TailCallMode::kDisallow);
   const Operator* CallRuntime(Runtime::FunctionId id);
@@ -476,10 +431,8 @@ class JSOperatorBuilder final : public ZoneObject {
 
   const Operator* ConvertReceiver(ConvertReceiverMode convert_mode);
 
-  const Operator* LoadProperty(LanguageMode language_mode,
-                               VectorSlotPair const& feedback);
-  const Operator* LoadNamed(LanguageMode language_mode, Handle<Name> name,
-                            VectorSlotPair const& feedback);
+  const Operator* LoadProperty(VectorSlotPair const& feedback);
+  const Operator* LoadNamed(Handle<Name> name, VectorSlotPair const& feedback);
 
   const Operator* StoreProperty(LanguageMode language_mode,
                                 VectorSlotPair const& feedback);

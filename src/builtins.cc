@@ -251,6 +251,9 @@ MUST_USE_RESULT
 inline MaybeHandle<FixedArrayBase> EnsureJSArrayWithWritableFastElements(
     Isolate* isolate, Handle<Object> receiver, Arguments* args,
     int first_added_arg) {
+  // We explicitly add a HandleScope to avoid creating several copies of the
+  // same handle which would otherwise cause issue when left-trimming later-on.
+  HandleScope scope(isolate);
   if (!receiver->IsJSArray()) return MaybeHandle<FixedArrayBase>();
   Handle<JSArray> array = Handle<JSArray>::cast(receiver);
   // If there may be elements accessors in the prototype chain, the fast path
@@ -264,12 +267,18 @@ inline MaybeHandle<FixedArrayBase> EnsureJSArrayWithWritableFastElements(
   Handle<FixedArrayBase> elms(array->elements(), isolate);
   Map* map = elms->map();
   if (map == heap->fixed_array_map()) {
-    if (args == NULL || array->HasFastObjectElements()) return elms;
+    if (args == NULL || array->HasFastObjectElements()) {
+      return scope.CloseAndEscape(elms);
+    }
   } else if (map == heap->fixed_cow_array_map()) {
     elms = JSObject::EnsureWritableFastElements(array);
-    if (args == NULL || array->HasFastObjectElements()) return elms;
+    if (args == NULL || array->HasFastObjectElements()) {
+      return scope.CloseAndEscape(elms);
+    }
   } else if (map == heap->fixed_double_array_map()) {
-    if (args == NULL) return elms;
+    if (args == NULL) {
+      return scope.CloseAndEscape(elms);
+    }
   } else {
     return MaybeHandle<FixedArrayBase>();
   }
@@ -283,7 +292,9 @@ inline MaybeHandle<FixedArrayBase> EnsureJSArrayWithWritableFastElements(
   // Need to ensure that the arguments passed in args can be contained in
   // the array.
   int args_length = args->length();
-  if (first_added_arg >= args_length) return handle(array->elements(), isolate);
+  if (first_added_arg >= args_length) {
+    return scope.CloseAndEscape(elms);
+  }
 
   ElementsKind origin_kind = array->map()->elements_kind();
   DCHECK(!IsFastObjectElementsKind(origin_kind));
@@ -306,9 +317,9 @@ inline MaybeHandle<FixedArrayBase> EnsureJSArrayWithWritableFastElements(
   }
   if (target_kind != origin_kind) {
     JSObject::TransitionElementsKind(array, target_kind);
-    return handle(array->elements(), isolate);
+    elms = handle(array->elements(), isolate);
   }
-  return elms;
+  return scope.CloseAndEscape(elms);
 }
 
 
@@ -1614,9 +1625,9 @@ MUST_USE_RESULT Maybe<bool> FastAssign(Handle<JSReceiver> to,
           prop_value = JSObject::FastPropertyAt(from, representation, index);
         }
       } else {
-        ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-            isolate, prop_value, Object::GetProperty(from, next_key, STRICT),
-            Nothing<bool>());
+        ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, prop_value,
+                                         Object::GetProperty(from, next_key),
+                                         Nothing<bool>());
       }
     } else {
       // If the map did change, do a slower lookup. We are still guaranteed that
@@ -1626,9 +1637,8 @@ MUST_USE_RESULT Maybe<bool> FastAssign(Handle<JSReceiver> to,
       DCHECK(it.state() == LookupIterator::DATA ||
              it.state() == LookupIterator::ACCESSOR);
       if (!it.IsEnumerable()) continue;
-      ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, prop_value,
-                                       Object::GetProperty(&it, STRICT),
-                                       Nothing<bool>());
+      ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+          isolate, prop_value, Object::GetProperty(&it), Nothing<bool>());
     }
     Handle<Object> status;
     ASSIGN_RETURN_ON_EXCEPTION_VALUE(
@@ -1687,7 +1697,7 @@ BUILTIN(ObjectAssign) {
         Handle<Object> prop_value;
         ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
             isolate, prop_value,
-            Runtime::GetObjectProperty(isolate, from, next_key, STRICT));
+            Runtime::GetObjectProperty(isolate, from, next_key));
         // 4c ii 2. Let status be ? Set(to, nextKey, propValue, true).
         Handle<Object> status;
         ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
@@ -1800,6 +1810,16 @@ BUILTIN(ObjectGetOwnPropertyNames) {
 // ES6 section 19.1.2.8 Object.getOwnPropertySymbols ( O )
 BUILTIN(ObjectGetOwnPropertySymbols) {
   return GetOwnPropertyKeys(isolate, args, SKIP_STRINGS);
+}
+
+
+// ES#sec-object.is Object.is ( value1, value2 )
+BUILTIN(ObjectIs) {
+  SealHandleScope shs(isolate);
+  DCHECK_EQ(3, args.length());
+  Handle<Object> value1 = args.at<Object>(1);
+  Handle<Object> value2 = args.at<Object>(2);
+  return isolate->heap()->ToBoolean(value1->SameValue(*value2));
 }
 
 
@@ -2302,6 +2322,70 @@ BUILTIN(ReflectSetPrototypeOf) {
       Handle<JSReceiver>::cast(target), proto, true, Object::DONT_THROW);
   MAYBE_RETURN(result, isolate->heap()->exception());
   return *isolate->factory()->ToBoolean(result.FromJust());
+}
+
+
+// -----------------------------------------------------------------------------
+// ES6 section 19.3 Boolean Objects
+
+
+// ES6 section 19.3.1.1 Boolean ( value ) for the [[Call]] case.
+BUILTIN(BooleanConstructor) {
+  HandleScope scope(isolate);
+  Handle<Object> value = args.atOrUndefined(isolate, 1);
+  return isolate->heap()->ToBoolean(value->BooleanValue());
+}
+
+
+// ES6 section 19.3.1.1 Boolean ( value ) for the [[Construct]] case.
+BUILTIN(BooleanConstructor_ConstructStub) {
+  HandleScope scope(isolate);
+  Handle<Object> value = args.atOrUndefined(isolate, 1);
+  Handle<JSFunction> target = args.target<JSFunction>();
+  Handle<JSReceiver> new_target = Handle<JSReceiver>::cast(args.new_target());
+  DCHECK(*target == target->native_context()->boolean_function());
+  Handle<Map> initial_map;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, initial_map,
+      JSFunction::GetDerivedMap(isolate, target, new_target));
+  Handle<JSValue> result = Handle<JSValue>::cast(
+      isolate->factory()->NewJSObjectFromMap(initial_map));
+  result->set_value(isolate->heap()->ToBoolean(value->BooleanValue()));
+  return *result;
+}
+
+
+// ES6 section 19.3.3.2 Boolean.prototype.toString ( )
+BUILTIN(BooleanPrototypeToString) {
+  HandleScope scope(isolate);
+  Handle<Object> receiver = args.receiver();
+  if (receiver->IsJSValue()) {
+    receiver = handle(Handle<JSValue>::cast(receiver)->value(), isolate);
+  }
+  if (!receiver->IsBoolean()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kNotGeneric,
+                              isolate->factory()->NewStringFromAsciiChecked(
+                                  "Boolean.prototype.toString")));
+  }
+  return Handle<Oddball>::cast(receiver)->to_string();
+}
+
+
+// ES6 section 19.3.3.3 Boolean.prototype.valueOf ( )
+BUILTIN(BooleanPrototypeValueOf) {
+  HandleScope scope(isolate);
+  Handle<Object> receiver = args.receiver();
+  if (receiver->IsJSValue()) {
+    receiver = handle(Handle<JSValue>::cast(receiver)->value(), isolate);
+  }
+  if (!receiver->IsBoolean()) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewTypeError(MessageTemplate::kNotGeneric,
+                              isolate->factory()->NewStringFromAsciiChecked(
+                                  "Boolean.prototype.valueOf")));
+  }
+  return *receiver;
 }
 
 
@@ -3905,6 +3989,16 @@ Handle<Code> Builtins::CallBoundFunction(TailCallMode tail_call_mode) {
   return Handle<Code>::null();
 }
 
+Handle<Code> Builtins::InterpreterPushArgsAndCall(TailCallMode tail_call_mode) {
+  switch (tail_call_mode) {
+    case TailCallMode::kDisallow:
+      return InterpreterPushArgsAndCall();
+    case TailCallMode::kAllow:
+      return InterpreterPushArgsAndTailCall();
+  }
+  UNREACHABLE();
+  return Handle<Code>::null();
+}
 
 namespace {
 
@@ -4034,12 +4128,7 @@ static void Generate_LoadIC_Miss(MacroAssembler* masm) {
 
 
 static void Generate_LoadIC_Normal(MacroAssembler* masm) {
-  LoadIC::GenerateNormal(masm, SLOPPY);
-}
-
-
-static void Generate_LoadIC_Normal_Strong(MacroAssembler* masm) {
-  LoadIC::GenerateNormal(masm, STRONG);
+  LoadIC::GenerateNormal(masm);
 }
 
 
@@ -4049,22 +4138,12 @@ static void Generate_LoadIC_Getter_ForDeopt(MacroAssembler* masm) {
 
 
 static void Generate_LoadIC_Slow(MacroAssembler* masm) {
-  LoadIC::GenerateRuntimeGetProperty(masm, SLOPPY);
-}
-
-
-static void Generate_LoadIC_Slow_Strong(MacroAssembler* masm) {
-  LoadIC::GenerateRuntimeGetProperty(masm, STRONG);
+  LoadIC::GenerateRuntimeGetProperty(masm);
 }
 
 
 static void Generate_KeyedLoadIC_Slow(MacroAssembler* masm) {
-  KeyedLoadIC::GenerateRuntimeGetProperty(masm, SLOPPY);
-}
-
-
-static void Generate_KeyedLoadIC_Slow_Strong(MacroAssembler* masm) {
-  KeyedLoadIC::GenerateRuntimeGetProperty(masm, STRONG);
+  KeyedLoadIC::GenerateRuntimeGetProperty(masm);
 }
 
 
@@ -4074,12 +4153,7 @@ static void Generate_KeyedLoadIC_Miss(MacroAssembler* masm) {
 
 
 static void Generate_KeyedLoadIC_Megamorphic(MacroAssembler* masm) {
-  KeyedLoadIC::GenerateMegamorphic(masm, SLOPPY);
-}
-
-
-static void Generate_KeyedLoadIC_Megamorphic_Strong(MacroAssembler* masm) {
-  KeyedLoadIC::GenerateMegamorphic(masm, STRONG);
+  KeyedLoadIC::GenerateMegamorphic(masm);
 }
 
 

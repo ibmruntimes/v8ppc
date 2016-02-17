@@ -8,7 +8,7 @@ vars = {
 
 deps = {
   "v8/build/gyp":
-    Var("git_url") + "/external/gyp.git" + "@" + "2f9ffdc96135eaa102ee90584e7c6e5e5c45915c",
+    Var("git_url") + "/external/gyp.git" + "@" + "ed163ce233f76a950dce1751ac851dbe4b1c00cc",
   "v8/third_party/icu":
     Var("git_url") + "/chromium/deps/icu.git" + "@" + "8f91ea3a7e0413df3312204058da856058a8099b",
   "v8/buildtools":
@@ -29,7 +29,7 @@ deps = {
   "v8/test/test262/data":
     Var("git_url") + "/external/github.com/tc39/test262.git" + "@" + "738a24b109f3fa71be44d5c3701d73141d494510",
   "v8/tools/clang":
-    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "fa731f3e12b54c519e08c0fe9b26cf12274df20c",
+    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "7a1ebdd9ae15490c88e87bf9b34417c318fe1986",
 }
 
 deps_os = {
@@ -100,6 +100,14 @@ hooks = [
                 "--no_auth",
                 "--bucket", "chromium-clang-format",
                 "-s", "v8/buildtools/linux64/clang-format.sha1",
+    ],
+  },
+  {
+    'name': 'gcmole',
+    'pattern': '.',
+    'action': [
+        'python',
+        'v8/tools/gcmole/download_gcmole_tools.py',
     ],
   },
   # Pull luci-go binaries (isolate, swarming) using checked-in hashes.

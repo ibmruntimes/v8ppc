@@ -37,7 +37,6 @@ namespace internal {
   V(Oddball, true_value, TrueValue)                                            \
   V(Oddball, false_value, FalseValue)                                          \
   V(String, empty_string, empty_string)                                        \
-  V(String, hidden_string, hidden_string)                                      \
   V(Oddball, uninitialized_value, UninitializedValue)                          \
   V(Map, cell_map, CellMap)                                                    \
   V(Map, global_property_cell_map, GlobalPropertyCellMap)                      \
@@ -291,6 +290,7 @@ class Scavenger;
 class ScavengeJob;
 class WeakObjectRetainer;
 
+typedef void (*ObjectSlotCallback)(HeapObject** from, HeapObject* to);
 
 // A queue of objects promoted during scavenge. Each object is accompanied
 // by it's size to avoid dereferencing a map pointer for scanning.
@@ -1059,6 +1059,7 @@ class Heap {
   }
 
   void ClearRecordedSlot(HeapObject* object, Object** slot);
+  void ClearRecordedSlotRange(HeapObject* object, Object** start, Object** end);
 
   // ===========================================================================
   // Incremental marking API. ==================================================
@@ -1361,6 +1362,9 @@ class Heap {
   // Report heap statistics.
   void ReportHeapStatistics(const char* title);
   void ReportCodeStatistics(const char* title);
+#endif
+#ifdef ENABLE_SLOW_DCHECKS
+  int CountHandlesForObject(Object* object);
 #endif
 
  private:

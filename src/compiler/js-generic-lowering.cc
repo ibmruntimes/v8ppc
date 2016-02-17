@@ -62,16 +62,11 @@ Reduction JSGenericLowering::Reduce(Node* node) {
   return Changed(node);
 }
 
-
-#define REPLACE_BINARY_OP_IC_CALL(Op, token)                                  \
-  void JSGenericLowering::Lower##Op(Node* node) {                             \
-    BinaryOperationParameters const& p =                                      \
-        BinaryOperationParametersOf(node->op());                              \
-    CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);             \
-    ReplaceWithStubCall(node,                                                 \
-                        CodeFactory::BinaryOpIC(isolate(), token,             \
-                                                strength(p.language_mode())), \
-                        CallDescriptor::kPatchableCallSiteWithNop | flags);   \
+#define REPLACE_BINARY_OP_IC_CALL(Op, token)                                \
+  void JSGenericLowering::Lower##Op(Node* node) {                           \
+    CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);           \
+    ReplaceWithStubCall(node, CodeFactory::BinaryOpIC(isolate(), token),    \
+                        CallDescriptor::kPatchableCallSiteWithNop | flags); \
   }
 REPLACE_BINARY_OP_IC_CALL(JSBitwiseOr, Token::BIT_OR)
 REPLACE_BINARY_OP_IC_CALL(JSBitwiseXor, Token::BIT_XOR)
@@ -89,27 +84,19 @@ REPLACE_BINARY_OP_IC_CALL(JSModulus, Token::MOD)
 
 // These ops are not language mode dependent; we arbitrarily pass Strength::WEAK
 // here.
-#define REPLACE_COMPARE_IC_CALL(op, token)             \
-  void JSGenericLowering::Lower##op(Node* node) {      \
-    ReplaceWithCompareIC(node, token, Strength::WEAK); \
+#define REPLACE_COMPARE_IC_CALL(op, token)        \
+  void JSGenericLowering::Lower##op(Node* node) { \
+    ReplaceWithCompareIC(node, token);            \
   }
 REPLACE_COMPARE_IC_CALL(JSEqual, Token::EQ)
 REPLACE_COMPARE_IC_CALL(JSNotEqual, Token::NE)
 REPLACE_COMPARE_IC_CALL(JSStrictEqual, Token::EQ_STRICT)
 REPLACE_COMPARE_IC_CALL(JSStrictNotEqual, Token::NE_STRICT)
+REPLACE_COMPARE_IC_CALL(JSLessThan, Token::LT)
+REPLACE_COMPARE_IC_CALL(JSGreaterThan, Token::GT)
+REPLACE_COMPARE_IC_CALL(JSLessThanOrEqual, Token::LTE)
+REPLACE_COMPARE_IC_CALL(JSGreaterThanOrEqual, Token::GTE)
 #undef REPLACE_COMPARE_IC_CALL
-
-
-#define REPLACE_COMPARE_IC_CALL_WITH_LANGUAGE_MODE(op, token)        \
-  void JSGenericLowering::Lower##op(Node* node) {                    \
-    ReplaceWithCompareIC(node, token,                                \
-                         strength(OpParameter<LanguageMode>(node))); \
-  }
-REPLACE_COMPARE_IC_CALL_WITH_LANGUAGE_MODE(JSLessThan, Token::LT)
-REPLACE_COMPARE_IC_CALL_WITH_LANGUAGE_MODE(JSGreaterThan, Token::GT)
-REPLACE_COMPARE_IC_CALL_WITH_LANGUAGE_MODE(JSLessThanOrEqual, Token::LTE)
-REPLACE_COMPARE_IC_CALL_WITH_LANGUAGE_MODE(JSGreaterThanOrEqual, Token::GTE)
-#undef REPLACE_COMPARE_IC_CALL_WITH_LANGUAGE_MODE
 
 
 #define REPLACE_RUNTIME_CALL(op, fun)             \
@@ -130,10 +117,8 @@ static CallDescriptor::Flags FlagsForNode(Node* node) {
   return result;
 }
 
-
-void JSGenericLowering::ReplaceWithCompareIC(Node* node, Token::Value token,
-                                             Strength str) {
-  Callable callable = CodeFactory::CompareIC(isolate(), token, str);
+void JSGenericLowering::ReplaceWithCompareIC(Node* node, Token::Value token) {
+  Callable callable = CodeFactory::CompareIC(isolate(), token);
 
   // Create a new call node asking a CompareIC for help.
   NodeVector inputs(zone());
@@ -285,8 +270,8 @@ void JSGenericLowering::LowerJSLoadProperty(Node* node) {
   Node* control = NodeProperties::GetControlInput(node);
   CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
   const PropertyAccess& p = PropertyAccessOf(node->op());
-  Callable callable = CodeFactory::KeyedLoadICInOptimizedCode(
-      isolate(), p.language_mode(), UNINITIALIZED);
+  Callable callable =
+      CodeFactory::KeyedLoadICInOptimizedCode(isolate(), UNINITIALIZED);
   // Load the type feedback vector from the closure.
   Node* shared_info = effect = graph()->NewNode(
       machine()->Load(MachineType::AnyTagged()), closure,
@@ -312,7 +297,7 @@ void JSGenericLowering::LowerJSLoadNamed(Node* node) {
   CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
   NamedAccess const& p = NamedAccessOf(node->op());
   Callable callable = CodeFactory::LoadICInOptimizedCode(
-      isolate(), NOT_INSIDE_TYPEOF, p.language_mode(), UNINITIALIZED);
+      isolate(), NOT_INSIDE_TYPEOF, UNINITIALIZED);
   // Load the type feedback vector from the closure.
   Node* shared_info = effect = graph()->NewNode(
       machine()->Load(MachineType::AnyTagged()), closure,
@@ -340,7 +325,7 @@ void JSGenericLowering::LowerJSLoadGlobal(Node* node) {
   CallDescriptor::Flags flags = AdjustFrameStatesForCall(node);
   const LoadGlobalParameters& p = LoadGlobalParametersOf(node->op());
   Callable callable = CodeFactory::LoadICInOptimizedCode(
-      isolate(), p.typeof_mode(), SLOPPY, UNINITIALIZED);
+      isolate(), p.typeof_mode(), UNINITIALIZED);
   // Load the type feedback vector from the closure.
   Node* shared_info = effect = graph()->NewNode(
       machine()->Load(MachineType::AnyTagged()), closure,

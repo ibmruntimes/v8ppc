@@ -161,37 +161,6 @@ TEST_F(JSIntrinsicLoweringTest, InlineIsArray) {
 
 
 // -----------------------------------------------------------------------------
-// %_IsDate
-
-
-TEST_F(JSIntrinsicLoweringTest, InlineIsDate) {
-  Node* const input = Parameter(0);
-  Node* const context = Parameter(1);
-  Node* const effect = graph()->start();
-  Node* const control = graph()->start();
-  Reduction const r = Reduce(
-      graph()->NewNode(javascript()->CallRuntime(Runtime::kInlineIsDate, 1),
-                       input, context, effect, control));
-  ASSERT_TRUE(r.Changed());
-
-  Node* phi = r.replacement();
-  Capture<Node*> branch, if_false;
-  EXPECT_THAT(
-      phi,
-      IsPhi(
-          MachineRepresentation::kTagged, IsFalseConstant(),
-          IsWord32Equal(IsLoadField(AccessBuilder::ForMapInstanceType(),
-                                    IsLoadField(AccessBuilder::ForMap(), input,
-                                                effect, CaptureEq(&if_false)),
-                                    effect, _),
-                        IsInt32Constant(JS_DATE_TYPE)),
-          IsMerge(IsIfTrue(AllOf(CaptureEq(&branch),
-                                 IsBranch(IsObjectIsSmi(input), control))),
-                  AllOf(CaptureEq(&if_false), IsIfFalse(CaptureEq(&branch))))));
-}
-
-
-// -----------------------------------------------------------------------------
 // %_IsTypedArray
 
 
@@ -267,24 +236,6 @@ TEST_F(JSIntrinsicLoweringTest, InlineIsJSReceiver) {
       context, effect, control));
   ASSERT_TRUE(r.Changed());
   EXPECT_THAT(r.replacement(), IsObjectIsReceiver(input));
-}
-
-
-// -----------------------------------------------------------------------------
-// %_JSValueGetValue
-
-
-TEST_F(JSIntrinsicLoweringTest, InlineJSValueGetValue) {
-  Node* const input = Parameter(0);
-  Node* const context = Parameter(1);
-  Node* const effect = graph()->start();
-  Node* const control = graph()->start();
-  Reduction const r = Reduce(graph()->NewNode(
-      javascript()->CallRuntime(Runtime::kInlineJSValueGetValue, 1), input,
-      context, effect, control));
-  ASSERT_TRUE(r.Changed());
-  EXPECT_THAT(r.replacement(),
-              IsLoadField(AccessBuilder::ForValue(), input, effect, control));
 }
 
 

@@ -49,8 +49,6 @@ Reduction JSIntrinsicLowering::Reduce(Node* node) {
       return ReduceIncrementStatsCounter(node);
     case Runtime::kInlineIsArray:
       return ReduceIsInstanceType(node, JS_ARRAY_TYPE);
-    case Runtime::kInlineIsDate:
-      return ReduceIsInstanceType(node, JS_DATE_TYPE);
     case Runtime::kInlineIsTypedArray:
       return ReduceIsInstanceType(node, JS_TYPED_ARRAY_TYPE);
     case Runtime::kInlineIsRegExp:
@@ -59,8 +57,6 @@ Reduction JSIntrinsicLowering::Reduce(Node* node) {
       return ReduceIsJSReceiver(node);
     case Runtime::kInlineIsSmi:
       return ReduceIsSmi(node);
-    case Runtime::kInlineJSValueGetValue:
-      return ReduceJSValueGetValue(node);
     case Runtime::kInlineMathClz32:
       return ReduceMathClz32(node);
     case Runtime::kInlineMathFloor:
@@ -233,15 +229,6 @@ Reduction JSIntrinsicLowering::ReduceIsJSReceiver(Node* node) {
 
 Reduction JSIntrinsicLowering::ReduceIsSmi(Node* node) {
   return Change(node, simplified()->ObjectIsSmi());
-}
-
-
-Reduction JSIntrinsicLowering::ReduceJSValueGetValue(Node* node) {
-  Node* value = NodeProperties::GetValueInput(node, 0);
-  Node* effect = NodeProperties::GetEffectInput(node);
-  Node* control = NodeProperties::GetControlInput(node);
-  return Change(node, simplified()->LoadField(AccessBuilder::ForValue()), value,
-                effect, control);
 }
 
 
@@ -512,20 +499,20 @@ Reduction JSIntrinsicLowering::ReduceToString(Node* node) {
 
 Reduction JSIntrinsicLowering::ReduceCall(Node* node) {
   size_t const arity = CallRuntimeParametersOf(node->op()).arity();
-  NodeProperties::ChangeOp(
-      node, javascript()->CallFunction(arity, STRICT, VectorSlotPair(),
-                                       ConvertReceiverMode::kAny,
-                                       TailCallMode::kDisallow));
+  NodeProperties::ChangeOp(node,
+                           javascript()->CallFunction(arity, VectorSlotPair(),
+                                                      ConvertReceiverMode::kAny,
+                                                      TailCallMode::kDisallow));
   return Changed(node);
 }
 
 
 Reduction JSIntrinsicLowering::ReduceTailCall(Node* node) {
   size_t const arity = CallRuntimeParametersOf(node->op()).arity();
-  NodeProperties::ChangeOp(
-      node, javascript()->CallFunction(arity, STRICT, VectorSlotPair(),
-                                       ConvertReceiverMode::kAny,
-                                       TailCallMode::kAllow));
+  NodeProperties::ChangeOp(node,
+                           javascript()->CallFunction(arity, VectorSlotPair(),
+                                                      ConvertReceiverMode::kAny,
+                                                      TailCallMode::kAllow));
   return Changed(node);
 }
 

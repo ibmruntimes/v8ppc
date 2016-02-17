@@ -568,10 +568,6 @@ void InstructionSelector::InitializeCallBuffer(Node* call, CallBuffer* buffer,
           g.UseLocation(callee, buffer->descriptor->GetInputLocation(0),
                         buffer->descriptor->GetInputType(0).representation()));
       break;
-    case CallDescriptor::kLazyBailout:
-      // The target is ignored, but we still need to pass a value here.
-      buffer->instruction_args.push_back(g.UseImmediate(callee));
-      break;
   }
   DCHECK_EQ(1u, buffer->instruction_args.size());
 
@@ -867,6 +863,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord32(node), VisitWord32Clz(node);
     case IrOpcode::kWord32Ctz:
       return MarkAsWord32(node), VisitWord32Ctz(node);
+    case IrOpcode::kWord32ReverseBits:
+      return MarkAsWord32(node), VisitWord32ReverseBits(node);
     case IrOpcode::kWord32Popcnt:
       return MarkAsWord32(node), VisitWord32Popcnt(node);
     case IrOpcode::kWord64Popcnt:
@@ -889,6 +887,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord64(node), VisitWord64Clz(node);
     case IrOpcode::kWord64Ctz:
       return MarkAsWord64(node), VisitWord64Ctz(node);
+    case IrOpcode::kWord64ReverseBits:
+      return MarkAsWord64(node), VisitWord64ReverseBits(node);
     case IrOpcode::kWord64Equal:
       return VisitWord64Equal(node);
     case IrOpcode::kInt32Add:
@@ -1077,6 +1077,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return VisitLoadStackPointer(node);
     case IrOpcode::kLoadFramePointer:
       return VisitLoadFramePointer(node);
+    case IrOpcode::kLoadParentFramePointer:
+      return VisitLoadParentFramePointer(node);
     case IrOpcode::kCheckedLoad: {
       MachineRepresentation rep =
           CheckedLoadRepresentationOf(node->op()).representation();
@@ -1101,9 +1103,14 @@ void InstructionSelector::VisitLoadStackPointer(Node* node) {
 
 void InstructionSelector::VisitLoadFramePointer(Node* node) {
   OperandGenerator g(this);
+  frame_->MarkNeedsFrame();
   Emit(kArchFramePointer, g.DefineAsRegister(node));
 }
 
+void InstructionSelector::VisitLoadParentFramePointer(Node* node) {
+  OperandGenerator g(this);
+  Emit(kArchParentFramePointer, g.DefineAsRegister(node));
+}
 
 void InstructionSelector::EmitTableSwitch(const SwitchInfo& sw,
                                           InstructionOperand& index_operand) {
@@ -1177,6 +1184,11 @@ void InstructionSelector::VisitWord64Clz(Node* node) { UNIMPLEMENTED(); }
 
 
 void InstructionSelector::VisitWord64Ctz(Node* node) { UNIMPLEMENTED(); }
+
+
+void InstructionSelector::VisitWord64ReverseBits(Node* node) {
+  UNIMPLEMENTED();
+}
 
 
 void InstructionSelector::VisitWord64Popcnt(Node* node) { UNIMPLEMENTED(); }
@@ -1451,9 +1463,6 @@ void InstructionSelector::VisitCall(Node* node, BasicBlock* handler) {
       break;
     case CallDescriptor::kCallJSFunction:
       opcode = kArchCallJSFunction | MiscField::encode(flags);
-      break;
-    case CallDescriptor::kLazyBailout:
-      opcode = kArchLazyBailout | MiscField::encode(flags);
       break;
   }
 

@@ -8,9 +8,7 @@
 #include <iosfwd>
 
 #include "src/factory.h"
-#include "src/field-index.h"
 #include "src/isolate.h"
-#include "src/types.h"
 
 namespace v8 {
 namespace internal {
@@ -75,9 +73,7 @@ std::ostream& operator<<(std::ostream& os, const Descriptor& d);
 class DataDescriptor final : public Descriptor {
  public:
   DataDescriptor(Handle<Name> key, int field_index,
-                 PropertyAttributes attributes, Representation representation)
-      : Descriptor(key, FieldType::Any(key->GetIsolate()), attributes, DATA,
-                   representation, field_index) {}
+                 PropertyAttributes attributes, Representation representation);
   // The field type is either a simple type or a map wrapped in a weak cell.
   DataDescriptor(Handle<Name> key, int field_index,
                  Handle<Object> wrapped_field_type,

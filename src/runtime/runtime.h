@@ -51,7 +51,6 @@ namespace internal {
   F(GetCachedArrayIndex, 1, 1)       \
   F(FixedArrayGet, 2, 1)             \
   F(FixedArraySet, 3, 1)             \
-  F(FastOneByteArrayJoin, 2, 1)      \
   F(ArraySpeciesConstructor, 1, 1)
 
 
@@ -84,8 +83,8 @@ namespace internal {
   F(HomeObjectSymbol, 0, 1)                 \
   F(DefineClass, 4, 1)                      \
   F(FinalizeClassDefinition, 2, 1)          \
-  F(LoadFromSuper, 4, 1)                    \
-  F(LoadKeyedFromSuper, 4, 1)               \
+  F(LoadFromSuper, 3, 1)                    \
+  F(LoadKeyedFromSuper, 3, 1)               \
   F(StoreToSuper_Strict, 4, 1)              \
   F(StoreToSuper_Sloppy, 4, 1)              \
   F(StoreKeyedToSuper_Strict, 4, 1)         \
@@ -419,9 +418,7 @@ namespace internal {
   F(GetOwnProperty_Legacy, 2, 1)                     \
   F(OptimizeObjectForAddingMultipleProperties, 2, 1) \
   F(GetProperty, 2, 1)                               \
-  F(GetPropertyStrong, 2, 1)                         \
   F(KeyedGetProperty, 2, 1)                          \
-  F(KeyedGetPropertyStrong, 2, 1)                    \
   F(LoadGlobalViaContext, 1, 1)                      \
   F(StoreGlobalViaContext_Sloppy, 2, 1)              \
   F(StoreGlobalViaContext_Strict, 2, 1)              \
@@ -451,8 +448,6 @@ namespace internal {
   F(GetDataProperty, 2, 1)                           \
   F(HasFastPackedElements, 1, 1)                     \
   F(ValueOf, 1, 1)                                   \
-  F(SetValueOf, 2, 1)                                \
-  F(JSValueGetValue, 1, 1)                           \
   F(IsJSReceiver, 1, 1)                              \
   F(IsStrong, 1, 1)                                  \
   F(ClassOf, 1, 1)                                   \
@@ -469,8 +464,9 @@ namespace internal {
   F(ToName, 1, 1)                                    \
   F(Equals, 2, 1)                                    \
   F(StrictEquals, 2, 1)                              \
+  F(SameValue, 2, 1)                                 \
+  F(SameValueZero, 2, 1)                             \
   F(Compare, 3, 1)                                   \
-  F(Compare_Strong, 3, 1)                            \
   F(InstanceOf, 2, 1)                                \
   F(HasInPrototypeChain, 2, 1)                       \
   F(CreateIterResultObject, 2, 1)                    \
@@ -491,30 +487,18 @@ namespace internal {
   F(GetObjectContextObjectGetNotifier, 1, 1)     \
   F(GetObjectContextNotifierPerformChange, 1, 1)
 
-
 #define FOR_EACH_INTRINSIC_OPERATORS(F) \
   F(Multiply, 2, 1)                     \
-  F(Multiply_Strong, 2, 1)              \
   F(Divide, 2, 1)                       \
-  F(Divide_Strong, 2, 1)                \
   F(Modulus, 2, 1)                      \
-  F(Modulus_Strong, 2, 1)               \
   F(Add, 2, 1)                          \
-  F(Add_Strong, 2, 1)                   \
   F(Subtract, 2, 1)                     \
-  F(Subtract_Strong, 2, 1)              \
   F(ShiftLeft, 2, 1)                    \
-  F(ShiftLeft_Strong, 2, 1)             \
   F(ShiftRight, 2, 1)                   \
-  F(ShiftRight_Strong, 2, 1)            \
   F(ShiftRightLogical, 2, 1)            \
-  F(ShiftRightLogical_Strong, 2, 1)     \
   F(BitwiseAnd, 2, 1)                   \
-  F(BitwiseAnd_Strong, 2, 1)            \
   F(BitwiseOr, 2, 1)                    \
-  F(BitwiseOr_Strong, 2, 1)             \
-  F(BitwiseXor, 2, 1)                   \
-  F(BitwiseXor_Strong, 2, 1)
+  F(BitwiseXor, 2, 1)
 
 #define FOR_EACH_INTRINSIC_PROXY(F)     \
   F(IsJSProxy, 1, 1)                    \
@@ -565,8 +549,6 @@ namespace internal {
 
 #define FOR_EACH_INTRINSIC_SIMD(F)     \
   F(IsSimdValue, 1, 1)                 \
-  F(SimdSameValue, 2, 1)               \
-  F(SimdSameValueZero, 2, 1)           \
   F(CreateFloat32x4, 4, 1)             \
   F(CreateInt32x4, 4, 1)               \
   F(CreateUint32x4, 4, 1)              \
@@ -1149,8 +1131,7 @@ class Runtime : public AllStatic {
       Handle<Object> value, LanguageMode language_mode);
 
   MUST_USE_RESULT static MaybeHandle<Object> GetObjectProperty(
-      Isolate* isolate, Handle<Object> object, Handle<Object> key,
-      LanguageMode language_mode = SLOPPY);
+      Isolate* isolate, Handle<Object> object, Handle<Object> key);
 
   enum TypedArrayId {
     // arrayIds below should be synchronized with typedarray.js natives.

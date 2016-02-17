@@ -11,7 +11,6 @@
 #include "src/profiler/allocation-tracker.h"
 #include "src/profiler/heap-profiler.h"
 #include "src/profiler/heap-snapshot-generator-inl.h"
-#include "src/types.h"
 
 namespace v8 {
 namespace internal {
@@ -1599,7 +1598,7 @@ void V8HeapExplorer::ExtractPropertyReferences(JSObject* js_obj, int entry) {
           int field_offset =
               field_index.is_inobject() ? field_index.offset() : -1;
 
-          if (k != heap_->hidden_string()) {
+          if (k != heap_->hidden_properties_symbol()) {
             SetDataOrAccessorPropertyReference(details.kind(), js_obj, entry, k,
                                                value, NULL, field_offset);
           } else {
@@ -1626,7 +1625,7 @@ void V8HeapExplorer::ExtractPropertyReferences(JSObject* js_obj, int entry) {
         DCHECK(dictionary->ValueAt(i)->IsPropertyCell());
         PropertyCell* cell = PropertyCell::cast(dictionary->ValueAt(i));
         Object* value = cell->value();
-        if (k == heap_->hidden_string()) {
+        if (k == heap_->hidden_properties_symbol()) {
           TagObject(value, "(hidden properties)");
           SetInternalReference(js_obj, entry, "hidden_properties", value);
           continue;
@@ -1643,7 +1642,7 @@ void V8HeapExplorer::ExtractPropertyReferences(JSObject* js_obj, int entry) {
       Object* k = dictionary->KeyAt(i);
       if (dictionary->IsKey(k)) {
         Object* value = dictionary->ValueAt(i);
-        if (k == heap_->hidden_string()) {
+        if (k == heap_->hidden_properties_symbol()) {
           TagObject(value, "(hidden properties)");
           SetInternalReference(js_obj, entry, "hidden_properties", value);
           continue;

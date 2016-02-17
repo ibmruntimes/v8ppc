@@ -220,25 +220,13 @@ void BytecodeArrayBuilder::Output(Bytecode bytecode) {
   bytecodes()->push_back(Bytecodes::ToByte(bytecode));
 }
 
-
 BytecodeArrayBuilder& BytecodeArrayBuilder::BinaryOperation(Token::Value op,
-                                                            Register reg,
-                                                            Strength strength) {
-  if (is_strong(strength)) {
-    UNIMPLEMENTED();
-  }
-
+                                                            Register reg) {
   Output(BytecodeForBinaryOperation(op), reg.ToRawOperand());
   return *this;
 }
 
-
-BytecodeArrayBuilder& BytecodeArrayBuilder::CountOperation(Token::Value op,
-                                                           Strength strength) {
-  if (is_strong(strength)) {
-    UNIMPLEMENTED();
-  }
-
+BytecodeArrayBuilder& BytecodeArrayBuilder::CountOperation(Token::Value op) {
   Output(BytecodeForCountOperation(op));
   return *this;
 }
@@ -255,13 +243,8 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::TypeOf() {
   return *this;
 }
 
-
-BytecodeArrayBuilder& BytecodeArrayBuilder::CompareOperation(
-    Token::Value op, Register reg, Strength strength) {
-  if (is_strong(strength)) {
-    UNIMPLEMENTED();
-  }
-
+BytecodeArrayBuilder& BytecodeArrayBuilder::CompareOperation(Token::Value op,
+                                                             Register reg) {
   Output(BytecodeForCompareOperation(op), reg.ToRawOperand());
   return *this;
 }
@@ -381,11 +364,10 @@ void BytecodeArrayBuilder::MoveRegisterUntranslated(Register from,
 }
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::LoadGlobal(
-    const Handle<String> name, int feedback_slot, LanguageMode language_mode,
-    TypeofMode typeof_mode) {
-  // TODO(rmcilroy): Potentially store language and typeof information in an
+    const Handle<String> name, int feedback_slot, TypeofMode typeof_mode) {
+  // TODO(rmcilroy): Potentially store typeof information in an
   // operand rather than having extra bytecodes.
-  Bytecode bytecode = BytecodeForLoadGlobal(language_mode, typeof_mode);
+  Bytecode bytecode = BytecodeForLoadGlobal(typeof_mode);
   size_t name_index = GetConstantPoolEntry(name);
   if (FitsInIdx8Operand(name_index) && FitsInIdx8Operand(feedback_slot)) {
     Output(bytecode, static_cast<uint8_t>(name_index),
@@ -485,16 +467,15 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::StoreLookupSlot(
 }
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::LoadNamedProperty(
-    Register object, const Handle<Name> name, int feedback_slot,
-    LanguageMode language_mode) {
-  Bytecode bytecode = BytecodeForLoadIC(language_mode);
+    Register object, const Handle<Name> name, int feedback_slot) {
   size_t name_index = GetConstantPoolEntry(name);
   if (FitsInIdx8Operand(name_index) && FitsInIdx8Operand(feedback_slot)) {
-    Output(bytecode, object.ToRawOperand(), static_cast<uint8_t>(name_index),
+    Output(Bytecode::kLoadIC, object.ToRawOperand(),
+           static_cast<uint8_t>(name_index),
            static_cast<uint8_t>(feedback_slot));
   } else if (FitsInIdx16Operand(name_index) &&
              FitsInIdx16Operand(feedback_slot)) {
-    Output(BytecodeForWideOperands(bytecode), object.ToRawOperand(),
+    Output(Bytecode::kLoadICWide, object.ToRawOperand(),
            static_cast<uint16_t>(name_index),
            static_cast<uint16_t>(feedback_slot));
   } else {
@@ -503,15 +484,13 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::LoadNamedProperty(
   return *this;
 }
 
-
 BytecodeArrayBuilder& BytecodeArrayBuilder::LoadKeyedProperty(
-    Register object, int feedback_slot, LanguageMode language_mode) {
-  Bytecode bytecode = BytecodeForKeyedLoadIC(language_mode);
+    Register object, int feedback_slot) {
   if (FitsInIdx8Operand(feedback_slot)) {
-    Output(bytecode, object.ToRawOperand(),
+    Output(Bytecode::kKeyedLoadIC, object.ToRawOperand(),
            static_cast<uint8_t>(feedback_slot));
   } else if (FitsInIdx16Operand(feedback_slot)) {
-    Output(BytecodeForWideOperands(bytecode), object.ToRawOperand(),
+    Output(Bytecode::kKeyedLoadICWide, object.ToRawOperand(),
            static_cast<uint16_t>(feedback_slot));
   } else {
     UNIMPLEMENTED();
@@ -1083,20 +1062,21 @@ void BytecodeArrayBuilder::EnsureReturn(FunctionLiteral* literal) {
 BytecodeArrayBuilder& BytecodeArrayBuilder::Call(Register callable,
                                                  Register receiver_args,
                                                  size_t receiver_args_count,
-                                                 int feedback_slot) {
+                                                 int feedback_slot,
+                                                 TailCallMode tail_call_mode) {
+  Bytecode bytecode = BytecodeForCall(tail_call_mode);
   if (FitsInReg8Operand(callable) && FitsInReg8Operand(receiver_args) &&
       FitsInIdx8Operand(receiver_args_count) &&
       FitsInIdx8Operand(feedback_slot)) {
-    Output(Bytecode::kCall, callable.ToRawOperand(),
-           receiver_args.ToRawOperand(),
+    Output(bytecode, callable.ToRawOperand(), receiver_args.ToRawOperand(),
            static_cast<uint8_t>(receiver_args_count),
            static_cast<uint8_t>(feedback_slot));
   } else if (FitsInReg16Operand(callable) &&
              FitsInReg16Operand(receiver_args) &&
              FitsInIdx16Operand(receiver_args_count) &&
              FitsInIdx16Operand(feedback_slot)) {
-    Output(Bytecode::kCallWide, callable.ToRawOperand(),
-           receiver_args.ToRawOperand(),
+    bytecode = BytecodeForWideOperands(bytecode);
+    Output(bytecode, callable.ToRawOperand(), receiver_args.ToRawOperand(),
            static_cast<uint16_t>(receiver_args_count),
            static_cast<uint16_t>(feedback_slot));
   } else {
@@ -1446,14 +1426,14 @@ Bytecode BytecodeArrayBuilder::BytecodeForCompareOperation(Token::Value op) {
 // static
 Bytecode BytecodeArrayBuilder::BytecodeForWideOperands(Bytecode bytecode) {
   switch (bytecode) {
-    case Bytecode::kLoadICSloppy:
-      return Bytecode::kLoadICSloppyWide;
-    case Bytecode::kLoadICStrict:
-      return Bytecode::kLoadICStrictWide;
-    case Bytecode::kKeyedLoadICSloppy:
-      return Bytecode::kKeyedLoadICSloppyWide;
-    case Bytecode::kKeyedLoadICStrict:
-      return Bytecode::kKeyedLoadICStrictWide;
+    case Bytecode::kCall:
+      return Bytecode::kCallWide;
+    case Bytecode::kTailCall:
+      return Bytecode::kTailCallWide;
+    case Bytecode::kLoadIC:
+      return Bytecode::kLoadICWide;
+    case Bytecode::kKeyedLoadIC:
+      return Bytecode::kKeyedLoadICWide;
     case Bytecode::kStoreICSloppy:
       return Bytecode::kStoreICSloppyWide;
     case Bytecode::kStoreICStrict:
@@ -1462,14 +1442,10 @@ Bytecode BytecodeArrayBuilder::BytecodeForWideOperands(Bytecode bytecode) {
       return Bytecode::kKeyedStoreICSloppyWide;
     case Bytecode::kKeyedStoreICStrict:
       return Bytecode::kKeyedStoreICStrictWide;
-    case Bytecode::kLdaGlobalSloppy:
-      return Bytecode::kLdaGlobalSloppyWide;
-    case Bytecode::kLdaGlobalStrict:
-      return Bytecode::kLdaGlobalStrictWide;
-    case Bytecode::kLdaGlobalInsideTypeofSloppy:
-      return Bytecode::kLdaGlobalInsideTypeofSloppyWide;
-    case Bytecode::kLdaGlobalInsideTypeofStrict:
-      return Bytecode::kLdaGlobalInsideTypeofStrictWide;
+    case Bytecode::kLdaGlobal:
+      return Bytecode::kLdaGlobalWide;
+    case Bytecode::kLdaGlobalInsideTypeof:
+      return Bytecode::kLdaGlobalInsideTypeofWide;
     case Bytecode::kStaGlobalSloppy:
       return Bytecode::kStaGlobalSloppyWide;
     case Bytecode::kStaGlobalStrict:
@@ -1486,39 +1462,6 @@ Bytecode BytecodeArrayBuilder::BytecodeForWideOperands(Bytecode bytecode) {
       UNREACHABLE();
       return static_cast<Bytecode>(-1);
   }
-}
-
-
-// static
-Bytecode BytecodeArrayBuilder::BytecodeForLoadIC(LanguageMode language_mode) {
-  switch (language_mode) {
-    case SLOPPY:
-      return Bytecode::kLoadICSloppy;
-    case STRICT:
-      return Bytecode::kLoadICStrict;
-    case STRONG:
-      UNIMPLEMENTED();
-    default:
-      UNREACHABLE();
-  }
-  return static_cast<Bytecode>(-1);
-}
-
-
-// static
-Bytecode BytecodeArrayBuilder::BytecodeForKeyedLoadIC(
-    LanguageMode language_mode) {
-  switch (language_mode) {
-    case SLOPPY:
-      return Bytecode::kKeyedLoadICSloppy;
-    case STRICT:
-      return Bytecode::kKeyedLoadICStrict;
-    case STRONG:
-      UNIMPLEMENTED();
-    default:
-      UNREACHABLE();
-  }
-  return static_cast<Bytecode>(-1);
 }
 
 
@@ -1556,23 +1499,9 @@ Bytecode BytecodeArrayBuilder::BytecodeForKeyedStoreIC(
 
 
 // static
-Bytecode BytecodeArrayBuilder::BytecodeForLoadGlobal(LanguageMode language_mode,
-                                                     TypeofMode typeof_mode) {
-  switch (language_mode) {
-    case SLOPPY:
-      return typeof_mode == INSIDE_TYPEOF
-                 ? Bytecode::kLdaGlobalInsideTypeofSloppy
-                 : Bytecode::kLdaGlobalSloppy;
-    case STRICT:
-      return typeof_mode == INSIDE_TYPEOF
-                 ? Bytecode::kLdaGlobalInsideTypeofStrict
-                 : Bytecode::kLdaGlobalStrict;
-    case STRONG:
-      UNIMPLEMENTED();
-    default:
-      UNREACHABLE();
-  }
-  return static_cast<Bytecode>(-1);
+Bytecode BytecodeArrayBuilder::BytecodeForLoadGlobal(TypeofMode typeof_mode) {
+  return typeof_mode == INSIDE_TYPEOF ? Bytecode::kLdaGlobalInsideTypeof
+                                      : Bytecode::kLdaGlobal;
 }
 
 
@@ -1640,6 +1569,18 @@ Bytecode BytecodeArrayBuilder::BytecodeForDelete(LanguageMode language_mode) {
   return static_cast<Bytecode>(-1);
 }
 
+// static
+Bytecode BytecodeArrayBuilder::BytecodeForCall(TailCallMode tail_call_mode) {
+  switch (tail_call_mode) {
+    case TailCallMode::kDisallow:
+      return Bytecode::kCall;
+    case TailCallMode::kAllow:
+      return Bytecode::kTailCall;
+    default:
+      UNREACHABLE();
+  }
+  return static_cast<Bytecode>(-1);
+}
 
 // static
 bool BytecodeArrayBuilder::FitsInIdx8Operand(int value) {

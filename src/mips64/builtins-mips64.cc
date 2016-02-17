@@ -967,11 +967,6 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ Push(ra, fp, cp, a1);
   __ Daddu(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
 
-  // Push new.target, dispatch table pointer and zero for bytecode array offset.
-  __ li(a0, Operand(ExternalReference::interpreter_dispatch_table_address(
-                masm->isolate())));
-  __ Push(a3, a0, zero_reg);
-
   // Get the bytecode array from the function object and load the pointer to the
   // first entry into kInterpreterBytecodeRegister.
   __ ld(a0, FieldMemOperand(a1, JSFunction::kSharedFunctionInfoOffset));
@@ -987,6 +982,9 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     __ Assert(eq, kFunctionDataShouldBeBytecodeArrayOnInterpreterEntry, a4,
               Operand(BYTECODE_ARRAY_TYPE));
   }
+
+  // Push new.target, bytecode array and zero for bytecode array offset.
+  __ Push(a3, kInterpreterBytecodeArrayRegister, zero_reg);
 
   // Allocate the local and temporary register file on the stack.
   {
@@ -1028,8 +1026,9 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
            Operand(InterpreterFrameConstants::kRegisterFilePointerFromFp));
   __ li(kInterpreterBytecodeOffsetRegister,
         Operand(BytecodeArray::kHeaderSize - kHeapObjectTag));
-  __ lw(kInterpreterDispatchTableRegister,
-        MemOperand(fp, InterpreterFrameConstants::kDispatchTableFromFp));
+  __ li(kInterpreterDispatchTableRegister,
+        Operand(ExternalReference::interpreter_dispatch_table_address(
+            masm->isolate())));
 
   // Dispatch to the first bytecode handler for the function.
   __ Daddu(a0, kInterpreterBytecodeArrayRegister,
@@ -1068,7 +1067,8 @@ void Builtins::Generate_InterpreterExitTrampoline(MacroAssembler* masm) {
 
 
 // static
-void Builtins::Generate_InterpreterPushArgsAndCall(MacroAssembler* masm) {
+void Builtins::Generate_InterpreterPushArgsAndCallImpl(
+    MacroAssembler* masm, TailCallMode tail_call_mode) {
   // ----------- S t a t e -------------
   //  -- a0 : the number of arguments (not including the receiver)
   //  -- a2 : the address of the first argument to be pushed. Subsequent
@@ -1093,7 +1093,9 @@ void Builtins::Generate_InterpreterPushArgsAndCall(MacroAssembler* masm) {
   __ Branch(&loop_header, gt, a2, Operand(a3));
 
   // Call the target.
-  __ Jump(masm->isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
+  __ Jump(masm->isolate()->builtins()->Call(ConvertReceiverMode::kAny,
+                                            tail_call_mode),
+          RelocInfo::CODE_TARGET);
 }
 
 
@@ -1142,12 +1144,10 @@ static void Generate_EnterBytecodeDispatch(MacroAssembler* masm) {
                    InterpreterFrameConstants::kContextFromRegisterPointer));
 
   // Get the bytecode array pointer from the frame.
-  __ ld(a1,
-        MemOperand(kInterpreterRegisterFileRegister,
-                   InterpreterFrameConstants::kFunctionFromRegisterPointer));
-  __ ld(a1, FieldMemOperand(a1, JSFunction::kSharedFunctionInfoOffset));
-  __ ld(kInterpreterBytecodeArrayRegister,
-        FieldMemOperand(a1, SharedFunctionInfo::kFunctionDataOffset));
+  __ ld(
+      kInterpreterBytecodeArrayRegister,
+      MemOperand(kInterpreterRegisterFileRegister,
+                 InterpreterFrameConstants::kBytecodeArrayFromRegisterPointer));
 
   if (FLAG_debug_code) {
     // Check function data field is actually a BytecodeArray object.
@@ -1960,7 +1960,7 @@ void Builtins::Generate_Apply(MacroAssembler* masm) {
 
     // Try to create the list from an arguments object.
     __ bind(&create_arguments);
-    __ ld(a2, FieldMemOperand(a0, JSSloppyArgumentsObject::kLengthOffset));
+    __ ld(a2, FieldMemOperand(a0, JSArgumentsObject::kLengthOffset));
     __ ld(a4, FieldMemOperand(a0, JSObject::kElementsOffset));
     __ ld(at, FieldMemOperand(a4, FixedArray::kLengthOffset));
     __ Branch(&create_runtime, ne, a2, Operand(at));
@@ -2076,6 +2076,16 @@ void PrepareForTailCall(MacroAssembler* masm, Register args_reg,
   __ li(at, Operand(debug_is_active));
   __ lb(scratch1, MemOperand(at));
   __ Branch(&done, ne, scratch1, Operand(zero_reg));
+
+  // Drop possible interpreter handler/stub frame.
+  {
+    Label no_interpreter_frame;
+    __ ld(scratch3, MemOperand(fp, StandardFrameConstants::kMarkerOffset));
+    __ Branch(&no_interpreter_frame, ne, scratch3,
+              Operand(Smi::FromInt(StackFrame::STUB)));
+    __ ld(fp, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+    __ bind(&no_interpreter_frame);
+  }
 
   // Check if next frame is an arguments adaptor frame.
   Label no_arguments_adaptor, formal_parameter_count_loaded;

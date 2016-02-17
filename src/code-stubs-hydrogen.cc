@@ -180,6 +180,7 @@ bool CodeStubGraphBuilderBase::BuildGraph() {
 
   context_ = Add<HContext>();
   start_environment->BindContext(context_);
+  start_environment->Bind(param_count, context_);
 
   Add<HSimulate>(BailoutId::StubEntry());
 
@@ -1468,15 +1469,15 @@ HValue* CodeStubGraphBuilder<BinaryOpICStub>::BuildCodeInitializedStub() {
       if_leftisstring.If<HIsStringAndBranch>(left);
       if_leftisstring.Then();
       {
-        Push(BuildBinaryOperation(
-            state.op(), left, right, Type::String(), right_type, result_type,
-            state.fixed_right_arg(), allocation_mode, state.strength()));
+        Push(BuildBinaryOperation(state.op(), left, right, Type::String(),
+                                  right_type, result_type,
+                                  state.fixed_right_arg(), allocation_mode));
       }
       if_leftisstring.Else();
       {
-        Push(BuildBinaryOperation(
-            state.op(), left, right, left_type, right_type, result_type,
-            state.fixed_right_arg(), allocation_mode, state.strength()));
+        Push(BuildBinaryOperation(state.op(), left, right, left_type,
+                                  right_type, result_type,
+                                  state.fixed_right_arg(), allocation_mode));
       }
       if_leftisstring.End();
       result = Pop();
@@ -1485,23 +1486,23 @@ HValue* CodeStubGraphBuilder<BinaryOpICStub>::BuildCodeInitializedStub() {
       if_rightisstring.If<HIsStringAndBranch>(right);
       if_rightisstring.Then();
       {
-        Push(BuildBinaryOperation(
-            state.op(), left, right, left_type, Type::String(), result_type,
-            state.fixed_right_arg(), allocation_mode, state.strength()));
+        Push(BuildBinaryOperation(state.op(), left, right, left_type,
+                                  Type::String(), result_type,
+                                  state.fixed_right_arg(), allocation_mode));
       }
       if_rightisstring.Else();
       {
-        Push(BuildBinaryOperation(
-            state.op(), left, right, left_type, right_type, result_type,
-            state.fixed_right_arg(), allocation_mode, state.strength()));
+        Push(BuildBinaryOperation(state.op(), left, right, left_type,
+                                  right_type, result_type,
+                                  state.fixed_right_arg(), allocation_mode));
       }
       if_rightisstring.End();
       result = Pop();
     }
   } else {
-    result = BuildBinaryOperation(
-        state.op(), left, right, left_type, right_type, result_type,
-        state.fixed_right_arg(), allocation_mode, state.strength());
+    result = BuildBinaryOperation(state.op(), left, right, left_type,
+                                  right_type, result_type,
+                                  state.fixed_right_arg(), allocation_mode);
   }
 
   // If we encounter a generic argument, the number conversion is
@@ -1535,7 +1536,7 @@ HValue* CodeStubGraphBuilder<BinaryOpWithAllocationSiteStub>::BuildCodeStub() {
 
   return BuildBinaryOperation(state.op(), left, right, left_type, right_type,
                               result_type, state.fixed_right_arg(),
-                              allocation_mode, state.strength());
+                              allocation_mode);
 }
 
 
@@ -2156,8 +2157,7 @@ HValue* CodeStubGraphBuilder<LoadDictionaryElementStub>::BuildCodeStub() {
 
   HValue* hash = BuildElementIndexHash(key);
 
-  return BuildUncheckedDictionaryElementLoad(receiver, elements, key, hash,
-                                             casted_stub()->language_mode());
+  return BuildUncheckedDictionaryElementLoad(receiver, elements, key, hash);
 }
 
 
@@ -2291,8 +2291,7 @@ HValue* CodeStubGraphBuilder<KeyedLoadGenericStub>::BuildCodeStub() {
 
       HValue* hash = BuildElementIndexHash(key);
 
-      Push(BuildUncheckedDictionaryElementLoad(receiver, elements, key, hash,
-                                               casted_stub()->language_mode()));
+      Push(BuildUncheckedDictionaryElementLoad(receiver, elements, key, hash));
     }
     kind_if.Else();
 
@@ -2336,8 +2335,8 @@ HValue* CodeStubGraphBuilder<KeyedLoadGenericStub>::BuildCodeStub() {
 
       hash = AddUncasted<HShr>(hash, Add<HConstant>(Name::kHashShift));
 
-      HValue* value = BuildUncheckedDictionaryElementLoad(
-          receiver, properties, key, hash, casted_stub()->language_mode());
+      HValue* value =
+          BuildUncheckedDictionaryElementLoad(receiver, properties, key, hash);
       Push(value);
     }
     if_dict_properties.Else();
@@ -2414,10 +2413,7 @@ HValue* CodeStubGraphBuilder<KeyedLoadGenericStub>::BuildCodeStub() {
         // KeyedLookupCache miss; call runtime.
         Add<HPushArguments>(receiver, key);
         Push(Add<HCallRuntime>(
-            Runtime::FunctionForId(is_strong(casted_stub()->language_mode())
-                                       ? Runtime::kKeyedGetPropertyStrong
-                                       : Runtime::kKeyedGetProperty),
-            2));
+            Runtime::FunctionForId(Runtime::kKeyedGetProperty), 2));
       }
       inline_or_runtime.End();
     }

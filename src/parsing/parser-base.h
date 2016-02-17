@@ -116,7 +116,8 @@ class ParserBase : public Traits {
         allow_strong_mode_(false),
         allow_legacy_const_(true),
         allow_harmony_do_expressions_(false),
-        allow_harmony_function_name_(false) {}
+        allow_harmony_function_name_(false),
+        allow_harmony_function_sent_(false) {}
 
 #define ALLOW_ACCESSORS(name)                           \
   bool allow_##name() const { return allow_##name##_; } \
@@ -134,6 +135,7 @@ class ParserBase : public Traits {
   ALLOW_ACCESSORS(legacy_const);
   ALLOW_ACCESSORS(harmony_do_expressions);
   ALLOW_ACCESSORS(harmony_function_name);
+  ALLOW_ACCESSORS(harmony_function_sent);
 #undef ALLOW_ACCESSORS
 
   uintptr_t stack_limit() const { return stack_limit_; }
@@ -453,6 +455,9 @@ class ParserBase : public Traits {
     return peek() == Token::IDENTIFIER &&
            scanner()->is_next_contextual_keyword(keyword);
   }
+
+  void ExpectMetaProperty(Vector<const char> property_name,
+                          const char* full_name, int pos, bool* ok);
 
   void ExpectContextualKeyword(Vector<const char> keyword, bool* ok) {
     Expect(Token::IDENTIFIER, ok);
@@ -944,6 +949,7 @@ class ParserBase : public Traits {
   bool allow_legacy_const_;
   bool allow_harmony_do_expressions_;
   bool allow_harmony_function_name_;
+  bool allow_harmony_function_sent_;
 };
 
 template <class Traits>
@@ -2540,11 +2546,10 @@ ParserBase<Traits>::ParseMemberExpression(ExpressionClassifier* classifier,
     Consume(Token::FUNCTION);
     int function_token_position = position();
 
-    if (FLAG_harmony_function_sent && Check(Token::PERIOD)) {
+    if (allow_harmony_function_sent() && peek() == Token::PERIOD) {
       // function.sent
-
       int pos = position();
-      ExpectContextualKeyword(CStrVector("sent"), CHECK_OK);
+      ExpectMetaProperty(CStrVector("sent"), "function.sent", pos, CHECK_OK);
 
       if (!is_generator()) {
         // TODO(neis): allow escaping into closures?
@@ -2769,13 +2774,26 @@ ParserBase<Traits>::ParseSuperExpression(bool is_new,
   return this->EmptyExpression();
 }
 
+template <class Traits>
+void ParserBase<Traits>::ExpectMetaProperty(Vector<const char> property_name,
+                                            const char* full_name, int pos,
+                                            bool* ok) {
+  Consume(Token::PERIOD);
+  ExpectContextualKeyword(property_name, ok);
+  if (!*ok) return;
+  if (scanner()->literal_contains_escapes()) {
+    Traits::ReportMessageAt(
+        Scanner::Location(pos, scanner()->location().end_pos),
+        MessageTemplate::kInvalidEscapedMetaProperty, full_name);
+    *ok = false;
+  }
+}
 
 template <class Traits>
 typename ParserBase<Traits>::ExpressionT
 ParserBase<Traits>::ParseNewTargetExpression(bool* ok) {
   int pos = position();
-  Consume(Token::PERIOD);
-  ExpectContextualKeyword(CStrVector("target"), CHECK_OK);
+  ExpectMetaProperty(CStrVector("target"), "new.target", pos, CHECK_OK);
 
   if (!scope_->ReceiverScope()->is_function_scope()) {
     ReportMessageAt(scanner()->location(),

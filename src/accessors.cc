@@ -99,7 +99,7 @@ bool Accessors::IsJSArrayBufferViewFieldAccessor(Handle<Map> map,
 
       // Check if the property is overridden on the instance.
       DescriptorArray* descriptors = map->instance_descriptors();
-      int descriptor = descriptors->SearchWithCache(*name, *map);
+      int descriptor = descriptors->SearchWithCache(isolate, *name, *map);
       if (descriptor != DescriptorArray::kNotFound) return false;
 
       Handle<Object> proto = Handle<Object>(map->prototype(), isolate);
@@ -142,8 +142,7 @@ MUST_USE_RESULT static MaybeHandle<Object> ReplaceAccessorWithDataProperty(
   Handle<Object> old_value;
   bool is_observed = observe && receiver->map()->is_observed();
   if (is_observed) {
-    MaybeHandle<Object> maybe_old =
-        Object::GetPropertyWithAccessor(&it, SLOPPY);
+    MaybeHandle<Object> maybe_old = Object::GetPropertyWithAccessor(&it);
     if (!maybe_old.ToHandle(&old_value)) return maybe_old;
   }
 

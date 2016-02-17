@@ -371,6 +371,7 @@ void Deoptimizer::DeoptimizeMarkedCodeForContext(Context* context) {
 
 
 void Deoptimizer::DeoptimizeAll(Isolate* isolate) {
+  TimerEventScope<TimerEventDeoptimizeCode> timer(isolate);
   if (FLAG_trace_deopt) {
     CodeTracer::Scope scope(isolate->GetCodeTracer());
     PrintF(scope.file(), "[deoptimize all code in all contexts]\n");
@@ -388,6 +389,7 @@ void Deoptimizer::DeoptimizeAll(Isolate* isolate) {
 
 
 void Deoptimizer::DeoptimizeMarkedCode(Isolate* isolate) {
+  TimerEventScope<TimerEventDeoptimizeCode> timer(isolate);
   if (FLAG_trace_deopt) {
     CodeTracer::Scope scope(isolate->GetCodeTracer());
     PrintF(scope.file(), "[deoptimize marked code in all contexts]\n");
@@ -415,6 +417,7 @@ void Deoptimizer::MarkAllCodeForContext(Context* context) {
 
 
 void Deoptimizer::DeoptimizeFunction(JSFunction* function) {
+  TimerEventScope<TimerEventDeoptimizeCode> timer(function->GetIsolate());
   Code* code = function->code();
   if (code->kind() == Code::OPTIMIZED_FUNCTION) {
     // Mark the code for deoptimization and unlink any functions that also
@@ -1251,12 +1254,12 @@ void Deoptimizer::DoComputeInterpretedFrame(int frame_index,
   Object* new_target = isolate_->heap()->undefined_value();
   WriteValueToOutput(new_target, 0, frame_index, output_offset, "new_target  ");
 
-  // Set the dispatch table pointer.
+  // Set the bytecode array pointer.
   output_offset -= kPointerSize;
   input_offset -= kPointerSize;
-  Address dispatch_table = isolate()->interpreter()->dispatch_table_address();
-  WriteValueToOutput(reinterpret_cast<Object*>(dispatch_table), 0, frame_index,
-                     output_offset, "dispatch_table ");
+  Object* bytecode_array = shared->bytecode_array();
+  WriteValueToOutput(bytecode_array, 0, frame_index, output_offset,
+                     "bytecode array ");
 
   // The bytecode offset was mentioned explicitly in the BEGIN_FRAME.
   output_offset -= kPointerSize;
@@ -1734,7 +1737,9 @@ void Deoptimizer::DoComputeCompiledStubFrame(int frame_index) {
   // object to the stub failure handler.
   int param_count = descriptor.GetRegisterParameterCount();
   int stack_param_count = descriptor.GetStackParameterCount();
-  CHECK_EQ(translated_frame->height(), param_count);
+  // The translated frame contains all of the register parameters
+  // plus the context.
+  CHECK_EQ(translated_frame->height(), param_count + 1);
   CHECK_GE(param_count, 0);
 
   int height_in_bytes = kPointerSize * (param_count + stack_param_count) +
@@ -1793,15 +1798,10 @@ void Deoptimizer::DoComputeCompiledStubFrame(int frame_index) {
                          "caller's constant_pool\n");
   }
 
-  // The context can be gotten from the input frame.
-  Register context_reg = StubFailureTrampolineFrame::context_register();
-  input_frame_offset -= kPointerSize;
-  value = input_->GetFrameSlot(input_frame_offset);
-  output_frame->SetRegister(context_reg.code(), value);
+  // Remember where the context will need to be written back from the deopt
+  // translation.
   output_frame_offset -= kPointerSize;
-  output_frame->SetFrameSlot(output_frame_offset, value);
-  CHECK(reinterpret_cast<Object*>(value)->IsContext());
-  DebugPrintOutputSlot(value, frame_index, output_frame_offset, "context\n");
+  unsigned context_frame_offset = output_frame_offset;
 
   // A marker value is used in place of the function.
   output_frame_offset -= kPointerSize;
@@ -1858,6 +1858,15 @@ void Deoptimizer::DoComputeCompiledStubFrame(int frame_index) {
       arguments_length_offset = output_frame_offset;
     }
   }
+
+  Object* maybe_context = value_iterator->GetRawValue();
+  CHECK(maybe_context->IsContext());
+  Register context_reg = StubFailureTrampolineFrame::context_register();
+  value = reinterpret_cast<intptr_t>(maybe_context);
+  output_frame->SetRegister(context_reg.code(), value);
+  output_frame->SetFrameSlot(context_frame_offset, value);
+  DebugPrintOutputSlot(value, frame_index, context_frame_offset, "context\n");
+  ++value_iterator;
 
   // Copy constant stack parameters to the failure frame. If the number of stack
   // parameters is not known in the descriptor, the arguments object is the way
@@ -3638,7 +3647,8 @@ bool TranslatedState::GetAdaptedArguments(Handle<JSObject>* result,
 TranslatedFrame* TranslatedState::GetArgumentsInfoFromJSFrameIndex(
     int jsframe_index, int* args_count) {
   for (size_t i = 0; i < frames_.size(); i++) {
-    if (frames_[i].kind() == TranslatedFrame::kFunction) {
+    if (frames_[i].kind() == TranslatedFrame::kFunction ||
+        frames_[i].kind() == TranslatedFrame::kInterpretedFunction) {
       if (jsframe_index > 0) {
         jsframe_index--;
       } else {
@@ -3701,7 +3711,8 @@ void TranslatedState::StoreMaterializedValuesAndDeopt() {
   if (new_store && value_changed) {
     materialized_store->Set(stack_frame_pointer_,
                             previously_materialized_objects);
-    CHECK_EQ(TranslatedFrame::kFunction, frames_[0].kind());
+    CHECK(frames_[0].kind() == TranslatedFrame::kFunction ||
+          frames_[0].kind() == TranslatedFrame::kInterpretedFunction);
     Object* const function = frames_[0].front().GetRawValue();
     Deoptimizer::DeoptimizeFunction(JSFunction::cast(function));
   }

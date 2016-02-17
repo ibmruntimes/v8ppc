@@ -9,11 +9,11 @@
 #include "src/conversions.h"
 #include "src/debug/debug.h"
 #include "src/factory.h"
+#include "src/field-type.h"
 #include "src/messages.h"
 #include "src/parsing/scanner.h"
 #include "src/parsing/token.h"
 #include "src/transitions.h"
-#include "src/types.h"
 
 namespace v8 {
 namespace internal {

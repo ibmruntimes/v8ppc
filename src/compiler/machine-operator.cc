@@ -194,11 +194,14 @@ MachineRepresentation StackSlotRepresentationOf(Operator const* op) {
   V(Float64InsertLowWord32, Operator::kNoProperties, 2, 0, 1)                 \
   V(Float64InsertHighWord32, Operator::kNoProperties, 2, 0, 1)                \
   V(LoadStackPointer, Operator::kNoProperties, 0, 0, 1)                       \
-  V(LoadFramePointer, Operator::kNoProperties, 0, 0, 1)
+  V(LoadFramePointer, Operator::kNoProperties, 0, 0, 1)                       \
+  V(LoadParentFramePointer, Operator::kNoProperties, 0, 0, 1)
 
 #define PURE_OPTIONAL_OP_LIST(V)                            \
   V(Word32Ctz, Operator::kNoProperties, 1, 0, 1)            \
   V(Word64Ctz, Operator::kNoProperties, 1, 0, 1)            \
+  V(Word32ReverseBits, Operator::kNoProperties, 1, 0, 1)    \
+  V(Word64ReverseBits, Operator::kNoProperties, 1, 0, 1)    \
   V(Word32Popcnt, Operator::kNoProperties, 1, 0, 1)         \
   V(Word64Popcnt, Operator::kNoProperties, 1, 0, 1)         \
   V(Float32Max, Operator::kNoProperties, 2, 0, 1)           \
@@ -214,7 +217,6 @@ MachineRepresentation StackSlotRepresentationOf(Operator const* op) {
   V(Float64RoundTiesAway, Operator::kNoProperties, 1, 0, 1) \
   V(Float32RoundTiesEven, Operator::kNoProperties, 1, 0, 1) \
   V(Float64RoundTiesEven, Operator::kNoProperties, 1, 0, 1)
-
 
 #define MACHINE_TYPE_LIST(V) \
   V(Float32)                 \

@@ -27,7 +27,6 @@ var ObjectToString = utils.ImportNow("object_to_string");
 var ObserveBeginPerformSplice;
 var ObserveEndPerformSplice;
 var ObserveEnqueueSpliceRecord;
-var SameValueZero;
 var iteratorSymbol = utils.ImportNow("iterator_symbol");
 var unscopablesSymbol = utils.ImportNow("unscopables_symbol");
 
@@ -43,7 +42,6 @@ utils.Import(function(from) {
   ObserveBeginPerformSplice = from.ObserveBeginPerformSplice;
   ObserveEndPerformSplice = from.ObserveEndPerformSplice;
   ObserveEnqueueSpliceRecord = from.ObserveEnqueueSpliceRecord;
-  SameValueZero = from.SameValueZero;
 });
 
 utils.ImportFromExperimental(function(from) {
@@ -211,8 +209,6 @@ function Join(array, length, separator, convert) {
         elements[elements_length++] = e;
       }
       elements.length = elements_length;
-      var result = %_FastOneByteArrayJoin(elements, '');
-      if (!IS_UNDEFINED(result)) return result;
       return %StringBuilderConcat(elements, elements_length, '');
     }
     // Non-empty separator case.
@@ -235,9 +231,6 @@ function Join(array, length, separator, convert) {
         elements[i] = e;
       }
     }
-    var result = %_FastOneByteArrayJoin(elements, separator);
-    if (!IS_UNDEFINED(result)) return result;
-
     return %StringBuilderJoin(elements, length, separator);
   } finally {
     // Make sure to remove the last element of the visited array no
@@ -448,9 +441,6 @@ function InnerArrayJoin(separator, array, length) {
   } else {
     separator = TO_STRING(separator);
   }
-
-  var result = %_FastOneByteArrayJoin(array, separator);
-  if (!IS_UNDEFINED(result)) return result;
 
   // Fast case for one-element arrays.
   if (length === 1) {
@@ -1724,7 +1714,7 @@ function InnerArrayIncludes(searchElement, fromIndex, array, length) {
 
   while (k < length) {
     var elementK = array[k];
-    if (SameValueZero(searchElement, elementK)) {
+    if (%SameValueZero(searchElement, elementK)) {
       return true;
     }
 

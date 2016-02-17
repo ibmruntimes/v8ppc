@@ -93,7 +93,6 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
 
   // Global loads to the accumulator and stores from the accumulator.
   BytecodeArrayBuilder& LoadGlobal(const Handle<String> name, int feedback_slot,
-                                   LanguageMode language_mode,
                                    TypeofMode typeof_mode);
   BytecodeArrayBuilder& StoreGlobal(const Handle<String> name,
                                     int feedback_slot,
@@ -115,11 +114,9 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   // Named load property.
   BytecodeArrayBuilder& LoadNamedProperty(Register object,
                                           const Handle<Name> name,
-                                          int feedback_slot,
-                                          LanguageMode language_mode);
+                                          int feedback_slot);
   // Keyed load property. The key should be in the accumulator.
-  BytecodeArrayBuilder& LoadKeyedProperty(Register object, int feedback_slot,
-                                          LanguageMode language_mode);
+  BytecodeArrayBuilder& LoadKeyedProperty(Register object, int feedback_slot);
 
   // Store properties. The value to be stored should be in the accumulator.
   BytecodeArrayBuilder& StoreNamedProperty(Register object,
@@ -164,8 +161,15 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   // |callable|, the receiver should be in |receiver_args| and all subsequent
   // arguments should be in registers <receiver_args + 1> to
   // <receiver_args + receiver_arg_count - 1>.
-  BytecodeArrayBuilder& Call(Register callable, Register receiver_args,
-                             size_t receiver_arg_count, int feedback_slot);
+  BytecodeArrayBuilder& Call(
+      Register callable, Register receiver_args, size_t receiver_arg_count,
+      int feedback_slot, TailCallMode tail_call_mode = TailCallMode::kDisallow);
+
+  BytecodeArrayBuilder& TailCall(Register callable, Register receiver_args,
+                                 size_t receiver_arg_count, int feedback_slot) {
+    return Call(callable, receiver_args, receiver_arg_count, feedback_slot,
+                TailCallMode::kAllow);
+  }
 
   // Call the new operator. The accumulator holds the |new_target|.
   // The |constructor| is in a register followed by |arg_count|
@@ -195,11 +199,10 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
                                       size_t receiver_args_count);
 
   // Operators (register holds the lhs value, accumulator holds the rhs value).
-  BytecodeArrayBuilder& BinaryOperation(Token::Value binop, Register reg,
-                                        Strength strength);
+  BytecodeArrayBuilder& BinaryOperation(Token::Value binop, Register reg);
 
   // Count Operators (value stored in accumulator).
-  BytecodeArrayBuilder& CountOperation(Token::Value op, Strength strength);
+  BytecodeArrayBuilder& CountOperation(Token::Value op);
 
   // Unary Operators.
   BytecodeArrayBuilder& LogicalNot();
@@ -210,8 +213,7 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   BytecodeArrayBuilder& Delete(Register object, LanguageMode language_mode);
 
   // Tests.
-  BytecodeArrayBuilder& CompareOperation(Token::Value op, Register reg,
-                                         Strength strength);
+  BytecodeArrayBuilder& CompareOperation(Token::Value op, Register reg);
 
   // Casts.
   BytecodeArrayBuilder& CastAccumulatorToBoolean();
@@ -278,16 +280,14 @@ class BytecodeArrayBuilder final : public ZoneObject, private RegisterMover {
   static Bytecode BytecodeForCountOperation(Token::Value op);
   static Bytecode BytecodeForCompareOperation(Token::Value op);
   static Bytecode BytecodeForWideOperands(Bytecode bytecode);
-  static Bytecode BytecodeForLoadIC(LanguageMode language_mode);
-  static Bytecode BytecodeForKeyedLoadIC(LanguageMode language_mode);
   static Bytecode BytecodeForStoreIC(LanguageMode language_mode);
   static Bytecode BytecodeForKeyedStoreIC(LanguageMode language_mode);
-  static Bytecode BytecodeForLoadGlobal(LanguageMode language_mode,
-                                        TypeofMode typeof_mode);
+  static Bytecode BytecodeForLoadGlobal(TypeofMode typeof_mode);
   static Bytecode BytecodeForStoreGlobal(LanguageMode language_mode);
   static Bytecode BytecodeForStoreLookupSlot(LanguageMode language_mode);
   static Bytecode BytecodeForCreateArguments(CreateArgumentsType type);
   static Bytecode BytecodeForDelete(LanguageMode language_mode);
+  static Bytecode BytecodeForCall(TailCallMode tail_call_mode);
 
   static bool FitsInIdx8Operand(int value);
   static bool FitsInIdx8Operand(size_t value);
