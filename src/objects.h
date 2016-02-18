@@ -8603,10 +8603,7 @@ class Name: public HeapObject {
   // If the name is private, it can only name own properties.
   inline bool IsPrivate();
 
-  // If the name is a non-flat string, this method returns a flat version of the
-  // string. Otherwise it'll just return the input.
-  static inline Handle<Name> Flatten(Handle<Name> name,
-                                     PretenureFlag pretenure = NOT_TENURED);
+  inline bool IsUniqueName() const;
 
   // Return a string version of this name that is converted according to the
   // rules described in ES6 section 9.2.11.
@@ -9809,12 +9806,12 @@ class JSProxy: public JSReceiver {
 
   static Handle<Smi> GetOrCreateIdentityHash(Handle<JSProxy> proxy);
 
- private:
-  static Maybe<bool> AddPrivateProperty(Isolate* isolate, Handle<JSProxy> proxy,
+  static Maybe<bool> SetPrivateProperty(Isolate* isolate, Handle<JSProxy> proxy,
                                         Handle<Symbol> private_name,
                                         PropertyDescriptor* desc,
                                         ShouldThrow should_throw);
 
+ private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSProxy);
 };
 

@@ -99,7 +99,6 @@ static void GenerateTailCallToSharedCode(MacroAssembler* masm) {
   __ jmp(ebx);
 }
 
-
 void Builtins::Generate_InOptimizationQueue(MacroAssembler* masm) {
   // Checking whether the queued function is ready for install is optional,
   // since we come across interrupts and stack checks elsewhere.  However,
@@ -678,7 +677,8 @@ static void Generate_InterpreterPushArgs(MacroAssembler* masm,
 
 
 // static
-void Builtins::Generate_InterpreterPushArgsAndCall(MacroAssembler* masm) {
+void Builtins::Generate_InterpreterPushArgsAndCallImpl(
+    MacroAssembler* masm, TailCallMode tail_call_mode) {
   // ----------- S t a t e -------------
   //  -- eax : the number of arguments (not including the receiver)
   //  -- ebx : the address of the first argument to be pushed. Subsequent
@@ -701,7 +701,9 @@ void Builtins::Generate_InterpreterPushArgsAndCall(MacroAssembler* masm) {
 
   // Call the target.
   __ Push(edx);  // Re-push return address.
-  __ Jump(masm->isolate()->builtins()->Call(), RelocInfo::CODE_TARGET);
+  __ Jump(masm->isolate()->builtins()->Call(ConvertReceiverMode::kAny,
+                                            tail_call_mode),
+          RelocInfo::CODE_TARGET);
 }
 
 
@@ -802,22 +804,20 @@ static void Generate_InterpreterNotifyDeoptimizedHelper(
   // Enter an internal frame.
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
-    __ Push(kInterpreterAccumulatorRegister);  // Save accumulator register.
 
     // Pass the deoptimization type to the runtime system.
     __ Push(Smi::FromInt(static_cast<int>(type)));
-
     __ CallRuntime(Runtime::kNotifyDeoptimized);
-
-    __ Pop(kInterpreterAccumulatorRegister);  // Restore accumulator register.
     // Tear down internal frame.
   }
 
-  // Drop state (we don't use these for interpreter deopts) and push PC at top
+  // Drop state (we don't use these for interpreter deopts) and and pop the
+  // accumulator value into the accumulator register and push PC at top
   // of stack (to simulate initial call to bytecode handler in interpreter entry
   // trampoline).
   __ Pop(ebx);
   __ Drop(1);
+  __ Pop(kInterpreterAccumulatorRegister);
   __ Push(ebx);
 
   // Enter the bytecode dispatch.
@@ -2015,6 +2015,16 @@ void PrepareForTailCall(MacroAssembler* masm, Register args_reg,
   __ movzx_b(scratch1, Operand::StaticVariable(debug_is_active));
   __ cmp(scratch1, Immediate(0));
   __ j(not_equal, &done, Label::kNear);
+
+  // Drop possible interpreter handler/stub frame.
+  {
+    Label no_interpreter_frame;
+    __ cmp(Operand(ebp, StandardFrameConstants::kMarkerOffset),
+           Immediate(Smi::FromInt(StackFrame::STUB)));
+    __ j(not_equal, &no_interpreter_frame, Label::kNear);
+    __ mov(ebp, Operand(ebp, StandardFrameConstants::kCallerFPOffset));
+    __ bind(&no_interpreter_frame);
+  }
 
   // Check if next frame is an arguments adaptor frame.
   Label no_arguments_adaptor, formal_parameter_count_loaded;

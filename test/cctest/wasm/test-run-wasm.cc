@@ -1276,16 +1276,43 @@ TEST(Run_Wasm_ReturnStore) {
 
 
 TEST(Run_Wasm_VoidReturn1) {
-  WasmRunner<void> r;
-  BUILD(r, kExprNop);
-  r.Call();
+  // We use a wrapper function because WasmRunner<void> does not exist.
+
+  // Build the test function.
+  TestSignatures sigs;
+  TestingModule module;
+  WasmFunctionCompiler t(sigs.v_v());
+  BUILD(t, kExprNop);
+  uint32_t index = t.CompileAndAdd(&module);
+
+  const int32_t kExpected = -414444;
+  // Build the calling function.
+  WasmRunner<int32_t> r;
+  r.env()->module = &module;
+  BUILD(r, WASM_BLOCK(2, WASM_CALL_FUNCTION0(index), WASM_I32(kExpected)));
+
+  int32_t result = r.Call();
+  CHECK_EQ(kExpected, result);
 }
 
 
 TEST(Run_Wasm_VoidReturn2) {
-  WasmRunner<void> r;
-  BUILD(r, WASM_RETURN0);
-  r.Call();
+  // We use a wrapper function because WasmRunner<void> does not exist.
+  // Build the test function.
+  TestSignatures sigs;
+  TestingModule module;
+  WasmFunctionCompiler t(sigs.v_v());
+  BUILD(t, WASM_RETURN0);
+  uint32_t index = t.CompileAndAdd(&module);
+
+  const int32_t kExpected = -414444;
+  // Build the calling function.
+  WasmRunner<int32_t> r;
+  r.env()->module = &module;
+  BUILD(r, WASM_BLOCK(2, WASM_CALL_FUNCTION0(index), WASM_I32(kExpected)));
+
+  int32_t result = r.Call();
+  CHECK_EQ(kExpected, result);
 }
 
 
@@ -2446,6 +2473,50 @@ TEST(Run_WasmCallF64StackParameter) {
   CHECK_EQ(256.5, result);
 }
 
+TEST(Run_WasmCallI64Parameter) {
+  // Build the target function.
+  LocalType param_types[20];
+  for (int i = 0; i < 20; i++) param_types[i] = kAstI64;
+  param_types[3] = kAstI32;
+  param_types[4] = kAstI32;
+  FunctionSig sig(1, 19, param_types);
+  for (int i = 0; i < 19; i++) {
+    TestingModule module;
+    WasmFunctionCompiler t(&sig);
+    if (i == 2 || i == 3) {
+      continue;
+    } else {
+      BUILD(t, WASM_GET_LOCAL(i));
+    }
+    uint32_t index = t.CompileAndAdd(&module);
+
+    // Build the calling function.
+    WasmRunner<int32_t> r;
+    r.env()->module = &module;
+    BUILD(r,
+          WASM_I32_CONVERT_I64(WASM_CALL_FUNCTION(
+              index, WASM_I64(0xbcd12340000000b), WASM_I64(0xbcd12340000000c),
+              WASM_I32(0xd), WASM_I32_CONVERT_I64(WASM_I64(0xbcd12340000000e)),
+              WASM_I64(0xbcd12340000000f), WASM_I64(0xbcd1234000000010),
+              WASM_I64(0xbcd1234000000011), WASM_I64(0xbcd1234000000012),
+              WASM_I64(0xbcd1234000000013), WASM_I64(0xbcd1234000000014),
+              WASM_I64(0xbcd1234000000015), WASM_I64(0xbcd1234000000016),
+              WASM_I64(0xbcd1234000000017), WASM_I64(0xbcd1234000000018),
+              WASM_I64(0xbcd1234000000019), WASM_I64(0xbcd123400000001a),
+              WASM_I64(0xbcd123400000001b), WASM_I64(0xbcd123400000001c),
+              WASM_I64(0xbcd123400000001d))));
+
+    CHECK_EQ(i + 0xb, r.Call());
+  }
+}
+
+TEST(Run_WasmI64And) {
+  WasmRunner<int64_t> r(MachineType::Int64(), MachineType::Int64());
+  BUILD(r, WASM_I64_AND(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
+  FOR_INT64_INPUTS(i) {
+    FOR_INT64_INPUTS(j) { CHECK_EQ((*i) & (*j), r.Call(*i, *j)); }
+  }
+}
 
 TEST(Run_WasmCallVoid) {
   const byte kMemOffset = 8;

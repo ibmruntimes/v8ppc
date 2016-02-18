@@ -2213,6 +2213,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(MathPow)                           \
   F(HasCachedArrayIndex)               \
   F(GetCachedArrayIndex)               \
+  F(FastOneByteArrayJoin)              \
   F(DebugBreakInOptimizedCode)         \
   F(StringCharCodeAt)                  \
   F(SubString)                         \
@@ -2514,7 +2515,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
         : builder_(builder),
           access_type_(access_type),
           map_(map),
-          name_(name),
+          name_(isolate()->factory()->InternalizeName(name)),
           field_type_(HType::Tagged()),
           access_(HObjectAccess::ForMap()),
           lookup_type_(NOT_FOUND),

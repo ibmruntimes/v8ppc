@@ -152,12 +152,12 @@ namespace internal {
 
 #if defined(V8_PPC_TAGGING_OPT)
 #define MASK_BITSET_TYPE_LIST(V) \
-  V(Representation, 0x7fc00000u) \
-  V(Semantic,       0x003fffffu)
+  V(Representation, 0x7fe00000u) \
+  V(Semantic,       0x001fffffu)
 #else  // V8_PPC_TAGGING_OPT
 #define MASK_BITSET_TYPE_LIST(V) \
-  V(Representation, 0xff800000u) \
-  V(Semantic,       0x007ffffeu)
+  V(Representation, 0xffc00000u) \
+  V(Semantic,       0x003ffffeu)
 #endif  // V8_PPC_TAGGING_OPT
 
 #define REPRESENTATION(k) ((k) & BitsetType::kRepresentation)
@@ -166,12 +166,13 @@ namespace internal {
 #if defined(V8_PPC_TAGGING_OPT)
 #define REPRESENTATION_BITSET_TYPE_LIST(V)    \
   V(None,               0)                    \
-  V(UntaggedBit,        1u << 22 | kSemantic) \
-  V(UntaggedIntegral8,  1u << 23 | kSemantic) \
-  V(UntaggedIntegral16, 1u << 24 | kSemantic) \
-  V(UntaggedIntegral32, 1u << 25 | kSemantic) \
-  V(UntaggedFloat32,    1u << 26 | kSemantic) \
-  V(UntaggedFloat64,    1u << 27 | kSemantic) \
+  V(UntaggedBit,        1u << 21 | kSemantic) \
+  V(UntaggedIntegral8,  1u << 22 | kSemantic) \
+  V(UntaggedIntegral16, 1u << 23 | kSemantic) \
+  V(UntaggedIntegral32, 1u << 24 | kSemantic) \
+  V(UntaggedFloat32,    1u << 25 | kSemantic) \
+  V(UntaggedFloat64,    1u << 26 | kSemantic) \
+  V(UntaggedSimd128,    1u << 27 | kSemantic) \
   V(UntaggedPointer,    1u << 28 | kSemantic) \
   V(TaggedSigned,       1u << 29 | kSemantic) \
   V(TaggedPointer,      1u << 30 | kSemantic) \
@@ -185,12 +186,13 @@ namespace internal {
 #else  // V8_PPC_TAGGING_OPT
 #define REPRESENTATION_BITSET_TYPE_LIST(V)    \
   V(None,               0)                    \
-  V(UntaggedBit,        1u << 23 | kSemantic) \
-  V(UntaggedIntegral8,  1u << 24 | kSemantic) \
-  V(UntaggedIntegral16, 1u << 25 | kSemantic) \
-  V(UntaggedIntegral32, 1u << 26 | kSemantic) \
-  V(UntaggedFloat32,    1u << 27 | kSemantic) \
-  V(UntaggedFloat64,    1u << 28 | kSemantic) \
+  V(UntaggedBit,        1u << 22 | kSemantic) \
+  V(UntaggedIntegral8,  1u << 23 | kSemantic) \
+  V(UntaggedIntegral16, 1u << 24 | kSemantic) \
+  V(UntaggedIntegral32, 1u << 25 | kSemantic) \
+  V(UntaggedFloat32,    1u << 26 | kSemantic) \
+  V(UntaggedFloat64,    1u << 27 | kSemantic) \
+  V(UntaggedSimd128,    1u << 28 | kSemantic) \
   V(UntaggedPointer,    1u << 29 | kSemantic) \
   V(TaggedSigned,       1u << 30 | kSemantic) \
   V(TaggedPointer,      1u << 31 | kSemantic) \

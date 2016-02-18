@@ -51,6 +51,7 @@ class CallSite {
 
   Handle<Object> GetFileName();
   Handle<Object> GetFunctionName();
+  Handle<Object> GetDebugName();
   Handle<Object> GetScriptNameOrSourceUrl();
   Handle<Object> GetMethodName();
   // Return 1-based line number, including line offset.
@@ -294,6 +295,7 @@ class CallSite {
   T(RestrictedFunctionProperties,                                              \
     "'caller' and 'arguments' are restricted function properties and cannot "  \
     "be accessed in this context.")                                            \
+  T(ReturnMethodNotCallable, "The iterator's 'return' method is not callable") \
   T(StaticPrototype, "Classes may not have static property named prototype")   \
   T(StrictCannotAssign, "Cannot assign to read only '%' in strict mode")       \
   T(StrictDeleteProperty, "Cannot delete property '%' of %")                   \
