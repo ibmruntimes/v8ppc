@@ -10200,31 +10200,6 @@ void HGraphBuilder::BuildArrayBufferViewInitialization(
 }
 
 
-void HOptimizedGraphBuilder::GenerateDataViewInitialize(
-    CallRuntime* expr) {
-  ZoneList<Expression*>* arguments = expr->arguments();
-
-  DCHECK(arguments->length()== 4);
-  CHECK_ALIVE(VisitForValue(arguments->at(0)));
-  HValue* obj = Pop();
-
-  CHECK_ALIVE(VisitForValue(arguments->at(1)));
-  HValue* buffer = Pop();
-
-  CHECK_ALIVE(VisitForValue(arguments->at(2)));
-  HValue* byte_offset = Pop();
-
-  CHECK_ALIVE(VisitForValue(arguments->at(3)));
-  HValue* byte_length = Pop();
-
-  {
-    NoObservableSideEffectsScope scope(this);
-    BuildArrayBufferViewInitialization<JSDataView>(
-        obj, buffer, byte_offset, byte_length);
-  }
-}
-
-
 HValue* HOptimizedGraphBuilder::BuildAllocateExternalElements(
     ExternalArrayType array_type,
     bool is_zero_byte_offset,
@@ -12219,8 +12194,8 @@ void HOptimizedGraphBuilder::VisitExportDeclaration(
 }
 
 
-void HOptimizedGraphBuilder::VisitRewritableAssignmentExpression(
-    RewritableAssignmentExpression* node) {
+void HOptimizedGraphBuilder::VisitRewritableExpression(
+    RewritableExpression* node) {
   CHECK_ALIVE(Visit(node->expression()));
 }
 
@@ -12897,16 +12872,6 @@ void HOptimizedGraphBuilder::GenerateGetCachedArrayIndex(CallRuntime* call) {
   HValue* value = Pop();
   HGetCachedArrayIndex* result = New<HGetCachedArrayIndex>(value);
   return ast_context()->ReturnInstruction(result, call->id());
-}
-
-
-void HOptimizedGraphBuilder::GenerateFastOneByteArrayJoin(CallRuntime* call) {
-  // Simply returning undefined here would be semantically correct and even
-  // avoid the bailout. Nevertheless, some ancient benchmarks like SunSpider's
-  // string-fasta would tank, because fullcode contains an optimized version.
-  // Obviously the fullcode => Crankshaft => bailout => fullcode dance is
-  // faster... *sigh*
-  return Bailout(kInlinedRuntimeFunctionFastOneByteArrayJoin);
 }
 
 

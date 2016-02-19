@@ -51,7 +51,6 @@ class CallSite {
 
   Handle<Object> GetFileName();
   Handle<Object> GetFunctionName();
-  Handle<Object> GetDebugName();
   Handle<Object> GetScriptNameOrSourceUrl();
   Handle<Object> GetMethodName();
   // Return 1-based line number, including line offset.
@@ -336,8 +335,6 @@ class CallSite {
   T(StrongSuperCallMissing,                                                    \
     "In strong mode, invoking the super constructor in a subclass is "         \
     "required")                                                                \
-  T(StrongUnboundGlobal,                                                       \
-    "In strong mode, using an undeclared global variable '%' is not allowed")  \
   T(UnsupportedSuper, "Unsupported reference to 'super'")                      \
   /* RangeError */                                                             \
   T(DateRange, "Provided date is not in valid range.")                         \
@@ -489,8 +486,6 @@ class CallSite {
     "with 'break', 'continue', 'return' or 'throw'")                           \
   T(StrongUndefined,                                                           \
     "In strong mode, binding or assigning to 'undefined' is deprecated")       \
-  T(StrongUseBeforeDeclaration,                                                \
-    "In strong mode, declaring variable '%' before its use is required")       \
   T(StrongVar,                                                                 \
     "In strong mode, 'var' is deprecated, use 'let' or 'const' instead")       \
   T(TemplateOctalLiteral,                                                      \

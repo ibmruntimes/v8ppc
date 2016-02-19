@@ -97,8 +97,6 @@ namespace internal {
   V(kImportDeclaration, "Import declaration")                                  \
   V(kIndexIsNegative, "Index is negative")                                     \
   V(kIndexIsTooLarge, "Index is too large")                                    \
-  V(kInlinedRuntimeFunctionFastOneByteArrayJoin,                               \
-    "Inlined runtime function: FastOneByteArrayJoin")                          \
   V(kInliningBailedOut, "Inlining bailed out")                                 \
   V(kInputGPRIsExpectedToHaveUpper32Cleared,                                   \
     "Input GPR is expected to have upper32 cleared")                           \
@@ -129,8 +127,6 @@ namespace internal {
   V(kNativeFunctionLiteral, "Native function literal")                         \
   V(kNeedSmiLiteral, "Need a Smi literal here")                                \
   V(kNoCasesLeft, "No cases left")                                             \
-  V(kNoEmptyArraysHereInEmitFastOneByteArrayJoin,                              \
-    "No empty arrays here in EmitFastOneByteArrayJoin")                        \
   V(kNonInitializerAssignmentToConst, "Non-initializer assignment to const")   \
   V(kNonSmiIndex, "Non-smi index")                                             \
   V(kNonSmiKeyInArrayLiteral, "Non-smi key in array literal")                  \
@@ -148,6 +144,7 @@ namespace internal {
     "Operand is a smi and not a bound function")                               \
   V(kOperandIsASmiAndNotAFunction, "Operand is a smi and not a function")      \
   V(kOperandIsASmiAndNotAName, "Operand is a smi and not a name")              \
+  V(kOperandIsASmiAndNotAReceiver, "Operand is a smi and not a receiver")      \
   V(kOperandIsASmiAndNotAString, "Operand is a smi and not a string")          \
   V(kOperandIsASmi, "Operand is a smi")                                        \
   V(kOperandIsNotADate, "Operand is not a date")                               \
@@ -155,6 +152,7 @@ namespace internal {
   V(kOperandIsNotAFunction, "Operand is not a function")                       \
   V(kOperandIsNotAName, "Operand is not a name")                               \
   V(kOperandIsNotANumber, "Operand is not a number")                           \
+  V(kOperandIsNotAReceiver, "Operand is not a receiver")                       \
   V(kOperandIsNotASmi, "Operand is not a smi")                                 \
   V(kOperandIsNotAString, "Operand is not a string")                           \
   V(kOperandIsNotSmi, "Operand is not smi")                                    \

@@ -728,11 +728,10 @@ FunctionLiteral* ParserTraits::ParseFunctionLiteral(
     const AstRawString* name, Scanner::Location function_name_location,
     FunctionNameValidity function_name_validity, FunctionKind kind,
     int function_token_position, FunctionLiteral::FunctionType type,
-    FunctionLiteral::ArityRestriction arity_restriction,
     LanguageMode language_mode, bool* ok) {
   return parser_->ParseFunctionLiteral(
       name, function_name_location, function_name_validity, kind,
-      function_token_position, type, arity_restriction, language_mode, ok);
+      function_token_position, type, language_mode, ok);
 }
 
 
@@ -944,13 +943,9 @@ FunctionLiteral* Parser::DoParseProgram(ParseInfo* info) {
 
     if (ok) {
       ParserTraits::RewriteDestructuringAssignments();
-      result = factory()->NewFunctionLiteral(
-          ast_value_factory()->empty_string(), scope_, body,
-          function_state.materialized_literal_count(),
-          function_state.expected_property_count(), 0,
-          FunctionLiteral::kNoDuplicateParameters,
-          FunctionLiteral::kGlobalOrEval, FunctionLiteral::kShouldLazyCompile,
-          FunctionKind::kNormalFunction, 0);
+      result = factory()->NewScriptOrEvalFunctionLiteral(
+          scope_, body, function_state.materialized_literal_count(),
+          function_state.expected_property_count());
     }
   }
 
@@ -1000,6 +995,18 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info) {
   return result;
 }
 
+static FunctionLiteral::FunctionType ComputeFunctionType(
+    Handle<SharedFunctionInfo> shared_info) {
+  if (shared_info->is_declaration()) {
+    return FunctionLiteral::kDeclaration;
+  } else if (shared_info->is_named_expression()) {
+    return FunctionLiteral::kNamedExpression;
+  } else if (IsConciseMethod(shared_info->kind()) ||
+             IsAccessorFunction(shared_info->kind())) {
+    return FunctionLiteral::kAccessorOrMethod;
+  }
+  return FunctionLiteral::kAnonymousExpression;
+}
 
 FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info,
                                    Utf16CharacterStream* source) {
@@ -1038,11 +1045,7 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info,
            is_strict(info->language_mode()));
     DCHECK(info->language_mode() == shared_info->language_mode());
     FunctionLiteral::FunctionType function_type =
-        shared_info->is_expression()
-            ? (shared_info->is_anonymous()
-                   ? FunctionLiteral::kAnonymousExpression
-                   : FunctionLiteral::kNamedExpression)
-            : FunctionLiteral::kDeclaration;
+        ComputeFunctionType(shared_info);
     bool ok = true;
 
     if (shared_info->is_arrow()) {
@@ -1060,7 +1063,7 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info,
       SetLanguageMode(scope, shared_info->language_mode());
 
       scope->set_start_position(shared_info->start_position());
-      ExpressionClassifier formals_classifier;
+      ExpressionClassifier formals_classifier(this);
       ParserFormalParameters formals(scope);
       Checkpoint checkpoint(this);
       {
@@ -1111,10 +1114,10 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info,
           shared_info->start_position(), shared_info->end_position(),
           shared_info->language_mode());
     } else {
-      result = ParseFunctionLiteral(
-          raw_name, Scanner::Location::invalid(), kSkipFunctionNameCheck,
-          shared_info->kind(), RelocInfo::kNoPosition, function_type,
-          FunctionLiteral::kNormalArity, shared_info->language_mode(), &ok);
+      result = ParseFunctionLiteral(raw_name, Scanner::Location::invalid(),
+                                    kSkipFunctionNameCheck, shared_info->kind(),
+                                    RelocInfo::kNoPosition, function_type,
+                                    shared_info->language_mode(), &ok);
     }
     // Make sure the results agree.
     DCHECK(ok == (result != NULL));
@@ -1270,20 +1273,10 @@ Statement* Parser::ParseStatementListItem(bool* ok) {
   //    Statement
   //    Declaration
 
-  if (peek() != Token::CLASS) {
-    // No more classes follow; reset the start position for the consecutive
-    // class declaration group.
-    scope_->set_class_declaration_group_start(-1);
-  }
-
   switch (peek()) {
     case Token::FUNCTION:
       return ParseFunctionDeclaration(NULL, ok);
     case Token::CLASS:
-      if (scope_->class_declaration_group_start() < 0) {
-        scope_->set_class_declaration_group_start(
-            scanner()->peek_location().beg_pos);
-      }
       Consume(Token::CLASS);
       return ParseClassDeclaration(NULL, ok);
     case Token::CONST:
@@ -1588,8 +1581,7 @@ Statement* Parser::ParseExportDefault(bool* ok) {
             kSkipFunctionNameCheck,
             is_generator ? FunctionKind::kGeneratorFunction
                          : FunctionKind::kNormalFunction,
-            pos, FunctionLiteral::kDeclaration, FunctionLiteral::kNormalArity,
-            language_mode(), CHECK_OK);
+            pos, FunctionLiteral::kDeclaration, language_mode(), CHECK_OK);
         result = factory()->NewEmptyStatement(RelocInfo::kNoPosition);
       } else {
         result = ParseFunctionDeclaration(pos, is_generator, &names, CHECK_OK);
@@ -1613,9 +1605,9 @@ Statement* Parser::ParseExportDefault(bool* ok) {
 
     default: {
       int pos = peek_position();
-      ExpressionClassifier classifier;
+      ExpressionClassifier classifier(this);
       Expression* expr = ParseAssignmentExpression(true, &classifier, CHECK_OK);
-      expr = ParserTraits::RewriteNonPattern(expr, &classifier, CHECK_OK);
+      RewriteNonPattern(&classifier, CHECK_OK);
 
       ExpectSemicolon(CHECK_OK);
       result = factory()->NewExpressionStatement(expr, pos);
@@ -1961,18 +1953,11 @@ Variable* Parser::Declare(Declaration* declaration,
     if (var == NULL) {
       // Declare the name.
       Variable::Kind kind = Variable::NORMAL;
-      int declaration_group_start = -1;
       if (is_function_declaration) {
         kind = Variable::FUNCTION;
-      } else if (declaration->IsVariableDeclaration() &&
-                 declaration->AsVariableDeclaration()->is_class_declaration()) {
-        kind = Variable::CLASS;
-        declaration_group_start =
-            declaration->AsVariableDeclaration()->declaration_group_start();
       }
       var = declaration_scope->DeclareLocal(
-          name, mode, declaration->initialization(), kind, kNotAssigned,
-          declaration_group_start);
+          name, mode, declaration->initialization(), kind, kNotAssigned);
     } else if ((mode == CONST_LEGACY || var->mode() == CONST_LEGACY) &&
                !declaration_scope->is_script_scope()) {
       // Duplicate legacy const definitions throw at runtime.
@@ -2167,8 +2152,7 @@ Statement* Parser::ParseFunctionDeclaration(
                          : kFunctionNameValidityUnknown,
       is_generator ? FunctionKind::kGeneratorFunction
                    : FunctionKind::kNormalFunction,
-      pos, FunctionLiteral::kDeclaration, FunctionLiteral::kNormalArity,
-      language_mode(), CHECK_OK);
+      pos, FunctionLiteral::kDeclaration, language_mode(), CHECK_OK);
 
   // Even if we're not at the top-level of the global or a function
   // scope, we treat it as such and introduce the function with its
@@ -2232,30 +2216,10 @@ Statement* Parser::ParseClassDeclaration(ZoneList<const AstRawString*>* names,
 
   VariableMode mode = is_strong(language_mode()) ? CONST : LET;
   VariableProxy* proxy = NewUnresolved(name, mode);
-  const bool is_class_declaration = true;
-  Declaration* declaration = factory()->NewVariableDeclaration(
-      proxy, mode, scope_, pos, is_class_declaration,
-      scope_->class_declaration_group_start());
-  Variable* outer_class_variable =
-      Declare(declaration, DeclarationDescriptor::NORMAL, true, CHECK_OK);
+  Declaration* declaration =
+      factory()->NewVariableDeclaration(proxy, mode, scope_, pos);
+  Declare(declaration, DeclarationDescriptor::NORMAL, true, CHECK_OK);
   proxy->var()->set_initializer_position(position());
-  // This is needed because a class ("class Name { }") creates two bindings (one
-  // in the outer scope, and one in the class scope). The method is a function
-  // scope inside the inner scope (class scope). The consecutive class
-  // declarations are in the outer scope.
-  if (value->class_variable_proxy() && value->class_variable_proxy()->var() &&
-      outer_class_variable->is_class()) {
-    // In some cases, the outer variable is not detected as a class variable;
-    // this happens e.g., for lazy methods. They are excluded from strong mode
-    // checks for now. TODO(marja, rossberg): re-create variables with the
-    // correct Kind and remove this hack.
-    value->class_variable_proxy()
-        ->var()
-        ->AsClassVariable()
-        ->set_declaration_group_start(
-            outer_class_variable->AsClassVariable()->declaration_group_start());
-  }
-
   Assignment* assignment =
       factory()->NewAssignment(Token::INIT, proxy, value, pos);
   Statement* assignment_statement =
@@ -2413,7 +2377,7 @@ Block* Parser::ParseVariableDeclarations(
     Expression* pattern;
     int decl_pos = peek_position();
     {
-      ExpressionClassifier pattern_classifier;
+      ExpressionClassifier pattern_classifier(this);
       Token::Value next = peek();
       pattern = ParsePrimaryExpression(&pattern_classifier, CHECK_OK);
       ValidateBindingPattern(&pattern_classifier, CHECK_OK);
@@ -2438,10 +2402,10 @@ Block* Parser::ParseVariableDeclarations(
     Expression* value = NULL;
     int initializer_position = RelocInfo::kNoPosition;
     if (Check(Token::ASSIGN)) {
-      ExpressionClassifier classifier;
+      ExpressionClassifier classifier(this);
       value = ParseAssignmentExpression(var_context != kForStatement,
                                         &classifier, CHECK_OK);
-      value = ParserTraits::RewriteNonPattern(value, &classifier, CHECK_OK);
+      RewriteNonPattern(&classifier, CHECK_OK);
       variable_loc.end_pos = scanner()->location().end_pos;
 
       if (!parsing_result->first_initializer_loc.IsValid()) {
@@ -2557,13 +2521,13 @@ Statement* Parser::ParseExpressionOrLabelledStatement(
           IsClassConstructor(function_state_->kind())) {
         bool is_this = peek() == Token::THIS;
         Expression* expr;
-        ExpressionClassifier classifier;
+        ExpressionClassifier classifier(this);
         if (is_this) {
           expr = ParseStrongInitializationExpression(&classifier, CHECK_OK);
         } else {
           expr = ParseStrongSuperCallExpression(&classifier, CHECK_OK);
         }
-        expr = ParserTraits::RewriteNonPattern(expr, &classifier, CHECK_OK);
+        RewriteNonPattern(&classifier, CHECK_OK);
         switch (peek()) {
           case Token::SEMICOLON:
             Consume(Token::SEMICOLON);
@@ -3096,7 +3060,7 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
     catch_scope = NewScope(scope_, CATCH_SCOPE);
     catch_scope->set_start_position(scanner()->location().beg_pos);
 
-    ExpressionClassifier pattern_classifier;
+    ExpressionClassifier pattern_classifier(this);
     Expression* pattern = ParsePrimaryExpression(&pattern_classifier, CHECK_OK);
     ValidateBindingPattern(&pattern_classifier, CHECK_OK);
 
@@ -3726,10 +3690,9 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
 
         Expression* enumerable;
         if (mode == ForEachStatement::ITERATE) {
-          ExpressionClassifier classifier;
+          ExpressionClassifier classifier(this);
           enumerable = ParseAssignmentExpression(true, &classifier, CHECK_OK);
-          enumerable = ParserTraits::RewriteNonPattern(enumerable, &classifier,
-                                                       CHECK_OK);
+          RewriteNonPattern(&classifier, CHECK_OK);
         } else {
           enumerable = ParseExpression(true, CHECK_OK);
         }
@@ -3819,7 +3782,7 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
       }
     } else {
       int lhs_beg_pos = peek_position();
-      ExpressionClassifier classifier;
+      ExpressionClassifier classifier(this);
       Expression* expression = ParseExpression(false, &classifier, CHECK_OK);
       int lhs_end_pos = scanner()->location().end_pos;
       ForEachStatement::VisitMode mode;
@@ -3837,8 +3800,7 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
       if (is_destructuring) {
         ValidateAssignmentPattern(&classifier, CHECK_OK);
       } else {
-        expression =
-            ParserTraits::RewriteNonPattern(expression, &classifier, CHECK_OK);
+        RewriteNonPattern(&classifier, CHECK_OK);
       }
 
       if (is_for_each) {
@@ -3854,10 +3816,9 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
 
         Expression* enumerable;
         if (mode == ForEachStatement::ITERATE) {
-          ExpressionClassifier classifier;
+          ExpressionClassifier classifier(this);
           enumerable = ParseAssignmentExpression(true, &classifier, CHECK_OK);
-          enumerable = ParserTraits::RewriteNonPattern(enumerable, &classifier,
-                                                       CHECK_OK);
+          RewriteNonPattern(&classifier, CHECK_OK);
         } else {
           enumerable = ParseExpression(true, CHECK_OK);
         }
@@ -4149,7 +4110,7 @@ void ParserTraits::ParseArrowFunctionFormalParameterList(
   ParseArrowFunctionFormalParameters(parameters, expr, params_loc, ok);
   if (!*ok) return;
 
-  ExpressionClassifier classifier;
+  Type::ExpressionClassifier classifier(parser_);
   if (!parameters->is_simple) {
     classifier.RecordNonSimpleParameter();
   }
@@ -4183,7 +4144,6 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     const AstRawString* function_name, Scanner::Location function_name_location,
     FunctionNameValidity function_name_validity, FunctionKind kind,
     int function_token_pos, FunctionLiteral::FunctionType function_type,
-    FunctionLiteral::ArityRestriction arity_restriction,
     LanguageMode language_mode, bool* ok) {
   // Function ::
   //   '(' FormalParameterList? ')' '{' FunctionBody '}'
@@ -4251,17 +4211,18 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
   int materialized_literal_count = -1;
   int expected_property_count = -1;
   DuplicateFinder duplicate_finder(scanner()->unicode_cache());
-  ExpressionClassifier formals_classifier(&duplicate_finder);
   FunctionLiteral::EagerCompileHint eager_compile_hint =
       parenthesized_function_ ? FunctionLiteral::kShouldEagerCompile
                               : FunctionLiteral::kShouldLazyCompile;
   bool should_be_used_once_hint = false;
+  bool has_duplicate_parameters;
   // Parse function.
   {
     AstNodeFactory function_factory(ast_value_factory());
     FunctionState function_state(&function_state_, &scope_, scope, kind,
                                  &function_factory);
     scope_->SetScopeName(function_name);
+    ExpressionClassifier formals_classifier(this, &duplicate_finder);
 
     if (is_generator) {
       // For generators, allocating variables in contexts is currently a win
@@ -4286,8 +4247,7 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     Expect(Token::RPAREN, CHECK_OK);
     int formals_end_position = scanner()->location().end_pos;
 
-    CheckArityRestrictions(arity, arity_restriction,
-                           formals.has_rest, start_position,
+    CheckArityRestrictions(arity, kind, formals.has_rest, start_position,
                            formals_end_position, CHECK_OK);
     Expect(Token::LBRACE, CHECK_OK);
 
@@ -4440,10 +4400,10 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
       // If body can be inspected, rewrite queued destructuring assignments
       ParserTraits::RewriteDestructuringAssignments();
     }
+    has_duplicate_parameters =
+      !formals_classifier.is_valid_formal_parameter_list_without_duplicates();
   }
 
-  bool has_duplicate_parameters =
-      !formals_classifier.is_valid_formal_parameter_list_without_duplicates();
   FunctionLiteral::ParameterFlag duplicate_parameters =
       has_duplicate_parameters ? FunctionLiteral::kHasDuplicateParameters
                                : FunctionLiteral::kNoDuplicateParameters;
@@ -4577,8 +4537,7 @@ class InitializerRewriter : public AstExpressionVisitor {
 
  private:
   void VisitExpression(Expression* expr) {
-    RewritableAssignmentExpression* to_rewrite =
-        expr->AsRewritableAssignmentExpression();
+    RewritableExpression* to_rewrite = expr->AsRewritableExpression();
     if (to_rewrite == nullptr || to_rewrite->is_rewritten()) return;
 
     Parser::PatternRewriter::RewriteDestructuringAssignment(parser_, to_rewrite,
@@ -4912,19 +4871,17 @@ ClassLiteral* Parser::ParseClassLiteral(const AstRawString* name,
   VariableProxy* proxy = NULL;
   if (name != NULL) {
     proxy = NewUnresolved(name, CONST);
-    const bool is_class_declaration = true;
-    Declaration* declaration = factory()->NewVariableDeclaration(
-        proxy, CONST, block_scope, pos, is_class_declaration,
-        scope_->class_declaration_group_start());
+    Declaration* declaration =
+        factory()->NewVariableDeclaration(proxy, CONST, block_scope, pos);
     Declare(declaration, DeclarationDescriptor::NORMAL, true, CHECK_OK);
   }
 
   Expression* extends = NULL;
   if (Check(Token::EXTENDS)) {
     block_scope->set_start_position(scanner()->location().end_pos);
-    ExpressionClassifier classifier;
+    ExpressionClassifier classifier(this);
     extends = ParseLeftHandSideExpression(&classifier, CHECK_OK);
-    extends = ParserTraits::RewriteNonPattern(extends, &classifier, CHECK_OK);
+    RewriteNonPattern(&classifier, CHECK_OK);
   } else {
     block_scope->set_start_position(scanner()->location().end_pos);
   }
@@ -4945,13 +4902,12 @@ ClassLiteral* Parser::ParseClassLiteral(const AstRawString* name,
     const bool is_static = false;
     bool is_computed_name = false;  // Classes do not care about computed
                                     // property names here.
-    ExpressionClassifier classifier;
+    ExpressionClassifier classifier(this);
     const AstRawString* property_name = nullptr;
     ObjectLiteral::Property* property = ParsePropertyDefinition(
         &checker, in_class, has_extends, is_static, &is_computed_name,
         &has_seen_constructor, &classifier, &property_name, CHECK_OK);
-    property = ParserTraits::RewriteNonPatternObjectLiteralProperty(
-        property, &classifier, CHECK_OK);
+    RewriteNonPattern(&classifier, CHECK_OK);
 
     if (has_seen_constructor && constructor == NULL) {
       constructor = GetPropertyValue(property)->AsFunctionLiteral();
@@ -5002,7 +4958,7 @@ Expression* Parser::ParseV8Intrinsic(bool* ok) {
   const AstRawString* name = ParseIdentifier(kAllowRestrictedIdentifiers,
                                              CHECK_OK);
   Scanner::Location spread_pos;
-  ExpressionClassifier classifier;
+  ExpressionClassifier classifier(this);
   ZoneList<Expression*>* args =
       ParseArguments(&spread_pos, &classifier, CHECK_OK);
 
@@ -5573,17 +5529,19 @@ void ParserTraits::RewriteDestructuringAssignments() {
 }
 
 
-Expression* ParserTraits::RewriteNonPattern(
-    Expression* expr, const ExpressionClassifier* classifier, bool* ok) {
-  return parser_->RewriteNonPattern(expr, classifier, ok);
+void ParserTraits::RewriteNonPattern(Type::ExpressionClassifier* classifier,
+                                     bool* ok) {
+  parser_->RewriteNonPattern(classifier, ok);
 }
 
 
-ObjectLiteralProperty* ParserTraits::RewriteNonPatternObjectLiteralProperty(
-    ObjectLiteralProperty* property, const ExpressionClassifier* classifier,
-    bool* ok) {
-  return parser_->RewriteNonPatternObjectLiteralProperty(property, classifier,
-                                                         ok);
+Zone* ParserTraits::zone() const {
+  return parser_->function_state_->scope()->zone();
+}
+
+
+ZoneList<Expression*>* ParserTraits::GetNonPatternList() const {
+  return parser_->function_state_->non_patterns_to_rewrite();
 }
 
 
@@ -5595,6 +5553,7 @@ class NonPatternRewriter : public AstExpressionRewriter {
 
  private:
   bool RewriteExpression(Expression* expr) override {
+    if (expr->IsRewritableExpression()) return true;
     // Rewrite only what could have been a pattern but is not.
     if (expr->IsArrayLiteral()) {
       // Spread rewriting in array literals.
@@ -5624,45 +5583,37 @@ class NonPatternRewriter : public AstExpressionRewriter {
 };
 
 
-Expression* Parser::RewriteNonPattern(Expression* expr,
-                                      const ExpressionClassifier* classifier,
-                                      bool* ok) {
+void Parser::RewriteNonPattern(ExpressionClassifier* classifier, bool* ok) {
   ValidateExpression(classifier, ok);
-  if (!*ok) return expr;
-  NonPatternRewriter rewriter(stack_limit_, this);
-  Expression* result = reinterpret_cast<Expression*>(rewriter.Rewrite(expr));
-  DCHECK_NOT_NULL(result);
-  return result;
-}
-
-
-ObjectLiteralProperty* Parser::RewriteNonPatternObjectLiteralProperty(
-    ObjectLiteralProperty* property, const ExpressionClassifier* classifier,
-    bool* ok) {
-  if (property != nullptr) {
-    // Do not rewrite (computed) key expressions
-    Expression* value = RewriteNonPattern(property->value(), classifier, ok);
-    property->set_value(value);
+  if (!*ok) return;
+  auto non_patterns_to_rewrite = function_state_->non_patterns_to_rewrite();
+  int begin = classifier->GetNonPatternBegin();
+  int end = non_patterns_to_rewrite->length();
+  if (begin < end) {
+    NonPatternRewriter rewriter(stack_limit_, this);
+    for (int i = begin; i < end; i++) {
+      DCHECK(non_patterns_to_rewrite->at(i)->IsRewritableExpression());
+      rewriter.Rewrite(non_patterns_to_rewrite->at(i));
+    }
+    non_patterns_to_rewrite->Rewind(begin);
   }
-  return property;
 }
 
 
 void Parser::RewriteDestructuringAssignments() {
-  FunctionState* func = function_state_;
   if (!allow_harmony_destructuring_assignment()) return;
-  const List<DestructuringAssignment>& assignments =
-      func->destructuring_assignments_to_rewrite();
+  const auto& assignments =
+      function_state_->destructuring_assignments_to_rewrite();
   for (int i = assignments.length() - 1; i >= 0; --i) {
     // Rewrite list in reverse, so that nested assignment patterns are rewritten
     // correctly.
-    DestructuringAssignment pair = assignments.at(i);
-    RewritableAssignmentExpression* to_rewrite =
-        pair.assignment->AsRewritableAssignmentExpression();
-    Scope* scope = pair.scope;
+    const DestructuringAssignment& pair = assignments.at(i);
+    RewritableExpression* to_rewrite =
+        pair.assignment->AsRewritableExpression();
     DCHECK_NOT_NULL(to_rewrite);
     if (!to_rewrite->is_rewritten()) {
-      PatternRewriter::RewriteDestructuringAssignment(this, to_rewrite, scope);
+      PatternRewriter::RewriteDestructuringAssignment(this, to_rewrite,
+                                                      pair.scope);
     }
   }
 }
@@ -5788,38 +5739,52 @@ Expression* Parser::RewriteSpreads(ArrayLiteral* lit) {
 
 
 void ParserTraits::QueueDestructuringAssignmentForRewriting(Expression* expr) {
-  DCHECK(expr->IsRewritableAssignmentExpression());
+  DCHECK(expr->IsRewritableExpression());
   parser_->function_state_->AddDestructuringAssignment(
       Parser::DestructuringAssignment(expr, parser_->scope_));
+}
+
+
+void ParserTraits::QueueNonPatternForRewriting(Expression* expr) {
+  DCHECK(expr->IsRewritableExpression());
+  parser_->function_state_->AddNonPatternForRewriting(expr);
 }
 
 
 void ParserTraits::SetFunctionNameFromPropertyName(
     ObjectLiteralProperty* property, const AstRawString* name) {
   Expression* value = property->value();
-  if (!value->IsAnonymousFunctionDefinition()) return;
 
   // Computed name setting must happen at runtime.
   if (property->is_computed_name()) return;
 
+  // Getter and setter names are handled here because their names
+  // change in ES2015, even though they are not anonymous.
+  auto function = value->AsFunctionLiteral();
+  if (function != nullptr) {
+    bool is_getter = property->kind() == ObjectLiteralProperty::GETTER;
+    bool is_setter = property->kind() == ObjectLiteralProperty::SETTER;
+    if (is_getter || is_setter) {
+      DCHECK_NOT_NULL(name);
+      const AstRawString* prefix =
+          is_getter ? parser_->ast_value_factory()->get_space_string()
+                    : parser_->ast_value_factory()->set_space_string();
+      function->set_raw_name(
+          parser_->ast_value_factory()->NewConsString(prefix, name));
+      return;
+    }
+  }
+
+  if (!value->IsAnonymousFunctionDefinition()) return;
   DCHECK_NOT_NULL(name);
 
   // Ignore "__proto__" as a name when it's being used to set the [[Prototype]]
   // of an object literal.
   if (property->kind() == ObjectLiteralProperty::PROTOTYPE) return;
 
-  auto function = value->AsFunctionLiteral();
   if (function != nullptr) {
-    if (property->kind() == ObjectLiteralProperty::GETTER) {
-      function->set_raw_name(parser_->ast_value_factory()->NewConsString(
-          parser_->ast_value_factory()->get_space_string(), name));
-    } else if (property->kind() == ObjectLiteralProperty::SETTER) {
-      function->set_raw_name(parser_->ast_value_factory()->NewConsString(
-          parser_->ast_value_factory()->set_space_string(), name));
-    } else {
-      function->set_raw_name(name);
-      DCHECK_EQ(ObjectLiteralProperty::COMPUTED, property->kind());
-    }
+    function->set_raw_name(name);
+    DCHECK_EQ(ObjectLiteralProperty::COMPUTED, property->kind());
   } else {
     DCHECK(value->IsClassLiteral());
     DCHECK_EQ(ObjectLiteralProperty::COMPUTED, property->kind());

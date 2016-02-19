@@ -38,7 +38,7 @@ LookupIterator LookupIterator::PropertyOrElement(Isolate* isolate,
     LookupIterator it(isolate, receiver, index, configuration);
     // Here we try to avoid having to rebuild the string later
     // by storing it on the indexed LookupIterator.
-    it.name_ = isolate->factory()->InternalizeName(name);
+    it.name_ = name;
     return it;
   }
 
@@ -517,18 +517,21 @@ void LookupIterator::WriteDataValue(Handle<Object> value) {
     Handle<JSObject> object = Handle<JSObject>::cast(holder);
     ElementsAccessor* accessor = object->GetElementsAccessor();
     accessor->Set(object, number_, *value);
+  } else if (holder->HasFastProperties()) {
+    if (property_details_.type() == v8::internal::DATA) {
+      JSObject::cast(*holder)->WriteToField(descriptor_number(),
+                                            property_details_, *value);
+    } else {
+      DCHECK_EQ(v8::internal::DATA_CONSTANT, property_details_.type());
+    }
   } else if (holder->IsJSGlobalObject()) {
     Handle<GlobalDictionary> property_dictionary =
         handle(JSObject::cast(*holder)->global_dictionary());
     PropertyCell::UpdateCell(property_dictionary, dictionary_entry(), value,
                              property_details_);
-  } else if (!holder->HasFastProperties()) {
+  } else {
     NameDictionary* property_dictionary = holder->property_dictionary();
     property_dictionary->ValueAtPut(dictionary_entry(), *value);
-  } else if (property_details_.type() == v8::internal::DATA) {
-    JSObject::cast(*holder)->WriteToField(descriptor_number(), *value);
-  } else {
-    DCHECK_EQ(v8::internal::DATA_CONSTANT, property_details_.type());
   }
 }
 
@@ -596,7 +599,6 @@ LookupIterator::State LookupIterator::LookupInHolder(Map* const map,
   switch (state_) {
     case NOT_FOUND:
       if (map->IsJSProxyMap()) {
-        // Do not leak private property names.
         if (IsElement() || !name_->IsPrivate()) return JSPROXY;
       }
       if (map->is_access_check_needed()) {
@@ -606,9 +608,7 @@ LookupIterator::State LookupIterator::LookupInHolder(Map* const map,
     case ACCESS_CHECK:
       if (check_interceptor() && HasInterceptor(map) &&
           !SkipInterceptor(JSObject::cast(holder))) {
-        // Do not leak private property names.
-        if (!name_.is_null() && name_->IsPrivate()) return NOT_FOUND;
-        return INTERCEPTOR;
+        if (IsElement() || !name_->IsPrivate()) return INTERCEPTOR;
       }
     // Fall through.
     case INTERCEPTOR:

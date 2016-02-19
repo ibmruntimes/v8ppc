@@ -4238,16 +4238,12 @@ Maybe<bool> Object::SetPropertyInternal(LookupIterator* it,
 Maybe<bool> Object::SetProperty(LookupIterator* it, Handle<Object> value,
                                 LanguageMode language_mode,
                                 StoreFromKeyed store_mode) {
-  ShouldThrow should_throw =
-      is_sloppy(language_mode) ? DONT_THROW : THROW_ON_ERROR;
-  if (it->GetReceiver()->IsJSProxy() && it->GetName()->IsPrivate()) {
-    RETURN_FAILURE(it->isolate(), should_throw,
-                   NewTypeError(MessageTemplate::kProxyPrivate));
-  }
   bool found = false;
   Maybe<bool> result =
       SetPropertyInternal(it, value, language_mode, store_mode, &found);
   if (found) return result;
+  ShouldThrow should_throw =
+      is_sloppy(language_mode) ? DONT_THROW : THROW_ON_ERROR;
   return AddDataProperty(it, value, NONE, should_throw, store_mode);
 }
 
@@ -4255,13 +4251,7 @@ Maybe<bool> Object::SetProperty(LookupIterator* it, Handle<Object> value,
 Maybe<bool> Object::SetSuperProperty(LookupIterator* it, Handle<Object> value,
                                      LanguageMode language_mode,
                                      StoreFromKeyed store_mode) {
-  ShouldThrow should_throw =
-      is_sloppy(language_mode) ? DONT_THROW : THROW_ON_ERROR;
   Isolate* isolate = it->isolate();
-  if (it->GetReceiver()->IsJSProxy() && it->GetName()->IsPrivate()) {
-    RETURN_FAILURE(isolate, should_throw,
-                   NewTypeError(MessageTemplate::kProxyPrivate));
-  }
 
   bool found = false;
   Maybe<bool> result =
@@ -4270,6 +4260,9 @@ Maybe<bool> Object::SetSuperProperty(LookupIterator* it, Handle<Object> value,
 
   // The property either doesn't exist on the holder or exists there as a data
   // property.
+
+  ShouldThrow should_throw =
+      is_sloppy(language_mode) ? DONT_THROW : THROW_ON_ERROR;
 
   if (!it->GetReceiver()->IsJSReceiver()) {
     return WriteToReadOnlyProperty(it, value, should_throw);
@@ -4290,8 +4283,16 @@ Maybe<bool> Object::SetSuperProperty(LookupIterator* it, Handle<Object> value,
         }
         break;
 
-      case LookupIterator::INTEGER_INDEXED_EXOTIC:
       case LookupIterator::ACCESSOR:
+        if (own_lookup.GetAccessors()->IsAccessorInfo()) {
+          if (own_lookup.IsReadOnly()) {
+            return WriteToReadOnlyProperty(&own_lookup, value, should_throw);
+          }
+          return JSObject::SetPropertyWithAccessor(&own_lookup, value,
+                                                   should_throw);
+        }
+      // Fall through.
+      case LookupIterator::INTEGER_INDEXED_EXOTIC:
         return RedefineIncompatibleProperty(isolate, it->GetName(), value,
                                             should_throw);
 
@@ -4486,8 +4487,11 @@ Maybe<bool> Object::AddDataProperty(LookupIterator* it, Handle<Object> value,
                                     PropertyAttributes attributes,
                                     ShouldThrow should_throw,
                                     StoreFromKeyed store_mode) {
-  DCHECK(!it->GetReceiver()->IsJSProxy());
   if (!it->GetReceiver()->IsJSObject()) {
+    if (it->GetReceiver()->IsJSProxy() && it->GetName()->IsPrivate()) {
+      RETURN_FAILURE(it->isolate(), should_throw,
+                     NewTypeError(MessageTemplate::kProxyPrivate));
+    }
     return CannotCreateProperty(it->isolate(), it->GetReceiver(), it->GetName(),
                                 value, should_throw);
   }
@@ -6164,7 +6168,7 @@ Maybe<bool> JSReceiver::DeleteProperty(LookupIterator* it,
   if (it->GetReceiver()->IsJSProxy()) {
     if (it->state() != LookupIterator::NOT_FOUND) {
       DCHECK_EQ(LookupIterator::DATA, it->state());
-      DCHECK(it->GetName()->IsPrivate());
+      DCHECK(it->name()->IsPrivate());
       it->Delete();
     }
     return Just(true);
@@ -13423,7 +13427,7 @@ Handle<String> JSFunction::ToString(Handle<JSFunction> function) {
     }
     if (shared_info->name_should_print_as_anonymous()) {
       builder.AppendCString("anonymous");
-    } else {
+    } else if (!shared_info->is_anonymous_expression()) {
       builder.AppendString(handle(String::cast(shared_info->name()), isolate));
     }
   }
@@ -13858,8 +13862,9 @@ void SharedFunctionInfo::InitFromFunctionLiteral(
   shared_info->set_function_token_position(lit->function_token_position());
   shared_info->set_start_position(lit->start_position());
   shared_info->set_end_position(lit->end_position());
-  shared_info->set_is_expression(lit->is_expression());
-  shared_info->set_is_anonymous(lit->is_anonymous());
+  shared_info->set_is_declaration(lit->is_declaration());
+  shared_info->set_is_named_expression(lit->is_named_expression());
+  shared_info->set_is_anonymous_expression(lit->is_anonymous_expression());
   shared_info->set_inferred_name(*lit->inferred_name());
   shared_info->set_allows_lazy_compilation(lit->AllowsLazyCompilation());
   shared_info->set_allows_lazy_compilation_without_context(

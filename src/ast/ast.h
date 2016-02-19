@@ -91,7 +91,7 @@ namespace internal {
   V(CaseClause)                 \
   V(EmptyParentheses)           \
   V(DoExpression)               \
-  V(RewritableAssignmentExpression)
+  V(RewritableExpression)
 
 #define AST_NODE_LIST(V)                        \
   DECLARATION_NODE_LIST(V)                      \
@@ -205,13 +205,9 @@ class AstNode: public ZoneObject {
 
   // Type testing & conversion functions overridden by concrete subclasses.
 #define DECLARE_NODE_FUNCTIONS(type) \
-  bool Is##type() const { return node_type() == AstNode::k##type; } \
-  type* As##type() { \
-    return Is##type() ? reinterpret_cast<type*>(this) : NULL; \
-  } \
-  const type* As##type() const { \
-    return Is##type() ? reinterpret_cast<const type*>(this) : NULL; \
-  }
+  V8_INLINE bool Is##type() const;   \
+  V8_INLINE type* As##type();        \
+  V8_INLINE const type* As##type() const;
   AST_NODE_LIST(DECLARE_NODE_FUNCTIONS)
 #undef DECLARE_NODE_FUNCTIONS
 
@@ -549,24 +545,10 @@ class VariableDeclaration final : public Declaration {
     return mode() == VAR ? kCreatedInitialized : kNeedsInitialization;
   }
 
-  bool is_class_declaration() const { return is_class_declaration_; }
-
-  // VariableDeclarations can be grouped into consecutive declaration
-  // groups. Each VariableDeclaration is associated with the start position of
-  // the group it belongs to. The positions are used for strong mode scope
-  // checks for classes and functions.
-  int declaration_group_start() const { return declaration_group_start_; }
-
  protected:
   VariableDeclaration(Zone* zone, VariableProxy* proxy, VariableMode mode,
-                      Scope* scope, int pos, bool is_class_declaration = false,
-                      int declaration_group_start = -1)
-      : Declaration(zone, proxy, mode, scope, pos),
-        is_class_declaration_(is_class_declaration),
-        declaration_group_start_(declaration_group_start) {}
-
-  bool is_class_declaration_;
-  int declaration_group_start_;
+                      Scope* scope, int pos)
+      : Declaration(zone, proxy, mode, scope, pos) {}
 };
 
 
@@ -1443,9 +1425,7 @@ class ObjectLiteralProperty final : public ZoneObject {
 
   void set_receiver_type(Handle<Map> map) { receiver_type_ = map; }
 
-  bool NeedsSetFunctionName() const {
-    return is_computed_name_ && value_->IsAnonymousFunctionDefinition();
-  }
+  bool NeedsSetFunctionName() const;
 
  protected:
   friend class AstNodeFactory;
@@ -2502,18 +2482,32 @@ class Assignment final : public Expression {
 };
 
 
-class RewritableAssignmentExpression : public Expression {
+// The RewritableExpression class is a wrapper for AST nodes that wait
+// for some potential rewriting.  However, even if such nodes are indeed
+// rewritten, the RewritableExpression wrapper nodes will survive in the
+// final AST and should be just ignored, i.e., they should be treated as
+// equivalent to the wrapped nodes.  For this reason and to simplify later
+// phases, RewritableExpressions are considered as exceptions of AST nodes
+// in the following sense:
+//
+// 1. IsRewritableExpression and AsRewritableExpression behave as usual.
+// 2. All other Is* and As* methods are practically delegated to the
+//    wrapped node, i.e. IsArrayLiteral() will return true iff the
+//    wrapped node is an array literal.
+//
+// Furthermore, an invariant that should be respected is that the wrapped
+// node is not a RewritableExpression.
+class RewritableExpression : public Expression {
  public:
-  DECLARE_NODE_TYPE(RewritableAssignmentExpression)
+  DECLARE_NODE_TYPE(RewritableExpression)
 
-  Expression* expression() { return expr_; }
+  Expression* expression() const { return expr_; }
   bool is_rewritten() const { return is_rewritten_; }
-
-  void set_expression(Expression* e) { expr_ = e; }
 
   void Rewrite(Expression* new_expression) {
     DCHECK(!is_rewritten());
     DCHECK_NOT_NULL(new_expression);
+    DCHECK(!new_expression->IsRewritableExpression());
     expr_ = new_expression;
     is_rewritten_ = true;
   }
@@ -2521,10 +2515,12 @@ class RewritableAssignmentExpression : public Expression {
   static int num_ids() { return parent_num_ids(); }
 
  protected:
-  RewritableAssignmentExpression(Zone* zone, Expression* expression)
+  RewritableExpression(Zone* zone, Expression* expression)
       : Expression(zone, expression->position()),
         is_rewritten_(false),
-        expr_(expression) {}
+        expr_(expression) {
+    DCHECK(!expression->IsRewritableExpression());
+  }
 
  private:
   int local_id(int n) const { return base_id() + parent_num_ids() + n; }
@@ -2589,14 +2585,12 @@ class FunctionLiteral final : public Expression {
     kAnonymousExpression,
     kNamedExpression,
     kDeclaration,
-    kGlobalOrEval
+    kAccessorOrMethod
   };
 
   enum ParameterFlag { kNoDuplicateParameters, kHasDuplicateParameters };
 
   enum EagerCompileHint { kShouldEagerCompile, kShouldLazyCompile };
-
-  enum ArityRestriction { kNormalArity, kGetterArity, kSetterArity };
 
   DECLARE_NODE_TYPE(FunctionLiteral)
 
@@ -2610,8 +2604,13 @@ class FunctionLiteral final : public Expression {
   int start_position() const;
   int end_position() const;
   int SourceSize() const { return end_position() - start_position(); }
-  bool is_expression() const { return IsExpression::decode(bitfield_); }
-  bool is_anonymous() const { return IsAnonymous::decode(bitfield_); }
+  bool is_declaration() const { return IsDeclaration::decode(bitfield_); }
+  bool is_named_expression() const {
+    return IsNamedExpression::decode(bitfield_);
+  }
+  bool is_anonymous_expression() const {
+    return IsAnonymousExpression::decode(bitfield_);
+  }
   LanguageMode language_mode() const;
 
   static bool NeedsHomeObject(Expression* expr);
@@ -2704,10 +2703,7 @@ class FunctionLiteral final : public Expression {
   }
 
   bool IsAnonymousFunctionDefinition() const final {
-    // TODO(adamk): This isn't quite accurate, as many non-expressions
-    // (such as concise methods) are marked as anonymous, but it's
-    // sufficient for the current callers.
-    return is_anonymous();
+    return is_anonymous_expression();
   }
 
  protected:
@@ -2718,7 +2714,7 @@ class FunctionLiteral final : public Expression {
                   FunctionType function_type,
                   ParameterFlag has_duplicate_parameters,
                   EagerCompileHint eager_compile_hint, FunctionKind kind,
-                  int position)
+                  int position, bool is_function)
       : Expression(zone, position),
         raw_name_(name),
         scope_(scope),
@@ -2731,26 +2727,28 @@ class FunctionLiteral final : public Expression {
         parameter_count_(parameter_count),
         function_token_position_(RelocInfo::kNoPosition) {
     bitfield_ =
-        IsExpression::encode(function_type != kDeclaration) |
-        IsAnonymous::encode(function_type == kAnonymousExpression) |
+        IsDeclaration::encode(function_type == kDeclaration) |
+        IsNamedExpression::encode(function_type == kNamedExpression) |
+        IsAnonymousExpression::encode(function_type == kAnonymousExpression) |
         Pretenure::encode(false) |
         HasDuplicateParameters::encode(has_duplicate_parameters ==
                                        kHasDuplicateParameters) |
-        IsFunction::encode(function_type != kGlobalOrEval) |
+        IsFunction::encode(is_function) |
         ShouldEagerCompile::encode(eager_compile_hint == kShouldEagerCompile) |
         FunctionKindBits::encode(kind) | ShouldBeUsedOnceHint::encode(false);
     DCHECK(IsValidFunctionKind(kind));
   }
 
  private:
-  class IsExpression : public BitField16<bool, 0, 1> {};
-  class IsAnonymous : public BitField16<bool, 1, 1> {};
-  class Pretenure : public BitField16<bool, 2, 1> {};
-  class HasDuplicateParameters : public BitField16<bool, 3, 1> {};
-  class IsFunction : public BitField16<bool, 4, 1> {};
-  class ShouldEagerCompile : public BitField16<bool, 5, 1> {};
-  class FunctionKindBits : public BitField16<FunctionKind, 6, 8> {};
-  class ShouldBeUsedOnceHint : public BitField16<bool, 15, 1> {};
+  class IsDeclaration : public BitField16<bool, 0, 1> {};
+  class IsNamedExpression : public BitField16<bool, 1, 1> {};
+  class IsAnonymousExpression : public BitField16<bool, 2, 1> {};
+  class Pretenure : public BitField16<bool, 3, 1> {};
+  class HasDuplicateParameters : public BitField16<bool, 4, 1> {};
+  class IsFunction : public BitField16<bool, 5, 1> {};
+  class ShouldEagerCompile : public BitField16<bool, 6, 1> {};
+  class ShouldBeUsedOnceHint : public BitField16<bool, 7, 1> {};
+  class FunctionKindBits : public BitField16<FunctionKind, 8, 8> {};
 
   // Start with 16-bit field, which should get packed together
   // with Expression's trailing 16-bit field.
@@ -3074,12 +3072,11 @@ class AstNodeFactory final BASE_EMBEDDED {
 
   AstValueFactory* ast_value_factory() const { return ast_value_factory_; }
 
-  VariableDeclaration* NewVariableDeclaration(
-      VariableProxy* proxy, VariableMode mode, Scope* scope, int pos,
-      bool is_class_declaration = false, int declaration_group_start = -1) {
+  VariableDeclaration* NewVariableDeclaration(VariableProxy* proxy,
+                                              VariableMode mode, Scope* scope,
+                                              int pos) {
     return new (parser_zone_)
-        VariableDeclaration(parser_zone_, proxy, mode, scope, pos,
-                            is_class_declaration, declaration_group_start);
+        VariableDeclaration(parser_zone_, proxy, mode, scope, pos);
   }
 
   FunctionDeclaration* NewFunctionDeclaration(VariableProxy* proxy,
@@ -3380,12 +3377,9 @@ class AstNodeFactory final BASE_EMBEDDED {
         local_zone_, condition, then_expression, else_expression, position);
   }
 
-  RewritableAssignmentExpression* NewRewritableAssignmentExpression(
-      Expression* expression) {
+  RewritableExpression* NewRewritableExpression(Expression* expression) {
     DCHECK_NOT_NULL(expression);
-    DCHECK(expression->IsAssignment());
-    return new (local_zone_)
-        RewritableAssignmentExpression(local_zone_, expression);
+    return new (local_zone_) RewritableExpression(local_zone_, expression);
   }
 
   Assignment* NewAssignment(Token::Value op,
@@ -3428,7 +3422,22 @@ class AstNodeFactory final BASE_EMBEDDED {
         parser_zone_, name, ast_value_factory_, scope, body,
         materialized_literal_count, expected_property_count, parameter_count,
         function_type, has_duplicate_parameters, eager_compile_hint, kind,
-        position);
+        position, true);
+  }
+
+  // Creates a FunctionLiteral representing a top-level script, the
+  // result of an eval (top-level or otherwise), or the result of calling
+  // the Function constructor.
+  FunctionLiteral* NewScriptOrEvalFunctionLiteral(
+      Scope* scope, ZoneList<Statement*>* body, int materialized_literal_count,
+      int expected_property_count) {
+    return new (parser_zone_) FunctionLiteral(
+        parser_zone_, ast_value_factory_->empty_string(), ast_value_factory_,
+        scope, body, materialized_literal_count, expected_property_count, 0,
+        FunctionLiteral::kAnonymousExpression,
+        FunctionLiteral::kNoDuplicateParameters,
+        FunctionLiteral::kShouldLazyCompile, FunctionKind::kNormalFunction, 0,
+        false);
   }
 
   ClassLiteral* NewClassLiteral(Scope* scope, VariableProxy* proxy,
@@ -3506,6 +3515,46 @@ class AstNodeFactory final BASE_EMBEDDED {
   Zone* parser_zone_;
   AstValueFactory* ast_value_factory_;
 };
+
+
+// Type testing & conversion functions overridden by concrete subclasses.
+// Inline functions for AstNode.
+
+#define DECLARE_NODE_FUNCTIONS(type)                                          \
+  bool AstNode::Is##type() const {                                            \
+    NodeType mine = node_type();                                              \
+    if (mine == AstNode::kRewritableExpression &&                             \
+        AstNode::k##type != AstNode::kRewritableExpression)                   \
+      mine = reinterpret_cast<const RewritableExpression*>(this)              \
+                 ->expression()                                               \
+                 ->node_type();                                               \
+    return mine == AstNode::k##type;                                          \
+  }                                                                           \
+  type* AstNode::As##type() {                                                 \
+    NodeType mine = node_type();                                              \
+    AstNode* result = this;                                                   \
+    if (mine == AstNode::kRewritableExpression &&                             \
+        AstNode::k##type != AstNode::kRewritableExpression) {                 \
+      result =                                                                \
+          reinterpret_cast<const RewritableExpression*>(this)->expression();  \
+      mine = result->node_type();                                             \
+    }                                                                         \
+    return mine == AstNode::k##type ? reinterpret_cast<type*>(result) : NULL; \
+  }                                                                           \
+  const type* AstNode::As##type() const {                                     \
+    NodeType mine = node_type();                                              \
+    const AstNode* result = this;                                             \
+    if (mine == AstNode::kRewritableExpression &&                             \
+        AstNode::k##type != AstNode::kRewritableExpression) {                 \
+      result =                                                                \
+          reinterpret_cast<const RewritableExpression*>(this)->expression();  \
+      mine = result->node_type();                                             \
+    }                                                                         \
+    return mine == AstNode::k##type ? reinterpret_cast<const type*>(result)   \
+                                    : NULL;                                   \
+  }
+AST_NODE_LIST(DECLARE_NODE_FUNCTIONS)
+#undef DECLARE_NODE_FUNCTIONS
 
 
 }  // namespace internal

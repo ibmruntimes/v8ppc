@@ -197,8 +197,6 @@ class PreParserExpression {
            ExpressionTypeField::decode(code_) == kAssignment;
   }
 
-  bool IsRewritableAssignmentExpression() const { return IsAssignment(); }
-
   bool IsObjectLiteral() const {
     return TypeField::decode(code_) == kObjectLiteralExpression;
   }
@@ -487,8 +485,7 @@ class PreParserFactory {
                                           PreParserExpression right, int pos) {
     return PreParserExpression::Default();
   }
-  PreParserExpression NewRewritableAssignmentExpression(
-      PreParserExpression expression) {
+  PreParserExpression NewRewritableExpression(PreParserExpression expression) {
     return expression;
   }
   PreParserExpression NewAssignment(Token::Value op,
@@ -588,6 +585,9 @@ class PreParserTraits {
     typedef void GeneratorVariable;
 
     typedef int AstProperties;
+
+    typedef v8::internal::ExpressionClassifier<PreParserTraits>
+        ExpressionClassifier;
 
     // Return types for traversing functions.
     typedef PreParserIdentifier Identifier;
@@ -885,7 +885,7 @@ class PreParserTraits {
     ++parameters->arity;
   }
   void DeclareFormalParameter(Scope* scope, PreParserIdentifier parameter,
-                              ExpressionClassifier* classifier) {
+                              Type::ExpressionClassifier* classifier) {
     if (!classifier->is_simple_parameter_list()) {
       scope->SetHasNonSimpleParameters();
     }
@@ -900,7 +900,6 @@ class PreParserTraits {
       PreParserIdentifier name, Scanner::Location function_name_location,
       FunctionNameValidity function_name_validity, FunctionKind kind,
       int function_token_position, FunctionLiteral::FunctionType type,
-      FunctionLiteral::ArityRestriction arity_restriction,
       LanguageMode language_mode, bool* ok);
 
   PreParserExpression ParseClassLiteral(PreParserIdentifier name,
@@ -924,18 +923,18 @@ class PreParserTraits {
   inline void RewriteDestructuringAssignments() {}
 
   inline void QueueDestructuringAssignmentForRewriting(PreParserExpression) {}
+  inline void QueueNonPatternForRewriting(PreParserExpression) {}
 
   void SetFunctionNameFromPropertyName(PreParserExpression,
                                        PreParserIdentifier) {}
   void SetFunctionNameFromIdentifierRef(PreParserExpression,
                                         PreParserExpression) {}
 
-  inline PreParserExpression RewriteNonPattern(
-      PreParserExpression expr, const ExpressionClassifier* classifier,
-      bool* ok);
-  inline PreParserExpression RewriteNonPatternObjectLiteralProperty(
-      PreParserExpression property, const ExpressionClassifier* classifier,
-      bool* ok);
+  inline void RewriteNonPattern(Type::ExpressionClassifier* classifier,
+                                bool* ok);
+
+  V8_INLINE Zone* zone() const;
+  V8_INLINE ZoneList<PreParserExpression>* GetNonPatternList() const;
 
   inline PreParserExpression RewriteYieldStar(
       PreParserExpression generator, PreParserExpression expr, int pos);
@@ -1069,7 +1068,6 @@ class PreParser : public ParserBase<PreParserTraits> {
       Identifier name, Scanner::Location function_name_location,
       FunctionNameValidity function_name_validity, FunctionKind kind,
       int function_token_pos, FunctionLiteral::FunctionType function_type,
-      FunctionLiteral::ArityRestriction arity_restriction,
       LanguageMode language_mode, bool* ok);
   void ParseLazyFunctionLiteralBody(bool* ok,
                                     Scanner::BookmarkScope* bookmark = nullptr);
@@ -1121,19 +1119,19 @@ PreParserExpression PreParserTraits::ParseDoExpression(bool* ok) {
 }
 
 
-PreParserExpression PreParserTraits::RewriteNonPattern(
-    PreParserExpression expr, const ExpressionClassifier* classifier,
-    bool* ok) {
+void PreParserTraits::RewriteNonPattern(Type::ExpressionClassifier* classifier,
+                                        bool* ok) {
   pre_parser_->ValidateExpression(classifier, ok);
-  return expr;
 }
 
 
-PreParserExpression PreParserTraits::RewriteNonPatternObjectLiteralProperty(
-    PreParserExpression property, const ExpressionClassifier* classifier,
-    bool* ok) {
-  pre_parser_->ValidateExpression(classifier, ok);
-  return property;
+Zone* PreParserTraits::zone() const {
+  return pre_parser_->function_state_->scope()->zone();
+}
+
+
+ZoneList<PreParserExpression>* PreParserTraits::GetNonPatternList() const {
+  return pre_parser_->function_state_->non_patterns_to_rewrite();
 }
 
 

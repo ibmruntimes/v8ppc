@@ -832,6 +832,10 @@ class MacroAssembler: public Assembler {
   void Cvt_d_ul(FPURegister fd, FPURegister fs);
   void Cvt_d_ul(FPURegister fd, Register rs);
 
+  // Convert unsigned word to float.
+  void Cvt_s_uw(FPURegister fd, FPURegister fs);
+  void Cvt_s_uw(FPURegister fd, Register rs);
+
   // Convert unsigned long to float.
   void Cvt_s_ul(FPURegister fd, FPURegister fs);
   void Cvt_s_ul(FPURegister fd, Register rs);
@@ -1659,6 +1663,9 @@ const Operand& rt = Operand(zero_reg), BranchDelaySlot bd = PROTECT
   // Abort execution if argument is not a JSBoundFunction,
   // enabled via --debug-code.
   void AssertBoundFunction(Register object);
+
+  // Abort execution if argument is not a JSReceiver, enabled via --debug-code.
+  void AssertReceiver(Register object);
 
   // Abort execution if argument is not undefined or an AllocationSite, enabled
   // via --debug-code.
