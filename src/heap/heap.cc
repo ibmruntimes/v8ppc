@@ -1063,9 +1063,9 @@ int Heap::NotifyContextDisposed(bool dependant_context) {
     tracer()->ResetSurvivalEvents();
     old_generation_size_configured_ = false;
     MemoryReducer::Event event;
-    event.type = MemoryReducer::kContextDisposed;
+    event.type = MemoryReducer::kPossibleGarbage;
     event.time_ms = MonotonicallyIncreasingTimeInMs();
-    memory_reducer_->NotifyContextDisposed(event);
+    memory_reducer_->NotifyPossibleGarbage(event);
   }
   if (isolate()->concurrent_recompilation_enabled()) {
     // Flush the queued recompilation tasks.
@@ -3029,6 +3029,7 @@ AllocationResult Heap::AllocateBytecodeArray(int length,
   instance->set_length(length);
   instance->set_frame_size(frame_size);
   instance->set_parameter_count(parameter_count);
+  instance->set_interrupt_budget(interpreter::Interpreter::InterruptBudget());
   instance->set_constant_pool(constant_pool);
   instance->set_handler_table(empty_fixed_array());
   instance->set_source_position_table(empty_fixed_array());
@@ -3357,6 +3358,25 @@ AllocationResult Heap::CopyCode(Code* code) {
   return new_code;
 }
 
+AllocationResult Heap::CopyBytecodeArray(BytecodeArray* bytecode_array) {
+  int size = BytecodeArray::SizeFor(bytecode_array->length());
+  HeapObject* result = nullptr;
+  {
+    AllocationResult allocation = AllocateRaw(size, OLD_SPACE);
+    if (!allocation.To(&result)) return allocation;
+  }
+
+  result->set_map_no_write_barrier(bytecode_array_map());
+  BytecodeArray* copy = BytecodeArray::cast(result);
+  copy->set_length(bytecode_array->length());
+  copy->set_frame_size(bytecode_array->frame_size());
+  copy->set_parameter_count(bytecode_array->parameter_count());
+  copy->set_constant_pool(bytecode_array->constant_pool());
+  copy->set_handler_table(bytecode_array->handler_table());
+  copy->set_source_position_table(bytecode_array->source_position_table());
+  bytecode_array->CopyBytecodesTo(copy);
+  return copy;
+}
 
 AllocationResult Heap::CopyCode(Code* code, Vector<byte> reloc_info) {
   // Allocate ByteArray before the Code object, so that we do not risk
@@ -4112,6 +4132,20 @@ bool Heap::HasHighFragmentation(intptr_t used, intptr_t committed) {
   return committed - used > used + kSlack;
 }
 
+void Heap::SetOptimizeForMemoryUsage() {
+  // Activate memory reducer when switching to background if
+  // - there was no mark compact since the start.
+  // - the committed memory can be potentially reduced.
+  // 2 pages for the old, code, and map space + 1 page for new space.
+  const int kMinCommittedMemory = 7 * Page::kPageSize;
+  if (ms_count_ == 0 && CommittedMemory() > kMinCommittedMemory) {
+    MemoryReducer::Event event;
+    event.type = MemoryReducer::kPossibleGarbage;
+    event.time_ms = MonotonicallyIncreasingTimeInMs();
+    memory_reducer_->NotifyPossibleGarbage(event);
+  }
+  optimize_for_memory_usage_ = true;
+}
 
 void Heap::ReduceNewSpaceSize() {
   // TODO(ulan): Unify this constant with the similar constant in

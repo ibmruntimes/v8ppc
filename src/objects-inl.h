@@ -3880,6 +3880,14 @@ void BytecodeArray::set_parameter_count(int number_of_parameters) {
                   (number_of_parameters << kPointerSizeLog2));
 }
 
+int BytecodeArray::interrupt_budget() const {
+  return READ_INT_FIELD(this, kInterruptBudgetOffset);
+}
+
+void BytecodeArray::set_interrupt_budget(int interrupt_budget) {
+  DCHECK_GE(interrupt_budget, 0);
+  WRITE_INT_FIELD(this, kInterruptBudgetOffset, interrupt_budget);
+}
 
 int BytecodeArray::parameter_count() const {
   // Parameter count is stored as the size on stack of the parameters to allow
@@ -5464,6 +5472,10 @@ void Script::set_origin_options(ScriptOriginOptions origin_options) {
 ACCESSORS(DebugInfo, shared, SharedFunctionInfo, kSharedFunctionInfoIndex)
 ACCESSORS(DebugInfo, abstract_code, AbstractCode, kAbstractCodeIndex)
 ACCESSORS(DebugInfo, break_points, FixedArray, kBreakPointsStateIndex)
+
+BytecodeArray* DebugInfo::original_bytecode_array() {
+  return shared()->bytecode_array();
+}
 
 SMI_ACCESSORS(BreakPointInfo, code_offset, kCodeOffsetIndex)
 SMI_ACCESSORS(BreakPointInfo, source_position, kSourcePositionIndex)

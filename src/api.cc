@@ -35,6 +35,7 @@
 #include "src/debug/debug.h"
 #include "src/deoptimizer.h"
 #include "src/execution.h"
+#include "src/gdb-jit.h"
 #include "src/global-handles.h"
 #include "src/icu_util.h"
 #include "src/isolate-inl.h"
@@ -168,6 +169,7 @@ class CallDepthScope {
     isolate_->IncrementJsCallsFromApiCounter();
     isolate_->handle_scope_implementer()->IncrementCallDepth();
     if (!context_.IsEmpty()) context_->Enter();
+    if (do_callback_) isolate_->FireBeforeCallEnteredCallback();
   }
   ~CallDepthScope() {
     if (!context_.IsEmpty()) context_->Exit();
@@ -7159,10 +7161,16 @@ Isolate* Isolate::New(const Isolate::CreateParams& params) {
   if (params.entry_hook) {
     isolate->set_function_entry_hook(params.entry_hook);
   }
-  if (params.code_event_handler) {
+  auto code_event_handler = params.code_event_handler;
+#ifdef ENABLE_GDB_JIT_INTERFACE
+  if (code_event_handler == nullptr && i::FLAG_gdbjit) {
+    code_event_handler = i::GDBJITInterface::EventHandler;
+  }
+#endif  // ENABLE_GDB_JIT_INTERFACE
+  if (code_event_handler) {
     isolate->InitializeLoggingAndCounters();
     isolate->logger()->SetCodeEventHandler(kJitCodeEventDefault,
-                                           params.code_event_handler);
+                                           code_event_handler);
   }
   if (params.counter_lookup_callback) {
     v8_isolate->SetCounterFunction(params.counter_lookup_callback);
@@ -7372,6 +7380,20 @@ void Isolate::SetEventLogger(LogEventCallback that) {
 }
 
 
+void Isolate::AddBeforeCallEnteredCallback(BeforeCallEnteredCallback callback) {
+  if (callback == NULL) return;
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->AddBeforeCallEnteredCallback(callback);
+}
+
+
+void Isolate::RemoveBeforeCallEnteredCallback(
+    BeforeCallEnteredCallback callback) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->RemoveBeforeCallEnteredCallback(callback);
+}
+
+
 void Isolate::AddCallCompletedCallback(CallCompletedCallback callback) {
   if (callback == NULL) return;
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
@@ -7382,6 +7404,19 @@ void Isolate::AddCallCompletedCallback(CallCompletedCallback callback) {
 void Isolate::RemoveCallCompletedCallback(CallCompletedCallback callback) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
   isolate->RemoveCallCompletedCallback(callback);
+}
+
+
+void Isolate::AddCallCompletedCallback(
+    DeprecatedCallCompletedCallback callback) {
+  AddCallCompletedCallback(reinterpret_cast<CallCompletedCallback>(callback));
+}
+
+
+void Isolate::RemoveCallCompletedCallback(
+    DeprecatedCallCompletedCallback callback) {
+  RemoveCallCompletedCallback(
+      reinterpret_cast<CallCompletedCallback>(callback));
 }
 
 

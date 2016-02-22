@@ -132,6 +132,13 @@ class InterpreterAssembler : public compiler::CodeStubAssembler {
   // Dispatch to the bytecode.
   void Dispatch();
 
+  // Dispatch to bytecode handler.
+  void DispatchToBytecodeHandler(compiler::Node* handler,
+                                 compiler::Node* bytecode_offset);
+  void DispatchToBytecodeHandler(compiler::Node* handler) {
+    DispatchToBytecodeHandler(handler, BytecodeOffset());
+  }
+
   // Abort with the given bailout reason.
   void Abort(BailoutReason bailout_reason);
 
@@ -155,6 +162,10 @@ class InterpreterAssembler : public compiler::CodeStubAssembler {
 
   // Traces the current bytecode by calling |function_id|.
   void TraceBytecode(Runtime::FunctionId function_id);
+
+  // Updates the bytecode array's interrupt budget by |weight| and calls
+  // Runtime::kInterrupt if counter reaches zero.
+  void UpdateInterruptBudget(compiler::Node* weight);
 
   // Returns the offset of register |index| relative to RegisterFilePointer().
   compiler::Node* RegisterFrameOffset(compiler::Node* index);

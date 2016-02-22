@@ -821,7 +821,7 @@ class Heap {
   bool HasHighFragmentation(intptr_t used, intptr_t committed);
 
   void SetOptimizeForLatency() { optimize_for_memory_usage_ = false; }
-  void SetOptimizeForMemoryUsage() { optimize_for_memory_usage_ = true; }
+  void SetOptimizeForMemoryUsage();
   bool ShouldOptimizeForMemoryUsage() { return optimize_for_memory_usage_; }
 
   // ===========================================================================
@@ -1789,6 +1789,9 @@ class Heap {
                                             Vector<byte> reloc_info);
 
   MUST_USE_RESULT AllocationResult CopyCode(Code* code);
+
+  MUST_USE_RESULT AllocationResult
+  CopyBytecodeArray(BytecodeArray* bytecode_array);
 
   // Allocates a fixed array initialized with undefined values
   MUST_USE_RESULT AllocationResult
