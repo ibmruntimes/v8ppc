@@ -1551,8 +1551,14 @@ bool Object::SameValueZero(Object* other) {
 MaybeHandle<Object> Object::ArraySpeciesConstructor(
     Isolate* isolate, Handle<Object> original_array) {
   Handle<Context> native_context = isolate->native_context();
+  Handle<Object> default_species = isolate->array_function();
   if (!FLAG_harmony_species) {
-    return Handle<Object>(native_context->array_function(), isolate);
+    return default_species;
+  }
+  if (original_array->IsJSArray() &&
+      Handle<JSReceiver>::cast(original_array)->map()->new_target_is_base() &&
+      isolate->IsArraySpeciesLookupChainIntact()) {
+    return default_species;
   }
   Handle<Object> constructor = isolate->factory()->undefined_value();
   Maybe<bool> is_array = Object::IsArray(original_array);
@@ -1586,7 +1592,7 @@ MaybeHandle<Object> Object::ArraySpeciesConstructor(
     }
   }
   if (constructor->IsUndefined()) {
-    return Handle<Object>(native_context->array_function(), isolate);
+    return default_species;
   } else {
     if (!constructor->IsConstructor()) {
       THROW_NEW_ERROR(isolate,
@@ -4144,6 +4150,7 @@ Maybe<bool> Object::SetPropertyInternal(LookupIterator* it,
                                         LanguageMode language_mode,
                                         StoreFromKeyed store_mode,
                                         bool* found) {
+  it->UpdateProtector();
   ShouldThrow should_throw =
       is_sloppy(language_mode) ? DONT_THROW : THROW_ON_ERROR;
 
@@ -5279,6 +5286,7 @@ MaybeHandle<Object> JSObject::DefineOwnPropertyIgnoreAttributes(
 Maybe<bool> JSObject::DefineOwnPropertyIgnoreAttributes(
     LookupIterator* it, Handle<Object> value, PropertyAttributes attributes,
     ShouldThrow should_throw, AccessorInfoHandling handling) {
+  it->UpdateProtector();
   Handle<JSObject> object = Handle<JSObject>::cast(it->GetReceiver());
   bool is_observed = object->map()->is_observed() &&
                      (it->IsElement() || !it->name()->IsPrivate());
@@ -6158,6 +6166,8 @@ void JSReceiver::DeleteNormalizedProperty(Handle<JSReceiver> object,
 
 Maybe<bool> JSReceiver::DeleteProperty(LookupIterator* it,
                                        LanguageMode language_mode) {
+  it->UpdateProtector();
+
   Isolate* isolate = it->isolate();
 
   if (it->state() == LookupIterator::JSPROXY) {
@@ -8670,15 +8680,9 @@ static Maybe<bool> GetKeys_Internal(Isolate* isolate,
         PrototypeIterator::GetCurrent<JSReceiver>(iter);
     Maybe<bool> result = Just(false);  // Dummy initialization.
     if (current->IsJSProxy()) {
-      if (type == OWN_ONLY) {
-        result = JSProxy::OwnPropertyKeys(isolate, receiver,
-                                          Handle<JSProxy>::cast(current),
-                                          filter, accumulator);
-      } else {
-        DCHECK(type == INCLUDE_PROTOS);
-        result = JSProxy::Enumerate(
-            isolate, receiver, Handle<JSProxy>::cast(current), accumulator);
-      }
+      result = JSProxy::OwnPropertyKeys(isolate, receiver,
+                                        Handle<JSProxy>::cast(current), filter,
+                                        accumulator);
     } else {
       DCHECK(current->IsJSObject());
       result = GetKeysFromJSObject(isolate, receiver,
@@ -8688,54 +8692,6 @@ static Maybe<bool> GetKeys_Internal(Isolate* isolate,
     MAYBE_RETURN(result, Nothing<bool>());
     if (!result.FromJust()) break;  // |false| means "stop iterating".
   }
-  return Just(true);
-}
-
-
-// ES6 9.5.11
-// Returns false in case of exception.
-// static
-Maybe<bool> JSProxy::Enumerate(Isolate* isolate, Handle<JSReceiver> receiver,
-                               Handle<JSProxy> proxy,
-                               KeyAccumulator* accumulator) {
-  STACK_CHECK(Nothing<bool>());
-  // 1. Let handler be the value of the [[ProxyHandler]] internal slot of O.
-  Handle<Object> handler(proxy->handler(), isolate);
-  // 2. If handler is null, throw a TypeError exception.
-  // 3. Assert: Type(handler) is Object.
-  if (proxy->IsRevoked()) {
-    isolate->Throw(*isolate->factory()->NewTypeError(
-        MessageTemplate::kProxyRevoked,
-        isolate->factory()->enumerate_string()));
-    return Nothing<bool>();
-  }
-  // 4. Let target be the value of the [[ProxyTarget]] internal slot of O.
-  Handle<JSReceiver> target(proxy->target(), isolate);
-  // 5. Let trap be ? GetMethod(handler, "enumerate").
-  Handle<Object> trap;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-      isolate, trap, Object::GetMethod(Handle<JSReceiver>::cast(handler),
-                                       isolate->factory()->enumerate_string()),
-      Nothing<bool>());
-  // 6. If trap is undefined, then
-  if (trap->IsUndefined()) {
-    // 6a. Return target.[[Enumerate]]().
-    return GetKeys_Internal(isolate, receiver, target, INCLUDE_PROTOS,
-                            ENUMERABLE_STRINGS, accumulator);
-  }
-  // The "proxy_enumerate" helper calls the trap (steps 7 - 9), which returns
-  // a generator; it then iterates over that generator until it's exhausted
-  // and returns an array containing the generated values.
-  Handle<Object> trap_result_array;
-  Handle<Object> args[] = {trap, handler, target};
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-      isolate, trap_result_array,
-      Execution::Call(isolate, isolate->proxy_enumerate(),
-                      isolate->factory()->undefined_value(), arraysize(args),
-                      args),
-      Nothing<bool>());
-  accumulator->NextPrototype();
-  accumulator->AddKeysFromProxy(Handle<JSObject>::cast(trap_result_array));
   return Just(true);
 }
 
@@ -15711,6 +15667,16 @@ Maybe<bool> JSObject::SetPrototype(Handle<JSObject> object,
                                    Handle<Object> value, bool from_javascript,
                                    ShouldThrow should_throw) {
   Isolate* isolate = object->GetIsolate();
+
+  // Setting the prototype of an Array instance invalidates the species
+  // protector
+  // because it could change the constructor property of the instance, which
+  // could change the @@species constructor.
+  if (object->IsJSArray() && isolate->IsArraySpeciesLookupChainIntact()) {
+    isolate->CountUsage(
+        v8::Isolate::UseCounterFeature::kArrayInstanceProtoModified);
+    isolate->InvalidateArraySpeciesProtector();
+  }
 
   const bool observed = from_javascript && object->map()->is_observed();
   Handle<Object> old_value;

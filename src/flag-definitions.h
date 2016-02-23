@@ -422,7 +422,6 @@ DEFINE_BOOL(omit_map_checks_for_leaf_maps, true,
 // Flags for TurboFan.
 DEFINE_BOOL(turbo, false, "enable TurboFan compiler")
 DEFINE_IMPLICATION(turbo, turbo_asm_deoptimization)
-DEFINE_IMPLICATION(turbo, turbo_inlining)
 DEFINE_BOOL(turbo_shipping, true, "enable TurboFan compiler on subset")
 DEFINE_BOOL(turbo_greedy_regalloc, false, "use the greedy register allocator")
 DEFINE_BOOL(turbo_sp_frame_access, false,
@@ -455,7 +454,7 @@ DEFINE_BOOL(function_context_specialization, false,
             "enable function context specialization in TurboFan")
 DEFINE_BOOL(native_context_specialization, true,
             "enable native context specialization in TurboFan")
-DEFINE_BOOL(turbo_inlining, false, "enable inlining in TurboFan")
+DEFINE_BOOL(turbo_inlining, true, "enable inlining in TurboFan")
 DEFINE_BOOL(trace_turbo_inlining, false, "trace TurboFan inlining")
 DEFINE_BOOL(loop_assignment_analysis, true, "perform loop assignment analysis")
 DEFINE_BOOL(turbo_profiling, false, "enable profiling in TurboFan")
@@ -638,6 +637,9 @@ DEFINE_INT(max_stack_trace_source_length, 300,
 // full-codegen.cc
 DEFINE_BOOL(always_inline_smi_code, false,
             "always inline smi code in non-opt code")
+DEFINE_BOOL(verify_operand_stack_depth, false,
+            "emit debug code that verifies the static tracking of the operand "
+            "stack depth")
 
 // heap.cc
 DEFINE_INT(min_semi_space_size, 0,

@@ -143,17 +143,10 @@ BUILTIN_LIST_C(DEF_ARG_TYPE)
   MUST_USE_RESULT static Object* Builtin_##name(                               \
       int args_length, Object** args_object, Isolate* isolate) {               \
     isolate->counters()->runtime_calls()->Increment();                         \
-    base::ElapsedTimer timer;                                                  \
-    if (FLAG_runtime_call_stats) {                                             \
-      RuntimeCallStats* stats = isolate->counters()->runtime_call_stats();     \
-      stats->Enter(&stats->Builtin_##name);                                    \
-      timer.Start();                                                           \
-    }                                                                          \
+    RuntimeCallStats* stats = isolate->counters()->runtime_call_stats();       \
+    RuntimeCallTimerScope timer(isolate, &stats->Builtin_##name);              \
     name##ArgumentsType args(args_length, args_object);                        \
     Object* value = Builtin_Impl_##name(args, isolate);                        \
-    if (FLAG_runtime_call_stats) {                                             \
-      isolate->counters()->runtime_call_stats()->Leave(timer.Elapsed());       \
-    }                                                                          \
     return value;                                                              \
   }                                                                            \
                                                                                \
@@ -483,19 +476,14 @@ BUILTIN(ArraySlice) {
   int relative_end = 0;
   bool is_sloppy_arguments = false;
 
-  // TODO(littledan): Look up @@species only once, not once here and
-  // again in the JS builtin. Pass the species out?
-  Handle<Object> species;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, species, Object::ArraySpeciesConstructor(isolate, receiver));
-  if (*species != isolate->context()->native_context()->array_function()) {
-    return CallJsIntrinsic(isolate, isolate->array_slice(), args);
-  }
   if (receiver->IsJSArray()) {
     DisallowHeapAllocation no_gc;
     JSArray* array = JSArray::cast(*receiver);
     if (!array->HasFastElements() ||
-        !IsJSArrayFastElementMovingAllowed(isolate, array)) {
+        !IsJSArrayFastElementMovingAllowed(isolate, array) ||
+        !isolate->IsArraySpeciesLookupChainIntact() ||
+        // If this is a subclass of Array, then call out to JS
+        !array->map()->new_target_is_base()) {
       AllowHeapAllocation allow_allocation;
       return CallJsIntrinsic(isolate, isolate->array_slice(), args);
     }
@@ -573,15 +561,11 @@ BUILTIN(ArraySplice) {
   MaybeHandle<FixedArrayBase> maybe_elms_obj =
       EnsureJSArrayWithWritableFastElements(isolate, receiver, &args, 3);
   Handle<FixedArrayBase> elms_obj;
-  if (!maybe_elms_obj.ToHandle(&elms_obj)) {
-    return CallJsIntrinsic(isolate, isolate->array_splice(), args);
-  }
-  // TODO(littledan): Look up @@species only once, not once here and
-  // again in the JS builtin. Pass the species out?
-  Handle<Object> species;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, species, Object::ArraySpeciesConstructor(isolate, receiver));
-  if (*species != isolate->context()->native_context()->array_function()) {
+  if (!maybe_elms_obj.ToHandle(&elms_obj) ||
+      // If this is a subclass of Array, then call out to JS
+      !JSArray::cast(*receiver)->map()->new_target_is_base() ||
+      // If anything with @@species has been messed with, call out to JS
+      !isolate->IsArraySpeciesLookupChainIntact()) {
     return CallJsIntrinsic(isolate, isolate->array_splice(), args);
   }
   Handle<JSArray> array = Handle<JSArray>::cast(receiver);
@@ -881,49 +865,6 @@ uint32_t EstimateElementCount(Handle<JSArray> array) {
 }
 
 
-template <class ExternalArrayClass, class ElementType>
-bool IterateTypedArrayElements(Isolate* isolate, Handle<JSObject> receiver,
-                               bool elements_are_ints,
-                               bool elements_are_guaranteed_smis,
-                               ArrayConcatVisitor* visitor) {
-  Handle<ExternalArrayClass> array(
-      ExternalArrayClass::cast(receiver->elements()));
-  uint32_t len = static_cast<uint32_t>(array->length());
-
-  DCHECK(visitor != NULL);
-  if (elements_are_ints) {
-    if (elements_are_guaranteed_smis) {
-      for (uint32_t j = 0; j < len; j++) {
-        HandleScope loop_scope(isolate);
-        Handle<Smi> e(Smi::FromInt(static_cast<int>(array->get_scalar(j))),
-                      isolate);
-        if (!visitor->visit(j, e)) return false;
-      }
-    } else {
-      for (uint32_t j = 0; j < len; j++) {
-        HandleScope loop_scope(isolate);
-        int64_t val = static_cast<int64_t>(array->get_scalar(j));
-        if (Smi::IsValid(static_cast<intptr_t>(val))) {
-          Handle<Smi> e(Smi::FromInt(static_cast<int>(val)), isolate);
-          if (!visitor->visit(j, e)) return false;
-        } else {
-          Handle<Object> e =
-              isolate->factory()->NewNumber(static_cast<ElementType>(val));
-          if (!visitor->visit(j, e)) return false;
-        }
-      }
-    }
-  } else {
-    for (uint32_t j = 0; j < len; j++) {
-      HandleScope loop_scope(isolate);
-      Handle<Object> e = isolate->factory()->NewNumber(array->get_scalar(j));
-      if (!visitor->visit(j, e)) return false;
-    }
-  }
-  return true;
-}
-
-
 // Used for sorting indices in a List<uint32_t>.
 int compareUInt32(const uint32_t* ap, const uint32_t* bp) {
   uint32_t a = *ap;
@@ -1098,7 +1039,7 @@ bool IterateElements(Isolate* isolate, Handle<JSReceiver> receiver,
     }
   }
 
-  if (!(receiver->IsJSArray() || receiver->IsJSTypedArray())) {
+  if (!receiver->IsJSArray()) {
     // For classes which are not known to be safe to access via elements alone,
     // use the slow case.
     return IterateElementsSlow(isolate, receiver, length, visitor);
@@ -1172,6 +1113,7 @@ bool IterateElements(Isolate* isolate, Handle<JSReceiver> receiver,
       }
       break;
     }
+
     case DICTIONARY_ELEMENTS: {
       // CollectElementIndices() can't be called when there's a JSProxy
       // on the prototype chain.
@@ -1203,63 +1145,6 @@ bool IterateElements(Isolate* isolate, Handle<JSReceiver> receiver,
       }
       break;
     }
-    case UINT8_CLAMPED_ELEMENTS: {
-      Handle<FixedUint8ClampedArray> pixels(
-          FixedUint8ClampedArray::cast(array->elements()));
-      for (uint32_t j = 0; j < length; j++) {
-        Handle<Smi> e(Smi::FromInt(pixels->get_scalar(j)), isolate);
-        visitor->visit(j, e);
-      }
-      break;
-    }
-    case INT8_ELEMENTS: {
-      if (!IterateTypedArrayElements<FixedInt8Array, int8_t>(
-              isolate, array, true, true, visitor))
-        return false;
-      break;
-    }
-    case UINT8_ELEMENTS: {
-      if (!IterateTypedArrayElements<FixedUint8Array, uint8_t>(
-              isolate, array, true, true, visitor))
-        return false;
-      break;
-    }
-    case INT16_ELEMENTS: {
-      if (!IterateTypedArrayElements<FixedInt16Array, int16_t>(
-              isolate, array, true, true, visitor))
-        return false;
-      break;
-    }
-    case UINT16_ELEMENTS: {
-      if (!IterateTypedArrayElements<FixedUint16Array, uint16_t>(
-              isolate, array, true, true, visitor))
-        return false;
-      break;
-    }
-    case INT32_ELEMENTS: {
-      if (!IterateTypedArrayElements<FixedInt32Array, int32_t>(
-              isolate, array, true, false, visitor))
-        return false;
-      break;
-    }
-    case UINT32_ELEMENTS: {
-      if (!IterateTypedArrayElements<FixedUint32Array, uint32_t>(
-              isolate, array, true, false, visitor))
-        return false;
-      break;
-    }
-    case FLOAT32_ELEMENTS: {
-      if (!IterateTypedArrayElements<FixedFloat32Array, float>(
-              isolate, array, false, false, visitor))
-        return false;
-      break;
-    }
-    case FLOAT64_ELEMENTS: {
-      if (!IterateTypedArrayElements<FixedFloat64Array, double>(
-              isolate, array, false, false, visitor))
-        return false;
-      break;
-    }
     case FAST_SLOPPY_ARGUMENTS_ELEMENTS:
     case SLOW_SLOPPY_ARGUMENTS_ELEMENTS: {
       for (uint32_t index = 0; index < length; index++) {
@@ -1273,6 +1158,9 @@ bool IterateElements(Isolate* isolate, Handle<JSReceiver> receiver,
     }
     case NO_ELEMENTS:
       break;
+#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size) case TYPE##_ELEMENTS:
+      TYPED_ARRAYS(TYPED_ARRAY_CASE)
+#undef TYPED_ARRAY_CASE
     case FAST_STRING_WRAPPER_ELEMENTS:
     case SLOW_STRING_WRAPPER_ELEMENTS:
       // |array| is guaranteed to be an array or typed array.

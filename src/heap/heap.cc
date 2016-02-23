@@ -2851,6 +2851,10 @@ void Heap::CreateInitialObjects() {
   cell->set_value(the_hole_value());
   set_empty_property_cell(*cell);
 
+  Handle<PropertyCell> species_cell = factory->NewPropertyCell();
+  species_cell->set_value(Smi::FromInt(Isolate::kArrayProtectorValid));
+  set_species_protector(*species_cell);
+
   set_weak_stack_trace_list(Smi::FromInt(0));
 
   set_noscript_shared_function_infos(Smi::FromInt(0));
@@ -5574,6 +5578,7 @@ void Heap::ClearRecordedSlot(HeapObject* object, Object** slot) {
     Page* page = Page::FromAddress(slot_addr);
     DCHECK_EQ(page->owner()->identity(), OLD_SPACE);
     RememberedSet<OLD_TO_NEW>::Remove(page, slot_addr);
+    RememberedSet<OLD_TO_OLD>::Remove(page, slot_addr);
   }
 }
 
@@ -5586,6 +5591,7 @@ void Heap::ClearRecordedSlotRange(HeapObject* object, Object** start,
     Page* page = Page::FromAddress(start_addr);
     DCHECK_EQ(page->owner()->identity(), OLD_SPACE);
     RememberedSet<OLD_TO_NEW>::RemoveRange(page, start_addr, end_addr);
+    RememberedSet<OLD_TO_OLD>::RemoveRange(page, start_addr, end_addr);
   }
 }
 
