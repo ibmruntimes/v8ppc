@@ -4884,7 +4884,6 @@ class Code: public HeapObject {
   V(KEYED_STORE_IC)     \
   V(BINARY_OP_IC)       \
   V(COMPARE_IC)         \
-  V(COMPARE_NIL_IC)     \
   V(TO_BOOLEAN_IC)
 
 #define CODE_KIND_LIST(V) \
@@ -4998,10 +4997,10 @@ class Code: public HeapObject {
   inline bool is_call_stub();
   inline bool is_binary_op_stub();
   inline bool is_compare_ic_stub();
-  inline bool is_compare_nil_ic_stub();
   inline bool is_to_boolean_ic_stub();
   inline bool is_keyed_stub();
   inline bool is_optimized_code();
+  inline bool is_wasm_code();
   inline bool embeds_maps_weakly();
 
   inline bool IsCodeStubOrIC();

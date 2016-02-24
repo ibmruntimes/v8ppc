@@ -1284,6 +1284,98 @@ TestForeignVariables();
 })();
 
 
+(function TestStdlibConstants() {
+  function Module(stdlib) {
+    "use asm";
+
+    var StdlibInfinity = stdlib.Infinity;
+    var StdlibNaN = stdlib.NaN;
+    var StdlibMathE = stdlib.Math.E;
+    var StdlibMathLN10 = stdlib.Math.LN10;
+    var StdlibMathLN2 = stdlib.Math.LN2;
+    var StdlibMathLOG2E = stdlib.Math.LOG2E;
+    var StdlibMathLOG10E = stdlib.Math.LOG10E;
+    var StdlibMathPI = stdlib.Math.PI;
+    var StdlibMathSQRT1_2 = stdlib.Math.SQRT1_2;
+    var StdlibMathSQRT2 = stdlib.Math.SQRT2;
+
+    function caller() {
+      if (StdlibInfinity != 1.0 / 0.0) return 0;
+      if (StdlibMathE != 2.718281828459045) return 0;
+      if (StdlibMathLN10 != 2.302585092994046) return 0;
+      if (StdlibMathLN2 != 0.6931471805599453) return 0;
+      if (StdlibMathLOG2E != 1.4426950408889634) return 0;
+      if (StdlibMathLOG10E != 0.4342944819032518) return 0;
+      if (StdlibMathPI != 3.141592653589793) return 0;
+      if (StdlibMathSQRT1_2 != 0.7071067811865476) return 0;
+      if (StdlibMathSQRT2 != 1.4142135623730951) return 0;
+      return 1;
+    }
+
+    function nanCheck() {
+      return +StdlibNaN;
+    }
+
+    return {caller:caller, nanCheck:nanCheck};
+  }
+
+  var m =_WASMEXP_.instantiateModuleFromAsm(Module.toString());
+  assertEquals(1, m.caller());
+  assertTrue(isNaN(m.nanCheck()));
+})();
+
+
+(function TestStdlibFunctions() {
+  function Module(stdlib) {
+    "use asm";
+
+    var StdlibMathAcos = stdlib.Math.acos;
+    var StdlibMathAsin = stdlib.Math.asin;
+    var StdlibMathAtan = stdlib.Math.atan;
+    var StdlibMathCos = stdlib.Math.cos;
+    var StdlibMathSin = stdlib.Math.sin;
+    var StdlibMathTan = stdlib.Math.tan;
+    var StdlibMathExp = stdlib.Math.exp;
+    var StdlibMathLog = stdlib.Math.log;
+    var StdlibMathCeil = stdlib.Math.ceil;
+    var StdlibMathFloor = stdlib.Math.floor;
+    var StdlibMathSqrt = stdlib.Math.sqrt;
+    var StdlibMathAbs = stdlib.Math.abs;
+    var StdlibMathMin = stdlib.Math.min;
+    var StdlibMathMax = stdlib.Math.max;
+    var StdlibMathAtan2 = stdlib.Math.atan2;
+    var StdlibMathPow = stdlib.Math.pow;
+    var StdlibMathImul = stdlib.Math.imul;
+    var fround = stdlib.Math.fround;
+
+    function caller() {
+      // TODO(bradnelson): Test transendentals when implemented.
+      if (StdlibMathSqrt(123.0) != 11.090536506409418) return 0;
+      if (StdlibMathSqrt(fround(256.0)) != fround(16.0)) return 0;
+      if (StdlibMathCeil(123.7) != 124.0) return 0;
+      if (StdlibMathCeil(fround(123.7)) != fround(124.0)) return 0;
+      if (StdlibMathFloor(123.7) != 123.0) return 0;
+      if (StdlibMathFloor(fround(123.7)) != fround(123.0)) return 0;
+      if (StdlibMathAbs(-123.0) != 123.0) return 0;
+      if (StdlibMathAbs(fround(-123.0)) != fround(123.0)) return 0;
+      if (StdlibMathMin(123.4, 1236.4) != 123.4) return 0;
+      if (StdlibMathMin(fround(123.4),
+            fround(1236.4)) != fround(123.4)) return 0;
+      if (StdlibMathMax(123.4, 1236.4) != 1236.4) return 0;
+      if (StdlibMathMax(fround(123.4), fround(1236.4))
+          != fround(1236.4)) return 0;
+      if (StdlibMathImul(6, 7) != 42) return 0;
+      return 1;
+    }
+
+    return {caller:caller};
+  }
+
+  var m = _WASMEXP_.instantiateModuleFromAsm(Module.toString());
+  assertEquals(1, m.caller());
+})();
+
+
 (function TestOr() {
   function Module() {
     "use asm";
@@ -1366,4 +1458,102 @@ TestForeignVariables();
 
   var m = _WASMEXP_.instantiateModuleFromAsm(Module.toString());
   assertEquals(3, m.func());
-})  // TODO(bradnelson): Enable when Math.fround implementation lands.
+});  // TODO(bradnelson): Enable when Math.fround implementation lands.
+
+
+(function TestIntegerMultiplyBothWays() {
+  function Module(stdlib, foreign, heap) {
+    "use asm";
+    function func() {
+      var a = 1;
+      return ((a * 3) + (4 * a)) | 0;
+    }
+    return {func: func};
+  }
+
+  var m = _WASMEXP_.instantiateModuleFromAsm(Module.toString());
+  assertEquals(7, m.func());
+})();
+
+
+(function TestBadMultiplyIntish() {
+  function Module(stdlib, foreign, heap) {
+    "use asm";
+    function func() {
+      var a = 1;
+      return ((a + a) * 4) | 0;
+    }
+    return {func: func};
+  }
+  assertThrows(function() {
+    _WASMEXP_.instantiateModuleFromAsm(Module.toString());
+  });
+})();
+
+
+(function TestAndNegative() {
+  function Module() {
+    "use asm";
+    function func() {
+      var x = 1;
+      var y = 2;
+      var z = 0;
+      z = x + y & -1;
+      return z | 0;
+    }
+    return {func: func};
+  }
+
+  var m = _WASMEXP_.instantiateModuleFromAsm(Module.toString());
+  assertEquals(3, m.func());
+})();
+
+
+(function TestNegativeDouble() {
+  function Module() {
+    "use asm";
+    function func() {
+      var x = -(34359738368.25);
+      var y = -2.5;
+      return +(x + y);
+    }
+    return {func: func};
+  }
+
+  var m = _WASMEXP_.instantiateModuleFromAsm(Module.toString());
+  assertEquals(-34359738370.75, m.func());
+})();
+
+
+(function TestBadAndDouble() {
+  function Module() {
+    "use asm";
+    function func() {
+      var x = 1.0;
+      var y = 2.0;
+      return (x & y) | 0;
+    }
+    return {func: func};
+  }
+
+  assertThrows(function() {
+    _WASMEXP_.instantiateModuleFromAsm(Module.toString());
+  });
+})();
+
+
+(function TestAndIntAndHeapValue() {
+  function Module(stdlib, foreign, buffer) {
+    "use asm";
+    var HEAP32 = new stdlib.Int32Array(buffer);
+    function func() {
+      var x = 0;
+      x = HEAP32[0] & -1;
+      return x | 0;
+    }
+    return {func: func};
+  }
+
+  var m = _WASMEXP_.instantiateModuleFromAsm(Module.toString());
+  assertEquals(0, m.func());
+})();

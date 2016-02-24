@@ -862,6 +862,12 @@ class RepresentationSelector {
       case IrOpcode::kHeapConstant:
         return VisitLeaf(node, NodeOutputInfo::AnyTagged());
 
+      case IrOpcode::kDeoptimizeIf:
+      case IrOpcode::kDeoptimizeUnless:
+        ProcessInput(node, 0, UseInfo::Bool());
+        ProcessInput(node, 1, UseInfo::AnyTagged());
+        ProcessRemainingInputs(node, 2);
+        break;
       case IrOpcode::kBranch:
         ProcessInput(node, 0, UseInfo::Bool());
         EnqueueInput(node, NodeProperties::FirstControlIndex(node));
@@ -1238,17 +1244,10 @@ class RepresentationSelector {
         SetOutput(node, NodeOutputInfo::None());
         break;
       }
-      case IrOpcode::kObjectIsNumber: {
-        ProcessInput(node, 0, UseInfo::AnyTagged());
-        SetOutput(node, NodeOutputInfo::Bool());
-        break;
-      }
-      case IrOpcode::kObjectIsReceiver: {
-        ProcessInput(node, 0, UseInfo::AnyTagged());
-        SetOutput(node, NodeOutputInfo::Bool());
-        break;
-      }
-      case IrOpcode::kObjectIsSmi: {
+      case IrOpcode::kObjectIsNumber:
+      case IrOpcode::kObjectIsReceiver:
+      case IrOpcode::kObjectIsSmi:
+      case IrOpcode::kObjectIsUndetectable: {
         ProcessInput(node, 0, UseInfo::AnyTagged());
         SetOutput(node, NodeOutputInfo::Bool());
         break;

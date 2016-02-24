@@ -997,14 +997,14 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
   // TODO(all): This visitor probably needs better comments and a revisit.
 
-  Label loop, exit;
-  ForIn loop_statement(this, stmt);
-  increment_loop_depth();
-
   // Get the object to enumerate over.
   SetExpressionAsStatementPosition(stmt->enumerable());
   VisitForAccumulatorValue(stmt->enumerable());
-  OperandStackDepthIncrement(ForIn::kElementCount);
+  OperandStackDepthIncrement(5);
+
+  Label loop, exit;
+  Iteration loop_statement(this, stmt);
+  increment_loop_depth();
 
   // If the object is null or undefined, skip over the loop, otherwise convert
   // it to a JS receiver.  See ECMA-262 version 5, section 12.6.4.
@@ -3841,10 +3841,11 @@ void FullCodeGenerator::EmitLiteralCompareNil(CompareOperation* expr,
     __ CompareRoot(x0, nil_value);
     Split(eq, if_true, if_false, fall_through);
   } else {
-    Handle<Code> ic = CompareNilICStub::GetUninitialized(isolate(), nil);
-    CallIC(ic, expr->CompareOperationFeedbackId());
-    __ CompareRoot(x0, Heap::kTrueValueRootIndex);
-    Split(eq, if_true, if_false, fall_through);
+    __ JumpIfSmi(x0, if_false);
+    __ Ldr(x0, FieldMemOperand(x0, HeapObject::kMapOffset));
+    __ Ldrb(x1, FieldMemOperand(x0, Map::kBitFieldOffset));
+    __ TestAndSplit(x1, 1 << Map::kIsUndetectable, if_false, if_true,
+                    fall_through);
   }
 
   context()->Plug(if_true, if_false);
@@ -3873,7 +3874,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
     case Yield::kSuspend:
       // Pop value from top-of-stack slot; box result into result register.
       EmitCreateIteratorResult(false);
-      __ Push(result_register());
+      PushOperand(result_register());
       // Fall through.
     case Yield::kInitial: {
       Label suspend, continuation, post_runtime, resume;
@@ -3895,6 +3896,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       EmitUnwindAndReturn();
 
       __ Bind(&suspend);
+      OperandStackDepthIncrement(1);  // Not popped on this path.
       VisitForAccumulatorValue(expr->generator_object());
       DCHECK((continuation.pos() > 0) && Smi::IsValid(continuation.pos()));
       __ Mov(x1, Smi::FromInt(continuation.pos()));
@@ -3920,7 +3922,6 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
 
     case Yield::kFinal: {
       // Pop value from top-of-stack slot, box result into result register.
-      OperandStackDepthDecrement(1);
       EmitCreateIteratorResult(true);
       EmitUnwindAndReturn();
       break;
@@ -4078,7 +4079,7 @@ void FullCodeGenerator::EmitCreateIteratorResult(bool done) {
   Register empty_fixed_array = x4;
   Register untagged_result = x5;
   __ LoadNativeContextSlot(Context::ITERATOR_RESULT_MAP_INDEX, map_reg);
-  __ Pop(result_value);
+  PopOperand(result_value);
   __ LoadRoot(boolean_done,
               done ? Heap::kTrueValueRootIndex : Heap::kFalseValueRootIndex);
   __ LoadRoot(empty_fixed_array, Heap::kEmptyFixedArrayRootIndex);
