@@ -498,6 +498,7 @@
 
 }],  # 'arch == ppc64 and simulator_run == True'
 
+##############################################################################
 ['ignition == True', {
   # TODO(yangguo,4690): Test failures in debugger tests.
   'test-debug/DebugStepLocals': [FAIL],
@@ -539,10 +540,6 @@
 
   # TODO(rmcilroy,4680): The function_data field should be a BytecodeArray on interpreter entry
   'test-api/SetFunctionEntryHook': [FAIL],
-
-  # TODO(rmcilroy,4680): Fail on shared_function_data()->IsUndefined in
-  #compiler.cc
-  'test-heap/CanonicalSharedFunctionInfo': [PASS, ['mode == debug or dcheck_always_on == True', FAIL]],
 
   # TODO(rmcilroy,4680): Check failed: !function->shared()->is_compiled() || function->IsOptimized().
   'test-heap/TestCodeFlushingPreAged': [FAIL],
@@ -597,21 +594,5 @@
   'test-run-inlining/InlineTwice': [FAIL],
   'test-serialize/SerializeInternalReference': [FAIL, ['arch == arm or arch == arm64', PASS]],
 }],  # ignition == True
-
-['ignition == True and arch == x64', {
-  # TODO(rmcilroy,4680): The function_data field should be a BytecodeArray on interpreter entry
-  'test-serialize/PerIsolateSnapshotBlobsOutdatedContextWithOverflow': [PASS, ['mode == debug', FAIL]],
-  'test-serialize/PerIsolateSnapshotBlobsWithLocker': [PASS, ['mode == debug', FAIL]],
-  'test-serialize/SnapshotBlobsStackOverflow': [PASS, ['mode == debug', FAIL]],
-  'test-serialize/PerIsolateSnapshotBlobs': [PASS, ['mode == debug', FAIL]],
-  'test-serialize/SerializationMemoryStats': [PASS, ['mode == debug', FAIL]],
-
-  # TODO(rmcilroy,4680): Test assert errors.
-  'test-heap-profiler/HeapSnapshotSimd': [PASS, ['mode == debug', FAIL]],
-  'test-api/InitializeDefaultIsolateOnSecondaryThread1': [PASS, ['mode == debug', FAIL]],
-
-  # TODO(rmcilroy,mattloring).
-  'test-heap-profiler/SamplingHeapProfiler': [PASS, ['mode == debug', SKIP]],
-}],
 
 ]

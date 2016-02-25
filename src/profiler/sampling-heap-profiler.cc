@@ -99,7 +99,8 @@ void SamplingHeapProfiler::SampleObject(Address soon_object, size_t size) {
 
   // Mark the new block as FreeSpace to make sure the heap is iterable while we
   // are taking the sample.
-  heap()->CreateFillerObjectAt(soon_object, static_cast<int>(size));
+  heap()->CreateFillerObjectAt(soon_object, static_cast<int>(size),
+                               ClearRecordedSlots::kNo);
 
   Local<v8::Value> loc = v8::Utils::ToLocal(obj);
 
@@ -223,9 +224,15 @@ v8::AllocationProfile::Node* SamplingHeapProfiler::TranslateAllocationNode(
        script_name, node->script_id_, node->script_position_, line, column,
        std::vector<v8::AllocationProfile::Node*>(), allocations}));
   v8::AllocationProfile::Node* current = &profile->nodes().back();
-  for (auto child : node->children_) {
+  size_t child_len = node->children_.size();
+  // The children vector may have nodes appended to it during translation
+  // because the translation may allocate strings on the JS heap that have
+  // the potential to be sampled. We cache the length of the vector before
+  // iteration so that nodes appended to the vector during iteration are
+  // not processed.
+  for (size_t i = 0; i < child_len; i++) {
     current->children.push_back(
-        TranslateAllocationNode(profile, child, scripts));
+        TranslateAllocationNode(profile, node->children_[i], scripts));
   }
   return current;
 }
