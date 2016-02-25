@@ -3601,7 +3601,6 @@ HGraph::HGraph(CompilationInfo* info, CallInterfaceDescriptor descriptor)
       info_(info),
       descriptor_(descriptor),
       zone_(info->zone()),
-      is_recursive_(false),
       use_optimistic_licm_(false),
       depends_on_empty_array_proto_elements_(false),
       type_change_checksum_(0),
@@ -6575,8 +6574,8 @@ HValue* HOptimizedGraphBuilder::BuildMonomorphicAccess(
         info->NeedsWrappingFor(Handle<JSFunction>::cast(info->accessor()))) {
       HValue* function = Add<HConstant>(info->accessor());
       PushArgumentsFromEnvironment(argument_count);
-      return New<HCallFunction>(function, argument_count,
-                                ConvertReceiverMode::kNotNullOrUndefined);
+      return NewCallFunction(function, argument_count,
+                             ConvertReceiverMode::kNotNullOrUndefined);
     } else if (FLAG_inline_accessors && can_inline_accessor) {
       bool success = info->IsLoad()
           ? TryInlineGetter(info->accessor(), info->map(), ast_id, return_id)
@@ -7989,20 +7988,20 @@ void HOptimizedGraphBuilder::AddCheckPrototypeMaps(Handle<JSObject> holder,
   }
 }
 
-
-HInstruction* HOptimizedGraphBuilder::NewPlainFunctionCall(HValue* fun,
+HInstruction* HOptimizedGraphBuilder::NewPlainFunctionCall(HValue* function,
                                                            int argument_count) {
-  return New<HCallJSFunction>(fun, argument_count);
+  return New<HCallJSFunction>(function, argument_count);
 }
 
-
 HInstruction* HOptimizedGraphBuilder::NewArgumentAdaptorCall(
-    HValue* fun, HValue* context,
-    int argument_count, HValue* expected_param_count) {
+    HValue* function, int argument_count, HValue* expected_param_count) {
+  HValue* context = Add<HLoadNamedField>(
+      function, nullptr, HObjectAccess::ForFunctionContextPointer());
   HValue* new_target = graph()->GetConstantUndefined();
   HValue* arity = Add<HConstant>(argument_count - 1);
 
-  HValue* op_vals[] = {context, fun, new_target, arity, expected_param_count};
+  HValue* op_vals[] = {context, function, new_target, arity,
+                       expected_param_count};
 
   Callable callable = CodeFactory::ArgumentAdaptor(isolate());
   HConstant* stub = Add<HConstant>(callable.code());
@@ -8011,6 +8010,36 @@ HInstruction* HOptimizedGraphBuilder::NewArgumentAdaptorCall(
                                   Vector<HValue*>(op_vals, arraysize(op_vals)));
 }
 
+HInstruction* HOptimizedGraphBuilder::NewCallFunction(
+    HValue* function, int argument_count, ConvertReceiverMode convert_mode) {
+  HValue* arity = Add<HConstant>(argument_count - 1);
+
+  HValue* op_vals[] = {context(), function, arity};
+
+  Callable callable = CodeFactory::Call(isolate(), convert_mode);
+  HConstant* stub = Add<HConstant>(callable.code());
+
+  return New<HCallWithDescriptor>(stub, argument_count, callable.descriptor(),
+                                  Vector<HValue*>(op_vals, arraysize(op_vals)));
+}
+
+HInstruction* HOptimizedGraphBuilder::NewCallFunctionViaIC(
+    HValue* function, int argument_count, ConvertReceiverMode convert_mode,
+    FeedbackVectorSlot slot) {
+  int arity = argument_count - 1;
+  Handle<TypeFeedbackVector> vector(current_feedback_vector(), isolate());
+  HValue* index_val = Add<HConstant>(vector->GetIndex(slot));
+  HValue* vector_val = Add<HConstant>(vector);
+
+  HValue* op_vals[] = {context(), function, index_val, vector_val};
+
+  Callable callable = CodeFactory::CallICInOptimizedCode(
+      isolate(), arity, ConvertReceiverMode::kNullOrUndefined);
+  HConstant* stub = Add<HConstant>(callable.code());
+
+  return New<HCallWithDescriptor>(stub, argument_count, callable.descriptor(),
+                                  Vector<HValue*>(op_vals, arraysize(op_vals)));
+}
 
 HInstruction* HOptimizedGraphBuilder::BuildCallConstantFunction(
     Handle<JSFunction> jsfun, int argument_count) {
@@ -8026,16 +8055,10 @@ HInstruction* HOptimizedGraphBuilder::BuildCallConstantFunction(
   bool can_invoke_directly =
       dont_adapt_arguments || formal_parameter_count == arity;
   if (can_invoke_directly) {
-    if (jsfun.is_identical_to(current_info()->closure())) {
-      graph()->MarkRecursive();
-    }
     return NewPlainFunctionCall(target, argument_count);
   } else {
     HValue* param_count_value = Add<HConstant>(formal_parameter_count);
-    HValue* context = Add<HLoadNamedField>(
-        target, nullptr, HObjectAccess::ForFunctionContextPointer());
-    return NewArgumentAdaptorCall(target, context,
-        argument_count, param_count_value);
+    return NewArgumentAdaptorCall(target, argument_count, param_count_value);
   }
   UNREACHABLE();
   return NULL;
@@ -8180,14 +8203,14 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(Call* expr,
       if (HasStackOverflow()) return;
     } else {
       // Since HWrapReceiver currently cannot actually wrap numbers and strings,
-      // use the regular CallFunctionStub for method calls to wrap the receiver.
+      // use the regular call builtin for method calls to wrap the receiver.
       // TODO(verwaest): Support creation of value wrappers directly in
       // HWrapReceiver.
       HInstruction* call =
-          needs_wrapping ? NewUncasted<HCallFunction>(
-                               function, argument_count,
-                               ConvertReceiverMode::kNotNullOrUndefined)
-                         : BuildCallConstantFunction(target, argument_count);
+          needs_wrapping
+              ? NewCallFunction(function, argument_count,
+                                ConvertReceiverMode::kNotNullOrUndefined)
+              : BuildCallConstantFunction(target, argument_count);
       PushArgumentsFromEnvironment(argument_count);
       AddInstruction(call);
       Drop(1);  // Drop the function.
@@ -8216,7 +8239,7 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(Call* expr,
     environment()->SetExpressionStackAt(0, receiver);
     CHECK_ALIVE(VisitExpressions(expr->arguments()));
 
-    HInstruction* call = New<HCallFunction>(
+    HInstruction* call = NewCallFunction(
         function, argument_count, ConvertReceiverMode::kNotNullOrUndefined);
 
     PushArgumentsFromEnvironment(argument_count);
@@ -9750,12 +9773,12 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
       // Wrap the receiver if necessary.
       if (NeedsWrapping(maps->first(), known_function)) {
         // Since HWrapReceiver currently cannot actually wrap numbers and
-        // strings, use the regular CallFunctionStub for method calls to wrap
+        // strings, use the regular call builtin for method calls to wrap
         // the receiver.
         // TODO(verwaest): Support creation of value wrappers directly in
         // HWrapReceiver.
-        call = New<HCallFunction>(function, argument_count,
-                                  ConvertReceiverMode::kNotNullOrUndefined);
+        call = NewCallFunction(function, argument_count,
+                               ConvertReceiverMode::kNotNullOrUndefined);
       } else if (TryInlineCall(expr)) {
         return;
       } else {
@@ -9778,8 +9801,8 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
       Push(receiver);
 
       CHECK_ALIVE(VisitExpressions(expr->arguments(), arguments_flag));
-      call = New<HCallFunction>(function, argument_count,
-                                ConvertReceiverMode::kNotNullOrUndefined);
+      call = NewCallFunction(function, argument_count,
+                             ConvertReceiverMode::kNotNullOrUndefined);
     }
     PushArgumentsFromEnvironment(argument_count);
 
@@ -9829,17 +9852,16 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
       call = BuildCallConstantFunction(expr->target(), argument_count);
     } else {
       PushArgumentsFromEnvironment(argument_count);
-      HCallFunction* call_function = New<HCallFunction>(
-          function, argument_count, ConvertReceiverMode::kNullOrUndefined);
-      call = call_function;
       if (expr->is_uninitialized() &&
           expr->IsUsingCallFeedbackICSlot(isolate())) {
         // We've never seen this call before, so let's have Crankshaft learn
         // through the type vector.
-        Handle<TypeFeedbackVector> vector =
-            handle(current_feedback_vector(), isolate());
-        FeedbackVectorSlot slot = expr->CallFeedbackICSlot();
-        call_function->SetVectorAndSlot(vector, slot);
+        call = NewCallFunctionViaIC(function, argument_count,
+                                    ConvertReceiverMode::kNullOrUndefined,
+                                    expr->CallFeedbackICSlot());
+      } else {
+        call = NewCallFunction(function, argument_count,
+                               ConvertReceiverMode::kNullOrUndefined);
       }
     }
   }

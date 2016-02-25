@@ -2040,8 +2040,7 @@ class JSObject: public JSReceiver {
   inline SeededNumberDictionary* element_dictionary();  // Gets slow elements.
 
   // Requires: HasFastElements().
-  static Handle<FixedArray> EnsureWritableFastElements(
-      Handle<JSObject> object);
+  static void EnsureWritableFastElements(Handle<JSObject> object);
 
   // Collects elements starting at index 0.
   // Undefined values are placed after non-undefined values.
@@ -4462,7 +4461,7 @@ class BytecodeArray : public FixedArrayBase {
 
   // Accessors for source position table containing mappings between byte code
   // offset and source position.
-  DECL_ACCESSORS(source_position_table, FixedArray)
+  DECL_ACCESSORS(source_position_table, ByteArray)
 
   DECLARE_CAST(BytecodeArray)
 

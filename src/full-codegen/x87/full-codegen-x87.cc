@@ -926,14 +926,14 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
   FeedbackVectorSlot slot = stmt->ForInFeedbackSlot();
 
-  Label loop, exit;
-  ForIn loop_statement(this, stmt);
-  increment_loop_depth();
-
   // Get the object to enumerate over.
   SetExpressionAsStatementPosition(stmt->enumerable());
   VisitForAccumulatorValue(stmt->enumerable());
-  OperandStackDepthIncrement(ForIn::kElementCount);
+  OperandStackDepthIncrement(5);
+
+  Label loop, exit;
+  Iteration loop_statement(this, stmt);
+  increment_loop_depth();
 
   // If the object is null or undefined, skip over the loop, otherwise convert
   // it to a JS receiver.  See ECMA-262 version 5, section 12.6.4.
@@ -1081,38 +1081,12 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
   // Remove the pointers stored on the stack.
   __ bind(loop_statement.break_label());
-  __ add(esp, Immediate(5 * kPointerSize));
-  OperandStackDepthDecrement(ForIn::kElementCount);
+  DropOperands(5);
 
   // Exit and decrement the loop depth.
   PrepareForBailoutForId(stmt->ExitId(), NO_REGISTERS);
   __ bind(&exit);
   decrement_loop_depth();
-}
-
-
-void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
-                                       bool pretenure) {
-  // Use the fast case closure allocation code that allocates in new
-  // space for nested functions that don't need literals cloning. If
-  // we're running with the --always-opt or the --prepare-always-opt
-  // flag, we need to use the runtime function so that the new function
-  // we are creating here gets a chance to have its code optimized and
-  // doesn't just get a copy of the existing unoptimized code.
-  if (!FLAG_always_opt &&
-      !FLAG_prepare_always_opt &&
-      !pretenure &&
-      scope()->is_function_scope() &&
-      info->num_literals() == 0) {
-    FastNewClosureStub stub(isolate(), info->language_mode(), info->kind());
-    __ mov(ebx, Immediate(info));
-    __ CallStub(&stub);
-  } else {
-    __ push(Immediate(info));
-    __ CallRuntime(pretenure ? Runtime::kNewClosure_Tenured
-                             : Runtime::kNewClosure);
-  }
-  context()->Plug(eax);
 }
 
 
@@ -1797,7 +1771,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
     case Yield::kSuspend:
       // Pop value from top-of-stack slot; box result into result register.
       EmitCreateIteratorResult(false);
-      __ push(result_register());
+      PushOperand(result_register());
       // Fall through.
     case Yield::kInitial: {
       Label suspend, continuation, post_runtime, resume;
@@ -1816,6 +1790,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       EmitUnwindAndReturn();
 
       __ bind(&suspend);
+      OperandStackDepthIncrement(1);  // Not popped on this path.
       VisitForAccumulatorValue(expr->generator_object());
       DCHECK(continuation.pos() > 0 && Smi::IsValid(continuation.pos()));
       __ mov(FieldOperand(eax, JSGeneratorObject::kContinuationOffset),
@@ -1842,7 +1817,6 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
 
     case Yield::kFinal: {
       // Pop value from top-of-stack slot, box result into result register.
-      OperandStackDepthDecrement(1);
       EmitCreateIteratorResult(true);
       EmitUnwindAndReturn();
       break;
@@ -1983,19 +1957,7 @@ void FullCodeGenerator::EmitCreateIteratorResult(bool done) {
   __ mov(FieldOperand(eax, JSIteratorResult::kDoneOffset),
          isolate()->factory()->ToBoolean(done));
   STATIC_ASSERT(JSIteratorResult::kSize == 5 * kPointerSize);
-}
-
-
-void FullCodeGenerator::EmitNamedPropertyLoad(Property* prop) {
-  SetExpressionPosition(prop);
-  Literal* key = prop->key()->AsLiteral();
-  DCHECK(!key->value()->IsSmi());
-  DCHECK(!prop->IsSuperAccess());
-
-  __ mov(LoadDescriptor::NameRegister(), Immediate(key->value()));
-  __ mov(LoadDescriptor::SlotRegister(),
-         Immediate(SmiFromSlot(prop->PropertyFeedbackSlot())));
-  CallLoadIC(NOT_INSIDE_TYPEOF);
+  OperandStackDepthDecrement(1);
 }
 
 
@@ -3623,11 +3585,11 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     __ jmp(&stub_call, Label::kNear);
     __ bind(&slow);
   }
-  if (!is_strong(language_mode())) {
-    ToNumberStub convert_stub(isolate());
-    __ CallStub(&convert_stub);
-    PrepareForBailoutForId(expr->ToNumberId(), TOS_REG);
-  }
+
+  // Convert old value into a number.
+  ToNumberStub convert_stub(isolate());
+  __ CallStub(&convert_stub);
+  PrepareForBailoutForId(expr->ToNumberId(), TOS_REG);
 
   // Save result for postfix expressions.
   if (expr->is_postfix()) {
@@ -3667,9 +3629,6 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
   patch_site.EmitPatchInfo();
   __ bind(&done);
 
-  if (is_strong(language_mode())) {
-    PrepareForBailoutForId(expr->ToNumberId(), TOS_REG);
-  }
   // Store the value returned in eax.
   switch (assign_type) {
     case VARIABLE:
@@ -3925,10 +3884,11 @@ void FullCodeGenerator::EmitLiteralCompareNil(CompareOperation* expr,
     __ cmp(eax, nil_value);
     Split(equal, if_true, if_false, fall_through);
   } else {
-    Handle<Code> ic = CompareNilICStub::GetUninitialized(isolate(), nil);
-    CallIC(ic, expr->CompareOperationFeedbackId());
-    __ cmp(eax, isolate()->factory()->true_value());
-    Split(equal, if_true, if_false, fall_through);
+    __ JumpIfSmi(eax, if_false);
+    __ mov(eax, FieldOperand(eax, HeapObject::kMapOffset));
+    __ test_b(FieldOperand(eax, Map::kBitFieldOffset),
+              1 << Map::kIsUndetectable);
+    Split(not_zero, if_true, if_false, fall_through);
   }
   context()->Plug(if_true, if_false);
 }

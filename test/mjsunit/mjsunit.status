@@ -391,6 +391,9 @@
 
   # BUG(v8:4754).
   'debug-referenced-by': [PASS, NO_VARIANTS],
+
+  # BUG(v8:4779): Crashes flakily with stress mode on arm64.
+  'array-splice': [PASS, SLOW, ['arch == arm64', FAST_VARIANTS]],
 }],  # 'gc_stress == True'
 
 ##############################################################################
@@ -770,13 +773,6 @@
 }],  # 'arch == ppc and simulator_run == True'
 
 ['ignition == True', {
-  # Skip strong mode tests since strong mode is unsupported on ignition.
-  'strong/*': [SKIP],
-
-  # TODO(mstarzinger): Flushes out a similar, but different issue to what the
-  # regression test was designed to test against. Investigate separately.
-  'regress/regress-crbug-589472': [SKIP],
-
   # TODO(yangguo,4690): Requires debugger support.
   'es6/debug*': [SKIP],
   'harmony/debug*': [SKIP],
@@ -860,12 +856,12 @@
   'harmony/iterator-close': [FAIL],
   'harmony/reflect-construct': [FAIL],
   'es6/promises': [FAIL],
+  'strong/function-arity': [FAIL],
+  'strong/undefined': [FAIL],
 
-  # TODO(rmcilroy,4680): Check failed in
-  # BytecodeGenerator::VisitFunctionLiteral - !shared_info.is_null().
-  'regress/regress-crbug-429159': [FAIL],
-
-  # TODO(rmcilroy,4680): Pass on debug, fail on release.
+  # TODO(rmcilroy,4680): Pass on debug, fail on release. Fails in both modes.
+  # the line numbers in the stack trace are incorrect. In debug mode somehow
+  # does not get flagged as a failure.
   'compiler/regress-stacktrace-methods': [PASS, ['mode == release', FAIL]],
 
   # TODO(rmcilroy,4680): Test assert failures.

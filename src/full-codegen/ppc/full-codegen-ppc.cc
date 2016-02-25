@@ -1138,28 +1138,6 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 }
 
 
-void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
-                                       bool pretenure) {
-  // Use the fast case closure allocation code that allocates in new
-  // space for nested functions that don't need literals cloning. If
-  // we're running with the --always-opt or the --prepare-always-opt
-  // flag, we need to use the runtime function so that the new function
-  // we are creating here gets a chance to have its code optimized and
-  // doesn't just get a copy of the existing unoptimized code.
-  if (!FLAG_always_opt && !FLAG_prepare_always_opt && !pretenure &&
-      scope()->is_function_scope() && info->num_literals() == 0) {
-    FastNewClosureStub stub(isolate(), info->language_mode(), info->kind());
-    __ mov(r5, Operand(info));
-    __ CallStub(&stub);
-  } else {
-    __ Push(info);
-    __ CallRuntime(pretenure ? Runtime::kNewClosure_Tenured
-                             : Runtime::kNewClosure);
-  }
-  context()->Plug(r3);
-}
-
-
 void FullCodeGenerator::EmitSetHomeObject(Expression* initializer, int offset,
                                           FeedbackVectorSlot slot) {
   DCHECK(NeedsHomeObject(initializer));
@@ -2069,18 +2047,6 @@ void FullCodeGenerator::EmitCreateIteratorResult(bool done) {
   __ StoreP(r7, FieldMemOperand(r3, JSObject::kElementsOffset), r0);
   __ StoreP(r5, FieldMemOperand(r3, JSIteratorResult::kValueOffset), r0);
   __ StoreP(r6, FieldMemOperand(r3, JSIteratorResult::kDoneOffset), r0);
-}
-
-
-void FullCodeGenerator::EmitNamedPropertyLoad(Property* prop) {
-  SetExpressionPosition(prop);
-  Literal* key = prop->key()->AsLiteral();
-  DCHECK(!prop->IsSuperAccess());
-
-  __ mov(LoadDescriptor::NameRegister(), Operand(key->value()));
-  __ mov(LoadDescriptor::SlotRegister(),
-         Operand(SmiFromSlot(prop->PropertyFeedbackSlot())));
-  CallLoadIC(NOT_INSIDE_TYPEOF);
 }
 
 
@@ -3730,11 +3696,11 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     __ b(&stub_call);
     __ bind(&slow);
   }
-  if (!is_strong(language_mode())) {
-    ToNumberStub convert_stub(isolate());
-    __ CallStub(&convert_stub);
-    PrepareForBailoutForId(expr->ToNumberId(), TOS_REG);
-  }
+
+  // Convert old value into a number.
+  ToNumberStub convert_stub(isolate());
+  __ CallStub(&convert_stub);
+  PrepareForBailoutForId(expr->ToNumberId(), TOS_REG);
 
   // Save result for postfix expressions.
   if (expr->is_postfix()) {
@@ -3773,9 +3739,6 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
   patch_site.EmitPatchInfo();
   __ bind(&done);
 
-  if (is_strong(language_mode())) {
-    PrepareForBailoutForId(expr->ToNumberId(), TOS_REG);
-  }
   // Store the value returned in r3.
   switch (assign_type) {
     case VARIABLE:

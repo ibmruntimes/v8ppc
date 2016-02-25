@@ -267,20 +267,6 @@ void LInnerAllocatedObject::PrintDataTo(StringStream* stream) {
 }
 
 
-void LCallFunction::PrintDataTo(StringStream* stream) {
-  context()->PrintTo(stream);
-  stream->Add(" ");
-  function()->PrintTo(stream);
-  if (hydrogen()->HasVectorAndSlot()) {
-    stream->Add(" (type-feedback-vector ");
-    temp_vector()->PrintTo(stream);
-    stream->Add(" ");
-    temp_slot()->PrintTo(stream);
-    stream->Add(")");
-  }
-}
-
-
 void LCallJSFunction::PrintDataTo(StringStream* stream) {
   stream->Add("= ");
   function()->PrintTo(stream);
@@ -433,13 +419,6 @@ LPlatformChunk* LChunkBuilder::Build() {
   chunk_ = new(zone()) LPlatformChunk(info(), graph());
   LPhase phase("L_Building chunk", chunk_);
   status_ = BUILDING;
-
-  // Reserve the first spill slot for the state of dynamic alignment.
-  if (info()->IsOptimizing()) {
-    int alignment_state_index = chunk_->GetNextSpillIndex(GENERAL_REGISTERS);
-    DCHECK_EQ(alignment_state_index, 4);
-    USE(alignment_state_index);
-  }
 
   // If compiling for OSR, reserve space for the unoptimized frame,
   // which will be subsumed into this frame.
@@ -1250,22 +1229,6 @@ LInstruction* LChunkBuilder::DoCallNewArray(HCallNewArray* instr) {
   LOperand* constructor = UseFixed(instr->constructor(), edi);
   LCallNewArray* result = new(zone()) LCallNewArray(context, constructor);
   return MarkAsCall(DefineFixed(result, eax), instr);
-}
-
-
-LInstruction* LChunkBuilder::DoCallFunction(HCallFunction* instr) {
-  LOperand* context = UseFixed(instr->context(), esi);
-  LOperand* function = UseFixed(instr->function(), edi);
-  LOperand* slot = NULL;
-  LOperand* vector = NULL;
-  if (instr->HasVectorAndSlot()) {
-    slot = FixedTemp(edx);
-    vector = FixedTemp(ebx);
-  }
-
-  LCallFunction* call =
-      new (zone()) LCallFunction(context, function, slot, vector);
-  return MarkAsCall(DefineFixed(call, eax), instr);
 }
 
 
@@ -2506,11 +2469,6 @@ LInstruction* LChunkBuilder::DoUnknownOSRValue(HUnknownOSRValue* instr) {
     if (spill_index > LUnallocated::kMaxFixedSlotIndex) {
       Retry(kNotEnoughSpillSlotsForOsr);
       spill_index = 0;
-    }
-    if (spill_index == 0) {
-      // The dynamic frame alignment state overwrites the first local.
-      // The first local is saved at the end of the unoptimized frame.
-      spill_index = graph()->osr()->UnoptimizedFrameSlots();
     }
     spill_index += StandardFrameConstants::kFixedSlotCount;
   }

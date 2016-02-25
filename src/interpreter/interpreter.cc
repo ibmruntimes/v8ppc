@@ -90,6 +90,9 @@ bool Interpreter::MakeBytecode(CompilationInfo* info) {
   BytecodeGenerator generator(info->isolate(), info->zone());
   info->EnsureFeedbackVector();
   Handle<BytecodeArray> bytecodes = generator.MakeBytecode(info);
+
+  if (generator.HasStackOverflow()) return false;
+
   if (FLAG_print_bytecode) {
     OFStream os(stdout);
     bytecodes->Print(os);
@@ -897,10 +900,12 @@ void Interpreter::DoLogicalNot(InterpreterAssembler* assembler) {
 // Load the accumulator with the string representating type of the
 // object in the accumulator.
 void Interpreter::DoTypeOf(InterpreterAssembler* assembler) {
+  Callable callable = CodeFactory::Typeof(isolate_);
+  Node* target = __ HeapConstant(callable.code());
   Node* accumulator = __ GetAccumulator();
   Node* context = __ GetContext();
   Node* result =
-      __ CallRuntime(Runtime::kInterpreterTypeOf, context, accumulator);
+      __ CallStub(callable.descriptor(), target, context, accumulator);
   __ SetAccumulator(result);
   __ Dispatch();
 }
@@ -1219,16 +1224,22 @@ void Interpreter::DoTestInstanceOf(InterpreterAssembler* assembler) {
   DoBinaryOp(Runtime::kInstanceOf, assembler);
 }
 
+void Interpreter::DoTypeConversionOp(Callable callable,
+                                     InterpreterAssembler* assembler) {
+  Node* target = __ HeapConstant(callable.code());
+  Node* accumulator = __ GetAccumulator();
+  Node* context = __ GetContext();
+  Node* result =
+      __ CallStub(callable.descriptor(), target, context, accumulator);
+  __ SetAccumulator(result);
+  __ Dispatch();
+}
 
 // ToName
 //
 // Cast the object referenced by the accumulator to a name.
 void Interpreter::DoToName(InterpreterAssembler* assembler) {
-  Node* accumulator = __ GetAccumulator();
-  Node* context = __ GetContext();
-  Node* result = __ CallRuntime(Runtime::kToName, context, accumulator);
-  __ SetAccumulator(result);
-  __ Dispatch();
+  DoTypeConversionOp(CodeFactory::ToName(isolate_), assembler);
 }
 
 
@@ -1236,11 +1247,7 @@ void Interpreter::DoToName(InterpreterAssembler* assembler) {
 //
 // Cast the object referenced by the accumulator to a number.
 void Interpreter::DoToNumber(InterpreterAssembler* assembler) {
-  Node* accumulator = __ GetAccumulator();
-  Node* context = __ GetContext();
-  Node* result = __ CallRuntime(Runtime::kToNumber, context, accumulator);
-  __ SetAccumulator(result);
-  __ Dispatch();
+  DoTypeConversionOp(CodeFactory::ToNumber(isolate_), assembler);
 }
 
 
@@ -1248,11 +1255,7 @@ void Interpreter::DoToNumber(InterpreterAssembler* assembler) {
 //
 // Cast the object referenced by the accumulator to a JSObject.
 void Interpreter::DoToObject(InterpreterAssembler* assembler) {
-  Node* accumulator = __ GetAccumulator();
-  Node* context = __ GetContext();
-  Node* result = __ CallRuntime(Runtime::kToObject, context, accumulator);
-  __ SetAccumulator(result);
-  __ Dispatch();
+  DoTypeConversionOp(CodeFactory::ToObject(isolate_), assembler);
 }
 
 
@@ -1570,7 +1573,20 @@ void Interpreter::DoCreateLiteral(Runtime::FunctionId function_id,
 // Creates a regular expression literal for literal index <literal_idx> with
 // <flags> and the pattern in <pattern_idx>.
 void Interpreter::DoCreateRegExpLiteral(InterpreterAssembler* assembler) {
-  DoCreateLiteral(Runtime::kCreateRegExpLiteral, assembler);
+  Callable callable = CodeFactory::FastCloneRegExp(isolate_);
+  Node* target = __ HeapConstant(callable.code());
+  Node* index = __ BytecodeOperandIdx(0);
+  Node* pattern = __ LoadConstantPoolEntry(index);
+  Node* literal_index_raw = __ BytecodeOperandIdx(1);
+  Node* literal_index = __ SmiTag(literal_index_raw);
+  Node* flags_raw = __ BytecodeOperandImm(2);
+  Node* flags = __ SmiTag(flags_raw);
+  Node* closure = __ LoadRegister(Register::function_closure());
+  Node* context = __ GetContext();
+  Node* result = __ CallStub(callable.descriptor(), target, context, closure,
+                             literal_index, pattern, flags);
+  __ SetAccumulator(result);
+  __ Dispatch();
 }
 
 
@@ -1579,7 +1595,7 @@ void Interpreter::DoCreateRegExpLiteral(InterpreterAssembler* assembler) {
 // Creates a regular expression literal for literal index <literal_idx> with
 // <flags> and the pattern in <pattern_idx>.
 void Interpreter::DoCreateRegExpLiteralWide(InterpreterAssembler* assembler) {
-  DoCreateLiteral(Runtime::kCreateRegExpLiteral, assembler);
+  DoCreateRegExpLiteral(assembler);
 }
 
 
@@ -1830,11 +1846,10 @@ void Interpreter::DoForInDone(InterpreterAssembler* assembler) {
 // Increments the loop counter in register |index| and stores the result
 // in the accumulator.
 void Interpreter::DoForInStep(InterpreterAssembler* assembler) {
-  // TODO(oth): Implement directly rather than making a runtime call.
   Node* index_reg = __ BytecodeOperandReg(0);
   Node* index = __ LoadRegister(index_reg);
-  Node* context = __ GetContext();
-  Node* result = __ CallRuntime(Runtime::kForInStep, context, index);
+  Node* one = __ SmiConstant(Smi::FromInt(1));
+  Node* result = __ SmiAdd(index, one);
   __ SetAccumulator(result);
   __ Dispatch();
 }

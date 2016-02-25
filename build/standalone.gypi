@@ -48,12 +48,6 @@
     'release_extra_cflags%': '',
     'variables': {
       'variables': {
-        # goma settings.
-        # 1 to use goma.
-        # If no gomadir is set, it uses the default gomadir.
-        'use_goma%': 0,
-        'gomadir%': '',
-
         'variables': {
           'conditions': [
             ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or \
@@ -76,23 +70,12 @@
 
         # Instrument for code coverage with gcov.
         'coverage%': 0,
-
-        'conditions': [
-          # Set default gomadir.
-          ['OS=="win"', {
-            'gomadir': 'c:\\goma\\goma-win',
-          }, {
-            'gomadir': '<!(/bin/echo -n ${HOME}/goma)',
-          }],
-        ],
       },
       'base_dir%': '<(base_dir)',
       'host_arch%': '<(host_arch)',
       'target_arch%': '<(target_arch)',
       'v8_target_arch%': '<(target_arch)',
       'coverage%': '<(coverage)',
-      'use_goma%': '<(use_goma)',
-      'gomadir%': '<(gomadir)',
       'asan%': 0,
       'lsan%': 0,
       'msan%': 0,
@@ -121,10 +104,24 @@
       # TODO(machenbach): Only configured for windows.
       'fastbuild%': 0,
 
+      # goma settings.
+      # 1 to use goma.
+      # If no gomadir is set, it uses the default gomadir.
+      'use_goma%': 0,
+      'gomadir%': '',
+
       # Check if valgrind directories are present.
       'has_valgrind%': '<!pymod_do_main(has_valgrind)',
 
+      'test_isolation_mode%': 'noop',
+
       'conditions': [
+        # Set default gomadir.
+        ['OS=="win"', {
+          'gomadir': 'c:\\goma\\goma-win',
+        }, {
+          'gomadir': '<!(/bin/echo -n ${HOME}/goma)',
+        }],
         ['host_arch!="ppc" and host_arch!="ppc64" and host_arch!="ppc64le" and host_arch!="s390" and host_arch!="s390x" and \
           coverage==0', {
           'host_clang%': 1,
@@ -141,21 +138,6 @@
         }, {
           'linux_use_bundled_gold%': 0,
         }],
-
-        # TODO(machenbach): Remove the conditions as more configurations are
-        # supported.
-        ['OS=="linux" or OS=="win"', {
-          'test_isolation_mode%': 'check',
-        }, {
-          'test_isolation_mode%': 'noop',
-        }],
-
-        ['(OS=="linux" or OS=="mac") and (target_arch=="ia32" or target_arch=="x64") and \
-          (v8_target_arch!="x87" and v8_target_arch!="x32") and coverage==0', {
-          'clang%': 1,
-        }, {
-          'clang%': 0,
-        }],
       ],
     },
     'base_dir%': '<(base_dir)',
@@ -167,7 +149,6 @@
     'werror%': '-Werror',
     'use_goma%': '<(use_goma)',
     'gomadir%': '<(gomadir)',
-    'clang%': '<(clang)',
     'asan%': '<(asan)',
     'lsan%': '<(lsan)',
     'msan%': '<(msan)',
@@ -245,6 +226,12 @@
         'v8_enable_gdbjit%': 1,
       }, {
         'v8_enable_gdbjit%': 0,
+      }],
+      ['(OS=="linux" or OS=="mac") and (target_arch=="ia32" or target_arch=="x64") and \
+        (v8_target_arch!="x87" and v8_target_arch!="x32") and coverage==0', {
+        'clang%': 1,
+      }, {
+        'clang%': 0,
       }],
       ['asan==1 or lsan==1 or msan==1 or tsan==1', {
         'clang%': 1,
@@ -368,23 +355,6 @@
       }, {
         'host_cc': '<!(which gcc)',
         'host_cxx': '<!(which g++)',
-      }],
-      ['use_goma==1 and ("<(GENERATOR)"=="ninja" or clang==1)', {
-        'conditions': [
-          ['coverage==1', {
-            'cc_wrapper': '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc',
-          }, {
-            'cc_wrapper': '<(gomadir)/gomacc',
-          }],
-        ],
-      }, {
-        'conditions': [
-          ['coverage==1', {
-            'cc_wrapper': '<(base_dir)/build/coverage_wrapper.py',
-          }, {
-            'cc_wrapper': 0,
-          }],
-        ],
       }],
     ],
     # Default ARM variable settings.
@@ -1285,12 +1255,37 @@
     # TODO(yyanagisawa): supports GENERATOR==make
     #  make generator doesn't support CC_wrapper without CC
     #  in make_global_settings yet.
-    ['cc_wrapper!=0', {
-      'make_global_settings': [
-       ['CC_wrapper', '<(cc_wrapper)'],
-       ['CXX_wrapper', '<(cc_wrapper)'],
-       ['CC.host_wrapper', '<(cc_wrapper)'],
-       ['CXX.host_wrapper', '<(cc_wrapper)'],
+    ['use_goma==1 and ("<(GENERATOR)"=="ninja" or clang==1)', {
+      'conditions': [
+        ['coverage==1', {
+          # Wrap goma with coverage wrapper.
+          'make_global_settings': [
+            ['CC_wrapper', '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc'],
+            ['CXX_wrapper', '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc'],
+            ['CC.host_wrapper', '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc'],
+            ['CXX.host_wrapper', '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc'],
+          ],
+        }, {
+          # Use only goma wrapper.
+          'make_global_settings': [
+            ['CC_wrapper', '<(gomadir)/gomacc'],
+            ['CXX_wrapper', '<(gomadir)/gomacc'],
+            ['CC.host_wrapper', '<(gomadir)/gomacc'],
+            ['CXX.host_wrapper', '<(gomadir)/gomacc'],
+          ],
+        }],
+      ],
+    }, {
+      'conditions': [
+        ['coverage==1', {
+          # Use only coverage wrapper.
+          'make_global_settings': [
+            ['CC_wrapper', '<(base_dir)/build/coverage_wrapper.py'],
+            ['CXX_wrapper', '<(base_dir)/build/coverage_wrapper.py'],
+            ['CC.host_wrapper', '<(base_dir)/build/coverage_wrapper.py'],
+            ['CXX.host_wrapper', '<(base_dir)/build/coverage_wrapper.py'],
+          ],
+        }],
       ],
     }],
     ['use_lto==1', {

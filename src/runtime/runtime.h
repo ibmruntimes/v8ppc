@@ -216,7 +216,6 @@ namespace internal {
   F(InterpreterGreaterThanOrEqual, 2, 1)  \
   F(InterpreterToBoolean, 1, 1)           \
   F(InterpreterLogicalNot, 1, 1)          \
-  F(InterpreterTypeOf, 1, 1)              \
   F(InterpreterNewClosure, 2, 1)          \
   F(InterpreterTraceBytecodeEntry, 3, 1)  \
   F(InterpreterTraceBytecodeExit, 3, 1)   \
@@ -369,9 +368,6 @@ namespace internal {
 
 
 #define FOR_EACH_INTRINSIC_MATHS(F) \
-  F(MathAcos, 1, 1)                 \
-  F(MathAsin, 1, 1)                 \
-  F(MathAtan, 1, 1)                 \
   F(MathLogRT, 1, 1)                \
   F(DoubleHi, 1, 1)                 \
   F(DoubleLo, 1, 1)                 \
@@ -385,7 +381,6 @@ namespace internal {
   F(MathPowRT, 2, 1)                \
   F(RoundNumber, 1, 1)              \
   F(MathSqrt, 1, 1)                 \
-  F(MathFround, 1, 1)               \
   F(GenerateRandomNumbers, 1, 1)
 
 
@@ -402,7 +397,6 @@ namespace internal {
   F(NumberToStringSkipCache, 1, 1)     \
   F(NumberToIntegerMapMinusZero, 1, 1) \
   F(NumberToSmi, 1, 1)                 \
-  F(NumberImul, 2, 1)                  \
   F(SmiLexicographicCompare, 2, 1)     \
   F(MaxSmi, 0, 1)                      \
   F(IsSmi, 1, 1)                       \
