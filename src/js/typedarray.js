@@ -763,9 +763,9 @@ function TypedArrayOf() {
 function TypedArrayFrom(source, mapfn, thisArg) {
   // TODO(littledan): Investigate if there is a receiver which could be
   // faster to accumulate on than Array, e.g., a TypedVector.
-  // TODO(littledan): Rewrite this code to ensure that things happen
-  // in the right order, e.g., the constructor needs to be called before
-  // the mapping function on array-likes.
+  // TODO(littledan) BUG(v8:4782): Rewrite this code to ensure that things
+  // happen in the right order, e.g., the constructor needs to be called
+  // before the mapping function on array-likes.
   var array = %_Call(ArrayFrom, GlobalArray, source, mapfn, thisArg);
   return TypedArrayCreate(this, array);
 }
@@ -785,7 +785,7 @@ function TypedArray() {
 %FunctionSetPrototype(TypedArray, new GlobalObject());
 %AddNamedProperty(TypedArray.prototype,
                   "constructor", TypedArray, DONT_ENUM);
-utils.InstallFunctions(TypedArray, DONT_ENUM | DONT_DELETE | READ_ONLY, [
+utils.InstallFunctions(TypedArray, DONT_ENUM, [
   "from", TypedArrayFrom,
   "of", TypedArrayOf
 ]);

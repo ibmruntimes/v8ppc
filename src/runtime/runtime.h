@@ -206,10 +206,6 @@ namespace internal {
   F(ForInStep, 1, 1)
 
 #define FOR_EACH_INTRINSIC_INTERPRETER(F) \
-  F(InterpreterLessThan, 2, 1)            \
-  F(InterpreterGreaterThan, 2, 1)         \
-  F(InterpreterLessThanOrEqual, 2, 1)     \
-  F(InterpreterGreaterThanOrEqual, 2, 1)  \
   F(InterpreterToBoolean, 1, 1)           \
   F(InterpreterLogicalNot, 1, 1)          \
   F(InterpreterNewClosure, 2, 1)          \
@@ -236,8 +232,6 @@ namespace internal {
   F(IsConstructor, 1, 1)                   \
   F(SetForceInlineFlag, 1, 1)              \
   F(Call, -1 /* >= 2 */, 1)                \
-  F(TailCall, -1 /* >= 2 */, 1)            \
-  F(Apply, 5, 1)                           \
   F(ConvertReceiver, 1, 1)                 \
   F(IsFunction, 1, 1)                      \
   F(FunctionToString, 1, 1)
@@ -486,10 +480,14 @@ namespace internal {
   F(BitwiseAnd, 2, 1)                   \
   F(BitwiseOr, 2, 1)                    \
   F(BitwiseXor, 2, 1)                   \
-  F(Equals, 2, 1)                       \
-  F(NotEquals, 2, 1)                    \
-  F(StrictEquals, 2, 1)                 \
-  F(StrictNotEquals, 2, 1)
+  F(Equal, 2, 1)                        \
+  F(NotEqual, 2, 1)                     \
+  F(StrictEqual, 2, 1)                  \
+  F(StrictNotEqual, 2, 1)               \
+  F(LessThan, 2, 1)                     \
+  F(GreaterThan, 2, 1)                  \
+  F(LessThanOrEqual, 2, 1)              \
+  F(GreaterThanOrEqual, 2, 1)
 
 #define FOR_EACH_INTRINSIC_PROXY(F)     \
   F(IsJSProxy, 1, 1)                    \
@@ -989,6 +987,7 @@ namespace internal {
   F(BinaryOpIC_MissWithAllocationSite, 3, 1) \
   F(CallIC_Miss, 3, 1)                       \
   F(CompareIC_Miss, 3, 1)                    \
+  F(CompareNilIC_Miss, 1, 1)                 \
   F(ElementsTransitionAndStoreIC_Miss, 5, 1) \
   F(KeyedLoadIC_Miss, 4, 1)                  \
   F(KeyedLoadIC_MissFromStubFailure, 4, 1)   \
@@ -1144,7 +1143,7 @@ class Runtime : public AllStatic {
   // Used in runtime.cc and hydrogen's VisitArrayLiteral.
   MUST_USE_RESULT static MaybeHandle<Object> CreateArrayLiteralBoilerplate(
       Isolate* isolate, Handle<LiteralsArray> literals,
-      Handle<FixedArray> elements, bool is_strong);
+      Handle<FixedArray> elements);
 
   static MaybeHandle<JSArray> GetInternalProperties(Isolate* isolate,
                                                     Handle<Object>);

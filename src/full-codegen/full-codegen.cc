@@ -67,7 +67,8 @@ bool FullCodeGenerator::MakeCode(CompilationInfo* info) {
   CodeGenerator::PrintCode(code, info);
   info->SetCode(code);
   void* line_info = masm.positions_recorder()->DetachJITHandlerData();
-  LOG_CODE_EVENT(isolate, CodeEndLinePosInfoRecordEvent(*code, line_info));
+  LOG_CODE_EVENT(isolate, CodeEndLinePosInfoRecordEvent(
+                              AbstractCode::cast(*code), line_info));
 
 #ifdef DEBUG
   // Check that no context-specific object has been embedded.
@@ -157,8 +158,7 @@ bool FullCodeGenerator::MustCreateObjectLiteralWithRuntime(
 
 bool FullCodeGenerator::MustCreateArrayLiteralWithRuntime(
     ArrayLiteral* expr) const {
-  // TODO(rossberg): Teach strong mode to FastCloneShallowArrayStub.
-  return expr->depth() > 1 || expr->is_strong() ||
+  return expr->depth() > 1 ||
          expr->values()->length() > JSArray::kInitialMaxFastElementArray;
 }
 

@@ -3180,6 +3180,58 @@ HValue* HGraphBuilder::BuildCloneShallowArrayNonEmpty(HValue* boilerplate,
 }
 
 
+void HGraphBuilder::BuildCompareNil(HValue* value, Type* type,
+                                    HIfContinuation* continuation,
+                                    MapEmbedding map_embedding) {
+  IfBuilder if_nil(this);
+
+  if (type->Maybe(Type::Undetectable())) {
+    if_nil.If<HIsUndetectableAndBranch>(value);
+  } else {
+    bool maybe_null = type->Maybe(Type::Null());
+    if (maybe_null) {
+      if_nil.If<HCompareObjectEqAndBranch>(value, graph()->GetConstantNull());
+    }
+
+    if (type->Maybe(Type::Undefined())) {
+      if (maybe_null) if_nil.Or();
+      if_nil.If<HCompareObjectEqAndBranch>(value,
+                                           graph()->GetConstantUndefined());
+    }
+
+    if_nil.Then();
+    if_nil.Else();
+
+    if (type->NumClasses() == 1) {
+      BuildCheckHeapObject(value);
+      // For ICs, the map checked below is a sentinel map that gets replaced by
+      // the monomorphic map when the code is used as a template to generate a
+      // new IC. For optimized functions, there is no sentinel map, the map
+      // emitted below is the actual monomorphic map.
+      if (map_embedding == kEmbedMapsViaWeakCells) {
+        HValue* cell =
+            Add<HConstant>(Map::WeakCellForMap(type->Classes().Current()));
+        HValue* expected_map = Add<HLoadNamedField>(
+            cell, nullptr, HObjectAccess::ForWeakCellValue());
+        HValue* map =
+            Add<HLoadNamedField>(value, nullptr, HObjectAccess::ForMap());
+        IfBuilder map_check(this);
+        map_check.IfNot<HCompareObjectEqAndBranch>(expected_map, map);
+        map_check.ThenDeopt(Deoptimizer::kUnknownMap);
+        map_check.End();
+      } else {
+        DCHECK(map_embedding == kEmbedMapsDirectly);
+        Add<HCheckMaps>(value, type->Classes().Current());
+      }
+    } else {
+      if_nil.Deopt(Deoptimizer::kTooManyUndetectableTypes);
+    }
+  }
+
+  if_nil.CaptureContinuation(continuation);
+}
+
+
 void HGraphBuilder::BuildCreateAllocationMemento(
     HValue* previous_object,
     HValue* previous_object_size,
@@ -6002,9 +6054,8 @@ void HOptimizedGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
     Handle<Object> raw_boilerplate;
     ASSIGN_RETURN_ON_EXCEPTION_VALUE(
         isolate(), raw_boilerplate,
-        Runtime::CreateArrayLiteralBoilerplate(
-            isolate(), literals, expr->constant_elements(),
-            is_strong(function_language_mode())),
+        Runtime::CreateArrayLiteralBoilerplate(isolate(), literals,
+                                               expr->constant_elements()),
         Bailout(kArrayBoilerplateCreationFailed));
 
     boilerplate_object = Handle<JSObject>::cast(raw_boilerplate);
@@ -6589,8 +6640,8 @@ HValue* HOptimizedGraphBuilder::BuildMonomorphicAccess(
       Bailout(kInliningBailedOut);
       return nullptr;
     }
-    return BuildCallConstantFunction(Handle<JSFunction>::cast(info->accessor()),
-                                     argument_count);
+    return NewCallConstantFunction(Handle<JSFunction>::cast(info->accessor()),
+                                   argument_count);
   }
 
   DCHECK(info->IsDataConstant());
@@ -7988,28 +8039,6 @@ void HOptimizedGraphBuilder::AddCheckPrototypeMaps(Handle<JSObject> holder,
   }
 }
 
-HInstruction* HOptimizedGraphBuilder::NewPlainFunctionCall(HValue* function,
-                                                           int argument_count) {
-  return New<HCallJSFunction>(function, argument_count);
-}
-
-HInstruction* HOptimizedGraphBuilder::NewArgumentAdaptorCall(
-    HValue* function, int argument_count, HValue* expected_param_count) {
-  HValue* context = Add<HLoadNamedField>(
-      function, nullptr, HObjectAccess::ForFunctionContextPointer());
-  HValue* new_target = graph()->GetConstantUndefined();
-  HValue* arity = Add<HConstant>(argument_count - 1);
-
-  HValue* op_vals[] = {context, function, new_target, arity,
-                       expected_param_count};
-
-  Callable callable = CodeFactory::ArgumentAdaptor(isolate());
-  HConstant* stub = Add<HConstant>(callable.code());
-
-  return New<HCallWithDescriptor>(stub, argument_count, callable.descriptor(),
-                                  Vector<HValue*>(op_vals, arraysize(op_vals)));
-}
-
 HInstruction* HOptimizedGraphBuilder::NewCallFunction(
     HValue* function, int argument_count, ConvertReceiverMode convert_mode) {
   HValue* arity = Add<HConstant>(argument_count - 1);
@@ -8041,27 +8070,10 @@ HInstruction* HOptimizedGraphBuilder::NewCallFunctionViaIC(
                                   Vector<HValue*>(op_vals, arraysize(op_vals)));
 }
 
-HInstruction* HOptimizedGraphBuilder::BuildCallConstantFunction(
-    Handle<JSFunction> jsfun, int argument_count) {
-  HValue* target = Add<HConstant>(jsfun);
-  // For constant functions, we try to avoid calling the
-  // argument adaptor and instead call the function directly
-  int formal_parameter_count =
-      jsfun->shared()->internal_formal_parameter_count();
-  bool dont_adapt_arguments =
-      (formal_parameter_count ==
-       SharedFunctionInfo::kDontAdaptArgumentsSentinel);
-  int arity = argument_count - 1;
-  bool can_invoke_directly =
-      dont_adapt_arguments || formal_parameter_count == arity;
-  if (can_invoke_directly) {
-    return NewPlainFunctionCall(target, argument_count);
-  } else {
-    HValue* param_count_value = Add<HConstant>(formal_parameter_count);
-    return NewArgumentAdaptorCall(target, argument_count, param_count_value);
-  }
-  UNREACHABLE();
-  return NULL;
+HInstruction* HOptimizedGraphBuilder::NewCallConstantFunction(
+    Handle<JSFunction> function, int argument_count) {
+  HValue* target = Add<HConstant>(function);
+  return New<HInvokeFunction>(target, function, argument_count);
 }
 
 
@@ -8210,7 +8222,7 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(Call* expr,
           needs_wrapping
               ? NewCallFunction(function, argument_count,
                                 ConvertReceiverMode::kNotNullOrUndefined)
-              : BuildCallConstantFunction(target, argument_count);
+              : NewCallConstantFunction(target, argument_count);
       PushArgumentsFromEnvironment(argument_count);
       AddInstruction(call);
       Drop(1);  // Drop the function.
@@ -9029,7 +9041,7 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinMethodCall(
 
       Drop(args_count_no_receiver);
       HValue* receiver = Pop();
-      HValue* function = Pop();
+      Drop(1);  // Function.
       HValue* result;
 
       {
@@ -9105,7 +9117,7 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinMethodCall(
           if_inline.Else();
           {
             Add<HPushArguments>(receiver);
-            result = Add<HCallJSFunction>(function, 1);
+            result = AddInstruction(NewCallConstantFunction(function, 1));
             if (!ast_context()->IsEffect()) Push(result);
           }
           if_inline.End();
@@ -9782,7 +9794,7 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
       } else if (TryInlineCall(expr)) {
         return;
       } else {
-        call = BuildCallConstantFunction(known_function, argument_count);
+        call = NewCallConstantFunction(known_function, argument_count);
       }
 
     } else {
@@ -9849,7 +9861,7 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
       if (TryInlineCall(expr)) return;
 
       PushArgumentsFromEnvironment(argument_count);
-      call = BuildCallConstantFunction(expr->target(), argument_count);
+      call = NewCallConstantFunction(expr->target(), argument_count);
     } else {
       PushArgumentsFromEnvironment(argument_count);
       if (expr->is_uninitialized() &&
@@ -11713,17 +11725,22 @@ void HOptimizedGraphBuilder::HandleLiteralCompareNil(CompareOperation* expr,
   if (!top_info()->is_tracking_positions()) SetSourcePosition(expr->position());
   CHECK_ALIVE(VisitForValue(sub_expr));
   HValue* value = Pop();
-  HControlInstruction* instr;
   if (expr->op() == Token::EQ_STRICT) {
     HConstant* nil_constant = nil == kNullValue
         ? graph()->GetConstantNull()
         : graph()->GetConstantUndefined();
-    instr = New<HCompareObjectEqAndBranch>(value, nil_constant);
+    HCompareObjectEqAndBranch* instr =
+        New<HCompareObjectEqAndBranch>(value, nil_constant);
+    return ast_context()->ReturnControl(instr, expr->id());
   } else {
     DCHECK_EQ(Token::EQ, expr->op());
-    instr = New<HIsUndetectableAndBranch>(value);
+    Type* type = expr->combined_type()->Is(Type::None())
+                     ? Type::Any()
+                     : expr->combined_type();
+    HIfContinuation continuation;
+    BuildCompareNil(value, type, &continuation);
+    return ast_context()->ReturnContinuation(&continuation, expr->id());
   }
-  return ast_context()->ReturnControl(instr, expr->id());
 }
 
 

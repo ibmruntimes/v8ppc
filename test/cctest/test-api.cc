@@ -22505,7 +22505,8 @@ THREADED_TEST(FunctionNew) {
                        ->serial_number()),
       i_isolate);
   auto cache = i_isolate->template_instantiations_cache();
-  CHECK(cache->Lookup(serial_number)->IsTheHole());
+  CHECK(cache->FindEntry(static_cast<uint32_t>(serial_number->value())) ==
+        i::UnseededNumberDictionary::kNotFound);
   // Verify that each Function::New creates a new function instance
   Local<Object> data2 = v8::Object::New(isolate);
   function_new_expected_env = data2;
@@ -24480,30 +24481,6 @@ TEST(StrongModeArityCallFromApi2) {
         .ToLocalChecked();
     CHECK(!try_catch.HasCaught());
   }
-}
-
-
-TEST(StrongObjectDelete) {
-  i::FLAG_strong_mode = true;
-  LocalContext env;
-  v8::Isolate* isolate = env->GetIsolate();
-  v8::HandleScope scope(isolate);
-  Local<Object> obj;
-  {
-    v8::TryCatch try_catch(isolate);
-    obj = Local<Object>::Cast(CompileRun(
-        "'use strong';"
-        "({});"));
-    CHECK(!try_catch.HasCaught());
-  }
-  obj->DefineOwnProperty(env.local(), v8_str("foo"), v8_num(1), v8::None)
-      .FromJust();
-  obj->DefineOwnProperty(env.local(), v8_str("2"), v8_num(1), v8::None)
-      .FromJust();
-  CHECK(obj->HasOwnProperty(env.local(), v8_str("foo")).FromJust());
-  CHECK(obj->HasOwnProperty(env.local(), v8_str("2")).FromJust());
-  CHECK(!obj->Delete(env.local(), v8_str("foo")).FromJust());
-  CHECK(!obj->Delete(env.local(), 2).FromJust());
 }
 
 

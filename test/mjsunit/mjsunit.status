@@ -134,6 +134,9 @@
   'strong/load-property-mutate-backing-store': [SKIP],
   'strong/load-super': [SKIP],
   'strong/literals': [SKIP], # Rest arguments do not respect strongness in Turbofan.
+  'strong/object-delete': [SKIP],
+  'strong/object-freeze-property': [SKIP],
+  'strong/object-set-prototype': [SKIP],
 
   # Issue 4035: unexpected frame->context() in debugger
   'regress/regress-crbug-107996': [PASS, NO_VARIANTS],
@@ -845,11 +848,6 @@
   'es6/regress/regress-3280': [FAIL],
   'harmony/destructuring-assignment': [FAIL],
   'harmony/function-sent': [FAIL],
-  'harmony/reflect-enumerate-delete': [FAIL],
-  'harmony/reflect-enumerate-special-cases': [FAIL],
-  'harmony/proxies-enumerate': [FAIL],
-  'harmony/reflect-enumerate-opt': [FAIL],
-  'harmony/reflect-enumerate': [FAIL],
   'harmony/destructuring': [FAIL],
   'harmony/regress/regress-4482': [FAIL],
   'harmony/generators': [FAIL],
@@ -866,24 +864,16 @@
 
   # TODO(rmcilroy,4680): Test assert failures.
   'array-literal-feedback': [FAIL],
-  'undetectable-compare': [FAIL],
   'debug-liveedit-2': [FAIL],
-  'compiler/deopt-tonumber-compare': [FAIL],
-  'es6/string-search': [FAIL],
   'es6/mirror-collections': [FAIL],
   'es6/regress/regress-468661': [FAIL],
-  'harmony/string-replace': [FAIL],
-  'harmony/string-match': [FAIL],
-  'harmony/string-split': [FAIL],
   'regress/regress-2618': [FAIL],
   'regress/regress-4121': [FAIL],
   'regress/regress-4266': [FAIL],
-  'harmony/simd': [FAIL],
   'regress/regress-crbug-109362': [FAIL],
   'regress/regress-crbug-568477-2': [FAIL],
   'regress/regress-crbug-568477-3': [FAIL],
   'regress/regress-crbug-568477-1': [FAIL],
-  'regress/regress-2318': [FAIL],
 
   # TODO(rmcilroy, 4680): new ES6 instanceof support
   'harmony/instanceof-es6': [SKIP],

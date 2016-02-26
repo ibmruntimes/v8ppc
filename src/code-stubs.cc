@@ -82,7 +82,8 @@ void CodeStub::RecordCodeGeneration(Handle<Code> code) {
   std::ostringstream os;
   os << *this;
   PROFILE(isolate(),
-          CodeCreateEvent(Logger::STUB_TAG, *code, os.str().c_str()));
+          CodeCreateEvent(Logger::STUB_TAG, AbstractCode::cast(*code),
+                          os.str().c_str()));
   Counters* counters = isolate()->counters();
   counters->total_stubs_code_size()->Increment(code->instruction_size());
 #ifdef DEBUG
@@ -451,6 +452,28 @@ void CompareICStub::Generate(MacroAssembler* masm) {
 }
 
 
+void CompareNilICStub::UpdateStatus(Handle<Object> object) {
+  State state = this->state();
+  DCHECK(!state.Contains(GENERIC));
+  State old_state = state;
+  if (object->IsNull()) {
+    state.Add(NULL_TYPE);
+  } else if (object->IsUndefined()) {
+    state.Add(UNDEFINED);
+  } else if (object->IsUndetectableObject() || object->IsSmi()) {
+    state.RemoveAll();
+    state.Add(GENERIC);
+  } else if (IsMonomorphic()) {
+    state.RemoveAll();
+    state.Add(GENERIC);
+  } else {
+    state.Add(MONOMORPHIC_MAP);
+  }
+  TraceTransition(old_state, state);
+  set_sub_minor_key(TypesBits::update(sub_minor_key(), state.ToIntegral()));
+}
+
+
 Handle<Code> TurboFanCodeStub::GenerateCode() {
   const char* name = CodeStub::MajorName(MajorKey());
   Zone zone;
@@ -486,6 +509,17 @@ void HydrogenCodeStub::TraceTransition(StateType from, StateType to) {
 }
 
 
+void CompareNilICStub::PrintBaseName(std::ostream& os) const {  // NOLINT
+  CodeStub::PrintBaseName(os);
+  os << ((nil_value() == kNullValue) ? "(NullValue)" : "(UndefinedValue)");
+}
+
+
+void CompareNilICStub::PrintState(std::ostream& os) const {  // NOLINT
+  os << state();
+}
+
+
 // TODO(svenpanne) Make this a real infix_ostream_iterator.
 class SimpleListPrinter {
  public:
@@ -504,6 +538,45 @@ class SimpleListPrinter {
   std::ostream& os_;
   bool first_;
 };
+
+
+std::ostream& operator<<(std::ostream& os, const CompareNilICStub::State& s) {
+  os << "(";
+  SimpleListPrinter p(os);
+  if (s.IsEmpty()) p.Add("None");
+  if (s.Contains(CompareNilICStub::UNDEFINED)) p.Add("Undefined");
+  if (s.Contains(CompareNilICStub::NULL_TYPE)) p.Add("Null");
+  if (s.Contains(CompareNilICStub::MONOMORPHIC_MAP)) p.Add("MonomorphicMap");
+  if (s.Contains(CompareNilICStub::GENERIC)) p.Add("Generic");
+  return os << ")";
+}
+
+
+Type* CompareNilICStub::GetType(Zone* zone, Handle<Map> map) {
+  State state = this->state();
+  if (state.Contains(CompareNilICStub::GENERIC)) return Type::Any();
+
+  Type* result = Type::None();
+  if (state.Contains(CompareNilICStub::UNDEFINED)) {
+    result = Type::Union(result, Type::Undefined(), zone);
+  }
+  if (state.Contains(CompareNilICStub::NULL_TYPE)) {
+    result = Type::Union(result, Type::Null(), zone);
+  }
+  if (state.Contains(CompareNilICStub::MONOMORPHIC_MAP)) {
+    Type* type = map.is_null() ? Type::Detectable() : Type::Class(map, zone);
+    result = Type::Union(result, type, zone);
+  }
+
+  return result;
+}
+
+
+Type* CompareNilICStub::GetInputType(Zone* zone, Handle<Map> map) {
+  Type* output_type = GetType(zone, map);
+  Type* nil_type = nil_value() == kNullValue ? Type::Null() : Type::Undefined();
+  return Type::Union(output_type, nil_type, zone);
+}
 
 
 void CallICStub::PrintState(std::ostream& os) const {  // NOLINT
@@ -664,6 +737,13 @@ void AllocateMutableHeapNumberStub::InitializeDescriptor(
 void AllocateInNewSpaceStub::InitializeDescriptor(
     CodeStubDescriptor* descriptor) {
   descriptor->Initialize();
+}
+
+
+void CompareNilICStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
+  descriptor->Initialize(FUNCTION_ADDR(Runtime_CompareNilIC_Miss));
+  descriptor->SetMissHandler(ExternalReference(
+      Runtime::FunctionForId(Runtime::kCompareNilIC_Miss), isolate()));
 }
 
 

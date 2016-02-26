@@ -1353,6 +1353,10 @@ int HeapNumber::get_sign() {
 
 
 bool Simd128Value::Equals(Simd128Value* that) {
+  // TODO(bmeurer): This doesn't match the SIMD.js specification, but it seems
+  // to be consistent with what the CompareICStub does, and what is tested in
+  // the current SIMD.js testsuite.
+  if (this == that) return true;
 #define SIMD128_VALUE(TYPE, Type, type, lane_count, lane_type) \
   if (this->Is##Type()) {                                      \
     if (!that->Is##Type()) return false;                       \
@@ -4685,7 +4689,8 @@ bool Code::IsCodeStubOrIC() {
   return kind() == STUB || kind() == HANDLER || kind() == LOAD_IC ||
          kind() == KEYED_LOAD_IC || kind() == CALL_IC || kind() == STORE_IC ||
          kind() == KEYED_STORE_IC || kind() == BINARY_OP_IC ||
-         kind() == COMPARE_IC || kind() == TO_BOOLEAN_IC;
+         kind() == COMPARE_IC || kind() == COMPARE_NIL_IC ||
+         kind() == TO_BOOLEAN_IC;
 }
 
 
@@ -4975,6 +4980,7 @@ bool Code::is_keyed_store_stub() { return kind() == KEYED_STORE_IC; }
 bool Code::is_call_stub() { return kind() == CALL_IC; }
 bool Code::is_binary_op_stub() { return kind() == BINARY_OP_IC; }
 bool Code::is_compare_ic_stub() { return kind() == COMPARE_IC; }
+bool Code::is_compare_nil_ic_stub() { return kind() == COMPARE_NIL_IC; }
 bool Code::is_to_boolean_ic_stub() { return kind() == TO_BOOLEAN_IC; }
 bool Code::is_optimized_code() { return kind() == OPTIMIZED_FUNCTION; }
 bool Code::is_wasm_code() { return kind() == WASM_FUNCTION; }
@@ -4982,7 +4988,7 @@ bool Code::is_wasm_code() { return kind() == WASM_FUNCTION; }
 bool Code::embeds_maps_weakly() {
   Kind k = kind();
   return (k == LOAD_IC || k == STORE_IC || k == KEYED_LOAD_IC ||
-          k == KEYED_STORE_IC) &&
+          k == KEYED_STORE_IC || k == COMPARE_NIL_IC) &&
          ic_state() == MONOMORPHIC;
 }
 
@@ -5128,11 +5134,50 @@ class Code::FindAndReplacePattern {
   friend class Code;
 };
 
-int AbstractCode::Size() {
+int AbstractCode::instruction_size() {
   if (IsCode()) {
     return GetCode()->instruction_size();
   } else {
     return GetBytecodeArray()->length();
+  }
+}
+
+int AbstractCode::ExecutableSize() {
+  if (IsCode()) {
+    return GetCode()->ExecutableSize();
+  } else {
+    return GetBytecodeArray()->BytecodeArraySize();
+  }
+}
+
+Address AbstractCode::instruction_start() {
+  if (IsCode()) {
+    return GetCode()->instruction_start();
+  } else {
+    return GetBytecodeArray()->GetFirstBytecodeAddress();
+  }
+}
+
+Address AbstractCode::instruction_end() {
+  if (IsCode()) {
+    return GetCode()->instruction_end();
+  } else {
+    return GetBytecodeArray()->GetFirstBytecodeAddress() +
+           GetBytecodeArray()->length();
+  }
+}
+
+bool AbstractCode::contains(byte* inner_pointer) {
+  return (address() <= inner_pointer) && (inner_pointer <= address() + Size());
+}
+
+AbstractCode::Kind AbstractCode::kind() {
+  if (IsCode()) {
+    STATIC_ASSERT(AbstractCode::FUNCTION ==
+                  static_cast<AbstractCode::Kind>(Code::FUNCTION));
+    return static_cast<AbstractCode::Kind>(GetCode()->kind());
+  } else {
+    return INTERPRETED_FUNCTION;
   }
 }
 
@@ -5659,6 +5704,13 @@ BOOL_GETTER(SharedFunctionInfo,
             optimization_disabled,
             kOptimizationDisabled)
 
+AbstractCode* SharedFunctionInfo::abstract_code() {
+  if (HasBytecodeArray()) {
+    return AbstractCode::cast(bytecode_array());
+  } else {
+    return AbstractCode::cast(code());
+  }
+}
 
 void SharedFunctionInfo::set_optimization_disabled(bool disable) {
   set_compiler_hints(BooleanBit::set(compiler_hints(),
@@ -6050,6 +6102,14 @@ void Map::InobjectSlackTrackingStep() {
   }
 }
 
+AbstractCode* JSFunction::abstract_code() {
+  Code* code = this->code();
+  if (code->is_interpreter_entry_trampoline()) {
+    return AbstractCode::cast(shared()->bytecode_array());
+  } else {
+    return AbstractCode::cast(code);
+  }
+}
 
 Code* JSFunction::code() {
   return Code::cast(
