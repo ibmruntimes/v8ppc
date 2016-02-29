@@ -1189,30 +1189,26 @@ class TestModuleEnv : public ModuleEnv {
     instance = nullptr;
     module = &mod;
     linker = nullptr;
-    mod.globals = new std::vector<WasmGlobal>;
-    mod.signatures = new std::vector<FunctionSig*>;
-    mod.functions = new std::vector<WasmFunction>;
-    mod.import_table = new std::vector<WasmImport>;
   }
   byte AddGlobal(MachineType mem_type) {
-    mod.globals->push_back({0, mem_type, 0, false});
-    CHECK(mod.globals->size() <= 127);
-    return static_cast<byte>(mod.globals->size() - 1);
+    mod.globals.push_back({0, mem_type, 0, false});
+    CHECK(mod.globals.size() <= 127);
+    return static_cast<byte>(mod.globals.size() - 1);
   }
   byte AddSignature(FunctionSig* sig) {
-    mod.signatures->push_back(sig);
-    CHECK(mod.signatures->size() <= 127);
-    return static_cast<byte>(mod.signatures->size() - 1);
+    mod.signatures.push_back(sig);
+    CHECK(mod.signatures.size() <= 127);
+    return static_cast<byte>(mod.signatures.size() - 1);
   }
   byte AddFunction(FunctionSig* sig) {
-    mod.functions->push_back({sig, 0, 0, 0, 0, 0, 0, 0, false, false});
-    CHECK(mod.functions->size() <= 127);
-    return static_cast<byte>(mod.functions->size() - 1);
+    mod.functions.push_back({sig, 0, 0, 0, 0, 0, 0, 0, false, false});
+    CHECK(mod.functions.size() <= 127);
+    return static_cast<byte>(mod.functions.size() - 1);
   }
   byte AddImport(FunctionSig* sig) {
-    mod.import_table->push_back({sig, 0, 0});
-    CHECK(mod.import_table->size() <= 127);
-    return static_cast<byte>(mod.import_table->size() - 1);
+    mod.import_table.push_back({sig, 0, 0});
+    CHECK(mod.import_table.size() <= 127);
+    return static_cast<byte>(mod.import_table.size() - 1);
   }
 
  private:
@@ -2113,7 +2109,7 @@ TEST_F(WasmOpcodeLengthTest, SimpleExpressions) {
   EXPECT_LENGTH(1, kExprI32Clz);
   EXPECT_LENGTH(1, kExprI32Ctz);
   EXPECT_LENGTH(1, kExprI32Popcnt);
-  EXPECT_LENGTH(1, kExprBoolNot);
+  EXPECT_LENGTH(1, kExprI32Eqz);
   EXPECT_LENGTH(1, kExprI64Add);
   EXPECT_LENGTH(1, kExprI64Sub);
   EXPECT_LENGTH(1, kExprI64Mul);
@@ -2374,7 +2370,7 @@ TEST_F(WasmOpcodeArityTest, SimpleExpressions) {
   EXPECT_ARITY(1, kExprI32Clz);
   EXPECT_ARITY(1, kExprI32Ctz);
   EXPECT_ARITY(1, kExprI32Popcnt);
-  EXPECT_ARITY(1, kExprBoolNot);
+  EXPECT_ARITY(1, kExprI32Eqz);
   EXPECT_ARITY(2, kExprI64Add);
   EXPECT_ARITY(2, kExprI64Sub);
   EXPECT_ARITY(2, kExprI64Mul);

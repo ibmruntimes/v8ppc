@@ -424,13 +424,6 @@ LPlatformChunk* LChunkBuilder::Build() {
   LPhase phase("L_Building chunk", chunk_);
   status_ = BUILDING;
 
-  // Reserve the first spill slot for the state of dynamic alignment.
-  if (info()->IsOptimizing()) {
-    int alignment_state_index = chunk_->GetNextSpillIndex(GENERAL_REGISTERS);
-    DCHECK_EQ(alignment_state_index, 4);
-    USE(alignment_state_index);
-  }
-
   // If compiling for OSR, reserve space for the unoptimized frame,
   // which will be subsumed into this frame.
   if (graph()->has_osr()) {
@@ -959,8 +952,8 @@ LInstruction* LChunkBuilder::DoBranch(HBranch* instr) {
   HValue* value = instr->value();
   Representation r = value->representation();
   HType type = value->type();
-  ToBooleanStub::Types expected = instr->expected_input_types();
-  if (expected.IsEmpty()) expected = ToBooleanStub::Types::Generic();
+  ToBooleanICStub::Types expected = instr->expected_input_types();
+  if (expected.IsEmpty()) expected = ToBooleanICStub::Types::Generic();
 
   bool easy_case = !r.IsTagged() || type.IsBoolean() || type.IsSmi() ||
       type.IsJSArray() || type.IsHeapNumber() || type.IsString();
@@ -969,7 +962,7 @@ LInstruction* LChunkBuilder::DoBranch(HBranch* instr) {
       temp != NULL ? new (zone()) LBranch(UseRegister(value), temp)
                    : new (zone()) LBranch(UseRegisterAtStart(value), temp);
   if (!easy_case &&
-      ((!expected.Contains(ToBooleanStub::SMI) && expected.NeedsMap()) ||
+      ((!expected.Contains(ToBooleanICStub::SMI) && expected.NeedsMap()) ||
        !expected.IsGeneric())) {
     branch = AssignEnvironment(branch);
   }
@@ -2464,11 +2457,6 @@ LInstruction* LChunkBuilder::DoUnknownOSRValue(HUnknownOSRValue* instr) {
     if (spill_index > LUnallocated::kMaxFixedSlotIndex) {
       Retry(kNotEnoughSpillSlotsForOsr);
       spill_index = 0;
-    }
-    if (spill_index == 0) {
-      // The dynamic frame alignment state overwrites the first local.
-      // The first local is saved at the end of the unoptimized frame.
-      spill_index = graph()->osr()->UnoptimizedFrameSlots();
     }
     spill_index += StandardFrameConstants::kFixedSlotCount;
   }

@@ -708,7 +708,7 @@ Node* WasmGraphBuilder::Unop(wasm::WasmOpcode opcode, Node* input) {
   const Operator* op;
   MachineOperatorBuilder* m = jsgraph()->machine();
   switch (opcode) {
-    case wasm::kExprBoolNot:
+    case wasm::kExprI32Eqz:
       op = m->Word32Equal();
       return graph()->NewNode(op, input, jsgraph()->Int32Constant(0));
     case wasm::kExprF32Abs:
@@ -1153,6 +1153,13 @@ Node* WasmGraphBuilder::BuildF64Max(Node* left, Node* right) {
 
 Node* WasmGraphBuilder::BuildI32SConvertF32(Node* input) {
   MachineOperatorBuilder* m = jsgraph()->machine();
+  if (module_ && module_->asm_js()) {
+    // asm.js must use the wacky JS semantics.
+    input = graph()->NewNode(m->ChangeFloat32ToFloat64(), input);
+    return graph()->NewNode(
+        m->TruncateFloat64ToInt32(TruncationMode::kJavaScript), input);
+  }
+
   // Truncation of the input value is needed for the overflow check later.
   Node* trunc = Unop(wasm::kExprF32Trunc, input);
   Node* result = graph()->NewNode(m->TruncateFloat32ToInt32(), trunc);
@@ -1169,7 +1176,8 @@ Node* WasmGraphBuilder::BuildI32SConvertF32(Node* input) {
 
 Node* WasmGraphBuilder::BuildI32SConvertF64(Node* input) {
   MachineOperatorBuilder* m = jsgraph()->machine();
-  if (module_ && module_->asm_js) {
+  if (module_ && module_->asm_js()) {
+    // asm.js must use the wacky JS semantics.
     return graph()->NewNode(
         m->TruncateFloat64ToInt32(TruncationMode::kJavaScript), input);
   }
@@ -1189,6 +1197,13 @@ Node* WasmGraphBuilder::BuildI32SConvertF64(Node* input) {
 
 Node* WasmGraphBuilder::BuildI32UConvertF32(Node* input) {
   MachineOperatorBuilder* m = jsgraph()->machine();
+  if (module_ && module_->asm_js()) {
+    // asm.js must use the wacky JS semantics.
+    input = graph()->NewNode(m->ChangeFloat32ToFloat64(), input);
+    return graph()->NewNode(
+        m->TruncateFloat64ToInt32(TruncationMode::kJavaScript), input);
+  }
+
   // Truncation of the input value is needed for the overflow check later.
   Node* trunc = Unop(wasm::kExprF32Trunc, input);
   Node* result = graph()->NewNode(m->TruncateFloat32ToUint32(), trunc);
@@ -1205,7 +1220,8 @@ Node* WasmGraphBuilder::BuildI32UConvertF32(Node* input) {
 
 Node* WasmGraphBuilder::BuildI32UConvertF64(Node* input) {
   MachineOperatorBuilder* m = jsgraph()->machine();
-  if (module_ && module_->asm_js) {
+  if (module_ && module_->asm_js()) {
+    // asm.js must use the wacky JS semantics.
     return graph()->NewNode(
         m->TruncateFloat64ToInt32(TruncationMode::kJavaScript), input);
   }
@@ -1680,7 +1696,7 @@ Node* WasmGraphBuilder::FromJS(Node* node, Node* context,
 
 
 Node* WasmGraphBuilder::Invert(Node* node) {
-  return Unop(wasm::kExprBoolNot, node);
+  return Unop(wasm::kExprI32Eqz, node);
 }
 
 
@@ -1838,7 +1854,7 @@ Node* WasmGraphBuilder::LoadGlobal(uint32_t index) {
   MachineType mem_type = module_->GetGlobalType(index);
   Node* addr = jsgraph()->IntPtrConstant(
       reinterpret_cast<uintptr_t>(module_->instance->globals_start +
-                                  module_->module->globals->at(index).offset));
+                                  module_->module->globals[index].offset));
   const Operator* op = jsgraph()->machine()->Load(mem_type);
   Node* node = graph()->NewNode(op, addr, jsgraph()->Int32Constant(0), *effect_,
                                 *control_);
@@ -1852,7 +1868,7 @@ Node* WasmGraphBuilder::StoreGlobal(uint32_t index, Node* val) {
   MachineType mem_type = module_->GetGlobalType(index);
   Node* addr = jsgraph()->IntPtrConstant(
       reinterpret_cast<uintptr_t>(module_->instance->globals_start +
-                                  module_->module->globals->at(index).offset));
+                                  module_->module->globals[index].offset));
   const Operator* op = jsgraph()->machine()->Store(
       StoreRepresentation(mem_type.representation(), kNoWriteBarrier));
   Node* node = graph()->NewNode(op, addr, jsgraph()->Int32Constant(0), val,
@@ -1889,7 +1905,7 @@ Node* WasmGraphBuilder::LoadMem(wasm::LocalType type, MachineType memtype,
                                 Node* index, uint32_t offset) {
   Node* load;
 
-  if (module_ && module_->asm_js) {
+  if (module_ && module_->asm_js()) {
     // asm.js semantics use CheckedLoad (i.e. OOB reads return 0ish).
     DCHECK_EQ(0, offset);
     const Operator* op = jsgraph()->machine()->CheckedLoad(memtype);
@@ -1924,7 +1940,7 @@ Node* WasmGraphBuilder::LoadMem(wasm::LocalType type, MachineType memtype,
 Node* WasmGraphBuilder::StoreMem(MachineType memtype, Node* index,
                                  uint32_t offset, Node* val) {
   Node* store;
-  if (module_ && module_->asm_js) {
+  if (module_ && module_->asm_js()) {
     // asm.js semantics use CheckedStore (i.e. ignore OOB writes).
     DCHECK_EQ(0, offset);
     const Operator* op =
@@ -1990,7 +2006,7 @@ static void RecordFunctionCompilation(Logger::LogEventsAndTags tag,
 Handle<JSFunction> CompileJSToWasmWrapper(
     Isolate* isolate, wasm::ModuleEnv* module, Handle<String> name,
     Handle<Code> wasm_code, Handle<JSObject> module_object, uint32_t index) {
-  wasm::WasmFunction* func = &module->module->functions->at(index);
+  wasm::WasmFunction* func = &module->module->functions[index];
 
   //----------------------------------------------------------------------------
   // Create the JSFunction object.

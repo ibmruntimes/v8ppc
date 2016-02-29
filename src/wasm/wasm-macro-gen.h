@@ -112,7 +112,7 @@
 #define WASM_CALL_IMPORT0(index) kExprCallImport, static_cast<byte>(index)
 #define WASM_CALL_INDIRECT0(index, func) \
   kExprCallIndirect, static_cast<byte>(index), func
-#define WASM_NOT(x) kExprBoolNot, x
+#define WASM_NOT(x) kExprI32Eqz, x
 
 //------------------------------------------------------------------------------
 // Constructs that are composed of multiple bytecodes.
@@ -264,5 +264,17 @@
 #define WASM_F64_REINTERPRET_I64(x) kExprF64ReinterpretI64, x
 #define WASM_I32_REINTERPRET_F32(x) kExprI32ReinterpretF32, x
 #define WASM_I64_REINTERPRET_F64(x) kExprI64ReinterpretF64, x
+
+#define U32_LE(v)                                    \
+  static_cast<byte>(v), static_cast<byte>((v) >> 8), \
+      static_cast<byte>((v) >> 16), static_cast<byte>((v) >> 24)
+
+#define U16_LE(v) static_cast<byte>(v), static_cast<byte>((v) >> 8)
+
+#define WASM_MODULE_HEADER U32_LE(kWasmMagic), U32_LE(kWasmVersion)
+
+#define SIG_INDEX(v) U16_LE(v)
+#define FUNC_INDEX(v) U16_LE(v)
+#define NAME_OFFSET(v) U32_LE(v)
 
 #endif  // V8_WASM_MACRO_GEN_H_

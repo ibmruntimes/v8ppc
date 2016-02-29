@@ -906,8 +906,8 @@ void HGraphBuilder::IfBuilder::Then() {
     // so that the graph builder visits it and sees any live range extending
     // constructs within it.
     HConstant* constant_false = builder()->graph()->GetConstantFalse();
-    ToBooleanStub::Types boolean_type = ToBooleanStub::Types();
-    boolean_type.Add(ToBooleanStub::BOOLEAN);
+    ToBooleanICStub::Types boolean_type = ToBooleanICStub::Types();
+    boolean_type.Add(ToBooleanICStub::BOOLEAN);
     HBranch* branch = builder()->New<HBranch>(
         constant_false, boolean_type, first_true_block_, first_false_block_);
     builder()->FinishCurrentBlock(branch);
@@ -1302,9 +1302,9 @@ HValue* HGraphBuilder::BuildCheckString(HValue* string) {
   return string;
 }
 
-
-HValue* HGraphBuilder::BuildWrapReceiver(HValue* object, HValue* function) {
+HValue* HGraphBuilder::BuildWrapReceiver(HValue* object, HValue* checked) {
   if (object->type().IsJSObject()) return object;
+  HValue* function = checked->ActualValue();
   if (function->IsConstant() &&
       HConstant::cast(function)->handle(isolate())->IsJSFunction()) {
     Handle<JSFunction> f = Handle<JSFunction>::cast(
@@ -1312,7 +1312,7 @@ HValue* HGraphBuilder::BuildWrapReceiver(HValue* object, HValue* function) {
     SharedFunctionInfo* shared = f->shared();
     if (is_strict(shared->language_mode()) || shared->native()) return object;
   }
-  return Add<HWrapReceiver>(object, function);
+  return Add<HWrapReceiver>(object, checked);
 }
 
 
@@ -3180,58 +3180,6 @@ HValue* HGraphBuilder::BuildCloneShallowArrayNonEmpty(HValue* boilerplate,
 }
 
 
-void HGraphBuilder::BuildCompareNil(HValue* value, Type* type,
-                                    HIfContinuation* continuation,
-                                    MapEmbedding map_embedding) {
-  IfBuilder if_nil(this);
-
-  if (type->Maybe(Type::Undetectable())) {
-    if_nil.If<HIsUndetectableAndBranch>(value);
-  } else {
-    bool maybe_null = type->Maybe(Type::Null());
-    if (maybe_null) {
-      if_nil.If<HCompareObjectEqAndBranch>(value, graph()->GetConstantNull());
-    }
-
-    if (type->Maybe(Type::Undefined())) {
-      if (maybe_null) if_nil.Or();
-      if_nil.If<HCompareObjectEqAndBranch>(value,
-                                           graph()->GetConstantUndefined());
-    }
-
-    if_nil.Then();
-    if_nil.Else();
-
-    if (type->NumClasses() == 1) {
-      BuildCheckHeapObject(value);
-      // For ICs, the map checked below is a sentinel map that gets replaced by
-      // the monomorphic map when the code is used as a template to generate a
-      // new IC. For optimized functions, there is no sentinel map, the map
-      // emitted below is the actual monomorphic map.
-      if (map_embedding == kEmbedMapsViaWeakCells) {
-        HValue* cell =
-            Add<HConstant>(Map::WeakCellForMap(type->Classes().Current()));
-        HValue* expected_map = Add<HLoadNamedField>(
-            cell, nullptr, HObjectAccess::ForWeakCellValue());
-        HValue* map =
-            Add<HLoadNamedField>(value, nullptr, HObjectAccess::ForMap());
-        IfBuilder map_check(this);
-        map_check.IfNot<HCompareObjectEqAndBranch>(expected_map, map);
-        map_check.ThenDeopt(Deoptimizer::kUnknownMap);
-        map_check.End();
-      } else {
-        DCHECK(map_embedding == kEmbedMapsDirectly);
-        Add<HCheckMaps>(value, type->Classes().Current());
-      }
-    } else {
-      if_nil.Deopt(Deoptimizer::kTooManyUndetectableTypes);
-    }
-  }
-
-  if_nil.CaptureContinuation(continuation);
-}
-
-
 void HGraphBuilder::BuildCreateAllocationMemento(
     HValue* previous_object,
     HValue* previous_object_size,
@@ -4350,7 +4298,7 @@ void TestContext::BuildBranch(HValue* value) {
   if (value != NULL && value->CheckFlag(HValue::kIsArguments)) {
     builder->Bailout(kArgumentsObjectValueInATestContext);
   }
-  ToBooleanStub::Types expected(condition()->to_boolean_types());
+  ToBooleanICStub::Types expected(condition()->to_boolean_types());
   ReturnControl(owner()->New<HBranch>(value, expected), BailoutId::None());
 }
 
@@ -11345,7 +11293,7 @@ void HOptimizedGraphBuilder::VisitLogicalExpression(BinaryOperation* expr) {
     // We need an extra block to maintain edge-split form.
     HBasicBlock* empty_block = graph()->CreateBasicBlock();
     HBasicBlock* eval_right = graph()->CreateBasicBlock();
-    ToBooleanStub::Types expected(expr->left()->to_boolean_types());
+    ToBooleanICStub::Types expected(expr->left()->to_boolean_types());
     HBranch* test = is_logical_and
         ? New<HBranch>(left_value, expected, eval_right, empty_block)
         : New<HBranch>(left_value, expected, empty_block, eval_right);
@@ -11725,22 +11673,17 @@ void HOptimizedGraphBuilder::HandleLiteralCompareNil(CompareOperation* expr,
   if (!top_info()->is_tracking_positions()) SetSourcePosition(expr->position());
   CHECK_ALIVE(VisitForValue(sub_expr));
   HValue* value = Pop();
+  HControlInstruction* instr;
   if (expr->op() == Token::EQ_STRICT) {
     HConstant* nil_constant = nil == kNullValue
         ? graph()->GetConstantNull()
         : graph()->GetConstantUndefined();
-    HCompareObjectEqAndBranch* instr =
-        New<HCompareObjectEqAndBranch>(value, nil_constant);
-    return ast_context()->ReturnControl(instr, expr->id());
+    instr = New<HCompareObjectEqAndBranch>(value, nil_constant);
   } else {
     DCHECK_EQ(Token::EQ, expr->op());
-    Type* type = expr->combined_type()->Is(Type::None())
-                     ? Type::Any()
-                     : expr->combined_type();
-    HIfContinuation continuation;
-    BuildCompareNil(value, type, &continuation);
-    return ast_context()->ReturnContinuation(&continuation, expr->id());
+    instr = New<HIsUndetectableAndBranch>(value);
   }
+  return ast_context()->ReturnControl(instr, expr->id());
 }
 
 

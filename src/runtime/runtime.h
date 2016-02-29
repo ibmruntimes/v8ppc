@@ -206,8 +206,6 @@ namespace internal {
   F(ForInStep, 1, 1)
 
 #define FOR_EACH_INTRINSIC_INTERPRETER(F) \
-  F(InterpreterToBoolean, 1, 1)           \
-  F(InterpreterLogicalNot, 1, 1)          \
   F(InterpreterNewClosure, 2, 1)          \
   F(InterpreterTraceBytecodeEntry, 3, 1)  \
   F(InterpreterTraceBytecodeExit, 3, 1)   \
@@ -411,7 +409,6 @@ namespace internal {
   F(AppendElement, 2, 1)                             \
   F(DeleteProperty_Sloppy, 2, 1)                     \
   F(DeleteProperty_Strict, 2, 1)                     \
-  F(HasOwnProperty, 2, 1)                            \
   F(HasProperty, 2, 1)                               \
   F(PropertyIsEnumerable, 2, 1)                      \
   F(GetOwnPropertyKeys, 2, 1)                        \
@@ -987,7 +984,6 @@ namespace internal {
   F(BinaryOpIC_MissWithAllocationSite, 3, 1) \
   F(CallIC_Miss, 3, 1)                       \
   F(CompareIC_Miss, 3, 1)                    \
-  F(CompareNilIC_Miss, 1, 1)                 \
   F(ElementsTransitionAndStoreIC_Miss, 5, 1) \
   F(KeyedLoadIC_Miss, 4, 1)                  \
   F(KeyedLoadIC_MissFromStubFailure, 4, 1)   \
