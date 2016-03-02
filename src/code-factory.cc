@@ -194,6 +194,17 @@ Callable CodeFactory::RegExpExec(Isolate* isolate) {
   return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
 }
 
+// static
+Callable CodeFactory::StrictEqual(Isolate* isolate) {
+  StrictEqualStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+// static
+Callable CodeFactory::StrictNotEqual(Isolate* isolate) {
+  StrictNotEqualStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
 
 // static
 Callable CodeFactory::StringAdd(Isolate* isolate, StringAddFlags flags,

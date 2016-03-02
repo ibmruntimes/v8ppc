@@ -84,12 +84,23 @@ BreakLocation::Iterator::Iterator(Handle<DebugInfo> debug_info)
       position_(1),
       statement_position_(1) {}
 
+int BreakLocation::Iterator::ReturnPosition() {
+  if (debug_info_->shared()->HasSourceCode()) {
+    return debug_info_->shared()->end_position() -
+           debug_info_->shared()->start_position() - 1;
+  } else {
+    return 0;
+  }
+}
+
 BreakLocation::CodeIterator::CodeIterator(Handle<DebugInfo> debug_info,
                                           BreakLocatorType type)
     : Iterator(debug_info),
       reloc_iterator_(debug_info->abstract_code()->GetCode(),
                       GetModeMask(type)) {
-  if (!Done()) Next();
+  // There is at least one break location.
+  DCHECK(!Done());
+  Next();
 }
 
 int BreakLocation::CodeIterator::GetModeMask(BreakLocatorType type) {
@@ -137,13 +148,7 @@ void BreakLocation::CodeIterator::Next() {
 
     if (RelocInfo::IsDebugBreakSlotAtReturn(rmode())) {
       // Set the positions to the end of the function.
-      if (debug_info_->shared()->HasSourceCode()) {
-        position_ = debug_info_->shared()->end_position() -
-                    debug_info_->shared()->start_position() - 1;
-      } else {
-        position_ = 0;
-      }
-      statement_position_ = position_;
+      statement_position_ = position_ = ReturnPosition();
     }
 
     break;
@@ -176,7 +181,9 @@ BreakLocation::BytecodeArrayIterator::BytecodeArrayIterator(
                                     ->source_position_table()),
       break_locator_type_(type),
       start_position_(debug_info->shared()->start_position()) {
-  if (!Done()) Next();
+  // There is at least one break location.
+  DCHECK(!Done());
+  Next();
 }
 
 void BreakLocation::BytecodeArrayIterator::Next() {
@@ -201,8 +208,10 @@ void BreakLocation::BytecodeArrayIterator::Next() {
     if (break_locator_type_ == ALL_BREAK_LOCATIONS) break;
 
     DCHECK_EQ(CALLS_AND_RETURNS, break_locator_type_);
-    if (type == DEBUG_BREAK_SLOT_AT_CALL ||
-        type == DEBUG_BREAK_SLOT_AT_RETURN) {
+    if (type == DEBUG_BREAK_SLOT_AT_CALL) break;
+    if (type == DEBUG_BREAK_SLOT_AT_RETURN) {
+      DCHECK_EQ(ReturnPosition(), position_);
+      DCHECK_EQ(ReturnPosition(), statement_position_);
       break;
     }
   }

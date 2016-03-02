@@ -387,7 +387,18 @@ class CompilationInfo {
 
   void DisableFutureOptimization() {
     if (GetFlag(kDisableFutureOptimization) && has_shared_info()) {
-      shared_info()->DisableOptimization(bailout_reason());
+      // If Crankshaft tried to optimize this function, bailed out, and
+      // doesn't want to try again, then use TurboFan next time.
+      if (!shared_info()->dont_crankshaft()) {
+        shared_info()->set_dont_crankshaft(true);
+        if (FLAG_trace_opt) {
+          PrintF("[disabled Crankshaft for ");
+          shared_info()->ShortPrint();
+          PrintF(", reason: %s]\n", GetBailoutReason(bailout_reason()));
+        }
+      } else {
+        shared_info()->DisableOptimization(bailout_reason());
+      }
     }
   }
 
@@ -498,7 +509,6 @@ class CompilationHandleScope BASE_EMBEDDED {
 
 
 class HGraph;
-class HOptimizedGraphBuilder;
 class LChunk;
 
 // A helper class that calls the three compilation phases in
@@ -511,7 +521,6 @@ class OptimizedCompileJob: public ZoneObject {
  public:
   explicit OptimizedCompileJob(CompilationInfo* info)
       : info_(info),
-        graph_builder_(NULL),
         graph_(NULL),
         chunk_(NULL),
         last_status_(FAILED),
@@ -548,7 +557,6 @@ class OptimizedCompileJob: public ZoneObject {
 
  private:
   CompilationInfo* info_;
-  HOptimizedGraphBuilder* graph_builder_;
   HGraph* graph_;
   LChunk* chunk_;
   base::TimeDelta time_taken_to_create_graph_;
@@ -654,30 +662,6 @@ class Compiler : public AllStatic {
   // On failure, return the empty handle.
   MUST_USE_RESULT static MaybeHandle<Code> GetConcurrentlyOptimizedCode(
       OptimizedCompileJob* job);
-};
-
-
-class CompilationPhase BASE_EMBEDDED {
- public:
-  CompilationPhase(const char* name, CompilationInfo* info);
-  ~CompilationPhase();
-
- protected:
-  bool ShouldProduceTraceOutput() const;
-
-  const char* name() const { return name_; }
-  CompilationInfo* info() const { return info_; }
-  Isolate* isolate() const { return info()->isolate(); }
-  Zone* zone() { return &zone_; }
-
- private:
-  const char* name_;
-  CompilationInfo* info_;
-  Zone zone_;
-  size_t info_zone_start_allocation_size_;
-  base::ElapsedTimer timer_;
-
-  DISALLOW_COPY_AND_ASSIGN(CompilationPhase);
 };
 
 }  // namespace internal

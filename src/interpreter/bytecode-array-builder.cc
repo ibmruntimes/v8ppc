@@ -67,7 +67,8 @@ class BytecodeArrayBuilder::PreviousBytecodeHelper BASE_EMBEDDED {
 
 BytecodeArrayBuilder::BytecodeArrayBuilder(Isolate* isolate, Zone* zone,
                                            int parameter_count,
-                                           int context_count, int locals_count)
+                                           int context_count, int locals_count,
+                                           FunctionLiteral* literal)
     : isolate_(isolate),
       zone_(zone),
       bytecodes_(zone),
@@ -87,6 +88,11 @@ BytecodeArrayBuilder::BytecodeArrayBuilder(Isolate* isolate, Zone* zone,
   DCHECK_GE(parameter_count_, 0);
   DCHECK_GE(context_register_count_, 0);
   DCHECK_GE(local_register_count_, 0);
+  return_position_ =
+      literal ? std::max(literal->start_position(), literal->end_position() - 1)
+              : RelocInfo::kNoPosition;
+  LOG_CODE_EVENT(isolate_, CodeStartLinePosInfoRecordEvent(
+                               source_position_table_builder()));
 }
 
 BytecodeArrayBuilder::~BytecodeArrayBuilder() { DCHECK_EQ(0, unbound_jumps_); }
@@ -126,13 +132,18 @@ Handle<BytecodeArray> BytecodeArrayBuilder::ToBytecodeArray() {
   Handle<FixedArray> handler_table = handler_table_builder()->ToHandlerTable();
   Handle<ByteArray> source_position_table =
       source_position_table_builder()->ToSourcePositionTable();
-  Handle<BytecodeArray> output = isolate_->factory()->NewBytecodeArray(
+  Handle<BytecodeArray> bytecode_array = isolate_->factory()->NewBytecodeArray(
       bytecode_size, &bytecodes_.front(), frame_size, parameter_count(),
       constant_pool);
-  output->set_handler_table(*handler_table);
-  output->set_source_position_table(*source_position_table);
+  bytecode_array->set_handler_table(*handler_table);
+  bytecode_array->set_source_position_table(*source_position_table);
+
+  void* line_info = source_position_table_builder()->DetachJITHandlerData();
+  LOG_CODE_EVENT(isolate_, CodeEndLinePosInfoRecordEvent(
+                               AbstractCode::cast(*bytecode_array), line_info));
+
   bytecode_generated_ = true;
-  return output;
+  return bytecode_array;
 }
 
 
@@ -961,6 +972,7 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::ReThrow() {
 
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::Return() {
+  SetReturnPosition();
   Output(Bytecode::kReturn);
   exit_seen_in_block_ = true;
   return *this;
@@ -991,17 +1003,21 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::ForInDone(Register index,
   return *this;
 }
 
-
 BytecodeArrayBuilder& BytecodeArrayBuilder::ForInNext(
-    Register receiver, Register index, Register cache_type_array_pair) {
+    Register receiver, Register index, Register cache_type_array_pair,
+    int feedback_slot) {
   if (FitsInReg8Operand(receiver) && FitsInReg8Operand(index) &&
-      FitsInReg8Operand(cache_type_array_pair)) {
+      FitsInReg8Operand(cache_type_array_pair) &&
+      FitsInIdx8Operand(feedback_slot)) {
     Output(Bytecode::kForInNext, receiver.ToRawOperand(), index.ToRawOperand(),
-           cache_type_array_pair.ToRawOperand());
+           cache_type_array_pair.ToRawOperand(),
+           static_cast<uint8_t>(feedback_slot));
   } else if (FitsInReg16Operand(receiver) && FitsInReg16Operand(index) &&
-             FitsInReg16Operand(cache_type_array_pair)) {
+             FitsInReg16Operand(cache_type_array_pair) &&
+             FitsInIdx16Operand(feedback_slot)) {
     Output(Bytecode::kForInNextWide, receiver.ToRawOperand(),
-           index.ToRawOperand(), cache_type_array_pair.ToRawOperand());
+           index.ToRawOperand(), cache_type_array_pair.ToRawOperand(),
+           static_cast<uint16_t>(feedback_slot));
   } else {
     UNIMPLEMENTED();
   }
@@ -1042,10 +1058,9 @@ void BytecodeArrayBuilder::LeaveBasicBlock() {
   exit_seen_in_block_ = false;
 }
 
-void BytecodeArrayBuilder::EnsureReturn(FunctionLiteral* literal) {
+void BytecodeArrayBuilder::EnsureReturn() {
   if (!exit_seen_in_block_) {
     LoadUndefined();
-    SetReturnPosition(literal);
     Return();
   }
   DCHECK(exit_seen_in_block_);
@@ -1176,12 +1191,11 @@ size_t BytecodeArrayBuilder::GetConstantPoolEntry(Handle<Object> object) {
   return constant_array_builder()->Insert(object);
 }
 
-void BytecodeArrayBuilder::SetReturnPosition(FunctionLiteral* fun) {
-  // Don't emit dead code.
+void BytecodeArrayBuilder::SetReturnPosition() {
+  if (return_position_ == RelocInfo::kNoPosition) return;
   if (exit_seen_in_block_) return;
-
-  int pos = std::max(fun->start_position(), fun->end_position() - 1);
-  source_position_table_builder_.AddStatementPosition(bytecodes_.size(), pos);
+  source_position_table_builder_.AddStatementPosition(bytecodes_.size(),
+                                                      return_position_);
 }
 
 void BytecodeArrayBuilder::SetStatementPosition(Statement* stmt) {
@@ -1196,6 +1210,13 @@ void BytecodeArrayBuilder::SetExpressionPosition(Expression* expr) {
   if (exit_seen_in_block_) return;
   source_position_table_builder_.AddExpressionPosition(bytecodes_.size(),
                                                        expr->position());
+}
+
+void BytecodeArrayBuilder::SetExpressionAsStatementPosition(Expression* expr) {
+  if (expr->position() == RelocInfo::kNoPosition) return;
+  if (exit_seen_in_block_) return;
+  source_position_table_builder_.AddStatementPosition(bytecodes_.size(),
+                                                      expr->position());
 }
 
 bool BytecodeArrayBuilder::TemporaryRegisterIsLive(Register reg) const {

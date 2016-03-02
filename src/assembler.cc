@@ -60,7 +60,7 @@
 #include "src/register-configuration.h"
 #include "src/runtime/runtime.h"
 #include "src/simulator.h"  // For flushing instruction cache.
-#include "src/snapshot/serialize.h"
+#include "src/snapshot/serializer-common.h"
 
 #if V8_TARGET_ARCH_IA32
 #include "src/ia32/assembler-ia32-inl.h"  // NOLINT
@@ -1648,8 +1648,7 @@ std::ostream& operator<<(std::ostream& os, ExternalReference reference) {
   return os;
 }
 
-
-void PositionsRecorder::RecordPosition(int pos) {
+void AssemblerPositionsRecorder::RecordPosition(int pos) {
   DCHECK(pos != RelocInfo::kNoPosition);
   DCHECK(pos >= 0);
   state_.current_position = pos;
@@ -1659,8 +1658,7 @@ void PositionsRecorder::RecordPosition(int pos) {
                                                  pos));
 }
 
-
-void PositionsRecorder::RecordStatementPosition(int pos) {
+void AssemblerPositionsRecorder::RecordStatementPosition(int pos) {
   DCHECK(pos != RelocInfo::kNoPosition);
   DCHECK(pos >= 0);
   state_.current_statement_position = pos;
@@ -1671,8 +1669,7 @@ void PositionsRecorder::RecordStatementPosition(int pos) {
                      pos));
 }
 
-
-bool PositionsRecorder::WriteRecordedPositions() {
+bool AssemblerPositionsRecorder::WriteRecordedPositions() {
   bool written = false;
 
   // Write the statement position if it is different from what was written last

@@ -148,15 +148,11 @@ static void AssignVectorSlots(Expression* expr, FeedbackVectorSpec* spec,
   }
 }
 
-
-void ForEachStatement::AssignFeedbackVectorSlots(
-    Isolate* isolate, FeedbackVectorSpec* spec,
-    FeedbackVectorSlotCache* cache) {
-  // TODO(adamk): for-of statements do not make use of this feedback slot.
-  // The each_slot_ should be specific to ForInStatement, and this work moved
-  // there.
-  if (IsForOfStatement()) return;
+void ForInStatement::AssignFeedbackVectorSlots(Isolate* isolate,
+                                               FeedbackVectorSpec* spec,
+                                               FeedbackVectorSlotCache* cache) {
   AssignVectorSlots(each(), spec, &each_slot_);
+  for_in_feedback_slot_ = spec->AddGeneralSlot();
 }
 
 
@@ -507,7 +503,7 @@ void ArrayLiteral::BuildConstantElements(Isolate* isolate) {
   // Allocate a fixed array to hold all the object literals.
   Handle<JSArray> array = isolate->factory()->NewJSArray(
       FAST_HOLEY_SMI_ELEMENTS, constants_length, constants_length,
-      Strength::WEAK, INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
+      INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
 
   // Fill in the literals.
   bool is_simple = true;

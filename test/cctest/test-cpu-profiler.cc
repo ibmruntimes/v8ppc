@@ -983,11 +983,11 @@ TEST(BoundFunctionCall) {
   profile->Delete();
 }
 
-
 // This tests checks distribution of the samples through the source lines.
-TEST(TickLines) {
+static void TickLines(bool optimize) {
   CcTest::InitializeVM();
   LocalContext env;
+  i::FLAG_allow_natives_syntax = true;
   i::FLAG_turbo_source_positions = true;
   i::Isolate* isolate = CcTest::i_isolate();
   i::Factory* factory = isolate->factory();
@@ -996,6 +996,8 @@ TEST(TickLines) {
   i::EmbeddedVector<char, 512> script;
 
   const char* func_name = "func";
+  const char* opt_func =
+      optimize ? "%OptimizeFunctionOnNextCall" : "%NeverOptimizeFunction";
   i::SNPrintF(script,
               "function %s() {\n"
               "  var n = 0;\n"
@@ -1005,8 +1007,9 @@ TEST(TickLines) {
               "    n += m * m * m;\n"
               "  }\n"
               "}\n"
+              "%s(%s);\n"
               "%s();\n",
-              func_name, func_name);
+              func_name, opt_func, func_name, func_name);
 
   CompileRun(script.start());
 
@@ -1014,14 +1017,7 @@ TEST(TickLines) {
       v8::Utils::OpenHandle(*GetFunction(env.local(), func_name)));
   CHECK(func->shared());
   CHECK(func->shared()->abstract_code());
-  i::AbstractCode* code = NULL;
-  if (func->abstract_code()->kind() == i::AbstractCode::OPTIMIZED_FUNCTION) {
-    code = func->abstract_code();
-  } else {
-    CHECK(func->shared()->abstract_code() == func->abstract_code() ||
-          !i::FLAG_crankshaft);
-    code = func->shared()->abstract_code();
-  }
+  i::AbstractCode* code = func->abstract_code();
   CHECK(code);
   i::Address code_address = code->instruction_start();
   CHECK(code_address);
@@ -1081,6 +1077,10 @@ TEST(TickLines) {
     }
   CHECK_EQ(hit_count, value);
 }
+
+TEST(TickLinesBaseline) { TickLines(false); }
+
+TEST(TickLinesOptimized) { TickLines(true); }
 
 static const char* call_function_test_source =
     "%NeverOptimizeFunction(bar);\n"
@@ -1500,6 +1500,68 @@ TEST(JsNativeJsRuntimeJsSampleMultiple) {
       GetChild(env, start_node, "CallJsFunction");
   const v8::CpuProfileNode* bar_node = GetChild(env, native_node, "bar");
   GetChild(env, bar_node, "foo");
+
+  profile->Delete();
+}
+
+static const char* inlining_test_source =
+    "%NeverOptimizeFunction(action);\n"
+    "%NeverOptimizeFunction(start);\n"
+    "%OptimizeFunctionOnNextCall(level1);\n"
+    "%OptimizeFunctionOnNextCall(level2);\n"
+    "%OptimizeFunctionOnNextCall(level3);\n"
+    "var finish = false;\n"
+    "function action(n) {\n"
+    "  var s = 0;\n"
+    "  for (var i = 0; i < n; ++i) s += i*i*i;\n"
+    "  if (finish)\n"
+    "    startProfiling('my_profile');\n"
+    "  return s;\n"
+    "}\n"
+    "function level3() { return action(100); }\n"
+    "function level2() { return level3() * 2; }\n"
+    "function level1() { return level2(); }\n"
+    "function start() {\n"
+    "  var n = 100;\n"
+    "  while (--n)\n"
+    "    level1();\n"
+    "  finish = true;\n"
+    "  level1();\n"
+    "}";
+
+// The test check multiple entrances/exits between JS and native code.
+//
+// [Top down]:
+//    (root) #0 1
+//      start #16 3
+//        level1 #0 4
+//          level2 #16 5
+//            level3 #16 6
+//              action #16 7
+//      (program) #0 2
+TEST(Inlining) {
+  i::FLAG_allow_natives_syntax = true;
+  v8::HandleScope scope(CcTest::isolate());
+  v8::Local<v8::Context> env = CcTest::NewContext(PROFILER_EXTENSION);
+  v8::Context::Scope context_scope(env);
+
+  CompileRun(inlining_test_source);
+  v8::Local<v8::Function> function = GetFunction(env, "start");
+
+  v8::CpuProfiler* cpu_profiler = env->GetIsolate()->GetCpuProfiler();
+  v8::Local<v8::String> profile_name = v8_str("my_profile");
+  function->Call(env, env->Global(), 0, NULL).ToLocalChecked();
+  v8::CpuProfile* profile = cpu_profiler->StopProfiling(profile_name);
+  CHECK(profile);
+  // Dump collected profile to have a better diagnostic in case of failure.
+  reinterpret_cast<i::CpuProfile*>(profile)->Print();
+
+  const v8::CpuProfileNode* root = profile->GetTopDownRoot();
+  const v8::CpuProfileNode* start_node = GetChild(env, root, "start");
+  const v8::CpuProfileNode* level1_node = GetChild(env, start_node, "level1");
+  const v8::CpuProfileNode* level2_node = GetChild(env, level1_node, "level2");
+  const v8::CpuProfileNode* level3_node = GetChild(env, level2_node, "level3");
+  GetChild(env, level3_node, "action");
 
   profile->Delete();
 }

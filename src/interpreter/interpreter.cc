@@ -744,6 +744,20 @@ void Interpreter::DoPopContext(InterpreterAssembler* assembler) {
   __ Dispatch();
 }
 
+void Interpreter::DoBinaryOp(Callable callable,
+                             InterpreterAssembler* assembler) {
+  // TODO(bmeurer): Collect definition side type feedback for various
+  // binary operations.
+  Node* target = __ HeapConstant(callable.code());
+  Node* reg_index = __ BytecodeOperandReg(0);
+  Node* lhs = __ LoadRegister(reg_index);
+  Node* rhs = __ GetAccumulator();
+  Node* context = __ GetContext();
+  Node* result = __ CallStub(callable.descriptor(), target, context, lhs, rhs);
+  __ SetAccumulator(result);
+  __ Dispatch();
+}
+
 void Interpreter::DoBinaryOp(Runtime::FunctionId function_id,
                              InterpreterAssembler* assembler) {
   // TODO(rmcilroy): Call ICs which back-patch bytecode with type specialized
@@ -1174,7 +1188,7 @@ void Interpreter::DoTestNotEqual(InterpreterAssembler* assembler) {
 //
 // Test if the value in the <src> register is strictly equal to the accumulator.
 void Interpreter::DoTestEqualStrict(InterpreterAssembler* assembler) {
-  DoBinaryOp(Runtime::kStrictEqual, assembler);
+  DoBinaryOp(CodeFactory::StrictEqual(isolate_), assembler);
 }
 
 
@@ -1183,7 +1197,7 @@ void Interpreter::DoTestEqualStrict(InterpreterAssembler* assembler) {
 // Test if the value in the <src> register is not strictly equal to the
 // accumulator.
 void Interpreter::DoTestNotEqualStrict(InterpreterAssembler* assembler) {
-  DoBinaryOp(Runtime::kStrictNotEqual, assembler);
+  DoBinaryOp(CodeFactory::StrictNotEqual(isolate_), assembler);
 }
 
 
@@ -1830,11 +1844,38 @@ void Interpreter::DoForInNext(InterpreterAssembler* assembler) {
   Node* cache_type = __ LoadRegister(cache_type_reg);
   Node* cache_array_reg = __ NextRegister(cache_type_reg);
   Node* cache_array = __ LoadRegister(cache_array_reg);
-  Node* context = __ GetContext();
-  Node* result = __ CallRuntime(Runtime::kForInNext, context, receiver,
-                                cache_array, cache_type, index);
-  __ SetAccumulator(result);
-  __ Dispatch();
+
+  // Load the next key from the enumeration array.
+  Node* key = __ LoadFixedArrayElementSmiIndex(cache_array, index);
+
+  // Check if we can use the for-in fast path potentially using the enum cache.
+  InterpreterAssembler::Label if_fast(assembler), if_slow(assembler);
+  Node* receiver_map = __ LoadObjectField(receiver, HeapObject::kMapOffset);
+  Node* condition = __ WordEqual(receiver_map, cache_type);
+  __ Branch(condition, &if_fast, &if_slow);
+  __ Bind(&if_fast);
+  {
+    // Enum cache in use for {receiver}, the {key} is definitely valid.
+    __ SetAccumulator(key);
+    __ Dispatch();
+  }
+  __ Bind(&if_slow);
+  {
+    // Record the fact that we hit the for-in slow path.
+    Node* vector_index = __ BytecodeOperandIdx(3);
+    Node* type_feedback_vector = __ LoadTypeFeedbackVector();
+    Node* megamorphic_sentinel =
+        __ HeapConstant(TypeFeedbackVector::MegamorphicSentinel(isolate_));
+    __ StoreFixedArrayElementNoWriteBarrier(type_feedback_vector, vector_index,
+                                            megamorphic_sentinel);
+
+    // Need to filter the {key} for the {receiver}.
+    Node* context = __ GetContext();
+    Node* result =
+        __ CallRuntime(Runtime::kForInFilter, context, receiver, key);
+    __ SetAccumulator(result);
+    __ Dispatch();
+  }
 }
 
 

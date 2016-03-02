@@ -66,12 +66,10 @@ class AsmWasmBuilderImpl : public AstVisitor {
   }
 
   void InitializeInitFunction() {
-    unsigned char init[] = "__init__";
     init_function_index_ = builder_->AddFunction();
     current_function_builder_ = builder_->FunctionAt(init_function_index_);
-    current_function_builder_->SetName(init, 8);
     current_function_builder_->ReturnType(kAstStmt);
-    current_function_builder_->Exported(1);
+    builder_->MarkStartFunction(init_function_index_);
     current_function_builder_ = nullptr;
   }
 
@@ -696,6 +694,12 @@ class AsmWasmBuilderImpl : public AstVisitor {
     is_set_op_ = true;
     RECURSE(Visit(expr->target()));
     DCHECK(!is_set_op_);
+    // Assignment to heapf32 from float64 converts.
+    if (TypeOf(expr->value()) == kAstF64 && expr->target()->IsProperty() &&
+        expr->target()->AsProperty()->obj()->bounds().lower->Is(
+            cache_.kFloat32Array)) {
+      current_function_builder_->Emit(kExprF32ConvertF64);
+    }
     RECURSE(Visit(expr->value()));
     if (in_init) {
       UnLoadInitFunction();

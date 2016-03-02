@@ -31,7 +31,7 @@
 #include "src/parsing/scanner-character-streams.h"
 #include "src/profiler/cpu-profiler.h"
 #include "src/runtime-profiler.h"
-#include "src/snapshot/serialize.h"
+#include "src/snapshot/code-serializer.h"
 #include "src/vm-state-inl.h"
 
 namespace v8 {
@@ -490,13 +490,13 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
         info()->shared_info()->disable_optimization_reason());
   }
 
-  graph_builder_ = (info()->is_tracking_positions() || FLAG_trace_ic)
-                       ? new (info()->zone())
-                             HOptimizedGraphBuilderWithPositions(info())
-                       : new (info()->zone()) HOptimizedGraphBuilder(info());
+  HOptimizedGraphBuilder* graph_builder =
+      (info()->is_tracking_positions() || FLAG_trace_ic)
+          ? new (info()->zone()) HOptimizedGraphBuilderWithPositions(info())
+          : new (info()->zone()) HOptimizedGraphBuilder(info());
 
   Timer t(this, &time_taken_to_create_graph_);
-  graph_ = graph_builder_->CreateGraph();
+  graph_ = graph_builder->CreateGraph();
 
   if (isolate()->has_pending_exception()) {
     return SetLastStatus(FAILED);
@@ -533,7 +533,7 @@ OptimizedCompileJob::Status OptimizedCompileJob::OptimizeGraph() {
     chunk_ = LChunk::NewChunk(graph_);
     if (chunk_ != NULL) return SetLastStatus(SUCCEEDED);
   } else if (bailout_reason != kNoReason) {
-    graph_builder_->Bailout(bailout_reason);
+    info_->AbortOptimization(bailout_reason);
   }
 
   return SetLastStatus(BAILED_OUT);
@@ -904,8 +904,9 @@ static bool Renumber(ParseInfo* parse_info) {
     FunctionLiteral* lit = parse_info->literal();
     shared_info->set_ast_node_count(lit->ast_node_count());
     MaybeDisableOptimization(shared_info, lit->dont_optimize_reason());
-    shared_info->set_dont_crankshaft(lit->flags() &
-                                     AstProperties::kDontCrankshaft);
+    shared_info->set_dont_crankshaft(
+        shared_info->dont_crankshaft() ||
+        (lit->flags() & AstProperties::kDontCrankshaft));
   }
   return true;
 }
@@ -1856,41 +1857,12 @@ MaybeHandle<Code> Compiler::GetConcurrentlyOptimizedCode(
 }
 
 
-CompilationPhase::CompilationPhase(const char* name, CompilationInfo* info)
-    : name_(name), info_(info) {
-  if (FLAG_hydrogen_stats) {
-    info_zone_start_allocation_size_ = info->zone()->allocation_size();
-    timer_.Start();
-  }
-}
-
-
-CompilationPhase::~CompilationPhase() {
-  if (FLAG_hydrogen_stats) {
-    size_t size = zone()->allocation_size();
-    size += info_->zone()->allocation_size() - info_zone_start_allocation_size_;
-    isolate()->GetHStatistics()->SaveTiming(name_, timer_.Elapsed(), size);
-  }
-}
-
-
-bool CompilationPhase::ShouldProduceTraceOutput() const {
-  // Trace if the appropriate trace flag is set and the phase name's first
-  // character is in the FLAG_trace_phase command line parameter.
-  AllowHandleDereference allow_deref;
-  bool tracing_on = info()->IsStub()
-      ? FLAG_trace_hydrogen_stubs
-      : (FLAG_trace_hydrogen &&
-         info()->closure()->PassesFilter(FLAG_trace_hydrogen_filter));
-  return (tracing_on &&
-      base::OS::StrChr(const_cast<char*>(FLAG_trace_phase), name_[0]) != NULL);
-}
-
 #if DEBUG
 void CompilationInfo::PrintAstForTesting() {
   PrintF("--- Source from AST ---\n%s\n",
          PrettyPrinter(isolate()).PrintProgram(literal()));
 }
 #endif
+
 }  // namespace internal
 }  // namespace v8

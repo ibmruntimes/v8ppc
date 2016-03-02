@@ -59,8 +59,6 @@ namespace internal {
   V(VectorStoreIC)                          \
   V(VectorKeyedStoreIC)                     \
   /* HydrogenCodeStubs */                   \
-  V(AllocateHeapNumber)                     \
-  V(AllocateMutableHeapNumber)              \
   V(AllocateInNewSpace)                     \
   V(ArrayNArgumentsConstructor)             \
   V(ArrayNoArgumentConstructor)             \
@@ -100,7 +98,11 @@ namespace internal {
   V(KeyedLoadIC)                            \
   V(LoadIC)                                 \
   /* TurboFanCodeStubs */                   \
+  V(AllocateHeapNumber)                     \
+  V(AllocateMutableHeapNumber)              \
   V(StringLength)                           \
+  V(StrictEqual)                            \
+  V(StrictNotEqual)                         \
   V(ToBoolean)                              \
   /* IC Handler stubs */                    \
   V(ArrayBufferViewLoadField)               \
@@ -629,6 +631,26 @@ class StringLengthStub : public TurboFanCodeStub {
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(LoadWithVector);
   DEFINE_CODE_STUB(StringLength, TurboFanCodeStub);
+};
+
+class StrictEqualStub final : public TurboFanCodeStub {
+ public:
+  explicit StrictEqualStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  void GenerateAssembly(compiler::CodeStubAssembler* assembler) const final;
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
+  DEFINE_CODE_STUB(StrictEqual, TurboFanCodeStub);
+};
+
+class StrictNotEqualStub final : public TurboFanCodeStub {
+ public:
+  explicit StrictNotEqualStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  void GenerateAssembly(compiler::CodeStubAssembler* assembler) const final;
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
+  DEFINE_CODE_STUB(StrictNotEqual, TurboFanCodeStub);
 };
 
 class ToBooleanStub final : public TurboFanCodeStub {
@@ -2418,26 +2440,28 @@ class TransitionElementsKindStub : public HydrogenCodeStub {
   DEFINE_HYDROGEN_CODE_STUB(TransitionElementsKind, HydrogenCodeStub);
 };
 
-
-class AllocateHeapNumberStub final : public HydrogenCodeStub {
+class AllocateHeapNumberStub : public TurboFanCodeStub {
  public:
   explicit AllocateHeapNumberStub(Isolate* isolate)
-      : HydrogenCodeStub(isolate) {}
+      : TurboFanCodeStub(isolate) {}
 
- private:
+  void InitializeDescriptor(CodeStubDescriptor* descriptor) override;
+  void GenerateAssembly(compiler::CodeStubAssembler* assembler) const override;
+
   DEFINE_CALL_INTERFACE_DESCRIPTOR(AllocateHeapNumber);
-  DEFINE_HYDROGEN_CODE_STUB(AllocateHeapNumber, HydrogenCodeStub);
+  DEFINE_CODE_STUB(AllocateHeapNumber, TurboFanCodeStub);
 };
 
-
-class AllocateMutableHeapNumberStub final : public HydrogenCodeStub {
+class AllocateMutableHeapNumberStub : public TurboFanCodeStub {
  public:
   explicit AllocateMutableHeapNumberStub(Isolate* isolate)
-      : HydrogenCodeStub(isolate) {}
+      : TurboFanCodeStub(isolate) {}
 
- private:
+  void InitializeDescriptor(CodeStubDescriptor* descriptor) override;
+  void GenerateAssembly(compiler::CodeStubAssembler* assembler) const override;
+
   DEFINE_CALL_INTERFACE_DESCRIPTOR(AllocateMutableHeapNumber);
-  DEFINE_HYDROGEN_CODE_STUB(AllocateMutableHeapNumber, HydrogenCodeStub);
+  DEFINE_CODE_STUB(AllocateMutableHeapNumber, TurboFanCodeStub);
 };
 
 

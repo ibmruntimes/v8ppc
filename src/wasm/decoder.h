@@ -77,33 +77,42 @@ class Decoder {
     return check(base, offset, 8, msg) ? read_u64(base + offset) : 0;
   }
 
+  // Reads a variable-length unsigned integer (little endian).
   uint32_t checked_read_u32v(const byte* base, int offset, int* length,
-                             const char* msg = "expected LEB128") {
-    if (!check(base, offset, 1, msg)) {
-      *length = 0;
-      return 0;
-    }
+                             const char* msg = "expected LEB32") {
+    return checked_read_leb<uint32_t>(base, offset, length, msg);
+  }
 
-    const ptrdiff_t kMaxDiff = 5;  // maximum 5 bytes.
-    const byte* ptr = base + offset;
-    const byte* end = ptr + kMaxDiff;
-    if (end > limit_) end = limit_;
-    int shift = 0;
-    byte b = 0;
-    uint32_t result = 0;
-    while (ptr < end) {
-      b = *ptr++;
-      result = result | ((b & 0x7F) << shift);
-      if ((b & 0x80) == 0) break;
-      shift += 7;
+  // Reads a variable-length signed integer (little endian).
+  int32_t checked_read_i32v(const byte* base, int offset, int* length,
+                            const char* msg = "expected SLEB32") {
+    uint32_t result = checked_read_u32v(base, offset, length, msg);
+    if (*length == 5) return bit_cast<int32_t>(result);
+    if (*length > 0) {
+      int shift = 32 - 7 * *length;
+      // Perform sign extension.
+      return bit_cast<int32_t>(result << shift) >> shift;
     }
-    DCHECK_LE(ptr - (base + offset), kMaxDiff);
-    *length = static_cast<int>(ptr - (base + offset));
-    if (ptr == end && (b & 0x80)) {
-      error(base, ptr, msg);
-      return 0;
+    return 0;
+  }
+
+  // Reads a variable-length unsigned integer (little endian).
+  uint64_t checked_read_u64v(const byte* base, int offset, int* length,
+                             const char* msg = "expected LEB64") {
+    return checked_read_leb<uint64_t>(base, offset, length, msg);
+  }
+
+  // Reads a variable-length signed integer (little endian).
+  int64_t checked_read_i64v(const byte* base, int offset, int* length,
+                            const char* msg = "expected SLEB64") {
+    uint64_t result = checked_read_u64v(base, offset, length, msg);
+    if (*length == 10) return bit_cast<int64_t>(result);
+    if (*length > 0) {
+      int shift = 64 - 7 * *length;
+      // Perform sign extension.
+      return bit_cast<int64_t>(result << shift) >> shift;
     }
-    return result;
+    return 0;
   }
 
   // Reads a single 16-bit unsigned integer (little endian).
@@ -232,12 +241,6 @@ class Decoder {
     }
   }
 
-  bool RangeOk(const byte* pc, int length) {
-    if (pc < start_ || pc_ >= limit_) return false;
-    if ((pc + length) >= limit_) return false;
-    return true;
-  }
-
   void error(const char* msg) { error(pc_, nullptr, msg); }
 
   void error(const byte* pc, const char* msg) { error(pc, nullptr, msg); }
@@ -287,8 +290,8 @@ class Decoder {
       result.start = start_;
       result.error_pc = error_pc_;
       result.error_pt = error_pt_;
-      result.error_msg = error_msg_;
-      error_msg_.Reset(nullptr);
+      // transfer ownership of the error to the result.
+      result.error_msg.Reset(error_msg_.Detach());
     } else {
       result.error_code = kSuccess;
     }
@@ -310,6 +313,9 @@ class Decoder {
   bool ok() const { return error_pc_ == nullptr; }
   bool failed() const { return error_pc_ != nullptr; }
 
+  const byte* start() { return start_; }
+  const byte* pc() { return pc_; }
+
  protected:
   const byte* start_;
   const byte* pc_;
@@ -318,6 +324,47 @@ class Decoder {
   const byte* error_pc_;
   const byte* error_pt_;
   base::SmartArrayPointer<char> error_msg_;
+
+ private:
+  template <typename IntType>
+  IntType checked_read_leb(const byte* base, int offset, int* length,
+                           const char* msg) {
+    if (!check(base, offset, 1, msg)) {
+      *length = 0;
+      return 0;
+    }
+
+    const int kMaxLength = (sizeof(IntType) * 8 + 6) / 7;
+    const byte* ptr = base + offset;
+    const byte* end = ptr + kMaxLength;
+    if (end > limit_) end = limit_;
+    int shift = 0;
+    byte b = 0;
+    IntType result = 0;
+    while (ptr < end) {
+      b = *ptr++;
+      result = result | (static_cast<IntType>(b & 0x7F) << shift);
+      if ((b & 0x80) == 0) break;
+      shift += 7;
+    }
+    DCHECK_LE(ptr - (base + offset), kMaxLength);
+    *length = static_cast<int>(ptr - (base + offset));
+    if (ptr == end) {
+      // Check there are no bits set beyond the bitwidth of {IntType}.
+      const int kExtraBits = (1 + kMaxLength * 7) - (sizeof(IntType) * 8);
+      const byte kExtraBitsMask =
+          static_cast<byte>((0xFF << (8 - kExtraBits)) & 0xFF);
+      if (*length == kMaxLength && (b & kExtraBitsMask) != 0) {
+        error(base, ptr, "extra bits in varint");
+        return 0;
+      }
+      if ((b & 0x80) != 0) {
+        error(base, ptr, msg);
+        return 0;
+      }
+    }
+    return result;
+  }
 };
 
 #undef TRACE

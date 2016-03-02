@@ -1961,6 +1961,8 @@ int JSObject::GetHeaderSize(InstanceType type) {
   // field operations considerably on average.
   if (type == JS_OBJECT_TYPE) return JSObject::kHeaderSize;
   switch (type) {
+    case JS_SPECIAL_API_OBJECT_TYPE:
+      return JSObject::kHeaderSize;
     case JS_GENERATOR_OBJECT_TYPE:
       return JSGeneratorObject::kSize;
     case JS_MODULE_TYPE:
@@ -4538,16 +4540,6 @@ bool Map::is_migration_target() {
 }
 
 
-void Map::set_is_strong() {
-  set_bit_field3(IsStrong::update(bit_field3(), true));
-}
-
-
-bool Map::is_strong() {
-  return IsStrong::decode(bit_field3());
-}
-
-
 void Map::set_new_target_is_base(bool value) {
   set_bit_field3(NewTargetIsBase::update(bit_field3(), value));
 }
@@ -6058,26 +6050,6 @@ bool SharedFunctionInfo::IsSubjectToDebugging() { return !IsBuiltin(); }
 
 bool SharedFunctionInfo::OptimizedCodeMapIsCleared() const {
   return optimized_code_map() == GetHeap()->cleared_optimized_code_map();
-}
-
-
-// static
-void SharedFunctionInfo::AddToOptimizedCodeMap(
-    Handle<SharedFunctionInfo> shared, Handle<Context> native_context,
-    Handle<Code> code, Handle<LiteralsArray> literals, BailoutId osr_ast_id) {
-  AddToOptimizedCodeMapInternal(shared, native_context, code, literals,
-                                osr_ast_id);
-}
-
-
-// static
-void SharedFunctionInfo::AddLiteralsToOptimizedCodeMap(
-    Handle<SharedFunctionInfo> shared, Handle<Context> native_context,
-    Handle<LiteralsArray> literals) {
-  Isolate* isolate = shared->GetIsolate();
-  Handle<Oddball> undefined = isolate->factory()->undefined_value();
-  AddToOptimizedCodeMapInternal(shared, native_context, undefined, literals,
-                                BailoutId::None());
 }
 
 
