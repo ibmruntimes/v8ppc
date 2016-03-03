@@ -908,9 +908,7 @@ bool HeapObject::IsJSGlobalProxy() const {
 
 TYPE_CHECKER(JSGlobalObject, JS_GLOBAL_OBJECT_TYPE)
 
-bool HeapObject::IsUndetectableObject() const {
-  return map()->is_undetectable();
-}
+bool HeapObject::IsUndetectable() const { return map()->is_undetectable(); }
 
 bool HeapObject::IsAccessCheckNeeded() const {
   if (IsJSGlobalProxy()) {
@@ -1961,8 +1959,6 @@ int JSObject::GetHeaderSize(InstanceType type) {
   // field operations considerably on average.
   if (type == JS_OBJECT_TYPE) return JSObject::kHeaderSize;
   switch (type) {
-    case JS_SPECIAL_API_OBJECT_TYPE:
-      return JSObject::kHeaderSize;
     case JS_GENERATOR_OBJECT_TYPE:
       return JSGeneratorObject::kSize;
     case JS_MODULE_TYPE:
