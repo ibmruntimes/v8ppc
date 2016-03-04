@@ -491,23 +491,6 @@ class CompilationInfo {
 };
 
 
-// A wrapper around a CompilationInfo that detaches the Handles from
-// the underlying DeferredHandleScope and stores them in info_ on
-// destruction.
-class CompilationHandleScope BASE_EMBEDDED {
- public:
-  explicit CompilationHandleScope(CompilationInfo* info)
-      : deferred_(info->isolate()), info_(info) {}
-  ~CompilationHandleScope() {
-    info_->set_deferred_handles(deferred_.Detach());
-  }
-
- private:
-  DeferredHandleScope deferred_;
-  CompilationInfo* info_;
-};
-
-
 class HGraph;
 class LChunk;
 
@@ -588,26 +571,28 @@ class OptimizedCompileJob: public ZoneObject {
   };
 };
 
-
-// The V8 compiler
+// The V8 compiler API.
+//
+// This is the central hub for dispatching to the various compilers within V8.
+// Logic for which compiler to choose and how to wire compilation results into
+// the object heap should be kept inside this class.
 //
 // General strategy: Source code is translated into an anonymous function w/o
 // parameters which then can be executed. If the source code contains other
-// functions, they will be compiled and allocated as part of the compilation
-// of the source code.
-
-// Please note this interface returns shared function infos.  This means you
-// need to call Factory::NewFunctionFromSharedFunctionInfo before you have a
-// real function with a context.
-
+// functions, they might be compiled and allocated as part of the compilation
+// of the source code or deferred for lazy compilation at a later point.
 class Compiler : public AllStatic {
  public:
-  MUST_USE_RESULT static MaybeHandle<Code> GetUnoptimizedCode(
-      Handle<JSFunction> function);
-  MUST_USE_RESULT static MaybeHandle<Code> GetLazyCode(
-      Handle<JSFunction> function);
+  enum ConcurrencyMode { NOT_CONCURRENT, CONCURRENT };
+
+  // ===========================================================================
+  // The following family of methods ensures a given function is compiled. The
+  // general contract is that failures will be reported by returning {false},
+  // whereas successful compilation ensures the {is_compiled} predicate on the
+  // given function holds.
 
   static bool Compile(Handle<JSFunction> function, ClearExceptionFlag flag);
+  static bool CompileOptimized(Handle<JSFunction> function, ConcurrencyMode);
   static bool CompileDebugCode(Handle<JSFunction> function);
   static bool CompileDebugCode(Handle<SharedFunctionInfo> shared);
   static void CompileForLiveEdit(Handle<Script> script);
@@ -618,6 +603,15 @@ class Compiler : public AllStatic {
   static bool Analyze(ParseInfo* info);
   // Adds deoptimization support, requires ParseAndAnalyze.
   static bool EnsureDeoptimizationSupport(CompilationInfo* info);
+
+  // ===========================================================================
+  // The following family of methods instantiates new functions for script or
+  // function literals. The decision whether those functions have been compiled
+  // is left to the discretion of the compiler.
+  //
+  // Please note this interface returns shared function infos.  This means you
+  // need to call Factory::NewFunctionFromSharedFunctionInfo before you have a
+  // real function with a context.
 
   // Compile a String source within a context for eval.
   MUST_USE_RESULT static MaybeHandle<JSFunction> GetFunctionFromEval(
@@ -648,15 +642,19 @@ class Compiler : public AllStatic {
   static Handle<SharedFunctionInfo> GetSharedFunctionInfoForNative(
       v8::Extension* extension, Handle<String> name);
 
-  enum ConcurrencyMode { NOT_CONCURRENT, CONCURRENT };
+  // ===========================================================================
+  // The following family of methods provides support for OSR. Code generated
+  // for entry via OSR might not be suitable for normal entry, hence will be
+  // returned directly to the caller.
+  //
+  // Please note this interface is the only part dealing with {Code} objects
+  // directly. Other methods are agnostic to {Code} and can use an interpreter
+  // instead of generating JIT code for a function at all.
 
-  // Generate and return optimized code or start a concurrent optimization job.
-  // In the latter case, return the InOptimizationQueue builtin.  On failure,
-  // return the empty handle.
-  MUST_USE_RESULT static MaybeHandle<Code> GetOptimizedCode(
-      Handle<JSFunction> function, ConcurrencyMode mode,
-      BailoutId osr_ast_id = BailoutId::None(),
-      JavaScriptFrame* osr_frame = nullptr);
+  // Generate and return optimized code for OSR, or empty handle on failure.
+  MUST_USE_RESULT static MaybeHandle<Code> GetOptimizedCodeForOSR(
+      Handle<JSFunction> function, ConcurrencyMode mode, BailoutId osr_ast_id,
+      JavaScriptFrame* osr_frame);
 
   // Generate and return code from previously queued optimization job.
   // On failure, return the empty handle.

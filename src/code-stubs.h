@@ -46,7 +46,6 @@ namespace internal {
   V(RegExpExec)                             \
   V(StoreBufferOverflow)                    \
   V(StoreElement)                           \
-  V(StringCompare)                          \
   V(StubFailureTrampoline)                  \
   V(SubString)                              \
   V(ToNumber)                               \
@@ -101,10 +100,18 @@ namespace internal {
   V(AllocateHeapNumber)                     \
   V(AllocateMutableHeapNumber)              \
   V(StringLength)                           \
+  V(LessThan)                               \
+  V(LessThanOrEqual)                        \
+  V(GreaterThan)                            \
+  V(GreaterThanOrEqual)                     \
   V(StrictEqual)                            \
   V(StrictNotEqual)                         \
   V(StringEqual)                            \
   V(StringNotEqual)                         \
+  V(StringLessThan)                         \
+  V(StringLessThanOrEqual)                  \
+  V(StringGreaterThan)                      \
+  V(StringGreaterThanOrEqual)               \
   V(ToBoolean)                              \
   /* IC Handler stubs */                    \
   V(ArrayBufferViewLoadField)               \
@@ -351,11 +358,10 @@ class CodeStub BASE_EMBEDDED {
   Handle<Code> GenerateCode() override;                               \
   DEFINE_CODE_STUB(NAME, SUPER)
 
-#define DEFINE_TURBOFAN_CODE_STUB(NAME, SUPER)                          \
- public:                                                                \
-  CallInterfaceDescriptor GetCallInterfaceDescriptor() const override { \
-    return DESC##Descriptor(isolate());                                 \
-  };                                                                    \
+#define DEFINE_TURBOFAN_CODE_STUB(NAME, SUPER)                  \
+ public:                                                        \
+  void GenerateAssembly(compiler::CodeStubAssembler* assembler) \
+      const override;                                           \
   DEFINE_CODE_STUB(NAME, SUPER)
 
 #define DEFINE_HANDLER_CODE_STUB(NAME, SUPER) \
@@ -629,60 +635,116 @@ class StringLengthStub : public TurboFanCodeStub {
   InlineCacheState GetICState() const override { return MONOMORPHIC; }
   ExtraICState GetExtraICState() const override { return Code::LOAD_IC; }
 
-  void GenerateAssembly(compiler::CodeStubAssembler* assembler) const override;
-
   DEFINE_CALL_INTERFACE_DESCRIPTOR(LoadWithVector);
-  DEFINE_CODE_STUB(StringLength, TurboFanCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(StringLength, TurboFanCodeStub);
+};
+
+class LessThanStub final : public TurboFanCodeStub {
+ public:
+  explicit LessThanStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
+  DEFINE_TURBOFAN_CODE_STUB(LessThan, TurboFanCodeStub);
+};
+
+class LessThanOrEqualStub final : public TurboFanCodeStub {
+ public:
+  explicit LessThanOrEqualStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
+  DEFINE_TURBOFAN_CODE_STUB(LessThanOrEqual, TurboFanCodeStub);
+};
+
+class GreaterThanStub final : public TurboFanCodeStub {
+ public:
+  explicit GreaterThanStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
+  DEFINE_TURBOFAN_CODE_STUB(GreaterThan, TurboFanCodeStub);
+};
+
+class GreaterThanOrEqualStub final : public TurboFanCodeStub {
+ public:
+  explicit GreaterThanOrEqualStub(Isolate* isolate)
+      : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
+  DEFINE_TURBOFAN_CODE_STUB(GreaterThanOrEqual, TurboFanCodeStub);
 };
 
 class StrictEqualStub final : public TurboFanCodeStub {
  public:
   explicit StrictEqualStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
-  void GenerateAssembly(compiler::CodeStubAssembler* assembler) const final;
-
   DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
-  DEFINE_CODE_STUB(StrictEqual, TurboFanCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(StrictEqual, TurboFanCodeStub);
 };
 
 class StrictNotEqualStub final : public TurboFanCodeStub {
  public:
   explicit StrictNotEqualStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
-  void GenerateAssembly(compiler::CodeStubAssembler* assembler) const final;
-
   DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
-  DEFINE_CODE_STUB(StrictNotEqual, TurboFanCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(StrictNotEqual, TurboFanCodeStub);
 };
 
 class StringEqualStub final : public TurboFanCodeStub {
  public:
   explicit StringEqualStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
-  void GenerateAssembly(compiler::CodeStubAssembler* assembler) const final;
-
   DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
-  DEFINE_CODE_STUB(StringEqual, TurboFanCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(StringEqual, TurboFanCodeStub);
 };
 
 class StringNotEqualStub final : public TurboFanCodeStub {
  public:
   explicit StringNotEqualStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
-  void GenerateAssembly(compiler::CodeStubAssembler* assembler) const final;
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
+  DEFINE_TURBOFAN_CODE_STUB(StringNotEqual, TurboFanCodeStub);
+};
+
+class StringLessThanStub final : public TurboFanCodeStub {
+ public:
+  explicit StringLessThanStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
-  DEFINE_CODE_STUB(StringNotEqual, TurboFanCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(StringLessThan, TurboFanCodeStub);
+};
+
+class StringLessThanOrEqualStub final : public TurboFanCodeStub {
+ public:
+  explicit StringLessThanOrEqualStub(Isolate* isolate)
+      : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
+  DEFINE_TURBOFAN_CODE_STUB(StringLessThanOrEqual, TurboFanCodeStub);
+};
+
+class StringGreaterThanStub final : public TurboFanCodeStub {
+ public:
+  explicit StringGreaterThanStub(Isolate* isolate)
+      : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
+  DEFINE_TURBOFAN_CODE_STUB(StringGreaterThan, TurboFanCodeStub);
+};
+
+class StringGreaterThanOrEqualStub final : public TurboFanCodeStub {
+ public:
+  explicit StringGreaterThanOrEqualStub(Isolate* isolate)
+      : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
+  DEFINE_TURBOFAN_CODE_STUB(StringGreaterThanOrEqual, TurboFanCodeStub);
 };
 
 class ToBooleanStub final : public TurboFanCodeStub {
  public:
   explicit ToBooleanStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
-  void GenerateAssembly(compiler::CodeStubAssembler* assembler) const final;
-
   DEFINE_CALL_INTERFACE_DESCRIPTOR(ToBoolean);
-  DEFINE_CODE_STUB(ToBoolean, TurboFanCodeStub);
+  DEFINE_TURBOFAN_CODE_STUB(ToBoolean, TurboFanCodeStub);
 };
 
 enum StringAddFlags {
@@ -2910,16 +2972,6 @@ class ToObjectStub final : public HydrogenCodeStub {
   DEFINE_CALL_INTERFACE_DESCRIPTOR(ToObject);
   DEFINE_HYDROGEN_CODE_STUB(ToObject, HydrogenCodeStub);
 };
-
-
-class StringCompareStub : public PlatformCodeStub {
- public:
-  explicit StringCompareStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(StringCompare);
-  DEFINE_PLATFORM_CODE_STUB(StringCompare, PlatformCodeStub);
-};
-
 
 #undef DEFINE_CALL_INTERFACE_DESCRIPTOR
 #undef DEFINE_PLATFORM_CODE_STUB

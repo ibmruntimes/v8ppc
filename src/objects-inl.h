@@ -1049,15 +1049,24 @@ bool Object::HasSpecificClassOf(String* name) {
 MaybeHandle<Object> Object::GetProperty(Handle<Object> object,
                                         Handle<Name> name) {
   LookupIterator it(object, name);
+  if (!it.IsFound()) return it.factory()->undefined_value();
   return GetProperty(&it);
 }
 
 MaybeHandle<Object> Object::GetElement(Isolate* isolate, Handle<Object> object,
                                        uint32_t index) {
   LookupIterator it(isolate, object, index);
+  if (!it.IsFound()) return it.factory()->undefined_value();
   return GetProperty(&it);
 }
 
+Handle<Object> JSReceiver::GetDataProperty(Handle<JSReceiver> object,
+                                           Handle<Name> name) {
+  LookupIterator it(object, name,
+                    LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
+  if (!it.IsFound()) return it.factory()->undefined_value();
+  return GetDataProperty(&it);
+}
 
 MaybeHandle<Object> Object::SetElement(Isolate* isolate, Handle<Object> object,
                                        uint32_t index, Handle<Object> value,
@@ -1959,6 +1968,8 @@ int JSObject::GetHeaderSize(InstanceType type) {
   // field operations considerably on average.
   if (type == JS_OBJECT_TYPE) return JSObject::kHeaderSize;
   switch (type) {
+    case JS_SPECIAL_API_OBJECT_TYPE:
+      return JSObject::kHeaderSize;
     case JS_GENERATOR_OBJECT_TYPE:
       return JSGeneratorObject::kSize;
     case JS_MODULE_TYPE:
@@ -4734,7 +4745,6 @@ Code::StubType Code::type() {
   return ExtractTypeFromFlags(flags());
 }
 
-
 // For initialization.
 void Code::set_raw_kind_specific_flags1(int value) {
   WRITE_INT_FIELD(this, kKindSpecificFlags1Offset, value);
@@ -5015,19 +5025,16 @@ Address Code::constant_pool() {
   return constant_pool;
 }
 
-
 Code::Flags Code::ComputeFlags(Kind kind, InlineCacheState ic_state,
                                ExtraICState extra_ic_state, StubType type,
                                CacheHolderFlag holder) {
   // Compute the bit mask.
-  unsigned int bits = KindField::encode(kind)
-      | ICStateField::encode(ic_state)
-      | TypeField::encode(type)
-      | ExtraICStateField::encode(extra_ic_state)
-      | CacheHolderField::encode(holder);
+  unsigned int bits = KindField::encode(kind) | ICStateField::encode(ic_state) |
+                      TypeField::encode(type) |
+                      ExtraICStateField::encode(extra_ic_state) |
+                      CacheHolderField::encode(holder);
   return static_cast<Flags>(bits);
 }
-
 
 Code::Flags Code::ComputeMonomorphicFlags(Kind kind,
                                           ExtraICState extra_ic_state,
@@ -5061,7 +5068,6 @@ ExtraICState Code::ExtractExtraICStateFromFlags(Flags flags) {
 Code::StubType Code::ExtractTypeFromFlags(Flags flags) {
   return TypeField::decode(flags);
 }
-
 
 CacheHolderFlag Code::ExtractCacheHolderFromFlags(Flags flags) {
   return CacheHolderField::decode(flags);
@@ -7167,11 +7173,12 @@ Handle<Smi> JSReceiver::GetOrCreateIdentityHash(Handle<JSReceiver> object) {
       : JSObject::GetOrCreateIdentityHash(Handle<JSObject>::cast(object));
 }
 
-
-Object* JSReceiver::GetIdentityHash() {
-  return IsJSProxy()
-      ? JSProxy::cast(this)->GetIdentityHash()
-      : JSObject::cast(this)->GetIdentityHash();
+Handle<Object> JSReceiver::GetIdentityHash(Isolate* isolate,
+                                           Handle<JSReceiver> receiver) {
+  return receiver->IsJSProxy() ? JSProxy::GetIdentityHash(
+                                     isolate, Handle<JSProxy>::cast(receiver))
+                               : JSObject::GetIdentityHash(
+                                     isolate, Handle<JSObject>::cast(receiver));
 }
 
 

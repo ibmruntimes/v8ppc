@@ -204,19 +204,20 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
 DEFINE_IMPLICATION(es_staging, harmony_tailcalls)
 
 // Features that are still work in progress (behind individual flags).
-#define HARMONY_INPROGRESS(V)                                                \
-  V(harmony_object_observe, "harmony Object.observe")                        \
-  V(harmony_modules, "harmony modules")                                      \
-  V(harmony_function_sent, "harmony function.sent")                          \
-  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")                  \
-  V(harmony_simd, "harmony simd")                                            \
-  V(harmony_do_expressions, "harmony do-expressions")                        \
-  V(harmony_tailcalls, "harmony tail calls")                                 \
-  V(harmony_regexp_property, "harmony unicode regexp property classes")
+#define HARMONY_INPROGRESS(V)                                           \
+  V(harmony_object_observe, "harmony Object.observe")                   \
+  V(harmony_modules, "harmony modules")                                 \
+  V(harmony_function_sent, "harmony function.sent")                     \
+  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")             \
+  V(harmony_simd, "harmony simd")                                       \
+  V(harmony_do_expressions, "harmony do-expressions")                   \
+  V(harmony_tailcalls, "harmony tail calls")                            \
+  V(harmony_regexp_property, "harmony unicode regexp property classes") \
+  V(harmony_restrictive_declarations,                                   \
+    "harmony limitations on sloppy mode function declarations")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                                    \
-  V(harmony_function_name, "harmony Function name inference")                \
   V(harmony_regexp_lookbehind, "harmony regexp lookbehind")                  \
   V(harmony_instanceof, "harmony instanceof support")                        \
   V(harmony_object_values_entries, "harmony Object.values / Object.entries") \
@@ -228,6 +229,7 @@ DEFINE_IMPLICATION(es_staging, harmony_tailcalls)
   V(harmony_default_parameters, "harmony default parameters")             \
   V(harmony_destructuring_assignment, "harmony destructuring assignment") \
   V(harmony_destructuring_bind, "harmony destructuring bind")             \
+  V(harmony_function_name, "harmony Function name inference")             \
   V(harmony_iterator_close, "harmony iterator finalization")              \
   V(harmony_tostring, "harmony toString")                                 \
   V(harmony_regexps, "harmony regular expression extensions")             \
