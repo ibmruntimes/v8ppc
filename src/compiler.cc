@@ -306,6 +306,23 @@ base::SmartArrayPointer<char> CompilationInfo::GetDebugName() const {
   return name;
 }
 
+StackFrame::Type CompilationInfo::GetOutputStackFrameType() const {
+  switch (output_code_kind()) {
+    case Code::STUB:
+    case Code::HANDLER:
+    case Code::BUILTIN:
+      return StackFrame::STUB;
+    case Code::WASM_FUNCTION:
+      return StackFrame::WASM;
+    case Code::JS_TO_WASM_FUNCTION:
+      return StackFrame::JS_TO_WASM;
+    case Code::WASM_TO_JS_FUNCTION:
+      return StackFrame::WASM_TO_JS;
+    default:
+      UNIMPLEMENTED();
+      return StackFrame::NONE;
+  }
+}
 
 bool CompilationInfo::ExpectsJSReceiverAsReceiver() {
   return is_sloppy(language_mode()) && !is_native();
@@ -1530,8 +1547,7 @@ MaybeHandle<JSFunction> Compiler::GetFunctionFromEval(
   return result;
 }
 
-
-Handle<SharedFunctionInfo> Compiler::CompileScript(
+Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForScript(
     Handle<String> source, Handle<Object> script_name, int line_offset,
     int column_offset, ScriptOriginOptions resource_options,
     Handle<Object> source_map_url, Handle<Context> context,
@@ -1666,8 +1682,7 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
   return result;
 }
 
-
-Handle<SharedFunctionInfo> Compiler::CompileStreamedScript(
+Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForStreamedScript(
     Handle<Script> script, ParseInfo* parse_info, int source_length) {
   Isolate* isolate = script->GetIsolate();
   // TODO(titzer): increment the counters in caller.
@@ -1846,18 +1861,15 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForNative(
   return shared;
 }
 
-MaybeHandle<Code> Compiler::GetOptimizedCodeForOSR(
-    Handle<JSFunction> function, Compiler::ConcurrencyMode mode,
-    BailoutId osr_ast_id, JavaScriptFrame* osr_frame) {
+MaybeHandle<Code> Compiler::GetOptimizedCodeForOSR(Handle<JSFunction> function,
+                                                   BailoutId osr_ast_id,
+                                                   JavaScriptFrame* osr_frame) {
   DCHECK(!osr_ast_id.IsNone());
-  // TODO(mstarzinger): Once concurrent OSR is removed, the following check
-  // should hold and can be enabled.
-  // DCHECK_NOT_NULL(osr_frame);
-  return GetOptimizedCode(function, mode, osr_ast_id, osr_frame);
+  DCHECK_NOT_NULL(osr_frame);
+  return GetOptimizedCode(function, NOT_CONCURRENT, osr_ast_id, osr_frame);
 }
 
-MaybeHandle<Code> Compiler::GetConcurrentlyOptimizedCode(
-    OptimizedCompileJob* job) {
+void Compiler::FinalizeOptimizedCompileJob(OptimizedCompileJob* job) {
   // Take ownership of compilation info.  Deleting compilation info
   // also tears down the zone and the recompile job.
   base::SmartPointer<CompilationInfo> info(job->info());
@@ -1893,7 +1905,8 @@ MaybeHandle<Code> Compiler::GetConcurrentlyOptimizedCode(
         info->closure()->ShortPrint();
         PrintF("]\n");
       }
-      return Handle<Code>(*info->code());
+      info->closure()->ReplaceCode(*info->code());
+      return;
     }
   }
 
@@ -1903,7 +1916,7 @@ MaybeHandle<Code> Compiler::GetConcurrentlyOptimizedCode(
     info->closure()->ShortPrint();
     PrintF(" because: %s]\n", GetBailoutReason(info->bailout_reason()));
   }
-  return MaybeHandle<Code>();
+  info->closure()->ReplaceCode(shared->code());
 }
 
 void Compiler::PostInstantiation(Handle<JSFunction> function,

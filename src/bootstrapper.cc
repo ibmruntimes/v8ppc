@@ -901,7 +901,7 @@ Handle<JSGlobalObject> Genesis::CreateNewGlobals(
 #ifdef DEBUG
     LookupIterator it(prototype, factory()->constructor_string(),
                       LookupIterator::OWN_SKIP_INTERCEPTOR);
-    Handle<Object> value = JSReceiver::GetProperty(&it).ToHandleChecked();
+    Handle<Object> value = Object::GetProperty(&it).ToHandleChecked();
     DCHECK(it.IsFound());
     DCHECK_EQ(*isolate()->object_function(), *value);
 #endif
@@ -1885,10 +1885,11 @@ bool Bootstrapper::CompileNative(Isolate* isolate, Vector<const char> name,
 
   Handle<String> script_name =
       isolate->factory()->NewStringFromUtf8(name).ToHandleChecked();
-  Handle<SharedFunctionInfo> function_info = Compiler::CompileScript(
-      source, script_name, 0, 0, ScriptOriginOptions(), Handle<Object>(),
-      context, NULL, NULL, ScriptCompiler::kNoCompileOptions, natives_flag,
-      false);
+  Handle<SharedFunctionInfo> function_info =
+      Compiler::GetSharedFunctionInfoForScript(
+          source, script_name, 0, 0, ScriptOriginOptions(), Handle<Object>(),
+          context, NULL, NULL, ScriptCompiler::kNoCompileOptions, natives_flag,
+          false);
   if (function_info.is_null()) return false;
 
   DCHECK(context->IsNativeContext());
@@ -1942,7 +1943,7 @@ bool Genesis::CompileExtension(Isolate* isolate, v8::Extension* extension) {
   if (!cache->Lookup(name, &function_info)) {
     Handle<String> script_name =
         factory->NewStringFromUtf8(name).ToHandleChecked();
-    function_info = Compiler::CompileScript(
+    function_info = Compiler::GetSharedFunctionInfoForScript(
         source, script_name, 0, 0, ScriptOriginOptions(), Handle<Object>(),
         context, extension, NULL, ScriptCompiler::kNoCompileOptions,
         EXTENSION_CODE, false);
@@ -1982,7 +1983,7 @@ static Handle<JSObject> ResolveBuiltinIdHolder(Handle<Context> native_context,
   Handle<String> property_string = factory->InternalizeUtf8String(property);
   DCHECK(!property_string.is_null());
   Handle<JSObject> object = Handle<JSObject>::cast(
-      Object::GetProperty(global, property_string).ToHandleChecked());
+      JSReceiver::GetProperty(global, property_string).ToHandleChecked());
   if (strcmp("prototype", inner) == 0) {
     Handle<JSFunction> function = Handle<JSFunction>::cast(object);
     return Handle<JSObject>(JSObject::cast(function->prototype()));
@@ -1990,7 +1991,7 @@ static Handle<JSObject> ResolveBuiltinIdHolder(Handle<Context> native_context,
   Handle<String> inner_string = factory->InternalizeUtf8String(inner);
   DCHECK(!inner_string.is_null());
   Handle<Object> value =
-      Object::GetProperty(object, inner_string).ToHandleChecked();
+      JSReceiver::GetProperty(object, inner_string).ToHandleChecked();
   return Handle<JSObject>::cast(value);
 }
 
@@ -2736,7 +2737,7 @@ bool Genesis::InstallNatives(GlobalContextType context_type) {
   {
     Handle<String> key = factory()->Promise_string();
     Handle<JSFunction> function = Handle<JSFunction>::cast(
-        Object::GetProperty(handle(native_context()->global_object()), key)
+        JSReceiver::GetProperty(handle(native_context()->global_object()), key)
             .ToHandleChecked());
     JSFunction::EnsureHasInitialMap(function);
     function->initial_map()->set_instance_type(JS_PROMISE_TYPE);
@@ -3035,7 +3036,7 @@ static void InstallBuiltinFunctionId(Handle<JSObject> holder,
                                      BuiltinFunctionId id) {
   Isolate* isolate = holder->GetIsolate();
   Handle<Object> function_object =
-      Object::GetProperty(isolate, holder, function_name).ToHandleChecked();
+      JSReceiver::GetProperty(isolate, holder, function_name).ToHandleChecked();
   Handle<JSFunction> function = Handle<JSFunction>::cast(function_object);
   function->shared()->set_builtin_function_id(id);
 }

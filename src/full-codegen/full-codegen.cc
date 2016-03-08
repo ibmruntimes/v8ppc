@@ -879,7 +879,6 @@ void FullCodeGenerator::VisitExpressionStatement(ExpressionStatement* stmt) {
 
 void FullCodeGenerator::VisitEmptyStatement(EmptyStatement* stmt) {
   Comment cmnt(masm_, "[ EmptyStatement");
-  SetStatementPosition(stmt);
 }
 
 
@@ -1780,27 +1779,6 @@ void BackEdgeTable::Revert(Isolate* isolate, Code* unoptimized) {
   unoptimized->set_allow_osr_at_loop_nesting_level(0);
   // Assert that none of the back edges are patched anymore.
   DCHECK(Verify(isolate, unoptimized));
-}
-
-
-void BackEdgeTable::AddStackCheck(Handle<Code> code, uint32_t pc_offset) {
-  DisallowHeapAllocation no_gc;
-  Isolate* isolate = code->GetIsolate();
-  Address pc = code->instruction_start() + pc_offset;
-  Code* patch = isolate->builtins()->builtin(Builtins::kOsrAfterStackCheck);
-  PatchAt(*code, pc, OSR_AFTER_STACK_CHECK, patch);
-}
-
-
-void BackEdgeTable::RemoveStackCheck(Handle<Code> code, uint32_t pc_offset) {
-  DisallowHeapAllocation no_gc;
-  Isolate* isolate = code->GetIsolate();
-  Address pc = code->instruction_start() + pc_offset;
-
-  if (OSR_AFTER_STACK_CHECK == GetBackEdgeState(isolate, *code, pc)) {
-    Code* patch = isolate->builtins()->builtin(Builtins::kOnStackReplacement);
-    PatchAt(*code, pc, ON_STACK_REPLACEMENT, patch);
-  }
 }
 
 
