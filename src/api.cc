@@ -157,6 +157,18 @@ class InternalEscapableScope : public v8::EscapableHandleScope {
 };
 
 
+#ifdef V8_ENABLE_CHECKS
+void CheckMicrotasksScopesConsistency(i::Isolate* isolate) {
+  auto handle_scope_implementer = isolate->handle_scope_implementer();
+  if (handle_scope_implementer->microtasks_policy() ==
+      v8::MicrotasksPolicy::kScoped) {
+    DCHECK(handle_scope_implementer->GetMicrotasksScopeDepth() ||
+           !handle_scope_implementer->DebugMicrotasksScopeDepthIsZero());
+  }
+}
+#endif
+
+
 class CallDepthScope {
  public:
   explicit CallDepthScope(i::Isolate* isolate, Local<Context> context,
@@ -176,6 +188,9 @@ class CallDepthScope {
     if (!context_.IsEmpty()) context_->Exit();
     if (!escaped_) isolate_->handle_scope_implementer()->DecrementCallDepth();
     if (do_callback_) isolate_->FireCallCompletedCallback();
+#ifdef V8_ENABLE_CHECKS
+    if (do_callback_) CheckMicrotasksScopesConsistency(isolate_);
+#endif
   }
 
   void Escape() {
@@ -3485,7 +3500,7 @@ Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
   i::Handle<i::Object> value_obj = Utils::OpenHandle(*value);
 
   i::LookupIterator it = i::LookupIterator::PropertyOrElement(
-      isolate, self, key_obj, i::LookupIterator::OWN);
+      isolate, self, key_obj, self, i::LookupIterator::OWN);
   Maybe<bool> result =
       i::JSReceiver::CreateDataProperty(&it, value_obj, i::Object::DONT_THROW);
   has_pending_exception = result.IsNothing();
@@ -3502,7 +3517,7 @@ Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
   i::Handle<i::JSReceiver> self = Utils::OpenHandle(this);
   i::Handle<i::Object> value_obj = Utils::OpenHandle(*value);
 
-  i::LookupIterator it(isolate, self, index, i::LookupIterator::OWN);
+  i::LookupIterator it(isolate, self, index, self, i::LookupIterator::OWN);
   Maybe<bool> result =
       i::JSReceiver::CreateDataProperty(&it, value_obj, i::Object::DONT_THROW);
   has_pending_exception = result.IsNothing();
@@ -3608,7 +3623,7 @@ Maybe<bool> v8::Object::SetPrivate(Local<Context> context, Local<Private> key,
         i::Handle<i::Symbol>::cast(key_obj), &desc, i::Object::DONT_THROW);
   }
   auto js_object = i::Handle<i::JSObject>::cast(self);
-  i::LookupIterator it(js_object, key_obj);
+  i::LookupIterator it(js_object, key_obj, js_object);
   has_pending_exception = i::JSObject::DefineOwnPropertyIgnoreAttributes(
                               &it, value_obj, i::DONT_ENUM)
                               .is_null();
@@ -3768,11 +3783,10 @@ MaybeLocal<Array> v8::Object::GetPropertyNames(Local<Context> context) {
       !i::JSReceiver::GetKeys(self, i::INCLUDE_PROTOS, i::ENUMERABLE_STRINGS)
            .ToHandle(&value);
   RETURN_ON_FAILED_EXECUTION(Array);
-  // Because we use caching to speed up enumeration it is important
-  // to never change the result of the basic enumeration function so
-  // we clone the result.
-  auto elms = isolate->factory()->CopyFixedArray(value);
-  auto result = isolate->factory()->NewJSArrayWithElements(elms);
+  DCHECK(self->map()->EnumLength() == i::kInvalidEnumCacheSentinel ||
+         self->map()->EnumLength() == 0 ||
+         self->map()->instance_descriptors()->GetEnumCache() != *value);
+  auto result = isolate->factory()->NewJSArrayWithElements(value);
   RETURN_ESCAPED(Utils::ToLocal(result));
 }
 
@@ -4158,7 +4172,7 @@ MaybeLocal<Value> v8::Object::GetRealNamedProperty(Local<Context> context,
   auto self = Utils::OpenHandle(this);
   auto key_obj = Utils::OpenHandle(*key);
   i::LookupIterator it = i::LookupIterator::PropertyOrElement(
-      isolate, self, key_obj,
+      isolate, self, key_obj, self,
       i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
   Local<Value> result;
   has_pending_exception = !ToLocal<Value>(i::Object::GetProperty(&it), &result);
@@ -4182,7 +4196,7 @@ Maybe<PropertyAttribute> v8::Object::GetRealNamedPropertyAttributes(
   auto self = Utils::OpenHandle(this);
   auto key_obj = Utils::OpenHandle(*key);
   i::LookupIterator it = i::LookupIterator::PropertyOrElement(
-      isolate, self, key_obj,
+      isolate, self, key_obj, self,
       i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
   auto result = i::JSReceiver::GetPropertyAttributes(&it);
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(PropertyAttribute);
@@ -7297,10 +7311,12 @@ Isolate::SuppressMicrotaskExecutionScope::SuppressMicrotaskExecutionScope(
     Isolate* isolate)
     : isolate_(reinterpret_cast<i::Isolate*>(isolate)) {
   isolate_->handle_scope_implementer()->IncrementCallDepth();
+  isolate_->handle_scope_implementer()->IncrementMicrotasksSuppressions();
 }
 
 
 Isolate::SuppressMicrotaskExecutionScope::~SuppressMicrotaskExecutionScope() {
+  isolate_->handle_scope_implementer()->DecrementMicrotasksSuppressions();
   isolate_->handle_scope_implementer()->DecrementCallDepth();
 }
 
@@ -7442,6 +7458,7 @@ void Isolate::SetPromiseRejectCallback(PromiseRejectCallback callback) {
 
 
 void Isolate::RunMicrotasks() {
+  DCHECK(MicrotasksPolicy::kScoped != GetMicrotasksPolicy());
   reinterpret_cast<i::Isolate*>(this)->RunMicrotasks();
 }
 
@@ -7465,12 +7482,26 @@ void Isolate::EnqueueMicrotask(MicrotaskCallback microtask, void* data) {
 
 
 void Isolate::SetAutorunMicrotasks(bool autorun) {
-  reinterpret_cast<i::Isolate*>(this)->set_autorun_microtasks(autorun);
+  SetMicrotasksPolicy(
+      autorun ? MicrotasksPolicy::kAuto : MicrotasksPolicy::kExplicit);
 }
 
 
 bool Isolate::WillAutorunMicrotasks() const {
-  return reinterpret_cast<const i::Isolate*>(this)->autorun_microtasks();
+  return GetMicrotasksPolicy() == MicrotasksPolicy::kAuto;
+}
+
+
+void Isolate::SetMicrotasksPolicy(MicrotasksPolicy policy) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->handle_scope_implementer()->set_microtasks_policy(policy);
+}
+
+
+MicrotasksPolicy Isolate::GetMicrotasksPolicy() const {
+  i::Isolate* isolate =
+      reinterpret_cast<i::Isolate*>(const_cast<Isolate*>(this));
+  return isolate->handle_scope_implementer()->microtasks_policy();
 }
 
 
@@ -7706,6 +7737,49 @@ void Isolate::VisitWeakHandles(PersistentHandleVisitor* visitor) {
   VisitorAdapter visitor_adapter(visitor);
   isolate->global_handles()->IterateWeakRootsInNewSpaceWithClassIds(
       &visitor_adapter);
+}
+
+
+MicrotasksScope::MicrotasksScope(Isolate* isolate, MicrotasksScope::Type type)
+    : isolate_(reinterpret_cast<i::Isolate*>(isolate)),
+      run_(type == MicrotasksScope::kRunMicrotasks) {
+  auto handle_scope_implementer = isolate_->handle_scope_implementer();
+  if (run_) handle_scope_implementer->IncrementMicrotasksScopeDepth();
+#ifdef V8_ENABLE_CHECKS
+  if (!run_) handle_scope_implementer->IncrementDebugMicrotasksScopeDepth();
+#endif
+}
+
+
+MicrotasksScope::~MicrotasksScope() {
+  auto handle_scope_implementer = isolate_->handle_scope_implementer();
+  if (run_) {
+    handle_scope_implementer->DecrementMicrotasksScopeDepth();
+    if (MicrotasksPolicy::kScoped ==
+        handle_scope_implementer->microtasks_policy()) {
+      PerformCheckpoint(reinterpret_cast<Isolate*>(isolate_));
+    }
+  }
+#ifdef V8_ENABLE_CHECKS
+  if (!run_) handle_scope_implementer->DecrementDebugMicrotasksScopeDepth();
+#endif
+}
+
+
+void MicrotasksScope::PerformCheckpoint(Isolate* v8Isolate) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8Isolate);
+  if (IsExecutionTerminatingCheck(isolate)) return;
+  auto handle_scope_implementer = isolate->handle_scope_implementer();
+  if (!handle_scope_implementer->GetMicrotasksScopeDepth() &&
+      !handle_scope_implementer->HasMicrotasksSuppressions()) {
+    isolate->RunMicrotasks();
+  }
+}
+
+
+int MicrotasksScope::GetCurrentDepth(Isolate* v8Isolate) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8Isolate);
+  return isolate->handle_scope_implementer()->GetMicrotasksScopeDepth();
 }
 
 

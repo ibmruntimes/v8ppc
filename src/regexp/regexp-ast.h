@@ -78,7 +78,10 @@ class CharacterRange {
   CharacterRange() : from_(0), to_(0) {}
   // For compatibility with the CHECK_OK macro
   CharacterRange(void* null) { DCHECK_NULL(null); }  // NOLINT
-  CharacterRange(uc32 from, uc32 to) : from_(from), to_(to) {}
+  CharacterRange(uc32 from, uc32 to) : from_(from), to_(to) {
+    DCHECK(0 <= from && to <= String::kMaxCodePoint);
+    DCHECK(static_cast<uint32_t>(from) <= static_cast<uint32_t>(to));
+  }
   static void AddClassEscape(uc16 type, ZoneList<CharacterRange>* ranges,
                              Zone* zone);
   static Vector<const int> GetWordBounds();
@@ -86,8 +89,6 @@ class CharacterRange {
     return CharacterRange(value, value);
   }
   static inline CharacterRange Range(uc32 from, uc32 to) {
-    DCHECK(0 <= from && to <= String::kMaxCodePoint);
-    DCHECK(static_cast<uint32_t>(from) <= static_cast<uint32_t>(to));
     return CharacterRange(from, to);
   }
   static inline CharacterRange Everything() {

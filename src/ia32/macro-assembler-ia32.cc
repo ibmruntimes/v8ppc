@@ -682,7 +682,6 @@ void MacroAssembler::DebugBreak() {
   call(ces.GetCode(), RelocInfo::DEBUGGER_STATEMENT);
 }
 
-
 void MacroAssembler::Cvtsi2sd(XMMRegister dst, const Operand& src) {
   xorps(dst, dst);
   cvtsi2sd(dst, src);
@@ -707,6 +706,27 @@ void MacroAssembler::Cvtui2ss(XMMRegister dst, Register src, Register tmp) {
   bind(&jmp_return);
 }
 
+void MacroAssembler::PairShl(Register dst, Register src, uint8_t shift) {
+  if (shift >= 32) {
+    mov(dst, src);
+    shl(dst, shift - 32);
+    xor_(src, src);
+  } else {
+    shld(dst, src, shift);
+    shl(src, shift);
+  }
+}
+
+void MacroAssembler::PairShl_cl(Register dst, Register src) {
+  shld_cl(dst, src);
+  shl_cl(src);
+  Label done;
+  test(ecx, Immediate(0x20));
+  j(equal, &done, Label::kNear);
+  mov(dst, src);
+  xor_(src, src);
+  bind(&done);
+}
 
 bool MacroAssembler::IsUnsafeImmediate(const Immediate& x) {
   static const int kMaxImmediateBits = 17;
@@ -2086,6 +2106,87 @@ void MacroAssembler::JumpToExternalReference(const ExternalReference& ext) {
   jmp(ces.GetCode(), RelocInfo::CODE_TARGET);
 }
 
+void MacroAssembler::PrepareForTailCall(
+    const ParameterCount& callee_args_count, Register caller_args_count_reg,
+    Register scratch0, Register scratch1, ReturnAddressState ra_state,
+    int number_of_temp_values_after_return_address) {
+#if DEBUG
+  if (callee_args_count.is_reg()) {
+    DCHECK(!AreAliased(callee_args_count.reg(), caller_args_count_reg, scratch0,
+                       scratch1));
+  } else {
+    DCHECK(!AreAliased(caller_args_count_reg, scratch0, scratch1));
+  }
+  DCHECK(ra_state != ReturnAddressState::kNotOnStack ||
+         number_of_temp_values_after_return_address == 0);
+#endif
+
+  // Calculate the destination address where we will put the return address
+  // after we drop current frame.
+  Register new_sp_reg = scratch0;
+  if (callee_args_count.is_reg()) {
+    sub(caller_args_count_reg, callee_args_count.reg());
+    lea(new_sp_reg,
+        Operand(ebp, caller_args_count_reg, times_pointer_size,
+                StandardFrameConstants::kCallerPCOffset -
+                    number_of_temp_values_after_return_address * kPointerSize));
+  } else {
+    lea(new_sp_reg, Operand(ebp, caller_args_count_reg, times_pointer_size,
+                            StandardFrameConstants::kCallerPCOffset -
+                                (callee_args_count.immediate() +
+                                 number_of_temp_values_after_return_address) *
+                                    kPointerSize));
+  }
+
+  if (FLAG_debug_code) {
+    cmp(esp, new_sp_reg);
+    Check(below, kStackAccessBelowStackPointer);
+  }
+
+  // Copy return address from caller's frame to current frame's return address
+  // to avoid its trashing and let the following loop copy it to the right
+  // place.
+  Register tmp_reg = scratch1;
+  if (ra_state == ReturnAddressState::kOnStack) {
+    mov(tmp_reg, Operand(ebp, StandardFrameConstants::kCallerPCOffset));
+    mov(Operand(esp, number_of_temp_values_after_return_address * kPointerSize),
+        tmp_reg);
+  } else {
+    DCHECK(ReturnAddressState::kNotOnStack == ra_state);
+    DCHECK_EQ(0, number_of_temp_values_after_return_address);
+    Push(Operand(ebp, StandardFrameConstants::kCallerPCOffset));
+  }
+
+  // Restore caller's frame pointer now as it could be overwritten by
+  // the copying loop.
+  mov(ebp, Operand(ebp, StandardFrameConstants::kCallerFPOffset));
+
+  // +2 here is to copy both receiver and return address.
+  Register count_reg = caller_args_count_reg;
+  if (callee_args_count.is_reg()) {
+    lea(count_reg, Operand(callee_args_count.reg(),
+                           2 + number_of_temp_values_after_return_address));
+  } else {
+    mov(count_reg, Immediate(callee_args_count.immediate() + 2 +
+                             number_of_temp_values_after_return_address));
+    // TODO(ishell): Unroll copying loop for small immediate values.
+  }
+
+  // Now copy callee arguments to the caller frame going backwards to avoid
+  // callee arguments corruption (source and destination areas could overlap).
+  Label loop, entry;
+  jmp(&entry, Label::kNear);
+  bind(&loop);
+  dec(count_reg);
+  mov(tmp_reg, Operand(esp, count_reg, times_pointer_size, 0));
+  mov(Operand(new_sp_reg, count_reg, times_pointer_size, 0), tmp_reg);
+  bind(&entry);
+  cmp(count_reg, Immediate(0));
+  j(not_equal, &loop, Label::kNear);
+
+  // Leave current frame.
+  mov(esp, new_sp_reg);
+}
 
 void MacroAssembler::InvokePrologue(const ParameterCount& expected,
                                     const ParameterCount& actual,

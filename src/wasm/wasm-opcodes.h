@@ -80,7 +80,7 @@ std::ostream& operator<<(std::ostream& os, const FunctionSig& function);
   V(Select, 0x05, _)              \
   V(Br, 0x06, _)                  \
   V(BrIf, 0x07, _)                \
-  V(TableSwitch, 0x08, _)         \
+  V(BrTable, 0x08, _)             \
   V(Return, 0x14, _)              \
   V(Unreachable, 0x15, _)
 
@@ -97,7 +97,8 @@ std::ostream& operator<<(std::ostream& os, const FunctionSig& function);
   V(StoreGlobal, 0x11, _)      \
   V(CallFunction, 0x12, _)     \
   V(CallIndirect, 0x13, _)     \
-  V(CallImport, 0x1F, _)
+  V(CallImport, 0x1F, _)       \
+  V(DeclLocals, 0x1E, _)
 
 // Load memory expressions.
 #define FOREACH_LOAD_MEM_OPCODE(V) \

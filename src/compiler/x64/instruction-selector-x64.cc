@@ -1356,6 +1356,7 @@ void InstructionSelector::EmitPrepareArguments(
 
 bool InstructionSelector::IsTailCallAddressImmediate() { return true; }
 
+int InstructionSelector::GetTempsCountForTailCallFromJSFunction() { return 3; }
 
 namespace {
 
@@ -1785,7 +1786,7 @@ void InstructionSelector::VisitWord64Equal(Node* const node) {
 void InstructionSelector::VisitInt32AddWithOverflow(Node* node) {
   if (Node* ovf = NodeProperties::FindProjection(node, 1)) {
     FlagsContinuation cont = FlagsContinuation::ForSet(kOverflow, ovf);
-    VisitBinop(this, node, kX64Add32, &cont);
+    return VisitBinop(this, node, kX64Add32, &cont);
   }
   FlagsContinuation cont;
   VisitBinop(this, node, kX64Add32, &cont);

@@ -27,6 +27,7 @@ var kWasmV2 = 0;
 var kWasmV3 = 0;
 
 var kHeaderSize = 8;
+var kPageSize = 65536;
 
 function bytesWithHeader() {
   var buffer = new ArrayBuffer(kHeaderSize + arguments.length);
@@ -46,6 +47,8 @@ function bytesWithHeader() {
   }
   return buffer;
 }
+
+var kDeclNoLocals = 0;
 
 // Section declaration constants
 var kDeclMemory = 0x00;

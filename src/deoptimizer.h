@@ -399,15 +399,7 @@ class OptimizedFunctionVisitor BASE_EMBEDDED {
 
 class Deoptimizer : public Malloced {
  public:
-  enum BailoutType {
-    EAGER,
-    LAZY,
-    SOFT,
-    // This last bailout type is not really a bailout, but used by the
-    // debugger to deoptimize stack frames to allow inspection.
-    DEBUGGER,
-    kBailoutTypesWithCodeEntry = SOFT + 1
-  };
+  enum BailoutType { EAGER, LAZY, SOFT, kLastBailoutType = SOFT };
 
 #define DEOPT_MESSAGES_CONSTANTS(C, T) C,
   enum DeoptReason {
@@ -608,6 +600,7 @@ class Deoptimizer : public Malloced {
                             unsigned output_offset,
                             const char* debug_hint_string);
 
+  unsigned ComputeInputFrameAboveFpFixedSize() const;
   unsigned ComputeInputFrameSize() const;
   static unsigned ComputeJavascriptFixedSize(SharedFunctionInfo* shared);
   static unsigned ComputeInterpretedFixedSize(SharedFunctionInfo* shared);
@@ -667,8 +660,15 @@ class Deoptimizer : public Malloced {
   // Array of output frame descriptions.
   FrameDescription** output_;
 
+  // Caller frame details computed from input frame.
+  intptr_t caller_frame_top_;
+  intptr_t caller_fp_;
+  intptr_t caller_pc_;
+  intptr_t caller_constant_pool_;
+  intptr_t input_frame_context_;
+
   // Key for lookup of previously materialized objects
-  Address stack_fp_;
+  intptr_t stack_fp_;
 
   TranslatedState translated_state_;
   struct ValueToMaterialize {
@@ -882,8 +882,8 @@ class DeoptimizerData {
 
  private:
   MemoryAllocator* allocator_;
-  int deopt_entry_code_entries_[Deoptimizer::kBailoutTypesWithCodeEntry];
-  MemoryChunk* deopt_entry_code_[Deoptimizer::kBailoutTypesWithCodeEntry];
+  int deopt_entry_code_entries_[Deoptimizer::kLastBailoutType + 1];
+  MemoryChunk* deopt_entry_code_[Deoptimizer::kLastBailoutType + 1];
 
   Deoptimizer* current_;
 

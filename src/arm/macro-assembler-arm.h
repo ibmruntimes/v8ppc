@@ -545,6 +545,11 @@ class MacroAssembler: public Assembler {
   void VmovLow(Register dst, DwVfpRegister src);
   void VmovLow(DwVfpRegister dst, Register src);
 
+  void PairLsl(Register dst_low, Register dst_high, Register src_low,
+               Register src_high, Register scratch, Register shift);
+  void PairLsl(Register dst_low, Register dst_high, Register src_low,
+               Register src_high, uint32_t shift);
+
   // Loads the number from object into dst register.
   // If |object| is neither smi nor heap number, |not_number| is jumped to
   // with |object| still intact.
@@ -636,6 +641,15 @@ class MacroAssembler: public Assembler {
 
   // ---------------------------------------------------------------------------
   // JavaScript invokes
+
+  // Removes current frame and its arguments from the stack preserving
+  // the arguments and a return address pushed to the stack for the next call.
+  // Both |callee_args_count| and |caller_args_count_reg| do not include
+  // receiver. |callee_args_count| is not modified, |caller_args_count_reg|
+  // is trashed.
+  void PrepareForTailCall(const ParameterCount& callee_args_count,
+                          Register caller_args_count_reg, Register scratch0,
+                          Register scratch1);
 
   // Invoke the JavaScript function code by either calling or jumping.
   void InvokeFunctionCode(Register function, Register new_target,

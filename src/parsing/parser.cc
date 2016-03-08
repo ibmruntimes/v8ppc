@@ -491,6 +491,20 @@ Expression* ParserTraits::BuildUnaryExpression(Expression* expression,
   return factory->NewUnaryOperation(op, expression, pos);
 }
 
+Expression* ParserTraits::BuildIteratorResult(Expression* value, bool done) {
+  int pos = RelocInfo::kNoPosition;
+  AstNodeFactory* factory = parser_->factory();
+  Zone* zone = parser_->zone();
+
+  if (value == nullptr) value = factory->NewUndefinedLiteral(pos);
+
+  auto args = new (zone) ZoneList<Expression*>(2, zone);
+  args->Add(value, zone);
+  args->Add(factory->NewBooleanLiteral(done, pos), zone);
+
+  return factory->NewCallRuntime(Runtime::kInlineCreateIterResultObject, args,
+                                 pos);
+}
 
 Expression* ParserTraits::NewThrowReferenceError(
     MessageTemplate::Template message, int pos) {
@@ -2783,14 +2797,10 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
   ExpectSemicolon(CHECK_OK);
 
   if (is_generator()) {
-    Expression* generator = factory()->NewVariableProxy(
-        function_state_->generator_object_variable());
-    Expression* yield = factory()->NewYield(
-        generator, return_value, Yield::kFinal, loc.beg_pos);
-    result = factory()->NewExpressionStatement(yield, loc.beg_pos);
-  } else {
-    result = factory()->NewReturnStatement(return_value, loc.beg_pos);
+    return_value = BuildIteratorResult(return_value, true);
   }
+
+  result = factory()->NewReturnStatement(return_value, loc.beg_pos);
 
   Scope* decl_scope = scope_->DeclarationScope();
   if (decl_scope->is_script_scope() || decl_scope->is_eval_scope()) {
@@ -3240,76 +3250,16 @@ Expression* Parser::BuildIteratorNextResult(Expression* iterator,
       throw_call, pos);
 }
 
-
 void Parser::InitializeForEachStatement(ForEachStatement* stmt,
                                         Expression* each, Expression* subject,
-                                        Statement* body,
-                                        bool is_destructuring) {
-  DCHECK(!is_destructuring || allow_harmony_destructuring_assignment());
+                                        Statement* body) {
   ForOfStatement* for_of = stmt->AsForOfStatement();
-
   if (for_of != NULL) {
-    Variable* iterator = scope_->NewTemporary(
-        ast_value_factory()->dot_iterator_string());
-    Variable* result = scope_->NewTemporary(
-        ast_value_factory()->dot_result_string());
-
-    Expression* assign_iterator;
-    Expression* next_result;
-    Expression* result_done;
-    Expression* assign_each;
-
-    // iterator = subject[Symbol.iterator]()
-    // Hackily disambiguate o from o.next and o [Symbol.iterator]().
-    // TODO(verwaest): Come up with a better solution.
-    assign_iterator = factory()->NewAssignment(
-        Token::ASSIGN, factory()->NewVariableProxy(iterator),
-        GetIterator(subject, factory(), subject->position() - 2),
-        subject->position());
-
-    // !%_IsJSReceiver(result = iterator.next()) &&
-    //     %ThrowIteratorResultNotAnObject(result)
-    {
-      // result = iterator.next()
-      Expression* iterator_proxy = factory()->NewVariableProxy(iterator);
-      // Hackily disambiguate o from o.next and o [Symbol.iterator]().
-      // TODO(verwaest): Come up with a better solution.
-      next_result = BuildIteratorNextResult(iterator_proxy, result,
-                                            subject->position() - 1);
-    }
-
-    // result.done
-    {
-      Expression* done_literal = factory()->NewStringLiteral(
-          ast_value_factory()->done_string(), RelocInfo::kNoPosition);
-      Expression* result_proxy = factory()->NewVariableProxy(result);
-      result_done = factory()->NewProperty(
-          result_proxy, done_literal, RelocInfo::kNoPosition);
-    }
-
-    // each = result.value
-    {
-      Expression* value_literal = factory()->NewStringLiteral(
-          ast_value_factory()->value_string(), RelocInfo::kNoPosition);
-      Expression* result_proxy = factory()->NewVariableProxy(result);
-      Expression* result_value = factory()->NewProperty(
-          result_proxy, value_literal, RelocInfo::kNoPosition);
-      assign_each = factory()->NewAssignment(Token::ASSIGN, each, result_value,
-                                             RelocInfo::kNoPosition);
-      if (is_destructuring) {
-        assign_each = PatternRewriter::RewriteDestructuringAssignment(
-            this, assign_each->AsAssignment(), scope_);
-      }
-    }
-
-    for_of->Initialize(each, subject, body,
-                       iterator,
-                       assign_iterator,
-                       next_result,
-                       result_done,
-                       assign_each);
+    InitializeForOfStatement(for_of, each, subject, body,
+                             RelocInfo::kNoPosition);
   } else {
-    if (is_destructuring) {
+    if (each->IsArrayLiteral() || each->IsObjectLiteral()) {
+      DCHECK(allow_harmony_destructuring_assignment());
       Variable* temp =
           scope_->NewTemporary(ast_value_factory()->empty_string());
       VariableProxy* temp_proxy = factory()->NewVariableProxy(temp);
@@ -3328,6 +3278,71 @@ void Parser::InitializeForEachStatement(ForEachStatement* stmt,
     }
     stmt->Initialize(each, subject, body);
   }
+}
+
+void Parser::InitializeForOfStatement(ForOfStatement* for_of, Expression* each,
+                                      Expression* iterable, Statement* body,
+                                      int iterable_pos) {
+  Variable* iterator =
+      scope_->NewTemporary(ast_value_factory()->dot_iterator_string());
+  Variable* result =
+      scope_->NewTemporary(ast_value_factory()->dot_result_string());
+
+  Expression* assign_iterator;
+  Expression* next_result;
+  Expression* result_done;
+  Expression* assign_each;
+
+  // Hackily disambiguate o from o.next and o [Symbol.iterator]().
+  // TODO(verwaest): Come up with a better solution.
+  int get_iterator_pos = iterable_pos != RelocInfo::kNoPosition
+                             ? iterable_pos
+                             : iterable->position() - 2;
+  int next_result_pos = iterable_pos != RelocInfo::kNoPosition
+                            ? iterable_pos
+                            : iterable->position() - 1;
+
+  // iterator = iterable[Symbol.iterator]()
+  assign_iterator = factory()->NewAssignment(
+      Token::ASSIGN, factory()->NewVariableProxy(iterator),
+      GetIterator(iterable, factory(), get_iterator_pos), iterable->position());
+
+  // !%_IsJSReceiver(result = iterator.next()) &&
+  //     %ThrowIteratorResultNotAnObject(result)
+  {
+    // result = iterator.next()
+    Expression* iterator_proxy = factory()->NewVariableProxy(iterator);
+    next_result =
+        BuildIteratorNextResult(iterator_proxy, result, next_result_pos);
+  }
+
+  // result.done
+  {
+    Expression* done_literal = factory()->NewStringLiteral(
+        ast_value_factory()->done_string(), RelocInfo::kNoPosition);
+    Expression* result_proxy = factory()->NewVariableProxy(result);
+    result_done = factory()->NewProperty(result_proxy, done_literal,
+                                         RelocInfo::kNoPosition);
+  }
+
+  // each = result.value
+  {
+    Expression* value_literal = factory()->NewStringLiteral(
+        ast_value_factory()->value_string(), RelocInfo::kNoPosition);
+    Expression* result_proxy = factory()->NewVariableProxy(result);
+    Expression* result_value = factory()->NewProperty(
+        result_proxy, value_literal, RelocInfo::kNoPosition);
+    assign_each = factory()->NewAssignment(Token::ASSIGN, each, result_value,
+                                           RelocInfo::kNoPosition);
+    if (each->IsArrayLiteral() || each->IsObjectLiteral()) {
+      DCHECK(allow_harmony_destructuring_assignment());
+      assign_each = PatternRewriter::RewriteDestructuringAssignment(
+          this, assign_each->AsAssignment(), scope_);
+    }
+  }
+
+  for_of->Initialize(each, iterable, body, iterator, assign_iterator,
+                     next_result, result_done, assign_each);
 }
 
 Statement* Parser::DesugarLexicalBindingsInForStatement(
@@ -3734,8 +3749,7 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
           body_block->statements()->Add(body, zone());
           VariableProxy* temp_proxy =
               factory()->NewVariableProxy(temp, each_beg_pos, each_end_pos);
-          InitializeForEachStatement(loop, temp_proxy, enumerable, body_block,
-                                     false);
+          InitializeForEachStatement(loop, temp_proxy, enumerable, body_block);
         }
         body_scope->set_end_position(scanner()->location().end_pos);
         body_scope = body_scope->FinalizeBlockScope();
@@ -3833,8 +3847,7 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         // For legacy compat reasons, give for loops similar treatment to
         // if statements in allowing a function declaration for a body
         Statement* body = ParseScopedStatement(NULL, true, CHECK_OK);
-        InitializeForEachStatement(loop, expression, enumerable, body,
-                                   is_destructuring);
+        InitializeForEachStatement(loop, expression, enumerable, body);
 
         Statement* final_loop = loop->IsForOfStatement()
             ? FinalizeForOfStatement(
@@ -4664,15 +4677,12 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
     if (IsGeneratorFunction(kind)) {
       // We produce:
       //
-      // try { InitialYield; ...body...; FinalYield }
+      // try { InitialYield; ...body...; return {value: undefined, done: true} }
       // finally { %GeneratorClose(generator) }
       //
       // - InitialYield yields the actual generator object.
-      // - FinalYield yields {value: foo, done: true} where foo is the
-      //   completion value of body.  (This is needed here in case the body
-      //   falls through without an explicit return.)
-      // - Any return statement inside the body will be converted into a similar
-      //   FinalYield.
+      // - Any return statement inside the body will have its argument wrapped
+      //   in a "done" iterator result object.
       // - If the generator terminates for whatever reason, we must close it.
       //   Hence the finally clause.
 
@@ -4690,8 +4700,8 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
             Token::INIT, init_proxy, allocation, RelocInfo::kNoPosition);
         VariableProxy* get_proxy = factory()->NewVariableProxy(
             function_state_->generator_object_variable());
-        Yield* yield = factory()->NewYield(
-            get_proxy, assignment, Yield::kInitial, RelocInfo::kNoPosition);
+        Yield* yield =
+            factory()->NewYield(get_proxy, assignment, RelocInfo::kNoPosition);
         try_block->statements()->Add(
             factory()->NewExpressionStatement(yield, RelocInfo::kNoPosition),
             zone());
@@ -4699,15 +4709,9 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
 
       ParseStatementList(try_block->statements(), Token::RBRACE, CHECK_OK);
 
-      VariableProxy* get_proxy = factory()->NewVariableProxy(
-          function_state_->generator_object_variable());
-      Expression* undefined =
-          factory()->NewUndefinedLiteral(RelocInfo::kNoPosition);
-      Yield* yield = factory()->NewYield(get_proxy, undefined, Yield::kFinal,
-                                         RelocInfo::kNoPosition);
-      try_block->statements()->Add(
-          factory()->NewExpressionStatement(yield, RelocInfo::kNoPosition),
-          zone());
+      Statement* final_return = factory()->NewReturnStatement(
+          BuildIteratorResult(nullptr, true), RelocInfo::kNoPosition);
+      try_block->statements()->Add(final_return, zone());
 
       Block* finally_block =
           factory()->NewBlock(nullptr, 1, false, RelocInfo::kNoPosition);
@@ -5658,45 +5662,6 @@ Expression* Parser::RewriteSpreads(ArrayLiteral* lit) {
       Variable* each =
           scope_->NewTemporary(ast_value_factory()->dot_for_string());
       Expression* subject = spread->expression();
-      Variable* iterator =
-          scope_->NewTemporary(ast_value_factory()->dot_iterator_string());
-      Variable* element =
-          scope_->NewTemporary(ast_value_factory()->dot_result_string());
-      // iterator = subject[Symbol.iterator]()
-      Expression* assign_iterator = factory()->NewAssignment(
-          Token::ASSIGN, factory()->NewVariableProxy(iterator),
-          GetIterator(subject, factory(), spread->expression_position()),
-          subject->position());
-      // !%_IsJSReceiver(element = iterator.next()) &&
-      //     %ThrowIteratorResultNotAnObject(element)
-      Expression* next_element;
-      {
-        // element = iterator.next()
-        Expression* iterator_proxy = factory()->NewVariableProxy(iterator);
-        next_element = BuildIteratorNextResult(iterator_proxy, element,
-                                               spread->expression_position());
-      }
-      // element.done
-      Expression* element_done;
-      {
-        Expression* done_literal = factory()->NewStringLiteral(
-            ast_value_factory()->done_string(), RelocInfo::kNoPosition);
-        Expression* element_proxy = factory()->NewVariableProxy(element);
-        element_done = factory()->NewProperty(element_proxy, done_literal,
-                                              RelocInfo::kNoPosition);
-      }
-      // each = element.value
-      Expression* assign_each;
-      {
-        Expression* value_literal = factory()->NewStringLiteral(
-            ast_value_factory()->value_string(), RelocInfo::kNoPosition);
-        Expression* element_proxy = factory()->NewVariableProxy(element);
-        Expression* element_value = factory()->NewProperty(
-            element_proxy, value_literal, RelocInfo::kNoPosition);
-        assign_each = factory()->NewAssignment(
-            Token::ASSIGN, factory()->NewVariableProxy(each), element_value,
-            RelocInfo::kNoPosition);
-      }
       // %AppendElement($R, each)
       Statement* append_body;
       {
@@ -5713,11 +5678,10 @@ Expression* Parser::RewriteSpreads(ArrayLiteral* lit) {
       // for (each of spread) %AppendElement($R, each)
       ForEachStatement* loop = factory()->NewForEachStatement(
           ForEachStatement::ITERATE, nullptr, RelocInfo::kNoPosition);
-      ForOfStatement* for_of = loop->AsForOfStatement();
-      for_of->Initialize(factory()->NewVariableProxy(each), subject,
-                         append_body, iterator, assign_iterator, next_element,
-                         element_done, assign_each);
-      do_block->statements()->Add(for_of, zone());
+      InitializeForOfStatement(loop->AsForOfStatement(),
+                               factory()->NewVariableProxy(each), subject,
+                               append_body, spread->expression_position());
+      do_block->statements()->Add(loop, zone());
     }
   }
   // Now, rewind the original array literal to truncate everything from the
@@ -6112,13 +6076,11 @@ Expression* ParserTraits::RewriteYieldStar(
     set_mode_return = factory->NewExpressionStatement(assignment, nopos);
   }
 
-
-  // RawYield(output);
+  // Yield(output);
   Statement* yield_output;
   {
     Expression* output_proxy = factory->NewVariableProxy(var_output);
-    Yield* yield = factory->NewYield(
-        generator, output_proxy, Yield::kInitial, nopos);
+    Yield* yield = factory->NewYield(generator, output_proxy, nopos);
     yield_output = factory->NewExpressionStatement(yield, nopos);
   }
 

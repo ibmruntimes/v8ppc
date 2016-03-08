@@ -444,6 +444,8 @@ class ParserTraits {
   Expression* BuildUnaryExpression(Expression* expression, Token::Value op,
                                    int pos, AstNodeFactory* factory);
 
+  Expression* BuildIteratorResult(Expression* value, bool done);
+
   // Generate AST node that throws a ReferenceError with the given type.
   Expression* NewThrowReferenceError(MessageTemplate::Template message,
                                      int pos);
@@ -936,8 +938,10 @@ class Parser : public ParserBase<ParserTraits> {
 
   // Initialize the components of a for-in / for-of statement.
   void InitializeForEachStatement(ForEachStatement* stmt, Expression* each,
-                                  Expression* subject, Statement* body,
-                                  bool is_destructuring);
+                                  Expression* subject, Statement* body);
+  void InitializeForOfStatement(ForOfStatement* stmt, Expression* each,
+                                Expression* iterable, Statement* body,
+                                int iterable_pos);
   Statement* DesugarLexicalBindingsInForStatement(
       Scope* inner_scope, VariableMode mode,
       ZoneList<const AstRawString*>* names, ForStatement* loop, Statement* init,
