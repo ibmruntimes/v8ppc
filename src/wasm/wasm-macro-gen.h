@@ -16,9 +16,16 @@
 #define WASM_MODULE_HEADER U32_LE(kWasmMagic), U32_LE(kWasmVersion)
 
 #define SIG_INDEX(v) U16_LE(v)
-#define FUNC_INDEX(v) U16_LE(v)
-#define NAME_OFFSET(v) U32_LE(v)
-#define BR_TARGET(v) U16_LE(v)
+// TODO(binji): make SIG_INDEX match this.
+#define IMPORT_SIG_INDEX(v) U32V_1(v)
+#define FUNC_INDEX(v) U32V_1(v)
+#define NO_NAME U32V_1(0)
+#define NAME_LENGTH(v) U32V_1(v)
+
+#define ZERO_ALIGNMENT 0
+#define ZERO_OFFSET 0
+
+#define BR_TARGET(v) U32_LE(v)
 
 #define MASK_7 ((1 << 7) - 1)
 #define MASK_14 ((1 << 14) - 1)
@@ -71,7 +78,7 @@
 #define WASM_UNREACHABLE kExprUnreachable
 
 #define WASM_BR_TABLE(key, count, ...) \
-  kExprBrTable, U16_LE(count), __VA_ARGS__, key
+  kExprBrTable, U32V_1(count), __VA_ARGS__, key
 
 #define WASM_CASE(x) static_cast<byte>(x), static_cast<byte>(x >> 8)
 #define WASM_CASE_BR(x) static_cast<byte>(x), static_cast<byte>(0x80 | (x) >> 8)
@@ -324,21 +331,19 @@ class LocalDeclEncoder {
 #define WASM_LOAD_MEM(type, index)                                      \
   static_cast<byte>(                                                    \
       v8::internal::wasm::WasmOpcodes::LoadStoreOpcodeOf(type, false)), \
-      v8::internal::wasm::WasmOpcodes::LoadStoreAccessOf(false), index
+      ZERO_ALIGNMENT, ZERO_OFFSET, index
 #define WASM_STORE_MEM(type, index, val)                               \
   static_cast<byte>(                                                   \
       v8::internal::wasm::WasmOpcodes::LoadStoreOpcodeOf(type, true)), \
-      v8::internal::wasm::WasmOpcodes::LoadStoreAccessOf(false), index, val
+      ZERO_ALIGNMENT, ZERO_OFFSET, index, val
 #define WASM_LOAD_MEM_OFFSET(type, offset, index)                       \
   static_cast<byte>(                                                    \
       v8::internal::wasm::WasmOpcodes::LoadStoreOpcodeOf(type, false)), \
-      v8::internal::wasm::WasmOpcodes::LoadStoreAccessOf(true),         \
-      static_cast<byte>(offset), index
+      ZERO_ALIGNMENT, U32V_1(offset), index
 #define WASM_STORE_MEM_OFFSET(type, offset, index, val)                \
   static_cast<byte>(                                                   \
       v8::internal::wasm::WasmOpcodes::LoadStoreOpcodeOf(type, true)), \
-      v8::internal::wasm::WasmOpcodes::LoadStoreAccessOf(true),        \
-      static_cast<byte>(offset), index, val
+      ZERO_ALIGNMENT, U32V_1(offset), index, val
 #define WASM_CALL_FUNCTION(index, ...) \
   kExprCallFunction, static_cast<byte>(index), __VA_ARGS__
 #define WASM_CALL_IMPORT(index, ...) \

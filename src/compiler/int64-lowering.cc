@@ -312,7 +312,51 @@ void Int64Lowering::LowerNode(Node* node) {
       break;
     }
     // kExprI64ShrU:
+    case IrOpcode::kWord64Shr: {
+      // TODO(turbofan): if the shift count >= 32, then we can set the low word
+      // of the output to 0 and just calculate the high word.
+      DCHECK(node->InputCount() == 2);
+      Node* shift = node->InputAt(1);
+      if (HasReplacementLow(shift)) {
+        // We do not have to care about the high word replacement, because
+        // the shift can only be between 0 and 63 anyways.
+        node->ReplaceInput(1, GetReplacementLow(shift));
+      }
+
+      Node* value = node->InputAt(0);
+      node->ReplaceInput(0, GetReplacementLow(value));
+      node->InsertInput(zone(), 1, GetReplacementHigh(value));
+
+      NodeProperties::ChangeOp(node, machine()->Word32PairShr());
+      // We access the additional return values through projections.
+      Node* low_node = graph()->NewNode(common()->Projection(0), node);
+      Node* high_node = graph()->NewNode(common()->Projection(1), node);
+      ReplaceNode(node, low_node, high_node);
+      break;
+    }
     // kExprI64ShrS:
+    case IrOpcode::kWord64Sar: {
+      // TODO(turbofan): if the shift count >= 32, then we can set the low word
+      // of the output to 0 and just calculate the high word.
+      DCHECK(node->InputCount() == 2);
+      Node* shift = node->InputAt(1);
+      if (HasReplacementLow(shift)) {
+        // We do not have to care about the high word replacement, because
+        // the shift can only be between 0 and 63 anyways.
+        node->ReplaceInput(1, GetReplacementLow(shift));
+      }
+
+      Node* value = node->InputAt(0);
+      node->ReplaceInput(0, GetReplacementLow(value));
+      node->InsertInput(zone(), 1, GetReplacementHigh(value));
+
+      NodeProperties::ChangeOp(node, machine()->Word32PairSar());
+      // We access the additional return values through projections.
+      Node* low_node = graph()->NewNode(common()->Projection(0), node);
+      Node* high_node = graph()->NewNode(common()->Projection(1), node);
+      ReplaceNode(node, low_node, high_node);
+      break;
+    }
     // kExprI64Eq:
     case IrOpcode::kWord64Equal: {
       DCHECK(node->InputCount() == 2);
@@ -356,8 +400,31 @@ void Int64Lowering::LowerNode(Node* node) {
     }
 
     // kExprI64SConvertI32:
-    // kExprI64UConvertI32:
-
+    case IrOpcode::kChangeInt32ToInt64: {
+      DCHECK(node->InputCount() == 1);
+      Node* input = node->InputAt(0);
+      if (HasReplacementLow(input)) {
+        input = GetReplacementLow(input);
+      }
+      // We use SAR to preserve the sign in the high word.
+      ReplaceNode(
+          node, input,
+          graph()->NewNode(machine()->Word32Sar(), input,
+                           graph()->NewNode(common()->Int32Constant(31))));
+      node->NullAllInputs();
+      break;
+    }
+    // kExprI64UConvertI32: {
+    case IrOpcode::kChangeUint32ToUint64: {
+      DCHECK(node->InputCount() == 1);
+      Node* input = node->InputAt(0);
+      if (HasReplacementLow(input)) {
+        input = GetReplacementLow(input);
+      }
+      ReplaceNode(node, input, graph()->NewNode(common()->Int32Constant(0)));
+      node->NullAllInputs();
+      break;
+    }
     // kExprF64ReinterpretI64:
     // kExprI64ReinterpretF64:
 

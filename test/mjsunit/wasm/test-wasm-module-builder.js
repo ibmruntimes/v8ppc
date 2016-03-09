@@ -103,7 +103,7 @@ var debug = false;
     var module = new WasmModuleBuilder();
     module.addMemory(1, 1, false);
     module.addFunction("load", [kAstI32, kAstI32])
-        .addBody([kExprI32LoadMem, 0, kExprGetLocal, 0])
+        .addBody([kExprI32LoadMem, 0, 0, kExprGetLocal, 0])
         .exportAs("load");
     module.addDataSegment(0, [9, 9, 9, 9], true);
 
@@ -137,4 +137,17 @@ var debug = false;
     }
     var instance = Wasm.instantiateModule(array2);
     assertEquals(17, instance.exports.blarg());
+})();
+
+(function ImportTestTwoLevel() {
+    var module = new WasmModuleBuilder();
+    var index = module.addImportWithModule("mod", "print", [kAstStmt, kAstI32]);
+    module.addFunction("foo", [kAstStmt])
+        .addBody([kExprCallImport, index, kExprI8Const, 19])
+        .exportAs("main");
+
+    var buffer = module.toBuffer(debug);
+    var instance = Wasm.instantiateModule(buffer, {mod: {print: print}});
+    print("should print 19! ");
+    instance.exports.main();
 })();

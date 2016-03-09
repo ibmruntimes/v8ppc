@@ -194,9 +194,7 @@ void InstructionSelector::VisitStore(Node* node) {
     size_t input_count = 0;
     inputs[input_count++] = g.UseUniqueRegister(base);
     inputs[input_count++] = g.UseUniqueRegister(index);
-    inputs[input_count++] = (write_barrier_kind == kMapWriteBarrier)
-                                ? g.UseRegister(value)
-                                : g.UseUniqueRegister(value);
+    inputs[input_count++] = g.UseUniqueRegister(value);
     RecordWriteMode record_write_mode = RecordWriteMode::kValueIsAny;
     switch (write_barrier_kind) {
       case kNoWriteBarrier:
@@ -398,6 +396,10 @@ void InstructionSelector::VisitWord32Sar(Node* node) {
 }
 
 void InstructionSelector::VisitWord32PairShl(Node* node) { UNIMPLEMENTED(); }
+
+void InstructionSelector::VisitWord32PairShr(Node* node) { UNIMPLEMENTED(); }
+
+void InstructionSelector::VisitWord32PairSar(Node* node) { UNIMPLEMENTED(); }
 
 void InstructionSelector::VisitWord32Ror(Node* node) {
   VisitRRO(this, kMipsRor, node);

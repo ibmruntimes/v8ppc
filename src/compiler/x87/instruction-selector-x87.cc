@@ -193,9 +193,7 @@ void InstructionSelector::VisitStore(Node* node) {
       inputs[input_count++] = g.UseUniqueRegister(index);
       addressing_mode = kMode_MR1;
     }
-    inputs[input_count++] = (write_barrier_kind == kMapWriteBarrier)
-                                ? g.UseRegister(value)
-                                : g.UseUniqueRegister(value);
+    inputs[input_count++] = g.UseUniqueRegister(value);
     RecordWriteMode record_write_mode = RecordWriteMode::kValueIsAny;
     switch (write_barrier_kind) {
       case kNoWriteBarrier:
@@ -566,6 +564,10 @@ void InstructionSelector::VisitWord32PairShl(Node* node) {
 
   Emit(kX87PairShl, 2, outputs, 3, inputs);
 }
+
+void InstructionSelector::VisitWord32PairShr(Node* node) { UNIMPLEMENTED(); }
+
+void InstructionSelector::VisitWord32PairSar(Node* node) { UNIMPLEMENTED(); }
 
 void InstructionSelector::VisitWord32Ror(Node* node) {
   VisitShift(this, node, kX87Ror);

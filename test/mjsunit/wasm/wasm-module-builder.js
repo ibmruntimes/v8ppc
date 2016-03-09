@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-function StringRef(string) {
-    this.pos = -1;
-    this.string = string;
-}
-
 function DataRef(data) {
     this.pos = -1;
     this.data = data;
@@ -78,10 +73,16 @@ WasmModuleBuilder.prototype.addFunction = function(name, sig) {
     return func;
 }
 
+WasmModuleBuilder.prototype.addImportWithModule = function(module, name, sig) {
+  var sig_index = (typeof sig) == "number" ? sig : this.addSignature(sig);
+  this.imports.push({module: module, name: name, sig_index: sig_index});
+  return this.imports.length - 1;
+}
+
 WasmModuleBuilder.prototype.addImport = function(name, sig) {
-    var sig_index = (typeof sig) == "number" ? sig : this.addSignature(sig);
-    this.imports.push({name: name, sig_index: sig_index});
-    return this.imports.length - 1;
+  var sig_index = (typeof sig) == "number" ? sig : this.addSignature(sig);
+  this.imports.push({module: name, name: undefined, sig_index: sig_index});
+  return this.imports.length - 1;
 }
 
 WasmModuleBuilder.prototype.addDataSegment = function(addr, data, init) {
@@ -111,10 +112,10 @@ function emit_u32(bytes, val) {
 }
 
 function emit_string(bytes, string) {
-    bytes.push(new StringRef(string));
-    bytes.push(0);
-    bytes.push(0);
-    bytes.push(0);
+    emit_varint(bytes, string.length);
+    for (var i = 0; i < string.length; i++) {
+      emit_u8(bytes, string.charCodeAt(i));
+    }
 }
 
 function emit_data_ref(bytes, string) {
@@ -158,7 +159,7 @@ WasmModuleBuilder.prototype.toArray = function(debug) {
         emit_varint(bytes, this.signatures.length);
         for (sig of this.signatures) {
             var params = sig.length - 1;
-            emit_u8(bytes, params);
+            emit_varint(bytes, params);
             for (var j = 0; j < sig.length; j++) {
                 emit_u8(bytes, sig[j]);
             }
@@ -171,9 +172,9 @@ WasmModuleBuilder.prototype.toArray = function(debug) {
         emit_u8(bytes, kDeclImportTable);
         emit_varint(bytes, this.imports.length);
         for (imp of this.imports) {
-            emit_u16(bytes, imp.sig_index);
-            emit_string(bytes, "");
-            emit_string(bytes, imp.name);
+            emit_varint(bytes, imp.sig_index);
+            emit_string(bytes, imp.module);
+            emit_string(bytes, imp.name || '');
         }
     }
 
@@ -218,7 +219,7 @@ WasmModuleBuilder.prototype.toArray = function(debug) {
                 local_decls.push({count: l.f64_count, type: kAstF64});
               }
             }
-            emit_u8(bytes, local_decls.length);
+            emit_varint(bytes, local_decls.length);
             for (decl of local_decls) {
               emit_varint(bytes, decl.count);
               emit_u8(bytes, decl.type);
@@ -247,7 +248,7 @@ WasmModuleBuilder.prototype.toArray = function(debug) {
         emit_u8(bytes, kDeclFunctionTable);
         emit_varint(bytes, this.function_table.length);
         for (index of this.function_table) {
-            emit_u16(bytes, index);
+            emit_varint(bytes, index);
         }
     }
 
@@ -257,7 +258,7 @@ WasmModuleBuilder.prototype.toArray = function(debug) {
         emit_varint(bytes, exports);
         for (func of this.functions) {
             for (exp of func.exports) {
-                emit_u16(bytes, func.index);
+                emit_varint(bytes, func.index);
                 emit_string(bytes, exp);
             }
         }
@@ -287,21 +288,12 @@ WasmModuleBuilder.prototype.toArray = function(debug) {
     if (debug) print("emitting end @ " + bytes.length);
     emit_u8(bytes, kDeclEnd);
 
-    // Collect references and canonicalize strings.
+    // Collect references.
     var strings = new Object();
     var data_segments = [];
     var count = 0;
     for (var i = 0; i < bytes.length; i++) {
         var b = bytes[i];
-        if (b instanceof StringRef) {
-            count++;
-            var prev = strings[b.string];
-            if (prev) {
-                bytes[i] = prev;
-            } else {
-                strings[b.string] = b;
-            }
-        }
         if (b instanceof DataRef) {
             data_segments.push(b);
             count++;
@@ -309,18 +301,6 @@ WasmModuleBuilder.prototype.toArray = function(debug) {
     }
 
     if (count > 0) {
-        // Emit strings.
-        if (debug) print("emitting strings @ " + bytes.length);
-        for (str in strings) {
-            var ref = strings[str];
-            if (!(ref instanceof StringRef)) continue;
-            if (debug) print("  \"" + str + "\" @ " + bytes.length);
-            ref.pos = bytes.length;
-            for (var i = 0; i < str.length; i++) {
-                emit_u8(bytes, str.charCodeAt(i));
-            }
-            emit_u8(bytes, 0);  // null terminator.
-        }
         // Emit data.
         if (debug) print("emitting data @ " + bytes.length);
         for (ref of data_segments) {
@@ -332,7 +312,7 @@ WasmModuleBuilder.prototype.toArray = function(debug) {
         // Update references to strings and data.
         for (var i = 0; i < bytes.length; i++) {
             var b = bytes[i];
-            if (b instanceof StringRef || b instanceof DataRef) {
+            if (b instanceof DataRef) {
                 bytes[i] = b.pos & 0xFF;
                 bytes[i + 1] = (b.pos >> 8) & 0xFF;
                 bytes[i + 2] = (b.pos >> 16) & 0xFF;

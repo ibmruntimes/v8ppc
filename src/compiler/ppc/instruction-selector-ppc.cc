@@ -252,9 +252,7 @@ void InstructionSelector::VisitStore(Node* node) {
       inputs[input_count++] = g.UseUniqueRegister(offset);
       addressing_mode = kMode_MRR;
     }
-    inputs[input_count++] = (write_barrier_kind == kMapWriteBarrier)
-                                ? g.UseRegister(value)
-                                : g.UseUniqueRegister(value);
+    inputs[input_count++] = g.UseUniqueRegister(value);
     RecordWriteMode record_write_mode = RecordWriteMode::kValueIsAny;
     switch (write_barrier_kind) {
       case kNoWriteBarrier:
@@ -725,6 +723,11 @@ void InstructionSelector::VisitWord32Shr(Node* node) {
   VisitRRO(this, kPPC_ShiftRight32, node, kShift32Imm);
 }
 
+#if !V8_TARGET_ARCH_PPC64
+void InstructionSelector::VisitWord32PairShr(Node* node) { UNIMPLEMENTED(); }
+
+void InstructionSelector::VisitWord32PairSar(Node* node) { UNIMPLEMENTED(); }
+#endif
 
 #if V8_TARGET_ARCH_PPC64
 void InstructionSelector::VisitWord64Shr(Node* node) {

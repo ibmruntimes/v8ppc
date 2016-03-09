@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --harmony-tailcalls --no-turbo-inlining
+// Flags: --allow-natives-syntax --harmony-tailcalls
 // TODO(v8:4698), TODO(ishell): support these cases.
-// Flags: --nostress-opt
+// Flags: --turbo --nostress-opt
 
 
 Error.prepareStackTrace = (error,stack) => {
@@ -39,8 +39,9 @@ function ident_source(source, ident) {
   return ident + source.replace(/\n/gi, "\n" + ident);
 }
 
+var SHARDS_COUNT = 10;
 
-function run_tests() {
+function run_tests(shard) {
   function inlinable_comment(inlinable) {
     return inlinable ? CAN_INLINE_COMMENT : DONT_INLINE_COMMENT;
   }
@@ -306,11 +307,10 @@ function run_tests() {
     return source;
   }
 
-  // TODO(v8:4698), TODO(ishell): support all commented cases.
   var f_args_variants = ["", "1", "1, 2"];
   var g_args_variants = ["", "10", "10, 20"];
-  var f_inlinable_variants = [/*true,*/ false];
-  var g_inlinable_variants = [/*true,*/ false];
+  var f_inlinable_variants = [true, false];
+  var g_inlinable_variants = [true, false];
   var f_variants = [
       f_cfg_sloppy,
       f_cfg_strict,
@@ -326,6 +326,10 @@ function run_tests() {
   ];
   var test_warmup_counts = [0, 1, 2];
 
+  var iter = 0;
+  if (shard !== undefined) {
+    print("Running shard #" + shard);
+  }
   f_variants.forEach((f_cfg) => {
     g_variants.forEach((g_cfg) => {
       f_args_variants.forEach((f_args) => {
@@ -333,6 +337,10 @@ function run_tests() {
           f_inlinable_variants.forEach((f_inlinable) => {
             g_inlinable_variants.forEach((g_inlinable) => {
               test_warmup_counts.forEach((test_warmup_count) => {
+                if (shard !== undefined && (iter++) % SHARDS_COUNT != shard) {
+                  print("skipping...");
+                  return;
+                }
                 var cfg = {
                   f_source_template: f_cfg.source_template,
                   f_inlinable,
@@ -357,4 +365,5 @@ function run_tests() {
   });
 }
 
-run_tests();
+// Uncomment to run all the tests at once or use shard runners.
+//run_tests();

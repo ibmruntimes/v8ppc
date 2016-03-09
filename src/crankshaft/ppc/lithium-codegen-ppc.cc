@@ -3350,6 +3350,7 @@ void LCodeGen::DoApplyArguments(LApplyArguments* instr) {
 
   InvokeFlag flag = CALL_FUNCTION;
   if (instr->hydrogen()->tail_call_mode() == TailCallMode::kAllow) {
+    DCHECK(!info()->saves_caller_doubles());
     // TODO(ishell): drop current frame before pushing arguments to the stack.
     flag = JUMP_FUNCTION;
     ParameterCount actual(r3);
@@ -3840,6 +3841,7 @@ void LCodeGen::DoInvokeFunction(LInvokeFunction* instr) {
   bool is_tail_call = hinstr->tail_call_mode() == TailCallMode::kAllow;
 
   if (is_tail_call) {
+    DCHECK(!info()->saves_caller_doubles());
     ParameterCount actual(instr->arity());
     // It is safe to use r6, r7 and r8 as scratch registers here given that
     // 1) we are not going to return to caller function anyway,
@@ -5400,13 +5402,6 @@ void LCodeGen::DoDeferredAllocate(LAllocate* instr) {
   CallRuntimeFromDeferred(Runtime::kAllocateInTargetSpace, 2, instr,
                           instr->context());
   __ StoreToSafepointRegisterSlot(r3, result);
-}
-
-
-void LCodeGen::DoToFastProperties(LToFastProperties* instr) {
-  DCHECK(ToRegister(instr->value()).is(r3));
-  __ push(r3);
-  CallRuntime(Runtime::kToFastProperties, 1, instr);
 }
 
 

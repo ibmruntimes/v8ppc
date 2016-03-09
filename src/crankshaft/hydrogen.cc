@@ -5990,17 +5990,7 @@ void HOptimizedGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
     }
   }
 
-  if (expr->has_function()) {
-    // Return the result of the transformation to fast properties
-    // instead of the original since this operation changes the map
-    // of the object. This makes sure that the original object won't
-    // be used by other optimized code before it is transformed
-    // (e.g. because of code motion).
-    HToFastProperties* result = Add<HToFastProperties>(Pop());
-    return ast_context()->ReturnValue(result);
-  } else {
-    return ast_context()->ReturnValue(Pop());
-  }
+  return ast_context()->ReturnValue(Pop());
 }
 
 
@@ -9241,6 +9231,10 @@ bool HOptimizedGraphBuilder::TryInlineApiCall(
   if (syntactic_tail_call_mode == TailCallMode::kAllow) {
     return false;
   }
+  if (argc > CallApiCallbackStub::kArgMax) {
+    return false;
+  }
+
   CallOptimization optimization(function);
   if (!optimization.is_simple_api_call()) return false;
   Handle<Map> holder_map;
@@ -9336,33 +9330,22 @@ bool HOptimizedGraphBuilder::TryInlineApiCall(
                        api_function_address, nullptr};
 
   HInstruction* call = nullptr;
+  CHECK(argc <= CallApiCallbackStub::kArgMax);
   if (!is_function) {
-    CallApiAccessorStub stub(isolate(), is_store, call_data_undefined,
+    CallApiCallbackStub stub(isolate(), is_store, call_data_undefined,
                              !optimization.is_constant_call());
     Handle<Code> code = stub.GetCode();
     HConstant* code_value = Add<HConstant>(code);
-    ApiAccessorDescriptor descriptor(isolate());
     call = New<HCallWithDescriptor>(
-        code_value, argc + 1, descriptor,
+        code_value, argc + 1, stub.GetCallInterfaceDescriptor(),
         Vector<HValue*>(op_vals, arraysize(op_vals) - 1));
-  } else if (argc <= CallApiFunctionWithFixedArgsStub::kMaxFixedArgs) {
-    CallApiFunctionWithFixedArgsStub stub(isolate(), argc, call_data_undefined);
-    Handle<Code> code = stub.GetCode();
-    HConstant* code_value = Add<HConstant>(code);
-    ApiFunctionWithFixedArgsDescriptor descriptor(isolate());
-    call = New<HCallWithDescriptor>(
-        code_value, argc + 1, descriptor,
-        Vector<HValue*>(op_vals, arraysize(op_vals) - 1));
-    Drop(1);  // Drop function.
   } else {
-    op_vals[arraysize(op_vals) - 1] = Add<HConstant>(argc);
-    CallApiFunctionStub stub(isolate(), call_data_undefined);
+    CallApiCallbackStub stub(isolate(), argc, call_data_undefined);
     Handle<Code> code = stub.GetCode();
     HConstant* code_value = Add<HConstant>(code);
-    ApiFunctionDescriptor descriptor(isolate());
-    call =
-        New<HCallWithDescriptor>(code_value, argc + 1, descriptor,
-                                 Vector<HValue*>(op_vals, arraysize(op_vals)));
+    call = New<HCallWithDescriptor>(
+        code_value, argc + 1, stub.GetCallInterfaceDescriptor(),
+        Vector<HValue*>(op_vals, arraysize(op_vals) - 1));
     Drop(1);  // Drop function.
   }
 
@@ -11699,6 +11682,20 @@ HControlInstruction* HOptimizedGraphBuilder::BuildCompareInstruction(
         New<HCompareNumericAndBranch>(left, right, op);
     return result;
   } else {
+    if (op == Token::EQ) {
+      if (left->IsConstant() &&
+          HConstant::cast(left)->GetInstanceType() == ODDBALL_TYPE &&
+          HConstant::cast(left)->IsUndetectable()) {
+        return New<HIsUndetectableAndBranch>(right);
+      }
+
+      if (right->IsConstant() &&
+          HConstant::cast(right)->GetInstanceType() == ODDBALL_TYPE &&
+          HConstant::cast(right)->IsUndetectable()) {
+        return New<HIsUndetectableAndBranch>(left);
+      }
+    }
+
     if (combined_rep.IsTagged() || combined_rep.IsNone()) {
       HCompareGeneric* result = Add<HCompareGeneric>(left, right, op);
       result->set_observed_input_representation(1, left_rep);

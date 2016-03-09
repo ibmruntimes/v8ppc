@@ -359,10 +359,10 @@ Maybe<bool> Object::Equals(Handle<Object> x, Handle<Object> y) {
         return Just(false);
       }
     } else if (x->IsJSReceiver()) {
-      if (y->IsUndetectable()) {
-        return Just(x->IsUndetectable());
-      } else if (y->IsJSReceiver()) {
+      if (y->IsJSReceiver()) {
         return Just(x.is_identical_to(y));
+      } else if (y->IsUndetectable()) {
+        return Just(x->IsUndetectable());
       } else if (y->IsBoolean()) {
         y = Oddball::ToNumber(Handle<Oddball>::cast(y));
       } else if (!JSReceiver::ToPrimitive(Handle<JSReceiver>::cast(x))
@@ -8970,6 +8970,8 @@ MaybeHandle<Object> JSObject::DefineAccessor(LookupIterator* it,
                                              PropertyAttributes attributes) {
   Isolate* isolate = it->isolate();
 
+  it->UpdateProtector();
+
   if (it->state() == LookupIterator::ACCESS_CHECK) {
     if (!it->HasAccess()) {
       isolate->ReportFailedAccessCheck(it->GetHolder<JSObject>());
@@ -13636,14 +13638,11 @@ int SharedFunctionInfo::SourceSize() {
   return end_position() - start_position();
 }
 
-
-namespace {
-
-void CalculateInstanceSizeHelper(InstanceType instance_type,
-                                 int requested_internal_fields,
-                                 int requested_in_object_properties,
-                                 int* instance_size,
-                                 int* in_object_properties) {
+void JSFunction::CalculateInstanceSizeHelper(InstanceType instance_type,
+                                             int requested_internal_fields,
+                                             int requested_in_object_properties,
+                                             int* instance_size,
+                                             int* in_object_properties) {
   int header_size = JSObject::GetHeaderSize(instance_type);
   DCHECK_LE(requested_internal_fields,
             (JSObject::kMaxInstanceSize - header_size) >> kPointerSizeLog2);
@@ -13655,8 +13654,6 @@ void CalculateInstanceSizeHelper(InstanceType instance_type,
   *in_object_properties = ((*instance_size - header_size) >> kPointerSizeLog2) -
                           requested_internal_fields;
 }
-
-}  // namespace
 
 
 void JSFunction::CalculateInstanceSize(InstanceType instance_type,
@@ -14677,6 +14674,15 @@ void DeoptimizationInputData::DeoptimizationInputDataPrint(
           os << "{function="
              << Brief(SharedFunctionInfo::cast(shared_info)->DebugName())
              << ", height=" << height << "}";
+          break;
+        }
+
+        case Translation::TAIL_CALLER_FRAME: {
+          int shared_info_id = iterator.Next();
+          Object* shared_info = LiteralArray()->get(shared_info_id);
+          os << "{function="
+             << Brief(SharedFunctionInfo::cast(shared_info)->DebugName())
+             << "}";
           break;
         }
 
