@@ -287,7 +287,6 @@ class Genesis BASE_EMBEDDED {
 
   void SetStrictFunctionInstanceDescriptor(Handle<Map> map,
                                            FunctionMode function_mode);
-  void SetStrongFunctionInstanceDescriptor(Handle<Map> map);
 
   static bool CallUtilsFunction(Isolate* isolate, const char* name);
 
@@ -623,29 +622,6 @@ void Genesis::SetStrictFunctionInstanceDescriptor(Handle<Map> map,
         Accessors::FunctionPrototypeInfo(isolate(), attribs);
     AccessorConstantDescriptor d(Handle<Name>(Name::cast(prototype->name())),
                                  prototype, attribs);
-    map->AppendDescriptor(&d);
-  }
-}
-
-
-void Genesis::SetStrongFunctionInstanceDescriptor(Handle<Map> map) {
-  Map::EnsureDescriptorSlack(map, 2);
-
-  PropertyAttributes ro_attribs =
-      static_cast<PropertyAttributes>(DONT_ENUM | DONT_DELETE | READ_ONLY);
-
-  Handle<AccessorInfo> length =
-      Accessors::FunctionLengthInfo(isolate(), ro_attribs);
-  {  // Add length.
-    AccessorConstantDescriptor d(Handle<Name>(Name::cast(length->name())),
-                                 length, ro_attribs);
-    map->AppendDescriptor(&d);
-  }
-  Handle<AccessorInfo> name =
-      Accessors::FunctionNameInfo(isolate(), ro_attribs);
-  {  // Add name.
-    AccessorConstantDescriptor d(Handle<Name>(Name::cast(name->name())), name,
-                                 ro_attribs);
     map->AppendDescriptor(&d);
   }
 }
@@ -2527,6 +2503,26 @@ void Genesis::InitializeGlobal_harmony_proxies() {
   InstallFunction(global, name, proxy_function, factory->Object_string());
 }
 
+void Genesis::InitializeGlobal_harmony_array_prototype_values() {
+  if (!FLAG_harmony_array_prototype_values) return;
+  Handle<JSFunction> array_constructor(native_context()->array_function());
+  Handle<JSObject> array_prototype(
+      JSObject::cast(array_constructor->instance_prototype()));
+  Handle<Object> values_iterator =
+      JSObject::GetProperty(array_prototype, factory()->iterator_symbol())
+          .ToHandleChecked();
+  DCHECK(values_iterator->IsJSFunction());
+  JSObject::AddProperty(array_prototype, factory()->values_string(),
+                        values_iterator, DONT_ENUM);
+
+  Handle<Object> unscopables =
+      JSObject::GetProperty(array_prototype, factory()->unscopables_symbol())
+          .ToHandleChecked();
+  DCHECK(unscopables->IsJSObject());
+  JSObject::AddProperty(Handle<JSObject>::cast(unscopables),
+                        factory()->values_string(), factory()->true_value(),
+                        NONE);
+}
 
 Handle<JSFunction> Genesis::InstallArrayBuffer(Handle<JSObject> target,
                                                const char* name) {
@@ -2749,6 +2745,37 @@ bool Genesis::InstallNatives(GlobalContextType context_type) {
 
   InstallBuiltinFunctionIds();
 
+  // Also install builtin function ids to some generator object methods. These
+  // three methods use the three resume operations (Runtime_GeneratorNext,
+  // Runtime_GeneratorReturn, Runtime_GeneratorThrow) respectively. Those
+  // operations are not supported by Crankshaft, TurboFan, nor Ignition.
+  {
+    Handle<JSObject> generator_object_prototype(JSObject::cast(
+        native_context()->generator_object_prototype_map()->prototype()));
+
+    {  // GeneratorObject.prototype.next
+      Handle<String> key = factory()->next_string();
+      Handle<JSFunction> function = Handle<JSFunction>::cast(
+          JSReceiver::GetProperty(generator_object_prototype, key)
+              .ToHandleChecked());
+      function->shared()->set_builtin_function_id(kGeneratorObjectNext);
+    }
+    {  // GeneratorObject.prototype.return
+      Handle<String> key = factory()->NewStringFromAsciiChecked("return");
+      Handle<JSFunction> function = Handle<JSFunction>::cast(
+          JSReceiver::GetProperty(generator_object_prototype, key)
+              .ToHandleChecked());
+      function->shared()->set_builtin_function_id(kGeneratorObjectReturn);
+    }
+    {  // GeneratorObject.prototype.throw
+      Handle<String> key = factory()->throw_string();
+      Handle<JSFunction> function = Handle<JSFunction>::cast(
+          JSReceiver::GetProperty(generator_object_prototype, key)
+              .ToHandleChecked());
+      function->shared()->set_builtin_function_id(kGeneratorObjectThrow);
+    }
+  }
+
   // Create a map for accessor property descriptors (a variant of JSObject
   // that predefines four properties get, set, configurable and enumerable).
   {
@@ -2967,6 +2994,7 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_object_values_entries_natives[] = {nullptr};
   static const char* harmony_object_own_property_descriptors_natives[] = {
       nullptr};
+  static const char* harmony_array_prototype_values_natives[] = {nullptr};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {

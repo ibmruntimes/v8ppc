@@ -219,6 +219,10 @@ endif
 ifeq ($(arm_test_noprobe), on)
   GYPFLAGS += -Darm_test_noprobe=on
 endif
+# Do not omit the frame pointer, needed for profiling with perf
+ifeq ($(no_omit_framepointer), on)
+  GYPFLAGS += -Drelease_extra_cflags=-fno-omit-frame-pointer
+endif
 # simulator=on
 # Force simulation even when the target platform matches the host.
 ifeq ($(simulator), on)

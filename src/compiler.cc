@@ -383,6 +383,14 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
     return AbortOptimization(kFunctionBeingDebugged);
   }
 
+  // Resuming a suspended frame is not supported by Crankshaft/TurboFan.
+  if (info()->shared_info()->HasBuiltinFunctionId() &&
+      (info()->shared_info()->builtin_function_id() == kGeneratorObjectNext ||
+       info()->shared_info()->builtin_function_id() == kGeneratorObjectReturn ||
+       info()->shared_info()->builtin_function_id() == kGeneratorObjectThrow)) {
+    return AbortOptimization(kGeneratorResumeMethod);
+  }
+
   // Limit the number of times we try to optimize functions.
   const int kMaxOptCount =
       FLAG_deopt_every_n_times == 0 ? FLAG_max_opt_count : 1000;
@@ -781,6 +789,12 @@ static bool CompileUnoptimizedCode(CompilationInfo* info) {
 static bool UseIgnition(CompilationInfo* info) {
   // Cannot use Ignition when the {function_data} is already used.
   if (info->has_shared_info() && info->shared_info()->HasBuiltinFunctionId()) {
+    return false;
+  }
+
+  // TODO(4681): Generators are not yet supported.
+  if ((info->has_shared_info() && info->shared_info()->is_generator()) ||
+      (info->has_literal() && IsGeneratorFunction(info->literal()->kind()))) {
     return false;
   }
 
@@ -1573,12 +1587,7 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForScript(
   isolate->counters()->total_load_size()->Increment(source_length);
   isolate->counters()->total_compile_size()->Increment(source_length);
 
-  // TODO(rossberg): The natives do not yet obey strong mode rules
-  // (for example, some macros use '==').
-  bool use_strong = FLAG_use_strong && !isolate->bootstrapper()->IsActive();
-  LanguageMode language_mode =
-      construct_language_mode(FLAG_use_strict, use_strong);
-
+  LanguageMode language_mode = construct_language_mode(FLAG_use_strict);
   CompilationCache* compilation_cache = isolate->compilation_cache();
 
   // Do a lookup in the compilation cache but not for extensions.
@@ -1690,8 +1699,7 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForStreamedScript(
   isolate->counters()->total_load_size()->Increment(source_length);
   isolate->counters()->total_compile_size()->Increment(source_length);
 
-  LanguageMode language_mode =
-      construct_language_mode(FLAG_use_strict, FLAG_use_strong);
+  LanguageMode language_mode = construct_language_mode(FLAG_use_strict);
   parse_info->set_language_mode(
       static_cast<LanguageMode>(parse_info->language_mode() | language_mode));
 

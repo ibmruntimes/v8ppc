@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-function DataRef(data) {
-    this.pos = -1;
-    this.data = data;
-}
-
 function WasmFunctionBuilder(name, sig_index) {
     this.name = name;
     this.sig_index = sig_index;
@@ -118,13 +113,6 @@ function emit_string(bytes, string) {
     }
 }
 
-function emit_data_ref(bytes, string) {
-    bytes.push(new DataRef(string));
-    bytes.push(0);
-    bytes.push(0);
-    bytes.push(0);
-}
-
 function emit_varint(bytes, val) {
     while (true) {
         var v = val & 0xff;
@@ -137,189 +125,190 @@ function emit_varint(bytes, val) {
     }
 }
 
+function emit_bytes(bytes, data) {
+  for (var i = 0; i < data.length; i++) {
+    bytes.push(data[i] & 0xff);
+  }
+}
+
+function emit_section(bytes, section_code, content_generator) {
+    // Start the section in a temporary buffer: its full length isn't know yet.
+    var tmp_bytes = [];
+    emit_string(tmp_bytes, section_names[section_code]);
+    content_generator(tmp_bytes);
+    // Now that we know the section length, emit it and copy the section.
+    emit_varint(bytes, tmp_bytes.length);
+    Array.prototype.push.apply(bytes, tmp_bytes);
+}
+
 WasmModuleBuilder.prototype.toArray = function(debug) {
     // Add header bytes
     var bytes = [];
     bytes = bytes.concat([kWasmH0, kWasmH1, kWasmH2, kWasmH3,
                           kWasmV0, kWasmV1, kWasmV2, kWasmV3]);
 
+    var wasm = this;
+
     // Add memory section
-    if (this.memory != undefined) {
+    if (wasm.memory != undefined) {
         if (debug) print("emitting memory @ " + bytes.length);
-        emit_u8(bytes, kDeclMemory);
-        emit_varint(bytes, this.memory.min);
-        emit_varint(bytes, this.memory.max);
-        emit_u8(bytes, this.memory.exp ? 1 : 0);
+        emit_section(bytes, kDeclMemory, function(bytes) {
+            emit_varint(bytes, wasm.memory.min);
+            emit_varint(bytes, wasm.memory.max);
+            emit_u8(bytes, wasm.memory.exp ? 1 : 0);
+        });
     }
 
     // Add signatures section
-    if (this.signatures.length > 0) {
+    if (wasm.signatures.length > 0) {
         if (debug) print("emitting signatures @ " + bytes.length);
-        emit_u8(bytes, kDeclSignatures);
-        emit_varint(bytes, this.signatures.length);
-        for (sig of this.signatures) {
-            var params = sig.length - 1;
-            emit_varint(bytes, params);
-            for (var j = 0; j < sig.length; j++) {
-                emit_u8(bytes, sig[j]);
+        emit_section(bytes, kDeclSignatures, function(bytes) {
+            emit_varint(bytes, wasm.signatures.length);
+            for (sig of wasm.signatures) {
+                var params = sig.length - 1;
+                emit_varint(bytes, params);
+                for (var j = 0; j < sig.length; j++) {
+                    emit_u8(bytes, sig[j]);
+                }
             }
-        }
+        });
     }
 
     // Add imports section
-    if (this.imports.length > 0) {
+    if (wasm.imports.length > 0) {
         if (debug) print("emitting imports @ " + bytes.length);
-        emit_u8(bytes, kDeclImportTable);
-        emit_varint(bytes, this.imports.length);
-        for (imp of this.imports) {
-            emit_varint(bytes, imp.sig_index);
-            emit_string(bytes, imp.module);
-            emit_string(bytes, imp.name || '');
-        }
+        emit_section(bytes, kDeclImportTable, function(bytes) {
+            emit_varint(bytes, wasm.imports.length);
+            for (imp of wasm.imports) {
+                emit_varint(bytes, imp.sig_index);
+                emit_string(bytes, imp.module);
+                emit_string(bytes, imp.name || '');
+            }
+        });
     }
 
     // Add functions section
     var names = false;
     var exports = 0;
-    if (this.functions.length > 0) {
-        if (debug) print("emitting functions @ " + bytes.length);
-        emit_u8(bytes, kDeclFunctions);
-        emit_varint(bytes, this.functions.length);
-        var index = 0;
-        for (func of this.functions) {
-            var flags = 0;
-            var hasName = func.name != undefined && func.name.length > 0;
-            names = names || hasName;
-            if (hasName) flags |= kDeclFunctionName;
-            exports += func.exports.length;
+    if (wasm.functions.length > 0) {
+        var has_names = false;
 
-            emit_u8(bytes, flags);
-            emit_u16(bytes, func.sig_index);
+        // emit function signatures
+        if (debug) print("emitting function sigs @ " + bytes.length);
+        emit_section(bytes, kDeclFunctionSignatures, function(bytes) {
+            emit_varint(bytes, wasm.functions.length);
+            for (func of wasm.functions) {
+              has_names = has_names || (func.name != undefined &&
+                                        func.name.length > 0);
+              exports += func.exports.length;
 
-            if (hasName) emit_string(bytes, func.name);
-
-            // Function body length will be patched later.
-            var length_pos = bytes.length;
-            emit_u16(bytes, 0);
-
-            var local_decls = [];
-            var l = func.locals;
-            if (l != undefined) {
-              var local_decls_count = 0;
-              if (l.i32_count > 0) {
-                local_decls.push({count: l.i32_count, type: kAstI32});
-              }
-              if (l.i64_count > 0) {
-                local_decls.push({count: l.i64_count, type: kAstI64});
-              }
-              if (l.f32_count > 0) {
-                local_decls.push({count: l.f32_count, type: kAstF32});
-              }
-              if (l.f64_count > 0) {
-                local_decls.push({count: l.f64_count, type: kAstF64});
-              }
+              emit_varint(bytes, func.sig_index);
             }
-            emit_varint(bytes, local_decls.length);
-            for (decl of local_decls) {
-              emit_varint(bytes, decl.count);
-              emit_u8(bytes, decl.type);
-            }
+        });
 
-            for (var i = 0; i < func.body.length; i++) {
-                emit_u8(bytes, func.body[i]);
-            }
-            var length = bytes.length - length_pos - 2;
-            bytes[length_pos] = length & 0xff;
-            bytes[length_pos + 1] = (length >> 8) & 0xff;
+        // emit function bodies
+        if (debug) print("emitting function bodies @ " + bytes.length);
+        emit_section(bytes, kDeclFunctionBodies, function(bytes) {
+            emit_varint(bytes, wasm.functions.length);
+            for (func of wasm.functions) {
+                // Function body length will be patched later.
+                var local_decls = [];
+                var l = func.locals;
+                if (l != undefined) {
+                  var local_decls_count = 0;
+                  if (l.i32_count > 0) {
+                    local_decls.push({count: l.i32_count, type: kAstI32});
+                  }
+                  if (l.i64_count > 0) {
+                    local_decls.push({count: l.i64_count, type: kAstI64});
+                  }
+                  if (l.f32_count > 0) {
+                    local_decls.push({count: l.f32_count, type: kAstF32});
+                  }
+                  if (l.f64_count > 0) {
+                    local_decls.push({count: l.f64_count, type: kAstF64});
+                  }
+                }
+                var header = new Array();
 
-            index++;
-        }
+                emit_varint(header, local_decls.length);
+                for (decl of local_decls) {
+                  emit_varint(header, decl.count);
+                  emit_u8(header, decl.type);
+                }
+
+                emit_varint(bytes, header.length + func.body.length);
+                emit_bytes(bytes, header);
+                emit_bytes(bytes, func.body);
+            }
+        });
+    }
+
+    // emit function names
+    if (has_names) {
+        if (debug) print("emitting names @ " + bytes.length);
+        emit_section(bytes, kDeclNames, function(bytes) {
+            emit_varint(bytes, wasm.functions.length);
+            for (func of wasm.functions) {
+                var name = func.name == undefined ? "" : func.name;
+               emit_string(bytes, name);
+               emit_u8(bytes, 0);  // local names count == 0
+            }
+        });
     }
 
     // Add start function section.
-    if (this.start_index != undefined) {
+    if (wasm.start_index != undefined) {
         if (debug) print("emitting start function @ " + bytes.length);
-      emit_u8(bytes, kDeclStartFunction);
-      emit_varint(bytes, this.start_index);
+        emit_section(bytes, kDeclStartFunction, function(bytes) {
+            emit_varint(bytes, wasm.start_index);
+        });
     }
 
-    if (this.function_table.length > 0) {
+    if (wasm.function_table.length > 0) {
         if (debug) print("emitting function table @ " + bytes.length);
-        emit_u8(bytes, kDeclFunctionTable);
-        emit_varint(bytes, this.function_table.length);
-        for (index of this.function_table) {
-            emit_varint(bytes, index);
-        }
+        emit_section(bytes, kDeclFunctionTable, function(bytes) {
+            emit_varint(bytes, wasm.function_table.length);
+            for (index of wasm.function_table) {
+                emit_varint(bytes, index);
+            }
+        });
     }
 
     if (exports > 0) {
         if (debug) print("emitting exports @ " + bytes.length);
-        emit_u8(bytes, kDeclExportTable);
-        emit_varint(bytes, exports);
-        for (func of this.functions) {
-            for (exp of func.exports) {
-                emit_varint(bytes, func.index);
-                emit_string(bytes, exp);
+        emit_section(bytes, kDeclExportTable, function(bytes) {
+            emit_varint(bytes, exports);
+            for (func of wasm.functions) {
+                for (exp of func.exports) {
+                    emit_varint(bytes, func.index);
+                    emit_string(bytes, exp);
+                }
             }
-        }
+        });
     }
 
-    if (this.data_segments.length > 0) {
+    if (wasm.data_segments.length > 0) {
         if (debug) print("emitting data segments @ " + bytes.length);
-        emit_u8(bytes, kDeclDataSegments);
-        emit_varint(bytes, this.data_segments.length);
-        for (seg of this.data_segments) {
-            emit_u32(bytes, seg.addr);
-            emit_data_ref(bytes, seg.data);
-            emit_u32(bytes, seg.data.length);
-            emit_u8(bytes, seg.init ? 1 : 0);
-        }
+        emit_section(bytes, kDeclDataSegments, function(bytes) {
+            emit_varint(bytes, wasm.data_segments.length);
+            for (seg of wasm.data_segments) {
+                emit_varint(bytes, seg.addr);
+                emit_varint(bytes, seg.data.length);
+                emit_bytes(bytes, seg.data);
+            }
+        });
     }
 
     // Emit any explicitly added sections
-    for (exp of this.explicit) {
+    for (exp of wasm.explicit) {
         if (debug) print("emitting explicit @ " + bytes.length);
-        for (var i = 0; i < exp.length; i++) {
-            emit_u8(bytes, exp[i]);
-        }
+        emit_bytes(bytes, exp);
     }
 
     // End the module.
     if (debug) print("emitting end @ " + bytes.length);
-    emit_u8(bytes, kDeclEnd);
-
-    // Collect references.
-    var strings = new Object();
-    var data_segments = [];
-    var count = 0;
-    for (var i = 0; i < bytes.length; i++) {
-        var b = bytes[i];
-        if (b instanceof DataRef) {
-            data_segments.push(b);
-            count++;
-        }
-    }
-
-    if (count > 0) {
-        // Emit data.
-        if (debug) print("emitting data @ " + bytes.length);
-        for (ref of data_segments) {
-            ref.pos = bytes.length;
-            for (var i = 0; i < ref.data.length; i++) {
-                emit_u8(bytes, ref.data[i]);
-            }
-        }
-        // Update references to strings and data.
-        for (var i = 0; i < bytes.length; i++) {
-            var b = bytes[i];
-            if (b instanceof DataRef) {
-                bytes[i] = b.pos & 0xFF;
-                bytes[i + 1] = (b.pos >> 8) & 0xFF;
-                bytes[i + 2] = (b.pos >> 16) & 0xFF;
-                bytes[i + 3] = (b.pos >> 24) & 0xFF;
-            }
-        }
-    }
+    emit_section(bytes, kDeclEnd, function(bytes) {});
 
     return bytes;
 }

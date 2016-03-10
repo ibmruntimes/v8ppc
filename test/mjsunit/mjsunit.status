@@ -92,7 +92,6 @@
   # Proxy tests rely on non ES6 version of Proxies
   # TODO(neis,cbruni): figure out which Proxy tests can be reused
   'harmony/proxies-example-membrane': [SKIP],
-  'strong/load-proxy': [SKIP],
 
   # Issue 3660: Replacing activated TurboFan frames by unoptimized code does
   # not work, but we expect it to not crash.
@@ -120,27 +119,6 @@
   'debug-multiple-breakpoints': [PASS, NO_VARIANTS],  # with custom snapshot and gc-stress.
   'debug-listbreakpoints': [PASS, NO_VARIANTS],  # arm64 nosnap with turbofan
   'debug-enable-disable-breakpoints': [PASS, NO_VARIANTS],  #arm64 nosnap with turbofan.
-
-  # Issue 3956: Strong mode is deprecating. The expectations inside the
-  # following tests should be updated once deprecation is complete.
-  'strong/class-extend-null': [SKIP],
-  'strong/class-literals': [SKIP],
-  'strong/class-object-frozen': [SKIP],
-  'strong/destructuring': [SKIP],
-  'strong/functions': [SKIP],
-  'strong/implicit-conversions': [SKIP],
-  'strong/implicit-conversions-count': [SKIP],
-  'strong/implicit-conversions-inlining': [SKIP],
-  'strong/load-builtins': [SKIP],
-  'strong/load-element': [SKIP],
-  'strong/load-element-mutate-backing-store': [SKIP],
-  'strong/load-property': [SKIP],
-  'strong/load-property-mutate-backing-store': [SKIP],
-  'strong/load-super': [SKIP],
-  'strong/literals': [SKIP], # Rest arguments do not respect strongness in Turbofan.
-  'strong/object-delete': [SKIP],
-  'strong/object-freeze-property': [SKIP],
-  'strong/object-set-prototype': [SKIP],
 
   # Issue 4035: unexpected frame->context() in debugger
   'regress/regress-crbug-107996': [PASS, NO_VARIANTS],
@@ -390,9 +368,6 @@
 
   # BUG(v8:4237)
   'regress/regress-3976': [SKIP],
-
-  # BUG(v8:4359)
-  'strong/load-proxy': [SKIP],
 
   # Slow tests.
   'array-constructor': [PASS, SLOW],
@@ -786,12 +761,12 @@
   'regress/regress-1132': [SKIP],
 }],  # 'arch == ppc and simulator_run == True'
 
+##############################################################################
 ['ignition == True', {
   # TODO(yangguo,4690): assertion failures in debugger tests.
   'debug-allscopes-on-debugger': [FAIL],
   'debug-return-value': [FAIL],
   'es6/debug-stepnext-for': [FAIL],
-  'es6/debug-stepin-generators': [FAIL],
   'es6/debug-stepin-string-template': [FAIL],
   'es6/debug-promises/stepin-constructor': [FAIL],
   'harmony/debug-stepin-proxies': [FAIL],
@@ -815,51 +790,13 @@
   'es6/debug-liveedit-new-target-1': [FAIL],
   'es6/debug-liveedit-new-target-2': [FAIL],
   'es6/debug-liveedit-new-target-3': [FAIL],
+  'es6/generators-debug-liveedit': [FAIL],
 
   # TODO(yangguo/rmcilroy,4690): Related to Debugger. Goes into a loop
   # in function: Debug::FindSharedFunctionInfoInScript and times out.
   'regress/regress-crbug-517592': [SKIP],
   'regress/regress-1853': [SKIP],
   'regress/regress-crbug-424142': [SKIP],
-
-  # TODO(rmcilroy,4681): Requires support for generators.
-  'messages': [FAIL],
-  'es6/array-from': [FAIL],
-  'regress-3225': [FAIL],
-  'es6/classes-subclass-builtins': [FAIL],
-  'es6/computed-property-names-classes': [FAIL],
-  'es6/computed-property-names-object-literals-methods': [FAIL],
-  'es6/function-length-configurable': [FAIL],
-  'es6/generators-poisoned-properties': [FAIL],
-  'es6/generators-runtime': [FAIL],
-  'es6/generators-objects': [FAIL],
-  'es6/generators-parsing': [FAIL],
-  'es6/generators-iteration': [FAIL],
-  'es6/generators-states': [FAIL],
-  'es6/iteration-semantics': [FAIL],
-  'es6/iterator-prototype': [FAIL],
-  'es6/generators-mirror': [FAIL],
-  'es6/object-literals-method': [FAIL],
-  'es6/object-literals-super': [FAIL],
-  'es6/generators-relocation': [FAIL],
-  'es6/spread-array': [FAIL],
-  'es6/generators-debug-liveedit': [FAIL],
-  'es6/spread-call': [FAIL],
-  'es6/typedarray-from': [FAIL],
-  'es6/typedarray': [FAIL],
-  'es6/regress/regress-2681': [FAIL],
-  'es6/regress/regress-2691': [FAIL],
-  'es6/regress/regress-3280': [FAIL],
-  'harmony/destructuring-assignment': [FAIL],
-  'harmony/function-sent': [FAIL],
-  'harmony/destructuring': [FAIL],
-  'harmony/regress/regress-4482': [FAIL],
-  'harmony/generators': [FAIL],
-  'harmony/iterator-close': [FAIL],
-  'harmony/reflect-construct': [FAIL],
-  'es6/promises': [FAIL],
-  'strong/function-arity': [FAIL],
-  'strong/undefined': [FAIL],
 
   # TODO(mythria, 4780): Related to type feedback for calls in interpreter.
   'array-literal-feedback': [FAIL],
@@ -896,14 +833,12 @@
   'compiler/osr-one': [SKIP],
   'compiler/osr-two': [SKIP],
   'regress/regress-1257': [SKIP],
-}],  # ignition == True and (arch == arm or arch == arm64)
+}],  # ignition == True and arch == arm
 
 ##############################################################################
 ['gcov_coverage', {
   # Tests taking too long.
   'array-functions-prototype-misc': [SKIP],
-  'strong/implicit-conversions': [SKIP],
-  'strong/load-element-mutate-backing-store': [SKIP],
 
   # Stack overflow.
   'big-array-literal': [SKIP],
