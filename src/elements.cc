@@ -839,6 +839,7 @@ class ElementsAccessorBase : public ElementsAccessor {
                              Handle<FixedArrayBase> backing_store,
                              KeyAccumulator* keys, uint32_t range,
                              PropertyFilter filter, uint32_t offset) final {
+    if (filter & ONLY_ALL_CAN_READ) return;
     ElementsAccessorSubclass::CollectElementIndicesImpl(
         object, backing_store, keys, range, filter, offset);
   }
@@ -849,10 +850,7 @@ class ElementsAccessorBase : public ElementsAccessor {
                                         PropertyFilter filter,
                                         uint32_t offset) {
     DCHECK_NE(DICTIONARY_ELEMENTS, kind());
-    if (filter & ONLY_ALL_CAN_READ) {
-      // Non-dictionary elements can't have all-can-read accessors.
-      return;
-    }
+    // Non-dictionary elements can't have all-can-read accessors.
     uint32_t length = GetIterationLength(*object, *backing_store);
     if (range < length) length = range;
     for (uint32_t i = offset; i < length; i++) {
@@ -866,10 +864,10 @@ class ElementsAccessorBase : public ElementsAccessor {
   static Handle<FixedArray> DirectCollectElementIndicesImpl(
       Isolate* isolate, Handle<JSObject> object,
       Handle<FixedArrayBase> backing_store, GetKeysConversion convert,
-      PropertyFilter filter, Handle<FixedArray> list, uint32_t* nof_indices) {
+      PropertyFilter filter, Handle<FixedArray> list, uint32_t* nof_indices,
+      uint32_t insertion_index = 0) {
     uint32_t length =
         ElementsAccessorSubclass::GetIterationLength(*object, *backing_store);
-    uint32_t insertion_index = 0;
     for (uint32_t i = 0; i < length; i++) {
       if (ElementsAccessorSubclass::HasElementImpl(object, i, backing_store,
                                                    filter)) {
@@ -914,7 +912,7 @@ class ElementsAccessorBase : public ElementsAccessor {
         &nof_indices);
 
     // Sort the indices list if necessary.
-    if (IsDictionaryElementsKind(kind())) {
+    if (IsDictionaryElementsKind(kind()) || IsSloppyArgumentsElements(kind())) {
       struct {
         bool operator()(Object* a, Object* b) {
           if (!a->IsUndefined()) {
@@ -1190,21 +1188,13 @@ class DictionaryElementsAccessor
     DisallowHeapAllocation no_gc;
     Object* raw_key = dictionary->KeyAt(entry);
     if (!dictionary->IsKey(raw_key)) return kMaxUInt32;
-    if (raw_key->FilterKey(filter)) return kMaxUInt32;
-    if (dictionary->IsDeleted(entry)) return kMaxUInt32;
+    DCHECK(!dictionary->IsDeleted(entry));
     DCHECK(raw_key->IsNumber());
     DCHECK_LE(raw_key->Number(), kMaxUInt32);
-    uint32_t key = static_cast<uint32_t>(raw_key->Number());
     PropertyDetails details = dictionary->DetailsAt(entry);
-    if (filter & ONLY_ALL_CAN_READ) {
-      if (details.kind() != kAccessor) return kMaxUInt32;
-      Object* accessors = dictionary->ValueAt(entry);
-      if (!accessors->IsAccessorInfo()) return kMaxUInt32;
-      if (!AccessorInfo::cast(accessors)->all_can_read()) return kMaxUInt32;
-    }
     PropertyAttributes attr = details.attributes();
     if ((attr & filter) != 0) return kMaxUInt32;
-    return key;
+    return static_cast<uint32_t>(raw_key->Number());
   }
 
   static void CollectElementIndicesImpl(Handle<JSObject> object,
@@ -1212,6 +1202,7 @@ class DictionaryElementsAccessor
                                         KeyAccumulator* keys, uint32_t range,
                                         PropertyFilter filter,
                                         uint32_t offset) {
+    if (filter & SKIP_STRINGS) return;
     Handle<SeededNumberDictionary> dictionary =
         Handle<SeededNumberDictionary>::cast(backing_store);
     int capacity = dictionary->Capacity();
@@ -1227,11 +1218,13 @@ class DictionaryElementsAccessor
   static Handle<FixedArray> DirectCollectElementIndicesImpl(
       Isolate* isolate, Handle<JSObject> object,
       Handle<FixedArrayBase> backing_store, GetKeysConversion convert,
-      PropertyFilter filter, Handle<FixedArray> list, uint32_t* nof_indices) {
+      PropertyFilter filter, Handle<FixedArray> list, uint32_t* nof_indices,
+      uint32_t insertion_index = 0) {
+    if (filter & SKIP_STRINGS) return list;
+    if (filter & ONLY_ALL_CAN_READ) return list;
     Handle<SeededNumberDictionary> dictionary =
         Handle<SeededNumberDictionary>::cast(backing_store);
     uint32_t capacity = dictionary->Capacity();
-    uint32_t insertion_index = 0;
     for (uint32_t i = 0; i < capacity; i++) {
       uint32_t key = GetKeyForEntryImpl(dictionary, i, filter);
       if (key == kMaxUInt32) continue;
@@ -2223,6 +2216,55 @@ class SloppyArgumentsElementsAccessor
           obj, entry - length);
     }
   }
+
+  static void CollectElementIndicesImpl(Handle<JSObject> object,
+                                        Handle<FixedArrayBase> backing_store,
+                                        KeyAccumulator* keys, uint32_t range,
+                                        PropertyFilter filter,
+                                        uint32_t offset) {
+    FixedArray* parameter_map = FixedArray::cast(*backing_store);
+    uint32_t length = parameter_map->length() - 2;
+    if (range < length) length = range;
+
+    for (uint32_t i = offset; i < length; ++i) {
+      if (!parameter_map->get(i + 2)->IsTheHole()) {
+        keys->AddKey(i);
+      }
+    }
+
+    Handle<FixedArrayBase> store(FixedArrayBase::cast(parameter_map->get(1)));
+    ArgumentsAccessor::CollectElementIndicesImpl(object, store, keys, range,
+                                                 filter, offset);
+    if (SloppyArgumentsElementsAccessorSubclass::kind() ==
+        FAST_SLOPPY_ARGUMENTS_ELEMENTS) {
+      keys->SortCurrentElementsList();
+    }
+  }
+
+  static Handle<FixedArray> DirectCollectElementIndicesImpl(
+      Isolate* isolate, Handle<JSObject> object,
+      Handle<FixedArrayBase> backing_store, GetKeysConversion convert,
+      PropertyFilter filter, Handle<FixedArray> list, uint32_t* nof_indices,
+      uint32_t insertion_index = 0) {
+    FixedArray* parameter_map = FixedArray::cast(*backing_store);
+    uint32_t length = parameter_map->length() - 2;
+
+    for (uint32_t i = 0; i < length; ++i) {
+      if (parameter_map->get(i + 2)->IsTheHole()) continue;
+      if (convert == CONVERT_TO_STRING) {
+        Handle<String> index_string = isolate->factory()->Uint32ToString(i);
+        list->set(insertion_index, *index_string);
+      } else {
+        list->set(insertion_index, Smi::FromInt(i), SKIP_WRITE_BARRIER);
+      }
+      insertion_index++;
+    }
+
+    Handle<FixedArrayBase> store(FixedArrayBase::cast(parameter_map->get(1)));
+    return ArgumentsAccessor::DirectCollectElementIndicesImpl(
+        isolate, object, store, convert, filter, list, nof_indices,
+        insertion_index);
+  }
 };
 
 
@@ -2512,11 +2554,9 @@ class StringWrapperElementsAccessor
                                         KeyAccumulator* keys, uint32_t range,
                                         PropertyFilter filter,
                                         uint32_t offset) {
-    if ((filter & ONLY_ALL_CAN_READ) == 0) {
-      uint32_t length = GetString(*object)->length();
-      for (uint32_t i = 0; i < length; i++) {
-        keys->AddKey(i);
-      }
+    uint32_t length = GetString(*object)->length();
+    for (uint32_t i = 0; i < length; i++) {
+      keys->AddKey(i);
     }
     BackingStoreAccessor::CollectElementIndicesImpl(object, backing_store, keys,
                                                     range, filter, offset);

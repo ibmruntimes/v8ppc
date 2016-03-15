@@ -509,17 +509,6 @@
 
 ##############################################################################
 ['ignition == True', {
-  # TODO(yangguo,4690): Test failures in debugger tests.
-  'test-debug/DebugStepNamedLoadLoop': [FAIL],
-  'test-debug/DebugStepForIn': [FAIL],
-  'test-debug/DebugStepDoWhile': [FAIL],
-  'test-debug/DebugConditional': [FAIL],
-  'test-debug/DebugStepForContinue': [FAIL],
-  'test-debug/DebugStepKeyedStoreLoop': [FAIL],
-  'test-debug/DebugStepForBreak': [FAIL],
-  'test-debug/DebugStepKeyedLoadLoop': [FAIL],
-  'test-debug/DebugStepNamedStoreLoop': [FAIL],
-
   # BUG(4333). Function name inferrer does not work for ES6 clases.
   'test-func-name-inference/UpperCaseClass': [TIMEOUT],
   'test-func-name-inference/LowerCaseClass': [TIMEOUT],
@@ -542,20 +531,33 @@
   # on nodes (behind --turbo_source_positions flag).
   'test-cpu-profiler/TickLinesOptimized': [FAIL],
 
-  # TODO(rmcilroy,4680): Test assert errors.
+  # TODO(mythria,4780): Related to type feedback support for calls.
   'test-feedback-vector/VectorCallICStates': [FAIL],
   'test-compiler/FeedbackVectorPreservedAcrossRecompiles': [FAIL],
-  'test-api/PromiseRejectCallback': [FAIL],
   'test-heap/WeakFunctionInConstructor': [FAIL],
-  'test-heap/Regress169209': [FAIL],
   'test-heap/IncrementalMarkingClearsMonomorphicConstructor': [FAIL],
   'test-heap/IncrementalMarkingPreservesMonomorphicConstructor': [FAIL],
   'test-heap/IncrementalMarkingPreservesMonomorphicCallIC': [FAIL],
-  'test-heap/CompilationCacheCachingBehavior': [FAIL],
   'test-heap/CellsInOptimizedCodeAreWeak': [FAIL],
+
+  # TODO(mythria,4680): Lack of code-ageing in interpreter.
+  'test-heap/Regress169209': [FAIL],
+
+  # TODO(mythria,4680): Lack of code-ageing and/or lack of compilation cache
+  # in interpreter.
+  'test-heap/CompilationCacheCachingBehavior': [FAIL],
+
+  # TODO(mythria,4680): Incorrect column number on eval.
+  'test-api/PromiseRejectCallback': [FAIL],
+
+  # TODO(rmcilroy,4680): Test assert errors.
   'test-run-inlining/InlineTwice': [FAIL],
-  'test-serialize/CodeSerializerInternalReference': [FAIL, ['arch == arm or arch == arm64', PASS]],
 
 }],  # ignition == True
+
+['ignition == True and msan', {
+  # TODO(rmcilroy,4680): Uninitialized memory.
+  'test-debug/*': [SKIP],
+}],  # ignition == True and msan
 
 ]

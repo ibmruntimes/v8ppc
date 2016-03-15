@@ -13330,8 +13330,6 @@ THREADED_TEST(ObjectProtoToString) {
 
 
 TEST(ObjectProtoToStringES6) {
-  // TODO(dslomov, caitp): merge into ObjectProtoToString test once shipped.
-  i::FLAG_harmony_tostring = true;
   LocalContext context;
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope scope(isolate);
@@ -20579,7 +20577,8 @@ THREADED_TEST(Regress1516) {
   int elements = CountLiveMapsInMapCache(CcTest::i_isolate()->context());
   CHECK_LE(1, elements);
 
-  CcTest::heap()->CollectAllGarbage();
+  // We have to abort incremental marking here to abandon black pages.
+  CcTest::heap()->CollectAllGarbage(i::Heap::kAbortIncrementalMarkingMask);
 
   CHECK_GT(elements, CountLiveMapsInMapCache(CcTest::i_isolate()->context()));
 }
@@ -24789,7 +24788,6 @@ TEST(AccessCheckedIsConcatSpreadable) {
 
 
 TEST(AccessCheckedToStringTag) {
-  i::FLAG_harmony_tostring = true;
   v8::Isolate* isolate = CcTest::isolate();
   HandleScope scope(isolate);
   LocalContext env;

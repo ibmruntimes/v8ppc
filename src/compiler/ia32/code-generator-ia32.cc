@@ -49,16 +49,13 @@ class IA32OperandConverter : public InstructionOperandConverter {
       return Operand(ToDoubleRegister(op));
     }
     DCHECK(op->IsStackSlot() || op->IsDoubleStackSlot());
-    FrameOffset offset = frame_access_state()->GetFrameOffset(
-        AllocatedOperand::cast(op)->index());
-    return Operand(offset.from_stack_pointer() ? esp : ebp,
-                   offset.offset() + extra);
+    return SlotToOperand(AllocatedOperand::cast(op)->index(), extra);
   }
 
-  Operand ToMaterializableOperand(int materializable_offset) {
-    FrameOffset offset = frame_access_state()->GetFrameOffset(
-        FPOffsetToFrameSlot(materializable_offset));
-    return Operand(offset.from_stack_pointer() ? esp : ebp, offset.offset());
+  Operand SlotToOperand(int slot, int extra = 0) {
+    FrameOffset offset = frame_access_state()->GetFrameOffset(slot);
+    return Operand(offset.from_stack_pointer() ? esp : ebp,
+                   offset.offset() + extra);
   }
 
   Operand HighOperand(InstructionOperand* op) {
@@ -680,6 +677,31 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ sar_cl(i.OutputOperand());
       }
       break;
+    case kIA32AddPair: {
+      // i.OutputRegister(0) == i.InputRegister(0) ... left low word.
+      // i.InputRegister(1) ... left high word.
+      // i.InputRegister(2) ... right low word.
+      // i.InputRegister(3) ... right high word.
+      bool use_temp = false;
+      if (i.OutputRegister(0).code() == i.InputRegister(1).code() ||
+          i.OutputRegister(0).code() == i.InputRegister(3).code()) {
+        // We cannot write to the output register directly, because it would
+        // overwrite an input for adc. We have to use the temp register.
+        use_temp = true;
+        __ Move(i.TempRegister(0), i.InputRegister(0));
+        __ add(i.TempRegister(0), i.InputRegister(2));
+      } else {
+        __ add(i.OutputRegister(0), i.InputRegister(2));
+      }
+      __ adc(i.InputRegister(1), Operand(i.InputRegister(3)));
+      if (i.OutputRegister(1).code() != i.InputRegister(1).code()) {
+        __ Move(i.OutputRegister(1), i.InputRegister(1));
+      }
+      if (use_temp) {
+        __ Move(i.OutputRegister(0), i.TempRegister(0));
+      }
+      break;
+    }
     case kIA32ShlPair:
       if (HasImmediateInput(instr, 2)) {
         __ ShlPair(i.InputRegister(1), i.InputRegister(0), i.InputInt6(2));
@@ -1652,15 +1674,15 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
     Constant src_constant = g.ToConstant(source);
     if (src_constant.type() == Constant::kHeapObject) {
       Handle<HeapObject> src = src_constant.ToHeapObject();
-      int offset;
-      if (IsMaterializableFromFrame(src, &offset)) {
+      int slot;
+      if (IsMaterializableFromFrame(src, &slot)) {
         if (destination->IsRegister()) {
           Register dst = g.ToRegister(destination);
-          __ mov(dst, g.ToMaterializableOperand(offset));
+          __ mov(dst, g.SlotToOperand(slot));
         } else {
           DCHECK(destination->IsStackSlot());
           Operand dst = g.ToOperand(destination);
-          __ push(g.ToMaterializableOperand(offset));
+          __ push(g.SlotToOperand(slot));
           __ pop(dst);
         }
       } else if (destination->IsRegister()) {

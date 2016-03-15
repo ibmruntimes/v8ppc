@@ -33,7 +33,7 @@
 #include "src/full-codegen/full-codegen.h"
 #include "src/ic/ic.h"
 #include "src/identity-map.h"
-#include "src/interpreter/bytecodes.h"
+#include "src/interpreter/bytecode-array-iterator.h"
 #include "src/interpreter/source-position-table.h"
 #include "src/isolate-inl.h"
 #include "src/keys.h"
@@ -2463,11 +2463,9 @@ Handle<String> JSReceiver::GetConstructorName(Handle<JSReceiver> receiver) {
     }
   }
 
-  if (FLAG_harmony_tostring) {
-    Handle<Object> maybe_tag = JSReceiver::GetDataProperty(
-        receiver, isolate->factory()->to_string_tag_symbol());
-    if (maybe_tag->IsString()) return Handle<String>::cast(maybe_tag);
-  }
+  Handle<Object> maybe_tag = JSReceiver::GetDataProperty(
+      receiver, isolate->factory()->to_string_tag_symbol());
+  if (maybe_tag->IsString()) return Handle<String>::cast(maybe_tag);
 
   PrototypeIterator iter(isolate, receiver);
   if (iter.IsAtEnd()) return handle(receiver->class_name());
@@ -11541,6 +11539,10 @@ void String::WriteToFlat(String* src,
           // Right hand side is longer.  Recurse over left.
           if (from < boundary) {
             WriteToFlat(first, sink, from, boundary);
+            if (from == 0 && cons_string->second() == first) {
+              CopyChars(sink + boundary, sink, boundary);
+              return;
+            }
             sink += boundary - from;
             from = 0;
           } else {
@@ -13984,8 +13986,6 @@ void Code::Relocate(intptr_t delta) {
 
 
 void Code::CopyFrom(const CodeDesc& desc) {
-  DCHECK(Marking::Color(this) == Marking::WHITE_OBJECT);
-
   // copy code
   CopyBytes(instruction_start(), desc.buffer,
             static_cast<size_t>(desc.instr_size));
@@ -14009,21 +14009,22 @@ void Code::CopyFrom(const CodeDesc& desc) {
     RelocInfo::Mode mode = it.rinfo()->rmode();
     if (mode == RelocInfo::EMBEDDED_OBJECT) {
       Handle<Object> p = it.rinfo()->target_object_handle(origin);
-      it.rinfo()->set_target_object(*p, SKIP_WRITE_BARRIER, SKIP_ICACHE_FLUSH);
+      it.rinfo()->set_target_object(*p, UPDATE_WRITE_BARRIER,
+                                    SKIP_ICACHE_FLUSH);
     } else if (mode == RelocInfo::CELL) {
       Handle<Cell> cell  = it.rinfo()->target_cell_handle();
-      it.rinfo()->set_target_cell(*cell, SKIP_WRITE_BARRIER, SKIP_ICACHE_FLUSH);
+      it.rinfo()->set_target_cell(*cell, UPDATE_WRITE_BARRIER,
+                                  SKIP_ICACHE_FLUSH);
     } else if (RelocInfo::IsCodeTarget(mode)) {
       // rewrite code handles in inline cache targets to direct
       // pointers to the first instruction in the code object
       Handle<Object> p = it.rinfo()->target_object_handle(origin);
       Code* code = Code::cast(*p);
       it.rinfo()->set_target_address(code->instruction_start(),
-                                     SKIP_WRITE_BARRIER,
-                                     SKIP_ICACHE_FLUSH);
+                                     UPDATE_WRITE_BARRIER, SKIP_ICACHE_FLUSH);
     } else if (RelocInfo::IsRuntimeEntry(mode)) {
       Address p = it.rinfo()->target_runtime_entry(origin);
-      it.rinfo()->set_target_runtime_entry(p, SKIP_WRITE_BARRIER,
+      it.rinfo()->set_target_runtime_entry(p, UPDATE_WRITE_BARRIER,
                                            SKIP_ICACHE_FLUSH);
     } else if (mode == RelocInfo::CODE_AGE_SEQUENCE) {
       Handle<Object> p = it.rinfo()->code_age_stub_handle(origin);
@@ -14358,6 +14359,12 @@ void Code::MakeYoung(Isolate* isolate) {
   if (sequence != NULL) MakeCodeAgeSequenceYoung(sequence, isolate);
 }
 
+void Code::PreAge(Isolate* isolate) {
+  byte* sequence = FindCodeAgeSequence();
+  if (sequence != NULL) {
+    PatchPlatformCodeAge(isolate, sequence, kPreAgedCodeAge, NO_MARKING_PARITY);
+  }
+}
 
 void Code::MarkToBeExecutedOnce(Isolate* isolate) {
   byte* sequence = FindCodeAgeSequence();
@@ -14366,7 +14373,6 @@ void Code::MarkToBeExecutedOnce(Isolate* isolate) {
                          NO_MARKING_PARITY);
   }
 }
-
 
 void Code::MakeOlder(MarkingParity current_parity) {
   byte* sequence = FindCodeAgeSequence();
@@ -15017,50 +15023,29 @@ void BytecodeArray::Disassemble(std::ostream& os) {
   os << "Frame size " << frame_size() << "\n";
   Vector<char> buf = Vector<char>::New(50);
 
-  const uint8_t* first_bytecode_address = GetFirstBytecodeAddress();
-  int bytecode_size = 0;
-
+  const uint8_t* base_address = GetFirstBytecodeAddress();
   interpreter::SourcePositionTableIterator source_positions(
       source_position_table());
-
-  for (int i = 0; i < this->length(); i += bytecode_size) {
-    const uint8_t* bytecode_start = &first_bytecode_address[i];
-    interpreter::Bytecode bytecode =
-        interpreter::Bytecodes::FromByte(bytecode_start[0]);
-    bytecode_size = interpreter::Bytecodes::Size(bytecode);
-
-    if (!source_positions.done() && i == source_positions.bytecode_offset()) {
+  interpreter::BytecodeArrayIterator iterator(handle(this));
+  while (!iterator.done()) {
+    if (!source_positions.done() &&
+        iterator.current_offset() == source_positions.bytecode_offset()) {
       os << std::setw(5) << source_positions.source_position();
       os << (source_positions.is_statement() ? " S> " : " E> ");
       source_positions.Advance();
     } else {
       os << "         ";
     }
-
-    SNPrintF(buf, "%p", bytecode_start);
+    const uint8_t* current_address = base_address + iterator.current_offset();
+    SNPrintF(buf, "%p", current_address);
     os << buf.start() << " : ";
-    interpreter::Bytecodes::Decode(os, bytecode_start, parameter_count());
-
-    if (interpreter::Bytecodes::IsJumpConstantWide(bytecode)) {
-      DCHECK_EQ(bytecode_size, 3);
-      int index = static_cast<int>(ReadUnalignedUInt16(bytecode_start + 1));
-      int offset = Smi::cast(constant_pool()->get(index))->value();
-      SNPrintF(buf, " (%p)", bytecode_start + offset);
-      os << buf.start();
-    } else if (interpreter::Bytecodes::IsJumpConstant(bytecode)) {
-      DCHECK_EQ(bytecode_size, 2);
-      int index = static_cast<int>(bytecode_start[1]);
-      int offset = Smi::cast(constant_pool()->get(index))->value();
-      SNPrintF(buf, " (%p)", bytecode_start + offset);
-      os << buf.start();
-    } else if (interpreter::Bytecodes::IsJump(bytecode)) {
-      DCHECK_EQ(bytecode_size, 2);
-      int offset = static_cast<int8_t>(bytecode_start[1]);
-      SNPrintF(buf, " (%p)", bytecode_start + offset);
+    interpreter::Bytecodes::Decode(os, current_address, parameter_count());
+    if (interpreter::Bytecodes::IsJump(iterator.current_bytecode())) {
+      SNPrintF(buf, " (%p)", base_address + iterator.GetJumpTargetOffset());
       os << buf.start();
     }
-
     os << std::endl;
+    iterator.Advance();
   }
 
   if (constant_pool()->length() > 0) {
@@ -16647,16 +16632,14 @@ MaybeHandle<String> Object::ObjectProtoToString(Isolate* isolate,
       Object::ToObject(isolate, object).ToHandleChecked();
 
   Handle<String> tag;
-  if (FLAG_harmony_tostring) {
-    Handle<Object> to_string_tag;
-    ASSIGN_RETURN_ON_EXCEPTION(
-        isolate, to_string_tag,
-        JSReceiver::GetProperty(receiver,
-                                isolate->factory()->to_string_tag_symbol()),
-        String);
-    if (to_string_tag->IsString()) {
-      tag = Handle<String>::cast(to_string_tag);
-    }
+  Handle<Object> to_string_tag;
+  ASSIGN_RETURN_ON_EXCEPTION(
+      isolate, to_string_tag,
+      JSReceiver::GetProperty(receiver,
+                              isolate->factory()->to_string_tag_symbol()),
+      String);
+  if (to_string_tag->IsString()) {
+    tag = Handle<String>::cast(to_string_tag);
   }
 
   if (tag.is_null()) {
@@ -17486,9 +17469,6 @@ template void Dictionary<NameDictionary, NameDictionaryShape,
 template Handle<NameDictionary>
 Dictionary<NameDictionary, NameDictionaryShape, Handle<Name> >::
     EnsureCapacity(Handle<NameDictionary>, int, Handle<Name>);
-
-template bool Dictionary<SeededNumberDictionary, SeededNumberDictionaryShape,
-                         uint32_t>::HasComplexElements();
 
 template int HashTable<SeededNumberDictionary, SeededNumberDictionaryShape,
                        uint32_t>::FindEntry(uint32_t);
@@ -18330,6 +18310,21 @@ void Dictionary<Derived, Shape, Key>::AddEntry(
   dictionary->ElementAdded();
 }
 
+bool SeededNumberDictionary::HasComplexElements() {
+  if (!requires_slow_elements()) return false;
+  int capacity = this->Capacity();
+  for (int i = 0; i < capacity; i++) {
+    Object* k = this->KeyAt(i);
+    if (this->IsKey(k)) {
+      DCHECK(!IsDeleted(i));
+      PropertyDetails details = this->DetailsAt(i);
+      if (details.type() == ACCESSOR_CONSTANT) return true;
+      PropertyAttributes attr = details.attributes();
+      if (attr & ALL_ATTRIBUTES_MASK) return true;
+    }
+  }
+  return false;
+}
 
 void SeededNumberDictionary::UpdateMaxNumberKey(uint32_t key,
                                                 bool used_as_prototype) {
@@ -18434,23 +18429,6 @@ int Dictionary<Derived, Shape, Key>::NumberOfElementsFilterAttributes(
     }
   }
   return result;
-}
-
-
-template <typename Derived, typename Shape, typename Key>
-bool Dictionary<Derived, Shape, Key>::HasComplexElements() {
-  int capacity = this->Capacity();
-  for (int i = 0; i < capacity; i++) {
-    Object* k = this->KeyAt(i);
-    if (this->IsKey(k) && !k->FilterKey(ALL_PROPERTIES)) {
-      if (this->IsDeleted(i)) continue;
-      PropertyDetails details = this->DetailsAt(i);
-      if (details.type() == ACCESSOR_CONSTANT) return true;
-      PropertyAttributes attr = details.attributes();
-      if (attr & ALL_ATTRIBUTES_MASK) return true;
-    }
-  }
-  return false;
 }
 
 

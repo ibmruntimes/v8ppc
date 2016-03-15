@@ -85,7 +85,7 @@ class CacheLineSizes {
     cache_type_register_ = 0;
 #else
     // Copy the content of the cache type register to a core register.
-    __asm__ __volatile__("mrs %[ctr], ctr_el0"  // NOLINT
+    __asm__ __volatile__("mrs %x[ctr], ctr_el0"  // NOLINT
                          : [ctr] "=r"(cache_type_register_));
 #endif
   }
@@ -656,8 +656,8 @@ CPU::CPU()
   }
 
   CacheLineSizes sizes;
-  icache_line_size_ = sizes.dcache_line_size();
-  dcache_line_size_ = sizes.icache_line_size();
+  icache_line_size_ = sizes.icache_line_size();
+  dcache_line_size_ = sizes.dcache_line_size();
 
 #elif V8_HOST_ARCH_PPC
 

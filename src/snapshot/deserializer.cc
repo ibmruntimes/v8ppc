@@ -41,6 +41,7 @@ void Deserializer::FlushICacheForNewIsolate() {
 void Deserializer::FlushICacheForNewCodeObjects() {
   DCHECK(deserializing_user_code_);
   for (Code* code : new_code_objects_) {
+    if (FLAG_serialize_age_code) code->PreAge(isolate_);
     Assembler::FlushICache(isolate_, code->instruction_start(),
                            code->instruction_size());
   }
@@ -127,6 +128,8 @@ MaybeHandle<Object> Deserializer::DeserializePartial(
   VisitPointer(&root);
   DeserializeDeferredObjects();
 
+  isolate->heap()->RegisterReservationsForBlackAllocation(reservations_);
+
   // There's no code deserialized here. If this assert fires then that's
   // changed and logging should be added to notify the profiler et al of the
   // new code, which also has to be flushed from instruction cache.
@@ -152,6 +155,7 @@ MaybeHandle<SharedFunctionInfo> Deserializer::DeserializeCode(
       result = Handle<SharedFunctionInfo>(SharedFunctionInfo::cast(root));
     }
     CommitPostProcessedObjects(isolate);
+    isolate->heap()->RegisterReservationsForBlackAllocation(reservations_);
     return scope.CloseAndEscape(result);
   }
 }

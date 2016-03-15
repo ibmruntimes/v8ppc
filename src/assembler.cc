@@ -1209,6 +1209,46 @@ ExternalReference ExternalReference::wasm_uint64_to_float64(Isolate* isolate) {
       Redirect(isolate, FUNCTION_ADDR(wasm::uint64_to_float64_wrapper)));
 }
 
+ExternalReference ExternalReference::wasm_float32_to_int64(Isolate* isolate) {
+  return ExternalReference(
+      Redirect(isolate, FUNCTION_ADDR(wasm::float32_to_int64_wrapper)));
+}
+
+ExternalReference ExternalReference::wasm_float32_to_uint64(Isolate* isolate) {
+  return ExternalReference(
+      Redirect(isolate, FUNCTION_ADDR(wasm::float32_to_uint64_wrapper)));
+}
+
+ExternalReference ExternalReference::wasm_float64_to_int64(Isolate* isolate) {
+  return ExternalReference(
+      Redirect(isolate, FUNCTION_ADDR(wasm::float64_to_int64_wrapper)));
+}
+
+ExternalReference ExternalReference::wasm_float64_to_uint64(Isolate* isolate) {
+  return ExternalReference(
+      Redirect(isolate, FUNCTION_ADDR(wasm::float64_to_uint64_wrapper)));
+}
+
+ExternalReference ExternalReference::wasm_int64_div(Isolate* isolate) {
+  return ExternalReference(
+      Redirect(isolate, FUNCTION_ADDR(wasm::int64_div_wrapper)));
+}
+
+ExternalReference ExternalReference::wasm_int64_mod(Isolate* isolate) {
+  return ExternalReference(
+      Redirect(isolate, FUNCTION_ADDR(wasm::int64_mod_wrapper)));
+}
+
+ExternalReference ExternalReference::wasm_uint64_div(Isolate* isolate) {
+  return ExternalReference(
+      Redirect(isolate, FUNCTION_ADDR(wasm::uint64_div_wrapper)));
+}
+
+ExternalReference ExternalReference::wasm_uint64_mod(Isolate* isolate) {
+  return ExternalReference(
+      Redirect(isolate, FUNCTION_ADDR(wasm::uint64_mod_wrapper)));
+}
+
 static void f64_acos_wrapper(double* param) { *param = std::acos(*param); }
 
 ExternalReference ExternalReference::f64_acos_wrapper_function(

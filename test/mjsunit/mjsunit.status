@@ -83,16 +83,6 @@
   'regress/regress-2185-2': [PASS, NO_VARIANTS],
   'regress/regress-2612': [PASS, NO_VARIANTS],
 
-  # Modules are busted
-  'harmony/module-linking': [SKIP],
-  'harmony/module-recompile': [SKIP],
-  'harmony/module-resolution': [SKIP],
-  'harmony/regress/regress-343928': [SKIP],
-
-  # Proxy tests rely on non ES6 version of Proxies
-  # TODO(neis,cbruni): figure out which Proxy tests can be reused
-  'harmony/proxies-example-membrane': [SKIP],
-
   # Issue 3660: Replacing activated TurboFan frames by unoptimized code does
   # not work, but we expect it to not crash.
   'debug-step-turbofan': [PASS, FAIL],
@@ -302,8 +292,7 @@
   'harmony/unicode-regexp-ignore-case': [PASS, ['no_i18n == True', FAIL]],
   'harmony/unicode-regexp-ignore-case-noi18n': [FAIL, ['no_i18n == True', PASS]],
   # desugaring regexp property class relies on ICU.
-  'harmony/regexp-property-general-category': [PASS, ['no_i18n == True', FAIL]],
-  'harmony/regexp-property-script-category': [PASS, ['no_i18n == True', FAIL]],
+  'harmony/regexp-property-*': [PASS, ['no_i18n == True', FAIL]],
 }],  # ALWAYS
 
 ['novfp3 == True', {
@@ -772,8 +761,9 @@
   'harmony/debug-stepin-proxies': [FAIL],
   'regress/regress-crbug-119800': [FAIL],
   'regress/regress-opt-after-debug-deopt': [FAIL],
-  'regress/regress-crbug-568477-2': [FAIL],
-  'debug-stepin-accessor-ic': [FAIL],
+
+  # TODO(yangguo,4690): flaky failures on the bots.
+  'debug-stepin-builtin-callback-opt': [SKIP],
 
    # TODO(rmcilroy,4765): assertion failures in LiveEdit tests.
   'debug-liveedit-restart-frame': [FAIL],
@@ -819,7 +809,18 @@
   # TODO(mythria, 4680): possibly problem with line numbers.
   'es6/regress/regress-468661': [FAIL],
 
+  # Debugger test cases that pass with ignition, but not full-codegen.
+  # These differences between full-codegen and ignition are deliberate.
+  'ignition/elided-instruction-no-ignition': [FAIL],
 }],  # ignition == True
+
+['ignition == True and system == windows', {
+  # TODO(rmcilroy,4680): Crash on windows nosnap shared.
+  'regress/regress-crbug-352058': [PASS, ['no_snap == True', SKIP]],
+
+  # TODO(rmcilroy,4680): Fails on win32 debug.
+  'div-mod': [PASS, ['arch == ia32', SKIP]],
+}],  # ignition == True and system == windows
 
 ['ignition == True and arch == arm64', {
   # TODO(rmcilroy,4680): Arm64 specific timeouts.
@@ -834,6 +835,51 @@
   'compiler/osr-two': [SKIP],
   'regress/regress-1257': [SKIP],
 }],  # ignition == True and arch == arm
+
+['ignition == True and msan', {
+  # TODO(rmcilroy,4680): Uninitialized memory.
+  'compiler/osr-big': [SKIP],
+  'compiler/osr-nested': [SKIP],
+  'debug-*': [SKIP],
+  'es6/debug-*': [SKIP],
+  'harmony/debug-stepin-default-parameters': [SKIP],
+  'ignition/debug-break': [SKIP],
+  'ignition/debug-break-on-stack': [SKIP],
+  'ignition/elided-instruction': [SKIP],
+  'regress/debug-prepare-step-in': [SKIP],
+  'regress/regress-102153': [SKIP],
+  'regress/regress-109195': [SKIP],
+  'regress/regress-147497': [SKIP],
+  'regress/regress-1523': [SKIP],
+  'regress/regress-1586': [SKIP],
+  'regress/regress-1639': [SKIP],
+  'regress/regress-1639-2': [SKIP],
+  'regress/regress-269': [SKIP],
+  'regress/regress-2825': [SKIP],
+  'regress/regress-298269': [SKIP],
+  'regress/regress-3960': [SKIP],
+  'regress/regress-4320': [SKIP],
+  'regress/regress-94873': [SKIP],
+  'regress/regress-998565': [SKIP],
+  'regress/regress-crbug-319860': [SKIP],
+  'regress/regress-crbug-387599': [SKIP],
+  'regress/regress-crbug-405922': [SKIP],
+  'regress/regress-crbug-409614': [SKIP],
+  'regress/regress-crbug-432493': [SKIP],
+  'regress/regress-crbug-467180': [SKIP],
+  'regress/regress-crbug-568477-2': [SKIP],
+  'regress/regress-crbug-481896': [SKIP],
+  'regress/regress-crbug-568477-4': [SKIP],
+  'regress/regress-debug-deopt-while-recompile': [SKIP],
+  'regress/regress-deep-proto': [SKIP],
+  'try': [SKIP],
+}],  # ignition == True and msan
+
+['ignition == False', {
+  # Debugger test cases that pass with full-codegen, but not ignition.
+  # These differences between full-codegen and ignition are deliberate.
+  'ignition/elided-instruction': [FAIL],
+}],  # ignition == False
 
 ##############################################################################
 ['gcov_coverage', {

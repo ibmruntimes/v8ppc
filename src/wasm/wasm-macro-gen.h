@@ -110,13 +110,11 @@ namespace wasm {
 inline void CheckI32v(int32_t value, int length) {
   DCHECK(length >= 1 && length <= 5);
   DCHECK(length == 5 || I32V_IN_RANGE(value, length));
-  DCHECK(length == 1 || !I32V_IN_RANGE(value, length - 1));
 }
 
 inline void CheckI64v(int64_t value, int length) {
   DCHECK(length >= 1 && length <= 10);
   DCHECK(length == 10 || I64V_IN_RANGE(value, length));
-  DCHECK(length == 1 || !I64V_IN_RANGE(value, length - 1));
 }
 
 // A helper for encoding local declarations prepended to the body of a
@@ -401,6 +399,7 @@ class LocalDeclEncoder {
 #define WASM_I32_CLZ(x) kExprI32Clz, x
 #define WASM_I32_CTZ(x) kExprI32Ctz, x
 #define WASM_I32_POPCNT(x) kExprI32Popcnt, x
+#define WASM_I32_EQZ(x) kExprI32Eqz, x
 
 //------------------------------------------------------------------------------
 // Int64 operations
@@ -433,6 +432,7 @@ class LocalDeclEncoder {
 #define WASM_I64_CLZ(x) kExprI64Clz, x
 #define WASM_I64_CTZ(x) kExprI64Ctz, x
 #define WASM_I64_POPCNT(x) kExprI64Popcnt, x
+#define WASM_I64_EQZ(x) kExprI64Eqz, x
 
 //------------------------------------------------------------------------------
 // Float32 operations

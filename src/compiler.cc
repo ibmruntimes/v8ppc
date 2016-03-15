@@ -1410,6 +1410,9 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
                                    FLAG_min_preparse_length) &&
                               !info->is_debug();
 
+      // Consider parsing eagerly when targeting the code cache.
+      parse_allow_lazy &= !(FLAG_serialize_eager && info->will_serialize());
+
       parse_info->set_allow_lazy_parsing(parse_allow_lazy);
       if (!parse_allow_lazy &&
           (options == ScriptCompiler::kProduceParserCache ||
@@ -1647,7 +1650,7 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForScript(
     Zone zone;
     ParseInfo parse_info(&zone, script);
     CompilationInfo info(&parse_info);
-    if (FLAG_harmony_modules && is_module) {
+    if (is_module) {
       parse_info.set_module();
     } else {
       parse_info.set_global();
@@ -1769,6 +1772,9 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfo(
                     (!info.is_debug() || allow_lazy_without_ctx);
 
   bool lazy = FLAG_lazy && allow_lazy && !literal->should_eager_compile();
+
+  // Consider compiling eagerly when targeting the code cache.
+  lazy &= !(FLAG_serialize_eager && info.will_serialize());
 
   // Generate code
   TimerEventScope<TimerEventCompileCode> timer(isolate);

@@ -1,4 +1,4 @@
-// Copyright 2012 the V8 project authors. All rights reserved.
+// Copyright 2011 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,63 +25,28 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --harmony-modules
+// Eval restrictions should not trigger outside of strict-mode code.
 
-// Test that potential recompilation of the global scope does not screw up.
+function foo() {
+  var arguments = 42;
+  arguments = arguments++;
+  arguments += --arguments;
+  arguments -= ++arguments;
+  arguments *= arguments--;
+  function arguments(arguments) {};
+  try {} catch (arguments) {}
 
-"use strict";
-
-var N = 1e5;  // Number of loop iterations that trigger optimization.
-
-module A {
-  export var x = 1
-  export function f() { return x }
-}
-var f = A.f
-
-assertEquals(1, A.x)
-assertEquals(1, A.f())
-assertEquals(1, f())
-
-A.x = 2
-
-assertEquals(2, A.x)
-assertEquals(2, A.f())
-assertEquals(2, f())
-
-for (var i = 0; i < N; i++) {
-  if (i > N) print("impossible");
-}
-
-assertEquals(2, A.x)
-assertEquals(2, A.f())
-assertEquals(2, f())
-
-
-// Same test with loop inside a module.
-
-module B {
-  module A {
-    export var x = 1
-    export function f() { return x }
-  }
-  var f = A.f
-
-  assertEquals(1, A.x)
-  assertEquals(1, A.f())
-  assertEquals(1, f())
-
-  A.x = 2
-
-  assertEquals(2, A.x)
-  assertEquals(2, A.f())
-  assertEquals(2, f())
-
-  for (var i = 0; i < N; i++) {
-    if (i > N) print("impossible");
+  function strict() {
+    "use strict";
+    // Reading eval and arguments is allowed.
+    eval(arguments);
   }
 
-  assertEquals(2, A.x)
-  assertEquals(2, A.f())
-  assertEquals(2, f())
+  var arguments = 42;
+  arguments = arguments++;
+  arguments += --arguments;
+  arguments -= ++arguments;
+  arguments *= arguments--;
+  function arguments(arguments) {};
+  try {} catch (arguments) {}
 }

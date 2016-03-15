@@ -142,13 +142,18 @@ BUILTIN_LIST_C(DEF_ARG_TYPE)
                                                      Isolate* isolate);        \
   MUST_USE_RESULT static Object* Builtin_##name(                               \
       int args_length, Object** args_object, Isolate* isolate) {               \
+    Object* value;                                                             \
     isolate->counters()->runtime_calls()->Increment();                         \
-    RuntimeCallStats* stats = isolate->counters()->runtime_call_stats();       \
-    RuntimeCallTimerScope timer(isolate, &stats->Builtin_##name);              \
     TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.runtime"),                      \
                  "V8.Builtin_" #name);                                         \
     name##ArgumentsType args(args_length, args_object);                        \
-    Object* value = Builtin_Impl_##name(args, isolate);                        \
+    if (FLAG_runtime_call_stats) {                                             \
+      RuntimeCallStats* stats = isolate->counters()->runtime_call_stats();     \
+      RuntimeCallTimerScope timer(isolate, &stats->Builtin_##name);            \
+      value = Builtin_Impl_##name(args, isolate);                              \
+    } else {                                                                   \
+      value = Builtin_Impl_##name(args, isolate);                              \
+    }                                                                          \
     return value;                                                              \
   }                                                                            \
                                                                                \
@@ -3903,9 +3908,9 @@ MUST_USE_RESULT MaybeHandle<Object> HandleApiCallHelper(
   HandleScope scope(isolate);
   Handle<HeapObject> function = args.target<HeapObject>();
   Handle<JSReceiver> receiver;
-  // TODO(ishell): turn this back to a DCHECK.
-  CHECK(function->IsFunctionTemplateInfo() ||
-        Handle<JSFunction>::cast(function)->shared()->IsApiFunction());
+
+  DCHECK(function->IsFunctionTemplateInfo() ||
+         Handle<JSFunction>::cast(function)->shared()->IsApiFunction());
 
   Handle<FunctionTemplateInfo> fun_data =
       function->IsFunctionTemplateInfo()
@@ -3951,8 +3956,7 @@ MUST_USE_RESULT MaybeHandle<Object> HandleApiCallHelper(
 
   Object* raw_call_data = fun_data->call_code();
   if (!raw_call_data->IsUndefined()) {
-    // TODO(ishell): remove this debugging code.
-    CHECK(raw_call_data->IsCallHandlerInfo());
+    DCHECK(raw_call_data->IsCallHandlerInfo());
     CallHandlerInfo* call_data = CallHandlerInfo::cast(raw_call_data);
     Object* callback_obj = call_data->callback();
     v8::FunctionCallback callback =

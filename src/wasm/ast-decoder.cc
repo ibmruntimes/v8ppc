@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/base/platform/elapsed-timer.h"
 #include "src/signature.h"
 
 #include "src/bit-vector.h"
@@ -335,12 +334,18 @@ class WasmDecoder : public Decoder {
         BranchTableOperand operand(this, pc);
         return 1 + operand.length;
       }
+      case kExprI32Const: {
+        ImmI32Operand operand(this, pc);
+        return 1 + operand.length;
+      }
+      case kExprI64Const: {
+        ImmI64Operand operand(this, pc);
+        return 1 + operand.length;
+      }
       case kExprI8Const:
         return 2;
-      case kExprI32Const:
       case kExprF32Const:
         return 5;
-      case kExprI64Const:
       case kExprF64Const:
         return 9;
 
@@ -369,11 +374,6 @@ class SR_WasmDecoder : public WasmDecoder {
   }
 
   TreeResult Decode() {
-    base::ElapsedTimer decode_timer;
-    if (FLAG_trace_wasm_decode_time) {
-      decode_timer.Start();
-    }
-
     if (end_ < pc_) {
       error(pc_, "function body end < start");
       return result_;
@@ -405,12 +405,7 @@ class SR_WasmDecoder : public WasmDecoder {
         FunctionBody body = {module_, sig_, base_, start_, end_};
         PrintAst(body);
       }
-      if (FLAG_trace_wasm_decode_time) {
-        double ms = decode_timer.Elapsed().InMillisecondsF();
-        PrintF("wasm-decode ok (%0.3f ms)\n\n", ms);
-      } else {
-        TRACE("wasm-decode ok\n\n");
-      }
+      TRACE("wasm-decode ok\n");
     } else {
       TRACE("wasm-error module+%-6d func+%d: %s\n\n", baserel(error_pc_),
             startrel(error_pc_), error_msg_.get());
@@ -664,7 +659,7 @@ class SR_WasmDecoder : public WasmDecoder {
             PushBlock(break_env);
             SsaEnv* cont_env = Steal(break_env);
             // The continue environment is the inner environment.
-            PrepareForLoop(cont_env);
+            PrepareForLoop(pc_, cont_env);
             SetEnv("loop:start", Split(cont_env));
             if (ssa_env_->go()) ssa_env_->state = SsaEnv::kReached;
             PushBlock(cont_env);
@@ -1359,6 +1354,7 @@ class SR_WasmDecoder : public WasmDecoder {
   }
 
   void SetEnv(const char* reason, SsaEnv* env) {
+#if DEBUG
     TRACE("  env = %p, block depth = %d, reason = %s", static_cast<void*>(env),
           static_cast<int>(blocks_.size()), reason);
     if (FLAG_trace_wasm_decoder && env && env->control) {
@@ -1366,6 +1362,7 @@ class SR_WasmDecoder : public WasmDecoder {
       compiler::WasmGraphBuilder::PrintDebugName(env->control);
     }
     TRACE("\n");
+#endif
     ssa_env_ = env;
     if (builder_) {
       builder_->set_control_ptr(&env->control);
@@ -1463,28 +1460,31 @@ class SR_WasmDecoder : public WasmDecoder {
     return tnode;
   }
 
-  void BuildInfiniteLoop() {
-    if (ssa_env_->go()) {
-      PrepareForLoop(ssa_env_);
-      SsaEnv* cont_env = ssa_env_;
-      ssa_env_ = Split(ssa_env_);
-      ssa_env_->state = SsaEnv::kReached;
-      Goto(ssa_env_, cont_env);
-    }
-  }
+  void PrepareForLoop(const byte* pc, SsaEnv* env) {
+    if (!env->go()) return;
+    env->state = SsaEnv::kMerged;
+    if (!builder_) return;
 
-  void PrepareForLoop(SsaEnv* env) {
-    if (env->go()) {
-      env->state = SsaEnv::kMerged;
-      if (builder_) {
-        env->control = builder_->Loop(env->control);
-        env->effect = builder_->EffectPhi(1, &env->effect, env->control);
-        builder_->Terminate(env->effect, env->control);
+    env->control = builder_->Loop(env->control);
+    env->effect = builder_->EffectPhi(1, &env->effect, env->control);
+    builder_->Terminate(env->effect, env->control);
+    if (FLAG_wasm_loop_assignment_analysis) {
+      BitVector* assigned = AnalyzeLoopAssignment(pc);
+      if (assigned != nullptr) {
+        // Only introduce phis for variables assigned in this loop.
         for (int i = EnvironmentCount() - 1; i >= 0; i--) {
+          if (!assigned->Contains(i)) continue;
           env->locals[i] = builder_->Phi(local_type_vec_[i], 1, &env->locals[i],
                                          env->control);
         }
+        return;
       }
+    }
+
+    // Conservatively introduce phis for all local variables.
+    for (int i = EnvironmentCount() - 1; i >= 0; i--) {
+      env->locals[i] =
+          builder_->Phi(local_type_vec_[i], 1, &env->locals[i], env->control);
     }
   }
 
@@ -1589,18 +1589,31 @@ class SR_WasmDecoder : public WasmDecoder {
       WasmOpcode opcode = static_cast<WasmOpcode>(*pc);
       int arity = 0;
       int length = 1;
+      int assigned_index = -1;
       if (opcode == kExprSetLocal) {
         LocalIndexOperand operand(this, pc);
         if (assigned->length() > 0 &&
             static_cast<int>(operand.index) < assigned->length()) {
           // Unverified code might have an out-of-bounds index.
+          // Ignore out-of-bounds indices, as the main verification will fail.
           assigned->Add(operand.index);
+          assigned_index = operand.index;
         }
         arity = 1;
         length = 1 + operand.length;
       } else {
         arity = OpcodeArity(pc);
         length = OpcodeLength(pc);
+      }
+
+      TRACE("loop-assign module+%-6d %s func+%d: 0x%02x %s", baserel(pc),
+            indentation(), startrel(pc), opcode,
+            WasmOpcodes::OpcodeName(opcode));
+
+      if (assigned_index >= 0) {
+        TRACE(" (assigned local #%d)\n", assigned_index);
+      } else {
+        TRACE("\n");
       }
 
       pc += length;

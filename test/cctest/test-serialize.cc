@@ -1556,6 +1556,12 @@ TEST(CodeSerializerInternalReference) {
 #if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64
   return;
 #endif
+  // In ignition there are only relative jumps, so the following code
+  // would not have any internal references. This test is not relevant
+  // for ignition.
+  if (FLAG_ignition) {
+    return;
+  }
   // Disable experimental natives that are loaded after deserialization.
   FLAG_function_context_specialization = false;
   FLAG_always_opt = true;
@@ -1636,6 +1642,61 @@ TEST(CodeSerializerInternalReference) {
   isolate->Dispose();
 }
 
+TEST(CodeSerializerEagerCompilationAndPreAge) {
+  if (FLAG_ignition) return;
+
+  FLAG_lazy = true;
+  FLAG_serialize_toplevel = true;
+  FLAG_serialize_age_code = true;
+  FLAG_serialize_eager = true;
+  FLAG_min_preparse_length = 1;
+
+  static const char* source =
+      "function f() {"
+      "  function g() {"
+      "    return 1;"
+      "  }"
+      "  return g();"
+      "}"
+      "'abcdef';";
+
+  v8::ScriptCompiler::CachedData* cache = ProduceCache(source);
+
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
+  v8::Isolate* isolate2 = v8::Isolate::New(create_params);
+  {
+    v8::Isolate::Scope iscope(isolate2);
+    v8::HandleScope scope(isolate2);
+    v8::Local<v8::Context> context = v8::Context::New(isolate2);
+    v8::Context::Scope context_scope(context);
+
+    v8::Local<v8::String> source_str = v8_str(source);
+    v8::ScriptOrigin origin(v8_str("test"));
+    v8::ScriptCompiler::Source source(source_str, origin, cache);
+    v8::Local<v8::UnboundScript> unbound =
+        v8::ScriptCompiler::CompileUnboundScript(
+            isolate2, &source, v8::ScriptCompiler::kConsumeCodeCache)
+            .ToLocalChecked();
+
+    CHECK(!cache->rejected);
+
+    Isolate* i_isolate = reinterpret_cast<Isolate*>(isolate2);
+    HandleScope i_scope(i_isolate);
+    Handle<SharedFunctionInfo> toplevel = v8::Utils::OpenHandle(*unbound);
+    Handle<Script> script(Script::cast(toplevel->script()));
+    WeakFixedArray::Iterator iterator(script->shared_function_infos());
+    // Every function has been pre-compiled from the code cache.
+    int count = 0;
+    while (SharedFunctionInfo* shared = iterator.Next<SharedFunctionInfo>()) {
+      CHECK(shared->is_compiled());
+      CHECK_EQ(Code::kPreAgedCodeAge, shared->code()->GetAge());
+      count++;
+    }
+    CHECK_EQ(3, count);
+  }
+  isolate2->Dispose();
+}
 
 TEST(Regress503552) {
   // Test that the code serializer can deal with weak cells that form a linked

@@ -111,9 +111,6 @@ class ParserBase : public Traits {
         allow_harmony_sloppy_(false),
         allow_harmony_sloppy_function_(false),
         allow_harmony_sloppy_let_(false),
-        allow_harmony_default_parameters_(false),
-        allow_harmony_destructuring_bind_(false),
-        allow_harmony_destructuring_assignment_(false),
         allow_harmony_restrictive_declarations_(false),
         allow_legacy_const_(true),
         allow_harmony_do_expressions_(false),
@@ -129,9 +126,6 @@ class ParserBase : public Traits {
   ALLOW_ACCESSORS(harmony_sloppy);
   ALLOW_ACCESSORS(harmony_sloppy_function);
   ALLOW_ACCESSORS(harmony_sloppy_let);
-  ALLOW_ACCESSORS(harmony_default_parameters);
-  ALLOW_ACCESSORS(harmony_destructuring_bind);
-  ALLOW_ACCESSORS(harmony_destructuring_assignment);
   ALLOW_ACCESSORS(harmony_restrictive_declarations);
   ALLOW_ACCESSORS(legacy_const);
   ALLOW_ACCESSORS(harmony_do_expressions);
@@ -368,7 +362,6 @@ class ParserBase : public Traits {
 
   Scope* NewScope(Scope* parent, ScopeType scope_type, FunctionKind kind) {
     DCHECK(ast_value_factory());
-    DCHECK(scope_type != MODULE_SCOPE || FLAG_harmony_modules);
     Scope* result = new (zone())
         Scope(zone(), parent, scope_type, ast_value_factory(), kind);
     result->Initialize();
@@ -806,10 +799,6 @@ class ParserBase : public Traits {
   ExpressionT CheckAndRewriteReferenceExpression(
       ExpressionT expression, int beg_pos, int end_pos,
       MessageTemplate::Template message, bool* ok);
-  ExpressionT ClassifyAndRewriteReferenceExpression(
-      ExpressionClassifier* classifier, ExpressionT expression, int beg_pos,
-      int end_pos, MessageTemplate::Template message,
-      ParseErrorType type = kSyntaxError);
   ExpressionT CheckAndRewriteReferenceExpression(
       ExpressionT expression, int beg_pos, int end_pos,
       MessageTemplate::Template message, ParseErrorType type, bool* ok);
@@ -925,9 +914,6 @@ class ParserBase : public Traits {
   bool allow_harmony_sloppy_;
   bool allow_harmony_sloppy_function_;
   bool allow_harmony_sloppy_let_;
-  bool allow_harmony_default_parameters_;
-  bool allow_harmony_destructuring_bind_;
-  bool allow_harmony_destructuring_assignment_;
   bool allow_harmony_restrictive_declarations_;
   bool allow_legacy_const_;
   bool allow_harmony_do_expressions_;
@@ -1263,15 +1249,9 @@ ParserBase<Traits>::ParsePrimaryExpression(ExpressionClassifier* classifier,
       return this->ParseRegExpLiteral(false, classifier, ok);
 
     case Token::LBRACK:
-      if (!allow_harmony_destructuring_bind()) {
-        BindingPatternUnexpectedToken(classifier);
-      }
       return this->ParseArrayLiteral(classifier, ok);
 
     case Token::LBRACE:
-      if (!allow_harmony_destructuring_bind()) {
-        BindingPatternUnexpectedToken(classifier);
-      }
       return this->ParseObjectLiteral(classifier, ok);
 
     case Token::LPAREN: {
@@ -1973,23 +1953,10 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN,
   // Now pending non-pattern expressions must be discarded.
   arrow_formals_classifier.Discard();
 
-  if (!(allow_harmony_destructuring_bind() ||
-        allow_harmony_default_parameters())) {
-    BindingPatternUnexpectedToken(classifier);
-  }
-
-  if (allow_harmony_destructuring_assignment() && IsValidPattern(expression) &&
-      peek() == Token::ASSIGN) {
+  if (IsValidPattern(expression) && peek() == Token::ASSIGN) {
     classifier->ForgiveCoverInitializedNameError();
     ValidateAssignmentPattern(classifier, CHECK_OK);
     is_destructuring_assignment = true;
-  } else if (allow_harmony_default_parameters() &&
-             !allow_harmony_destructuring_assignment()) {
-    // TODO(adamk): This branch should be removed once the destructuring
-    // assignment and default parameter flags are removed.
-    expression = this->ClassifyAndRewriteReferenceExpression(
-        classifier, expression, lhs_beg_pos, scanner()->location().end_pos,
-        MessageTemplate::kInvalidLhsInAssignment);
   } else {
     expression = this->CheckAndRewriteReferenceExpression(
         expression, lhs_beg_pos, scanner()->location().end_pos,
@@ -2665,7 +2632,6 @@ void ParserBase<Traits>::ParseFormalParameter(
   //   BindingElement[?Yield, ?GeneratorParameter]
   bool is_rest = parameters->has_rest;
 
-  Token::Value next = peek();
   ExpressionT pattern = ParsePrimaryExpression(classifier, ok);
   if (!*ok) return;
 
@@ -2673,11 +2639,6 @@ void ParserBase<Traits>::ParseFormalParameter(
   if (!*ok) return;
 
   if (!Traits::IsIdentifier(pattern)) {
-    if (!allow_harmony_destructuring_bind()) {
-      ReportUnexpectedToken(next);
-      *ok = false;
-      return;
-    }
     parameters->is_simple = false;
     ValidateFormalParameterInitializer(classifier, ok);
     if (!*ok) return;
@@ -2685,7 +2646,7 @@ void ParserBase<Traits>::ParseFormalParameter(
   }
 
   ExpressionT initializer = Traits::EmptyExpression();
-  if (!is_rest && allow_harmony_default_parameters() && Check(Token::ASSIGN)) {
+  if (!is_rest && Check(Token::ASSIGN)) {
     ExpressionClassifier init_classifier(this);
     initializer = ParseAssignmentExpression(true, &init_classifier, ok);
     if (!*ok) return;
@@ -3024,41 +2985,25 @@ typename ParserBase<Traits>::ExpressionT
 ParserBase<Traits>::CheckAndRewriteReferenceExpression(
     ExpressionT expression, int beg_pos, int end_pos,
     MessageTemplate::Template message, ParseErrorType type, bool* ok) {
-  ExpressionClassifier classifier(this);
-  ExpressionT result = ClassifyAndRewriteReferenceExpression(
-      &classifier, expression, beg_pos, end_pos, message, type);
-  ValidateExpression(&classifier, ok);
-  if (!*ok) return this->EmptyExpression();
-  return result;
-}
-
-
-template <typename Traits>
-typename ParserBase<Traits>::ExpressionT
-ParserBase<Traits>::ClassifyAndRewriteReferenceExpression(
-    ExpressionClassifier* classifier, ExpressionT expression, int beg_pos,
-    int end_pos, MessageTemplate::Template message, ParseErrorType type) {
-  Scanner::Location location(beg_pos, end_pos);
-  if (this->IsIdentifier(expression)) {
-    if (is_strict(language_mode()) &&
-        this->IsEvalOrArguments(this->AsIdentifier(expression))) {
-      classifier->RecordExpressionError(
-          location, MessageTemplate::kStrictEvalArguments, kSyntaxError);
-      return expression;
-    }
+  if (this->IsIdentifier(expression) && is_strict(language_mode()) &&
+      this->IsEvalOrArguments(this->AsIdentifier(expression))) {
+    ReportMessageAt(Scanner::Location(beg_pos, end_pos),
+                    MessageTemplate::kStrictEvalArguments, kSyntaxError);
+    *ok = false;
+    return this->EmptyExpression();
   }
   if (expression->IsValidReferenceExpression()) {
     return expression;
-  } else if (expression->IsCall()) {
+  }
+  if (expression->IsCall()) {
     // If it is a call, make it a runtime error for legacy web compatibility.
     // Rewrite `expr' to `expr[throw ReferenceError]'.
-    int pos = location.beg_pos;
-    ExpressionT error = this->NewThrowReferenceError(message, pos);
-    return factory()->NewProperty(expression, error, pos);
-  } else {
-    classifier->RecordExpressionError(location, message, type);
-    return expression;
+    ExpressionT error = this->NewThrowReferenceError(message, beg_pos);
+    return factory()->NewProperty(expression, error, beg_pos);
   }
+  ReportMessageAt(Scanner::Location(beg_pos, end_pos), message, type);
+  *ok = false;
+  return this->EmptyExpression();
 }
 
 
