@@ -197,6 +197,7 @@ MachineRepresentation StackSlotRepresentationOf(Operator const* op) {
   V(LoadFramePointer, Operator::kNoProperties, 0, 0, 1)                       \
   V(LoadParentFramePointer, Operator::kNoProperties, 0, 0, 1)                 \
   V(Int32PairAdd, Operator::kNoProperties, 4, 0, 2)                           \
+  V(Int32PairSub, Operator::kNoProperties, 4, 0, 2)                           \
   V(Word32PairShl, Operator::kNoProperties, 3, 0, 2)                          \
   V(Word32PairShr, Operator::kNoProperties, 3, 0, 2)                          \
   V(Word32PairSar, Operator::kNoProperties, 3, 0, 2)
@@ -471,12 +472,19 @@ const Operator* MachineOperatorBuilder::CheckedStore(
   return nullptr;
 }
 
-// On 32 bit platforms we need to get a reference to a Word64Popcnt operator for
-// later lowering, even though 32 bit platforms don't support Word64Popcnt.
+// On 32 bit platforms we need to get a reference to optional operators of
+// 64-bit instructions for later Int64Lowering, even though 32 bit platforms
+// don't support the original 64-bit instruction.
 const Operator* MachineOperatorBuilder::Word64PopcntPlaceholder() {
   return &cache_.kWord64Popcnt;
 }
 
+// On 32 bit platforms we need to get a reference to optional operators of
+// 64-bit instructions for later Int64Lowering, even though 32 bit platforms
+// don't support the original 64-bit instruction.
+const Operator* MachineOperatorBuilder::Word64CtzPlaceholder() {
+  return &cache_.kWord64Ctz;
+}
 }  // namespace compiler
 }  // namespace internal
 }  // namespace v8

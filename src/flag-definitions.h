@@ -209,7 +209,6 @@ DEFINE_IMPLICATION(es_staging, harmony_tailcalls)
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                                    \
-  V(harmony_array_prototype_values, "harmony Array.prototype.values")        \
   V(harmony_regexp_lookbehind, "harmony regexp lookbehind")                  \
   V(harmony_instanceof, "harmony instanceof support")                        \
   V(harmony_object_values_entries, "harmony Object.values / Object.entries") \
@@ -219,17 +218,18 @@ DEFINE_IMPLICATION(es_staging, harmony_tailcalls)
     "harmony limitations on sloppy mode function declarations")
 
 // Features that are shipping (turned on by default, but internal flag remains).
-#define HARMONY_SHIPPING(V)                                               \
-  V(harmony_function_name, "harmony Function name inference")             \
-  V(harmony_iterator_close, "harmony iterator finalization")              \
-  V(harmony_regexps, "harmony regular expression extensions")             \
-  V(harmony_unicode_regexps, "harmony unicode regexps")                   \
-  V(harmony_sloppy, "harmony features in sloppy mode")                    \
-  V(harmony_sloppy_let, "harmony let in sloppy mode")                     \
-  V(harmony_sloppy_function, "harmony sloppy function block scoping")     \
-  V(harmony_proxies, "harmony proxies")                                   \
-  V(harmony_reflect, "harmony Reflect API")                               \
-  V(harmony_regexp_subclass, "harmony regexp subclassing")                \
+#define HARMONY_SHIPPING(V)                                           \
+  V(harmony_array_prototype_values, "harmony Array.prototype.values") \
+  V(harmony_function_name, "harmony Function name inference")         \
+  V(harmony_iterator_close, "harmony iterator finalization")          \
+  V(harmony_regexps, "harmony regular expression extensions")         \
+  V(harmony_unicode_regexps, "harmony unicode regexps")               \
+  V(harmony_sloppy, "harmony features in sloppy mode")                \
+  V(harmony_sloppy_let, "harmony let in sloppy mode")                 \
+  V(harmony_sloppy_function, "harmony sloppy function block scoping") \
+  V(harmony_proxies, "harmony proxies")                               \
+  V(harmony_reflect, "harmony Reflect API")                           \
+  V(harmony_regexp_subclass, "harmony regexp subclassing")            \
   V(harmony_species, "harmony Symbol.species")
 
 // Once a shipping feature has proved stable in the wild, it will be dropped
@@ -690,7 +690,7 @@ DEFINE_INT(min_progress_during_incremental_marking_finalization, 32,
            "least this many unmarked objects")
 DEFINE_INT(max_incremental_marking_finalization_rounds, 3,
            "at most try this many times to finalize incremental marking")
-DEFINE_BOOL(black_allocation, true, "use black allocation")
+DEFINE_BOOL(black_allocation, false, "use black allocation")
 DEFINE_BOOL(concurrent_sweeping, true, "use concurrent sweeping")
 DEFINE_BOOL(parallel_compaction, true, "use parallel compaction")
 DEFINE_BOOL(parallel_pointer_update, false,

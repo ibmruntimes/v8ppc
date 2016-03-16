@@ -41,12 +41,13 @@
 
 #define FOREACH_I64_OPERATOR(V) \
   V(DepthFirst, true)           \
+  V(I64Phi, false)              \
   V(I64Const, true)             \
   V(I64Return, true)            \
   V(I64Param, true)             \
   V(I64LoadStore, true)         \
   V(I64Add, !MIPS_OR_X87)       \
-  V(I64Sub, false)              \
+  V(I64Sub, !MIPS_OR_X87)       \
   V(I64Mul, false)              \
   V(I64DivS, true)              \
   V(I64DivU, true)              \
@@ -68,8 +69,8 @@
   V(I64GeS, true)               \
   V(I64GtU, true)               \
   V(I64GeU, true)               \
-  V(I64Clz, false)              \
-  V(I64Ctz, false)              \
+  V(I64Ctz, true)               \
+  V(I64Clz, true)               \
   V(I64Popcnt, !MIPS_OR_X87)    \
   V(I32ConvertI64, true)        \
   V(I64SConvertF32, false)      \
@@ -137,6 +138,14 @@ TEST(Run_WasmI64Add) {
   }
 }
 // kExprI64Sub:
+TEST(Run_Wasm_I64Sub) {
+  REQUIRE(I64Sub);
+  WasmRunner<int64_t> r(MachineType::Int64(), MachineType::Int64());
+  BUILD(r, WASM_I64_SUB(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
+  FOR_INT64_INPUTS(i) {
+    FOR_INT64_INPUTS(j) { CHECK_EQ(*i - *j, r.Call(*i, *j)); }
+  }
+}
 // kExprI64Mul:
 // kExprI64DivS:
 
@@ -541,7 +550,7 @@ TEST(Run_WasmF32SConvertI64) {
   REQUIRE(F32SConvertI64);
   WasmRunner<float> r(MachineType::Int64());
   BUILD(r, WASM_F32_SCONVERT_I64(WASM_GET_LOCAL(0)));
-  FOR_INT64_INPUTS(i) { CHECK_EQ(static_cast<float>(*i), r.Call(*i)); }
+  FOR_INT64_INPUTS(i) { CHECK_FLOAT_EQ(static_cast<float>(*i), r.Call(*i)); }
 }
 // kExprF32UConvertI64:
 TEST(Run_WasmF32UConvertI64) {
@@ -636,7 +645,7 @@ TEST(Run_WasmF64SConvertI64) {
   REQUIRE(F64SConvertI64);
   WasmRunner<double> r(MachineType::Int64());
   BUILD(r, WASM_F64_SCONVERT_I64(WASM_GET_LOCAL(0)));
-  FOR_INT64_INPUTS(i) { CHECK_EQ(static_cast<double>(*i), r.Call(*i)); }
+  FOR_INT64_INPUTS(i) { CHECK_DOUBLE_EQ(static_cast<double>(*i), r.Call(*i)); }
 }
 // kExprF64UConvertI64:
 TEST(Run_Wasm_F64UConvertI64) {
@@ -1241,6 +1250,7 @@ TEST(Run_Wasm_MemI64_Sum) {
   REQUIRE(I64LoadStore);
   REQUIRE(I64Add);
   REQUIRE(I64Sub);
+  REQUIRE(I64Phi);
   const int kNumElems = 20;
   TestingModule module;
   uint64_t* memory = module.AddMemoryElems<uint64_t>(kNumElems);

@@ -498,6 +498,9 @@ Node* WasmGraphBuilder::Binop(wasm::WasmOpcode opcode, Node* left,
       op = m->Int64Add();
       break;
     // kExprI64Sub:
+    case wasm::kExprI64Sub:
+      op = m->Int64Sub();
+      break;
     // kExprI64Mul:
     // kExprI64DivS:
     case wasm::kExprI64DivS:
@@ -570,9 +573,6 @@ Node* WasmGraphBuilder::Binop(wasm::WasmOpcode opcode, Node* left,
 #if WASM_64
     // Opcodes only supported on 64-bit platforms.
     // TODO(titzer): query the machine operator builder here instead of #ifdef.
-    case wasm::kExprI64Sub:
-      op = m->Int64Sub();
-      break;
     case wasm::kExprI64Mul:
       op = m->Int64Mul();
       break;
@@ -838,7 +838,25 @@ Node* WasmGraphBuilder::Unop(wasm::WasmOpcode opcode, Node* input) {
       op = m->BitcastFloat64ToInt64();
       break;
     // kExprI64Clz:
+    case wasm::kExprI64Clz:
+      op = m->Word64Clz();
+      break;
     // kExprI64Ctz:
+    case wasm::kExprI64Ctz: {
+      if (m->Word64Ctz().IsSupported()) {
+        op = m->Word64Ctz().op();
+        break;
+      } else if (m->Is32() && m->Word32Ctz().IsSupported()) {
+        op = m->Word64CtzPlaceholder();
+        break;
+      } else if (m->Word64ReverseBits().IsSupported()) {
+        Node* reversed = graph()->NewNode(m->Word64ReverseBits().op(), input);
+        Node* result = graph()->NewNode(m->Word64Clz(), reversed);
+        return result;
+      } else {
+        return BuildI64Ctz(input);
+      }
+    }
     // kExprI64Popcnt:
     case wasm::kExprI64Popcnt: {
       if (m->Word64Popcnt().IsSupported()) {
@@ -897,25 +915,6 @@ Node* WasmGraphBuilder::Unop(wasm::WasmOpcode opcode, Node* input) {
     case wasm::kExprI64UConvertF64: {
       return BuildI64UConvertF64(input);
     }
-#if WASM_64
-    // Opcodes only supported on 64-bit platforms.
-    // TODO(titzer): query the machine operator builder here instead of #ifdef.
-    case wasm::kExprI64Clz:
-      op = m->Word64Clz();
-      break;
-    case wasm::kExprI64Ctz: {
-      if (m->Word64Ctz().IsSupported()) {
-        op = m->Word64Ctz().op();
-        break;
-      } else if (m->Word64ReverseBits().IsSupported()) {
-        Node* reversed = graph()->NewNode(m->Word64ReverseBits().op(), input);
-        Node* result = graph()->NewNode(m->Word64Clz(), reversed);
-        return result;
-      } else {
-        return BuildI64Ctz(input);
-      }
-    }
-#endif
     default:
       op = UnsupportedOpcode(opcode);
   }

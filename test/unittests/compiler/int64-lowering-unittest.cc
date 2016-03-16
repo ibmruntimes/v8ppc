@@ -320,6 +320,22 @@ TEST_F(Int64LoweringTest, Int64Add) {
                         start(), start()));
 }
 // kExprI64Sub:
+TEST_F(Int64LoweringTest, Int64Sub) {
+  LowerGraph(graph()->NewNode(machine()->Int64Sub(), Int64Constant(value(0)),
+                              Int64Constant(value(1))),
+             MachineRepresentation::kWord64);
+
+  Capture<Node*> sub;
+  Matcher<Node*> sub_matcher = IsInt32PairSub(
+      IsInt32Constant(low_word_value(0)), IsInt32Constant(high_word_value(0)),
+      IsInt32Constant(low_word_value(1)), IsInt32Constant(high_word_value(1)));
+
+  EXPECT_THAT(graph()->end()->InputAt(1),
+              IsReturn2(IsProjection(0, AllOf(CaptureEq(&sub), sub_matcher)),
+                        IsProjection(1, AllOf(CaptureEq(&sub), sub_matcher)),
+                        start(), start()));
+}
+
 // kExprI64Mul:
 // kExprI64DivS:
 // kExprI64DivU:
@@ -551,7 +567,50 @@ TEST_F(Int64LoweringTest, I64ReinterpretF64) {
                 start(), start()));
 }
 // kExprI64Clz:
+TEST_F(Int64LoweringTest, I64Clz) {
+  LowerGraph(graph()->NewNode(machine()->Word64Clz(), Int64Constant(value(0))),
+             MachineRepresentation::kWord64);
+
+  Capture<Node*> branch_capture;
+  Matcher<Node*> branch_matcher = IsBranch(
+      IsWord32Equal(IsInt32Constant(high_word_value(0)), IsInt32Constant(0)),
+      start());
+
+  EXPECT_THAT(
+      graph()->end()->InputAt(1),
+      IsReturn2(
+          IsPhi(MachineRepresentation::kWord32,
+                IsInt32Add(IsWord32Clz(IsInt32Constant(low_word_value(0))),
+                           IsInt32Constant(32)),
+                IsWord32Clz(IsInt32Constant(high_word_value(0))),
+                IsMerge(
+                    IsIfTrue(AllOf(CaptureEq(&branch_capture), branch_matcher)),
+                    IsIfFalse(
+                        AllOf(CaptureEq(&branch_capture), branch_matcher)))),
+          IsInt32Constant(0), start(), start()));
+}
 // kExprI64Ctz:
+TEST_F(Int64LoweringTest, I64Ctz) {
+  LowerGraph(graph()->NewNode(machine()->Word64CtzPlaceholder(),
+                              Int64Constant(value(0))),
+             MachineRepresentation::kWord64);
+  Capture<Node*> branch_capture;
+  Matcher<Node*> branch_matcher = IsBranch(
+      IsWord32Equal(IsInt32Constant(low_word_value(0)), IsInt32Constant(0)),
+      start());
+  EXPECT_THAT(
+      graph()->end()->InputAt(1),
+      IsReturn2(
+          IsPhi(MachineRepresentation::kWord32,
+                IsInt32Add(IsWord32Ctz(IsInt32Constant(high_word_value(0))),
+                           IsInt32Constant(32)),
+                IsWord32Ctz(IsInt32Constant(low_word_value(0))),
+                IsMerge(
+                    IsIfTrue(AllOf(CaptureEq(&branch_capture), branch_matcher)),
+                    IsIfFalse(
+                        AllOf(CaptureEq(&branch_capture), branch_matcher)))),
+          IsInt32Constant(0), start(), start()));
+}
 // kExprI64Popcnt:
 
 TEST_F(Int64LoweringTest, Dfs) {

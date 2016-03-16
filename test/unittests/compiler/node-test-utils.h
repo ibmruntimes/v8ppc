@@ -279,6 +279,7 @@ Matcher<Node*> IsWord32Ror(const Matcher<Node*>& lhs_matcher,
 Matcher<Node*> IsWord32Equal(const Matcher<Node*>& lhs_matcher,
                              const Matcher<Node*>& rhs_matcher);
 Matcher<Node*> IsWord32Clz(const Matcher<Node*>& value_matcher);
+Matcher<Node*> IsWord32Ctz(const Matcher<Node*>& value_matcher);
 Matcher<Node*> IsWord32Popcnt(const Matcher<Node*>& value_matcher);
 Matcher<Node*> IsWord64And(const Matcher<Node*>& lhs_matcher,
                            const Matcher<Node*>& rhs_matcher);
@@ -364,6 +365,11 @@ Matcher<Node*> IsInt32PairAdd(const Matcher<Node*>& a_matcher,
                               const Matcher<Node*>& b_matcher,
                               const Matcher<Node*>& c_matcher,
                               const Matcher<Node*>& d_matcher);
+Matcher<Node*> IsInt32PairSub(const Matcher<Node*>& a_matcher,
+                              const Matcher<Node*>& b_matcher,
+                              const Matcher<Node*>& c_matcher,
+                              const Matcher<Node*>& d_matcher);
+
 Matcher<Node*> IsWord32PairShl(const Matcher<Node*>& lhs_matcher,
                                const Matcher<Node*>& mid_matcher,
                                const Matcher<Node*>& rhs_matcher);
