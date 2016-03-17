@@ -36,10 +36,12 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kS390_RotLeftAndClearRight64:
     case kS390_Add:
     case kS390_AddWithOverflow32:
+    case kS390_AddPair:
     case kS390_AddFloat:
     case kS390_AddDouble:
     case kS390_Sub:
     case kS390_SubWithOverflow32:
+    case kS390_SubPair:
     case kS390_SubFloat:
     case kS390_SubDouble:
     case kS390_Mul32:

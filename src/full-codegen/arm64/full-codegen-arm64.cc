@@ -3121,6 +3121,11 @@ void FullCodeGenerator::EmitGetSuperConstructor(CallRuntime* expr) {
   context()->Plug(x0);
 }
 
+void FullCodeGenerator::EmitGetOrdinaryHasInstance(CallRuntime* expr) {
+  DCHECK_EQ(0, expr->arguments()->length());
+  __ LoadNativeContextSlot(Context::ORDINARY_HAS_INSTANCE_INDEX, x0);
+  context()->Plug(x0);
+}
 
 void FullCodeGenerator::EmitDebugIsActive(CallRuntime* expr) {
   DCHECK(expr->arguments()->length() == 0);
@@ -3844,7 +3849,10 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
                               JSGeneratorObject::kReceiverOffset));
   __ Push(x10);
 
-  // Push holes for the rest of the arguments to the generator function.
+  // Push holes for arguments to generator function. Since the parser forced
+  // context allocation for any variables in generators, the actual argument
+  // values have already been copied into the context and these dummy values
+  // will never be used.
   __ Ldr(x10, FieldMemOperand(function, JSFunction::kSharedFunctionInfoOffset));
 
   // The number of arguments is stored as an int32_t, and -1 is a marker

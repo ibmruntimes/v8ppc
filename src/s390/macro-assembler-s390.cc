@@ -4006,6 +4006,39 @@ void MacroAssembler::AddP(const MemOperand& opnd, const Operand& imm) {
 //  Add Logical Instructions
 //----------------------------------------------------------------------------
 
+// Add Logical With Carry 32-bit (Register dst = Register src1 + Register src2)
+void MacroAssembler::AddLogicalWithCarry32(Register dst, Register src1,
+                                           Register src2) {
+  if (!dst.is(src2) && !dst.is(src1)) {
+    lr(dst, src1);
+    alcr(dst, src2);
+  } else if (!dst.is(src2)) {
+    // dst == src1
+    DCHECK(dst.is(src1));
+    alcr(dst, src2);
+  } else {
+    // dst == src2
+    DCHECK(dst.is(src2));
+    alcr(dst, src1);
+  }
+}
+
+// Add Logical 32-bit (Register dst = Register src1 + Register src2)
+void MacroAssembler::AddLogical32(Register dst, Register src1, Register src2) {
+  if (!dst.is(src2) && !dst.is(src1)) {
+    lr(dst, src1);
+    alr(dst, src2);
+  } else if (!dst.is(src2)) {
+    // dst == src1
+    DCHECK(dst.is(src1));
+    alr(dst, src2);
+  } else {
+    // dst == src2
+    DCHECK(dst.is(src2));
+    alr(dst, src1);
+  }
+}
+
 // Add Logical 32-bit (Register dst = Register dst + Immediate opnd)
 void MacroAssembler::AddLogical(Register dst, const Operand& imm) {
   alfi(dst, imm);
@@ -4042,6 +4075,42 @@ void MacroAssembler::AddLogicalP(Register dst, const MemOperand& opnd) {
 //----------------------------------------------------------------------------
 //  Subtract Instructions
 //----------------------------------------------------------------------------
+
+// Subtract Logical With Carry 32-bit (Register dst = Register src1 - Register
+// src2)
+void MacroAssembler::SubLogicalWithBorrow32(Register dst, Register src1,
+                                            Register src2) {
+  if (!dst.is(src2) && !dst.is(src1)) {
+    lr(dst, src1);
+    slbr(dst, src2);
+  } else if (!dst.is(src2)) {
+    // dst == src1
+    DCHECK(dst.is(src1));
+    slbr(dst, src2);
+  } else {
+    // dst == src2
+    DCHECK(dst.is(src2));
+    lr(r0, dst);
+    SubLogicalWithBorrow32(dst, src1, r0);
+  }
+}
+
+// Subtract Logical 32-bit (Register dst = Register src1 - Register src2)
+void MacroAssembler::SubLogical32(Register dst, Register src1, Register src2) {
+  if (!dst.is(src2) && !dst.is(src1)) {
+    lr(dst, src1);
+    slr(dst, src2);
+  } else if (!dst.is(src2)) {
+    // dst == src1
+    DCHECK(dst.is(src1));
+    slr(dst, src2);
+  } else {
+    // dst == src2
+    DCHECK(dst.is(src2));
+    lr(r0, dst);
+    SubLogical32(dst, src1, r0);
+  }
+}
 
 // Subtract 32-bit (Register dst = Register dst - Immediate opnd)
 void MacroAssembler::Sub32(Register dst, const Operand& imm) {

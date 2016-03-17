@@ -1903,7 +1903,10 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
   __ lw(a2, FieldMemOperand(a1, JSGeneratorObject::kReceiverOffset));
   __ push(a2);
 
-  // Push holes for the rest of the arguments to the generator function.
+  // Push holes for arguments to generator function. Since the parser forced
+  // context allocation for any variables in generators, the actual argument
+  // values have already been copied into the context and these dummy values
+  // will never be used.
   __ lw(a3, FieldMemOperand(t0, JSFunction::kSharedFunctionInfoOffset));
   __ lw(a3,
         FieldMemOperand(a3, SharedFunctionInfo::kFormalParameterCountOffset));
@@ -3324,6 +3327,11 @@ void FullCodeGenerator::EmitGetSuperConstructor(CallRuntime* expr) {
   context()->Plug(v0);
 }
 
+void FullCodeGenerator::EmitGetOrdinaryHasInstance(CallRuntime* expr) {
+  DCHECK_EQ(0, expr->arguments()->length());
+  __ LoadNativeContextSlot(Context::ORDINARY_HAS_INSTANCE_INDEX, v0);
+  context()->Plug(v0);
+}
 
 void FullCodeGenerator::EmitDebugIsActive(CallRuntime* expr) {
   DCHECK(expr->arguments()->length() == 0);

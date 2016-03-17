@@ -4928,9 +4928,8 @@ void HOptimizedGraphBuilder::VisitReturnStatement(ReturnStatement* stmt) {
     // will always evaluate to true, in a value context the return value needs
     // to be a JSObject.
     if (context->IsTest()) {
-      TestContext* test = TestContext::cast(context);
       CHECK_ALIVE(VisitForEffect(stmt->expression()));
-      Goto(test->if_true(), state);
+      context->ReturnValue(graph()->GetConstantTrue());
     } else if (context->IsEffect()) {
       CHECK_ALIVE(VisitForEffect(stmt->expression()));
       Goto(function_return(), state);
@@ -8568,7 +8567,7 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
       // return value will always evaluate to true, in a value context the
       // return value is the newly allocated receiver.
       if (call_context()->IsTest()) {
-        Goto(inlined_test_context()->if_true(), state);
+        inlined_test_context()->ReturnValue(graph()->GetConstantTrue());
       } else if (call_context()->IsEffect()) {
         Goto(function_return(), state);
       } else {
@@ -8591,7 +8590,7 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
       // Falling off the end of a normal inlined function. This basically means
       // returning undefined.
       if (call_context()->IsTest()) {
-        Goto(inlined_test_context()->if_false(), state);
+        inlined_test_context()->ReturnValue(graph()->GetConstantFalse());
       } else if (call_context()->IsEffect()) {
         Goto(function_return(), state);
       } else {
@@ -10481,19 +10480,26 @@ void HOptimizedGraphBuilder::VisitCallRuntime(CallRuntime* expr) {
   DCHECK(current_block() != NULL);
   DCHECK(current_block()->HasPredecessor());
   if (expr->is_jsruntime()) {
+    // Crankshaft always specializes to the native context, so we can just grab
+    // the constant function from the current native context and embed that into
+    // the code object.
+    Handle<JSFunction> known_function(
+        JSFunction::cast(
+            current_info()->native_context()->get(expr->context_index())),
+        isolate());
+
     // The callee and the receiver both have to be pushed onto the operand stack
     // before arguments are being evaluated.
-    HValue* function = AddLoadJSBuiltin(expr->context_index());
-    HValue* receiver = graph()->GetConstantUndefined();
+    HConstant* function = Add<HConstant>(known_function);
+    HValue* receiver = ImplicitReceiverFor(function, known_function);
     Push(function);
     Push(receiver);
 
     int argument_count = expr->arguments()->length() + 1;  // Count receiver.
     CHECK_ALIVE(VisitExpressions(expr->arguments()));
     PushArgumentsFromEnvironment(argument_count);
-    HInstruction* call = NewCallFunction(function, argument_count,
-                                         ConvertReceiverMode::kNullOrUndefined,
-                                         TailCallMode::kDisallow);
+    HInstruction* call = NewCallConstantFunction(known_function, argument_count,
+                                                 TailCallMode::kDisallow);
     Drop(1);  // Function
     return ast_context()->ReturnInstruction(call, expr->id());
   }
@@ -12879,6 +12885,12 @@ void HOptimizedGraphBuilder::GenerateDebugIsActive(CallRuntime* call) {
   return ast_context()->ReturnValue(value);
 }
 
+void HOptimizedGraphBuilder::GenerateGetOrdinaryHasInstance(CallRuntime* call) {
+  DCHECK(call->arguments()->length() == 0);
+  // ordinary_has_instance is immutable so we can treat it as a constant.
+  HValue* value = Add<HConstant>(isolate()->ordinary_has_instance());
+  return ast_context()->ReturnValue(value);
+}
 
 #undef CHECK_BAILOUT
 #undef CHECK_ALIVE

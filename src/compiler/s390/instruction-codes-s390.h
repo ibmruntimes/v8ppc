@@ -35,12 +35,14 @@ namespace compiler {
   V(S390_RotLeftAndClearRight64)   \
   V(S390_Add)                      \
   V(S390_AddWithOverflow32)        \
+  V(S390_AddPair)                  \
   V(S390_AddFloat)                 \
   V(S390_AddDouble)                \
   V(S390_Sub)                      \
   V(S390_SubWithOverflow32)        \
   V(S390_SubFloat)                 \
   V(S390_SubDouble)                \
+  V(S390_SubPair)                  \
   V(S390_Mul32)                    \
   V(S390_Mul64)                    \
   V(S390_MulHigh32)                \
