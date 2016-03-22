@@ -8,9 +8,9 @@ vars = {
 
 deps = {
   "v8/build/gyp":
-    Var("git_url") + "/external/gyp.git" + "@" + "61259d585ce99d9de8b35188cd0025bdbcb58411",
+    Var("git_url") + "/external/gyp.git" + "@" + "133eaf70b3720b7413017ef3f9c42f6811ef9347",
   "v8/third_party/icu":
-    Var("git_url") + "/chromium/deps/icu.git" + "@" + "6d3b55dfa17d9a597c064eeef7ceac18c73184b7",
+    Var("git_url") + "/chromium/deps/icu.git" + "@" + "0d572d65aae621e13d6863fe470c9c8cee71043d",
   "v8/buildtools":
     Var("git_url") + "/chromium/buildtools.git" + "@" + "7274f1c726640bce4cd4c4198e1ee62a0b29bb89",
   "v8/base/trace_event/common":
@@ -29,13 +29,13 @@ deps = {
   "v8/test/test262/data":
     Var("git_url") + "/external/github.com/tc39/test262.git" + "@" + "57d3e2216fa86ad63b6c0a54914ba9dcbff96003",
   "v8/tools/clang":
-    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "c642451e861b9c568967fb8e4d9d3fd081699162",
+    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "a00149535c011c08b6e8cc583a1f10f38d3cdaf9",
 }
 
 deps_os = {
   "android": {
     "v8/third_party/android_tools":
-      Var("git_url") + "/android_tools.git" + "@" + "f4c36ad89b2696b37d9cd7ca7d984b691888b188",
+      Var("git_url") + "/android_tools.git" + "@" + "19728471dd63a968668288488403286b68e4ae9e",
   },
   "win": {
     "v8/third_party/cygwin":

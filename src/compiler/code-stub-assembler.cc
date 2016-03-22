@@ -221,6 +221,12 @@ Node* CodeStubAssembler::WordIsSmi(Node* a) {
                    IntPtrConstant(0));
 }
 
+Node* CodeStubAssembler::WordIsPositiveSmi(Node* a) {
+  return WordEqual(
+      raw_assembler_->WordAnd(a, IntPtrConstant(kSmiTagMask | kSmiSignMask)),
+      IntPtrConstant(0));
+}
+
 Node* CodeStubAssembler::LoadBufferObject(Node* buffer, int offset,
                                           MachineType rep) {
   return raw_assembler_->Load(rep, buffer, IntPtrConstant(offset));
@@ -235,6 +241,12 @@ Node* CodeStubAssembler::LoadObjectField(Node* object, int offset,
 Node* CodeStubAssembler::LoadHeapNumberValue(Node* object) {
   return Load(MachineType::Float64(), object,
               IntPtrConstant(HeapNumber::kValueOffset - kHeapObjectTag));
+}
+
+Node* CodeStubAssembler::StoreHeapNumberValue(Node* object, Node* value) {
+  return StoreNoWriteBarrier(
+      MachineRepresentation::kFloat64, object,
+      IntPtrConstant(HeapNumber::kValueOffset - kHeapObjectTag), value);
 }
 
 Node* CodeStubAssembler::LoadMapBitField(Node* map) {
@@ -453,6 +465,12 @@ Node* CodeStubAssembler::LoadMap(Node* object) {
   return LoadObjectField(object, HeapObject::kMapOffset);
 }
 
+Node* CodeStubAssembler::StoreMapNoWriteBarrier(Node* object, Node* map) {
+  return StoreNoWriteBarrier(
+      MachineRepresentation::kTagged, object,
+      IntPtrConstant(HeapNumber::kMapOffset - kHeapObjectTag), map);
+}
+
 Node* CodeStubAssembler::LoadInstanceType(Node* object) {
   return LoadMapInstanceType(LoadMap(object));
 }
@@ -466,108 +484,11 @@ Node* CodeStubAssembler::BitFieldDecode(Node* word32, uint32_t shift,
 
 void CodeStubAssembler::BranchIf(Node* condition, Label* if_true,
                                  Label* if_false) {
-  Label if_condition_true(this), if_condition_false(this);
-  Branch(condition, &if_condition_true, &if_condition_false);
-  Bind(&if_condition_true);
+  Label if_condition_is_true(this), if_condition_is_false(this);
+  Branch(condition, &if_condition_is_true, &if_condition_is_false);
+  Bind(&if_condition_is_true);
   Goto(if_true);
-  Bind(&if_condition_false);
-  Goto(if_false);
-}
-
-void CodeStubAssembler::BranchIfInt32LessThan(Node* a, Node* b, Label* if_true,
-                                              Label* if_false) {
-  Label if_lessthan(this), if_notlessthan(this);
-  Branch(Int32LessThan(a, b), &if_lessthan, &if_notlessthan);
-  Bind(&if_lessthan);
-  Goto(if_true);
-  Bind(&if_notlessthan);
-  Goto(if_false);
-}
-
-void CodeStubAssembler::BranchIfSmiLessThan(Node* a, Node* b, Label* if_true,
-                                            Label* if_false) {
-  Label if_lessthan(this), if_notlessthan(this);
-  Branch(SmiLessThan(a, b), &if_lessthan, &if_notlessthan);
-  Bind(&if_lessthan);
-  Goto(if_true);
-  Bind(&if_notlessthan);
-  Goto(if_false);
-}
-
-void CodeStubAssembler::BranchIfSmiLessThanOrEqual(Node* a, Node* b,
-                                                   Label* if_true,
-                                                   Label* if_false) {
-  Label if_lessthanorequal(this), if_notlessthanorequal(this);
-  Branch(SmiLessThanOrEqual(a, b), &if_lessthanorequal, &if_notlessthanorequal);
-  Bind(&if_lessthanorequal);
-  Goto(if_true);
-  Bind(&if_notlessthanorequal);
-  Goto(if_false);
-}
-
-void CodeStubAssembler::BranchIfFloat64Equal(Node* a, Node* b, Label* if_true,
-                                             Label* if_false) {
-  Label if_equal(this), if_notequal(this);
-  Branch(Float64Equal(a, b), &if_equal, &if_notequal);
-  Bind(&if_equal);
-  Goto(if_true);
-  Bind(&if_notequal);
-  Goto(if_false);
-}
-
-void CodeStubAssembler::BranchIfFloat64LessThan(Node* a, Node* b,
-                                                Label* if_true,
-                                                Label* if_false) {
-  Label if_lessthan(this), if_notlessthan(this);
-  Branch(Float64LessThan(a, b), &if_lessthan, &if_notlessthan);
-  Bind(&if_lessthan);
-  Goto(if_true);
-  Bind(&if_notlessthan);
-  Goto(if_false);
-}
-
-void CodeStubAssembler::BranchIfFloat64LessThanOrEqual(Node* a, Node* b,
-                                                       Label* if_true,
-                                                       Label* if_false) {
-  Label if_lessthanorequal(this), if_notlessthanorequal(this);
-  Branch(Float64LessThanOrEqual(a, b), &if_lessthanorequal,
-         &if_notlessthanorequal);
-  Bind(&if_lessthanorequal);
-  Goto(if_true);
-  Bind(&if_notlessthanorequal);
-  Goto(if_false);
-}
-
-void CodeStubAssembler::BranchIfFloat64GreaterThan(Node* a, Node* b,
-                                                   Label* if_true,
-                                                   Label* if_false) {
-  Label if_greaterthan(this), if_notgreaterthan(this);
-  Branch(Float64GreaterThan(a, b), &if_greaterthan, &if_notgreaterthan);
-  Bind(&if_greaterthan);
-  Goto(if_true);
-  Bind(&if_notgreaterthan);
-  Goto(if_false);
-}
-
-void CodeStubAssembler::BranchIfFloat64GreaterThanOrEqual(Node* a, Node* b,
-                                                          Label* if_true,
-                                                          Label* if_false) {
-  Label if_greaterthanorequal(this), if_notgreaterthanorequal(this);
-  Branch(Float64GreaterThanOrEqual(a, b), &if_greaterthanorequal,
-         &if_notgreaterthanorequal);
-  Bind(&if_greaterthanorequal);
-  Goto(if_true);
-  Bind(&if_notgreaterthanorequal);
-  Goto(if_false);
-}
-
-void CodeStubAssembler::BranchIfWord32Equal(Node* a, Node* b, Label* if_true,
-                                            Label* if_false) {
-  Label if_equal(this), if_notequal(this);
-  Branch(Word32Equal(a, b), &if_equal, &if_notequal);
-  Bind(&if_equal);
-  Goto(if_true);
-  Bind(&if_notequal);
+  Bind(&if_condition_is_false);
   Goto(if_false);
 }
 

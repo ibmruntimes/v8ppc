@@ -156,7 +156,7 @@ class InternalEscapableScope : public v8::EscapableHandleScope {
 };
 
 
-#ifdef V8_ENABLE_CHECKS
+#ifdef DEBUG
 void CheckMicrotasksScopesConsistency(i::Isolate* isolate) {
   auto handle_scope_implementer = isolate->handle_scope_implementer();
   if (handle_scope_implementer->microtasks_policy() ==
@@ -187,7 +187,7 @@ class CallDepthScope {
     if (!context_.IsEmpty()) context_->Exit();
     if (!escaped_) isolate_->handle_scope_implementer()->DecrementCallDepth();
     if (do_callback_) isolate_->FireCallCompletedCallback();
-#ifdef V8_ENABLE_CHECKS
+#ifdef DEBUG
     if (do_callback_) CheckMicrotasksScopesConsistency(isolate_);
 #endif
   }
@@ -500,13 +500,17 @@ StartupData V8::WarmUpSnapshotDataBlob(StartupData cold_snapshot_blob,
     Isolate::Scope isolate_scope(isolate);
     i::Snapshot::Initialize(internal_isolate);
     Persistent<Context> context;
+    bool success;
     {
       HandleScope handle_scope(isolate);
-      Local<Context> warmup_context = Context::New(isolate);
-      if (RunExtraCode(isolate, warmup_context, warmup_source, "<warm-up>")) {
-        Local<Context> fresh_context = Context::New(isolate);
-        context.Reset(isolate, fresh_context);
-      }
+      Local<Context> new_context = Context::New(isolate);
+      success = RunExtraCode(isolate, new_context, warmup_source, "<warm-up>");
+    }
+    if (success) {
+      HandleScope handle_scope(isolate);
+      isolate->ContextDisposedNotification(false);
+      Local<Context> new_context = Context::New(isolate);
+      context.Reset(isolate, new_context);
     }
 
     i::Snapshot::Metadata metadata;
@@ -7803,7 +7807,7 @@ MicrotasksScope::MicrotasksScope(Isolate* isolate, MicrotasksScope::Type type)
       run_(type == MicrotasksScope::kRunMicrotasks) {
   auto handle_scope_implementer = isolate_->handle_scope_implementer();
   if (run_) handle_scope_implementer->IncrementMicrotasksScopeDepth();
-#ifdef V8_ENABLE_CHECKS
+#ifdef DEBUG
   if (!run_) handle_scope_implementer->IncrementDebugMicrotasksScopeDepth();
 #endif
 }
@@ -7818,7 +7822,7 @@ MicrotasksScope::~MicrotasksScope() {
       PerformCheckpoint(reinterpret_cast<Isolate*>(isolate_));
     }
   }
-#ifdef V8_ENABLE_CHECKS
+#ifdef DEBUG
   if (!run_) handle_scope_implementer->DecrementDebugMicrotasksScopeDepth();
 #endif
 }

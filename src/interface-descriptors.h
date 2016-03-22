@@ -23,18 +23,14 @@ class PlatformInterfaceDescriptor;
   V(VectorStoreIC)                            \
   V(InstanceOf)                               \
   V(LoadWithVector)                           \
+  V(FastArrayPush)                            \
   V(FastNewClosure)                           \
   V(FastNewContext)                           \
   V(FastNewObject)                            \
   V(FastNewRestParameter)                     \
   V(FastNewSloppyArguments)                   \
   V(FastNewStrictArguments)                   \
-  V(ToNumber)                                 \
-  V(ToLength)                                 \
-  V(ToString)                                 \
-  V(ToName)                                   \
-  V(ToObject)                                 \
-  V(NumberToString)                           \
+  V(TypeConversion)                           \
   V(Typeof)                                   \
   V(FastCloneRegExp)                          \
   V(FastCloneShallowArray)                    \
@@ -52,13 +48,22 @@ class PlatformInterfaceDescriptor;
   V(TransitionElementsKind)                   \
   V(AllocateHeapNumber)                       \
   V(AllocateMutableHeapNumber)                \
+  V(AllocateFloat32x4)                        \
+  V(AllocateInt32x4)                          \
+  V(AllocateUint32x4)                         \
+  V(AllocateBool32x4)                         \
+  V(AllocateInt16x8)                          \
+  V(AllocateUint16x8)                         \
+  V(AllocateBool16x8)                         \
+  V(AllocateInt8x16)                          \
+  V(AllocateUint8x16)                         \
+  V(AllocateBool8x16)                         \
   V(AllocateInNewSpace)                       \
   V(ArrayConstructorConstantArgCount)         \
   V(ArrayConstructor)                         \
   V(InternalArrayConstructorConstantArgCount) \
   V(InternalArrayConstructor)                 \
   V(Compare)                                  \
-  V(ToBoolean)                                \
   V(BinaryOp)                                 \
   V(BinaryOpWithAllocationSite)               \
   V(StringAdd)                                \
@@ -416,56 +421,13 @@ class FastNewStrictArgumentsDescriptor : public CallInterfaceDescriptor {
                      CallInterfaceDescriptor)
 };
 
-
-class ToNumberDescriptor : public CallInterfaceDescriptor {
+class TypeConversionDescriptor final : public CallInterfaceDescriptor {
  public:
-  DECLARE_DESCRIPTOR(ToNumberDescriptor, CallInterfaceDescriptor)
-};
+  enum ParameterIndices { kArgumentIndex };
 
+  DECLARE_DESCRIPTOR(TypeConversionDescriptor, CallInterfaceDescriptor)
 
-class ToLengthDescriptor : public CallInterfaceDescriptor {
- public:
-  enum ParameterIndices { kReceiverIndex };
-
-  DECLARE_DESCRIPTOR(ToLengthDescriptor, CallInterfaceDescriptor)
-
-  static const Register ReceiverRegister();
-};
-
-
-class ToStringDescriptor : public CallInterfaceDescriptor {
- public:
-  enum ParameterIndices { kReceiverIndex };
-
-  DECLARE_DESCRIPTOR(ToStringDescriptor, CallInterfaceDescriptor)
-
-  static const Register ReceiverRegister();
-};
-
-
-class ToNameDescriptor : public CallInterfaceDescriptor {
- public:
-  enum ParameterIndices { kReceiverIndex };
-
-  DECLARE_DESCRIPTOR(ToNameDescriptor, CallInterfaceDescriptor)
-
-  static const Register ReceiverRegister();
-};
-
-
-class ToObjectDescriptor : public CallInterfaceDescriptor {
- public:
-  enum ParameterIndices { kReceiverIndex };
-
-  DECLARE_DESCRIPTOR(ToObjectDescriptor, CallInterfaceDescriptor)
-
-  static const Register ReceiverRegister();
-};
-
-
-class NumberToStringDescriptor : public CallInterfaceDescriptor {
- public:
-  DECLARE_DESCRIPTOR(NumberToStringDescriptor, CallInterfaceDescriptor)
+  static const Register ArgumentRegister();
 };
 
 
@@ -600,6 +562,13 @@ class AllocateHeapNumberDescriptor : public CallInterfaceDescriptor {
   DECLARE_DESCRIPTOR(AllocateHeapNumberDescriptor, CallInterfaceDescriptor)
 };
 
+#define SIMD128_ALLOC_DESC(TYPE, Type, type, lane_count, lane_type)         \
+  class Allocate##Type##Descriptor : public CallInterfaceDescriptor {       \
+   public:                                                                  \
+    DECLARE_DESCRIPTOR(Allocate##Type##Descriptor, CallInterfaceDescriptor) \
+  };
+SIMD128_TYPES(SIMD128_ALLOC_DESC)
+#undef SIMD128_ALLOC_DESC
 
 class AllocateMutableHeapNumberDescriptor : public CallInterfaceDescriptor {
  public:
@@ -647,12 +616,6 @@ class InternalArrayConstructorDescriptor : public CallInterfaceDescriptor {
 class CompareDescriptor : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(CompareDescriptor, CallInterfaceDescriptor)
-};
-
-
-class ToBooleanDescriptor : public CallInterfaceDescriptor {
- public:
-  DECLARE_DESCRIPTOR(ToBooleanDescriptor, CallInterfaceDescriptor)
 };
 
 
@@ -811,6 +774,11 @@ class ContextOnlyDescriptor : public CallInterfaceDescriptor {
   DECLARE_DESCRIPTOR(ContextOnlyDescriptor, CallInterfaceDescriptor)
 };
 
+class FastArrayPushDescriptor : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(FastArrayPushDescriptor,
+                                               CallInterfaceDescriptor)
+};
 
 class GrowArrayElementsDescriptor : public CallInterfaceDescriptor {
  public:

@@ -94,7 +94,8 @@ class CallSite {
   T(ArrayFunctionsOnSealed, "Cannot add/remove sealed array elements")         \
   T(ArrayNotSubclassable, "Subclassing Arrays is not currently supported.")    \
   T(CalledNonCallable, "% is not a function")                                  \
-  T(CalledNonCallableInstanceOf, "right-hand side is not a function")          \
+  T(CalledNonCallableInstanceOf,                                               \
+    "Right-hand side of 'instanceof' is not callable")                         \
   T(CalledOnNonObject, "% called on non-object")                               \
   T(CalledOnNullOrUndefined, "% called on null or undefined")                  \
   T(CallSiteExpectsFunction,                                                   \
@@ -147,6 +148,8 @@ class CallSite {
   T(NoAccess, "no access")                                                     \
   T(NonCoercible, "Cannot match against 'undefined' or 'null'.")               \
   T(NonExtensibleProto, "% is not extensible")                                 \
+  T(NonObjectInInstanceOfCheck,                                                \
+    "Right-hand side of 'instanceof' is not an object")                        \
   T(NonObjectPropertyLoad, "Cannot read property '%' of %")                    \
   T(NonObjectPropertyStore, "Cannot set property '%' of %")                    \
   T(NoSetterInCallback, "Cannot set property % of % which has only a getter")  \
@@ -461,7 +464,9 @@ class CallSite {
   T(UnterminatedTemplate, "Unterminated template literal")                     \
   T(UnterminatedTemplateExpr, "Missing } in template expression")              \
   T(FoundNonCallableHasInstance, "Found non-callable @@hasInstance")           \
-  T(NonObjectInInstanceOfCheck, "Expecting an object in instanceof check")     \
+  T(InvalidHexEscapeSequence, "Invalid hexadecimal escape sequence")           \
+  T(InvalidUnicodeEscapeSequence, "Invalid Unicode escape sequence")           \
+  T(UndefinedUnicodeCodePoint, "Undefined Unicode code-point")                 \
   /* EvalError */                                                              \
   T(CodeGenFromStrings, "%")                                                   \
   /* URIError */                                                               \

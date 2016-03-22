@@ -102,6 +102,7 @@ namespace internal {
   V(kInputStringTooLong, "Input string too long")                              \
   V(kInteger32ToSmiFieldWritingToNonSmiLocation,                               \
     "Integer32ToSmiField writing to non-smi location")                         \
+  V(kInvalidBytecode, "Invalid bytecode")                                      \
   V(kInvalidCaptureReferenced, "Invalid capture referenced")                   \
   V(kInvalidElementsKindForInternalArrayOrInternalPackedArray,                 \
     "Invalid ElementsKind for InternalArray or InternalPackedArray")           \
@@ -139,6 +140,7 @@ namespace internal {
   V(kObjectFoundInSmiOnlyArray, "Object found in smi-only array")              \
   V(kObjectLiteralWithComplexProperty, "Object literal with complex property") \
   V(kOffsetOutOfRange, "Offset out of range")                                  \
+  V(kOperandIsANumber, "Operand is a number")                                  \
   V(kOperandIsASmiAndNotABoundFunction,                                        \
     "Operand is a smi and not a bound function")                               \
   V(kOperandIsASmiAndNotAFunction, "Operand is a smi and not a function")      \
@@ -229,6 +231,8 @@ namespace internal {
   V(kUnexpectedNegativeValue, "Unexpected negative value")                     \
   V(kUnexpectedNumberOfPreAllocatedPropertyFields,                             \
     "Unexpected number of pre-allocated property fields")                      \
+  V(kUnexpectedFunctionIDForInvokeIntrinsic,                                   \
+    "Unexpected runtime function id for the InvokeIntrinsic bytecode")         \
   V(kUnexpectedFPCRMode, "Unexpected FPCR mode.")                              \
   V(kUnexpectedSmi, "Unexpected smi value")                                    \
   V(kUnexpectedStackDepth, "Unexpected operand stack depth in full-codegen")   \
@@ -261,6 +265,8 @@ namespace internal {
   V(kWrongFunctionContext, "Wrong context passed to function")                 \
   V(kWrongAddressOrValuePassedToRecordWrite,                                   \
     "Wrong address or value passed to RecordWrite")                            \
+  V(kWrongArgumentCountForInvokeIntrinsic,                                     \
+    "Wrong number of arguments for intrinsic")                                 \
   V(kShouldNotDirectlyEnterOsrFunction,                                        \
     "Should not directly enter OSR-compiled function")                         \
   V(kYield, "Yield")

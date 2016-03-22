@@ -6666,7 +6666,7 @@ Maybe<bool> JSReceiver::CreateDataProperty(LookupIterator* it,
   Isolate* isolate = receiver->GetIsolate();
 
   if (receiver->IsJSObject()) {
-    return JSObject::CreateDataProperty(it, value);  // Shortcut.
+    return JSObject::CreateDataProperty(it, value, should_throw);  // Shortcut.
   }
 
   PropertyDescriptor new_desc;
@@ -6679,17 +6679,26 @@ Maybe<bool> JSReceiver::CreateDataProperty(LookupIterator* it,
                                        &new_desc, should_throw);
 }
 
-
 Maybe<bool> JSObject::CreateDataProperty(LookupIterator* it,
-                                         Handle<Object> value) {
+                                         Handle<Object> value,
+                                         ShouldThrow should_throw) {
   DCHECK(it->GetReceiver()->IsJSObject());
   MAYBE_RETURN(JSReceiver::GetPropertyAttributes(it), Nothing<bool>());
+  Handle<JSReceiver> receiver = Handle<JSReceiver>::cast(it->GetReceiver());
+  Isolate* isolate = receiver->GetIsolate();
 
   if (it->IsFound()) {
-    if (!it->IsConfigurable()) return Just(false);
+    if (!it->IsConfigurable()) {
+      RETURN_FAILURE(
+          isolate, should_throw,
+          NewTypeError(MessageTemplate::kRedefineDisallowed, it->GetName()));
+    }
   } else {
-    if (!JSObject::IsExtensible(Handle<JSObject>::cast(it->GetReceiver())))
-      return Just(false);
+    if (!JSObject::IsExtensible(Handle<JSObject>::cast(it->GetReceiver()))) {
+      RETURN_FAILURE(
+          isolate, should_throw,
+          NewTypeError(MessageTemplate::kDefineDisallowed, it->GetName()));
+    }
   }
 
   RETURN_ON_EXCEPTION_VALUE(it->isolate(),
@@ -13131,43 +13140,6 @@ void JSFunction::PrintName(FILE* out) {
 }
 
 
-// The filter is a pattern that matches function names in this way:
-//   "*"      all; the default
-//   "-"      all but the top-level function
-//   "-name"  all but the function "name"
-//   ""       only the top-level function
-//   "name"   only the function "name"
-//   "name*"  only functions starting with "name"
-//   "~"      none; the tilde is not an identifier
-bool JSFunction::PassesFilter(const char* raw_filter) {
-  if (*raw_filter == '*') return true;
-  String* name = shared()->DebugName();
-  Vector<const char> filter = CStrVector(raw_filter);
-  if (filter.length() == 0) return name->length() == 0;
-  if (filter[0] == '-') {
-    // Negative filter.
-    if (filter.length() == 1) {
-      return (name->length() != 0);
-    } else if (name->IsUtf8EqualTo(filter.SubVector(1, filter.length()))) {
-      return false;
-    }
-    if (filter[filter.length() - 1] == '*' &&
-        name->IsUtf8EqualTo(filter.SubVector(1, filter.length() - 1), true)) {
-      return false;
-    }
-    return true;
-
-  } else if (name->IsUtf8EqualTo(filter)) {
-    return true;
-  }
-  if (filter[filter.length() - 1] == '*' &&
-      name->IsUtf8EqualTo(filter.SubVector(0, filter.length() - 1), true)) {
-    return true;
-  }
-  return false;
-}
-
-
 Handle<String> JSFunction::GetName(Handle<JSFunction> function) {
   Isolate* isolate = function->GetIsolate();
   Handle<Object> name =
@@ -13533,6 +13505,41 @@ String* SharedFunctionInfo::DebugName() {
   return String::cast(n);
 }
 
+// The filter is a pattern that matches function names in this way:
+//   "*"      all; the default
+//   "-"      all but the top-level function
+//   "-name"  all but the function "name"
+//   ""       only the top-level function
+//   "name"   only the function "name"
+//   "name*"  only functions starting with "name"
+//   "~"      none; the tilde is not an identifier
+bool SharedFunctionInfo::PassesFilter(const char* raw_filter) {
+  if (*raw_filter == '*') return true;
+  String* name = DebugName();
+  Vector<const char> filter = CStrVector(raw_filter);
+  if (filter.length() == 0) return name->length() == 0;
+  if (filter[0] == '-') {
+    // Negative filter.
+    if (filter.length() == 1) {
+      return (name->length() != 0);
+    } else if (name->IsUtf8EqualTo(filter.SubVector(1, filter.length()))) {
+      return false;
+    }
+    if (filter[filter.length() - 1] == '*' &&
+        name->IsUtf8EqualTo(filter.SubVector(1, filter.length() - 1), true)) {
+      return false;
+    }
+    return true;
+
+  } else if (name->IsUtf8EqualTo(filter)) {
+    return true;
+  }
+  if (filter[filter.length() - 1] == '*' &&
+      name->IsUtf8EqualTo(filter.SubVector(0, filter.length() - 1), true)) {
+    return true;
+  }
+  return false;
+}
 
 bool SharedFunctionInfo::HasSourceCode() const {
   return !script()->IsUndefined() &&
@@ -14471,7 +14478,9 @@ bool Code::CanDeoptAt(Address pc) {
   for (int i = 0; i < deopt_data->DeoptCount(); i++) {
     if (deopt_data->Pc(i)->value() == -1) continue;
     Address address = code_start_address + deopt_data->Pc(i)->value();
-    if (address == pc) return true;
+    if (address == pc && deopt_data->AstId(i) != BailoutId::None()) {
+      return true;
+    }
   }
   return false;
 }
@@ -14988,6 +14997,7 @@ void BytecodeArray::Disassemble(std::ostream& os) {
   const uint8_t* base_address = GetFirstBytecodeAddress();
   interpreter::SourcePositionTableIterator source_positions(
       source_position_table());
+
   interpreter::BytecodeArrayIterator iterator(handle(this));
   while (!iterator.done()) {
     if (!source_positions.done() &&
@@ -16105,14 +16115,16 @@ bool Map::IsValidElementsTransition(ElementsKind from_kind,
 
 
 bool JSArray::HasReadOnlyLength(Handle<JSArray> array) {
-  Isolate* isolate = array->GetIsolate();
-  // Optimistic fast path: "length" is usually the first fast property.
-  DescriptorArray* descriptors = array->map()->instance_descriptors();
-  if (descriptors->length() >= 1 &&
-      descriptors->GetKey(0) == isolate->heap()->length_string()) {
-    return descriptors->GetDetails(0).IsReadOnly();
+  Map* map = array->map();
+  // Fast path: "length" is the first fast property of arrays. Since it's not
+  // configurable, it's guaranteed to be the first in the descriptor array.
+  if (!map->is_dictionary_map()) {
+    DCHECK(map->instance_descriptors()->GetKey(0) ==
+           array->GetHeap()->length_string());
+    return map->instance_descriptors()->GetDetails(0).IsReadOnly();
   }
 
+  Isolate* isolate = array->GetIsolate();
   LookupIterator it(array, isolate->factory()->length_string(), array,
                     LookupIterator::OWN_SKIP_INTERCEPTOR);
   CHECK_EQ(LookupIterator::ACCESSOR, it.state());

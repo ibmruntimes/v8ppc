@@ -25,7 +25,6 @@ class CodeFlusher;
 class MarkCompactCollector;
 class MarkingVisitor;
 class RootMarkingVisitor;
-class LocalSlotsBuffer;
 
 class Marking : public AllStatic {
  public:
@@ -486,11 +485,6 @@ class MarkCompactCollector {
   void UpdateSlots(SlotsBuffer* buffer);
   void UpdateSlotsRecordedIn(SlotsBuffer* buffer);
 
-  void MigrateObject(HeapObject* dst, HeapObject* src, int size,
-                     AllocationSpace to_old_space,
-                     LocalSlotsBuffer* old_to_old_slots,
-                     LocalSlotsBuffer* old_to_new_slots);
-
   void InvalidateCode(Code* code);
 
   void ClearMarkbits();
@@ -561,12 +555,11 @@ class MarkCompactCollector {
 
   void InitializeMarkingDeque();
 
-  // The following four methods can just be called after marking, when the
+  // The following two methods can just be called after marking, when the
   // whole transitive closure is known. They must be called before sweeping
   // when mark bits are still intact.
-  bool IsSlotInBlackObject(Page* p, Address slot, HeapObject** out_object);
+  bool IsSlotInBlackObject(MemoryChunk* p, Address slot);
   HeapObject* FindBlackObjectBySlotSlow(Address slot);
-  bool IsSlotInLiveObject(Address slot);
 
   // Removes all the slots in the slot buffers that are within the given
   // address range.
@@ -811,11 +804,6 @@ class MarkCompactCollector {
   // Finalizes the parallel sweeping phase. Marks all the pages that were
   // swept in parallel.
   void ParallelSweepSpacesComplete();
-
-  // Updates store buffer and slot buffer for a pointer in a migrating object.
-  void RecordMigratedSlot(Object* value, Address slot,
-                          LocalSlotsBuffer* old_to_old_slots,
-                          LocalSlotsBuffer* old_to_new_slots);
 
 #ifdef DEBUG
   friend class MarkObjectVisitor;

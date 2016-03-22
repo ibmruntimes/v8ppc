@@ -4925,14 +4925,10 @@ void Code::set_profiler_ticks(int ticks) {
   }
 }
 
-
-int Code::builtin_index() {
-  return READ_INT32_FIELD(this, kKindSpecificFlags1Offset);
-}
-
+int Code::builtin_index() { return READ_INT_FIELD(this, kBuiltinIndexOffset); }
 
 void Code::set_builtin_index(int index) {
-  WRITE_INT32_FIELD(this, kKindSpecificFlags1Offset, index);
+  WRITE_INT_FIELD(this, kBuiltinIndexOffset, index);
 }
 
 
@@ -5589,8 +5585,8 @@ ACCESSORS(SharedFunctionInfo, instance_class_name, Object,
 ACCESSORS(SharedFunctionInfo, function_data, Object, kFunctionDataOffset)
 ACCESSORS(SharedFunctionInfo, script, Object, kScriptOffset)
 ACCESSORS(SharedFunctionInfo, debug_info, Object, kDebugInfoOffset)
-ACCESSORS(SharedFunctionInfo, inferred_name, String, kInferredNameOffset)
-
+ACCESSORS(SharedFunctionInfo, function_identifier, Object,
+          kFunctionIdentifierOffset)
 
 SMI_ACCESSORS(FunctionTemplateInfo, length, kLengthOffset)
 BOOL_ACCESSORS(FunctionTemplateInfo, flag, hidden_prototype,
@@ -5845,7 +5841,7 @@ bool Script::HasValidSource() {
 
 
 void SharedFunctionInfo::DontAdaptArguments() {
-  DCHECK(code()->kind() == Code::BUILTIN);
+  DCHECK(code()->kind() == Code::BUILTIN || code()->kind() == Code::STUB);
   set_internal_formal_parameter_count(kDontAdaptArgumentsSentinel);
 }
 
@@ -5955,21 +5951,6 @@ void SharedFunctionInfo::set_api_func_data(FunctionTemplateInfo* data) {
   set_function_data(data);
 }
 
-bool SharedFunctionInfo::HasBuiltinFunctionId() {
-  return function_data()->IsSmi();
-}
-
-
-BuiltinFunctionId SharedFunctionInfo::builtin_function_id() {
-  DCHECK(HasBuiltinFunctionId());
-  return static_cast<BuiltinFunctionId>(Smi::cast(function_data())->value());
-}
-
-void SharedFunctionInfo::set_builtin_function_id(BuiltinFunctionId id) {
-  DCHECK(function_data()->IsUndefined() || HasBuiltinFunctionId());
-  set_function_data(Smi::FromInt(id));
-}
-
 bool SharedFunctionInfo::HasBytecodeArray() {
   return function_data()->IsBytecodeArray();
 }
@@ -5988,6 +5969,37 @@ void SharedFunctionInfo::set_bytecode_array(BytecodeArray* bytecode) {
 void SharedFunctionInfo::ClearBytecodeArray() {
   DCHECK(function_data()->IsUndefined() || HasBytecodeArray());
   set_function_data(GetHeap()->undefined_value());
+}
+
+bool SharedFunctionInfo::HasBuiltinFunctionId() {
+  return function_identifier()->IsSmi();
+}
+
+BuiltinFunctionId SharedFunctionInfo::builtin_function_id() {
+  DCHECK(HasBuiltinFunctionId());
+  return static_cast<BuiltinFunctionId>(
+      Smi::cast(function_identifier())->value());
+}
+
+void SharedFunctionInfo::set_builtin_function_id(BuiltinFunctionId id) {
+  set_function_identifier(Smi::FromInt(id));
+}
+
+bool SharedFunctionInfo::HasInferredName() {
+  return function_identifier()->IsString();
+}
+
+String* SharedFunctionInfo::inferred_name() {
+  if (HasInferredName()) {
+    return String::cast(function_identifier());
+  }
+  DCHECK(function_identifier()->IsUndefined() || HasBuiltinFunctionId());
+  return GetIsolate()->heap()->empty_string();
+}
+
+void SharedFunctionInfo::set_inferred_name(String* inferred_name) {
+  DCHECK(function_identifier()->IsUndefined() || HasInferredName());
+  set_function_identifier(inferred_name);
 }
 
 int SharedFunctionInfo::ic_age() {

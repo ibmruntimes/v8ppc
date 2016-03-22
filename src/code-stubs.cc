@@ -489,6 +489,22 @@ void AllocateMutableHeapNumberStub::GenerateAssembly(
   assembler->Return(result);
 }
 
+#define SIMD128_GEN_ASM(TYPE, Type, type, lane_count, lane_type)            \
+  void Allocate##Type##Stub::GenerateAssembly(                              \
+      compiler::CodeStubAssembler* assembler) const {                       \
+    compiler::Node* result = assembler->Allocate(                           \
+        Simd128Value::kSize, compiler::CodeStubAssembler::kNone);           \
+    compiler::Node* map_offset =                                            \
+        assembler->IntPtrConstant(HeapObject::kMapOffset - kHeapObjectTag); \
+    compiler::Node* map = assembler->IntPtrAdd(result, map_offset);         \
+    assembler->StoreNoWriteBarrier(                                         \
+        MachineRepresentation::kTagged, map,                                \
+        assembler->HeapConstant(isolate()->factory()->type##_map()));       \
+    assembler->Return(result);                                              \
+  }
+SIMD128_TYPES(SIMD128_GEN_ASM)
+#undef SIMD128_GEN_ASM
+
 void StringLengthStub::GenerateAssembly(
     compiler::CodeStubAssembler* assembler) const {
   compiler::Node* value = assembler->Parameter(0);
@@ -599,7 +615,8 @@ void GenerateAbstractRelationalComparison(
           // dedicated ToPrimitive(rhs, hint Number) operation, as the
           // ToNumber(rhs) will by itself already invoke ToPrimitive with
           // a Number hint.
-          Callable callable = CodeFactory::ToNumber(assembler->isolate());
+          Callable callable =
+              CodeFactory::NonNumberToNumber(assembler->isolate());
           var_rhs.Bind(assembler->CallStub(callable, context, rhs));
           assembler->Goto(&loop);
         }
@@ -642,7 +659,8 @@ void GenerateAbstractRelationalComparison(
           // dedicated ToPrimitive(lhs, hint Number) operation, as the
           // ToNumber(lhs) will by itself already invoke ToPrimitive with
           // a Number hint.
-          Callable callable = CodeFactory::ToNumber(assembler->isolate());
+          Callable callable =
+              CodeFactory::NonNumberToNumber(assembler->isolate());
           var_lhs.Bind(assembler->CallStub(callable, context, lhs));
           assembler->Goto(&loop);
         }
@@ -681,7 +699,8 @@ void GenerateAbstractRelationalComparison(
             // dedicated ToPrimitive(rhs, hint Number) operation, as the
             // ToNumber(rhs) will by itself already invoke ToPrimitive with
             // a Number hint.
-            Callable callable = CodeFactory::ToNumber(assembler->isolate());
+            Callable callable =
+                CodeFactory::NonNumberToNumber(assembler->isolate());
             var_rhs.Bind(assembler->CallStub(callable, context, rhs));
             assembler->Goto(&loop);
           }
@@ -1072,7 +1091,8 @@ void GenerateEqual(compiler::CodeStubAssembler* assembler, ResultMode mode) {
             assembler->Bind(&if_rhsisstring);
             {
               // Convert the {rhs} to a Number.
-              Callable callable = CodeFactory::ToNumber(assembler->isolate());
+              Callable callable =
+                  CodeFactory::StringToNumber(assembler->isolate());
               var_rhs.Bind(assembler->CallStub(callable, context, rhs));
               assembler->Goto(&loop);
             }
@@ -1247,7 +1267,8 @@ void GenerateEqual(compiler::CodeStubAssembler* assembler, ResultMode mode) {
                 // The {rhs} is a String and the {lhs} is a HeapNumber; we need
                 // to convert the {rhs} to a Number and compare the output to
                 // the Number on the {lhs}.
-                Callable callable = CodeFactory::ToNumber(assembler->isolate());
+                Callable callable =
+                    CodeFactory::StringToNumber(assembler->isolate());
                 var_rhs.Bind(assembler->CallStub(callable, context, rhs));
                 assembler->Goto(&loop);
               }
@@ -2327,6 +2348,39 @@ void ToBooleanStub::GenerateAssembly(
   }
 }
 
+void StoreInterceptorStub::GenerateAssembly(
+    compiler::CodeStubAssembler* assembler) const {
+  typedef compiler::Node Node;
+  Node* receiver = assembler->Parameter(0);
+  Node* name = assembler->Parameter(1);
+  Node* value = assembler->Parameter(2);
+  Node* context = assembler->Parameter(3);
+  assembler->TailCallRuntime(Runtime::kStorePropertyWithInterceptor, context,
+                             receiver, name, value);
+}
+
+void LoadIndexedInterceptorStub::GenerateAssembly(
+    compiler::CodeStubAssembler* assembler) const {
+  typedef compiler::Node Node;
+  typedef compiler::CodeStubAssembler::Label Label;
+  Node* receiver = assembler->Parameter(0);
+  Node* key = assembler->Parameter(1);
+  Node* slot = assembler->Parameter(2);
+  Node* vector = assembler->Parameter(3);
+  Node* context = assembler->Parameter(4);
+
+  Label if_keyispositivesmi(assembler), if_keyisinvalid(assembler);
+  assembler->Branch(assembler->WordIsPositiveSmi(key), &if_keyispositivesmi,
+                    &if_keyisinvalid);
+  assembler->Bind(&if_keyispositivesmi);
+  assembler->TailCallRuntime(Runtime::kLoadElementWithInterceptor, context,
+                             receiver, key);
+
+  assembler->Bind(&if_keyisinvalid);
+  assembler->TailCallRuntime(Runtime::kKeyedLoadIC_Miss, context, receiver, key,
+                             slot, vector);
+}
+
 template<class StateType>
 void HydrogenCodeStub::TraceTransition(StateType from, StateType to) {
   // Note: Although a no-op transition is semantically OK, it is hinting at a
@@ -2453,7 +2507,6 @@ void TypeofStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {}
 
 
 void NumberToStringStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
-  NumberToStringDescriptor call_descriptor(isolate());
   descriptor->Initialize(
       Runtime::FunctionForId(Runtime::kNumberToString)->entry);
 }
@@ -2514,6 +2567,14 @@ void AllocateMutableHeapNumberStub::InitializeDescriptor(
   descriptor->Initialize();
 }
 
+#define SIMD128_INIT_DESC(TYPE, Type, type, lane_count, lane_type) \
+  void Allocate##Type##Stub::InitializeDescriptor(                 \
+      CodeStubDescriptor* descriptor) {                            \
+    descriptor->Initialize(                                        \
+        Runtime::FunctionForId(Runtime::kCreate##Type)->entry);    \
+  }
+SIMD128_TYPES(SIMD128_INIT_DESC)
+#undef SIMD128_INIT_DESC
 
 void AllocateInNewSpaceStub::InitializeDescriptor(
     CodeStubDescriptor* descriptor) {

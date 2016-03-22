@@ -210,23 +210,22 @@ DEFINE_IMPLICATION(es_staging, harmony_tailcalls)
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                                    \
   V(harmony_regexp_lookbehind, "harmony regexp lookbehind")                  \
-  V(harmony_instanceof, "harmony instanceof support")                        \
   V(harmony_object_values_entries, "harmony Object.values / Object.entries") \
   V(harmony_object_own_property_descriptors,                                 \
     "harmony Object.getOwnPropertyDescriptors()")                            \
+  V(harmony_exponentiation_operator, "harmony exponentiation operator `**`")
 
 // Features that are shipping (turned on by default, but internal flag remains).
 #define HARMONY_SHIPPING(V)                                           \
   V(harmony_array_prototype_values, "harmony Array.prototype.values") \
   V(harmony_function_name, "harmony Function name inference")         \
+  V(harmony_instanceof, "harmony instanceof support")                 \
   V(harmony_iterator_close, "harmony iterator finalization")          \
   V(harmony_regexps, "harmony regular expression extensions")         \
   V(harmony_unicode_regexps, "harmony unicode regexps")               \
   V(harmony_sloppy, "harmony features in sloppy mode")                \
   V(harmony_sloppy_let, "harmony let in sloppy mode")                 \
   V(harmony_sloppy_function, "harmony sloppy function block scoping") \
-  V(harmony_proxies, "harmony proxies")                               \
-  V(harmony_reflect, "harmony Reflect API")                           \
   V(harmony_regexp_subclass, "harmony regexp subclassing")            \
   V(harmony_restrictive_declarations,                                 \
     "harmony limitations on sloppy mode function declarations")       \
@@ -273,6 +272,7 @@ DEFINE_BOOL(track_fields, true, "track fields with only smi values")
 DEFINE_BOOL(track_double_fields, true, "track fields with double values")
 DEFINE_BOOL(track_heap_object_fields, true, "track fields with heap values")
 DEFINE_BOOL(track_computed_fields, true, "track computed boilerplate fields")
+DEFINE_BOOL(harmony_instanceof_opt, true, "optimize ES6 instanceof support")
 DEFINE_IMPLICATION(track_double_fields, track_fields)
 DEFINE_IMPLICATION(track_heap_object_fields, track_fields)
 DEFINE_IMPLICATION(track_computed_fields, track_fields)
@@ -365,8 +365,6 @@ DEFINE_BOOL(use_osr, true, "use on-stack replacement")
 DEFINE_BOOL(array_bounds_checks_elimination, true,
             "perform array bounds checks elimination")
 DEFINE_BOOL(trace_bce, false, "trace array bounds check elimination")
-DEFINE_BOOL(array_bounds_checks_hoisting, false,
-            "perform array bounds checks hoisting")
 DEFINE_BOOL(array_index_dehoisting, true, "perform array index dehoisting")
 DEFINE_BOOL(analyze_environment_liveness, true,
             "analyze liveness of environment slots and zap dead values")
@@ -478,9 +476,8 @@ DEFINE_BOOL(wasm_loop_assignment_analysis, false,
 
 DEFINE_BOOL(enable_simd_asmjs, false, "enable SIMD.js in asm.js stdlib")
 
-DEFINE_BOOL(dump_asmjs_wasm, false, "dump Asm.js to WASM module bytes")
-DEFINE_STRING(asmjs_wasm_dumpfile, "asmjs.wasm",
-              "file to dump asm wasm conversion result to")
+DEFINE_BOOL(dump_wasm_module, false, "dump WASM module bytes")
+DEFINE_STRING(dump_wasm_module_path, NULL, "directory to dump wasm modules to")
 
 DEFINE_INT(typed_array_max_size_in_heap, 64,
            "threshold for in-heap typed array")
@@ -694,7 +691,7 @@ DEFINE_INT(min_progress_during_incremental_marking_finalization, 32,
            "least this many unmarked objects")
 DEFINE_INT(max_incremental_marking_finalization_rounds, 3,
            "at most try this many times to finalize incremental marking")
-DEFINE_BOOL(black_allocation, true, "use black allocation")
+DEFINE_BOOL(black_allocation, false, "use black allocation")
 DEFINE_BOOL(concurrent_sweeping, true, "use concurrent sweeping")
 DEFINE_BOOL(parallel_compaction, true, "use parallel compaction")
 DEFINE_BOOL(parallel_pointer_update, true,

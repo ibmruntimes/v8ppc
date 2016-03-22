@@ -147,6 +147,18 @@ Callable CodeFactory::ToNumber(Isolate* isolate) {
 
 
 // static
+Callable CodeFactory::NonNumberToNumber(Isolate* isolate) {
+  NonNumberToNumberStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+// static
+Callable CodeFactory::StringToNumber(Isolate* isolate) {
+  StringToNumberStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+// static
 Callable CodeFactory::ToString(Isolate* isolate) {
   ToStringStub stub(isolate);
   return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
@@ -317,6 +329,12 @@ Callable CodeFactory::SubString(Isolate* isolate) {
 
 
 // static
+Callable CodeFactory::StoreInterceptor(Isolate* isolate) {
+  StoreInterceptorStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+// static
 Callable CodeFactory::Typeof(Isolate* isolate) {
   TypeofStub stub(isolate);
   return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
@@ -402,6 +420,13 @@ Callable CodeFactory::AllocateMutableHeapNumber(Isolate* isolate) {
   return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
 }
 
+#define SIMD128_ALLOC(TYPE, Type, type, lane_count, lane_type)          \
+  Callable CodeFactory::Allocate##Type(Isolate* isolate) {              \
+    Allocate##Type##Stub stub(isolate);                                 \
+    return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor()); \
+  }
+SIMD128_TYPES(SIMD128_ALLOC)
+#undef SIMD128_ALLOC
 
 // static
 Callable CodeFactory::AllocateInNewSpace(Isolate* isolate) {

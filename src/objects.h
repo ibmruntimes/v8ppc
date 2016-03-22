@@ -709,7 +709,7 @@ enum InstanceType {
   JS_GLOBAL_PROXY_TYPE,
   // Like JS_OBJECT_TYPE, but requires access checks and/or has interceptors.
   JS_SPECIAL_API_OBJECT_TYPE,  // LAST_SPECIAL_RECEIVER_TYPE
-  JS_VALUE_TYPE,
+  JS_VALUE_TYPE,               // LAST_CUSTOM_ELEMENTS_RECEIVER
   JS_MESSAGE_OBJECT_TYPE,
   JS_DATE_TYPE,
   JS_OBJECT_TYPE,
@@ -760,6 +760,10 @@ enum InstanceType {
   LAST_JS_OBJECT_TYPE = LAST_TYPE,
   // Boundary for testing JSReceivers that need special property lookup handling
   LAST_SPECIAL_RECEIVER_TYPE = JS_SPECIAL_API_OBJECT_TYPE,
+  // Boundary case for testing JSReceivers that may have elements while having
+  // an empty fixed array as elements backing store. This is true for string
+  // wrappers.
+  LAST_CUSTOM_ELEMENTS_RECEIVER = JS_VALUE_TYPE,
 };
 
 STATIC_ASSERT(JS_OBJECT_TYPE == Internals::kJSObjectType);
@@ -2104,8 +2108,9 @@ class JSObject: public JSReceiver {
 
   // Adds or reconfigures a property to attributes NONE. It will fail when it
   // cannot.
-  MUST_USE_RESULT static Maybe<bool> CreateDataProperty(LookupIterator* it,
-                                                        Handle<Object> value);
+  MUST_USE_RESULT static Maybe<bool> CreateDataProperty(
+      LookupIterator* it, Handle<Object> value,
+      ShouldThrow should_throw = DONT_THROW);
 
   static void AddProperty(Handle<JSObject> object, Handle<Name> name,
                           Handle<Object> value, PropertyAttributes attributes);
@@ -3075,6 +3080,11 @@ class DescriptorArray: public FixedArray {
     return ToKeyIndex(number_of_descriptors);
   }
 
+  static int ToDetailsIndex(int descriptor_number) {
+    return kFirstIndex + (descriptor_number * kDescriptorSize) +
+           kDescriptorDetails;
+  }
+
  private:
   // An entry in a DescriptorArray, represented as an (array, index) pair.
   class Entry {
@@ -3095,12 +3105,6 @@ class DescriptorArray: public FixedArray {
     return kFirstIndex +
            (descriptor_number * kDescriptorSize) +
            kDescriptorKey;
-  }
-
-  static int ToDetailsIndex(int descriptor_number) {
-    return kFirstIndex +
-           (descriptor_number * kDescriptorSize) +
-           kDescriptorDetails;
   }
 
   static int ToValueIndex(int descriptor_number) {
@@ -5314,8 +5318,9 @@ class Code: public HeapObject {
   // Note: We might be able to squeeze this into the flags above.
   static const int kPrologueOffset = kKindSpecificFlags2Offset + kIntSize;
   static const int kConstantPoolOffset = kPrologueOffset + kIntSize;
-  static const int kHeaderPaddingStart =
+  static const int kBuiltinIndexOffset =
       kConstantPoolOffset + kConstantPoolSize;
+  static const int kHeaderPaddingStart = kBuiltinIndexOffset + kIntSize;
 
   // Add padding to align the instruction start following right after
   // the Code object header.
@@ -5343,7 +5348,7 @@ class Code: public HeapObject {
       : public BitField<ExtraICState, 11, PlatformSmiTagging::kSmiValueSize -
                                               11 + 1> {};  // NOLINT
 
-  // KindSpecificFlags1 layout (STUB and OPTIMIZED_FUNCTION)
+  // KindSpecificFlags1 layout (STUB, BUILTIN and OPTIMIZED_FUNCTION)
   static const int kStackSlotsFirstBit = 0;
   static const int kStackSlotsBitCount = 24;
   static const int kMarkedForDeoptimizationBit =
@@ -6767,23 +6772,34 @@ class SharedFunctionInfo: public HeapObject {
   // [function data]: This field holds some additional data for function.
   // Currently it has one of:
   //  - a FunctionTemplateInfo to make benefit the API [IsApiFunction()].
-  //  - a Smi identifying a builtin function [HasBuiltinFunctionId()].
   //  - a BytecodeArray for the interpreter [HasBytecodeArray()].
-  // In the long run we don't want all functions to have this field but
-  // we can fix that when we have a better model for storing hidden data
-  // on objects.
   DECL_ACCESSORS(function_data, Object)
 
   inline bool IsApiFunction();
   inline FunctionTemplateInfo* get_api_func_data();
   inline void set_api_func_data(FunctionTemplateInfo* data);
-  inline bool HasBuiltinFunctionId();
-  inline BuiltinFunctionId builtin_function_id();
-  inline void set_builtin_function_id(BuiltinFunctionId id);
   inline bool HasBytecodeArray();
   inline BytecodeArray* bytecode_array();
   inline void set_bytecode_array(BytecodeArray* bytecode);
   inline void ClearBytecodeArray();
+
+  // [function identifier]: This field holds an additional identifier for the
+  // function.
+  //  - a Smi identifying a builtin function [HasBuiltinFunctionId()].
+  //  - a String identifying the function's inferred name [HasInferredName()].
+  // The inferred_name is inferred from variable or property
+  // assignment of this function. It is used to facilitate debugging and
+  // profiling of JavaScript code written in OO style, where almost
+  // all functions are anonymous but are assigned to object
+  // properties.
+  DECL_ACCESSORS(function_identifier, Object)
+
+  inline bool HasBuiltinFunctionId();
+  inline BuiltinFunctionId builtin_function_id();
+  inline void set_builtin_function_id(BuiltinFunctionId id);
+  inline bool HasInferredName();
+  inline String* inferred_name();
+  inline void set_inferred_name(String* inferred_name);
 
   // [script info]: Script from which the function originates.
   DECL_ACCESSORS(script, Object)
@@ -6810,15 +6826,11 @@ class SharedFunctionInfo: public HeapObject {
   // [debug info]: Debug information.
   DECL_ACCESSORS(debug_info, Object)
 
-  // [inferred name]: Name inferred from variable or property
-  // assignment of this function. Used to facilitate debugging and
-  // profiling of JavaScript code written in OO style, where almost
-  // all functions are anonymous but are assigned to object
-  // properties.
-  DECL_ACCESSORS(inferred_name, String)
-
   // The function's name if it is non-empty, otherwise the inferred name.
   String* DebugName();
+
+  // Used for flags such as --hydrogen-filter.
+  bool PassesFilter(const char* raw_filter);
 
   // Position of the 'function' token in the script source.
   inline int function_token_position() const;
@@ -7056,9 +7068,9 @@ class SharedFunctionInfo: public HeapObject {
       kInstanceClassNameOffset + kPointerSize;
   static const int kScriptOffset = kFunctionDataOffset + kPointerSize;
   static const int kDebugInfoOffset = kScriptOffset + kPointerSize;
-  static const int kInferredNameOffset = kDebugInfoOffset + kPointerSize;
+  static const int kFunctionIdentifierOffset = kDebugInfoOffset + kPointerSize;
   static const int kFeedbackVectorOffset =
-      kInferredNameOffset + kPointerSize;
+      kFunctionIdentifierOffset + kPointerSize;
 #if TRACE_MAPS
   static const int kUniqueIdOffset = kFeedbackVectorOffset + kPointerSize;
   static const int kLastPointerFieldOffset = kUniqueIdOffset;
@@ -7629,9 +7641,6 @@ class JSFunction: public JSObject {
 
   // Returns the number of allocated literals.
   inline int NumberOfLiterals();
-
-  // Used for flags such as --hydrogen-filter.
-  bool PassesFilter(const char* raw_filter);
 
   // The function's name if it is configured, otherwise shared function info
   // debug name.

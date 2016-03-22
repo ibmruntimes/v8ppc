@@ -820,7 +820,8 @@ void Heap::FinalizeIncrementalMarking(const char* gc_reason) {
     GCCallbacksScope scope(this);
     if (scope.CheckReenter()) {
       AllowHeapAllocation allow_allocation;
-      GCTracer::Scope scope(tracer(), GCTracer::Scope::EXTERNAL);
+      GCTracer::Scope scope(tracer(),
+                            GCTracer::Scope::MC_INCREMENTAL_EXTERNAL_PROLOGUE);
       VMState<EXTERNAL> state(isolate_);
       HandleScope handle_scope(isolate_);
       CallGCPrologueCallbacks(kGCTypeIncrementalMarking, kNoGCCallbackFlags);
@@ -831,7 +832,8 @@ void Heap::FinalizeIncrementalMarking(const char* gc_reason) {
     GCCallbacksScope scope(this);
     if (scope.CheckReenter()) {
       AllowHeapAllocation allow_allocation;
-      GCTracer::Scope scope(tracer(), GCTracer::Scope::EXTERNAL);
+      GCTracer::Scope scope(tracer(),
+                            GCTracer::Scope::MC_INCREMENTAL_EXTERNAL_PROLOGUE);
       VMState<EXTERNAL> state(isolate_);
       HandleScope handle_scope(isolate_);
       CallGCEpilogueCallbacks(kGCTypeIncrementalMarking, kNoGCCallbackFlags);
@@ -1158,7 +1160,9 @@ bool Heap::ReserveSpace(Reservation* reservations) {
           if (space == NEW_SPACE) {
             allocation = new_space()->AllocateRawUnaligned(size);
           } else {
-            allocation = paged_space(space)->AllocateRawUnaligned(size);
+            // The deserializer will update the skip list.
+            allocation = paged_space(space)->AllocateRawUnaligned(
+                size, PagedSpace::IGNORE_SKIP_LIST);
           }
           HeapObject* free_space = nullptr;
           if (allocation.To(&free_space)) {
@@ -1278,7 +1282,10 @@ bool Heap::PerformGarbageCollection(
     GCCallbacksScope scope(this);
     if (scope.CheckReenter()) {
       AllowHeapAllocation allow_allocation;
-      GCTracer::Scope scope(tracer(), GCTracer::Scope::EXTERNAL);
+      GCTracer::Scope scope(tracer(),
+                            collector == MARK_COMPACTOR
+                                ? GCTracer::Scope::MC_EXTERNAL_PROLOGUE
+                                : GCTracer::Scope::SCAVENGER_EXTERNAL_PROLOGUE);
       VMState<EXTERNAL> state(isolate_);
       HandleScope handle_scope(isolate_);
       CallGCPrologueCallbacks(gc_type, kNoGCCallbackFlags);
@@ -1322,22 +1329,11 @@ bool Heap::PerformGarbageCollection(
 
   isolate_->counters()->objs_since_last_young()->Set(0);
 
-  if (collector != SCAVENGER) {
-    // Callbacks that fire after this point might trigger nested GCs and
-    // restart incremental marking, the assertion can't be moved down.
-    DCHECK(incremental_marking()->IsStopped());
-
-    // We finished a marking cycle. We can uncommit the marking deque until
-    // we start marking again.
-    mark_compact_collector()->marking_deque()->Uninitialize();
-    mark_compact_collector()->EnsureMarkingDequeIsCommitted(
-        MarkCompactCollector::kMinMarkingDequeSize);
-  }
-
   gc_post_processing_depth_++;
   {
     AllowHeapAllocation allow_allocation;
-    GCTracer::Scope scope(tracer(), GCTracer::Scope::EXTERNAL);
+    GCTracer::Scope scope(tracer(),
+                          GCTracer::Scope::EXTERNAL_WEAK_GLOBAL_HANDLES);
     freed_global_handles =
         isolate_->global_handles()->PostGarbageCollectionProcessing(
             collector, gc_callback_flags);
@@ -1368,7 +1364,10 @@ bool Heap::PerformGarbageCollection(
     GCCallbacksScope scope(this);
     if (scope.CheckReenter()) {
       AllowHeapAllocation allow_allocation;
-      GCTracer::Scope scope(tracer(), GCTracer::Scope::EXTERNAL);
+      GCTracer::Scope scope(tracer(),
+                            collector == MARK_COMPACTOR
+                                ? GCTracer::Scope::MC_EXTERNAL_EPILOGUE
+                                : GCTracer::Scope::SCAVENGER_EXTERNAL_EPILOGUE);
       VMState<EXTERNAL> state(isolate_);
       HandleScope handle_scope(isolate_);
       CallGCEpilogueCallbacks(gc_type, gc_callback_flags);
@@ -1456,6 +1455,14 @@ void Heap::MarkCompactEpilogue() {
   incremental_marking()->Epilogue();
 
   PreprocessStackTraces();
+
+  DCHECK(incremental_marking()->IsStopped());
+
+  // We finished a marking cycle. We can uncommit the marking deque until
+  // we start marking again.
+  mark_compact_collector()->marking_deque()->Uninitialize();
+  mark_compact_collector()->EnsureMarkingDequeIsCommitted(
+      MarkCompactCollector::kMinMarkingDequeSize);
 }
 
 
@@ -3420,6 +3427,7 @@ AllocationResult Heap::CopyBytecodeArray(BytecodeArray* bytecode_array) {
   copy->set_constant_pool(bytecode_array->constant_pool());
   copy->set_handler_table(bytecode_array->handler_table());
   copy->set_source_position_table(bytecode_array->source_position_table());
+  copy->set_interrupt_budget(bytecode_array->interrupt_budget());
   bytecode_array->CopyBytecodesTo(copy);
   return copy;
 }

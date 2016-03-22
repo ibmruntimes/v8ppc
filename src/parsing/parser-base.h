@@ -108,6 +108,7 @@ class ParserBase : public Traits {
         stack_overflow_(false),
         allow_lazy_(false),
         allow_natives_(false),
+        allow_tailcalls_(false),
         allow_harmony_sloppy_(false),
         allow_harmony_sloppy_function_(false),
         allow_harmony_sloppy_let_(false),
@@ -121,8 +122,15 @@ class ParserBase : public Traits {
   bool allow_##name() const { return allow_##name##_; } \
   void set_allow_##name(bool allow) { allow_##name##_ = allow; }
 
+#define SCANNER_ACCESSORS(name)                                  \
+  bool allow_##name() const { return scanner_->allow_##name(); } \
+  void set_allow_##name(bool allow) {                            \
+    return scanner_->set_allow_##name(allow);                    \
+  }
+
   ALLOW_ACCESSORS(lazy);
   ALLOW_ACCESSORS(natives);
+  ALLOW_ACCESSORS(tailcalls);
   ALLOW_ACCESSORS(harmony_sloppy);
   ALLOW_ACCESSORS(harmony_sloppy_function);
   ALLOW_ACCESSORS(harmony_sloppy_let);
@@ -131,6 +139,9 @@ class ParserBase : public Traits {
   ALLOW_ACCESSORS(harmony_do_expressions);
   ALLOW_ACCESSORS(harmony_function_name);
   ALLOW_ACCESSORS(harmony_function_sent);
+  SCANNER_ACCESSORS(harmony_exponentiation_operator);
+
+#undef SCANNER_ACCESSORS
 #undef ALLOW_ACCESSORS
 
   uintptr_t stack_limit() const { return stack_limit_; }
@@ -575,7 +586,8 @@ class ParserBase : public Traits {
   }
 
   void GetUnexpectedTokenMessage(
-      Token::Value token, MessageTemplate::Template* message, const char** arg,
+      Token::Value token, MessageTemplate::Template* message,
+      Scanner::Location* location, const char** arg,
       MessageTemplate::Template default_ = MessageTemplate::kUnexpectedToken);
 
   void ReportUnexpectedToken(Token::Value token);
@@ -676,33 +688,34 @@ class ParserBase : public Traits {
   void ExpressionUnexpectedToken(ExpressionClassifier* classifier) {
     MessageTemplate::Template message = MessageTemplate::kUnexpectedToken;
     const char* arg;
-    GetUnexpectedTokenMessage(peek(), &message, &arg);
-    classifier->RecordExpressionError(scanner()->peek_location(), message, arg);
+    Scanner::Location location = scanner()->peek_location();
+    GetUnexpectedTokenMessage(peek(), &message, &location, &arg);
+    classifier->RecordExpressionError(location, message, arg);
   }
 
   void BindingPatternUnexpectedToken(ExpressionClassifier* classifier) {
     MessageTemplate::Template message = MessageTemplate::kUnexpectedToken;
     const char* arg;
-    GetUnexpectedTokenMessage(peek(), &message, &arg);
-    classifier->RecordBindingPatternError(scanner()->peek_location(), message,
-                                          arg);
+    Scanner::Location location = scanner()->peek_location();
+    GetUnexpectedTokenMessage(peek(), &message, &location, &arg);
+    classifier->RecordBindingPatternError(location, message, arg);
   }
 
   void ArrowFormalParametersUnexpectedToken(ExpressionClassifier* classifier) {
     MessageTemplate::Template message = MessageTemplate::kUnexpectedToken;
     const char* arg;
-    GetUnexpectedTokenMessage(peek(), &message, &arg);
-    classifier->RecordArrowFormalParametersError(scanner()->peek_location(),
-                                                 message, arg);
+    Scanner::Location location = scanner()->peek_location();
+    GetUnexpectedTokenMessage(peek(), &message, &location, &arg);
+    classifier->RecordArrowFormalParametersError(location, message, arg);
   }
 
   void FormalParameterInitializerUnexpectedToken(
       ExpressionClassifier* classifier) {
     MessageTemplate::Template message = MessageTemplate::kUnexpectedToken;
     const char* arg;
-    GetUnexpectedTokenMessage(peek(), &message, &arg);
-    classifier->RecordFormalParameterInitializerError(
-        scanner()->peek_location(), message, arg);
+    Scanner::Location location = scanner()->peek_location();
+    GetUnexpectedTokenMessage(peek(), &message, &location, &arg);
+    classifier->RecordFormalParameterInitializerError(location, message, arg);
   }
 
   // Recursive descent functions:
@@ -911,6 +924,7 @@ class ParserBase : public Traits {
 
   bool allow_lazy_;
   bool allow_natives_;
+  bool allow_tailcalls_;
   bool allow_harmony_sloppy_;
   bool allow_harmony_sloppy_function_;
   bool allow_harmony_sloppy_let_;
@@ -950,10 +964,10 @@ ParserBase<Traits>::FunctionState::~FunctionState() {
   *function_state_stack_ = outer_function_state_;
 }
 
-
 template <class Traits>
 void ParserBase<Traits>::GetUnexpectedTokenMessage(
-    Token::Value token, MessageTemplate::Template* message, const char** arg,
+    Token::Value token, MessageTemplate::Template* message,
+    Scanner::Location* location, const char** arg,
     MessageTemplate::Template default_) {
   *arg = nullptr;
   switch (token) {
@@ -990,7 +1004,12 @@ void ParserBase<Traits>::GetUnexpectedTokenMessage(
       *message = MessageTemplate::kInvalidEscapedReservedWord;
       break;
     case Token::ILLEGAL:
-      *message = MessageTemplate::kInvalidOrUnexpectedToken;
+      if (scanner()->has_error()) {
+        *message = scanner()->error();
+        *location = scanner()->error_location();
+      } else {
+        *message = MessageTemplate::kInvalidOrUnexpectedToken;
+      }
       break;
     default:
       const char* name = Token::String(token);
@@ -1012,7 +1031,7 @@ void ParserBase<Traits>::ReportUnexpectedTokenAt(
     Scanner::Location source_location, Token::Value token,
     MessageTemplate::Template message) {
   const char* arg;
-  GetUnexpectedTokenMessage(token, &message, &arg);
+  GetUnexpectedTokenMessage(token, &message, &source_location, &arg);
   Traits::ReportMessageAt(source_location, message, arg);
 }
 
@@ -2009,6 +2028,11 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN,
     Traits::SetFunctionNameFromIdentifierRef(right, expression);
   }
 
+  if (op == Token::ASSIGN_EXP) {
+    DCHECK(!is_destructuring_assignment);
+    return Traits::RewriteAssignExponentiation(expression, right, pos);
+  }
+
   ExpressionT result = factory()->NewAssignment(op, expression, right, pos);
 
   if (is_destructuring_assignment) {
@@ -2118,8 +2142,11 @@ ParserBase<Traits>::ParseBinaryExpression(int prec, bool accept_IN,
       ArrowFormalParametersUnexpectedToken(classifier);
       Token::Value op = Next();
       int pos = position();
+
+      const bool is_right_associative = op == Token::EXP;
+      const int next_prec = is_right_associative ? prec1 : prec1 + 1;
       ExpressionT y =
-          ParseBinaryExpression(prec1 + 1, accept_IN, classifier, CHECK_OK);
+          ParseBinaryExpression(next_prec, accept_IN, classifier, CHECK_OK);
       Traits::RewriteNonPattern(classifier, CHECK_OK);
 
       if (this->ShortcutNumericLiteralBinaryExpression(&x, y, op, pos,
@@ -2147,6 +2174,9 @@ ParserBase<Traits>::ParseBinaryExpression(int prec, bool accept_IN,
             x = factory()->NewUnaryOperation(Token::NOT, x, pos);
           }
         }
+
+      } else if (op == Token::EXP) {
+        x = Traits::RewriteExponentiation(x, y, pos);
       } else {
         // We have a "normal" binary operation.
         x = factory()->NewBinaryOperation(op, x, y, pos);
@@ -2190,6 +2220,12 @@ ParserBase<Traits>::ParseUnaryExpression(ExpressionClassifier* classifier,
         *ok = false;
         return this->EmptyExpression();
       }
+    }
+
+    if (peek() == Token::EXP) {
+      ReportUnexpectedToken(Next());
+      *ok = false;
+      return this->EmptyExpression();
     }
 
     // Allow Traits do rewrite the expression.

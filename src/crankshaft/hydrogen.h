@@ -294,8 +294,6 @@ class HLoopInformation final : public ZoneObject {
 };
 
 
-class BoundsCheckTable;
-class InductionVariableBlocksTable;
 class HGraph final : public ZoneObject {
  public:
   explicit HGraph(CompilationInfo* info, CallInterfaceDescriptor descriptor);
@@ -2246,7 +2244,6 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   F(DoubleLo)                          \
   F(MathClz32)                         \
   F(MathFloor)                         \
-  F(MathSqrt)                          \
   F(MathLogRT)                         \
   /* ES6 Collections */                \
   F(MapClear)                          \
@@ -2837,17 +2834,22 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   void AddCheckPrototypeMaps(Handle<JSObject> holder,
                              Handle<Map> receiver_map);
 
+  void BuildEnsureCallable(HValue* object);
+
   HInstruction* NewCallFunction(HValue* function, int argument_count,
+                                TailCallMode syntactic_tail_call_mode,
                                 ConvertReceiverMode convert_mode,
                                 TailCallMode tail_call_mode);
 
   HInstruction* NewCallFunctionViaIC(HValue* function, int argument_count,
+                                     TailCallMode syntactic_tail_call_mode,
                                      ConvertReceiverMode convert_mode,
                                      TailCallMode tail_call_mode,
                                      FeedbackVectorSlot slot);
 
   HInstruction* NewCallConstantFunction(Handle<JSFunction> target,
                                         int argument_count,
+                                        TailCallMode syntactic_tail_call_mode,
                                         TailCallMode tail_call_mode);
 
   bool CanBeFunctionApplyArguments(Call* expr);

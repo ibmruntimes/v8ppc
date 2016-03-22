@@ -2842,7 +2842,7 @@ void AstGraphBuilder::VisitCompareOperation(CompareOperation* expr) {
   if (expr->IsLiteralCompareTypeof(&sub_expr, &check)) {
     return VisitLiteralCompareTypeof(expr, sub_expr, check);
   }
-  if (expr->IsLiteralCompareUndefined(&sub_expr, isolate())) {
+  if (expr->IsLiteralCompareUndefined(&sub_expr)) {
     return VisitLiteralCompareNil(expr, sub_expr,
                                   jsgraph()->UndefinedConstant());
   }
@@ -2877,6 +2877,7 @@ void AstGraphBuilder::VisitCompareOperation(CompareOperation* expr) {
       op = javascript()->GreaterThanOrEqual();
       break;
     case Token::INSTANCEOF:
+      DCHECK(!FLAG_harmony_instanceof);
       op = javascript()->InstanceOf();
       break;
     case Token::IN:

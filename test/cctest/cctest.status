@@ -72,6 +72,7 @@
 
   # BUG(2999). The cpu profiler tests are notoriously flaky.
   'test-cpu-profiler/CpuProfileDeepStack': [SKIP],
+  'test-cpu-profiler/CollectCpuProfile': [SKIP],
   'test-cpu-profiler/HotDeoptNoFrameEntry': [SKIP],
   'test-cpu-profiler/SampleWhenFrameIsNotSetup': [SKIP],
 
@@ -236,36 +237,30 @@
 
   # BUG(v8:4642).
   'test-lockers/LockAndUnlockDifferentIsolates': [PASS, NO_VARIANTS],
+
+  # BUG(v8:2999,v8:4751).
+  'test-cpu-profiler/CollectDeoptEvents': [SKIP],
+  'test-cpu-profiler/JsNativeJsRuntimeJsSampleMultiple': [SKIP],
+  'test-cpu-profiler/JsNativeJsSample': [SKIP],
+  'test-cpu-profiler/JsNative1JsNative2JsSample': [SKIP],
 }],  # 'system == windows'
 
 ##############################################################################
 ['byteorder == big', {
   # TODO(mips-team): Fix Wasm for big-endian.
   'test-run-wasm-module/Run_WasmModule_CallAdd': [SKIP],
-  'test-run-wasm-module/Run_WasmModule_CallAdd_rev': [SKIP],
   'test-run-wasm-module/Run_WasmModule_CallMain_recursive': [SKIP],
   'test-run-wasm-module/Run_WasmModule_ReadLoadedDataSegment': [SKIP],
   'test-run-wasm-module/Run_WasmModule_Return114': [SKIP],
   'test-run-wasm-module/Run_WasmModule_CheckMemoryIsZero': [SKIP],
   'test-run-wasm-module/Run_WasmModule_Global': [SKIP],
-  'test-run-wasm/Run_WasmInt32*': [SKIP],
-  'test-run-wasm/Run_Wasm_TableSwitch*': [SKIP],
-  'test-run-wasm/Run_Wasm_StoreMemI32_offset': [SKIP],
-  'test-run-wasm/Run_Wasm_Int32LoadInt16_*': [SKIP],
+  'test-run-wasm/Run_Wasm_Int32LoadInt16_signext': [SKIP],
+  'test-run-wasm/Run_Wasm_Int32LoadInt16_zeroext': [SKIP],
   'test-run-wasm/Run_WasmMixedGlobals': [SKIP],
-  'test-run-wasm/Run_WasmCall*': [SKIP],
-  'test-run-wasm/Run_WasmMixedCall_*': [SKIP],
-  'test-run-wasm/Run_WasmInt64*': [SKIP],
-  'test-run-wasm/Run_Wasm_LoadStoreI64_sx': [SKIP],
-  'test-run-wasm/Run_WASM_Int64DivS_byzero_const': [SKIP],
-  'test-run-wasm/Run_TestI64WasmRunner': [SKIP],
-  'test-run-wasm-js/Run_JSSelect_1': [SKIP],
-  'test-run-wasm-js/Run_JSSelect_2': [SKIP],
-  'test-run-wasm-js/Run_JSSelect_3': [SKIP],
-  'test-run-wasm-js/Run_JSSelect_4': [SKIP],
-  'test-run-wasm-js/Run_JSSelect_5': [SKIP],
-  'test-run-wasm-js/Run_JSSelect_6': [SKIP],
   'test-run-wasm-64/Run_WasmI64*': [SKIP],
+  'test-run-wasm-64/Run_Wasm_I64*': [SKIP],
+  'test-run-wasm-64/Run_Wasm_LoadStoreI64_sx': [SKIP],
+  'test-run-wasm-64/Run_TestI64WasmRunner': [SKIP],
 }],  # 'byteorder == big'
 
 ##############################################################################
@@ -508,10 +503,6 @@
   'test-run-jsexceptions/ThrowMessagePosition': [FAIL],
   'test-api/TryCatchMixedNesting': [FAIL],
 
-  # TODO(rmcilroy,4766): Requires BytecodeGraphBuilder to track source position
-  # on nodes (behind --turbo_source_positions flag).
-  'test-cpu-profiler/TickLinesOptimized': [FAIL],
-
   # TODO(mythria,4780): Related to type feedback support for calls.
   'test-feedback-vector/VectorCallICStates': [FAIL],
   'test-compiler/FeedbackVectorPreservedAcrossRecompiles': [FAIL],
@@ -531,10 +522,5 @@
   # TODO(mythria,4680): Incorrect column number on eval.
   'test-api/PromiseRejectCallback': [FAIL],
 }],  # ignition == True
-
-['ignition == True and msan', {
-  # TODO(rmcilroy,4680): Uninitialized memory.
-  'test-debug/*': [SKIP],
-}],  # ignition == True and msan
 
 ]

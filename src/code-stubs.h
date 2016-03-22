@@ -37,7 +37,6 @@ namespace internal {
   V(KeyedLoadICTrampoline)                  \
   V(LoadICTrampoline)                       \
   V(CallICTrampoline)                       \
-  V(LoadIndexedInterceptor)                 \
   V(LoadIndexedString)                      \
   V(MathPow)                                \
   V(ProfileEntryHook)                       \
@@ -48,6 +47,8 @@ namespace internal {
   V(StubFailureTrampoline)                  \
   V(SubString)                              \
   V(ToNumber)                               \
+  V(NonNumberToNumber)                      \
+  V(StringToNumber)                         \
   V(ToLength)                               \
   V(ToString)                               \
   V(ToName)                                 \
@@ -66,6 +67,7 @@ namespace internal {
   V(CreateAllocationSite)                   \
   V(CreateWeakCell)                         \
   V(ElementsTransitionAndStore)             \
+  V(FastArrayPush)                          \
   V(FastCloneRegExp)                        \
   V(FastCloneShallowArray)                  \
   V(FastCloneShallowObject)                 \
@@ -98,6 +100,16 @@ namespace internal {
   /* TurboFanCodeStubs */                   \
   V(AllocateHeapNumber)                     \
   V(AllocateMutableHeapNumber)              \
+  V(AllocateFloat32x4)                      \
+  V(AllocateInt32x4)                        \
+  V(AllocateUint32x4)                       \
+  V(AllocateBool32x4)                       \
+  V(AllocateInt16x8)                        \
+  V(AllocateUint16x8)                       \
+  V(AllocateBool16x8)                       \
+  V(AllocateInt8x16)                        \
+  V(AllocateUint8x16)                       \
+  V(AllocateBool8x16)                       \
   V(StringLength)                           \
   V(LessThan)                               \
   V(LessThanOrEqual)                        \
@@ -119,9 +131,11 @@ namespace internal {
   V(LoadConstant)                           \
   V(LoadFastElement)                        \
   V(LoadField)                              \
+  V(LoadIndexedInterceptor)                 \
   V(KeyedLoadSloppyArguments)               \
   V(KeyedStoreSloppyArguments)              \
   V(StoreField)                             \
+  V(StoreInterceptor)                       \
   V(StoreGlobal)                            \
   V(StoreTransition)
 
@@ -773,8 +787,31 @@ class ToBooleanStub final : public TurboFanCodeStub {
  public:
   explicit ToBooleanStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(ToBoolean);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_TURBOFAN_CODE_STUB(ToBoolean, TurboFanCodeStub);
+};
+
+class StoreInterceptorStub : public TurboFanCodeStub {
+ public:
+  explicit StoreInterceptorStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  void GenerateAssembly(compiler::CodeStubAssembler* assember) const override;
+
+  Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Store);
+  DEFINE_CODE_STUB(StoreInterceptor, TurboFanCodeStub);
+};
+
+class LoadIndexedInterceptorStub : public TurboFanCodeStub {
+ public:
+  explicit LoadIndexedInterceptorStub(Isolate* isolate)
+      : TurboFanCodeStub(isolate) {}
+
+  Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(LoadWithVector);
+  DEFINE_TURBOFAN_CODE_STUB(LoadIndexedInterceptor, TurboFanCodeStub);
 };
 
 enum StringAddFlags {
@@ -803,7 +840,7 @@ class NumberToStringStub final : public HydrogenCodeStub {
   // Parameters accessed via CodeStubGraphBuilder::GetParameter()
   static const int kNumber = 0;
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(NumberToString);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_HYDROGEN_CODE_STUB(NumberToString, HydrogenCodeStub);
 };
 
@@ -1018,12 +1055,29 @@ class GrowArrayElementsStub : public HydrogenCodeStub {
   DEFINE_HYDROGEN_CODE_STUB(GrowArrayElements, HydrogenCodeStub);
 };
 
+class FastArrayPushStub : public HydrogenCodeStub {
+ public:
+  explicit FastArrayPushStub(Isolate* isolate) : HydrogenCodeStub(isolate) {}
+
+ private:
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(FastArrayPush);
+  DEFINE_HYDROGEN_CODE_STUB(FastArrayPush, HydrogenCodeStub);
+};
 
 class InstanceOfStub final : public PlatformCodeStub {
  public:
-  explicit InstanceOfStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
+  explicit InstanceOfStub(Isolate* isolate, bool es6_instanceof = false)
+      : PlatformCodeStub(isolate) {
+    minor_key_ = IsES6InstanceOfBits::encode(es6_instanceof);
+  }
+
+  bool is_es6_instanceof() const {
+    return IsES6InstanceOfBits::decode(minor_key_);
+  }
 
  private:
+  class IsES6InstanceOfBits : public BitField<bool, 0, 1> {};
+
   DEFINE_CALL_INTERFACE_DESCRIPTOR(InstanceOf);
   DEFINE_PLATFORM_CODE_STUB(InstanceOf, PlatformCodeStub);
 };
@@ -1155,20 +1209,6 @@ class FunctionPrototypeStub : public PlatformCodeStub {
   }
 
   DEFINE_PLATFORM_CODE_STUB(FunctionPrototype, PlatformCodeStub);
-};
-
-
-// TODO(mvstanton): Translate to hydrogen code stub.
-class LoadIndexedInterceptorStub : public PlatformCodeStub {
- public:
-  explicit LoadIndexedInterceptorStub(Isolate* isolate)
-      : PlatformCodeStub(isolate) {}
-
-  Code::Kind GetCodeKind() const override { return Code::HANDLER; }
-  Code::StubType GetStubType() const override { return Code::FAST; }
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(Load);
-  DEFINE_PLATFORM_CODE_STUB(LoadIndexedInterceptor, PlatformCodeStub);
 };
 
 
@@ -2547,6 +2587,21 @@ class AllocateMutableHeapNumberStub : public TurboFanCodeStub {
   DEFINE_CODE_STUB(AllocateMutableHeapNumber, TurboFanCodeStub);
 };
 
+#define SIMD128_ALLOC_STUB(TYPE, Type, type, lane_count, lane_type)     \
+  class Allocate##Type##Stub : public TurboFanCodeStub {                \
+   public:                                                              \
+    explicit Allocate##Type##Stub(Isolate* isolate)                     \
+        : TurboFanCodeStub(isolate) {}                                  \
+                                                                        \
+    void InitializeDescriptor(CodeStubDescriptor* descriptor) override; \
+    void GenerateAssembly(                                              \
+        compiler::CodeStubAssembler* assembler) const override;         \
+                                                                        \
+    DEFINE_CALL_INTERFACE_DESCRIPTOR(Allocate##Type);                   \
+    DEFINE_CODE_STUB(Allocate##Type, TurboFanCodeStub);                 \
+  };
+SIMD128_TYPES(SIMD128_ALLOC_STUB)
+#undef SIMD128_ALLOC_STUB
 
 class AllocateInNewSpaceStub final : public HydrogenCodeStub {
  public:
@@ -2820,7 +2875,7 @@ class ToBooleanICStub : public HydrogenCodeStub {
 
   class TypesBits : public BitField<uint16_t, 0, NUMBER_OF_TYPES> {};
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(ToBoolean);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_HYDROGEN_CODE_STUB(ToBooleanIC, HydrogenCodeStub);
 };
 
@@ -2932,16 +2987,32 @@ class ToNumberStub final : public PlatformCodeStub {
  public:
   explicit ToNumberStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(ToNumber);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_PLATFORM_CODE_STUB(ToNumber, PlatformCodeStub);
 };
 
+class NonNumberToNumberStub final : public PlatformCodeStub {
+ public:
+  explicit NonNumberToNumberStub(Isolate* isolate)
+      : PlatformCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
+  DEFINE_PLATFORM_CODE_STUB(NonNumberToNumber, PlatformCodeStub);
+};
+
+class StringToNumberStub final : public PlatformCodeStub {
+ public:
+  explicit StringToNumberStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
+  DEFINE_PLATFORM_CODE_STUB(StringToNumber, PlatformCodeStub);
+};
 
 class ToLengthStub final : public PlatformCodeStub {
  public:
   explicit ToLengthStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(ToLength);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_PLATFORM_CODE_STUB(ToLength, PlatformCodeStub);
 };
 
@@ -2950,7 +3021,7 @@ class ToStringStub final : public PlatformCodeStub {
  public:
   explicit ToStringStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(ToString);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_PLATFORM_CODE_STUB(ToString, PlatformCodeStub);
 };
 
@@ -2959,7 +3030,7 @@ class ToNameStub final : public PlatformCodeStub {
  public:
   explicit ToNameStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(ToName);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_PLATFORM_CODE_STUB(ToName, PlatformCodeStub);
 };
 
@@ -2968,7 +3039,7 @@ class ToObjectStub final : public HydrogenCodeStub {
  public:
   explicit ToObjectStub(Isolate* isolate) : HydrogenCodeStub(isolate) {}
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(ToObject);
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_HYDROGEN_CODE_STUB(ToObject, HydrogenCodeStub);
 };
 

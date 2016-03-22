@@ -197,31 +197,9 @@ void StringCompareDescriptor::InitializePlatformSpecific(
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
 
-
-void ToLengthDescriptor::InitializePlatformSpecific(
+void TypeConversionDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
-  Register registers[] = {ReceiverRegister()};
-  data->InitializePlatformSpecific(arraysize(registers), registers);
-}
-
-
-void ToStringDescriptor::InitializePlatformSpecific(
-    CallInterfaceDescriptorData* data) {
-  Register registers[] = {ReceiverRegister()};
-  data->InitializePlatformSpecific(arraysize(registers), registers);
-}
-
-
-void ToNameDescriptor::InitializePlatformSpecific(
-    CallInterfaceDescriptorData* data) {
-  Register registers[] = {ReceiverRegister()};
-  data->InitializePlatformSpecific(arraysize(registers), registers);
-}
-
-
-void ToObjectDescriptor::InitializePlatformSpecific(
-    CallInterfaceDescriptorData* data) {
-  Register registers[] = {ReceiverRegister()};
+  Register registers[] = {ArgumentRegister()};
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
 
@@ -350,6 +328,15 @@ void GrowArrayElementsDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {ObjectRegister(), KeyRegister()};
   data->InitializePlatformSpecific(arraysize(registers), registers);
+}
+
+FunctionType* FastArrayPushDescriptor::BuildCallInterfaceDescriptorFunctionType(
+    Isolate* isolate, int paramater_count) {
+  Zone* zone = isolate->interface_descriptor_zone();
+  FunctionType* function =
+      Type::Function(AnyTagged(zone), AnyTagged(zone), 1, zone)->AsFunction();
+  function->InitParameter(0, UntaggedIntegral32(zone));  // actual #arguments
+  return function;
 }
 
 FunctionType*

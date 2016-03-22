@@ -11,7 +11,6 @@
 #include "src/ast/scopeinfo.h"
 #include "src/code-factory.h"
 #include "src/crankshaft/hydrogen-bce.h"
-#include "src/crankshaft/hydrogen-bch.h"
 #include "src/crankshaft/hydrogen-canonicalize.h"
 #include "src/crankshaft/hydrogen-check-elimination.h"
 #include "src/crankshaft/hydrogen-dce.h"
@@ -4528,7 +4527,6 @@ bool HGraph::Optimize(BailoutReason* bailout_reason) {
   Run<HStackCheckEliminationPhase>();
 
   if (FLAG_array_bounds_checks_elimination) Run<HBoundsCheckEliminationPhase>();
-  if (FLAG_array_bounds_checks_hoisting) Run<HBoundsCheckHoistingPhase>();
   if (FLAG_array_index_dehoisting) Run<HDehoistIndexComputationsPhase>();
   if (FLAG_dead_code_elimination) Run<HDeadCodeEliminationPhase>();
 
@@ -4773,23 +4771,24 @@ void HOptimizedGraphBuilder::VisitIfStatement(IfStatement* stmt) {
     HBasicBlock* cond_false = graph()->CreateBasicBlock();
     CHECK_BAILOUT(VisitForControl(stmt->condition(), cond_true, cond_false));
 
-    if (cond_true->HasPredecessor()) {
-      cond_true->SetJoinId(stmt->ThenId());
-      set_current_block(cond_true);
-      CHECK_BAILOUT(Visit(stmt->then_statement()));
-      cond_true = current_block();
-    } else {
-      cond_true = NULL;
-    }
+    // Technically, we should be able to handle the case when one side of
+    // the test is not connected, but this can trip up liveness analysis
+    // if we did not fully connect the test context based on some optimistic
+    // assumption. If such an assumption was violated, we would end up with
+    // an environment with optimized-out values. So we should always
+    // conservatively connect the test context.
+    CHECK(cond_true->HasPredecessor());
+    CHECK(cond_false->HasPredecessor());
 
-    if (cond_false->HasPredecessor()) {
-      cond_false->SetJoinId(stmt->ElseId());
-      set_current_block(cond_false);
-      CHECK_BAILOUT(Visit(stmt->else_statement()));
-      cond_false = current_block();
-    } else {
-      cond_false = NULL;
-    }
+    cond_true->SetJoinId(stmt->ThenId());
+    set_current_block(cond_true);
+    CHECK_BAILOUT(Visit(stmt->then_statement()));
+    cond_true = current_block();
+
+    cond_false->SetJoinId(stmt->ElseId());
+    set_current_block(cond_false);
+    CHECK_BAILOUT(Visit(stmt->else_statement()));
+    cond_false = current_block();
 
     HBasicBlock* join = CreateJoin(cond_true, cond_false, stmt->IfId());
     set_current_block(join);
@@ -5512,9 +5511,8 @@ void HOptimizedGraphBuilder::VisitFunctionLiteral(FunctionLiteral* expr) {
     FastNewClosureDescriptor descriptor(isolate());
     HValue* values[] = {context(), shared_info_value};
     HConstant* stub_value = Add<HConstant>(stub.GetCode());
-    instr = New<HCallWithDescriptor>(stub_value, 0, descriptor,
-                                     Vector<HValue*>(values, arraysize(values)),
-                                     NORMAL_CALL);
+    instr = New<HCallWithDescriptor>(
+        stub_value, 0, descriptor, Vector<HValue*>(values, arraysize(values)));
   } else {
     Add<HPushArguments>(shared_info_value);
     Runtime::FunctionId function_id =
@@ -5795,9 +5793,9 @@ void HOptimizedGraphBuilder::VisitRegExpLiteral(RegExpLiteral* expr) {
       context(), AddThisFunction(), Add<HConstant>(expr->literal_index()),
       Add<HConstant>(expr->pattern()), Add<HConstant>(expr->flags())};
   HConstant* stub_value = Add<HConstant>(callable.code());
-  HInstruction* instr = New<HCallWithDescriptor>(
-      stub_value, 0, callable.descriptor(),
-      Vector<HValue*>(values, arraysize(values)), NORMAL_CALL);
+  HInstruction* instr =
+      New<HCallWithDescriptor>(stub_value, 0, callable.descriptor(),
+                               Vector<HValue*>(values, arraysize(values)));
   return ast_context()->ReturnInstruction(instr, expr->id());
 }
 
@@ -6582,7 +6580,7 @@ HValue* HOptimizedGraphBuilder::BuildMonomorphicAccess(
         info->NeedsWrappingFor(Handle<JSFunction>::cast(info->accessor()))) {
       HValue* function = Add<HConstant>(info->accessor());
       PushArgumentsFromEnvironment(argument_count);
-      return NewCallFunction(function, argument_count,
+      return NewCallFunction(function, argument_count, TailCallMode::kDisallow,
                              ConvertReceiverMode::kNotNullOrUndefined,
                              TailCallMode::kDisallow);
     } else if (FLAG_inline_accessors && can_inline_accessor) {
@@ -6599,7 +6597,8 @@ HValue* HOptimizedGraphBuilder::BuildMonomorphicAccess(
       return nullptr;
     }
     return NewCallConstantFunction(Handle<JSFunction>::cast(info->accessor()),
-                                   argument_count, TailCallMode::kDisallow);
+                                   argument_count, TailCallMode::kDisallow,
+                                   TailCallMode::kDisallow);
   }
 
   DCHECK(info->IsDataConstant());
@@ -7997,9 +7996,37 @@ void HOptimizedGraphBuilder::AddCheckPrototypeMaps(Handle<JSObject> holder,
   }
 }
 
+void HOptimizedGraphBuilder::BuildEnsureCallable(HValue* object) {
+  NoObservableSideEffectsScope scope(this);
+  const Runtime::Function* throw_called_non_callable =
+      Runtime::FunctionForId(Runtime::kThrowCalledNonCallable);
+
+  IfBuilder is_not_function(this);
+  HValue* smi_check = is_not_function.If<HIsSmiAndBranch>(object);
+  is_not_function.Or();
+  HValue* map = AddLoadMap(object, smi_check);
+  HValue* bit_field =
+      Add<HLoadNamedField>(map, nullptr, HObjectAccess::ForMapBitField());
+  HValue* bit_field_masked = AddUncasted<HBitwise>(
+      Token::BIT_AND, bit_field, Add<HConstant>(1 << Map::kIsCallable));
+  is_not_function.IfNot<HCompareNumericAndBranch>(
+      bit_field_masked, Add<HConstant>(1 << Map::kIsCallable), Token::EQ);
+  is_not_function.Then();
+  {
+    Add<HPushArguments>(object);
+    Add<HCallRuntime>(throw_called_non_callable, 1);
+  }
+  is_not_function.End();
+}
+
 HInstruction* HOptimizedGraphBuilder::NewCallFunction(
-    HValue* function, int argument_count, ConvertReceiverMode convert_mode,
-    TailCallMode tail_call_mode) {
+    HValue* function, int argument_count, TailCallMode syntactic_tail_call_mode,
+    ConvertReceiverMode convert_mode, TailCallMode tail_call_mode) {
+  if (syntactic_tail_call_mode == TailCallMode::kAllow) {
+    BuildEnsureCallable(function);
+  } else {
+    DCHECK_EQ(TailCallMode::kDisallow, tail_call_mode);
+  }
   HValue* arity = Add<HConstant>(argument_count - 1);
 
   HValue* op_vals[] = {context(), function, arity};
@@ -8009,12 +8036,19 @@ HInstruction* HOptimizedGraphBuilder::NewCallFunction(
   HConstant* stub = Add<HConstant>(callable.code());
 
   return New<HCallWithDescriptor>(stub, argument_count, callable.descriptor(),
-                                  Vector<HValue*>(op_vals, arraysize(op_vals)));
+                                  Vector<HValue*>(op_vals, arraysize(op_vals)),
+                                  syntactic_tail_call_mode);
 }
 
 HInstruction* HOptimizedGraphBuilder::NewCallFunctionViaIC(
-    HValue* function, int argument_count, ConvertReceiverMode convert_mode,
-    TailCallMode tail_call_mode, FeedbackVectorSlot slot) {
+    HValue* function, int argument_count, TailCallMode syntactic_tail_call_mode,
+    ConvertReceiverMode convert_mode, TailCallMode tail_call_mode,
+    FeedbackVectorSlot slot) {
+  if (syntactic_tail_call_mode == TailCallMode::kAllow) {
+    BuildEnsureCallable(function);
+  } else {
+    DCHECK_EQ(TailCallMode::kDisallow, tail_call_mode);
+  }
   int arity = argument_count - 1;
   Handle<TypeFeedbackVector> vector(current_feedback_vector(), isolate());
   HValue* index_val = Add<HConstant>(vector->GetIndex(slot));
@@ -8023,18 +8057,20 @@ HInstruction* HOptimizedGraphBuilder::NewCallFunctionViaIC(
   HValue* op_vals[] = {context(), function, index_val, vector_val};
 
   Callable callable = CodeFactory::CallICInOptimizedCode(
-      isolate(), arity, ConvertReceiverMode::kNullOrUndefined, tail_call_mode);
+      isolate(), arity, convert_mode, tail_call_mode);
   HConstant* stub = Add<HConstant>(callable.code());
 
   return New<HCallWithDescriptor>(stub, argument_count, callable.descriptor(),
-                                  Vector<HValue*>(op_vals, arraysize(op_vals)));
+                                  Vector<HValue*>(op_vals, arraysize(op_vals)),
+                                  syntactic_tail_call_mode);
 }
 
 HInstruction* HOptimizedGraphBuilder::NewCallConstantFunction(
     Handle<JSFunction> function, int argument_count,
-    TailCallMode tail_call_mode) {
+    TailCallMode syntactic_tail_call_mode, TailCallMode tail_call_mode) {
   HValue* target = Add<HConstant>(function);
-  return New<HInvokeFunction>(target, function, argument_count, tail_call_mode);
+  return New<HInvokeFunction>(target, function, argument_count,
+                              syntactic_tail_call_mode, tail_call_mode);
 }
 
 
@@ -8185,10 +8221,12 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(Call* expr,
       // HWrapReceiver.
       HInstruction* call =
           needs_wrapping
-              ? NewCallFunction(function, argument_count,
-                                ConvertReceiverMode::kNotNullOrUndefined,
-                                tail_call_mode)
-              : NewCallConstantFunction(target, argument_count, tail_call_mode);
+              ? NewCallFunction(
+                    function, argument_count, syntactic_tail_call_mode,
+                    ConvertReceiverMode::kNotNullOrUndefined, tail_call_mode)
+              : NewCallConstantFunction(target, argument_count,
+                                        syntactic_tail_call_mode,
+                                        tail_call_mode);
       PushArgumentsFromEnvironment(argument_count);
       AddInstruction(call);
       Drop(1);  // Drop the function.
@@ -8218,8 +8256,8 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(Call* expr,
     CHECK_ALIVE(VisitExpressions(expr->arguments()));
 
     HInstruction* call = NewCallFunction(
-        function, argument_count, ConvertReceiverMode::kNotNullOrUndefined,
-        tail_call_mode);
+        function, argument_count, syntactic_tail_call_mode,
+        ConvertReceiverMode::kNotNullOrUndefined, tail_call_mode);
 
     PushArgumentsFromEnvironment(argument_count);
 
@@ -9105,8 +9143,8 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinMethodCall(
           if_inline.Else();
           {
             Add<HPushArguments>(receiver);
-            result = AddInstruction(
-                NewCallConstantFunction(function, 1, TailCallMode::kDisallow));
+            result = AddInstruction(NewCallConstantFunction(
+                function, 1, TailCallMode::kDisallow, TailCallMode::kDisallow));
             if (!ast_context()->IsEffect()) Push(result);
           }
           if_inline.End();
@@ -9370,8 +9408,9 @@ void HOptimizedGraphBuilder::HandleIndirectCall(Call* expr, HValue* function,
       function_state()->ComputeTailCallMode(syntactic_tail_call_mode);
 
   PushArgumentsFromEnvironment(arguments_count);
-  HInvokeFunction* call = New<HInvokeFunction>(function, known_function,
-                                               arguments_count, tail_call_mode);
+  HInvokeFunction* call =
+      New<HInvokeFunction>(function, known_function, arguments_count,
+                           syntactic_tail_call_mode, tail_call_mode);
   Drop(1);  // Function
   ast_context()->ReturnInstruction(call, expr->id());
 }
@@ -9768,14 +9807,15 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
         // the receiver.
         // TODO(verwaest): Support creation of value wrappers directly in
         // HWrapReceiver.
-        call = NewCallFunction(function, argument_count,
-                               ConvertReceiverMode::kNotNullOrUndefined,
-                               tail_call_mode);
+        call = NewCallFunction(
+            function, argument_count, syntactic_tail_call_mode,
+            ConvertReceiverMode::kNotNullOrUndefined, tail_call_mode);
       } else if (TryInlineCall(expr)) {
         return;
       } else {
-        call = NewCallConstantFunction(known_function, argument_count,
-                                       tail_call_mode);
+        call =
+            NewCallConstantFunction(known_function, argument_count,
+                                    syntactic_tail_call_mode, tail_call_mode);
       }
 
     } else {
@@ -9794,7 +9834,7 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
       Push(receiver);
 
       CHECK_ALIVE(VisitExpressions(expr->arguments(), arguments_flag));
-      call = NewCallFunction(function, argument_count,
+      call = NewCallFunction(function, argument_count, syntactic_tail_call_mode,
                              ConvertReceiverMode::kNotNullOrUndefined,
                              tail_call_mode);
     }
@@ -9844,7 +9884,7 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
 
       PushArgumentsFromEnvironment(argument_count);
       call = NewCallConstantFunction(expr->target(), argument_count,
-                                     tail_call_mode);
+                                     syntactic_tail_call_mode, tail_call_mode);
     } else {
       PushArgumentsFromEnvironment(argument_count);
       if (expr->is_uninitialized() &&
@@ -9852,12 +9892,13 @@ void HOptimizedGraphBuilder::VisitCall(Call* expr) {
         // We've never seen this call before, so let's have Crankshaft learn
         // through the type vector.
         call = NewCallFunctionViaIC(function, argument_count,
+                                    syntactic_tail_call_mode,
                                     ConvertReceiverMode::kNullOrUndefined,
                                     tail_call_mode, expr->CallFeedbackICSlot());
       } else {
-        call = NewCallFunction(function, argument_count,
-                               ConvertReceiverMode::kNullOrUndefined,
-                               tail_call_mode);
+        call = NewCallFunction(
+            function, argument_count, syntactic_tail_call_mode,
+            ConvertReceiverMode::kNullOrUndefined, tail_call_mode);
       }
     }
   }
@@ -10499,6 +10540,7 @@ void HOptimizedGraphBuilder::VisitCallRuntime(CallRuntime* expr) {
     CHECK_ALIVE(VisitExpressions(expr->arguments()));
     PushArgumentsFromEnvironment(argument_count);
     HInstruction* call = NewCallConstantFunction(known_function, argument_count,
+                                                 TailCallMode::kDisallow,
                                                  TailCallMode::kDisallow);
     Drop(1);  // Function
     return ast_context()->ReturnInstruction(call, expr->id());
@@ -11319,12 +11361,10 @@ void HOptimizedGraphBuilder::VisitLogicalExpression(BinaryOperation* expr) {
 
     // Translate right subexpression by visiting it in the same AST
     // context as the entire expression.
-    if (eval_right->HasPredecessor()) {
-      eval_right->SetJoinId(expr->RightId());
-      set_current_block(eval_right);
-      Visit(expr->right());
-    }
-
+    CHECK(eval_right->HasPredecessor());
+    eval_right->SetJoinId(expr->RightId());
+    set_current_block(eval_right);
+    Visit(expr->right());
   } else if (ast_context()->IsValue()) {
     CHECK_ALIVE(VisitForValue(expr->left()));
     DCHECK(current_block() != NULL);
@@ -11380,20 +11420,22 @@ void HOptimizedGraphBuilder::VisitLogicalExpression(BinaryOperation* expr) {
     // second one is not a merge node, and that we really have no good AST ID to
     // put on that first HSimulate.
 
-    if (empty_block->HasPredecessor()) {
-      empty_block->SetJoinId(expr->id());
-    } else {
-      empty_block = NULL;
-    }
+    // Technically, we should be able to handle the case when one side of
+    // the test is not connected, but this can trip up liveness analysis
+    // if we did not fully connect the test context based on some optimistic
+    // assumption. If such an assumption was violated, we would end up with
+    // an environment with optimized-out values. So we should always
+    // conservatively connect the test context.
 
-    if (right_block->HasPredecessor()) {
-      right_block->SetJoinId(expr->RightId());
-      set_current_block(right_block);
-      CHECK_BAILOUT(VisitForEffect(expr->right()));
-      right_block = current_block();
-    } else {
-      right_block = NULL;
-    }
+    CHECK(right_block->HasPredecessor());
+    CHECK(empty_block->HasPredecessor());
+
+    empty_block->SetJoinId(expr->id());
+
+    right_block->SetJoinId(expr->RightId());
+    set_current_block(right_block);
+    CHECK_BAILOUT(VisitForEffect(expr->right()));
+    right_block = current_block();
 
     HBasicBlock* join_block =
       CreateJoin(empty_block, right_block, expr->id());
@@ -11462,7 +11504,7 @@ void HOptimizedGraphBuilder::VisitCompareOperation(CompareOperation* expr) {
   if (expr->IsLiteralCompareTypeof(&sub_expr, &check)) {
     return HandleLiteralCompareTypeof(expr, sub_expr, check);
   }
-  if (expr->IsLiteralCompareUndefined(&sub_expr, isolate())) {
+  if (expr->IsLiteralCompareUndefined(&sub_expr)) {
     return HandleLiteralCompareNil(expr, sub_expr, kUndefinedValue);
   }
   if (expr->IsLiteralCompareNull(&sub_expr)) {
@@ -11498,6 +11540,7 @@ void HOptimizedGraphBuilder::VisitCompareOperation(CompareOperation* expr) {
   }
 
   if (op == Token::INSTANCEOF) {
+    DCHECK(!FLAG_harmony_instanceof);
     // Check to see if the rhs of the instanceof is a known function.
     if (right->IsConstant() &&
         HConstant::cast(right)->handle(isolate())->IsJSFunction()) {
@@ -12618,6 +12661,45 @@ void HOptimizedGraphBuilder::GenerateNumberToString(CallRuntime* call) {
 void HOptimizedGraphBuilder::GenerateCall(CallRuntime* call) {
   DCHECK_LE(2, call->arguments()->length());
   CHECK_ALIVE(VisitExpressions(call->arguments()));
+
+  // Try and customize ES6 instanceof here.
+  // We should at least have the constructor on the expression stack.
+  if (FLAG_harmony_instanceof && FLAG_harmony_instanceof_opt &&
+      call->arguments()->length() == 3) {
+    HValue* target = environment()->ExpressionStackAt(2);
+    if (target->IsConstant()) {
+      HConstant* constant_function = HConstant::cast(target);
+      if (constant_function->handle(isolate())->IsJSFunction()) {
+        Handle<JSFunction> func =
+            Handle<JSFunction>::cast(constant_function->handle(isolate()));
+        if (*func == isolate()->native_context()->ordinary_has_instance()) {
+          // Look at the function, which will be argument 1.
+          HValue* right = environment()->ExpressionStackAt(1);
+          if (right->IsConstant() &&
+              HConstant::cast(right)->handle(isolate())->IsJSFunction()) {
+            Handle<JSFunction> constructor = Handle<JSFunction>::cast(
+                HConstant::cast(right)->handle(isolate()));
+            if (constructor->IsConstructor() &&
+                !constructor->map()->has_non_instance_prototype()) {
+              JSFunction::EnsureHasInitialMap(constructor);
+              DCHECK(constructor->has_initial_map());
+              Handle<Map> initial_map(constructor->initial_map(), isolate());
+              top_info()->dependencies()->AssumeInitialMapCantChange(
+                  initial_map);
+              HInstruction* prototype =
+                  Add<HConstant>(handle(initial_map->prototype(), isolate()));
+              HValue* left = environment()->ExpressionStackAt(0);
+              HHasInPrototypeChainAndBranch* result =
+                  New<HHasInPrototypeChainAndBranch>(left, prototype);
+              Drop(3);
+              return ast_context()->ReturnControl(result, call->id());
+            }
+          }
+        }
+      }
+    }
+  }
+
   CallTrampolineDescriptor descriptor(isolate());
   PushArgumentsFromEnvironment(call->arguments()->length() - 1);
   HValue* trampoline = Add<HConstant>(isolate()->builtins()->Call());
@@ -12666,15 +12748,6 @@ void HOptimizedGraphBuilder::GenerateMathLogRT(CallRuntime* call) {
   CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
   HValue* value = Pop();
   HInstruction* result = NewUncasted<HUnaryMathOperation>(value, kMathLog);
-  return ast_context()->ReturnInstruction(result, call->id());
-}
-
-
-void HOptimizedGraphBuilder::GenerateMathSqrt(CallRuntime* call) {
-  DCHECK(call->arguments()->length() == 1);
-  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
-  HValue* value = Pop();
-  HInstruction* result = NewUncasted<HUnaryMathOperation>(value, kMathSqrt);
   return ast_context()->ReturnInstruction(result, call->id());
 }
 

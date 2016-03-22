@@ -387,7 +387,8 @@ RegExpTree* RegExpParser::ParseDisjunction() {
           case '8':
           case '9': {
             int index = 0;
-            if (ParseBackReferenceIndex(&index)) {
+            bool is_backref = ParseBackReferenceIndex(&index CHECK_FAILED);
+            if (is_backref) {
               if (state->IsInsideCaptureGroup(index)) {
                 // The back reference is inside the capture group it refers to.
                 // Nothing can possibly have been captured yet, so we use empty
@@ -844,10 +845,31 @@ bool RegExpParser::ParseUnicodeEscape(uc32* value) {
 }
 
 #ifdef V8_I18N_SUPPORT
+bool IsExactPropertyValueAlias(const char* property_name, UProperty property,
+                               int32_t property_value) {
+  const char* short_name =
+      u_getPropertyValueName(property, property_value, U_SHORT_PROPERTY_NAME);
+  if (short_name != NULL && strcmp(property_name, short_name) == 0) return true;
+  for (int i = 0;; i++) {
+    const char* long_name = u_getPropertyValueName(
+        property, property_value,
+        static_cast<UPropertyNameChoice>(U_LONG_PROPERTY_NAME + i));
+    if (long_name == NULL) break;
+    if (strcmp(property_name, long_name) == 0) return true;
+  }
+  return false;
+}
+
 bool LookupPropertyClass(UProperty property, const char* property_name,
                          ZoneList<CharacterRange>* result, Zone* zone) {
   int32_t property_value = u_getPropertyValueEnum(property, property_name);
   if (property_value == UCHAR_INVALID_CODE) return false;
+
+  // We require the property name to match exactly to one of the property value
+  // aliases. However, u_getPropertyValueEnum uses loose matching.
+  if (!IsExactPropertyValueAlias(property_name, property, property_value)) {
+    return false;
+  }
 
   USet* set = uset_openEmpty();
   UErrorCode ec = U_ZERO_ERROR;
