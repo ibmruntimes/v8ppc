@@ -68,7 +68,6 @@ class IdleScavengeObserver : public AllocationObserver {
   Heap& heap_;
 };
 
-
 Heap::Heap()
     : amount_of_external_allocated_memory_(0),
       amount_of_external_allocated_memory_at_last_global_gc_(0),
@@ -92,6 +91,7 @@ Heap::Heap()
       survived_since_last_expansion_(0),
       survived_last_scavenge_(0),
       always_allocate_scope_count_(0),
+      memory_pressure_level_(MemoryPressureLevel::kNone),
       contexts_disposed_(0),
       number_of_disposed_maps_(0),
       global_ic_age_(0),
@@ -116,6 +116,7 @@ Heap::Heap()
       inline_allocation_disabled_(false),
       total_regexp_code_generated_(0),
       tracer_(nullptr),
+      embedder_heap_tracer_(nullptr),
       high_survival_rate_period_length_(0),
       promoted_objects_size_(0),
       promotion_ratio_(0),
@@ -790,12 +791,19 @@ class GCCallbacksScope {
 
 
 void Heap::HandleGCRequest() {
-  if (incremental_marking()->request_type() ==
-      IncrementalMarking::COMPLETE_MARKING) {
+  if (HighMemoryPressure()) {
+    incremental_marking()->reset_request_type();
+    CheckMemoryPressure();
+  } else if (incremental_marking()->request_type() ==
+             IncrementalMarking::COMPLETE_MARKING) {
+    incremental_marking()->reset_request_type();
     CollectAllGarbage(current_gc_flags_, "GC interrupt",
                       current_gc_callback_flags_);
-  } else if (incremental_marking()->IsMarking() &&
+  } else if (incremental_marking()->request_type() ==
+                 IncrementalMarking::FINALIZATION &&
+             incremental_marking()->IsMarking() &&
              !incremental_marking()->finalize_marking_completed()) {
+    incremental_marking()->reset_request_type();
     FinalizeIncrementalMarking("GC interrupt: finalize incremental marking");
   }
 }
@@ -833,7 +841,7 @@ void Heap::FinalizeIncrementalMarking(const char* gc_reason) {
     if (scope.CheckReenter()) {
       AllowHeapAllocation allow_allocation;
       GCTracer::Scope scope(tracer(),
-                            GCTracer::Scope::MC_INCREMENTAL_EXTERNAL_PROLOGUE);
+                            GCTracer::Scope::MC_INCREMENTAL_EXTERNAL_EPILOGUE);
       VMState<EXTERNAL> state(isolate_);
       HandleScope handle_scope(isolate_);
       CallGCEpilogueCallbacks(kGCTypeIncrementalMarking, kNoGCCallbackFlags);
@@ -1036,6 +1044,7 @@ bool Heap::CollectGarbage(GarbageCollector collector, const char* gc_reason,
       if (deserialization_complete_) {
         memory_reducer_->NotifyMarkCompact(event);
       }
+      memory_pressure_level_.SetValue(MemoryPressureLevel::kNone);
     }
 
     tracer()->Stop(collector);
@@ -1108,7 +1117,7 @@ void Heap::MoveElements(FixedArray* array, int dst_index, int src_index,
                   dst_objects[i]);
     }
   }
-  incremental_marking()->RecordWrites(array);
+  incremental_marking()->IterateBlackObject(array);
 }
 
 
@@ -1346,9 +1355,8 @@ bool Heap::PerformGarbageCollection(
   Relocatable::PostGarbageCollectionProcessing(isolate_);
 
   double gc_speed = tracer()->CombinedMarkCompactSpeedInBytesPerMillisecond();
-  double mutator_speed = static_cast<double>(
-      tracer()
-          ->CurrentOldGenerationAllocationThroughputInBytesPerMillisecond());
+  double mutator_speed =
+      tracer()->CurrentOldGenerationAllocationThroughputInBytesPerMillisecond();
   intptr_t old_gen_size = PromotedSpaceSizeOfObjects();
   if (collector == MARK_COMPACTOR) {
     // Register the amount of external allocated memory.
@@ -1455,7 +1463,6 @@ void Heap::MarkCompactEpilogue() {
   incremental_marking()->Epilogue();
 
   PreprocessStackTraces();
-
   DCHECK(incremental_marking()->IsStopped());
 
   // We finished a marking cycle. We can uncommit the marking deque until
@@ -2397,6 +2404,7 @@ bool Heap::CreateInitialMaps() {
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, function_context)
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, catch_context)
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, with_context)
+    ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, debug_evaluate_context)
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, block_context)
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, module_context)
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, script_context)
@@ -2927,7 +2935,6 @@ void Heap::CreateInitialObjects() {
 
 bool Heap::RootCanBeWrittenAfterInitialization(Heap::RootListIndex root_index) {
   switch (root_index) {
-    case kStoreBufferTopRootIndex:
     case kNumberStringCacheRootIndex:
     case kInstanceofCacheFunctionRootIndex:
     case kInstanceofCacheMapRootIndex:
@@ -4128,8 +4135,8 @@ static double ComputeMutatorUtilization(double mutator_speed, double gc_speed) {
 double Heap::YoungGenerationMutatorUtilization() {
   double mutator_speed = static_cast<double>(
       tracer()->NewSpaceAllocationThroughputInBytesPerMillisecond());
-  double gc_speed = static_cast<double>(
-      tracer()->ScavengeSpeedInBytesPerMillisecond(kForSurvivedObjects));
+  double gc_speed =
+      tracer()->ScavengeSpeedInBytesPerMillisecond(kForSurvivedObjects);
   double result = ComputeMutatorUtilization(mutator_speed, gc_speed);
   if (FLAG_trace_mutator_utilization) {
     PrintIsolate(isolate(),
@@ -4208,7 +4215,7 @@ void Heap::ReduceNewSpaceSize() {
   // TODO(ulan): Unify this constant with the similar constant in
   // GCIdleTimeHandler once the change is merged to 4.5.
   static const size_t kLowAllocationThroughput = 1000;
-  const size_t allocation_throughput =
+  const double allocation_throughput =
       tracer()->CurrentAllocationThroughputInBytesPerMillisecond();
 
   if (FLAG_predictable) return;
@@ -4237,21 +4244,20 @@ void Heap::FinalizeIncrementalMarkingIfComplete(const char* comment) {
 
 bool Heap::TryFinalizeIdleIncrementalMarking(double idle_time_in_ms) {
   size_t size_of_objects = static_cast<size_t>(SizeOfObjects());
-  size_t final_incremental_mark_compact_speed_in_bytes_per_ms =
-      static_cast<size_t>(
-          tracer()->FinalIncrementalMarkCompactSpeedInBytesPerMillisecond());
+  double final_incremental_mark_compact_speed_in_bytes_per_ms =
+      tracer()->FinalIncrementalMarkCompactSpeedInBytesPerMillisecond();
   if (incremental_marking()->IsReadyToOverApproximateWeakClosure() ||
       (!incremental_marking()->finalize_marking_completed() &&
        mark_compact_collector()->marking_deque()->IsEmpty() &&
        gc_idle_time_handler_->ShouldDoOverApproximateWeakClosure(
-           static_cast<size_t>(idle_time_in_ms)))) {
+           idle_time_in_ms))) {
     FinalizeIncrementalMarking(
         "Idle notification: finalize incremental marking");
     return true;
   } else if (incremental_marking()->IsComplete() ||
              (mark_compact_collector()->marking_deque()->IsEmpty() &&
               gc_idle_time_handler_->ShouldDoFinalIncrementalMarkCompact(
-                  static_cast<size_t>(idle_time_in_ms), size_of_objects,
+                  idle_time_in_ms, size_of_objects,
                   final_incremental_mark_compact_speed_in_bytes_per_ms))) {
     CollectAllGarbage(current_gc_flags_,
                       "idle notification: finalize incremental marking");
@@ -4424,6 +4430,59 @@ bool Heap::RecentIdleNotificationHappened() {
          MonotonicallyIncreasingTimeInMs();
 }
 
+class MemoryPressureInterruptTask : public CancelableTask {
+ public:
+  explicit MemoryPressureInterruptTask(Heap* heap)
+      : CancelableTask(heap->isolate()), heap_(heap) {}
+
+  virtual ~MemoryPressureInterruptTask() {}
+
+ private:
+  // v8::internal::CancelableTask overrides.
+  void RunInternal() override { heap_->CheckMemoryPressure(); }
+
+  Heap* heap_;
+  DISALLOW_COPY_AND_ASSIGN(MemoryPressureInterruptTask);
+};
+
+void Heap::CheckMemoryPressure() {
+  if (memory_pressure_level_.Value() == MemoryPressureLevel::kCritical) {
+    CollectGarbageOnMemoryPressure("memory pressure");
+  } else if (memory_pressure_level_.Value() == MemoryPressureLevel::kModerate) {
+    if (FLAG_incremental_marking && incremental_marking()->IsStopped()) {
+      StartIdleIncrementalMarking();
+    }
+  }
+  MemoryReducer::Event event;
+  event.type = MemoryReducer::kPossibleGarbage;
+  event.time_ms = MonotonicallyIncreasingTimeInMs();
+  memory_reducer_->NotifyPossibleGarbage(event);
+}
+
+void Heap::CollectGarbageOnMemoryPressure(const char* source) {
+  CollectAllGarbage(kReduceMemoryFootprintMask | kAbortIncrementalMarkingMask,
+                    source);
+}
+
+void Heap::MemoryPressureNotification(MemoryPressureLevel level,
+                                      bool is_isolate_locked) {
+  MemoryPressureLevel previous = memory_pressure_level_.Value();
+  memory_pressure_level_.SetValue(level);
+  if ((previous != MemoryPressureLevel::kCritical &&
+       level == MemoryPressureLevel::kCritical) ||
+      (previous == MemoryPressureLevel::kNone &&
+       level == MemoryPressureLevel::kModerate)) {
+    if (is_isolate_locked) {
+      CheckMemoryPressure();
+    } else {
+      ExecutionAccess access(isolate());
+      isolate()->stack_guard()->RequestGC();
+      V8::GetCurrentPlatform()->CallOnForegroundThread(
+          reinterpret_cast<v8::Isolate*>(isolate()),
+          new MemoryPressureInterruptTask(this));
+    }
+  }
+}
 
 #ifdef DEBUG
 
@@ -4709,10 +4768,9 @@ void Heap::IteratePromotedObject(HeapObject* target, int size,
   // regular visiting and IteratePromotedObjectPointers.
   if (!was_marked_black) {
     if (incremental_marking()->black_allocation()) {
-      Map* map = target->map();
-      IncrementalMarking::MarkObject(this, map);
+      IncrementalMarking::MarkObject(this, target->map());
+      incremental_marking()->IterateBlackObject(target);
     }
-    incremental_marking()->IterateBlackObject(target);
   }
 }
 
@@ -5361,6 +5419,13 @@ void Heap::NotifyDeserializationComplete() {
 #endif  // DEBUG
 }
 
+void Heap::RegisterExternallyReferencedObject(Object** object) {
+  DCHECK(mark_compact_collector()->in_use());
+  HeapObject* heap_object = HeapObject::cast(*object);
+  DCHECK(Contains(heap_object));
+  MarkBit mark_bit = Marking::MarkBitFrom(heap_object);
+  mark_compact_collector()->MarkObject(heap_object, mark_bit);
+}
 
 void Heap::TearDown() {
 #ifdef VERIFY_HEAP
@@ -5526,6 +5591,11 @@ void Heap::RemoveGCEpilogueCallback(v8::Isolate::GCCallback callback) {
   UNREACHABLE();
 }
 
+void Heap::SetEmbedderHeapTracer(EmbedderHeapTracer* tracer) {
+  DCHECK_NOT_NULL(tracer);
+  CHECK_NULL(embedder_heap_tracer_);
+  embedder_heap_tracer_ = tracer;
+}
 
 // TODO(ishell): Find a better place for this.
 void Heap::AddWeakObjectToCodeDependency(Handle<HeapObject> obj,

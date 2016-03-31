@@ -935,6 +935,11 @@ void LChunkBuilder::AddInstruction(LInstruction* instr,
         // Push return value on top of outer environment.
         hydrogen_env = hydrogen_env->Copy();
         hydrogen_env->Push(hydrogen_val);
+      } else {
+        // Although we don't need this lazy bailout for normal execution
+        // (because when we tail call from the outermost function we should pop
+        // its frame) we still need it when debugger is on.
+        hydrogen_env = current_block_->last_environment();
       }
     } else {
       if (hydrogen_val->HasObservableSideEffects()) {
@@ -943,16 +948,10 @@ void LChunkBuilder::AddInstruction(LInstruction* instr,
         hydrogen_value_for_lazy_bailout = sim;
       }
     }
-    if (hydrogen_env != nullptr) {
-      // The |hydrogen_env| can be null at this point only if we are generating
-      // a syntactic tail call from the outermost function but in this case
-      // it would be a real tail call which will pop function's frame and
-      // therefore this lazy bailout can be skipped.
-      LInstruction* bailout = LChunkBuilderBase::AssignEnvironment(
-          new (zone()) LLazyBailout(), hydrogen_env);
-      bailout->set_hydrogen_value(hydrogen_value_for_lazy_bailout);
-      chunk_->AddInstruction(bailout, current_block_);
-    }
+    LInstruction* bailout = LChunkBuilderBase::AssignEnvironment(
+        new (zone()) LLazyBailout(), hydrogen_env);
+    bailout->set_hydrogen_value(hydrogen_value_for_lazy_bailout);
+    chunk_->AddInstruction(bailout, current_block_);
   }
 }
 
@@ -2556,11 +2555,9 @@ LInstruction* LChunkBuilder::DoEnterInlined(HEnterInlined* instr) {
   HEnvironment* outer = current_block_->last_environment();
   outer->set_ast_id(instr->ReturnId());
   HConstant* undefined = graph()->GetConstantUndefined();
-  HEnvironment* inner = outer->CopyForInlining(instr->closure(),
-                                               instr->arguments_count(),
-                                               instr->function(),
-                                               undefined,
-                                               instr->inlining_kind());
+  HEnvironment* inner = outer->CopyForInlining(
+      instr->closure(), instr->arguments_count(), instr->function(), undefined,
+      instr->inlining_kind(), instr->syntactic_tail_call_mode());
   // Only replay binding of arguments object if it wasn't removed from graph.
   if (instr->arguments_var() != NULL && instr->arguments_object()->IsLinked()) {
     inner->Bind(instr->arguments_var(), instr->arguments_object());
@@ -2620,13 +2617,6 @@ LInstruction* LChunkBuilder::DoLoadFieldByIndex(HLoadFieldByIndex* instr) {
   LInstruction* result = DefineSameAsFirst(load);
   return AssignPointerMap(result);
 }
-
-
-LInstruction* LChunkBuilder::DoStoreFrameContext(HStoreFrameContext* instr) {
-  LOperand* context = UseRegisterAtStart(instr->context());
-  return new(zone()) LStoreFrameContext(context);
-}
-
 
 }  // namespace internal
 }  // namespace v8

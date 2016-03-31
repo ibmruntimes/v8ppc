@@ -137,10 +137,10 @@ namespace internal {
   F(DateCurrentTime, 0, 1)         \
   F(ThrowNotDateError, 0, 1)
 
-
 #define FOR_EACH_INTRINSIC_DEBUG(F)            \
   F(HandleDebuggerStatement, 0, 1)             \
-  F(DebugBreak, 0, 1)                          \
+  F(DebugBreak, 1, 1)                          \
+  F(DebugBreakOnBytecode, 1, 1)                \
   F(SetDebugEventListener, 2, 1)               \
   F(ScheduleBreak, 0, 1)                       \
   F(DebugGetInternalProperties, 1, 1)          \
@@ -195,7 +195,6 @@ namespace internal {
   F(DebugIsActive, 0, 1)                       \
   F(DebugBreakInOptimizedCode, 0, 1)
 
-
 #define FOR_EACH_INTRINSIC_FORIN(F) \
   F(ForInDone, 2, 1)                \
   F(ForInEnumerate, 1, 1)           \
@@ -218,6 +217,7 @@ namespace internal {
   F(FunctionGetSourceCode, 1, 1)           \
   F(FunctionGetScriptSourcePosition, 1, 1) \
   F(FunctionGetPositionForOffset, 2, 1)    \
+  F(FunctionGetContextData, 1, 1)          \
   F(FunctionSetInstanceClassName, 2, 1)    \
   F(FunctionSetLength, 2, 1)               \
   F(FunctionSetPrototype, 2, 1)            \
@@ -237,7 +237,6 @@ namespace internal {
   F(ResumeJSGeneratorObject, 3, 1)      \
   F(GeneratorClose, 1, 1)               \
   F(GeneratorGetFunction, 1, 1)         \
-  F(GeneratorGetContext, 1, 1)          \
   F(GeneratorGetReceiver, 1, 1)         \
   F(GeneratorGetInput, 1, 1)            \
   F(GeneratorGetContinuation, 1, 1)     \
@@ -358,10 +357,8 @@ namespace internal {
   F(MathAtan2, 2, 1)                \
   F(MathExpRT, 1, 1)                \
   F(MathClz32, 1, 1)                \
-  F(MathFloor, 1, 1)                \
   F(MathPow, 2, 1)                  \
   F(MathPowRT, 2, 1)                \
-  F(RoundNumber, 1, 1)              \
   F(GenerateRandomNumbers, 1, 1)
 
 
@@ -387,6 +384,7 @@ namespace internal {
 
 #define FOR_EACH_INTRINSIC_OBJECT(F)                 \
   F(GetPrototype, 1, 1)                              \
+  F(ObjectHasOwnProperty, 2, 1)                      \
   F(InternalSetPrototype, 2, 1)                      \
   F(SetPrototype, 2, 1)                              \
   F(GetOwnProperty_Legacy, 2, 1)                     \

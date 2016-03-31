@@ -108,7 +108,8 @@ bool LCodeGen::GeneratePrologue() {
     // Prologue logic requires its starting address in ip and the
     // corresponding offset from the function entry.  Need to add
     // 4 bytes for the size of AHI/AGHI that AddP expands into.
-    __ AddP(ip, ip, Operand(prologue_offset + sizeof(FourByteInstr)));
+    prologue_offset += sizeof(FourByteInstr);
+    __ AddP(ip, ip, Operand(prologue_offset));
   }
   info()->set_prologue_offset(prologue_offset);
   if (NeedsEagerFrame()) {
@@ -1278,7 +1279,7 @@ void LCodeGen::DoFlooringDivI(LFlooringDivI* instr) {
   __ beq(&done, Label::kNear);
 
   // We performed a truncating division. Correct the result.
-  __ SubP(result, result, Operand(1));
+  __ Sub32(result, result, Operand(1));
   __ bind(&done);
 }
 
@@ -3156,7 +3157,7 @@ void LCodeGen::DoArgumentsElements(LArgumentsElements* instr) {
 
   if (instr->hydrogen()->from_inlined()) {
     __ lay(result, MemOperand(sp, -2 * kPointerSize));
-  } else {
+  } else if (instr->hydrogen()->arguments_adaptor()) {
     // Check if the calling frame is an arguments adaptor frame.
     Label done, adapted;
     __ LoadP(scratch, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
@@ -3174,6 +3175,8 @@ void LCodeGen::DoArgumentsElements(LArgumentsElements* instr) {
     __ bind(&adapted);
     __ LoadRR(result, scratch);
     __ bind(&done);
+  } else {
+    __ LoadRR(result, fp);
   }
 }
 
@@ -4226,7 +4229,22 @@ void LCodeGen::DoStoreKeyedFixedArray(LStoreKeyed* instr) {
     if (hinstr->key()->representation().IsSmi()) {
       __ SmiToPtrArrayOffset(scratch, key);
     } else {
-      __ ShiftLeftP(scratch, key, Operand(kPointerSizeLog2));
+      if (instr->hydrogen()->IsDehoisted()) {
+#if V8_TARGET_ARCH_S390X
+        // If array access is dehoisted, the key, being an int32, can contain
+        // a negative value, as needs to be sign-extended to 64-bit for
+        // memory access.
+        __ lgfr(key, key);
+#endif
+        __ ShiftLeftP(scratch, key, Operand(kPointerSizeLog2));
+      } else {
+        // Small optimization to reduce pathlength.  After Bounds Check,
+        // the key is guaranteed to be non-negative.  Leverage RISBG,
+        // which also performs zero-extension.
+        __ risbg(scratch, key, Operand(32 - kPointerSizeLog2),
+                 Operand(63 - kPointerSizeLog2), Operand(kPointerSizeLog2),
+                 true);
+      }
     }
   }
 
@@ -5645,11 +5663,7 @@ void LCodeGen::DoLoadFieldByIndex(LLoadFieldByIndex* instr) {
   __ bind(&done);
 }
 
-void LCodeGen::DoStoreFrameContext(LStoreFrameContext* instr) {
-  Register context = ToRegister(instr->context());
-  __ StoreP(context, MemOperand(fp, StandardFrameConstants::kContextOffset));
-}
-
 #undef __
+
 }  // namespace internal
 }  // namespace v8

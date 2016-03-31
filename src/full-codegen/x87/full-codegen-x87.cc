@@ -285,37 +285,35 @@ void FullCodeGenerator::Generate() {
     __ CallRuntime(Runtime::kTraceEnter);
   }
 
-  // Visit the declarations and body unless there is an illegal
-  // redeclaration.
-  if (scope()->HasIllegalRedeclaration()) {
-    EmitIllegalRedeclaration();
-  } else {
-    PrepareForBailoutForId(BailoutId::FunctionEntry(), NO_REGISTERS);
-    { Comment cmnt(masm_, "[ Declarations");
-      VisitDeclarations(scope()->declarations());
-    }
+  // Visit the declarations and body.
+  PrepareForBailoutForId(BailoutId::FunctionEntry(), NO_REGISTERS);
+  {
+    Comment cmnt(masm_, "[ Declarations");
+    VisitDeclarations(scope()->declarations());
+  }
 
-    // Assert that the declarations do not use ICs. Otherwise the debugger
-    // won't be able to redirect a PC at an IC to the correct IC in newly
-    // recompiled code.
-    DCHECK_EQ(0, ic_total_count_);
+  // Assert that the declarations do not use ICs. Otherwise the debugger
+  // won't be able to redirect a PC at an IC to the correct IC in newly
+  // recompiled code.
+  DCHECK_EQ(0, ic_total_count_);
 
-    { Comment cmnt(masm_, "[ Stack check");
-      PrepareForBailoutForId(BailoutId::Declarations(), NO_REGISTERS);
-      Label ok;
-      ExternalReference stack_limit
-          = ExternalReference::address_of_stack_limit(isolate());
-      __ cmp(esp, Operand::StaticVariable(stack_limit));
-      __ j(above_equal, &ok, Label::kNear);
-      __ call(isolate()->builtins()->StackCheck(), RelocInfo::CODE_TARGET);
-      __ bind(&ok);
-    }
+  {
+    Comment cmnt(masm_, "[ Stack check");
+    PrepareForBailoutForId(BailoutId::Declarations(), NO_REGISTERS);
+    Label ok;
+    ExternalReference stack_limit =
+        ExternalReference::address_of_stack_limit(isolate());
+    __ cmp(esp, Operand::StaticVariable(stack_limit));
+    __ j(above_equal, &ok, Label::kNear);
+    __ call(isolate()->builtins()->StackCheck(), RelocInfo::CODE_TARGET);
+    __ bind(&ok);
+  }
 
-    { Comment cmnt(masm_, "[ Body");
-      DCHECK(loop_depth() == 0);
-      VisitStatements(literal()->body());
-      DCHECK(loop_depth() == 0);
-    }
+  {
+    Comment cmnt(masm_, "[ Body");
+    DCHECK(loop_depth() == 0);
+    VisitStatements(literal()->body());
+    DCHECK(loop_depth() == 0);
   }
 
   // Always emit a 'return undefined' in case control fell off the end of
@@ -3819,12 +3817,6 @@ void FullCodeGenerator::EmitLiteralCompareNil(CompareOperation* expr,
 }
 
 
-void FullCodeGenerator::VisitThisFunction(ThisFunction* expr) {
-  __ mov(eax, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
-  context()->Plug(eax);
-}
-
-
 Register FullCodeGenerator::result_register() {
   return eax;
 }
@@ -3834,6 +3826,10 @@ Register FullCodeGenerator::context_register() {
   return esi;
 }
 
+void FullCodeGenerator::LoadFromFrameField(int frame_offset, Register value) {
+  DCHECK_EQ(POINTER_SIZE_ALIGN(frame_offset), frame_offset);
+  __ mov(value, Operand(ebp, frame_offset));
+}
 
 void FullCodeGenerator::StoreToFrameField(int frame_offset, Register value) {
   DCHECK_EQ(POINTER_SIZE_ALIGN(frame_offset), frame_offset);

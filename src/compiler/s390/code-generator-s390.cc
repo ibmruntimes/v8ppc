@@ -882,6 +882,19 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ SubLogicalWithBorrow32(i.OutputRegister(1), i.InputRegister(1),
                                 i.InputRegister(3));
       break;
+    case kS390_MulPair:
+      // i.InputRegister(0) ... left low word.
+      // i.InputRegister(1) ... left high word.
+      // i.InputRegister(2) ... right low word.
+      // i.InputRegister(3) ... right high word.
+      __ sllg(r0, i.InputRegister(1), Operand(32));
+      __ sllg(r1, i.InputRegister(3), Operand(32));
+      __ lr(r0, i.InputRegister(0));
+      __ lr(r1, i.InputRegister(2));
+      __ msgr(r1, r0);
+      __ lr(i.OutputRegister(0), r1);
+      __ srag(i.OutputRegister(1), r1, Operand(32));
+      break;
     case kS390_ShiftLeftPair:
       if (instr->InputAt(2)->IsImmediate()) {
         __ ShiftLeftPair(i.OutputRegister(0), i.OutputRegister(1),
@@ -929,11 +942,10 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kS390_RotRight64:
       if (HasRegisterInput(instr, 1)) {
         __ LoadComplementRR(kScratchReg, i.InputRegister(1));
-        __ rll(i.OutputRegister(), i.InputRegister(0), kScratchReg,
-               Operand(32));
-        __ lgfr(i.OutputRegister(), i.OutputRegister());
+        __ rllg(i.OutputRegister(), i.InputRegister(0), kScratchReg);
       } else {
-        UNIMPLEMENTED();  // Not implemented for now
+        __ rllg(i.OutputRegister(), i.InputRegister(0),
+                Operand(64 - i.InputInt32(1)));
       }
       break;
 #endif
@@ -1107,6 +1119,10 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
 #if V8_TARGET_ARCH_S390X
     case kS390_Div64:
+      __ LoadRR(r1, i.InputRegister(0));
+      __ dsgr(r0, i.InputRegister(1));  // R1: Dividend
+      __ ltgr(i.OutputRegister(), r1);  // Copy R1: Quotient to output
+      break;
 #endif
     case kS390_Div32:
       __ LoadRR(r0, i.InputRegister(0));
@@ -1118,15 +1134,15 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kS390_DivU64:
       __ LoadRR(r1, i.InputRegister(0));
       __ LoadImmP(r0, Operand::Zero());
-      __ dlgr(r0, i.InputRegister(1));  // R0:R1 = R1 / divisor -
-      __ ltgr(i.OutputRegister(), r1);  // Copy remainder to output reg
+      __ dlgr(r0, i.InputRegister(1));  // R0:R1: Dividend
+      __ ltgr(i.OutputRegister(), r1);  // Copy R1: Quotient to output
       break;
 #endif
     case kS390_DivU32:
       __ LoadRR(r0, i.InputRegister(0));
       __ srdl(r0, Operand(32));
-      __ dlr(r0, i.InputRegister(1));  // R0:R1 = R1 / divisor -
-      __ ltr(i.OutputRegister(), r1);  // Copy remainder to output reg
+      __ dlr(r0, i.InputRegister(1));  // R0:R1: Dividend
+      __ ltr(i.OutputRegister(), r1);  // Copy R1: Quotient to output
       break;
 
     case kS390_DivFloat:
@@ -1161,10 +1177,15 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
 #if V8_TARGET_ARCH_S390X
     case kS390_Mod64:
-      ASSEMBLE_MODULO(dr, srda);
+      __ LoadRR(r1, i.InputRegister(0));
+      __ dsgr(r0, i.InputRegister(1));  // R1: Dividend
+      __ ltgr(i.OutputRegister(), r0);  // Copy R0: Remainder to output
       break;
     case kS390_ModU64:
-      ASSEMBLE_MODULO(dlr, srdl);
+      __ LoadRR(r1, i.InputRegister(0));
+      __ LoadImmP(r0, Operand::Zero());
+      __ dlgr(r0, i.InputRegister(1));  // R0:R1: Dividend
+      __ ltgr(i.OutputRegister(), r0);  // Copy R0: Remainder to output
       break;
 #endif
     case kS390_AbsFloat:

@@ -528,6 +528,7 @@ struct RuntimeCallStats {
       RuntimeCallCounter("UnexpectedStubMiss");
   // Counter for runtime callbacks into JavaScript.
   RuntimeCallCounter ExternalCallback = RuntimeCallCounter("ExternalCallback");
+  RuntimeCallCounter GC = RuntimeCallCounter("GC");
 #define CALL_RUNTIME_COUNTER(name, nargs, ressize) \
   RuntimeCallCounter Runtime_##name = RuntimeCallCounter(#name);
   FOR_EACH_INTRINSIC(CALL_RUNTIME_COUNTER)
@@ -758,11 +759,8 @@ class RuntimeCallTimerScope {
   SC(math_atan2_runtime, V8.MathAtan2Runtime)                                  \
   SC(math_clz32_runtime, V8.MathClz32Runtime)                                  \
   SC(math_exp_runtime, V8.MathExpRuntime)                                      \
-  SC(math_floor_runtime, V8.MathFloorRuntime)                                  \
   SC(math_log_runtime, V8.MathLogRuntime)                                      \
   SC(math_pow_runtime, V8.MathPowRuntime)                                      \
-  SC(math_round_runtime, V8.MathRoundRuntime)                                  \
-  SC(math_sqrt_runtime, V8.MathSqrtRuntime)                                    \
   SC(stack_interrupts, V8.StackInterrupts)                                     \
   SC(runtime_profiler_ticks, V8.RuntimeProfilerTicks)                          \
   SC(runtime_calls, V8.RuntimeCalls)                          \

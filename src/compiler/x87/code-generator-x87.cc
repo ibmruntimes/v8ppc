@@ -812,6 +812,18 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       }
       break;
     }
+    case kX87MulPair: {
+      __ imul(i.OutputRegister(1), i.InputOperand(0));
+      __ mov(i.TempRegister(0), i.InputOperand(1));
+      __ imul(i.TempRegister(0), i.InputOperand(2));
+      __ add(i.OutputRegister(1), i.TempRegister(0));
+      __ mov(i.OutputRegister(0), i.InputOperand(0));
+      // Multiplies the low words and stores them in eax and edx.
+      __ mul(i.InputRegister(2));
+      __ add(i.OutputRegister(1), i.TempRegister(0));
+
+      break;
+    }
     case kX87ShlPair:
       if (HasImmediateInput(instr, 2)) {
         __ ShlPair(i.InputRegister(1), i.InputRegister(0), i.InputInt6(2));
@@ -1295,8 +1307,8 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       InstructionOperand* input = instr->InputAt(0);
       if (input->IsDoubleRegister()) {
         __ sub(esp, Immediate(kDoubleSize));
-        __ fstp_d(MemOperand(esp, 0));
-        __ fld_d(MemOperand(esp, 0));
+        __ fstp_s(MemOperand(esp, 0));
+        __ fld_s(MemOperand(esp, 0));
         __ add(esp, Immediate(kDoubleSize));
       } else {
         DCHECK(input->IsDoubleStackSlot());

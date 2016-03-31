@@ -29,7 +29,7 @@ class IncrementalMarking {
 
   enum ForceCompletionAction { FORCE_COMPLETION, DO_NOT_FORCE_COMPLETION };
 
-  enum GCRequestType { COMPLETE_MARKING, FINALIZATION };
+  enum GCRequestType { NONE, COMPLETE_MARKING, FINALIZATION };
 
   struct StepActions {
     StepActions(CompletionAction complete_action_,
@@ -79,6 +79,8 @@ class IncrementalMarking {
   }
 
   GCRequestType request_type() const { return request_type_; }
+
+  void reset_request_type() { request_type_ = NONE; }
 
   bool CanBeActivated();
 
@@ -176,10 +178,6 @@ class IncrementalMarking {
   void RecordCodeTargetPatch(Code* host, Address pc, HeapObject* value);
   void RecordCodeTargetPatch(Address pc, HeapObject* value);
 
-  void RecordWrites(HeapObject* obj);
-
-  void BlackToGreyAndUnshift(HeapObject* obj, MarkBit mark_bit);
-
   void WhiteToGreyAndPush(HeapObject* obj, MarkBit mark_bit);
 
   inline void SetOldSpacePageFlags(MemoryChunk* chunk) {
@@ -195,10 +193,6 @@ class IncrementalMarking {
   void ActivateGeneratedStub(Code* stub);
 
   void NotifyOfHighPromotionRate();
-
-  void EnterNoMarkingScope() { no_marking_scope_depth_++; }
-
-  void LeaveNoMarkingScope() { no_marking_scope_depth_--; }
 
   void NotifyIncompleteScanOfObject(int unscanned_bytes) {
     unscanned_bytes_of_large_object_ = unscanned_bytes;
@@ -292,8 +286,6 @@ class IncrementalMarking {
   intptr_t allocated_;
   intptr_t write_barriers_invoked_since_last_step_;
   size_t idle_marking_delay_counter_;
-
-  int no_marking_scope_depth_;
 
   int unscanned_bytes_of_large_object_;
 

@@ -677,6 +677,10 @@ i::Object** V8::CopyPersistent(i::Object** obj) {
   return result.location();
 }
 
+void V8::RegisterExternallyReferencedObject(i::Object** object,
+                                            i::Isolate* isolate) {
+  isolate->heap()->RegisterExternallyReferencedObject(object);
+}
 
 void V8::MakeWeak(i::Object** object, void* parameter,
                   WeakCallback weak_callback) {
@@ -7174,6 +7178,10 @@ void V8::AddGCEpilogueCallback(GCCallback callback, GCType gc_type) {
       reinterpret_cast<v8::Isolate::GCCallback>(callback), gc_type, false);
 }
 
+void Isolate::SetEmbedderHeapTracer(EmbedderHeapTracer* tracer) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->heap()->SetEmbedderHeapTracer(tracer);
+}
 
 void Isolate::AddMemoryAllocationCallback(MemoryAllocationCallback callback,
                                           ObjectSpace space,
@@ -7657,6 +7665,11 @@ void Isolate::IsolateInBackgroundNotification() {
   return isolate->heap()->SetOptimizeForMemoryUsage();
 }
 
+void Isolate::MemoryPressureNotification(MemoryPressureLevel level) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  return isolate->heap()->MemoryPressureNotification(level,
+                                                     Locker::IsLocked(this));
+}
 
 void Isolate::SetJitCodeEventHandler(JitCodeEventOptions options,
                                      JitCodeEventHandler event_handler) {
@@ -8084,6 +8097,15 @@ void Debug::SetLiveEditEnabled(Isolate* isolate, bool enable) {
   internal_isolate->debug()->set_live_edit_enabled(enable);
 }
 
+bool Debug::IsTailCallEliminationEnabled(Isolate* isolate) {
+  i::Isolate* internal_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  return internal_isolate->is_tail_call_elimination_enabled();
+}
+
+void Debug::SetTailCallEliminationEnabled(Isolate* isolate, bool enabled) {
+  i::Isolate* internal_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  internal_isolate->SetTailCallEliminationEnabled(enabled);
+}
 
 MaybeLocal<Array> Debug::GetInternalProperties(Isolate* v8_isolate,
                                                Local<Value> value) {

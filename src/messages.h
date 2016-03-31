@@ -100,6 +100,7 @@ class CallSite {
   T(CalledOnNullOrUndefined, "% called on null or undefined")                  \
   T(CallSiteExpectsFunction,                                                   \
     "CallSite expects function as second argument, got %")                     \
+  T(CallSiteMethod, "CallSite method % expects CallSite as receiver")          \
   T(CannotConvertToPrimitive, "Cannot convert object to primitive value")      \
   T(CannotPreventExt, "Cannot prevent extensions")                             \
   T(CannotFreezeArrayBufferView,                                               \
@@ -136,6 +137,8 @@ class CallSite {
     "Function has non-object prototype '%' in instanceof check")               \
   T(InvalidArgument, "invalid_argument")                                       \
   T(InvalidInOperatorUse, "Cannot use 'in' operator to search for '%' in %")   \
+  T(InvalidRegExpExecResult,                                                   \
+    "RegExp exec method returned something other than an Object or null")      \
   T(InvalidSimdOperation, "% is not a valid type for this SIMD operation.")    \
   T(IteratorResultNotAnObject, "Iterator result % is not an object")           \
   T(IteratorValueNotAnObject, "Iterator value % is not an entry object")       \
@@ -333,6 +336,7 @@ class CallSite {
   T(InvalidArrayBufferLength, "Invalid array buffer length")                   \
   T(ArrayBufferAllocationFailed, "Array buffer allocation failed")             \
   T(InvalidArrayLength, "Invalid array length")                                \
+  T(InvalidAtomicAccessIndex, "Invalid atomic access index")                   \
   T(InvalidCodePoint, "Invalid code point %")                                  \
   T(InvalidCountValue, "Invalid count value")                                  \
   T(InvalidCurrencyCode, "Invalid currency code: %")                           \
@@ -398,6 +402,9 @@ class CallSite {
   T(JsonParseUnexpectedTokenNumber, "Unexpected number in JSON at position %") \
   T(JsonParseUnexpectedTokenString, "Unexpected string in JSON at position %") \
   T(LabelRedeclaration, "Label '%' has already been declared")                 \
+  T(LabelledFunctionDeclaration,                                               \
+    "Labelled function declaration not allowed as the body of a control flow " \
+    "structure")                                                               \
   T(MalformedArrowFunParamList, "Malformed arrow function parameter list")     \
   T(MalformedRegExp, "Invalid regular expression: /%/: %")                     \
   T(MalformedRegExpFlags, "Invalid regular expression flags")                  \

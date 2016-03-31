@@ -1082,7 +1082,7 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
                           false);
 
     SimpleInstallFunction(isolate->initial_object_prototype(), "hasOwnProperty",
-                          Builtins::kObjectHasOwnProperty, 1, false);
+                          Builtins::kObjectHasOwnProperty, 1, true);
   }
 
   Handle<JSObject> global(native_context()->global_object());
@@ -1519,13 +1519,19 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     SimpleInstallFunction(math, "acos", Builtins::kMathAcos, 1, true);
     SimpleInstallFunction(math, "asin", Builtins::kMathAsin, 1, true);
     SimpleInstallFunction(math, "atan", Builtins::kMathAtan, 1, true);
+    SimpleInstallFunction(math, "ceil", Builtins::kMathCeil, 1, true);
+    Handle<JSFunction> math_floor =
+        SimpleInstallFunction(math, "floor", Builtins::kMathFloor, 1, true);
+    native_context()->set_math_floor(*math_floor);
     SimpleInstallFunction(math, "fround", Builtins::kMathFround, 1, true);
     SimpleInstallFunction(math, "imul", Builtins::kMathImul, 2, true);
     SimpleInstallFunction(math, "max", Builtins::kMathMax, 2, false);
     SimpleInstallFunction(math, "min", Builtins::kMathMin, 2, false);
+    SimpleInstallFunction(math, "round", Builtins::kMathRound, 1, true);
     Handle<JSFunction> math_sqrt =
         SimpleInstallFunction(math, "sqrt", Builtins::kMathSqrt, 1, true);
     native_context()->set_math_sqrt(*math_sqrt);
+    SimpleInstallFunction(math, "trunc", Builtins::kMathTrunc, 1, true);
   }
 
   {  // -- A r r a y B u f f e r
@@ -2359,10 +2365,10 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy_function)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy_let)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_object_observe)
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexps)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_unicode_regexps)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_do_expressions)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_iterator_close)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexp_exec)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexp_lookbehind)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexp_property)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_function_name)
@@ -2372,6 +2378,7 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_tailcalls)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_instanceof)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_restrictive_declarations)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_exponentiation_operator)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_string_padding)
 
 void InstallPublicSymbol(Factory* factory, Handle<Context> native_context,
                          const char* name, Handle<Symbol> value) {
@@ -2923,8 +2930,6 @@ bool Genesis::InstallNatives(GlobalContextType context_type) {
 
 
 bool Genesis::InstallExperimentalNatives() {
-  static const char* harmony_regexps_natives[] = {"native harmony-regexp.js",
-                                                  nullptr};
   static const char* harmony_iterator_close_natives[] = {nullptr};
   static const char* harmony_sloppy_natives[] = {nullptr};
   static const char* harmony_sloppy_function_natives[] = {nullptr};
@@ -2941,6 +2946,8 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_simd_natives[] = {"native harmony-simd.js",
                                                nullptr};
   static const char* harmony_do_expressions_natives[] = {nullptr};
+  static const char* harmony_regexp_exec_natives[] = {
+      "native harmony-regexp-exec.js", nullptr};
   static const char* harmony_regexp_subclass_natives[] = {nullptr};
   static const char* harmony_regexp_lookbehind_natives[] = {nullptr};
   static const char* harmony_instanceof_natives[] = {nullptr};
@@ -2955,6 +2962,8 @@ bool Genesis::InstallExperimentalNatives() {
       nullptr};
   static const char* harmony_array_prototype_values_natives[] = {nullptr};
   static const char* harmony_exponentiation_operator_natives[] = {nullptr};
+  static const char* harmony_string_padding_natives[] = {
+      "native harmony-string-padding.js", nullptr};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {

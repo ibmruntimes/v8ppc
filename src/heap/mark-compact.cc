@@ -644,15 +644,15 @@ void MarkCompactCollector::ComputeEvacuationHeuristics(
     *target_fragmentation_percent = kTargetFragmentationPercentForReduceMemory;
     *max_evacuated_bytes = kMaxEvacuatedBytesForReduceMemory;
   } else {
-    const intptr_t estimated_compaction_speed =
+    const double estimated_compaction_speed =
         heap()->tracer()->CompactionSpeedInBytesPerMillisecond();
     if (estimated_compaction_speed != 0) {
       // Estimate the target fragmentation based on traced compaction speed
       // and a goal for a single page.
-      const intptr_t estimated_ms_per_area =
-          1 + static_cast<intptr_t>(area_size) / estimated_compaction_speed;
-      *target_fragmentation_percent =
-          100 - 100 * kTargetMsPerArea / estimated_ms_per_area;
+      const double estimated_ms_per_area =
+          1 + area_size / estimated_compaction_speed;
+      *target_fragmentation_percent = static_cast<int>(
+          100 - 100 * kTargetMsPerArea / estimated_ms_per_area);
       if (*target_fragmentation_percent <
           kTargetFragmentationPercentForReduceMemory) {
         *target_fragmentation_percent =
@@ -1010,7 +1010,7 @@ void CodeFlusher::ProcessSharedFunctionInfoCandidates() {
 
 void CodeFlusher::EvictCandidate(SharedFunctionInfo* shared_info) {
   // Make sure previous flushing decisions are revisited.
-  isolate_->heap()->incremental_marking()->RecordWrites(shared_info);
+  isolate_->heap()->incremental_marking()->IterateBlackObject(shared_info);
 
   if (FLAG_trace_code_flushing) {
     PrintF("[code-flushing abandons function-info: ");
@@ -1046,8 +1046,9 @@ void CodeFlusher::EvictCandidate(JSFunction* function) {
   Object* undefined = isolate_->heap()->undefined_value();
 
   // Make sure previous flushing decisions are revisited.
-  isolate_->heap()->incremental_marking()->RecordWrites(function);
-  isolate_->heap()->incremental_marking()->RecordWrites(function->shared());
+  isolate_->heap()->incremental_marking()->IterateBlackObject(function);
+  isolate_->heap()->incremental_marking()->IterateBlackObject(
+      function->shared());
 
   if (FLAG_trace_code_flushing) {
     PrintF("[code-flushing abandons closure: ");
@@ -1334,12 +1335,6 @@ void MarkCompactCollector::PrepareForCodeFlushing() {
   // If code flushing is disabled, there is no need to prepare for it.
   if (!is_code_flushing_enabled()) return;
 
-  // Ensure that empty descriptor array is marked. Method MarkDescriptorArray
-  // relies on it being marked before any other descriptor array.
-  HeapObject* descriptor_array = heap()->empty_descriptor_array();
-  MarkBit descriptor_array_mark = Marking::MarkBitFrom(descriptor_array);
-  MarkObject(descriptor_array, descriptor_array_mark);
-
   // Make sure we are not referencing the code from the stack.
   DCHECK(this == heap()->mark_compact_collector());
   PrepareThreadForCodeFlushing(heap()->isolate(),
@@ -1493,11 +1488,9 @@ void MarkCompactCollector::DiscoverGreyObjectsWithIterator(T* it) {
   }
 }
 
-template <LiveObjectIterationMode T>
 void MarkCompactCollector::DiscoverGreyObjectsOnPage(MemoryChunk* p) {
   DCHECK(!marking_deque()->IsFull());
-  DCHECK(T == kGreyObjects || T == kGreyObjectsOnBlackPage);
-  LiveObjectIterator<T> it(p);
+  LiveObjectIterator<kGreyObjects> it(p);
   HeapObject* object = NULL;
   while ((object = it.Next()) != NULL) {
     MarkBit markbit = Marking::MarkBitFrom(object);
@@ -1798,10 +1791,8 @@ void MarkCompactCollector::DiscoverGreyObjectsInSpace(PagedSpace* space) {
   PageIterator it(space);
   while (it.has_next()) {
     Page* p = it.next();
-    if (p->IsFlagSet(Page::BLACK_PAGE)) {
-      DiscoverGreyObjectsOnPage<kGreyObjectsOnBlackPage>(p);
-    } else {
-      DiscoverGreyObjectsOnPage<kGreyObjects>(p);
+    if (!p->IsFlagSet(Page::BLACK_PAGE)) {
+      DiscoverGreyObjectsOnPage(p);
     }
     if (marking_deque()->IsFull()) return;
   }
@@ -1813,7 +1804,7 @@ void MarkCompactCollector::DiscoverGreyObjectsInNewSpace() {
   NewSpacePageIterator it(space->bottom(), space->top());
   while (it.has_next()) {
     NewSpacePage* page = it.next();
-    DiscoverGreyObjectsOnPage<kGreyObjects>(page);
+    DiscoverGreyObjectsOnPage(page);
     if (marking_deque()->IsFull()) return;
   }
 }
@@ -2145,7 +2136,12 @@ void MarkCompactCollector::MarkLiveObjects() {
     // The objects reachable from the roots are marked, yet unreachable
     // objects are unmarked.  Mark objects reachable due to host
     // application specific logic or through Harmony weak maps.
-    ProcessEphemeralMarking(&root_visitor, false);
+    {
+      GCTracer::Scope gc_scope(heap()->tracer(),
+                               GCTracer::Scope::MC_MARK_WEAK_CLOSURE_EPHEMERAL);
+      ProcessEphemeralMarking(&root_visitor, false);
+      ProcessMarkingDeque();
+    }
 
     // The objects reachable from the roots, weak maps or object groups
     // are marked. Objects pointed to only by weak global handles cannot be
@@ -2154,18 +2150,33 @@ void MarkCompactCollector::MarkLiveObjects() {
     //
     // First we identify nonlive weak handles and mark them as pending
     // destruction.
-    heap()->isolate()->global_handles()->IdentifyWeakHandles(
-        &IsUnmarkedHeapObject);
+    {
+      GCTracer::Scope gc_scope(
+          heap()->tracer(), GCTracer::Scope::MC_MARK_WEAK_CLOSURE_WEAK_HANDLES);
+      heap()->isolate()->global_handles()->IdentifyWeakHandles(
+          &IsUnmarkedHeapObject);
+      ProcessMarkingDeque();
+    }
     // Then we mark the objects.
-    heap()->isolate()->global_handles()->IterateWeakRoots(&root_visitor);
-    ProcessMarkingDeque();
+
+    {
+      GCTracer::Scope gc_scope(
+          heap()->tracer(), GCTracer::Scope::MC_MARK_WEAK_CLOSURE_WEAK_ROOTS);
+      heap()->isolate()->global_handles()->IterateWeakRoots(&root_visitor);
+      ProcessMarkingDeque();
+    }
 
     // Repeat Harmony weak maps marking to mark unmarked objects reachable from
     // the weak roots we just marked as pending destruction.
     //
     // We only process harmony collections, as all object groups have been fully
     // processed and no weakly reachable node can discover new objects groups.
-    ProcessEphemeralMarking(&root_visitor, true);
+    {
+      GCTracer::Scope gc_scope(heap()->tracer(),
+                               GCTracer::Scope::MC_MARK_WEAK_CLOSURE_HARMONY);
+      ProcessEphemeralMarking(&root_visitor, true);
+      ProcessMarkingDeque();
+    }
   }
 
   if (FLAG_print_cumulative_gc_stat) {
@@ -3047,7 +3058,7 @@ int MarkCompactCollector::NumberOfParallelCompactionTasks(int pages,
   const double kTargetCompactionTimeInMs = 1;
   const int kNumSweepingTasks = 3;
 
-  intptr_t compaction_speed =
+  double compaction_speed =
       heap()->tracer()->CompactionSpeedInBytesPerMillisecond();
 
   const int available_cores = Max(
@@ -3056,8 +3067,8 @@ int MarkCompactCollector::NumberOfParallelCompactionTasks(int pages,
              kNumSweepingTasks - 1);
   int tasks;
   if (compaction_speed > 0) {
-    tasks = 1 + static_cast<int>(static_cast<double>(live_bytes) /
-                                 compaction_speed / kTargetCompactionTimeInMs);
+    tasks = 1 + static_cast<int>(live_bytes / compaction_speed /
+                                 kTargetCompactionTimeInMs);
   } else {
     tasks = pages;
   }
@@ -3124,7 +3135,7 @@ void MarkCompactCollector::EvacuatePagesInParallel() {
   DCHECK_GE(job.NumberOfPages(), 1);
 
   // Used for trace summary.
-  intptr_t compaction_speed = 0;
+  double compaction_speed = 0;
   if (FLAG_trace_evacuation) {
     compaction_speed = heap()->tracer()->CompactionSpeedInBytesPerMillisecond();
   }
@@ -3147,7 +3158,7 @@ void MarkCompactCollector::EvacuatePagesInParallel() {
         isolate(),
         "%8.0f ms: evacuation-summary: parallel=%s pages=%d aborted=%d "
         "wanted_tasks=%d tasks=%d cores=%d live_bytes=%" V8_PTR_PREFIX
-        "d compaction_speed=%" V8_PTR_PREFIX "d\n",
+        "d compaction_speed=%.f\n",
         isolate()->time_millis_since_init(),
         FLAG_parallel_compaction ? "yes" : "no", job.NumberOfPages(),
         abandoned_pages, wanted_num_tasks, job.NumberOfTasks(),

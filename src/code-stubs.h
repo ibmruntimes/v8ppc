@@ -49,7 +49,6 @@ namespace internal {
   V(ToNumber)                               \
   V(NonNumberToNumber)                      \
   V(StringToNumber)                         \
-  V(ToLength)                               \
   V(ToString)                               \
   V(ToName)                                 \
   V(ToObject)                               \
@@ -111,6 +110,11 @@ namespace internal {
   V(AllocateUint8x16)                       \
   V(AllocateBool8x16)                       \
   V(StringLength)                           \
+  V(Add)                                    \
+  V(Subtract)                               \
+  V(BitwiseAnd)                             \
+  V(BitwiseOr)                              \
+  V(BitwiseXor)                             \
   V(LessThan)                               \
   V(LessThanOrEqual)                        \
   V(GreaterThan)                            \
@@ -126,6 +130,7 @@ namespace internal {
   V(StringGreaterThan)                      \
   V(StringGreaterThanOrEqual)               \
   V(ToBoolean)                              \
+  V(ToLength)                               \
   /* IC Handler stubs */                    \
   V(ArrayBufferViewLoadField)               \
   V(LoadConstant)                           \
@@ -667,6 +672,46 @@ class StringLengthStub : public TurboFanCodeStub {
   DEFINE_TURBOFAN_CODE_STUB(StringLength, TurboFanCodeStub);
 };
 
+class AddStub final : public TurboFanCodeStub {
+ public:
+  explicit AddStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOp);
+  DEFINE_TURBOFAN_CODE_STUB(Add, TurboFanCodeStub);
+};
+
+class SubtractStub final : public TurboFanCodeStub {
+ public:
+  explicit SubtractStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOp);
+  DEFINE_TURBOFAN_CODE_STUB(Subtract, TurboFanCodeStub);
+};
+
+class BitwiseAndStub final : public TurboFanCodeStub {
+ public:
+  explicit BitwiseAndStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOp);
+  DEFINE_TURBOFAN_CODE_STUB(BitwiseAnd, TurboFanCodeStub);
+};
+
+class BitwiseOrStub final : public TurboFanCodeStub {
+ public:
+  explicit BitwiseOrStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOp);
+  DEFINE_TURBOFAN_CODE_STUB(BitwiseOr, TurboFanCodeStub);
+};
+
+class BitwiseXorStub final : public TurboFanCodeStub {
+ public:
+  explicit BitwiseXorStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOp);
+  DEFINE_TURBOFAN_CODE_STUB(BitwiseXor, TurboFanCodeStub);
+};
+
 class LessThanStub final : public TurboFanCodeStub {
  public:
   explicit LessThanStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
@@ -789,6 +834,14 @@ class ToBooleanStub final : public TurboFanCodeStub {
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_TURBOFAN_CODE_STUB(ToBoolean, TurboFanCodeStub);
+};
+
+class ToLengthStub final : public TurboFanCodeStub {
+ public:
+  explicit ToLengthStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
+  DEFINE_TURBOFAN_CODE_STUB(ToLength, TurboFanCodeStub);
 };
 
 class StoreInterceptorStub : public TurboFanCodeStub {
@@ -3006,14 +3059,6 @@ class StringToNumberStub final : public PlatformCodeStub {
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_PLATFORM_CODE_STUB(StringToNumber, PlatformCodeStub);
-};
-
-class ToLengthStub final : public PlatformCodeStub {
- public:
-  explicit ToLengthStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
-  DEFINE_PLATFORM_CODE_STUB(ToLength, PlatformCodeStub);
 };
 
 

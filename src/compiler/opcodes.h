@@ -183,6 +183,10 @@
   V(NumberShiftLeft)               \
   V(NumberShiftRight)              \
   V(NumberShiftRightLogical)       \
+  V(NumberCeil)                    \
+  V(NumberFloor)                   \
+  V(NumberRound)                   \
+  V(NumberTrunc)                   \
   V(NumberToInt32)                 \
   V(NumberToUint32)                \
   V(NumberIsHoleNaN)               \
@@ -337,6 +341,7 @@
   V(CheckedStore)               \
   V(Int32PairAdd)               \
   V(Int32PairSub)               \
+  V(Int32PairMul)               \
   V(Word32PairShl)              \
   V(Word32PairShr)              \
   V(Word32PairSar)

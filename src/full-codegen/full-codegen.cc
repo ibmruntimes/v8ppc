@@ -4,8 +4,8 @@
 
 #include "src/full-codegen/full-codegen.h"
 
-#include "src/ast/ast.h"
 #include "src/ast/ast-numbering.h"
+#include "src/ast/ast.h"
 #include "src/ast/prettyprinter.h"
 #include "src/ast/scopeinfo.h"
 #include "src/ast/scopes.h"
@@ -14,6 +14,7 @@
 #include "src/compiler.h"
 #include "src/debug/debug.h"
 #include "src/debug/liveedit.h"
+#include "src/frames-inl.h"
 #include "src/isolate-inl.h"
 #include "src/macro-assembler.h"
 #include "src/snapshot/snapshot.h"
@@ -559,6 +560,11 @@ void FullCodeGenerator::EmitIntrinsicAsStubCall(CallRuntime* expr,
     }
   }
   __ Call(callable.code(), RelocInfo::CODE_TARGET);
+
+  // Reload the context register after the call as i.e. TurboFan code stubs
+  // won't preserve the context register.
+  LoadFromFrameField(StandardFrameConstants::kContextOffset,
+                     context_register());
   context()->Plug(result_register());
 }
 
@@ -980,13 +986,6 @@ void FullCodeGenerator::EmitBreak(Statement* target) {
   __ jmp(current->AsBreakable()->break_label());
 }
 
-void FullCodeGenerator::EmitIllegalRedeclaration() {
-  Comment cmnt(masm_, "[ Declarations");
-  Expression* illegal = scope()->GetIllegalRedeclaration();
-  SetExpressionAsStatementPosition(illegal);
-  VisitForEffect(illegal);
-}
-
 void FullCodeGenerator::VisitBreakStatement(BreakStatement* stmt) {
   Comment cmnt(masm_, "[ BreakStatement");
   SetStatementPosition(stmt);
@@ -1276,6 +1275,11 @@ void FullCodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
   decrement_loop_depth();
 }
 
+void FullCodeGenerator::VisitThisFunction(ThisFunction* expr) {
+  LoadFromFrameField(JavaScriptFrameConstants::kFunctionOffset,
+                     result_register());
+  context()->Plug(result_register());
+}
 
 void FullCodeGenerator::VisitTryCatchStatement(TryCatchStatement* stmt) {
   Comment cmnt(masm_, "[ TryCatchStatement");

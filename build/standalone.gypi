@@ -44,7 +44,7 @@
     'v8_deprecation_warnings': 1,
     'v8_imminent_deprecation_warnings': 1,
     'msvs_multi_core_compile%': '1',
-    'mac_deployment_target%': '10.5',
+    'mac_deployment_target%': '10.7',
     'release_extra_cflags%': '',
     'variables': {
       'variables': {
@@ -701,7 +701,7 @@
           '-Wnon-virtual-dtor',
           '-fno-exceptions',
           '-fno-rtti',
-          '-std=gnu++0x',
+          '-std=gnu++11',
         ],
         'ldflags': [ '-pthread', ],
         'conditions': [
@@ -751,7 +751,7 @@
           '-Wnon-virtual-dtor',
           '-fno-exceptions',
           '-fno-rtti',
-          '-std=gnu++0x',
+          '-std=gnu++11',
         ],
         'conditions': [
           [ 'visibility=="hidden"', {
@@ -981,7 +981,7 @@
           ['clang==1', {
             'xcode_settings': {
               'GCC_VERSION': 'com.apple.compilers.llvm.clang.1_0',
-              'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++0x',  # -std=gnu++0x
+              'CLANG_CXX_LANGUAGE_STANDARD': 'c++11',  # -std=c++11
             },
             'conditions': [
               ['v8_target_arch=="x64" or v8_target_arch=="arm64" \

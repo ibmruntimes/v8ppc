@@ -684,13 +684,12 @@ Maybe<bool> JSReceiver::HasProperty(LookupIterator* it) {
       case LookupIterator::TRANSITION:
         UNREACHABLE();
       case LookupIterator::JSPROXY:
-        // Call the "has" trap on proxies.
         return JSProxy::HasProperty(it->isolate(), it->GetHolder<JSProxy>(),
                                     it->GetName());
       case LookupIterator::INTERCEPTOR: {
         Maybe<PropertyAttributes> result =
             JSObject::GetPropertyAttributesWithInterceptor(it);
-        if (!result.IsJust()) return Nothing<bool>();
+        if (result.IsNothing()) return Nothing<bool>();
         if (result.FromJust() != ABSENT) return Just(true);
         break;
       }
@@ -698,7 +697,7 @@ Maybe<bool> JSReceiver::HasProperty(LookupIterator* it) {
         if (it->HasAccess()) break;
         Maybe<PropertyAttributes> result =
             JSObject::GetPropertyAttributesWithFailedAccessCheck(it);
-        if (!result.IsJust()) return Nothing<bool>();
+        if (result.IsNothing()) return Nothing<bool>();
         return Just(result.FromJust() != ABSENT);
       }
       case LookupIterator::INTEGER_INDEXED_EXOTIC:
@@ -3200,7 +3199,7 @@ void Map::ReplaceDescriptors(DescriptorArray* new_descriptors,
   }
 
   DescriptorArray* to_replace = instance_descriptors();
-  GetHeap()->incremental_marking()->RecordWrites(to_replace);
+  GetHeap()->incremental_marking()->IterateBlackObject(to_replace);
   Map* current = this;
   while (current->instance_descriptors() == to_replace) {
     Object* next = current->GetBackPointer();
@@ -4574,7 +4573,7 @@ void Map::EnsureDescriptorSlack(Handle<Map> map, int slack) {
   }
 
   // Replace descriptors by new_descriptors in all maps that share it.
-  map->GetHeap()->incremental_marking()->RecordWrites(*descriptors);
+  map->GetHeap()->incremental_marking()->IterateBlackObject(*descriptors);
 
   Map* current = *map;
   while (current->instance_descriptors() == *descriptors) {
@@ -5144,11 +5143,9 @@ MaybeHandle<Context> JSReceiver::GetFunctionRealm(Handle<JSReceiver> receiver) {
 
 
 Maybe<PropertyAttributes> JSProxy::GetPropertyAttributes(LookupIterator* it) {
-  Isolate* isolate = it->isolate();
-  HandleScope scope(isolate);
   PropertyDescriptor desc;
   Maybe<bool> found = JSProxy::GetOwnPropertyDescriptor(
-      isolate, it->GetHolder<JSProxy>(), it->GetName(), &desc);
+      it->isolate(), it->GetHolder<JSProxy>(), it->GetName(), &desc);
   MAYBE_RETURN(found, Nothing<PropertyAttributes>());
   if (!found.FromJust()) return Just(ABSENT);
   return Just(desc.ToAttributes());
@@ -8398,7 +8395,7 @@ Handle<FixedArray> JSObject::GetEnumPropertyKeys(Handle<JSObject> object) {
     Handle<GlobalDictionary> dictionary(object->global_dictionary());
     int length = dictionary->NumberOfEnumElements();
     if (length == 0) {
-      return Handle<FixedArray>(isolate->heap()->empty_fixed_array());
+      return isolate->factory()->empty_fixed_array();
     }
     Handle<FixedArray> storage = isolate->factory()->NewFixedArray(length);
     dictionary->CopyEnumKeysTo(*storage);
@@ -8407,7 +8404,7 @@ Handle<FixedArray> JSObject::GetEnumPropertyKeys(Handle<JSObject> object) {
     Handle<NameDictionary> dictionary(object->property_dictionary());
     int length = dictionary->NumberOfEnumElements();
     if (length == 0) {
-      return Handle<FixedArray>(isolate->heap()->empty_fixed_array());
+      return isolate->factory()->empty_fixed_array();
     }
     Handle<FixedArray> storage = isolate->factory()->NewFixedArray(length);
     dictionary->CopyEnumKeysTo(*storage);
@@ -8515,12 +8512,23 @@ static Maybe<bool> GetKeys_Internal(Isolate* isolate,
                                     KeyCollectionType type,
                                     PropertyFilter filter,
                                     KeyAccumulator* accumulator) {
+  // Proxies have no hidden prototype and we should not trigger the
+  // [[GetPrototypeOf]] trap on the last iteration when using
+  // AdvanceFollowingProxies.
+  if (type == OWN_ONLY && object->IsJSProxy()) {
+    MAYBE_RETURN(JSProxy::OwnPropertyKeys(isolate, receiver,
+                                          Handle<JSProxy>::cast(object), filter,
+                                          accumulator),
+                 Nothing<bool>());
+    return Just(true);
+  }
+
   PrototypeIterator::WhereToEnd end = type == OWN_ONLY
                                           ? PrototypeIterator::END_AT_NON_HIDDEN
                                           : PrototypeIterator::END_AT_NULL;
   for (PrototypeIterator iter(isolate, object,
                               PrototypeIterator::START_AT_RECEIVER, end);
-       !iter.IsAtEnd(); iter.Advance()) {
+       !iter.IsAtEnd();) {
     Handle<JSReceiver> current =
         PrototypeIterator::GetCurrent<JSReceiver>(iter);
     Maybe<bool> result = Just(false);  // Dummy initialization.
@@ -8536,6 +8544,11 @@ static Maybe<bool> GetKeys_Internal(Isolate* isolate,
     }
     MAYBE_RETURN(result, Nothing<bool>());
     if (!result.FromJust()) break;  // |false| means "stop iterating".
+    // Iterate through proxies but ignore access checks for the ALL_CAN_READ
+    // case on API objects for OWN_ONLY keys handlede in GgetKeysFromJSObject.
+    if (!iter.AdvanceFollowingProxiesIgnoringAccessChecks()) {
+      return Nothing<bool>();
+    }
   }
   return Just(true);
 }
@@ -8694,14 +8707,15 @@ Maybe<bool> JSProxy::OwnPropertyKeys(Isolate* isolate,
   return accumulator->AddKeysFromProxy(proxy, trap_result);
 }
 
-
 MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
                                             KeyCollectionType type,
                                             PropertyFilter filter,
-                                            GetKeysConversion keys_conversion) {
+                                            GetKeysConversion keys_conversion,
+                                            bool filter_proxy_keys) {
   USE(ContainsOnlyValidKeys);
   Isolate* isolate = object->GetIsolate();
   KeyAccumulator accumulator(isolate, type, filter);
+  accumulator.set_filter_proxy_keys(filter_proxy_keys);
   MAYBE_RETURN(
       GetKeys_Internal(isolate, object, object, type, filter, &accumulator),
       MaybeHandle<FixedArray>());
@@ -8719,17 +8733,23 @@ MUST_USE_RESULT Maybe<bool> FastGetOwnValuesOrEntries(
   if (!map->OnlyHasSimpleProperties()) return Just(false);
 
   Handle<JSObject> object(JSObject::cast(*receiver));
-  if (object->elements() != isolate->heap()->empty_fixed_array()) {
-    return Just(false);
-  }
 
   Handle<DescriptorArray> descriptors(map->instance_descriptors(), isolate);
   int number_of_own_descriptors = map->NumberOfOwnDescriptors();
-  Handle<FixedArray> values_or_entries =
-      isolate->factory()->NewFixedArray(number_of_own_descriptors);
+  int number_of_own_elements =
+      object->GetElementsAccessor()->GetCapacity(*object, object->elements());
+  Handle<FixedArray> values_or_entries = isolate->factory()->NewFixedArray(
+      number_of_own_descriptors + number_of_own_elements);
   int count = 0;
 
-  bool stable = true;
+  if (object->elements() != isolate->heap()->empty_fixed_array()) {
+    MAYBE_RETURN(object->GetElementsAccessor()->CollectValuesOrEntries(
+                     isolate, object, values_or_entries, get_entries, &count,
+                     ENUMERABLE_STRINGS),
+                 Nothing<bool>());
+  }
+
+  bool stable = object->map() == *map;
 
   for (int index = 0; index < number_of_own_descriptors; index++) {
     Handle<Name> next_key(descriptors->GetKey(index), isolate);
@@ -8768,12 +8788,7 @@ MUST_USE_RESULT Maybe<bool> FastGetOwnValuesOrEntries(
     }
 
     if (get_entries) {
-      Handle<FixedArray> entry_storage =
-          isolate->factory()->NewUninitializedFixedArray(2);
-      entry_storage->set(0, *next_key);
-      entry_storage->set(1, *prop_value);
-      prop_value = isolate->factory()->NewJSArrayWithElements(entry_storage,
-                                                              FAST_ELEMENTS, 2);
+      prop_value = MakeEntryPair(isolate, next_key, prop_value);
     }
 
     values_or_entries->set(count, *prop_value);
@@ -10108,6 +10123,7 @@ void CodeCache::Update(
 
 void CodeCache::UpdateDefaultCache(
     Handle<CodeCache> code_cache, Handle<Name> name, Handle<Code> code) {
+  Isolate* isolate = code_cache->GetIsolate();
   // When updating the default code cache we disregard the type encoded in the
   // flags. This allows call constant stubs to overwrite call field
   // stubs, etc.
@@ -10120,19 +10136,23 @@ void CodeCache::UpdateDefaultCache(
   {
     DisallowHeapAllocation no_alloc;
     int deleted_index = -1;
+    Object* null = isolate->heap()->null_value();
+    Object* undefined = isolate->heap()->undefined_value();
+    DCHECK(name->IsUniqueName());
     for (int i = 0; i < length; i += kCodeCacheEntrySize) {
       Object* key = cache->get(i);
-      if (key->IsNull()) {
+      if (key == null) {
         if (deleted_index < 0) deleted_index = i;
         continue;
       }
-      if (key->IsUndefined()) {
+      if (key == undefined) {
         if (deleted_index >= 0) i = deleted_index;
         cache->set(i + kCodeCacheEntryNameOffset, *name);
         cache->set(i + kCodeCacheEntryCodeOffset, *code);
         return;
       }
-      if (name->Equals(Name::cast(key))) {
+      DCHECK(key->IsUniqueName());
+      if (*name == key) {
         Code::Flags found =
             Code::cast(cache->get(i + kCodeCacheEntryCodeOffset))->flags();
         if (Code::RemoveTypeFromFlags(found) == flags) {
@@ -10153,7 +10173,6 @@ void CodeCache::UpdateDefaultCache(
 
   // Extend the code cache with some new entries (at least one). Must be a
   // multiple of the entry size.
-  Isolate* isolate = cache->GetIsolate();
   int new_length = length + (length >> 1) + kCodeCacheEntrySize;
   new_length = new_length - new_length % kCodeCacheEntrySize;
   DCHECK((new_length % kCodeCacheEntrySize) == 0);
@@ -10188,13 +10207,18 @@ Object* CodeCache::Lookup(Name* name, Code::Flags flags) {
 
 Object* CodeCache::LookupDefaultCache(Name* name, Code::Flags flags) {
   FixedArray* cache = default_cache();
+  Heap* heap = GetHeap();
+  Object* null = heap->null_value();
+  Object* undefined = heap->undefined_value();
   int length = cache->length();
+  DCHECK(name->IsUniqueName());
   for (int i = 0; i < length; i += kCodeCacheEntrySize) {
     Object* key = cache->get(i + kCodeCacheEntryNameOffset);
     // Skip deleted elements.
-    if (key->IsNull()) continue;
-    if (key->IsUndefined()) return key;
-    if (name->Equals(Name::cast(key))) {
+    if (key == null) continue;
+    if (key == undefined) return key;
+    DCHECK(key->IsUniqueName());
+    if (name == key) {
       Code* code = Code::cast(cache->get(i + kCodeCacheEntryCodeOffset));
       if (Code::RemoveTypeFromFlags(code->flags()) == flags) {
         return code;
@@ -16767,7 +16791,6 @@ JSRegExp::Flags RegExpFlagsFromString(Handle<String> flags, bool* success) {
         flag = JSRegExp::kUnicode;
         break;
       case 'y':
-        if (!FLAG_harmony_regexps) return JSRegExp::Flags(0);
         flag = JSRegExp::kSticky;
         break;
       default:
@@ -17917,6 +17940,25 @@ String* StringTable::LookupKeyIfExists(Isolate* isolate, HashTableKey* key) {
   return NULL;
 }
 
+Handle<StringSet> StringSet::New(Isolate* isolate) {
+  return HashTable::New(isolate, 0);
+}
+
+Handle<StringSet> StringSet::Add(Handle<StringSet> stringset,
+                                 Handle<String> name) {
+  if (!stringset->Has(name)) {
+    stringset = EnsureCapacity(stringset, 1, *name);
+    uint32_t hash = StringSetShape::Hash(*name);
+    int entry = stringset->FindInsertionEntry(hash);
+    stringset->set(EntryToIndex(entry), *name);
+    stringset->ElementAdded();
+  }
+  return stringset;
+}
+
+bool StringSet::Has(Handle<String> name) {
+  return FindEntry(*name) != kNotFound;
+}
 
 Handle<Object> CompilationCacheTable::Lookup(Handle<String> src,
                                              Handle<Context> context,
@@ -18072,40 +18114,6 @@ void CompilationCacheTable::Remove(Object* value) {
   }
   return;
 }
-
-
-// StringsKey used for HashTable where key is array of internalized strings.
-class StringsKey : public HashTableKey {
- public:
-  explicit StringsKey(Handle<FixedArray> strings) : strings_(strings) { }
-
-  bool IsMatch(Object* strings) override {
-    FixedArray* o = FixedArray::cast(strings);
-    int len = strings_->length();
-    if (o->length() != len) return false;
-    for (int i = 0; i < len; i++) {
-      if (o->get(i) != strings_->get(i)) return false;
-    }
-    return true;
-  }
-
-  uint32_t Hash() override { return HashForObject(*strings_); }
-
-  uint32_t HashForObject(Object* obj) override {
-    FixedArray* strings = FixedArray::cast(obj);
-    int len = strings->length();
-    uint32_t hash = 0;
-    for (int i = 0; i < len; i++) {
-      hash ^= String::cast(strings->get(i))->Hash();
-    }
-    return hash;
-  }
-
-  Handle<Object> AsHandle(Isolate* isolate) override { return strings_; }
-
- private:
-  Handle<FixedArray> strings_;
-};
 
 
 template<typename Derived, typename Shape, typename Key>

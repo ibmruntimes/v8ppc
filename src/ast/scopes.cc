@@ -100,7 +100,6 @@ Scope::Scope(Zone* zone, Scope* outer_scope, ScopeType scope_type,
               function_kind);
   // The outermost scope must be a script scope.
   DCHECK(scope_type == SCRIPT_SCOPE || outer_scope != NULL);
-  DCHECK(!HasIllegalRedeclaration());
 }
 
 Scope::Scope(Zone* zone, Scope* inner_scope, ScopeType scope_type,
@@ -169,7 +168,6 @@ void Scope::SetDefaults(ScopeType scope_type, Scope* outer_scope,
   function_ = nullptr;
   arguments_ = nullptr;
   this_function_ = nullptr;
-  illegal_redecl_ = nullptr;
   scope_inside_with_ = false;
   scope_calls_eval_ = false;
   scope_uses_arguments_ = false;
@@ -210,7 +208,8 @@ Scope* Scope::DeserializeScopeChain(Isolate* isolate, Zone* zone,
   Scope* current_scope = NULL;
   Scope* innermost_scope = NULL;
   while (!context->IsNativeContext()) {
-    if (context->IsWithContext()) {
+    if (context->IsWithContext() || context->IsDebugEvaluateContext()) {
+      // For scope analysis, debug-evaluate is equivalent to a with scope.
       Scope* with_scope = new (zone)
           Scope(zone, current_scope, WITH_SCOPE, Handle<ScopeInfo>::null(),
                 script_scope->ast_value_factory_);
@@ -573,21 +572,6 @@ void Scope::AddDeclaration(Declaration* declaration) {
 }
 
 
-void Scope::SetIllegalRedeclaration(Expression* expression) {
-  // Record only the first illegal redeclaration.
-  if (!HasIllegalRedeclaration()) {
-    illegal_redecl_ = expression;
-  }
-  DCHECK(HasIllegalRedeclaration());
-}
-
-
-Expression* Scope::GetIllegalRedeclaration() {
-  DCHECK(HasIllegalRedeclaration());
-  return illegal_redecl_;
-}
-
-
 Declaration* Scope::CheckConflictingVarDeclarations() {
   int length = decls_.length();
   for (int i = 0; i < length; i++) {
@@ -807,8 +791,7 @@ Handle<ScopeInfo> Scope::GetScopeInfo(Isolate* isolate) {
   return scope_info_;
 }
 
-
-void Scope::CollectNonLocals(HashMap* non_locals) {
+Handle<StringSet> Scope::CollectNonLocals(Handle<StringSet> non_locals) {
   // Collect non-local variables referenced in the scope.
   // TODO(yangguo): store non-local variables explicitly if we can no longer
   //                rely on unresolved_ to find them.
@@ -816,13 +799,12 @@ void Scope::CollectNonLocals(HashMap* non_locals) {
     VariableProxy* proxy = unresolved_[i];
     if (proxy->is_resolved() && proxy->var()->IsStackAllocated()) continue;
     Handle<String> name = proxy->name();
-    void* key = reinterpret_cast<void*>(name.location());
-    HashMap::Entry* entry = non_locals->LookupOrInsert(key, name->Hash());
-    entry->value = key;
+    non_locals = StringSet::Add(non_locals, name);
   }
   for (int i = 0; i < inner_scopes_.length(); i++) {
-    inner_scopes_[i]->CollectNonLocals(non_locals);
+    non_locals = inner_scopes_[i]->CollectNonLocals(non_locals);
   }
+  return non_locals;
 }
 
 

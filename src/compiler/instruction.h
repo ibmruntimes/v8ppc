@@ -812,6 +812,23 @@ class Instruction final {
            OutputCount() == 0 && TempCount() == 0;
   }
 
+  bool IsDeoptimizeCall() const {
+    return arch_opcode() == ArchOpcode::kArchDeoptimize ||
+           FlagsModeField::decode(opcode()) == kFlags_deoptimize;
+  }
+
+  bool IsJump() const { return arch_opcode() == ArchOpcode::kArchJmp; }
+  bool IsRet() const { return arch_opcode() == ArchOpcode::kArchRet; }
+  bool IsTailCall() const {
+    return arch_opcode() == ArchOpcode::kArchTailCallCodeObject ||
+           arch_opcode() == ArchOpcode::kArchTailCallCodeObjectFromJSFunction ||
+           arch_opcode() == ArchOpcode::kArchTailCallJSFunction ||
+           arch_opcode() == ArchOpcode::kArchTailCallJSFunctionFromJSFunction;
+  }
+  bool IsThrow() const {
+    return arch_opcode() == ArchOpcode::kArchThrowTerminator;
+  }
+
   enum GapPosition {
     START,
     END,
@@ -1355,6 +1372,7 @@ class InstructionSequence final : public ZoneObject {
   void PrintBlock(int block_id) const;
 
   void ValidateEdgeSplitForm();
+  void ValidateDeferredBlockExitPaths();
   void ValidateSSA();
 
  private:

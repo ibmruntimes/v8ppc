@@ -1158,6 +1158,10 @@ void InstructionSelector::VisitNode(Node* node) {
       MarkAsWord32(NodeProperties::FindProjection(node, 0));
       MarkAsWord32(NodeProperties::FindProjection(node, 1));
       return VisitInt32PairSub(node);
+    case IrOpcode::kInt32PairMul:
+      MarkAsWord32(NodeProperties::FindProjection(node, 0));
+      MarkAsWord32(NodeProperties::FindProjection(node, 1));
+      return VisitInt32PairMul(node);
     case IrOpcode::kWord32PairShl:
       MarkAsWord32(NodeProperties::FindProjection(node, 0));
       MarkAsWord32(NodeProperties::FindProjection(node, 1));
@@ -1186,7 +1190,6 @@ void InstructionSelector::VisitLoadStackPointer(Node* node) {
 
 void InstructionSelector::VisitLoadFramePointer(Node* node) {
   OperandGenerator g(this);
-  frame_->MarkNeedsFrame();
   Emit(kArchFramePointer, g.DefineAsRegister(node));
 }
 
@@ -1399,6 +1402,8 @@ void InstructionSelector::VisitInt32PairAdd(Node* node) { UNIMPLEMENTED(); }
 
 void InstructionSelector::VisitInt32PairSub(Node* node) { UNIMPLEMENTED(); }
 
+void InstructionSelector::VisitInt32PairMul(Node* node) { UNIMPLEMENTED(); }
+
 void InstructionSelector::VisitWord32PairShl(Node* node) { UNIMPLEMENTED(); }
 
 void InstructionSelector::VisitWord32PairShr(Node* node) { UNIMPLEMENTED(); }
@@ -1485,6 +1490,7 @@ void InstructionSelector::VisitProjection(Node* node) {
     case IrOpcode::kTryTruncateFloat64ToUint64:
     case IrOpcode::kInt32PairAdd:
     case IrOpcode::kInt32PairSub:
+    case IrOpcode::kInt32PairMul:
     case IrOpcode::kWord32PairShl:
     case IrOpcode::kWord32PairShr:
     case IrOpcode::kWord32PairSar:
@@ -1543,12 +1549,14 @@ void InstructionSelector::VisitCall(Node* node, BasicBlock* handler) {
     buffer.instruction_args.push_back(g.Label(handler));
   }
 
-  // (arm64 only) caller uses JSSP but callee might destroy it.
-  if (descriptor->UseNativeStack() &&
-      !linkage()->GetIncomingDescriptor()->UseNativeStack()) {
-    flags |= CallDescriptor::kRestoreJSSP;
+  bool from_native_stack = linkage()->GetIncomingDescriptor()->UseNativeStack();
+  bool to_native_stack = descriptor->UseNativeStack();
+  if (from_native_stack != to_native_stack) {
+    // (arm64 only) Mismatch in the use of stack pointers. One or the other
+    // has to be restored manually by the code generator.
+    flags |= to_native_stack ? CallDescriptor::kRestoreJSSP
+                             : CallDescriptor::kRestoreCSP;
   }
-
 
   // Select the appropriate opcode based on the call type.
   InstructionCode opcode = kArchNop;

@@ -265,8 +265,8 @@ class MacroAssembler: public Assembler {
 
   void Call(Label* target);
 
-  void Move(Register dst, Handle<Object> handle) { li(dst, handle); }
-  void Move(Register dst, Smi* smi) { li(dst, Operand(smi)); }
+  inline void Move(Register dst, Handle<Object> handle) { li(dst, handle); }
+  inline void Move(Register dst, Smi* smi) { li(dst, Operand(smi)); }
 
   inline void Move(Register dst, Register src) {
     if (!dst.is(src)) {
@@ -274,16 +274,28 @@ class MacroAssembler: public Assembler {
     }
   }
 
-  inline void Move(FPURegister dst, FPURegister src) {
+  inline void Move_d(FPURegister dst, FPURegister src) {
     if (!dst.is(src)) {
       mov_d(dst, src);
     }
   }
 
+  inline void Move_s(FPURegister dst, FPURegister src) {
+    if (!dst.is(src)) {
+      mov_s(dst, src);
+    }
+  }
+
+  inline void Move(FPURegister dst, FPURegister src) { Move_d(dst, src); }
+
   inline void Move(Register dst_low, Register dst_high, FPURegister src) {
     mfc1(dst_low, src);
     mfhc1(dst_high, src);
   }
+
+  inline void Move(Register dst, FPURegister src) { dmfc1(dst, src); }
+
+  inline void Move(FPURegister dst, Register src) { dmtc1(src, dst); }
 
   inline void FmoveHigh(Register dst_high, FPURegister src) {
     mfhc1(dst_high, src);
@@ -312,6 +324,17 @@ class MacroAssembler: public Assembler {
   void Movn(Register rd, Register rs, Register rt);
   void Movt(Register rd, Register rs, uint16_t cc = 0);
   void Movf(Register rd, Register rs, uint16_t cc = 0);
+
+  // Min, Max macros.
+  // On pre-r6 these functions may modify at and t8 registers.
+  void MinNaNCheck_d(FPURegister dst, FPURegister src1, FPURegister src2,
+                     Label* nan = nullptr);
+  void MaxNaNCheck_d(FPURegister dst, FPURegister src1, FPURegister src2,
+                     Label* nan = nullptr);
+  void MinNaNCheck_s(FPURegister dst, FPURegister src1, FPURegister src2,
+                     Label* nan = nullptr);
+  void MaxNaNCheck_s(FPURegister dst, FPURegister src1, FPURegister src2,
+                     Label* nan = nullptr);
 
   void Clz(Register rd, Register rs);
 
@@ -1799,25 +1822,22 @@ const Operand& rt = Operand(zero_reg), BranchDelaySlot bd = PROTECT
   // in a0.  Assumes that any other register can be used as a scratch.
   void CheckEnumCache(Label* call_runtime);
 
-  // AllocationMemento support. Arrays may have an associated
-  // AllocationMemento object that can be checked for in order to pretransition
-  // to another type.
-  // On entry, receiver_reg should point to the array object.
-  // scratch_reg gets clobbered.
-  // If allocation info is present, jump to allocation_memento_present.
-  void TestJSArrayForAllocationMemento(
-      Register receiver_reg,
-      Register scratch_reg,
-      Label* no_memento_found,
-      Condition cond = al,
-      Label* allocation_memento_present = NULL);
+  // AllocationMemento support. Arrays may have an associated AllocationMemento
+  // object that can be checked for in order to pretransition to another type.
+  // On entry, receiver_reg should point to the array object. scratch_reg gets
+  // clobbered. If no info is present jump to no_memento_found, otherwise fall
+  // through.
+  void TestJSArrayForAllocationMemento(Register receiver_reg,
+                                       Register scratch_reg,
+                                       Label* no_memento_found);
 
   void JumpIfJSArrayHasAllocationMemento(Register receiver_reg,
                                          Register scratch_reg,
                                          Label* memento_found) {
     Label no_memento_found;
     TestJSArrayForAllocationMemento(receiver_reg, scratch_reg,
-                                    &no_memento_found, eq, memento_found);
+                                    &no_memento_found);
+    Branch(memento_found);
     bind(&no_memento_found);
   }
 
@@ -1858,8 +1878,6 @@ const Operand& rt = Operand(zero_reg), BranchDelaySlot bd = PROTECT
                                BranchDelaySlot bdslot);
   void BranchLong(Label* L, BranchDelaySlot bdslot);
   void BranchAndLinkLong(Label* L, BranchDelaySlot bdslot);
-  void Jr(Label* L, BranchDelaySlot bdslot);
-  void Jalr(Label* L, BranchDelaySlot bdslot);
 
   // Common implementation of BranchF functions for the different formats.
   void BranchFCommon(SecondaryField sizeField, Label* target, Label* nan,

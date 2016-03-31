@@ -39,19 +39,9 @@ function MathAtan2JS(y, x) {
   return %MathAtan2(y, x);
 }
 
-// ECMA 262 - 15.8.2.6
-function MathCeil(x) {
-  return -%_MathFloor(-x);
-}
-
 // ECMA 262 - 15.8.2.8
 function MathExp(x) {
   return %MathExpRT(TO_NUMBER(x));
-}
-
-// ECMA 262 - 15.8.2.9
-function MathFloorJS(x) {
-  return %_MathFloor(+x);
 }
 
 // ECMA 262 - 15.8.2.10
@@ -86,25 +76,11 @@ function MathRandomRaw() {
   return %_DoubleLo(randomNumbers[--nextRandomIndex]) & 0x3FFFFFFF;
 }
 
-// ECMA 262 - 15.8.2.15
-function MathRound(x) {
-  return %RoundNumber(TO_NUMBER(x));
-}
-
 // ES6 draft 09-27-13, section 20.2.2.28.
 function MathSign(x) {
   x = +x;
   if (x > 0) return 1;
   if (x < 0) return -1;
-  // -0, 0 or NaN.
-  return x;
-}
-
-// ES6 draft 09-27-13, section 20.2.2.34.
-function MathTrunc(x) {
-  x = +x;
-  if (x > 0) return %_MathFloor(x);
-  if (x < 0) return -%_MathFloor(-x);
   // -0, 0 or NaN.
   return x;
 }
@@ -187,7 +163,7 @@ macro NEWTON_ITERATION_CBRT(x, approx)
 endmacro
 
 function CubeRoot(x) {
-  var approx_hi = MathFloorJS(%_DoubleHi(x) / 3) + 0x2A9F7893;
+  var approx_hi = %math_floor(%_DoubleHi(x) / 3) + 0x2A9F7893;
   var approx = %_ConstructDouble(approx_hi | 0, 0);
   approx = NEWTON_ITERATION_CBRT(x, approx);
   approx = NEWTON_ITERATION_CBRT(x, approx);
@@ -224,15 +200,11 @@ utils.InstallConstants(GlobalMath, [
 utils.InstallFunctions(GlobalMath, DONT_ENUM, [
   "random", MathRandom,
   "abs", MathAbs,
-  "ceil", MathCeil,
   "exp", MathExp,
-  "floor", MathFloorJS,
   "log", MathLog,
-  "round", MathRound,
   "atan2", MathAtan2JS,
   "pow", MathPowJS,
   "sign", MathSign,
-  "trunc", MathTrunc,
   "asinh", MathAsinh,
   "acosh", MathAcosh,
   "atanh", MathAtanh,
@@ -243,12 +215,9 @@ utils.InstallFunctions(GlobalMath, DONT_ENUM, [
 
 %SetForceInlineFlag(MathAbs);
 %SetForceInlineFlag(MathAtan2JS);
-%SetForceInlineFlag(MathCeil);
 %SetForceInlineFlag(MathClz32JS);
-%SetForceInlineFlag(MathFloorJS);
 %SetForceInlineFlag(MathRandom);
 %SetForceInlineFlag(MathSign);
-%SetForceInlineFlag(MathTrunc);
 
 // -------------------------------------------------------------------
 // Exports
@@ -256,7 +225,6 @@ utils.InstallFunctions(GlobalMath, DONT_ENUM, [
 utils.Export(function(to) {
   to.MathAbs = MathAbs;
   to.MathExp = MathExp;
-  to.MathFloor = MathFloorJS;
   to.IntRandom = MathRandomRaw;
 });
 

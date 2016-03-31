@@ -4221,8 +4221,7 @@ void LCodeGen::DoTrapAllocationMemento(LTrapAllocationMemento* instr) {
   Register object = ToRegister(instr->object());
   Register temp = ToRegister(instr->temp());
   Label no_memento_found;
-  __ TestJSArrayForAllocationMemento(object, temp, &no_memento_found,
-                                     ne, &no_memento_found);
+  __ TestJSArrayForAllocationMemento(object, temp, &no_memento_found);
   DeoptimizeIf(al, instr);
   __ bind(&no_memento_found);
 }
@@ -5557,13 +5556,6 @@ void LCodeGen::DoLoadFieldByIndex(LLoadFieldByIndex* instr) {
   __ bind(deferred->exit());
   __ bind(&done);
 }
-
-
-void LCodeGen::DoStoreFrameContext(LStoreFrameContext* instr) {
-  Register context = ToRegister(instr->context());
-  __ sw(context, MemOperand(fp, StandardFrameConstants::kContextOffset));
-}
-
 
 #undef __
 

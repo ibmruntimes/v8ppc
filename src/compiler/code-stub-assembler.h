@@ -63,9 +63,16 @@ class Schedule;
 
 #define CODE_STUB_ASSEMBLER_BINARY_OP_LIST(V)   \
   CODE_STUB_ASSEMBLER_COMPARE_BINARY_OP_LIST(V) \
+  V(Float64Add)                                 \
+  V(Float64Sub)                                 \
+  V(Float64InsertLowWord32)                     \
+  V(Float64InsertHighWord32)                    \
   V(IntPtrAdd)                                  \
+  V(IntPtrAddWithOverflow)                      \
   V(IntPtrSub)                                  \
+  V(IntPtrSubWithOverflow)                      \
   V(Int32Add)                                   \
+  V(Int32AddWithOverflow)                       \
   V(Int32Sub)                                   \
   V(Int32Mul)                                   \
   V(WordOr)                                     \
@@ -90,6 +97,7 @@ class Schedule;
   V(Word64Ror)
 
 #define CODE_STUB_ASSEMBLER_UNARY_OP_LIST(V) \
+  V(Float64Neg)                              \
   V(Float64Sqrt)                             \
   V(ChangeFloat64ToUint32)                   \
   V(ChangeInt32ToFloat64)                    \
@@ -161,6 +169,8 @@ class CodeStubAssembler {
 
   void Bind(Label* label);
   void Goto(Label* label);
+  void GotoIf(Node* condition, Label* true_label);
+  void GotoUnless(Node* condition, Label* false_label);
   void Branch(Node* condition, Label* true_label, Label* false_label);
 
   void Switch(Node* index, Label* default_label, int32_t* case_values,
@@ -252,6 +262,12 @@ class CodeStubAssembler {
   // Macros
   // ===========================================================================
 
+  // Float64 operations.
+  Node* Float64Ceil(Node* x);
+  Node* Float64Floor(Node* x);
+  Node* Float64Round(Node* x);
+  Node* Float64Trunc(Node* x);
+
   // Tag a Word as a Smi value.
   Node* SmiTag(Node* value);
   // Untag a Smi value as a Word.
@@ -259,10 +275,13 @@ class CodeStubAssembler {
 
   // Smi conversions.
   Node* SmiToFloat64(Node* value);
-  Node* SmiToInt32(Node* value);
+  Node* SmiToWord32(Node* value);
 
   // Smi operations.
   Node* SmiAdd(Node* a, Node* b);
+  Node* SmiAddWithOverflow(Node* a, Node* b);
+  Node* SmiSub(Node* a, Node* b);
+  Node* SmiSubWithOverflow(Node* a, Node* b);
   Node* SmiEqual(Node* a, Node* b);
   Node* SmiLessThan(Node* a, Node* b);
   Node* SmiLessThanOrEqual(Node* a, Node* b);
@@ -287,18 +306,35 @@ class CodeStubAssembler {
   Node* LoadHeapNumberValue(Node* object);
   // Store the floating point value of a HeapNumber.
   Node* StoreHeapNumberValue(Node* object, Node* value);
+  // Truncate the floating point value of a HeapNumber to an Int32.
+  Node* TruncateHeapNumberValueToWord32(Node* object);
   // Load the bit field of a Map.
   Node* LoadMapBitField(Node* map);
-  // Load the instance type of a Map.
+  // Load bit field 2 of a map.
+  Node* LoadMapBitField2(Node* map);
+  // Load bit field 3 of a map.
+  Node* LoadMapBitField3(Node* map);
+  // Load the instance type of a map.
   Node* LoadMapInstanceType(Node* map);
+  // Load the instance descriptors of a map.
+  Node* LoadMapDescriptors(Node* map);
+
+  // Load the hash field of a name.
+  Node* LoadNameHash(Node* name);
 
   // Load an array element from a FixedArray.
+  Node* LoadFixedArrayElementInt32Index(Node* object, Node* int32_index,
+                                        int additional_offset = 0);
   Node* LoadFixedArrayElementSmiIndex(Node* object, Node* smi_index,
                                       int additional_offset = 0);
   Node* LoadFixedArrayElementConstantIndex(Node* object, int index);
 
   // Allocate an object of the given size.
-  Node* Allocate(int size, AllocationFlags flags);
+  Node* Allocate(int size, AllocationFlags flags = kNone);
+  // Allocate a HeapNumber without initializing its value.
+  Node* AllocateHeapNumber();
+  // Allocate a HeapNumber with a specific value.
+  Node* AllocateHeapNumberWithValue(Node* value);
 
   // Store an array element to a FixedArray.
   Node* StoreFixedArrayElementNoWriteBarrier(Node* object, Node* index,
@@ -310,6 +346,11 @@ class CodeStubAssembler {
   // Load the instance type of an HeapObject.
   Node* LoadInstanceType(Node* object);
 
+  // Load the elements backing store of a JSObject.
+  Node* LoadElements(Node* object);
+  // Load the length of a fixed array base instance.
+  Node* LoadFixedArrayBaseLength(Node* array);
+
   // Returns a node that is true if the given bit is set in |word32|.
   template <typename T>
   Node* BitFieldDecode(Node* word32) {
@@ -317,6 +358,12 @@ class CodeStubAssembler {
   }
 
   Node* BitFieldDecode(Node* word32, uint32_t shift, uint32_t mask);
+
+  // Conversions.
+  Node* ChangeFloat64ToTagged(Node* value);
+  Node* ChangeInt32ToTagged(Node* value);
+  Node* TruncateTaggedToFloat64(Node* context, Node* value);
+  Node* TruncateTaggedToWord32(Node* context, Node* value);
 
   // Branching helpers.
   // TODO(danno): Can we be more cleverish wrt. edge-split?

@@ -95,6 +95,7 @@ enum BindingFlags {
   V(SPREAD_ARGUMENTS_INDEX, JSFunction, spread_arguments)                 \
   V(SPREAD_ITERABLE_INDEX, JSFunction, spread_iterable)                   \
   V(ORDINARY_HAS_INSTANCE_INDEX, JSFunction, ordinary_has_instance)       \
+  V(MATH_FLOOR, JSFunction, math_floor)                                   \
   V(MATH_SQRT, JSFunction, math_sqrt)
 
 #define NATIVE_CONTEXT_IMPORTED_FIELDS(V)                                     \
@@ -405,6 +406,10 @@ class Context: public FixedArray {
     MIN_CONTEXT_SLOTS = GLOBAL_PROXY_INDEX,
     // This slot holds the thrown value in catch contexts.
     THROWN_OBJECT_INDEX = MIN_CONTEXT_SLOTS,
+
+    // These slots hold values in debug evaluate contexts.
+    WRAPPED_CONTEXT_INDEX = MIN_CONTEXT_SLOTS,
+    WHITE_LIST_INDEX = MIN_CONTEXT_SLOTS + 1
   };
 
   void IncrementErrorsThrown();
@@ -457,6 +462,7 @@ class Context: public FixedArray {
   inline bool IsFunctionContext();
   inline bool IsCatchContext();
   inline bool IsWithContext();
+  inline bool IsDebugEvaluateContext();
   inline bool IsBlockContext();
   inline bool IsModuleContext();
   inline bool IsScriptContext();

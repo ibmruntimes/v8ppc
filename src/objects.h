@@ -80,6 +80,7 @@
 //         - HashTable
 //           - Dictionary
 //           - StringTable
+//           - StringSet
 //           - CompilationCacheTable
 //           - CodeCacheHashTable
 //           - MapCache
@@ -976,6 +977,7 @@ template <class C> inline bool Is(Object* obj);
   V(HashTable)                     \
   V(Dictionary)                    \
   V(StringTable)                   \
+  V(StringSet)                     \
   V(NormalizedMapCache)            \
   V(CompilationCacheTable)         \
   V(CodeCacheHashTable)            \
@@ -1962,7 +1964,8 @@ class JSReceiver: public HeapObject {
   // "for (n in object) { }".
   MUST_USE_RESULT static MaybeHandle<FixedArray> GetKeys(
       Handle<JSReceiver> object, KeyCollectionType type, PropertyFilter filter,
-      GetKeysConversion keys_conversion = KEEP_NUMBERS);
+      GetKeysConversion keys_conversion = KEEP_NUMBERS,
+      bool filter_proxy_keys_ = true);
 
   MUST_USE_RESULT static MaybeHandle<FixedArray> GetOwnValues(
       Handle<JSReceiver> object, PropertyFilter filter);
@@ -3085,6 +3088,11 @@ class DescriptorArray: public FixedArray {
            kDescriptorDetails;
   }
 
+  // Conversion from descriptor number to array indices.
+  static int ToKeyIndex(int descriptor_number) {
+    return kFirstIndex + (descriptor_number * kDescriptorSize) + kDescriptorKey;
+  }
+
  private:
   // An entry in a DescriptorArray, represented as an (array, index) pair.
   class Entry {
@@ -3099,13 +3107,6 @@ class DescriptorArray: public FixedArray {
     DescriptorArray* descs_;
     int index_;
   };
-
-  // Conversion from descriptor number to array indices.
-  static int ToKeyIndex(int descriptor_number) {
-    return kFirstIndex +
-           (descriptor_number * kDescriptorSize) +
-           kDescriptorKey;
-  }
 
   static int ToValueIndex(int descriptor_number) {
     return kFirstIndex +
@@ -3431,6 +3432,25 @@ class StringTable: public HashTable<StringTable,
   DISALLOW_IMPLICIT_CONSTRUCTORS(StringTable);
 };
 
+class StringSetShape : public BaseShape<String*> {
+ public:
+  static inline bool IsMatch(String* key, Object* value);
+  static inline uint32_t Hash(String* key);
+  static inline uint32_t HashForObject(String* key, Object* object);
+
+  static const int kPrefixSize = 0;
+  static const int kEntrySize = 1;
+};
+
+class StringSet : public HashTable<StringSet, StringSetShape, String*> {
+ public:
+  static Handle<StringSet> New(Isolate* isolate);
+  static Handle<StringSet> Add(Handle<StringSet> blacklist,
+                               Handle<String> name);
+  bool Has(Handle<String> name);
+
+  DECLARE_CAST(StringSet)
+};
 
 template <typename Derived, typename Shape, typename Key>
 class Dictionary: public HashTable<Derived, Shape, Key> {
@@ -6618,7 +6638,8 @@ class Script: public Struct {
   V(Math, atan2, MathAtan2)                                 \
   V(Math, imul, MathImul)                                   \
   V(Math, clz32, MathClz32)                                 \
-  V(Math, fround, MathFround)
+  V(Math, fround, MathFround)                               \
+  V(Math, trunc, MathTrunc)
 
 #define ATOMIC_FUNCTIONS_WITH_ID_LIST(V) \
   V(Atomics, load, AtomicsLoad)          \

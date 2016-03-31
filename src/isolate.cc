@@ -429,13 +429,17 @@ Handle<Object> Isolate::CaptureSimpleStackTrace(Handle<JSObject> error_object,
       } break;
 
       case StackFrame::WASM: {
+        WasmFrame* wasm_frame = WasmFrame::cast(frame);
+        Code* code = wasm_frame->unchecked_code();
+        Handle<AbstractCode> abstract_code =
+            Handle<AbstractCode>(AbstractCode::cast(code));
         Handle<JSFunction> fun = factory()->NewFunction(
             factory()->NewStringFromAsciiChecked("<WASM>"));
         elements = MaybeGrow(this, elements, cursor, cursor + 4);
         // TODO(jfb) Pass module object.
         elements->set(cursor++, *factory()->undefined_value());
         elements->set(cursor++, *fun);
-        elements->set(cursor++, Internals::IntToSmi(0));
+        elements->set(cursor++, *abstract_code);
         elements->set(cursor++, Internals::IntToSmi(0));
         frames_seen++;
       } break;
@@ -1826,6 +1830,7 @@ Isolate::Isolate(bool enable_serializer)
       serializer_enabled_(enable_serializer),
       has_fatal_error_(false),
       initialized_from_snapshot_(false),
+      is_tail_call_elimination_enabled_(true),
       cpu_profiler_(NULL),
       heap_profiler_(NULL),
       function_entry_hook_(NULL),
@@ -2880,6 +2885,14 @@ std::string Isolate::GetTurboCfgFileName() {
   }
 }
 
+void Isolate::SetTailCallEliminationEnabled(bool enabled) {
+  if (is_tail_call_elimination_enabled_ == enabled) return;
+  is_tail_call_elimination_enabled_ = enabled;
+  // TODO(ishell): Introduce DependencyGroup::kTailCallChangedGroup to
+  // deoptimize only those functions that are affected by the change of this
+  // flag.
+  internal::Deoptimizer::DeoptimizeAll(this);
+}
 
 // Heap::detached_contexts tracks detached contexts as pairs
 // (number of GC since the context was detached, the context).

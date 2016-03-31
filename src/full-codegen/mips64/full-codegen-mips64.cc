@@ -301,40 +301,38 @@ void FullCodeGenerator::Generate() {
     __ CallRuntime(Runtime::kTraceEnter);
   }
 
-  // Visit the declarations and body unless there is an illegal
-  // redeclaration.
-  if (scope()->HasIllegalRedeclaration()) {
-    EmitIllegalRedeclaration();
-  } else {
-    PrepareForBailoutForId(BailoutId::FunctionEntry(), NO_REGISTERS);
-    { Comment cmnt(masm_, "[ Declarations");
-      VisitDeclarations(scope()->declarations());
-    }
+  // Visit the declarations and body.
+  PrepareForBailoutForId(BailoutId::FunctionEntry(), NO_REGISTERS);
+  {
+    Comment cmnt(masm_, "[ Declarations");
+    VisitDeclarations(scope()->declarations());
+  }
 
-    // Assert that the declarations do not use ICs. Otherwise the debugger
-    // won't be able to redirect a PC at an IC to the correct IC in newly
-    // recompiled code.
-    DCHECK_EQ(0, ic_total_count_);
+  // Assert that the declarations do not use ICs. Otherwise the debugger
+  // won't be able to redirect a PC at an IC to the correct IC in newly
+  // recompiled code.
+  DCHECK_EQ(0, ic_total_count_);
 
-    { Comment cmnt(masm_, "[ Stack check");
-      PrepareForBailoutForId(BailoutId::Declarations(), NO_REGISTERS);
-      Label ok;
-      __ LoadRoot(at, Heap::kStackLimitRootIndex);
-      __ Branch(&ok, hs, sp, Operand(at));
-      Handle<Code> stack_check = isolate()->builtins()->StackCheck();
-      PredictableCodeSizeScope predictable(masm_,
-          masm_->CallSize(stack_check, RelocInfo::CODE_TARGET));
-      __ Call(stack_check, RelocInfo::CODE_TARGET);
-      __ bind(&ok);
-    }
+  {
+    Comment cmnt(masm_, "[ Stack check");
+    PrepareForBailoutForId(BailoutId::Declarations(), NO_REGISTERS);
+    Label ok;
+    __ LoadRoot(at, Heap::kStackLimitRootIndex);
+    __ Branch(&ok, hs, sp, Operand(at));
+    Handle<Code> stack_check = isolate()->builtins()->StackCheck();
+    PredictableCodeSizeScope predictable(
+        masm_, masm_->CallSize(stack_check, RelocInfo::CODE_TARGET));
+    __ Call(stack_check, RelocInfo::CODE_TARGET);
+    __ bind(&ok);
+  }
 
-    { Comment cmnt(masm_, "[ Body");
-      DCHECK(loop_depth() == 0);
+  {
+    Comment cmnt(masm_, "[ Body");
+    DCHECK(loop_depth() == 0);
 
-      VisitStatements(literal()->body());
+    VisitStatements(literal()->body());
 
-      DCHECK(loop_depth() == 0);
-    }
+    DCHECK(loop_depth() == 0);
   }
 
   // Always emit a 'return undefined' in case control fell off the end of
@@ -3943,12 +3941,6 @@ void FullCodeGenerator::EmitLiteralCompareNil(CompareOperation* expr,
 }
 
 
-void FullCodeGenerator::VisitThisFunction(ThisFunction* expr) {
-  __ ld(v0, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  context()->Plug(v0);
-}
-
-
 Register FullCodeGenerator::result_register() {
   return v0;
 }
@@ -3958,6 +3950,12 @@ Register FullCodeGenerator::context_register() {
   return cp;
 }
 
+void FullCodeGenerator::LoadFromFrameField(int frame_offset, Register value) {
+  // DCHECK_EQ(POINTER_SIZE_ALIGN(frame_offset), frame_offset);
+  DCHECK(IsAligned(frame_offset, kPointerSize));
+  //  __ sw(value, MemOperand(fp, frame_offset));
+  __ ld(value, MemOperand(fp, frame_offset));
+}
 
 void FullCodeGenerator::StoreToFrameField(int frame_offset, Register value) {
   // DCHECK_EQ(POINTER_SIZE_ALIGN(frame_offset), frame_offset);
@@ -4064,7 +4062,9 @@ void BackEdgeTable::PatchAt(Code* unoptimized_code,
                             BackEdgeState target_state,
                             Code* replacement_code) {
   static const int kInstrSize = Assembler::kInstrSize;
-  Address branch_address = pc - 8 * kInstrSize;
+  Address pc_immediate_load_address =
+      Assembler::target_address_from_return_address(pc);
+  Address branch_address = pc_immediate_load_address - 2 * kInstrSize;
   Isolate* isolate = unoptimized_code->GetIsolate();
   CodePatcher patcher(isolate, branch_address, 1);
 
@@ -4094,7 +4094,6 @@ void BackEdgeTable::PatchAt(Code* unoptimized_code,
       patcher.masm()->daddiu(at, zero_reg, 1);
       break;
   }
-  Address pc_immediate_load_address = pc - 6 * kInstrSize;
   // Replace the stack check address in the load-immediate (6-instr sequence)
   // with the entry address of the replacement code.
   Assembler::set_target_address_at(isolate, pc_immediate_load_address,
@@ -4110,12 +4109,11 @@ BackEdgeTable::BackEdgeState BackEdgeTable::GetBackEdgeState(
     Code* unoptimized_code,
     Address pc) {
   static const int kInstrSize = Assembler::kInstrSize;
-  Address branch_address = pc - 8 * kInstrSize;
-#ifdef DEBUG
-  Address pc_immediate_load_address = pc - 6 * kInstrSize;
-#endif
+  Address pc_immediate_load_address =
+      Assembler::target_address_from_return_address(pc);
+  Address branch_address = pc_immediate_load_address - 2 * kInstrSize;
 
-  DCHECK(Assembler::IsBeq(Assembler::instr_at(pc - 7 * kInstrSize)));
+  DCHECK(Assembler::IsBeq(Assembler::instr_at(branch_address + kInstrSize)));
   if (!Assembler::IsAddImmediate(Assembler::instr_at(branch_address))) {
     DCHECK(reinterpret_cast<uint64_t>(
         Assembler::target_address_at(pc_immediate_load_address)) ==

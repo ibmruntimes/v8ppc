@@ -324,36 +324,75 @@ TEST(Run_WasmI32Eqz) {
   TestInt32Unop(kExprI32Eqz, 1, 0);
 }
 
+TEST(Run_WasmI32Shl) {
+  WasmRunner<uint32_t> r(MachineType::Uint32(), MachineType::Uint32());
+  BUILD(r, WASM_I32_SHL(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
+
+  FOR_UINT32_INPUTS(i) {
+    FOR_UINT32_INPUTS(j) {
+      uint32_t expected = (*i) << (*j & 0x1f);
+      CHECK_EQ(expected, r.Call(*i, *j));
+    }
+  }
+}
+
+TEST(Run_WasmI32Shr) {
+  WasmRunner<uint32_t> r(MachineType::Uint32(), MachineType::Uint32());
+  BUILD(r, WASM_I32_SHR(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
+
+  FOR_UINT32_INPUTS(i) {
+    FOR_UINT32_INPUTS(j) {
+      uint32_t expected = (*i) >> (*j & 0x1f);
+      CHECK_EQ(expected, r.Call(*i, *j));
+    }
+  }
+}
+
+TEST(Run_WasmI32Sar) {
+  WasmRunner<int32_t> r(MachineType::Int32(), MachineType::Int32());
+  BUILD(r, WASM_I32_SAR(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
+
+  FOR_INT32_INPUTS(i) {
+    FOR_INT32_INPUTS(j) {
+      int32_t expected = (*i) >> (*j & 0x1f);
+      CHECK_EQ(expected, r.Call(*i, *j));
+    }
+  }
+}
+
 TEST(Run_WASM_Int32DivS_trap) {
   WasmRunner<int32_t> r(MachineType::Int32(), MachineType::Int32());
   BUILD(r, WASM_I32_DIVS(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
+  const int32_t kMin = std::numeric_limits<int32_t>::min();
   CHECK_EQ(0, r.Call(0, 100));
   CHECK_TRAP(r.Call(100, 0));
   CHECK_TRAP(r.Call(-1001, 0));
-  CHECK_TRAP(r.Call(std::numeric_limits<int32_t>::min(), -1));
-  CHECK_TRAP(r.Call(std::numeric_limits<int32_t>::min(), 0));
+  CHECK_TRAP(r.Call(kMin, -1));
+  CHECK_TRAP(r.Call(kMin, 0));
 }
 
 
 TEST(Run_WASM_Int32RemS_trap) {
   WasmRunner<int32_t> r(MachineType::Int32(), MachineType::Int32());
   BUILD(r, WASM_I32_REMS(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
+  const int32_t kMin = std::numeric_limits<int32_t>::min();
   CHECK_EQ(33, r.Call(133, 100));
-  CHECK_EQ(0, r.Call(std::numeric_limits<int32_t>::min(), -1));
+  CHECK_EQ(0, r.Call(kMin, -1));
   CHECK_TRAP(r.Call(100, 0));
   CHECK_TRAP(r.Call(-1001, 0));
-  CHECK_TRAP(r.Call(std::numeric_limits<int32_t>::min(), 0));
+  CHECK_TRAP(r.Call(kMin, 0));
 }
 
 
 TEST(Run_WASM_Int32DivU_trap) {
   WasmRunner<int32_t> r(MachineType::Int32(), MachineType::Int32());
   BUILD(r, WASM_I32_DIVU(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
+  const int32_t kMin = std::numeric_limits<int32_t>::min();
   CHECK_EQ(0, r.Call(0, 100));
-  CHECK_EQ(0, r.Call(std::numeric_limits<int32_t>::min(), -1));
+  CHECK_EQ(0, r.Call(kMin, -1));
   CHECK_TRAP(r.Call(100, 0));
   CHECK_TRAP(r.Call(-1001, 0));
-  CHECK_TRAP(r.Call(std::numeric_limits<int32_t>::min(), 0));
+  CHECK_TRAP(r.Call(kMin, 0));
 }
 
 
@@ -361,11 +400,63 @@ TEST(Run_WASM_Int32RemU_trap) {
   WasmRunner<int32_t> r(MachineType::Int32(), MachineType::Int32());
   BUILD(r, WASM_I32_REMU(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
   CHECK_EQ(17, r.Call(217, 100));
+  const int32_t kMin = std::numeric_limits<int32_t>::min();
   CHECK_TRAP(r.Call(100, 0));
   CHECK_TRAP(r.Call(-1001, 0));
-  CHECK_TRAP(r.Call(std::numeric_limits<int32_t>::min(), 0));
-  CHECK_EQ(std::numeric_limits<int32_t>::min(),
-           r.Call(std::numeric_limits<int32_t>::min(), -1));
+  CHECK_TRAP(r.Call(kMin, 0));
+  CHECK_EQ(kMin, r.Call(kMin, -1));
+}
+
+TEST(Run_WASM_Int32DivS_asmjs) {
+  TestingModule module;
+  module.origin = kAsmJsOrigin;
+  WasmRunner<int32_t> r(&module, MachineType::Int32(), MachineType::Int32());
+  BUILD(r, WASM_I32_DIVS(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
+  const int32_t kMin = std::numeric_limits<int32_t>::min();
+  CHECK_EQ(0, r.Call(0, 100));
+  CHECK_EQ(0, r.Call(100, 0));
+  CHECK_EQ(0, r.Call(-1001, 0));
+  CHECK_EQ(kMin, r.Call(kMin, -1));
+  CHECK_EQ(0, r.Call(kMin, 0));
+}
+
+TEST(Run_WASM_Int32RemS_asmjs) {
+  TestingModule module;
+  module.origin = kAsmJsOrigin;
+  WasmRunner<int32_t> r(&module, MachineType::Int32(), MachineType::Int32());
+  BUILD(r, WASM_I32_REMS(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
+  const int32_t kMin = std::numeric_limits<int32_t>::min();
+  CHECK_EQ(33, r.Call(133, 100));
+  CHECK_EQ(0, r.Call(kMin, -1));
+  CHECK_EQ(0, r.Call(100, 0));
+  CHECK_EQ(0, r.Call(-1001, 0));
+  CHECK_EQ(0, r.Call(kMin, 0));
+}
+
+TEST(Run_WASM_Int32DivU_asmjs) {
+  TestingModule module;
+  module.origin = kAsmJsOrigin;
+  WasmRunner<int32_t> r(&module, MachineType::Int32(), MachineType::Int32());
+  BUILD(r, WASM_I32_DIVU(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
+  const int32_t kMin = std::numeric_limits<int32_t>::min();
+  CHECK_EQ(0, r.Call(0, 100));
+  CHECK_EQ(0, r.Call(kMin, -1));
+  CHECK_EQ(0, r.Call(100, 0));
+  CHECK_EQ(0, r.Call(-1001, 0));
+  CHECK_EQ(0, r.Call(kMin, 0));
+}
+
+TEST(Run_WASM_Int32RemU_asmjs) {
+  TestingModule module;
+  module.origin = kAsmJsOrigin;
+  WasmRunner<int32_t> r(&module, MachineType::Int32(), MachineType::Int32());
+  BUILD(r, WASM_I32_REMU(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
+  const int32_t kMin = std::numeric_limits<int32_t>::min();
+  CHECK_EQ(17, r.Call(217, 100));
+  CHECK_EQ(0, r.Call(100, 0));
+  CHECK_EQ(0, r.Call(-1001, 0));
+  CHECK_EQ(0, r.Call(kMin, 0));
+  CHECK_EQ(kMin, r.Call(kMin, -1));
 }
 
 
@@ -1998,7 +2089,6 @@ TEST(Run_WasmCall_Float64Sub) {
   double* memory = module.AddMemoryElems<double>(16);
   WasmRunner<int32_t> r(&module);
 
-  // TODO(titzer): convert to a binop test.
   BUILD(r, WASM_BLOCK(
                2, WASM_STORE_MEM(
                       MachineType::Float64(), WASM_ZERO,
@@ -2680,9 +2770,6 @@ TEST(Run_Wasm_F64CopySign) {
 }
 
 
-// TODO(tizer): Fix on arm and reenable.
-#if !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_ARM64
-
 TEST(Run_Wasm_F32CopySign) {
   WasmRunner<float> r(MachineType::Float32(), MachineType::Float32());
   BUILD(r, WASM_F32_COPYSIGN(WASM_GET_LOCAL(0), WASM_GET_LOCAL(1)));
@@ -2691,10 +2778,6 @@ TEST(Run_Wasm_F32CopySign) {
     FOR_FLOAT32_INPUTS(j) { CHECK_FLOAT_EQ(copysign(*i, *j), r.Call(*i, *j)); }
   }
 }
-
-
-#endif
-
 
 void CompileCallIndirectMany(LocalType param) {
   // Make sure we don't run out of registers when compiling indirect calls

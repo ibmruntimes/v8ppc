@@ -330,6 +330,12 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
     __ bind(&done);                                          \
   } while (false)
 
+void CodeGenerator::AssembleDeconstructFrame() {
+  __ mov(esp, ebp);
+  __ pop(ebp);
+}
+
+void CodeGenerator::AssembleSetupStackPointer() {}
 
 void CodeGenerator::AssembleDeconstructActivationRecord(int stack_param_delta) {
   int sp_slot_delta = TailCallFrameStackSlotDelta(stack_param_delta);
@@ -346,7 +352,7 @@ void CodeGenerator::AssemblePrepareTailCall(int stack_param_delta) {
     __ sub(esp, Immediate(-sp_slot_delta * kPointerSize));
     frame_access_state()->IncreaseSPDelta(-sp_slot_delta);
   }
-  if (frame()->needs_frame()) {
+  if (frame_access_state()->has_frame()) {
     __ mov(ebp, MemOperand(ebp, 0));
   }
   frame_access_state()->SetFrameAccessToSP();
@@ -514,7 +520,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ mov(i.OutputRegister(), ebp);
       break;
     case kArchParentFramePointer:
-      if (frame_access_state()->frame()->needs_frame()) {
+      if (frame_access_state()->has_frame()) {
         __ mov(i.OutputRegister(), Operand(ebp, 0));
       } else {
         __ mov(i.OutputRegister(), ebp);
@@ -725,6 +731,18 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       if (use_temp) {
         __ Move(i.OutputRegister(0), i.TempRegister(0));
       }
+      break;
+    }
+    case kIA32MulPair: {
+      __ imul(i.OutputRegister(1), i.InputOperand(0));
+      __ mov(i.TempRegister(0), i.InputOperand(1));
+      __ imul(i.TempRegister(0), i.InputOperand(2));
+      __ add(i.OutputRegister(1), i.TempRegister(0));
+      __ mov(i.OutputRegister(0), i.InputOperand(0));
+      // Multiplies the low words and stores them in eax and edx.
+      __ mul(i.InputRegister(2));
+      __ add(i.OutputRegister(1), i.TempRegister(0));
+
       break;
     }
     case kIA32ShlPair:
@@ -1595,7 +1613,7 @@ void CodeGenerator::AssembleDeoptimizerCall(
 
 void CodeGenerator::AssemblePrologue() {
   CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
-  if (frame()->needs_frame()) {
+  if (frame_access_state()->has_frame()) {
     if (descriptor->IsCFunctionCall()) {
       __ push(ebp);
       __ mov(ebp, esp);
@@ -1604,11 +1622,7 @@ void CodeGenerator::AssemblePrologue() {
     } else {
       __ StubPrologue(info()->GetOutputStackFrameType());
     }
-  } else {
-    frame()->SetElidedFrameSizeInSlots(kPCOnStackSize / kPointerSize);
   }
-  frame_access_state()->SetFrameAccessToDefault();
-
   int stack_shrink_slots = frame()->GetSpillSlotCount();
   if (info()->is_osr()) {
     // TurboFan OSR-compiled functions cannot be entered directly.
@@ -1654,17 +1668,15 @@ void CodeGenerator::AssembleReturn() {
   }
 
   if (descriptor->IsCFunctionCall()) {
-    __ mov(esp, ebp);  // Move stack pointer back to frame pointer.
-    __ pop(ebp);       // Pop caller's frame pointer.
-  } else if (frame()->needs_frame()) {
+    AssembleDeconstructFrame();
+  } else if (frame_access_state()->has_frame()) {
     // Canonicalize JSFunction return sites for now.
     if (return_label_.is_bound()) {
       __ jmp(&return_label_);
       return;
     } else {
       __ bind(&return_label_);
-      __ mov(esp, ebp);  // Move stack pointer back to frame pointer.
-      __ pop(ebp);       // Pop caller's frame pointer.
+      AssembleDeconstructFrame();
     }
   }
   size_t pop_size = descriptor->StackParameterCount() * kPointerSize;

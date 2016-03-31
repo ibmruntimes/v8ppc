@@ -987,9 +987,6 @@ class ExternalReference BASE_EMBEDDED {
   static ExternalReference address_of_regexp_stack_memory_size(
       Isolate* isolate);
 
-  // Static variable Heap::NewSpaceStart()
-  static ExternalReference new_space_start(Isolate* isolate);
-
   // Write barrier.
   static ExternalReference store_buffer_top(Isolate* isolate);
 
@@ -1028,6 +1025,9 @@ class ExternalReference BASE_EMBEDDED {
   static ExternalReference ForDeoptEntry(Address entry);
 
   static ExternalReference cpu_features();
+
+  static ExternalReference is_tail_call_elimination_enabled_address(
+      Isolate* isolate);
 
   static ExternalReference debug_is_active_address(Isolate* isolate);
   static ExternalReference debug_after_break_target_address(Isolate* isolate);

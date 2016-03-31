@@ -2498,11 +2498,9 @@ LInstruction* LChunkBuilder::DoEnterInlined(HEnterInlined* instr) {
   HEnvironment* outer = current_block_->last_environment();
   outer->set_ast_id(instr->ReturnId());
   HConstant* undefined = graph()->GetConstantUndefined();
-  HEnvironment* inner = outer->CopyForInlining(instr->closure(),
-                                               instr->arguments_count(),
-                                               instr->function(),
-                                               undefined,
-                                               instr->inlining_kind());
+  HEnvironment* inner = outer->CopyForInlining(
+      instr->closure(), instr->arguments_count(), instr->function(), undefined,
+      instr->inlining_kind(), instr->syntactic_tail_call_mode());
   // Only replay binding of arguments object if it wasn't removed from graph.
   if (instr->arguments_var() != NULL && instr->arguments_object()->IsLinked()) {
     inner->Bind(instr->arguments_var(), instr->arguments_object());
@@ -2561,12 +2559,6 @@ LInstruction* LChunkBuilder::DoLoadFieldByIndex(HLoadFieldByIndex* instr) {
   LLoadFieldByIndex* load = new(zone()) LLoadFieldByIndex(object, index);
   LInstruction* result = DefineSameAsFirst(load);
   return AssignPointerMap(result);
-}
-
-
-LInstruction* LChunkBuilder::DoStoreFrameContext(HStoreFrameContext* instr) {
-  LOperand* context = UseRegisterAtStart(instr->context());
-  return new(zone()) LStoreFrameContext(context);
 }
 
 }  // namespace internal

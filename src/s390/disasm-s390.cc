@@ -643,6 +643,9 @@ bool Decoder::DecodeFourByte(Instruction* instr) {
     case SRA:
       Format(instr, "sra\t'r1,'d1('r3)");
       break;
+    case SLDL:
+      Format(instr, "sldl\t'r1,'d1('r3)");
+      break;
     case AGR:
       Format(instr, "agr\t'r5,'r6");
       break;
@@ -785,7 +788,7 @@ bool Decoder::DecodeFourByte(Instruction* instr) {
       Format(instr, "slbr\t'r5,'r6");
       break;
     case DLR:
-      Format(instr, "dlr\t'r1,'r2");
+      Format(instr, "dlr\t'r5,'r6");
       break;
     case DLGR:
       Format(instr, "dlgr\t'r5,'r6");
@@ -958,8 +961,14 @@ bool Decoder::DecodeFourByte(Instruction* instr) {
     case CDBR:
       Format(instr, "cdbr\t'f5,'f6");
       break;
+    case CEBR:
+      Format(instr, "cebr\t'f5,'f6");
+      break;
     case SQDBR:
       Format(instr, "sqdbr\t'f5,'f6");
+      break;
+    case SQEBR:
+      Format(instr, "sqebr\t'f5,'f6");
       break;
     case LCDBR:
       Format(instr, "lcdbr\t'f5,'f6");
@@ -968,10 +977,10 @@ bool Decoder::DecodeFourByte(Instruction* instr) {
       Format(instr, "sth\t'r1,'d1('r2d,'r3)");
       break;
     case SRDA:
-      Format(instr, "srda\t'r1,'d1");
+      Format(instr, "srda\t'r1,'d1('r3)");
       break;
     case SRDL:
-      Format(instr, "srdl\t'r1,'d1");
+      Format(instr, "srdl\t'r1,'d1('r3)");
       break;
     case MADBR:
       Format(instr, "madbr\t'f3,'f5,'f6");

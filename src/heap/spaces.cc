@@ -1335,8 +1335,6 @@ bool NewSpace::SetUp(int reserved_semispace_capacity,
   }
   DCHECK(!from_space_.is_committed());  // No need to use memory yet.
 
-  start_ = chunk_base_;
-
   ResetAllocationInfo();
 
   return true;
@@ -1353,9 +1351,7 @@ void NewSpace::TearDown() {
     promoted_histogram_ = NULL;
   }
 
-  start_ = NULL;
   allocation_info_.Reset(nullptr, nullptr);
-
 
   to_space_.TearDown();
   from_space_.TearDown();
@@ -2327,7 +2323,6 @@ FreeSpace* FreeList::SearchForNodeInList(FreeListCategoryType type,
 
 FreeSpace* FreeList::FindNodeFor(int size_in_bytes, int* node_size) {
   FreeSpace* node = nullptr;
-  Page* page = nullptr;
 
   // First try the allocation fast path: try to allocate the minimum element
   // size of a free list category. This operation is constant time.
@@ -2354,11 +2349,6 @@ FreeSpace* FreeList::FindNodeFor(int size_in_bytes, int* node_size) {
   // requested size.
   type = SelectFreeListCategoryType(size_in_bytes);
   node = TryFindNodeIn(type, node_size, size_in_bytes);
-  if (node != nullptr) {
-    DCHECK(size_in_bytes <= *node_size);
-    page = Page::FromAddress(node->address());
-    page->add_available_in_free_list(-(*node_size));
-  }
 
   DCHECK(IsVeryLong() || Available() == SumFreeLists());
   return node;

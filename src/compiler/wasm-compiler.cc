@@ -352,8 +352,7 @@ Node* WasmGraphBuilder::Merge(unsigned count, Node** controls) {
 Node* WasmGraphBuilder::Phi(wasm::LocalType type, unsigned count, Node** vals,
                             Node* control) {
   DCHECK(IrOpcode::IsMergeOpcode(control->opcode()));
-  Node** buf = Realloc(vals, count);
-  buf = Realloc(buf, count + 1);
+  Node** buf = Realloc(vals, count, count + 1);
   buf[count] = control;
   return graph()->NewNode(jsgraph()->common()->Phi(type, count), count + 1,
                           buf);
@@ -363,8 +362,7 @@ Node* WasmGraphBuilder::Phi(wasm::LocalType type, unsigned count, Node** vals,
 Node* WasmGraphBuilder::EffectPhi(unsigned count, Node** effects,
                                   Node* control) {
   DCHECK(IrOpcode::IsMergeOpcode(control->opcode()));
-  Node** buf = Realloc(effects, count);
-  buf = Realloc(buf, count + 1);
+  Node** buf = Realloc(effects, count, count + 1);
   buf[count] = control;
   return graph()->NewNode(jsgraph()->common()->EffectPhi(count), count + 1,
                           buf);
@@ -395,43 +393,14 @@ Node* WasmGraphBuilder::Binop(wasm::WasmOpcode opcode, Node* left,
     case wasm::kExprI32Mul:
       op = m->Int32Mul();
       break;
-    case wasm::kExprI32DivS: {
-      trap_->ZeroCheck32(kTrapDivByZero, right);
-      Node* before = *control_;
-      Node* denom_is_m1;
-      Node* denom_is_not_m1;
-      Branch(graph()->NewNode(jsgraph()->machine()->Word32Equal(), right,
-                              jsgraph()->Int32Constant(-1)),
-             &denom_is_m1, &denom_is_not_m1);
-      *control_ = denom_is_m1;
-      trap_->TrapIfEq32(kTrapDivUnrepresentable, left, kMinInt);
-      if (*control_ != denom_is_m1) {
-        *control_ = graph()->NewNode(jsgraph()->common()->Merge(2),
-                                     denom_is_not_m1, *control_);
-      } else {
-        *control_ = before;
-      }
-      return graph()->NewNode(m->Int32Div(), left, right, *control_);
-    }
+    case wasm::kExprI32DivS:
+      return BuildI32DivS(left, right);
     case wasm::kExprI32DivU:
-      op = m->Uint32Div();
-      return graph()->NewNode(op, left, right,
-                              trap_->ZeroCheck32(kTrapDivByZero, right));
-    case wasm::kExprI32RemS: {
-      trap_->ZeroCheck32(kTrapRemByZero, right);
-      Diamond d(graph(), jsgraph()->common(),
-                graph()->NewNode(jsgraph()->machine()->Word32Equal(), right,
-                                 jsgraph()->Int32Constant(-1)));
-
-      Node* rem = graph()->NewNode(m->Int32Mod(), left, right, d.if_false);
-
-      return d.Phi(MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
-                   rem);
-    }
+      return BuildI32DivU(left, right);
+    case wasm::kExprI32RemS:
+      return BuildI32RemS(left, right);
     case wasm::kExprI32RemU:
-      op = m->Uint32Mod();
-      return graph()->NewNode(op, left, right,
-                              trap_->ZeroCheck32(kTrapRemByZero, right));
+      return BuildI32RemU(left, right);
     case wasm::kExprI32And:
       op = m->Word32And();
       break;
@@ -443,17 +412,22 @@ Node* WasmGraphBuilder::Binop(wasm::WasmOpcode opcode, Node* left,
       break;
     case wasm::kExprI32Shl:
       op = m->Word32Shl();
+      right = MaskShiftCount32(right);
       break;
     case wasm::kExprI32ShrU:
       op = m->Word32Shr();
+      right = MaskShiftCount32(right);
       break;
     case wasm::kExprI32ShrS:
       op = m->Word32Sar();
+      right = MaskShiftCount32(right);
       break;
     case wasm::kExprI32Ror:
       op = m->Word32Ror();
+      right = MaskShiftCount32(right);
       break;
     case wasm::kExprI32Rol:
+      right = MaskShiftCount32(right);
       return BuildI32Rol(left, right);
     case wasm::kExprI32Eq:
       op = m->Word32Equal();
@@ -502,6 +476,9 @@ Node* WasmGraphBuilder::Binop(wasm::WasmOpcode opcode, Node* left,
       op = m->Int64Sub();
       break;
     // kExprI64Mul:
+    case wasm::kExprI64Mul:
+      op = m->Int64Mul();
+      break;
     // kExprI64DivS:
     case wasm::kExprI64DivS:
       return BuildI64DivS(left, right);
@@ -524,14 +501,17 @@ Node* WasmGraphBuilder::Binop(wasm::WasmOpcode opcode, Node* left,
 // kExprI64Shl:
     case wasm::kExprI64Shl:
       op = m->Word64Shl();
+      right = MaskShiftCount64(right);
       break;
     // kExprI64ShrU:
     case wasm::kExprI64ShrU:
       op = m->Word64Shr();
+      right = MaskShiftCount64(right);
       break;
     // kExprI64ShrS:
     case wasm::kExprI64ShrS:
       op = m->Word64Sar();
+      right = MaskShiftCount64(right);
       break;
     // kExprI64Eq:
     case wasm::kExprI64Eq:
@@ -569,20 +549,12 @@ Node* WasmGraphBuilder::Binop(wasm::WasmOpcode opcode, Node* left,
       op = m->Uint64LessThanOrEqual();
       std::swap(left, right);
       break;
-
-#if WASM_64
-    // Opcodes only supported on 64-bit platforms.
-    // TODO(titzer): query the machine operator builder here instead of #ifdef.
-    case wasm::kExprI64Mul:
-      op = m->Int64Mul();
-      break;
     case wasm::kExprI64Ror:
       op = m->Word64Ror();
+      right = MaskShiftCount64(right);
       break;
     case wasm::kExprI64Rol:
       return BuildI64Rol(left, right);
-#endif
-
     case wasm::kExprF32CopySign:
       return BuildF32CopySign(left, right);
     case wasm::kExprF64CopySign:
@@ -976,8 +948,7 @@ Node* WasmGraphBuilder::Return(unsigned count, Node** vals) {
     count = 1;
   }
 
-  Node** buf = Realloc(vals, count);
-  buf = Realloc(buf, count + 2);
+  Node** buf = Realloc(vals, count, count + 2);
   buf[count] = *effect_;
   buf[count + 1] = *control_;
   Node* ret = graph()->NewNode(jsgraph()->common()->Return(), count + 2, vals);
@@ -995,6 +966,37 @@ Node* WasmGraphBuilder::Unreachable() {
   return nullptr;
 }
 
+Node* WasmGraphBuilder::MaskShiftCount32(Node* node) {
+  static const int32_t kMask32 = 0x1f;
+  if (!jsgraph()->machine()->Word32ShiftIsSafe()) {
+    // Shifts by constants are so common we pattern-match them here.
+    Int32Matcher match(node);
+    if (match.HasValue()) {
+      int32_t masked = (match.Value() & kMask32);
+      if (match.Value() != masked) node = jsgraph()->Int32Constant(masked);
+    } else {
+      node = graph()->NewNode(jsgraph()->machine()->Word32And(), node,
+                              jsgraph()->Int32Constant(kMask32));
+    }
+  }
+  return node;
+}
+
+Node* WasmGraphBuilder::MaskShiftCount64(Node* node) {
+  static const int64_t kMask64 = 0x3f;
+  if (!jsgraph()->machine()->Word32ShiftIsSafe()) {
+    // Shifts by constants are so common we pattern-match them here.
+    Int64Matcher match(node);
+    if (match.HasValue()) {
+      int64_t masked = (match.Value() & kMask64);
+      if (match.Value() != masked) node = jsgraph()->Int64Constant(masked);
+    } else {
+      node = graph()->NewNode(jsgraph()->machine()->Word64And(), node,
+                              jsgraph()->Int64Constant(kMask64));
+    }
+  }
+  return node;
+}
 
 Node* WasmGraphBuilder::BuildF32Neg(Node* input) {
   Node* result =
@@ -1569,7 +1571,7 @@ Node* WasmGraphBuilder::BuildCFuncInstruction(ExternalReference ref,
                               *control_);
 
   Node* function = graph()->NewNode(jsgraph()->common()->ExternalConstant(ref));
-  Node** args = Buffer(4);
+  Node** args = Buffer(5);
   args[0] = function;
   args[1] = stack_slot_param0;
   int input_count = 1;
@@ -1582,7 +1584,6 @@ Node* WasmGraphBuilder::BuildCFuncInstruction(ExternalReference ref,
     *effect_ = graph()->NewNode(store_op1, stack_slot_param1,
                                 jsgraph()->Int32Constant(0), input1, *effect_,
                                 *control_);
-    args = Realloc(args, 5);
     args[2] = stack_slot_param1;
     ++input_count;
   }
@@ -1747,6 +1748,132 @@ Node* WasmGraphBuilder::BuildFloatToIntConversionInstruction(
   return load;
 }
 
+Node* WasmGraphBuilder::BuildI32DivS(Node* left, Node* right) {
+  MachineOperatorBuilder* m = jsgraph()->machine();
+  if (module_ && module_->asm_js()) {
+    // asm.js semantics return 0 on divide or mod by zero.
+    if (m->Int32DivIsSafe()) {
+      // The hardware instruction does the right thing (e.g. arm).
+      return graph()->NewNode(m->Int32Div(), left, right, graph()->start());
+    }
+
+    // Check denominator for zero.
+    Diamond z(
+        graph(), jsgraph()->common(),
+        graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(0)),
+        BranchHint::kFalse);
+
+    // Check numerator for -1. (avoid minint / -1 case).
+    Diamond n(
+        graph(), jsgraph()->common(),
+        graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(-1)),
+        BranchHint::kFalse);
+
+    Node* div = graph()->NewNode(m->Int32Div(), left, right, z.if_false);
+    Node* neg =
+        graph()->NewNode(m->Int32Sub(), jsgraph()->Int32Constant(0), left);
+
+    return n.Phi(MachineRepresentation::kWord32, neg,
+                 z.Phi(MachineRepresentation::kWord32,
+                       jsgraph()->Int32Constant(0), div));
+  }
+
+  trap_->ZeroCheck32(kTrapDivByZero, right);
+  Node* before = *control_;
+  Node* denom_is_m1;
+  Node* denom_is_not_m1;
+  Branch(
+      graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(-1)),
+      &denom_is_m1, &denom_is_not_m1);
+  *control_ = denom_is_m1;
+  trap_->TrapIfEq32(kTrapDivUnrepresentable, left, kMinInt);
+  if (*control_ != denom_is_m1) {
+    *control_ = graph()->NewNode(jsgraph()->common()->Merge(2), denom_is_not_m1,
+                                 *control_);
+  } else {
+    *control_ = before;
+  }
+  return graph()->NewNode(m->Int32Div(), left, right, *control_);
+}
+
+Node* WasmGraphBuilder::BuildI32RemS(Node* left, Node* right) {
+  MachineOperatorBuilder* m = jsgraph()->machine();
+  if (module_ && module_->asm_js()) {
+    // asm.js semantics return 0 on divide or mod by zero.
+    // Explicit check for x % 0.
+    Diamond z(
+        graph(), jsgraph()->common(),
+        graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(0)),
+        BranchHint::kFalse);
+
+    // Explicit check for x % -1.
+    Diamond d(
+        graph(), jsgraph()->common(),
+        graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(-1)),
+        BranchHint::kFalse);
+    d.Chain(z.if_false);
+
+    return z.Phi(
+        MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
+        d.Phi(MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
+              graph()->NewNode(m->Int32Mod(), left, right, d.if_false)));
+  }
+
+  trap_->ZeroCheck32(kTrapRemByZero, right);
+
+  Diamond d(
+      graph(), jsgraph()->common(),
+      graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(-1)),
+      BranchHint::kFalse);
+  d.Chain(*control_);
+
+  return d.Phi(MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
+               graph()->NewNode(m->Int32Mod(), left, right, d.if_false));
+}
+
+Node* WasmGraphBuilder::BuildI32DivU(Node* left, Node* right) {
+  MachineOperatorBuilder* m = jsgraph()->machine();
+  if (module_ && module_->asm_js()) {
+    // asm.js semantics return 0 on divide or mod by zero.
+    if (m->Uint32DivIsSafe()) {
+      // The hardware instruction does the right thing (e.g. arm).
+      return graph()->NewNode(m->Uint32Div(), left, right, graph()->start());
+    }
+
+    // Explicit check for x % 0.
+    Diamond z(
+        graph(), jsgraph()->common(),
+        graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(0)),
+        BranchHint::kFalse);
+
+    return z.Phi(MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
+                 graph()->NewNode(jsgraph()->machine()->Uint32Div(), left,
+                                  right, z.if_false));
+  }
+  return graph()->NewNode(m->Uint32Div(), left, right,
+                          trap_->ZeroCheck32(kTrapDivByZero, right));
+}
+
+Node* WasmGraphBuilder::BuildI32RemU(Node* left, Node* right) {
+  MachineOperatorBuilder* m = jsgraph()->machine();
+  if (module_ && module_->asm_js()) {
+    // asm.js semantics return 0 on divide or mod by zero.
+    // Explicit check for x % 0.
+    Diamond z(
+        graph(), jsgraph()->common(),
+        graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(0)),
+        BranchHint::kFalse);
+
+    Node* rem = graph()->NewNode(jsgraph()->machine()->Uint32Mod(), left, right,
+                                 z.if_false);
+    return z.Phi(MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
+                 rem);
+  }
+
+  return graph()->NewNode(m->Uint32Mod(), left, right,
+                          trap_->ZeroCheck32(kTrapRemByZero, right));
+}
+
 Node* WasmGraphBuilder::BuildI64DivS(Node* left, Node* right) {
   if (jsgraph()->machine()->Is32()) {
     return BuildDiv64Call(
@@ -1855,7 +1982,7 @@ Node* WasmGraphBuilder::BuildCCall(MachineSignature* sig, Node** args) {
   const size_t count = 1 + params + extra;
 
   // Reallocate the buffer to make space for extra inputs.
-  args = Realloc(args, count);
+  args = Realloc(args, 1 + params, count);
 
   // Add effect and control inputs.
   args[params + 1] = *effect_;
@@ -1876,7 +2003,7 @@ Node* WasmGraphBuilder::BuildWasmCall(wasm::FunctionSig* sig, Node** args) {
   const size_t count = 1 + params + extra;
 
   // Reallocate the buffer to make space for extra inputs.
-  args = Realloc(args, count);
+  args = Realloc(args, 1 + params, count);
 
   // Add effect and control inputs.
   args[params + 1] = *effect_;
@@ -2075,19 +2202,22 @@ void WasmGraphBuilder::BuildJSToWasmWrapper(Handle<Code> wasm_code,
   Node** args = Buffer(count);
 
   // Build the start and the JS parameter nodes.
-  Node* start = Start(params + 3);
+  Node* start = Start(params + 5);
   *control_ = start;
   *effect_ = start;
-  // JS context is the last parameter.
+  // Create the context parameter
   Node* context = graph()->NewNode(
-      jsgraph()->common()->Parameter(params + 1, "context"), start);
+      jsgraph()->common()->Parameter(
+          Linkage::GetJSCallContextParamIndex(params + 1), "%context"),
+      graph()->start());
 
   int pos = 0;
   args[pos++] = Constant(wasm_code);
 
   // Convert JS parameters to WASM numbers.
   for (int i = 0; i < params; i++) {
-    Node* param = graph()->NewNode(jsgraph()->common()->Parameter(i), start);
+    Node* param =
+        graph()->NewNode(jsgraph()->common()->Parameter(i + 1), start);
     args[pos++] = FromJS(param, context, sig->GetParam(i));
   }
 
@@ -2384,7 +2514,7 @@ Handle<JSFunction> CompileJSToWasmWrapper(
       isolate->factory()->NewSharedFunctionInfo(name, wasm_code, false);
   int params = static_cast<int>(func->sig->parameter_count());
   shared->set_length(params);
-  shared->set_internal_formal_parameter_count(1 + params);
+  shared->set_internal_formal_parameter_count(params);
   Handle<JSFunction> function = isolate->factory()->NewFunction(
       isolate->wasm_function_map(), name, MaybeHandle<Code>());
   function->SetInternalField(0, *module_object);
@@ -2458,6 +2588,12 @@ Handle<JSFunction> CompileJSToWasmWrapper(
     CompilationInfo info(func_name, isolate, &zone, flags);
     Handle<Code> code =
         Pipeline::GenerateCodeForTesting(&info, incoming, &graph, nullptr);
+#ifdef ENABLE_DISASSEMBLER
+    if (FLAG_print_opt_code && !code.is_null()) {
+      OFStream os(stdout);
+      code->Disassemble(buffer.start(), os);
+    }
+#endif
     if (debugging) {
       buffer.Dispose();
     }
@@ -2538,6 +2674,12 @@ Handle<Code> CompileWasmToJSWrapper(Isolate* isolate, wasm::ModuleEnv* module,
 
     CompilationInfo info(func_name, isolate, &zone, flags);
     code = Pipeline::GenerateCodeForTesting(&info, incoming, &graph, nullptr);
+#ifdef ENABLE_DISASSEMBLER
+    if (FLAG_print_opt_code && !code.is_null()) {
+      OFStream os(stdout);
+      code->Disassemble(buffer.start(), os);
+    }
+#endif
     if (debugging) {
       buffer.Dispose();
     }

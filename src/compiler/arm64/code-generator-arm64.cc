@@ -279,7 +279,8 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
         value_(value),
         scratch0_(scratch0),
         scratch1_(scratch1),
-        mode_(mode) {}
+        mode_(mode),
+        must_save_lr_(!gen->frame_access_state()->has_frame()) {}
 
   void Generate() final {
     if (mode_ > RecordWriteMode::kValueIsPointer) {
@@ -293,7 +294,7 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
                                              : OMIT_REMEMBERED_SET;
     SaveFPRegsMode const save_fp_mode =
         frame()->DidAllocateDoubleRegisters() ? kSaveFPRegs : kDontSaveFPRegs;
-    if (!frame()->needs_frame()) {
+    if (must_save_lr_) {
       // We need to save and restore lr if the frame was elided.
       __ Push(lr);
     }
@@ -301,7 +302,7 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
                          remembered_set_action, save_fp_mode);
     __ Add(scratch1_, object_, index_);
     __ CallStub(&stub);
-    if (!frame()->needs_frame()) {
+    if (must_save_lr_) {
       __ Pop(lr);
     }
   }
@@ -313,6 +314,7 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
   Register const scratch0_;
   Register const scratch1_;
   RecordWriteMode const mode_;
+  bool must_save_lr_;
 };
 
 
@@ -466,6 +468,15 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     }                                                                       \
   } while (0)
 
+void CodeGenerator::AssembleDeconstructFrame() {
+  const CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
+  if (descriptor->IsCFunctionCall() || descriptor->UseNativeStack()) {
+    __ Mov(csp, fp);
+  } else {
+    __ Mov(jssp, fp);
+  }
+  __ Pop(fp, lr);
+}
 
 void CodeGenerator::AssembleDeconstructActivationRecord(int stack_param_delta) {
   int sp_slot_delta = TailCallFrameStackSlotDelta(stack_param_delta);
@@ -482,7 +493,7 @@ void CodeGenerator::AssemblePrepareTailCall(int stack_param_delta) {
     __ Claim(-sp_slot_delta);
     frame_access_state()->IncreaseSPDelta(-sp_slot_delta);
   }
-  if (frame()->needs_frame()) {
+  if (frame_access_state()->has_frame()) {
     __ Ldr(lr, MemOperand(fp, StandardFrameConstants::kCallerPCOffset));
     __ Ldr(fp, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
   }
@@ -530,16 +541,20 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ Add(target, target, Code::kHeaderSize - kHeapObjectTag);
         __ Call(target);
       }
+      RecordCallPosition(instr);
       // TODO(titzer): this is ugly. JSSP should be a caller-save register
       // in this case, but it is not possible to express in the register
       // allocator.
-      CallDescriptor::Flags flags =
-          static_cast<CallDescriptor::Flags>(MiscField::decode(opcode));
+      CallDescriptor::Flags flags(MiscField::decode(opcode));
       if (flags & CallDescriptor::kRestoreJSSP) {
-        __ mov(jssp, csp);
+        __ Ldr(jssp, MemOperand(csp));
+        __ Mov(csp, jssp);
+      }
+      if (flags & CallDescriptor::kRestoreCSP) {
+        __ Mov(csp, jssp);
+        __ AssertCspAligned();
       }
       frame_access_state()->ClearSPDelta();
-      RecordCallPosition(instr);
       break;
     }
     case kArchTailCallCodeObjectFromJSFunction:
@@ -575,16 +590,20 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       }
       __ Ldr(x10, FieldMemOperand(func, JSFunction::kCodeEntryOffset));
       __ Call(x10);
+      RecordCallPosition(instr);
       // TODO(titzer): this is ugly. JSSP should be a caller-save register
       // in this case, but it is not possible to express in the register
       // allocator.
-      CallDescriptor::Flags flags =
-          static_cast<CallDescriptor::Flags>(MiscField::decode(opcode));
+      CallDescriptor::Flags flags(MiscField::decode(opcode));
       if (flags & CallDescriptor::kRestoreJSSP) {
-        __ mov(jssp, csp);
+        __ Ldr(jssp, MemOperand(csp));
+        __ Mov(csp, jssp);
+      }
+      if (flags & CallDescriptor::kRestoreCSP) {
+        __ Mov(csp, jssp);
+        __ AssertCspAligned();
       }
       frame_access_state()->ClearSPDelta();
-      RecordCallPosition(instr);
       break;
     }
     case kArchTailCallJSFunctionFromJSFunction:
@@ -664,7 +683,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ mov(i.OutputRegister(), fp);
       break;
     case kArchParentFramePointer:
-      if (frame_access_state()->frame()->needs_frame()) {
+      if (frame_access_state()->has_frame()) {
         __ ldr(i.OutputRegister(), MemOperand(fp, 0));
       } else {
         __ mov(i.OutputRegister(), fp);
@@ -967,26 +986,46 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       // Pseudo instruction turned into cbz/cbnz in AssembleArchBranch.
       break;
     case kArm64ClaimCSP: {
-      int count = i.InputInt32(0);
+      int count = RoundUp(i.InputInt32(0), 2);
       Register prev = __ StackPointer();
       if (prev.Is(jssp)) {
-        __ AlignAndSetCSPForFrame();
+        // TODO(titzer): make this a macro-assembler method.
+        // Align the CSP and store the previous JSSP on the stack.
+        UseScratchRegisterScope scope(masm());
+        Register tmp = scope.AcquireX();
+
+        int sp_alignment = __ ActivationFrameAlignment();
+        __ Sub(tmp, jssp, kPointerSize);
+        __ And(tmp, tmp, Operand(~static_cast<uint64_t>(sp_alignment - 1)));
+        __ Mov(csp, tmp);
+        __ Str(jssp, MemOperand(csp));
+        if (count > 0) {
+          __ SetStackPointer(csp);
+          __ Claim(count);
+          __ SetStackPointer(prev);
+        }
+      } else {
+        __ AssertCspAligned();
+        if (count > 0) {
+          __ Claim(count);
+          frame_access_state()->IncreaseSPDelta(count);
+        }
       }
-      if (count > 0) {
-        __ Claim(count);
-      }
-      __ SetStackPointer(prev);
-      frame_access_state()->IncreaseSPDelta(count);
       break;
     }
     case kArm64ClaimJSSP: {
       int count = i.InputInt32(0);
       if (csp.Is(__ StackPointer())) {
-        // No JSP is set up. Compute it from the CSP.
-        int even = RoundUp(count, 2);
-        __ Sub(jssp, csp, count * kPointerSize);
-        __ Sub(csp, csp, even * kPointerSize);  // Must always be aligned.
-        frame_access_state()->IncreaseSPDelta(even);
+        // No JSSP is set up. Compute it from the CSP.
+        __ AssertCspAligned();
+        if (count > 0) {
+          int even = RoundUp(count, 2);
+          __ Sub(jssp, csp, count * kPointerSize);
+          __ Sub(csp, csp, even * kPointerSize);  // Must always be aligned.
+          frame_access_state()->IncreaseSPDelta(even);
+        } else {
+          __ Mov(jssp, csp);
+        }
       } else {
         // JSSP is the current stack pointer, just use regular Claim().
         __ Claim(count);
@@ -1464,22 +1503,27 @@ void CodeGenerator::AssembleDeoptimizerCall(
   __ Call(deopt_entry, RelocInfo::RUNTIME_ENTRY);
 }
 
+void CodeGenerator::AssembleSetupStackPointer() {
+  const CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
+  if (descriptor->UseNativeStack() || descriptor->IsCFunctionCall()) {
+    __ SetStackPointer(csp);
+  } else {
+    __ SetStackPointer(jssp);
+  }
+}
 
 void CodeGenerator::AssemblePrologue() {
   CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
-  frame()->AlignFrame(16);
+  if (descriptor->UseNativeStack()) {
+    __ AssertCspAligned();
+  }
+
   int stack_shrink_slots = frame()->GetSpillSlotCount();
-  if (frame()->needs_frame()) {
+  if (frame_access_state()->has_frame()) {
     if (descriptor->IsJSFunctionCall()) {
       DCHECK(!descriptor->UseNativeStack());
-      __ SetStackPointer(jssp);
       __ Prologue(this->info()->GeneratePreagedPrologue());
     } else {
-      if (descriptor->UseNativeStack() || descriptor->IsCFunctionCall()) {
-        __ SetStackPointer(csp);
-      } else {
-        __ SetStackPointer(jssp);
-      }
       if (descriptor->IsCFunctionCall()) {
         __ Push(lr, fp);
         __ Mov(fp, masm_.StackPointer());
@@ -1489,15 +1533,8 @@ void CodeGenerator::AssemblePrologue() {
                         frame()->GetTotalFrameSlotCount());
       }
     }
-  } else {
-    if (descriptor->UseNativeStack()) {
-      __ SetStackPointer(csp);
-    } else {
-      __ SetStackPointer(jssp);
-    }
-    frame()->SetElidedFrameSizeInSlots(0);
   }
-  frame_access_state()->SetFrameAccessToDefault();
+
   if (info()->is_osr()) {
     // TurboFan OSR-compiled functions cannot be entered directly.
     __ Abort(kShouldNotDirectlyEnterOsrFunction);
@@ -1558,27 +1595,27 @@ void CodeGenerator::AssembleReturn() {
 
   int pop_count = static_cast<int>(descriptor->StackParameterCount());
   if (descriptor->IsCFunctionCall()) {
-    __ Mov(csp, fp);
-    __ Pop(fp, lr);
-  } else if (frame()->needs_frame()) {
+    AssembleDeconstructFrame();
+  } else if (frame_access_state()->has_frame()) {
     // Canonicalize JSFunction return sites for now.
     if (return_label_.is_bound()) {
       __ B(&return_label_);
       return;
     } else {
       __ Bind(&return_label_);
+      AssembleDeconstructFrame();
       if (descriptor->UseNativeStack()) {
-        __ Mov(csp, fp);
         pop_count += (pop_count & 1);  // align
-      } else {
-        __ Mov(jssp, fp);
       }
-      __ Pop(fp, lr);
     }
   } else if (descriptor->UseNativeStack()) {
     pop_count += (pop_count & 1);  // align
   }
   __ Drop(pop_count);
+
+  if (descriptor->UseNativeStack()) {
+    __ AssertCspAligned();
+  }
   __ Ret();
 }
 

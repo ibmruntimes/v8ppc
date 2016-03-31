@@ -10,6 +10,7 @@
 
 // Clients of this interface shouldn't depend on lots of heap internals.
 // Do not include anything from src/heap here!
+#include "include/v8.h"
 #include "src/allocation.h"
 #include "src/assert-scope.h"
 #include "src/atomic-utils.h"
@@ -23,6 +24,8 @@
 namespace v8 {
 namespace internal {
 
+using v8::MemoryPressureLevel;
+
 // Defines all the roots in Heap.
 #define STRONG_ROOT_LIST(V)                                                    \
   V(Map, byte_array_map, ByteArrayMap)                                         \
@@ -30,7 +33,6 @@ namespace internal {
   V(Map, one_pointer_filler_map, OnePointerFillerMap)                          \
   V(Map, two_pointer_filler_map, TwoPointerFillerMap)                          \
   /* Cluster the most popular ones in a few cache lines here at the top.    */ \
-  V(Smi, store_buffer_top, StoreBufferTop)                                     \
   V(Oddball, undefined_value, UndefinedValue)                                  \
   V(Oddball, the_hole_value, TheHoleValue)                                     \
   V(Oddball, null_value, NullValue)                                            \
@@ -135,6 +137,7 @@ namespace internal {
   V(Map, sloppy_arguments_elements_map, SloppyArgumentsElementsMap)            \
   V(Map, catch_context_map, CatchContextMap)                                   \
   V(Map, with_context_map, WithContextMap)                                     \
+  V(Map, debug_evaluate_context_map, DebugEvaluateContextMap)                  \
   V(Map, block_context_map, BlockContextMap)                                   \
   V(Map, module_context_map, ModuleContextMap)                                 \
   V(Map, script_context_map, ScriptContextMap)                                 \
@@ -736,6 +739,10 @@ class Heap {
   bool IdleNotification(double deadline_in_seconds);
   bool IdleNotification(int idle_time_in_ms);
 
+  void MemoryPressureNotification(MemoryPressureLevel level,
+                                  bool is_isolate_locked);
+  void CheckMemoryPressure();
+
   double MonotonicallyIncreasingTimeInMs();
 
   void RecordStats(HeapStats* stats, bool take_snapshot = false);
@@ -749,6 +756,8 @@ class Heap {
     intptr_t adjusted_allocation_limit = limit - new_space_.Capacity();
 
     if (PromotedTotalSize() >= adjusted_allocation_limit) return true;
+
+    if (HighMemoryPressure()) return true;
 
     return false;
   }
@@ -833,7 +842,12 @@ class Heap {
 
   void SetOptimizeForLatency() { optimize_for_memory_usage_ = false; }
   void SetOptimizeForMemoryUsage();
-  bool ShouldOptimizeForMemoryUsage() { return optimize_for_memory_usage_; }
+  bool ShouldOptimizeForMemoryUsage() {
+    return optimize_for_memory_usage_ || HighMemoryPressure();
+  }
+  bool HighMemoryPressure() {
+    return memory_pressure_level_.Value() != MemoryPressureLevel::kNone;
+  }
 
   // ===========================================================================
   // Initialization. ===========================================================
@@ -863,10 +877,6 @@ class Heap {
   // Getters for spaces. =======================================================
   // ===========================================================================
 
-  // Return the starting address and a mask for the new space.  And-masking an
-  // address with the mask will result in the start address of the new space
-  // for all addresses in either semispace.
-  Address NewSpaceStart() { return new_space_.start(); }
   Address NewSpaceTop() { return new_space_.top(); }
 
   NewSpace* new_space() { return &new_space_; }
@@ -905,10 +915,20 @@ class Heap {
   const char* GetSpaceName(int idx);
 
   // ===========================================================================
+  // API. ======================================================================
+  // ===========================================================================
+
+  void SetEmbedderHeapTracer(EmbedderHeapTracer* tracer);
+
+  void RegisterExternallyReferencedObject(Object** object);
+
+  // ===========================================================================
   // Getters to other components. ==============================================
   // ===========================================================================
 
   GCTracer* tracer() { return tracer_; }
+
+  EmbedderHeapTracer* embedder_heap_tracer() { return embedder_heap_tracer_; }
 
   PromotionQueue* promotion_queue() { return &promotion_queue_; }
 
@@ -1065,9 +1085,7 @@ class Heap {
   // Write barrier support for object[offset] = o;
   inline void RecordWrite(Object* object, int offset, Object* o);
 
-  Address* store_buffer_top_address() {
-    return reinterpret_cast<Address*>(&roots_[kStoreBufferTopRootIndex]);
-  }
+  Address* store_buffer_top_address() { return store_buffer()->top_address(); }
 
   void ClearRecordedSlot(HeapObject* object, Object** slot);
   void ClearRecordedSlotRange(Address start, Address end);
@@ -1630,6 +1648,8 @@ class Heap {
 
   void CompactRetainedMaps(ArrayList* retained_maps);
 
+  void CollectGarbageOnMemoryPressure(const char* source);
+
   // Attempt to over-approximate the weak closure by marking object groups and
   // implicit references from global handles, but don't atomically complete
   // marking. If we continue to mark incrementally, we might have marked
@@ -1996,6 +2016,10 @@ class Heap {
   // count, as scopes can be acquired from multiple tasks (read: threads).
   AtomicNumber<size_t> always_allocate_scope_count_;
 
+  // Stores the memory pressure level that set by MemoryPressureNotification
+  // and reset by a mark-compact garbage collection.
+  AtomicValue<MemoryPressureLevel> memory_pressure_level_;
+
   // For keeping track of context disposals.
   int contexts_disposed_;
 
@@ -2082,6 +2106,7 @@ class Heap {
   int deferred_counters_[v8::Isolate::kUseCounterFeatureCount];
 
   GCTracer* tracer_;
+  EmbedderHeapTracer* embedder_heap_tracer_;
 
   int high_survival_rate_period_length_;
   intptr_t promoted_objects_size_;
