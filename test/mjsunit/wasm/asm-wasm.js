@@ -518,13 +518,6 @@ function TestConvertF64FromInt() {
 
 assertWasm(25, TestConvertF64FromInt);
 
-/*
-This appears to be a bad test.
-Conversion from double to int32 of values greater than kMaxInt
-(e.g. 4294967295) should yield kMaxInt.
-[See static_cast<int> AsmWasmBuilderImpl::VisitLiteral]
-Intel yields 0x80000000 and the test passes.
-Power yields 0x7fffffff and the test fails.
 
 function TestConvertF64FromUnsigned() {
   "use asm";
@@ -543,7 +536,6 @@ function TestConvertF64FromUnsigned() {
 }
 
 assertWasm(26, TestConvertF64FromUnsigned);
-*/
 
 
 function TestModInt() {
@@ -561,14 +553,6 @@ function TestModInt() {
 assertWasm(-27,TestModInt);
 
 
-/*
-This appears to be a bad test.
-Conversion from double to int32 of values greater than kMaxInt
-(e.g. 2147483648) should yield kMaxInt.
-[See static_cast<int> AsmWasmBuilderImpl::VisitLiteral]
-Intel yields 0x80000000 and the test passes.
-Power yields 0x7fffffff and the test fails.
-
 function TestModUnsignedInt() {
   "use asm";
 
@@ -582,7 +566,6 @@ function TestModUnsignedInt() {
 }
 
 assertWasm(8, TestModUnsignedInt);
-*/
 
 
 function TestModDouble() {
