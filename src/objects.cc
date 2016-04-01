@@ -8647,7 +8647,7 @@ Maybe<bool> JSProxy::OwnPropertyKeys(Isolate* isolate,
     return accumulator->AddKeysFromProxy(proxy, trap_result);
   }
   // 16. Let uncheckedResultKeys be a new List which is a copy of trapResult.
-  Zone set_zone;
+  Zone set_zone(isolate->allocator());
   const int kPresent = 1;
   const int kGone = 0;
   IdentityMap<int> unchecked_result_keys(isolate->heap(), &set_zone);
@@ -14057,6 +14057,8 @@ int Code::SourcePosition(int code_offset) {
     }
     it.next();
   }
+  DCHECK(kind() == FUNCTION || (is_optimized_code() && is_turbofanned()) ||
+         is_wasm_code() || position == RelocInfo::kNoPosition);
   return position;
 }
 

@@ -816,10 +816,12 @@ void LChunkBuilder::AddInstruction(LInstruction* instr,
     DCHECK_NOT_NULL(hydrogen_env);
     if (instr->IsSyntacticTailCall()) {
       // If it was a syntactic tail call we need to drop the current frame and
-      // an arguments adaptor frame on top of it (if the latter is present).
+      // all the frames on top of it that are either an arguments adaptor frame
+      // or a tail caller frame.
       hydrogen_env = hydrogen_env->outer();
-      if (hydrogen_env != nullptr &&
-          hydrogen_env->frame_type() == ARGUMENTS_ADAPTOR) {
+      while (hydrogen_env != nullptr &&
+             (hydrogen_env->frame_type() == ARGUMENTS_ADAPTOR ||
+              hydrogen_env->frame_type() == TAIL_CALLER_FUNCTION)) {
         hydrogen_env = hydrogen_env->outer();
       }
       if (hydrogen_env != nullptr) {
@@ -2063,9 +2065,10 @@ LInstruction* LChunkBuilder::DoTransitionElementsKind(
 LInstruction* LChunkBuilder::DoTrapAllocationMemento(
     HTrapAllocationMemento* instr) {
   LOperand* object = UseRegister(instr->object());
-  LOperand* temp = TempRegister();
+  LOperand* temp1 = TempRegister();
+  LOperand* temp2 = TempRegister();
   LTrapAllocationMemento* result =
-      new (zone()) LTrapAllocationMemento(object, temp);
+      new (zone()) LTrapAllocationMemento(object, temp1, temp2);
   return AssignEnvironment(result);
 }
 

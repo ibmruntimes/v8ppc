@@ -12283,22 +12283,13 @@ void HOptimizedGraphBuilder::GenerateToInteger(CallRuntime* call) {
   if (input->type().IsSmi()) {
     return ast_context()->ReturnValue(input);
   } else {
-    IfBuilder if_inputissmi(this);
-    if_inputissmi.If<HIsSmiAndBranch>(input);
-    if_inputissmi.Then();
-    {
-      // Return the input value.
-      Push(input);
-      Add<HSimulate>(call->id(), FIXED_SIMULATE);
-    }
-    if_inputissmi.Else();
-    {
-      Add<HPushArguments>(input);
-      Push(Add<HCallRuntime>(Runtime::FunctionForId(Runtime::kToInteger), 1));
-      Add<HSimulate>(call->id(), FIXED_SIMULATE);
-    }
-    if_inputissmi.End();
-    return ast_context()->ReturnValue(Pop());
+    Callable callable = CodeFactory::ToInteger(isolate());
+    HValue* stub = Add<HConstant>(callable.code());
+    HValue* values[] = {context(), input};
+    HInstruction* result =
+        New<HCallWithDescriptor>(stub, 0, callable.descriptor(),
+                                 Vector<HValue*>(values, arraysize(values)));
+    return ast_context()->ReturnInstruction(result, call->id());
   }
 }
 
@@ -12543,6 +12534,18 @@ void HOptimizedGraphBuilder::GenerateSubString(CallRuntime* call) {
   return ast_context()->ReturnInstruction(result, call->id());
 }
 
+// Support for direct creation of new objects.
+void HOptimizedGraphBuilder::GenerateNewObject(CallRuntime* call) {
+  DCHECK_EQ(2, call->arguments()->length());
+  CHECK_ALIVE(VisitExpressions(call->arguments()));
+  FastNewObjectStub stub(isolate());
+  FastNewObjectDescriptor descriptor(isolate());
+  HValue* values[] = {context(), Pop(), Pop()};
+  HConstant* stub_value = Add<HConstant>(stub.GetCode());
+  HInstruction* result = New<HCallWithDescriptor>(
+      stub_value, 0, descriptor, Vector<HValue*>(values, arraysize(values)));
+  return ast_context()->ReturnInstruction(result, call->id());
+}
 
 // Support for direct calls from JavaScript to native RegExp code.
 void HOptimizedGraphBuilder::GenerateRegExpExec(CallRuntime* call) {
@@ -12696,15 +12699,6 @@ void HOptimizedGraphBuilder::GenerateMathPow(CallRuntime* call) {
   HValue* right = Pop();
   HValue* left = Pop();
   HInstruction* result = NewUncasted<HPower>(left, right);
-  return ast_context()->ReturnInstruction(result, call->id());
-}
-
-
-void HOptimizedGraphBuilder::GenerateMathClz32(CallRuntime* call) {
-  DCHECK(call->arguments()->length() == 1);
-  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
-  HValue* value = Pop();
-  HInstruction* result = NewUncasted<HUnaryMathOperation>(value, kMathClz32);
   return ast_context()->ReturnInstruction(result, call->id());
 }
 

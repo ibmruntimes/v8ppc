@@ -109,7 +109,7 @@ function RegExpConstructor(pattern, flags) {
     if (IS_UNDEFINED(flags)) flags = input_pattern.flags;
   }
 
-  var object = %NewObject(GlobalRegExp, newtarget);
+  var object = %_NewObject(GlobalRegExp, newtarget);
   return RegExpInitialize(object, pattern, flags);
 }
 
@@ -1123,6 +1123,11 @@ function RegExpGetMultiline() {
 // ES6 21.2.5.10.
 function RegExpGetSource() {
   if (!IS_REGEXP(this)) {
+    // TODO(littledan): Remove this RegExp compat workaround
+    if (this === GlobalRegExpPrototype) {
+      %IncrementUseCounter(kRegExpPrototypeSourceGetter);
+      return UNDEFINED;
+    }
     throw MakeTypeError(kRegExpNonRegExp, "RegExp.prototype.source");
   }
   return REGEXP_SOURCE(this);

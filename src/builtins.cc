@@ -1039,7 +1039,8 @@ void CollectElementIndices(Handle<JSObject> object, uint32_t range,
     case FAST_ELEMENTS:
     case FAST_HOLEY_SMI_ELEMENTS:
     case FAST_HOLEY_ELEMENTS: {
-      Handle<FixedArray> elements(FixedArray::cast(object->elements()));
+      DisallowHeapAllocation no_gc;
+      FixedArray* elements = FixedArray::cast(object->elements());
       uint32_t length = static_cast<uint32_t>(elements->length());
       if (range < length) length = range;
       for (uint32_t i = 0; i < length; i++) {
@@ -1067,17 +1068,21 @@ void CollectElementIndices(Handle<JSObject> object, uint32_t range,
       break;
     }
     case DICTIONARY_ELEMENTS: {
-      Handle<SeededNumberDictionary> dict(
-          SeededNumberDictionary::cast(object->elements()));
+      DisallowHeapAllocation no_gc;
+      SeededNumberDictionary* dict =
+          SeededNumberDictionary::cast(object->elements());
       uint32_t capacity = dict->Capacity();
+      Heap* heap = isolate->heap();
+      Object* undefined = heap->undefined_value();
+      Object* the_hole = heap->the_hole_value();
       FOR_WITH_HANDLE_SCOPE(isolate, uint32_t, j = 0, j, j < capacity, j++, {
-        Handle<Object> k(dict->KeyAt(j), isolate);
-        if (dict->IsKey(*k)) {
-          DCHECK(k->IsNumber());
-          uint32_t index = static_cast<uint32_t>(k->Number());
-          if (index < range) {
-            indices->Add(index);
-          }
+        Object* k = dict->KeyAt(j);
+        if (k == undefined) continue;
+        if (k == the_hole) continue;
+        DCHECK(k->IsNumber());
+        uint32_t index = static_cast<uint32_t>(k->Number());
+        if (index < range) {
+          indices->Add(index);
         }
       });
       break;
@@ -1410,6 +1415,7 @@ Object* Slow_ArrayConcat(Arguments* args, Handle<Object> species,
           double_storage->set(j, obj->Number());
           j++;
         } else {
+          DisallowHeapAllocation no_gc;
           JSArray* array = JSArray::cast(*obj);
           uint32_t length = static_cast<uint32_t>(array->length()->Number());
           switch (array->GetElementsKind()) {
@@ -1437,10 +1443,11 @@ Object* Slow_ArrayConcat(Arguments* args, Handle<Object> species,
             }
             case FAST_HOLEY_SMI_ELEMENTS:
             case FAST_SMI_ELEMENTS: {
+              Object* the_hole = isolate->heap()->the_hole_value();
               FixedArray* elements(FixedArray::cast(array->elements()));
               for (uint32_t i = 0; i < length; i++) {
                 Object* element = elements->get(i);
-                if (element->IsTheHole()) {
+                if (element == the_hole) {
                   failure = true;
                   break;
                 }
@@ -1530,11 +1537,10 @@ MaybeHandle<JSArray> Fast_ArrayConcat(Isolate* isolate, Arguments* args) {
     for (int i = 0; i < n_arguments; i++) {
       Object* arg = (*args)[i];
       if (!arg->IsJSArray()) return MaybeHandle<JSArray>();
-      if (!HasOnlySimpleReceiverElements(isolate, JSObject::cast(arg))) {
+      if (!JSObject::cast(arg)->HasFastElements()) {
         return MaybeHandle<JSArray>();
       }
-      // TODO(cbruni): support fast concatenation of DICTIONARY_ELEMENTS.
-      if (!JSObject::cast(arg)->HasFastElements()) {
+      if (!HasOnlySimpleReceiverElements(isolate, JSObject::cast(arg))) {
         return MaybeHandle<JSArray>();
       }
       Handle<JSArray> array(JSArray::cast(arg), isolate);
@@ -2180,6 +2186,74 @@ void Generate_MathRoundingOperation(
 void Builtins::Generate_MathCeil(compiler::CodeStubAssembler* assembler) {
   Generate_MathRoundingOperation(assembler,
                                  &compiler::CodeStubAssembler::Float64Ceil);
+}
+
+// ES6 section 20.2.2.11 Math.clz32 ( x )
+void Builtins::Generate_MathClz32(compiler::CodeStubAssembler* assembler) {
+  typedef compiler::CodeStubAssembler::Label Label;
+  typedef compiler::Node Node;
+  typedef compiler::CodeStubAssembler::Variable Variable;
+
+  Node* context = assembler->Parameter(4);
+
+  // Shared entry point for the clz32 operation.
+  Variable var_clz32_x(assembler, MachineRepresentation::kWord32);
+  Label do_clz32(assembler);
+
+  // We might need to loop once for ToNumber conversion.
+  Variable var_x(assembler, MachineRepresentation::kTagged);
+  Label loop(assembler, &var_x);
+  var_x.Bind(assembler->Parameter(1));
+  assembler->Goto(&loop);
+  assembler->Bind(&loop);
+  {
+    // Load the current {x} value.
+    Node* x = var_x.value();
+
+    // Check if {x} is a Smi or a HeapObject.
+    Label if_xissmi(assembler), if_xisnotsmi(assembler);
+    assembler->Branch(assembler->WordIsSmi(x), &if_xissmi, &if_xisnotsmi);
+
+    assembler->Bind(&if_xissmi);
+    {
+      var_clz32_x.Bind(assembler->SmiToWord32(x));
+      assembler->Goto(&do_clz32);
+    }
+
+    assembler->Bind(&if_xisnotsmi);
+    {
+      // Check if {x} is a HeapNumber.
+      Label if_xisheapnumber(assembler),
+          if_xisnotheapnumber(assembler, Label::kDeferred);
+      assembler->Branch(
+          assembler->WordEqual(assembler->LoadMap(x),
+                               assembler->HeapNumberMapConstant()),
+          &if_xisheapnumber, &if_xisnotheapnumber);
+
+      assembler->Bind(&if_xisheapnumber);
+      {
+        var_clz32_x.Bind(assembler->TruncateHeapNumberValueToWord32(x));
+        assembler->Goto(&do_clz32);
+      }
+
+      assembler->Bind(&if_xisnotheapnumber);
+      {
+        // Need to convert {x} to a Number first.
+        Callable callable =
+            CodeFactory::NonNumberToNumber(assembler->isolate());
+        var_x.Bind(assembler->CallStub(callable, context, x));
+        assembler->Goto(&loop);
+      }
+    }
+  }
+
+  assembler->Bind(&do_clz32);
+  {
+    Node* x_value = var_clz32_x.value();
+    Node* value = assembler->Word32Clz(x_value);
+    Node* result = assembler->ChangeInt32ToTagged(value);
+    assembler->Return(result);
+  }
 }
 
 // ES6 section 20.2.2.16 Math.floor ( x )
@@ -4579,7 +4653,7 @@ Handle<Code> MacroAssemblerBuilder(Isolate* isolate,
 
 Handle<Code> CodeStubAssemblerBuilder(Isolate* isolate,
                                       BuiltinDesc const* builtin_desc) {
-  Zone zone;
+  Zone zone(isolate->allocator());
   compiler::CodeStubAssembler assembler(isolate, &zone, builtin_desc->argc,
                                         builtin_desc->flags,
                                         builtin_desc->s_name);

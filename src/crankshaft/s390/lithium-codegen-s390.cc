@@ -4229,7 +4229,8 @@ void LCodeGen::DoStoreKeyedFixedArray(LStoreKeyed* instr) {
     if (hinstr->key()->representation().IsSmi()) {
       __ SmiToPtrArrayOffset(scratch, key);
     } else {
-      if (instr->hydrogen()->IsDehoisted()) {
+      if (instr->hydrogen()->IsDehoisted() ||
+          !CpuFeatures::IsSupported(GENERAL_INSTR_EXT)) {
 #if V8_TARGET_ARCH_S390X
         // If array access is dehoisted, the key, being an int32, can contain
         // a negative value, as needs to be sign-extended to 64-bit for
@@ -4440,9 +4441,10 @@ void LCodeGen::DoTransitionElementsKind(LTransitionElementsKind* instr) {
 
 void LCodeGen::DoTrapAllocationMemento(LTrapAllocationMemento* instr) {
   Register object = ToRegister(instr->object());
-  Register temp = ToRegister(instr->temp());
+  Register temp1 = ToRegister(instr->temp1());
+  Register temp2 = ToRegister(instr->temp2());
   Label no_memento_found;
-  __ TestJSArrayForAllocationMemento(object, temp, &no_memento_found);
+  __ TestJSArrayForAllocationMemento(object, temp1, temp2, &no_memento_found);
   DeoptimizeIf(eq, instr, Deoptimizer::kMementoFound);
   __ bind(&no_memento_found);
 }

@@ -97,6 +97,7 @@ class Typer::Visitor : public Reducer {
       COMMON_OP_LIST(DECLARE_CASE)
       SIMPLIFIED_OP_LIST(DECLARE_CASE)
       MACHINE_OP_LIST(DECLARE_CASE)
+      MACHINE_SIMD_OP_LIST(DECLARE_CASE)
       JS_SIMPLE_UNOP_LIST(DECLARE_CASE)
       JS_OBJECT_OP_LIST(DECLARE_CASE)
       JS_CONTEXT_OP_LIST(DECLARE_CASE)
@@ -143,6 +144,7 @@ class Typer::Visitor : public Reducer {
       COMMON_OP_LIST(DECLARE_CASE)
       SIMPLIFIED_OP_LIST(DECLARE_CASE)
       MACHINE_OP_LIST(DECLARE_CASE)
+      MACHINE_SIMD_OP_LIST(DECLARE_CASE)
       JS_SIMPLE_UNOP_LIST(DECLARE_CASE)
       JS_OBJECT_OP_LIST(DECLARE_CASE)
       JS_CONTEXT_OP_LIST(DECLARE_CASE)
@@ -421,6 +423,11 @@ Type* Typer::Visitor::ToInteger(Type* type, Typer* t) {
   // ES6 section 7.1.4 ToInteger ( argument )
   type = ToNumber(type, t);
   if (type->Is(t->cache_.kIntegerOrMinusZero)) return type;
+  if (type->Is(t->cache_.kIntegerOrMinusZeroOrNaN)) {
+    return Type::Union(
+        Type::Intersect(type, t->cache_.kIntegerOrMinusZero, t->zone()),
+        t->cache_.kSingletonZero, t->zone());
+  }
   return t->cache_.kIntegerOrMinusZero;
 }
 
@@ -1245,26 +1252,29 @@ Type* Typer::Visitor::TypeJSToBoolean(Node* node) {
   return TypeUnaryOp(node, ToBoolean);
 }
 
-
-Type* Typer::Visitor::TypeJSToNumber(Node* node) {
-  return TypeUnaryOp(node, ToNumber);
+Type* Typer::Visitor::TypeJSToInteger(Node* node) {
+  return TypeUnaryOp(node, ToInteger);
 }
 
-
-Type* Typer::Visitor::TypeJSToString(Node* node) {
-  return TypeUnaryOp(node, ToString);
+Type* Typer::Visitor::TypeJSToLength(Node* node) {
+  return TypeUnaryOp(node, ToLength);
 }
-
 
 Type* Typer::Visitor::TypeJSToName(Node* node) {
   return TypeUnaryOp(node, ToName);
 }
 
+Type* Typer::Visitor::TypeJSToNumber(Node* node) {
+  return TypeUnaryOp(node, ToNumber);
+}
 
 Type* Typer::Visitor::TypeJSToObject(Node* node) {
   return TypeUnaryOp(node, ToObject);
 }
 
+Type* Typer::Visitor::TypeJSToString(Node* node) {
+  return TypeUnaryOp(node, ToString);
+}
 
 // JS object operators.
 
@@ -1623,8 +1633,6 @@ Type* Typer::Visitor::TypeJSCallRuntime(Node* node) {
     case Runtime::kInlineConstructDouble:
     case Runtime::kInlineMathAtan2:
       return Type::Number();
-    case Runtime::kInlineMathClz32:
-      return Type::Range(0, 32, zone());
     case Runtime::kInlineCreateIterResultObject:
     case Runtime::kInlineRegExpConstructResult:
       return Type::OtherObject();
@@ -1749,6 +1757,10 @@ Type* Typer::Visitor::TypeNumberShiftRight(Node* node) {
 
 Type* Typer::Visitor::TypeNumberShiftRightLogical(Node* node) {
   return Type::Unsigned32();
+}
+
+Type* Typer::Visitor::TypeNumberClz32(Node* node) {
+  return typer_->cache_.kZeroToThirtyTwo;
 }
 
 Type* Typer::Visitor::TypeNumberCeil(Node* node) {
@@ -2198,6 +2210,10 @@ Type* Typer::Visitor::TypeChangeFloat64ToUint32(Node* node) {
                          zone());
 }
 
+Type* Typer::Visitor::TypeTruncateFloat64ToUint32(Node* node) {
+  return Type::Intersect(Type::Unsigned32(), Type::UntaggedIntegral32(),
+                         zone());
+}
 
 Type* Typer::Visitor::TypeTruncateFloat32ToInt32(Node* node) {
   return Type::Intersect(Type::Signed32(), Type::UntaggedIntegral32(), zone());
@@ -2505,8 +2521,24 @@ Type* Typer::Visitor::TypeWord32PairShr(Node* node) { return Type::Internal(); }
 
 Type* Typer::Visitor::TypeWord32PairSar(Node* node) { return Type::Internal(); }
 
-// Heap constants.
+// SIMD type methods.
 
+#define SIMD_RETURN_SIMD(Name) \
+  Type* Typer::Visitor::Type##Name(Node* node) { return Type::Simd(); }
+MACHINE_SIMD_RETURN_SIMD_OP_LIST(SIMD_RETURN_SIMD)
+#undef SIMD_RETURN_SIMD
+
+#define SIMD_RETURN_NUM(Name) \
+  Type* Typer::Visitor::Type##Name(Node* node) { return Type::Number(); }
+MACHINE_SIMD_RETURN_NUM_OP_LIST(SIMD_RETURN_NUM)
+#undef SIMD_RETURN_NUM
+
+#define SIMD_RETURN_BOOL(Name) \
+  Type* Typer::Visitor::Type##Name(Node* node) { return Type::Boolean(); }
+MACHINE_SIMD_RETURN_BOOL_OP_LIST(SIMD_RETURN_BOOL)
+#undef SIMD_RETURN_BOOL
+
+// Heap constants.
 
 Type* Typer::Visitor::TypeConstant(Handle<Object> value) {
   if (value->IsJSTypedArray()) {

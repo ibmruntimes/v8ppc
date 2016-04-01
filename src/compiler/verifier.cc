@@ -492,6 +492,18 @@ void Verifier::Visitor::Check(Node* node) {
       // Type is Boolean.
       CheckUpperIs(node, Type::Boolean());
       break;
+    case IrOpcode::kJSToInteger:
+      // Type is OrderedNumber.
+      CheckUpperIs(node, Type::OrderedNumber());
+      break;
+    case IrOpcode::kJSToLength:
+      // Type is OrderedNumber.
+      CheckUpperIs(node, Type::OrderedNumber());
+      break;
+    case IrOpcode::kJSToName:
+      // Type is Name.
+      CheckUpperIs(node, Type::Name());
+      break;
     case IrOpcode::kJSToNumber:
       // Type is Number.
       CheckUpperIs(node, Type::Number());
@@ -499,10 +511,6 @@ void Verifier::Visitor::Check(Node* node) {
     case IrOpcode::kJSToString:
       // Type is String.
       CheckUpperIs(node, Type::String());
-      break;
-    case IrOpcode::kJSToName:
-      // Type is Name.
-      CheckUpperIs(node, Type::Name());
       break;
     case IrOpcode::kJSToObject:
       // Type is Receiver.
@@ -675,6 +683,11 @@ void Verifier::Visitor::Check(Node* node) {
       // (Unsigned32, Unsigned32) -> Unsigned32
       CheckValueInputIs(node, 0, Type::Unsigned32());
       CheckValueInputIs(node, 1, Type::Unsigned32());
+      CheckUpperIs(node, Type::Unsigned32());
+      break;
+    case IrOpcode::kNumberClz32:
+      // Unsigned32 -> Unsigned32
+      CheckValueInputIs(node, 0, Type::Unsigned32());
       CheckUpperIs(node, Type::Unsigned32());
       break;
     case IrOpcode::kNumberCeil:
@@ -949,6 +962,7 @@ void Verifier::Visitor::Check(Node* node) {
     case IrOpcode::kChangeFloat32ToFloat64:
     case IrOpcode::kChangeFloat64ToInt32:
     case IrOpcode::kChangeFloat64ToUint32:
+    case IrOpcode::kTruncateFloat64ToUint32:
     case IrOpcode::kTruncateFloat32ToInt32:
     case IrOpcode::kTruncateFloat32ToUint32:
     case IrOpcode::kTryTruncateFloat32ToInt64:
@@ -970,6 +984,11 @@ void Verifier::Visitor::Check(Node* node) {
     case IrOpcode::kLoadParentFramePointer:
     case IrOpcode::kCheckedLoad:
     case IrOpcode::kCheckedStore:
+
+#define SIMD_MACHINE_OP_CASE(Name) case IrOpcode::k##Name:
+      MACHINE_SIMD_OP_LIST(SIMD_MACHINE_OP_CASE)
+#undef SIMD_MACHINE_OP_CASE
+
       // TODO(rossberg): Check.
       break;
   }
@@ -979,7 +998,7 @@ void Verifier::Visitor::Check(Node* node) {
 void Verifier::Run(Graph* graph, Typing typing) {
   CHECK_NOT_NULL(graph->start());
   CHECK_NOT_NULL(graph->end());
-  Zone zone;
+  Zone zone(graph->zone()->allocator());
   Visitor visitor(&zone, typing);
   AllNodes all(&zone, graph);
   for (Node* node : all.live) visitor.Check(node);
@@ -1069,7 +1088,7 @@ static void CheckInputsDominate(Schedule* schedule, BasicBlock* block,
 
 void ScheduleVerifier::Run(Schedule* schedule) {
   const size_t count = schedule->BasicBlockCount();
-  Zone tmp_zone;
+  Zone tmp_zone(schedule->zone()->allocator());
   Zone* zone = &tmp_zone;
   BasicBlock* start = schedule->start();
   BasicBlockVector* rpo_order = schedule->rpo_order();

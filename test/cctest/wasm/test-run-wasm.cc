@@ -1714,8 +1714,8 @@ TEST(Run_Wasm_Infinite_Loop_not_taken2_brif) {
 static void TestBuildGraphForSimpleExpression(WasmOpcode opcode) {
   if (!WasmOpcodes::IsSupported(opcode)) return;
 
-  Zone zone;
   Isolate* isolate = CcTest::InitIsolateOnce();
+  Zone zone(isolate->allocator());
   HandleScope scope(isolate);
   // Enable all optional operators.
   CommonOperatorBuilder common(&zone);
@@ -2141,7 +2141,8 @@ static void Run_WasmMixedCall_N(int start) {
 
   int num_params = static_cast<int>(arraysize(mixed)) - start;
   for (int which = 0; which < num_params; which++) {
-    Zone zone;
+    v8::base::AccountingAllocator allocator;
+    Zone zone(&allocator);
     TestingModule module;
     module.AddMemory(1024);
     MachineType* memtypes = &mixed[start];
@@ -2699,8 +2700,6 @@ TEST(Run_Wasm_F64Max_Snan) {
 
 #endif
 
-// TODO(titzer): Fix and re-enable.
-#if 0
 TEST(Run_Wasm_I32SConvertF32) {
   WasmRunner<int32_t> r(MachineType::Float32());
   BUILD(r, WASM_I32_SCONVERT_F32(WASM_GET_LOCAL(0)));
@@ -2721,8 +2720,8 @@ TEST(Run_Wasm_I32SConvertF64) {
   BUILD(r, WASM_I32_SCONVERT_F64(WASM_GET_LOCAL(0)));
 
   FOR_FLOAT64_INPUTS(i) {
-    if (*i < static_cast<double>(INT32_MAX) &&
-        *i >= static_cast<double>(INT32_MIN)) {
+    if (*i < (static_cast<double>(INT32_MAX) + 1.0) &&
+        *i > (static_cast<double>(INT32_MIN) - 1.0)) {
       CHECK_EQ(static_cast<int64_t>(*i), r.Call(*i));
     } else {
       CHECK_TRAP32(r.Call(*i));
@@ -2736,7 +2735,7 @@ TEST(Run_Wasm_I32UConvertF32) {
   BUILD(r, WASM_I32_UCONVERT_F32(WASM_GET_LOCAL(0)));
 
   FOR_FLOAT32_INPUTS(i) {
-    if (*i < static_cast<float>(UINT32_MAX) && *i > -1) {
+    if (*i < (static_cast<float>(UINT32_MAX) + 1.0) && *i > -1) {
       CHECK_EQ(static_cast<uint32_t>(*i), r.Call(*i));
     } else {
       CHECK_TRAP32(r.Call(*i));
@@ -2750,15 +2749,13 @@ TEST(Run_Wasm_I32UConvertF64) {
   BUILD(r, WASM_I32_UCONVERT_F64(WASM_GET_LOCAL(0)));
 
   FOR_FLOAT64_INPUTS(i) {
-    if (*i < static_cast<float>(UINT32_MAX) && *i > -1) {
+    if (*i < (static_cast<float>(UINT32_MAX) + 1.0) && *i > -1) {
       CHECK_EQ(static_cast<uint32_t>(*i), r.Call(*i));
     } else {
       CHECK_TRAP32(r.Call(*i));
     }
   }
 }
-#endif
-
 
 TEST(Run_Wasm_F64CopySign) {
   WasmRunner<double> r(MachineType::Float64(), MachineType::Float64());
@@ -2784,7 +2781,8 @@ void CompileCallIndirectMany(LocalType param) {
   // with many many parameters.
   TestSignatures sigs;
   for (byte num_params = 0; num_params < 40; num_params++) {
-    Zone zone;
+    v8::base::AccountingAllocator allocator;
+    Zone zone(&allocator);
     HandleScope scope(CcTest::InitIsolateOnce());
     TestingModule module;
     FunctionSig* sig = sigs.many(&zone, kAstStmt, param, num_params);

@@ -568,6 +568,9 @@ void FullCodeGenerator::EmitIntrinsicAsStubCall(CallRuntime* expr,
   context()->Plug(result_register());
 }
 
+void FullCodeGenerator::EmitNewObject(CallRuntime* expr) {
+  EmitIntrinsicAsStubCall(expr, CodeFactory::FastNewObject(isolate()));
+}
 
 void FullCodeGenerator::EmitNumberToString(CallRuntime* expr) {
   EmitIntrinsicAsStubCall(expr, CodeFactory::NumberToString(isolate()));
@@ -588,6 +591,9 @@ void FullCodeGenerator::EmitToLength(CallRuntime* expr) {
   EmitIntrinsicAsStubCall(expr, CodeFactory::ToLength(isolate()));
 }
 
+void FullCodeGenerator::EmitToInteger(CallRuntime* expr) {
+  EmitIntrinsicAsStubCall(expr, CodeFactory::ToInteger(isolate()));
+}
 
 void FullCodeGenerator::EmitToNumber(CallRuntime* expr) {
   EmitIntrinsicAsStubCall(expr, CodeFactory::ToNumber(isolate()));
