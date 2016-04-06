@@ -553,12 +553,6 @@ void IncrementalMarking::StartMarking() {
   heap_->CompletelyClearInstanceofCache();
   heap_->isolate()->compilation_cache()->MarkCompactPrologue();
 
-  if (FLAG_cleanup_code_caches_at_gc) {
-    // We will mark cache black with a separate pass
-    // when we finish marking.
-    MarkObjectGreyDoNotEnqueue(heap_->polymorphic_code_cache());
-  }
-
   // Mark strong roots grey.
   IncrementalMarkingRootMarkingVisitor visitor(this);
   heap_->IterateStrongRoots(&visitor, VISIT_ONLY_STRONG);
@@ -925,13 +919,6 @@ void IncrementalMarking::Hurry() {
     }
   }
 
-  if (FLAG_cleanup_code_caches_at_gc) {
-    PolymorphicCodeCache* poly_cache = heap_->polymorphic_code_cache();
-    Marking::GreyToBlack(Marking::MarkBitFrom(poly_cache));
-    MemoryChunk::IncrementLiveBytesFromGC(poly_cache,
-                                          PolymorphicCodeCache::kSize);
-  }
-
   Object* context = heap_->native_contexts_list();
   while (!context->IsUndefined()) {
     // GC can happen when the context is not fully initialized,
@@ -1015,33 +1002,26 @@ void IncrementalMarking::Epilogue() {
   incremental_marking_finalization_rounds_ = 0;
 }
 
-
 double IncrementalMarking::AdvanceIncrementalMarking(
-    intptr_t step_size_in_bytes, double deadline_in_ms,
-    IncrementalMarking::StepActions step_actions) {
+    double deadline_in_ms, IncrementalMarking::StepActions step_actions) {
   DCHECK(!IsStopped());
 
-  if (step_size_in_bytes == 0) {
-    step_size_in_bytes = GCIdleTimeHandler::EstimateMarkingStepSize(
-        GCIdleTimeHandler::kIncrementalMarkingStepTimeInMs,
-        heap()
-            ->tracer()
-            ->FinalIncrementalMarkCompactSpeedInBytesPerMillisecond());
-  }
-
-  double remaining_time_in_ms = 0.0;
-  intptr_t bytes_processed = 0;
-  do {
-    bytes_processed =
+  intptr_t step_size_in_bytes = GCIdleTimeHandler::EstimateMarkingStepSize(
+      GCIdleTimeHandler::kIncrementalMarkingStepTimeInMs,
+      heap()
+          ->tracer()
+          ->FinalIncrementalMarkCompactSpeedInBytesPerMillisecond());
+  double remaining_time_in_ms =
+      deadline_in_ms - heap()->MonotonicallyIncreasingTimeInMs();
+  while (remaining_time_in_ms >=
+         GCIdleTimeHandler::kMinIncrementalMarkingStepTimeInMs) {
+    intptr_t bytes_processed =
         Step(step_size_in_bytes, step_actions.completion_action,
              step_actions.force_marking, step_actions.force_completion);
     remaining_time_in_ms =
         deadline_in_ms - heap()->MonotonicallyIncreasingTimeInMs();
-  } while (bytes_processed > 0 &&
-           remaining_time_in_ms >=
-               2.0 * GCIdleTimeHandler::kIncrementalMarkingStepTimeInMs &&
-           !IsComplete() &&
-           !heap()->mark_compact_collector()->marking_deque()->IsEmpty());
+    if (bytes_processed == 0) break;
+  }
   return remaining_time_in_ms;
 }
 

@@ -803,6 +803,34 @@ void MacroAssembler::Mul(Register rd_hi, Register rd_lo,
   }
 }
 
+void MacroAssembler::Mulu(Register rd_hi, Register rd_lo, Register rs,
+                          const Operand& rt) {
+  Register reg;
+  if (rt.is_reg()) {
+    reg = rt.rm();
+  } else {
+    DCHECK(!rs.is(at));
+    reg = at;
+    li(reg, rt);
+  }
+
+  if (!IsMipsArchVariant(kMips32r6)) {
+    multu(rs, reg);
+    mflo(rd_lo);
+    mfhi(rd_hi);
+  } else {
+    if (rd_lo.is(rs)) {
+      DCHECK(!rd_hi.is(rs));
+      DCHECK(!rd_hi.is(reg) && !rd_lo.is(reg));
+      muhu(rd_hi, rs, reg);
+      mulu(rd_lo, rs, reg);
+    } else {
+      DCHECK(!rd_hi.is(reg) && !rd_lo.is(reg));
+      mulu(rd_lo, rs, reg);
+      muhu(rd_hi, rs, reg);
+    }
+  }
+}
 
 void MacroAssembler::Mulh(Register rd, Register rs, const Operand& rt) {
   if (rt.is_reg()) {
@@ -5587,6 +5615,16 @@ void MacroAssembler::AssertBoundFunction(Register object) {
   }
 }
 
+void MacroAssembler::AssertGeneratorObject(Register object) {
+  if (emit_debug_code()) {
+    STATIC_ASSERT(kSmiTag == 0);
+    SmiTst(object, t8);
+    Check(ne, kOperandIsASmiAndNotAGeneratorObject, t8, Operand(zero_reg));
+    GetObjectType(object, t8, t8);
+    Check(eq, kOperandIsNotAGeneratorObject, t8,
+          Operand(JS_GENERATOR_OBJECT_TYPE));
+  }
+}
 
 void MacroAssembler::AssertReceiver(Register object) {
   if (emit_debug_code()) {

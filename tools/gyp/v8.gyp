@@ -211,10 +211,6 @@
             '<(INTERMEDIATE_DIR)/snapshot.cc',
           ],
           'variables': {
-            'mksnapshot_flags': [
-              '--log-snapshot-positions',
-              '--logfile', '<(INTERMEDIATE_DIR)/snapshot.log',
-            ],
             'conditions': [
               ['v8_random_seed!=0', {
                 'mksnapshot_flags': ['--random-seed', '<(v8_random_seed)'],
@@ -311,8 +307,6 @@
                     # variable.
                     'mksnapshot_flags_ignition': [
                       '--ignition',
-                      '--log-snapshot-positions',
-                      '--logfile', '<(INTERMEDIATE_DIR)/snapshot_ignition.log',
                     ],
                     'conditions': [
                       ['v8_random_seed!=0', {
@@ -376,10 +370,6 @@
               'action_name': 'run_mksnapshot (external)',
               'inputs': ['<(mksnapshot_exec)'],
               'variables': {
-                'mksnapshot_flags': [
-                  '--log-snapshot-positions',
-                  '--logfile', '<(INTERMEDIATE_DIR)/snapshot.log',
-                ],
                 'conditions': [
                   ['v8_random_seed!=0', {
                     'mksnapshot_flags': ['--random-seed', '<(v8_random_seed)'],
@@ -1195,6 +1185,8 @@
         '../../src/wasm/decoder.h',
         '../../src/wasm/encoder.cc',
         '../../src/wasm/encoder.h',
+        '../../src/wasm/wasm-external-refs.cc',
+        '../../src/wasm/wasm-external-refs.h',
         '../../src/wasm/module-decoder.cc',
         '../../src/wasm/module-decoder.h',
         '../../src/wasm/wasm-js.cc',
@@ -1562,7 +1554,6 @@
             '../../src/ppc/frames-ppc.cc',
             '../../src/ppc/frames-ppc.h',
             '../../src/ppc/interface-descriptors-ppc.cc',
-            '../../src/ppc/interface-descriptors-ppc.h',
             '../../src/ppc/macro-assembler-ppc.cc',
             '../../src/ppc/macro-assembler-ppc.h',
             '../../src/ppc/simulator-ppc.cc',
@@ -2061,7 +2052,6 @@
           '../../src/js/arraybuffer.js',
           '../../src/js/typedarray.js',
           '../../src/js/iterator-prototype.js',
-          '../../src/js/generator.js',
           '../../src/js/object-observe.js',
           '../../src/js/collection.js',
           '../../src/js/weak-collection.js',
@@ -2081,7 +2071,6 @@
         'experimental_library_files': [
           '../../src/js/macros.py',
           '../../src/messages.h',
-          '../../src/js/generator.js',
           '../../src/js/harmony-atomics.js',
           '../../src/js/harmony-regexp-exec.js',
           '../../src/js/harmony-object-observe.js',

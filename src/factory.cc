@@ -853,15 +853,6 @@ Handle<Struct> Factory::NewStruct(InstanceType type) {
 }
 
 
-Handle<CodeCache> Factory::NewCodeCache() {
-  Handle<CodeCache> code_cache =
-      Handle<CodeCache>::cast(NewStruct(CODE_CACHE_TYPE));
-  code_cache->set_default_cache(*empty_fixed_array(), SKIP_WRITE_BARRIER);
-  code_cache->set_normal_type_cache(*undefined_value(), SKIP_WRITE_BARRIER);
-  return code_cache;
-}
-
-
 Handle<AliasedArgumentsEntry> Factory::NewAliasedArgumentsEntry(
     int aliased_context_slot) {
   Handle<AliasedArgumentsEntry> entry = Handle<AliasedArgumentsEntry>::cast(
@@ -1410,8 +1401,10 @@ Handle<Code> Factory::NewCode(const CodeDesc& desc,
   int obj_size = Code::SizeFor(body_size);
 
   Handle<Code> code = NewCodeRaw(obj_size, immovable);
-  DCHECK(isolate()->code_range() == NULL || !isolate()->code_range()->valid() ||
-         isolate()->code_range()->contains(code->address()) ||
+  DCHECK(isolate()->heap()->memory_allocator()->code_range() == NULL ||
+         !isolate()->heap()->memory_allocator()->code_range()->valid() ||
+         isolate()->heap()->memory_allocator()->code_range()->contains(
+             code->address()) ||
          obj_size <= isolate()->heap()->code_space()->AreaSize());
 
   // The code object has not been fully initialized yet.  We rely on the
@@ -1498,6 +1491,14 @@ Handle<JSObject> Factory::NewJSObjectWithMemento(
       JSObject);
 }
 
+Handle<JSObject> Factory::NewJSObjectWithNullProto() {
+  Handle<JSObject> result = NewJSObject(isolate()->object_function());
+  Handle<Map> new_map =
+      Map::Copy(Handle<Map>(result->map()), "ObjectWithNullProto");
+  Map::SetPrototype(new_map, null_value());
+  JSObject::MigrateToMap(result, new_map);
+  return result;
+}
 
 Handle<JSModule> Factory::NewJSModule(Handle<Context> context,
                                       Handle<ScopeInfo> scope_info) {

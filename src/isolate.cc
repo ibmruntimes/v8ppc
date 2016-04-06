@@ -355,7 +355,7 @@ static Handle<FixedArray> MaybeGrow(Isolate* isolate,
   return elements;
 }
 
-Handle<Object> Isolate::CaptureSimpleStackTrace(Handle<JSObject> error_object,
+Handle<Object> Isolate::CaptureSimpleStackTrace(Handle<JSReceiver> error_object,
                                                 Handle<Object> caller) {
   // Get stack trace limit.
   Handle<JSObject> error = error_function();
@@ -456,8 +456,8 @@ Handle<Object> Isolate::CaptureSimpleStackTrace(Handle<JSObject> error_object,
   return result;
 }
 
-MaybeHandle<JSObject> Isolate::CaptureAndSetDetailedStackTrace(
-    Handle<JSObject> error_object) {
+MaybeHandle<JSReceiver> Isolate::CaptureAndSetDetailedStackTrace(
+    Handle<JSReceiver> error_object) {
   if (capture_stack_trace_for_uncaught_exceptions_) {
     // Capture stack trace for a detailed exception message.
     Handle<Name> key = factory()->detailed_stack_trace_symbol();
@@ -465,21 +465,20 @@ MaybeHandle<JSObject> Isolate::CaptureAndSetDetailedStackTrace(
         stack_trace_for_uncaught_exceptions_frame_limit_,
         stack_trace_for_uncaught_exceptions_options_);
     RETURN_ON_EXCEPTION(
-        this, JSObject::SetProperty(error_object, key, stack_trace, STRICT),
-        JSObject);
+        this, JSReceiver::SetProperty(error_object, key, stack_trace, STRICT),
+        JSReceiver);
   }
   return error_object;
 }
 
-
-MaybeHandle<JSObject> Isolate::CaptureAndSetSimpleStackTrace(
-    Handle<JSObject> error_object, Handle<Object> caller) {
+MaybeHandle<JSReceiver> Isolate::CaptureAndSetSimpleStackTrace(
+    Handle<JSReceiver> error_object, Handle<Object> caller) {
   // Capture stack trace for simple stack trace string formatting.
   Handle<Name> key = factory()->stack_trace_symbol();
   Handle<Object> stack_trace = CaptureSimpleStackTrace(error_object, caller);
   RETURN_ON_EXCEPTION(
-      this, JSObject::SetProperty(error_object, key, stack_trace, STRICT),
-      JSObject);
+      this, JSReceiver::SetProperty(error_object, key, stack_trace, STRICT),
+      JSReceiver);
   return error_object;
 }
 
@@ -688,7 +687,7 @@ Handle<JSArray> Isolate::CaptureCurrentStackTrace(
   StackTraceFrameIterator it(this);
   int frames_seen = 0;
   while (!it.done() && (frames_seen < limit)) {
-    JavaScriptFrame* frame = it.frame();
+    StandardFrame* frame = it.frame();
     // Set initial size to the maximum inlining level + 1 for the outermost
     // function.
     List<FrameSummary> frames(FLAG_max_inlining_levels + 1);
@@ -1319,7 +1318,7 @@ void Isolate::PrintCurrentStackTrace(FILE* out) {
   while (!it.done()) {
     HandleScope scope(this);
     // Find code position if recorded in relocation info.
-    JavaScriptFrame* frame = it.frame();
+    StandardFrame* frame = it.frame();
     Code* code = frame->LookupCode();
     int offset = static_cast<int>(frame->pc() - code->instruction_start());
     int pos = frame->LookupCode()->SourcePosition(offset);
@@ -1345,7 +1344,7 @@ void Isolate::PrintCurrentStackTrace(FILE* out) {
 bool Isolate::ComputeLocation(MessageLocation* target) {
   StackTraceFrameIterator it(this);
   if (!it.done()) {
-    JavaScriptFrame* frame = it.frame();
+    StandardFrame* frame = it.frame();
     JSFunction* fun = frame->function();
     Object* script = fun->shared()->script();
     if (script->IsScript() &&
@@ -1355,7 +1354,7 @@ bool Isolate::ComputeLocation(MessageLocation* target) {
       // baseline code. For optimized code this will use the deoptimization
       // information to get canonical location information.
       List<FrameSummary> frames(FLAG_max_inlining_levels + 1);
-      it.frame()->Summarize(&frames);
+      frame->Summarize(&frames);
       FrameSummary& summary = frames.last();
       int pos = summary.abstract_code()->SourcePosition(summary.code_offset());
       *target = MessageLocation(casted_script, pos, pos + 1, handle(fun));
@@ -1799,7 +1798,6 @@ Isolate::Isolate(bool enable_serializer)
       runtime_profiler_(NULL),
       compilation_cache_(NULL),
       counters_(NULL),
-      code_range_(NULL),
       logger_(NULL),
       stats_table_(NULL),
       stub_cache_(NULL),
@@ -1810,7 +1808,6 @@ Isolate::Isolate(bool enable_serializer)
       capture_stack_trace_for_uncaught_exceptions_(false),
       stack_trace_for_uncaught_exceptions_frame_limit_(0),
       stack_trace_for_uncaught_exceptions_options_(StackTrace::kOverview),
-      memory_allocator_(NULL),
       keyed_lookup_cache_(NULL),
       context_slot_cache_(NULL),
       descriptor_lookup_cache_(NULL),
@@ -2068,10 +2065,6 @@ Isolate::~Isolate() {
   delete thread_manager_;
   thread_manager_ = NULL;
 
-  delete memory_allocator_;
-  memory_allocator_ = NULL;
-  delete code_range_;
-  code_range_ = NULL;
   delete global_handles_;
   global_handles_ = NULL;
   delete eternal_handles_;
@@ -2165,9 +2158,6 @@ bool Isolate::Init(Deserializer* des) {
   // The initialization process does not handle memory exhaustion.
   AlwaysAllocateScope always_allocate(this);
 
-  memory_allocator_ = new MemoryAllocator(this);
-  code_range_ = new CodeRange(this);
-
   // Safe after setting Heap::isolate_, and initializing StackGuard
   heap_.SetStackLimits();
 
@@ -2226,7 +2216,7 @@ bool Isolate::Init(Deserializer* des) {
     return false;
   }
 
-  deoptimizer_data_ = new DeoptimizerData(memory_allocator_);
+  deoptimizer_data_ = new DeoptimizerData(heap()->memory_allocator());
 
   const bool create_heap_objects = (des == NULL);
   if (create_heap_objects && !heap_.CreateHeapObjects()) {

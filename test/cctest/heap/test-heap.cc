@@ -2333,11 +2333,7 @@ TEST(GrowAndShrinkNewSpace) {
   Heap* heap = CcTest::heap();
   NewSpace* new_space = heap->new_space();
 
-  if (heap->ReservedSemiSpaceSize() == heap->InitialSemiSpaceSize() ||
-      heap->MaxSemiSpaceSize() == heap->InitialSemiSpaceSize()) {
-    // The max size cannot exceed the reserved size, since semispaces must be
-    // always within the reserved space.  We can't test new space growing and
-    // shrinking if the reserved size is the same as the minimum (initial) size.
+  if (heap->MaxSemiSpaceSize() == heap->InitialSemiSpaceSize()) {
     return;
   }
 
@@ -2382,11 +2378,7 @@ TEST(GrowAndShrinkNewSpace) {
 TEST(CollectingAllAvailableGarbageShrinksNewSpace) {
   CcTest::InitializeVM();
   Heap* heap = CcTest::heap();
-  if (heap->ReservedSemiSpaceSize() == heap->InitialSemiSpaceSize() ||
-      heap->MaxSemiSpaceSize() == heap->InitialSemiSpaceSize()) {
-    // The max size cannot exceed the reserved size, since semispaces must be
-    // always within the reserved space.  We can't test new space growing and
-    // shrinking if the reserved size is the same as the minimum (initial) size.
+  if (heap->MaxSemiSpaceSize() == heap->InitialSemiSpaceSize()) {
     return;
   }
 
@@ -4644,7 +4636,7 @@ TEST(LargeObjectSlotRecording) {
   // Start incremental marking to active write barrier.
   SimulateIncrementalMarking(heap, false);
   heap->incremental_marking()->AdvanceIncrementalMarking(
-      10000000, 10000000, IncrementalMarking::IdleStepActions());
+      10000000, IncrementalMarking::IdleStepActions());
 
   // Create references from the large object to the object on the evacuation
   // candidate.
@@ -5555,19 +5547,21 @@ UNINITIALIZED_TEST(Regress538257) {
   isolate->Enter();
   {
     i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+    Heap* heap = i_isolate->heap();
     HandleScope handle_scope(i_isolate);
-    PagedSpace* old_space = i_isolate->heap()->old_space();
+    PagedSpace* old_space = heap->old_space();
     const int kMaxObjects = 10000;
     const int kFixedArrayLen = 512;
     Handle<FixedArray> objects[kMaxObjects];
-    for (int i = 0; (i < kMaxObjects) && old_space->CanExpand(Page::kPageSize);
+    for (int i = 0; (i < kMaxObjects) &&
+                    heap->CanExpandOldGeneration(old_space->AreaSize());
          i++) {
       objects[i] = i_isolate->factory()->NewFixedArray(kFixedArrayLen, TENURED);
       Page::FromAddress(objects[i]->address())
           ->SetFlag(MemoryChunk::FORCE_EVACUATION_CANDIDATE_FOR_TESTING);
     }
     SimulateFullSpace(old_space);
-    i_isolate->heap()->CollectGarbage(OLD_SPACE);
+    heap->CollectGarbage(OLD_SPACE);
     // If we get this far, we've successfully aborted compaction. Any further
     // allocations might trigger OOM.
   }

@@ -1199,8 +1199,10 @@ void BytecodeGenerator::VisitTryCatchStatement(TryCatchStatement* stmt) {
   VisitNewLocalCatchContext(stmt->variable());
   builder()->StoreAccumulatorInRegister(context);
 
-  // Clear message object as we enter the catch block.
-  builder()->CallRuntime(Runtime::kInterpreterClearPendingMessage, no_reg, 0);
+  // If requested, clear message object as we enter the catch block.
+  if (stmt->clear_pending_message()) {
+    builder()->CallRuntime(Runtime::kInterpreterClearPendingMessage, no_reg, 0);
+  }
 
   // Load the catch context into the accumulator.
   builder()->LoadAccumulatorWithRegister(context);
@@ -1745,6 +1747,7 @@ void BytecodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
 
 
 void BytecodeGenerator::VisitVariableProxy(VariableProxy* proxy) {
+  builder()->SetExpressionPosition(proxy);
   VisitVariableLoad(proxy->var(), proxy->VariableFeedbackSlot());
 }
 
@@ -2189,6 +2192,7 @@ void BytecodeGenerator::VisitAssignment(Assignment* expr) {
   }
 
   // Store the value.
+  builder()->SetExpressionPosition(expr);
   FeedbackVectorSlot slot = expr->AssignmentSlot();
   switch (assign_type) {
     case VARIABLE: {
@@ -2226,6 +2230,7 @@ void BytecodeGenerator::VisitYield(Yield* expr) { UNIMPLEMENTED(); }
 
 void BytecodeGenerator::VisitThrow(Throw* expr) {
   VisitForAccumulatorValue(expr->exception());
+  builder()->SetExpressionPosition(expr);
   builder()->Throw();
   // Throw statments are modeled as expression instead of statments. These are
   // converted from assignment statements in Rewriter::ReWrite pass. An
@@ -2238,6 +2243,7 @@ void BytecodeGenerator::VisitThrow(Throw* expr) {
 void BytecodeGenerator::VisitPropertyLoad(Register obj, Property* expr) {
   LhsKind property_kind = Property::GetAssignType(expr);
   FeedbackVectorSlot slot = expr->PropertyFeedbackSlot();
+  builder()->SetExpressionPosition(expr);
   switch (property_kind) {
     case VARIABLE:
       UNREACHABLE();
@@ -2746,6 +2752,7 @@ void BytecodeGenerator::VisitCountOperation(CountOperation* expr) {
   builder()->CountOperation(expr->binary_op());
 
   // Store the value.
+  builder()->SetExpressionPosition(expr);
   FeedbackVectorSlot feedback_slot = expr->CountSlot();
   switch (assign_type) {
     case VARIABLE: {
@@ -2805,6 +2812,7 @@ void BytecodeGenerator::VisitBinaryOperation(BinaryOperation* binop) {
 void BytecodeGenerator::VisitCompareOperation(CompareOperation* expr) {
   Register lhs = VisitForRegisterValue(expr->left());
   VisitForAccumulatorValue(expr->right());
+  builder()->SetExpressionPosition(expr);
   builder()->CompareOperation(expr->op(), lhs);
   execution_result()->SetResultInAccumulator();
 }
@@ -3148,7 +3156,7 @@ LanguageMode BytecodeGenerator::language_mode() const {
 
 
 int BytecodeGenerator::feedback_index(FeedbackVectorSlot slot) const {
-  return info()->feedback_vector()->GetIndex(slot);
+  return info()->shared_info()->feedback_vector()->GetIndex(slot);
 }
 
 }  // namespace interpreter

@@ -671,13 +671,16 @@ void FullCodeGenerator::SetExpressionAsStatementPosition(Expression* expr) {
   }
 }
 
-
-void FullCodeGenerator::SetCallPosition(Expression* expr) {
+void FullCodeGenerator::SetCallPosition(Expression* expr,
+                                        TailCallMode tail_call_mode) {
   if (expr->position() == RelocInfo::kNoPosition) return;
   RecordPosition(masm_, expr->position());
   if (info_->is_debug()) {
+    RelocInfo::Mode mode = (tail_call_mode == TailCallMode::kAllow)
+                               ? RelocInfo::DEBUG_BREAK_SLOT_AT_TAIL_CALL
+                               : RelocInfo::DEBUG_BREAK_SLOT_AT_CALL;
     // Always emit a debug break slot before a call.
-    DebugCodegen::GenerateSlot(masm_, RelocInfo::DEBUG_BREAK_SLOT_AT_CALL);
+    DebugCodegen::GenerateSlot(masm_, mode);
   }
 }
 
@@ -690,27 +693,6 @@ void FullCodeGenerator::VisitSuperPropertyReference(
 
 void FullCodeGenerator::VisitSuperCallReference(SuperCallReference* super) {
   __ CallRuntime(Runtime::kThrowUnsupportedSuperError);
-}
-
-
-void FullCodeGenerator::EmitGeneratorNext(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 2);
-  EmitGeneratorResume(args->at(0), args->at(1), JSGeneratorObject::NEXT);
-}
-
-
-void FullCodeGenerator::EmitGeneratorReturn(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 2);
-  EmitGeneratorResume(args->at(0), args->at(1), JSGeneratorObject::RETURN);
-}
-
-
-void FullCodeGenerator::EmitGeneratorThrow(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 2);
-  EmitGeneratorResume(args->at(0), args->at(1), JSGeneratorObject::THROW);
 }
 
 
@@ -1300,7 +1282,7 @@ void FullCodeGenerator::VisitTryCatchStatement(TryCatchStatement* stmt) {
   Label try_entry, handler_entry, exit;
   __ jmp(&try_entry);
   __ bind(&handler_entry);
-  ClearPendingMessage();
+  if (stmt->clear_pending_message()) ClearPendingMessage();
 
   // Exception handler code, the exception is in the result register.
   // Extend the context before executing the catch block.

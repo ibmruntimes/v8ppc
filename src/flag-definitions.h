@@ -204,7 +204,6 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                                    \
-  V(harmony_regexp_exec, "harmony RegExp exec override behavior")            \
   V(harmony_regexp_lookbehind, "harmony regexp lookbehind")                  \
   V(harmony_tailcalls, "harmony tail calls")                                 \
   V(harmony_object_values_entries, "harmony Object.values / Object.entries") \
@@ -219,6 +218,7 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_instanceof, "harmony instanceof support")                 \
   V(harmony_iterator_close, "harmony iterator finalization")          \
   V(harmony_unicode_regexps, "harmony unicode regexps")               \
+  V(harmony_regexp_exec, "harmony RegExp exec override behavior")     \
   V(harmony_sloppy, "harmony features in sloppy mode")                \
   V(harmony_sloppy_let, "harmony let in sloppy mode")                 \
   V(harmony_sloppy_function, "harmony sloppy function block scoping") \
@@ -1003,8 +1003,6 @@ DEFINE_BOOL(log_code, false,
 DEFINE_BOOL(log_gc, false,
             "Log heap samples on garbage collection for the hp2ps tool.")
 DEFINE_BOOL(log_handles, false, "Log global handle events.")
-DEFINE_BOOL(log_snapshot_positions, false,
-            "log positions of (de)serialized objects in the snapshot.")
 DEFINE_BOOL(log_suspect, false, "Log suspect operations.")
 DEFINE_BOOL(prof, false,
             "Log statistical profiling information (implies --log-code).")

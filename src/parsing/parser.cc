@@ -4394,13 +4394,17 @@ class InitializerRewriter : public AstExpressionVisitor {
         scope_(scope) {}
 
  private:
-  void VisitExpression(Expression* expr) {
+  void VisitExpression(Expression* expr) override {
     RewritableExpression* to_rewrite = expr->AsRewritableExpression();
     if (to_rewrite == nullptr || to_rewrite->is_rewritten()) return;
 
     Parser::PatternRewriter::RewriteDestructuringAssignment(parser_, to_rewrite,
                                                             scope_);
   }
+
+  // Code in function literals does not need to be eagerly rewritten, it will be
+  // rewritten when scheduled.
+  void VisitFunctionLiteral(FunctionLiteral* expr) override {}
 
  private:
   Parser* parser_;
@@ -5781,7 +5785,7 @@ Expression* ParserTraits::RewriteYieldStar(
   Statement* initialize_mode;
   {
     Expression* mode_proxy = factory->NewVariableProxy(var_mode);
-    Expression* knext = factory->NewSmiLiteral(JSGeneratorObject::NEXT, nopos);
+    Expression* knext = factory->NewSmiLiteral(JSGeneratorObject::kNext, nopos);
     Expression* assignment =
         factory->NewAssignment(Token::ASSIGN, mode_proxy, knext, nopos);
     initialize_mode = factory->NewExpressionStatement(assignment, nopos);
@@ -5979,7 +5983,7 @@ Expression* ParserTraits::RewriteYieldStar(
   {
     Expression* mode_proxy = factory->NewVariableProxy(var_mode);
     Expression* kreturn =
-        factory->NewSmiLiteral(JSGeneratorObject::RETURN, nopos);
+        factory->NewSmiLiteral(JSGeneratorObject::kReturn, nopos);
     Expression* assignment =
         factory->NewAssignment(Token::ASSIGN, mode_proxy, kreturn, nopos);
     set_mode_return = factory->NewExpressionStatement(assignment, nopos);
@@ -5998,7 +6002,7 @@ Expression* ParserTraits::RewriteYieldStar(
   Statement* set_mode_next;
   {
     Expression* mode_proxy = factory->NewVariableProxy(var_mode);
-    Expression* knext = factory->NewSmiLiteral(JSGeneratorObject::NEXT, nopos);
+    Expression* knext = factory->NewSmiLiteral(JSGeneratorObject::kNext, nopos);
     Expression* assignment =
         factory->NewAssignment(Token::ASSIGN, mode_proxy, knext, nopos);
     set_mode_next = factory->NewExpressionStatement(assignment, nopos);
@@ -6010,7 +6014,7 @@ Expression* ParserTraits::RewriteYieldStar(
   {
     Expression* mode_proxy = factory->NewVariableProxy(var_mode);
     Expression* kthrow =
-        factory->NewSmiLiteral(JSGeneratorObject::THROW, nopos);
+        factory->NewSmiLiteral(JSGeneratorObject::kThrow, nopos);
     Expression* assignment =
         factory->NewAssignment(Token::ASSIGN, mode_proxy, kthrow, nopos);
     set_mode_throw = factory->NewExpressionStatement(assignment, nopos);
@@ -6098,11 +6102,11 @@ Expression* ParserTraits::RewriteYieldStar(
     case_throw->Add(factory->NewBreakStatement(switch_mode, nopos), zone);
 
     auto cases = new (zone) ZoneList<CaseClause*>(3, zone);
-    Expression* knext = factory->NewSmiLiteral(JSGeneratorObject::NEXT, nopos);
+    Expression* knext = factory->NewSmiLiteral(JSGeneratorObject::kNext, nopos);
     Expression* kreturn =
-        factory->NewSmiLiteral(JSGeneratorObject::RETURN, nopos);
+        factory->NewSmiLiteral(JSGeneratorObject::kReturn, nopos);
     Expression* kthrow =
-        factory->NewSmiLiteral(JSGeneratorObject::THROW, nopos);
+        factory->NewSmiLiteral(JSGeneratorObject::kThrow, nopos);
     cases->Add(factory->NewCaseClause(knext, case_next, nopos), zone);
     cases->Add(factory->NewCaseClause(kreturn, case_return, nopos), zone);
     cases->Add(factory->NewCaseClause(kthrow, case_throw, nopos), zone);
@@ -6465,7 +6469,7 @@ void ParserTraits::FinalizeIteratorUse(Variable* completion,
   //       iterator_use
   //     } catch(e) {
   //       if (completion === kAbruptCompletion) completion = kThrowCompletion;
-  //       throw e;
+  //       %ReThrow(e);
   //     }
   //   } finally {
   //     if (condition) {
@@ -6526,7 +6530,7 @@ void ParserTraits::FinalizeIteratorUse(Variable* completion,
   // try { #try_block }
   // catch(e) {
   //   #set_completion_throw;
-  //   throw e;
+  //   %ReThrow(e);
   // }
   Statement* try_catch;
   {
@@ -6536,17 +6540,22 @@ void ParserTraits::FinalizeIteratorUse(Variable* completion,
                                   kCreatedInitialized, Variable::NORMAL);
 
     Statement* rethrow;
+    // We use %ReThrow rather than the ordinary throw because we want to
+    // preserve the original exception message.  This is also why we create a
+    // TryCatchStatementForReThrow below (which does not clear the pending
+    // message), rather than a TryCatchStatement.
     {
-      Expression* proxy = factory->NewVariableProxy(catch_variable);
-      rethrow = factory->NewExpressionStatement(factory->NewThrow(proxy, nopos),
-                                                nopos);
+      auto args = new (zone) ZoneList<Expression*>(1, zone);
+      args->Add(factory->NewVariableProxy(catch_variable), zone);
+      rethrow = factory->NewExpressionStatement(
+          factory->NewCallRuntime(Runtime::kReThrow, args, nopos), nopos);
     }
 
     Block* catch_block = factory->NewBlock(nullptr, 2, false, nopos);
     catch_block->statements()->Add(set_completion_throw, zone);
     catch_block->statements()->Add(rethrow, zone);
 
-    try_catch = factory->NewTryCatchStatement(
+    try_catch = factory->NewTryCatchStatementForReThrow(
         iterator_use, catch_scope, catch_variable, catch_block, nopos);
   }
 
@@ -6742,7 +6751,7 @@ Statement* ParserTraits::FinalizeForOfStatement(ForOfStatement* loop, int pos) {
   //       #loop;
   //     } catch(e) {
   //       if (completion === kAbruptCompletion) completion = kThrowCompletion;
-  //       throw e;
+  //       %ReThrow(e);
   //     }
   //   } finally {
   //     if (!(completion === kNormalCompletion || IS_UNDEFINED(#iterator))) {

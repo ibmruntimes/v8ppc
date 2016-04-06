@@ -81,6 +81,9 @@ class BreakLocation {
 
   inline bool IsReturn() const { return type_ == DEBUG_BREAK_SLOT_AT_RETURN; }
   inline bool IsCall() const { return type_ == DEBUG_BREAK_SLOT_AT_CALL; }
+  inline bool IsTailCall() const {
+    return type_ == DEBUG_BREAK_SLOT_AT_TAIL_CALL;
+  }
   inline bool IsDebugBreakSlot() const { return type_ >= DEBUG_BREAK_SLOT; }
   inline bool IsDebuggerStatement() const {
     return type_ == DEBUGGER_STATEMENT;
@@ -113,7 +116,8 @@ class BreakLocation {
     DEBUGGER_STATEMENT,
     DEBUG_BREAK_SLOT,
     DEBUG_BREAK_SLOT_AT_CALL,
-    DEBUG_BREAK_SLOT_AT_RETURN
+    DEBUG_BREAK_SLOT_AT_RETURN,
+    DEBUG_BREAK_SLOT_AT_TAIL_CALL,
   };
 
   BreakLocation(Handle<DebugInfo> debug_info, DebugBreakType type,
@@ -139,6 +143,8 @@ class BreakLocation {
    protected:
     explicit Iterator(Handle<DebugInfo> debug_info);
     int ReturnPosition();
+
+    Isolate* isolate() { return debug_info_->GetIsolate(); }
 
     Handle<DebugInfo> debug_info_;
     int break_index_;
@@ -166,7 +172,7 @@ class BreakLocation {
     }
 
    private:
-    static int GetModeMask(BreakLocatorType type);
+    int GetModeMask(BreakLocatorType type);
     RelocInfo::Mode rmode() { return reloc_iterator_.rinfo()->rmode(); }
     RelocInfo* rinfo() { return reloc_iterator_.rinfo(); }
 
@@ -411,7 +417,6 @@ class Debug {
   void OnCompileError(Handle<Script> script);
   void OnBeforeCompile(Handle<Script> script);
   void OnAfterCompile(Handle<Script> script);
-  void OnPromiseEvent(Handle<JSObject> data);
   void OnAsyncTaskEvent(Handle<JSObject> data);
 
   // API facing.
@@ -574,8 +579,6 @@ class Debug {
       Handle<Object> promise);
   MUST_USE_RESULT MaybeHandle<Object> MakeCompileEvent(
       Handle<Script> script, v8::DebugEvent type);
-  MUST_USE_RESULT MaybeHandle<Object> MakePromiseEvent(
-      Handle<JSObject> promise_event);
   MUST_USE_RESULT MaybeHandle<Object> MakeAsyncTaskEvent(
       Handle<JSObject> task_event);
 

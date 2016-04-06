@@ -143,12 +143,6 @@ CompilationInfo::CompilationInfo(ParseInfo* parse_info)
   if (FLAG_turbo_types) MarkAsTypingEnabled();
 
   if (has_shared_info()) {
-    if (shared_info()->is_compiled()) {
-      // We should initialize the CompilationInfo feedback vector from the
-      // passed in shared info, rather than creating a new one.
-      feedback_vector_ = Handle<TypeFeedbackVector>(
-          shared_info()->feedback_vector(), parse_info->isolate());
-    }
     if (shared_info()->never_compiled()) MarkAsFirstCompile();
   }
 }
@@ -219,20 +213,6 @@ bool CompilationInfo::ShouldSelfOptimize() {
          !literal()->dont_optimize() &&
          literal()->scope()->AllowsLazyCompilation() &&
          (!has_shared_info() || !shared_info()->optimization_disabled());
-}
-
-
-void CompilationInfo::EnsureFeedbackVector() {
-  if (feedback_vector_.is_null()) {
-    Handle<TypeFeedbackMetadata> feedback_metadata =
-        TypeFeedbackMetadata::New(isolate(), literal()->feedback_vector_spec());
-    feedback_vector_ = TypeFeedbackVector::New(isolate(), feedback_metadata);
-  }
-
-  // It's very important that recompiles do not alter the structure of the
-  // type feedback vector.
-  CHECK(!feedback_vector_->metadata()->SpecDiffersFrom(
-      literal()->feedback_vector_spec()));
 }
 
 
@@ -393,14 +373,6 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
   // Do not use Crankshaft/TurboFan if we need to be able to set break points.
   if (info()->shared_info()->HasDebugInfo()) {
     return AbortOptimization(kFunctionBeingDebugged);
-  }
-
-  // Resuming a suspended frame is not supported by Crankshaft/TurboFan.
-  if (info()->shared_info()->HasBuiltinFunctionId() &&
-      (info()->shared_info()->builtin_function_id() == kGeneratorObjectNext ||
-       info()->shared_info()->builtin_function_id() == kGeneratorObjectReturn ||
-       info()->shared_info()->builtin_function_id() == kGeneratorObjectThrow)) {
-    return AbortOptimization(kGeneratorResumeMethod);
   }
 
   // Limit the number of times we try to optimize functions.
@@ -784,10 +756,30 @@ void RecordFunctionCompilation(Logger::LogEventsAndTags tag,
   }
 }
 
+void EnsureFeedbackVector(CompilationInfo* info) {
+  if (!info->has_shared_info()) return;
+
+  // If no type feedback vector exists, we create one now. At this point the
+  // AstNumbering pass has already run. Note that we should reuse any existing
+  // feedback vector rather than creating a new one.
+  if (info->shared_info()->feedback_vector()->is_empty()) {
+    Handle<TypeFeedbackMetadata> feedback_metadata = TypeFeedbackMetadata::New(
+        info->isolate(), info->literal()->feedback_vector_spec());
+    Handle<TypeFeedbackVector> feedback_vector =
+        TypeFeedbackVector::New(info->isolate(), feedback_metadata);
+    info->shared_info()->set_feedback_vector(*feedback_vector);
+  }
+
+  // It's very important that recompiles do not alter the structure of the type
+  // feedback vector. Verify that the structure fits the function literal.
+  CHECK(!info->shared_info()->feedback_vector()->metadata()->SpecDiffersFrom(
+      info->literal()->feedback_vector_spec()));
+}
+
 bool CompileUnoptimizedCode(CompilationInfo* info) {
   DCHECK(AllowCompilation::IsAllowed(info->isolate()));
   if (!Compiler::Analyze(info->parse_info()) ||
-      !(info->EnsureFeedbackVector(), FullCodeGenerator::MakeCode(info))) {
+      !(EnsureFeedbackVector(info), FullCodeGenerator::MakeCode(info))) {
     Isolate* isolate = info->isolate();
     if (!isolate->has_pending_exception()) isolate->StackOverflow();
     return false;
@@ -797,27 +789,18 @@ bool CompileUnoptimizedCode(CompilationInfo* info) {
 
 bool UseIgnition(CompilationInfo* info) {
   // TODO(4681): Generator functions are not yet supported.
-  if ((info->has_shared_info() && info->shared_info()->is_generator()) ||
-      (info->has_literal() && IsGeneratorFunction(info->literal()->kind()))) {
-    return false;
-  }
-
-  // TODO(4681): Resuming a suspended frame is not supported.
-  if (info->has_shared_info() && info->shared_info()->HasBuiltinFunctionId() &&
-      (info->shared_info()->builtin_function_id() == kGeneratorObjectNext ||
-       info->shared_info()->builtin_function_id() == kGeneratorObjectReturn ||
-       info->shared_info()->builtin_function_id() == kGeneratorObjectThrow)) {
+  if (info->shared_info()->is_generator()) {
     return false;
   }
 
   // Checks whether top level functions should be passed by the filter.
-  if (info->closure().is_null()) {
+  if (info->shared_info()->is_toplevel()) {
     Vector<const char> filter = CStrVector(FLAG_ignition_filter);
     return (filter.length() == 0) || (filter.length() == 1 && filter[0] == '*');
   }
 
   // Finally respect the filter.
-  return info->closure()->shared()->PassesFilter(FLAG_ignition_filter);
+  return info->shared_info()->PassesFilter(FLAG_ignition_filter);
 }
 
 int CodeAndMetadataSize(CompilationInfo* info) {
@@ -840,7 +823,7 @@ int CodeAndMetadataSize(CompilationInfo* info) {
 
 bool GenerateBaselineCode(CompilationInfo* info) {
   bool success;
-  info->EnsureFeedbackVector();
+  EnsureFeedbackVector(info);
   if (FLAG_ignition && UseIgnition(info)) {
     success = interpreter::Interpreter::MakeBytecode(info);
   } else {
@@ -873,7 +856,6 @@ void InstallBaselineCompilationResult(CompilationInfo* info,
   DCHECK(!info->code().is_null());
   shared->ReplaceCode(*info->code());
   shared->set_scope_info(*scope_info);
-  shared->set_feedback_vector(*info->feedback_vector());
   if (info->has_bytecode_array()) {
     DCHECK(!shared->HasBytecodeArray());  // Only compiled once.
     shared->set_bytecode_array(*info->bytecode_array());
@@ -1316,6 +1298,7 @@ Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
       // Eval scripts cannot be (re-)compiled without context.
       result->set_allows_lazy_compilation_without_context(false);
     }
+    parse_info->set_shared_info(result);
 
     // Compile the code.
     if (!CompileBaselineCode(info)) {
@@ -1460,11 +1443,10 @@ bool Compiler::EnsureDeoptimizationSupport(CompilationInfo* info) {
         shared->code()->has_reloc_info_for_serialization()) {
       unoptimized.PrepareForSerializing();
     }
-    unoptimized.EnsureFeedbackVector();
+    EnsureFeedbackVector(&unoptimized);
     if (!FullCodeGenerator::MakeCode(&unoptimized)) return false;
 
     shared->EnableDeoptimizationSupport(*unoptimized.code());
-    shared->set_feedback_vector(*unoptimized.feedback_vector());
 
     info->MarkAsCompiled();
 
@@ -1498,11 +1480,6 @@ void Compiler::CompileForLiveEdit(Handle<Script> script) {
 
   LiveEditFunctionTracker tracker(info.isolate(), parse_info.literal());
   if (!CompileUnoptimizedCode(&info)) return;
-  if (info.has_shared_info()) {
-    Handle<ScopeInfo> scope_info =
-        ScopeInfo::Create(info.isolate(), info.zone(), info.scope());
-    info.shared_info()->set_scope_info(*scope_info);
-  }
   tracker.RecordRootFunctionInfo(info.code());
 }
 
@@ -1763,6 +1740,7 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfo(
   ParseInfo parse_info(&zone, script);
   CompilationInfo info(&parse_info);
   parse_info.set_literal(literal);
+  parse_info.set_shared_info(result);
   parse_info.set_scope(literal->scope());
   parse_info.set_language_mode(literal->scope()->language_mode());
   if (outer_info->will_serialize()) info.PrepareForSerializing();

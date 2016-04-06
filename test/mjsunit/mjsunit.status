@@ -151,6 +151,7 @@
 
   # TODO(turbofan): The escape analysis needs some investigation.
   'compiler/escape-analysis-deopt-5': [PASS, NO_VARIANTS],
+  'compiler/escape-analysis-9': [PASS, NO_VARIANTS],
 
   ##############################################################################
   # Too slow in debug mode with --stress-opt mode.
@@ -759,7 +760,6 @@
   # TODO(yangguo,4690): assertion failures in debugger tests.
   'debug-allscopes-on-debugger': [FAIL],
   'es6/debug-stepnext-for': [FAIL],
-  'es6/debug-stepin-string-template': [FAIL],
   'es6/debug-promises/stepin-constructor': [FAIL],
   'es6/debug-stepin-proxies': [FAIL],
   'regress/regress-crbug-119800': [FAIL],
@@ -799,13 +799,6 @@
   # objects.
   'es6/mirror-collections': [FAIL],
 
-  # TODO(mythria, 4680): line numbers in eval test. Column number is
-  # incorrect.
-  'regress/regress-crbug-109362': [FAIL],
-
-  # TODO(mythria, 4680): possibly problem with line numbers.
-  'es6/regress/regress-468661': [FAIL],
-
   # TODO(mythria, 4680): Fails with context_register_count_ > 0 (0 vs. 0) when
   # trying to get a context register in BytecodeGenerator.
   'harmony/regress/regress-4658': [FAIL, ['mode == release and dcheck_always_on == False', PASS],],
@@ -837,6 +830,8 @@
   'asm/construct-double': [SKIP],
   'compiler/osr-one': [SKIP],
   'compiler/osr-two': [SKIP],
+  'wasm/asm-wasm-i32': [SKIP],
+  'wasm/asm-wasm-u32': [SKIP],
 }],  # ignition == True and arch == arm64
 
 ['ignition == True and arch == arm', {
@@ -872,40 +867,6 @@
   # These differences between full-codegen and ignition are deliberate.
   'ignition/elided-instruction': [FAIL],
 }],  # ignition == False
-
-['ignition == True and system == windows and no_snap', {
-  # TODO(rmcilroy): Fail with nosnap and shared libraries.
-  'es6/array-from': [FAIL],
-  'es6/classes-subclass-builtins': [FAIL],
-  'es6/computed-property-names-classes': [FAIL],
-  'es6/computed-property-names-object-literals-methods': [FAIL],
-  'es6/debug-stepin-generators': [FAIL],
-  'es6/destructuring': [FAIL],
-  'es6/destructuring-assignment': [FAIL],
-  'es6/generators-iteration': [FAIL],
-  'es6/generators-mirror': [FAIL],
-  'es6/generators-parsing': [FAIL],
-  'es6/generators-poisoned-properties': [FAIL],
-  'es6/generators-relocation': [FAIL],
-  'es6/generators-states': [FAIL],
-  'es6/iteration-semantics': [FAIL],
-  'es6/object-literals-method': [FAIL],
-  'es6/object-literals-super': [FAIL],
-  'es6/promises': [FAIL],
-  'es6/regress/regress-2681': [FAIL],
-  'es6/regress/regress-2691': [FAIL],
-  'es6/regress/regress-3280': [FAIL],
-  'es6/spread-array': [FAIL],
-  'es6/spread-call': [FAIL],
-  'es6/typedarray': [FAIL],
-  'es6/typedarray-from': [FAIL],
-  'harmony/function-sent': [FAIL],
-  'harmony/generators': [FAIL],
-  'harmony/iterator-close': [FAIL],
-  'harmony/regress/regress-4482': [FAIL],
-  'messages': [FAIL],
-  'regress-3225': [FAIL],
-}],  # ignition == True and system == windows and no_snap
 
 ##############################################################################
 ['gcov_coverage', {

@@ -43,7 +43,7 @@ void NamedLoadHandlerCompiler::GenerateLoadViaGetter(
       }
       __ Push(receiver);
       __ LoadAccessor(r3, holder, accessor_index, ACCESSOR_GETTER);
-      __ LoadImmP(r2, Operand(0));
+      __ LoadImmP(r2, Operand::Zero());
       __ Call(masm->isolate()->builtins()->CallFunction(
                   ConvertReceiverMode::kNotNullOrUndefined),
               RelocInfo::CODE_TARGET);
@@ -703,7 +703,7 @@ Handle<Code> NamedStoreHandlerCompiler::CompileStoreCallback(
   __ TailCallRuntime(Runtime::kStoreCallbackProperty);
 
   // Return the generated code.
-  return GetCode(kind(), Code::FAST, name);
+  return GetCode(kind(), name);
 }
 
 Register NamedStoreHandlerCompiler::value() {
@@ -740,7 +740,7 @@ Handle<Code> NamedLoadHandlerCompiler::CompileLoadGlobal(
   FrontendFooter(name, &miss);
 
   // Return the generated code.
-  return GetCode(kind(), Code::NORMAL, name);
+  return GetCode(kind(), name);
 }
 
 #undef __

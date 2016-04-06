@@ -163,7 +163,6 @@ using v8::MemoryPressureLevel;
   V(JSObject, message_listeners, MessageListeners)                             \
   V(UnseededNumberDictionary, code_stubs, CodeStubs)                           \
   V(UnseededNumberDictionary, non_monomorphic_cache, NonMonomorphicCache)      \
-  V(PolymorphicCodeCache, polymorphic_code_cache, PolymorphicCodeCache)        \
   V(Code, js_entry_code, JsEntryCode)                                          \
   V(Code, js_construct_entry_code, JsConstructEntryCode)                       \
   V(FixedArray, natives_source_cache, NativesSourceCache)                      \
@@ -625,11 +624,9 @@ class Heap {
     return old_space_->allocation_limit_address();
   }
 
-  // TODO(hpayer): There is still a missmatch between capacity and actual
-  // committed memory size.
-  bool CanExpandOldGeneration(int size = 0) {
+  bool CanExpandOldGeneration(int size) {
     if (force_oom_) return false;
-    return (CommittedOldGenerationMemory() + size) < MaxOldGenerationSize();
+    return (OldGenerationCapacity() + size) < MaxOldGenerationSize();
   }
 
   // Clear the Instanceof cache (used when a prototype changes).
@@ -928,6 +925,8 @@ class Heap {
 
   GCTracer* tracer() { return tracer_; }
 
+  MemoryAllocator* memory_allocator() { return memory_allocator_; }
+
   EmbedderHeapTracer* embedder_heap_tracer() { return embedder_heap_tracer_; }
 
   PromotionQueue* promotion_queue() { return &promotion_queue_; }
@@ -1003,6 +1002,10 @@ class Heap {
   // code that looks here, because it is faster than loading from the static
   // jslimit_/real_jslimit_ variable in the StackGuard.
   void SetStackLimits();
+
+  // The stack limit is thread-dependent. To be able to reproduce the same
+  // snapshot blob, we need to reset it before serializing.
+  void ClearStackLimits();
 
   // Generated code can treat direct references to this root as constant.
   bool RootCanBeTreatedAsConstant(RootListIndex root_index);
@@ -1174,16 +1177,11 @@ class Heap {
   // GC statistics. ============================================================
   // ===========================================================================
 
-  // Returns the maximum amount of memory reserved for the heap.  For
-  // the young generation, we reserve 4 times the amount needed for a
-  // semi space.  The young generation consists of two semi spaces and
-  // we reserve twice the amount needed for those in order to ensure
-  // that new space can be aligned to its size.
+  // Returns the maximum amount of memory reserved for the heap.
   intptr_t MaxReserved() {
-    return 4 * reserved_semispace_size_ + max_old_generation_size_;
+    return 2 * max_semi_space_size_ + max_old_generation_size_;
   }
   int MaxSemiSpaceSize() { return max_semi_space_size_; }
-  int ReservedSemiSpaceSize() { return reserved_semispace_size_; }
   int InitialSemiSpaceSize() { return initial_semispace_size_; }
   intptr_t MaxOldGenerationSize() { return max_old_generation_size_; }
   intptr_t MaxExecutableSize() { return max_executable_size_; }
@@ -1191,6 +1189,9 @@ class Heap {
   // Returns the capacity of the heap in bytes w/o growing. Heap grows when
   // more spaces are needed until it reaches the limit.
   intptr_t Capacity();
+
+  // Returns the capacity of the old generation.
+  intptr_t OldGenerationCapacity();
 
   // Returns the amount of memory currently committed for the heap.
   intptr_t CommittedMemory();
@@ -1995,10 +1996,8 @@ class Heap {
   Object* roots_[kRootListLength];
 
   size_t code_range_size_;
-  int reserved_semispace_size_;
   int max_semi_space_size_;
   int initial_semispace_size_;
-  int target_semispace_size_;
   intptr_t max_old_generation_size_;
   intptr_t initial_old_generation_size_;
   bool old_generation_size_configured_;
@@ -2153,6 +2152,8 @@ class Heap {
 
   MarkCompactCollector* mark_compact_collector_;
 
+  MemoryAllocator* memory_allocator_;
+
   StoreBuffer store_buffer_;
 
   IncrementalMarking* incremental_marking_;
@@ -2256,6 +2257,7 @@ class Heap {
   friend class Page;
   friend class Scavenger;
   friend class StoreBuffer;
+  friend class TestMemoryAllocatorScope;
 
   // The allocator interface.
   friend class Factory;

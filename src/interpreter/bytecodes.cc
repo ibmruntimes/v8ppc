@@ -8,6 +8,7 @@
 
 #include "src/frames.h"
 #include "src/interpreter/bytecode-traits.h"
+#include "src/interpreter/interpreter.h"
 
 namespace v8 {
 namespace internal {
@@ -39,6 +40,22 @@ std::string Bytecodes::ToString(Bytecode bytecode, OperandScale operand_scale) {
   } else {
     return value;
   }
+}
+
+// static
+const char* Bytecodes::AccumulatorUseToString(AccumulatorUse accumulator_use) {
+  switch (accumulator_use) {
+    case AccumulatorUse::kNone:
+      return "None";
+    case AccumulatorUse::kRead:
+      return "Read";
+    case AccumulatorUse::kWrite:
+      return "Write";
+    case AccumulatorUse::kReadWrite:
+      return "ReadWrite";
+  }
+  UNREACHABLE();
+  return "";
 }
 
 // static
@@ -140,7 +157,7 @@ int Bytecodes::NumberOfOperands(Bytecode bytecode) {
   switch (bytecode) {
 #define CASE(Name, ...)   \
   case Bytecode::k##Name: \
-    return BytecodeTraits<__VA_ARGS__, OPERAND_TERM>::kOperandCount;
+    return BytecodeTraits<__VA_ARGS__>::kOperandCount;
     BYTECODE_LIST(CASE)
 #undef CASE
   }
@@ -153,9 +170,9 @@ int Bytecodes::NumberOfOperands(Bytecode bytecode) {
 int Bytecodes::NumberOfRegisterOperands(Bytecode bytecode) {
   DCHECK(bytecode <= Bytecode::kLast);
   switch (bytecode) {
-#define CASE(Name, ...)                                            \
-  case Bytecode::k##Name:                                          \
-    typedef BytecodeTraits<__VA_ARGS__, OPERAND_TERM> Name##Trait; \
+#define CASE(Name, ...)                              \
+  case Bytecode::k##Name:                            \
+    typedef BytecodeTraits<__VA_ARGS__> Name##Trait; \
     return Name##Trait::kRegisterOperandCount;
     BYTECODE_LIST(CASE)
 #undef CASE
@@ -198,12 +215,38 @@ OperandScale Bytecodes::PrefixBytecodeToOperandScale(Bytecode bytecode) {
 }
 
 // static
+AccumulatorUse Bytecodes::GetAccumulatorUse(Bytecode bytecode) {
+  DCHECK(bytecode <= Bytecode::kLast);
+  switch (bytecode) {
+#define CASE(Name, ...)   \
+  case Bytecode::k##Name: \
+    return BytecodeTraits<__VA_ARGS__>::kAccumulatorUse;
+    BYTECODE_LIST(CASE)
+#undef CASE
+  }
+  UNREACHABLE();
+  return AccumulatorUse::kNone;
+}
+
+// static
+bool Bytecodes::ReadsAccumulator(Bytecode bytecode) {
+  return (GetAccumulatorUse(bytecode) & AccumulatorUse::kRead) ==
+         AccumulatorUse::kRead;
+}
+
+// static
+bool Bytecodes::WritesAccumulator(Bytecode bytecode) {
+  return (GetAccumulatorUse(bytecode) & AccumulatorUse::kWrite) ==
+         AccumulatorUse::kWrite;
+}
+
+// static
 OperandType Bytecodes::GetOperandType(Bytecode bytecode, int i) {
   DCHECK(bytecode <= Bytecode::kLast);
   switch (bytecode) {
 #define CASE(Name, ...)   \
   case Bytecode::k##Name: \
-    return BytecodeTraits<__VA_ARGS__, OPERAND_TERM>::GetOperandType(i);
+    return BytecodeTraits<__VA_ARGS__>::GetOperandType(i);
     BYTECODE_LIST(CASE)
 #undef CASE
   }
@@ -222,9 +265,9 @@ OperandSize Bytecodes::GetOperandSize(Bytecode bytecode, int i,
 int Bytecodes::GetRegisterOperandBitmap(Bytecode bytecode) {
   DCHECK(bytecode <= Bytecode::kLast);
   switch (bytecode) {
-#define CASE(Name, ...)                                            \
-  case Bytecode::k##Name:                                          \
-    typedef BytecodeTraits<__VA_ARGS__, OPERAND_TERM> Name##Trait; \
+#define CASE(Name, ...)                              \
+  case Bytecode::k##Name:                            \
+    typedef BytecodeTraits<__VA_ARGS__> Name##Trait; \
     return Name##Trait::kRegisterOperandBitmap;
     BYTECODE_LIST(CASE)
 #undef CASE
@@ -330,9 +373,9 @@ bool Bytecodes::IsDebugBreak(Bytecode bytecode) {
 // static
 bool Bytecodes::IsBytecodeWithScalableOperands(Bytecode bytecode) {
   switch (bytecode) {
-#define CASE(Name, ...)                                            \
-  case Bytecode::k##Name:                                          \
-    typedef BytecodeTraits<__VA_ARGS__, OPERAND_TERM> Name##Trait; \
+#define CASE(Name, ...)                              \
+  case Bytecode::k##Name:                            \
+    typedef BytecodeTraits<__VA_ARGS__> Name##Trait; \
     return Name##Trait::IsScalable();
     BYTECODE_LIST(CASE)
 #undef CASE
@@ -574,8 +617,19 @@ std::ostream& Bytecodes::Decode(std::ostream& os, const uint8_t* bytecode_start,
   return os;
 }
 
+// static
+bool Bytecodes::BytecodeHasHandler(Bytecode bytecode,
+                                   OperandScale operand_scale) {
+  return operand_scale == OperandScale::kSingle ||
+         Bytecodes::IsBytecodeWithScalableOperands(bytecode);
+}
+
 std::ostream& operator<<(std::ostream& os, const Bytecode& bytecode) {
   return os << Bytecodes::ToString(bytecode);
+}
+
+std::ostream& operator<<(std::ostream& os, const AccumulatorUse& use) {
+  return os << Bytecodes::AccumulatorUseToString(use);
 }
 
 std::ostream& operator<<(std::ostream& os, const OperandSize& operand_size) {
