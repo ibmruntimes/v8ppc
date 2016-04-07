@@ -115,16 +115,6 @@ bool CompilationInfo::has_context() const {
 }
 
 
-bool CompilationInfo::has_literal() const {
-  return parse_info_ && parse_info_->literal() != nullptr;
-}
-
-
-bool CompilationInfo::has_scope() const {
-  return parse_info_ && parse_info_->scope() != nullptr;
-}
-
-
 CompilationInfo::CompilationInfo(ParseInfo* parse_info)
     : CompilationInfo(parse_info, nullptr, Code::ComputeFlags(Code::FUNCTION),
                       BASE, parse_info->isolate(), parse_info->zone()) {
@@ -168,7 +158,6 @@ CompilationInfo::CompilationInfo(ParseInfo* parse_info, const char* debug_name,
       prologue_offset_(Code::kPrologueOffsetNotSet),
       track_positions_(FLAG_hydrogen_track_positions ||
                        isolate->cpu_profiler()->is_profiling()),
-      opt_count_(has_shared_info() ? shared_info()->opt_count() : 0),
       parameter_count_(0),
       optimization_id_(-1),
       osr_expr_stack_height_(0),
@@ -187,7 +176,7 @@ CompilationInfo::~CompilationInfo() {
 
 
 int CompilationInfo::num_parameters() const {
-  return has_scope() ? scope()->num_parameters() : parameter_count_;
+  return !IsStub() ? scope()->num_parameters() : parameter_count_;
 }
 
 
@@ -197,11 +186,6 @@ int CompilationInfo::num_parameters_including_this() const {
 
 
 bool CompilationInfo::is_this_defined() const { return !IsStub(); }
-
-
-int CompilationInfo::num_heap_slots() const {
-  return has_scope() ? scope()->num_heap_slots() : 0;
-}
 
 
 // Primitive functions are unlikely to be picked up by the stack-walking
@@ -378,7 +362,7 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
   // Limit the number of times we try to optimize functions.
   const int kMaxOptCount =
       FLAG_deopt_every_n_times == 0 ? FLAG_max_opt_count : 1000;
-  if (info()->opt_count() > kMaxOptCount) {
+  if (info()->shared_info()->opt_count() > kMaxOptCount) {
     return AbortOptimization(kOptimizedTooManyTimes);
   }
 
@@ -862,8 +846,7 @@ void InstallBaselineCompilationResult(CompilationInfo* info,
   }
 }
 
-MUST_USE_RESULT MaybeHandle<Code> GetUnoptimizedCodeCommon(
-    CompilationInfo* info) {
+MUST_USE_RESULT MaybeHandle<Code> GetUnoptimizedCode(CompilationInfo* info) {
   VMState<COMPILER> state(info->isolate());
   PostponeInterruptsScope postpone(info->isolate());
 
@@ -1027,21 +1010,6 @@ bool GetOptimizedCodeLater(CompilationInfo* info) {
   return true;
 }
 
-MaybeHandle<Code> GetUnoptimizedCode(Handle<JSFunction> function) {
-  DCHECK(!function->GetIsolate()->has_pending_exception());
-  DCHECK(!function->is_compiled());
-  if (function->shared()->is_compiled()) {
-    return Handle<Code>(function->shared()->code());
-  }
-
-  CompilationInfoWithZone info(function);
-  Handle<Code> result;
-  ASSIGN_RETURN_ON_EXCEPTION(info.isolate(), result,
-                             GetUnoptimizedCodeCommon(&info),
-                             Code);
-  return result;
-}
-
 MaybeHandle<Code> GetOptimizedCode(Handle<JSFunction> function,
                                    Compiler::ConcurrencyMode mode,
                                    BailoutId osr_ast_id = BailoutId::None(),
@@ -1116,20 +1084,11 @@ MaybeHandle<Code> GetLazyCode(Handle<JSFunction> function) {
   if (FLAG_turbo_asm && function->shared()->asm_function() &&
       (FLAG_turbo_asm_deoptimization || !isolate->debug()->is_active()) &&
       !FLAG_turbo_osr) {
-    CompilationInfoWithZone info(function);
-
-    VMState<COMPILER> state(isolate);
-    PostponeInterruptsScope postpone(isolate);
-
-    info.SetOptimizing();
-
-    if (GetOptimizedCodeNow(&info)) {
+    Handle<Code> code;
+    if (GetOptimizedCode(function, Compiler::NOT_CONCURRENT).ToHandle(&code)) {
       DCHECK(function->shared()->is_compiled());
-      return info.code();
+      return code;
     }
-    // We have failed compilation. If there was an exception clear it so that
-    // we can compile unoptimized code.
-    if (isolate->has_pending_exception()) isolate->clear_pending_exception();
   }
 
   if (function->shared()->is_compiled()) {
@@ -1138,8 +1097,7 @@ MaybeHandle<Code> GetLazyCode(Handle<JSFunction> function) {
 
   CompilationInfoWithZone info(function);
   Handle<Code> result;
-  ASSIGN_RETURN_ON_EXCEPTION(isolate, result, GetUnoptimizedCodeCommon(&info),
-                             Code);
+  ASSIGN_RETURN_ON_EXCEPTION(isolate, result, GetUnoptimizedCode(&info), Code);
 
   if (FLAG_always_opt) {
     Handle<Code> opt_code;
@@ -1193,7 +1151,7 @@ bool CompileEvalForDebugging(Handle<JSFunction> function,
 
 bool CompileForDebugging(CompilationInfo* info) {
   info->MarkAsDebug();
-  if (GetUnoptimizedCodeCommon(info).is_null()) {
+  if (GetUnoptimizedCode(info).is_null()) {
     info->isolate()->clear_pending_exception();
     return false;
   }
@@ -1386,8 +1344,13 @@ bool Compiler::CompileOptimized(Handle<JSFunction> function,
     code = Handle<Code>(function->shared()->code(), isolate);
     if (code->kind() != Code::FUNCTION &&
         code->kind() != Code::OPTIMIZED_FUNCTION) {
-      if (!GetUnoptimizedCode(function).ToHandle(&code)) {
-        return false;
+      DCHECK(!isolate->has_pending_exception());
+      DCHECK(!function->is_compiled());
+      if (!function->shared()->is_compiled()) {
+        CompilationInfoWithZone info(function);
+        if (!GetUnoptimizedCode(&info).ToHandle(&code)) {
+          return false;
+        }
       }
     }
     function->ReplaceCode(*code);
@@ -1424,7 +1387,7 @@ bool Compiler::CompileDebugCode(Handle<SharedFunctionInfo> shared) {
 // be generated lazily once deopt is triggered.
 bool Compiler::EnsureDeoptimizationSupport(CompilationInfo* info) {
   DCHECK_NOT_NULL(info->literal());
-  DCHECK(info->has_scope());
+  DCHECK_NOT_NULL(info->scope());
   Handle<SharedFunctionInfo> shared = info->shared_info();
   if (!shared->has_deoptimization_support()) {
     // TODO(titzer): just reuse the ParseInfo for the unoptimized compile.

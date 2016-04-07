@@ -1960,13 +1960,9 @@ MaybeHandle<JSBoundFunction> Factory::NewJSBoundFunction(
   }
 
   // Setup the map for the JSBoundFunction instance.
-  Handle<Map> map = handle(
-      target_function->IsConstructor()
-          ? isolate()->native_context()->bound_function_with_constructor_map()
-          : isolate()
-                ->native_context()
-                ->bound_function_without_constructor_map(),
-      isolate());
+  Handle<Map> map = target_function->IsConstructor()
+                        ? isolate()->bound_function_with_constructor_map()
+                        : isolate()->bound_function_without_constructor_map();
   if (map->prototype() != *prototype) {
     map = Map::TransitionToPrototype(map, prototype, REGULAR_PROTOTYPE);
   }
@@ -1978,8 +1974,6 @@ MaybeHandle<JSBoundFunction> Factory::NewJSBoundFunction(
   result->set_bound_target_function(*target_function);
   result->set_bound_this(*bound_this);
   result->set_bound_arguments(*bound_arguments);
-  result->set_length(Smi::FromInt(0));
-  result->set_name(*undefined_value(), SKIP_WRITE_BARRIER);
   return result;
 }
 
@@ -2239,14 +2233,19 @@ Handle<DebugInfo> Factory::NewDebugInfo(Handle<SharedFunctionInfo> shared) {
       Handle<DebugInfo>::cast(NewStruct(DEBUG_INFO_TYPE));
   debug_info->set_shared(*shared);
   if (shared->HasBytecodeArray()) {
-    // Create a copy for debugging.
-    Handle<BytecodeArray> original(shared->bytecode_array(), isolate());
-    Handle<BytecodeArray> copy = CopyBytecodeArray(original);
-    debug_info->set_abstract_code(AbstractCode::cast(*copy));
+    // We need to create a copy, but delay since this may cause heap
+    // verification.
+    debug_info->set_abstract_code(AbstractCode::cast(shared->bytecode_array()));
   } else {
     debug_info->set_abstract_code(AbstractCode::cast(shared->code()));
   }
   debug_info->set_break_points(*break_points);
+  if (shared->HasBytecodeArray()) {
+    // Create a copy for debugging.
+    Handle<BytecodeArray> original(shared->bytecode_array());
+    Handle<BytecodeArray> copy = CopyBytecodeArray(original);
+    debug_info->set_abstract_code(AbstractCode::cast(*copy));
+  }
 
   // Link debug info to function.
   shared->set_debug_info(*debug_info);

@@ -943,21 +943,15 @@ void Heap::ReportExternalMemoryPressure(const char* gc_reason) {
 
 
 void Heap::EnsureFillerObjectAtTop() {
-  // There may be an allocation memento behind every object in new space.
-  // If we evacuate a not full new space or if we are on the last page of
-  // the new space, then there may be uninitialized memory behind the top
-  // pointer of the new space page. We store a filler object there to
-  // identify the unused space.
-  Address from_top = new_space_.top();
-  // Check that from_top is inside its page (i.e., not at the end).
-  Address space_end = new_space_.ToSpaceEnd();
-  if (from_top < space_end) {
-    Page* page = Page::FromAddress(from_top);
-    if (page->Contains(from_top)) {
-      int remaining_in_page = static_cast<int>(page->area_end() - from_top);
-      CreateFillerObjectAt(from_top, remaining_in_page,
-                           ClearRecordedSlots::kNo);
-    }
+  // There may be an allocation memento behind objects in new space. Upon
+  // evacuation of a non-full new space (or if we are on the last page) there
+  // may be uninitialized memory behind top. We fill the remainder of the page
+  // with a filler.
+  Address to_top = new_space_.top();
+  NewSpacePage* page = NewSpacePage::FromAddress(to_top - kPointerSize);
+  if (page->Contains(to_top)) {
+    int remaining_in_page = static_cast<int>(page->area_end() - to_top);
+    CreateFillerObjectAt(to_top, remaining_in_page, ClearRecordedSlots::kNo);
   }
 }
 
@@ -4239,7 +4233,23 @@ void Heap::RegisterReservationsForBlackAllocation(Reservation* reservations) {
   // TODO(hpayer): We do not have to iterate reservations on black objects
   // for marking. We just have to execute the special visiting side effect
   // code that adds objects to global data structures, e.g. for array buffers.
+
+  // Code space, map space, and large object space do not use black pages.
+  // Hence we have to color all objects of the reservation first black to avoid
+  // unnecessary marking deque load.
   if (incremental_marking()->black_allocation()) {
+    for (int i = CODE_SPACE; i < Serializer::kNumberOfSpaces; i++) {
+      const Heap::Reservation& res = reservations[i];
+      for (auto& chunk : res) {
+        Address addr = chunk.start;
+        while (addr < chunk.end) {
+          HeapObject* obj = HeapObject::FromAddress(addr);
+          Marking::MarkBlack(Marking::MarkBitFrom(obj));
+          MemoryChunk::IncrementLiveBytesFromGC(obj, obj->Size());
+          addr += obj->Size();
+        }
+      }
+    }
     for (int i = OLD_SPACE; i < Serializer::kNumberOfSpaces; i++) {
       const Heap::Reservation& res = reservations[i];
       for (auto& chunk : res) {

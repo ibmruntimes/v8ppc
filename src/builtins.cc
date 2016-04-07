@@ -138,32 +138,35 @@ BUILTIN_LIST_C(DEF_ARG_TYPE)
 //
 // In the body of the builtin function the arguments can be accessed
 // through the BuiltinArguments object args.
-
+// TODO(cbruni): add global flag to check whether any tracing events have been
+// enabled.
 #define BUILTIN(name)                                                          \
   MUST_USE_RESULT static Object* Builtin_Impl_##name(name##ArgumentsType args, \
                                                      Isolate* isolate);        \
-  MUST_USE_RESULT static Object* Builtin_##name(                               \
+                                                                               \
+  V8_NOINLINE static Object* Builtin_Impl_Stats_##name(                        \
       int args_length, Object** args_object, Isolate* isolate) {               \
-    Object* value;                                                             \
-    isolate->counters()->runtime_calls()->Increment();                         \
+    name##ArgumentsType args(args_length, args_object);                        \
+    RuntimeCallStats* stats = isolate->counters()->runtime_call_stats();       \
+    RuntimeCallTimerScope timer(isolate, &stats->Builtin_##name);              \
     TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.runtime"),                      \
                  "V8.Builtin_" #name);                                         \
-    name##ArgumentsType args(args_length, args_object);                        \
+    return Builtin_Impl_##name(args, isolate);                                 \
+  }                                                                            \
+                                                                               \
+  MUST_USE_RESULT static Object* Builtin_##name(                               \
+      int args_length, Object** args_object, Isolate* isolate) {               \
     if (FLAG_runtime_call_stats) {                                             \
-      RuntimeCallStats* stats = isolate->counters()->runtime_call_stats();     \
-      RuntimeCallTimerScope timer(isolate, &stats->Builtin_##name);            \
-      value = Builtin_Impl_##name(args, isolate);                              \
-    } else {                                                                   \
-      value = Builtin_Impl_##name(args, isolate);                              \
+      return Builtin_Impl_Stats_##name(args_length, args_object, isolate);     \
     }                                                                          \
-    return value;                                                              \
+    name##ArgumentsType args(args_length, args_object);                        \
+    return Builtin_Impl_##name(args, isolate);                                 \
   }                                                                            \
                                                                                \
   MUST_USE_RESULT static Object* Builtin_Impl_##name(name##ArgumentsType args, \
                                                      Isolate* isolate)
 
 // ----------------------------------------------------------------------------
-
 
 #define CHECK_RECEIVER(Type, name, method)                                  \
   if (!args.receiver()->Is##Type()) {                                       \
@@ -4063,42 +4066,64 @@ BUILTIN(FunctionPrototypeBind) {
       isolate, function,
       isolate->factory()->NewJSBoundFunction(target, this_arg, argv));
 
-  // TODO(bmeurer): Optimize the rest for the common cases where {target} is
-  // a function with some initial map or even a bound function.
+  LookupIterator length_lookup(target, isolate->factory()->length_string(),
+                               target, LookupIterator::HIDDEN);
   // Setup the "length" property based on the "length" of the {target}.
-  Handle<Object> length(Smi::FromInt(0), isolate);
-  Maybe<bool> target_has_length =
-      JSReceiver::HasOwnProperty(target, isolate->factory()->length_string());
-  if (!target_has_length.IsJust()) {
-    return isolate->heap()->exception();
-  } else if (target_has_length.FromJust()) {
-    Handle<Object> target_length;
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-        isolate, target_length,
-        JSReceiver::GetProperty(target, isolate->factory()->length_string()));
-    if (target_length->IsNumber()) {
-      length = isolate->factory()->NewNumber(std::max(
-          0.0, DoubleToInteger(target_length->Number()) - argv.length()));
+  // If the targets length is the default JSFunction accessor, we can keep the
+  // accessor that's installed by default on the JSBoundFunction. It lazily
+  // computes the value from the underlying internal length.
+  if (!target->IsJSFunction() ||
+      length_lookup.state() != LookupIterator::ACCESSOR ||
+      !length_lookup.GetAccessors()->IsAccessorInfo()) {
+    Handle<Object> length(Smi::FromInt(0), isolate);
+    Maybe<PropertyAttributes> attributes =
+        JSReceiver::GetPropertyAttributes(&length_lookup);
+    if (!attributes.IsJust()) return isolate->heap()->exception();
+    if (attributes.FromJust() != ABSENT) {
+      Handle<Object> target_length;
+      ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, target_length,
+                                         Object::GetProperty(&length_lookup));
+      if (target_length->IsNumber()) {
+        length = isolate->factory()->NewNumber(std::max(
+            0.0, DoubleToInteger(target_length->Number()) - argv.length()));
+      }
     }
+    LookupIterator it(function, isolate->factory()->length_string(), function);
+    DCHECK_EQ(LookupIterator::ACCESSOR, it.state());
+    RETURN_FAILURE_ON_EXCEPTION(isolate,
+                                JSObject::DefineOwnPropertyIgnoreAttributes(
+                                    &it, length, it.property_attributes()));
   }
-  function->set_length(*length);
 
   // Setup the "name" property based on the "name" of the {target}.
-  Handle<Object> target_name;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, target_name,
-      JSReceiver::GetProperty(target, isolate->factory()->name_string()));
-  Handle<String> name;
-  if (!target_name->IsString()) {
-    name = isolate->factory()->bound__string();
-  } else {
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-        isolate, name, Name::ToFunctionName(Handle<String>::cast(target_name)));
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-        isolate, name, isolate->factory()->NewConsString(
-                           isolate->factory()->bound__string(), name));
+  // If the targets name is the default JSFunction accessor, we can keep the
+  // accessor that's installed by default on the JSBoundFunction. It lazily
+  // computes the value from the underlying internal name.
+  LookupIterator name_lookup(target, isolate->factory()->name_string(), target,
+                             LookupIterator::HIDDEN);
+  if (!target->IsJSFunction() ||
+      name_lookup.state() != LookupIterator::ACCESSOR ||
+      !name_lookup.GetAccessors()->IsAccessorInfo()) {
+    Handle<Object> target_name;
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, target_name,
+                                       Object::GetProperty(&name_lookup));
+    Handle<String> name;
+    if (target_name->IsString()) {
+      ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+          isolate, name,
+          Name::ToFunctionName(Handle<String>::cast(target_name)));
+      ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+          isolate, name, isolate->factory()->NewConsString(
+                             isolate->factory()->bound__string(), name));
+    } else {
+      name = isolate->factory()->bound__string();
+    }
+    LookupIterator it(function, isolate->factory()->name_string());
+    DCHECK_EQ(LookupIterator::ACCESSOR, it.state());
+    RETURN_FAILURE_ON_EXCEPTION(isolate,
+                                JSObject::DefineOwnPropertyIgnoreAttributes(
+                                    &it, name, it.property_attributes()));
   }
-  function->set_name(*name);
   return *function;
 }
 

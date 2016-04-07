@@ -3599,7 +3599,6 @@ std::ostream& operator<<(std::ostream& os, const HBasicBlock& b) {
   return os << "B" << b.block_id();
 }
 
-
 HGraph::HGraph(CompilationInfo* info, CallInterfaceDescriptor descriptor)
     : isolate_(info->isolate()),
       next_block_id_(0),
@@ -3612,6 +3611,7 @@ HGraph::HGraph(CompilationInfo* info, CallInterfaceDescriptor descriptor)
       info_(info),
       descriptor_(descriptor),
       zone_(info->zone()),
+      allow_code_motion_(false),
       use_optimistic_licm_(false),
       depends_on_empty_array_proto_elements_(false),
       type_change_checksum_(0),
@@ -4445,6 +4445,11 @@ bool HOptimizedGraphBuilder::BuildGraph() {
       !type_info->matches_inlined_type_change_checksum(composite_checksum));
   type_info->set_inlined_type_change_checksum(composite_checksum);
 
+  // Set this predicate early to avoid handle deref during graph optimization.
+  graph()->set_allow_code_motion(
+      current_info()->IsStub() ||
+      current_info()->shared_info()->opt_count() + 1 < FLAG_max_opt_count);
+
   // Perform any necessary OSR-specific cleanups or changes to the graph.
   osr()->FinishGraph();
 
@@ -5111,7 +5116,7 @@ void HOptimizedGraphBuilder::VisitDoWhileStatement(DoWhileStatement* stmt) {
   HBasicBlock* body_exit =
       JoinContinue(stmt, current_block(), break_info.continue_block());
   HBasicBlock* loop_successor = NULL;
-  if (body_exit != NULL && !stmt->cond()->ToBooleanIsTrue()) {
+  if (body_exit != NULL) {
     set_current_block(body_exit);
     loop_successor = graph()->CreateBasicBlock();
     if (stmt->cond()->ToBooleanIsFalse()) {
@@ -5153,19 +5158,17 @@ void HOptimizedGraphBuilder::VisitWhileStatement(WhileStatement* stmt) {
 
   // If the condition is constant true, do not generate a branch.
   HBasicBlock* loop_successor = NULL;
-  if (!stmt->cond()->ToBooleanIsTrue()) {
-    HBasicBlock* body_entry = graph()->CreateBasicBlock();
-    loop_successor = graph()->CreateBasicBlock();
-    CHECK_BAILOUT(VisitForControl(stmt->cond(), body_entry, loop_successor));
-    if (body_entry->HasPredecessor()) {
-      body_entry->SetJoinId(stmt->BodyId());
-      set_current_block(body_entry);
-    }
-    if (loop_successor->HasPredecessor()) {
-      loop_successor->SetJoinId(stmt->ExitId());
-    } else {
-      loop_successor = NULL;
-    }
+  HBasicBlock* body_entry = graph()->CreateBasicBlock();
+  loop_successor = graph()->CreateBasicBlock();
+  CHECK_BAILOUT(VisitForControl(stmt->cond(), body_entry, loop_successor));
+  if (body_entry->HasPredecessor()) {
+    body_entry->SetJoinId(stmt->BodyId());
+    set_current_block(body_entry);
+  }
+  if (loop_successor->HasPredecessor()) {
+    loop_successor->SetJoinId(stmt->ExitId());
+  } else {
+    loop_successor = NULL;
   }
 
   BreakAndContinueInfo break_info(stmt, scope());
@@ -5194,10 +5197,9 @@ void HOptimizedGraphBuilder::VisitForStatement(ForStatement* stmt) {
   DCHECK(current_block() != NULL);
   HBasicBlock* loop_entry = BuildLoopEntry(stmt);
 
-  HBasicBlock* loop_successor = NULL;
+  HBasicBlock* loop_successor = graph()->CreateBasicBlock();
+  HBasicBlock* body_entry = graph()->CreateBasicBlock();
   if (stmt->cond() != NULL) {
-    HBasicBlock* body_entry = graph()->CreateBasicBlock();
-    loop_successor = graph()->CreateBasicBlock();
     CHECK_BAILOUT(VisitForControl(stmt->cond(), body_entry, loop_successor));
     if (body_entry->HasPredecessor()) {
       body_entry->SetJoinId(stmt->BodyId());
@@ -5208,6 +5210,14 @@ void HOptimizedGraphBuilder::VisitForStatement(ForStatement* stmt) {
     } else {
       loop_successor = NULL;
     }
+  } else {
+    // Create dummy control flow so that variable liveness analysis
+    // produces teh correct result.
+    HControlInstruction* branch = New<HBranch>(graph()->GetConstantTrue());
+    branch->SetSuccessorAt(0, body_entry);
+    branch->SetSuccessorAt(1, loop_successor);
+    FinishCurrentBlock(branch);
+    set_current_block(body_entry);
   }
 
   BreakAndContinueInfo break_info(stmt, scope());

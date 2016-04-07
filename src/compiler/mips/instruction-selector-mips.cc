@@ -395,27 +395,71 @@ void InstructionSelector::VisitWord32Sar(Node* node) {
   VisitRRO(this, kMipsSar, node);
 }
 
-void InstructionSelector::VisitInt32PairAdd(Node* node) { UNIMPLEMENTED(); }
+static void VisitInt32PairBinop(InstructionSelector* selector,
+                                InstructionCode opcode, Node* node) {
+  MipsOperandGenerator g(selector);
 
-void InstructionSelector::VisitInt32PairSub(Node* node) { UNIMPLEMENTED(); }
-
-void InstructionSelector::VisitInt32PairMul(Node* node) {
-  MipsOperandGenerator g(this);
+  // We use UseUniqueRegister here to avoid register sharing with the output
+  // register.
   InstructionOperand inputs[] = {g.UseUniqueRegister(node->InputAt(0)),
                                  g.UseUniqueRegister(node->InputAt(1)),
                                  g.UseUniqueRegister(node->InputAt(2)),
                                  g.UseUniqueRegister(node->InputAt(3))};
+
   InstructionOperand outputs[] = {
       g.DefineAsRegister(node),
       g.DefineAsRegister(NodeProperties::FindProjection(node, 1))};
-  Emit(kMipsMulPair, 2, outputs, 4, inputs);
+  selector->Emit(opcode, 2, outputs, 4, inputs);
 }
 
-void InstructionSelector::VisitWord32PairShl(Node* node) { UNIMPLEMENTED(); }
+void InstructionSelector::VisitInt32PairAdd(Node* node) {
+  VisitInt32PairBinop(this, kMipsAddPair, node);
+}
 
-void InstructionSelector::VisitWord32PairShr(Node* node) { UNIMPLEMENTED(); }
+void InstructionSelector::VisitInt32PairSub(Node* node) {
+  VisitInt32PairBinop(this, kMipsSubPair, node);
+}
 
-void InstructionSelector::VisitWord32PairSar(Node* node) { UNIMPLEMENTED(); }
+void InstructionSelector::VisitInt32PairMul(Node* node) {
+  VisitInt32PairBinop(this, kMipsMulPair, node);
+}
+
+// Shared routine for multiple shift operations.
+static void VisitWord32PairShift(InstructionSelector* selector,
+                                 InstructionCode opcode, Node* node) {
+  MipsOperandGenerator g(selector);
+  Int32Matcher m(node->InputAt(2));
+  InstructionOperand shift_operand;
+  if (m.HasValue()) {
+    shift_operand = g.UseImmediate(m.node());
+  } else {
+    shift_operand = g.UseUniqueRegister(m.node());
+  }
+
+  // We use UseUniqueRegister here to avoid register sharing with the output
+  // register.
+  InstructionOperand inputs[] = {g.UseUniqueRegister(node->InputAt(0)),
+                                 g.UseUniqueRegister(node->InputAt(1)),
+                                 shift_operand};
+
+  InstructionOperand outputs[] = {
+      g.DefineAsRegister(node),
+      g.DefineAsRegister(NodeProperties::FindProjection(node, 1))};
+
+  selector->Emit(opcode, 2, outputs, 3, inputs);
+}
+
+void InstructionSelector::VisitWord32PairShl(Node* node) {
+  VisitWord32PairShift(this, kMipsShlPair, node);
+}
+
+void InstructionSelector::VisitWord32PairShr(Node* node) {
+  VisitWord32PairShift(this, kMipsShrPair, node);
+}
+
+void InstructionSelector::VisitWord32PairSar(Node* node) {
+  VisitWord32PairShift(this, kMipsSarPair, node);
+}
 
 void InstructionSelector::VisitWord32Ror(Node* node) {
   VisitRRO(this, kMipsRor, node);
@@ -444,8 +488,32 @@ void InstructionSelector::VisitWord32Popcnt(Node* node) {
 
 void InstructionSelector::VisitInt32Add(Node* node) {
   MipsOperandGenerator g(this);
+  Int32BinopMatcher m(node);
 
-  // TODO(plind): Consider multiply & add optimization from arm port.
+  // Select Lsa for (left + (left_of_right << imm)).
+  if (m.right().opcode() == IrOpcode::kWord32Shl &&
+      CanCover(node, m.left().node()) && CanCover(node, m.right().node())) {
+    Int32BinopMatcher mright(m.right().node());
+    if (mright.right().HasValue()) {
+      int32_t shift_value = static_cast<int32_t>(mright.right().Value());
+      Emit(kMipsLsa, g.DefineAsRegister(node), g.UseRegister(m.left().node()),
+           g.UseRegister(mright.left().node()), g.TempImmediate(shift_value));
+      return;
+    }
+  }
+
+  // Select Lsa for ((left_of_left << imm) + right).
+  if (m.left().opcode() == IrOpcode::kWord32Shl &&
+      CanCover(node, m.right().node()) && CanCover(node, m.left().node())) {
+    Int32BinopMatcher mleft(m.left().node());
+    if (mleft.right().HasValue()) {
+      int32_t shift_value = static_cast<int32_t>(mleft.right().Value());
+      Emit(kMipsLsa, g.DefineAsRegister(node), g.UseRegister(m.right().node()),
+           g.UseRegister(mleft.left().node()), g.TempImmediate(shift_value));
+      return;
+    }
+  }
+
   VisitBinop(this, node, kMipsAdd);
 }
 
@@ -467,12 +535,9 @@ void InstructionSelector::VisitInt32Mul(Node* node) {
       return;
     }
     if (base::bits::IsPowerOfTwo32(value - 1)) {
-      InstructionOperand temp = g.TempRegister();
-      Emit(kMipsShl | AddressingModeField::encode(kMode_None), temp,
+      Emit(kMipsLsa, g.DefineAsRegister(node), g.UseRegister(m.left().node()),
            g.UseRegister(m.left().node()),
            g.TempImmediate(WhichPowerOf2(value - 1)));
-      Emit(kMipsAdd | AddressingModeField::encode(kMode_None),
-           g.DefineAsRegister(node), g.UseRegister(m.left().node()), temp);
       return;
     }
     if (base::bits::IsPowerOfTwo32(value + 1)) {
@@ -999,7 +1064,6 @@ void InstructionSelector::VisitCheckedStore(Node* node) {
 
 
 namespace {
-
 // Shared routine for multiple compare operations.
 static void VisitCompare(InstructionSelector* selector, InstructionCode opcode,
                          InstructionOperand left, InstructionOperand right,
