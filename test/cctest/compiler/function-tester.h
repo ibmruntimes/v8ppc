@@ -31,7 +31,7 @@ class FunctionTester : public InitializedHandleScope {
     Compile(function);
     const uint32_t supported_flags =
         CompilationInfo::kFunctionContextSpecializing |
-        CompilationInfo::kInliningEnabled | CompilationInfo::kTypingEnabled;
+        CompilationInfo::kInliningEnabled;
     CHECK_EQ(0u, flags_ & ~supported_flags);
   }
 
@@ -177,7 +177,7 @@ class FunctionTester : public InitializedHandleScope {
   Handle<JSFunction> Compile(Handle<JSFunction> function) {
     Zone zone(function->GetIsolate()->allocator());
     ParseInfo parse_info(&zone, function);
-    CompilationInfo info(&parse_info);
+    CompilationInfo info(&parse_info, function);
     info.MarkAsDeoptimizationEnabled();
 
     CHECK(Parser::ParseStatic(info.parse_info()));
@@ -187,9 +187,6 @@ class FunctionTester : public InitializedHandleScope {
     }
     if (flags_ & CompilationInfo::kInliningEnabled) {
       info.MarkAsInliningEnabled();
-    }
-    if (flags_ & CompilationInfo::kTypingEnabled) {
-      info.MarkAsTypingEnabled();
     }
     CHECK(Compiler::Analyze(info.parse_info()));
     CHECK(Compiler::EnsureDeoptimizationSupport(&info));
@@ -226,7 +223,7 @@ class FunctionTester : public InitializedHandleScope {
   Handle<JSFunction> CompileGraph(Graph* graph) {
     Zone zone(function->GetIsolate()->allocator());
     ParseInfo parse_info(&zone, function);
-    CompilationInfo info(&parse_info);
+    CompilationInfo info(&parse_info, function);
 
     CHECK(Parser::ParseStatic(info.parse_info()));
     info.SetOptimizing();

@@ -66,16 +66,20 @@ class Schedule;
   V(Float64Add)                                 \
   V(Float64Sub)                                 \
   V(Float64Mul)                                 \
+  V(Float64Div)                                 \
+  V(Float64Mod)                                 \
   V(Float64InsertLowWord32)                     \
   V(Float64InsertHighWord32)                    \
   V(IntPtrAdd)                                  \
   V(IntPtrAddWithOverflow)                      \
   V(IntPtrSub)                                  \
   V(IntPtrSubWithOverflow)                      \
+  V(IntPtrMul)                                  \
   V(Int32Add)                                   \
   V(Int32AddWithOverflow)                       \
   V(Int32Sub)                                   \
   V(Int32Mul)                                   \
+  V(Int32Div)                                   \
   V(WordOr)                                     \
   V(WordAnd)                                    \
   V(WordXor)                                    \
@@ -308,10 +312,6 @@ class CodeStubAssembler {
   // Load a field from an object on the heap.
   Node* LoadObjectField(Node* object, int offset,
                         MachineType rep = MachineType::AnyTagged());
-  // Store a field to an object on the heap.
-  Node* StoreObjectFieldNoWriteBarrier(
-      Node* object, int offset, Node* value,
-      MachineRepresentation rep = MachineRepresentation::kTagged);
   // Load the floating point value of a HeapNumber.
   Node* LoadHeapNumberValue(Node* object);
   // Store the floating point value of a HeapNumber.
@@ -331,8 +331,6 @@ class CodeStubAssembler {
 
   // Load the hash field of a name.
   Node* LoadNameHash(Node* name);
-  // Load the instance size of a Map.
-  Node* LoadMapInstanceSize(Node* map);
 
   // Load an array element from a FixedArray.
   Node* LoadFixedArrayElementInt32Index(Node* object, Node* int32_index,
@@ -347,7 +345,6 @@ class CodeStubAssembler {
   Node* AllocateHeapNumber();
   // Allocate a HeapNumber with a specific value.
   Node* AllocateHeapNumberWithValue(Node* value);
-  Node* InnerAllocate(Node* previous, int offset);
 
   // Store an array element to a FixedArray.
   Node* StoreFixedArrayElementNoWriteBarrier(Node* object, Node* index,

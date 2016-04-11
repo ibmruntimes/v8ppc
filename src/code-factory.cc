@@ -228,6 +228,18 @@ Callable CodeFactory::Multiply(Isolate* isolate) {
 }
 
 // static
+Callable CodeFactory::Divide(Isolate* isolate) {
+  DivideStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+// static
+Callable CodeFactory::Modulus(Isolate* isolate) {
+  ModulusStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+// static
 Callable CodeFactory::BitwiseAnd(Isolate* isolate) {
   BitwiseAndStub stub(isolate);
   return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());

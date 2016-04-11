@@ -1436,7 +1436,9 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
     }
     if (entry == 0) {
       FixedArray* empty = heap->empty_fixed_array();
-      if (Subclass::kind() == FAST_SLOPPY_ARGUMENTS_ELEMENTS) {
+      // Dynamically ask for the elements kind here since we manually redirect
+      // the operations for argument backing stores.
+      if (obj->GetElementsKind() == FAST_SLOPPY_ARGUMENTS_ELEMENTS) {
         FixedArray::cast(obj->elements())->set(1, empty);
       } else {
         obj->set_elements(empty);
@@ -1572,16 +1574,20 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
   static void ValidateContents(Handle<JSObject> holder, int length) {
 #if DEBUG
     Isolate* isolate = holder->GetIsolate();
+    Heap* heap = isolate->heap();
     HandleScope scope(isolate);
     Handle<FixedArrayBase> elements(holder->elements(), isolate);
     Map* map = elements->map();
-    DCHECK((IsFastSmiOrObjectElementsKind(KindTraits::Kind) &&
-            (map == isolate->heap()->fixed_array_map() ||
-             map == isolate->heap()->fixed_cow_array_map())) ||
-           (IsFastDoubleElementsKind(KindTraits::Kind) ==
-            ((map == isolate->heap()->fixed_array_map() && length == 0) ||
-             map == isolate->heap()->fixed_double_array_map())));
+    if (IsFastSmiOrObjectElementsKind(KindTraits::Kind)) {
+      DCHECK_NE(map, heap->fixed_double_array_map());
+    } else if (IsFastDoubleElementsKind(KindTraits::Kind)) {
+      DCHECK_NE(map, heap->fixed_cow_array_map());
+      if (map == heap->fixed_array_map()) DCHECK_EQ(0, length);
+    } else {
+      UNREACHABLE();
+    }
     if (length == 0) return;  // nothing to do!
+#if ENABLE_SLOW_DCHECKS
     DisallowHeapAllocation no_gc;
     Handle<BackingStore> backing_store = Handle<BackingStore>::cast(elements);
     if (IsFastSmiElementsKind(KindTraits::Kind)) {
@@ -1590,7 +1596,15 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
                (IsFastHoleyElementsKind(KindTraits::Kind) &&
                 backing_store->is_the_hole(i)));
       }
+    } else if (KindTraits::Kind == FAST_ELEMENTS ||
+               KindTraits::Kind == FAST_DOUBLE_ELEMENTS) {
+      for (int i = 0; i < length; i++) {
+        DCHECK(!backing_store->is_the_hole(i));
+      }
+    } else {
+      DCHECK(IsFastHoleyElementsKind(KindTraits::Kind));
     }
+#endif
 #endif
   }
 
@@ -1805,7 +1819,7 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
   static uint32_t AddArguments(Handle<JSArray> receiver,
                                Handle<FixedArrayBase> backing_store,
                                Arguments* args, uint32_t add_size,
-                               Where remove_position) {
+                               Where add_position) {
     uint32_t length = Smi::cast(receiver->length())->value();
     DCHECK(0 < add_size);
     uint32_t elms_len = backing_store->length();
@@ -1817,13 +1831,13 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
       // New backing storage is needed.
       uint32_t capacity = JSObject::NewElementsCapacity(new_length);
       // If we add arguments to the start we have to shift the existing objects.
-      int copy_dst_index = remove_position == AT_START ? add_size : 0;
+      int copy_dst_index = add_position == AT_START ? add_size : 0;
       // Copy over all objects to a new backing_store.
       backing_store = Subclass::ConvertElementsWithCapacity(
           receiver, backing_store, KindTraits::Kind, capacity, 0,
           copy_dst_index, ElementsAccessor::kCopyToEndAndInitializeToHole);
       receiver->set_elements(*backing_store);
-    } else if (remove_position == AT_START) {
+    } else if (add_position == AT_START) {
       // If the backing store has enough capacity and we add elements to the
       // start we have to shift the existing objects.
       Isolate* isolate = receiver->GetIsolate();
@@ -1831,7 +1845,7 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
                              length, 0, 0);
     }
 
-    int insertion_index = remove_position == AT_START ? 0 : length;
+    int insertion_index = add_position == AT_START ? 0 : length;
     // Copy the arguments to the start.
     Subclass::CopyArguments(args, backing_store, add_size, 1, insertion_index);
     // Set the length.
@@ -1847,8 +1861,9 @@ class FastElementsAccessor : public ElementsAccessorBase<Subclass, KindTraits> {
     FixedArrayBase* raw_backing_store = *dst_store;
     WriteBarrierMode mode = raw_backing_store->GetWriteBarrierMode(no_gc);
     for (uint32_t i = 0; i < copy_size; i++) {
-      Object* argument = (*args)[i + src_index];
-      Subclass::SetImpl(raw_backing_store, i + dst_index, argument, mode);
+      Object* argument = (*args)[src_index + i];
+      DCHECK(!argument->IsTheHole());
+      Subclass::SetImpl(raw_backing_store, dst_index + i, argument, mode);
     }
   }
 };
@@ -2343,7 +2358,7 @@ class SloppyArgumentsElementsAccessor
     FixedArray* arguments = FixedArray::cast(parameter_map->get(1));
     uint32_t entry = ArgumentsAccessor::GetEntryForIndexImpl(holder, arguments,
                                                              index, filter);
-    if (entry == kMaxUInt32) return entry;
+    if (entry == kMaxUInt32) return kMaxUInt32;
     return (parameter_map->length() - 2) + entry;
   }
 
@@ -2916,7 +2931,7 @@ MaybeHandle<Object> ArrayConstructInitializeElements(Handle<JSArray> array,
   }
 
   // Fill in the content
-  switch (array->GetElementsKind()) {
+  switch (elements_kind) {
     case FAST_HOLEY_SMI_ELEMENTS:
     case FAST_SMI_ELEMENTS: {
       Handle<FixedArray> smi_elms = Handle<FixedArray>::cast(elms);

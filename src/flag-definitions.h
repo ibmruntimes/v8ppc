@@ -219,9 +219,6 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_iterator_close, "harmony iterator finalization")          \
   V(harmony_unicode_regexps, "harmony unicode regexps")               \
   V(harmony_regexp_exec, "harmony RegExp exec override behavior")     \
-  V(harmony_sloppy, "harmony features in sloppy mode")                \
-  V(harmony_sloppy_let, "harmony let in sloppy mode")                 \
-  V(harmony_sloppy_function, "harmony sloppy function block scoping") \
   V(harmony_regexp_subclass, "harmony regexp subclassing")            \
   V(harmony_restrictive_declarations,                                 \
     "harmony limitations on sloppy mode function declarations")       \
@@ -249,11 +246,6 @@ HARMONY_STAGED(FLAG_STAGED_FEATURES)
   DEFINE_NEG_NEG_IMPLICATION(harmony_shipping, id)
 HARMONY_SHIPPING(FLAG_SHIPPING_FEATURES)
 #undef FLAG_SHIPPING_FEATURES
-
-
-// Feature dependencies.
-DEFINE_IMPLICATION(harmony_sloppy_let, harmony_sloppy)
-DEFINE_IMPLICATION(harmony_sloppy_function, harmony_sloppy)
 
 // Flags for experimental implementation features.
 DEFINE_BOOL(compiled_keyed_generic_loads, false,
@@ -298,6 +290,13 @@ DEFINE_BOOL(trace_ignition, false,
             "trace the bytecodes executed by the ignition interpreter")
 DEFINE_BOOL(trace_ignition_codegen, false,
             "trace the codegen of ignition interpreter bytecode handlers")
+DEFINE_BOOL(trace_ignition_dispatches, false,
+            "traces the dispatches to bytecode handlers by the ignition "
+            "interpreter")
+DEFINE_STRING(trace_ignition_dispatches_output_file,
+              "v8.ignition_dispatches_table.json",
+              "the file to which the bytecode handler dispatch table is "
+              "written")
 
 // Flags for Crankshaft.
 DEFINE_BOOL(crankshaft, true, "use crankshaft")
@@ -427,7 +426,6 @@ DEFINE_BOOL(turbo_asm_deoptimization, false,
 DEFINE_BOOL(turbo_verify, DEBUG_BOOL, "verify TurboFan graphs at each phase")
 DEFINE_BOOL(turbo_stats, false, "print TurboFan statistics")
 DEFINE_BOOL(turbo_splitting, true, "split nodes during scheduling in TurboFan")
-DEFINE_BOOL(turbo_types, true, "use typed lowering in TurboFan")
 DEFINE_BOOL(turbo_source_positions, false,
             "track source code positions when building TurboFan IR")
 DEFINE_IMPLICATION(trace_turbo, turbo_source_positions)

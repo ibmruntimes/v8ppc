@@ -30,6 +30,22 @@ class LAllocator;
 class LChunk;
 class LiveRange;
 
+class HCompilationJob final : public OptimizedCompileJob {
+ public:
+  explicit HCompilationJob(CompilationInfo* info)
+      : OptimizedCompileJob(info, "Crankshaft"),
+        graph_(nullptr),
+        chunk_(nullptr) {}
+
+ protected:
+  virtual Status CreateGraphImpl();
+  virtual Status OptimizeGraphImpl();
+  virtual Status GenerateCodeImpl();
+
+ private:
+  HGraph* graph_;
+  LChunk* chunk_;
+};
 
 class HBasicBlock final : public ZoneObject {
  public:

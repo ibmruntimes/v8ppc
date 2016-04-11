@@ -1356,7 +1356,6 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
     __ mov(edx, Immediate(Smi::FromInt(flags)));
     FastCloneShallowObjectStub stub(isolate(), expr->properties_count());
     __ CallStub(&stub);
-    __ mov(esi, Operand(ebp, StandardFrameConstants::kContextOffset));
   }
   PrepareForBailoutForId(expr->CreateLiteralId(), TOS_REG);
 
@@ -1761,11 +1760,10 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
 
   __ jmp(&suspend);
   __ bind(&continuation);
-  // When we arrive here, the stack top is the resume mode and
-  // result_register() holds the input value (the argument given to the
-  // respective resume operation).
+  // When we arrive here, eax holds the generator object.
   __ RecordGeneratorContinuation();
-  __ pop(ebx);
+  __ mov(ebx, FieldOperand(eax, JSGeneratorObject::kResumeModeOffset));
+  __ mov(eax, FieldOperand(eax, JSGeneratorObject::kInputOffset));
   STATIC_ASSERT(JSGeneratorObject::kNext < JSGeneratorObject::kReturn);
   STATIC_ASSERT(JSGeneratorObject::kThrow > JSGeneratorObject::kReturn);
   __ cmp(ebx, Immediate(Smi::FromInt(JSGeneratorObject::kReturn)));

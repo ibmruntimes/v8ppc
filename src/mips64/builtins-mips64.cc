@@ -705,6 +705,9 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   __ RecordWriteField(a1, JSGeneratorObject::kInputOffset, v0, a3,
                       kRAHasNotBeenSaved, kDontSaveFPRegs);
 
+  // Store resume mode into generator object.
+  __ sd(a2, FieldMemOperand(a1, JSGeneratorObject::kResumeModeOffset));
+
   // Load suspended function and context.
   __ ld(cp, FieldMemOperand(a1, JSGeneratorObject::kContextOffset));
   __ ld(a4, FieldMemOperand(a1, JSGeneratorObject::kFunctionOffset));
@@ -718,10 +721,10 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   __ Branch(&skip_flooding, eq, t1, Operand(zero_reg));
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
-    __ Push(a1, a2, t0);
+    __ Push(a1, a2, a4);
     __ CallRuntime(Runtime::kDebugPrepareStepInIfStepping);
     __ Pop(a1, a2);
-    __ ld(t0, FieldMemOperand(a1, JSGeneratorObject::kFunctionOffset));
+    __ ld(a4, FieldMemOperand(a1, JSGeneratorObject::kFunctionOffset));
   }
   __ bind(&skip_flooding);
 
@@ -767,7 +770,7 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   __ ld(a3, FieldMemOperand(a0, FixedArray::kLengthOffset));
   __ SmiUntag(a3);
   __ Daddu(a0, a0, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ Lsa(a3, a0, a3, kPointerSizeLog2);
+  __ Dlsa(a3, a0, a3, kPointerSizeLog2);
   {
     Label done_loop, loop;
     __ bind(&loop);
@@ -779,15 +782,9 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
     __ bind(&done_loop);
   }
 
-  // Push resume mode (consumed in continuation).
-  __ Push(a2);
-
   // Reset operand stack so we don't leak.
   __ LoadRoot(a5, Heap::kEmptyFixedArrayRootIndex);
   __ sd(a5, FieldMemOperand(a1, JSGeneratorObject::kOperandStackOffset));
-
-  // Restore value.
-  __ ld(v0, FieldMemOperand(a1, JSGeneratorObject::kInputOffset));
 
   // Resume the generator function at the continuation.
   __ ld(a3, FieldMemOperand(a4, JSFunction::kSharedFunctionInfoOffset));
@@ -798,6 +795,7 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   __ Daddu(a3, a3, Operand(a2));
   __ li(a2, Operand(Smi::FromInt(JSGeneratorObject::kGeneratorExecuting)));
   __ sd(a2, FieldMemOperand(a1, JSGeneratorObject::kContinuationOffset));
+  __ Move(v0, a1);  // Continuation expects generator object in v0.
   __ Jump(a3);
 }
 

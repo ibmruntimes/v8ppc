@@ -41,12 +41,12 @@ class BuiltinArguments : public Arguments {
   }
 
   Object*& operator[] (int index) {
-    DCHECK(index < length());
+    DCHECK_LT(index, length());
     return Arguments::operator[](index);
   }
 
   template <class S> Handle<S> at(int index) {
-    DCHECK(index < length());
+    DCHECK_LT(index, length());
     return Arguments::at<S>(index);
   }
 
@@ -4665,6 +4665,14 @@ static void Generate_KeyedStoreIC_Slow(MacroAssembler* masm) {
 
 static void Generate_StoreIC_Setter_ForDeopt(MacroAssembler* masm) {
   NamedStoreHandlerCompiler::GenerateStoreViaSetterForDeopt(masm);
+}
+
+static void Generate_StoreIC_Megamorphic(MacroAssembler* masm) {
+  StoreIC::GenerateMegamorphic(masm);
+}
+
+static void Generate_StoreIC_Megamorphic_Strict(MacroAssembler* masm) {
+  StoreIC::GenerateMegamorphic(masm);
 }
 
 
