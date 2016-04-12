@@ -9,7 +9,6 @@
 #include "src/api-arguments.h"
 #include "src/arguments.h"
 #include "src/base/bits.h"
-#include "src/code-factory.h"
 #include "src/codegen.h"
 #include "src/conversions.h"
 #include "src/execution.h"
@@ -1520,7 +1519,8 @@ Handle<Code> StoreIC::CompileHandler(LookupIterator* lookup,
 
     case LookupIterator::INTERCEPTOR: {
       DCHECK(!holder->GetNamedInterceptor()->setter()->IsUndefined());
-      return CodeFactory::StoreInterceptor(isolate()).code();
+      StoreInterceptorStub stub(isolate());
+      return stub.GetCode();
     }
 
     case LookupIterator::ACCESSOR: {
@@ -1635,6 +1635,14 @@ void KeyedStoreIC::UpdateStoreElement(Handle<Map> receiver_map,
         PropertyICCompiler::ComputeKeyedStoreMonomorphicHandler(monomorphic_map,
                                                                 store_mode);
     return ConfigureVectorState(Handle<Name>(), monomorphic_map, handler);
+  }
+
+  for (int i = 0; i < target_receiver_maps.length(); i++) {
+    if (!target_receiver_maps.at(i).is_null() &&
+        target_receiver_maps.at(i)->instance_type() == JS_VALUE_TYPE) {
+      TRACE_GENERIC_IC(isolate(), "KeyedStoreIC", "JSValue");
+      return;
+    }
   }
 
   // There are several special cases where an IC that is MONOMORPHIC can still

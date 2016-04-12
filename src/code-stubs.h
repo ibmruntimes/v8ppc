@@ -57,7 +57,7 @@ namespace internal {
   V(VectorStoreIC)                          \
   V(VectorKeyedStoreIC)                     \
   /* HydrogenCodeStubs */                   \
-  V(AllocateInNewSpace)                     \
+  V(Allocate)                               \
   V(ArrayNArgumentsConstructor)             \
   V(ArrayNoArgumentConstructor)             \
   V(ArraySingleArgumentConstructor)         \
@@ -884,6 +884,8 @@ class StoreInterceptorStub : public TurboFanCodeStub {
   void GenerateAssembly(compiler::CodeStubAssembler* assember) const override;
 
   Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::STORE_IC; }
+  InlineCacheState GetICState() const override { return MONOMORPHIC; }
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(Store);
   DEFINE_CODE_STUB(StoreInterceptor, TurboFanCodeStub);
@@ -895,6 +897,8 @@ class LoadIndexedInterceptorStub : public TurboFanCodeStub {
       : TurboFanCodeStub(isolate) {}
 
   Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::KEYED_LOAD_IC; }
+  InlineCacheState GetICState() const override { return MONOMORPHIC; }
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(LoadWithVector);
   DEFINE_TURBOFAN_CODE_STUB(LoadIndexedInterceptor, TurboFanCodeStub);
@@ -2679,16 +2683,22 @@ class AllocateMutableHeapNumberStub : public TurboFanCodeStub {
 SIMD128_TYPES(SIMD128_ALLOC_STUB)
 #undef SIMD128_ALLOC_STUB
 
-class AllocateInNewSpaceStub final : public HydrogenCodeStub {
+class AllocateStub final : public HydrogenCodeStub {
  public:
-  explicit AllocateInNewSpaceStub(Isolate* isolate)
-      : HydrogenCodeStub(isolate) {}
+  AllocateStub(Isolate* isolate, PretenureFlag pretenure_flag)
+      : HydrogenCodeStub(isolate) {
+    set_sub_minor_key(PretenureFlagBits::encode(pretenure_flag));
+  }
+
+  PretenureFlag pretenure_flag() const {
+    return PretenureFlagBits::decode(sub_minor_key());
+  }
 
  private:
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(AllocateInNewSpace);
-  DEFINE_HYDROGEN_CODE_STUB(AllocateInNewSpace, HydrogenCodeStub);
+  typedef BitField<PretenureFlag, 0, 1> PretenureFlagBits;
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Allocate);
+  DEFINE_HYDROGEN_CODE_STUB(Allocate, HydrogenCodeStub);
 };
-
 
 class ArrayConstructorStubBase : public HydrogenCodeStub {
  public:

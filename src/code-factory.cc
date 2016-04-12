@@ -380,12 +380,6 @@ Callable CodeFactory::SubString(Isolate* isolate) {
 
 
 // static
-Callable CodeFactory::StoreInterceptor(Isolate* isolate) {
-  StoreInterceptorStub stub(isolate);
-  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
-}
-
-// static
 Callable CodeFactory::ResumeGenerator(Isolate* isolate) {
   return Callable(isolate->builtins()->ResumeGeneratorTrampoline(),
                   ResumeGeneratorDescriptor(isolate));
@@ -486,11 +480,10 @@ SIMD128_TYPES(SIMD128_ALLOC)
 #undef SIMD128_ALLOC
 
 // static
-Callable CodeFactory::AllocateInNewSpace(Isolate* isolate) {
-  AllocateInNewSpaceStub stub(isolate);
+Callable CodeFactory::Allocate(Isolate* isolate, PretenureFlag pretenure_flag) {
+  AllocateStub stub(isolate, pretenure_flag);
   return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
 }
-
 
 // static
 Callable CodeFactory::ArgumentAdaptor(Isolate* isolate) {

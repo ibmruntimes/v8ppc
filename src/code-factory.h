@@ -54,8 +54,6 @@ class CodeFactory final {
       Isolate* isolate, LanguageMode mode,
       InlineCacheState initialization_state);
 
-  static Callable StoreInterceptor(Isolate* isolate);
-
   static Callable ResumeGenerator(Isolate* isolate);
 
   static Callable CompareIC(Isolate* isolate, Token::Value op);
@@ -130,7 +128,7 @@ class CodeFactory final {
   static Callable Allocate##Type(Isolate* isolate);
   SIMD128_TYPES(SIMD128_ALLOC)
 #undef SIMD128_ALLOC
-  static Callable AllocateInNewSpace(Isolate* isolate);
+  static Callable Allocate(Isolate* isolate, PretenureFlag pretenure_flag);
 
   static Callable ArgumentAdaptor(Isolate* isolate);
   static Callable Call(Isolate* isolate,

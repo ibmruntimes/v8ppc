@@ -549,6 +549,7 @@ class Heap {
 
   STATIC_ASSERT(kUndefinedValueRootIndex ==
                 Internals::kUndefinedValueRootIndex);
+  STATIC_ASSERT(kTheHoleValueRootIndex == Internals::kTheHoleValueRootIndex);
   STATIC_ASSERT(kNullValueRootIndex == Internals::kNullValueRootIndex);
   STATIC_ASSERT(kTrueValueRootIndex == Internals::kTrueValueRootIndex);
   STATIC_ASSERT(kFalseValueRootIndex == Internals::kFalseValueRootIndex);
@@ -724,6 +725,14 @@ class Heap {
 
   // Returns false if not able to reserve.
   bool ReserveSpace(Reservation* reservations);
+
+  void SetEmbedderHeapTracer(EmbedderHeapTracer* tracer);
+
+  bool UsingEmbedderHeapTracer();
+
+  void TracePossibleWrapper(JSObject* js_object);
+
+  void RegisterExternallyReferencedObject(Object** object);
 
   //
   // Support for the API.
@@ -911,22 +920,12 @@ class Heap {
   const char* GetSpaceName(int idx);
 
   // ===========================================================================
-  // API. ======================================================================
-  // ===========================================================================
-
-  void SetEmbedderHeapTracer(EmbedderHeapTracer* tracer);
-
-  void RegisterExternallyReferencedObject(Object** object);
-
-  // ===========================================================================
   // Getters to other components. ==============================================
   // ===========================================================================
 
   GCTracer* tracer() { return tracer_; }
 
   MemoryAllocator* memory_allocator() { return memory_allocator_; }
-
-  EmbedderHeapTracer* embedder_heap_tracer() { return embedder_heap_tracer_; }
 
   PromotionQueue* promotion_queue() { return &promotion_queue_; }
 
@@ -2099,7 +2098,6 @@ class Heap {
   int deferred_counters_[v8::Isolate::kUseCounterFeatureCount];
 
   GCTracer* tracer_;
-  EmbedderHeapTracer* embedder_heap_tracer_;
 
   int high_survival_rate_period_length_;
   intptr_t promoted_objects_size_;
