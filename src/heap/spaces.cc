@@ -62,8 +62,10 @@ bool HeapObjectIterator::AdvanceToNextPage() {
   }
   cur_page = cur_page->next_page();
   if (cur_page == space_->anchor()) return false;
-  cur_page->heap()->mark_compact_collector()->SweepOrWaitUntilSweepingCompleted(
-      cur_page);
+  cur_page->heap()
+      ->mark_compact_collector()
+      ->sweeper()
+      .SweepOrWaitUntilSweepingCompleted(cur_page);
   cur_addr_ = cur_page->area_start();
   cur_end_ = cur_page->area_end();
   DCHECK(cur_page->SweepingDone());
@@ -882,10 +884,7 @@ void MemoryAllocator::RemoveMemoryAllocationCallback(
 void MemoryAllocator::ReportStatistics() {
   intptr_t size = Size();
   float pct = static_cast<float>(capacity_ - size) / capacity_;
-  PrintF("  capacity: %" V8_PTR_PREFIX
-         "d"
-         ", used: %" V8_PTR_PREFIX
-         "d"
+  PrintF("  capacity: %" V8PRIdPTR ", used: %" V8PRIdPTR
          ", available: %%%d\n\n",
          capacity_, size, static_cast<int>(pct * 100));
 }
@@ -1055,17 +1054,14 @@ void PagedSpace::RefillFreeList() {
     return;
   }
   MarkCompactCollector* collector = heap()->mark_compact_collector();
-  List<Page*>* swept_pages = collector->swept_pages(identity());
   intptr_t added = 0;
   {
-    base::LockGuard<base::Mutex> guard(collector->swept_pages_mutex());
-    for (int i = swept_pages->length() - 1; i >= 0; --i) {
-      Page* p = (*swept_pages)[i];
+    Page* p = nullptr;
+    while ((p = collector->sweeper().GetSweptPageSafe(this)) != nullptr) {
       // Only during compaction pages can actually change ownership. This is
       // safe because there exists no other competing action on the page links
       // during compaction.
       if (is_local() && (p->owner() != this)) {
-        if (added > kCompactionMemoryWanted) break;
         base::LockGuard<base::Mutex> guard(
             reinterpret_cast<PagedSpace*>(p->owner())->mutex());
         p->Unlink();
@@ -1074,7 +1070,7 @@ void PagedSpace::RefillFreeList() {
       }
       added += RelinkFreeListCategories(p);
       added += p->wasted_memory();
-      swept_pages->Remove(i);
+      if (is_local() && (added > kCompactionMemoryWanted)) break;
     }
   }
   accounting_stats_.IncreaseCapacity(added);
@@ -2062,9 +2058,7 @@ void NewSpace::ReportStatistics() {
 #ifdef DEBUG
   if (FLAG_heap_stats) {
     float pct = static_cast<float>(Available()) / TotalCapacity();
-    PrintF("  capacity: %" V8_PTR_PREFIX
-           "d"
-           ", available: %" V8_PTR_PREFIX "d, %%%d\n",
+    PrintF("  capacity: %" V8PRIdPTR ", available: %" V8PRIdPTR ", %%%d\n",
            TotalCapacity(), Available(), static_cast<int>(pct * 100));
     PrintF("\n  Object Histogram:\n");
     for (int i = 0; i <= LAST_TYPE; i++) {
@@ -2623,8 +2617,8 @@ HeapObject* PagedSpace::SlowAllocateRaw(int size_in_bytes) {
     if (object != NULL) return object;
 
     // If sweeping is still in progress try to sweep pages on the main thread.
-    int max_freed = collector->SweepInParallel(heap()->paged_space(identity()),
-                                               size_in_bytes, kMaxPagesToSweep);
+    int max_freed = collector->sweeper().ParallelSweepSpace(
+        identity(), size_in_bytes, kMaxPagesToSweep);
     RefillFreeList();
     if (max_freed >= size_in_bytes) {
       object = free_list_.Allocate(size_in_bytes);
@@ -2790,11 +2784,8 @@ void PagedSpace::CollectCodeStatistics() {
 
 void PagedSpace::ReportStatistics() {
   int pct = static_cast<int>(Available() * 100 / Capacity());
-  PrintF("  capacity: %" V8_PTR_PREFIX
-         "d"
-         ", waste: %" V8_PTR_PREFIX
-         "d"
-         ", available: %" V8_PTR_PREFIX "d, %%%d\n",
+  PrintF("  capacity: %" V8PRIdPTR ", waste: %" V8PRIdPTR
+         ", available: %" V8PRIdPTR ", %%%d\n",
          Capacity(), Waste(), Available(), pct);
 
   if (heap()->mark_compact_collector()->sweeping_in_progress()) {
@@ -3090,7 +3081,7 @@ void LargeObjectSpace::Print() {
 
 
 void LargeObjectSpace::ReportStatistics() {
-  PrintF("  size: %" V8_PTR_PREFIX "d\n", size_);
+  PrintF("  size: %" V8PRIdPTR "\n", size_);
   int num_objects = 0;
   ClearHistograms(heap()->isolate());
   LargeObjectIterator it(this);
@@ -3101,7 +3092,7 @@ void LargeObjectSpace::ReportStatistics() {
 
   PrintF(
       "  number of objects %d, "
-      "size of objects %" V8_PTR_PREFIX "d\n",
+      "size of objects %" V8PRIdPTR "\n",
       num_objects, objects_size_);
   if (num_objects > 0) ReportHistogram(heap()->isolate(), false);
 }

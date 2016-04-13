@@ -1546,10 +1546,7 @@ TEST(TestUseOfIncrementalBarrierOnCompileLazy) {
   Handle<Object> g_value =
       Object::GetProperty(isolate->global_object(), g_name).ToHandleChecked();
   Handle<JSFunction> g_function = Handle<JSFunction>::cast(g_value);
-  // TODO(mvstanton): change to check that g is *not* compiled when optimized
-  // cache
-  // map lookup moves to the compile lazy builtin.
-  CHECK(g_function->is_compiled());
+  CHECK(!g_function->is_compiled());
 
   SimulateIncrementalMarking(heap);
   CompileRun("%OptimizeFunctionOnNextCall(f); f();");
@@ -2296,16 +2293,20 @@ TEST(TestSizeOfObjectsVsHeapIteratorPrecision) {
   // on the heap.
   if (size_of_objects_1 > size_of_objects_2) {
     intptr_t delta = size_of_objects_1 - size_of_objects_2;
-    PrintF("Heap::SizeOfObjects: %" V8_PTR_PREFIX "d, "
-           "Iterator: %" V8_PTR_PREFIX "d, "
-           "delta: %" V8_PTR_PREFIX "d\n",
+    PrintF("Heap::SizeOfObjects: %" V8PRIdPTR
+           ", "
+           "Iterator: %" V8PRIdPTR
+           ", "
+           "delta: %" V8PRIdPTR "\n",
            size_of_objects_1, size_of_objects_2, delta);
     CHECK_GT(size_of_objects_1 / 20, delta);
   } else {
     intptr_t delta = size_of_objects_2 - size_of_objects_1;
-    PrintF("Heap::SizeOfObjects: %" V8_PTR_PREFIX "d, "
-           "Iterator: %" V8_PTR_PREFIX "d, "
-           "delta: %" V8_PTR_PREFIX "d\n",
+    PrintF("Heap::SizeOfObjects: %" V8PRIdPTR
+           ", "
+           "Iterator: %" V8PRIdPTR
+           ", "
+           "delta: %" V8PRIdPTR "\n",
            size_of_objects_1, size_of_objects_2, delta);
     CHECK_GT(size_of_objects_2 / 20, delta);
   }

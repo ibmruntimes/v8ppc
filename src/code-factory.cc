@@ -240,6 +240,24 @@ Callable CodeFactory::Modulus(Isolate* isolate) {
 }
 
 // static
+Callable CodeFactory::ShiftRight(Isolate* isolate) {
+  ShiftRightStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+// static
+Callable CodeFactory::ShiftRightLogical(Isolate* isolate) {
+  ShiftRightLogicalStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+// static
+Callable CodeFactory::ShiftLeft(Isolate* isolate) {
+  ShiftLeftStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+// static
 Callable CodeFactory::BitwiseAnd(Isolate* isolate) {
   BitwiseAndStub stub(isolate);
   return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
@@ -543,6 +561,11 @@ Callable CodeFactory::InterpreterCEntry(Isolate* isolate, int result_size) {
   // save fpregs too.
   CEntryStub stub(isolate, result_size, kDontSaveFPRegs, kArgvInRegister);
   return Callable(stub.GetCode(), InterpreterCEntryDescriptor(isolate));
+}
+
+Callable CodeFactory::AtomicsLoad(Isolate* isolate) {
+  AtomicsLoadStub stub(isolate);
+  return Callable(stub.GetCode(), AtomicsLoadDescriptor(isolate));
 }
 
 }  // namespace internal

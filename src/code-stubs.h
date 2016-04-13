@@ -22,6 +22,7 @@ namespace internal {
 #define CODE_STUB_LIST_ALL_PLATFORMS(V)     \
   /* PlatformCodeStubs */                   \
   V(ArrayConstructor)                       \
+  V(AtomicsLoad)                            \
   V(BinaryOpICWithAllocationSite)           \
   V(CallApiCallback)                        \
   V(CallApiGetter)                          \
@@ -115,6 +116,9 @@ namespace internal {
   V(Multiply)                               \
   V(Divide)                                 \
   V(Modulus)                                \
+  V(ShiftRight)                             \
+  V(ShiftRightLogical)                      \
+  V(ShiftLeft)                              \
   V(BitwiseAnd)                             \
   V(BitwiseOr)                              \
   V(BitwiseXor)                             \
@@ -711,6 +715,31 @@ class ModulusStub final : public TurboFanCodeStub {
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOp);
   DEFINE_TURBOFAN_CODE_STUB(Modulus, TurboFanCodeStub);
+};
+
+class ShiftRightStub final : public TurboFanCodeStub {
+ public:
+  explicit ShiftRightStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOp);
+  DEFINE_TURBOFAN_CODE_STUB(ShiftRight, TurboFanCodeStub);
+};
+
+class ShiftRightLogicalStub final : public TurboFanCodeStub {
+ public:
+  explicit ShiftRightLogicalStub(Isolate* isolate)
+      : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOp);
+  DEFINE_TURBOFAN_CODE_STUB(ShiftRightLogical, TurboFanCodeStub);
+};
+
+class ShiftLeftStub final : public TurboFanCodeStub {
+ public:
+  explicit ShiftLeftStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOp);
+  DEFINE_TURBOFAN_CODE_STUB(ShiftLeft, TurboFanCodeStub);
 };
 
 class BitwiseAndStub final : public TurboFanCodeStub {
@@ -2512,7 +2541,7 @@ class ScriptContextFieldStub : public HandlerStub {
 
  private:
   static const int kContextIndexBits = 9;
-  static const int kSlotIndexBits = 13;
+  static const int kSlotIndexBits = 12;
   class ContextIndexBits : public BitField<int, 0, kContextIndexBits> {};
   class SlotIndexBits
       : public BitField<int, kContextIndexBits, kSlotIndexBits> {};
@@ -3119,6 +3148,14 @@ class ToObjectStub final : public HydrogenCodeStub {
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_HYDROGEN_CODE_STUB(ToObject, HydrogenCodeStub);
+};
+
+class AtomicsLoadStub : public PlatformCodeStub {
+ public:
+  explicit AtomicsLoadStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(AtomicsLoad);
+  DEFINE_PLATFORM_CODE_STUB(AtomicsLoad, PlatformCodeStub);
 };
 
 #undef DEFINE_CALL_INTERFACE_DESCRIPTOR
