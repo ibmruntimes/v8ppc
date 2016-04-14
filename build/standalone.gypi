@@ -259,44 +259,50 @@
             'android_ndk_root%': '<(base_dir)/third_party/android_tools/ndk/',
             'android_host_arch%': "<!(uname -m | sed -e 's/i[3456]86/x86/')",
             'host_os%': "<!(uname -s | sed -e 's/Linux/linux/;s/Darwin/mac/')",
+            'os_folder_name%': "<!(uname -s | sed -e 's/Linux/linux/;s/Darwin/darwin/')",
           },
 
           # Copy conditionally-set variables out one scope.
           'android_ndk_root%': '<(android_ndk_root)',
           'host_os%': '<(host_os)',
+          'os_folder_name%': '<(os_folder_name)',
 
           'conditions': [
             ['target_arch == "ia32"', {
-              'android_toolchain%': '<(android_ndk_root)/toolchains/x86-4.9/prebuilt/<(host_os)-<(android_host_arch)/bin',
+              'android_toolchain%': '<(android_ndk_root)/toolchains/x86-4.9/prebuilt/<(os_folder_name)-<(android_host_arch)/bin',
               'android_target_arch%': 'x86',
               'android_target_platform%': '16',
+              'arm_version%': 'default',
             }],
             ['target_arch == "x64"', {
-              'android_toolchain%': '<(android_ndk_root)/toolchains/x86_64-4.9/prebuilt/<(host_os)-<(android_host_arch)/bin',
+              'android_toolchain%': '<(android_ndk_root)/toolchains/x86_64-4.9/prebuilt/<(os_folder_name)-<(android_host_arch)/bin',
               'android_target_arch%': 'x86_64',
               'android_target_platform%': '21',
+              'arm_version%': 'default',
             }],
             ['target_arch=="arm"', {
-              'android_toolchain%': '<(android_ndk_root)/toolchains/arm-linux-androideabi-4.9/prebuilt/<(host_os)-<(android_host_arch)/bin',
+              'android_toolchain%': '<(android_ndk_root)/toolchains/arm-linux-androideabi-4.9/prebuilt/<(os_folder_name)-<(android_host_arch)/bin',
               'android_target_arch%': 'arm',
               'android_target_platform%': '16',
               'arm_version%': 7,
             }],
             ['target_arch == "arm64"', {
-              'android_toolchain%': '<(android_ndk_root)/toolchains/aarch64-linux-android-4.9/prebuilt/<(host_os)-<(android_host_arch)/bin',
+              'android_toolchain%': '<(android_ndk_root)/toolchains/aarch64-linux-android-4.9/prebuilt/<(os_folder_name)-<(android_host_arch)/bin',
               'android_target_arch%': 'arm64',
               'android_target_platform%': '21',
               'arm_version%': 'default',
             }],
             ['target_arch == "mipsel"', {
-              'android_toolchain%': '<(android_ndk_root)/toolchains/mipsel-linux-android-4.9/prebuilt/<(host_os)-<(android_host_arch)/bin',
+              'android_toolchain%': '<(android_ndk_root)/toolchains/mipsel-linux-android-4.9/prebuilt/<(os_folder_name)-<(android_host_arch)/bin',
               'android_target_arch%': 'mips',
               'android_target_platform%': '16',
+              'arm_version%': 'default',
             }],
             ['target_arch == "mips64el"', {
-              'android_toolchain%': '<(android_ndk_root)/toolchains/mips64el-linux-android-4.9/prebuilt/<(host_os)-<(android_host_arch)/bin',
+              'android_toolchain%': '<(android_ndk_root)/toolchains/mips64el-linux-android-4.9/prebuilt/<(os_folder_name)-<(android_host_arch)/bin',
               'android_target_arch%': 'mips64',
               'android_target_platform%': '21',
+              'arm_version%': 'default',
             }],
           ],
         },
@@ -348,6 +354,12 @@
         'android_libcpp_library': 'c++_static',
       }],  # OS=="android"
       ['host_clang==1', {
+        'conditions':[
+          ['OS=="android"', {
+            'host_ld': '<!(which ld)',
+            'host_ranlib': '<!(which ranlib)',
+          }],
+        ],
         'host_cc': '<(clang_dir)/bin/clang',
         'host_cxx': '<(clang_dir)/bin/clang++',
       }, {
@@ -784,6 +796,11 @@
               '_HAS_EXCEPTIONS=0',
             ],
           }],
+          ['component=="shared_library"', {
+            'msvs_disabled_warnings': [
+              4251,  # class 'std::xx' needs to have dll-interface.
+            ],
+          }],
         ],
         'msvs_cygwin_dirs': ['<(DEPTH)/third_party/cygwin'],
         'msvs_disabled_warnings': [
@@ -929,6 +946,31 @@
               }],
             ],
           },
+          'conditions': [
+            ['clang==1', {
+              'VCCLCompilerTool': {
+                'AdditionalOptions': [
+                  # Don't warn about unused function parameters.
+                  # (This is also used on other platforms.)
+                  '-Wno-unused-parameter',
+                  # Don't warn about the "struct foo f = {0};" initialization
+                  # pattern.
+                  '-Wno-missing-field-initializers',
+
+                  # Many files use intrinsics without including this header.
+                  # TODO(hans): Fix those files, or move this to sub-GYPs.
+                  '/FIIntrin.h',
+
+                  # TODO(hans): Make this list shorter eventually, http://crbug.com/504657
+                  '-Wno-microsoft-enum-value',  # http://crbug.com/505296
+                  '-Wno-unknown-pragmas',  # http://crbug.com/505314
+                  '-Wno-microsoft-cast',  # http://crbug.com/550065
+
+                  '-fmsc-version=1900',
+                ],
+              },
+            }],
+          ],
         },
       },
     }],  # OS=="win"
@@ -1185,8 +1227,12 @@
       # Hardcode the compiler names in the Makefile so that
       # it won't depend on the environment at make time.
       'make_global_settings': [
+        ['LD', '<!(/bin/echo -n <(android_toolchain)/../*/bin/ld)'],
+        ['RANLIB', '<!(/bin/echo -n <(android_toolchain)/../*/bin/ranlib)'],
         ['CC', '<!(/bin/echo -n <(android_toolchain)/*-gcc)'],
         ['CXX', '<!(/bin/echo -n <(android_toolchain)/*-g++)'],
+        ['LD.host', '<(host_ld)'],
+        ['RANLIB.host', '<(host_ranlib)'],
         ['CC.host', '<(host_cc)'],
         ['CXX.host', '<(host_cxx)'],
       ],

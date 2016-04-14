@@ -1116,6 +1116,8 @@
         '../../src/version.h',
         '../../src/vm-state-inl.h',
         '../../src/vm-state.h',
+        '../../src/wasm/switch-logic.h',
+        '../../src/wasm/switch-logic.cc',
         '../../src/wasm/asm-wasm-builder.cc',
         '../../src/wasm/asm-wasm-builder.h',
         '../../src/wasm/ast-decoder.cc',
@@ -1692,11 +1694,12 @@
             ],
             'link_settings': {
               'target_conditions': [
-                ['_toolset=="host"', {
+                ['_toolset=="host" and host_os!="mac"', {
                   # Only include libdl and librt on host builds because they
                   # are included by default on Android target builds, and we
                   # don't want to re-include them here since this will change
                   # library order and break (see crbug.com/469973).
+                  # These libraries do not exist on Mac hosted builds.
                   'libraries': [
                     '-ldl',
                     '-lrt'

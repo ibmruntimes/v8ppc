@@ -523,6 +523,11 @@ Node* CodeStubAssembler::LoadFixedArrayElementInt32Index(
   return Load(MachineType::AnyTagged(), object, offset);
 }
 
+Node* CodeStubAssembler::LoadMapInstanceSize(Node* map) {
+  return Load(MachineType::Uint8(), map,
+              IntPtrConstant(Map::kInstanceSizeOffset - kHeapObjectTag));
+}
+
 Node* CodeStubAssembler::LoadFixedArrayElementSmiIndex(Node* object,
                                                        Node* smi_index,
                                                        int additional_offset) {
@@ -702,6 +707,10 @@ Node* CodeStubAssembler::Allocate(int size_in_bytes, AllocationFlags flags) {
 
   return AllocateRawUnaligned(IntPtrConstant(size_in_bytes), flags, top_address,
                               limit_address);
+}
+
+Node* CodeStubAssembler::InnerAllocate(Node* previous, int offset) {
+  return IntPtrAdd(previous, IntPtrConstant(offset));
 }
 
 Node* CodeStubAssembler::AllocateHeapNumber() {
@@ -1547,15 +1556,13 @@ Node* CodeStubAssembler::TailCallStub(const CallInterfaceDescriptor& descriptor,
   return raw_assembler_->TailCallN(call_descriptor, target, args);
 }
 
-Node* CodeStubAssembler::TailCall(
-    const CallInterfaceDescriptor& interface_descriptor, Node* code_target,
-    Node** args, size_t result_size) {
-  CallDescriptor* descriptor = Linkage::GetStubCallDescriptor(
+Node* CodeStubAssembler::TailCallBytecodeDispatch(
+    const CallInterfaceDescriptor& interface_descriptor,
+    Node* code_target_address, Node** args) {
+  CallDescriptor* descriptor = Linkage::GetBytecodeDispatchCallDescriptor(
       isolate(), zone(), interface_descriptor,
-      interface_descriptor.GetStackParameterCount(),
-      CallDescriptor::kSupportsTailCalls, Operator::kNoProperties,
-      MachineType::AnyTagged(), result_size);
-  return raw_assembler_->TailCallN(descriptor, code_target, args);
+      interface_descriptor.GetStackParameterCount());
+  return raw_assembler_->TailCallN(descriptor, code_target_address, args);
 }
 
 void CodeStubAssembler::Goto(CodeStubAssembler::Label* label) {

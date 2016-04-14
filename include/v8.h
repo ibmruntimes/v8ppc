@@ -6243,13 +6243,17 @@ class V8_EXPORT Isolate {
    * Enables the host application to provide a mechanism to be notified
    * and perform custom logging when V8 Allocates Executable Memory.
    */
-  void AddMemoryAllocationCallback(MemoryAllocationCallback callback,
-                                   ObjectSpace space, AllocationAction action);
+  void V8_DEPRECATED(
+      "Use a combination of RequestInterrupt and GCCallback instead",
+      AddMemoryAllocationCallback(MemoryAllocationCallback callback,
+                                  ObjectSpace space, AllocationAction action));
 
   /**
    * Removes callback that was installed by AddMemoryAllocationCallback.
    */
-  void RemoveMemoryAllocationCallback(MemoryAllocationCallback callback);
+  void V8_DEPRECATED(
+      "Use a combination of RequestInterrupt and GCCallback instead",
+      RemoveMemoryAllocationCallback(MemoryAllocationCallback callback));
 
   /**
    * Iterates through all external resources referenced from current isolate
@@ -6484,23 +6488,6 @@ class V8_EXPORT V8 {
   V8_INLINE static V8_DEPRECATED(
       "Use isolate version",
       void RemoveGCEpilogueCallback(GCCallback callback));
-
-  /**
-   * Enables the host application to provide a mechanism to be notified
-   * and perform custom logging when V8 Allocates Executable Memory.
-   */
-  V8_INLINE static V8_DEPRECATED(
-      "Use isolate version",
-      void AddMemoryAllocationCallback(MemoryAllocationCallback callback,
-                                       ObjectSpace space,
-                                       AllocationAction action));
-
-  /**
-   * Removes callback that was installed by AddMemoryAllocationCallback.
-   */
-  V8_INLINE static V8_DEPRECATED(
-      "Use isolate version",
-      void RemoveMemoryAllocationCallback(MemoryAllocationCallback callback));
 
   /**
    * Initializes V8. This function needs to be called before the first Isolate
@@ -8793,21 +8780,6 @@ void V8::RemoveGCEpilogueCallback(GCCallback callback) {
   isolate->RemoveGCEpilogueCallback(
       reinterpret_cast<v8::Isolate::GCCallback>(callback));
 }
-
-
-void V8::AddMemoryAllocationCallback(MemoryAllocationCallback callback,
-                                     ObjectSpace space,
-                                     AllocationAction action) {
-  Isolate* isolate = Isolate::GetCurrent();
-  isolate->AddMemoryAllocationCallback(callback, space, action);
-}
-
-
-void V8::RemoveMemoryAllocationCallback(MemoryAllocationCallback callback) {
-  Isolate* isolate = Isolate::GetCurrent();
-  isolate->RemoveMemoryAllocationCallback(callback);
-}
-
 
 void V8::TerminateExecution(Isolate* isolate) { isolate->TerminateExecution(); }
 

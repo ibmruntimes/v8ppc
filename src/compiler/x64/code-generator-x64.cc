@@ -695,6 +695,15 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       frame_access_state()->ClearSPDelta();
       break;
     }
+    case kArchTailCallAddress: {
+      int stack_param_delta = i.InputInt32(instr->InputCount() - 1);
+      AssembleDeconstructActivationRecord(stack_param_delta);
+      CHECK(!HasImmediateInput(instr, 0));
+      Register reg = i.InputRegister(0);
+      __ jmp(reg);
+      frame_access_state()->ClearSPDelta();
+      break;
+    }
     case kArchCallJSFunction: {
       EnsureSpaceForLazyDeopt();
       Register func = i.InputRegister(0);
@@ -791,10 +800,13 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       auto result = i.OutputRegister();
       auto input = i.InputDoubleRegister(0);
       auto ool = new (zone()) OutOfLineTruncateDoubleToI(this, result, input);
+      // We use Cvttsd2siq instead of Cvttsd2si due to performance reasons. The
+      // use of Cvttsd2siq requires the movl below to avoid sign extension.
       __ Cvttsd2siq(result, input);
       __ cmpq(result, Immediate(1));
       __ j(overflow, ool->entry());
       __ bind(ool->exit());
+      __ movl(result, result);
       break;
     }
     case kArchStoreWithWriteBarrier: {

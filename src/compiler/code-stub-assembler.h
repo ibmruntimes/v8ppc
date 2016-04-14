@@ -263,13 +263,12 @@ class CodeStubAssembler {
 
   Node* TailCallStub(Callable const& callable, Node* context, Node* arg1,
                      Node* arg2, size_t result_size = 1);
-
   Node* TailCallStub(const CallInterfaceDescriptor& descriptor, Node* target,
                      Node* context, Node* arg1, Node* arg2,
                      size_t result_size = 1);
 
-  Node* TailCall(const CallInterfaceDescriptor& descriptor, Node* target,
-                 Node** args, size_t result_size = 1);
+  Node* TailCallBytecodeDispatch(const CallInterfaceDescriptor& descriptor,
+                                 Node* code_target_address, Node** args);
 
   // ===========================================================================
   // Macros
@@ -341,6 +340,8 @@ class CodeStubAssembler {
 
   // Load the hash field of a name.
   Node* LoadNameHash(Node* name);
+  // Load the instance size of a Map.
+  Node* LoadMapInstanceSize(Node* map);
 
   // Load an array element from a FixedArray.
   Node* LoadFixedArrayElementInt32Index(Node* object, Node* int32_index,
