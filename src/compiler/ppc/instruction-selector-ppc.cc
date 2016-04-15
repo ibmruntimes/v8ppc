@@ -1656,10 +1656,14 @@ void InstructionSelector::VisitFloat64InsertHighWord32(Node* node) {
 // static
 MachineOperatorBuilder::Flags
 InstructionSelector::SupportedMachineOperatorFlags() {
-  return MachineOperatorBuilder::kFloat64RoundDown |
-         MachineOperatorBuilder::kFloat64RoundTruncate |
-         MachineOperatorBuilder::kFloat64RoundTiesAway;
+  MachineOperatorBuilder::Flags flags = MachineOperatorBuilder::kNoFlags;
+  if (CpuFeatures::IsSupported(FROUND)) {
+    flags |= MachineOperatorBuilder::kFloat64RoundDown |
+             MachineOperatorBuilder::kFloat64RoundTruncate |
+             MachineOperatorBuilder::kFloat64RoundTiesAway;
+  }
   // We omit kWord32ShiftIsSafe as s[rl]w use 0x3f as a mask rather than 0x1f.
+  return flags;
 }
 
 }  // namespace compiler

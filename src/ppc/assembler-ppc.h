@@ -67,6 +67,7 @@
 #endif
 
 #define INSTR_AND_DATA_CACHE_COHERENCY LWSYNC
+#define FROUND LWSYNC
 
 namespace v8 {
 namespace internal {

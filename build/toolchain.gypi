@@ -314,16 +314,6 @@
             'defines': [
               'V8_TARGET_ARCH_PPC_BE',
             ],
-            'conditions': [
-              ['OS=="aix"', {
-                # Work around AIX ceil, trunc and round oddities.
-                'cflags': [ '-mcpu=power5+ -mfprnd' ],
-              }],
-              ['OS=="aix"', {
-                # Work around AIX assembler popcntb bug.
-                'cflags': [ '-mno-popcntb' ],
-              }],
-            ],
           }],
         ],
       }],  # ppc
