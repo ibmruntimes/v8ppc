@@ -1145,6 +1145,12 @@ MaybeHandle<Object> JSReceiver::GetProperty(Isolate* isolate,
       object, HeapObject::RawField(object, offset), value); \
   heap->RecordWrite(object, offset, value);
 
+#define FIXED_ARRAY_ELEMENTS_WRITE_BARRIER(heap, array, start, length) \
+  do {                                                                 \
+    heap->RecordFixedArrayElements(array, start, length);              \
+    heap->incremental_marking()->IterateBlackObject(array);            \
+  } while (false)
+
 #define CONDITIONAL_WRITE_BARRIER(heap, object, offset, value, mode) \
   if (mode != SKIP_WRITE_BARRIER) {                                  \
     if (mode == UPDATE_WRITE_BARRIER) {                              \
@@ -5418,6 +5424,7 @@ ACCESSORS(AccessorInfo, expected_receiver_type, Object,
 
 ACCESSORS(AccessorInfo, getter, Object, kGetterOffset)
 ACCESSORS(AccessorInfo, setter, Object, kSetterOffset)
+ACCESSORS(AccessorInfo, js_getter, Object, kJsGetterOffset)
 ACCESSORS(AccessorInfo, data, Object, kDataOffset)
 
 ACCESSORS(Box, value, Object, kValueOffset)
@@ -5503,8 +5510,7 @@ ACCESSORS(Script, wrapper, HeapObject, kWrapperOffset)
 SMI_ACCESSORS(Script, type, kTypeOffset)
 ACCESSORS(Script, line_ends, Object, kLineEndsOffset)
 ACCESSORS(Script, eval_from_shared, Object, kEvalFromSharedOffset)
-SMI_ACCESSORS(Script, eval_from_instructions_offset,
-              kEvalFrominstructionsOffsetOffset)
+SMI_ACCESSORS(Script, eval_from_position, kEvalFromPositionOffset)
 ACCESSORS(Script, shared_function_infos, Object, kSharedFunctionInfosOffset)
 SMI_ACCESSORS(Script, flags, kFlagsOffset)
 ACCESSORS(Script, source_url, Object, kSourceUrlOffset)
@@ -6306,9 +6312,9 @@ SMI_ACCESSORS(JSGeneratorObject, continuation, kContinuationOffset)
 ACCESSORS(JSGeneratorObject, operand_stack, FixedArray, kOperandStackOffset)
 
 bool JSGeneratorObject::is_suspended() {
-  DCHECK_LT(kGeneratorExecuting, kGeneratorClosed);
-  DCHECK_EQ(kGeneratorClosed, 0);
-  return continuation() > 0;
+  DCHECK_LT(kGeneratorExecuting, 0);
+  DCHECK_LT(kGeneratorClosed, 0);
+  return continuation() >= 0;
 }
 
 bool JSGeneratorObject::is_closed() {

@@ -3092,6 +3092,11 @@ class DescriptorArray: public FixedArray {
     return kFirstIndex + (descriptor_number * kDescriptorSize) + kDescriptorKey;
   }
 
+  static int ToValueIndex(int descriptor_number) {
+    return kFirstIndex + (descriptor_number * kDescriptorSize) +
+           kDescriptorValue;
+  }
+
  private:
   // An entry in a DescriptorArray, represented as an (array, index) pair.
   class Entry {
@@ -3106,12 +3111,6 @@ class DescriptorArray: public FixedArray {
     DescriptorArray* descs_;
     int index_;
   };
-
-  static int ToValueIndex(int descriptor_number) {
-    return kFirstIndex +
-           (descriptor_number * kDescriptorSize) +
-           kDescriptorValue;
-  }
 
   // Transfer a complete descriptor from the src descriptor array to this
   // descriptor array.
@@ -6436,9 +6435,10 @@ class Script: public Struct {
   // function from which eval was called.
   DECL_ACCESSORS(eval_from_shared, Object)
 
-  // [eval_from_instructions_offset]: the instruction offset in the code for the
-  // function from which eval was called where eval was called.
-  DECL_INT_ACCESSORS(eval_from_instructions_offset)
+  // [eval_from_position]: the source position in the code for the function
+  // from which eval was called, as positive integer. Or the code offset in the
+  // code from which eval was called, as negative integer.
+  DECL_INT_ACCESSORS(eval_from_position)
 
   // [shared_function_infos]: weak fixed array containing all shared
   // function infos created from this script.
@@ -6490,6 +6490,13 @@ class Script: public Struct {
 
   static Handle<Object> GetNameOrSourceURL(Handle<Script> script);
 
+  // Set eval origin for stack trace formatting.
+  static void SetEvalOrigin(Handle<Script> script,
+                            Handle<SharedFunctionInfo> outer,
+                            int eval_position);
+  // Retrieve source position from where eval was called.
+  int GetEvalPosition();
+
   // Init line_ends array with source code positions of line ends.
   static void InitLineEnds(Handle<Script> script);
 
@@ -6525,10 +6532,10 @@ class Script: public Struct {
   static const int kLineEndsOffset = kTypeOffset + kPointerSize;
   static const int kIdOffset = kLineEndsOffset + kPointerSize;
   static const int kEvalFromSharedOffset = kIdOffset + kPointerSize;
-  static const int kEvalFrominstructionsOffsetOffset =
+  static const int kEvalFromPositionOffset =
       kEvalFromSharedOffset + kPointerSize;
   static const int kSharedFunctionInfosOffset =
-      kEvalFrominstructionsOffsetOffset + kPointerSize;
+      kEvalFromPositionOffset + kPointerSize;
   static const int kFlagsOffset = kSharedFunctionInfosOffset + kPointerSize;
   static const int kSourceUrlOffset = kFlagsOffset + kPointerSize;
   static const int kSourceMappingUrlOffset = kSourceUrlOffset + kPointerSize;
@@ -7387,8 +7394,8 @@ class JSGeneratorObject: public JSObject {
   DECLARE_VERIFIER(JSGeneratorObject)
 
   // Magic sentinel values for the continuation.
-  static const int kGeneratorExecuting = -1;
-  static const int kGeneratorClosed = 0;
+  static const int kGeneratorExecuting = -2;
+  static const int kGeneratorClosed = -1;
 
   // Layout description.
   static const int kFunctionOffset = JSObject::kHeaderSize;
@@ -10282,9 +10289,19 @@ class AccessorInfo: public Struct {
   DECL_ACCESSORS(name, Object)
   DECL_INT_ACCESSORS(flag)
   DECL_ACCESSORS(expected_receiver_type, Object)
+  // This directly points at a foreign C function to be used from the runtime.
   DECL_ACCESSORS(getter, Object)
   DECL_ACCESSORS(setter, Object)
+  // This either points at the same as above, or a trampoline in case we are
+  // running with the simulator. Use these entries from generated code.
+  DECL_ACCESSORS(js_getter, Object)
   DECL_ACCESSORS(data, Object)
+
+#ifdef USE_SIMULATOR
+  static Address redirect(Isolate* isolate, Address address,
+                          AccessorComponent component);
+  Address redirected_getter() const;
+#endif
 
   // Dispatched behavior.
   DECLARE_PRINTER(AccessorInfo)
@@ -10321,9 +10338,14 @@ class AccessorInfo: public Struct {
   static const int kNameOffset = HeapObject::kHeaderSize;
   static const int kFlagOffset = kNameOffset + kPointerSize;
   static const int kExpectedReceiverTypeOffset = kFlagOffset + kPointerSize;
-  static const int kGetterOffset = kExpectedReceiverTypeOffset + kPointerSize;
-  static const int kSetterOffset = kGetterOffset + kPointerSize;
-  static const int kDataOffset = kSetterOffset + kPointerSize;
+  static const int kSetterOffset = kExpectedReceiverTypeOffset + kPointerSize;
+  static const int kGetterOffset = kSetterOffset + kPointerSize;
+#ifdef USE_SIMULATOR
+  static const int kJsGetterOffset = kGetterOffset + kPointerSize;
+#else
+  static const int kJsGetterOffset = kGetterOffset;
+#endif
+  static const int kDataOffset = kJsGetterOffset + kPointerSize;
   static const int kSize = kDataOffset + kPointerSize;
 
 

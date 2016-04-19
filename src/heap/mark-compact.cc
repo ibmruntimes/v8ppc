@@ -2024,8 +2024,7 @@ void MarkCompactCollector::ProcessEphemeralMarking(
   DCHECK(marking_deque_.IsEmpty() && !marking_deque_.overflowed());
   while (work_to_do) {
     if (UsingEmbedderHeapTracer()) {
-      embedder_heap_tracer()->TraceWrappableFrom(
-          reinterpret_cast<v8::Isolate*>(isolate()), wrappers_to_trace_);
+      embedder_heap_tracer()->TraceWrappersFrom(wrappers_to_trace_);
       wrappers_to_trace_.clear();
     } else if (!only_process_harmony_weak_collections) {
       isolate()->global_handles()->IterateObjectGroups(
@@ -2145,8 +2144,10 @@ void MarkCompactCollector::SetEmbedderHeapTracer(EmbedderHeapTracer* tracer) {
 void MarkCompactCollector::TracePossibleWrapper(JSObject* js_object) {
   DCHECK(js_object->WasConstructedFromApiFunction());
   if (js_object->GetInternalFieldCount() >= 2 &&
+      js_object->GetInternalField(0) &&
       js_object->GetInternalField(0) != heap_->undefined_value() &&
       js_object->GetInternalField(1) != heap_->undefined_value()) {
+    DCHECK(reinterpret_cast<intptr_t>(js_object->GetInternalField(0)) % 2 == 0);
     wrappers_to_trace().push_back(std::pair<void*, void*>(
         reinterpret_cast<void*>(js_object->GetInternalField(0)),
         reinterpret_cast<void*>(js_object->GetInternalField(1))));
@@ -2217,8 +2218,7 @@ void MarkCompactCollector::MarkLiveObjects() {
       TRACE_GC(heap()->tracer(),
                GCTracer::Scope::MC_MARK_WEAK_CLOSURE_EPHEMERAL);
       if (UsingEmbedderHeapTracer()) {
-        embedder_heap_tracer()->TraceRoots(
-            reinterpret_cast<v8::Isolate*>(isolate()));
+        embedder_heap_tracer()->TracePrologue();
       }
       ProcessEphemeralMarking(&root_visitor, false);
       ProcessMarkingDeque();
@@ -2257,8 +2257,7 @@ void MarkCompactCollector::MarkLiveObjects() {
       ProcessEphemeralMarking(&root_visitor, true);
       ProcessMarkingDeque();
       if (UsingEmbedderHeapTracer()) {
-        embedder_heap_tracer()->ClearTracingMarks(
-            reinterpret_cast<v8::Isolate*>(isolate()));
+        embedder_heap_tracer()->TraceEpilogue();
       }
     }
   }

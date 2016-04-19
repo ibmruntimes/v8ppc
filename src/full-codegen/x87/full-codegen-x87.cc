@@ -1749,20 +1749,25 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
   // this.  It stays on the stack while we update the iterator.
   VisitForStackValue(expr->expression());
 
-  Label suspend, continuation, post_runtime, resume;
+  Label suspend, continuation, post_runtime, resume, exception;
 
   __ jmp(&suspend);
   __ bind(&continuation);
-  // When we arrive here, the stack top is the resume mode and
-  // result_register() holds the input value (the argument given to the
-  // respective resume operation).
+  // When we arrive here, eax holds the generator object.
   __ RecordGeneratorContinuation();
-  __ pop(ebx);
-  __ cmp(ebx, Immediate(Smi::FromInt(JSGeneratorObject::RETURN)));
-  __ j(not_equal, &resume);
-  __ push(result_register());
+  __ mov(ebx, FieldOperand(eax, JSGeneratorObject::kResumeModeOffset));
+  __ mov(eax, FieldOperand(eax, JSGeneratorObject::kInputOffset));
+  STATIC_ASSERT(JSGeneratorObject::kNext < JSGeneratorObject::kReturn);
+  STATIC_ASSERT(JSGeneratorObject::kThrow > JSGeneratorObject::kReturn);
+  __ cmp(ebx, Immediate(Smi::FromInt(JSGeneratorObject::kReturn)));
+  __ j(less, &resume);
+  __ Push(result_register());
+  __ j(greater, &exception);
   EmitCreateIteratorResult(true);
   EmitUnwindAndReturn();
+
+  __ bind(&exception);
+  __ CallRuntime(Runtime::kThrow);
 
   __ bind(&suspend);
   OperandStackDepthIncrement(1);  // Not popped on this path.
@@ -1786,101 +1791,6 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
   EmitReturnSequence();
 
   __ bind(&resume);
-  context()->Plug(result_register());
-}
-
-
-void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
-    Expression *value,
-    JSGeneratorObject::ResumeMode resume_mode) {
-  // The value stays in eax, and is ultimately read by the resumed generator, as
-  // if CallRuntime(Runtime::kSuspendJSGeneratorObject) returned it. Or it
-  // is read to throw the value when the resumed generator is already closed.
-  // ebx will hold the generator object until the activation has been resumed.
-  VisitForStackValue(generator);
-  VisitForAccumulatorValue(value);
-  PopOperand(ebx);
-
-  // Store input value into generator object.
-  __ mov(FieldOperand(ebx, JSGeneratorObject::kInputOffset), result_register());
-  __ mov(ecx, result_register());
-  __ RecordWriteField(ebx, JSGeneratorObject::kInputOffset, ecx, edx,
-                      kDontSaveFPRegs);
-
-  // Load suspended function and context.
-  __ mov(esi, FieldOperand(ebx, JSGeneratorObject::kContextOffset));
-  __ mov(edi, FieldOperand(ebx, JSGeneratorObject::kFunctionOffset));
-
-  // Push receiver.
-  __ push(FieldOperand(ebx, JSGeneratorObject::kReceiverOffset));
-
-  // Push holes for arguments to generator function. Since the parser forced
-  // context allocation for any variables in generators, the actual argument
-  // values have already been copied into the context and these dummy values
-  // will never be used.
-  __ mov(edx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
-  __ mov(edx,
-         FieldOperand(edx, SharedFunctionInfo::kFormalParameterCountOffset));
-  __ mov(ecx, isolate()->factory()->the_hole_value());
-  Label push_argument_holes, push_frame;
-  __ bind(&push_argument_holes);
-  __ sub(edx, Immediate(Smi::FromInt(1)));
-  __ j(carry, &push_frame);
-  __ push(ecx);
-  __ jmp(&push_argument_holes);
-
-  // Enter a new JavaScript frame, and initialize its slots as they were when
-  // the generator was suspended.
-  Label resume_frame, done;
-  __ bind(&push_frame);
-  __ call(&resume_frame);
-  __ jmp(&done);
-  __ bind(&resume_frame);
-  __ push(ebp);  // Caller's frame pointer.
-  __ mov(ebp, esp);
-  __ push(esi);  // Callee's context.
-  __ push(edi);  // Callee's JS Function.
-
-  // Load the operand stack size.
-  __ mov(edx, FieldOperand(ebx, JSGeneratorObject::kOperandStackOffset));
-  __ mov(edx, FieldOperand(edx, FixedArray::kLengthOffset));
-  __ SmiUntag(edx);
-
-  // If we are sending a value and there is no operand stack, we can jump back
-  // in directly.
-  if (resume_mode == JSGeneratorObject::NEXT) {
-    Label slow_resume;
-    __ cmp(edx, Immediate(0));
-    __ j(not_zero, &slow_resume);
-    __ mov(edx, FieldOperand(edi, JSFunction::kCodeEntryOffset));
-    __ mov(ecx, FieldOperand(ebx, JSGeneratorObject::kContinuationOffset));
-    __ SmiUntag(ecx);
-    __ add(edx, ecx);
-    __ mov(FieldOperand(ebx, JSGeneratorObject::kContinuationOffset),
-           Immediate(Smi::FromInt(JSGeneratorObject::kGeneratorExecuting)));
-    __ Push(Smi::FromInt(resume_mode));  // Consumed in continuation.
-    __ jmp(edx);
-    __ bind(&slow_resume);
-  }
-
-  // Otherwise, we push holes for the operand stack and call the runtime to fix
-  // up the stack and the handlers.
-  Label push_operand_holes, call_resume;
-  __ bind(&push_operand_holes);
-  __ sub(edx, Immediate(1));
-  __ j(carry, &call_resume);
-  __ push(ecx);
-  __ jmp(&push_operand_holes);
-  __ bind(&call_resume);
-  __ Push(Smi::FromInt(resume_mode));  // Consumed in continuation.
-  __ push(ebx);
-  __ push(result_register());
-  __ Push(Smi::FromInt(resume_mode));
-  __ CallRuntime(Runtime::kResumeJSGeneratorObject);
-  // Not reached: the runtime call returns elsewhere.
-  __ Abort(kGeneratorFailedToResume);
-
-  __ bind(&done);
   context()->Plug(result_register());
 }
 
@@ -2543,8 +2453,8 @@ void FullCodeGenerator::EmitCall(Call* expr, ConvertReceiverMode mode) {
   context()->DropAndPlug(1, eax);
 }
 
-
-void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
+void FullCodeGenerator::EmitResolvePossiblyDirectEval(Call* expr) {
+  int arg_count = expr->arguments()->length();
   // Push copy of the first argument or undefined if it doesn't exist.
   if (arg_count > 0) {
     __ push(Operand(esp, arg_count * kPointerSize));
@@ -2560,6 +2470,9 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
 
   // Push the start position of the scope the calls resides in.
   __ push(Immediate(Smi::FromInt(scope()->start_position())));
+
+  // Push the source position of the eval call.
+  __ push(Immediate(Smi::FromInt(expr->position())));
 
   // Do the runtime call.
   __ CallRuntime(Runtime::kResolvePossiblyDirectEval);
@@ -2607,7 +2520,7 @@ void FullCodeGenerator::PushCalleeAndWithBaseObject(Call* expr) {
 
 
 void FullCodeGenerator::EmitPossiblyEvalCall(Call* expr) {
-  // In a call to eval, we first call RuntimeHidden_ResolvePossiblyDirectEval
+  // In a call to eval, we first call Runtime_ResolvePossiblyDirectEval
   // to resolve the function we need to call.  Then we call the resolved
   // function using the given arguments.
   ZoneList<Expression*>* args = expr->arguments();
@@ -2623,7 +2536,7 @@ void FullCodeGenerator::EmitPossiblyEvalCall(Call* expr) {
   // Push a copy of the function (found below the arguments) and
   // resolve eval.
   __ push(Operand(esp, (arg_count + 1) * kPointerSize));
-  EmitResolvePossiblyDirectEval(arg_count);
+  EmitResolvePossiblyDirectEval(expr);
 
   // Touch up the stack with the resolved function.
   __ mov(Operand(esp, (arg_count + 1) * kPointerSize), eax);

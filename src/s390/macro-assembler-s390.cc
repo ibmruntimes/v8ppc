@@ -500,8 +500,8 @@ void MacroAssembler::RecordWriteCodeEntryField(Register js_function,
   // Save caller-saved registers.  js_function and code_entry are in the
   // caller-saved register list.
   DCHECK(kJSCallerSaved & js_function.bit());
-  DCHECK(kJSCallerSaved & code_entry.bit());
-  MultiPush(kJSCallerSaved | r14.bit());
+  // DCHECK(kJSCallerSaved & code_entry.bit());
+  MultiPush(kJSCallerSaved | code_entry.bit() | r14.bit());
 
   int argument_count = 3;
   PrepareCallCFunction(argument_count, code_entry);
@@ -519,7 +519,7 @@ void MacroAssembler::RecordWriteCodeEntryField(Register js_function,
   }
 
   // Restore caller-saved registers (including js_function and code_entry).
-  MultiPop(kJSCallerSaved | r14.bit());
+  MultiPop(kJSCallerSaved | code_entry.bit() | r14.bit());
 
   bind(&done);
 }
@@ -4977,6 +4977,14 @@ void MacroAssembler::LoadB(Register dst, const MemOperand& mem) {
 #endif
 }
 
+void MacroAssembler::LoadB(Register dst, Register src) {
+#if V8_TARGET_ARCH_S390X
+  lgbr(dst, src);
+#else
+  lbr(dst, src);
+#endif
+}
+
 void MacroAssembler::LoadlB(Register dst, const MemOperand& mem) {
 #if V8_TARGET_ARCH_S390X
   llgc(dst, mem);
@@ -5316,7 +5324,7 @@ void MacroAssembler::Popcnt32(Register dst, Register src) {
   ar(dst, r0);
   ShiftRight(r0, dst, Operand(8));
   ar(dst, r0);
-  lbr(dst, dst);
+  LoadB(dst, dst);
 }
 
 #ifdef V8_TARGET_ARCH_S390X
@@ -5331,7 +5339,7 @@ void MacroAssembler::Popcnt64(Register dst, Register src) {
   AddP(dst, r0);
   ShiftRightP(r0, dst, Operand(8));
   AddP(dst, r0);
-  lbr(dst, dst);
+  LoadB(dst, dst);
 }
 #endif
 

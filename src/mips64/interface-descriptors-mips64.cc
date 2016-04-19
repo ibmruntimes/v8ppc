@@ -53,9 +53,8 @@ const Register InstanceOfDescriptor::RightRegister() { return a0; }
 const Register StringCompareDescriptor::LeftRegister() { return a1; }
 const Register StringCompareDescriptor::RightRegister() { return a0; }
 
-
-const Register ApiGetterDescriptor::function_address() { return a2; }
-
+const Register ApiGetterDescriptor::HolderRegister() { return a0; }
+const Register ApiGetterDescriptor::CallbackRegister() { return a3; }
 
 const Register MathPowTaggedDescriptor::exponent() { return a2; }
 
@@ -376,9 +375,8 @@ void ApiCallbackDescriptorBase::InitializePlatformSpecific(
 void InterpreterDispatchDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {
-      kInterpreterAccumulatorRegister, kInterpreterRegisterFileRegister,
-      kInterpreterBytecodeOffsetRegister, kInterpreterBytecodeArrayRegister,
-      kInterpreterDispatchTableRegister};
+      kInterpreterAccumulatorRegister, kInterpreterBytecodeOffsetRegister,
+      kInterpreterBytecodeArrayRegister, kInterpreterDispatchTableRegister};
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
 
@@ -419,15 +417,6 @@ void ResumeGeneratorDescriptor::InitializePlatformSpecific(
       v0,  // the value to pass to the generator
       a1,  // the JSGeneratorObject to resume
       a2   // the resume mode (tagged)
-  };
-  data->InitializePlatformSpecific(arraysize(registers), registers);
-}
-
-void AtomicsLoadDescriptor::InitializePlatformSpecific(
-    CallInterfaceDescriptorData* data) {
-  Register registers[] = {
-      a1,  // the typedarray object
-      a0   // the index to load (untagged)
   };
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }

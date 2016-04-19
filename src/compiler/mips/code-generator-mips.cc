@@ -472,6 +472,12 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
     __ bind(&done);                                                           \
   }
 
+#define ASSEMBLE_ATOMIC_LOAD_INTEGER(asm_instr)          \
+  do {                                                   \
+    __ asm_instr(i.OutputRegister(), i.MemoryOperand()); \
+    __ sync();                                           \
+  } while (0)
+
 void CodeGenerator::AssembleDeconstructFrame() {
   __ mov(sp, fp);
   __ Pop(ra, fp);
@@ -1323,6 +1329,21 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kCheckedLoadWord64:
     case kCheckedStoreWord64:
       UNREACHABLE();  // currently unsupported checked int64 load/store.
+      break;
+    case kAtomicLoadInt8:
+      ASSEMBLE_ATOMIC_LOAD_INTEGER(lb);
+      break;
+    case kAtomicLoadUint8:
+      ASSEMBLE_ATOMIC_LOAD_INTEGER(lbu);
+      break;
+    case kAtomicLoadInt16:
+      ASSEMBLE_ATOMIC_LOAD_INTEGER(lh);
+      break;
+    case kAtomicLoadUint16:
+      ASSEMBLE_ATOMIC_LOAD_INTEGER(lhu);
+      break;
+    case kAtomicLoadWord32:
+      ASSEMBLE_ATOMIC_LOAD_INTEGER(lw);
       break;
   }
 }  // NOLINT(readability/fn_size)

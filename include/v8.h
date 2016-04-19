@@ -480,9 +480,12 @@ class WeakCallbackData {
 template <class T>
 using PhantomCallbackData = WeakCallbackInfo<T>;
 
-
-enum class WeakCallbackType { kParameter, kInternalFields };
-
+// kParameter will pass a void* parameter back to the callback, kInternalFields
+// will pass the first two internal fields back to the callback, kFinalizer
+// will pass a void* parameter back, but is invoked before the object is
+// actually collected, so it can be resurrected. In the last case, it is not
+// possible to request a second pass callback.
+enum class WeakCallbackType { kParameter, kInternalFields, kFinalizer };
 
 /**
  * An object reference that is independent of any handle scope.  Where
@@ -1665,9 +1668,8 @@ struct SampleInfo {
   StateTag vm_state;
 };
 
-
 /**
- * A JSON Parser.
+ * A JSON Parser and Stringifier.
  */
 class V8_EXPORT JSON {
  public:
@@ -1678,10 +1680,23 @@ class V8_EXPORT JSON {
    * \param json_string The string to parse.
    * \return The corresponding value if successfully parsed.
    */
-  static V8_DEPRECATED("Use maybe version",
+  static V8_DEPRECATED("Use the maybe version taking context",
                        Local<Value> Parse(Local<String> json_string));
+  static V8_DEPRECATE_SOON("Use the maybe version taking context",
+                           MaybeLocal<Value> Parse(Isolate* isolate,
+                                                   Local<String> json_string));
   static V8_WARN_UNUSED_RESULT MaybeLocal<Value> Parse(
-      Isolate* isolate, Local<String> json_string);
+      Local<Context> context, Local<String> json_string);
+
+  /**
+   * Tries to stringify the JSON-serializable object |json_object| and returns
+   * it as string if successful.
+   *
+   * \param json_object The JSON-serializable object to stringify.
+   * \return The corresponding string if successfully stringified.
+   */
+  static V8_WARN_UNUSED_RESULT MaybeLocal<String> Stringify(
+      Local<Context> context, Local<Object> json_object);
 };
 
 
@@ -2639,6 +2654,10 @@ enum AccessControl {
   PROHIBITS_OVERWRITING = 1 << 2
 };
 
+/**
+ * Integrity level for objects.
+ */
+enum class IntegrityLevel { kFrozen, kSealed };
 
 /**
  * A JavaScript object (ECMA-262, 4.3.3)
@@ -2829,6 +2848,11 @@ class V8_EXPORT Object : public Value {
    * Returns the name of the function invoked as a constructor for this object.
    */
   Local<String> GetConstructorName();
+
+  /**
+   * Sets the integrity level of the object.
+   */
+  Maybe<bool> SetIntegrityLevel(Local<Context> context, IntegrityLevel level);
 
   /** Gets the number of internal fields for this Object. */
   int InternalFieldCount();
@@ -4136,7 +4160,11 @@ enum Intrinsic {
  */
 class V8_EXPORT Template : public Data {
  public:
-  /** Adds a property to each instance created by this template.*/
+  /**
+   * Adds a property to each instance created by this template.
+   *
+   * The property must be defined either as a primitive value, or a template.
+   */
   void Set(Local<Name> name, Local<Data> value,
            PropertyAttribute attributes = None);
   V8_INLINE void Set(Isolate* isolate, const char* name, Local<Data> value);
@@ -5403,31 +5431,29 @@ enum class MemoryPressureLevel { kNone, kModerate, kCritical };
  * trace through its heap and call PersistentBase::RegisterExternalReference on
  * each js object reachable from any of the given wrappers.
  *
- * Before the first call to the TraceWrappableFrom function v8 will call
- * TraceRoots. When the v8 garbage collection is finished, v8 will call
- * ClearTracingMarks.
+ * Before the first call to the TraceWrappersFrom function TracePrologue will be
+ * called. When the garbage collection cycle is finished, TraceEpilogue will be
+ * called.
  */
 class EmbedderHeapTracer {
  public:
   /**
    * V8 will call this method at the beginning of the gc cycle.
    */
-  virtual void TraceRoots(Isolate* isolate) = 0;
-
+  virtual void TracePrologue() = 0;
   /**
    * V8 will call this method with internal fields of a potential wrappers.
    * Embedder is expected to trace its heap (synchronously) and call
    * PersistentBase::RegisterExternalReference() on all wrappers reachable from
    * any of the given wrappers.
    */
-  virtual void TraceWrappableFrom(
-      Isolate* isolate,
+  virtual void TraceWrappersFrom(
       const std::vector<std::pair<void*, void*> >& internal_fields) = 0;
   /**
    * V8 will call this method at the end of the gc cycle. Allocation is *not*
-   * allowed in the ClearTracingMarks.
+   * allowed in the TraceEpilogue.
    */
-  virtual void ClearTracingMarks(Isolate* isolate) = 0;
+  virtual void TraceEpilogue() = 0;
 
  protected:
   virtual ~EmbedderHeapTracer() = default;
@@ -6650,8 +6676,6 @@ class V8_EXPORT V8 {
   static internal::Object** CopyPersistent(internal::Object** handle);
   static void DisposeGlobal(internal::Object** global_handle);
   typedef WeakCallbackData<Value, void>::Callback WeakCallback;
-  static void RegisterExternallyReferencedObject(internal::Object** object,
-                                                 internal::Isolate* isolate);
   static void MakeWeak(internal::Object** global_handle, void* data,
                        WeakCallback weak_callback);
   static void MakeWeak(internal::Object** global_handle, void* data,
@@ -6668,6 +6692,11 @@ class V8_EXPORT V8 {
                          Value* handle,
                          int* index);
   static Local<Value> GetEternal(Isolate* isolate, int index);
+
+  static void RegisterExternallyReferencedObject(internal::Object** object,
+                                                 internal::Isolate* isolate);
+  template <class K, class V, class T>
+  friend class PersistentValueMapBase;
 
   static void FromJustIsNothing();
   static void ToLocalEmpty();

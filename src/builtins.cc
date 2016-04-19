@@ -4,13 +4,13 @@
 
 #include "src/builtins.h"
 
-#include "src/api.h"
 #include "src/api-arguments.h"
 #include "src/api-natives.h"
+#include "src/api.h"
 #include "src/base/once.h"
 #include "src/bootstrapper.h"
 #include "src/code-factory.h"
-#include "src/compiler/code-stub-assembler.h"
+#include "src/code-stub-assembler.h"
 #include "src/dateparser-inl.h"
 #include "src/elements.h"
 #include "src/frames-inl.h"
@@ -352,11 +352,10 @@ BUILTIN(Illegal) {
 
 BUILTIN(EmptyFunction) { return isolate->heap()->undefined_value(); }
 
-void Builtins::Generate_ObjectHasOwnProperty(
-    compiler::CodeStubAssembler* assembler) {
+void Builtins::Generate_ObjectHasOwnProperty(CodeStubAssembler* assembler) {
   typedef compiler::Node Node;
-  typedef compiler::CodeStubAssembler::Label Label;
-  typedef compiler::CodeStubAssembler::Variable Variable;
+  typedef CodeStubAssembler::Label Label;
+  typedef CodeStubAssembler::Variable Variable;
 
   Node* object = assembler->Parameter(0);
   Node* key = assembler->Parameter(1);
@@ -2068,11 +2067,12 @@ MaybeHandle<JSFunction> CompileString(Handle<Context> context,
   }
 
   // Compile source string in the native context.
-  Handle<SharedFunctionInfo> outer_info(native_context->closure()->shared(),
-                                        isolate);
+  int eval_scope_position = 0;
+  int eval_position = RelocInfo::kNoPosition;
+  Handle<SharedFunctionInfo> outer_info(native_context->closure()->shared());
   return Compiler::GetFunctionFromEval(source, outer_info, native_context,
-                                       SLOPPY, restriction,
-                                       RelocInfo::kNoPosition);
+                                       SLOPPY, restriction, eval_scope_position,
+                                       eval_position);
 }
 
 }  // namespace
@@ -2134,12 +2134,11 @@ BUILTIN(MathAtan) {
 namespace {
 
 void Generate_MathRoundingOperation(
-    compiler::CodeStubAssembler* assembler,
-    compiler::Node* (compiler::CodeStubAssembler::*float64op)(
-        compiler::Node*)) {
-  typedef compiler::CodeStubAssembler::Label Label;
+    CodeStubAssembler* assembler,
+    compiler::Node* (CodeStubAssembler::*float64op)(compiler::Node*)) {
+  typedef CodeStubAssembler::Label Label;
   typedef compiler::Node Node;
-  typedef compiler::CodeStubAssembler::Variable Variable;
+  typedef CodeStubAssembler::Variable Variable;
 
   Node* context = assembler->Parameter(4);
 
@@ -2196,16 +2195,15 @@ void Generate_MathRoundingOperation(
 }  // namespace
 
 // ES6 section 20.2.2.10 Math.ceil ( x )
-void Builtins::Generate_MathCeil(compiler::CodeStubAssembler* assembler) {
-  Generate_MathRoundingOperation(assembler,
-                                 &compiler::CodeStubAssembler::Float64Ceil);
+void Builtins::Generate_MathCeil(CodeStubAssembler* assembler) {
+  Generate_MathRoundingOperation(assembler, &CodeStubAssembler::Float64Ceil);
 }
 
 // ES6 section 20.2.2.11 Math.clz32 ( x )
-void Builtins::Generate_MathClz32(compiler::CodeStubAssembler* assembler) {
-  typedef compiler::CodeStubAssembler::Label Label;
+void Builtins::Generate_MathClz32(CodeStubAssembler* assembler) {
+  typedef CodeStubAssembler::Label Label;
   typedef compiler::Node Node;
-  typedef compiler::CodeStubAssembler::Variable Variable;
+  typedef CodeStubAssembler::Variable Variable;
 
   Node* context = assembler->Parameter(4);
 
@@ -2270,9 +2268,8 @@ void Builtins::Generate_MathClz32(compiler::CodeStubAssembler* assembler) {
 }
 
 // ES6 section 20.2.2.16 Math.floor ( x )
-void Builtins::Generate_MathFloor(compiler::CodeStubAssembler* assembler) {
-  Generate_MathRoundingOperation(assembler,
-                                 &compiler::CodeStubAssembler::Float64Floor);
+void Builtins::Generate_MathFloor(CodeStubAssembler* assembler) {
+  Generate_MathRoundingOperation(assembler, &CodeStubAssembler::Float64Floor);
 }
 
 // ES6 section 20.2.2.17 Math.fround ( x )
@@ -2298,13 +2295,12 @@ BUILTIN(MathImul) {
 }
 
 // ES6 section 20.2.2.28 Math.round ( x )
-void Builtins::Generate_MathRound(compiler::CodeStubAssembler* assembler) {
-  Generate_MathRoundingOperation(assembler,
-                                 &compiler::CodeStubAssembler::Float64Round);
+void Builtins::Generate_MathRound(CodeStubAssembler* assembler) {
+  Generate_MathRoundingOperation(assembler, &CodeStubAssembler::Float64Round);
 }
 
 // ES6 section 20.2.2.32 Math.sqrt ( x )
-void Builtins::Generate_MathSqrt(compiler::CodeStubAssembler* assembler) {
+void Builtins::Generate_MathSqrt(CodeStubAssembler* assembler) {
   using compiler::Node;
 
   Node* x = assembler->Parameter(1);
@@ -2316,9 +2312,8 @@ void Builtins::Generate_MathSqrt(compiler::CodeStubAssembler* assembler) {
 }
 
 // ES6 section 20.2.2.35 Math.trunc ( x )
-void Builtins::Generate_MathTrunc(compiler::CodeStubAssembler* assembler) {
-  Generate_MathRoundingOperation(assembler,
-                                 &compiler::CodeStubAssembler::Float64Trunc);
+void Builtins::Generate_MathTrunc(CodeStubAssembler* assembler) {
+  Generate_MathRoundingOperation(assembler, &CodeStubAssembler::Float64Trunc);
 }
 
 // -----------------------------------------------------------------------------
@@ -2327,15 +2322,16 @@ void Builtins::Generate_MathTrunc(compiler::CodeStubAssembler* assembler) {
 namespace {
 
 void Generate_GeneratorPrototypeResume(
-    compiler::CodeStubAssembler* assembler,
-    JSGeneratorObject::ResumeMode resume_mode, char const* const method_name) {
-  typedef compiler::CodeStubAssembler::Label Label;
+    CodeStubAssembler* assembler, JSGeneratorObject::ResumeMode resume_mode,
+    char const* const method_name) {
+  typedef CodeStubAssembler::Label Label;
   typedef compiler::Node Node;
 
   Node* receiver = assembler->Parameter(0);
   Node* value = assembler->Parameter(1);
   Node* context = assembler->Parameter(4);
-  Node* zero = assembler->SmiConstant(Smi::FromInt(0));
+  Node* closed = assembler->SmiConstant(
+      Smi::FromInt(JSGeneratorObject::kGeneratorClosed));
 
   // Check if the {receiver} is actually a JSGeneratorObject.
   Label if_receiverisincompatible(assembler, Label::kDeferred);
@@ -2351,9 +2347,11 @@ void Generate_GeneratorPrototypeResume(
       receiver, JSGeneratorObject::kContinuationOffset);
   Label if_receiverisclosed(assembler, Label::kDeferred),
       if_receiverisrunning(assembler, Label::kDeferred);
-  assembler->GotoIf(assembler->SmiEqual(receiver_continuation, zero),
+  assembler->GotoIf(assembler->SmiEqual(receiver_continuation, closed),
                     &if_receiverisclosed);
-  assembler->GotoIf(assembler->SmiLessThan(receiver_continuation, zero),
+  DCHECK_LT(JSGeneratorObject::kGeneratorExecuting,
+            JSGeneratorObject::kGeneratorClosed);
+  assembler->GotoIf(assembler->SmiLessThan(receiver_continuation, closed),
                     &if_receiverisrunning);
 
   // Resume the {receiver} using our trampoline.
@@ -2406,22 +2404,19 @@ void Generate_GeneratorPrototypeResume(
 }  // namespace
 
 // ES6 section 25.3.1.2 Generator.prototype.next ( value )
-void Builtins::Generate_GeneratorPrototypeNext(
-    compiler::CodeStubAssembler* assembler) {
+void Builtins::Generate_GeneratorPrototypeNext(CodeStubAssembler* assembler) {
   Generate_GeneratorPrototypeResume(assembler, JSGeneratorObject::kNext,
                                     "[Generator].prototype.next");
 }
 
 // ES6 section 25.3.1.3 Generator.prototype.return ( value )
-void Builtins::Generate_GeneratorPrototypeReturn(
-    compiler::CodeStubAssembler* assembler) {
+void Builtins::Generate_GeneratorPrototypeReturn(CodeStubAssembler* assembler) {
   Generate_GeneratorPrototypeResume(assembler, JSGeneratorObject::kReturn,
                                     "[Generator].prototype.return");
 }
 
 // ES6 section 25.3.1.4 Generator.prototype.throw ( exception )
-void Builtins::Generate_GeneratorPrototypeThrow(
-    compiler::CodeStubAssembler* assembler) {
+void Builtins::Generate_GeneratorPrototypeThrow(CodeStubAssembler* assembler) {
   Generate_GeneratorPrototypeResume(assembler, JSGeneratorObject::kThrow,
                                     "[Generator].prototype.throw");
 }
@@ -4191,11 +4186,10 @@ BUILTIN(ObjectProtoToString) {
 // ES6 section 21.1 String Objects
 
 // ES6 section 21.1.3.1 String.prototype.charAt ( pos )
-void Builtins::Generate_StringPrototypeCharAt(
-    compiler::CodeStubAssembler* assembler) {
-  typedef compiler::CodeStubAssembler::Label Label;
+void Builtins::Generate_StringPrototypeCharAt(CodeStubAssembler* assembler) {
+  typedef CodeStubAssembler::Label Label;
   typedef compiler::Node Node;
-  typedef compiler::CodeStubAssembler::Variable Variable;
+  typedef CodeStubAssembler::Variable Variable;
 
   Node* receiver = assembler->Parameter(0);
   Node* position = assembler->Parameter(1);
@@ -4287,10 +4281,10 @@ void Builtins::Generate_StringPrototypeCharAt(
 
 // ES6 section 21.1.3.2 String.prototype.charCodeAt ( pos )
 void Builtins::Generate_StringPrototypeCharCodeAt(
-    compiler::CodeStubAssembler* assembler) {
-  typedef compiler::CodeStubAssembler::Label Label;
+    CodeStubAssembler* assembler) {
+  typedef CodeStubAssembler::Label Label;
   typedef compiler::Node Node;
-  typedef compiler::CodeStubAssembler::Variable Variable;
+  typedef CodeStubAssembler::Variable Variable;
 
   Node* receiver = assembler->Parameter(0);
   Node* position = assembler->Parameter(1);
@@ -4987,11 +4981,10 @@ Handle<Code> MacroAssemblerBuilder(Isolate* isolate,
 Handle<Code> CodeStubAssemblerBuilder(Isolate* isolate,
                                       BuiltinDesc const* builtin_desc) {
   Zone zone(isolate->allocator());
-  compiler::CodeStubAssembler assembler(isolate, &zone, builtin_desc->argc,
-                                        builtin_desc->flags,
-                                        builtin_desc->s_name);
+  CodeStubAssembler assembler(isolate, &zone, builtin_desc->argc,
+                              builtin_desc->flags, builtin_desc->s_name);
   // Generate the code/adaptor.
-  typedef void (*Generator)(compiler::CodeStubAssembler*);
+  typedef void (*Generator)(CodeStubAssembler*);
   Generator g = FUNCTION_CAST<Generator>(builtin_desc->generator);
   g(&assembler);
   return assembler.GenerateCode();
@@ -5147,8 +5140,10 @@ void Builtins::Generate_StackCheck(MacroAssembler* masm) {
 
 namespace {
 
-void ValidateSharedTypedArray(compiler::CodeStubAssembler* a,
-                              compiler::Node* tagged, compiler::Node* context) {
+void ValidateSharedTypedArray(CodeStubAssembler* a, compiler::Node* tagged,
+                              compiler::Node* context,
+                              compiler::Node** out_instance_type,
+                              compiler::Node** out_backing_store) {
   using namespace compiler;
   CodeStubAssembler::Label is_smi(a), not_smi(a), is_typed_array(a),
       not_typed_array(a), is_shared(a), not_shared(a), is_float_or_clamped(a),
@@ -5169,10 +5164,9 @@ void ValidateSharedTypedArray(compiler::CodeStubAssembler* a,
 
   // Fail if the array's JSArrayBuffer is not shared.
   a->Bind(&is_typed_array);
-  Node* is_buffer_shared =
-      a->BitFieldDecode<JSArrayBuffer::IsShared>(a->LoadObjectField(
-          a->LoadObjectField(tagged, JSTypedArray::kBufferOffset),
-          JSArrayBuffer::kBitFieldOffset));
+  Node* array_buffer = a->LoadObjectField(tagged, JSTypedArray::kBufferOffset);
+  Node* is_buffer_shared = a->BitFieldDecode<JSArrayBuffer::IsShared>(
+      a->LoadObjectField(array_buffer, JSArrayBuffer::kBitFieldOffset));
   a->Branch(is_buffer_shared, &is_shared, &not_shared);
   a->Bind(&not_shared);
   a->Goto(&invalid);
@@ -5199,10 +5193,18 @@ void ValidateSharedTypedArray(compiler::CodeStubAssembler* a,
   a->Return(a->UndefinedConstant());
 
   a->Bind(&not_float_or_clamped);
+  *out_instance_type = elements_instance_type;
+
+  Node* backing_store =
+      a->LoadObjectField(array_buffer, JSArrayBuffer::kBackingStoreOffset);
+  Node* byte_offset = a->ChangeUint32ToWord(a->TruncateTaggedToWord32(
+      context,
+      a->LoadObjectField(tagged, JSArrayBufferView::kByteOffsetOffset)));
+  *out_backing_store = a->IntPtrAdd(backing_store, byte_offset);
 }
 
 // https://tc39.github.io/ecmascript_sharedmem/shmem.html#Atomics.ValidateAtomicAccess
-compiler::Node* ConvertTaggedAtomicIndexToWord32(compiler::CodeStubAssembler* a,
+compiler::Node* ConvertTaggedAtomicIndexToWord32(CodeStubAssembler* a,
                                                  compiler::Node* tagged,
                                                  compiler::Node* context) {
   using namespace compiler;
@@ -5246,8 +5248,7 @@ compiler::Node* ConvertTaggedAtomicIndexToWord32(compiler::CodeStubAssembler* a,
   return var_result.value();
 }
 
-void ValidateAtomicIndex(compiler::CodeStubAssembler* a,
-                         compiler::Node* index_word,
+void ValidateAtomicIndex(CodeStubAssembler* a, compiler::Node* index_word,
                          compiler::Node* array_length_word,
                          compiler::Node* context) {
   using namespace compiler;
@@ -5265,22 +5266,61 @@ void ValidateAtomicIndex(compiler::CodeStubAssembler* a,
 
 }  // anonymous namespace
 
-void Builtins::Generate_AtomicsLoadCheck(compiler::CodeStubAssembler* a) {
+void Builtins::Generate_AtomicsLoad(CodeStubAssembler* a) {
   using namespace compiler;
-  Isolate* isolate = a->isolate();
   Node* array = a->Parameter(1);
   Node* index = a->Parameter(2);
   Node* context = a->Parameter(3 + 2);
-  ValidateSharedTypedArray(a, array, context);
-  Node* index_word = ConvertTaggedAtomicIndexToWord32(a, index, context);
-  Node* array_length_word = a->TruncateTaggedToWord32(
-      context, a->LoadObjectField(array, JSTypedArray::kLengthOffset));
-  ValidateAtomicIndex(a, index_word, array_length_word, context);
 
-  Callable atomics_load = CodeFactory::AtomicsLoad(isolate);
-  Node* target = a->HeapConstant(atomics_load.code());
-  a->Return(a->CallStub(atomics_load.descriptor(), target, context, array,
-                        index_word));
+  Node* instance_type;
+  Node* backing_store;
+  ValidateSharedTypedArray(a, array, context, &instance_type, &backing_store);
+
+  Node* index_word32 = ConvertTaggedAtomicIndexToWord32(a, index, context);
+  Node* array_length_word32 = a->TruncateTaggedToWord32(
+      context, a->LoadObjectField(array, JSTypedArray::kLengthOffset));
+  ValidateAtomicIndex(a, index_word32, array_length_word32, context);
+  Node* index_word = a->ChangeUint32ToWord(index_word32);
+
+  CodeStubAssembler::Label i8(a), u8(a), i16(a), u16(a), i32(a), u32(a),
+      other(a);
+  int32_t case_values[] = {
+      FIXED_INT8_ARRAY_TYPE,   FIXED_UINT8_ARRAY_TYPE, FIXED_INT16_ARRAY_TYPE,
+      FIXED_UINT16_ARRAY_TYPE, FIXED_INT32_ARRAY_TYPE, FIXED_UINT32_ARRAY_TYPE,
+  };
+  CodeStubAssembler::Label* case_labels[] = {
+      &i8, &u8, &i16, &u16, &i32, &u32,
+  };
+  a->Switch(instance_type, &other, case_values, case_labels,
+            arraysize(case_labels));
+
+  a->Bind(&i8);
+  a->Return(
+      a->SmiTag(a->AtomicLoad(MachineType::Int8(), backing_store, index_word)));
+
+  a->Bind(&u8);
+  a->Return(a->SmiTag(
+      a->AtomicLoad(MachineType::Uint8(), backing_store, index_word)));
+
+  a->Bind(&i16);
+  a->Return(a->SmiTag(a->AtomicLoad(MachineType::Int16(), backing_store,
+                                    a->WordShl(index_word, 1))));
+
+  a->Bind(&u16);
+  a->Return(a->SmiTag(a->AtomicLoad(MachineType::Uint16(), backing_store,
+                                    a->WordShl(index_word, 1))));
+
+  a->Bind(&i32);
+  a->Return(a->ChangeInt32ToTagged(a->AtomicLoad(
+      MachineType::Int32(), backing_store, a->WordShl(index_word, 2))));
+
+  a->Bind(&u32);
+  a->Return(a->ChangeUint32ToTagged(a->AtomicLoad(
+      MachineType::Uint32(), backing_store, a->WordShl(index_word, 2))));
+
+  // This shouldn't happen, we've already validated the type.
+  a->Bind(&other);
+  a->Return(a->Int32Constant(0));
 }
 
 #define DEFINE_BUILTIN_ACCESSOR_C(name, ignore)               \

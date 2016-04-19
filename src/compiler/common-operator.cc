@@ -98,6 +98,11 @@ SelectParameters const& SelectParametersOf(const Operator* const op) {
   return OpParameter<SelectParameters>(op);
 }
 
+CallDescriptor const* CallDescriptorOf(const Operator* const op) {
+  DCHECK(op->opcode() == IrOpcode::kCall ||
+         op->opcode() == IrOpcode::kTailCall);
+  return OpParameter<CallDescriptor const*>(op);
+}
 
 size_t ProjectionIndexOf(const Operator* const op) {
   DCHECK_EQ(IrOpcode::kProjection, op->opcode());
@@ -698,11 +703,12 @@ const Operator* CommonOperatorBuilder::RelocatableInt32Constant(
 
 const Operator* CommonOperatorBuilder::RelocatableInt64Constant(
     int64_t value, RelocInfo::Mode rmode) {
-  return new (zone()) Operator1<RelocatablePtrConstantInfo>(  // --
-      IrOpcode::kRelocatableInt64Constant, Operator::kPure,   // opcode
-      "RelocatableInt64Constant",                             // name
-      0, 0, 0, 1, 0, 0,                                       // counts
-      RelocatablePtrConstantInfo(value, rmode));              // parameter
+  return new (zone()) Operator1<RelocatablePtrConstantInfo>(    // --
+      IrOpcode::kRelocatableInt64Constant, Operator::kPure,     // opcode
+      "RelocatableInt64Constant",                               // name
+      0, 0, 0, 1, 0, 0,                                         // counts
+      RelocatablePtrConstantInfo(static_cast<intptr_t>(value),  // parameter
+                                 rmode));
 }
 
 const Operator* CommonOperatorBuilder::Select(MachineRepresentation rep,

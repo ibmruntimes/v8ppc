@@ -150,8 +150,7 @@
   'allocation-site-info': [PASS, NO_VARIANTS],
 
   # TODO(turbofan): The escape analysis needs some investigation.
-  'compiler/escape-analysis-deopt-5': [PASS, NO_VARIANTS],
-  'compiler/escape-analysis-9': [PASS, NO_VARIANTS],
+  'compiler/escape-analysis-*': [PASS, NO_VARIANTS],
 
   ##############################################################################
   # Too slow in debug mode with --stress-opt mode.
@@ -284,9 +283,6 @@
   'harmony/unicode-regexp-ignore-case-noi18n': [FAIL, ['no_i18n == True', PASS]],
   # desugaring regexp property class relies on ICU.
   'harmony/regexp-property-*': [PASS, ['no_i18n == True', FAIL]],
-
-  # BUG(v8:4894).
-  'es6/debug-step-into-constructor': [PASS, ['system == linux and arch == x64 and mode == release ', FAST_VARIANTS]],
 }],  # ALWAYS
 
 ['novfp3 == True', {
@@ -651,9 +647,6 @@
 
   # BUG(v8:4495).
   'es6/collections': [PASS, ['arch == ia32', FAST_VARIANTS]],
-
-  # BUG(v8:4893).
-  'regress/regress-crbug-506443': [PASS, ['no_snap', FAST_VARIANTS]],
 }],  # 'system == windows'
 
 ##############################################################################
@@ -765,7 +758,6 @@
   'es6/debug-promises/stepin-constructor': [FAIL],
   'es6/debug-stepin-proxies': [FAIL],
   'regress/regress-crbug-119800': [FAIL],
-  'regress/regress-opt-after-debug-deopt': [FAIL],
 
   # TODO(yangguo,4690): flaky failures on the bots.
   'debug-stepin-builtin-callback-opt': [SKIP],
@@ -800,10 +792,6 @@
   # TODO(mythria, 4680): Relate to GC and ignition holding references to
   # objects.
   'es6/mirror-collections': [FAIL],
-
-  # TODO(mythria, 4904): Parser bug. It creates incorrectly nested scopes
-  # for do expressions in arrow functions.
-  'harmony/regress/regress-4658': [FAIL, ['mode == release and dcheck_always_on == False', PASS],],
 
   # TODO(rmcilroy, 4680): Script throws RangeError as expected, but does so during
   # eager compile of the whole script instead of during lazy compile of the function

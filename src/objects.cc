@@ -12,9 +12,9 @@
 
 #include "src/accessors.h"
 #include "src/allocation-site-scopes.h"
-#include "src/api.h"
 #include "src/api-arguments.h"
 #include "src/api-natives.h"
+#include "src/api.h"
 #include "src/base/bits.h"
 #include "src/base/utils/random-number-generator.h"
 #include "src/bootstrapper.h"
@@ -30,6 +30,7 @@
 #include "src/field-index-inl.h"
 #include "src/field-index.h"
 #include "src/field-type.h"
+#include "src/frames-inl.h"
 #include "src/full-codegen/full-codegen.h"
 #include "src/ic/ic.h"
 #include "src/identity-map.h"
@@ -1091,6 +1092,22 @@ MaybeHandle<Object> Object::GetPropertyWithAccessor(LookupIterator* it) {
   return ReadAbsentProperty(isolate, receiver, it->GetName());
 }
 
+#ifdef USE_SIMULATOR
+// static
+Address AccessorInfo::redirect(Isolate* isolate, Address address,
+                               AccessorComponent component) {
+  ApiFunction fun(address);
+  DCHECK_EQ(ACCESSOR_GETTER, component);
+  ExternalReference::Type type = ExternalReference::DIRECT_GETTER_CALL;
+  return ExternalReference(&fun, type, isolate).address();
+}
+
+Address AccessorInfo::redirected_getter() const {
+  Address accessor = v8::ToCData<Address>(getter());
+  if (accessor == nullptr) return nullptr;
+  return redirect(GetIsolate(), accessor, ACCESSOR_GETTER);
+}
+#endif
 
 bool AccessorInfo::IsCompatibleReceiverMap(Isolate* isolate,
                                            Handle<AccessorInfo> info,
@@ -11958,12 +11975,9 @@ bool JSFunction::Inlines(SharedFunctionInfo* candidate) {
 
 void JSFunction::MarkForOptimization() {
   Isolate* isolate = GetIsolate();
-  // Do not optimize if function contains break points.
-  if (shared()->HasDebugInfo()) return;
   DCHECK(!IsOptimized());
   DCHECK(shared()->allows_lazy_compilation() ||
          !shared()->optimization_disabled());
-  DCHECK(!shared()->HasDebugInfo());
   set_code_no_write_barrier(
       isolate->builtins()->builtin(Builtins::kCompileOptimized));
   // No write barrier required, since the builtin is part of the root set.
@@ -12984,6 +12998,45 @@ void Oddball::Initialize(Isolate* isolate, Handle<Oddball> oddball,
   oddball->set_kind(kind);
 }
 
+void Script::SetEvalOrigin(Handle<Script> script,
+                           Handle<SharedFunctionInfo> outer_info,
+                           int eval_position) {
+  if (eval_position == RelocInfo::kNoPosition) {
+    // If the position is missing, attempt to get the code offset from the
+    // current activation.  Do not translate the code offset into source
+    // position, but store it as negative value for lazy translation.
+    StackTraceFrameIterator it(script->GetIsolate());
+    if (!it.done() && it.is_javascript()) {
+      FrameSummary summary = FrameSummary::GetFirst(it.javascript_frame());
+      script->set_eval_from_shared(summary.function()->shared());
+      script->set_eval_from_position(-summary.code_offset());
+      return;
+    }
+    eval_position = 0;
+  }
+  script->set_eval_from_shared(*outer_info);
+  script->set_eval_from_position(eval_position);
+}
+
+int Script::GetEvalPosition() {
+  DisallowHeapAllocation no_gc;
+  DCHECK(compilation_type() == Script::COMPILATION_TYPE_EVAL);
+  int position = eval_from_position();
+  if (position < 0) {
+    // Due to laziness, the position may not have been translated from code
+    // offset yet, which would be encoded as negative integer. In that case,
+    // translate and set the position.
+    if (eval_from_shared()->IsUndefined()) {
+      position = 0;
+    } else {
+      SharedFunctionInfo* shared = SharedFunctionInfo::cast(eval_from_shared());
+      position = shared->abstract_code()->SourcePosition(-position);
+    }
+    DCHECK(position >= 0);
+    set_eval_from_position(position);
+  }
+  return position;
+}
 
 void Script::InitLineEnds(Handle<Script> script) {
   if (!script->line_ends()->IsUndefined()) return;
@@ -13517,8 +13570,15 @@ void SharedFunctionInfo::ResetForNewContext(int new_ic_age) {
   set_ic_age(new_ic_age);
   if (code()->kind() == Code::FUNCTION) {
     code()->set_profiler_ticks(0);
-    if (optimization_disabled() &&
-        opt_count() >= FLAG_max_opt_count) {
+    if (optimization_disabled() && opt_count() >= FLAG_max_opt_count) {
+      // Re-enable optimizations if they were disabled due to opt_count limit.
+      set_optimization_disabled(false);
+    }
+    set_opt_count(0);
+    set_deopt_count(0);
+  } else if (code()->is_interpreter_entry_trampoline()) {
+    set_profiler_ticks(0);
+    if (optimization_disabled() && opt_count() >= FLAG_max_opt_count) {
       // Re-enable optimizations if they were disabled due to opt_count limit.
       set_optimization_disabled(false);
     }
@@ -13577,12 +13637,6 @@ CodeAndLiterals SharedFunctionInfo::SearchOptimizedCodeMap(
                     ? nullptr
                     : LiteralsArray::cast(literals_cell->value())};
     }
-  }
-  if (FLAG_trace_opt && !OptimizedCodeMapIsCleared() &&
-      result.code == nullptr) {
-    PrintF("[didn't find optimized code in optimized code map for ");
-    ShortPrint();
-    PrintF("]\n");
   }
   return result;
 }
@@ -16860,6 +16914,16 @@ void HashTable<Derived, Shape, Key>::Rehash(Key key) {
       }
     }
   }
+  // Wipe deleted entries.
+  Heap* heap = GetHeap();
+  Object* the_hole = heap->the_hole_value();
+  Object* undefined = heap->undefined_value();
+  for (uint32_t current = 0; current < capacity; current++) {
+    if (get(EntryToIndex(current)) == the_hole) {
+      set(EntryToIndex(current), undefined);
+    }
+  }
+  SetNumberOfDeletedElements(0);
 }
 
 
@@ -17629,23 +17693,11 @@ Handle<CompilationCacheTable> CompilationCacheTable::Put(
   Isolate* isolate = cache->GetIsolate();
   Handle<SharedFunctionInfo> shared(context->closure()->shared());
   StringSharedKey key(src, shared, language_mode, RelocInfo::kNoPosition);
-  {
-    Handle<Object> k = key.AsHandle(isolate);
-    DisallowHeapAllocation no_allocation_scope;
-    int entry = cache->FindEntry(&key);
-    if (entry != kNotFound) {
-      cache->set(EntryToIndex(entry), *k);
-      cache->set(EntryToIndex(entry) + 1, *value);
-      return cache;
-    }
-  }
-
+  Handle<Object> k = key.AsHandle(isolate);
   cache = EnsureCapacity(cache, 1, &key);
   int entry = cache->FindInsertionEntry(key.Hash());
-  Handle<Object> k =
-      isolate->factory()->NewNumber(static_cast<double>(key.Hash()));
   cache->set(EntryToIndex(entry), *k);
-  cache->set(EntryToIndex(entry) + 1, Smi::FromInt(kHashGenerations));
+  cache->set(EntryToIndex(entry) + 1, *value);
   cache->ElementAdded();
   return cache;
 }
@@ -18220,6 +18272,12 @@ Handle<ObjectHashTable> ObjectHashTable::Put(Handle<ObjectHashTable> table,
   if (entry != kNotFound) {
     table->set(EntryToIndex(entry) + 1, *value);
     return table;
+  }
+
+  // Rehash if more than 25% of the entries are deleted entries.
+  // TODO(jochen): Consider to shrink the fixed array in place.
+  if ((table->NumberOfDeletedElements() << 1) > table->NumberOfElements()) {
+    table->Rehash(isolate->factory()->undefined_value());
   }
 
   // Check whether the hash table should be extended.

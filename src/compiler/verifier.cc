@@ -746,9 +746,11 @@ void Verifier::Visitor::Check(Node* node) {
       CheckUpperIs(node, Type::Boolean());
       break;
     }
+    case IrOpcode::kObjectIsCallable:
     case IrOpcode::kObjectIsNumber:
     case IrOpcode::kObjectIsReceiver:
     case IrOpcode::kObjectIsSmi:
+    case IrOpcode::kObjectIsString:
     case IrOpcode::kObjectIsUndetectable:
       CheckValueInputIs(node, 0, Type::Any());
       CheckUpperIs(node, Type::Boolean());
@@ -993,6 +995,7 @@ void Verifier::Visitor::Check(Node* node) {
     case IrOpcode::kLoadParentFramePointer:
     case IrOpcode::kCheckedLoad:
     case IrOpcode::kCheckedStore:
+    case IrOpcode::kAtomicLoad:
       // TODO(rossberg): Check.
       break;
   }

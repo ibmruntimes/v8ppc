@@ -121,7 +121,6 @@ namespace internal {
   F(GetWeakSetValues, 2, 1)               \
   F(ObservationWeakMapCreate, 0, 1)
 
-
 #define FOR_EACH_INTRINSIC_COMPILER(F)    \
   F(CompileLazy, 1, 1)                    \
   F(CompileOptimized_Concurrent, 1, 1)    \
@@ -130,8 +129,7 @@ namespace internal {
   F(NotifyDeoptimized, 1, 1)              \
   F(CompileForOnStackReplacement, 1, 1)   \
   F(TryInstallOptimizedCode, 1, 1)        \
-  F(ResolvePossiblyDirectEval, 5, 1)
-
+  F(ResolvePossiblyDirectEval, 6, 1)
 
 #define FOR_EACH_INTRINSIC_DATE(F) \
   F(IsDate, 1, 1)                  \
@@ -239,7 +237,10 @@ namespace internal {
   F(GeneratorGetReceiver, 1, 1)         \
   F(GeneratorGetInput, 1, 1)            \
   F(GeneratorGetContinuation, 1, 1)     \
-  F(GeneratorGetSourcePosition, 1, 1)
+  F(GeneratorGetSourcePosition, 1, 1)   \
+  F(GeneratorGetResumeMode, 1, 1)       \
+  F(SuspendIgnitionGenerator, 2, 1)     \
+  F(ResumeIgnitionGenerator, 1, 1)
 
 #ifdef V8_I18N_SUPPORT
 #define FOR_EACH_INTRINSIC_I18N(F)           \
@@ -501,7 +502,6 @@ namespace internal {
   F(InitializeVarGlobal, 3, 1)             \
   F(InitializeConstGlobal, 2, 1)           \
   F(DeclareLookupSlot, 3, 1)               \
-  F(InitializeLegacyConstLookupSlot, 3, 1) \
   F(NewSloppyArguments_Generic, 1, 1)      \
   F(NewStrictArguments, 1, 1)              \
   F(NewRestParameter, 1, 1)                \
@@ -1109,6 +1109,12 @@ class Runtime : public AllStatic {
 
   MUST_USE_RESULT static MaybeHandle<Object> GetObjectProperty(
       Isolate* isolate, Handle<Object> object, Handle<Object> key);
+
+  MUST_USE_RESULT static MaybeHandle<Object> BasicJsonStringify(
+      Isolate* isolate, Handle<Object> object);
+
+  MUST_USE_RESULT static MaybeHandle<Object> BasicJsonStringifyString(
+      Isolate* isolate, Handle<String> string);
 
   enum TypedArrayId {
     // arrayIds below should be synchronized with typedarray.js natives.

@@ -1587,22 +1587,8 @@ TEST(CompilationCacheCachingBehavior) {
     CompileRun(raw_source);
   }
 
-  // On first compilation, only a hash is inserted in the code cache. We can't
-  // find that value.
+  // The script should be in the cache now.
   MaybeHandle<SharedFunctionInfo> info = compilation_cache->LookupScript(
-      source, Handle<Object>(), 0, 0,
-      v8::ScriptOriginOptions(false, true, false), native_context,
-      language_mode);
-  CHECK(info.is_null());
-
-  {
-    v8::HandleScope scope(CcTest::isolate());
-    CompileRun(raw_source);
-  }
-
-  // On second compilation, the hash is replaced by a real cache entry mapping
-  // the source to the shared function info containing the code.
-  info = compilation_cache->LookupScript(
       source, Handle<Object>(), 0, 0,
       v8::ScriptOriginOptions(false, true, false), native_context,
       language_mode);
@@ -1632,36 +1618,6 @@ TEST(CompilationCacheCachingBehavior) {
 
   heap->CollectAllGarbage();
   // Ensure code aging cleared the entry from the cache.
-  info = compilation_cache->LookupScript(
-      source, Handle<Object>(), 0, 0,
-      v8::ScriptOriginOptions(false, true, false), native_context,
-      language_mode);
-  CHECK(info.is_null());
-
-  {
-    v8::HandleScope scope(CcTest::isolate());
-    CompileRun(raw_source);
-  }
-
-  // On first compilation, only a hash is inserted in the code cache. We can't
-  // find that value.
-  info = compilation_cache->LookupScript(
-      source, Handle<Object>(), 0, 0,
-      v8::ScriptOriginOptions(false, true, false), native_context,
-      language_mode);
-  CHECK(info.is_null());
-
-  for (int i = 0; i < CompilationCacheTable::kHashGenerations; i++) {
-    compilation_cache->MarkCompactPrologue();
-  }
-
-  {
-    v8::HandleScope scope(CcTest::isolate());
-    CompileRun(raw_source);
-  }
-
-  // If we aged the cache before caching the script, ensure that we didn't cache
-  // on next compilation.
   info = compilation_cache->LookupScript(
       source, Handle<Object>(), 0, 0,
       v8::ScriptOriginOptions(false, true, false), native_context,
@@ -2658,6 +2614,14 @@ TEST(InstanceOfStubWriteBarrier) {
   CcTest::heap()->CollectGarbage(OLD_SPACE);
 }
 
+namespace {
+
+int GetProfilerTicks(SharedFunctionInfo* shared) {
+  return FLAG_ignition ? shared->profiler_ticks()
+                       : shared->code()->profiler_ticks();
+}
+
+}  // namespace
 
 TEST(ResetSharedFunctionInfoCountersDuringIncrementalMarking) {
   i::FLAG_stress_compaction = false;
@@ -2688,16 +2652,18 @@ TEST(ResetSharedFunctionInfoCountersDuringIncrementalMarking) {
           CcTest::global()->Get(ctx, v8_str("f")).ToLocalChecked())));
   CHECK(f->IsOptimized());
 
-  IncrementalMarking* marking = CcTest::heap()->incremental_marking();
-  marking->Stop();
+  // Make sure incremental marking it not running.
+  CcTest::heap()->incremental_marking()->Stop();
+
   CcTest::heap()->StartIncrementalMarking();
   // The following calls will increment CcTest::heap()->global_ic_age().
   CcTest::isolate()->ContextDisposedNotification();
   SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage();
+
   CHECK_EQ(CcTest::heap()->global_ic_age(), f->shared()->ic_age());
   CHECK_EQ(0, f->shared()->opt_count());
-  CHECK_EQ(0, f->shared()->code()->profiler_ticks());
+  CHECK_EQ(0, GetProfilerTicks(f->shared()));
 }
 
 
@@ -2728,9 +2694,9 @@ TEST(ResetSharedFunctionInfoCountersDuringMarkSweep) {
   i::Handle<JSFunction> f = i::Handle<JSFunction>::cast(
       v8::Utils::OpenHandle(*v8::Local<v8::Function>::Cast(
           CcTest::global()->Get(ctx, v8_str("f")).ToLocalChecked())));
-
   CHECK(f->IsOptimized());
 
+  // Make sure incremental marking it not running.
   CcTest::heap()->incremental_marking()->Stop();
 
   // The following two calls will increment CcTest::heap()->global_ic_age().
@@ -2739,7 +2705,7 @@ TEST(ResetSharedFunctionInfoCountersDuringMarkSweep) {
 
   CHECK_EQ(CcTest::heap()->global_ic_age(), f->shared()->ic_age());
   CHECK_EQ(0, f->shared()->opt_count());
-  CHECK_EQ(0, f->shared()->code()->profiler_ticks());
+  CHECK_EQ(0, GetProfilerTicks(f->shared()));
 }
 
 

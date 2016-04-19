@@ -5722,18 +5722,39 @@ void CallApiCallbackStub::Generate(MacroAssembler* masm) {
 
 
 void CallApiGetterStub::Generate(MacroAssembler* masm) {
-  // ----------- S t a t e -------------
-  //  -- sp[0]                        : name
-  //  -- sp[4 .. (4 + kArgsLength*4)] : v8::PropertyCallbackInfo::args_
-  //  -- ...
-  //  -- r5                           : api_function_address
-  // -----------------------------------
-
-  Register api_function_address = ApiGetterDescriptor::function_address();
   int arg0Slot = 0;
   int accessorInfoSlot = 0;
   int apiStackSpace = 0;
-  DCHECK(api_function_address.is(r5));
+  // Build v8::PropertyCallbackInfo::args_ array on the stack and push property
+  // name below the exit frame to make GC aware of them.
+  STATIC_ASSERT(PropertyCallbackArguments::kShouldThrowOnErrorIndex == 0);
+  STATIC_ASSERT(PropertyCallbackArguments::kHolderIndex == 1);
+  STATIC_ASSERT(PropertyCallbackArguments::kIsolateIndex == 2);
+  STATIC_ASSERT(PropertyCallbackArguments::kReturnValueDefaultValueIndex == 3);
+  STATIC_ASSERT(PropertyCallbackArguments::kReturnValueOffset == 4);
+  STATIC_ASSERT(PropertyCallbackArguments::kDataIndex == 5);
+  STATIC_ASSERT(PropertyCallbackArguments::kThisIndex == 6);
+  STATIC_ASSERT(PropertyCallbackArguments::kArgsLength == 7);
+
+  Register receiver = ApiGetterDescriptor::ReceiverRegister();
+  Register holder = ApiGetterDescriptor::HolderRegister();
+  Register callback = ApiGetterDescriptor::CallbackRegister();
+  Register scratch = r7;
+  DCHECK(!AreAliased(receiver, holder, callback, scratch));
+
+  Register api_function_address = r5;
+
+  __ push(receiver);
+  // Push data from AccessorInfo.
+  __ LoadP(scratch, FieldMemOperand(callback, AccessorInfo::kDataOffset));
+  __ push(scratch);
+  __ LoadRoot(scratch, Heap::kUndefinedValueRootIndex);
+  __ Push(scratch, scratch);
+  __ mov(scratch, Operand(ExternalReference::isolate_address(isolate())));
+  __ Push(scratch, holder);
+  __ Push(Smi::FromInt(0));  // should_throw_on_error -> false
+  __ LoadP(scratch, FieldMemOperand(callback, AccessorInfo::kNameOffset));
+  __ push(scratch);
 
   // v8::PropertyCallbackInfo::args_ array and name handle.
   const int kStackUnwindSpace = PropertyCallbackArguments::kArgsLength + 1;
@@ -5781,198 +5802,15 @@ void CallApiGetterStub::Generate(MacroAssembler* masm) {
   ExternalReference thunk_ref =
       ExternalReference::invoke_accessor_getter_callback(isolate());
 
+  __ LoadP(scratch, FieldMemOperand(callback, AccessorInfo::kJsGetterOffset));
+  __ LoadP(api_function_address,
+        FieldMemOperand(scratch, Foreign::kForeignAddressOffset));
+
   // +3 is to skip prolog, return address and name handle.
   MemOperand return_value_operand(
       fp, (PropertyCallbackArguments::kReturnValueOffset + 3) * kPointerSize);
   CallApiFunctionAndReturn(masm, api_function_address, thunk_ref,
                            kStackUnwindSpace, NULL, return_value_operand, NULL);
-}
-
-namespace {
-
-void GetTypedArrayBackingStore(MacroAssembler* masm, Register backing_store,
-                               Register object, Register scratch,
-                               DoubleRegister double_scratch) {
-  Label offset_is_not_smi, done_offset;
-  __ LoadP(scratch, FieldMemOperand(object, JSTypedArray::kBufferOffset));
-  __ LoadP(backing_store,
-           FieldMemOperand(scratch, JSArrayBuffer::kBackingStoreOffset));
-  __ LoadP(scratch,
-           FieldMemOperand(object, JSArrayBufferView::kByteOffsetOffset));
-  __ JumpIfNotSmi(scratch, &offset_is_not_smi);
-  // offset is smi
-  __ SmiUntag(scratch);
-  __ b(&done_offset);
-
-  // offset is a heap number
-  __ bind(&offset_is_not_smi);
-  __ lfd(double_scratch, FieldMemOperand(scratch, HeapNumber::kValueOffset));
-  __ ConvertDoubleToInt64(double_scratch,
-#if !V8_TARGET_ARCH_PPC64
-                          r0,
-#endif
-                          scratch, double_scratch);
-  __ bind(&done_offset);
-  __ add(backing_store, backing_store, scratch);
-}
-
-void TypedArrayJumpTablePrologue(MacroAssembler* masm, Register object,
-                                 Register scratch, Register scratch2,
-                                 Label* table) {
-  __ LoadP(scratch, FieldMemOperand(object, JSObject::kElementsOffset));
-  __ LoadP(scratch, FieldMemOperand(scratch, HeapObject::kMapOffset));
-  __ lbz(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
-  __ subi(scratch, scratch,
-          Operand(static_cast<uint8_t>(FIXED_INT8_ARRAY_TYPE)));
-  if (__ emit_debug_code()) {
-    __ cmpi(scratch, Operand::Zero());
-    __ Check(ge, kOffsetOutOfRange);
-  }
-  __ ShiftLeftImm(scratch, scratch, Operand(kPointerSizeLog2));
-  __ mov_label_addr(scratch2, table);
-  __ LoadPX(scratch, MemOperand(scratch2, scratch));
-  __ Jump(scratch);
-}
-
-void TypedArrayJumpTableEpilogue(MacroAssembler* masm, Label* table, Label* i8,
-                                 Label* u8, Label* i16, Label* u16, Label* i32,
-                                 Label* u32, Label* u8c) {
-  STATIC_ASSERT(FIXED_UINT8_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 1);
-  STATIC_ASSERT(FIXED_INT16_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 2);
-  STATIC_ASSERT(FIXED_UINT16_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 3);
-  STATIC_ASSERT(FIXED_INT32_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 4);
-  STATIC_ASSERT(FIXED_UINT32_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 5);
-  STATIC_ASSERT(FIXED_FLOAT32_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 6);
-  STATIC_ASSERT(FIXED_FLOAT64_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 7);
-  STATIC_ASSERT(FIXED_UINT8_CLAMPED_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 8);
-
-  Label abort;
-  __ bind(table);
-  __ emit_label_addr(i8);      // Int8Array
-  __ emit_label_addr(u8);      // Uint8Array
-  __ emit_label_addr(i16);     // Int16Array
-  __ emit_label_addr(u16);     // Uint16Array
-  __ emit_label_addr(i32);     // Int32Array
-  __ emit_label_addr(u32);     // Uint32Array
-  __ emit_label_addr(&abort);  // Float32Array
-  __ emit_label_addr(&abort);  // Float64Array
-  __ emit_label_addr(u8c);     // Uint8ClampedArray
-
-  __ bind(&abort);
-  __ Abort(kNoReason);
-}
-
-#if !V8_TARGET_ARCH_PPC64
-void ReturnInteger32(MacroAssembler* masm, DoubleRegister dst, Register value,
-                     Label* use_heap_number) {
-  Label not_smi;
-  __ JumpIfNotSmiCandidate(value, r0, &not_smi);
-  __ SmiTag(r3, value);
-  __ blr();
-
-  __ bind(&not_smi);
-  __ ConvertIntToDouble(value, dst);
-  __ b(use_heap_number);
-}
-#endif
-
-void ReturnUnsignedInteger32(MacroAssembler* masm, DoubleRegister dst,
-                             Register value, Label* use_heap_number) {
-  Label not_smi;
-  __ JumpIfNotUnsignedSmiCandidate(value, r0, &not_smi);
-  __ SmiTag(r3, value);
-  __ blr();
-
-  __ bind(&not_smi);
-  __ ConvertUnsignedIntToDouble(value, dst);
-  __ b(use_heap_number);
-}
-
-void ReturnAllocatedHeapNumber(MacroAssembler* masm, DoubleRegister value,
-                               Register scratch, Register scratch2,
-                               Register scratch3) {
-  Label call_runtime;
-  __ LoadRoot(scratch3, Heap::kHeapNumberMapRootIndex);
-  __ AllocateHeapNumber(r3, scratch, scratch2, scratch3, &call_runtime);
-  __ stfd(value, FieldMemOperand(r3, HeapNumber::kValueOffset));
-  __ blr();
-
-  __ bind(&call_runtime);
-  {
-    FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
-    __ CallRuntimeSaveDoubles(Runtime::kAllocateHeapNumber);
-    __ stfd(value, FieldMemOperand(r3, HeapNumber::kValueOffset));
-  }
-  __ blr();
-}
-
-}  // anonymous namespace
-
-#define ASSEMBLE_ATOMIC_LOAD(instr, dst, base, index) \
-  do {                                                \
-    Label not_taken;                                  \
-    __ sync();                                        \
-    __ instr(dst, MemOperand(base, index));           \
-    __ bind(&not_taken);                              \
-    __ cmp(dst, dst);                                 \
-    __ bne(&not_taken);                               \
-    __ isync();                                       \
-  } while (0)
-
-void AtomicsLoadStub::Generate(MacroAssembler* masm) {
-  Register object = r4;
-  Register index = r3;  // Index is an untagged word32.
-  Register backing_store = r5;
-  Label table, i8, u8, i16, u16, i32, u32;
-
-  GetTypedArrayBackingStore(masm, backing_store, object, r6, d0);
-  TypedArrayJumpTablePrologue(masm, object, r6, r7, &table);
-
-  __ bind(&i8);
-  ASSEMBLE_ATOMIC_LOAD(lbzx, r3, backing_store, index);
-  __ extsb(r3, r3);
-  __ SmiTag(r3);
-  __ blr();
-
-  __ bind(&u8);
-  ASSEMBLE_ATOMIC_LOAD(lbzx, r3, backing_store, index);
-  __ SmiTag(r3);
-  __ blr();
-
-  __ bind(&i16);
-  __ ShiftLeftImm(index, index, Operand(1));
-  ASSEMBLE_ATOMIC_LOAD(lhax, r3, backing_store, index);
-  __ SmiTag(r3);
-  __ blr();
-
-  __ bind(&u16);
-  __ ShiftLeftImm(index, index, Operand(1));
-  ASSEMBLE_ATOMIC_LOAD(lhzx, r3, backing_store, index);
-  __ SmiTag(r3);
-  __ blr();
-
-  Label use_heap_number;
-
-  __ bind(&i32);
-  __ ShiftLeftImm(index, index, Operand(2));
-  ASSEMBLE_ATOMIC_LOAD(lwax, r3, backing_store, index);
-#if V8_TARGET_ARCH_PPC64
-  __ SmiTag(r3);
-  __ blr();
-#else
-  ReturnInteger32(masm, d0, r3, &use_heap_number);
-#endif
-
-  __ bind(&u32);
-  __ ShiftLeftImm(index, index, Operand(2));
-  ASSEMBLE_ATOMIC_LOAD(lwzx, r3, backing_store, index);
-  ReturnUnsignedInteger32(masm, d0, r3, &use_heap_number);
-
-  __ bind(&use_heap_number);
-  ReturnAllocatedHeapNumber(masm, d0, r4, r5, r6);
-
-  TypedArrayJumpTableEpilogue(masm, &table, &i8, &u8, &i16, &u16, &i32, &u32,
-                              &u8);
 }
 
 #undef __

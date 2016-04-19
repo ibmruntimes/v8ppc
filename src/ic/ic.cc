@@ -1044,8 +1044,9 @@ Handle<Code> LoadIC::CompileHandler(LookupIterator* lookup,
           NamedLoadHandlerCompiler compiler(isolate(), map, holder,
                                             cache_holder);
           if (call_optimization.is_simple_api_call()) {
-            return compiler.CompileLoadCallback(
-                lookup->name(), call_optimization, lookup->GetAccessorIndex());
+            int index = lookup->GetAccessorIndex();
+            return compiler.CompileLoadCallback(lookup->name(),
+                                                call_optimization, index);
           }
           int expected_arguments = Handle<JSFunction>::cast(getter)
                                        ->shared()
@@ -1054,13 +1055,18 @@ Handle<Code> LoadIC::CompileHandler(LookupIterator* lookup,
               lookup->name(), lookup->GetAccessorIndex(), expected_arguments);
         } else if (accessors->IsAccessorInfo()) {
           Handle<AccessorInfo> info = Handle<AccessorInfo>::cast(accessors);
-          if (v8::ToCData<Address>(info->getter()) == 0) break;
+          if (v8::ToCData<Address>(info->getter()) == nullptr) break;
           if (!AccessorInfo::IsCompatibleReceiverMap(isolate(), info, map)) {
             // This case should be already handled in LoadIC::UpdateCaches.
             UNREACHABLE();
             break;
           }
           if (!holder->HasFastProperties()) break;
+          if (receiver_is_holder) {
+            int index = lookup->GetAccessorIndex();
+            LoadApiGetterStub stub(isolate(), true, index);
+            return stub.GetCode();
+          }
           NamedLoadHandlerCompiler compiler(isolate(), map, holder,
                                             cache_holder);
           return compiler.CompileLoadCallback(lookup->name(), info);
@@ -1148,7 +1154,8 @@ static Handle<Object> TryConvertKey(Handle<Object> key, Isolate* isolate) {
 
 void KeyedLoadIC::UpdateLoadElement(Handle<HeapObject> receiver) {
   Handle<Map> receiver_map(receiver->map(), isolate());
-  DCHECK(receiver_map->instance_type() != JS_VALUE_TYPE);  // Checked by caller.
+  DCHECK(receiver_map->instance_type() != JS_VALUE_TYPE &&
+         receiver_map->instance_type() != JS_PROXY_TYPE);  // Checked by caller.
   MapHandleList target_receiver_maps;
   TargetMaps(&target_receiver_maps);
 
@@ -1160,9 +1167,14 @@ void KeyedLoadIC::UpdateLoadElement(Handle<HeapObject> receiver) {
   }
 
   for (int i = 0; i < target_receiver_maps.length(); i++) {
-    if (!target_receiver_maps.at(i).is_null() &&
-        target_receiver_maps.at(i)->instance_type() == JS_VALUE_TYPE) {
+    Handle<Map> map = target_receiver_maps.at(i);
+    if (map.is_null()) continue;
+    if (map->instance_type() == JS_VALUE_TYPE) {
       TRACE_GENERIC_IC(isolate(), "KeyedLoadIC", "JSValue");
+      return;
+    }
+    if (map->instance_type() == JS_PROXY_TYPE) {
+      TRACE_GENERIC_IC(isolate(), "KeyedLoadIC", "JSProxy");
       return;
     }
   }

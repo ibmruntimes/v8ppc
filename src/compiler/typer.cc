@@ -247,9 +247,11 @@ class Typer::Visitor : public Reducer {
   static Type* NumberToInt32(Type*, Typer*);
   static Type* NumberToUint32(Type*, Typer*);
 
+  static Type* ObjectIsCallable(Type*, Typer*);
   static Type* ObjectIsNumber(Type*, Typer*);
   static Type* ObjectIsReceiver(Type*, Typer*);
   static Type* ObjectIsSmi(Type*, Typer*);
+  static Type* ObjectIsString(Type*, Typer*);
   static Type* ObjectIsUndetectable(Type*, Typer*);
 
   static Type* JSAddRanger(RangeType*, RangeType*, Typer*);
@@ -556,6 +558,11 @@ Type* Typer::Visitor::NumberToUint32(Type* type, Typer* t) {
 
 // Type checks.
 
+Type* Typer::Visitor::ObjectIsCallable(Type* type, Typer* t) {
+  if (type->Is(Type::Function())) return t->singleton_true_;
+  if (type->Is(Type::Primitive())) return t->singleton_false_;
+  return Type::Boolean();
+}
 
 Type* Typer::Visitor::ObjectIsNumber(Type* type, Typer* t) {
   if (type->Is(Type::Number())) return t->singleton_true_;
@@ -577,6 +584,11 @@ Type* Typer::Visitor::ObjectIsSmi(Type* type, Typer* t) {
   return Type::Boolean();
 }
 
+Type* Typer::Visitor::ObjectIsString(Type* type, Typer* t) {
+  if (type->Is(Type::String())) return t->singleton_true_;
+  if (!type->Maybe(Type::String())) return t->singleton_false_;
+  return Type::Boolean();
+}
 
 Type* Typer::Visitor::ObjectIsUndetectable(Type* type, Typer* t) {
   if (type->Is(Type::Undetectable())) return t->singleton_true_;
@@ -1982,6 +1994,9 @@ Type* Typer::Visitor::TypeStoreElement(Node* node) {
   return nullptr;
 }
 
+Type* Typer::Visitor::TypeObjectIsCallable(Node* node) {
+  return TypeUnaryOp(node, ObjectIsCallable);
+}
 
 Type* Typer::Visitor::TypeObjectIsNumber(Node* node) {
   return TypeUnaryOp(node, ObjectIsNumber);
@@ -1997,6 +2012,9 @@ Type* Typer::Visitor::TypeObjectIsSmi(Node* node) {
   return TypeUnaryOp(node, ObjectIsSmi);
 }
 
+Type* Typer::Visitor::TypeObjectIsString(Node* node) {
+  return TypeUnaryOp(node, ObjectIsString);
+}
 
 Type* Typer::Visitor::TypeObjectIsUndetectable(Node* node) {
   return TypeUnaryOp(node, ObjectIsUndetectable);
@@ -2503,6 +2521,7 @@ Type* Typer::Visitor::TypeLoadParentFramePointer(Node* node) {
 
 Type* Typer::Visitor::TypeCheckedLoad(Node* node) { return Type::Any(); }
 
+Type* Typer::Visitor::TypeAtomicLoad(Node* node) { return Type::Any(); }
 
 Type* Typer::Visitor::TypeCheckedStore(Node* node) {
   UNREACHABLE();

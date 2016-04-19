@@ -39,6 +39,13 @@ Handle<AccessorInfo> Accessors::MakeAccessor(
   Handle<Object> set = v8::FromCData(isolate, setter);
   info->set_getter(*get);
   info->set_setter(*set);
+#ifdef USE_SIMULATOR
+  Address redirected = info->redirected_getter();
+  if (redirected != nullptr) {
+    Handle<Object> js_get = v8::FromCData(isolate, redirected);
+    info->set_js_getter(*js_get);
+  }
+#endif
   return info;
 }
 
@@ -661,11 +668,7 @@ void Accessors::ScriptEvalFromScriptPositionGetter(
       Script::cast(Handle<JSValue>::cast(object)->value()), isolate);
   Handle<Object> result = isolate->factory()->undefined_value();
   if (script->compilation_type() == Script::COMPILATION_TYPE_EVAL) {
-    Handle<Code> code(SharedFunctionInfo::cast(
-        script->eval_from_shared())->code());
-    result = Handle<Object>(Smi::FromInt(code->SourcePosition(
-                                script->eval_from_instructions_offset())),
-                            isolate);
+    result = Handle<Object>(Smi::FromInt(script->GetEvalPosition()), isolate);
   }
   info.GetReturnValue().Set(Utils::ToLocal(result));
 }

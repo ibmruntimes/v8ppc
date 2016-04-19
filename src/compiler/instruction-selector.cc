@@ -1180,6 +1180,11 @@ void InstructionSelector::VisitNode(Node* node) {
       MarkAsWord32(NodeProperties::FindProjection(node, 0));
       MarkAsWord32(NodeProperties::FindProjection(node, 1));
       return VisitWord32PairSar(node);
+    case IrOpcode::kAtomicLoad: {
+      LoadRepresentation type = LoadRepresentationOf(node->op());
+      MarkAsRepresentation(type.representation(), node);
+      return VisitAtomicLoad(node);
+    }
     default:
       V8_Fatal(__FILE__, __LINE__, "Unexpected operator #%d:%s @ node #%d",
                node->opcode(), node->op()->mnemonic(), node->id());
@@ -1451,7 +1456,7 @@ void InstructionSelector::VisitIfException(Node* node) {
   OperandGenerator g(this);
   Node* call = node->InputAt(1);
   DCHECK_EQ(IrOpcode::kCall, call->opcode());
-  const CallDescriptor* descriptor = OpParameter<const CallDescriptor*>(call);
+  const CallDescriptor* descriptor = CallDescriptorOf(call->op());
   Emit(kArchNop,
        g.DefineAsLocation(node, descriptor->GetReturnLocation(0),
                           descriptor->GetReturnType(0).representation()));
@@ -1523,7 +1528,7 @@ void InstructionSelector::VisitConstant(Node* node) {
 
 void InstructionSelector::VisitCall(Node* node, BasicBlock* handler) {
   OperandGenerator g(this);
-  const CallDescriptor* descriptor = OpParameter<const CallDescriptor*>(node);
+  const CallDescriptor* descriptor = CallDescriptorOf(node->op());
 
   FrameStateDescriptor* frame_state_descriptor = nullptr;
   if (descriptor->NeedsFrameState()) {
@@ -1591,7 +1596,7 @@ void InstructionSelector::VisitCall(Node* node, BasicBlock* handler) {
 
 void InstructionSelector::VisitTailCall(Node* node) {
   OperandGenerator g(this);
-  CallDescriptor const* descriptor = OpParameter<CallDescriptor const*>(node);
+  CallDescriptor const* descriptor = CallDescriptorOf(node->op());
   DCHECK_NE(0, descriptor->flags() & CallDescriptor::kSupportsTailCalls);
   DCHECK_EQ(0, descriptor->flags() & CallDescriptor::kPatchableCallSite);
   DCHECK_EQ(0, descriptor->flags() & CallDescriptor::kNeedsNopAfterCall);

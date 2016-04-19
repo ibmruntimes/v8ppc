@@ -708,7 +708,7 @@ void FullCodeGenerator::VisitVariableDeclaration(
   VariableProxy* proxy = declaration->proxy();
   VariableMode mode = declaration->mode();
   Variable* variable = proxy->var();
-  bool hole_init = mode == LET || mode == CONST || mode == CONST_LEGACY;
+  bool hole_init = mode == LET || mode == CONST;
   switch (variable->location()) {
     case VariableLocation::GLOBAL:
     case VariableLocation::UNALLOCATED:
@@ -1207,16 +1207,11 @@ void FullCodeGenerator::EmitDynamicLookupFastCase(VariableProxy* proxy,
   } else if (var->mode() == DYNAMIC_LOCAL) {
     Variable* local = var->local_if_not_shadowed();
     __ mov(eax, ContextSlotOperandCheckExtensions(local, slow));
-    if (local->mode() == LET || local->mode() == CONST ||
-        local->mode() == CONST_LEGACY) {
+    if (local->mode() == LET || local->mode() == CONST) {
       __ cmp(eax, isolate()->factory()->the_hole_value());
       __ j(not_equal, done);
-      if (local->mode() == CONST_LEGACY) {
-        __ mov(eax, isolate()->factory()->undefined_value());
-      } else {  // LET || CONST
-        __ push(Immediate(var->name()));
-        __ CallRuntime(Runtime::kThrowReferenceError);
-      }
+      __ push(Immediate(var->name()));
+      __ CallRuntime(Runtime::kThrowReferenceError);
     }
     __ jmp(done);
   }
@@ -1274,10 +1269,6 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy,
           // binding in harmony mode.
           __ push(Immediate(var->name()));
           __ CallRuntime(Runtime::kThrowReferenceError);
-        } else {
-          // Uninitialized legacy const bindings are unholed.
-          DCHECK(var->mode() == CONST_LEGACY);
-          __ mov(eax, isolate()->factory()->undefined_value());
         }
         __ bind(&done);
         context()->Plug(eax);
@@ -2143,8 +2134,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
     __ bind(&uninitialized_this);
     EmitStoreToStackLocalOrContextSlot(var, location);
 
-  } else if (!var->is_const_mode() ||
-             (var->mode() == CONST && op == Token::INIT)) {
+  } else if (!var->is_const_mode() || op == Token::INIT) {
     if (var->IsLookupSlot()) {
       // Assignment to var.
       __ Push(Immediate(var->name()));
@@ -2164,25 +2154,6 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op,
         __ Check(equal, kLetBindingReInitialization);
       }
       EmitStoreToStackLocalOrContextSlot(var, location);
-    }
-
-  } else if (var->mode() == CONST_LEGACY && op == Token::INIT) {
-    // Const initializers need a write barrier.
-    DCHECK(!var->IsParameter());  // No const parameters.
-    if (var->IsLookupSlot()) {
-      __ push(eax);
-      __ push(esi);
-      __ push(Immediate(var->name()));
-      __ CallRuntime(Runtime::kInitializeLegacyConstLookupSlot);
-    } else {
-      DCHECK(var->IsStackLocal() || var->IsContextSlot());
-      Label skip;
-      MemOperand location = VarOperand(var, ecx);
-      __ mov(edx, location);
-      __ cmp(edx, isolate()->factory()->the_hole_value());
-      __ j(not_equal, &skip, Label::kNear);
-      EmitStoreToStackLocalOrContextSlot(var, location);
-      __ bind(&skip);
     }
 
   } else {
@@ -2461,8 +2432,8 @@ void FullCodeGenerator::EmitCall(Call* expr, ConvertReceiverMode mode) {
   context()->DropAndPlug(1, eax);
 }
 
-
-void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
+void FullCodeGenerator::EmitResolvePossiblyDirectEval(Call* expr) {
+  int arg_count = expr->arguments()->length();
   // Push copy of the first argument or undefined if it doesn't exist.
   if (arg_count > 0) {
     __ push(Operand(esp, arg_count * kPointerSize));
@@ -2478,6 +2449,9 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
 
   // Push the start position of the scope the calls resides in.
   __ push(Immediate(Smi::FromInt(scope()->start_position())));
+
+  // Push the source position of the eval call.
+  __ push(Immediate(Smi::FromInt(expr->position())));
 
   // Do the runtime call.
   __ CallRuntime(Runtime::kResolvePossiblyDirectEval);
@@ -2525,7 +2499,7 @@ void FullCodeGenerator::PushCalleeAndWithBaseObject(Call* expr) {
 
 
 void FullCodeGenerator::EmitPossiblyEvalCall(Call* expr) {
-  // In a call to eval, we first call RuntimeHidden_ResolvePossiblyDirectEval
+  // In a call to eval, we first call Runtime_ResolvePossiblyDirectEval
   // to resolve the function we need to call.  Then we call the resolved
   // function using the given arguments.
   ZoneList<Expression*>* args = expr->arguments();
@@ -2541,7 +2515,7 @@ void FullCodeGenerator::EmitPossiblyEvalCall(Call* expr) {
   // Push a copy of the function (found below the arguments) and
   // resolve eval.
   __ push(Operand(esp, (arg_count + 1) * kPointerSize));
-  EmitResolvePossiblyDirectEval(arg_count);
+  EmitResolvePossiblyDirectEval(expr);
 
   // Touch up the stack with the resolved function.
   __ mov(Operand(esp, (arg_count + 1) * kPointerSize), eax);

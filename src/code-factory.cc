@@ -17,6 +17,11 @@ Callable CodeFactory::LoadIC(Isolate* isolate, TypeofMode typeof_mode) {
   return Callable(stub.GetCode(), LoadDescriptor(isolate));
 }
 
+// static
+Callable CodeFactory::ApiGetter(Isolate* isolate) {
+  CallApiGetterStub stub(isolate);
+  return Callable(stub.GetCode(), ApiGetterDescriptor(isolate));
+}
 
 // static
 Callable CodeFactory::LoadICInOptimizedCode(
@@ -561,11 +566,6 @@ Callable CodeFactory::InterpreterCEntry(Isolate* isolate, int result_size) {
   // save fpregs too.
   CEntryStub stub(isolate, result_size, kDontSaveFPRegs, kArgvInRegister);
   return Callable(stub.GetCode(), InterpreterCEntryDescriptor(isolate));
-}
-
-Callable CodeFactory::AtomicsLoad(Isolate* isolate) {
-  AtomicsLoadStub stub(isolate);
-  return Callable(stub.GetCode(), AtomicsLoadDescriptor(isolate));
 }
 
 }  // namespace internal

@@ -7,8 +7,8 @@
 
 #include "src/allocation.h"
 #include "src/assembler.h"
+#include "src/code-stub-assembler.h"
 #include "src/codegen.h"
-#include "src/compiler/code-stub-assembler.h"
 #include "src/globals.h"
 #include "src/ic/ic-state.h"
 #include "src/interface-descriptors.h"
@@ -22,7 +22,6 @@ namespace internal {
 #define CODE_STUB_LIST_ALL_PLATFORMS(V)     \
   /* PlatformCodeStubs */                   \
   V(ArrayConstructor)                       \
-  V(AtomicsLoad)                            \
   V(BinaryOpICWithAllocationSite)           \
   V(CallApiCallback)                        \
   V(CallApiGetter)                          \
@@ -141,15 +140,16 @@ namespace internal {
   V(ToLength)                               \
   /* IC Handler stubs */                    \
   V(ArrayBufferViewLoadField)               \
+  V(KeyedLoadSloppyArguments)               \
+  V(KeyedStoreSloppyArguments)              \
+  V(LoadApiGetter)                          \
   V(LoadConstant)                           \
   V(LoadFastElement)                        \
   V(LoadField)                              \
   V(LoadIndexedInterceptor)                 \
-  V(KeyedLoadSloppyArguments)               \
-  V(KeyedStoreSloppyArguments)              \
   V(StoreField)                             \
-  V(StoreInterceptor)                       \
   V(StoreGlobal)                            \
+  V(StoreInterceptor)                       \
   V(StoreTransition)
 
 // List of code stubs only used on ARM 32 bits platforms.
@@ -396,10 +396,9 @@ class CodeStub BASE_EMBEDDED {
   Handle<Code> GenerateCode() override;                               \
   DEFINE_CODE_STUB(NAME, SUPER)
 
-#define DEFINE_TURBOFAN_CODE_STUB(NAME, SUPER)                  \
- public:                                                        \
-  void GenerateAssembly(compiler::CodeStubAssembler* assembler) \
-      const override;                                           \
+#define DEFINE_TURBOFAN_CODE_STUB(NAME, SUPER)                        \
+ public:                                                              \
+  void GenerateAssembly(CodeStubAssembler* assembler) const override; \
   DEFINE_CODE_STUB(NAME, SUPER)
 
 #define DEFINE_HANDLER_CODE_STUB(NAME, SUPER) \
@@ -588,8 +587,7 @@ class TurboFanCodeStub : public CodeStub {
  protected:
   explicit TurboFanCodeStub(Isolate* isolate) : CodeStub(isolate) {}
 
-  virtual void GenerateAssembly(
-      compiler::CodeStubAssembler* assembler) const = 0;
+  virtual void GenerateAssembly(CodeStubAssembler* assembler) const = 0;
 
  private:
   DEFINE_CODE_STUB_BASE(TurboFanCodeStub, CodeStub);
@@ -910,7 +908,7 @@ class StoreInterceptorStub : public TurboFanCodeStub {
  public:
   explicit StoreInterceptorStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
-  void GenerateAssembly(compiler::CodeStubAssembler* assember) const override;
+  void GenerateAssembly(CodeStubAssembler* assember) const override;
 
   Code::Kind GetCodeKind() const override { return Code::HANDLER; }
   ExtraICState GetExtraICState() const override { return Code::STORE_IC; }
@@ -1459,6 +1457,30 @@ class LoadConstantStub : public HandlerStub {
   DEFINE_HANDLER_CODE_STUB(LoadConstant, HandlerStub);
 };
 
+class LoadApiGetterStub : public TurboFanCodeStub {
+ public:
+  LoadApiGetterStub(Isolate* isolate, bool receiver_is_holder, int index)
+      : TurboFanCodeStub(isolate) {
+    minor_key_ = IndexBits::encode(index) |
+                 ReceiverIsHolderBits::encode(receiver_is_holder);
+  }
+
+  Code::Kind GetCodeKind() const override { return Code::HANDLER; }
+  ExtraICState GetExtraICState() const override { return Code::LOAD_IC; }
+  InlineCacheState GetICState() const override { return MONOMORPHIC; }
+
+  int index() const { return IndexBits::decode(minor_key_); }
+  bool receiver_is_holder() const {
+    return ReceiverIsHolderBits::decode(minor_key_);
+  }
+
+ private:
+  class ReceiverIsHolderBits : public BitField<bool, 0, 1> {};
+  class IndexBits : public BitField<int, 1, kDescriptorIndexBitCount> {};
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Load);
+  DEFINE_TURBOFAN_CODE_STUB(LoadApiGetter, TurboFanCodeStub);
+};
 
 class StoreFieldStub : public HandlerStub {
  public:
@@ -2677,7 +2699,7 @@ class AllocateHeapNumberStub : public TurboFanCodeStub {
       : TurboFanCodeStub(isolate) {}
 
   void InitializeDescriptor(CodeStubDescriptor* descriptor) override;
-  void GenerateAssembly(compiler::CodeStubAssembler* assembler) const override;
+  void GenerateAssembly(CodeStubAssembler* assembler) const override;
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(AllocateHeapNumber);
   DEFINE_CODE_STUB(AllocateHeapNumber, TurboFanCodeStub);
@@ -2689,7 +2711,7 @@ class AllocateMutableHeapNumberStub : public TurboFanCodeStub {
       : TurboFanCodeStub(isolate) {}
 
   void InitializeDescriptor(CodeStubDescriptor* descriptor) override;
-  void GenerateAssembly(compiler::CodeStubAssembler* assembler) const override;
+  void GenerateAssembly(CodeStubAssembler* assembler) const override;
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(AllocateMutableHeapNumber);
   DEFINE_CODE_STUB(AllocateMutableHeapNumber, TurboFanCodeStub);
@@ -2702,8 +2724,7 @@ class AllocateMutableHeapNumberStub : public TurboFanCodeStub {
         : TurboFanCodeStub(isolate) {}                                  \
                                                                         \
     void InitializeDescriptor(CodeStubDescriptor* descriptor) override; \
-    void GenerateAssembly(                                              \
-        compiler::CodeStubAssembler* assembler) const override;         \
+    void GenerateAssembly(CodeStubAssembler* assembler) const override; \
                                                                         \
     DEFINE_CALL_INTERFACE_DESCRIPTOR(Allocate##Type);                   \
     DEFINE_CODE_STUB(Allocate##Type, TurboFanCodeStub);                 \
@@ -3147,14 +3168,6 @@ class ToObjectStub final : public HydrogenCodeStub {
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(TypeConversion);
   DEFINE_HYDROGEN_CODE_STUB(ToObject, HydrogenCodeStub);
-};
-
-class AtomicsLoadStub : public PlatformCodeStub {
- public:
-  explicit AtomicsLoadStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(AtomicsLoad);
-  DEFINE_PLATFORM_CODE_STUB(AtomicsLoad, PlatformCodeStub);
 };
 
 #undef DEFINE_CALL_INTERFACE_DESCRIPTOR

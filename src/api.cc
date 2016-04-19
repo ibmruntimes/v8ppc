@@ -49,12 +49,12 @@
 #include "src/profiler/heap-snapshot-generator-inl.h"
 #include "src/profiler/profile-generator-inl.h"
 #include "src/profiler/sampler.h"
-#include "src/property.h"
 #include "src/property-descriptor.h"
 #include "src/property-details.h"
+#include "src/property.h"
 #include "src/prototype.h"
-#include "src/runtime/runtime.h"
 #include "src/runtime-profiler.h"
+#include "src/runtime/runtime.h"
 #include "src/simulator.h"
 #include "src/snapshot/natives.h"
 #include "src/snapshot/snapshot.h"
@@ -65,7 +65,6 @@
 #include "src/v8threads.h"
 #include "src/version.h"
 #include "src/vm-state-inl.h"
-
 
 namespace v8 {
 
@@ -1030,13 +1029,13 @@ void Template::Set(v8::Local<Name> name, v8::Local<Data> value,
   ENTER_V8(isolate);
   i::HandleScope scope(isolate);
   auto value_obj = Utils::OpenHandle(*value);
+  CHECK(!value_obj->IsJSReceiver() || value_obj->IsTemplateInfo());
   if (value_obj->IsObjectTemplateInfo()) {
     templ->set_serial_number(i::Smi::FromInt(0));
     if (templ->IsFunctionTemplateInfo()) {
       i::Handle<i::FunctionTemplateInfo>::cast(templ)->set_do_not_cache(true);
     }
   }
-  // TODO(dcarney): split api to allow values of v8::Value or v8::TemplateInfo.
   i::ApiNatives::AddDataProperty(isolate, templ, Utils::OpenHandle(*name),
                                  value_obj,
                                  static_cast<i::PropertyAttributes>(attribute));
@@ -1225,8 +1224,10 @@ static i::Handle<i::AccessorInfo> SetAccessorInfoProperties(
   return obj;
 }
 
+namespace {
+
 template <typename Getter, typename Setter>
-static i::Handle<i::AccessorInfo> MakeAccessorInfo(
+i::Handle<i::AccessorInfo> MakeAccessorInfo(
     v8::Local<Name> name, Getter getter, Setter setter, v8::Local<Value> data,
     v8::AccessControl settings, v8::PropertyAttribute attributes,
     v8::Local<AccessorSignature> signature, bool is_special_data_property) {
@@ -1237,6 +1238,10 @@ static i::Handle<i::AccessorInfo> MakeAccessorInfo(
     setter = reinterpret_cast<Setter>(&i::Accessors::ReconfigureToDataProperty);
   }
   SET_FIELD_WRAPPED(obj, set_setter, setter);
+#ifdef USE_SIMULATOR
+  i::Address redirected = obj->redirected_getter();
+  if (redirected != nullptr) SET_FIELD_WRAPPED(obj, set_js_getter, redirected);
+#endif
   if (data.IsEmpty()) {
     data = v8::Undefined(reinterpret_cast<v8::Isolate*>(isolate));
   }
@@ -1245,6 +1250,7 @@ static i::Handle<i::AccessorInfo> MakeAccessorInfo(
   return SetAccessorInfoProperties(obj, name, settings, attributes, signature);
 }
 
+}  // namespace
 
 Local<ObjectTemplate> FunctionTemplate::InstanceTemplate() {
   i::Handle<i::FunctionTemplateInfo> handle = Utils::OpenHandle(this, true);
@@ -2034,6 +2040,8 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
   }
 
   i::Handle<i::Object> name_obj;
+  int eval_scope_position = 0;
+  int eval_position = i::RelocInfo::kNoPosition;
   int line_offset = 0;
   int column_offset = 0;
   if (!source->resource_name.IsEmpty()) {
@@ -2046,11 +2054,13 @@ MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
     column_offset = static_cast<int>(source->resource_column_offset->Value());
   }
   i::Handle<i::JSFunction> fun;
-  has_pending_exception = !i::Compiler::GetFunctionFromEval(
-                               source_string, outer_info, context, i::SLOPPY,
-                               i::ONLY_SINGLE_FUNCTION_LITERAL, line_offset,
-                               column_offset - scope_position, name_obj,
-                               source->resource_options).ToHandle(&fun);
+  has_pending_exception =
+      !i::Compiler::GetFunctionFromEval(
+           source_string, outer_info, context, i::SLOPPY,
+           i::ONLY_SINGLE_FUNCTION_LITERAL, eval_scope_position, eval_position,
+           line_offset, column_offset - scope_position, name_obj,
+           source->resource_options)
+           .ToHandle(&fun);
   if (has_pending_exception) {
     isolate->ReportPendingMessages();
   }
@@ -2747,13 +2757,38 @@ MaybeLocal<Value> JSON::Parse(Isolate* v8_isolate, Local<String> json_string) {
   RETURN_ESCAPED(result);
 }
 
-
-Local<Value> JSON::Parse(Local<String> json_string) {
-  auto isolate = reinterpret_cast<v8::Isolate*>(
-      Utils::OpenHandle(*json_string)->GetIsolate());
-  RETURN_TO_LOCAL_UNCHECKED(Parse(isolate, json_string), Value);
+MaybeLocal<Value> JSON::Parse(Local<Context> context,
+                              Local<String> json_string) {
+  PREPARE_FOR_EXECUTION(context, "JSON::Parse", Value);
+  i::Handle<i::String> string = Utils::OpenHandle(*json_string);
+  i::Handle<i::String> source = i::String::Flatten(string);
+  auto maybe = source->IsSeqOneByteString()
+                   ? i::JsonParser<true>::Parse(source)
+                   : i::JsonParser<false>::Parse(source);
+  Local<Value> result;
+  has_pending_exception = !ToLocal<Value>(maybe, &result);
+  RETURN_ON_FAILED_EXECUTION(Value);
+  RETURN_ESCAPED(result);
 }
 
+Local<Value> JSON::Parse(Local<String> json_string) {
+  RETURN_TO_LOCAL_UNCHECKED(Parse(Local<Context>(), json_string), Value);
+}
+
+MaybeLocal<String> JSON::Stringify(Local<Context> context,
+                                   Local<Object> json_object) {
+  PREPARE_FOR_EXECUTION(context, "JSON::Stringify", String);
+  i::Handle<i::Object> object = Utils::OpenHandle(*json_object);
+  i::Handle<i::Object> maybe;
+  has_pending_exception =
+      !i::Runtime::BasicJsonStringify(isolate, object).ToHandle(&maybe);
+  RETURN_ON_FAILED_EXECUTION(String);
+  Local<String> result;
+  has_pending_exception =
+      !ToLocal<String>(i::Object::ToString(isolate, maybe), &result);
+  RETURN_ON_FAILED_EXECUTION(String);
+  RETURN_ESCAPED(result);
+}
 
 // --- D a t a ---
 
@@ -3912,6 +3947,19 @@ Local<String> v8::Object::GetConstructorName() {
   return Utils::ToLocal(name);
 }
 
+Maybe<bool> v8::Object::SetIntegrityLevel(Local<Context> context,
+                                          IntegrityLevel level) {
+  PREPARE_FOR_EXECUTION_PRIMITIVE(context, "v8::Object::SetIntegrityLevel()",
+                                  bool);
+  auto self = Utils::OpenHandle(this);
+  i::JSReceiver::IntegrityLevel i_level =
+      level == IntegrityLevel::kFrozen ? i::FROZEN : i::SEALED;
+  Maybe<bool> result =
+      i::JSReceiver::SetIntegrityLevel(self, i_level, i::Object::DONT_THROW);
+  has_pending_exception = result.IsNothing();
+  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+  return result;
+}
 
 Maybe<bool> v8::Object::Delete(Local<Context> context, Local<Value> key) {
   PREPARE_FOR_EXECUTION_PRIMITIVE(context, "v8::Object::Delete()", bool);

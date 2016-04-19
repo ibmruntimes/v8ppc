@@ -633,7 +633,7 @@ class RepresentationSelector {
   }
 
   void VisitCall(Node* node, SimplifiedLowering* lowering) {
-    const CallDescriptor* desc = OpParameter<const CallDescriptor*>(node->op());
+    const CallDescriptor* desc = CallDescriptorOf(node->op());
     const MachineSignature* sig = desc->GetMachineSignature();
     int params = static_cast<int>(sig->parameter_count());
     // Propagate representation information from call descriptor.
@@ -1044,7 +1044,7 @@ class RepresentationSelector {
               flags, properties);
           node->InsertInput(jsgraph_->zone(), 0,
                             jsgraph_->HeapConstant(callable.code()));
-          node->InsertInput(jsgraph_->zone(), 3, jsgraph_->NoContextConstant());
+          node->AppendInput(jsgraph_->zone(), jsgraph_->NoContextConstant());
           NodeProperties::ChangeOp(node, jsgraph_->common()->Call(desc));
         }
         break;
@@ -1061,7 +1061,7 @@ class RepresentationSelector {
               flags, properties);
           node->InsertInput(jsgraph_->zone(), 0,
                             jsgraph_->HeapConstant(callable.code()));
-          node->InsertInput(jsgraph_->zone(), 3, jsgraph_->NoContextConstant());
+          node->AppendInput(jsgraph_->zone(), jsgraph_->NoContextConstant());
           NodeProperties::ChangeOp(node, jsgraph_->common()->Call(desc));
         }
         break;
@@ -1080,7 +1080,7 @@ class RepresentationSelector {
               flags, properties);
           node->InsertInput(jsgraph_->zone(), 0,
                             jsgraph_->HeapConstant(callable.code()));
-          node->InsertInput(jsgraph_->zone(), 3, jsgraph_->NoContextConstant());
+          node->AppendInput(jsgraph_->zone(), jsgraph_->NoContextConstant());
           NodeProperties::ChangeOp(node, jsgraph_->common()->Call(desc));
         }
         break;
@@ -1189,9 +1189,11 @@ class RepresentationSelector {
         SetOutput(node, MachineRepresentation::kNone);
         break;
       }
+      case IrOpcode::kObjectIsCallable:
       case IrOpcode::kObjectIsNumber:
       case IrOpcode::kObjectIsReceiver:
       case IrOpcode::kObjectIsSmi:
+      case IrOpcode::kObjectIsString:
       case IrOpcode::kObjectIsUndetectable: {
         ProcessInput(node, 0, UseInfo::AnyTagged());
         SetOutput(node, MachineRepresentation::kBit);

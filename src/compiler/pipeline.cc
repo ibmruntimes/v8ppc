@@ -19,6 +19,7 @@
 #include "src/compiler/common-operator-reducer.h"
 #include "src/compiler/control-flow-optimizer.h"
 #include "src/compiler/dead-code-elimination.h"
+#include "src/compiler/effect-control-linearizer.h"
 #include "src/compiler/escape-analysis-reducer.h"
 #include "src/compiler/escape-analysis.h"
 #include "src/compiler/frame-elider.h"
@@ -225,6 +226,7 @@ class PipelineData {
     DCHECK(!schedule_);
     schedule_ = schedule;
   }
+  void reset_schedule() { schedule_ = nullptr; }
 
   Zone* instruction_zone() const { return instruction_zone_; }
   InstructionSequence* sequence() const { return sequence_; }
@@ -503,6 +505,13 @@ PipelineCompilationJob::Status PipelineCompilationJob::CreateGraphImpl() {
   if (!info()->shared_info()->asm_function() || FLAG_turbo_asm_deoptimization) {
     info()->MarkAsDeoptimizationEnabled();
   }
+  if (!info()->shared_info()->asm_function()) {
+    info()->MarkAsEffectSchedulingEnabled();
+  }
+
+  if (!info()->shared_info()->HasBytecodeArray()) {
+    if (!Compiler::EnsureDeoptimizationSupport(info())) return FAILED;
+  }
 
   Pipeline pipeline(info());
   pipeline.GenerateCode();
@@ -552,9 +561,11 @@ struct LoopAssignmentAnalysisPhase {
   static const char* phase_name() { return "loop assignment analysis"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    AstLoopAssignmentAnalyzer analyzer(data->graph_zone(), data->info());
-    LoopAssignmentAnalysis* loop_assignment = analyzer.Analyze();
-    data->set_loop_assignment(loop_assignment);
+    if (!data->info()->is_optimizing_from_bytecode()) {
+      AstLoopAssignmentAnalyzer analyzer(data->graph_zone(), data->info());
+      LoopAssignmentAnalysis* loop_assignment = analyzer.Analyze();
+      data->set_loop_assignment(loop_assignment);
+    }
   }
 };
 
@@ -563,10 +574,12 @@ struct TypeHintAnalysisPhase {
   static const char* phase_name() { return "type hint analysis"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    TypeHintAnalyzer analyzer(data->graph_zone());
-    Handle<Code> code(data->info()->shared_info()->code(), data->isolate());
-    TypeHintAnalysis* type_hint_analysis = analyzer.Analyze(code);
-    data->set_type_hint_analysis(type_hint_analysis);
+    if (!data->info()->is_optimizing_from_bytecode()) {
+      TypeHintAnalyzer analyzer(data->graph_zone());
+      Handle<Code> code(data->info()->shared_info()->code(), data->isolate());
+      TypeHintAnalysis* type_hint_analysis = analyzer.Analyze(code);
+      data->set_type_hint_analysis(type_hint_analysis);
+    }
   }
 };
 
@@ -578,7 +591,7 @@ struct GraphBuilderPhase {
     bool stack_check = !data->info()->IsStub();
     bool succeeded = false;
 
-    if (data->info()->shared_info()->HasBytecodeArray()) {
+    if (data->info()->is_optimizing_from_bytecode()) {
       BytecodeGraphBuilder graph_builder(temp_zone, data->info(),
                                          data->jsgraph());
       succeeded = graph_builder.CreateGraph();
@@ -767,12 +780,6 @@ struct SimplifiedLoweringPhase {
                                 data->source_positions());
     lowering.LowerAllNodes();
 
-    // TODO(bmeurer): See comment on SimplifiedLowering::abort_compilation_.
-    if (lowering.abort_compilation_) {
-      data->set_compilation_failed();
-      return;
-    }
-
     JSGraphReducer graph_reducer(data->jsgraph(), temp_zone);
     DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                               data->common());
@@ -801,6 +808,35 @@ struct ControlFlowOptimizationPhase {
   }
 };
 
+struct EffectControlLinearizationPhase {
+  static const char* phase_name() { return "effect linearization"; }
+
+  void Run(PipelineData* data, Zone* temp_zone) {
+    // The scheduler requires the graphs to be trimmed, so trim now.
+    // TODO(jarin) Remove the trimming once the scheduler can handle untrimmed
+    // graphs.
+    GraphTrimmer trimmer(temp_zone, data->graph());
+    NodeVector roots(temp_zone);
+    data->jsgraph()->GetCachedNodes(&roots);
+    trimmer.TrimGraph(roots.begin(), roots.end());
+
+    // Schedule the graph without node splitting so that we can
+    // fix the effect and control flow for nodes with low-level side
+    // effects (such as changing representation to tagged or
+    // 'floating' allocation regions.)
+    Schedule* schedule = Scheduler::ComputeSchedule(temp_zone, data->graph(),
+                                                    Scheduler::kNoFlags);
+    if (FLAG_turbo_verify) ScheduleVerifier::Run(schedule);
+
+    // Post-pass for wiring the control/effects
+    // - connect allocating representation changes into the control&effect
+    //   chains and lower them,
+    // - get rid of the region markers,
+    // - introduce effect phis and rewire effects to get SSA again.
+    EffectControlLinearizer introducer(data->jsgraph(), schedule, temp_zone);
+    introducer.Run();
+  }
+};
 
 struct ChangeLoweringPhase {
   static const char* phase_name() { return "change lowering"; }
@@ -824,7 +860,6 @@ struct ChangeLoweringPhase {
     graph_reducer.ReduceGraph();
   }
 };
-
 
 struct EarlyGraphTrimmingPhase {
   static const char* phase_name() { return "early graph trimming"; }
@@ -1244,7 +1279,7 @@ Handle<Code> Pipeline::GenerateCode() {
     RunPrintAndVerify("Loop peeled");
   }
 
-  if (FLAG_turbo_escape) {
+  if (FLAG_experimental_turbo_escape) {
     Run<EscapeAnalysisPhase>();
     RunPrintAndVerify("Escape Analysed");
   }
@@ -1252,6 +1287,12 @@ Handle<Code> Pipeline::GenerateCode() {
   // Lower simplified operators and insert changes.
   Run<SimplifiedLoweringPhase>();
   RunPrintAndVerify("Lowered simplified");
+
+  if (info()->is_effect_scheduling_enabled()) {
+    // TODO(jarin) Run value numbering for the representation changes.
+    Run<EffectControlLinearizationPhase>();
+    RunPrintAndVerify("Effect and control linearized");
+  }
 
   Run<BranchEliminationPhase>();
   RunPrintAndVerify("Branch conditions eliminated");
@@ -1282,9 +1323,6 @@ Handle<Code> Pipeline::GenerateCode() {
 
   // Kill the Typer and thereby uninstall the decorator (if any).
   typer.Reset(nullptr);
-
-  // TODO(bmeurer): See comment on SimplifiedLowering::abort_compilation_.
-  if (data.compilation_failed()) return Handle<Code>::null();
 
   return ScheduleAndGenerateCode(
       Linkage::ComputeIncoming(data.instruction_zone(), info()));

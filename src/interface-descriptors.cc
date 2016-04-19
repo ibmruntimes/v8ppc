@@ -301,22 +301,16 @@ void VectorStoreICTrampolineDescriptor::InitializePlatformSpecific(
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
 
-FunctionType* ApiGetterDescriptor::BuildCallInterfaceDescriptorFunctionType(
-    Isolate* isolate, int paramater_count) {
-  Zone* zone = isolate->interface_descriptor_zone();
-  FunctionType* function =
-      Type::Function(AnyTagged(zone), Type::Undefined(), 1, zone)->AsFunction();
-  function->InitParameter(0, ExternalPointer(zone));
-  return function;
+const Register ApiGetterDescriptor::ReceiverRegister() {
+  return LoadDescriptor::ReceiverRegister();
 }
-
 
 void ApiGetterDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
-  Register registers[] = {function_address()};
+  Register registers[] = {ReceiverRegister(), HolderRegister(),
+                          CallbackRegister()};
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
-
 
 void ContextOnlyDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
@@ -528,9 +522,8 @@ InterpreterDispatchDescriptor::BuildCallInterfaceDescriptorFunctionType(
     Isolate* isolate, int parameter_count) {
   Zone* zone = isolate->interface_descriptor_zone();
   FunctionType* function =
-      Type::Function(AnyTagged(zone), Type::Undefined(), 5, zone)->AsFunction();
+      Type::Function(AnyTagged(zone), Type::Undefined(), 4, zone)->AsFunction();
   function->InitParameter(kAccumulatorParameter, AnyTagged(zone));
-  function->InitParameter(kRegisterFileParameter, ExternalPointer(zone));
   function->InitParameter(kBytecodeOffsetParameter, UntaggedIntegral32(zone));
   function->InitParameter(kBytecodeArrayParameter, AnyTagged(zone));
   function->InitParameter(kDispatchTableParameter, AnyTagged(zone));

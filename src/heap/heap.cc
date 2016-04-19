@@ -766,10 +766,10 @@ void Heap::PreprocessStackTraces() {
       // If GC happens while adding a stack trace to the weak fixed array,
       // which has been copied into a larger backing store, we may run into
       // a stack trace that has already been preprocessed. Guard against this.
-      if (!maybe_code->IsCode()) break;
-      Code* code = Code::cast(maybe_code);
+      if (!maybe_code->IsAbstractCode()) break;
+      AbstractCode* abstract_code = AbstractCode::cast(maybe_code);
       int offset = Smi::cast(elements->get(j + 3))->value();
-      int pos = code->SourcePosition(offset);
+      int pos = abstract_code->SourcePosition(offset);
       elements->set(j + 2, Smi::FromInt(pos));
     }
   }
@@ -1102,13 +1102,7 @@ void Heap::MoveElements(FixedArray* array, int dst_index, int src_index,
   DCHECK(array->map() != fixed_cow_array_map());
   Object** dst_objects = array->data_start() + dst_index;
   MemMove(dst_objects, array->data_start() + src_index, len * kPointerSize);
-  if (!InNewSpace(array)) {
-    for (int i = 0; i < len; i++) {
-      RecordWrite(array, array->OffsetOfElementAt(dst_index + i),
-                  dst_objects[i]);
-    }
-  }
-  incremental_marking()->IterateBlackObject(array);
+  FIXED_ARRAY_ELEMENTS_WRITE_BARRIER(this, array, dst_index, len);
 }
 
 
@@ -3143,7 +3137,6 @@ FixedArrayBase* Heap::LeftTrimFixedArray(FixedArrayBase* object,
   // we still do it.
   CreateFillerObjectAt(object->address(), bytes_to_trim,
                        ClearRecordedSlots::kYes);
-
   // Initialize header of the trimmed array. Since left trimming is only
   // performed on pages which are not concurrently swept creating a filler
   // object does not require synchronization.
@@ -3154,6 +3147,11 @@ FixedArrayBase* Heap::LeftTrimFixedArray(FixedArrayBase* object,
   former_start[new_start_index + 1] = Smi::FromInt(len - elements_to_trim);
   FixedArrayBase* new_object =
       FixedArrayBase::cast(HeapObject::FromAddress(new_start));
+
+  // Remove recorded slots for the new map and length offset.
+  ClearRecordedSlot(new_object, HeapObject::RawField(object, 0));
+  ClearRecordedSlot(
+      new_object, HeapObject::RawField(object, FixedArrayBase::kLengthOffset));
 
   // Maintain consistency of live bytes during incremental marking
   Marking::TransferMark(this, object->address(), new_start);

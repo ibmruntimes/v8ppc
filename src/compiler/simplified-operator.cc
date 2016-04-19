@@ -190,15 +190,15 @@ const ElementAccess& ElementAccessOf(const Operator* op) {
   V(ChangeFloat64ToTagged, Operator::kNoProperties, 1)   \
   V(ChangeBoolToBit, Operator::kNoProperties, 1)         \
   V(ChangeBitToBool, Operator::kNoProperties, 1)         \
+  V(ObjectIsCallable, Operator::kNoProperties, 1)        \
   V(ObjectIsNumber, Operator::kNoProperties, 1)          \
   V(ObjectIsReceiver, Operator::kNoProperties, 1)        \
   V(ObjectIsSmi, Operator::kNoProperties, 1)             \
-  V(ObjectIsUndetectable, Operator::kNoProperties, 1)
-
-#define NO_THROW_OP_LIST(V)                 \
-  V(StringEqual, Operator::kCommutative, 2) \
-  V(StringLessThan, Operator::kNoThrow, 2)  \
-  V(StringLessThanOrEqual, Operator::kNoThrow, 2)
+  V(ObjectIsString, Operator::kNoProperties, 1)          \
+  V(ObjectIsUndetectable, Operator::kNoProperties, 1)    \
+  V(StringEqual, Operator::kCommutative, 2)              \
+  V(StringLessThan, Operator::kNoProperties, 2)          \
+  V(StringLessThanOrEqual, Operator::kNoProperties, 2)
 
 struct SimplifiedOperatorGlobalCache final {
 #define PURE(Name, properties, input_count)                                \
@@ -210,16 +210,6 @@ struct SimplifiedOperatorGlobalCache final {
   Name##Operator k##Name;
   PURE_OP_LIST(PURE)
 #undef PURE
-
-#define NO_THROW(Name, properties, input_count)                               \
-  struct Name##Operator final : public Operator {                             \
-    Name##Operator()                                                          \
-        : Operator(IrOpcode::k##Name, Operator::kNoThrow | properties, #Name, \
-                   input_count, 1, 1, 1, 1, 0) {}                             \
-  };                                                                          \
-  Name##Operator k##Name;
-  NO_THROW_OP_LIST(NO_THROW)
-#undef NO_THROW
 
 #define BUFFER_ACCESS(Type, type, TYPE, ctype, size)                          \
   struct LoadBuffer##Type##Operator final : public Operator1<BufferAccess> {  \
@@ -254,7 +244,6 @@ SimplifiedOperatorBuilder::SimplifiedOperatorBuilder(Zone* zone)
 #define GET_FROM_CACHE(Name, properties, input_count) \
   const Operator* SimplifiedOperatorBuilder::Name() { return &cache_.k##Name; }
 PURE_OP_LIST(GET_FROM_CACHE)
-NO_THROW_OP_LIST(GET_FROM_CACHE)
 #undef GET_FROM_CACHE
 
 

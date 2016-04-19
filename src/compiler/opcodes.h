@@ -211,9 +211,11 @@
   V(StoreField)                    \
   V(StoreBuffer)                   \
   V(StoreElement)                  \
+  V(ObjectIsCallable)              \
   V(ObjectIsNumber)                \
   V(ObjectIsReceiver)              \
   V(ObjectIsSmi)                   \
+  V(ObjectIsString)                \
   V(ObjectIsUndetectable)
 
 // Opcodes for Machine-level operators.
@@ -349,7 +351,8 @@
   V(Int32PairMul)               \
   V(Word32PairShl)              \
   V(Word32PairShr)              \
-  V(Word32PairSar)
+  V(Word32PairSar)              \
+  V(AtomicLoad)
 
 #define VALUE_OP_LIST(V) \
   COMMON_OP_LIST(V)      \

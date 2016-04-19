@@ -25,23 +25,18 @@ using compiler::Node;
 InterpreterAssembler::InterpreterAssembler(Isolate* isolate, Zone* zone,
                                            Bytecode bytecode,
                                            OperandScale operand_scale)
-    : compiler::CodeStubAssembler(isolate, zone,
-                                  InterpreterDispatchDescriptor(isolate),
-                                  Code::ComputeFlags(Code::BYTECODE_HANDLER),
-                                  Bytecodes::ToString(bytecode), 0),
+    : CodeStubAssembler(isolate, zone, InterpreterDispatchDescriptor(isolate),
+                        Code::ComputeFlags(Code::BYTECODE_HANDLER),
+                        Bytecodes::ToString(bytecode), 0),
       bytecode_(bytecode),
       operand_scale_(operand_scale),
       accumulator_(this, MachineRepresentation::kTagged),
       accumulator_use_(AccumulatorUse::kNone),
-      context_(this, MachineRepresentation::kTagged),
-      bytecode_array_(this, MachineRepresentation::kTagged),
+      made_call_(false),
       disable_stack_check_across_call_(false),
       stack_pointer_before_call_(nullptr) {
   accumulator_.Bind(
       Parameter(InterpreterDispatchDescriptor::kAccumulatorParameter));
-  context_.Bind(Parameter(InterpreterDispatchDescriptor::kContextParameter));
-  bytecode_array_.Bind(
-      Parameter(InterpreterDispatchDescriptor::kBytecodeArrayParameter));
   if (FLAG_trace_ignition) {
     TraceBytecode(Runtime::kInterpreterTraceBytecodeEntry);
   }
@@ -70,23 +65,26 @@ void InterpreterAssembler::SetAccumulator(Node* value) {
   accumulator_.Bind(value);
 }
 
-Node* InterpreterAssembler::GetContext() { return context_.value(); }
+Node* InterpreterAssembler::GetContext() {
+  return LoadRegister(Register::current_context());
+}
 
 void InterpreterAssembler::SetContext(Node* value) {
   StoreRegister(value, Register::current_context());
-  context_.Bind(value);
 }
 
 Node* InterpreterAssembler::BytecodeOffset() {
   return Parameter(InterpreterDispatchDescriptor::kBytecodeOffsetParameter);
 }
 
-Node* InterpreterAssembler::RegisterFileRawPointer() {
-  return Parameter(InterpreterDispatchDescriptor::kRegisterFileParameter);
-}
-
 Node* InterpreterAssembler::BytecodeArrayTaggedPointer() {
-  return bytecode_array_.value();
+  if (made_call_) {
+    // If we have made a call, restore bytecode array from stack frame in case
+    // the debugger has swapped us to the patched debugger bytecode array.
+    return LoadRegister(Register::bytecode_array());
+  } else {
+    return Parameter(InterpreterDispatchDescriptor::kBytecodeArrayParameter);
+  }
 }
 
 Node* InterpreterAssembler::DispatchTableRawPointer() {
@@ -94,40 +92,32 @@ Node* InterpreterAssembler::DispatchTableRawPointer() {
 }
 
 Node* InterpreterAssembler::RegisterLocation(Node* reg_index) {
-  return IntPtrAdd(RegisterFileRawPointer(), RegisterFrameOffset(reg_index));
-}
-
-Node* InterpreterAssembler::LoadRegister(int offset) {
-  return Load(MachineType::AnyTagged(), RegisterFileRawPointer(),
-              IntPtrConstant(offset));
-}
-
-Node* InterpreterAssembler::LoadRegister(Register reg) {
-  return LoadRegister(IntPtrConstant(-reg.index()));
+  return IntPtrAdd(LoadParentFramePointer(), RegisterFrameOffset(reg_index));
 }
 
 Node* InterpreterAssembler::RegisterFrameOffset(Node* index) {
   return WordShl(index, kPointerSizeLog2);
 }
 
+Node* InterpreterAssembler::LoadRegister(Register reg) {
+  return Load(MachineType::AnyTagged(), LoadParentFramePointer(),
+              IntPtrConstant(reg.ToOperand() << kPointerSizeLog2));
+}
+
 Node* InterpreterAssembler::LoadRegister(Node* reg_index) {
-  return Load(MachineType::AnyTagged(), RegisterFileRawPointer(),
+  return Load(MachineType::AnyTagged(), LoadParentFramePointer(),
               RegisterFrameOffset(reg_index));
 }
 
-Node* InterpreterAssembler::StoreRegister(Node* value, int offset) {
-  return StoreNoWriteBarrier(MachineRepresentation::kTagged,
-                             RegisterFileRawPointer(), IntPtrConstant(offset),
-                             value);
-}
-
 Node* InterpreterAssembler::StoreRegister(Node* value, Register reg) {
-  return StoreRegister(value, IntPtrConstant(-reg.index()));
+  return StoreNoWriteBarrier(
+      MachineRepresentation::kTagged, LoadParentFramePointer(),
+      IntPtrConstant(reg.ToOperand() << kPointerSizeLog2), value);
 }
 
 Node* InterpreterAssembler::StoreRegister(Node* value, Node* reg_index) {
   return StoreNoWriteBarrier(MachineRepresentation::kTagged,
-                             RegisterFileRawPointer(),
+                             LoadParentFramePointer(),
                              RegisterFrameOffset(reg_index), value);
 }
 
@@ -407,9 +397,7 @@ Node* InterpreterAssembler::StoreContextSlot(Node* context, Node* slot_index,
 }
 
 Node* InterpreterAssembler::LoadTypeFeedbackVector() {
-  Node* function = Load(
-      MachineType::AnyTagged(), RegisterFileRawPointer(),
-      IntPtrConstant(InterpreterFrameConstants::kFunctionFromRegisterPointer));
+  Node* function = LoadRegister(Register::function_closure());
   Node* shared_info =
       LoadObjectField(function, JSFunction::kSharedFunctionInfoOffset);
   Node* vector =
@@ -418,13 +406,13 @@ Node* InterpreterAssembler::LoadTypeFeedbackVector() {
 }
 
 void InterpreterAssembler::CallPrologue() {
-  StoreRegister(SmiTag(BytecodeOffset()),
-                InterpreterFrameConstants::kBytecodeOffsetFromRegisterPointer);
+  StoreRegister(SmiTag(BytecodeOffset()), Register::bytecode_offset());
 
   if (FLAG_debug_code && !disable_stack_check_across_call_) {
     DCHECK(stack_pointer_before_call_ == nullptr);
     stack_pointer_before_call_ = LoadStackPointer();
   }
+  made_call_ = true;
 }
 
 void InterpreterAssembler::CallEpilogue() {
@@ -435,11 +423,6 @@ void InterpreterAssembler::CallEpilogue() {
     AbortIfWordNotEqual(stack_pointer_before_call, stack_pointer_after_call,
                         kUnexpectedStackPointer);
   }
-
-  // Restore bytecode array from stack frame in case the debugger has swapped us
-  // to the patched debugger bytecode array.
-  bytecode_array_.Bind(LoadRegister(
-      InterpreterFrameConstants::kBytecodeArrayFromRegisterPointer));
 }
 
 Node* InterpreterAssembler::CallJS(Node* function, Node* context,
@@ -580,9 +563,8 @@ void InterpreterAssembler::DispatchToBytecodeHandlerEntry(
   }
 
   InterpreterDispatchDescriptor descriptor(isolate());
-  Node* args[] = {GetAccumulatorUnchecked(), RegisterFileRawPointer(),
-                  bytecode_offset,           BytecodeArrayTaggedPointer(),
-                  DispatchTableRawPointer(), GetContext()};
+  Node* args[] = {GetAccumulatorUnchecked(), bytecode_offset,
+                  BytecodeArrayTaggedPointer(), DispatchTableRawPointer()};
   TailCallBytecodeDispatch(descriptor, handler_entry, args);
 }
 

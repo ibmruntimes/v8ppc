@@ -893,44 +893,70 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
     __ bind(&done_loop);
   }
 
-  // Enter a new JavaScript frame, and initialize its slots as they were when
-  // the generator was suspended.
-  FrameScope scope(masm, StackFrame::MANUAL);
-  __ Push(ra, fp);
-  __ Move(fp, sp);
-  __ Push(cp, t0);
+  // Dispatch on the kind of generator object.
+  Label old_generator;
+  __ lw(a3, FieldMemOperand(t0, JSFunction::kSharedFunctionInfoOffset));
+  __ lw(a3, FieldMemOperand(a3, SharedFunctionInfo::kFunctionDataOffset));
+  __ GetObjectType(a3, a3, a3);
+  __ Branch(&old_generator, ne, a3, Operand(BYTECODE_ARRAY_TYPE));
 
-  // Restore the operand stack.
-  __ lw(a0, FieldMemOperand(a1, JSGeneratorObject::kOperandStackOffset));
-  __ lw(a3, FieldMemOperand(a0, FixedArray::kLengthOffset));
-  __ Addu(a0, a0, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ Lsa(a3, a0, a3, kPointerSizeLog2 - 1);
+  // New-style (ignition/turbofan) generator object.
   {
-    Label done_loop, loop;
-    __ bind(&loop);
-    __ Branch(&done_loop, eq, a0, Operand(a3));
-    __ lw(t1, MemOperand(a0));
-    __ Push(t1);
-    __ Branch(USE_DELAY_SLOT, &loop);
-    __ addiu(a0, a0, kPointerSize);  // In delay slot.
-    __ bind(&done_loop);
+    __ lw(a0, FieldMemOperand(t0, JSFunction::kSharedFunctionInfoOffset));
+    __ lw(a0,
+         FieldMemOperand(a0, SharedFunctionInfo::kFormalParameterCountOffset));
+    __ SmiUntag(a0);
+    // We abuse new.target both to indicate that this is a resume call and to
+    // pass in the generator object.  In ordinary calls, new.target is always
+    // undefined because generator functions are non-constructable.
+    __ Move(a3, a1);
+    __ Move(a1, t0);
+    __ lw(a2, FieldMemOperand(a1, JSFunction::kCodeEntryOffset));
+    __ Jump(a2);
   }
 
-  // Reset operand stack so we don't leak.
-  __ LoadRoot(t1, Heap::kEmptyFixedArrayRootIndex);
-  __ sw(t1, FieldMemOperand(a1, JSGeneratorObject::kOperandStackOffset));
+  // Old-style (full-codegen) generator object
+  __ bind(&old_generator);
+  {
+    // Enter a new JavaScript frame, and initialize its slots as they were when
+    // the generator was suspended.
+    FrameScope scope(masm, StackFrame::MANUAL);
+    __ Push(ra, fp);
+    __ Move(fp, sp);
+    __ Push(cp, t0);
 
-  // Resume the generator function at the continuation.
-  __ lw(a3, FieldMemOperand(t0, JSFunction::kSharedFunctionInfoOffset));
-  __ lw(a3, FieldMemOperand(a3, SharedFunctionInfo::kCodeOffset));
-  __ Addu(a3, a3, Operand(Code::kHeaderSize - kHeapObjectTag));
-  __ lw(a2, FieldMemOperand(a1, JSGeneratorObject::kContinuationOffset));
-  __ SmiUntag(a2);
-  __ Addu(a3, a3, Operand(a2));
-  __ li(a2, Operand(Smi::FromInt(JSGeneratorObject::kGeneratorExecuting)));
-  __ sw(a2, FieldMemOperand(a1, JSGeneratorObject::kContinuationOffset));
-  __ Move(v0, a1);  // Continuation expects generator object in v0.
-  __ Jump(a3);
+    // Restore the operand stack.
+    __ lw(a0, FieldMemOperand(a1, JSGeneratorObject::kOperandStackOffset));
+    __ lw(a3, FieldMemOperand(a0, FixedArray::kLengthOffset));
+    __ Addu(a0, a0, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+    __ Lsa(a3, a0, a3, kPointerSizeLog2 - 1);
+    {
+      Label done_loop, loop;
+      __ bind(&loop);
+      __ Branch(&done_loop, eq, a0, Operand(a3));
+      __ lw(t1, MemOperand(a0));
+      __ Push(t1);
+      __ Branch(USE_DELAY_SLOT, &loop);
+      __ addiu(a0, a0, kPointerSize);  // In delay slot.
+      __ bind(&done_loop);
+    }
+
+    // Reset operand stack so we don't leak.
+    __ LoadRoot(t1, Heap::kEmptyFixedArrayRootIndex);
+    __ sw(t1, FieldMemOperand(a1, JSGeneratorObject::kOperandStackOffset));
+
+    // Resume the generator function at the continuation.
+    __ lw(a3, FieldMemOperand(t0, JSFunction::kSharedFunctionInfoOffset));
+    __ lw(a3, FieldMemOperand(a3, SharedFunctionInfo::kCodeOffset));
+    __ Addu(a3, a3, Operand(Code::kHeaderSize - kHeapObjectTag));
+    __ lw(a2, FieldMemOperand(a1, JSGeneratorObject::kContinuationOffset));
+    __ SmiUntag(a2);
+    __ Addu(a3, a3, Operand(a2));
+    __ li(a2, Operand(Smi::FromInt(JSGeneratorObject::kGeneratorExecuting)));
+    __ sw(a2, FieldMemOperand(a1, JSGeneratorObject::kContinuationOffset));
+    __ Move(v0, a1);  // Continuation expects generator object in v0.
+    __ Jump(a3);
+  }
 }
 
 // Generate code for entering a JS function with the interpreter.
@@ -949,6 +975,8 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
 // The function builds an interpreter frame.  See InterpreterFrameConstants in
 // frames.h for its layout.
 void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
+  ProfileEntryHookStub::MaybeCallEntryHook(masm);
+
   // Open a frame scope to indicate that there is a frame on the stack.  The
   // MANUAL indicates that the scope shouldn't actually generate code to set up
   // the frame (that is done below).
@@ -1009,15 +1037,9 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     __ Branch(&loop_header, ge, t0, Operand(zero_reg));
   }
 
-  // TODO(rmcilroy): List of things not currently dealt with here but done in
-  // fullcodegen's prologue:
-  //  - Call ProfileEntryHookStub when isolate has a function_entry_hook.
-  //  - Code aging of the BytecodeArray object.
-
   // Load bytecode offset and dispatch table into registers.
   __ LoadRoot(kInterpreterAccumulatorRegister, Heap::kUndefinedValueRootIndex);
-  __ Addu(kInterpreterRegisterFileRegister, fp,
-          Operand(InterpreterFrameConstants::kRegisterFilePointerFromFp));
+  __ Addu(t3, fp, Operand(InterpreterFrameConstants::kRegisterFileFromFp));
   __ li(kInterpreterBytecodeOffsetRegister,
         Operand(BytecodeArray::kHeaderSize - kHeapObjectTag));
   __ li(kInterpreterDispatchTableRegister,
@@ -1044,12 +1066,6 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
 
 
 void Builtins::Generate_InterpreterExitTrampoline(MacroAssembler* masm) {
-  // TODO(rmcilroy): List of things not currently dealt with here but done in
-  // fullcodegen's EmitReturnSequence.
-  //  - Supporting FLAG_trace for Runtime::TraceExit.
-  //  - Support profiler (specifically decrementing profiling_counter
-  //    appropriately and calling out to HandleInterrupts if necessary).
-
   // The return value is in accumulator, which is already in v0.
 
   // Leave the frame (also dropping the register file).
@@ -1128,23 +1144,14 @@ void Builtins::Generate_InterpreterPushArgsAndConstruct(MacroAssembler* masm) {
 
 
 static void Generate_EnterBytecodeDispatch(MacroAssembler* masm) {
-  // Initialize register file register and dispatch table register.
-  __ Addu(kInterpreterRegisterFileRegister, fp,
-          Operand(InterpreterFrameConstants::kRegisterFilePointerFromFp));
+  // Initialize the dispatch table register.
   __ li(kInterpreterDispatchTableRegister,
         Operand(ExternalReference::interpreter_dispatch_table_address(
             masm->isolate())));
 
-  // Get the context from the frame.
-  __ lw(kContextRegister,
-        MemOperand(kInterpreterRegisterFileRegister,
-                   InterpreterFrameConstants::kContextFromRegisterPointer));
-
   // Get the bytecode array pointer from the frame.
-  __ lw(
-      kInterpreterBytecodeArrayRegister,
-      MemOperand(kInterpreterRegisterFileRegister,
-                 InterpreterFrameConstants::kBytecodeArrayFromRegisterPointer));
+  __ lw(kInterpreterBytecodeArrayRegister,
+        MemOperand(fp, InterpreterFrameConstants::kBytecodeArrayFromFp));
 
   if (FLAG_debug_code) {
     // Check function data field is actually a BytecodeArray object.
@@ -1158,9 +1165,7 @@ static void Generate_EnterBytecodeDispatch(MacroAssembler* masm) {
 
   // Get the target bytecode offset from the frame.
   __ lw(kInterpreterBytecodeOffsetRegister,
-        MemOperand(
-            kInterpreterRegisterFileRegister,
-            InterpreterFrameConstants::kBytecodeOffsetFromRegisterPointer));
+        MemOperand(fp, InterpreterFrameConstants::kBytecodeOffsetFromFp));
   __ SmiUntag(kInterpreterBytecodeOffsetRegister);
 
   // Dispatch to the target bytecode.

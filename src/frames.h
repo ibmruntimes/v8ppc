@@ -324,31 +324,22 @@ class InterpreterFrameConstants : public AllStatic {
       StandardFrameConstants::kFixedFrameSizeFromFp + 3 * kPointerSize;
 
   // FP-relative.
+  static const int kLastParamFromFp = StandardFrameConstants::kCallerSPOffset;
   static const int kNewTargetFromFp =
       -StandardFrameConstants::kFixedFrameSizeFromFp - 1 * kPointerSize;
   static const int kBytecodeArrayFromFp =
       -StandardFrameConstants::kFixedFrameSizeFromFp - 2 * kPointerSize;
   static const int kBytecodeOffsetFromFp =
       -StandardFrameConstants::kFixedFrameSizeFromFp - 3 * kPointerSize;
-  static const int kRegisterFilePointerFromFp =
+  static const int kRegisterFileFromFp =
       -StandardFrameConstants::kFixedFrameSizeFromFp - 4 * kPointerSize;
 
-  static const int kExpressionsOffset = kRegisterFilePointerFromFp;
+  static const int kExpressionsOffset = kRegisterFileFromFp;
 
   // Expression index for {StandardFrame::GetExpressionAddress}.
   static const int kBytecodeArrayExpressionIndex = -2;
   static const int kBytecodeOffsetExpressionIndex = -1;
   static const int kRegisterFileExpressionIndex = 0;
-
-  // Register file pointer relative.
-  static const int kLastParamFromRegisterPointer =
-      StandardFrameConstants::kFixedFrameSize + 4 * kPointerSize;
-
-  static const int kBytecodeOffsetFromRegisterPointer = 1 * kPointerSize;
-  static const int kBytecodeArrayFromRegisterPointer = 2 * kPointerSize;
-  static const int kNewTargetFromRegisterPointer = 3 * kPointerSize;
-  static const int kFunctionFromRegisterPointer = 4 * kPointerSize;
-  static const int kContextFromRegisterPointer = 5 * kPointerSize;
 };
 
 inline static int FPOffsetToFrameSlot(int frame_offset) {
@@ -640,11 +631,15 @@ class ExitFrame: public StackFrame {
   friend class StackFrameIteratorBase;
 };
 
+class JavaScriptFrame;
+
 class FrameSummary BASE_EMBEDDED {
  public:
   FrameSummary(Object* receiver, JSFunction* function,
                AbstractCode* abstract_code, int code_offset,
                bool is_constructor);
+
+  static FrameSummary GetFirst(JavaScriptFrame* frame);
 
   Handle<Object> receiver() { return receiver_; }
   Handle<JSFunction> function() { return function_; }
@@ -728,7 +723,6 @@ class StandardFrame : public StackFrame {
   friend class StackFrame;
   friend class SafeStackFrameIterator;
 };
-
 
 class JavaScriptFrame : public StandardFrame {
  public:
@@ -897,14 +891,15 @@ class InterpretedFrame : public JavaScriptFrame {
   void PatchBytecodeOffset(int new_offset);
 
   // Returns the frame's current bytecode array.
-  Object* GetBytecodeArray() const;
+  BytecodeArray* GetBytecodeArray() const;
 
   // Updates the frame's BytecodeArray with |bytecode_array|. Used by the
   // debugger to swap execution onto a BytecodeArray patched with breakpoints.
-  void PatchBytecodeArray(Object* bytecode_array);
+  void PatchBytecodeArray(BytecodeArray* bytecode_array);
 
   // Access to the interpreter register file for this frame.
-  Object* GetInterpreterRegister(int register_index) const;
+  Object* ReadInterpreterRegister(int register_index) const;
+  void WriteInterpreterRegister(int register_index, Object* value);
 
   // Build a list with summaries for this frame including all inlined frames.
   void Summarize(List<FrameSummary>* frames) const override;
@@ -971,6 +966,8 @@ class WasmFrame : public StandardFrame {
   }
 
   JSFunction* function() const override;
+
+  void Summarize(List<FrameSummary>* frames) const override;
 
  protected:
   inline explicit WasmFrame(StackFrameIteratorBase* iterator);

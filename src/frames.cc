@@ -486,10 +486,10 @@ StackFrame::Type StackFrame::ComputeType(const StackFrameIteratorBase* iterator,
     case INTERNAL:
     case CONSTRUCT:
     case ARGUMENTS_ADAPTOR:
-      return candidate;
-    case JS_TO_WASM:
     case WASM_TO_JS:
     case WASM:
+      return candidate;
+    case JS_TO_WASM:
     case JAVA_SCRIPT:
     case OPTIMIZED:
     case INTERPRETED:
@@ -977,6 +977,12 @@ FrameSummary::FrameSummary(Object* receiver, JSFunction* function,
          CannotDeoptFromAsmCode(Code::cast(abstract_code), function));
 }
 
+FrameSummary FrameSummary::GetFirst(JavaScriptFrame* frame) {
+  List<FrameSummary> frames(FLAG_max_inlining_levels + 1);
+  frame->Summarize(&frames);
+  return frames.first();
+}
+
 void FrameSummary::Print() {
   PrintF("receiver: ");
   receiver_->ShortPrint();
@@ -1228,15 +1234,15 @@ void InterpretedFrame::PatchBytecodeOffset(int new_offset) {
   SetExpression(index, Smi::FromInt(raw_offset));
 }
 
-Object* InterpretedFrame::GetBytecodeArray() const {
+BytecodeArray* InterpretedFrame::GetBytecodeArray() const {
   const int index = InterpreterFrameConstants::kBytecodeArrayExpressionIndex;
   DCHECK_EQ(
       InterpreterFrameConstants::kBytecodeArrayFromFp,
       InterpreterFrameConstants::kExpressionsOffset - index * kPointerSize);
-  return GetExpression(index);
+  return BytecodeArray::cast(GetExpression(index));
 }
 
-void InterpretedFrame::PatchBytecodeArray(Object* bytecode_array) {
+void InterpretedFrame::PatchBytecodeArray(BytecodeArray* bytecode_array) {
   const int index = InterpreterFrameConstants::kBytecodeArrayExpressionIndex;
   DCHECK_EQ(
       InterpreterFrameConstants::kBytecodeArrayFromFp,
@@ -1244,12 +1250,21 @@ void InterpretedFrame::PatchBytecodeArray(Object* bytecode_array) {
   SetExpression(index, bytecode_array);
 }
 
-Object* InterpretedFrame::GetInterpreterRegister(int register_index) const {
+Object* InterpretedFrame::ReadInterpreterRegister(int register_index) const {
   const int index = InterpreterFrameConstants::kRegisterFileExpressionIndex;
   DCHECK_EQ(
-      InterpreterFrameConstants::kRegisterFilePointerFromFp,
+      InterpreterFrameConstants::kRegisterFileFromFp,
       InterpreterFrameConstants::kExpressionsOffset - index * kPointerSize);
   return GetExpression(index + register_index);
+}
+
+void InterpretedFrame::WriteInterpreterRegister(int register_index,
+                                                Object* value) {
+  const int index = InterpreterFrameConstants::kRegisterFileExpressionIndex;
+  DCHECK_EQ(
+      InterpreterFrameConstants::kRegisterFileFromFp,
+      InterpreterFrameConstants::kExpressionsOffset - index * kPointerSize);
+  return SetExpression(index + register_index, value);
 }
 
 void InterpretedFrame::Summarize(List<FrameSummary>* functions) const {
@@ -1316,6 +1331,16 @@ JSFunction* WasmFrame::function() const {
   Handle<JSFunction> fun =
       factory->NewFunction(factory->NewStringFromAsciiChecked("<WASM>"));
   return *fun;
+}
+
+void WasmFrame::Summarize(List<FrameSummary>* functions) const {
+  DCHECK(functions->length() == 0);
+  Code* code = LookupCode();
+  int offset = static_cast<int>(pc() - code->instruction_start());
+  AbstractCode* abstract_code = AbstractCode::cast(code);
+  Handle<JSFunction> fun(function(), isolate());
+  FrameSummary summary(receiver(), *fun, abstract_code, offset, false);
+  functions->Add(summary);
 }
 
 void WasmFrame::Iterate(ObjectVisitor* v) const { IterateCompiledFrame(v); }

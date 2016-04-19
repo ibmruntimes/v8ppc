@@ -537,48 +537,72 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
     __ bind(&done_loop);
   }
 
-  // Enter a new JavaScript frame, and initialize its slots as they were when
-  // the generator was suspended.
-  FrameScope scope(masm, StackFrame::MANUAL);
-  __ PushReturnAddressFrom(rax);  // Return address.
-  __ Push(rbp);                   // Caller's frame pointer.
-  __ Move(rbp, rsp);
-  __ Push(rsi);  // Callee's context.
-  __ Push(rdi);  // Callee's JS Function.
+  // Dispatch on the kind of generator object.
+  Label old_generator;
+  __ movp(rcx, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
+  __ movp(rcx, FieldOperand(rcx, SharedFunctionInfo::kFunctionDataOffset));
+  __ CmpObjectType(rcx, BYTECODE_ARRAY_TYPE, rcx);
+  __ j(not_equal, &old_generator);
 
-  // Restore the operand stack.
-  __ movp(rsi, FieldOperand(rbx, JSGeneratorObject::kOperandStackOffset));
-  __ SmiToInteger32(rax, FieldOperand(rsi, FixedArray::kLengthOffset));
+  // New-style (ignition/turbofan) generator object.
   {
-    Label done_loop, loop;
-    __ Set(rcx, 0);
-    __ bind(&loop);
-    __ cmpl(rcx, rax);
-    __ j(equal, &done_loop, Label::kNear);
-    __ Push(
-        FieldOperand(rsi, rcx, times_pointer_size, FixedArray::kHeaderSize));
-    __ addl(rcx, Immediate(1));
-    __ jmp(&loop);
-    __ bind(&done_loop);
+    __ PushReturnAddressFrom(rax);
+    __ movp(rax, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
+    __ LoadSharedFunctionInfoSpecialField(
+        rax, rax, SharedFunctionInfo::kFormalParameterCountOffset);
+    // We abuse new.target both to indicate that this is a resume call and to
+    // pass in the generator object.  In ordinary calls, new.target is always
+    // undefined because generator functions are non-constructable.
+    __ movp(rdx, rbx);
+    __ jmp(FieldOperand(rdi, JSFunction::kCodeEntryOffset));
   }
 
-  // Reset operand stack so we don't leak.
-  __ LoadRoot(FieldOperand(rbx, JSGeneratorObject::kOperandStackOffset),
-              Heap::kEmptyFixedArrayRootIndex);
+  // Old-style (full-codegen) generator object.
+  __ bind(&old_generator);
+  {
+    // Enter a new JavaScript frame, and initialize its slots as they were when
+    // the generator was suspended.
+    FrameScope scope(masm, StackFrame::MANUAL);
+    __ PushReturnAddressFrom(rax);  // Return address.
+    __ Push(rbp);                   // Caller's frame pointer.
+    __ Move(rbp, rsp);
+    __ Push(rsi);  // Callee's context.
+    __ Push(rdi);  // Callee's JS Function.
 
-  // Restore context.
-  __ movp(rsi, FieldOperand(rbx, JSGeneratorObject::kContextOffset));
+    // Restore the operand stack.
+    __ movp(rsi, FieldOperand(rbx, JSGeneratorObject::kOperandStackOffset));
+    __ SmiToInteger32(rax, FieldOperand(rsi, FixedArray::kLengthOffset));
+    {
+      Label done_loop, loop;
+      __ Set(rcx, 0);
+      __ bind(&loop);
+      __ cmpl(rcx, rax);
+      __ j(equal, &done_loop, Label::kNear);
+      __ Push(
+          FieldOperand(rsi, rcx, times_pointer_size, FixedArray::kHeaderSize));
+      __ addl(rcx, Immediate(1));
+      __ jmp(&loop);
+      __ bind(&done_loop);
+    }
 
-  // Resume the generator function at the continuation.
-  __ movp(rdx, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
-  __ movp(rdx, FieldOperand(rdx, SharedFunctionInfo::kCodeOffset));
-  __ SmiToInteger64(rcx,
-                    FieldOperand(rbx, JSGeneratorObject::kContinuationOffset));
-  __ leap(rdx, FieldOperand(rdx, rcx, times_1, Code::kHeaderSize));
-  __ Move(FieldOperand(rbx, JSGeneratorObject::kContinuationOffset),
-          Smi::FromInt(JSGeneratorObject::kGeneratorExecuting));
-  __ movp(rax, rbx);  // Continuation expects generator object in rax.
-  __ jmp(rdx);
+    // Reset operand stack so we don't leak.
+    __ LoadRoot(FieldOperand(rbx, JSGeneratorObject::kOperandStackOffset),
+                Heap::kEmptyFixedArrayRootIndex);
+
+    // Restore context.
+    __ movp(rsi, FieldOperand(rbx, JSGeneratorObject::kContextOffset));
+
+    // Resume the generator function at the continuation.
+    __ movp(rdx, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
+    __ movp(rdx, FieldOperand(rdx, SharedFunctionInfo::kCodeOffset));
+    __ SmiToInteger64(
+        rcx, FieldOperand(rbx, JSGeneratorObject::kContinuationOffset));
+    __ leap(rdx, FieldOperand(rdx, rcx, times_1, Code::kHeaderSize));
+    __ Move(FieldOperand(rbx, JSGeneratorObject::kContinuationOffset),
+            Smi::FromInt(JSGeneratorObject::kGeneratorExecuting));
+    __ movp(rax, rbx);  // Continuation expects generator object in rax.
+    __ jmp(rdx);
+  }
 }
 
 // Generate code for entering a JS function with the interpreter.
@@ -596,6 +620,8 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
 // The function builds an interpreter frame.  See InterpreterFrameConstants in
 // frames.h for its layout.
 void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
+  ProfileEntryHookStub::MaybeCallEntryHook(masm);
+
   // Open a frame scope to indicate that there is a frame on the stack.  The
   // MANUAL indicates that the scope shouldn't actually generate code to set up
   // the frame (that is done below).
@@ -661,17 +687,11 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     __ j(greater_equal, &loop_header, Label::kNear);
   }
 
-  // TODO(rmcilroy): List of things not currently dealt with here but done in
-  // fullcodegen's prologue:
-  //  - Call ProfileEntryHookStub when isolate has a function_entry_hook.
-  //  - Code aging of the BytecodeArray object.
-
   // Load accumulator, register file, bytecode offset, dispatch table into
   // registers.
   __ LoadRoot(kInterpreterAccumulatorRegister, Heap::kUndefinedValueRootIndex);
-  __ movp(kInterpreterRegisterFileRegister, rbp);
-  __ addp(kInterpreterRegisterFileRegister,
-          Immediate(InterpreterFrameConstants::kRegisterFilePointerFromFp));
+  __ movp(r11, rbp);
+  __ addp(r11, Immediate(InterpreterFrameConstants::kRegisterFileFromFp));
   __ movp(kInterpreterBytecodeOffsetRegister,
           Immediate(BytecodeArray::kHeaderSize - kHeapObjectTag));
   __ Move(
@@ -699,12 +719,6 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
 
 
 void Builtins::Generate_InterpreterExitTrampoline(MacroAssembler* masm) {
-  // TODO(rmcilroy): List of things not currently dealt with here but done in
-  // fullcodegen's EmitReturnSequence.
-  //  - Supporting FLAG_trace for Runtime::TraceExit.
-  //  - Support profiler (specifically decrementing profiling_counter
-  //    appropriately and calling out to HandleInterrupts if necessary).
-
   // The return value is in accumulator, which is already in rax.
 
   // Leave the frame (also dropping the register file).
@@ -804,24 +818,14 @@ void Builtins::Generate_InterpreterPushArgsAndConstruct(MacroAssembler* masm) {
 
 
 static void Generate_EnterBytecodeDispatch(MacroAssembler* masm) {
-  // Initialize register file register and dispatch table register.
-  __ movp(kInterpreterRegisterFileRegister, rbp);
-  __ addp(kInterpreterRegisterFileRegister,
-          Immediate(InterpreterFrameConstants::kRegisterFilePointerFromFp));
+  // Initialize dispatch table register.
   __ Move(
       kInterpreterDispatchTableRegister,
       ExternalReference::interpreter_dispatch_table_address(masm->isolate()));
 
-  // Get the context from the frame.
-  __ movp(kContextRegister,
-          Operand(kInterpreterRegisterFileRegister,
-                  InterpreterFrameConstants::kContextFromRegisterPointer));
-
   // Get the bytecode array pointer from the frame.
-  __ movp(
-      kInterpreterBytecodeArrayRegister,
-      Operand(kInterpreterRegisterFileRegister,
-              InterpreterFrameConstants::kBytecodeArrayFromRegisterPointer));
+  __ movp(kInterpreterBytecodeArrayRegister,
+          Operand(rbp, InterpreterFrameConstants::kBytecodeArrayFromFp));
 
   if (FLAG_debug_code) {
     // Check function data field is actually a BytecodeArray object.
@@ -832,10 +836,8 @@ static void Generate_EnterBytecodeDispatch(MacroAssembler* masm) {
   }
 
   // Get the target bytecode offset from the frame.
-  __ movp(
-      kInterpreterBytecodeOffsetRegister,
-      Operand(kInterpreterRegisterFileRegister,
-              InterpreterFrameConstants::kBytecodeOffsetFromRegisterPointer));
+  __ movp(kInterpreterBytecodeOffsetRegister,
+          Operand(rbp, InterpreterFrameConstants::kBytecodeOffsetFromFp));
   __ SmiToInteger32(kInterpreterBytecodeOffsetRegister,
                     kInterpreterBytecodeOffsetRegister);
 

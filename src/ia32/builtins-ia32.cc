@@ -463,44 +463,68 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
     __ bind(&done_loop);
   }
 
-  // Enter a new JavaScript frame, and initialize its slots as they were when
-  // the generator was suspended.
-  FrameScope scope(masm, StackFrame::MANUAL);
-  __ PushReturnAddressFrom(eax);  // Return address.
-  __ Push(ebp);                   // Caller's frame pointer.
-  __ Move(ebp, esp);
-  __ Push(esi);  // Callee's context.
-  __ Push(edi);  // Callee's JS Function.
+  // Dispatch on the kind of generator object.
+  Label old_generator;
+  __ mov(ecx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+  __ mov(ecx, FieldOperand(ecx, SharedFunctionInfo::kFunctionDataOffset));
+  __ CmpObjectType(ecx, BYTECODE_ARRAY_TYPE, ecx);
+  __ j(not_equal, &old_generator);
 
-  // Restore the operand stack.
-  __ mov(eax, FieldOperand(ebx, JSGeneratorObject::kOperandStackOffset));
+  // New-style (ignition/turbofan) generator object
   {
-    Label done_loop, loop;
-    __ Move(ecx, Smi::FromInt(0));
-    __ bind(&loop);
-    __ cmp(ecx, FieldOperand(eax, FixedArray::kLengthOffset));
-    __ j(equal, &done_loop, Label::kNear);
-    __ Push(FieldOperand(eax, ecx, times_half_pointer_size,
-                         FixedArray::kHeaderSize));
-    __ add(ecx, Immediate(Smi::FromInt(1)));
-    __ jmp(&loop);
-    __ bind(&done_loop);
+    __ PushReturnAddressFrom(eax);
+    __ mov(eax, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+    __ mov(eax,
+         FieldOperand(ecx, SharedFunctionInfo::kFormalParameterCountOffset));
+    // We abuse new.target both to indicate that this is a resume call and to
+    // pass in the generator object.  In ordinary calls, new.target is always
+    // undefined because generator functions are non-constructable.
+    __ mov(edx, ebx);
+    __ jmp(FieldOperand(edi, JSFunction::kCodeEntryOffset));
   }
 
-  // Reset operand stack so we don't leak.
-  __ mov(FieldOperand(ebx, JSGeneratorObject::kOperandStackOffset),
-         Immediate(masm->isolate()->factory()->empty_fixed_array()));
+  // Old-style (full-codegen) generator object
+  __ bind(&old_generator);
+  {
+    // Enter a new JavaScript frame, and initialize its slots as they were when
+    // the generator was suspended.
+    FrameScope scope(masm, StackFrame::MANUAL);
+    __ PushReturnAddressFrom(eax);  // Return address.
+    __ Push(ebp);                   // Caller's frame pointer.
+    __ Move(ebp, esp);
+    __ Push(esi);  // Callee's context.
+    __ Push(edi);  // Callee's JS Function.
 
-  // Resume the generator function at the continuation.
-  __ mov(edx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
-  __ mov(edx, FieldOperand(edx, SharedFunctionInfo::kCodeOffset));
-  __ mov(ecx, FieldOperand(ebx, JSGeneratorObject::kContinuationOffset));
-  __ SmiUntag(ecx);
-  __ lea(edx, FieldOperand(edx, ecx, times_1, Code::kHeaderSize));
-  __ mov(FieldOperand(ebx, JSGeneratorObject::kContinuationOffset),
-         Immediate(Smi::FromInt(JSGeneratorObject::kGeneratorExecuting)));
-  __ mov(eax, ebx);  // Continuation expects generator object in eax.
-  __ jmp(edx);
+    // Restore the operand stack.
+    __ mov(eax, FieldOperand(ebx, JSGeneratorObject::kOperandStackOffset));
+    {
+      Label done_loop, loop;
+      __ Move(ecx, Smi::FromInt(0));
+      __ bind(&loop);
+      __ cmp(ecx, FieldOperand(eax, FixedArray::kLengthOffset));
+      __ j(equal, &done_loop, Label::kNear);
+      __ Push(FieldOperand(eax, ecx, times_half_pointer_size,
+                           FixedArray::kHeaderSize));
+      __ add(ecx, Immediate(Smi::FromInt(1)));
+      __ jmp(&loop);
+      __ bind(&done_loop);
+    }
+
+    // Reset operand stack so we don't leak.
+    __ mov(FieldOperand(ebx, JSGeneratorObject::kOperandStackOffset),
+           Immediate(masm->isolate()->factory()->empty_fixed_array()));
+
+    // Resume the generator function at the continuation.
+    __ mov(edx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+    __ mov(edx, FieldOperand(edx, SharedFunctionInfo::kCodeOffset));
+    __ mov(ecx, FieldOperand(ebx, JSGeneratorObject::kContinuationOffset));
+    __ SmiUntag(ecx);
+    __ lea(edx, FieldOperand(edx, ecx, times_1, Code::kHeaderSize));
+    __ mov(FieldOperand(ebx, JSGeneratorObject::kContinuationOffset),
+           Immediate(Smi::FromInt(JSGeneratorObject::kGeneratorExecuting)));
+    __ mov(eax, ebx);  // Continuation expects generator object in eax.
+    __ jmp(edx);
+  }
 }
 
 // Generate code for entering a JS function with the interpreter.
@@ -518,6 +542,8 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
 // The function builds an interpreter frame.  See InterpreterFrameConstants in
 // frames.h for its layout.
 void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
+  ProfileEntryHookStub::MaybeCallEntryHook(masm);
+
   // Open a frame scope to indicate that there is a frame on the stack.  The
   // MANUAL indicates that the scope shouldn't actually generate code to set up
   // the frame (that is done below).
@@ -584,34 +610,22 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     __ j(greater_equal, &loop_header);
   }
 
-  // TODO(rmcilroy): List of things not currently dealt with here but done in
-  // fullcodegen's prologue:
-  //  - Call ProfileEntryHookStub when isolate has a function_entry_hook.
-  //  - Code aging of the BytecodeArray object.
-
   // Load accumulator, register file, bytecode offset, dispatch table into
   // registers.
   __ LoadRoot(kInterpreterAccumulatorRegister, Heap::kUndefinedValueRootIndex);
-  __ mov(kInterpreterRegisterFileRegister, ebp);
-  __ add(kInterpreterRegisterFileRegister,
-         Immediate(InterpreterFrameConstants::kRegisterFilePointerFromFp));
+  __ mov(edx, ebp);
+  __ add(edx, Immediate(InterpreterFrameConstants::kRegisterFileFromFp));
   __ mov(kInterpreterBytecodeOffsetRegister,
          Immediate(BytecodeArray::kHeaderSize - kHeapObjectTag));
-  __ mov(ebx, Immediate(ExternalReference::interpreter_dispatch_table_address(
-                  masm->isolate())));
-
-  // Push dispatch table as a stack located parameter to the bytecode handler.
-  DCHECK_EQ(-1, kInterpreterDispatchTableSpillSlot);
-  __ push(ebx);
+  __ mov(kInterpreterDispatchTableRegister,
+         Immediate(ExternalReference::interpreter_dispatch_table_address(
+             masm->isolate())));
 
   // Dispatch to the first bytecode handler for the function.
-  __ movzx_b(eax, Operand(kInterpreterBytecodeArrayRegister,
+  __ movzx_b(ebx, Operand(kInterpreterBytecodeArrayRegister,
                           kInterpreterBytecodeOffsetRegister, times_1, 0));
-  __ mov(ebx, Operand(ebx, eax, times_pointer_size, 0));
-  // Restore undefined_value in accumulator (eax)
-  // TODO(rmcilroy): Remove this once we move the dispatch table back into a
-  // register.
-  __ mov(eax, Immediate(masm->isolate()->factory()->undefined_value()));
+  __ mov(ebx, Operand(kInterpreterDispatchTableRegister, ebx,
+                      times_pointer_size, 0));
   __ call(ebx);
 
   // Even though the first bytecode handler was called, we will never return.
@@ -628,13 +642,7 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
 
 
 void Builtins::Generate_InterpreterExitTrampoline(MacroAssembler* masm) {
-  // TODO(rmcilroy): List of things not currently dealt with here but done in
-  // fullcodegen's EmitReturnSequence.
-  //  - Supporting FLAG_trace for Runtime::TraceExit.
-  //  - Support profiler (specifically decrementing profiling_counter
-  //    appropriately and calling out to HandleInterrupts if necessary).
-
-  // The return value is in accumulator, which is already in rax.
+  // The return value is in accumulator, which is already in eax.
 
   // Leave the frame (also dropping the register file).
   __ leave();
@@ -737,15 +745,14 @@ void Builtins::Generate_InterpreterPushArgsAndConstruct(MacroAssembler* masm) {
 
 
 static void Generate_EnterBytecodeDispatch(MacroAssembler* masm) {
-  // Initialize register file register.
-  __ mov(kInterpreterRegisterFileRegister, ebp);
-  __ add(kInterpreterRegisterFileRegister,
-         Immediate(InterpreterFrameConstants::kRegisterFilePointerFromFp));
+  // Initialize the dispatch table register.
+  __ mov(kInterpreterDispatchTableRegister,
+         Immediate(ExternalReference::interpreter_dispatch_table_address(
+             masm->isolate())));
 
   // Get the bytecode array pointer from the frame.
   __ mov(kInterpreterBytecodeArrayRegister,
-         Operand(kInterpreterRegisterFileRegister,
-                 InterpreterFrameConstants::kBytecodeArrayFromRegisterPointer));
+         Operand(ebp, InterpreterFrameConstants::kBytecodeArrayFromFp));
 
   if (FLAG_debug_code) {
     // Check function data field is actually a BytecodeArray object.
@@ -756,29 +763,15 @@ static void Generate_EnterBytecodeDispatch(MacroAssembler* masm) {
   }
 
   // Get the target bytecode offset from the frame.
-  __ mov(
-      kInterpreterBytecodeOffsetRegister,
-      Operand(kInterpreterRegisterFileRegister,
-              InterpreterFrameConstants::kBytecodeOffsetFromRegisterPointer));
+  __ mov(kInterpreterBytecodeOffsetRegister,
+         Operand(ebp, InterpreterFrameConstants::kBytecodeOffsetFromFp));
   __ SmiUntag(kInterpreterBytecodeOffsetRegister);
 
-  // Push dispatch table as a stack located parameter to the bytecode handler.
-  __ mov(ebx, Immediate(ExternalReference::interpreter_dispatch_table_address(
-                  masm->isolate())));
-  DCHECK_EQ(-1, kInterpreterDispatchTableSpillSlot);
-  __ Pop(esi);
-  __ Push(ebx);
-  __ Push(esi);
-
   // Dispatch to the target bytecode.
-  __ movzx_b(esi, Operand(kInterpreterBytecodeArrayRegister,
+  __ movzx_b(ebx, Operand(kInterpreterBytecodeArrayRegister,
                           kInterpreterBytecodeOffsetRegister, times_1, 0));
-  __ mov(ebx, Operand(ebx, esi, times_pointer_size, 0));
-
-  // Get the context from the frame.
-  __ mov(kContextRegister,
-         Operand(kInterpreterRegisterFileRegister,
-                 InterpreterFrameConstants::kContextFromRegisterPointer));
+  __ mov(ebx, Operand(kInterpreterDispatchTableRegister, ebx,
+                      times_pointer_size, 0));
   __ jmp(ebx);
 }
 

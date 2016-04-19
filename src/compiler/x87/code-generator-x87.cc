@@ -59,6 +59,11 @@ class X87OperandConverter : public InstructionOperandConverter {
 
   Immediate ToImmediate(InstructionOperand* operand) {
     Constant constant = ToConstant(operand);
+    if (constant.type() == Constant::kInt32 &&
+        constant.rmode() == RelocInfo::WASM_MEMORY_REFERENCE) {
+      return Immediate(reinterpret_cast<Address>(constant.ToInt32()),
+                       constant.rmode());
+    }
     switch (constant.type()) {
       case Constant::kInt32:
         return Immediate(constant.ToInt32());
@@ -337,6 +342,33 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
     __ bind(&done);                                          \
   } while (false)
 
+#define ASSEMBLE_COMPARE(asm_instr)                                   \
+  do {                                                                \
+    if (AddressingModeField::decode(instr->opcode()) != kMode_None) { \
+      size_t index = 0;                                               \
+      Operand left = i.MemoryOperand(&index);                         \
+      if (HasImmediateInput(instr, index)) {                          \
+        __ asm_instr(left, i.InputImmediate(index));                  \
+      } else {                                                        \
+        __ asm_instr(left, i.InputRegister(index));                   \
+      }                                                               \
+    } else {                                                          \
+      if (HasImmediateInput(instr, 1)) {                              \
+        if (instr->InputAt(0)->IsRegister()) {                        \
+          __ asm_instr(i.InputRegister(0), i.InputImmediate(1));      \
+        } else {                                                      \
+          __ asm_instr(i.InputOperand(0), i.InputImmediate(1));       \
+        }                                                             \
+      } else {                                                        \
+        if (instr->InputAt(1)->IsRegister()) {                        \
+          __ asm_instr(i.InputRegister(0), i.InputRegister(1));       \
+        } else {                                                      \
+          __ asm_instr(i.InputRegister(0), i.InputOperand(1));        \
+        }                                                             \
+      }                                                               \
+    }                                                                 \
+  } while (0)
+
 void CodeGenerator::AssembleDeconstructFrame() {
   __ mov(esp, ebp);
   __ pop(ebp);
@@ -471,6 +503,15 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ add(reg, Immediate(Code::kHeaderSize - kHeapObjectTag));
         __ jmp(reg);
       }
+      frame_access_state()->ClearSPDelta();
+      break;
+    }
+    case kArchTailCallAddress: {
+      int stack_param_delta = i.InputInt32(instr->InputCount() - 1);
+      AssembleDeconstructActivationRecord(stack_param_delta);
+      CHECK(!HasImmediateInput(instr, 0));
+      Register reg = i.InputRegister(0);
+      __ jmp(reg);
       frame_access_state()->ClearSPDelta();
       break;
     }
@@ -677,38 +718,22 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       }
       break;
     case kX87Cmp:
-      if (AddressingModeField::decode(instr->opcode()) != kMode_None) {
-        size_t index = 0;
-        Operand operand = i.MemoryOperand(&index);
-        if (HasImmediateInput(instr, index)) {
-          __ cmp(operand, i.InputImmediate(index));
-        } else {
-          __ cmp(operand, i.InputRegister(index));
-        }
-      } else {
-        if (HasImmediateInput(instr, 1)) {
-          __ cmp(i.InputOperand(0), i.InputImmediate(1));
-        } else {
-          __ cmp(i.InputRegister(0), i.InputOperand(1));
-        }
-      }
+      ASSEMBLE_COMPARE(cmp);
+      break;
+    case kX87Cmp16:
+      ASSEMBLE_COMPARE(cmpw);
+      break;
+    case kX87Cmp8:
+      ASSEMBLE_COMPARE(cmpb);
       break;
     case kX87Test:
-      if (AddressingModeField::decode(instr->opcode()) != kMode_None) {
-        size_t index = 0;
-        Operand operand = i.MemoryOperand(&index);
-        if (HasImmediateInput(instr, index)) {
-          __ test(operand, i.InputImmediate(index));
-        } else {
-          __ test(i.InputRegister(index), operand);
-        }
-      } else {
-        if (HasImmediateInput(instr, 1)) {
-          __ test(i.InputOperand(0), i.InputImmediate(1));
-        } else {
-          __ test(i.InputRegister(0), i.InputOperand(1));
-        }
-      }
+      ASSEMBLE_COMPARE(test);
+      break;
+    case kX87Test16:
+      ASSEMBLE_COMPARE(test_w);
+      break;
+    case kX87Test8:
+      ASSEMBLE_COMPARE(test_b);
       break;
     case kX87Imul:
       if (HasImmediateInput(instr, 1)) {
@@ -1412,11 +1437,12 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ fld_d(i.InputOperand(0));
       }
       __ fild_s(Operand(esp, 0));
-      __ fadd(1);
-      __ fstp(0);
+      __ fld(1);
+      __ faddp();
       __ TruncateX87TOSToI(i.OutputRegister(0));
       __ add(esp, Immediate(kInt32Size));
       __ add(i.OutputRegister(), Immediate(0x80000000));
+      __ fstp(0);
       if (!instr->InputAt(0)->IsDoubleRegister()) {
         __ fstp(0);
       }
@@ -1748,6 +1774,13 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kCheckedLoadWord64:
     case kCheckedStoreWord64:
       UNREACHABLE();  // currently unsupported checked int64 load/store.
+      break;
+    case kAtomicLoadInt8:
+    case kAtomicLoadUint8:
+    case kAtomicLoadInt16:
+    case kAtomicLoadUint16:
+    case kAtomicLoadWord32:
+      UNREACHABLE();  // Won't be generated by instruction selector.
       break;
   }
 }  // NOLINT(readability/fn_size)

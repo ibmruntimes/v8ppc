@@ -91,8 +91,7 @@ class PlatformInterfaceDescriptor;
   V(InterpreterPushArgsAndCall)               \
   V(InterpreterPushArgsAndConstruct)          \
   V(InterpreterCEntry)                        \
-  V(ResumeGenerator)                          \
-  V(AtomicsLoad)
+  V(ResumeGenerator)
 
 class CallInterfaceDescriptorData {
  public:
@@ -747,10 +746,11 @@ class ApiCallbackWith7ArgsDescriptor : public ApiCallbackDescriptorBase {
 
 class ApiGetterDescriptor : public CallInterfaceDescriptor {
  public:
-  DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(ApiGetterDescriptor,
-                                               CallInterfaceDescriptor)
+  DECLARE_DESCRIPTOR(ApiGetterDescriptor, CallInterfaceDescriptor)
 
-  static const Register function_address();
+  static const Register ReceiverRegister();
+  static const Register HolderRegister();
+  static const Register CallbackRegister();
 };
 
 
@@ -796,11 +796,9 @@ class InterpreterDispatchDescriptor : public CallInterfaceDescriptor {
                                                CallInterfaceDescriptor)
 
   static const int kAccumulatorParameter = 0;
-  static const int kRegisterFileParameter = 1;
-  static const int kBytecodeOffsetParameter = 2;
-  static const int kBytecodeArrayParameter = 3;
-  static const int kDispatchTableParameter = 4;
-  static const int kContextParameter = 5;
+  static const int kBytecodeOffsetParameter = 1;
+  static const int kBytecodeArrayParameter = 2;
+  static const int kDispatchTableParameter = 3;
 };
 
 class InterpreterPushArgsAndCallDescriptor : public CallInterfaceDescriptor {
@@ -826,11 +824,6 @@ class InterpreterCEntryDescriptor : public CallInterfaceDescriptor {
 class ResumeGeneratorDescriptor final : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(ResumeGeneratorDescriptor, CallInterfaceDescriptor)
-};
-
-class AtomicsLoadDescriptor : public CallInterfaceDescriptor {
- public:
-  DECLARE_DESCRIPTOR(AtomicsLoadDescriptor, CallInterfaceDescriptor)
 };
 
 #undef DECLARE_DESCRIPTOR_WITH_BASE

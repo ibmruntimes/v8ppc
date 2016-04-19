@@ -107,32 +107,6 @@ class JSBinopReduction final {
     return lowering_->Changed(node_);
   }
 
-  Reduction ChangeToStringComparisonOperator(const Operator* op,
-                                             bool invert = false) {
-    if (node_->op()->ControlInputCount() > 0) {
-      lowering_->RelaxControls(node_);
-    }
-    // String comparison operators need effect and control inputs, so copy them
-    // over.
-    Node* effect = NodeProperties::GetEffectInput(node_);
-    Node* control = NodeProperties::GetControlInput(node_);
-    node_->ReplaceInput(2, effect);
-    node_->ReplaceInput(3, control);
-
-    node_->TrimInputCount(4);
-    NodeProperties::ChangeOp(node_, op);
-
-    if (invert) {
-      // Insert a boolean-not to invert the value.
-      Node* value = graph()->NewNode(simplified()->BooleanNot(), node_);
-      node_->ReplaceUses(value);
-      // Note: ReplaceUses() smashes all uses, so smash it back here.
-      value->ReplaceInput(0, node_);
-      return lowering_->Replace(value);
-    }
-    return lowering_->Changed(node_);
-  }
-
   Reduction ChangeToPureOperator(const Operator* op, Type* type) {
     return ChangeToPureOperator(op, false, type);
   }
@@ -477,7 +451,7 @@ Reduction JSTypedLowering::ReduceJSComparison(Node* node) {
       default:
         return NoChange();
     }
-    r.ChangeToStringComparisonOperator(stringOp);
+    r.ChangeToPureOperator(stringOp);
     return Changed(node);
   }
   if (r.OneInputCannotBe(Type::StringOrReceiver())) {
@@ -521,9 +495,53 @@ Reduction JSTypedLowering::ReduceJSComparison(Node* node) {
   return NoChange();  // Keep a generic comparison.
 }
 
+Reduction JSTypedLowering::ReduceJSEqualTypeOf(Node* node, bool invert) {
+  HeapObjectBinopMatcher m(node);
+  if (m.left().IsJSTypeOf() && m.right().HasValue() &&
+      m.right().Value()->IsString()) {
+    Node* replacement;
+    Node* input = m.left().InputAt(0);
+    Handle<String> value = Handle<String>::cast(m.right().Value());
+    if (String::Equals(value, factory()->boolean_string())) {
+      replacement = graph()->NewNode(
+          common()->Select(MachineRepresentation::kTagged),
+          graph()->NewNode(simplified()->ReferenceEqual(Type::Any()), input,
+                           jsgraph()->TrueConstant()),
+          jsgraph()->TrueConstant(),
+          graph()->NewNode(simplified()->ReferenceEqual(Type::Any()), input,
+                           jsgraph()->FalseConstant()));
+    } else if (String::Equals(value, factory()->function_string())) {
+      replacement = graph()->NewNode(simplified()->ObjectIsCallable(), input);
+    } else if (String::Equals(value, factory()->number_string())) {
+      replacement = graph()->NewNode(simplified()->ObjectIsNumber(), input);
+    } else if (String::Equals(value, factory()->string_string())) {
+      replacement = graph()->NewNode(simplified()->ObjectIsString(), input);
+    } else if (String::Equals(value, factory()->undefined_string())) {
+      replacement = graph()->NewNode(
+          common()->Select(MachineRepresentation::kTagged),
+          graph()->NewNode(simplified()->ReferenceEqual(Type::Any()), input,
+                           jsgraph()->NullConstant()),
+          jsgraph()->FalseConstant(),
+          graph()->NewNode(simplified()->ObjectIsUndetectable(), input));
+    } else {
+      return NoChange();
+    }
+    if (invert) {
+      replacement = graph()->NewNode(simplified()->BooleanNot(), replacement);
+    }
+    return Replace(replacement);
+  }
+  return NoChange();
+}
 
 Reduction JSTypedLowering::ReduceJSEqual(Node* node, bool invert) {
   if (flags() & kDisableBinaryOpReduction) return NoChange();
+
+  Reduction const reduction = ReduceJSEqualTypeOf(node, invert);
+  if (reduction.Changed()) {
+    ReplaceWithValue(node, reduction.replacement());
+    return reduction;
+  }
 
   JSBinopReduction r(this, node);
 
@@ -531,8 +549,7 @@ Reduction JSTypedLowering::ReduceJSEqual(Node* node, bool invert) {
     return r.ChangeToPureOperator(simplified()->NumberEqual(), invert);
   }
   if (r.BothInputsAre(Type::String())) {
-    return r.ChangeToStringComparisonOperator(simplified()->StringEqual(),
-                                              invert);
+    return r.ChangeToPureOperator(simplified()->StringEqual(), invert);
   }
   if (r.BothInputsAre(Type::Boolean())) {
     return r.ChangeToPureOperator(simplified()->ReferenceEqual(Type::Boolean()),
@@ -582,6 +599,10 @@ Reduction JSTypedLowering::ReduceJSStrictEqual(Node* node, bool invert) {
       return Replace(replacement);
     }
   }
+  Reduction const reduction = ReduceJSEqualTypeOf(node, invert);
+  if (reduction.Changed()) {
+    return reduction;
+  }
   if (r.OneInputIs(the_hole_type_)) {
     return r.ChangeToPureOperator(simplified()->ReferenceEqual(the_hole_type_),
                                   invert);
@@ -611,8 +632,7 @@ Reduction JSTypedLowering::ReduceJSStrictEqual(Node* node, bool invert) {
                                   invert);
   }
   if (r.BothInputsAre(Type::String())) {
-    return r.ChangeToStringComparisonOperator(simplified()->StringEqual(),
-                                              invert);
+    return r.ChangeToPureOperator(simplified()->StringEqual(), invert);
   }
   if (r.BothInputsAre(Type::NumberOrUndefined())) {
     return r.ChangeToPureOperator(simplified()->NumberEqual(), invert);
@@ -625,10 +645,8 @@ Reduction JSTypedLowering::ReduceJSStrictEqual(Node* node, bool invert) {
 Reduction JSTypedLowering::ReduceJSToBoolean(Node* node) {
   Node* const input = node->InputAt(0);
   Type* const input_type = NodeProperties::GetType(input);
-  Node* const effect = NodeProperties::GetEffectInput(node);
   if (input_type->Is(Type::Boolean())) {
     // JSToBoolean(x:boolean) => x
-    ReplaceWithValue(node, input, effect);
     return Replace(input);
   } else if (input_type->Is(Type::OrderedNumber())) {
     // JSToBoolean(x:ordered-number) => BooleanNot(NumberEqual(x,#0))
@@ -642,11 +660,10 @@ Reduction JSTypedLowering::ReduceJSToBoolean(Node* node) {
     // JSToBoolean(x:string) => NumberLessThan(#0,x.length)
     FieldAccess const access = AccessBuilder::ForStringLength();
     Node* length = graph()->NewNode(simplified()->LoadField(access), input,
-                                    effect, graph()->start());
+                                    graph()->start(), graph()->start());
     ReplaceWithValue(node, node, length);
     node->ReplaceInput(0, jsgraph()->ZeroConstant());
     node->ReplaceInput(1, length);
-    node->TrimInputCount(2);
     NodeProperties::ChangeOp(node, simplified()->NumberLessThan());
     return Changed(node);
   }
@@ -700,12 +717,6 @@ Reduction JSTypedLowering::ReduceJSToLength(Node* node) {
 }
 
 Reduction JSTypedLowering::ReduceJSToNumberInput(Node* input) {
-  if (input->opcode() == IrOpcode::kJSToNumber) {
-    // Recursively try to reduce the input first.
-    Reduction result = ReduceJSToNumber(input);
-    if (result.Changed()) return result;
-    return Changed(input);  // JSToNumber(JSToNumber(x)) => JSToNumber(x)
-  }
   // Check for ToNumber truncation of signaling NaN to undefined mapping.
   if (input->opcode() == IrOpcode::kSelect) {
     Node* check = NodeProperties::GetValueInput(input, 0);

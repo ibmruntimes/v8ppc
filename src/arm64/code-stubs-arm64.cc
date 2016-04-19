@@ -1323,11 +1323,6 @@ void JSEntryStub::Generate(MacroAssembler* masm) {
   __ Mov(jssp, csp);
   __ SetStackPointer(jssp);
 
-  // Configure the FPCR. We don't restore it, so this is technically not allowed
-  // according to AAPCS64. However, we only set default-NaN mode and this will
-  // be harmless for most C code. Also, it works for ARM.
-  __ ConfigureFPCR();
-
   ProfileEntryHookStub::MaybeCallEntryHook(masm);
 
   // Set up the reserved register for 0.0.
@@ -5895,15 +5890,34 @@ void CallApiCallbackStub::Generate(MacroAssembler* masm) {
 
 
 void CallApiGetterStub::Generate(MacroAssembler* masm) {
-  // ----------- S t a t e -------------
-  //  -- sp[0]                         : name
-  //  -- sp[8 .. (8 + kArgsLength*8)]  : v8::PropertyCallbackInfo::args_
-  //  -- ...
-  //  -- x2                            : api_function_address
-  // -----------------------------------
+  // Build v8::PropertyCallbackInfo::args_ array on the stack and push property
+  // name below the exit frame to make GC aware of them.
+  STATIC_ASSERT(PropertyCallbackArguments::kShouldThrowOnErrorIndex == 0);
+  STATIC_ASSERT(PropertyCallbackArguments::kHolderIndex == 1);
+  STATIC_ASSERT(PropertyCallbackArguments::kIsolateIndex == 2);
+  STATIC_ASSERT(PropertyCallbackArguments::kReturnValueDefaultValueIndex == 3);
+  STATIC_ASSERT(PropertyCallbackArguments::kReturnValueOffset == 4);
+  STATIC_ASSERT(PropertyCallbackArguments::kDataIndex == 5);
+  STATIC_ASSERT(PropertyCallbackArguments::kThisIndex == 6);
+  STATIC_ASSERT(PropertyCallbackArguments::kArgsLength == 7);
 
-  Register api_function_address = ApiGetterDescriptor::function_address();
-  DCHECK(api_function_address.is(x2));
+  Register receiver = ApiGetterDescriptor::ReceiverRegister();
+  Register holder = ApiGetterDescriptor::HolderRegister();
+  Register callback = ApiGetterDescriptor::CallbackRegister();
+  Register scratch = x4;
+  Register scratch2 = x5;
+  Register scratch3 = x6;
+  DCHECK(!AreAliased(receiver, holder, callback, scratch));
+
+  __ Push(receiver);
+
+  __ LoadRoot(scratch, Heap::kUndefinedValueRootIndex);
+  __ Mov(scratch2, Operand(ExternalReference::isolate_address(isolate())));
+  __ Ldr(scratch3, FieldMemOperand(callback, AccessorInfo::kDataOffset));
+  __ Push(scratch3, scratch, scratch, scratch2, holder);
+  __ Push(Smi::FromInt(0));  // should_throw_on_error -> false
+  __ Ldr(scratch, FieldMemOperand(callback, AccessorInfo::kNameOffset));
+  __ Push(scratch);
 
   // v8::PropertyCallbackInfo::args_ array and name handle.
   const int kStackUnwindSpace = PropertyCallbackArguments::kArgsLength + 1;
@@ -5930,6 +5944,11 @@ void CallApiGetterStub::Generate(MacroAssembler* masm) {
   ExternalReference thunk_ref =
       ExternalReference::invoke_accessor_getter_callback(isolate());
 
+  Register api_function_address = x2;
+  __ Ldr(scratch, FieldMemOperand(callback, AccessorInfo::kJsGetterOffset));
+  __ Ldr(api_function_address,
+         FieldMemOperand(scratch, Foreign::kForeignAddressOffset));
+
   const int spill_offset = 1 + kApiStackSpace;
   // +3 is to skip prolog, return address and name handle.
   MemOperand return_value_operand(
@@ -5937,145 +5956,6 @@ void CallApiGetterStub::Generate(MacroAssembler* masm) {
   CallApiFunctionAndReturn(masm, api_function_address, thunk_ref,
                            kStackUnwindSpace, NULL, spill_offset,
                            return_value_operand, NULL);
-}
-
-namespace {
-
-void GetTypedArrayBackingStore(MacroAssembler* masm, Register backing_store,
-                               Register object, Register scratch,
-                               FPRegister double_scratch) {
-  Label offset_is_not_smi, done;
-  __ Ldr(scratch, FieldMemOperand(object, JSTypedArray::kBufferOffset));
-  __ Ldr(backing_store,
-         FieldMemOperand(scratch, JSArrayBuffer::kBackingStoreOffset));
-  __ Ldr(scratch,
-         FieldMemOperand(object, JSArrayBufferView::kByteOffsetOffset));
-  __ JumpIfNotSmi(scratch, &offset_is_not_smi);
-  // offset is smi
-  __ Add(backing_store, backing_store, Operand::UntagSmi(scratch));
-  __ B(&done);
-
-  // offset is a heap number
-  __ Bind(&offset_is_not_smi);
-  __ Ldr(double_scratch, FieldMemOperand(scratch, HeapNumber::kValueOffset));
-  __ Fcvtzu(scratch, double_scratch);
-  __ Add(backing_store, backing_store, scratch);
-  __ Bind(&done);
-}
-
-void TypedArrayJumpTable(MacroAssembler* masm, Register object,
-                         Register scratch, Register scratch2, Label* i8,
-                         Label* u8, Label* i16, Label* u16, Label* i32,
-                         Label* u32, Label* u8c) {
-  STATIC_ASSERT(FIXED_UINT8_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 1);
-  STATIC_ASSERT(FIXED_INT16_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 2);
-  STATIC_ASSERT(FIXED_UINT16_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 3);
-  STATIC_ASSERT(FIXED_INT32_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 4);
-  STATIC_ASSERT(FIXED_UINT32_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 5);
-  STATIC_ASSERT(FIXED_FLOAT32_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 6);
-  STATIC_ASSERT(FIXED_FLOAT64_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 7);
-  STATIC_ASSERT(FIXED_UINT8_CLAMPED_ARRAY_TYPE == FIXED_INT8_ARRAY_TYPE + 8);
-
-  __ Ldr(scratch, FieldMemOperand(object, JSObject::kElementsOffset));
-  __ Ldr(scratch, FieldMemOperand(scratch, HeapObject::kMapOffset));
-  __ Ldrb(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
-  __ Subs(scratch, scratch,
-          Operand(static_cast<uint8_t>(FIXED_INT8_ARRAY_TYPE)));
-  __ Assert(ge, kOffsetOutOfRange);
-
-  Label abort;
-  Label table;
-
-  __ Adr(scratch2, &table);
-  __ Add(scratch, scratch2, Operand(scratch, UXTW, 2));
-  __ Br(scratch);
-
-  __ StartBlockPools();
-  __ Bind(&table);
-  __ B(i8);      // Int8Array
-  __ B(u8);      // Uint8Array
-  __ B(i16);     // Int16Array
-  __ B(u16);     // Uint16Array
-  __ B(i32);     // Int32Array
-  __ B(u32);     // Uint32Array
-  __ B(&abort);  // Float32Array
-  __ B(&abort);  // Float64Array
-  __ B(u8c);     // Uint8ClampedArray
-  __ EndBlockPools();
-
-  __ Bind(&abort);
-  __ Abort(kNoReason);
-}
-
-void ReturnUnsignedInteger32(MacroAssembler* masm, FPRegister dst,
-                             Register value, Register scratch,
-                             Register scratch2) {
-  Label not_smi, call_runtime;
-  __ Tbnz(value, 31, &not_smi);
-  __ SmiTag(x0, value);
-  __ Ret();
-
-  __ Bind(&not_smi);
-  __ Ucvtf(dst, value);
-  __ AllocateHeapNumber(x0, &call_runtime, scratch, scratch2, dst);
-  __ Ret();
-
-  __ Bind(&call_runtime);
-  {
-    FrameScope scope(masm, StackFrame::INTERNAL);
-    __ CallRuntimeSaveDoubles(Runtime::kAllocateHeapNumber);
-    __ Str(value, FieldMemOperand(x0, HeapNumber::kValueOffset));
-  }
-  __ Ret();
-}
-
-}  // anonymous namespace
-
-void AtomicsLoadStub::Generate(MacroAssembler* masm) {
-  Register object = x1;
-  Register index = x0;  // Index is an untagged word32.
-  Register backing_store = x2;
-  Label i8, u8, i16, u16, i32, u32;
-
-  GetTypedArrayBackingStore(masm, backing_store, object, x3, d0);
-  TypedArrayJumpTable(masm, object, x3, x4, &i8, &u8, &i16, &u16, &i32, &u32,
-                      &u8);
-
-  __ Bind(&i8);
-  __ Ldrsb(x0, MemOperand(backing_store, index));
-  __ Dmb(InnerShareable, BarrierAll);
-  __ SmiTag(x0);
-  __ Ret();
-
-  __ Bind(&u8);
-  __ Ldrb(x0, MemOperand(backing_store, index));
-  __ Dmb(InnerShareable, BarrierAll);
-  __ SmiTag(x0);
-  __ Ret();
-
-  __ Bind(&i16);
-  __ Ldrsh(x0, MemOperand(backing_store, index, UXTW, 1));
-  __ Dmb(InnerShareable, BarrierAll);
-  __ SmiTag(x0);
-  __ Ret();
-
-  __ Bind(&u16);
-  __ Ldrh(x0, MemOperand(backing_store, index, UXTW, 1));
-  __ Dmb(InnerShareable, BarrierAll);
-  __ SmiTag(x0);
-  __ Ret();
-
-  __ Bind(&i32);
-  __ Ldrsw(x0, MemOperand(backing_store, index, UXTW, 2));
-  __ Dmb(InnerShareable, BarrierAll);
-  DCHECK(SmiValuesAre32Bits());
-  __ SmiTag(x0);
-  __ Ret();
-
-  __ Bind(&u32);
-  __ Ldr(w0, MemOperand(backing_store, index, UXTW, 2));
-  __ Dmb(InnerShareable, BarrierAll);
-  ReturnUnsignedInteger32(masm, d0, x0, x1, x2);
 }
 
 #undef __

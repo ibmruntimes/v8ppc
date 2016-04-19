@@ -1080,6 +1080,8 @@ class Heap {
 
   // Write barrier support for object[offset] = o;
   inline void RecordWrite(Object* object, int offset, Object* o);
+  inline void RecordFixedArrayElements(FixedArray* array, int offset,
+                                       int length);
 
   Address* store_buffer_top_address() { return store_buffer()->top_address(); }
 
@@ -1255,13 +1257,8 @@ class Heap {
     return static_cast<intptr_t>(total);
   }
 
-  void UpdateNewSpaceAllocationCounter() {
-    new_space_allocation_counter_ = NewSpaceAllocationCounter();
-  }
-
-  size_t NewSpaceAllocationCounter() {
-    return new_space_allocation_counter_ + new_space()->AllocatedSinceLastGC();
-  }
+  inline void UpdateNewSpaceAllocationCounter();
+  inline size_t NewSpaceAllocationCounter();
 
   // This should be used only for testing.
   void set_new_space_allocation_counter(size_t new_value) {

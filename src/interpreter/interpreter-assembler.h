@@ -8,7 +8,7 @@
 #include "src/allocation.h"
 #include "src/base/smart-pointers.h"
 #include "src/builtins.h"
-#include "src/compiler/code-stub-assembler.h"
+#include "src/code-stub-assembler.h"
 #include "src/frames.h"
 #include "src/interpreter/bytecodes.h"
 #include "src/runtime/runtime.h"
@@ -17,7 +17,7 @@ namespace v8 {
 namespace internal {
 namespace interpreter {
 
-class InterpreterAssembler : public compiler::CodeStubAssembler {
+class InterpreterAssembler : public CodeStubAssembler {
  public:
   InterpreterAssembler(Isolate* isolate, Zone* zone, Bytecode bytecode,
                        OperandScale operand_scale);
@@ -51,10 +51,8 @@ class InterpreterAssembler : public compiler::CodeStubAssembler {
   void SetContext(compiler::Node* value);
 
   // Loads from and stores to the interpreter register file.
-  compiler::Node* LoadRegister(int offset);
   compiler::Node* LoadRegister(Register reg);
   compiler::Node* LoadRegister(compiler::Node* reg_index);
-  compiler::Node* StoreRegister(compiler::Node* value, int offset);
   compiler::Node* StoreRegister(compiler::Node* value, Register reg);
   compiler::Node* StoreRegister(compiler::Node* value,
                                 compiler::Node* reg_index);
@@ -152,8 +150,6 @@ class InterpreterAssembler : public compiler::CodeStubAssembler {
   static bool TargetSupportsUnalignedAccess();
 
  private:
-  // Returns a raw pointer to start of the register file on the stack.
-  compiler::Node* RegisterFileRawPointer();
   // Returns a tagged pointer to the current function's BytecodeArray object.
   compiler::Node* BytecodeArrayTaggedPointer();
   // Returns the offset from the BytecodeArrayPointer of the current bytecode.
@@ -233,8 +229,7 @@ class InterpreterAssembler : public compiler::CodeStubAssembler {
   OperandScale operand_scale_;
   CodeStubAssembler::Variable accumulator_;
   AccumulatorUse accumulator_use_;
-  CodeStubAssembler::Variable context_;
-  CodeStubAssembler::Variable bytecode_array_;
+  bool made_call_;
 
   bool disable_stack_check_across_call_;
   compiler::Node* stack_pointer_before_call_;
