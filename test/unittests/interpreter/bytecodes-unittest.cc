@@ -177,6 +177,10 @@ TEST(Bytecodes, DecodeBytecodeAndOperands) {
   };
 
 #define B(Name) static_cast<uint8_t>(Bytecode::k##Name)
+#define REG_OFFSET \
+  (InterpreterFrameConstants::kRegisterFileFromFp / kPointerSize)
+#define REG(i) static_cast<uint8_t>(REG_OFFSET - (i))
+#define REG_HI(i) static_cast<uint8_t>((REG_OFFSET - (i)) >> 8)
   const BytecodesAndResult cases[] = {
 #if V8_TARGET_LITTLE_ENDIAN
     {{B(LdaSmi), 0x01}, 2, 0, "            LdaSmi [1]"},
@@ -191,9 +195,10 @@ TEST(Bytecodes, DecodeBytecodeAndOperands) {
      6,
      0,
      "LdaSmi.ExtraWide [-100000]"},
-    {{B(Star), 0xf5}, 2, 0, "            Star r5"},
-    {{B(Wide), B(Star), 0x72, 0xff}, 4, 0, "      Star.Wide r136"},
-    {{B(Wide), B(Call), 0x74, 0xff, 0x73, 0xff, 0x02, 0x00, 0xb1, 0x00},
+    {{B(Star), REG(5)}, 2, 0, "            Star r5"},
+    {{B(Wide), B(Star), REG(136), REG_HI(136)}, 4, 0, "      Star.Wide r136"},
+    {{B(Wide), B(Call), REG(134), REG_HI(134), REG(135), REG_HI(135), 0x02,
+      0x00, 0xb1, 0x00},
      10,
      0,
      "Call.Wide r134, r135, #2, [177]"},
@@ -223,9 +228,10 @@ TEST(Bytecodes, DecodeBytecodeAndOperands) {
      6,
      0,
      "LdaSmi.ExtraWide [-100000]"},
-    {{B(Star), 0xf5}, 2, 0, "            Star r5"},
-    {{B(Wide), B(Star), 0xff, 0x72}, 4, 0, "      Star.Wide r136"},
-    {{B(Wide), B(Call), 0xff, 0x74, 0xff, 0x73, 0x00, 0x02, 0x00, 0xb1},
+    {{B(Star), REG(5)}, 2, 0, "            Star r5"},
+    {{B(Wide), B(Star), REG_HI(136), REG(136)}, 4, 0, "      Star.Wide r136"},
+    {{B(Wide), B(Call), REG_HI(134), REG(134), REG_HI(135), REG(135), 0x00,
+      0x02, 0x00, 0xb1},
      10,
      0,
      "Call.Wide r134, r135, #2, [177]"},
@@ -247,6 +253,9 @@ TEST(Bytecodes, DecodeBytecodeAndOperands) {
 #endif
   };
 #undef B
+#undef REG_OFFSET
+#undef REG
+#undef REG_HI
 
   for (size_t i = 0; i < arraysize(cases); ++i) {
     // Generate reference string by prepending formatted bytes.
