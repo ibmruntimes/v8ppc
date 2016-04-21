@@ -136,6 +136,14 @@ ExternalReferenceTable::ExternalReferenceTable(Isolate* isolate) {
       "wasm::uint64_div");
   Add(ExternalReference::wasm_uint64_mod(isolate).address(),
       "wasm::uint64_mod");
+  Add(ExternalReference::wasm_word32_ctz(isolate).address(),
+      "wasm::word32_ctz");
+  Add(ExternalReference::wasm_word64_ctz(isolate).address(),
+      "wasm::word64_ctz");
+  Add(ExternalReference::wasm_word32_popcnt(isolate).address(),
+      "wasm::word32_popcnt");
+  Add(ExternalReference::wasm_word64_popcnt(isolate).address(),
+      "wasm::word64_popcnt");
   Add(ExternalReference::f64_acos_wrapper_function(isolate).address(),
       "f64_acos_wrapper");
   Add(ExternalReference::f64_asin_wrapper_function(isolate).address(),
@@ -312,10 +320,8 @@ ExternalReferenceTable::ExternalReferenceTable(Isolate* isolate) {
 
   for (unsigned i = 0; i < arraysize(getters); ++i) {
     Add(getters[i].address, getters[i].name);
-#ifdef USE_SIMULATOR
     Add(AccessorInfo::redirect(isolate, getters[i].address, ACCESSOR_GETTER),
-        getters[i].name);
-#endif
+        "");
   }
 
   for (unsigned i = 0; i < arraysize(setters); ++i) {

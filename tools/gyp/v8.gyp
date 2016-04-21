@@ -299,6 +299,8 @@
               'action_name': 'run_mksnapshot (external)',
               'inputs': [
                 '<(mksnapshot_exec)',
+                '<(embed_script)',
+                '<(warmup_script)',
               ],
               'variables': {
                 'mksnapshot_flags': [],
@@ -1131,6 +1133,7 @@
         '../../src/wasm/encoder.h',
         '../../src/wasm/wasm-external-refs.cc',
         '../../src/wasm/wasm-external-refs.h',
+        '../../src/wasm/leb-helper.h',
         '../../src/wasm/module-decoder.cc',
         '../../src/wasm/module-decoder.h',
         '../../src/wasm/wasm-js.cc',

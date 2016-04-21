@@ -1241,6 +1241,10 @@ class Object {
       Handle<Object> object, Handle<Name> name, Handle<Object> value,
       LanguageMode language_mode,
       StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED);
+  MUST_USE_RESULT static inline MaybeHandle<Object> SetPropertyOrElement(
+      Handle<Object> object, Handle<Name> name, Handle<Object> value,
+      LanguageMode language_mode,
+      StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED);
 
   MUST_USE_RESULT static Maybe<bool> SetSuperProperty(
       LookupIterator* it, Handle<Object> value, LanguageMode language_mode,
@@ -9269,9 +9273,6 @@ class ExternalString: public String {
   static const int kResourceDataOffset = kResourceOffset + kPointerSize;
   static const int kSize = kResourceDataOffset + kPointerSize;
 
-  static const int kMaxShortLength =
-      (kShortSize - SeqString::kHeaderSize) / kCharSize;
-
   // Return whether external string is short (data pointer is not cached).
   inline bool is_short();
 
@@ -10297,11 +10298,9 @@ class AccessorInfo: public Struct {
   DECL_ACCESSORS(js_getter, Object)
   DECL_ACCESSORS(data, Object)
 
-#ifdef USE_SIMULATOR
   static Address redirect(Isolate* isolate, Address address,
                           AccessorComponent component);
   Address redirected_getter() const;
-#endif
 
   // Dispatched behavior.
   DECLARE_PRINTER(AccessorInfo)
@@ -10340,11 +10339,7 @@ class AccessorInfo: public Struct {
   static const int kExpectedReceiverTypeOffset = kFlagOffset + kPointerSize;
   static const int kSetterOffset = kExpectedReceiverTypeOffset + kPointerSize;
   static const int kGetterOffset = kSetterOffset + kPointerSize;
-#ifdef USE_SIMULATOR
   static const int kJsGetterOffset = kGetterOffset + kPointerSize;
-#else
-  static const int kJsGetterOffset = kGetterOffset;
-#endif
   static const int kDataOffset = kJsGetterOffset + kPointerSize;
   static const int kSize = kDataOffset + kPointerSize;
 

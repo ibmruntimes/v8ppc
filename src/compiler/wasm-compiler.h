@@ -18,6 +18,7 @@ namespace compiler {
 class Node;
 class JSGraph;
 class Graph;
+class Operator;
 }
 
 namespace wasm {
@@ -78,6 +79,7 @@ class WasmGraphBuilder {
   Node* Merge(unsigned count, Node** controls);
   Node* Phi(wasm::LocalType type, unsigned count, Node** vals, Node* control);
   Node* EffectPhi(unsigned count, Node** effects, Node* control);
+  Node* NumberConstant(int32_t value);
   Node* Int32Constant(int32_t value);
   Node* Int64Constant(int64_t value);
   Node* Float32Constant(float value);
@@ -108,8 +110,6 @@ class WasmGraphBuilder {
   void BuildWasmToJSWrapper(Handle<JSFunction> function,
                             wasm::FunctionSig* sig);
 
-  Node* BuildJavaScriptToNumber(Node* node, Node* context, Node* effect,
-                                Node* control);
   Node* ToJS(Node* node, Node* context, wasm::LocalType type);
   Node* FromJS(Node* node, Node* context, wasm::LocalType type);
   Node* Invert(Node* node);
@@ -158,6 +158,7 @@ class WasmGraphBuilder {
 
   WasmTrapHelper* trap_;
   wasm::FunctionSig* function_signature_;
+  SetOncePointer<const Operator> allocate_heap_number_operator_;
 
   // Internal helper methods.
   JSGraph* jsgraph() { return jsgraph_; }
@@ -189,6 +190,9 @@ class WasmGraphBuilder {
   Node* BuildI32Popcnt(Node* input);
   Node* BuildI64Ctz(Node* input);
   Node* BuildI64Popcnt(Node* input);
+  Node* BuildBitCountingCall(Node* input, ExternalReference ref,
+                             MachineRepresentation input_type);
+
   Node* BuildCFuncInstruction(ExternalReference ref, MachineType type,
                               Node* input0, Node* input1 = nullptr);
   Node* BuildF32Trunc(Node* input);
@@ -243,6 +247,22 @@ class WasmGraphBuilder {
   Node* BuildI64RemU(Node* left, Node* right);
   Node* BuildDiv64Call(Node* left, Node* right, ExternalReference ref,
                        MachineType result_type, int trap_zero);
+
+  Node* BuildJavaScriptToNumber(Node* node, Node* context, Node* effect,
+                                Node* control);
+  Node* BuildChangeInt32ToTagged(Node* value);
+  Node* BuildChangeFloat64ToTagged(Node* value);
+  Node* BuildChangeTaggedToFloat64(Node* value);
+
+  Node* BuildChangeInt32ToSmi(Node* value);
+  Node* BuildChangeSmiToInt32(Node* value);
+  Node* BuildChangeSmiToFloat64(Node* value);
+  Node* BuildTestNotSmi(Node* value);
+  Node* BuildSmiShiftBitsConstant();
+
+  Node* BuildAllocateHeapNumberWithValue(Node* value, Node* control);
+  Node* BuildLoadHeapNumberValue(Node* value, Node* control);
+  Node* BuildHeapNumberValueIndexConstant();
 
   Node** Realloc(Node** buffer, size_t old_count, size_t new_count) {
     Node** buf = Buffer(new_count);

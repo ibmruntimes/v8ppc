@@ -1845,6 +1845,11 @@ Type* ChangeRepresentation(Type* type, Type* rep, Zone* zone) {
 
 }  // namespace
 
+Type* Typer::Visitor::TypeChangeSmiToInt32(Node* node) {
+  Type* arg = Operand(node, 0);
+  // TODO(neis): DCHECK(arg->Is(Type::Signed32()));
+  return ChangeRepresentation(arg, Type::UntaggedIntegral32(), zone());
+}
 
 Type* Typer::Visitor::TypeChangeTaggedToInt32(Node* node) {
   Type* arg = Operand(node, 0);
@@ -2212,6 +2217,9 @@ Type* Typer::Visitor::TypeUint64LessThanOrEqual(Node* node) {
 
 Type* Typer::Visitor::TypeUint64Mod(Node* node) { return Type::Internal(); }
 
+Type* Typer::Visitor::TypeBitcastWordToTagged(Node* node) {
+  return Type::TaggedPointer();
+}
 
 Type* Typer::Visitor::TypeChangeFloat32ToFloat64(Node* node) {
   return Type::Intersect(Type::Number(), Type::UntaggedFloat64(), zone());

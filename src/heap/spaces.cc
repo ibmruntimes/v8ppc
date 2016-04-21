@@ -333,6 +333,10 @@ void MemoryAllocator::TearDown() {
   capacity_ = 0;
   capacity_executable_ = 0;
 
+  if (last_chunk_.IsReserved()) {
+    last_chunk_.Release();
+  }
+
   delete code_range_;
   code_range_ = nullptr;
 }
@@ -678,6 +682,23 @@ MemoryChunk* MemoryAllocator::AllocateChunk(intptr_t reserve_area_size,
   if (owner != NULL) {
     ObjectSpace space = static_cast<ObjectSpace>(1 << owner->identity());
     PerformAllocationCallback(space, kAllocationActionAllocate, chunk_size);
+  }
+
+  // We cannot use the last chunk in the address space because we would
+  // overflow when comparing top and limit if this chunk is used for a
+  // linear allocation area.
+  if ((reinterpret_cast<uintptr_t>(base) + chunk_size) == 0u) {
+    CHECK(!last_chunk_.IsReserved());
+    last_chunk_.TakeControl(&reservation);
+    UncommitBlock(reinterpret_cast<Address>(last_chunk_.address()),
+                  last_chunk_.size());
+    size_.Increment(-static_cast<intptr_t>(chunk_size));
+    if (executable == EXECUTABLE) {
+      size_executable_.Increment(-static_cast<intptr_t>(chunk_size));
+    }
+    CHECK(last_chunk_.IsReserved());
+    return AllocateChunk(reserve_area_size, commit_area_size, executable,
+                         owner);
   }
 
   return MemoryChunk::Initialize(heap, base, chunk_size, area_start, area_end,
@@ -1161,7 +1182,7 @@ bool PagedSpace::Expand() {
 
   Page* p =
       heap()->memory_allocator()->AllocatePage<Page>(size, this, executable());
-  if (p == NULL) return false;
+  if (p == nullptr) return false;
 
   AccountCommitted(static_cast<intptr_t>(p->size()));
 
@@ -1817,6 +1838,19 @@ void SemiSpace::Reset() {
   current_page_ = anchor_.next_page();
 }
 
+void SemiSpace::ReplaceWithEmptyPage(NewSpacePage* old_page) {
+  NewSpacePage* new_page =
+      heap()->memory_allocator()->AllocatePage<NewSpacePage>(
+          NewSpacePage::kAllocatableMemory, this, executable());
+  Bitmap::Clear(new_page);
+  new_page->SetFlags(old_page->GetFlags(), NewSpacePage::kCopyAllFlags);
+  new_page->set_next_page(old_page->next_page());
+  new_page->set_prev_page(old_page->prev_page());
+  old_page->next_page()->set_prev_page(new_page);
+  old_page->prev_page()->set_next_page(new_page);
+  heap()->CreateFillerObjectAt(new_page->area_start(), new_page->area_size(),
+                               ClearRecordedSlots::kNo);
+}
 
 void SemiSpace::Swap(SemiSpace* from, SemiSpace* to) {
   // We won't be swapping semispaces without data in them.
