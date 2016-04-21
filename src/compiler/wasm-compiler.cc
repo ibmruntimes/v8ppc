@@ -2296,7 +2296,9 @@ Node* WasmGraphBuilder::BuildChangeSmiToFloat64(Node* value) {
 
 Node* WasmGraphBuilder::BuildTestNotSmi(Node* value) {
   STATIC_ASSERT(kSmiTag == 0);
+#if !defined(V8_PPC_TAGGING_OPT)
   STATIC_ASSERT(kSmiTagMask == 1);
+#endif
   return graph()->NewNode(jsgraph()->machine()->WordAnd(), value,
                           jsgraph()->IntPtrConstant(kSmiTagMask));
 }
