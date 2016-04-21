@@ -274,14 +274,13 @@ PreParser::Statement PreParser::ParseStatement(
 }
 
 PreParser::Statement PreParser::ParseScopedStatement(bool legacy, bool* ok) {
-  if (is_strict(language_mode()) || peek() != Token::FUNCTION ||
-      (legacy && allow_harmony_restrictive_declarations())) {
-    return ParseSubStatement(kDisallowLabelledFunctionStatement, ok);
-  } else {
+  if (!(is_strict(language_mode()) || peek() != Token::FUNCTION ||
+      (legacy && allow_harmony_restrictive_declarations()))) {
     Scope* body_scope = NewScope(scope_, BLOCK_SCOPE);
     BlockState block_state(&scope_, body_scope);
     return ParseFunctionDeclaration(CHECK_OK);
   }
+  return ParseSubStatement(kDisallowLabelledFunctionStatement, ok);
 }
 
 PreParser::Statement PreParser::ParseSubStatement(
