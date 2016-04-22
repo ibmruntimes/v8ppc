@@ -814,12 +814,12 @@ void Interpreter::DoShiftRightLogical(InterpreterAssembler* assembler) {
   DoBinaryOp<ShiftRightLogicalStub>(assembler);
 }
 
-void Interpreter::DoCountOp(Runtime::FunctionId function_id,
+void Interpreter::DoCountOp(Callable callable,
                             InterpreterAssembler* assembler) {
+  Node* target = __ HeapConstant(callable.code());
   Node* value = __ GetAccumulator();
-  Node* one = __ NumberConstant(1);
   Node* context = __ GetContext();
-  Node* result = __ CallRuntime(function_id, context, value, one);
+  Node* result = __ CallStub(callable.descriptor(), target, context, value);
   __ SetAccumulator(result);
   __ Dispatch();
 }
@@ -829,7 +829,7 @@ void Interpreter::DoCountOp(Runtime::FunctionId function_id,
 //
 // Increments value in the accumulator by one.
 void Interpreter::DoInc(InterpreterAssembler* assembler) {
-  DoCountOp(Runtime::kAdd, assembler);
+  DoCountOp(CodeFactory::Inc(isolate_), assembler);
 }
 
 
@@ -837,7 +837,7 @@ void Interpreter::DoInc(InterpreterAssembler* assembler) {
 //
 // Decrements value in the accumulator by one.
 void Interpreter::DoDec(InterpreterAssembler* assembler) {
-  DoCountOp(Runtime::kSubtract, assembler);
+  DoCountOp(CodeFactory::Dec(isolate_), assembler);
 }
 
 
@@ -1693,6 +1693,49 @@ void Interpreter::DoExtraWide(InterpreterAssembler* assembler) {
 // An invalid bytecode aborting execution if dispatched.
 void Interpreter::DoIllegal(InterpreterAssembler* assembler) {
   __ Abort(kInvalidBytecode);
+}
+
+// SuspendGenerator <generator>
+//
+// Exports the register file and stores it into the generator.  Also stores the
+// current context and the state given in the accumulator into the generator.
+void Interpreter::DoSuspendGenerator(InterpreterAssembler* assembler) {
+  Node* generator_reg = __ BytecodeOperandReg(0);
+  Node* generator = __ LoadRegister(generator_reg);
+
+  Node* array = __ ExportRegisterFile();
+  Node* context = __ GetContext();
+  Node* state = __ GetAccumulator();
+
+  __ StoreObjectField(generator, JSGeneratorObject::kOperandStackOffset, array);
+  __ StoreObjectField(generator, JSGeneratorObject::kContextOffset, context);
+  __ StoreObjectField(generator, JSGeneratorObject::kContinuationOffset, state);
+
+  __ Dispatch();
+}
+
+// ResumeGenerator <generator>
+//
+// Imports the register file stored in the generator. Also loads the
+// generator's state and stores it in the accumulator, before overwriting it
+// with kGeneratorExecuting.
+void Interpreter::DoResumeGenerator(InterpreterAssembler* assembler) {
+  Node* generator_reg = __ BytecodeOperandReg(0);
+  Node* generator = __ LoadRegister(generator_reg);
+
+  __ ImportRegisterFile(
+      __ LoadObjectField(generator, JSGeneratorObject::kOperandStackOffset));
+  __ StoreObjectField(generator, JSGeneratorObject::kOperandStackOffset,
+      __ HeapConstant(isolate_->factory()->empty_fixed_array()));
+
+  Node* old_state =
+      __ LoadObjectField(generator, JSGeneratorObject::kContinuationOffset);
+  Node* new_state = __ Int32Constant(JSGeneratorObject::kGeneratorExecuting);
+  __ StoreObjectField(generator, JSGeneratorObject::kContinuationOffset,
+      __ SmiTag(new_state));
+  __ SetAccumulator(old_state);
+
+  __ Dispatch();
 }
 
 }  // namespace interpreter

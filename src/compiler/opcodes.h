@@ -196,10 +196,11 @@
   V(NumberToUint32)                \
   V(NumberIsHoleNaN)               \
   V(StringToNumber)                \
-  V(ChangeSmiToInt32)              \
+  V(ChangeTaggedSignedToInt32)     \
   V(ChangeTaggedToInt32)           \
   V(ChangeTaggedToUint32)          \
   V(ChangeTaggedToFloat64)         \
+  V(ChangeInt31ToTagged)           \
   V(ChangeInt32ToTagged)           \
   V(ChangeUint32ToTagged)          \
   V(ChangeFloat64ToTagged)         \

@@ -104,7 +104,8 @@ class PipelineData {
         register_allocation_data_(nullptr) {
     PhaseScope scope(pipeline_statistics, "init pipeline data");
     graph_ = new (graph_zone_) Graph(graph_zone_);
-    source_positions_.Reset(new SourcePositionTable(graph_));
+    source_positions_ = new (graph_zone_->New(sizeof(SourcePositionTable)))
+        SourcePositionTable(graph_);
     simplified_ = new (graph_zone_) SimplifiedOperatorBuilder(graph_zone_);
     machine_ = new (graph_zone_) MachineOperatorBuilder(
         graph_zone_, MachineType::PointerRepresentation(),
@@ -128,7 +129,8 @@ class PipelineData {
         graph_zone_scope_(zone_pool_),
         graph_zone_(nullptr),
         graph_(graph),
-        source_positions_(new SourcePositionTable(graph_)),
+        source_positions_(new (info->zone()->New(sizeof(SourcePositionTable)))
+                              SourcePositionTable(graph_)),
         loop_assignment_(nullptr),
         simplified_(nullptr),
         machine_(nullptr),
@@ -195,9 +197,7 @@ class PipelineData {
 
   Zone* graph_zone() const { return graph_zone_; }
   Graph* graph() const { return graph_; }
-  SourcePositionTable* source_positions() const {
-    return source_positions_.get();
-  }
+  SourcePositionTable* source_positions() const { return source_positions_; }
   MachineOperatorBuilder* machine() const { return machine_; }
   CommonOperatorBuilder* common() const { return common_; }
   JSOperatorBuilder* javascript() const { return javascript_; }
@@ -238,13 +238,11 @@ class PipelineData {
   }
 
   void DeleteGraphZone() {
-    // Destroy objects with destructors first.
-    source_positions_.Reset(nullptr);
     if (graph_zone_ == nullptr) return;
-    // Destroy zone and clear pointers.
     graph_zone_scope_.Destroy();
     graph_zone_ = nullptr;
     graph_ = nullptr;
+    source_positions_ = nullptr;
     loop_assignment_ = nullptr;
     type_hint_analysis_ = nullptr;
     simplified_ = nullptr;
@@ -317,8 +315,7 @@ class PipelineData {
   ZonePool::Scope graph_zone_scope_;
   Zone* graph_zone_;
   Graph* graph_;
-  // TODO(dcarney): make this into a ZoneObject.
-  base::SmartPointer<SourcePositionTable> source_positions_;
+  SourcePositionTable* source_positions_;
   LoopAssignmentAnalysis* loop_assignment_;
   TypeHintAnalysis* type_hint_analysis_ = nullptr;
   SimplifiedOperatorBuilder* simplified_;
@@ -556,6 +553,12 @@ void Pipeline::Run(Arg0 arg_0) {
   phase.Run(this->data_, scope.zone(), arg_0);
 }
 
+template <typename Phase, typename Arg0, typename Arg1>
+void Pipeline::Run(Arg0 arg_0, Arg1 arg_1) {
+  PipelineRunScope scope(this->data_, Phase::phase_name());
+  Phase phase;
+  phase.Run(this->data_, scope.zone(), arg_0, arg_1);
+}
 
 struct LoopAssignmentAnalysisPhase {
   static const char* phase_name() { return "loop assignment analysis"; }
@@ -851,7 +854,6 @@ struct LateOptimizationPhase {
     JSGraphReducer graph_reducer(data->jsgraph(), temp_zone);
     DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                               data->common());
-    SimplifiedOperatorReducer simple_reducer(data->jsgraph());
     ValueNumberingReducer value_numbering(temp_zone);
     ChangeLowering lowering(data->jsgraph());
     MachineOperatorReducer machine_reducer(data->jsgraph());
@@ -861,7 +863,6 @@ struct LateOptimizationPhase {
                                    data->jsgraph()->common());
     TailCallOptimization tco(data->common(), data->graph());
     AddReducer(data, &graph_reducer, &dead_code_elimination);
-    AddReducer(data, &graph_reducer, &simple_reducer);
     AddReducer(data, &graph_reducer, &value_numbering);
     AddReducer(data, &graph_reducer, &lowering);
     AddReducer(data, &graph_reducer, &machine_reducer);
@@ -1144,9 +1145,10 @@ struct PrintGraphPhase {
 struct VerifyGraphPhase {
   static const char* phase_name() { return nullptr; }
 
-  void Run(PipelineData* data, Zone* temp_zone, const bool untyped) {
-    Verifier::Run(data->graph(),
-                  !untyped ? Verifier::TYPED : Verifier::UNTYPED);
+  void Run(PipelineData* data, Zone* temp_zone, const bool untyped,
+           bool values_only = false) {
+    Verifier::Run(data->graph(), !untyped ? Verifier::TYPED : Verifier::UNTYPED,
+                  values_only ? Verifier::kValuesOnly : Verifier::kAll);
   }
 };
 
@@ -1281,7 +1283,6 @@ Handle<Code> Pipeline::GenerateCode() {
   RunPrintAndVerify("Early optimized");
 
   if (info()->is_effect_scheduling_enabled()) {
-    // TODO(jarin) Run value numbering for the representation changes.
     Run<EffectControlLinearizationPhase>();
     RunPrintAndVerify("Effect and control linearized");
   }
@@ -1347,6 +1348,7 @@ Handle<Code> Pipeline::GenerateCodeForCodeStub(Isolate* isolate,
     pipeline.Run<PrintGraphPhase>("Machine");
   }
 
+  pipeline.Run<VerifyGraphPhase>(false, true);
   return pipeline.ScheduleAndGenerateCode(call_descriptor);
 }
 
@@ -1509,7 +1511,6 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
                                  CallDescriptor* descriptor,
                                  bool run_verifier) {
   PipelineData* data = this->data_;
-
   // Don't track usage for this zone in compiler stats.
   base::SmartPointer<Zone> verifier_zone;
   RegisterAllocatorVerifier* verifier = nullptr;

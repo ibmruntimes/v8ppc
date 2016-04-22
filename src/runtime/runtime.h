@@ -118,8 +118,7 @@ namespace internal {
   F(WeakCollectionHas, 3, 1)              \
   F(WeakCollectionDelete, 3, 1)           \
   F(WeakCollectionSet, 4, 1)              \
-  F(GetWeakSetValues, 2, 1)               \
-  F(ObservationWeakMapCreate, 0, 1)
+  F(GetWeakSetValues, 2, 1)
 
 #define FOR_EACH_INTRINSIC_COMPILER(F)    \
   F(CompileLazy, 1, 1)                    \
@@ -238,9 +237,7 @@ namespace internal {
   F(GeneratorGetInput, 1, 1)            \
   F(GeneratorGetContinuation, 1, 1)     \
   F(GeneratorGetSourcePosition, 1, 1)   \
-  F(GeneratorGetResumeMode, 1, 1)       \
-  F(SuspendIgnitionGenerator, 2, 1)     \
-  F(ResumeIgnitionGenerator, 1, 1)
+  F(GeneratorGetResumeMode, 1, 1)
 
 #ifdef V8_I18N_SUPPORT
 #define FOR_EACH_INTRINSIC_I18N(F)           \
@@ -319,7 +316,9 @@ namespace internal {
   F(CreateListFromArrayLike, 1, 1)                  \
   F(IncrementUseCounter, 1, 1)                      \
   F(GetOrdinaryHasInstance, 0, 1)                   \
-  F(GetAndResetRuntimeCallStats, 0, 1)
+  F(GetAndResetRuntimeCallStats, 0, 1)              \
+  F(EnqueueMicrotask, 1, 1)                         \
+  F(RunMicrotasks, 0, 1)
 
 #define FOR_EACH_INTRINSIC_JSON(F) \
   F(QuoteJSONString, 1, 1)         \
@@ -442,19 +441,6 @@ namespace internal {
   F(ObjectDefineProperties, 2, 1)                    \
   F(ObjectDefineProperty, 3, 1)                      \
   F(CreateDataProperty, 3, 1)
-
-#define FOR_EACH_INTRINSIC_OBSERVE(F)            \
-  F(IsObserved, 1, 1)                            \
-  F(SetIsObserved, 1, 1)                         \
-  F(EnqueueMicrotask, 1, 1)                      \
-  F(RunMicrotasks, 0, 1)                         \
-  F(DeliverObservationChangeRecords, 2, 1)       \
-  F(GetObservationState, 0, 1)                   \
-  F(ObserverObjectAndRecordHaveSameOrigin, 3, 1) \
-  F(ObjectWasCreatedInCurrentOrigin, 1, 1)       \
-  F(GetObjectContextObjectObserve, 1, 1)         \
-  F(GetObjectContextObjectGetNotifier, 1, 1)     \
-  F(GetObjectContextNotifierPerformChange, 1, 1)
 
 #define FOR_EACH_INTRINSIC_OPERATORS(F) \
   F(Multiply, 2, 1)                     \
@@ -1020,7 +1006,6 @@ namespace internal {
   FOR_EACH_INTRINSIC_MATHS(F)               \
   FOR_EACH_INTRINSIC_NUMBERS(F)             \
   FOR_EACH_INTRINSIC_OBJECT(F)              \
-  FOR_EACH_INTRINSIC_OBSERVE(F)             \
   FOR_EACH_INTRINSIC_OPERATORS(F)           \
   FOR_EACH_INTRINSIC_PROXY(F)               \
   FOR_EACH_INTRINSIC_REGEXP(F)              \

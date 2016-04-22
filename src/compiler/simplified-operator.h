@@ -159,10 +159,11 @@ class SimplifiedOperatorBuilder final : public ZoneObject {
   const Operator* StringLessThanOrEqual();
   const Operator* StringToNumber();
 
-  const Operator* ChangeSmiToInt32();
+  const Operator* ChangeTaggedSignedToInt32();
   const Operator* ChangeTaggedToInt32();
   const Operator* ChangeTaggedToUint32();
   const Operator* ChangeTaggedToFloat64();
+  const Operator* ChangeInt31ToTagged();
   const Operator* ChangeInt32ToTagged();
   const Operator* ChangeUint32ToTagged();
   const Operator* ChangeFloat64ToTagged();

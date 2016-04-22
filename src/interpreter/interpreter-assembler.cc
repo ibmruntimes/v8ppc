@@ -371,11 +371,6 @@ Node* InterpreterAssembler::LoadConstantPoolEntry(Node* index) {
   return Load(MachineType::AnyTagged(), constant_pool, entry_offset);
 }
 
-Node* InterpreterAssembler::LoadObjectField(Node* object, int offset) {
-  return Load(MachineType::AnyTagged(), object,
-              IntPtrConstant(offset - kHeapObjectTag));
-}
-
 Node* InterpreterAssembler::LoadContextSlot(Node* context, int slot_index) {
   return Load(MachineType::AnyTagged(), context,
               IntPtrConstant(Context::SlotOffset(slot_index)));
@@ -502,9 +497,9 @@ Node* InterpreterAssembler::Advance(Node* delta) {
   return IntPtrAdd(BytecodeOffset(), delta);
 }
 
-void InterpreterAssembler::Jump(Node* delta) {
+Node* InterpreterAssembler::Jump(Node* delta) {
   UpdateInterruptBudget(delta);
-  DispatchTo(Advance(delta));
+  return DispatchTo(Advance(delta));
 }
 
 void InterpreterAssembler::JumpConditional(Node* condition, Node* delta) {
@@ -527,11 +522,11 @@ void InterpreterAssembler::JumpIfWordNotEqual(Node* lhs, Node* rhs,
   JumpConditional(WordNotEqual(lhs, rhs), delta);
 }
 
-void InterpreterAssembler::Dispatch() {
-  DispatchTo(Advance(Bytecodes::Size(bytecode_, operand_scale_)));
+Node* InterpreterAssembler::Dispatch() {
+  return DispatchTo(Advance(Bytecodes::Size(bytecode_, operand_scale_)));
 }
 
-void InterpreterAssembler::DispatchTo(Node* new_bytecode_offset) {
+Node* InterpreterAssembler::DispatchTo(Node* new_bytecode_offset) {
   Node* target_bytecode = Load(
       MachineType::Uint8(), BytecodeArrayTaggedPointer(), new_bytecode_offset);
   if (kPointerSize == 8) {
@@ -546,17 +541,17 @@ void InterpreterAssembler::DispatchTo(Node* new_bytecode_offset) {
       Load(MachineType::Pointer(), DispatchTableRawPointer(),
            WordShl(target_bytecode, IntPtrConstant(kPointerSizeLog2)));
 
-  DispatchToBytecodeHandlerEntry(target_code_entry, new_bytecode_offset);
+  return DispatchToBytecodeHandlerEntry(target_code_entry, new_bytecode_offset);
 }
 
-void InterpreterAssembler::DispatchToBytecodeHandler(Node* handler,
-                                                     Node* bytecode_offset) {
+Node* InterpreterAssembler::DispatchToBytecodeHandler(Node* handler,
+                                                      Node* bytecode_offset) {
   Node* handler_entry =
       IntPtrAdd(handler, IntPtrConstant(Code::kHeaderSize - kHeapObjectTag));
-  DispatchToBytecodeHandlerEntry(handler_entry, bytecode_offset);
+  return DispatchToBytecodeHandlerEntry(handler_entry, bytecode_offset);
 }
 
-void InterpreterAssembler::DispatchToBytecodeHandlerEntry(
+Node* InterpreterAssembler::DispatchToBytecodeHandlerEntry(
     Node* handler_entry, Node* bytecode_offset) {
   if (FLAG_trace_ignition) {
     TraceBytecode(Runtime::kInterpreterTraceBytecodeExit);
@@ -565,7 +560,7 @@ void InterpreterAssembler::DispatchToBytecodeHandlerEntry(
   InterpreterDispatchDescriptor descriptor(isolate());
   Node* args[] = {GetAccumulatorUnchecked(), bytecode_offset,
                   BytecodeArrayTaggedPointer(), DispatchTableRawPointer()};
-  TailCallBytecodeDispatch(descriptor, handler_entry, args);
+  return TailCallBytecodeDispatch(descriptor, handler_entry, args);
 }
 
 void InterpreterAssembler::DispatchWide(OperandScale operand_scale) {
@@ -607,7 +602,7 @@ void InterpreterAssembler::DispatchWide(OperandScale operand_scale) {
   DispatchToBytecodeHandlerEntry(target_code_entry, next_bytecode_offset);
 }
 
-void InterpreterAssembler::InterpreterReturn() {
+compiler::Node* InterpreterAssembler::InterpreterReturn() {
   // TODO(rmcilroy): Investigate whether it is worth supporting self
   // optimization of primitive functions like FullCodegen.
 
@@ -620,7 +615,7 @@ void InterpreterAssembler::InterpreterReturn() {
 
   Node* exit_trampoline_code_object =
       HeapConstant(isolate()->builtins()->InterpreterExitTrampoline());
-  DispatchToBytecodeHandler(exit_trampoline_code_object);
+  return DispatchToBytecodeHandler(exit_trampoline_code_object);
 }
 
 void InterpreterAssembler::StackCheck() {
@@ -711,6 +706,75 @@ bool InterpreterAssembler::TargetSupportsUnalignedAccess() {
 #else
 #error "Unknown Architecture"
 #endif
+}
+
+Node* InterpreterAssembler::RegisterCount() {
+  Node* bytecode_array = LoadRegister(Register::bytecode_array());
+  Node* frame_size = LoadObjectField(
+      bytecode_array, BytecodeArray::kFrameSizeOffset, MachineType::Int32());
+  return Word32Sar(frame_size, Int32Constant(kPointerSizeLog2));
+}
+
+Node* InterpreterAssembler::ExportRegisterFile() {
+  Node* register_count = RegisterCount();
+  Node* array =
+      AllocateUninitializedFixedArray(ChangeInt32ToIntPtr(register_count));
+
+  Variable var_index(this, MachineRepresentation::kWord32);
+  var_index.Bind(Int32Constant(0));
+
+  // Iterate over register file and write values into array.
+  Label loop(this, &var_index), done_loop(this);
+  Goto(&loop);
+  Bind(&loop);
+  {
+    Node* index = var_index.value();
+    Node* condition = Int32LessThan(index, register_count);
+    GotoUnless(condition, &done_loop);
+
+    Node* reg_index =
+        Int32Sub(Int32Constant(Register(0).ToOperand()), index);
+    Node* value = LoadRegister(ChangeInt32ToIntPtr(reg_index));
+
+    // No write barrier needed for writing into freshly allocated object.
+    StoreFixedArrayElementNoWriteBarrier(
+        array, ChangeInt32ToIntPtr(index), value);
+
+    var_index.Bind(Int32Add(index, Int32Constant(1)));
+    Goto(&loop);
+  }
+  Bind(&done_loop);
+
+  return array;
+}
+
+Node* InterpreterAssembler::ImportRegisterFile(Node* array) {
+  Node* register_count = RegisterCount();
+
+  Variable var_index(this, MachineRepresentation::kWord32);
+  var_index.Bind(Int32Constant(0));
+
+  // Iterate over array and write values into register file.
+  Label loop(this, &var_index), done_loop(this);
+  Goto(&loop);
+  Bind(&loop);
+  {
+    Node* index = var_index.value();
+    Node* condition = Int32LessThan(index, register_count);
+    GotoUnless(condition, &done_loop);
+
+    Node* value = LoadFixedArrayElementInt32Index(array, index);
+
+    Node* reg_index =
+        Int32Sub(Int32Constant(Register(0).ToOperand()), index);
+    StoreRegister(value, ChangeInt32ToIntPtr(reg_index));
+
+    var_index.Bind(Int32Add(index, Int32Constant(1)));
+    Goto(&loop);
+  }
+  Bind(&done_loop);
+
+  return array;
 }
 
 }  // namespace interpreter
