@@ -1630,6 +1630,14 @@ MUST_USE_RESULT Maybe<bool> FastAssign(Handle<JSReceiver> to,
                 String::cast(*next_source)->length() == 0);
   }
 
+  // If the target is deprecated, the object will be updated on first store. If
+  // the source for that store equals the target, this will invalidate the
+  // cached representation of the source. Preventively upgrade the target.
+  // Do this on each iteration since any property load could cause deprecation.
+  if (to->map()->is_deprecated()) {
+    JSObject::MigrateInstance(Handle<JSObject>::cast(to));
+  }
+
   Isolate* isolate = to->GetIsolate();
   Handle<Map> map(JSReceiver::cast(*next_source)->map(), isolate);
 
@@ -1782,6 +1790,30 @@ BUILTIN(ObjectCreate) {
   return *object;
 }
 
+// ES6 section 19.1.2.3 Object.defineProperties
+BUILTIN(ObjectDefineProperties) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(3, args.length());
+  Handle<Object> target = args.at<Object>(1);
+  Handle<Object> properties = args.at<Object>(2);
+
+  Handle<Object> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result,
+      JSReceiver::DefineProperties(isolate, target, properties));
+  return *result;
+}
+
+// ES6 section 19.1.2.4 Object.defineProperty
+BUILTIN(ObjectDefineProperty) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(4, args.length());
+  Handle<Object> target = args.at<Object>(1);
+  Handle<Object> key = args.at<Object>(2);
+  Handle<Object> attributes = args.at<Object>(3);
+
+  return JSReceiver::DefineProperty(isolate, target, key, attributes);
+}
 
 // ES6 section 19.1.2.5 Object.freeze ( O )
 BUILTIN(ObjectFreeze) {
@@ -1793,6 +1825,23 @@ BUILTIN(ObjectFreeze) {
                  isolate->heap()->exception());
   }
   return *object;
+}
+
+
+// ES section 19.1.2.9 Object.getPrototypeOf ( O )
+BUILTIN(ObjectGetPrototypeOf) {
+  HandleScope scope(isolate);
+  Handle<Object> object = args.atOrUndefined(isolate, 1);
+
+  Handle<JSReceiver> receiver;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, receiver, Object::ToObject(isolate, object));
+
+  Handle<Object> prototype;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, prototype, JSReceiver::GetPrototype(isolate, receiver));
+
+  return *prototype;
 }
 
 
@@ -5221,7 +5270,7 @@ compiler::Node* ConvertTaggedAtomicIndexToWord32(CodeStubAssembler* a,
   a->Bind(&if_numberisnotsmi);
   {
     Node* number_index_value = a->LoadHeapNumberValue(number_index);
-    Node* access_index = a->TruncateFloat64ToInt32(number_index_value);
+    Node* access_index = a->TruncateFloat64ToWord32(number_index_value);
     Node* test_index = a->ChangeInt32ToFloat64(access_index);
 
     CodeStubAssembler::Label if_indexesareequal(a), if_indexesarenotequal(a);

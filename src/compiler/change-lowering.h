@@ -28,10 +28,8 @@ class ChangeLowering final : public Reducer {
 
  private:
   Node* HeapNumberValueIndexConstant();
-  Node* SmiMaxValueConstant();
   Node* SmiShiftBitsConstant();
 
-  Node* AllocateHeapNumberWithValue(Node* value, Node* control);
   Node* ChangeInt32ToFloat64(Node* value);
   Node* ChangeInt32ToSmi(Node* value);
   Node* ChangeSmiToFloat64(Node* value);
@@ -47,9 +45,6 @@ class ChangeLowering final : public Reducer {
   Reduction ChangeInt31ToTagged(Node* value, Node* control);
   Reduction ChangeInt32ToTagged(Node* value, Node* control);
   Reduction ChangeTaggedSignedToInt32(Node* value);
-  Reduction ChangeTaggedToFloat64(Node* value, Node* control);
-  Reduction ChangeTaggedToUI32(Node* value, Node* control,
-                               Signedness signedness);
   Reduction ChangeUint32ToTagged(Node* value, Node* control);
 
   Reduction LoadField(Node* node);
@@ -63,12 +58,7 @@ class ChangeLowering final : public Reducer {
   Node* LoadMapBitField(Node* map);
   Node* LoadMapInstanceType(Node* map);
 
-  Reduction ObjectIsCallable(Node* node);
-  Reduction ObjectIsNumber(Node* node);
-  Reduction ObjectIsReceiver(Node* node);
   Reduction ObjectIsSmi(Node* node);
-  Reduction ObjectIsString(Node* node);
-  Reduction ObjectIsUndetectable(Node* node);
 
   Node* ComputeIndex(const ElementAccess& access, Node* const key);
   Graph* graph() const;

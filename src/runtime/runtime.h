@@ -122,6 +122,7 @@ namespace internal {
 
 #define FOR_EACH_INTRINSIC_COMPILER(F)    \
   F(CompileLazy, 1, 1)                    \
+  F(CompileBaseline, 1, 1)                \
   F(CompileOptimized_Concurrent, 1, 1)    \
   F(CompileOptimized_NotConcurrent, 1, 1) \
   F(NotifyStubFailure, 0, 1)              \
@@ -146,9 +147,6 @@ namespace internal {
   F(DebugGetProperty, 2, 1)                    \
   F(DebugPropertyTypeFromDetails, 1, 1)        \
   F(DebugPropertyAttributesFromDetails, 1, 1)  \
-  F(DebugPropertyIndexFromDetails, 1, 1)       \
-  F(DebugNamedInterceptorPropertyValue, 2, 1)  \
-  F(DebugIndexedInterceptorElementValue, 2, 1) \
   F(CheckExecutionState, 1, 1)                 \
   F(GetFrameCount, 1, 1)                       \
   F(GetFrameDetails, 2, 1)                     \
@@ -159,8 +157,6 @@ namespace internal {
   F(GetFunctionScopeDetails, 2, 1)             \
   F(SetScopeVariableValue, 6, 1)               \
   F(DebugPrintScopes, 0, 1)                    \
-  F(GetThreadCount, 1, 1)                      \
-  F(GetThreadDetails, 2, 1)                    \
   F(SetBreakPointsActive, 1, 1)                \
   F(GetBreakLocations, 2, 1)                   \
   F(SetFunctionBreakPoint, 3, 1)               \
@@ -412,7 +408,6 @@ namespace internal {
   F(TryMigrateInstance, 1, 1)                        \
   F(IsJSGlobalProxy, 1, 1)                           \
   F(DefineAccessorPropertyUnchecked, 5, 1)           \
-  F(DefineDataPropertyUnchecked, 4, 1)               \
   F(DefineDataPropertyInLiteral, 5, 1)               \
   F(GetDataProperty, 2, 1)                           \
   F(HasFastPackedElements, 1, 1)                     \
@@ -438,8 +433,6 @@ namespace internal {
   F(HasInPrototypeChain, 2, 1)                       \
   F(CreateIterResultObject, 2, 1)                    \
   F(IsAccessCheckNeeded, 1, 1)                       \
-  F(ObjectDefineProperties, 2, 1)                    \
-  F(ObjectDefineProperty, 3, 1)                      \
   F(CreateDataProperty, 3, 1)
 
 #define FOR_EACH_INTRINSIC_OPERATORS(F) \

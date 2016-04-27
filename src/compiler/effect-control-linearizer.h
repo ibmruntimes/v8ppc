@@ -47,6 +47,24 @@ class EffectControlLinearizer {
                                                Node* control);
   ValueEffectControl LowerChangeFloat64ToTagged(Node* node, Node* effect,
                                                 Node* control);
+  ValueEffectControl LowerChangeTaggedToInt32(Node* node, Node* effect,
+                                              Node* control);
+  ValueEffectControl LowerChangeTaggedToUint32(Node* node, Node* effect,
+                                               Node* control);
+  ValueEffectControl LowerChangeTaggedToFloat64(Node* node, Node* effect,
+                                                Node* control);
+  ValueEffectControl LowerTruncateTaggedToWord32(Node* node, Node* effect,
+                                                 Node* control);
+  ValueEffectControl LowerObjectIsCallable(Node* node, Node* effect,
+                                           Node* control);
+  ValueEffectControl LowerObjectIsNumber(Node* node, Node* effect,
+                                         Node* control);
+  ValueEffectControl LowerObjectIsReceiver(Node* node, Node* effect,
+                                           Node* control);
+  ValueEffectControl LowerObjectIsString(Node* node, Node* effect,
+                                         Node* control);
+  ValueEffectControl LowerObjectIsUndetectable(Node* node, Node* effect,
+                                               Node* control);
   ValueEffectControl AllocateHeapNumberWithValue(Node* node, Node* effect,
                                                  Node* control);
 

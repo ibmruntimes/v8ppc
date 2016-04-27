@@ -12,8 +12,8 @@
 #include "src/compiler/access-builder.h"
 #include "src/compiler/common-operator.h"
 #include "src/compiler/diamond.h"
-#include "src/compiler/graph.h"
 #include "src/compiler/graph-visualizer.h"
+#include "src/compiler/graph.h"
 #include "src/compiler/instruction-selector.h"
 #include "src/compiler/int64-lowering.h"
 #include "src/compiler/js-generic-lowering.h"
@@ -24,6 +24,7 @@
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/pipeline.h"
 #include "src/compiler/source-position.h"
+#include "src/compiler/zone-pool.h"
 
 #include "src/code-factory.h"
 #include "src/code-stubs.h"
@@ -244,8 +245,9 @@ class WasmTrapHelper : public ZoneObject {
   }
 };
 
-WasmGraphBuilder::WasmGraphBuilder(Zone* zone, JSGraph* jsgraph,
-                                   wasm::FunctionSig* function_signature)
+WasmGraphBuilder::WasmGraphBuilder(
+    Zone* zone, JSGraph* jsgraph, wasm::FunctionSig* function_signature,
+    compiler::SourcePositionTable* source_position_table)
     : zone_(zone),
       jsgraph_(jsgraph),
       module_(nullptr),
@@ -257,7 +259,8 @@ WasmGraphBuilder::WasmGraphBuilder(Zone* zone, JSGraph* jsgraph,
       cur_buffer_(def_buffer_),
       cur_bufsize_(kDefaultBufferSize),
       trap_(new (zone) WasmTrapHelper(this)),
-      function_signature_(function_signature) {
+      function_signature_(function_signature),
+      source_position_table_(source_position_table) {
   DCHECK_NOT_NULL(jsgraph_);
 }
 
@@ -1139,8 +1142,7 @@ Node* WasmGraphBuilder::BuildI32SConvertF32(Node* input) {
   if (module_ && module_->asm_js()) {
     // asm.js must use the wacky JS semantics.
     input = graph()->NewNode(m->ChangeFloat32ToFloat64(), input);
-    return graph()->NewNode(
-        m->TruncateFloat64ToInt32(TruncationMode::kJavaScript), input);
+    return graph()->NewNode(m->TruncateFloat64ToWord32(), input);
   }
 
   // Truncation of the input value is needed for the overflow check later.
@@ -1161,8 +1163,7 @@ Node* WasmGraphBuilder::BuildI32SConvertF64(Node* input) {
   MachineOperatorBuilder* m = jsgraph()->machine();
   if (module_ && module_->asm_js()) {
     // asm.js must use the wacky JS semantics.
-    return graph()->NewNode(
-        m->TruncateFloat64ToInt32(TruncationMode::kJavaScript), input);
+    return graph()->NewNode(m->TruncateFloat64ToWord32(), input);
   }
   // Truncation of the input value is needed for the overflow check later.
   Node* trunc = Unop(wasm::kExprF64Trunc, input);
@@ -1183,8 +1184,7 @@ Node* WasmGraphBuilder::BuildI32UConvertF32(Node* input) {
   if (module_ && module_->asm_js()) {
     // asm.js must use the wacky JS semantics.
     input = graph()->NewNode(m->ChangeFloat32ToFloat64(), input);
-    return graph()->NewNode(
-        m->TruncateFloat64ToInt32(TruncationMode::kJavaScript), input);
+    return graph()->NewNode(m->TruncateFloat64ToWord32(), input);
   }
 
   // Truncation of the input value is needed for the overflow check later.
@@ -1205,8 +1205,7 @@ Node* WasmGraphBuilder::BuildI32UConvertF64(Node* input) {
   MachineOperatorBuilder* m = jsgraph()->machine();
   if (module_ && module_->asm_js()) {
     // asm.js must use the wacky JS semantics.
-    return graph()->NewNode(
-        m->TruncateFloat64ToInt32(TruncationMode::kJavaScript), input);
+    return graph()->NewNode(m->TruncateFloat64ToWord32(), input);
   }
   // Truncation of the input value is needed for the overflow check later.
   Node* trunc = Unop(wasm::kExprF64Trunc, input);
@@ -2007,8 +2006,7 @@ Node* WasmGraphBuilder::BuildChangeFloat64ToTagged(Node* value) {
   MachineOperatorBuilder* machine = jsgraph()->machine();
   CommonOperatorBuilder* common = jsgraph()->common();
 
-  Node* const value32 = graph()->NewNode(
-      machine->TruncateFloat64ToInt32(TruncationMode::kRoundToZero), value);
+  Node* value32 = graph()->NewNode(machine->RoundFloat64ToInt32(), value);
   Node* check_same = graph()->NewNode(
       machine->Float64Equal(), value,
       graph()->NewNode(machine->ChangeInt32ToFloat64(), value32));
@@ -2239,15 +2237,13 @@ Node* WasmGraphBuilder::FromJS(Node* node, Node* context,
 
   switch (type) {
     case wasm::kAstI32: {
-      num = graph()->NewNode(jsgraph()->machine()->TruncateFloat64ToInt32(
-                                 TruncationMode::kJavaScript),
+      num = graph()->NewNode(jsgraph()->machine()->TruncateFloat64ToWord32(),
                              num);
       break;
     }
     case wasm::kAstI64:
       // TODO(titzer): JS->i64 has no good solution right now. Using 32 bits.
-      num = graph()->NewNode(jsgraph()->machine()->TruncateFloat64ToInt32(
-                                 TruncationMode::kJavaScript),
+      num = graph()->NewNode(jsgraph()->machine()->TruncateFloat64ToWord32(),
                              num);
       if (jsgraph()->machine()->Is64()) {
         // We cannot change an int32 to an int64 on a 32 bit platform. Instead
@@ -2672,6 +2668,12 @@ void WasmGraphBuilder::Int64LoweringForTesting() {
   }
 }
 
+void WasmGraphBuilder::SetSourcePosition(Node* node, int position) {
+  compiler::SourcePosition pos(position);
+  if (source_position_table_)
+    source_position_table_->SetSourcePosition(node, pos);
+}
+
 static void RecordFunctionCompilation(Logger::LogEventsAndTags tag,
                                       CompilationInfo* info,
                                       const char* message, uint32_t index,
@@ -2680,8 +2682,8 @@ static void RecordFunctionCompilation(Logger::LogEventsAndTags tag,
   if (isolate->logger()->is_logging_code_events() ||
       isolate->cpu_profiler()->is_profiling()) {
     ScopedVector<char> buffer(128);
-    SNPrintF(buffer, "%s#%d:%.*s", message, index, func_name.length,
-             func_name.name);
+    SNPrintF(buffer, "%s#%d:%.*s", message, index, func_name.length(),
+             func_name.start());
     Handle<String> name_str =
         isolate->factory()->NewStringFromAsciiChecked(buffer.start());
     Handle<String> script_str =
@@ -2752,19 +2754,19 @@ Handle<JSFunction> CompileJSToWasmWrapper(
 #else
         FLAG_print_opt_code || FLAG_trace_turbo || FLAG_trace_turbo_graph;
 #endif
-    const char* func_name = "js-to-wasm";
+    Vector<const char> func_name = ArrayVector("js-to-wasm");
 
     static unsigned id = 0;
     Vector<char> buffer;
     if (debugging) {
       buffer = Vector<char>::New(128);
-      SNPrintF(buffer, "js-to-wasm#%d", id);
-      func_name = buffer.start();
+      int chars = SNPrintF(buffer, "js-to-wasm#%d", id);
+      func_name = Vector<const char>::cast(buffer.SubVector(0, chars));
     }
 
     CompilationInfo info(func_name, isolate, &zone, flags);
     Handle<Code> code =
-        Pipeline::GenerateCodeForTesting(&info, incoming, &graph, nullptr);
+        Pipeline::GenerateCodeForTesting(&info, incoming, &graph);
 #ifdef ENABLE_DISASSEMBLER
     if (FLAG_print_opt_code && !code.is_null()) {
       OFStream os(stdout);
@@ -2828,13 +2830,13 @@ Handle<Code> CompileWasmToJSWrapper(Isolate* isolate, wasm::ModuleEnv* module,
 #else
         FLAG_print_opt_code || FLAG_trace_turbo || FLAG_trace_turbo_graph;
 #endif
-    const char* func_name = "wasm-to-js";
+    Vector<const char> func_name = ArrayVector("wasm-to-js");
     static unsigned id = 0;
     Vector<char> buffer;
     if (debugging) {
       buffer = Vector<char>::New(128);
-      SNPrintF(buffer, "wasm-to-js#%d", id);
-      func_name = buffer.start();
+      int chars = SNPrintF(buffer, "wasm-to-js#%d", id);
+      func_name = Vector<const char>::cast(buffer.SubVector(0, chars));
     }
 
     CompilationInfo info(func_name, isolate, &zone, flags);
@@ -2855,6 +2857,60 @@ Handle<Code> CompileWasmToJSWrapper(Isolate* isolate, wasm::ModuleEnv* module,
   return code;
 }
 
+std::pair<JSGraph*, SourcePositionTable*> BuildGraphForWasmFunction(
+    Zone* zone, wasm::ErrorThrower& thrower, Isolate* isolate,
+    wasm::ModuleEnv*& module_env, const wasm::WasmFunction& function,
+    double* decode_ms) {
+  base::ElapsedTimer decode_timer;
+  if (FLAG_trace_wasm_decode_time) {
+    decode_timer.Start();
+  }
+  // Create a TF graph during decoding.
+  Graph* graph = new (zone) Graph(zone);
+  CommonOperatorBuilder* common = new (zone) CommonOperatorBuilder(zone);
+  MachineOperatorBuilder* machine = new (zone) MachineOperatorBuilder(
+      zone, MachineType::PointerRepresentation(),
+      InstructionSelector::SupportedMachineOperatorFlags());
+  JSGraph* jsgraph =
+      new (zone) JSGraph(isolate, graph, common, nullptr, nullptr, machine);
+  SourcePositionTable* source_position_table =
+      new (zone) SourcePositionTable(graph);
+  WasmGraphBuilder builder(zone, jsgraph, function.sig, source_position_table);
+  wasm::FunctionBody body = {
+      module_env, function.sig, module_env->module->module_start,
+      module_env->module->module_start + function.code_start_offset,
+      module_env->module->module_start + function.code_end_offset};
+  wasm::TreeResult result =
+      wasm::BuildTFGraph(isolate->allocator(), &builder, body);
+
+  if (machine->Is32()) {
+    Int64Lowering r(graph, machine, common, zone, function.sig);
+    r.LowerGraph();
+  }
+
+  if (result.failed()) {
+    if (FLAG_trace_wasm_compiler) {
+      OFStream os(stdout);
+      os << "Compilation failed: " << result << std::endl;
+    }
+    // Add the function as another context for the exception
+    ScopedVector<char> buffer(128);
+    wasm::WasmName name =
+        module_env->module->GetName(function.name_offset, function.name_length);
+    SNPrintF(buffer, "Compiling WASM function #%d:%.*s failed:",
+             function.func_index, name.length(), name.start());
+    thrower.Failed(buffer.start(), result);
+    return std::make_pair(nullptr, nullptr);
+  }
+  int index = static_cast<int>(function.func_index);
+  if (index >= FLAG_trace_wasm_ast_start && index < FLAG_trace_wasm_ast_end) {
+    PrintAst(isolate->allocator(), body);
+  }
+  if (FLAG_trace_wasm_decode_time) {
+    *decode_ms = decode_timer.Elapsed().InMillisecondsF();
+  }
+  return std::make_pair(jsgraph, source_position_table);
+}
 
 // Helper function to compile a single function.
 Handle<Code> CompileWasmFunction(wasm::ErrorThrower& thrower, Isolate* isolate,
@@ -2869,55 +2925,17 @@ Handle<Code> CompileWasmFunction(wasm::ErrorThrower& thrower, Isolate* isolate,
     os << std::endl;
   }
 
+  compiler::ZonePool zone_pool(isolate->allocator());
+  compiler::ZonePool::Scope graph_zone_scope(&zone_pool);
   double decode_ms = 0;
-  base::ElapsedTimer decode_timer;
-  if (FLAG_trace_wasm_decode_time) {
-    decode_timer.Start();
-  }
+  std::pair<JSGraph*, SourcePositionTable*> graph_result =
+      BuildGraphForWasmFunction(graph_zone_scope.zone(), thrower, isolate,
+                                module_env, function, &decode_ms);
+  JSGraph* jsgraph = graph_result.first;
+  SourcePositionTable* source_positions = graph_result.second;
 
-  // Create a TF graph during decoding.
-  Zone zone(isolate->allocator());
-  Graph graph(&zone);
-  CommonOperatorBuilder common(&zone);
-  MachineOperatorBuilder machine(
-      &zone, MachineType::PointerRepresentation(),
-      InstructionSelector::SupportedMachineOperatorFlags());
-  JSGraph jsgraph(isolate, &graph, &common, nullptr, nullptr, &machine);
-  WasmGraphBuilder builder(&zone, &jsgraph, function.sig);
-  wasm::FunctionBody body = {
-      module_env, function.sig, module_env->module->module_start,
-      module_env->module->module_start + function.code_start_offset,
-      module_env->module->module_start + function.code_end_offset};
-  wasm::TreeResult result =
-      wasm::BuildTFGraph(isolate->allocator(), &builder, body);
-
-  if (machine.Is32()) {
-    Int64Lowering r(&graph, &machine, &common, &zone, function.sig);
-    r.LowerGraph();
-  }
-
-  if (result.failed()) {
-    if (FLAG_trace_wasm_compiler) {
-      OFStream os(stdout);
-      os << "Compilation failed: " << result << std::endl;
-    }
-    // Add the function as another context for the exception
-    ScopedVector<char> buffer(128);
-    wasm::WasmName name =
-        module_env->module->GetName(function.name_offset, function.name_length);
-    SNPrintF(buffer, "Compiling WASM function #%d:%.*s failed:",
-             function.func_index, name.length, name.name);
-    thrower.Failed(buffer.start(), result);
+  if (jsgraph == nullptr) {
     return Handle<Code>::null();
-  }
-
-  int index = static_cast<int>(function.func_index);
-  if (index >= FLAG_trace_wasm_ast_start && index < FLAG_trace_wasm_ast_end) {
-    PrintAst(isolate->allocator(), body);
-  }
-
-  if (FLAG_trace_wasm_decode_time) {
-    decode_ms = decode_timer.Elapsed().InMillisecondsF();
   }
 
   base::ElapsedTimer compile_timer;
@@ -2925,10 +2943,11 @@ Handle<Code> CompileWasmFunction(wasm::ErrorThrower& thrower, Isolate* isolate,
     compile_timer.Start();
   }
   // Run the compiler pipeline to generate machine code.
-  CallDescriptor* descriptor =
-      wasm::ModuleEnv::GetWasmCallDescriptor(&zone, function.sig);
-  if (machine.Is32()) {
-    descriptor = module_env->GetI32WasmCallDescriptor(&zone, descriptor);
+  CallDescriptor* descriptor = wasm::ModuleEnv::GetWasmCallDescriptor(
+      jsgraph->graph()->zone(), function.sig);
+  if (jsgraph->machine()->Is32()) {
+    descriptor = module_env->GetI32WasmCallDescriptor(jsgraph->graph()->zone(),
+                                                      descriptor);
   }
   Code::Flags flags = Code::ComputeFlags(Code::WASM_FUNCTION);
   // add flags here if a meaningful name is helpful for debugging.
@@ -2938,23 +2957,28 @@ Handle<Code> CompileWasmFunction(wasm::ErrorThrower& thrower, Isolate* isolate,
 #else
       FLAG_print_opt_code || FLAG_trace_turbo || FLAG_trace_turbo_graph;
 #endif
-  const char* func_name = "wasm";
+  Vector<const char> func_name = module_env->module->GetNameOrNull(
+      function.name_offset, function.name_length);
   Vector<char> buffer;
-  if (debugging) {
-    buffer = Vector<char>::New(128);
-    wasm::WasmName name =
-        module_env->module->GetName(function.name_offset, function.name_length);
-    SNPrintF(buffer, "WASM_function_#%d:%.*s", function.func_index, name.length,
-             name.name);
-    func_name = buffer.start();
+  if (func_name.is_empty()) {
+    if (debugging) {
+      buffer = Vector<char>::New(128);
+      int chars = SNPrintF(buffer, "WASM_function_#%d", function.func_index);
+      func_name = Vector<const char>::cast(buffer.SubVector(0, chars));
+    } else {
+      func_name = ArrayVector("wasm");
+    }
   }
-  CompilationInfo info(func_name, isolate, &zone, flags);
+  CompilationInfo info(func_name, isolate, jsgraph->graph()->zone(), flags);
+  base::SmartPointer<OptimizedCompileJob> job(Pipeline::NewWasmCompilationJob(
+      &info, jsgraph->graph(), descriptor, source_positions));
+  Handle<Code> code = Handle<Code>::null();
+  if (job->OptimizeGraph() == OptimizedCompileJob::SUCCEEDED &&
+      job->GenerateCode() == OptimizedCompileJob::SUCCEEDED) {
+    code = info.code();
+  }
 
-  Handle<Code> code =
-      Pipeline::GenerateCodeForTesting(&info, descriptor, &graph);
-  if (debugging) {
-    buffer.Dispose();
-  }
+  buffer.Dispose();
   if (!code.is_null()) {
     RecordFunctionCompilation(Logger::FUNCTION_TAG, &info, "WASM_function",
                               function.func_index,
@@ -2968,11 +2992,12 @@ Handle<Code> CompileWasmFunction(wasm::ErrorThrower& thrower, Isolate* isolate,
         "wasm-compile ok: %d bytes, %0.3f ms decode, %d nodes, %0.3f ms "
         "compile\n",
         static_cast<int>(function.code_end_offset - function.code_start_offset),
-        decode_ms, static_cast<int>(graph.NodeCount()), compile_ms);
+        decode_ms, static_cast<int>(jsgraph->graph()->NodeCount()), compile_ms);
   }
   // TODO(bradnelson): Improve histogram handling of size_t.
   isolate->counters()->wasm_compile_function_peak_memory_bytes()->AddSample(
-      static_cast<int>(zone.allocation_size()));
+      static_cast<int>(jsgraph->graph()->zone()->allocation_size()));
+  graph_zone_scope.Destroy();
   return code;
 }
 

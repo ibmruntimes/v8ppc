@@ -1921,6 +1921,18 @@ void JSObject::JSObjectShortPrint(StringStream* accumulator) {
       if (!printed) {
         accumulator->Add("<JS Function");
       }
+      if (FLAG_trace_file_names) {
+        Object* source_name =
+            Script::cast(function->shared()->script())->name();
+        if (source_name->IsString()) {
+          String* str = String::cast(source_name);
+          if (str->length() > 0) {
+            accumulator->Add(" <");
+            accumulator->Put(str);
+            accumulator->Add(">");
+          }
+        }
+      }
       accumulator->Add(" (SharedFunctionInfo %p)",
                        reinterpret_cast<void*>(function->shared()));
       accumulator->Put('>');
@@ -11769,6 +11781,12 @@ bool JSFunction::Inlines(SharedFunctionInfo* candidate) {
   return false;
 }
 
+void JSFunction::MarkForBaseline() {
+  Isolate* isolate = GetIsolate();
+  set_code_no_write_barrier(
+      isolate->builtins()->builtin(Builtins::kCompileBaseline));
+  // No write barrier required, since the builtin is part of the root set.
+}
 
 void JSFunction::MarkForOptimization() {
   Isolate* isolate = GetIsolate();
@@ -12788,6 +12806,7 @@ void Oddball::Initialize(Isolate* isolate, Handle<Oddball> oddball,
       isolate->factory()->InternalizeUtf8String(to_string);
   Handle<String> internalized_type_of =
       isolate->factory()->InternalizeUtf8String(type_of);
+  oddball->set_to_number_raw(to_number->Number());
   oddball->set_to_boolean(isolate->heap()->ToBoolean(to_boolean));
   oddball->set_to_number(*to_number);
   oddball->set_to_string(*internalized_to_string);

@@ -5158,6 +5158,11 @@ class V8_EXPORT MicrotasksScope {
    */
   static int GetCurrentDepth(Isolate* isolate);
 
+  /**
+   * Returns true while microtasks are being executed.
+   */
+  static bool IsRunningMicrotasks(Isolate* isolate);
+
  private:
   internal::Isolate* const isolate_;
   bool run_;
@@ -7427,7 +7432,7 @@ class Internals {
       1 * kApiPointerSize + kApiIntSize;
   static const int kStringResourceOffset = 3 * kApiPointerSize;
 
-  static const int kOddballKindOffset = 5 * kApiPointerSize;
+  static const int kOddballKindOffset = 5 * kApiPointerSize + sizeof(double);
   static const int kForeignAddressOffset = kApiPointerSize;
   static const int kJSObjectHeaderSize = 3 * kApiPointerSize;
   static const int kFixedArrayHeaderSize = 2 * kApiPointerSize;

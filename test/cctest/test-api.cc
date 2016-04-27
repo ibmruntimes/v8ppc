@@ -20915,6 +20915,7 @@ TEST(CallCompletedCallbackTwoExceptions) {
 
 
 static void MicrotaskOne(const v8::FunctionCallbackInfo<Value>& info) {
+  CHECK(v8::MicrotasksScope::IsRunningMicrotasks(info.GetIsolate()));
   v8::HandleScope scope(info.GetIsolate());
   v8::MicrotasksScope microtasks(info.GetIsolate(),
                                  v8::MicrotasksScope::kDoNotRunMicrotasks);
@@ -20923,6 +20924,7 @@ static void MicrotaskOne(const v8::FunctionCallbackInfo<Value>& info) {
 
 
 static void MicrotaskTwo(const v8::FunctionCallbackInfo<Value>& info) {
+  CHECK(v8::MicrotasksScope::IsRunningMicrotasks(info.GetIsolate()));
   v8::HandleScope scope(info.GetIsolate());
   v8::MicrotasksScope microtasks(info.GetIsolate(),
                                  v8::MicrotasksScope::kDoNotRunMicrotasks);
@@ -20941,6 +20943,7 @@ static void MicrotaskThree(void* data) {
 TEST(EnqueueMicrotask) {
   LocalContext env;
   v8::HandleScope scope(env->GetIsolate());
+  CHECK(!v8::MicrotasksScope::IsRunningMicrotasks(env->GetIsolate()));
   CompileRun(
       "var ext1Calls = 0;"
       "var ext2Calls = 0;");

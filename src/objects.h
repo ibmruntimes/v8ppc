@@ -4194,7 +4194,7 @@ class ScopeInfo : public FixedArray {
 
   // Return true if this local was introduced by the compiler, and should not be
   // exposed to the user in a debugger.
-  bool LocalIsSynthetic(int var);
+  static bool VariableIsSynthetic(String* name);
 
   // Lookup support for serialized scope info. Returns the
   // the stack slot index for a given slot name if the slot is
@@ -7283,6 +7283,8 @@ class SharedFunctionInfo: public HeapObject {
   static const int kStrictModeBit =
       kStrictModeFunction + kCompilerHintsSmiTagSize;
   static const int kNativeBit = kNative + kCompilerHintsSmiTagSize;
+  static const int kHasDuplicateParametersBit =
+      kHasDuplicateParameters + kCompilerHintsSmiTagSize;
 
   static const int kClassConstructorBits =
       FunctionKind::kClassConstructor
@@ -7293,6 +7295,8 @@ class SharedFunctionInfo: public HeapObject {
   // Allows to use byte-width instructions.
   static const int kStrictModeBitWithinByte = kStrictModeBit % kBitsPerByte;
   static const int kNativeBitWithinByte = kNativeBit % kBitsPerByte;
+  static const int kHasDuplicateParametersBitWithinByte =
+      kHasDuplicateParametersBit % kBitsPerByte;
 
 #if !defined(V8_PPC_TAGGING_OPT)
   static const int kClassConstructorBitsWithinByte =
@@ -7316,6 +7320,8 @@ class SharedFunctionInfo: public HeapObject {
 #if !defined(V8_PPC_TAGGING_OPT)
   static const int kFunctionKindByteOffset = BYTE_OFFSET(kFunctionKind);
 #endif
+  static const int kHasDuplicateParametersByteOffset =
+      BYTE_OFFSET(kHasDuplicateParameters);
 #undef BYTE_OFFSET
 
  private:
@@ -7503,13 +7509,14 @@ class JSFunction: public JSObject {
   // Tells whether or not this function has been optimized.
   inline bool IsOptimized();
 
-  // Mark this function for lazy recompilation. The function will be
-  // recompiled the next time it is executed.
+  // Mark this function for lazy recompilation. The function will be recompiled
+  // the next time it is executed.
+  void MarkForBaseline();
   void MarkForOptimization();
   void AttemptConcurrentOptimization();
 
-  // Tells whether or not the function is already marked for lazy
-  // recompilation.
+  // Tells whether or not the function is already marked for lazy recompilation.
+  inline bool IsMarkedForBaseline();
   inline bool IsMarkedForOptimization();
   inline bool IsMarkedForConcurrentOptimization();
 
@@ -9464,6 +9471,10 @@ class VectorIterator {
 // The Oddball describes objects null, undefined, true, and false.
 class Oddball: public HeapObject {
  public:
+  // [to_number_raw]: Cached raw to_number computed at startup.
+  inline double to_number_raw() const;
+  inline void set_to_number_raw(double value);
+
   // [to_string]: Cached to_string computed at startup.
   DECL_ACCESSORS(to_string, String)
 
@@ -9493,7 +9504,8 @@ class Oddball: public HeapObject {
                          bool to_boolean, const char* type_of, byte kind);
 
   // Layout description.
-  static const int kToStringOffset = HeapObject::kHeaderSize;
+  static const int kToNumberRawOffset = HeapObject::kHeaderSize;
+  static const int kToStringOffset = kToNumberRawOffset + kDoubleSize;
   static const int kToNumberOffset = kToStringOffset + kPointerSize;
   static const int kToBooleanOffset = kToNumberOffset + kPointerSize;
   static const int kTypeOfOffset = kToBooleanOffset + kPointerSize;
@@ -9515,6 +9527,7 @@ class Oddball: public HeapObject {
   typedef FixedBodyDescriptor<kToStringOffset, kTypeOfOffset + kPointerSize,
                               kSize> BodyDescriptor;
 
+  STATIC_ASSERT(kToNumberRawOffset == HeapNumber::kValueOffset);
   STATIC_ASSERT(kKindOffset == Internals::kOddballKindOffset);
   STATIC_ASSERT(kNull == Internals::kNullOddballKind);
   STATIC_ASSERT(kUndefined == Internals::kUndefinedOddballKind);

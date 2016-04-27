@@ -12,8 +12,8 @@
 #include "src/hashmap.h"
 #include "src/list.h"
 #include "src/parsing/parser-base.h"
-#include "src/parsing/preparse-data.h"
 #include "src/parsing/preparse-data-format.h"
+#include "src/parsing/preparse-data.h"
 #include "src/parsing/preparser.h"
 #include "src/unicode.h"
 #include "src/utils.h"
@@ -98,11 +98,11 @@ PreParserExpression PreParserTraits::ParseFunctionLiteral(
       function_token_position, type, language_mode, ok);
 }
 
-
 PreParser::PreParseResult PreParser::PreParseLazyFunction(
     LanguageMode language_mode, FunctionKind kind, bool has_simple_parameters,
-    ParserRecorder* log, Scanner::BookmarkScope* bookmark) {
+    ParserRecorder* log, Scanner::BookmarkScope* bookmark, int* use_counts) {
   log_ = log;
+  use_counts_ = use_counts;
   // Lazy functions always have trivial outer scopes (no with/catch scopes).
   Scope* top_scope = NewScope(scope_, SCRIPT_SCOPE);
   PreParserFactory top_factory(NULL);
@@ -118,6 +118,7 @@ PreParser::PreParseResult PreParser::PreParseLazyFunction(
   bool ok = true;
   int start_position = peek_position();
   ParseLazyFunctionLiteralBody(&ok, bookmark);
+  use_counts_ = nullptr;
   if (bookmark && bookmark->HasBeenReset()) {
     // Do nothing, as we've just aborted scanning this function.
   } else if (stack_overflow()) {
@@ -679,11 +680,28 @@ PreParser::Statement PreParser::ParseReturnStatement(bool* ok) {
   // This is not handled during preparsing.
 
   Token::Value tok = peek();
+  int tail_call_position = -1;
+  if (FLAG_harmony_explicit_tailcalls && tok == Token::CONTINUE) {
+    Consume(Token::CONTINUE);
+    tail_call_position = position();
+    tok = peek();
+  }
   if (!scanner()->HasAnyLineTerminatorBeforeNext() &&
       tok != Token::SEMICOLON &&
       tok != Token::RBRACE &&
       tok != Token::EOS) {
     ParseExpression(true, CHECK_OK);
+    if (tail_call_position >= 0) {
+      ReturnExprContext return_expr_context =
+          function_state_->return_expr_context();
+      if (return_expr_context != ReturnExprContext::kNormal) {
+        ReportIllegalTailCallAt(tail_call_position, return_expr_context);
+        *ok = false;
+        return Statement::Default();
+      }
+      function_state_->AddExpressionInTailPosition(
+          PreParserExpression::Default(), tail_call_position);
+    }
   }
   ExpectSemicolon(CHECK_OK);
   return Statement::Jump();
@@ -810,7 +828,12 @@ PreParser::Statement PreParser::ParseForStatement(bool* ok) {
         }
         if (first_initializer_loc.IsValid() &&
             (is_strict(language_mode()) || mode == ForEachStatement::ITERATE ||
-             is_lexical || is_binding_pattern)) {
+             is_lexical || is_binding_pattern || allow_harmony_for_in())) {
+          // Only increment the use count if we would have let this through
+          // without the flag.
+          if (use_counts_ != nullptr && allow_harmony_for_in()) {
+            ++use_counts_[v8::Isolate::kForInInitializer];
+          }
           PreParserTraits::ReportMessageAt(
               first_initializer_loc, MessageTemplate::kForInOfLoopInitializer,
               ForEachStatement::VisitModeString(mode));
@@ -827,7 +850,11 @@ PreParser::Statement PreParser::ParseForStatement(bool* ok) {
         }
 
         Expect(Token::RPAREN, CHECK_OK);
-        ParseScopedStatement(true, CHECK_OK);
+        {
+          ReturnExprScope no_tail_calls(function_state_,
+                                        ReturnExprContext::kInsideForInOfBody);
+          ParseScopedStatement(true, CHECK_OK);
+        }
         return Statement::Default();
       }
     } else {
@@ -929,7 +956,11 @@ PreParser::Statement PreParser::ParseTryStatement(bool* ok) {
 
   Expect(Token::TRY, CHECK_OK);
 
-  ParseBlock(CHECK_OK);
+  {
+    ReturnExprScope no_tail_calls(function_state_,
+                                  ReturnExprContext::kInsideTryBlock);
+    ParseBlock(CHECK_OK);
+  }
 
   Token::Value tok = peek();
   if (tok != Token::CATCH && tok != Token::FINALLY) {
@@ -937,6 +968,8 @@ PreParser::Statement PreParser::ParseTryStatement(bool* ok) {
     *ok = false;
     return Statement::Default();
   }
+  List<TailCallExpression> expressions_in_tail_position_in_catch_block;
+  bool catch_block_exists = false;
   if (tok == Token::CATCH) {
     Consume(Token::CATCH);
     Expect(Token::LPAREN, CHECK_OK);
@@ -946,6 +979,9 @@ PreParser::Statement PreParser::ParseTryStatement(bool* ok) {
     ValidateBindingPattern(&pattern_classifier, CHECK_OK);
     Expect(Token::RPAREN, CHECK_OK);
     {
+      CollectExpressionsInTailPositionToListScope
+          collect_expressions_in_tail_position_scope(
+              function_state_, &expressions_in_tail_position_in_catch_block);
       BlockState block_state(&scope_, catch_scope);
       Scope* block_scope = NewScope(scope_, BLOCK_SCOPE);
       {
@@ -953,11 +989,22 @@ PreParser::Statement PreParser::ParseTryStatement(bool* ok) {
         ParseBlock(CHECK_OK);
       }
     }
+    catch_block_exists = true;
     tok = peek();
   }
   if (tok == Token::FINALLY) {
     Consume(Token::FINALLY);
     ParseBlock(CHECK_OK);
+    if (FLAG_harmony_explicit_tailcalls && catch_block_exists &&
+        expressions_in_tail_position_in_catch_block.length() > 0) {
+      // TODO(ishell): update chapter number.
+      // ES8 XX.YY.ZZ
+      int pos = expressions_in_tail_position_in_catch_block[0].pos;
+      ReportMessageAt(Scanner::Location(pos, pos + 1),
+                      MessageTemplate::kTailCallInCatchBlock);
+      *ok = false;
+      return Statement::Default();
+    }
   }
   return Statement::Default();
 }

@@ -22,6 +22,8 @@ namespace internal {
 namespace interpreter {
 
 using compiler::Node;
+typedef CodeStubAssembler::Label Label;
+typedef CodeStubAssembler::Variable Variable;
 
 #define __ assembler->
 
@@ -36,9 +38,9 @@ void Interpreter::Initialize() {
 
   if (FLAG_trace_ignition_dispatches) {
     static const int kBytecodeCount = static_cast<int>(Bytecode::kLast) + 1;
-    bytecode_dispatch_count_table_.Reset(
+    bytecode_dispatch_counters_table_.Reset(
         new uintptr_t[kBytecodeCount * kBytecodeCount]);
-    memset(bytecode_dispatch_count_table_.get(), 0,
+    memset(bytecode_dispatch_counters_table_.get(), 0,
            sizeof(uintptr_t) * kBytecodeCount * kBytecodeCount);
   }
 
@@ -199,9 +201,18 @@ const char* Interpreter::LookupNameOfBytecodeHandler(Code* code) {
   return nullptr;
 }
 
-void Interpreter::WriteDispatchCounters() {
-  std::ofstream stream(FLAG_trace_ignition_dispatches_output_file);
-  static const int kBytecodeCount = static_cast<int>(Bytecode::kLast) + 1;
+uintptr_t Interpreter::GetDispatchCounter(Bytecode from, Bytecode to) const {
+  int from_index = Bytecodes::ToByte(from);
+  int to_index = Bytecodes::ToByte(to);
+  return bytecode_dispatch_counters_table_[from_index * kNumberOfBytecodes +
+                                           to_index];
+}
+
+Local<v8::Object> Interpreter::GetDispatchCountersObject() {
+  v8::Isolate* isolate = reinterpret_cast<v8::Isolate*>(isolate_);
+  Local<v8::Context> context = isolate->GetCurrentContext();
+
+  Local<v8::Object> counters_map = v8::Object::New(isolate);
 
   // Output is a JSON-encoded object of objects.
   //
@@ -214,35 +225,36 @@ void Interpreter::WriteDispatchCounters() {
   // object is always present, even if the value is empty because all counters
   // for that source are zero.
 
-  stream << '{';
-
-  for (int from_index = 0; from_index < kBytecodeCount; ++from_index) {
-    if (from_index > 0) stream << ",\n ";
-
+  for (int from_index = 0; from_index < kNumberOfBytecodes; ++from_index) {
     Bytecode from_bytecode = Bytecodes::FromByte(from_index);
-    stream << "\"" << Bytecodes::ToString(from_bytecode) << "\": {";
+    Local<v8::Object> counters_row = v8::Object::New(isolate);
 
-    bool emitted_first = false;
-    for (int to_index = 0; to_index < kBytecodeCount; ++to_index) {
-      uintptr_t counter =
-          bytecode_dispatch_count_table_[from_index * kBytecodeCount +
-                                         to_index];
+    for (int to_index = 0; to_index < kNumberOfBytecodes; ++to_index) {
+      Bytecode to_bytecode = Bytecodes::FromByte(to_index);
+      uintptr_t counter = GetDispatchCounter(from_bytecode, to_bytecode);
+
       if (counter > 0) {
-        if (emitted_first) {
-          stream << ", ";
-        } else {
-          emitted_first = true;
-        }
-
-        Bytecode to_bytecode = Bytecodes::FromByte(to_index);
-        stream << '"' << Bytecodes::ToString(to_bytecode) << "\": " << counter;
+        std::string to_name = Bytecodes::ToString(to_bytecode);
+        Local<v8::String> to_name_object =
+            v8::String::NewFromUtf8(isolate, to_name.c_str(),
+                                    NewStringType::kNormal)
+                .ToLocalChecked();
+        Local<v8::Number> counter_object = v8::Number::New(isolate, counter);
+        CHECK(counters_row->Set(context, to_name_object, counter_object)
+                  .IsJust());
       }
     }
 
-    stream << "}";
+    std::string from_name = Bytecodes::ToString(from_bytecode);
+    Local<v8::String> from_name_object =
+        v8::String::NewFromUtf8(isolate, from_name.c_str(),
+                                NewStringType::kNormal)
+            .ToLocalChecked();
+
+    CHECK(counters_map->Set(context, from_name_object, counters_row).IsJust());
   }
 
-  stream << '}';
+  return counters_map;
 }
 
 // LdaZero
@@ -1471,9 +1483,40 @@ void Interpreter::DoCreateClosure(InterpreterAssembler* assembler) {
 void Interpreter::DoCreateMappedArguments(InterpreterAssembler* assembler) {
   Node* closure = __ LoadRegister(Register::function_closure());
   Node* context = __ GetContext();
-  Node* result =
-      __ CallRuntime(Runtime::kNewSloppyArguments_Generic, context, closure);
-  __ SetAccumulator(result);
+
+  Variable result(assembler, MachineRepresentation::kTagged);
+  Label end(assembler), if_duplicate_parameters(assembler),
+      if_not_duplicate_parameters(assembler);
+
+  // Check if function has duplicate parameters.
+  // TODO(rmcilroy): Remove this check when FastNewSloppyArgumentsStub supports
+  // duplicate parameters.
+  Node* shared_info =
+      __ LoadObjectField(closure, JSFunction::kSharedFunctionInfoOffset);
+  Node* compiler_hints = __ LoadObjectField(
+      shared_info, SharedFunctionInfo::kHasDuplicateParametersByteOffset,
+      MachineType::Uint8());
+  Node* duplicate_parameters_bit = __ Int32Constant(
+      1 << SharedFunctionInfo::kHasDuplicateParametersBitWithinByte);
+  Node* compare = __ Word32And(compiler_hints, duplicate_parameters_bit);
+  __ BranchIf(compare, &if_duplicate_parameters, &if_not_duplicate_parameters);
+
+  __ Bind(&if_duplicate_parameters);
+  {
+    result.Bind(
+        __ CallRuntime(Runtime::kNewSloppyArguments_Generic, context, closure));
+    __ Goto(&end);
+  }
+
+  __ Bind(&if_not_duplicate_parameters);
+  {
+    Callable callable = CodeFactory::FastNewSloppyArguments(isolate_);
+    Node* target = __ HeapConstant(callable.code());
+    result.Bind(__ CallStub(callable.descriptor(), target, context, closure));
+    __ Goto(&end);
+  }
+  __ Bind(&end);
+  __ SetAccumulator(result.value());
   __ Dispatch();
 }
 

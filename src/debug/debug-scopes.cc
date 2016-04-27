@@ -453,7 +453,7 @@ MaybeHandle<JSObject> ScopeIterator::MaterializeScriptScope() {
       global->native_context()->script_context_table());
 
   Handle<JSObject> script_scope =
-      isolate_->factory()->NewJSObject(isolate_->object_function());
+      isolate_->factory()->NewJSObjectWithNullProto();
 
   for (int context_index = 0; context_index < script_contexts->used();
        context_index++) {
@@ -470,7 +470,7 @@ MaybeHandle<JSObject> ScopeIterator::MaterializeLocalScope() {
   Handle<JSFunction> function = GetFunction();
 
   Handle<JSObject> local_scope =
-      isolate_->factory()->NewJSObject(isolate_->object_function());
+      isolate_->factory()->NewJSObjectWithNullProto();
   frame_inspector_->MaterializeStackLocals(local_scope, function);
 
   Handle<Context> frame_context =
@@ -513,7 +513,7 @@ Handle<JSObject> ScopeIterator::MaterializeClosure() {
   // Allocate and initialize a JSObject with all the content of this function
   // closure.
   Handle<JSObject> closure_scope =
-      isolate_->factory()->NewJSObject(isolate_->object_function());
+      isolate_->factory()->NewJSObjectWithNullProto();
 
   // Fill all context locals to the context extension.
   CopyContextLocalsToScopeObject(scope_info, context, closure_scope);
@@ -540,7 +540,7 @@ Handle<JSObject> ScopeIterator::MaterializeCatchScope() {
   Handle<Object> thrown_object(context->get(Context::THROWN_OBJECT_INDEX),
                                isolate_);
   Handle<JSObject> catch_scope =
-      isolate_->factory()->NewJSObject(isolate_->object_function());
+      isolate_->factory()->NewJSObjectWithNullProto();
   JSObject::SetOwnPropertyIgnoreAttributes(catch_scope, name, thrown_object,
                                            NONE)
       .Check();
@@ -562,7 +562,7 @@ Handle<JSObject> ScopeIterator::WithContextExtension() {
 // block context.
 Handle<JSObject> ScopeIterator::MaterializeBlockScope() {
   Handle<JSObject> block_scope =
-      isolate_->factory()->NewJSObject(isolate_->object_function());
+      isolate_->factory()->NewJSObjectWithNullProto();
 
   Handle<Context> context = Handle<Context>::null();
   if (!nested_scope_chain_.is_empty()) {
@@ -599,7 +599,7 @@ MaybeHandle<JSObject> ScopeIterator::MaterializeModuleScope() {
   // Allocate and initialize a JSObject with all the members of the debugged
   // module.
   Handle<JSObject> module_scope =
-      isolate_->factory()->NewJSObject(isolate_->object_function());
+      isolate_->factory()->NewJSObjectWithNullProto();
 
   // Fill all context locals.
   CopyContextLocalsToScopeObject(scope_info, context, module_scope);
@@ -801,19 +801,16 @@ void ScopeIterator::CopyContextLocalsToScopeObject(
   int local_count = scope_info->ContextLocalCount();
   if (local_count == 0) return;
   // Fill all context locals to the context extension.
-  int first_context_var = scope_info->StackLocalCount();
-  int start = scope_info->ContextLocalNameEntriesIndex();
   for (int i = 0; i < local_count; ++i) {
-    if (scope_info->LocalIsSynthetic(first_context_var + i)) continue;
+    Handle<String> name(scope_info->ContextLocalName(i));
+    if (ScopeInfo::VariableIsSynthetic(*name)) continue;
     int context_index = Context::MIN_CONTEXT_SLOTS + i;
     Handle<Object> value = Handle<Object>(context->get(context_index), isolate);
     // Reflect variables under TDZ as undefined in scope object.
     if (value->IsTheHole()) continue;
     // This should always succeed.
     // TODO(verwaest): Use AddDataProperty instead.
-    JSObject::SetOwnPropertyIgnoreAttributes(
-        scope_object, handle(String::cast(scope_info->get(i + start))), value,
-        NONE)
+    JSObject::SetOwnPropertyIgnoreAttributes(scope_object, name, value, NONE)
         .Check();
   }
 }

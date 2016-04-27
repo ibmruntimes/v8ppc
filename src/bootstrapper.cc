@@ -10,6 +10,7 @@
 #include "src/extensions/externalize-string-extension.h"
 #include "src/extensions/free-buffer-extension.h"
 #include "src/extensions/gc-extension.h"
+#include "src/extensions/ignition-statistics-extension.h"
 #include "src/extensions/statistics-extension.h"
 #include "src/extensions/trigger-failure-extension.h"
 #include "src/heap/heap.h"
@@ -73,7 +74,7 @@ v8::Extension* Bootstrapper::gc_extension_ = NULL;
 v8::Extension* Bootstrapper::externalize_string_extension_ = NULL;
 v8::Extension* Bootstrapper::statistics_extension_ = NULL;
 v8::Extension* Bootstrapper::trigger_failure_extension_ = NULL;
-
+v8::Extension* Bootstrapper::ignition_statistics_extension_ = NULL;
 
 void Bootstrapper::InitializeOncePerProcess() {
   free_buffer_extension_ = new FreeBufferExtension;
@@ -86,6 +87,8 @@ void Bootstrapper::InitializeOncePerProcess() {
   v8::RegisterExtension(statistics_extension_);
   trigger_failure_extension_ = new TriggerFailureExtension;
   v8::RegisterExtension(trigger_failure_extension_);
+  ignition_statistics_extension_ = new IgnitionStatisticsExtension;
+  v8::RegisterExtension(ignition_statistics_extension_);
 }
 
 
@@ -100,6 +103,8 @@ void Bootstrapper::TearDownExtensions() {
   statistics_extension_ = NULL;
   delete trigger_failure_extension_;
   trigger_failure_extension_ = NULL;
+  delete ignition_statistics_extension_;
+  ignition_statistics_extension_ = NULL;
 }
 
 
@@ -1056,37 +1061,59 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     Handle<JSFunction> object_function = isolate->object_function();
     JSObject::AddProperty(global_object, object_name, object_function,
                           DONT_ENUM);
+
     SimpleInstallFunction(object_function, factory->assign_string(),
                           Builtins::kObjectAssign, 2, false);
     SimpleInstallFunction(object_function, factory->create_string(),
                           Builtins::kObjectCreate, 2, false);
-    Handle<JSFunction> object_freeze = SimpleInstallFunction(
-        object_function, "freeze", Builtins::kObjectFreeze, 1, false);
-    native_context()->set_object_freeze(*object_freeze);
     SimpleInstallFunction(object_function, "getOwnPropertyDescriptor",
                           Builtins::kObjectGetOwnPropertyDescriptor, 2, false);
     SimpleInstallFunction(object_function, "getOwnPropertyNames",
                           Builtins::kObjectGetOwnPropertyNames, 1, false);
     SimpleInstallFunction(object_function, "getOwnPropertySymbols",
                           Builtins::kObjectGetOwnPropertySymbols, 1, false);
-    SimpleInstallFunction(object_function, "is", Builtins::kObjectIs, 2, true);
-    Handle<JSFunction> object_is_extensible =
-        SimpleInstallFunction(object_function, "isExtensible",
-                              Builtins::kObjectIsExtensible, 1, false);
+    SimpleInstallFunction(object_function, "is",
+                          Builtins::kObjectIs, 2, true);
+    SimpleInstallFunction(object_function, "preventExtensions",
+                          Builtins::kObjectPreventExtensions, 1, false);
+    SimpleInstallFunction(object_function, "seal",
+                          Builtins::kObjectSeal, 1, false);
+
+    Handle<JSFunction> object_define_properties = SimpleInstallFunction(
+        object_function, "defineProperties",
+        Builtins::kObjectDefineProperties, 2, true);
+    native_context()->set_object_define_properties(*object_define_properties);
+
+    Handle<JSFunction> object_define_property = SimpleInstallFunction(
+        object_function, factory->defineProperty_string(),
+        Builtins::kObjectDefineProperty, 3, true);
+    native_context()->set_object_define_property(*object_define_property);
+
+    Handle<JSFunction> object_freeze = SimpleInstallFunction(
+        object_function, "freeze", Builtins::kObjectFreeze, 1, false);
+    native_context()->set_object_freeze(*object_freeze);
+
+    Handle<JSFunction> object_get_prototype_of = SimpleInstallFunction(
+        object_function, "getPrototypeOf", Builtins::kObjectGetPrototypeOf,
+        1, false);
+    native_context()->set_object_get_prototype_of(*object_get_prototype_of);
+
+    Handle<JSFunction> object_is_extensible = SimpleInstallFunction(
+        object_function, "isExtensible", Builtins::kObjectIsExtensible,
+        1, false);
     native_context()->set_object_is_extensible(*object_is_extensible);
+
     Handle<JSFunction> object_is_frozen = SimpleInstallFunction(
         object_function, "isFrozen", Builtins::kObjectIsFrozen, 1, false);
     native_context()->set_object_is_frozen(*object_is_frozen);
+
     Handle<JSFunction> object_is_sealed = SimpleInstallFunction(
         object_function, "isSealed", Builtins::kObjectIsSealed, 1, false);
     native_context()->set_object_is_sealed(*object_is_sealed);
+
     Handle<JSFunction> object_keys = SimpleInstallFunction(
         object_function, "keys", Builtins::kObjectKeys, 1, false);
     native_context()->set_object_keys(*object_keys);
-    SimpleInstallFunction(object_function, "preventExtensions",
-                          Builtins::kObjectPreventExtensions, 1, false);
-    SimpleInstallFunction(object_function, "seal", Builtins::kObjectSeal, 1,
-                          false);
 
     SimpleInstallFunction(isolate->initial_object_prototype(), "hasOwnProperty",
                           Builtins::kObjectHasOwnProperty, 1, true);
@@ -3187,17 +3214,20 @@ bool Genesis::InstallExtensions(Handle<Context> native_context,
   Isolate* isolate = native_context->GetIsolate();
   ExtensionStates extension_states;  // All extensions have state UNVISITED.
   return InstallAutoExtensions(isolate, &extension_states) &&
-      (!FLAG_expose_free_buffer ||
-       InstallExtension(isolate, "v8/free-buffer", &extension_states)) &&
-      (!FLAG_expose_gc ||
-       InstallExtension(isolate, "v8/gc", &extension_states)) &&
-      (!FLAG_expose_externalize_string ||
-       InstallExtension(isolate, "v8/externalize", &extension_states)) &&
-      (!FLAG_track_gc_object_stats ||
-       InstallExtension(isolate, "v8/statistics", &extension_states)) &&
-      (!FLAG_expose_trigger_failure ||
-       InstallExtension(isolate, "v8/trigger-failure", &extension_states)) &&
-      InstallRequestedExtensions(isolate, extensions, &extension_states);
+         (!FLAG_expose_free_buffer ||
+          InstallExtension(isolate, "v8/free-buffer", &extension_states)) &&
+         (!FLAG_expose_gc ||
+          InstallExtension(isolate, "v8/gc", &extension_states)) &&
+         (!FLAG_expose_externalize_string ||
+          InstallExtension(isolate, "v8/externalize", &extension_states)) &&
+         (!FLAG_track_gc_object_stats ||
+          InstallExtension(isolate, "v8/statistics", &extension_states)) &&
+         (!FLAG_expose_trigger_failure ||
+          InstallExtension(isolate, "v8/trigger-failure", &extension_states)) &&
+         (!(FLAG_ignition && FLAG_trace_ignition_dispatches) ||
+          InstallExtension(isolate, "v8/ignition-statistics",
+                           &extension_states)) &&
+         InstallRequestedExtensions(isolate, extensions, &extension_states);
 }
 
 

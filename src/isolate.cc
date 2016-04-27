@@ -1858,6 +1858,7 @@ Isolate::Isolate(bool enable_serializer)
 #if TRACE_MAPS
       next_unique_sfi_id_(0),
 #endif
+      is_running_microtasks_(false),
       use_counter_callback_(NULL),
       basic_block_profiler_(NULL),
       cancelable_task_manager_(new CancelableTaskManager()),
@@ -2553,6 +2554,7 @@ bool Isolate::IsFastArrayConstructorPrototypeChainIntact() {
 }
 
 bool Isolate::IsArraySpeciesLookupChainIntact() {
+  if (!FLAG_harmony_species) return true;
   // Note: It would be nice to have debug checks to make sure that the
   // species protector is accurate, but this would be hard to do for most of
   // what the protector stands for:
@@ -2571,6 +2573,7 @@ bool Isolate::IsArraySpeciesLookupChainIntact() {
 }
 
 void Isolate::InvalidateArraySpeciesProtector() {
+  if (!FLAG_harmony_species) return;
   DCHECK(factory()->species_protector()->value()->IsSmi());
   DCHECK(IsArraySpeciesLookupChainIntact());
   PropertyCell::SetValueWithInvalidation(
@@ -2780,7 +2783,9 @@ void Isolate::RunMicrotasks() {
   // Increase call depth to prevent recursive callbacks.
   v8::Isolate::SuppressMicrotaskExecutionScope suppress(
       reinterpret_cast<v8::Isolate*>(this));
+  is_running_microtasks_ = true;
   RunMicrotasksInternal();
+  is_running_microtasks_ = false;
   FireMicrotasksCompletedCallback();
 }
 

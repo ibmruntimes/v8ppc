@@ -4386,16 +4386,16 @@ void FastNewObjectStub::Generate(MacroAssembler* masm) {
   __ bind(&done_allocate);
 
   // Initialize the JSObject fields.
-  __ mov(Operand(eax, JSObject::kMapOffset), ecx);
-  __ mov(Operand(eax, JSObject::kPropertiesOffset),
+  __ mov(FieldOperand(eax, JSObject::kMapOffset), ecx);
+  __ mov(FieldOperand(eax, JSObject::kPropertiesOffset),
          masm->isolate()->factory()->empty_fixed_array());
-  __ mov(Operand(eax, JSObject::kElementsOffset),
+  __ mov(FieldOperand(eax, JSObject::kElementsOffset),
          masm->isolate()->factory()->empty_fixed_array());
   STATIC_ASSERT(JSObject::kHeaderSize == 3 * kPointerSize);
-  __ lea(ebx, Operand(eax, JSObject::kHeaderSize));
+  __ lea(ebx, FieldOperand(eax, JSObject::kHeaderSize));
 
   // ----------- S t a t e -------------
-  //  -- eax    : result (untagged)
+  //  -- eax    : result (tagged)
   //  -- ebx    : result fields (untagged)
   //  -- edi    : result end (untagged)
   //  -- ecx    : initial map
@@ -4413,10 +4413,6 @@ void FastNewObjectStub::Generate(MacroAssembler* masm) {
     // Initialize all in-object fields with undefined.
     __ LoadRoot(edx, Heap::kUndefinedValueRootIndex);
     __ InitializeFieldsWithFiller(ebx, edi, edx);
-
-    // Add the object tag to make the JSObject real.
-    STATIC_ASSERT(kHeapObjectTag == 1);
-    __ inc(eax);
     __ Ret();
   }
   __ bind(&slack_tracking);
@@ -4438,10 +4434,6 @@ void FastNewObjectStub::Generate(MacroAssembler* masm) {
     __ lea(edx, Operand(ebx, edx, times_pointer_size, 0));
     __ LoadRoot(edi, Heap::kOnePointerFillerMapRootIndex);
     __ InitializeFieldsWithFiller(ebx, edx, edi);
-
-    // Add the object tag to make the JSObject real.
-    STATIC_ASSERT(kHeapObjectTag == 1);
-    __ inc(eax);
 
     // Check if we can finalize the instance size.
     Label finalize;
@@ -4473,10 +4465,10 @@ void FastNewObjectStub::Generate(MacroAssembler* masm) {
     __ CallRuntime(Runtime::kAllocateInNewSpace);
     __ Pop(ecx);
   }
-  STATIC_ASSERT(kHeapObjectTag == 1);
-  __ dec(eax);
   __ movzx_b(ebx, FieldOperand(ecx, Map::kInstanceSizeOffset));
   __ lea(edi, Operand(eax, ebx, times_pointer_size, 0));
+  STATIC_ASSERT(kHeapObjectTag == 1);
+  __ dec(edi);
   __ jmp(&done_allocate);
 
   // Fall back to %NewObject.
@@ -4539,7 +4531,7 @@ void FastNewRestParameterStub::Generate(MacroAssembler* masm) {
 
     // Allocate an empty rest parameter array.
     Label allocate, done_allocate;
-    __ Allocate(JSArray::kSize, eax, edx, ecx, &allocate, TAG_OBJECT);
+    __ Allocate(JSArray::kSize, eax, edx, ecx, &allocate, NO_ALLOCATION_FLAGS);
     __ bind(&done_allocate);
 
     // Setup the rest parameter array in rax.
@@ -4581,7 +4573,7 @@ void FastNewRestParameterStub::Generate(MacroAssembler* masm) {
     Label allocate, done_allocate;
     __ lea(ecx, Operand(eax, times_half_pointer_size,
                         JSArray::kSize + FixedArray::kHeaderSize));
-    __ Allocate(ecx, edx, edi, no_reg, &allocate, TAG_OBJECT);
+    __ Allocate(ecx, edx, edi, no_reg, &allocate, NO_ALLOCATION_FLAGS);
     __ bind(&done_allocate);
 
     // Setup the elements array in edx.
@@ -4643,35 +4635,50 @@ void FastNewSloppyArgumentsStub::Generate(MacroAssembler* masm) {
   // -----------------------------------
   __ AssertFunction(edi);
 
+  // For Ignition we need to skip all possible handler/stub frames until
+  // we reach the JavaScript frame for the function (similar to what the
+  // runtime fallback implementation does). So make ebx point to that
+  // JavaScript frame.
+  {
+    Label loop, loop_entry;
+    __ mov(ecx, ebp);
+    __ jmp(&loop_entry, Label::kNear);
+    __ bind(&loop);
+    __ mov(ecx, Operand(ecx, StandardFrameConstants::kCallerFPOffset));
+    __ bind(&loop_entry);
+    __ cmp(edi, Operand(ecx, StandardFrameConstants::kFunctionOffset));
+    __ j(not_equal, &loop);
+  }
+
   // TODO(bmeurer): Cleanup to match the FastNewStrictArgumentsStub.
-  __ mov(ecx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
-  __ mov(ecx,
-         FieldOperand(ecx, SharedFunctionInfo::kFormalParameterCountOffset));
-  __ lea(edx, Operand(ebp, ecx, times_half_pointer_size,
+  __ mov(ebx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+  __ mov(ebx,
+         FieldOperand(ebx, SharedFunctionInfo::kFormalParameterCountOffset));
+  __ lea(edx, Operand(ecx, ebx, times_half_pointer_size,
                       StandardFrameConstants::kCallerSPOffset));
 
-  // ecx : number of parameters (tagged)
+  // ebx : number of parameters (tagged)
   // edx : parameters pointer
   // edi : function
+  // ecx : JavaScript frame pointer.
   // esp[0] : return address
 
   // Check if the calling frame is an arguments adaptor frame.
   Label adaptor_frame, try_allocate, runtime;
-  __ mov(ebx, Operand(ebp, StandardFrameConstants::kCallerFPOffset));
-  __ mov(eax, Operand(ebx, CommonFrameConstants::kContextOrFrameTypeOffset));
+  __ mov(eax, Operand(ecx, StandardFrameConstants::kCallerFPOffset));
+  __ mov(eax, Operand(eax, CommonFrameConstants::kContextOrFrameTypeOffset));
   __ cmp(eax, Immediate(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ j(equal, &adaptor_frame, Label::kNear);
 
   // No adaptor, parameter count = argument count.
-  __ mov(ebx, ecx);
-  __ push(ecx);
+  __ mov(ecx, ebx);
+  __ push(ebx);
   __ jmp(&try_allocate, Label::kNear);
 
   // We have an adaptor frame. Patch the parameters pointer.
   __ bind(&adaptor_frame);
-  __ mov(ebx, ecx);
-  __ push(ecx);
-  __ mov(edx, Operand(ebp, StandardFrameConstants::kCallerFPOffset));
+  __ push(ebx);
+  __ mov(edx, Operand(ecx, StandardFrameConstants::kCallerFPOffset));
   __ mov(ecx, Operand(edx, ArgumentsAdaptorFrameConstants::kLengthOffset));
   __ lea(edx,
          Operand(edx, ecx, times_2, StandardFrameConstants::kCallerSPOffset));
@@ -4705,7 +4712,7 @@ void FastNewSloppyArgumentsStub::Generate(MacroAssembler* masm) {
   __ add(ebx, Immediate(JSSloppyArgumentsObject::kSize));
 
   // Do the allocation of all three objects in one go.
-  __ Allocate(ebx, eax, edi, no_reg, &runtime, TAG_OBJECT);
+  __ Allocate(ebx, eax, edi, no_reg, &runtime, NO_ALLOCATION_FLAGS);
 
   // eax = address of new object(s) (tagged)
   // ecx = argument count (smi-tagged)
@@ -4934,7 +4941,7 @@ void FastNewStrictArgumentsStub::Generate(MacroAssembler* masm) {
   __ lea(ecx,
          Operand(eax, times_half_pointer_size,
                  JSStrictArgumentsObject::kSize + FixedArray::kHeaderSize));
-  __ Allocate(ecx, edx, edi, no_reg, &allocate, TAG_OBJECT);
+  __ Allocate(ecx, edx, edi, no_reg, &allocate, NO_ALLOCATION_FLAGS);
   __ bind(&done_allocate);
 
   // Setup the elements array in edx.

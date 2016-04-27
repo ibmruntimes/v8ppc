@@ -4748,15 +4748,15 @@ void FastNewObjectStub::Generate(MacroAssembler* masm) {
   __ bind(&done_allocate);
 
   // Initialize the JSObject fields.
-  __ sw(a2, MemOperand(v0, JSObject::kMapOffset));
+  __ sw(a2, FieldMemOperand(v0, JSObject::kMapOffset));
   __ LoadRoot(a3, Heap::kEmptyFixedArrayRootIndex);
-  __ sw(a3, MemOperand(v0, JSObject::kPropertiesOffset));
-  __ sw(a3, MemOperand(v0, JSObject::kElementsOffset));
+  __ sw(a3, FieldMemOperand(v0, JSObject::kPropertiesOffset));
+  __ sw(a3, FieldMemOperand(v0, JSObject::kElementsOffset));
   STATIC_ASSERT(JSObject::kHeaderSize == 3 * kPointerSize);
-  __ Addu(a1, v0, Operand(JSObject::kHeaderSize));
+  __ Addu(a1, v0, Operand(JSObject::kHeaderSize - kHeapObjectTag));
 
   // ----------- S t a t e -------------
-  //  -- v0 : result (untagged)
+  //  -- v0 : result (tagged)
   //  -- a1 : result fields (untagged)
   //  -- t1 : result end (untagged)
   //  -- a2 : initial map
@@ -4774,11 +4774,7 @@ void FastNewObjectStub::Generate(MacroAssembler* masm) {
   {
     // Initialize all in-object fields with undefined.
     __ InitializeFieldsWithFiller(a1, t1, a0);
-
-    // Add the object tag to make the JSObject real.
-    STATIC_ASSERT(kHeapObjectTag == 1);
-    __ Ret(USE_DELAY_SLOT);
-    __ Addu(v0, v0, Operand(kHeapObjectTag));  // In delay slot.
+    __ Ret();
   }
   __ bind(&slack_tracking);
   {
@@ -4801,9 +4797,7 @@ void FastNewObjectStub::Generate(MacroAssembler* masm) {
     Label finalize;
     STATIC_ASSERT(Map::kSlackTrackingCounterEnd == 1);
     __ And(a3, a3, Operand(Map::ConstructionCounter::kMask));
-    __ Branch(USE_DELAY_SLOT, &finalize, eq, a3, Operand(zero_reg));
-    STATIC_ASSERT(kHeapObjectTag == 1);
-    __ Addu(v0, v0, Operand(kHeapObjectTag));  // In delay slot.
+    __ Branch(&finalize, eq, a3, Operand(zero_reg));
     __ Ret();
 
     // Finalize the instance size.
@@ -4828,10 +4822,10 @@ void FastNewObjectStub::Generate(MacroAssembler* masm) {
     __ CallRuntime(Runtime::kAllocateInNewSpace);
     __ Pop(a2);
   }
-  STATIC_ASSERT(kHeapObjectTag == 1);
-  __ Subu(v0, v0, Operand(kHeapObjectTag));
   __ lbu(t1, FieldMemOperand(a2, Map::kInstanceSizeOffset));
   __ Lsa(t1, v0, t1, kPointerSizeLog2);
+  STATIC_ASSERT(kHeapObjectTag == 1);
+  __ Subu(t1, t1, Operand(kHeapObjectTag));
   __ jmp(&done_allocate);
 
   // Fall back to %NewObject.
@@ -4893,7 +4887,7 @@ void FastNewRestParameterStub::Generate(MacroAssembler* masm) {
 
     // Allocate an empty rest parameter array.
     Label allocate, done_allocate;
-    __ Allocate(JSArray::kSize, v0, a0, a1, &allocate, TAG_OBJECT);
+    __ Allocate(JSArray::kSize, v0, a0, a1, &allocate, NO_ALLOCATION_FLAGS);
     __ bind(&done_allocate);
 
     // Setup the rest parameter array in v0.
@@ -4935,7 +4929,7 @@ void FastNewRestParameterStub::Generate(MacroAssembler* masm) {
     Label allocate, done_allocate;
     __ li(a1, Operand(JSArray::kSize + FixedArray::kHeaderSize));
     __ Lsa(a1, a1, a0, kPointerSizeLog2 - 1);
-    __ Allocate(a1, v0, a3, t0, &allocate, TAG_OBJECT);
+    __ Allocate(a1, v0, a3, t0, &allocate, NO_ALLOCATION_FLAGS);
     __ bind(&done_allocate);
 
     // Setup the elements array in v0.
@@ -4991,23 +4985,39 @@ void FastNewSloppyArgumentsStub::Generate(MacroAssembler* masm) {
   // -----------------------------------
   __ AssertFunction(a1);
 
+  // For Ignition we need to skip all possible handler/stub frames until
+  // we reach the JavaScript frame for the function (similar to what the
+  // runtime fallback implementation does). So make t0 point to that
+  // JavaScript frame.
+  {
+    Label loop, loop_entry;
+    __ Branch(USE_DELAY_SLOT, &loop_entry);
+    __ mov(t0, fp);  // In delay slot.
+    __ bind(&loop);
+    __ lw(t0, MemOperand(t0, StandardFrameConstants::kCallerFPOffset));
+    __ bind(&loop_entry);
+    __ lw(a3, MemOperand(t0, StandardFrameConstants::kFunctionOffset));
+    __ Branch(&loop, ne, a1, Operand(a3));
+  }
+
   // TODO(bmeurer): Cleanup to match the FastNewStrictArgumentsStub.
   __ lw(a2, FieldMemOperand(a1, JSFunction::kSharedFunctionInfoOffset));
   __ lw(a2,
         FieldMemOperand(a2, SharedFunctionInfo::kFormalParameterCountOffset));
-  __ Lsa(a3, fp, a2, kPointerSizeLog2 - 1);
+  __ Lsa(a3, t0, a2, kPointerSizeLog2 - 1);
   __ Addu(a3, a3, Operand(StandardFrameConstants::kCallerSPOffset));
 
   // a1 : function
   // a2 : number of parameters (tagged)
   // a3 : parameters pointer
+  // t0 : Javascript frame pointer
   // Registers used over whole function:
   //  t1 : arguments count (tagged)
   //  t2 : mapped parameter count (tagged)
 
   // Check if the calling frame is an arguments adaptor frame.
   Label adaptor_frame, try_allocate, runtime;
-  __ lw(t0, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  __ lw(t0, MemOperand(t0, StandardFrameConstants::kCallerFPOffset));
   __ lw(a0, MemOperand(t0, CommonFrameConstants::kContextOrFrameTypeOffset));
   __ Branch(&adaptor_frame, eq, a0,
             Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
@@ -5053,7 +5063,7 @@ void FastNewSloppyArgumentsStub::Generate(MacroAssembler* masm) {
   __ Addu(t5, t5, Operand(JSSloppyArgumentsObject::kSize));
 
   // Do the allocation of all three objects in one go.
-  __ Allocate(t5, v0, t5, t0, &runtime, TAG_OBJECT);
+  __ Allocate(t5, v0, t5, t0, &runtime, NO_ALLOCATION_FLAGS);
 
   // v0 = address of new object(s) (tagged)
   // a2 = argument count (smi-tagged)
@@ -5255,7 +5265,7 @@ void FastNewStrictArgumentsStub::Generate(MacroAssembler* masm) {
   Label allocate, done_allocate;
   __ li(a1, Operand(JSStrictArgumentsObject::kSize + FixedArray::kHeaderSize));
   __ Lsa(a1, a1, a0, kPointerSizeLog2 - 1);
-  __ Allocate(a1, v0, a3, t0, &allocate, TAG_OBJECT);
+  __ Allocate(a1, v0, a3, t0, &allocate, NO_ALLOCATION_FLAGS);
   __ bind(&done_allocate);
 
   // Setup the elements array in v0.
@@ -5692,21 +5702,30 @@ void CallApiGetterStub::Generate(MacroAssembler* masm) {
   Register holder = ApiGetterDescriptor::HolderRegister();
   Register callback = ApiGetterDescriptor::CallbackRegister();
   Register scratch = t0;
-  Register scratch2 = t1;
-  Register scratch3 = t2;
-  DCHECK(!AreAliased(receiver, holder, callback, scratch, scratch2, scratch3));
+  DCHECK(!AreAliased(receiver, holder, callback, scratch));
 
   Register api_function_address = a2;
 
-  __ Push(receiver);
-  // Push data from AccessorInfo.
+  // Here and below +1 is for name() pushed after the args_ array.
+  typedef PropertyCallbackArguments PCA;
+  __ Subu(sp, sp, (PCA::kArgsLength + 1) * kPointerSize);
+  __ sw(receiver, MemOperand(sp, (PCA::kThisIndex + 1) * kPointerSize));
+  __ lw(scratch, FieldMemOperand(callback, AccessorInfo::kDataOffset));
+  __ sw(scratch, MemOperand(sp, (PCA::kDataIndex + 1) * kPointerSize));
   __ LoadRoot(scratch, Heap::kUndefinedValueRootIndex);
-  __ li(scratch2, Operand(ExternalReference::isolate_address(isolate())));
-  __ lw(scratch3, FieldMemOperand(callback, AccessorInfo::kDataOffset));
-  __ Push(scratch3, scratch, scratch, scratch2, holder);
-  __ Push(Smi::FromInt(0));  // should_throw_on_error -> false
+  __ sw(scratch, MemOperand(sp, (PCA::kReturnValueOffset + 1) * kPointerSize));
+  __ sw(scratch, MemOperand(sp, (PCA::kReturnValueDefaultValueIndex + 1) *
+                                    kPointerSize));
+  __ li(scratch, Operand(ExternalReference::isolate_address(isolate())));
+  __ sw(scratch, MemOperand(sp, (PCA::kIsolateIndex + 1) * kPointerSize));
+  __ sw(holder, MemOperand(sp, (PCA::kHolderIndex + 1) * kPointerSize));
+  // should_throw_on_error -> false
+  DCHECK(Smi::FromInt(0) == nullptr);
+  __ sw(zero_reg,
+        MemOperand(sp, (PCA::kShouldThrowOnErrorIndex + 1) * kPointerSize));
   __ lw(scratch, FieldMemOperand(callback, AccessorInfo::kNameOffset));
-  __ push(scratch);
+  __ sw(scratch, MemOperand(sp, 0 * kPointerSize));
+
   // v8::PropertyCallbackInfo::args_ array and name handle.
   const int kStackUnwindSpace = PropertyCallbackArguments::kArgsLength + 1;
 

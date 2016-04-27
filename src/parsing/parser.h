@@ -572,6 +572,8 @@ class ParserTraits {
                                   bool name_is_strict_reserved, int pos,
                                   bool* ok);
 
+  V8_INLINE void MarkTailPosition(Expression* expression);
+
   V8_INLINE void CheckConflictingVarDeclarations(v8::internal::Scope* scope,
                                                  bool* ok);
 
@@ -918,8 +920,6 @@ class Parser : public ParserBase<ParserTraits> {
   Statement* ParseForStatement(ZoneList<const AstRawString*>* labels, bool* ok);
   Statement* ParseThrowStatement(bool* ok);
   Expression* MakeCatchContext(Handle<String> id, VariableProxy* value);
-  class DontCollectExpressionsInTailPositionScope;
-  class CollectExpressionsInTailPositionToListScope;
   TryStatement* ParseTryStatement(bool* ok);
   DebuggerStatement* ParseDebuggerStatement(bool* ok);
   // Parse a SubStatement in strict mode, or with an extra block scope in
@@ -939,10 +939,11 @@ class Parser : public ParserBase<ParserTraits> {
 
   // Initialize the components of a for-in / for-of statement.
   void InitializeForEachStatement(ForEachStatement* stmt, Expression* each,
-                                  Expression* subject, Statement* body);
+                                  Expression* subject, Statement* body,
+                                  int each_keyword_pos);
   void InitializeForOfStatement(ForOfStatement* stmt, Expression* each,
                                 Expression* iterable, Statement* body,
-                                int iterable_pos);
+                                int next_result_pos = RelocInfo::kNoPosition);
   Statement* DesugarLexicalBindingsInForStatement(
       Scope* inner_scope, VariableMode mode,
       ZoneList<const AstRawString*>* names, ForStatement* loop, Statement* init,

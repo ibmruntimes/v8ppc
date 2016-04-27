@@ -762,6 +762,9 @@ ClassLiteral* ParserTraits::ParseClassLiteral(
                                     name_is_strict_reserved, pos, ok);
 }
 
+void ParserTraits::MarkTailPosition(Expression* expression) {
+  expression->MarkTail();
+}
 
 Parser::Parser(ParseInfo* info)
     : ParserBase<ParserTraits>(info->zone(), &scanner_, info->stack_limit(),
@@ -785,6 +788,7 @@ Parser::Parser(ParseInfo* info)
   set_allow_tailcalls(FLAG_harmony_tailcalls && !info->is_native() &&
                       info->isolate()->is_tail_call_elimination_enabled());
   set_allow_harmony_do_expressions(FLAG_harmony_do_expressions);
+  set_allow_harmony_for_in(FLAG_harmony_for_in);
   set_allow_harmony_function_name(FLAG_harmony_function_name);
   set_allow_harmony_function_sent(FLAG_harmony_function_sent);
   set_allow_harmony_restrictive_declarations(
@@ -2569,6 +2573,13 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
   function_state_->set_return_location(loc);
 
   Token::Value tok = peek();
+  int tail_call_position = -1;
+  if (FLAG_harmony_explicit_tailcalls && tok == Token::CONTINUE) {
+    Consume(Token::CONTINUE);
+    tail_call_position = position();
+    tok = peek();
+  }
+
   Statement* result;
   Expression* return_value;
   if (scanner()->HasAnyLineTerminatorBeforeNext() ||
@@ -2625,9 +2636,22 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
           is_object_conditional, pos);
     }
 
-    // ES6 14.6.1 Static Semantics: IsInTailPosition
-    if (allow_tailcalls() && !is_sloppy(language_mode())) {
-      function_state_->AddExpressionInTailPosition(return_value);
+    // TODO(ishell): update chapter number.
+    // ES8 XX.YY.ZZ
+    if (tail_call_position >= 0) {
+      ReturnExprContext return_expr_context =
+          function_state_->return_expr_context();
+      if (return_expr_context != ReturnExprContext::kNormal) {
+        ReportIllegalTailCallAt(tail_call_position, return_expr_context);
+        *ok = false;
+        return NULL;
+      }
+      function_state_->AddExpressionInTailPosition(return_value,
+                                                   tail_call_position);
+
+    } else if (allow_tailcalls() && !is_sloppy(language_mode())) {
+      // ES6 14.6.1 Static Semantics: IsInTailPosition
+      function_state_->AddExpressionInTailPosition(return_value, pos);
     }
   }
   ExpectSemicolon(CHECK_OK);
@@ -2807,40 +2831,6 @@ Statement* Parser::ParseThrowStatement(bool* ok) {
       factory()->NewThrow(exception, pos), pos);
 }
 
-class Parser::DontCollectExpressionsInTailPositionScope {
- public:
-  DontCollectExpressionsInTailPositionScope(
-      Parser::FunctionState* function_state)
-      : function_state_(function_state),
-        old_value_(function_state->collect_expressions_in_tail_position()) {
-    function_state->set_collect_expressions_in_tail_position(false);
-  }
-  ~DontCollectExpressionsInTailPositionScope() {
-    function_state_->set_collect_expressions_in_tail_position(old_value_);
-  }
-
- private:
-  Parser::FunctionState* function_state_;
-  bool old_value_;
-};
-
-// Collects all return expressions at tail call position in this scope
-// to a separate list.
-class Parser::CollectExpressionsInTailPositionToListScope {
- public:
-  CollectExpressionsInTailPositionToListScope(
-      Parser::FunctionState* function_state, List<Expression*>* list)
-      : function_state_(function_state), list_(list) {
-    function_state->expressions_in_tail_position().Swap(list_);
-  }
-  ~CollectExpressionsInTailPositionToListScope() {
-    function_state_->expressions_in_tail_position().Swap(list_);
-  }
-
- private:
-  Parser::FunctionState* function_state_;
-  List<Expression*>* list_;
-};
 
 TryStatement* Parser::ParseTryStatement(bool* ok) {
   // TryStatement ::
@@ -2859,7 +2849,8 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
 
   Block* try_block;
   {
-    DontCollectExpressionsInTailPositionScope no_tail_calls(function_state_);
+    ReturnExprScope no_tail_calls(function_state_,
+                                  ReturnExprContext::kInsideTryBlock);
     try_block = ParseBlock(NULL, CHECK_OK);
   }
 
@@ -2873,7 +2864,7 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
   Scope* catch_scope = NULL;
   Variable* catch_variable = NULL;
   Block* catch_block = NULL;
-  List<Expression*> expressions_in_tail_position_in_catch_block;
+  List<TailCallExpression> expressions_in_tail_position_in_catch_block;
   if (tok == Token::CATCH) {
     Consume(Token::CATCH);
 
@@ -2989,6 +2980,16 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
     result = factory()->NewTryCatchStatement(try_block, catch_scope,
                                              catch_variable, catch_block, pos);
   } else {
+    if (FLAG_harmony_explicit_tailcalls &&
+        expressions_in_tail_position_in_catch_block.length() > 0) {
+      // TODO(ishell): update chapter number.
+      // ES8 XX.YY.ZZ
+      int pos = expressions_in_tail_position_in_catch_block[0].pos;
+      ReportMessageAt(Scanner::Location(pos, pos + 1),
+                      MessageTemplate::kTailCallInCatchBlock);
+      *ok = false;
+      return NULL;
+    }
     DCHECK(finally_block != NULL);
     result = factory()->NewTryFinallyStatement(try_block, finally_block, pos);
   }
@@ -3083,11 +3084,10 @@ Expression* Parser::BuildIteratorNextResult(Expression* iterator,
 
 void Parser::InitializeForEachStatement(ForEachStatement* stmt,
                                         Expression* each, Expression* subject,
-                                        Statement* body) {
+                                        Statement* body, int each_keyword_pos) {
   ForOfStatement* for_of = stmt->AsForOfStatement();
   if (for_of != NULL) {
-    InitializeForOfStatement(for_of, each, subject, body,
-                             RelocInfo::kNoPosition);
+    InitializeForOfStatement(for_of, each, subject, body, each_keyword_pos);
   } else {
     if (each->IsArrayLiteral() || each->IsObjectLiteral()) {
       Variable* temp =
@@ -3112,7 +3112,7 @@ void Parser::InitializeForEachStatement(ForEachStatement* stmt,
 
 void Parser::InitializeForOfStatement(ForOfStatement* for_of, Expression* each,
                                       Expression* iterable, Statement* body,
-                                      int iterable_pos) {
+                                      int next_result_pos) {
   Variable* iterator =
       scope_->NewTemporary(ast_value_factory()->dot_iterator_string());
   Variable* result =
@@ -3123,14 +3123,7 @@ void Parser::InitializeForOfStatement(ForOfStatement* for_of, Expression* each,
   Expression* result_done;
   Expression* assign_each;
 
-  // Hackily disambiguate o from o.next and o [Symbol.iterator]().
-  // TODO(verwaest): Come up with a better solution.
-  int get_iterator_pos = iterable_pos != RelocInfo::kNoPosition
-                             ? iterable_pos
-                             : iterable->position() - 2;
-  int next_result_pos = iterable_pos != RelocInfo::kNoPosition
-                            ? iterable_pos
-                            : iterable->position() - 1;
+  int get_iterator_pos = iterable->position();
 
   // iterator = iterable[Symbol.iterator]()
   assign_iterator = factory()->NewAssignment(
@@ -3486,7 +3479,12 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         if (parsing_result.first_initializer_loc.IsValid() &&
             (is_strict(language_mode()) || mode == ForEachStatement::ITERATE ||
              IsLexicalVariableMode(parsing_result.descriptor.mode) ||
-             !decl.pattern->IsVariableProxy())) {
+             !decl.pattern->IsVariableProxy() || allow_harmony_for_in())) {
+          // Only increment the use count if we would have let this through
+          // without the flag.
+          if (allow_harmony_for_in()) {
+            ++use_counts_[v8::Isolate::kForInInitializer];
+          }
           ParserTraits::ReportMessageAt(
               parsing_result.first_initializer_loc,
               MessageTemplate::kForInOfLoopInitializer,
@@ -3500,19 +3498,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         // special case for legacy for (var/const x =.... in)
         if (!IsLexicalVariableMode(parsing_result.descriptor.mode) &&
             decl.pattern->IsVariableProxy() && decl.initializer != nullptr) {
+          DCHECK(!allow_harmony_for_in());
           ++use_counts_[v8::Isolate::kForInInitializer];
-          if (FLAG_harmony_for_in) {
-            // TODO(rossberg): This error is not currently generated in the
-            // preparser, because that would lose some of the use counts
-            // recorded above. Once either the use counter or the flag is
-            // removed, the preparser should be adjusted.
-            ParserTraits::ReportMessageAt(
-                parsing_result.first_initializer_loc,
-                MessageTemplate::kForInOfLoopInitializer,
-                ForEachStatement::VisitModeString(mode));
-            *ok = false;
-            return nullptr;
-          }
           const AstRawString* name =
               decl.pattern->AsVariableProxy()->raw_name();
           VariableProxy* single_var = scope_->NewUnresolved(
@@ -3550,6 +3537,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
             factory()->NewForEachStatement(mode, labels, stmt_pos);
         Target target(&this->target_stack_, loop);
 
+        int each_keyword_position = scanner()->location().beg_pos;
+
         Expression* enumerable;
         if (mode == ForEachStatement::ITERATE) {
           ExpressionClassifier classifier(this);
@@ -3568,6 +3557,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
             factory()->NewBlock(NULL, 3, false, RelocInfo::kNoPosition);
 
         {
+          ReturnExprScope no_tail_calls(function_state_,
+                                        ReturnExprContext::kInsideForInOfBody);
           BlockState block_state(&scope_, body_scope);
 
           Statement* body = ParseScopedStatement(NULL, true, CHECK_OK);
@@ -3591,7 +3582,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
           body_block->statements()->Add(body, zone());
           VariableProxy* temp_proxy =
               factory()->NewVariableProxy(temp, each_beg_pos, each_end_pos);
-          InitializeForEachStatement(loop, temp_proxy, enumerable, body_block);
+          InitializeForEachStatement(loop, temp_proxy, enumerable, body_block,
+                                     each_keyword_position);
         }
         body_scope->set_end_position(scanner()->location().end_pos);
         body_scope = body_scope->FinalizeBlockScope();
@@ -3670,6 +3662,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
             factory()->NewForEachStatement(mode, labels, stmt_pos);
         Target target(&this->target_stack_, loop);
 
+        int each_keyword_position = scanner()->location().beg_pos;
+
         Expression* enumerable;
         if (mode == ForEachStatement::ITERATE) {
           ExpressionClassifier classifier(this);
@@ -3684,7 +3678,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         // For legacy compat reasons, give for loops similar treatment to
         // if statements in allowing a function declaration for a body
         Statement* body = ParseScopedStatement(NULL, true, CHECK_OK);
-        InitializeForEachStatement(loop, expression, enumerable, body);
+        InitializeForEachStatement(loop, expression, enumerable, body,
+                                   each_keyword_position);
 
         Statement* final_loop = loop->IsForOfStatement()
             ? FinalizeForOfStatement(
@@ -4577,10 +4572,10 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
 
   // ES6 14.6.1 Static Semantics: IsInTailPosition
   // Mark collected return expressions that are in tail call position.
-  const List<Expression*>& expressions_in_tail_position =
+  const List<TailCallExpression>& expressions_in_tail_position =
       function_state_->expressions_in_tail_position();
   for (int i = 0; i < expressions_in_tail_position.length(); ++i) {
-    expressions_in_tail_position[i]->MarkTail();
+    MarkTailPosition(expressions_in_tail_position[i].expression);
   }
   return result;
 }
@@ -4604,6 +4599,7 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
 #define SET_ALLOW(name) reusable_preparser_->set_allow_##name(allow_##name());
     SET_ALLOW(natives);
     SET_ALLOW(harmony_do_expressions);
+    SET_ALLOW(harmony_for_in);
     SET_ALLOW(harmony_function_name);
     SET_ALLOW(harmony_function_sent);
     SET_ALLOW(harmony_exponentiation_operator);
@@ -4612,7 +4608,7 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
   }
   PreParser::PreParseResult result = reusable_preparser_->PreParseLazyFunction(
       language_mode(), function_state_->kind(), scope_->has_simple_parameters(),
-      logger, bookmark);
+      logger, bookmark, use_counts_);
   if (pre_parse_timer_ != NULL) {
     pre_parse_timer_->Stop();
   }
@@ -5520,7 +5516,7 @@ Expression* Parser::RewriteSpreads(ArrayLiteral* lit) {
           ForEachStatement::ITERATE, nullptr, RelocInfo::kNoPosition);
       InitializeForOfStatement(loop->AsForOfStatement(),
                                factory()->NewVariableProxy(each), subject,
-                               append_body, spread->expression_position());
+                               append_body);
       do_block->statements()->Add(loop, zone());
     }
   }

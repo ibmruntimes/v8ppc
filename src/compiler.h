@@ -44,6 +44,7 @@ class Compiler : public AllStatic {
   // given function holds (except for live-edit, which compiles the world).
 
   static bool Compile(Handle<JSFunction> function, ClearExceptionFlag flag);
+  static bool CompileBaseline(Handle<JSFunction> function);
   static bool CompileOptimized(Handle<JSFunction> function, ConcurrencyMode);
   static bool CompileDebugCode(Handle<JSFunction> function);
   static bool CompileDebugCode(Handle<SharedFunctionInfo> shared);
@@ -159,13 +160,12 @@ class CompilationInfo {
     kSplittingEnabled = 1 << 13,
     kDeoptimizationEnabled = 1 << 14,
     kSourcePositionsEnabled = 1 << 15,
-    kEffectSchedulingEnabled = 1 << 16,
-    kBailoutOnUninitialized = 1 << 17,
-    kOptimizeFromBytecode = 1 << 18,
+    kBailoutOnUninitialized = 1 << 16,
+    kOptimizeFromBytecode = 1 << 17,
   };
 
   CompilationInfo(ParseInfo* parse_info, Handle<JSFunction> closure);
-  CompilationInfo(const char* debug_name, Isolate* isolate, Zone* zone,
+  CompilationInfo(Vector<const char> debug_name, Isolate* isolate, Zone* zone,
                   Code::Flags code_flags = Code::ComputeFlags(Code::STUB));
   virtual ~CompilationInfo();
 
@@ -273,12 +273,6 @@ class CompilationInfo {
 
   bool is_deoptimization_enabled() const {
     return GetFlag(kDeoptimizationEnabled);
-  }
-
-  void MarkAsEffectSchedulingEnabled() { SetFlag(kEffectSchedulingEnabled); }
-
-  bool is_effect_scheduling_enabled() const {
-    return GetFlag(kEffectSchedulingEnabled);
   }
 
   void MarkAsSourcePositionsEnabled() { SetFlag(kSourcePositionsEnabled); }
@@ -498,7 +492,7 @@ class CompilationInfo {
     STUB
   };
 
-  CompilationInfo(ParseInfo* parse_info, const char* debug_name,
+  CompilationInfo(ParseInfo* parse_info, Vector<const char> debug_name,
                   Code::Flags code_flags, Mode mode, Isolate* isolate,
                   Zone* zone);
 
@@ -562,7 +556,7 @@ class CompilationInfo {
   // The current OSR frame for specialization or {nullptr}.
   JavaScriptFrame* osr_frame_ = nullptr;
 
-  const char* debug_name_;
+  Vector<const char> debug_name_;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationInfo);
 };
@@ -577,7 +571,8 @@ class CompilationInfo {
 // Each of the three phases can either fail, bail-out to full code generator or
 // succeed. Apart from their return value, the status of the phase last run can
 // be checked using {last_status()} as well.
-class OptimizedCompileJob: public ZoneObject {
+// TODO(mstarzinger): Make CompilationInfo base embedded.
+class OptimizedCompileJob {
  public:
   explicit OptimizedCompileJob(CompilationInfo* info, const char* compiler_name)
       : info_(info), compiler_name_(compiler_name), last_status_(SUCCEEDED) {}

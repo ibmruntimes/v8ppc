@@ -17,6 +17,7 @@
 #include "src/compiler/node.h"
 #include "src/compiler/pipeline.h"
 #include "src/compiler/wasm-compiler.h"
+#include "src/compiler/zone-pool.h"
 
 #include "src/wasm/ast-decoder.h"
 #include "src/wasm/wasm-js.h"
@@ -178,8 +179,8 @@ class TestingModule : public ModuleEnv {
         *v8::Local<v8::Function>::Cast(CompileRun(source))));
     uint32_t index = AddFunction(sig, Handle<Code>::null());
     Isolate* isolate = module->shared_isolate;
-    WasmName module_name = {"test", 4};
-    WasmName function_name = {nullptr, 0};
+    WasmName module_name = ArrayVector("test");
+    WasmName function_name;
     Handle<Code> code = CompileWasmToJSWrapper(isolate, this, jsfunc, sig,
                                                module_name, function_name);
     instance->function_code[index] = code;
@@ -242,9 +243,10 @@ class TestingModule : public ModuleEnv {
 };
 
 inline void TestBuildingGraph(Zone* zone, JSGraph* jsgraph, ModuleEnv* module,
-                              FunctionSig* sig, const byte* start,
-                              const byte* end) {
-  compiler::WasmGraphBuilder builder(zone, jsgraph, sig);
+                              FunctionSig* sig,
+                              SourcePositionTable* source_position_table,
+                              const byte* start, const byte* end) {
+  compiler::WasmGraphBuilder builder(zone, jsgraph, sig, source_position_table);
   TreeResult result =
       BuildTFGraph(zone->allocator(), &builder, module, sig, start, end);
   if (result.failed()) {
@@ -380,7 +382,7 @@ class WasmFunctionWrapper : public HandleAndZoneScope,
         r.LowerGraph();
       }
 
-      CompilationInfo info("testing", isolate, graph()->zone());
+      CompilationInfo info(ArrayVector("testing"), isolate, graph()->zone());
       code_ =
           Pipeline::GenerateCodeForTesting(&info, descriptor, graph(), nullptr);
       CHECK(!code_.is_null());
@@ -410,15 +412,17 @@ class WasmFunctionWrapper : public HandleAndZoneScope,
 class WasmFunctionCompiler : public HandleAndZoneScope,
                              private GraphAndBuilders {
  public:
-  explicit WasmFunctionCompiler(FunctionSig* sig, TestingModule* module,
-                                const char* debug_name = "<WASM UNNAMED>")
+  explicit WasmFunctionCompiler(
+      FunctionSig* sig, TestingModule* module,
+      Vector<const char> debug_name = ArrayVector("<WASM UNNAMED>"))
       : GraphAndBuilders(main_zone()),
         jsgraph(this->isolate(), this->graph(), this->common(), nullptr,
                 nullptr, this->machine()),
         sig(sig),
         descriptor_(nullptr),
         testing_module_(module),
-        debug_name_(debug_name) {
+        debug_name_(debug_name),
+        source_position_table_(this->graph()) {
     if (module) {
       // Get a new function from the testing module.
       function_ = nullptr;
@@ -440,10 +444,11 @@ class WasmFunctionCompiler : public HandleAndZoneScope,
   // The call descriptor is initialized when the function is compiled.
   CallDescriptor* descriptor_;
   TestingModule* testing_module_;
-  const char* debug_name_;
+  Vector<const char> debug_name_;
   WasmFunction* function_;
   int function_index_;
   LocalDeclEncoder local_decls;
+  SourcePositionTable source_position_table_;
 
   Isolate* isolate() { return main_isolate(); }
   Graph* graph() const { return main_graph_; }
@@ -460,7 +465,8 @@ class WasmFunctionCompiler : public HandleAndZoneScope,
   void Build(const byte* start, const byte* end) {
     // Build the TurboFan graph.
     local_decls.Prepend(&start, &end);
-    TestBuildingGraph(main_zone(), &jsgraph, testing_module_, sig, start, end);
+    TestBuildingGraph(main_zone(), &jsgraph, testing_module_, sig,
+                      &source_position_table_, start, end);
     delete[] start;
   }
 
@@ -479,16 +485,22 @@ class WasmFunctionCompiler : public HandleAndZoneScope,
     }
     CompilationInfo info(debug_name_, this->isolate(), this->zone(),
                          Code::ComputeFlags(Code::WASM_FUNCTION));
-    Handle<Code> result =
-        Pipeline::GenerateCodeForTesting(&info, desc, this->graph());
+    v8::base::SmartPointer<OptimizedCompileJob> job(
+        Pipeline::NewWasmCompilationJob(&info, graph(), desc,
+                                        &source_position_table_));
+    Handle<Code> code = Handle<Code>::null();
+    if (job->OptimizeGraph() == OptimizedCompileJob::SUCCEEDED &&
+        job->GenerateCode() == OptimizedCompileJob::SUCCEEDED) {
+      code = info.code();
+    }
 #ifdef ENABLE_DISASSEMBLER
-    if (!result.is_null() && FLAG_print_opt_code) {
+    if (!code.is_null() && FLAG_print_opt_code) {
       OFStream os(stdout);
-      result->Disassemble("wasm code", os);
+      code->Disassemble("wasm code", os);
     }
 #endif
 
-    return result;
+    return code;
   }
 
   uint32_t CompileAndAdd(uint16_t sig_index = 0) {

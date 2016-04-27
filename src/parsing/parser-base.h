@@ -114,6 +114,7 @@ class ParserBase : public Traits {
         allow_tailcalls_(false),
         allow_harmony_restrictive_declarations_(false),
         allow_harmony_do_expressions_(false),
+        allow_harmony_for_in_(false),
         allow_harmony_function_name_(false),
         allow_harmony_function_sent_(false) {}
 
@@ -132,6 +133,7 @@ class ParserBase : public Traits {
   ALLOW_ACCESSORS(tailcalls);
   ALLOW_ACCESSORS(harmony_restrictive_declarations);
   ALLOW_ACCESSORS(harmony_do_expressions);
+  ALLOW_ACCESSORS(harmony_for_in);
   ALLOW_ACCESSORS(harmony_function_name);
   ALLOW_ACCESSORS(harmony_function_sent);
   SCANNER_ACCESSORS(harmony_exponentiation_operator);
@@ -186,6 +188,23 @@ class ParserBase : public Traits {
 
     ExpressionT assignment;
     Scope* scope;
+  };
+
+  struct TailCallExpression {
+    TailCallExpression(ExpressionT expression, int pos)
+        : expression(expression), pos(pos) {}
+
+    ExpressionT expression;
+    int pos;
+  };
+
+  // Defines whether tail call expressions are allowed or not.
+  enum class ReturnExprContext {
+    // Tail call expressions are allowed.
+    kNormal,
+    // Tail call expressions are not allowed.
+    kInsideTryBlock,
+    kInsideForInOfBody,
   };
 
   class FunctionState BASE_EMBEDDED {
@@ -245,20 +264,20 @@ class ParserBase : public Traits {
       return destructuring_assignments_to_rewrite_;
     }
 
-    List<ExpressionT>& expressions_in_tail_position() {
+    List<TailCallExpression>& expressions_in_tail_position() {
       return expressions_in_tail_position_;
     }
-    void AddExpressionInTailPosition(ExpressionT expression) {
-      if (collect_expressions_in_tail_position_) {
-        expressions_in_tail_position_.Add(expression);
+    void AddExpressionInTailPosition(ExpressionT expression, int pos) {
+      if (return_expr_context() == ReturnExprContext::kNormal) {
+        expressions_in_tail_position_.Add(TailCallExpression(expression, pos));
       }
     }
 
-    bool collect_expressions_in_tail_position() const {
-      return collect_expressions_in_tail_position_;
+    ReturnExprContext return_expr_context() const {
+      return return_expr_context_;
     }
-    void set_collect_expressions_in_tail_position(bool collect) {
-      collect_expressions_in_tail_position_ = collect;
+    void set_return_expr_context(ReturnExprContext context) {
+      return_expr_context_ = context;
     }
 
     ZoneList<ExpressionT>* non_patterns_to_rewrite() {
@@ -313,8 +332,8 @@ class ParserBase : public Traits {
     Scope* outer_scope_;
 
     List<DestructuringAssignment> destructuring_assignments_to_rewrite_;
-    List<ExpressionT> expressions_in_tail_position_;
-    bool collect_expressions_in_tail_position_;
+    List<TailCallExpression> expressions_in_tail_position_;
+    ReturnExprContext return_expr_context_;
     ZoneList<ExpressionT> non_patterns_to_rewrite_;
 
     typename Traits::Type::Factory* factory_;
@@ -330,6 +349,42 @@ class ParserBase : public Traits {
     friend class ParserTraits;
     friend class PreParserTraits;
     friend class Checkpoint;
+  };
+
+  // This scope sets current ReturnExprContext to given value.
+  class ReturnExprScope {
+   public:
+    explicit ReturnExprScope(FunctionState* function_state,
+                             ReturnExprContext return_expr_context)
+        : function_state_(function_state),
+          sav_return_expr_context_(function_state->return_expr_context()) {
+      function_state->set_return_expr_context(return_expr_context);
+    }
+    ~ReturnExprScope() {
+      function_state_->set_return_expr_context(sav_return_expr_context_);
+    }
+
+   private:
+    FunctionState* function_state_;
+    ReturnExprContext sav_return_expr_context_;
+  };
+
+  // Collects all return expressions at tail call position in this scope
+  // to a separate list.
+  class CollectExpressionsInTailPositionToListScope {
+   public:
+    CollectExpressionsInTailPositionToListScope(FunctionState* function_state,
+                                                List<TailCallExpression>* list)
+        : function_state_(function_state), list_(list) {
+      function_state->expressions_in_tail_position().Swap(list_);
+    }
+    ~CollectExpressionsInTailPositionToListScope() {
+      function_state_->expressions_in_tail_position().Swap(list_);
+    }
+
+   private:
+    FunctionState* function_state_;
+    List<TailCallExpression>* list_;
   };
 
   // Annoyingly, arrow functions first parse as comma expressions, then when we
@@ -587,6 +642,23 @@ class ParserBase : public Traits {
                             error_type);
   }
 
+  void ReportIllegalTailCallAt(int pos, ReturnExprContext return_expr_context) {
+    Scanner::Location loc(pos, pos + 1);
+    MessageTemplate::Template msg = MessageTemplate::kNone;
+    switch (return_expr_context) {
+      case ReturnExprContext::kNormal:
+        UNREACHABLE();
+        return;
+      case ReturnExprContext::kInsideTryBlock:
+        msg = MessageTemplate::kTailCallInTryBlock;
+        break;
+      case ReturnExprContext::kInsideForInOfBody:
+        msg = MessageTemplate::kTailCallInForInOf;
+        break;
+    }
+    ReportMessageAt(loc, msg);
+  }
+
   void GetUnexpectedTokenMessage(
       Token::Value token, MessageTemplate::Template* message,
       Scanner::Location* location, const char** arg,
@@ -771,7 +843,8 @@ class ParserBase : public Traits {
   ExpressionT ParseAssignmentExpression(bool accept_IN,
                                         ExpressionClassifier* classifier,
                                         bool* ok);
-  ExpressionT ParseYieldExpression(ExpressionClassifier* classifier, bool* ok);
+  ExpressionT ParseYieldExpression(bool accept_IN,
+                                   ExpressionClassifier* classifier, bool* ok);
   ExpressionT ParseConditionalExpression(bool accept_IN,
                                          ExpressionClassifier* classifier,
                                          bool* ok);
@@ -923,6 +996,7 @@ class ParserBase : public Traits {
   bool allow_tailcalls_;
   bool allow_harmony_restrictive_declarations_;
   bool allow_harmony_do_expressions_;
+  bool allow_harmony_for_in_;
   bool allow_harmony_function_name_;
   bool allow_harmony_function_sent_;
 };
@@ -942,7 +1016,7 @@ ParserBase<Traits>::FunctionState::FunctionState(
       outer_function_state_(*function_state_stack),
       scope_stack_(scope_stack),
       outer_scope_(*scope_stack),
-      collect_expressions_in_tail_position_(true),
+      return_expr_context_(ReturnExprContext::kNormal),
       non_patterns_to_rewrite_(0, scope->zone()),
       factory_(factory),
       next_function_is_parenthesized_(false),
@@ -1889,11 +1963,12 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN,
   //   ArrowFunction
   //   YieldExpression
   //   LeftHandSideExpression AssignmentOperator AssignmentExpression
+  //   TailCallExpression
   bool is_destructuring_assignment = false;
   int lhs_beg_pos = peek_position();
 
   if (peek() == Token::YIELD && is_generator()) {
-    return this->ParseYieldExpression(classifier, ok);
+    return this->ParseYieldExpression(accept_IN, classifier, ok);
   }
 
   FuncNameInferrer::State fni_state(fni_);
@@ -2040,7 +2115,8 @@ ParserBase<Traits>::ParseAssignmentExpression(bool accept_IN,
 
 template <class Traits>
 typename ParserBase<Traits>::ExpressionT
-ParserBase<Traits>::ParseYieldExpression(ExpressionClassifier* classifier,
+ParserBase<Traits>::ParseYieldExpression(bool accept_IN,
+                                         ExpressionClassifier* classifier,
                                          bool* ok) {
   // YieldExpression ::
   //   'yield' ([no line terminator] '*'? AssignmentExpression)?
@@ -2070,7 +2146,7 @@ ParserBase<Traits>::ParseYieldExpression(ExpressionClassifier* classifier,
         if (!delegating) break;
         // Delegating yields require an RHS; fall through.
       default:
-        expression = ParseAssignmentExpression(false, classifier, CHECK_OK);
+        expression = ParseAssignmentExpression(accept_IN, classifier, CHECK_OK);
         Traits::RewriteNonPattern(classifier, CHECK_OK);
         break;
     }
@@ -2855,6 +2931,22 @@ ParserBase<Traits>::ParseArrowFunctionLiteral(
       // Single-expression body
       int pos = position();
       ExpressionClassifier classifier(this);
+      bool is_tail_call_expression;
+      if (FLAG_harmony_explicit_tailcalls) {
+        // TODO(ishell): update chapter number.
+        // ES8 XX.YY.ZZ
+        if (peek() == Token::CONTINUE) {
+          Consume(Token::CONTINUE);
+          pos = position();
+          is_tail_call_expression = true;
+        } else {
+          is_tail_call_expression = false;
+        }
+      } else {
+        // ES6 14.6.1 Static Semantics: IsInTailPosition
+        is_tail_call_expression =
+            allow_tailcalls() && !is_sloppy(language_mode());
+      }
       ExpressionT expression =
           ParseAssignmentExpression(accept_IN, &classifier, CHECK_OK);
       Traits::RewriteNonPattern(&classifier, CHECK_OK);
@@ -2863,6 +2955,9 @@ ParserBase<Traits>::ParseArrowFunctionLiteral(
       body->Add(factory()->NewReturnStatement(expression, pos), zone());
       materialized_literal_count = function_state.materialized_literal_count();
       expected_property_count = function_state.expected_property_count();
+      if (is_tail_call_expression) {
+        this->MarkTailPosition(expression);
+      }
     }
     super_loc = function_state.super_location();
 

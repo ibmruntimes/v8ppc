@@ -1686,7 +1686,6 @@ void FullCodeGenerator::VisitAssignment(Assignment* expr) {
   DCHECK(expr->target()->IsValidReferenceExpressionOrThis());
 
   Comment cmnt(masm_, "[ Assignment");
-  SetExpressionPosition(expr, INSERT_BREAK);
 
   Property* property = expr->target()->AsProperty();
   LhsKind assign_type = Property::GetAssignType(property);
@@ -1899,7 +1898,8 @@ void FullCodeGenerator::EmitOperandStackDepthCheck() {
 void FullCodeGenerator::EmitCreateIteratorResult(bool done) {
   Label allocate, done_allocate;
 
-  __ Allocate(JSIteratorResult::kSize, r0, r2, r3, &allocate, TAG_OBJECT);
+  __ Allocate(JSIteratorResult::kSize, r0, r2, r3, &allocate,
+              NO_ALLOCATION_FLAGS);
   __ b(&done_allocate);
 
   __ bind(&allocate);
@@ -3195,7 +3195,8 @@ void FullCodeGenerator::EmitCreateIterResultObject(CallRuntime* expr) {
 
   Label runtime, done;
 
-  __ Allocate(JSIteratorResult::kSize, r0, r2, r3, &runtime, TAG_OBJECT);
+  __ Allocate(JSIteratorResult::kSize, r0, r2, r3, &runtime,
+              NO_ALLOCATION_FLAGS);
   __ LoadNativeContextSlot(Context::ITERATOR_RESULT_MAP_INDEX, r1);
   __ pop(r3);
   __ pop(r2);
