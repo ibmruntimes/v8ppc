@@ -78,7 +78,12 @@ Semaphore::Semaphore(int count) {
   // Unaligned native handle can later cause a failure in semaphore signal.
   // Check the alignment here to catch the failure earlier.
   // Context: crbug.com/605349.
+#if V8_OS_AIX
+  // On aix sem_t is of type int
+  const uintptr_t kPointerAlignmentMask = sizeof(int) - 1;
+#else
   const uintptr_t kPointerAlignmentMask = sizeof(void*) - 1;
+#endif
   CHECK_EQ(
       0, reinterpret_cast<uintptr_t>(&native_handle_) & kPointerAlignmentMask);
   DCHECK(count >= 0);
