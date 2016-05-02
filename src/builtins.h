@@ -60,7 +60,6 @@ inline bool operator&(BuiltinExtraArguments lhs, BuiltinExtraArguments rhs) {
   V(EmptyFunction, kNone)                                      \
                                                                \
   V(ArrayConcat, kNone)                                        \
-  V(ArrayIsArray, kNone)                                       \
   V(ArrayPop, kNone)                                           \
   V(ArrayPush, kNone)                                          \
   V(ArrayShift, kNone)                                         \
@@ -126,10 +125,14 @@ inline bool operator&(BuiltinExtraArguments lhs, BuiltinExtraArguments rhs) {
                                                                \
   V(ObjectAssign, kNone)                                       \
   V(ObjectCreate, kNone)                                       \
+  V(ObjectDefineGetter, kNone)                                 \
   V(ObjectDefineProperties, kNone)                             \
   V(ObjectDefineProperty, kNone)                               \
+  V(ObjectDefineSetter, kNone)                                 \
+  V(ObjectEntries, kNone)                                      \
   V(ObjectFreeze, kNone)                                       \
   V(ObjectGetOwnPropertyDescriptor, kNone)                     \
+  V(ObjectGetOwnPropertyDescriptors, kNone)                    \
   V(ObjectGetOwnPropertyNames, kNone)                          \
   V(ObjectGetOwnPropertySymbols, kNone)                        \
   V(ObjectGetPrototypeOf, kNone)                               \
@@ -138,12 +141,12 @@ inline bool operator&(BuiltinExtraArguments lhs, BuiltinExtraArguments rhs) {
   V(ObjectIsFrozen, kNone)                                     \
   V(ObjectIsSealed, kNone)                                     \
   V(ObjectKeys, kNone)                                         \
-  V(ObjectValues, kNone)                                       \
-  V(ObjectEntries, kNone)                                      \
-  V(ObjectGetOwnPropertyDescriptors, kNone)                    \
+  V(ObjectLookupGetter, kNone)                                 \
+  V(ObjectLookupSetter, kNone)                                 \
   V(ObjectPreventExtensions, kNone)                            \
-  V(ObjectSeal, kNone)                                         \
   V(ObjectProtoToString, kNone)                                \
+  V(ObjectSeal, kNone)                                         \
+  V(ObjectValues, kNone)                                       \
                                                                \
   V(ProxyConstructor, kNone)                                   \
   V(ProxyConstructor_ConstructStub, kTarget)                   \
@@ -163,8 +166,7 @@ inline bool operator&(BuiltinExtraArguments lhs, BuiltinExtraArguments rhs) {
   V(SymbolConstructor, kNone)                                  \
   V(SymbolConstructor_ConstructStub, kTarget)                  \
                                                                \
-  V(HandleApiCall, kTarget)                                    \
-  V(HandleApiCallConstruct, kTarget)                           \
+  V(HandleApiCall, kTargetAndNewTarget)                        \
   V(HandleApiCallAsFunction, kNone)                            \
   V(HandleApiCallAsConstructor, kNone)                         \
                                                                \
@@ -173,6 +175,9 @@ inline bool operator&(BuiltinExtraArguments lhs, BuiltinExtraArguments rhs) {
 
 // Define list of builtins implemented in assembly.
 #define BUILTIN_LIST_A(V)                                                      \
+  V(AllocateInNewSpace, BUILTIN, UNINITIALIZED, kNoExtraICState)               \
+  V(AllocateInOldSpace, BUILTIN, UNINITIALIZED, kNoExtraICState)               \
+                                                                               \
   V(ArgumentsAdaptorTrampoline, BUILTIN, UNINITIALIZED, kNoExtraICState)       \
                                                                                \
   V(ConstructedNonConstructable, BUILTIN, UNINITIALIZED, kNoExtraICState)      \
@@ -314,6 +319,7 @@ inline bool operator&(BuiltinExtraArguments lhs, BuiltinExtraArguments rhs) {
   V(MathSqrt, 2)                  \
   V(MathTrunc, 2)                 \
   V(ObjectHasOwnProperty, 2)      \
+  V(ArrayIsArray, 2)              \
   V(StringPrototypeCharAt, 2)     \
   V(StringPrototypeCharCodeAt, 2) \
   V(AtomicsLoad, 3)
@@ -440,6 +446,8 @@ class Builtins {
   static void Generate_Adaptor(MacroAssembler* masm,
                                CFunctionId id,
                                BuiltinExtraArguments extra_args);
+  static void Generate_AllocateInNewSpace(MacroAssembler* masm);
+  static void Generate_AllocateInOldSpace(MacroAssembler* masm);
   static void Generate_ConstructedNonConstructable(MacroAssembler* masm);
   static void Generate_CompileLazy(MacroAssembler* masm);
   static void Generate_CompileBaseline(MacroAssembler* masm);
@@ -628,6 +636,9 @@ class Builtins {
 
   // ES6 section 19.1.3.2 Object.prototype.hasOwnProperty
   static void Generate_ObjectHasOwnProperty(CodeStubAssembler* assembler);
+
+  // ES6 section 22.1.2.2 Array.isArray
+  static void Generate_ArrayIsArray(CodeStubAssembler* assembler);
 
   // ES6 section 21.1.3.1 String.prototype.charAt ( pos )
   static void Generate_StringPrototypeCharAt(CodeStubAssembler* assembler);

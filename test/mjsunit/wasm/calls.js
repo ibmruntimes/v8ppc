@@ -37,7 +37,6 @@ function assertFunction(module, func) {
   assertFalse(exp === null);
   assertFalse(exp === 0);
   assertEquals("function", typeof exp);
-
   return exp;
 }
 
@@ -46,11 +45,11 @@ function assertFunction(module, func) {
   var builder = new WasmModuleBuilder();
 
   builder.addMemory(1, 1, true);
-  builder.addFunction("sub", [kAstI64, kAstI64, kAstI64])
-    .addBody([
-      kExprI64Sub,                  // --
-      kExprGetLocal, 0,             // --
-      kExprGetLocal, 1])            // --
+  builder.addFunction("sub", kSig_l_ll)
+    .addBody([           // --
+      kExprGetLocal, 0,  // --
+      kExprGetLocal, 1,  // --
+      kExprI64Sub])      // --
     .exportFunc()
 
   var module = builder.instantiate();
@@ -68,11 +67,12 @@ function assertFunction(module, func) {
   var builder = new WasmModuleBuilder();
 
   builder.addMemory(1, 1, true);
-  builder.addFunction("sub", [kAstI32, kAstI32, kAstI32])
+  builder.addFunction("sub", kSig_i_ii)
     .addBody([
-      kExprI32Sub,                  // --
       kExprGetLocal, 0,             // --
-      kExprGetLocal, 1])            // --
+      kExprGetLocal, 1,             // --
+      kExprI32Sub,                  // --
+    ])
     .exportFunc()
 
   var module = builder.instantiate();
@@ -92,7 +92,7 @@ function assertFunction(module, func) {
 
   var kPages = 2;
   builder.addMemory(kPages, kPages, true);
-  builder.addFunction("nop", [kAstStmt])
+  builder.addFunction("nop", kSig_v_v)
     .addBody([kExprNop])
     .exportFunc();
 
@@ -109,11 +109,12 @@ function assertFunction(module, func) {
 
   var kPages = 3;
   builder.addMemory(kPages, kPages, true);
-  builder.addFunction("flt", [kAstI32, kAstF64, kAstF64])
+  builder.addFunction("flt", kSig_i_dd)
     .addBody([
-      kExprF64Lt,           // --
       kExprGetLocal, 0,     // --
-      kExprGetLocal, 1])    // --
+      kExprGetLocal, 1,     // --
+      kExprF64Lt            // --
+    ])                      // --
     .exportFunc();
 
   var module = builder.instantiate();

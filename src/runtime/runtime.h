@@ -47,6 +47,7 @@ namespace internal {
   F(GrowArrayElements, 2, 1)         \
   F(HasComplexElements, 1, 1)        \
   F(IsArray, 1, 1)                   \
+  F(ArrayIsArray, 1, 1)              \
   F(HasCachedArrayIndex, 1, 1)       \
   F(GetCachedArrayIndex, 1, 1)       \
   F(FixedArrayGet, 2, 1)             \
@@ -283,7 +284,7 @@ namespace internal {
   F(ThrowIteratorResultNotAnObject, 1, 1)           \
   F(ThrowGeneratorRunning, 0, 1)                    \
   F(ThrowStackOverflow, 0, 1)                       \
-  F(ThrowWasmError, 1, 1)                           \
+  F(ThrowWasmError, 2, 1)                           \
   F(PromiseRejectEvent, 3, 1)                       \
   F(PromiseRevokeReject, 1, 1)                      \
   F(StackGuard, 0, 1)                               \
@@ -381,7 +382,6 @@ namespace internal {
   F(ObjectHasOwnProperty, 2, 1)                      \
   F(InternalSetPrototype, 2, 1)                      \
   F(SetPrototype, 2, 1)                              \
-  F(GetOwnProperty_Legacy, 2, 1)                     \
   F(OptimizeObjectForAddingMultipleProperties, 2, 1) \
   F(GetProperty, 2, 1)                               \
   F(KeyedGetProperty, 2, 1)                          \
@@ -402,8 +402,6 @@ namespace internal {
   F(AllocateHeapNumber, 0, 1)                        \
   F(NewObject, 2, 1)                                 \
   F(FinalizeInstanceSize, 1, 1)                      \
-  F(GlobalProxy, 1, 1)                               \
-  F(LookupAccessor, 3, 1)                            \
   F(LoadMutableDouble, 2, 1)                         \
   F(TryMigrateInstance, 1, 1)                        \
   F(IsJSGlobalProxy, 1, 1)                           \

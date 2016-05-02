@@ -73,7 +73,7 @@
     'v8_no_strict_aliasing%': 0,
 
     # Chrome needs this definition unconditionally. For standalone V8 builds,
-    # it's handled in build/standalone.gypi.
+    # it's handled in gypfiles/standalone.gypi.
     'want_separate_host_toolset%': 1,
 
     # Toolset the d8 binary should be compiled for. Possible values are 'host'
@@ -669,6 +669,9 @@
                     'ldflags': ['-mips32r2'],
                   }],
                   ['mips_arch_variant=="r1"', {
+                    'defines': [
+                      'FPU_MODE_FP32',
+                    ],
                     'cflags!': ['-mfp64', '-mfpxx'],
                     'conditions': [
                       [ 'clang==0', {

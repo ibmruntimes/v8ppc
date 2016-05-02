@@ -65,6 +65,7 @@
 #include "src/compiler/zone-pool.h"
 #include "src/isolate-inl.h"
 #include "src/ostreams.h"
+#include "src/parsing/parser.h"
 #include "src/register-configuration.h"
 #include "src/type-info.h"
 #include "src/utils.h"
@@ -500,15 +501,20 @@ PipelineStatistics* CreatePipelineStatistics(CompilationInfo* info,
   return pipeline_statistics;
 }
 
-class PipelineCompilationJob final : public OptimizedCompileJob {
+class PipelineCompilationJob final : public CompilationJob {
  public:
-  explicit PipelineCompilationJob(CompilationInfo* info)
-      : OptimizedCompileJob(info, "TurboFan"),
-        zone_pool_(info->isolate()->allocator()),
-        pipeline_statistics_(CreatePipelineStatistics(info, &zone_pool_)),
-        data_(&zone_pool_, info, pipeline_statistics_.get()),
+  PipelineCompilationJob(Isolate* isolate, Handle<JSFunction> function)
+      // Note that the CompilationInfo is not initialized at the time we pass it
+      // to the CompilationJob constructor, but it is not dereferenced there.
+      : CompilationJob(&info_, "TurboFan"),
+        zone_(isolate->allocator()),
+        zone_pool_(isolate->allocator()),
+        parse_info_(&zone_, function),
+        info_(&parse_info_, function),
+        pipeline_statistics_(CreatePipelineStatistics(info(), &zone_pool_)),
+        data_(&zone_pool_, info(), pipeline_statistics_.get()),
         pipeline_(&data_),
-        linkage_(Linkage::ComputeIncoming(info->zone(), info)) {}
+        linkage_(nullptr) {}
 
  protected:
   Status CreateGraphImpl() final;
@@ -516,11 +522,14 @@ class PipelineCompilationJob final : public OptimizedCompileJob {
   Status GenerateCodeImpl() final;
 
  private:
+  Zone zone_;
   ZonePool zone_pool_;
+  ParseInfo parse_info_;
+  CompilationInfo info_;
   base::SmartPointer<PipelineStatistics> pipeline_statistics_;
   PipelineData data_;
   Pipeline pipeline_;
-  Linkage linkage_;
+  Linkage* linkage_;
 };
 
 PipelineCompilationJob::Status PipelineCompilationJob::CreateGraphImpl() {
@@ -538,9 +547,11 @@ PipelineCompilationJob::Status PipelineCompilationJob::CreateGraphImpl() {
   if (!info()->shared_info()->asm_function() || FLAG_turbo_asm_deoptimization) {
     info()->MarkAsDeoptimizationEnabled();
   }
-  if (!info()->shared_info()->HasBytecodeArray()) {
+  if (!info()->is_optimizing_from_bytecode()) {
     if (!Compiler::EnsureDeoptimizationSupport(info())) return FAILED;
   }
+
+  linkage_ = new (&zone_) Linkage(Linkage::ComputeIncoming(&zone_, info()));
 
   if (!pipeline_.CreateGraph()) {
     if (isolate()->has_pending_exception()) return FAILED;  // Stack overflowed.
@@ -551,17 +562,17 @@ PipelineCompilationJob::Status PipelineCompilationJob::CreateGraphImpl() {
 }
 
 PipelineCompilationJob::Status PipelineCompilationJob::OptimizeGraphImpl() {
-  if (!pipeline_.OptimizeGraph(&linkage_)) return FAILED;
+  if (!pipeline_.OptimizeGraph(linkage_)) return FAILED;
   return SUCCEEDED;
 }
 
 PipelineCompilationJob::Status PipelineCompilationJob::GenerateCodeImpl() {
-  Handle<Code> code = pipeline_.GenerateCode(&linkage_);
+  Handle<Code> code = pipeline_.GenerateCode(linkage_);
   if (code.is_null()) {
     if (info()->bailout_reason() == kNoReason) {
       return AbortOptimization(kCodeGenerationFailed);
     }
-    return BAILED_OUT;
+    return FAILED;
   }
   info()->dependencies()->Commit(code);
   info()->SetCode(code);
@@ -572,12 +583,14 @@ PipelineCompilationJob::Status PipelineCompilationJob::GenerateCodeImpl() {
   return SUCCEEDED;
 }
 
-class PipelineWasmCompilationJob final : public OptimizedCompileJob {
+}  // namespace
+
+class PipelineWasmCompilationJob final : public CompilationJob {
  public:
   explicit PipelineWasmCompilationJob(CompilationInfo* info, Graph* graph,
                                       CallDescriptor* descriptor,
                                       SourcePositionTable* source_positions)
-      : OptimizedCompileJob(info, "TurboFan"),
+      : CompilationJob(info, "TurboFan"),
         zone_pool_(info->isolate()->allocator()),
         data_(&zone_pool_, info, graph, source_positions),
         pipeline_(&data_),
@@ -602,6 +615,18 @@ PipelineWasmCompilationJob::CreateGraphImpl() {
 
 PipelineWasmCompilationJob::Status
 PipelineWasmCompilationJob::OptimizeGraphImpl() {
+  if (FLAG_trace_turbo) {
+    FILE* json_file = OpenVisualizerLogFile(info(), nullptr, "json", "w+");
+    if (json_file != nullptr) {
+      OFStream json_of(json_file);
+      json_of << "{\"function\":\"" << info()->GetDebugName().get()
+              << "\", \"source\":\"\",\n\"phases\":[";
+      fclose(json_file);
+    }
+  }
+
+  pipeline_.RunPrintAndVerify("Machine", true);
+
   if (!pipeline_.ScheduleAndSelectInstructions(&linkage_)) return FAILED;
   return SUCCEEDED;
 }
@@ -611,8 +636,6 @@ PipelineWasmCompilationJob::GenerateCodeImpl() {
   pipeline_.GenerateCode(&linkage_);
   return SUCCEEDED;
 }
-
-}  // namespace
 
 
 template <typename Phase>
@@ -756,6 +779,31 @@ struct TyperPhase {
   }
 };
 
+#ifdef DEBUG
+
+struct UntyperPhase {
+  static const char* phase_name() { return "untyper"; }
+
+  void Run(PipelineData* data, Zone* temp_zone) {
+    class RemoveTypeReducer final : public Reducer {
+     public:
+      Reduction Reduce(Node* node) final {
+        if (NodeProperties::IsTyped(node)) {
+          NodeProperties::RemoveType(node);
+          return Changed(node);
+        }
+        return NoChange();
+      }
+    };
+
+    JSGraphReducer graph_reducer(data->jsgraph(), temp_zone);
+    RemoveTypeReducer remove_type_reducer;
+    AddReducer(data, &graph_reducer, &remove_type_reducer);
+    graph_reducer.ReduceGraph();
+  }
+};
+
+#endif  // DEBUG
 
 struct OsrDeconstructionPhase {
   static const char* phase_name() { return "OSR deconstruction"; }
@@ -1301,59 +1349,59 @@ bool Pipeline::CreateGraph() {
     GraphReplayPrinter::PrintReplay(data->graph());
   }
 
-  // Type the graph.
-  base::SmartPointer<Typer> typer;
-  typer.Reset(new Typer(isolate(), data->graph(),
-                        info()->is_deoptimization_enabled()
-                            ? Typer::kDeoptimizationEnabled
-                            : Typer::kNoFlags,
-                        info()->dependencies()));
-  Run<TyperPhase>(typer.get());
-  RunPrintAndVerify("Typed");
+  // Run the type-sensitive lowerings and optimizations on the graph.
+  {
+    // Type the graph and keep the Typer running on newly created nodes within
+    // this scope; the Typer is automatically unlinked from the Graph once we
+    // leave this scope below.
+    Typer typer(isolate(), data->graph(), info()->is_deoptimization_enabled()
+                                              ? Typer::kDeoptimizationEnabled
+                                              : Typer::kNoFlags,
+                info()->dependencies());
+    Run<TyperPhase>(&typer);
+    RunPrintAndVerify("Typed");
 
-  BeginPhaseKind("lowering");
+    BeginPhaseKind("lowering");
 
-  // Lower JSOperators where we can determine types.
-  Run<TypedLoweringPhase>();
-  RunPrintAndVerify("Lowered typed");
+    // Lower JSOperators where we can determine types.
+    Run<TypedLoweringPhase>();
+    RunPrintAndVerify("Lowered typed");
 
-  if (FLAG_turbo_stress_loop_peeling) {
-    Run<StressLoopPeelingPhase>();
-    RunPrintAndVerify("Loop peeled");
+    if (FLAG_turbo_stress_loop_peeling) {
+      Run<StressLoopPeelingPhase>();
+      RunPrintAndVerify("Loop peeled");
+    }
+
+    if (FLAG_experimental_turbo_escape) {
+      Run<EscapeAnalysisPhase>();
+      RunPrintAndVerify("Escape Analysed");
+    }
+
+    // Select representations.
+    Run<RepresentationSelectionPhase>();
+    RunPrintAndVerify("Representations selected");
+
+    // Run early optimization pass.
+    Run<EarlyOptimizationPhase>();
+    RunPrintAndVerify("Early optimized");
   }
 
-  if (FLAG_experimental_turbo_escape) {
-    Run<EscapeAnalysisPhase>();
-    RunPrintAndVerify("Escape Analysed");
-  }
-
-  // Select representations.
-  Run<RepresentationSelectionPhase>();
-  RunPrintAndVerify("Representations selected");
-
-  // Run early optimization pass.
-  Run<EarlyOptimizationPhase>();
-  RunPrintAndVerify("Early optimized");
-
-  Run<EffectControlLinearizationPhase>();
-  RunPrintAndVerify("Effect and control linearized");
-
-  Run<BranchEliminationPhase>();
-  RunPrintAndVerify("Branch conditions eliminated");
-
-  // Optimize control flow.
-  if (FLAG_turbo_cf_optimization) {
-    Run<ControlFlowOptimizationPhase>();
-    RunPrintAndVerify("Control flow optimized");
-  }
-
-  // Lower changes that have been inserted before.
-  Run<LateOptimizationPhase>();
-  // TODO(jarin, rossberg): Remove UNTYPED once machine typing works.
-  RunPrintAndVerify("Late optimized", true);
-
-  // Kill the Typer and thereby uninstall the decorator (if any).
-  typer.Reset(nullptr);
+#ifdef DEBUG
+  // From now on it is invalid to look at types on the nodes, because:
+  //
+  //  (a) The remaining passes (might) run concurrent to the main thread and
+  //      therefore must not access the Heap or the Isolate in an uncontrolled
+  //      way (as done by the type system), and
+  //  (b) the types on the nodes might not make sense after representation
+  //      selection due to the way we handle truncations; if we'd want to look
+  //      at types afterwards we'd essentially need to re-type (large portions
+  //      of) the graph.
+  //
+  // In order to catch bugs related to type access after this point we remove
+  // the types from the nodes at this point (currently only in Debug builds).
+  Run<UntyperPhase>();
+  RunPrintAndVerify("Untyped", true);
+#endif
 
   EndPhaseKind();
 
@@ -1364,6 +1412,23 @@ bool Pipeline::OptimizeGraph(Linkage* linkage) {
   PipelineData* data = this->data_;
 
   BeginPhaseKind("block building");
+
+  Run<EffectControlLinearizationPhase>();
+  RunPrintAndVerify("Effect and control linearized", true);
+
+  Run<BranchEliminationPhase>();
+  RunPrintAndVerify("Branch conditions eliminated", true);
+
+  // Optimize control flow.
+  if (FLAG_turbo_cf_optimization) {
+    Run<ControlFlowOptimizationPhase>();
+    RunPrintAndVerify("Control flow optimized", true);
+  }
+
+  // Lower changes that have been inserted before.
+  Run<LateOptimizationPhase>();
+  // TODO(jarin, rossberg): Remove UNTYPED once machine typing works.
+  RunPrintAndVerify("Late optimized", true);
 
   Run<LateGraphTrimmingPhase>();
   // TODO(jarin, rossberg): Remove UNTYPED once machine typing works.
@@ -1452,21 +1517,29 @@ Handle<Code> Pipeline::GenerateCodeForTesting(CompilationInfo* info,
   }
 
   Pipeline pipeline(&data);
-  if (data.schedule() == nullptr) {
-    // TODO(rossberg): Should this really be untyped?
-    pipeline.RunPrintAndVerify("Machine", true);
+
+  if (FLAG_trace_turbo) {
+    FILE* json_file = OpenVisualizerLogFile(info, nullptr, "json", "w+");
+    if (json_file != nullptr) {
+      OFStream json_of(json_file);
+      json_of << "{\"function\":\"" << info->GetDebugName().get()
+              << "\", \"source\":\"\",\n\"phases\":[";
+      fclose(json_file);
+    }
   }
+  // TODO(rossberg): Should this really be untyped?
+  pipeline.RunPrintAndVerify("Machine", true);
 
   return pipeline.ScheduleAndGenerateCode(call_descriptor);
 }
 
 // static
-OptimizedCompileJob* Pipeline::NewCompilationJob(CompilationInfo* info) {
-  return new PipelineCompilationJob(info);
+CompilationJob* Pipeline::NewCompilationJob(Handle<JSFunction> function) {
+  return new PipelineCompilationJob(function->GetIsolate(), function);
 }
 
 // static
-OptimizedCompileJob* Pipeline::NewWasmCompilationJob(
+CompilationJob* Pipeline::NewWasmCompilationJob(
     CompilationInfo* info, Graph* graph, CallDescriptor* descriptor,
     SourcePositionTable* source_positions) {
   return new PipelineWasmCompilationJob(info, graph, descriptor,

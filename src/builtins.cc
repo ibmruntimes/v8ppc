@@ -351,6 +351,39 @@ BUILTIN(Illegal) {
 
 BUILTIN(EmptyFunction) { return isolate->heap()->undefined_value(); }
 
+void Builtins::Generate_ArrayIsArray(CodeStubAssembler* assembler) {
+  typedef compiler::Node Node;
+  typedef CodeStubAssembler::Label Label;
+
+  Node* object = assembler->Parameter(1);
+  Node* context = assembler->Parameter(4);
+
+  Label call_runtime(assembler), return_true(assembler),
+      return_false(assembler);
+
+  assembler->GotoIf(assembler->WordIsSmi(object), &return_false);
+  Node* instance_type = assembler->LoadInstanceType(object);
+
+  assembler->GotoIf(assembler->Word32Equal(
+                        instance_type, assembler->Int32Constant(JS_ARRAY_TYPE)),
+                    &return_true);
+
+  // TODO(verwaest): Handle proxies in-place.
+  assembler->Branch(assembler->Word32Equal(
+                        instance_type, assembler->Int32Constant(JS_PROXY_TYPE)),
+                    &call_runtime, &return_false);
+
+  assembler->Bind(&return_true);
+  assembler->Return(assembler->BooleanConstant(true));
+
+  assembler->Bind(&return_false);
+  assembler->Return(assembler->BooleanConstant(false));
+
+  assembler->Bind(&call_runtime);
+  assembler->Return(
+      assembler->CallRuntime(Runtime::kArrayIsArray, context, object));
+}
+
 void Builtins::Generate_ObjectHasOwnProperty(CodeStubAssembler* assembler) {
   typedef compiler::Node Node;
   typedef CodeStubAssembler::Label Label;
@@ -1609,16 +1642,6 @@ BUILTIN(ArrayConcat) {
 }
 
 
-// ES6 22.1.2.2 Array.isArray
-BUILTIN(ArrayIsArray) {
-  HandleScope scope(isolate);
-  DCHECK_EQ(2, args.length());
-  Handle<Object> object = args.at<Object>(1);
-  Maybe<bool> result = Object::IsArray(object);
-  MAYBE_RETURN(result, isolate->heap()->exception());
-  return *isolate->factory()->ToBoolean(result.FromJust());
-}
-
 namespace {
 
 MUST_USE_RESULT Maybe<bool> FastAssign(Handle<JSReceiver> to,
@@ -1813,6 +1836,132 @@ BUILTIN(ObjectDefineProperty) {
   Handle<Object> attributes = args.at<Object>(3);
 
   return JSReceiver::DefineProperty(isolate, target, key, attributes);
+}
+
+namespace {
+
+template <AccessorComponent which_accessor>
+Object* ObjectDefineAccessor(Isolate* isolate, Handle<Object> object,
+                             Handle<Object> name, Handle<Object> accessor) {
+  // 1. Let O be ? ToObject(this value).
+  Handle<JSReceiver> receiver;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, receiver,
+                                     Object::ConvertReceiver(isolate, object));
+  // 2. If IsCallable(getter) is false, throw a TypeError exception.
+  if (!accessor->IsCallable()) {
+    MessageTemplate::Template message =
+        which_accessor == ACCESSOR_GETTER
+            ? MessageTemplate::kObjectGetterExpectingFunction
+            : MessageTemplate::kObjectSetterExpectingFunction;
+    THROW_NEW_ERROR_RETURN_FAILURE(isolate, NewTypeError(message));
+  }
+  // 3. Let desc be PropertyDescriptor{[[Get]]: getter, [[Enumerable]]: true,
+  //                                   [[Configurable]]: true}.
+  PropertyDescriptor desc;
+  if (which_accessor == ACCESSOR_GETTER) {
+    desc.set_get(accessor);
+  } else {
+    DCHECK(which_accessor == ACCESSOR_SETTER);
+    desc.set_set(accessor);
+  }
+  desc.set_enumerable(true);
+  desc.set_configurable(true);
+  // 4. Let key be ? ToPropertyKey(P).
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, name,
+                                     Object::ToPropertyKey(isolate, name));
+  // 5. Perform ? DefinePropertyOrThrow(O, key, desc).
+  // To preserve legacy behavior, we ignore errors silently rather than
+  // throwing an exception.
+  Maybe<bool> success = JSReceiver::DefineOwnProperty(
+      isolate, receiver, name, &desc, Object::DONT_THROW);
+  MAYBE_RETURN(success, isolate->heap()->exception());
+  // 6. Return undefined.
+  return isolate->heap()->undefined_value();
+}
+
+Object* ObjectLookupAccessor(Isolate* isolate, Handle<Object> object,
+                             Handle<Object> key, AccessorComponent component) {
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, object,
+                                     Object::ConvertReceiver(isolate, object));
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, key,
+                                     Object::ToPropertyKey(isolate, key));
+  bool success = false;
+  LookupIterator it = LookupIterator::PropertyOrElement(
+      isolate, object, key, &success,
+      LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
+  DCHECK(success);
+
+  for (; it.IsFound(); it.Next()) {
+    switch (it.state()) {
+      case LookupIterator::INTERCEPTOR:
+      case LookupIterator::NOT_FOUND:
+      case LookupIterator::TRANSITION:
+        UNREACHABLE();
+
+      case LookupIterator::ACCESS_CHECK:
+        if (it.HasAccess()) continue;
+        isolate->ReportFailedAccessCheck(it.GetHolder<JSObject>());
+        RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
+        return isolate->heap()->undefined_value();
+
+      case LookupIterator::JSPROXY:
+        return isolate->heap()->undefined_value();
+
+      case LookupIterator::INTEGER_INDEXED_EXOTIC:
+        return isolate->heap()->undefined_value();
+      case LookupIterator::DATA:
+        continue;
+      case LookupIterator::ACCESSOR: {
+        Handle<Object> maybe_pair = it.GetAccessors();
+        if (maybe_pair->IsAccessorPair()) {
+          return *AccessorPair::GetComponent(
+              Handle<AccessorPair>::cast(maybe_pair), component);
+        }
+      }
+    }
+  }
+
+  return isolate->heap()->undefined_value();
+}
+
+}  // namespace
+
+// ES6 B.2.2.2 a.k.a.
+// https://tc39.github.io/ecma262/#sec-object.prototype.__defineGetter__
+BUILTIN(ObjectDefineGetter) {
+  HandleScope scope(isolate);
+  Handle<Object> object = args.at<Object>(0);  // Receiver.
+  Handle<Object> name = args.at<Object>(1);
+  Handle<Object> getter = args.at<Object>(2);
+  return ObjectDefineAccessor<ACCESSOR_GETTER>(isolate, object, name, getter);
+}
+
+// ES6 B.2.2.3 a.k.a.
+// https://tc39.github.io/ecma262/#sec-object.prototype.__defineSetter__
+BUILTIN(ObjectDefineSetter) {
+  HandleScope scope(isolate);
+  Handle<Object> object = args.at<Object>(0);  // Receiver.
+  Handle<Object> name = args.at<Object>(1);
+  Handle<Object> setter = args.at<Object>(2);
+  return ObjectDefineAccessor<ACCESSOR_SETTER>(isolate, object, name, setter);
+}
+
+// ES6 B.2.2.4 a.k.a.
+// https://tc39.github.io/ecma262/#sec-object.prototype.__lookupGetter__
+BUILTIN(ObjectLookupGetter) {
+  HandleScope scope(isolate);
+  Handle<Object> object = args.at<Object>(0);
+  Handle<Object> name = args.at<Object>(1);
+  return ObjectLookupAccessor(isolate, object, name, ACCESSOR_GETTER);
+}
+
+// ES6 B.2.2.5 a.k.a.
+// https://tc39.github.io/ecma262/#sec-object.prototype.__lookupSetter__
+BUILTIN(ObjectLookupSetter) {
+  HandleScope scope(isolate);
+  Handle<Object> object = args.at<Object>(0);
+  Handle<Object> name = args.at<Object>(1);
+  return ObjectLookupAccessor(isolate, object, name, ACCESSOR_SETTER);
 }
 
 // ES6 section 19.1.2.5 Object.freeze ( O )
@@ -3113,8 +3262,7 @@ BUILTIN(DateConstructor) {
   HandleScope scope(isolate);
   double const time_val = JSDate::CurrentTimeValue(isolate);
   char buffer[128];
-  Vector<char> str(buffer, arraysize(buffer));
-  ToDateString(time_val, str, isolate->date_cache());
+  ToDateString(time_val, ArrayVector(buffer), isolate->date_cache());
   Handle<String> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
@@ -3697,8 +3845,8 @@ BUILTIN(DatePrototypeToDateString) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSDate, date, "Date.prototype.toDateString");
   char buffer[128];
-  Vector<char> str(buffer, arraysize(buffer));
-  ToDateString(date->value()->Number(), str, isolate->date_cache(), kDateOnly);
+  ToDateString(date->value()->Number(), ArrayVector(buffer),
+               isolate->date_cache(), kDateOnly);
   Handle<String> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
@@ -3721,18 +3869,17 @@ BUILTIN(DatePrototypeToISOString) {
   isolate->date_cache()->BreakDownTime(time_ms, &year, &month, &day, &weekday,
                                        &hour, &min, &sec, &ms);
   char buffer[128];
-  Vector<char> str(buffer, arraysize(buffer));
   if (year >= 0 && year <= 9999) {
-    SNPrintF(str, "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", year, month + 1, day,
-             hour, min, sec, ms);
+    SNPrintF(ArrayVector(buffer), "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", year,
+             month + 1, day, hour, min, sec, ms);
   } else if (year < 0) {
-    SNPrintF(str, "-%06d-%02d-%02dT%02d:%02d:%02d.%03dZ", -year, month + 1, day,
-             hour, min, sec, ms);
+    SNPrintF(ArrayVector(buffer), "-%06d-%02d-%02dT%02d:%02d:%02d.%03dZ", -year,
+             month + 1, day, hour, min, sec, ms);
   } else {
-    SNPrintF(str, "+%06d-%02d-%02dT%02d:%02d:%02d.%03dZ", year, month + 1, day,
-             hour, min, sec, ms);
+    SNPrintF(ArrayVector(buffer), "+%06d-%02d-%02dT%02d:%02d:%02d.%03dZ", year,
+             month + 1, day, hour, min, sec, ms);
   }
-  return *isolate->factory()->NewStringFromAsciiChecked(str.start());
+  return *isolate->factory()->NewStringFromAsciiChecked(buffer);
 }
 
 
@@ -3741,8 +3888,8 @@ BUILTIN(DatePrototypeToString) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSDate, date, "Date.prototype.toString");
   char buffer[128];
-  Vector<char> str(buffer, arraysize(buffer));
-  ToDateString(date->value()->Number(), str, isolate->date_cache());
+  ToDateString(date->value()->Number(), ArrayVector(buffer),
+               isolate->date_cache());
   Handle<String> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
@@ -3756,8 +3903,8 @@ BUILTIN(DatePrototypeToTimeString) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSDate, date, "Date.prototype.toTimeString");
   char buffer[128];
-  Vector<char> str(buffer, arraysize(buffer));
-  ToDateString(date->value()->Number(), str, isolate->date_cache(), kTimeOnly);
+  ToDateString(date->value()->Number(), ArrayVector(buffer),
+               isolate->date_cache(), kTimeOnly);
   Handle<String> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
@@ -3775,14 +3922,14 @@ BUILTIN(DatePrototypeToUTCString) {
     return *isolate->factory()->NewStringFromAsciiChecked("Invalid Date");
   }
   char buffer[128];
-  Vector<char> str(buffer, arraysize(buffer));
   int64_t time_ms = static_cast<int64_t>(time_val);
   int year, month, day, weekday, hour, min, sec, ms;
   isolate->date_cache()->BreakDownTime(time_ms, &year, &month, &day, &weekday,
                                        &hour, &min, &sec, &ms);
-  SNPrintF(str, "%s, %02d %s %4d %02d:%02d:%02d GMT", kShortWeekDays[weekday],
-           day, kShortMonths[month], year, hour, min, sec);
-  return *isolate->factory()->NewStringFromAsciiChecked(str.start());
+  SNPrintF(ArrayVector(buffer), "%s, %02d %s %4d %02d:%02d:%02d GMT",
+           kShortWeekDays[weekday], day, kShortMonths[month], year, hour, min,
+           sec);
+  return *isolate->factory()->NewStringFromAsciiChecked(buffer);
 }
 
 
@@ -4525,11 +4672,13 @@ BUILTIN(RestrictedStrictArgumentsPropertiesThrower) {
 
 namespace {
 
-template <bool is_construct>
 MUST_USE_RESULT MaybeHandle<Object> HandleApiCallHelper(
-    Isolate* isolate, BuiltinArguments<BuiltinExtraArguments::kTarget> args) {
+    Isolate* isolate,
+    BuiltinArguments<BuiltinExtraArguments::kTargetAndNewTarget> args) {
   HandleScope scope(isolate);
   Handle<HeapObject> function = args.target<HeapObject>();
+  Handle<HeapObject> new_target = args.new_target();
+  bool is_construct = !new_target->IsUndefined();
   Handle<JSReceiver> receiver;
 
   DCHECK(function->IsFunctionTemplateInfo() ||
@@ -4589,13 +4738,9 @@ MUST_USE_RESULT MaybeHandle<Object> HandleApiCallHelper(
     LOG(isolate, ApiObjectAccess("call", JSObject::cast(*args.receiver())));
     DCHECK(raw_holder->IsJSObject());
 
-    FunctionCallbackArguments custom(isolate,
-                                     data_obj,
-                                     *function,
-                                     raw_holder,
-                                     &args[0] - 1,
-                                     args.length() - 1,
-                                     is_construct);
+    FunctionCallbackArguments custom(isolate, data_obj, *function, raw_holder,
+                                     *new_target, &args[0] - 1,
+                                     args.length() - 1);
 
     Handle<Object> result = custom.Call(callback);
     if (result.is_null()) result = isolate->factory()->undefined_value();
@@ -4616,18 +4761,10 @@ BUILTIN(HandleApiCall) {
   HandleScope scope(isolate);
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
-                                     HandleApiCallHelper<false>(isolate, args));
+                                     HandleApiCallHelper(isolate, args));
   return *result;
 }
 
-
-BUILTIN(HandleApiCallConstruct) {
-  HandleScope scope(isolate);
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
-                                     HandleApiCallHelper<true>(isolate, args));
-  return *result;
-}
 
 Handle<Code> Builtins::CallFunction(ConvertReceiverMode mode,
                                     TailCallMode tail_call_mode) {
@@ -4710,11 +4847,12 @@ Handle<Code> Builtins::InterpreterPushArgsAndCall(TailCallMode tail_call_mode) {
 namespace {
 
 class RelocatableArguments
-    : public BuiltinArguments<BuiltinExtraArguments::kTarget>,
+    : public BuiltinArguments<BuiltinExtraArguments::kTargetAndNewTarget>,
       public Relocatable {
  public:
   RelocatableArguments(Isolate* isolate, int length, Object** arguments)
-      : BuiltinArguments<BuiltinExtraArguments::kTarget>(length, arguments),
+      : BuiltinArguments<BuiltinExtraArguments::kTargetAndNewTarget>(length,
+                                                                     arguments),
         Relocatable(isolate) {}
 
   virtual inline void IterateInstance(ObjectVisitor* v) {
@@ -4738,32 +4876,31 @@ MaybeHandle<Object> Builtins::InvokeApiFunction(Handle<HeapObject> function,
     DCHECK(function->IsFunctionTemplateInfo() || function->IsJSFunction());
     if (function->IsFunctionTemplateInfo() ||
         is_sloppy(JSFunction::cast(*function)->shared()->language_mode())) {
-      if (receiver->IsUndefined() || receiver->IsNull()) {
-        receiver = handle(isolate->global_proxy(), isolate);
-      } else {
-        ASSIGN_RETURN_ON_EXCEPTION(isolate, receiver,
-                                   Object::ToObject(isolate, receiver), Object);
-      }
+      ASSIGN_RETURN_ON_EXCEPTION(isolate, receiver,
+                                 Object::ConvertReceiver(isolate, receiver),
+                                 Object);
     }
   }
-  // Construct BuiltinArguments object: function, arguments reversed, receiver.
+  // Construct BuiltinArguments object:
+  // new target, function, arguments reversed, receiver.
   const int kBufferSize = 32;
   Object* small_argv[kBufferSize];
   Object** argv;
-  if (argc + 2 <= kBufferSize) {
+  if (argc + 3 <= kBufferSize) {
     argv = small_argv;
   } else {
-    argv = new Object* [argc + 2];
+    argv = new Object*[argc + 3];
   }
-  argv[argc + 1] = *receiver;
+  argv[argc + 2] = *receiver;
   for (int i = 0; i < argc; ++i) {
-    argv[argc - i] = *args[i];
+    argv[argc - i + 1] = *args[i];
   }
-  argv[0] = *function;
+  argv[1] = *function;
+  argv[0] = isolate->heap()->undefined_value();  // new target
   MaybeHandle<Object> result;
   {
-    RelocatableArguments arguments(isolate, argc + 2, &argv[argc + 1]);
-    result = HandleApiCallHelper<false>(isolate, arguments);
+    RelocatableArguments arguments(isolate, argc + 3, &argv[argc] + 2);
+    result = HandleApiCallHelper(isolate, arguments);
   }
   if (argv != small_argv) {
     delete[] argv;
@@ -4782,6 +4919,18 @@ MUST_USE_RESULT static Object* HandleApiCallAsFunctionOrConstructor(
 
   // Get the object called.
   JSObject* obj = JSObject::cast(*receiver);
+
+  // Set the new target.
+  HeapObject* new_target;
+  if (is_construct_call) {
+    // TODO(adamk): This should be passed through in args instead of
+    // being patched in here. We need to set a non-undefined value
+    // for v8::FunctionCallbackInfo::IsConstructCall() to get the
+    // right answer.
+    new_target = obj;
+  } else {
+    new_target = isolate->heap()->undefined_value();
+  }
 
   // Get the invocation callback from the function descriptor that was
   // used to create the called object.
@@ -4805,13 +4954,9 @@ MUST_USE_RESULT static Object* HandleApiCallAsFunctionOrConstructor(
     HandleScope scope(isolate);
     LOG(isolate, ApiObjectAccess("call non-function", obj));
 
-    FunctionCallbackArguments custom(isolate,
-                                     call_data->data(),
-                                     constructor,
-                                     obj,
-                                     &args[0] - 1,
-                                     args.length() - 1,
-                                     is_construct_call);
+    FunctionCallbackArguments custom(isolate, call_data->data(), constructor,
+                                     obj, new_target, &args[0] - 1,
+                                     args.length() - 1);
     Handle<Object> result_handle = custom.Call(callback);
     if (result_handle.is_null()) {
       result = isolate->heap()->undefined_value();

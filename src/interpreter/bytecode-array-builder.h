@@ -28,7 +28,6 @@ class BytecodeArrayBuilder final : public ZoneObject {
   BytecodeArrayBuilder(Isolate* isolate, Zone* zone, int parameter_count,
                        int context_count, int locals_count,
                        FunctionLiteral* literal = nullptr);
-  ~BytecodeArrayBuilder();
 
   Handle<BytecodeArray> ToBytecodeArray();
 
@@ -224,7 +223,7 @@ class BytecodeArrayBuilder final : public ZoneObject {
   BytecodeArrayBuilder& JumpIfNull(BytecodeLabel* label);
   BytecodeArrayBuilder& JumpIfUndefined(BytecodeLabel* label);
 
-  BytecodeArrayBuilder& StackCheck();
+  BytecodeArrayBuilder& StackCheck(int position);
 
   BytecodeArrayBuilder& Throw();
   BytecodeArrayBuilder& ReThrow();

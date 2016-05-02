@@ -37,7 +37,7 @@
     'v8_experimental_extra_library_files%': [],
     'mksnapshot_exec': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mksnapshot<(EXECUTABLE_SUFFIX)',
   },
-  'includes': ['../build/toolchain.gypi', '../build/features.gypi'],
+  'includes': ['../gypfiles/toolchain.gypi', '../gypfiles/features.gypi'],
   'targets': [
     {
       'target_name': 'v8',
@@ -192,8 +192,18 @@
           'action_name': 'run_mksnapshot',
           'inputs': [
             '<(mksnapshot_exec)',
-            '<(embed_script)',
-            '<(warmup_script)',
+          ],
+          'conditions': [
+            ['embed_script!=""', {
+              'inputs': [
+                '<(embed_script)',
+              ],
+            }],
+            ['warmup_script!=""', {
+              'inputs': [
+                '<(warmup_script)',
+              ],
+            }],
           ],
           'outputs': [
             '<(INTERMEDIATE_DIR)/snapshot.cc',
@@ -299,8 +309,6 @@
               'action_name': 'run_mksnapshot (external)',
               'inputs': [
                 '<(mksnapshot_exec)',
-                '<(embed_script)',
-                '<(warmup_script)',
               ],
               'variables': {
                 'mksnapshot_flags': [],
@@ -314,6 +322,16 @@
                 ],
               },
               'conditions': [
+                ['embed_script!=""', {
+                  'inputs': [
+                    '<(embed_script)',
+                  ],
+                }],
+                ['warmup_script!=""', {
+                  'inputs': [
+                    '<(warmup_script)',
+                  ],
+                }],
                 ['want_separate_host_toolset==1', {
                   'target_conditions': [
                     ['_toolset=="host"', {
@@ -371,10 +389,6 @@
         '..',
         # To be able to find base/trace_event/common/trace_event_common.h
         '../..',
-      ],
-      'defines': [
-        # TODO(jochen): Remove again after this is globally turned on.
-        'V8_IMMINENT_DEPRECATION_WARNINGS',
       ],
       'sources': [  ### gcmole(all) ###
         '../include/v8-debug.h',
@@ -1123,8 +1137,6 @@
         'version.h',
         'vm-state-inl.h',
         'vm-state.h',
-        'wasm/switch-logic.h',
-        'wasm/switch-logic.cc',
         'wasm/asm-wasm-builder.cc',
         'wasm/asm-wasm-builder.h',
         'wasm/ast-decoder.cc',
@@ -1132,11 +1144,15 @@
         'wasm/decoder.h',
         'wasm/encoder.cc',
         'wasm/encoder.h',
-        'wasm/wasm-external-refs.cc',
-        'wasm/wasm-external-refs.h',
         'wasm/leb-helper.h',
         'wasm/module-decoder.cc',
         'wasm/module-decoder.h',
+        'wasm/switch-logic.h',
+        'wasm/switch-logic.cc',
+        'wasm/wasm-external-refs.cc',
+        'wasm/wasm-external-refs.h',
+        'wasm/wasm-function-name-table.cc',
+        'wasm/wasm-function-name-table.h',
         'wasm/wasm-js.cc',
         'wasm/wasm-js.h',
         'wasm/wasm-macro-gen.h',

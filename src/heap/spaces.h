@@ -5,6 +5,8 @@
 #ifndef V8_HEAP_SPACES_H_
 #define V8_HEAP_SPACES_H_
 
+#include <list>
+
 #include "src/allocation.h"
 #include "src/atomic-utils.h"
 #include "src/base/atomicops.h"
@@ -440,6 +442,10 @@ class MemoryChunk {
     // still has to be performed.
     PRE_FREED,
 
+    // |POOLED|: When actually freeing this chunk, only uncommit and do not
+    // give up the reservation as we still reuse the chunk at some point.
+    POOLED,
+
     // |COMPACTION_WAS_ABORTED|: Indicates that the compaction in this page
     //   has been aborted and needs special handling by the sweeper.
     COMPACTION_WAS_ABORTED,
@@ -546,10 +552,6 @@ class MemoryChunk {
   // Only works if the pointer is in the first kPageSize of the MemoryChunk.
   static MemoryChunk* FromAddress(Address a) {
     return reinterpret_cast<MemoryChunk*>(OffsetFrom(a) & ~kAlignmentMask);
-  }
-
-  static intptr_t OffsetInPage(Address a) {
-    return reinterpret_cast<intptr_t>(a) & kPageAlignmentMask;
   }
 
   static inline MemoryChunk* FromAnyPointerAddress(Heap* heap, Address addr);
@@ -1265,14 +1267,91 @@ class SkipList {
 // A space acquires chunks of memory from the operating system. The memory
 // allocator allocated and deallocates pages for the paged heap spaces and large
 // pages for large object space.
-//
-// Each space has to manage it's own pages.
-//
 class MemoryAllocator {
  public:
+  // Unmapper takes care of concurrently unmapping and uncommitting memory
+  // chunks.
+  class Unmapper {
+   public:
+    class UnmapFreeMemoryTask;
+
+    explicit Unmapper(MemoryAllocator* allocator)
+        : allocator_(allocator),
+          pending_unmapping_tasks_semaphore_(0),
+          concurrent_unmapping_tasks_active_(0) {}
+
+    void AddMemoryChunkSafe(MemoryChunk* chunk) {
+      if ((chunk->size() == Page::kPageSize) &&
+          (chunk->executable() != EXECUTABLE)) {
+        AddMemoryChunkSafe<kRegular>(chunk);
+      } else {
+        AddMemoryChunkSafe<kNonRegular>(chunk);
+      }
+    }
+
+    MemoryChunk* TryGetPooledMemoryChunkSafe() {
+      // Procedure:
+      // (1) Try to get a chunk that was declared as pooled and already has
+      // been uncommitted.
+      // (2) Try to steal any memory chunk of kPageSize that would've been
+      // unmapped.
+      MemoryChunk* chunk = GetMemoryChunkSafe<kPooled>();
+      if (chunk == nullptr) {
+        chunk = GetMemoryChunkSafe<kRegular>();
+        if (chunk != nullptr) {
+          // For stolen chunks we need to manually free any allocated memory.
+          chunk->ReleaseAllocatedMemory();
+        }
+      }
+      return chunk;
+    }
+
+    void FreeQueuedChunks();
+    bool WaitUntilCompleted();
+
+   private:
+    enum ChunkQueueType {
+      kRegular,     // Pages of kPageSize that do not live in a CodeRange and
+                    // can thus be used for stealing.
+      kNonRegular,  // Large chunks and executable chunks.
+      kPooled,      // Pooled chunks, already uncommited and ready for reuse.
+      kNumberOfChunkQueues,
+    };
+
+    template <ChunkQueueType type>
+    void AddMemoryChunkSafe(MemoryChunk* chunk) {
+      base::LockGuard<base::Mutex> guard(&mutex_);
+      chunks_[type].push_back(chunk);
+    }
+
+    template <ChunkQueueType type>
+    MemoryChunk* GetMemoryChunkSafe() {
+      base::LockGuard<base::Mutex> guard(&mutex_);
+      if (chunks_[type].empty()) return nullptr;
+      MemoryChunk* chunk = chunks_[type].front();
+      chunks_[type].pop_front();
+      return chunk;
+    }
+
+    void PerformFreeMemoryOnQueuedChunks();
+
+    base::Mutex mutex_;
+    MemoryAllocator* allocator_;
+    std::list<MemoryChunk*> chunks_[kNumberOfChunkQueues];
+    base::Semaphore pending_unmapping_tasks_semaphore_;
+    intptr_t concurrent_unmapping_tasks_active_;
+
+    friend class MemoryAllocator;
+  };
+
   enum AllocationMode {
     kRegular,
     kPooled,
+  };
+  enum FreeMode {
+    kFull,
+    kPreFreeAndQueue,
+    kPooledAndQueue,
   };
 
   explicit MemoryAllocator(Isolate* isolate);
@@ -1294,16 +1373,7 @@ class MemoryAllocator {
   LargePage* AllocateLargePage(intptr_t size, LargeObjectSpace* owner,
                                Executability executable);
 
-  // PreFree logically frees the object, i.e., it takes care of the size
-  // bookkeeping and calls the allocation callback.
-  void PreFreeMemory(MemoryChunk* chunk);
-
-  // FreeMemory can be called concurrently when PreFree was executed before.
-  void PerformFreeMemory(MemoryChunk* chunk);
-
-  // Free is a wrapper method. For kRegular AllocationMode it  calls PreFree and
-  // PerformFreeMemory together. For kPooled it will dispatch to pooled free.
-  template <MemoryAllocator::AllocationMode mode = kRegular>
+  template <MemoryAllocator::FreeMode mode = kFull>
   void Free(MemoryChunk* chunk);
 
   // Returns allocated spaces in bytes.
@@ -1409,15 +1479,20 @@ class MemoryAllocator {
                                               size_t reserved_size);
 
   CodeRange* code_range() { return code_range_; }
+  Unmapper* unmapper() { return &unmapper_; }
 
  private:
+  // PreFree logically frees the object, i.e., it takes care of the size
+  // bookkeeping and calls the allocation callback.
+  void PreFreeMemory(MemoryChunk* chunk);
+
+  // FreeMemory can be called concurrently when PreFree was executed before.
+  void PerformFreeMemory(MemoryChunk* chunk);
+
   // See AllocatePage for public interface. Note that currently we only support
   // pools for NOT_EXECUTABLE pages of size MemoryChunk::kPageSize.
   template <typename SpaceType>
   MemoryChunk* AllocatePagePooled(SpaceType* owner);
-
-  // Free that chunk into the pool.
-  void FreePooled(MemoryChunk* chunk);
 
   Isolate* isolate_;
 
@@ -1474,9 +1549,8 @@ class MemoryAllocator {
     } while ((high > ptr) && !highest_ever_allocated_.TrySetValue(ptr, high));
   }
 
-  List<MemoryChunk*> chunk_pool_;
-
   base::VirtualMemory last_chunk_;
+  Unmapper unmapper_;
 
   friend class TestCodeRangeScope;
 
@@ -2381,7 +2455,7 @@ class SemiSpace : public Space {
   // Resets the space to using the first page.
   void Reset();
 
-  void ReplaceWithEmptyPage(Page* page);
+  bool ReplaceWithEmptyPage(Page* page);
 
   // Age mark accessors.
   Address age_mark() { return age_mark_; }
@@ -2529,7 +2603,6 @@ class NewSpace : public Space {
         from_space_(heap, kFromSpace),
         reservation_(),
         pages_used_(0),
-        allocated_since_last_gc_(0),
         top_on_previous_step_(0),
         allocated_histogram_(nullptr),
         promoted_histogram_(nullptr) {}
@@ -2601,12 +2674,47 @@ class NewSpace : public Space {
   // Return the available bytes without growing.
   intptr_t Available() override { return Capacity() - Size(); }
 
-  inline size_t AllocatedSinceLastGC();
+  size_t AllocatedSinceLastGC() {
+    bool seen_age_mark = false;
+    Address age_mark = to_space_.age_mark();
+    Page* current_page = to_space_.first_page();
+    Page* age_mark_page = Page::FromAddress(age_mark);
+    Page* last_page = Page::FromAddress(top() - kPointerSize);
+    if (age_mark_page == last_page) {
+      if (top() - age_mark >= 0) {
+        return top() - age_mark;
+      }
+      // Top was reset at some point, invalidating this metric.
+      return 0;
+    }
+    while (current_page != last_page) {
+      if (current_page == age_mark_page) {
+        seen_age_mark = true;
+        break;
+      }
+      current_page = current_page->next_page();
+    }
+    if (!seen_age_mark) {
+      // Top was reset at some point, invalidating this metric.
+      return 0;
+    }
+    intptr_t allocated = age_mark_page->area_end() - age_mark;
+    DCHECK_EQ(current_page, age_mark_page);
+    current_page = age_mark_page->next_page();
+    while (current_page != last_page) {
+      allocated += Page::kAllocatableMemory;
+      current_page = current_page->next_page();
+    }
+    allocated += top() - current_page->area_start();
+    DCHECK_LE(0, allocated);
+    DCHECK_LE(allocated, Size());
+    return static_cast<size_t>(allocated);
+  }
 
-  void ReplaceWithEmptyPage(Page* page) {
+  bool ReplaceWithEmptyPage(Page* page) {
     // This method is called after flipping the semispace.
     DCHECK(page->InFromSpace());
-    from_space_.ReplaceWithEmptyPage(page);
+    return from_space_.ReplaceWithEmptyPage(page);
   }
 
   // Return the maximum capacity of a semispace.
@@ -2641,10 +2749,7 @@ class NewSpace : public Space {
   // Get the age mark of the inactive semispace.
   Address age_mark() { return from_space_.age_mark(); }
   // Set the age mark in the active semispace.
-  void set_age_mark(Address mark) {
-    to_space_.set_age_mark(mark);
-    allocated_since_last_gc_ = 0;
-  }
+  void set_age_mark(Address mark) { to_space_.set_age_mark(mark); }
 
   // The allocation top and limit address.
   Address* allocation_top_address() { return allocation_info_.top_address(); }
@@ -2765,7 +2870,6 @@ class NewSpace : public Space {
   SemiSpace from_space_;
   base::VirtualMemory reservation_;
   int pages_used_;
-  intptr_t allocated_since_last_gc_;
 
   // Allocation pointer and limit for normal allocation and allocation during
   // mark-compact collection.

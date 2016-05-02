@@ -1505,7 +1505,6 @@ i::Handle<i::String> FormatMessage(i::Vector<unsigned> data) {
 enum ParserFlag {
   kAllowLazy,
   kAllowNatives,
-  kAllowHarmonyNewTarget,
   kAllowHarmonyFunctionSent,
   kAllowHarmonyRestrictiveDeclarations,
   kAllowHarmonyExponentiationOperator,
@@ -1543,11 +1542,10 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
   uintptr_t stack_limit = isolate->stack_guard()->real_climit();
   int preparser_materialized_literals = -1;
   int parser_materialized_literals = -2;
-  bool test_preparser = !is_module;
 
   // Preparse the data.
   i::CompleteParserRecorder log;
-  if (test_preparser) {
+  {
     i::Scanner scanner(isolate->unicode_cache());
     i::GenericStringUtf16CharacterStream stream(source, 0, source->length());
     i::Zone zone(CcTest::i_isolate()->allocator());
@@ -1604,7 +1602,7 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
       CHECK(false);
     }
 
-    if (test_preparser && !preparse_error) {
+    if (!preparse_error) {
       v8::base::OS::Print(
           "Parser failed on:\n"
           "\t%s\n"
@@ -1615,7 +1613,7 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
       CHECK(false);
     }
     // Check that preparser and parser produce the same error.
-    if (test_preparser) {
+    {
       i::Handle<i::String> preparser_message =
           FormatMessage(log.ErrorMessageData());
       if (!i::String::Equals(message_string, preparser_message)) {
@@ -1630,7 +1628,7 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
         CHECK(false);
       }
     }
-  } else if (test_preparser && preparse_error) {
+  } else if (preparse_error) {
     v8::base::OS::Print(
         "Preparser failed on:\n"
         "\t%s\n"
@@ -1647,8 +1645,7 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
         "However, parser and preparser succeeded",
         source->ToCString().get());
     CHECK(false);
-  } else if (test_preparser &&
-             preparser_materialized_literals != parser_materialized_literals) {
+  } else if (preparser_materialized_literals != parser_materialized_literals) {
     v8::base::OS::Print(
         "Preparser materialized literals (%d) differ from Parser materialized "
         "literals (%d) on:\n"
@@ -5106,7 +5103,7 @@ TEST(ScanTemplateLiterals) {
       "`foo${\r a}`",
       "`foo${'a' in a}`",
       NULL};
-  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, NULL, 0);
+  RunParserSyncTest(context_data, data, kSuccess);
 }
 
 
@@ -5141,7 +5138,7 @@ TEST(ScanTaggedTemplateLiterals) {
       "tag`foo${\r a}`",
       "tag`foo${'a' in a}`",
       NULL};
-  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, NULL, 0);
+  RunParserSyncTest(context_data, data, kSuccess);
 }
 
 
@@ -5168,7 +5165,7 @@ TEST(TemplateMaterializedLiterals) {
     NULL
   };
 
-  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, NULL, 0);
+  RunParserSyncTest(context_data, data, kSuccess);
 }
 
 
@@ -5202,7 +5199,7 @@ TEST(ScanUnterminatedTemplateLiterals) {
       "`foo${fn(}`",
       "`foo${1 if}`",
       NULL};
-  RunParserSyncTest(context_data, data, kError, NULL, 0, NULL, 0);
+  RunParserSyncTest(context_data, data, kError);
 }
 
 
@@ -5222,7 +5219,7 @@ TEST(TemplateLiteralsIllegalTokens) {
       "`hello${1}\\x\n${2}`",
       NULL};
 
-  RunParserSyncTest(context_data, data, kError, NULL, 0, NULL, 0);
+  RunParserSyncTest(context_data, data, kError);
 }
 
 
@@ -5477,6 +5474,8 @@ TEST(BasicImportExportParsing) {
       "export { static } from 'm.js'",
       "export { let } from 'm.js'",
       "var a; export { a as b, a as c };",
+      "var a; export { a as await };",
+      "var a; export { a as enum };",
 
       "import 'somemodule.js';",
       "import { } from 'm.js';",
@@ -5602,6 +5601,8 @@ TEST(ImportExportParsingErrors) {
       "import { y as yield } from 'm.js'",
       "import { s as static } from 'm.js'",
       "import { l as let } from 'm.js'",
+      "import { a as await } from 'm.js';",
+      "import { a as enum } from 'm.js';",
       "import { x }, def from 'm.js';",
       "import def, def2 from 'm.js';",
       "import * as x, def from 'm.js';",
@@ -5671,6 +5672,142 @@ TEST(ModuleTopLevelFunctionDecl) {
   }
 }
 
+TEST(ModuleAwaitReserved) {
+  // clang-format off
+  const char* kErrorSources[] = {
+      "await;",
+      "await: ;",
+      "var await;",
+      "var [await] = [];",
+      "var { await } = {};",
+      "var { x: await } = {};",
+      "{ var await; }",
+      "let await;",
+      "let [await] = [];",
+      "let { await } = {};",
+      "let { x: await } = {};",
+      "{ let await; }",
+      "const await = null;",
+      "const [await] = [];",
+      "const { await } = {};",
+      "const { x: await } = {};",
+      "{ const await = null; }",
+      "function await() {}",
+      "function f(await) {}",
+      "function* await() {}",
+      "function* g(await) {}",
+      "(function await() {});",
+      "(function (await) {});",
+      "(function* await() {});",
+      "(function* (await) {});",
+      "(await) => {};",
+      "await => {};",
+      "class await {}",
+      "class C { constructor(await) {} }",
+      "class C { m(await) {} }",
+      "class C { static m(await) {} }",
+      "class C { *m(await) {} }",
+      "class C { static *m(await) {} }",
+      "(class await {})",
+      "(class { constructor(await) {} });",
+      "(class { m(await) {} });",
+      "(class { static m(await) {} });",
+      "(class { *m(await) {} });",
+      "(class { static *m(await) {} });",
+      "({ m(await) {} });",
+      "({ *m(await) {} });",
+      "({ set p(await) {} });",
+      "try {} catch (await) {}",
+      "try {} catch (await) {} finally {}",
+      NULL
+  };
+  // clang-format on
+  const char* context_data[][2] = {{"", ""}, {NULL, NULL}};
+
+  RunModuleParserSyncTest(context_data, kErrorSources, kError);
+}
+
+TEST(ModuleAwaitReservedPreParse) {
+  const char* context_data[][2] = {{"", ""}, {NULL, NULL}};
+  const char* error_data[] = {"function f() { var await = 0; }", NULL};
+
+  RunModuleParserSyncTest(context_data, error_data, kError);
+}
+
+TEST(ModuleAwaitPermitted) {
+  // clang-format off
+  const char* kValidSources[] = {
+    "({}).await;",
+    "({ await: null });",
+    "({ await() {} });",
+    "({ get await() {} });",
+    "({ set await(x) {} });",
+    "(class { await() {} });",
+    "(class { static await() {} });",
+    "(class { *await() {} });",
+    "(class { static *await() {} });",
+    NULL
+  };
+  // clang-format on
+  const char* context_data[][2] = {{"", ""}, {NULL, NULL}};
+
+  RunModuleParserSyncTest(context_data, kValidSources, kSuccess);
+}
+
+TEST(EnumReserved) {
+  // clang-format off
+  const char* kErrorSources[] = {
+      "enum;",
+      "enum: ;",
+      "var enum;",
+      "var [enum] = [];",
+      "var { enum } = {};",
+      "var { x: enum } = {};",
+      "{ var enum; }",
+      "let enum;",
+      "let [enum] = [];",
+      "let { enum } = {};",
+      "let { x: enum } = {};",
+      "{ let enum; }",
+      "const enum = null;",
+      "const [enum] = [];",
+      "const { enum } = {};",
+      "const { x: enum } = {};",
+      "{ const enum = null; }",
+      "function enum() {}",
+      "function f(enum) {}",
+      "function* enum() {}",
+      "function* g(enum) {}",
+      "(function enum() {});",
+      "(function (enum) {});",
+      "(function* enum() {});",
+      "(function* (enum) {});",
+      "(enum) => {};",
+      "enum => {};",
+      "class enum {}",
+      "class C { constructor(enum) {} }",
+      "class C { m(enum) {} }",
+      "class C { static m(enum) {} }",
+      "class C { *m(enum) {} }",
+      "class C { static *m(enum) {} }",
+      "(class enum {})",
+      "(class { constructor(enum) {} });",
+      "(class { m(enum) {} });",
+      "(class { static m(enum) {} });",
+      "(class { *m(enum) {} });",
+      "(class { static *m(enum) {} });",
+      "({ m(enum) {} });",
+      "({ *m(enum) {} });",
+      "({ set p(enum) {} });",
+      "try {} catch (enum) {}",
+      "try {} catch (enum) {} finally {}",
+      NULL
+  };
+  // clang-format on
+  const char* context_data[][2] = {{"", ""}, {NULL, NULL}};
+
+  RunModuleParserSyncTest(context_data, kErrorSources, kError);
+}
 
 TEST(ModuleParsingInternals) {
   i::Isolate* isolate = CcTest::i_isolate();
@@ -7028,7 +7165,7 @@ TEST(MiscSyntaxErrors) {
   };
   // clang-format on
 
-  RunParserSyncTest(context_data, error_data, kError, NULL, 0, NULL, 0);
+  RunParserSyncTest(context_data, error_data, kError);
 }
 
 
@@ -7057,7 +7194,7 @@ TEST(EscapeSequenceErrors) {
   };
   // clang-format on
 
-  RunParserSyncTest(context_data, error_data, kError, NULL, 0, NULL, 0);
+  RunParserSyncTest(context_data, error_data, kError);
 }
 
 
@@ -7142,6 +7279,13 @@ TEST(FunctionDeclarationError) {
     "with ({}) label: function f() { };",
     "if (true) label: function f() {}",
     "if (true) {} else label: function f() {}",
+    "if (true) function* f() { }",
+    "label: function* f() { }",
+    // TODO(littledan, v8:4806): Ban duplicate generator declarations in
+    // a block, maybe by tracking whether a Variable is a generator declaration
+    // "{ function* f() {} function* f() {} }",
+    // "{ function f() {} function* f() {} }",
+    // "{ function* f() {} function f() {} }",
     NULL
   };
   // Valid only in sloppy mode, with or without

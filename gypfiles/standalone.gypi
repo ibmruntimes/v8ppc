@@ -677,7 +677,7 @@
               ],
             },
             'dependencies': [
-              '<(DEPTH)/build/mac/asan.gyp:asan_dynamic_runtime',
+              '<(DEPTH)/gypfiles/mac/asan.gyp:asan_dynamic_runtime',
             ],
             'target_conditions': [
               ['_type!="static_library"', {
@@ -1039,6 +1039,13 @@
               'CLANG_CXX_LANGUAGE_STANDARD': 'c++11',  # -std=c++11
             },
             'conditions': [
+              ['clang_xcode==0', {
+                'xcode_settings': {
+                  'CC': '<(clang_dir)/bin/clang',
+                  'LDPLUSPLUS': '<(clang_dir)/bin/clang++',
+                  'CLANG_CXX_LIBRARY': 'libc++'
+                },
+              }],
               ['v8_target_arch=="x64" or v8_target_arch=="arm64" \
                 or v8_target_arch=="mips64el"', {
                 'xcode_settings': {'WARNING_CFLAGS': ['-Wshorten-64-to-32']},
@@ -1320,10 +1327,10 @@
         ['coverage==1', {
           # Wrap goma with coverage wrapper.
           'make_global_settings': [
-            ['CC_wrapper', '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc'],
-            ['CXX_wrapper', '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc'],
-            ['CC.host_wrapper', '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc'],
-            ['CXX.host_wrapper', '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc'],
+            ['CC_wrapper', '<(base_dir)/gypfiles/coverage_wrapper.py <(gomadir)/gomacc'],
+            ['CXX_wrapper', '<(base_dir)/gypfiles/coverage_wrapper.py <(gomadir)/gomacc'],
+            ['CC.host_wrapper', '<(base_dir)/gypfiles/coverage_wrapper.py <(gomadir)/gomacc'],
+            ['CXX.host_wrapper', '<(base_dir)/gypfiles/coverage_wrapper.py <(gomadir)/gomacc'],
           ],
         }, {
           # Use only goma wrapper.
@@ -1340,10 +1347,10 @@
         ['coverage==1', {
           # Use only coverage wrapper.
           'make_global_settings': [
-            ['CC_wrapper', '<(base_dir)/build/coverage_wrapper.py'],
-            ['CXX_wrapper', '<(base_dir)/build/coverage_wrapper.py'],
-            ['CC.host_wrapper', '<(base_dir)/build/coverage_wrapper.py'],
-            ['CXX.host_wrapper', '<(base_dir)/build/coverage_wrapper.py'],
+            ['CC_wrapper', '<(base_dir)/gypfiles/coverage_wrapper.py'],
+            ['CXX_wrapper', '<(base_dir)/gypfiles/coverage_wrapper.py'],
+            ['CC.host_wrapper', '<(base_dir)/gypfiles/coverage_wrapper.py'],
+            ['CXX.host_wrapper', '<(base_dir)/gypfiles/coverage_wrapper.py'],
           ],
         }],
       ],

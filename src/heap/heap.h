@@ -78,6 +78,7 @@ using v8::MemoryPressureLevel;
   V(Oddball, exception, Exception)                                             \
   V(Oddball, termination_exception, TerminationException)                      \
   V(Oddball, optimized_out, OptimizedOut)                                      \
+  V(Oddball, stale_register, StaleRegister)                                    \
   V(FixedArray, number_string_cache, NumberStringCache)                        \
   V(Object, instanceof_cache_function, InstanceofCacheFunction)                \
   V(Object, instanceof_cache_map, InstanceofCacheMap)                          \
@@ -152,6 +153,7 @@ using v8::MemoryPressureLevel;
   V(Map, exception_map, ExceptionMap)                                          \
   V(Map, termination_exception_map, TerminationExceptionMap)                   \
   V(Map, optimized_out_map, OptimizedOutMap)                                   \
+  V(Map, stale_register_map, StaleRegisterMap)                                 \
   V(Map, message_object_map, JSMessageObjectMap)                               \
   V(Map, foreign_map, ForeignMap)                                              \
   V(Map, neander_map, NeanderMap)                                              \
@@ -778,11 +780,6 @@ class Heap {
 
   inline bool OldGenerationAllocationLimitReached();
 
-  void QueueMemoryChunkForFree(MemoryChunk* chunk);
-  void FreeQueuedChunks(MemoryChunk* list_head);
-  void FreeQueuedChunks();
-  void WaitUntilUnmappingOfFreeChunksCompleted();
-
   // Completely clear the Instanceof cache (to stop it keeping objects alive
   // around a GC).
   inline void CompletelyClearInstanceofCache();
@@ -1256,8 +1253,13 @@ class Heap {
     return static_cast<intptr_t>(total);
   }
 
-  inline void UpdateNewSpaceAllocationCounter();
-  inline size_t NewSpaceAllocationCounter();
+  void UpdateNewSpaceAllocationCounter() {
+    new_space_allocation_counter_ = NewSpaceAllocationCounter();
+  }
+
+  size_t NewSpaceAllocationCounter() {
+    return new_space_allocation_counter_ + new_space()->AllocatedSinceLastGC();
+  }
 
   // This should be used only for testing.
   void set_new_space_allocation_counter(size_t new_value) {
@@ -1390,7 +1392,6 @@ class Heap {
 
  private:
   class PretenuringScope;
-  class UnmapFreeMemoryTask;
 
   // External strings table is a place where all external strings are
   // registered.  We need to keep track of such strings to properly
@@ -2207,12 +2208,6 @@ class Heap {
   GCCallbackFlags current_gc_callback_flags_;
 
   ExternalStringTable external_string_table_;
-
-  MemoryChunk* chunks_queued_for_free_;
-
-  size_t concurrent_unmapping_tasks_active_;
-
-  base::Semaphore pending_unmapping_tasks_semaphore_;
 
   base::Mutex relocation_mutex_;
 

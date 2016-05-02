@@ -412,6 +412,12 @@ class MacroAssembler : public Assembler {
 
   void mov(Register dst, const Operand& src);
 
+  void CleanUInt32(Register x) {
+#ifdef V8_TARGET_ARCH_S390X
+    llgfr(x, x);
+#endif
+  }
+
   // ---------------------------------------------------------------------------
   // GC Support
 
@@ -983,7 +989,6 @@ class MacroAssembler : public Assembler {
   // when control continues at the gc_required label.
   void AllocateHeapNumber(Register result, Register scratch1, Register scratch2,
                           Register heap_number_map, Label* gc_required,
-                          TaggingMode tagging_mode = TAG_RESULT,
                           MutableMode mode = IMMUTABLE);
   void AllocateHeapNumberWithValue(Register result, DoubleRegister value,
                                    Register scratch1, Register scratch2,

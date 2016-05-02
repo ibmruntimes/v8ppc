@@ -4626,15 +4626,15 @@ void FastNewObjectStub::Generate(MacroAssembler* masm) {
   __ bind(&done_allocate);
 
   // Initialize the JSObject fields.
-  __ StoreP(r4, MemOperand(r2, JSObject::kMapOffset));
+  __ StoreP(r4, FieldMemOperand(r2, JSObject::kMapOffset));
   __ LoadRoot(r5, Heap::kEmptyFixedArrayRootIndex);
-  __ StoreP(r5, MemOperand(r2, JSObject::kPropertiesOffset));
-  __ StoreP(r5, MemOperand(r2, JSObject::kElementsOffset));
+  __ StoreP(r5, FieldMemOperand(r2, JSObject::kPropertiesOffset));
+  __ StoreP(r5, FieldMemOperand(r2, JSObject::kElementsOffset));
   STATIC_ASSERT(JSObject::kHeaderSize == 3 * kPointerSize);
-  __ AddP(r3, r2, Operand(JSObject::kHeaderSize));
+  __ AddP(r3, r2, Operand(JSObject::kHeaderSize - kHeapObjectTag));
 
   // ----------- S t a t e -------------
-  //  -- r2 : result (untagged)
+  //  -- r2 : result (tagged)
   //  -- r3 : result fields (untagged)
   //  -- r7 : result end (untagged)
   //  -- r4 : initial map
@@ -4654,8 +4654,6 @@ void FastNewObjectStub::Generate(MacroAssembler* masm) {
     // Initialize all in-object fields with undefined.
     __ InitializeFieldsWithFiller(r3, r7, r8);
 
-    // Add the object tag to make the JSObject real.
-    __ AddP(r2, r2, Operand(kHeapObjectTag));
     __ Ret();
   }
   __ bind(&slack_tracking);
@@ -4674,9 +4672,6 @@ void FastNewObjectStub::Generate(MacroAssembler* masm) {
     // Initialize the remaining (reserved) fields with one pointer filler map.
     __ LoadRoot(r8, Heap::kOnePointerFillerMapRootIndex);
     __ InitializeFieldsWithFiller(r3, r7, r8);
-
-    // Add the object tag to make the JSObject real.
-    __ AddP(r2, r2, Operand(kHeapObjectTag));
 
     // Check if we can finalize the instance size.
     __ CmpP(r9, Operand(Map::kSlackTrackingCounterEnd));
@@ -4703,10 +4698,10 @@ void FastNewObjectStub::Generate(MacroAssembler* masm) {
     __ CallRuntime(Runtime::kAllocateInNewSpace);
     __ Pop(r4);
   }
-  __ SubP(r2, r2, Operand(kHeapObjectTag));
   __ LoadlB(r7, FieldMemOperand(r4, Map::kInstanceSizeOffset));
   __ ShiftLeftP(r7, r7, Operand(kPointerSizeLog2));
   __ AddP(r7, r2, r7);
+  __ SubP(r7, r7, Operand(kHeapObjectTag));
   __ b(&done_allocate);
 
   // Fall back to %NewObject.
@@ -4771,7 +4766,7 @@ void FastNewRestParameterStub::Generate(MacroAssembler* masm) {
 
     // Allocate an empty rest parameter array.
     Label allocate, done_allocate;
-    __ Allocate(JSArray::kSize, r2, r3, r4, &allocate, TAG_OBJECT);
+    __ Allocate(JSArray::kSize, r2, r3, r4, &allocate, NO_ALLOCATION_FLAGS);
     __ bind(&done_allocate);
 
     // Setup the rest parameter array in r0.
@@ -4814,7 +4809,7 @@ void FastNewRestParameterStub::Generate(MacroAssembler* masm) {
     Label allocate, done_allocate;
     __ mov(r3, Operand(JSArray::kSize + FixedArray::kHeaderSize));
     __ AddP(r3, r3, r8);
-    __ Allocate(r3, r5, r6, r7, &allocate, TAG_OBJECT);
+    __ Allocate(r3, r5, r6, r7, &allocate, NO_ALLOCATION_FLAGS);
     __ bind(&done_allocate);
 
     // Setup the elements array in r5.
@@ -4961,7 +4956,7 @@ void FastNewSloppyArgumentsStub::Generate(MacroAssembler* masm) {
   __ AddP(r1, r1, Operand(JSSloppyArgumentsObject::kSize));
 
   // Do the allocation of all three objects in one go.
-  __ Allocate(r1, r2, r1, r6, &runtime, TAG_OBJECT);
+  __ Allocate(r1, r2, r1, r6, &runtime, NO_ALLOCATION_FLAGS);
 
   // r2 = address of new object(s) (tagged)
   // r4 = argument count (smi-tagged)
@@ -5179,7 +5174,7 @@ void FastNewStrictArgumentsStub::Generate(MacroAssembler* masm) {
   Label allocate, done_allocate;
   __ mov(r3, Operand(JSStrictArgumentsObject::kSize + FixedArray::kHeaderSize));
   __ AddP(r3, r3, r8);
-  __ Allocate(r3, r5, r6, r7, &allocate, TAG_OBJECT);
+  __ Allocate(r3, r5, r6, r7, &allocate, NO_ALLOCATION_FLAGS);
   __ bind(&done_allocate);
 
   // Setup the elements array in r5.
@@ -5551,7 +5546,11 @@ void CallApiCallbackStub::Generate(MacroAssembler* masm) {
   STATIC_ASSERT(FCA::kReturnValueDefaultValueIndex == 2);
   STATIC_ASSERT(FCA::kIsolateIndex == 1);
   STATIC_ASSERT(FCA::kHolderIndex == 0);
-  STATIC_ASSERT(FCA::kArgsLength == 7);
+  STATIC_ASSERT(FCA::kNewTargetIndex == 7);
+  STATIC_ASSERT(FCA::kArgsLength == 8);
+
+  // new target
+  __ PushRoot(Heap::kUndefinedValueRootIndex);
 
   // context save
   __ push(context);
@@ -5587,10 +5586,10 @@ void CallApiCallbackStub::Generate(MacroAssembler* masm) {
   // it's not controlled by GC.
   // S390 LINUX ABI:
   //
-  // Create 5 extra slots on stack:
+  // Create 4 extra slots on stack:
   //    [0] space for DirectCEntryStub's LR save
-  //    [1-4] FunctionCallbackInfo
-  const int kApiStackSpace = 5;
+  //    [1-3] FunctionCallbackInfo
+  const int kApiStackSpace = 4;
   const int kFunctionCallbackInfoOffset =
       (kStackFrameExtraParamSlot + 1) * kPointerSize;
 
@@ -5609,9 +5608,6 @@ void CallApiCallbackStub::Generate(MacroAssembler* masm) {
   // FunctionCallbackInfo::length_ = argc
   __ LoadImmP(ip, Operand(argc()));
   __ StoreW(ip, MemOperand(r2, 2 * kPointerSize));
-  // FunctionCallbackInfo::is_construct_call_ = 0
-  __ LoadImmP(ip, Operand::Zero());
-  __ StoreW(ip, MemOperand(r2, 2 * kPointerSize + kIntSize));
 
   ExternalReference thunk_ref =
       ExternalReference::invoke_function_callback(masm->isolate());
@@ -5628,9 +5624,9 @@ void CallApiCallbackStub::Generate(MacroAssembler* masm) {
   }
   MemOperand return_value_operand(fp, return_value_offset * kPointerSize);
   int stack_space = 0;
-  MemOperand is_construct_call_operand =
-      MemOperand(sp, kFunctionCallbackInfoOffset + 2 * kPointerSize + kIntSize);
-  MemOperand* stack_space_operand = &is_construct_call_operand;
+  MemOperand length_operand =
+      MemOperand(sp, kFunctionCallbackInfoOffset + 2 * kPointerSize);
+  MemOperand* stack_space_operand = &length_operand;
   stack_space = argc() + FCA::kArgsLength + 1;
   stack_space_operand = NULL;
   CallApiFunctionAndReturn(masm, api_function_address, thunk_ref, stack_space,

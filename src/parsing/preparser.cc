@@ -38,8 +38,10 @@ void PreParserTraits::ReportMessageAt(int start_pos, int end_pos,
 
 
 PreParserIdentifier PreParserTraits::GetSymbol(Scanner* scanner) {
-  if (scanner->current_token() == Token::FUTURE_RESERVED_WORD) {
-    return PreParserIdentifier::FutureReserved();
+  if (scanner->current_token() == Token::ENUM) {
+    return PreParserIdentifier::Enum();
+  } else if (scanner->current_token() == Token::AWAIT) {
+    return PreParserIdentifier::Await();
   } else if (scanner->current_token() ==
              Token::FUTURE_STRICT_RESERVED_WORD) {
     return PreParserIdentifier::FutureStrictReserved();
@@ -100,7 +102,9 @@ PreParserExpression PreParserTraits::ParseFunctionLiteral(
 
 PreParser::PreParseResult PreParser::PreParseLazyFunction(
     LanguageMode language_mode, FunctionKind kind, bool has_simple_parameters,
-    ParserRecorder* log, Scanner::BookmarkScope* bookmark, int* use_counts) {
+    bool parsing_module, ParserRecorder* log, Scanner::BookmarkScope* bookmark,
+    int* use_counts) {
+  parsing_module_ = parsing_module;
   log_ = log;
   use_counts_ = use_counts;
   // Lazy functions always have trivial outer scopes (no with/catch scopes).
@@ -179,7 +183,7 @@ PreParser::Statement PreParser::ParseStatementListItem(bool* ok) {
 
   switch (peek()) {
     case Token::FUNCTION:
-      return ParseFunctionDeclaration(ok);
+      return ParseHoistableDeclaration(ok);
     case Token::CLASS:
       return ParseClassDeclaration(ok);
     case Token::CONST:
@@ -377,15 +381,8 @@ PreParser::Statement PreParser::ParseSubStatement(
 }
 
 
-PreParser::Statement PreParser::ParseFunctionDeclaration(bool* ok) {
-  // FunctionDeclaration ::
-  //   'function' Identifier '(' FormalParameterListopt ')' '{' FunctionBody '}'
-  // GeneratorDeclaration ::
-  //   'function' '*' Identifier '(' FormalParameterListopt ')'
-  //      '{' FunctionBody '}'
-  Expect(Token::FUNCTION, CHECK_OK);
-  int pos = position();
-  bool is_generator = Check(Token::MUL);
+PreParser::Statement PreParser::ParseHoistableDeclaration(
+    int pos, bool is_generator, bool* ok) {
   bool is_strict_reserved = false;
   Identifier name = ParseIdentifierOrStrictReservedWord(
       &is_strict_reserved, CHECK_OK);
@@ -397,6 +394,19 @@ PreParser::Statement PreParser::ParseFunctionDeclaration(bool* ok) {
                        pos, FunctionLiteral::kDeclaration, language_mode(),
                        CHECK_OK);
   return Statement::FunctionDeclaration();
+}
+
+
+PreParser::Statement PreParser::ParseHoistableDeclaration(bool* ok) {
+  // FunctionDeclaration ::
+  //   'function' Identifier '(' FormalParameterListopt ')' '{' FunctionBody '}'
+  // GeneratorDeclaration ::
+  //   'function' '*' Identifier '(' FormalParameterListopt ')'
+  //      '{' FunctionBody '}'
+  Expect(Token::FUNCTION, CHECK_OK);
+  int pos = position();
+  bool is_generator = Check(Token::MUL);
+  return ParseHoistableDeclaration(pos, is_generator, CHECK_OK);
 }
 
 
@@ -552,6 +562,20 @@ PreParser::Statement PreParser::ParseVariableDeclarations(
   return Statement::Default();
 }
 
+PreParser::Statement PreParser::ParseFunctionDeclaration(bool* ok) {
+  Consume(Token::FUNCTION);
+  int pos = position();
+  bool is_generator = Check(Token::MUL);
+  if (allow_harmony_restrictive_declarations() && is_generator) {
+    PreParserTraits::ReportMessageAt(
+        scanner()->location(),
+        MessageTemplate::kGeneratorInLegacyContext);
+    *ok = false;
+    return Statement::Default();
+  }
+  return ParseHoistableDeclaration(pos, is_generator, ok);
+}
+
 PreParser::Statement PreParser::ParseExpressionOrLabelledStatement(
     AllowLabelledFunctionStatement allow_function, bool* ok) {
   // ExpressionStatement | LabelledStatement ::
@@ -582,7 +606,8 @@ PreParser::Statement PreParser::ParseExpressionOrLabelledStatement(
   if (starts_with_identifier && expr.IsIdentifier() && peek() == Token::COLON) {
     // Expression is a single identifier, and not, e.g., a parenthesized
     // identifier.
-    DCHECK(!expr.AsIdentifier().IsFutureReserved());
+    DCHECK(!expr.AsIdentifier().IsEnum());
+    DCHECK(!parsing_module_ || !expr.AsIdentifier().IsAwait());
     DCHECK(is_sloppy(language_mode()) ||
            !IsFutureStrictReserved(expr.AsIdentifier()));
     Consume(Token::COLON);

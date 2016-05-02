@@ -121,8 +121,6 @@ BytecodeArrayBuilder::BytecodeArrayBuilder(Isolate* isolate, Zone* zone,
                                source_position_table_builder()));
 }
 
-BytecodeArrayBuilder::~BytecodeArrayBuilder() { DCHECK_EQ(0, unbound_jumps_); }
-
 Register BytecodeArrayBuilder::first_context_register() const {
   DCHECK_GT(context_register_count_, 0);
   return Register(local_register_count_);
@@ -147,6 +145,7 @@ bool BytecodeArrayBuilder::RegisterIsParameterOrLocal(Register reg) const {
 
 
 Handle<BytecodeArray> BytecodeArrayBuilder::ToBytecodeArray() {
+  DCHECK_EQ(0, unbound_jumps_);
   DCHECK_EQ(bytecode_generated_, false);
   DCHECK(exit_seen_in_block_);
 
@@ -861,7 +860,13 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::JumpIfUndefined(
   return OutputJump(Bytecode::kJumpIfUndefined, label);
 }
 
-BytecodeArrayBuilder& BytecodeArrayBuilder::StackCheck() {
+BytecodeArrayBuilder& BytecodeArrayBuilder::StackCheck(int position) {
+  if (position != RelocInfo::kNoPosition) {
+    // We need to attach a non-breakable source position to a stack check,
+    // so we simply add it as expression position.
+    source_position_table_builder_.AddExpressionPosition(bytecodes_.size(),
+                                                         position);
+  }
   Output(Bytecode::kStackCheck);
   return *this;
 }

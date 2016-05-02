@@ -193,29 +193,29 @@ DEFINE_IMPLICATION(es_staging, harmony_regexp_lookbehind)
 DEFINE_IMPLICATION(es_staging, move_object_start)
 
 // Features that are still work in progress (behind individual flags).
-#define HARMONY_INPROGRESS(V)                                           \
-  V(harmony_explicit_tailcalls, "harmony explicit tail calls")          \
-  V(harmony_function_sent, "harmony function.sent")                     \
-  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")             \
-  V(harmony_simd, "harmony simd")                                       \
-  V(harmony_do_expressions, "harmony do-expressions")                   \
-  V(harmony_regexp_property, "harmony unicode regexp property classes") \
-  V(harmony_string_padding, "harmony String-padding methods")
+#define HARMONY_INPROGRESS(V)                                  \
+  V(harmony_explicit_tailcalls, "harmony explicit tail calls") \
+  V(harmony_function_sent, "harmony function.sent")            \
+  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")    \
+  V(harmony_simd, "harmony simd")                              \
+  V(harmony_do_expressions, "harmony do-expressions")          \
+  V(harmony_regexp_property, "harmony unicode regexp property classes")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                                    \
   V(harmony_regexp_lookbehind, "harmony regexp lookbehind")                  \
   V(harmony_tailcalls, "harmony tail calls")                                 \
-  V(harmony_for_in, "harmony for-in syntax")                                 \
   V(harmony_object_values_entries, "harmony Object.values / Object.entries") \
   V(harmony_object_own_property_descriptors,                                 \
-    "harmony Object.getOwnPropertyDescriptors()")
+    "harmony Object.getOwnPropertyDescriptors()")                            \
+  V(harmony_string_padding, "harmony String-padding methods")
 
 // Features that are shipping (turned on by default, but internal flag remains).
 #define HARMONY_SHIPPING(V)                                           \
   V(harmony_array_prototype_values, "harmony Array.prototype.values") \
   V(harmony_function_name, "harmony Function name inference")         \
   V(harmony_instanceof, "harmony instanceof support")                 \
+  V(harmony_for_in, "harmony for-in syntax")                          \
   V(harmony_iterator_close, "harmony iterator finalization")          \
   V(harmony_unicode_regexps, "harmony unicode regexps")               \
   V(harmony_regexp_exec, "harmony RegExp exec override behavior")     \
@@ -409,6 +409,7 @@ DEFINE_BOOL(omit_map_checks_for_leaf_maps, true,
 DEFINE_BOOL(turbo, false, "enable TurboFan compiler")
 DEFINE_IMPLICATION(turbo, turbo_asm_deoptimization)
 DEFINE_BOOL(turbo_shipping, true, "enable TurboFan compiler on subset")
+DEFINE_BOOL(turbo_from_bytecode, false, "enable building graphs from bytecode")
 DEFINE_BOOL(turbo_greedy_regalloc, false, "use the greedy register allocator")
 DEFINE_BOOL(turbo_sp_frame_access, false,
             "use stack pointer-relative access to frame wherever possible")
@@ -462,6 +463,7 @@ DEFINE_BOOL(turbo_stress_instruction_scheduling, false,
 
 // Flags for native WebAssembly.
 DEFINE_BOOL(expose_wasm, false, "expose WASM interface to JavaScript")
+DEFINE_BOOL(wasm_parallel_compilation, false, "compile WASM code in parallel")
 DEFINE_BOOL(trace_wasm_encoder, false, "trace encoding of wasm code")
 DEFINE_BOOL(trace_wasm_decoder, false, "trace decoding of wasm code")
 DEFINE_BOOL(trace_wasm_decode_time, false, "trace decoding time of wasm code")
@@ -479,6 +481,8 @@ DEFINE_BOOL(enable_simd_asmjs, false, "enable SIMD.js in asm.js stdlib")
 
 DEFINE_BOOL(dump_wasm_module, false, "dump WASM module bytes")
 DEFINE_STRING(dump_wasm_module_path, NULL, "directory to dump wasm modules to")
+DEFINE_BOOL(print_wasm_code_size, false,
+            "print the generated code size for each wasm module")
 
 DEFINE_INT(typed_array_max_size_in_heap, 64,
            "threshold for in-heap typed array")

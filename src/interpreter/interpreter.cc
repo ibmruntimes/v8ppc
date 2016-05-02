@@ -719,22 +719,12 @@ void Interpreter::DoBinaryOp(Runtime::FunctionId function_id,
   __ Dispatch();
 }
 
-template <class Generator>
-void Interpreter::DoBinaryOp(InterpreterAssembler* assembler) {
-  Node* reg_index = __ BytecodeOperandReg(0);
-  Node* lhs = __ LoadRegister(reg_index);
-  Node* rhs = __ GetAccumulator();
-  Node* context = __ GetContext();
-  Node* result = Generator::Generate(assembler, lhs, rhs, context);
-  __ SetAccumulator(result);
-  __ Dispatch();
-}
 
 // Add <src>
 //
 // Add register <src> to accumulator.
 void Interpreter::DoAdd(InterpreterAssembler* assembler) {
-  DoBinaryOp<AddStub>(assembler);
+  DoBinaryOp(CodeFactory::Add(isolate_), assembler);
 }
 
 
@@ -742,7 +732,7 @@ void Interpreter::DoAdd(InterpreterAssembler* assembler) {
 //
 // Subtract register <src> from accumulator.
 void Interpreter::DoSub(InterpreterAssembler* assembler) {
-  DoBinaryOp<SubtractStub>(assembler);
+  DoBinaryOp(CodeFactory::Subtract(isolate_), assembler);
 }
 
 
@@ -750,7 +740,7 @@ void Interpreter::DoSub(InterpreterAssembler* assembler) {
 //
 // Multiply accumulator by register <src>.
 void Interpreter::DoMul(InterpreterAssembler* assembler) {
-  DoBinaryOp<MultiplyStub>(assembler);
+  DoBinaryOp(CodeFactory::Multiply(isolate_), assembler);
 }
 
 
@@ -758,7 +748,7 @@ void Interpreter::DoMul(InterpreterAssembler* assembler) {
 //
 // Divide register <src> by accumulator.
 void Interpreter::DoDiv(InterpreterAssembler* assembler) {
-  DoBinaryOp<DivideStub>(assembler);
+  DoBinaryOp(CodeFactory::Divide(isolate_), assembler);
 }
 
 
@@ -766,7 +756,7 @@ void Interpreter::DoDiv(InterpreterAssembler* assembler) {
 //
 // Modulo register <src> by accumulator.
 void Interpreter::DoMod(InterpreterAssembler* assembler) {
-  DoBinaryOp<ModulusStub>(assembler);
+  DoBinaryOp(CodeFactory::Modulus(isolate_), assembler);
 }
 
 
@@ -774,7 +764,7 @@ void Interpreter::DoMod(InterpreterAssembler* assembler) {
 //
 // BitwiseOr register <src> to accumulator.
 void Interpreter::DoBitwiseOr(InterpreterAssembler* assembler) {
-  DoBinaryOp<BitwiseOrStub>(assembler);
+  DoBinaryOp(CodeFactory::BitwiseOr(isolate_), assembler);
 }
 
 
@@ -782,7 +772,7 @@ void Interpreter::DoBitwiseOr(InterpreterAssembler* assembler) {
 //
 // BitwiseXor register <src> to accumulator.
 void Interpreter::DoBitwiseXor(InterpreterAssembler* assembler) {
-  DoBinaryOp<BitwiseXorStub>(assembler);
+  DoBinaryOp(CodeFactory::BitwiseXor(isolate_), assembler);
 }
 
 
@@ -790,7 +780,7 @@ void Interpreter::DoBitwiseXor(InterpreterAssembler* assembler) {
 //
 // BitwiseAnd register <src> to accumulator.
 void Interpreter::DoBitwiseAnd(InterpreterAssembler* assembler) {
-  DoBinaryOp<BitwiseAndStub>(assembler);
+  DoBinaryOp(CodeFactory::BitwiseAnd(isolate_), assembler);
 }
 
 
@@ -801,7 +791,7 @@ void Interpreter::DoBitwiseAnd(InterpreterAssembler* assembler) {
 // before the operation. 5 lsb bits from the accumulator are used as count
 // i.e. <src> << (accumulator & 0x1F).
 void Interpreter::DoShiftLeft(InterpreterAssembler* assembler) {
-  DoBinaryOp<ShiftLeftStub>(assembler);
+  DoBinaryOp(CodeFactory::ShiftLeft(isolate_), assembler);
 }
 
 
@@ -812,7 +802,7 @@ void Interpreter::DoShiftLeft(InterpreterAssembler* assembler) {
 // accumulator to uint32 before the operation. 5 lsb bits from the accumulator
 // are used as count i.e. <src> >> (accumulator & 0x1F).
 void Interpreter::DoShiftRight(InterpreterAssembler* assembler) {
-  DoBinaryOp<ShiftRightStub>(assembler);
+  DoBinaryOp(CodeFactory::ShiftRight(isolate_), assembler);
 }
 
 
@@ -823,7 +813,7 @@ void Interpreter::DoShiftRight(InterpreterAssembler* assembler) {
 // uint32 before the operation 5 lsb bits from the accumulator are used as
 // count i.e. <src> << (accumulator & 0x1F).
 void Interpreter::DoShiftRightLogical(InterpreterAssembler* assembler) {
-  DoBinaryOp<ShiftRightLogicalStub>(assembler);
+  DoBinaryOp(CodeFactory::ShiftRightLogical(isolate_), assembler);
 }
 
 void Interpreter::DoCountOp(Callable callable,
@@ -1405,23 +1395,6 @@ void Interpreter::DoJumpIfNotHoleConstant(InterpreterAssembler* assembler) {
   __ JumpIfWordNotEqual(accumulator, the_hole_value, relative_jump);
 }
 
-void Interpreter::DoCreateLiteral(Runtime::FunctionId function_id,
-                                  InterpreterAssembler* assembler) {
-  Node* index = __ BytecodeOperandIdx(0);
-  Node* constant_elements = __ LoadConstantPoolEntry(index);
-  Node* literal_index_raw = __ BytecodeOperandIdx(1);
-  Node* literal_index = __ SmiTag(literal_index_raw);
-  Node* flags_raw = __ BytecodeOperandFlag(2);
-  Node* flags = __ SmiTag(flags_raw);
-  Node* closure = __ LoadRegister(Register::function_closure());
-  Node* context = __ GetContext();
-  Node* result = __ CallRuntime(function_id, context, closure, literal_index,
-                                constant_elements, flags);
-  __ SetAccumulator(result);
-  __ Dispatch();
-}
-
-
 // CreateRegExpLiteral <pattern_idx> <literal_idx> <flags>
 //
 // Creates a regular expression literal for literal index <literal_idx> with
@@ -1448,15 +1421,71 @@ void Interpreter::DoCreateRegExpLiteral(InterpreterAssembler* assembler) {
 // Creates an array literal for literal index <literal_idx> with flags <flags>
 // and constant elements in <element_idx>.
 void Interpreter::DoCreateArrayLiteral(InterpreterAssembler* assembler) {
-  DoCreateLiteral(Runtime::kCreateArrayLiteral, assembler);
+  Node* index = __ BytecodeOperandIdx(0);
+  Node* constant_elements = __ LoadConstantPoolEntry(index);
+  Node* literal_index_raw = __ BytecodeOperandIdx(1);
+  Node* literal_index = __ SmiTag(literal_index_raw);
+  Node* flags_raw = __ BytecodeOperandFlag(2);
+  Node* flags = __ SmiTag(flags_raw);
+  Node* closure = __ LoadRegister(Register::function_closure());
+  Node* context = __ GetContext();
+  Node* result = __ CallRuntime(Runtime::kCreateArrayLiteral, context, closure,
+                                literal_index, constant_elements, flags);
+  __ SetAccumulator(result);
+  __ Dispatch();
 }
 
 // CreateObjectLiteral <element_idx> <literal_idx> <flags>
 //
-// Creates an object literal for literal index <literal_idx> with flags <flags>
-// and constant elements in <element_idx>.
+// Creates an object literal for literal index <literal_idx> with
+// CreateObjectLiteralFlags <flags> and constant elements in <element_idx>.
 void Interpreter::DoCreateObjectLiteral(InterpreterAssembler* assembler) {
-  DoCreateLiteral(Runtime::kCreateObjectLiteral, assembler);
+  Node* literal_index_raw = __ BytecodeOperandIdx(1);
+  Node* literal_index = __ SmiTag(literal_index_raw);
+  Node* bytecode_flags = __ BytecodeOperandFlag(2);
+  Node* closure = __ LoadRegister(Register::function_closure());
+
+  Variable result(assembler, MachineRepresentation::kTagged);
+
+  // Check if we can do a fast clone or have to call the runtime.
+  Label end(assembler), if_fast_clone(assembler),
+      if_not_fast_clone(assembler, Label::kDeferred);
+  Node* fast_clone_properties_count =
+      __ BitFieldDecode<CreateObjectLiteralFlags::FastClonePropertiesCountBits>(
+          bytecode_flags);
+  __ BranchIf(fast_clone_properties_count, &if_fast_clone, &if_not_fast_clone);
+
+  __ Bind(&if_fast_clone);
+  {
+    // If we can do a fast clone do the fast-path in FastCloneShallowObjectStub.
+    Node* clone = FastCloneShallowObjectStub::GenerateFastPath(
+        assembler, &if_not_fast_clone, closure, literal_index,
+        fast_clone_properties_count);
+    result.Bind(clone);
+    __ Goto(&end);
+  }
+
+  __ Bind(&if_not_fast_clone);
+  {
+    // If we can't do a fast clone, call into the runtime.
+    Node* index = __ BytecodeOperandIdx(0);
+    Node* constant_elements = __ LoadConstantPoolEntry(index);
+    Node* context = __ GetContext();
+
+    STATIC_ASSERT(CreateObjectLiteralFlags::FlagsBits::kShift == 0);
+    Node* flags_raw = __ Word32And(
+        bytecode_flags,
+        __ Int32Constant(CreateObjectLiteralFlags::FlagsBits::kMask));
+    Node* flags = __ SmiTag(flags_raw);
+
+    result.Bind(__ CallRuntime(Runtime::kCreateObjectLiteral, context, closure,
+                               literal_index, constant_elements, flags));
+    __ Goto(&end);
+  }
+
+  __ Bind(&end);
+  __ SetAccumulator(result.value());
+  __ Dispatch();
 }
 
 // CreateClosure <index> <tenured>
@@ -1746,11 +1775,12 @@ void Interpreter::DoSuspendGenerator(InterpreterAssembler* assembler) {
   Node* generator_reg = __ BytecodeOperandReg(0);
   Node* generator = __ LoadRegister(generator_reg);
 
-  Node* array = __ ExportRegisterFile();
+  Node* array =
+      __ LoadObjectField(generator, JSGeneratorObject::kOperandStackOffset);
   Node* context = __ GetContext();
   Node* state = __ GetAccumulator();
 
-  __ StoreObjectField(generator, JSGeneratorObject::kOperandStackOffset, array);
+  __ ExportRegisterFile(array);
   __ StoreObjectField(generator, JSGeneratorObject::kContextOffset, context);
   __ StoreObjectField(generator, JSGeneratorObject::kContinuationOffset, state);
 
@@ -1768,8 +1798,6 @@ void Interpreter::DoResumeGenerator(InterpreterAssembler* assembler) {
 
   __ ImportRegisterFile(
       __ LoadObjectField(generator, JSGeneratorObject::kOperandStackOffset));
-  __ StoreObjectField(generator, JSGeneratorObject::kOperandStackOffset,
-      __ HeapConstant(isolate_->factory()->empty_fixed_array()));
 
   Node* old_state =
       __ LoadObjectField(generator, JSGeneratorObject::kContinuationOffset);

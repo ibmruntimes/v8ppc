@@ -157,9 +157,6 @@ Heap::Heap()
       current_gc_flags_(Heap::kNoGCFlags),
       current_gc_callback_flags_(GCCallbackFlags::kNoGCCallbackFlags),
       external_string_table_(this),
-      chunks_queued_for_free_(NULL),
-      concurrent_unmapping_tasks_active_(0),
-      pending_unmapping_tasks_semaphore_(0),
       gc_callbacks_depth_(0),
       deserialization_complete_(false),
       strong_roots_list_(NULL),
@@ -2290,6 +2287,7 @@ bool Heap::CreateInitialMaps() {
     ALLOCATE_MAP(ODDBALL_TYPE, Oddball::kSize, exception);
     ALLOCATE_MAP(ODDBALL_TYPE, Oddball::kSize, termination_exception);
     ALLOCATE_MAP(ODDBALL_TYPE, Oddball::kSize, optimized_out);
+    ALLOCATE_MAP(ODDBALL_TYPE, Oddball::kSize, stale_register);
 
     for (unsigned i = 0; i < arraysize(string_type_table); i++) {
       const StringTypeTable& entry = string_type_table[i];
@@ -2663,6 +2661,11 @@ void Heap::CreateInitialObjects() {
       *factory->NewOddball(factory->optimized_out_map(), "optimized_out",
                            handle(Smi::FromInt(-6), isolate()), false,
                            "undefined", Oddball::kOptimizedOut));
+
+  set_stale_register(
+      *factory->NewOddball(factory->stale_register_map(), "stale_register",
+                           handle(Smi::FromInt(-7), isolate()), false,
+                           "undefined", Oddball::kStaleRegister));
 
   for (unsigned i = 0; i < arraysize(constant_string_table); i++) {
     Handle<String> str =
@@ -5447,8 +5450,6 @@ void Heap::TearDown() {
   delete scavenge_job_;
   scavenge_job_ = nullptr;
 
-  WaitUntilUnmappingOfFreeChunksCompleted();
-
   delete array_buffer_tracker_;
   array_buffer_tracker_ = nullptr;
 
@@ -6251,75 +6252,6 @@ void Heap::ExternalStringTable::TearDown() {
     heap_->FinalizeExternalString(ExternalString::cast(old_space_strings_[i]));
   }
   old_space_strings_.Free();
-}
-
-
-class Heap::UnmapFreeMemoryTask : public v8::Task {
- public:
-  UnmapFreeMemoryTask(Heap* heap, MemoryChunk* head)
-      : heap_(heap), head_(head) {}
-  virtual ~UnmapFreeMemoryTask() {}
-
- private:
-  // v8::Task overrides.
-  void Run() override {
-    heap_->FreeQueuedChunks(head_);
-    heap_->pending_unmapping_tasks_semaphore_.Signal();
-  }
-
-  Heap* heap_;
-  MemoryChunk* head_;
-
-  DISALLOW_COPY_AND_ASSIGN(UnmapFreeMemoryTask);
-};
-
-
-void Heap::WaitUntilUnmappingOfFreeChunksCompleted() {
-  while (concurrent_unmapping_tasks_active_ > 0) {
-    pending_unmapping_tasks_semaphore_.Wait();
-    concurrent_unmapping_tasks_active_--;
-  }
-}
-
-
-void Heap::QueueMemoryChunkForFree(MemoryChunk* chunk) {
-  // PreFree logically frees the memory chunk. However, the actual freeing
-  // will happen on a separate thread sometime later.
-  memory_allocator()->PreFreeMemory(chunk);
-
-  // The chunks added to this queue will be freed by a concurrent thread.
-  chunk->set_next_chunk(chunks_queued_for_free_);
-  chunks_queued_for_free_ = chunk;
-}
-
-
-void Heap::FreeQueuedChunks() {
-  if (chunks_queued_for_free_ != NULL) {
-    if (FLAG_concurrent_sweeping) {
-      V8::GetCurrentPlatform()->CallOnBackgroundThread(
-          new UnmapFreeMemoryTask(this, chunks_queued_for_free_),
-          v8::Platform::kShortRunningTask);
-    } else {
-      FreeQueuedChunks(chunks_queued_for_free_);
-      pending_unmapping_tasks_semaphore_.Signal();
-    }
-    chunks_queued_for_free_ = NULL;
-  } else {
-    // If we do not have anything to unmap, we just signal the semaphore
-    // that we are done.
-    pending_unmapping_tasks_semaphore_.Signal();
-  }
-  concurrent_unmapping_tasks_active_++;
-}
-
-
-void Heap::FreeQueuedChunks(MemoryChunk* list_head) {
-  MemoryChunk* next;
-  MemoryChunk* chunk;
-  for (chunk = list_head; chunk != NULL; chunk = next) {
-    next = chunk->next_chunk();
-    memory_allocator()->PerformFreeMemory(chunk);
-  }
 }
 
 

@@ -17,8 +17,8 @@ namespace internal {
 
 // Forward declarations.
 class CompilationInfo;
+class CompilationJob;
 class JavaScriptFrame;
-class OptimizedCompileJob;
 class ParseInfo;
 class ScriptData;
 
@@ -50,8 +50,8 @@ class Compiler : public AllStatic {
   static bool CompileDebugCode(Handle<SharedFunctionInfo> shared);
   static bool CompileForLiveEdit(Handle<Script> script);
 
-  // Generate and install code from previously queued optimization job.
-  static void FinalizeOptimizedCompileJob(OptimizedCompileJob* job);
+  // Generate and install code from previously queued compilation job.
+  static void FinalizeCompilationJob(CompilationJob* job);
 
   // Give the compiler a chance to perform low-latency initialization tasks of
   // the given {function} on its instantiation. Note that only the runtime will
@@ -139,7 +139,7 @@ struct InlinedFunctionInfo {
 
 // CompilationInfo encapsulates some information known at compile time.  It
 // is constructed based on the resources available at compile-time.
-class CompilationInfo {
+class CompilationInfo final {
  public:
   // Various configuration flags for a compilation, as well as some properties
   // of the compiled code produced by a compilation.
@@ -167,7 +167,7 @@ class CompilationInfo {
   CompilationInfo(ParseInfo* parse_info, Handle<JSFunction> closure);
   CompilationInfo(Vector<const char> debug_name, Isolate* isolate, Zone* zone,
                   Code::Flags code_flags = Code::ComputeFlags(Code::STUB));
-  virtual ~CompilationInfo();
+  ~CompilationInfo();
 
   ParseInfo* parse_info() const { return parse_info_; }
 
@@ -568,19 +568,18 @@ class CompilationInfo {
 //  2) OptimizeGraph: Runs concurrently. No heap allocation or handle derefs.
 //  3) GenerateCode:  Runs on main thread. No dependency changes.
 //
-// Each of the three phases can either fail, bail-out to full code generator or
-// succeed. Apart from their return value, the status of the phase last run can
-// be checked using {last_status()} as well.
-// TODO(mstarzinger): Make CompilationInfo base embedded.
-class OptimizedCompileJob {
+// Each of the three phases can either fail or succeed. Apart from their return
+// value, the status of the phase last run can be checked using {last_status()}
+// as well. When failing we distinguish between the following levels:
+//  a) AbortOptimization: Persistent failure, disable future optimization.
+//  b) RetryOptimzation: Transient failure, try again next time.
+class CompilationJob {
  public:
-  explicit OptimizedCompileJob(CompilationInfo* info, const char* compiler_name)
+  explicit CompilationJob(CompilationInfo* info, const char* compiler_name)
       : info_(info), compiler_name_(compiler_name), last_status_(SUCCEEDED) {}
-  virtual ~OptimizedCompileJob() {}
+  virtual ~CompilationJob() {}
 
-  enum Status {
-    FAILED, BAILED_OUT, SUCCEEDED
-  };
+  enum Status { FAILED, SUCCEEDED };
 
   MUST_USE_RESULT Status CreateGraph();
   MUST_USE_RESULT Status OptimizeGraph();
@@ -592,12 +591,12 @@ class OptimizedCompileJob {
 
   Status RetryOptimization(BailoutReason reason) {
     info_->RetryOptimization(reason);
-    return SetLastStatus(BAILED_OUT);
+    return SetLastStatus(FAILED);
   }
 
   Status AbortOptimization(BailoutReason reason) {
     info_->AbortOptimization(reason);
-    return SetLastStatus(BAILED_OUT);
+    return SetLastStatus(FAILED);
   }
 
   void RecordOptimizationStats();

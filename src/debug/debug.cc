@@ -1323,7 +1323,7 @@ bool Debug::PrepareFunctionForBreakPoints(Handle<SharedFunctionInfo> shared) {
   isolate_->heap()->CollectAllGarbage(Heap::kMakeHeapIterableMask,
                                       "prepare for break points");
 
-  bool is_interpreted = shared->HasBytecodeArray();
+  bool is_interpreted = shared->IsInterpreted();
 
   {
     // TODO(yangguo): with bytecode, we still walk the heap to find all
@@ -1532,7 +1532,7 @@ bool Debug::EnsureDebugInfo(Handle<SharedFunctionInfo> shared,
     return false;
   }
 
-  if (shared->HasBytecodeArray()) {
+  if (shared->IsInterpreted()) {
     // To prepare bytecode for debugging, we already need to have the debug
     // info (containing the debug copy) upfront, but since we do not recompile,
     // preparing for break points cannot fail.
@@ -1898,7 +1898,7 @@ void Debug::CallEventCallback(v8::DebugEvent event,
                               exec_state,
                               event_data,
                               event_listener_data_ };
-    Handle<JSReceiver> global(isolate_->global_proxy());
+    Handle<JSReceiver> global = isolate_->global_proxy();
     Execution::TryCall(isolate_, Handle<JSFunction>::cast(event_listener_),
                        global, arraysize(argv), argv);
   }
@@ -2258,8 +2258,10 @@ void Debug::PrintBreakLocation() {
     Handle<Script> script = Handle<Script>::cast(script_obj);
     Handle<String> source(String::cast(script->source()));
     Script::InitLineEnds(script);
-    int line = Script::GetLineNumber(script, source_position);
-    int column = Script::GetColumnNumber(script, source_position);
+    int line =
+        Script::GetLineNumber(script, source_position) - script->line_offset();
+    int column = Script::GetColumnNumber(script, source_position) -
+                 (line == 0 ? script->column_offset() : 0);
     Handle<FixedArray> line_ends(FixedArray::cast(script->line_ends()));
     int line_start =
         line == 0 ? 0 : Smi::cast(line_ends->get(line - 1))->value() + 1;

@@ -21,10 +21,6 @@ class Isolate;
 class Callable;
 class CompilationInfo;
 
-namespace compiler {
-class Node;
-}  // namespace compiler
-
 namespace interpreter {
 
 class InterpreterAssembler;
@@ -77,10 +73,6 @@ class Interpreter {
   void DoBinaryOp(Runtime::FunctionId function_id,
                   InterpreterAssembler* assembler);
 
-  // Generates code to perform the binary operations via |Generator|.
-  template <class Generator>
-  void DoBinaryOp(InterpreterAssembler* assembler);
-
   // Generates code to perform the count operations via |callable|.
   void DoCountOp(Callable callable, InterpreterAssembler* assembler);
 
@@ -126,10 +118,6 @@ class Interpreter {
 
   // Generates code to perform a type conversion.
   void DoTypeConversionOp(Callable callable, InterpreterAssembler* assembler);
-
-  // Generates code to create a literal via |function_id|.
-  void DoCreateLiteral(Runtime::FunctionId function_id,
-                       InterpreterAssembler* assembler);
 
   // Generates code to perform delete via function_id.
   void DoDelete(Runtime::FunctionId function_id,

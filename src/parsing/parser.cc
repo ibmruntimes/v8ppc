@@ -602,8 +602,7 @@ const AstRawString* ParserTraits::GetSymbol(Scanner* scanner) {
 const AstRawString* ParserTraits::GetNumberAsSymbol(Scanner* scanner) {
   double double_value = parser_->scanner()->DoubleValue();
   char array[100];
-  const char* string =
-      DoubleToCString(double_value, Vector<char>(array, arraysize(array)));
+  const char* string = DoubleToCString(double_value, ArrayVector(array));
   return parser_->ast_value_factory()->GetOneByteString(string);
 }
 
@@ -924,7 +923,8 @@ FunctionLiteral* Parser::DoParseProgram(ParseInfo* info) {
     ZoneList<Statement*>* body = new(zone()) ZoneList<Statement*>(16, zone());
     bool ok = true;
     int beg_pos = scanner()->location().beg_pos;
-    if (info->is_module()) {
+    parsing_module_ = info->is_module();
+    if (parsing_module_) {
       ParseModuleItemList(body, &ok);
     } else {
       // Don't count the mode in the use counters--give the program a chance
@@ -1252,7 +1252,7 @@ Statement* Parser::ParseStatementListItem(bool* ok) {
 
   switch (peek()) {
     case Token::FUNCTION:
-      return ParseFunctionDeclaration(NULL, ok);
+      return ParseHoistableDeclaration(NULL, ok);
     case Token::CLASS:
       Consume(Token::CLASS);
       return ParseClassDeclaration(NULL, ok);
@@ -1359,7 +1359,7 @@ void* Parser::ParseExportClause(ZoneList<const AstRawString*>* export_names,
     // Keep track of the first reserved word encountered in case our
     // caller needs to report an error.
     if (!reserved_loc->IsValid() &&
-        !Token::IsIdentifier(name_tok, STRICT, false)) {
+        !Token::IsIdentifier(name_tok, STRICT, false, parsing_module_)) {
       *reserved_loc = scanner()->location();
     }
     const AstRawString* local_name = ParseIdentifierName(CHECK_OK);
@@ -1410,7 +1410,8 @@ ZoneList<ImportDeclaration*>* Parser::ParseNamedImports(int pos, bool* ok) {
     if (CheckContextualKeyword(CStrVector("as"))) {
       local_name = ParseIdentifierName(CHECK_OK);
     }
-    if (!Token::IsIdentifier(scanner()->current_token(), STRICT, false)) {
+    if (!Token::IsIdentifier(scanner()->current_token(), STRICT, false,
+                             parsing_module_)) {
       *ok = false;
       ReportMessage(MessageTemplate::kUnexpectedReserved);
       return NULL;
@@ -1553,7 +1554,7 @@ Statement* Parser::ParseExportDefault(bool* ok) {
             pos, FunctionLiteral::kDeclaration, language_mode(), CHECK_OK);
         result = factory()->NewEmptyStatement(RelocInfo::kNoPosition);
       } else {
-        result = ParseFunctionDeclaration(pos, is_generator, &names, CHECK_OK);
+        result = ParseHoistableDeclaration(pos, is_generator, &names, CHECK_OK);
       }
       break;
     }
@@ -1682,7 +1683,7 @@ Statement* Parser::ParseExportDeclaration(bool* ok) {
     }
 
     case Token::FUNCTION:
-      result = ParseFunctionDeclaration(&names, CHECK_OK);
+      result = ParseHoistableDeclaration(&names, CHECK_OK);
       break;
 
     case Token::CLASS:
@@ -2051,16 +2052,16 @@ Statement* Parser::ParseNativeDeclaration(bool* ok) {
 }
 
 
-Statement* Parser::ParseFunctionDeclaration(
+Statement* Parser::ParseHoistableDeclaration(
     ZoneList<const AstRawString*>* names, bool* ok) {
   Expect(Token::FUNCTION, CHECK_OK);
   int pos = position();
   bool is_generator = Check(Token::MUL);
-  return ParseFunctionDeclaration(pos, is_generator, names, ok);
+  return ParseHoistableDeclaration(pos, is_generator, names, ok);
 }
 
 
-Statement* Parser::ParseFunctionDeclaration(
+Statement* Parser::ParseHoistableDeclaration(
     int pos, bool is_generator, ZoneList<const AstRawString*>* names,
     bool* ok) {
   // FunctionDeclaration ::
@@ -2390,6 +2391,20 @@ static bool ContainsLabel(ZoneList<const AstRawString*>* labels,
   return false;
 }
 
+Statement* Parser::ParseFunctionDeclaration(bool* ok) {
+  Consume(Token::FUNCTION);
+  int pos = position();
+  bool is_generator = Check(Token::MUL);
+  if (allow_harmony_restrictive_declarations() && is_generator) {
+    ParserTraits::ReportMessageAt(
+        scanner()->location(),
+        MessageTemplate::kGeneratorInLegacyContext);
+    *ok = false;
+    return nullptr;
+  }
+  return ParseHoistableDeclaration(pos, is_generator, nullptr, CHECK_OK);
+}
+
 Statement* Parser::ParseExpressionOrLabelledStatement(
     ZoneList<const AstRawString*>* labels,
     AllowLabelledFunctionStatement allow_function, bool* ok) {
@@ -2446,7 +2461,7 @@ Statement* Parser::ParseExpressionOrLabelledStatement(
     // ES#sec-labelled-function-declarations Labelled Function Declarations
     if (peek() == Token::FUNCTION && is_sloppy(language_mode())) {
       if (allow_function == kAllowLabelledFunctionStatement) {
-        return ParseFunctionDeclaration(labels, ok);
+        return ParseFunctionDeclaration(ok);
       } else {
         return ParseScopedStatement(labels, true, ok);
       }
@@ -3430,7 +3445,7 @@ Statement* Parser::ParseScopedStatement(ZoneList<const AstRawString*>* labels,
     body_scope->set_start_position(scanner()->location().beg_pos);
     BlockState block_state(&scope_, body_scope);
     Block* block = factory()->NewBlock(NULL, 1, false, RelocInfo::kNoPosition);
-    Statement* body = ParseFunctionDeclaration(NULL, CHECK_OK);
+    Statement* body = ParseFunctionDeclaration(CHECK_OK);
     block->statements()->Add(body, zone());
     body_scope->set_end_position(scanner()->location().end_pos);
     body_scope = body_scope->FinalizeBlockScope();
@@ -4608,7 +4623,7 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
   }
   PreParser::PreParseResult result = reusable_preparser_->PreParseLazyFunction(
       language_mode(), function_state_->kind(), scope_->has_simple_parameters(),
-      logger, bookmark, use_counts_);
+      parsing_module_, logger, bookmark, use_counts_);
   if (pre_parse_timer_ != NULL) {
     pre_parse_timer_->Stop();
   }

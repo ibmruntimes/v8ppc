@@ -1792,7 +1792,7 @@ MaybeLocal<Value> Script::Run(Local<Context> context) {
   i::TimerEventScope<i::TimerEventExecute> timer_scope(isolate);
   TRACE_EVENT0("v8", "V8.Execute");
   auto fun = i::Handle<i::JSFunction>::cast(Utils::OpenHandle(this));
-  i::Handle<i::Object> receiver(isolate->global_proxy(), isolate);
+  i::Handle<i::Object> receiver = isolate->global_proxy();
   Local<Value> result;
   has_pending_exception =
       !ToLocal<Value>(i::Execution::Call(isolate, fun, receiver, 0, NULL),
@@ -8354,7 +8354,7 @@ CpuProfile* CpuProfiler::StopProfiling(Local<String> title) {
 void CpuProfiler::SetIdle(bool is_idle) {
   i::Isolate* isolate = reinterpret_cast<i::CpuProfiler*>(this)->isolate();
   v8::StateTag state = isolate->current_vm_state();
-  DCHECK(state == v8::EXTERNAL || state == v8::IDLE);
+  DCHECK(state == v8::JS || state == v8::EXTERNAL || state == v8::IDLE);
   if (isolate->js_entry_sp() != NULL) return;
   if (is_idle) {
     isolate->set_current_vm_state(v8::IDLE);

@@ -1215,10 +1215,15 @@ class Assembler : public AssemblerBase {
 
   bool IsPrevInstrCompactBranch() { return prev_instr_compact_branch_; }
 
+  inline int UnboundLabelsCount() { return unbound_labels_count_; }
+
  protected:
   // Load Scaled Address instructions.
   void lsa(Register rd, Register rt, Register rs, uint8_t sa);
   void dlsa(Register rd, Register rt, Register rs, uint8_t sa);
+
+  // Helpers.
+  void LoadRegPlusOffsetToAt(const MemOperand& src);
 
   // Relocation for a type-recording IC has the AST id added to it.  This
   // member variable is a way to pass the information from the call site to
@@ -1415,9 +1420,6 @@ class Assembler : public AssemblerBase {
 
   void GenInstrJump(Opcode opcode,
                      uint32_t address);
-
-  // Helpers.
-  void LoadRegPlusOffsetToAt(const MemOperand& src);
 
   // Labels.
   void print(Label* L);

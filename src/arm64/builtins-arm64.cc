@@ -605,16 +605,9 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // x0: number of arguments
     // x1: constructor function
     // x3: new target
-    if (is_api_function) {
-      __ Ldr(cp, FieldMemOperand(constructor, JSFunction::kContextOffset));
-      Handle<Code> code =
-          masm->isolate()->builtins()->HandleApiCallConstruct();
-      __ Call(code, RelocInfo::CODE_TARGET);
-    } else {
-      ParameterCount actual(argc);
-      __ InvokeFunction(constructor, new_target, actual, CALL_FUNCTION,
-                        CheckDebugStepCallWrapper());
-    }
+    ParameterCount actual(argc);
+    __ InvokeFunction(constructor, new_target, actual, CALL_FUNCTION,
+                      CheckDebugStepCallWrapper());
 
     // Store offset of return address for deoptimizer.
     if (create_implicit_receiver && !is_api_function) {
@@ -1201,7 +1194,6 @@ void Builtins::Generate_CompileLazy(MacroAssembler* masm) {
   Label loop_top, loop_bottom;
 
   Register closure = x1;
-  Register new_target = x3;
   Register map = x13;
   Register index = x2;
   __ Ldr(map, FieldMemOperand(closure, JSFunction::kSharedFunctionInfoOffset));
@@ -2759,6 +2751,42 @@ void Builtins::Generate_InterpreterPushArgsAndConstruct(MacroAssembler* masm) {
   __ Jump(masm->isolate()->builtins()->Construct(), RelocInfo::CODE_TARGET);
 }
 
+// static
+void Builtins::Generate_AllocateInNewSpace(MacroAssembler* masm) {
+  ASM_LOCATION("Builtins::Generate_AllocateInNewSpace");
+  // ----------- S t a t e -------------
+  //  -- x1 : requested object size (untagged)
+  //  -- lr : return address
+  // -----------------------------------
+  Label runtime;
+  __ Allocate(x1, x0, x2, x3, &runtime, NO_ALLOCATION_FLAGS);
+  __ Ret();
+
+  __ Bind(&runtime);
+  __ SmiTag(x1);
+  __ Push(x1);
+  __ Move(cp, Smi::FromInt(0));
+  __ TailCallRuntime(Runtime::kAllocateInNewSpace);
+}
+
+// static
+void Builtins::Generate_AllocateInOldSpace(MacroAssembler* masm) {
+  ASM_LOCATION("Builtins::Generate_AllocateInOldSpace");
+  // ----------- S t a t e -------------
+  //  -- x1 : requested object size (untagged)
+  //  -- lr : return address
+  // -----------------------------------
+  Label runtime;
+  __ Allocate(x1, x0, x2, x3, &runtime, PRETENURE);
+  __ Ret();
+
+  __ Bind(&runtime);
+  __ SmiTag(x1);
+  __ Move(x2, Smi::FromInt(AllocateTargetSpace::encode(OLD_SPACE)));
+  __ Push(x1, x2);
+  __ Move(cp, Smi::FromInt(0));
+  __ TailCallRuntime(Runtime::kAllocateInTargetSpace);
+}
 
 void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
   ASM_LOCATION("Builtins::Generate_ArgumentsAdaptorTrampoline");

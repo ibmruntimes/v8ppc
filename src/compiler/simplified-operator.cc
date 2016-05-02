@@ -186,12 +186,12 @@ const ElementAccess& ElementAccessOf(const Operator* op) {
   V(ChangeTaggedToInt32, Operator::kNoProperties, 1)       \
   V(ChangeTaggedToUint32, Operator::kNoProperties, 1)      \
   V(ChangeTaggedToFloat64, Operator::kNoProperties, 1)     \
-  V(ChangeInt31ToTagged, Operator::kNoProperties, 1)       \
+  V(ChangeInt31ToTaggedSigned, Operator::kNoProperties, 1) \
   V(ChangeInt32ToTagged, Operator::kNoProperties, 1)       \
   V(ChangeUint32ToTagged, Operator::kNoProperties, 1)      \
   V(ChangeFloat64ToTagged, Operator::kNoProperties, 1)     \
-  V(ChangeBoolToBit, Operator::kNoProperties, 1)           \
-  V(ChangeBitToBool, Operator::kNoProperties, 1)           \
+  V(ChangeTaggedToBit, Operator::kNoProperties, 1)         \
+  V(ChangeBitToTagged, Operator::kNoProperties, 1)         \
   V(TruncateTaggedToWord32, Operator::kNoProperties, 1)    \
   V(ObjectIsCallable, Operator::kNoProperties, 1)          \
   V(ObjectIsNumber, Operator::kNoProperties, 1)            \
@@ -213,6 +213,15 @@ struct SimplifiedOperatorGlobalCache final {
   Name##Operator k##Name;
   PURE_OP_LIST(PURE)
 #undef PURE
+
+  template <PretenureFlag kPretenure>
+  struct AllocateOperator final : public Operator1<PretenureFlag> {
+    AllocateOperator()
+        : Operator1<PretenureFlag>(IrOpcode::kAllocate, Operator::kNoThrow,
+                                   "Allocate", 1, 1, 1, 1, 1, 0, kPretenure) {}
+  };
+  AllocateOperator<NOT_TENURED> kAllocateNotTenuredOperator;
+  AllocateOperator<TENURED> kAllocateTenuredOperator;
 
 #define BUFFER_ACCESS(Type, type, TYPE, ctype, size)                          \
   struct LoadBuffer##Type##Operator final : public Operator1<BufferAccess> {  \
@@ -258,9 +267,14 @@ const Operator* SimplifiedOperatorBuilder::ReferenceEqual(Type* type) {
 
 
 const Operator* SimplifiedOperatorBuilder::Allocate(PretenureFlag pretenure) {
-  return new (zone())
-      Operator1<PretenureFlag>(IrOpcode::kAllocate, Operator::kNoThrow,
-                               "Allocate", 1, 1, 1, 1, 1, 0, pretenure);
+  switch (pretenure) {
+    case NOT_TENURED:
+      return &cache_.kAllocateNotTenuredOperator;
+    case TENURED:
+      return &cache_.kAllocateTenuredOperator;
+  }
+  UNREACHABLE();
+  return nullptr;
 }
 
 

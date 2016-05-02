@@ -21,6 +21,7 @@
 
 #include "src/wasm/ast-decoder.h"
 #include "src/wasm/wasm-js.h"
+#include "src/wasm/wasm-macro-gen.h"
 #include "src/wasm/wasm-module.h"
 #include "src/wasm/wasm-opcodes.h"
 
@@ -485,16 +486,31 @@ class WasmFunctionCompiler : public HandleAndZoneScope,
     }
     CompilationInfo info(debug_name_, this->isolate(), this->zone(),
                          Code::ComputeFlags(Code::WASM_FUNCTION));
-    v8::base::SmartPointer<OptimizedCompileJob> job(
-        Pipeline::NewWasmCompilationJob(&info, graph(), desc,
-                                        &source_position_table_));
-    Handle<Code> code = Handle<Code>::null();
-    if (job->OptimizeGraph() == OptimizedCompileJob::SUCCEEDED &&
-        job->GenerateCode() == OptimizedCompileJob::SUCCEEDED) {
-      code = info.code();
+    v8::base::SmartPointer<CompilationJob> job(Pipeline::NewWasmCompilationJob(
+        &info, graph(), desc, &source_position_table_));
+    if (job->OptimizeGraph() != CompilationJob::SUCCEEDED ||
+        job->GenerateCode() != CompilationJob::SUCCEEDED)
+      return Handle<Code>::null();
+
+    Handle<Code> code = info.code();
+
+    // Length is always 2, since usually <wasm_obj, func_index> is stored in the
+    // deopt data. Here, we store <func_name, undef> instead.
+    DCHECK(code->deoptimization_data() == nullptr ||
+           code->deoptimization_data()->length() == 0);
+    Handle<FixedArray> deopt_data =
+        isolate()->factory()->NewFixedArray(2, TENURED);
+    if (debug_name_.start() != nullptr) {
+      MaybeHandle<String> maybe_name =
+          isolate()->factory()->NewStringFromUtf8(debug_name_, TENURED);
+      if (!maybe_name.is_null())
+        deopt_data->set(0, *maybe_name.ToHandleChecked());
     }
+    deopt_data->set_length(2);
+    code->set_deoptimization_data(*deopt_data);
+
 #ifdef ENABLE_DISASSEMBLER
-    if (!code.is_null() && FLAG_print_opt_code) {
+    if (FLAG_print_opt_code) {
       OFStream os(stdout);
       code->Disassemble("wasm code", os);
     }

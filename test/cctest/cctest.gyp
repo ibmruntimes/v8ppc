@@ -30,7 +30,7 @@
     'v8_code': 1,
     'generated_file': '<(SHARED_INTERMEDIATE_DIR)/resources.cc',
   },
-  'includes': ['../../build/toolchain.gypi', '../../build/features.gypi'],
+  'includes': ['../../gypfiles/toolchain.gypi', '../../gypfiles/features.gypi'],
   'targets': [
     {
       'target_name': 'cctest',
@@ -51,7 +51,6 @@
         'compiler/graph-builder-tester.h',
         'compiler/test-basic-block-profiler.cc',
         'compiler/test-branch-combine.cc',
-        'compiler/test-changes-lowering.cc',
         'compiler/test-code-stub-assembler.cc',
         'compiler/test-gap-resolver.cc',
         'compiler/test-graph-visualizer.cc',
@@ -192,6 +191,7 @@
         'wasm/test-run-wasm-js.cc',
         'wasm/test-run-wasm-module.cc',
         'wasm/test-signatures.h',
+        'wasm/test-wasm-function-name-table.cc',
         'wasm/test-wasm-stack.cc',
         'wasm/wasm-run-utils.h',
       ],
@@ -420,7 +420,7 @@
             'cctest',
           ],
           'includes': [
-            '../../build/isolate.gypi',
+            '../../gypfiles/isolate.gypi',
           ],
           'sources': [
             'cctest_exe.isolate',
@@ -433,7 +433,7 @@
             'cctest_exe_run',
           ],
           'includes': [
-            '../../build/isolate.gypi',
+            '../../gypfiles/isolate.gypi',
           ],
           'sources': [
             'cctest.isolate',

@@ -13,7 +13,7 @@ namespace v8 {
 namespace internal {
 
 class CompilationInfo;
-class OptimizedCompileJob;
+class CompilationJob;
 class RegisterConfiguration;
 
 namespace compiler {
@@ -72,18 +72,19 @@ class Pipeline {
                                              Graph* graph,
                                              Schedule* schedule = nullptr);
 
-  // Returns a new compilation job for the given compilation info.
-  static OptimizedCompileJob* NewCompilationJob(CompilationInfo* info);
+  // Returns a new compilation job for the given function.
+  static CompilationJob* NewCompilationJob(Handle<JSFunction> function);
 
   // Returns a new compilation job for the WebAssembly compilation info.
-  static OptimizedCompileJob* NewWasmCompilationJob(
+  static CompilationJob* NewWasmCompilationJob(
       CompilationInfo* info, Graph* graph, CallDescriptor* descriptor,
       SourcePositionTable* source_positions);
 
-  // TODO(mstarzinger, bmeurer): This shouldn't be public!
-  bool ScheduleAndSelectInstructions(Linkage* linkage);
-
  private:
+  // The wasm compilation job calls ScheduleAndSelectInstructions and
+  // RunPrintAndVerify, so we make it a member class.
+  friend class PipelineWasmCompilationJob;
+
   // Helpers for executing pipeline phases.
   template <typename Phase>
   void Run();
@@ -94,6 +95,7 @@ class Pipeline {
 
   void BeginPhaseKind(const char* phase_kind);
   void EndPhaseKind();
+  bool ScheduleAndSelectInstructions(Linkage* linkage);
   void RunPrintAndVerify(const char* phase, bool untyped = false);
   Handle<Code> ScheduleAndGenerateCode(CallDescriptor* call_descriptor);
   void AllocateRegisters(const RegisterConfiguration* config,
