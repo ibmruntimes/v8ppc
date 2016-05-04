@@ -50,11 +50,7 @@ namespace internal {
 
 
 PARSE_INFO_GETTER(Handle<Script>, script)
-PARSE_INFO_GETTER(bool, is_eval)
-PARSE_INFO_GETTER(bool, is_native)
-PARSE_INFO_GETTER(bool, is_module)
 PARSE_INFO_GETTER(FunctionLiteral*, literal)
-PARSE_INFO_GETTER_WITH_DEFAULT(LanguageMode, language_mode, STRICT)
 PARSE_INFO_GETTER_WITH_DEFAULT(Scope*, scope, nullptr)
 PARSE_INFO_GETTER_WITH_DEFAULT(Handle<Context>, context,
                                Handle<Context>::null())
@@ -269,8 +265,15 @@ StackFrame::Type CompilationInfo::GetOutputStackFrameType() const {
   }
 }
 
+int CompilationInfo::GetDeclareGlobalsFlags() const {
+  DCHECK(DeclareGlobalsLanguageMode::is_valid(parse_info()->language_mode()));
+  return DeclareGlobalsEvalFlag::encode(parse_info()->is_eval()) |
+         DeclareGlobalsNativeFlag::encode(parse_info()->is_native()) |
+         DeclareGlobalsLanguageMode::encode(parse_info()->language_mode());
+}
+
 bool CompilationInfo::ExpectsJSReceiverAsReceiver() {
-  return is_sloppy(language_mode()) && !is_native();
+  return is_sloppy(parse_info()->language_mode()) && !parse_info()->is_native();
 }
 
 #if DEBUG
@@ -418,6 +421,12 @@ void CompilationJob::RecordOptimizationStats() {
 // Local helper methods that make up the compilation pipeline.
 
 namespace {
+
+bool IsEvalToplevel(Handle<SharedFunctionInfo> shared) {
+  return shared->is_toplevel() && shared->script()->IsScript() &&
+         Script::cast(shared->script())->compilation_type() ==
+             Script::COMPILATION_TYPE_EVAL;
+}
 
 void RecordFunctionCompilation(Logger::LogEventsAndTags tag,
                                CompilationInfo* info) {
@@ -766,12 +775,6 @@ MaybeHandle<Code> GetOptimizedCode(Handle<JSFunction> function,
     shared->code()->set_profiler_ticks(0);
   }
 
-  // TODO(mstarzinger): We cannot properly deserialize a scope chain containing
-  // an eval scope and hence would fail at parsing the eval source again.
-  if (shared->disable_optimization_reason() == kEval) {
-    return MaybeHandle<Code>();
-  }
-
   VMState<COMPILER> state(isolate);
   DCHECK(!isolate->has_pending_exception());
   PostponeInterruptsScope postpone(isolate);
@@ -780,6 +783,7 @@ MaybeHandle<Code> GetOptimizedCode(Handle<JSFunction> function,
       use_turbofan ? compiler::Pipeline::NewCompilationJob(function)
                    : new HCompilationJob(function));
   CompilationInfo* info = job->info();
+  ParseInfo* parse_info = info->parse_info();
 
   info->SetOptimizingForOsr(osr_ast_id);
 
@@ -812,6 +816,14 @@ MaybeHandle<Code> GetOptimizedCode(Handle<JSFunction> function,
   if (FLAG_turbo_from_bytecode && use_turbofan &&
       info->shared_info()->HasBytecodeArray()) {
     info->MarkAsOptimizeFromBytecode();
+  }
+
+  if (IsEvalToplevel(shared)) {
+    parse_info->set_eval();
+    if (function->context()->IsNativeContext()) parse_info->set_global();
+    parse_info->set_toplevel();
+    parse_info->set_allow_lazy_parsing(false);
+    parse_info->set_lazy(false);
   }
 
   if (mode == Compiler::CONCURRENT) {
@@ -1002,12 +1014,6 @@ MaybeHandle<Code> GetLazyCode(Handle<JSFunction> function) {
 }
 
 
-inline bool IsEvalToplevel(Handle<SharedFunctionInfo> shared) {
-  return shared->is_toplevel() && shared->script()->IsScript() &&
-         Script::cast(shared->script())->compilation_type() ==
-             Script::COMPILATION_TYPE_EVAL;
-}
-
 Handle<SharedFunctionInfo> NewSharedFunctionInfoForLiteral(
     Isolate* isolate, FunctionLiteral* literal, Handle<Script> script) {
   Handle<Code> code = isolate->builtins()->CompileLazy();
@@ -1084,17 +1090,17 @@ Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
     // Measure how long it takes to do the compilation; only take the
     // rest of the function into account to avoid overlap with the
     // parsing statistics.
-    HistogramTimer* rate = info->is_eval()
-          ? info->isolate()->counters()->compile_eval()
-          : info->isolate()->counters()->compile();
+    HistogramTimer* rate = parse_info->is_eval()
+                               ? info->isolate()->counters()->compile_eval()
+                               : info->isolate()->counters()->compile();
     HistogramTimerScope timer(rate);
-    TRACE_EVENT0("v8", info->is_eval() ? "V8.CompileEval" : "V8.Compile");
+    TRACE_EVENT0("v8", parse_info->is_eval() ? "V8.CompileEval" : "V8.Compile");
 
     // Allocate a shared function info object.
     DCHECK_EQ(RelocInfo::kNoPosition, lit->function_token_position());
     result = NewSharedFunctionInfoForLiteral(isolate, lit, script);
     result->set_is_toplevel(true);
-    if (info->is_eval()) {
+    if (parse_info->is_eval()) {
       // Eval scripts cannot be (re-)compiled without context.
       result->set_allows_lazy_compilation_without_context(false);
     }
@@ -1115,9 +1121,10 @@ Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
         script->name()->IsString()
             ? Handle<String>(String::cast(script->name()))
             : isolate->factory()->empty_string();
-    Logger::LogEventsAndTags log_tag = info->is_eval()
-        ? Logger::EVAL_TAG
-        : Logger::ToNativeByScript(Logger::SCRIPT_TAG, *script);
+    Logger::LogEventsAndTags log_tag =
+        parse_info->is_eval()
+            ? Logger::EVAL_TAG
+            : Logger::ToNativeByScript(Logger::SCRIPT_TAG, *script);
 
     PROFILE(isolate, CodeCreateEvent(log_tag, result->abstract_code(), *result,
                                      *script_name));
@@ -1527,7 +1534,7 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForScript(
     }
 
     parse_info.set_language_mode(
-        static_cast<LanguageMode>(info.language_mode() | language_mode));
+        static_cast<LanguageMode>(parse_info.language_mode() | language_mode));
     result = CompileToplevel(&info);
     if (extension == NULL && !result.is_null()) {
       compilation_cache->PutScript(source, context, language_mode, result);

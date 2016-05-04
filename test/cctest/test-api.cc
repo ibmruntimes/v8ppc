@@ -4717,126 +4717,6 @@ THREADED_TEST(ApiObjectGroupsCycle) {
 }
 
 
-// TODO(mstarzinger): This should be a THREADED_TEST but causes failures
-// on the buildbots, so was made non-threaded for the time being.
-TEST(ApiObjectGroupsCycleForScavenger) {
-  i::FLAG_stress_compaction = false;
-  i::FLAG_gc_global = false;
-  LocalContext env;
-  v8::Isolate* iso = env->GetIsolate();
-  HandleScope scope(iso);
-
-  WeakCallCounter counter(1234);
-
-  WeakCallCounterAndPersistent<Value> g1s1(&counter);
-  WeakCallCounterAndPersistent<Value> g1s2(&counter);
-  WeakCallCounterAndPersistent<Value> g2s1(&counter);
-  WeakCallCounterAndPersistent<Value> g2s2(&counter);
-  WeakCallCounterAndPersistent<Value> g3s1(&counter);
-  WeakCallCounterAndPersistent<Value> g3s2(&counter);
-
-  {
-    HandleScope scope(iso);
-    g1s1.handle.Reset(iso, Object::New(iso));
-    g1s2.handle.Reset(iso, Object::New(iso));
-    g1s1.handle.SetWeak(&g1s1, &WeakPointerCallback,
-                        v8::WeakCallbackType::kParameter);
-    g1s2.handle.SetWeak(&g1s2, &WeakPointerCallback,
-                        v8::WeakCallbackType::kParameter);
-
-    g2s1.handle.Reset(iso, Object::New(iso));
-    g2s2.handle.Reset(iso, Object::New(iso));
-    g2s1.handle.SetWeak(&g2s1, &WeakPointerCallback,
-                        v8::WeakCallbackType::kParameter);
-    g2s2.handle.SetWeak(&g2s2, &WeakPointerCallback,
-                        v8::WeakCallbackType::kParameter);
-
-    g3s1.handle.Reset(iso, Object::New(iso));
-    g3s2.handle.Reset(iso, Object::New(iso));
-    g3s1.handle.SetWeak(&g3s1, &WeakPointerCallback,
-                        v8::WeakCallbackType::kParameter);
-    g3s2.handle.SetWeak(&g3s2, &WeakPointerCallback,
-                        v8::WeakCallbackType::kParameter);
-  }
-
-  // Make a root.
-  WeakCallCounterAndPersistent<Value> root(&counter);
-  root.handle.Reset(iso, g1s1.handle);
-  root.handle.MarkPartiallyDependent();
-
-  // Connect groups.  We're building the following cycle:
-  // G1: { g1s1, g2s1 }, g1s1 implicitly references g2s1, ditto for other
-  // groups.
-  {
-    HandleScope handle_scope(iso);
-    g1s1.handle.MarkPartiallyDependent();
-    g1s2.handle.MarkPartiallyDependent();
-    g2s1.handle.MarkPartiallyDependent();
-    g2s2.handle.MarkPartiallyDependent();
-    g3s1.handle.MarkPartiallyDependent();
-    g3s2.handle.MarkPartiallyDependent();
-    iso->SetObjectGroupId(g1s1.handle, UniqueId(1));
-    iso->SetObjectGroupId(g1s2.handle, UniqueId(1));
-    Local<Object>::New(iso, g1s1.handle.As<Object>())
-        ->Set(env.local(), v8_str("x"), Local<Value>::New(iso, g2s1.handle))
-        .FromJust();
-    iso->SetObjectGroupId(g2s1.handle, UniqueId(2));
-    iso->SetObjectGroupId(g2s2.handle, UniqueId(2));
-    Local<Object>::New(iso, g2s1.handle.As<Object>())
-        ->Set(env.local(), v8_str("x"), Local<Value>::New(iso, g3s1.handle))
-        .FromJust();
-    iso->SetObjectGroupId(g3s1.handle, UniqueId(3));
-    iso->SetObjectGroupId(g3s2.handle, UniqueId(3));
-    Local<Object>::New(iso, g3s1.handle.As<Object>())
-        ->Set(env.local(), v8_str("x"), Local<Value>::New(iso, g1s1.handle))
-        .FromJust();
-  }
-
-  v8::internal::Heap* heap =
-      reinterpret_cast<v8::internal::Isolate*>(iso)->heap();
-  heap->CollectAllGarbage();
-
-  // All objects should be alive.
-  CHECK_EQ(0, counter.NumberOfWeakCalls());
-
-  // Weaken the root.
-  root.handle.SetWeak(&root, &WeakPointerCallback,
-                      v8::WeakCallbackType::kParameter);
-  root.handle.MarkPartiallyDependent();
-
-  // Groups are deleted, rebuild groups.
-  {
-    HandleScope handle_scope(iso);
-    g1s1.handle.MarkPartiallyDependent();
-    g1s2.handle.MarkPartiallyDependent();
-    g2s1.handle.MarkPartiallyDependent();
-    g2s2.handle.MarkPartiallyDependent();
-    g3s1.handle.MarkPartiallyDependent();
-    g3s2.handle.MarkPartiallyDependent();
-    iso->SetObjectGroupId(g1s1.handle, UniqueId(1));
-    iso->SetObjectGroupId(g1s2.handle, UniqueId(1));
-    Local<Object>::New(iso, g1s1.handle.As<Object>())
-        ->Set(env.local(), v8_str("x"), Local<Value>::New(iso, g2s1.handle))
-        .FromJust();
-    iso->SetObjectGroupId(g2s1.handle, UniqueId(2));
-    iso->SetObjectGroupId(g2s2.handle, UniqueId(2));
-    Local<Object>::New(iso, g2s1.handle.As<Object>())
-        ->Set(env.local(), v8_str("x"), Local<Value>::New(iso, g3s1.handle))
-        .FromJust();
-    iso->SetObjectGroupId(g3s1.handle, UniqueId(3));
-    iso->SetObjectGroupId(g3s2.handle, UniqueId(3));
-    Local<Object>::New(iso, g3s1.handle.As<Object>())
-        ->Set(env.local(), v8_str("x"), Local<Value>::New(iso, g1s1.handle))
-        .FromJust();
-  }
-
-  heap->CollectAllGarbage();
-
-  // All objects should be gone. 7 global handles in total.
-  CHECK_EQ(7, counter.NumberOfWeakCalls());
-}
-
-
 THREADED_TEST(ScriptException) {
   LocalContext env;
   v8::HandleScope scope(env->GetIsolate());
@@ -10544,6 +10424,69 @@ THREADED_TEST(GlobalObjectInstanceProperties) {
   }
 }
 
+THREADED_TEST(ObjectGetOwnPropertyNames) {
+  LocalContext context;
+  v8::Isolate* isolate = context->GetIsolate();
+  v8::HandleScope handle_scope(isolate);
+
+  v8::Local<v8::Object> value =
+      v8::Local<v8::Object>::Cast(v8::StringObject::New(v8_str("test")));
+  v8::Local<v8::Array> properties;
+
+  CHECK(value
+            ->GetOwnPropertyNames(context.local(),
+                                  static_cast<v8::PropertyFilter>(
+                                      v8::PropertyFilter::ALL_PROPERTIES |
+                                      v8::PropertyFilter::SKIP_SYMBOLS))
+            .ToLocal(&properties));
+  CHECK_EQ(5, properties->Length());
+  v8::Local<v8::Value> property;
+  CHECK(properties->Get(context.local(), 4).ToLocal(&property) &&
+        property->IsString());
+  CHECK(property.As<v8::String>()
+            ->Equals(context.local(), v8_str("length"))
+            .FromMaybe(false));
+  for (int i = 0; i < 4; ++i) {
+    v8::Local<v8::Value> property;
+    CHECK(properties->Get(context.local(), i).ToLocal(&property) &&
+          property->IsInt32());
+    CHECK_EQ(property.As<v8::Int32>()->Value(), i);
+  }
+
+  CHECK(value->GetOwnPropertyNames(context.local(), v8::ONLY_ENUMERABLE)
+            .ToLocal(&properties));
+  CHECK_EQ(4, properties->Length());
+  for (int i = 0; i < 4; ++i) {
+    v8::Local<v8::Value> property;
+    CHECK(properties->Get(context.local(), i).ToLocal(&property) &&
+          property->IsInt32());
+    CHECK_EQ(property.As<v8::Int32>()->Value(), i);
+  }
+
+  value = value->GetPrototype().As<v8::Object>();
+  CHECK(value
+            ->GetOwnPropertyNames(context.local(),
+                                  static_cast<v8::PropertyFilter>(
+                                      v8::PropertyFilter::ALL_PROPERTIES |
+                                      v8::PropertyFilter::SKIP_SYMBOLS))
+            .ToLocal(&properties));
+  bool concat_found = false;
+  bool starts_with_found = false;
+  for (uint32_t i = 0; i < properties->Length(); ++i) {
+    v8::Local<v8::Value> property;
+    CHECK(properties->Get(context.local(), i).ToLocal(&property));
+    if (!property->IsString()) continue;
+    if (!concat_found)
+      concat_found = property.As<v8::String>()
+                         ->Equals(context.local(), v8_str("concat"))
+                         .FromMaybe(false);
+    if (!starts_with_found)
+      starts_with_found = property.As<v8::String>()
+                              ->Equals(context.local(), v8_str("startsWith"))
+                              .FromMaybe(false);
+  }
+  CHECK(concat_found && starts_with_found);
+}
 
 THREADED_TEST(CallKnownGlobalReceiver) {
   v8::Isolate* isolate = CcTest::isolate();

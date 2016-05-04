@@ -12,22 +12,6 @@ namespace v8 {
 namespace internal {
 namespace compiler {
 
-std::ostream& operator<<(std::ostream& os, WriteBarrierKind kind) {
-  switch (kind) {
-    case kNoWriteBarrier:
-      return os << "NoWriteBarrier";
-    case kMapWriteBarrier:
-      return os << "MapWriteBarrier";
-    case kPointerWriteBarrier:
-      return os << "PointerWriteBarrier";
-    case kFullWriteBarrier:
-      return os << "FullWriteBarrier";
-  }
-  UNREACHABLE();
-  return os;
-}
-
-
 bool operator==(StoreRepresentation lhs, StoreRepresentation rhs) {
   return lhs.representation() == rhs.representation() &&
          lhs.write_barrier_kind() == rhs.write_barrier_kind();
@@ -76,6 +60,11 @@ CheckedStoreRepresentation CheckedStoreRepresentationOf(Operator const* op) {
 
 MachineRepresentation StackSlotRepresentationOf(Operator const* op) {
   DCHECK_EQ(IrOpcode::kStackSlot, op->opcode());
+  return OpParameter<MachineRepresentation>(op);
+}
+
+MachineRepresentation AtomicStoreRepresentationOf(Operator const* op) {
+  DCHECK_EQ(IrOpcode::kAtomicStore, op->opcode());
   return OpParameter<MachineRepresentation>(op);
 }
 
@@ -188,7 +177,179 @@ MachineRepresentation StackSlotRepresentationOf(Operator const* op) {
   V(Int32PairMul, Operator::kNoProperties, 4, 0, 2)                           \
   V(Word32PairShl, Operator::kNoProperties, 3, 0, 2)                          \
   V(Word32PairShr, Operator::kNoProperties, 3, 0, 2)                          \
-  V(Word32PairSar, Operator::kNoProperties, 3, 0, 2)
+  V(Word32PairSar, Operator::kNoProperties, 3, 0, 2)                          \
+  V(CreateFloat32x4, Operator::kNoProperties, 4, 0, 1)                        \
+  V(Float32x4ExtractLane, Operator::kNoProperties, 2, 0, 1)                   \
+  V(Float32x4ReplaceLane, Operator::kNoProperties, 3, 0, 1)                   \
+  V(Float32x4Abs, Operator::kNoProperties, 1, 0, 1)                           \
+  V(Float32x4Neg, Operator::kNoProperties, 1, 0, 1)                           \
+  V(Float32x4Sqrt, Operator::kNoProperties, 1, 0, 1)                          \
+  V(Float32x4RecipApprox, Operator::kNoProperties, 1, 0, 1)                   \
+  V(Float32x4RecipSqrtApprox, Operator::kNoProperties, 1, 0, 1)               \
+  V(Float32x4Add, Operator::kCommutative, 2, 0, 1)                            \
+  V(Float32x4Sub, Operator::kNoProperties, 2, 0, 1)                           \
+  V(Float32x4Mul, Operator::kCommutative, 2, 0, 1)                            \
+  V(Float32x4Div, Operator::kNoProperties, 2, 0, 1)                           \
+  V(Float32x4Min, Operator::kCommutative, 2, 0, 1)                            \
+  V(Float32x4Max, Operator::kCommutative, 2, 0, 1)                            \
+  V(Float32x4MinNum, Operator::kCommutative, 2, 0, 1)                         \
+  V(Float32x4MaxNum, Operator::kCommutative, 2, 0, 1)                         \
+  V(Float32x4Equal, Operator::kCommutative, 2, 0, 1)                          \
+  V(Float32x4NotEqual, Operator::kCommutative, 2, 0, 1)                       \
+  V(Float32x4LessThan, Operator::kNoProperties, 2, 0, 1)                      \
+  V(Float32x4LessThanOrEqual, Operator::kNoProperties, 2, 0, 1)               \
+  V(Float32x4GreaterThan, Operator::kNoProperties, 2, 0, 1)                   \
+  V(Float32x4GreaterThanOrEqual, Operator::kNoProperties, 2, 0, 1)            \
+  V(Float32x4Select, Operator::kNoProperties, 3, 0, 1)                        \
+  V(Float32x4Swizzle, Operator::kNoProperties, 5, 0, 1)                       \
+  V(Float32x4Shuffle, Operator::kNoProperties, 6, 0, 1)                       \
+  V(Float32x4FromInt32x4, Operator::kNoProperties, 1, 0, 1)                   \
+  V(Float32x4FromUint32x4, Operator::kNoProperties, 1, 0, 1)                  \
+  V(CreateInt32x4, Operator::kNoProperties, 4, 0, 1)                          \
+  V(Int32x4ExtractLane, Operator::kNoProperties, 2, 0, 1)                     \
+  V(Int32x4ReplaceLane, Operator::kNoProperties, 3, 0, 1)                     \
+  V(Int32x4Neg, Operator::kNoProperties, 1, 0, 1)                             \
+  V(Int32x4Add, Operator::kCommutative, 2, 0, 1)                              \
+  V(Int32x4Sub, Operator::kNoProperties, 2, 0, 1)                             \
+  V(Int32x4Mul, Operator::kCommutative, 2, 0, 1)                              \
+  V(Int32x4Min, Operator::kCommutative, 2, 0, 1)                              \
+  V(Int32x4Max, Operator::kCommutative, 2, 0, 1)                              \
+  V(Int32x4ShiftLeftByScalar, Operator::kNoProperties, 2, 0, 1)               \
+  V(Int32x4ShiftRightByScalar, Operator::kNoProperties, 2, 0, 1)              \
+  V(Int32x4Equal, Operator::kCommutative, 2, 0, 1)                            \
+  V(Int32x4NotEqual, Operator::kCommutative, 2, 0, 1)                         \
+  V(Int32x4LessThan, Operator::kNoProperties, 2, 0, 1)                        \
+  V(Int32x4LessThanOrEqual, Operator::kNoProperties, 2, 0, 1)                 \
+  V(Int32x4GreaterThan, Operator::kNoProperties, 2, 0, 1)                     \
+  V(Int32x4GreaterThanOrEqual, Operator::kNoProperties, 2, 0, 1)              \
+  V(Int32x4Select, Operator::kNoProperties, 3, 0, 1)                          \
+  V(Int32x4Swizzle, Operator::kNoProperties, 5, 0, 1)                         \
+  V(Int32x4Shuffle, Operator::kNoProperties, 6, 0, 1)                         \
+  V(Int32x4FromFloat32x4, Operator::kNoProperties, 1, 0, 1)                   \
+  V(Uint32x4Min, Operator::kCommutative, 2, 0, 1)                             \
+  V(Uint32x4Max, Operator::kCommutative, 2, 0, 1)                             \
+  V(Uint32x4ShiftLeftByScalar, Operator::kNoProperties, 2, 0, 1)              \
+  V(Uint32x4ShiftRightByScalar, Operator::kNoProperties, 2, 0, 1)             \
+  V(Uint32x4LessThan, Operator::kNoProperties, 2, 0, 1)                       \
+  V(Uint32x4LessThanOrEqual, Operator::kNoProperties, 2, 0, 1)                \
+  V(Uint32x4GreaterThan, Operator::kNoProperties, 2, 0, 1)                    \
+  V(Uint32x4GreaterThanOrEqual, Operator::kNoProperties, 2, 0, 1)             \
+  V(Uint32x4FromFloat32x4, Operator::kNoProperties, 1, 0, 1)                  \
+  V(CreateBool32x4, Operator::kNoProperties, 4, 0, 1)                         \
+  V(Bool32x4ExtractLane, Operator::kNoProperties, 2, 0, 1)                    \
+  V(Bool32x4ReplaceLane, Operator::kNoProperties, 3, 0, 1)                    \
+  V(Bool32x4And, Operator::kAssociative | Operator::kCommutative, 2, 0, 1)    \
+  V(Bool32x4Or, Operator::kAssociative | Operator::kCommutative, 2, 0, 1)     \
+  V(Bool32x4Xor, Operator::kAssociative | Operator::kCommutative, 2, 0, 1)    \
+  V(Bool32x4Not, Operator::kNoProperties, 1, 0, 1)                            \
+  V(Bool32x4AnyTrue, Operator::kNoProperties, 1, 0, 1)                        \
+  V(Bool32x4AllTrue, Operator::kNoProperties, 1, 0, 1)                        \
+  V(Bool32x4Swizzle, Operator::kNoProperties, 5, 0, 1)                        \
+  V(Bool32x4Shuffle, Operator::kNoProperties, 6, 0, 1)                        \
+  V(Bool32x4Equal, Operator::kCommutative, 2, 0, 1)                           \
+  V(Bool32x4NotEqual, Operator::kCommutative, 2, 0, 1)                        \
+  V(CreateInt16x8, Operator::kNoProperties, 8, 0, 1)                          \
+  V(Int16x8ExtractLane, Operator::kNoProperties, 2, 0, 1)                     \
+  V(Int16x8ReplaceLane, Operator::kNoProperties, 3, 0, 1)                     \
+  V(Int16x8Neg, Operator::kNoProperties, 1, 0, 1)                             \
+  V(Int16x8Add, Operator::kCommutative, 2, 0, 1)                              \
+  V(Int16x8AddSaturate, Operator::kCommutative, 2, 0, 1)                      \
+  V(Int16x8Sub, Operator::kNoProperties, 2, 0, 1)                             \
+  V(Int16x8SubSaturate, Operator::kNoProperties, 2, 0, 1)                     \
+  V(Int16x8Mul, Operator::kCommutative, 2, 0, 1)                              \
+  V(Int16x8Min, Operator::kCommutative, 2, 0, 1)                              \
+  V(Int16x8Max, Operator::kCommutative, 2, 0, 1)                              \
+  V(Int16x8ShiftLeftByScalar, Operator::kNoProperties, 2, 0, 1)               \
+  V(Int16x8ShiftRightByScalar, Operator::kNoProperties, 2, 0, 1)              \
+  V(Int16x8Equal, Operator::kCommutative, 2, 0, 1)                            \
+  V(Int16x8NotEqual, Operator::kCommutative, 2, 0, 1)                         \
+  V(Int16x8LessThan, Operator::kNoProperties, 2, 0, 1)                        \
+  V(Int16x8LessThanOrEqual, Operator::kNoProperties, 2, 0, 1)                 \
+  V(Int16x8GreaterThan, Operator::kNoProperties, 2, 0, 1)                     \
+  V(Int16x8GreaterThanOrEqual, Operator::kNoProperties, 2, 0, 1)              \
+  V(Int16x8Select, Operator::kNoProperties, 3, 0, 1)                          \
+  V(Int16x8Swizzle, Operator::kNoProperties, 9, 0, 1)                         \
+  V(Int16x8Shuffle, Operator::kNoProperties, 10, 0, 1)                        \
+  V(Uint16x8AddSaturate, Operator::kCommutative, 2, 0, 1)                     \
+  V(Uint16x8SubSaturate, Operator::kNoProperties, 2, 0, 1)                    \
+  V(Uint16x8Min, Operator::kCommutative, 2, 0, 1)                             \
+  V(Uint16x8Max, Operator::kCommutative, 2, 0, 1)                             \
+  V(Uint16x8ShiftLeftByScalar, Operator::kNoProperties, 2, 0, 1)              \
+  V(Uint16x8ShiftRightByScalar, Operator::kNoProperties, 2, 0, 1)             \
+  V(Uint16x8LessThan, Operator::kNoProperties, 2, 0, 1)                       \
+  V(Uint16x8LessThanOrEqual, Operator::kNoProperties, 2, 0, 1)                \
+  V(Uint16x8GreaterThan, Operator::kNoProperties, 2, 0, 1)                    \
+  V(Uint16x8GreaterThanOrEqual, Operator::kNoProperties, 2, 0, 1)             \
+  V(CreateBool16x8, Operator::kNoProperties, 8, 0, 1)                         \
+  V(Bool16x8ExtractLane, Operator::kNoProperties, 2, 0, 1)                    \
+  V(Bool16x8ReplaceLane, Operator::kNoProperties, 3, 0, 1)                    \
+  V(Bool16x8And, Operator::kAssociative | Operator::kCommutative, 2, 0, 1)    \
+  V(Bool16x8Or, Operator::kAssociative | Operator::kCommutative, 2, 0, 1)     \
+  V(Bool16x8Xor, Operator::kAssociative | Operator::kCommutative, 2, 0, 1)    \
+  V(Bool16x8Not, Operator::kNoProperties, 1, 0, 1)                            \
+  V(Bool16x8AnyTrue, Operator::kNoProperties, 1, 0, 1)                        \
+  V(Bool16x8AllTrue, Operator::kNoProperties, 1, 0, 1)                        \
+  V(Bool16x8Swizzle, Operator::kNoProperties, 9, 0, 1)                        \
+  V(Bool16x8Shuffle, Operator::kNoProperties, 10, 0, 1)                       \
+  V(Bool16x8Equal, Operator::kCommutative, 2, 0, 1)                           \
+  V(Bool16x8NotEqual, Operator::kCommutative, 2, 0, 1)                        \
+  V(CreateInt8x16, Operator::kNoProperties, 16, 0, 1)                         \
+  V(Int8x16ExtractLane, Operator::kNoProperties, 2, 0, 1)                     \
+  V(Int8x16ReplaceLane, Operator::kNoProperties, 3, 0, 1)                     \
+  V(Int8x16Neg, Operator::kNoProperties, 1, 0, 1)                             \
+  V(Int8x16Add, Operator::kCommutative, 2, 0, 1)                              \
+  V(Int8x16AddSaturate, Operator::kCommutative, 2, 0, 1)                      \
+  V(Int8x16Sub, Operator::kNoProperties, 2, 0, 1)                             \
+  V(Int8x16SubSaturate, Operator::kNoProperties, 2, 0, 1)                     \
+  V(Int8x16Mul, Operator::kCommutative, 2, 0, 1)                              \
+  V(Int8x16Min, Operator::kCommutative, 2, 0, 1)                              \
+  V(Int8x16Max, Operator::kCommutative, 2, 0, 1)                              \
+  V(Int8x16ShiftLeftByScalar, Operator::kNoProperties, 2, 0, 1)               \
+  V(Int8x16ShiftRightByScalar, Operator::kNoProperties, 2, 0, 1)              \
+  V(Int8x16Equal, Operator::kCommutative, 2, 0, 1)                            \
+  V(Int8x16NotEqual, Operator::kCommutative, 2, 0, 1)                         \
+  V(Int8x16LessThan, Operator::kNoProperties, 2, 0, 1)                        \
+  V(Int8x16LessThanOrEqual, Operator::kNoProperties, 2, 0, 1)                 \
+  V(Int8x16GreaterThan, Operator::kNoProperties, 2, 0, 1)                     \
+  V(Int8x16GreaterThanOrEqual, Operator::kNoProperties, 2, 0, 1)              \
+  V(Int8x16Select, Operator::kNoProperties, 3, 0, 1)                          \
+  V(Int8x16Swizzle, Operator::kNoProperties, 17, 0, 1)                        \
+  V(Int8x16Shuffle, Operator::kNoProperties, 18, 0, 1)                        \
+  V(Uint8x16AddSaturate, Operator::kCommutative, 2, 0, 1)                     \
+  V(Uint8x16SubSaturate, Operator::kNoProperties, 2, 0, 1)                    \
+  V(Uint8x16Min, Operator::kCommutative, 2, 0, 1)                             \
+  V(Uint8x16Max, Operator::kCommutative, 2, 0, 1)                             \
+  V(Uint8x16ShiftLeftByScalar, Operator::kNoProperties, 2, 0, 1)              \
+  V(Uint8x16ShiftRightByScalar, Operator::kNoProperties, 2, 0, 1)             \
+  V(Uint8x16LessThan, Operator::kNoProperties, 2, 0, 1)                       \
+  V(Uint8x16LessThanOrEqual, Operator::kNoProperties, 2, 0, 1)                \
+  V(Uint8x16GreaterThan, Operator::kNoProperties, 2, 0, 1)                    \
+  V(Uint8x16GreaterThanOrEqual, Operator::kNoProperties, 2, 0, 1)             \
+  V(CreateBool8x16, Operator::kNoProperties, 16, 0, 1)                        \
+  V(Bool8x16ExtractLane, Operator::kNoProperties, 2, 0, 1)                    \
+  V(Bool8x16ReplaceLane, Operator::kNoProperties, 3, 0, 1)                    \
+  V(Bool8x16And, Operator::kAssociative | Operator::kCommutative, 2, 0, 1)    \
+  V(Bool8x16Or, Operator::kAssociative | Operator::kCommutative, 2, 0, 1)     \
+  V(Bool8x16Xor, Operator::kAssociative | Operator::kCommutative, 2, 0, 1)    \
+  V(Bool8x16Not, Operator::kNoProperties, 1, 0, 1)                            \
+  V(Bool8x16AnyTrue, Operator::kNoProperties, 1, 0, 1)                        \
+  V(Bool8x16AllTrue, Operator::kNoProperties, 1, 0, 1)                        \
+  V(Bool8x16Swizzle, Operator::kNoProperties, 17, 0, 1)                       \
+  V(Bool8x16Shuffle, Operator::kNoProperties, 18, 0, 1)                       \
+  V(Bool8x16Equal, Operator::kCommutative, 2, 0, 1)                           \
+  V(Bool8x16NotEqual, Operator::kCommutative, 2, 0, 1)                        \
+  V(Simd128Load, Operator::kNoProperties, 2, 0, 1)                            \
+  V(Simd128Load1, Operator::kNoProperties, 2, 0, 1)                           \
+  V(Simd128Load2, Operator::kNoProperties, 2, 0, 1)                           \
+  V(Simd128Load3, Operator::kNoProperties, 2, 0, 1)                           \
+  V(Simd128Store, Operator::kNoProperties, 3, 0, 1)                           \
+  V(Simd128Store1, Operator::kNoProperties, 3, 0, 1)                          \
+  V(Simd128Store2, Operator::kNoProperties, 3, 0, 1)                          \
+  V(Simd128Store3, Operator::kNoProperties, 3, 0, 1)                          \
+  V(Simd128And, Operator::kAssociative | Operator::kCommutative, 2, 0, 1)     \
+  V(Simd128Or, Operator::kAssociative | Operator::kCommutative, 2, 0, 1)      \
+  V(Simd128Xor, Operator::kAssociative | Operator::kCommutative, 2, 0, 1)     \
+  V(Simd128Not, Operator::kNoProperties, 1, 0, 1)
 
 #define PURE_OPTIONAL_OP_LIST(V)                            \
   V(Word32Ctz, Operator::kNoProperties, 1, 0, 1)            \
@@ -243,6 +404,11 @@ MachineRepresentation StackSlotRepresentationOf(Operator const* op) {
   V(Uint16)                 \
   V(Int32)                  \
   V(Uint32)
+
+#define ATOMIC_REPRESENTATION_LIST(V) \
+  V(kWord8)                           \
+  V(kWord16)                          \
+  V(kWord32)
 
 struct MachineOperatorGlobalCache {
 #define PURE(Name, properties, value_input_count, control_input_count,         \
@@ -335,7 +501,7 @@ struct MachineOperatorGlobalCache {
   MACHINE_REPRESENTATION_LIST(STORE)
 #undef STORE
 
-#define ATOMIC(Type)                                                          \
+#define ATOMIC_LOAD(Type)                                                     \
   struct AtomicLoad##Type##Operator final                                     \
       : public Operator1<LoadRepresentation> {                                \
     AtomicLoad##Type##Operator()                                              \
@@ -344,8 +510,20 @@ struct MachineOperatorGlobalCache {
               "AtomicLoad", 2, 1, 1, 1, 1, 0, MachineType::Type()) {}         \
   };                                                                          \
   AtomicLoad##Type##Operator kAtomicLoad##Type;
-  ATOMIC_TYPE_LIST(ATOMIC)
-#undef ATOMIC
+  ATOMIC_TYPE_LIST(ATOMIC_LOAD)
+#undef ATOMIC_LOAD
+
+#define ATOMIC_STORE(Type)                                                     \
+  struct AtomicStore##Type##Operator                                           \
+      : public Operator1<MachineRepresentation> {                              \
+    AtomicStore##Type##Operator()                                              \
+        : Operator1<MachineRepresentation>(                                    \
+              IrOpcode::kAtomicStore, Operator::kNoRead | Operator::kNoThrow,  \
+              "AtomicStore", 3, 1, 1, 0, 1, 0, MachineRepresentation::Type) {} \
+  };                                                                           \
+  AtomicStore##Type##Operator kAtomicStore##Type;
+  ATOMIC_REPRESENTATION_LIST(ATOMIC_STORE)
+#undef STORE
 };
 
 
@@ -475,6 +653,17 @@ const Operator* MachineOperatorBuilder::AtomicLoad(LoadRepresentation rep) {
   }
   ATOMIC_TYPE_LIST(LOAD)
 #undef LOAD
+  UNREACHABLE();
+  return nullptr;
+}
+
+const Operator* MachineOperatorBuilder::AtomicStore(MachineRepresentation rep) {
+#define STORE(kRep)                         \
+  if (rep == MachineRepresentation::kRep) { \
+    return &cache_.kAtomicStore##kRep;      \
+  }
+  ATOMIC_REPRESENTATION_LIST(STORE)
+#undef STORE
   UNREACHABLE();
   return nullptr;
 }

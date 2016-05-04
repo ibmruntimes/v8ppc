@@ -1188,6 +1188,8 @@ void InstructionSelector::VisitNode(Node* node) {
       MarkAsRepresentation(type.representation(), node);
       return VisitAtomicLoad(node);
     }
+    case IrOpcode::kAtomicStore:
+      return VisitAtomicStore(node);
     default:
       V8_Fatal(__FILE__, __LINE__, "Unexpected operator #%d:%s @ node #%d",
                node->opcode(), node->op()->mnemonic(), node->id());
@@ -1607,8 +1609,6 @@ void InstructionSelector::VisitTailCall(Node* node) {
   OperandGenerator g(this);
   CallDescriptor const* descriptor = CallDescriptorOf(node->op());
   DCHECK_NE(0, descriptor->flags() & CallDescriptor::kSupportsTailCalls);
-  DCHECK_EQ(0, descriptor->flags() & CallDescriptor::kPatchableCallSite);
-  DCHECK_EQ(0, descriptor->flags() & CallDescriptor::kNeedsNopAfterCall);
 
   // TODO(turbofan): Relax restriction for stack parameters.
 

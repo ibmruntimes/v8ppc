@@ -140,11 +140,11 @@ PreParser::PreParseResult PreParser::PreParseLazyFunction(
   return kPreParseSuccess;
 }
 
-
 PreParserExpression PreParserTraits::ParseClassLiteral(
-    PreParserIdentifier name, Scanner::Location class_name_location,
-    bool name_is_strict_reserved, int pos, bool* ok) {
-  return pre_parser_->ParseClassLiteral(name, class_name_location,
+    Type::ExpressionClassifier* classifier, PreParserIdentifier name,
+    Scanner::Location class_name_location, bool name_is_strict_reserved,
+    int pos, bool* ok) {
+  return pre_parser_->ParseClassLiteral(classifier, name, class_name_location,
                                         name_is_strict_reserved, pos, ok);
 }
 
@@ -279,13 +279,14 @@ PreParser::Statement PreParser::ParseStatement(
 }
 
 PreParser::Statement PreParser::ParseScopedStatement(bool legacy, bool* ok) {
-  if (!(is_strict(language_mode()) || peek() != Token::FUNCTION ||
-      (legacy && allow_harmony_restrictive_declarations()))) {
+  if (is_strict(language_mode()) || peek() != Token::FUNCTION ||
+      (legacy && allow_harmony_restrictive_declarations())) {
+    return ParseSubStatement(kDisallowLabelledFunctionStatement, ok);
+  } else {
     Scope* body_scope = NewScope(scope_, BLOCK_SCOPE);
     BlockState block_state(&scope_, body_scope);
-    return ParseFunctionDeclaration(CHECK_OK);
+    return ParseFunctionDeclaration(ok);
   }
-  return ParseSubStatement(kDisallowLabelledFunctionStatement, ok);
 }
 
 PreParser::Statement PreParser::ParseSubStatement(
@@ -417,8 +418,8 @@ PreParser::Statement PreParser::ParseClassDeclaration(bool* ok) {
   bool is_strict_reserved = false;
   Identifier name =
       ParseIdentifierOrStrictReservedWord(&is_strict_reserved, CHECK_OK);
-  ParseClassLiteral(name, scanner()->location(), is_strict_reserved, pos,
-                    CHECK_OK);
+  ParseClassLiteral(nullptr, name, scanner()->location(), is_strict_reserved,
+                    pos, CHECK_OK);
   return Statement::Default();
 }
 
@@ -705,28 +706,21 @@ PreParser::Statement PreParser::ParseReturnStatement(bool* ok) {
   // This is not handled during preparsing.
 
   Token::Value tok = peek();
-  int tail_call_position = -1;
-  if (FLAG_harmony_explicit_tailcalls && tok == Token::CONTINUE) {
-    Consume(Token::CONTINUE);
-    tail_call_position = position();
-    tok = peek();
-  }
   if (!scanner()->HasAnyLineTerminatorBeforeNext() &&
       tok != Token::SEMICOLON &&
       tok != Token::RBRACE &&
       tok != Token::EOS) {
+    // Because of the return code rewriting that happens in case of a subclass
+    // constructor we don't want to accept tail calls, therefore we don't set
+    // ReturnExprScope to kInsideValidReturnStatement here.
+    ReturnExprContext return_expr_context =
+        IsSubclassConstructor(function_state_->kind())
+            ? function_state_->return_expr_context()
+            : ReturnExprContext::kInsideValidReturnStatement;
+
+    ReturnExprScope maybe_allow_tail_calls(function_state_,
+                                           return_expr_context);
     ParseExpression(true, CHECK_OK);
-    if (tail_call_position >= 0) {
-      ReturnExprContext return_expr_context =
-          function_state_->return_expr_context();
-      if (return_expr_context != ReturnExprContext::kNormal) {
-        ReportIllegalTailCallAt(tail_call_position, return_expr_context);
-        *ok = false;
-        return Statement::Default();
-      }
-      function_state_->AddExpressionInTailPosition(
-          PreParserExpression::Default(), tail_call_position);
-    }
   }
   ExpectSemicolon(CHECK_OK);
   return Statement::Jump();
@@ -993,7 +987,7 @@ PreParser::Statement PreParser::ParseTryStatement(bool* ok) {
     *ok = false;
     return Statement::Default();
   }
-  List<TailCallExpression> expressions_in_tail_position_in_catch_block;
+  TailCallExpressionList tail_call_expressions_in_catch_block(zone());
   bool catch_block_exists = false;
   if (tok == Token::CATCH) {
     Consume(Token::CATCH);
@@ -1005,8 +999,8 @@ PreParser::Statement PreParser::ParseTryStatement(bool* ok) {
     Expect(Token::RPAREN, CHECK_OK);
     {
       CollectExpressionsInTailPositionToListScope
-          collect_expressions_in_tail_position_scope(
-              function_state_, &expressions_in_tail_position_in_catch_block);
+          collect_tail_call_expressions_scope(
+              function_state_, &tail_call_expressions_in_catch_block);
       BlockState block_state(&scope_, catch_scope);
       Scope* block_scope = NewScope(scope_, BLOCK_SCOPE);
       {
@@ -1021,12 +1015,11 @@ PreParser::Statement PreParser::ParseTryStatement(bool* ok) {
     Consume(Token::FINALLY);
     ParseBlock(CHECK_OK);
     if (FLAG_harmony_explicit_tailcalls && catch_block_exists &&
-        expressions_in_tail_position_in_catch_block.length() > 0) {
+        !tail_call_expressions_in_catch_block.is_empty()) {
       // TODO(ishell): update chapter number.
       // ES8 XX.YY.ZZ
-      int pos = expressions_in_tail_position_in_catch_block[0].pos;
-      ReportMessageAt(Scanner::Location(pos, pos + 1),
-                      MessageTemplate::kTailCallInCatchBlock);
+      ReportMessageAt(tail_call_expressions_in_catch_block.location(),
+                      MessageTemplate::kUnexpectedTailCallInCatchBlock);
       *ok = false;
       return Statement::Default();
     }
@@ -1135,10 +1128,10 @@ void PreParser::ParseLazyFunctionLiteralBody(bool* ok,
                     scope_->uses_super_property(), scope_->calls_eval());
 }
 
-
 PreParserExpression PreParser::ParseClassLiteral(
-    PreParserIdentifier name, Scanner::Location class_name_location,
-    bool name_is_strict_reserved, int pos, bool* ok) {
+    ExpressionClassifier* classifier, PreParserIdentifier name,
+    Scanner::Location class_name_location, bool name_is_strict_reserved,
+    int pos, bool* ok) {
   // All parts of a ClassDeclaration and ClassExpression are strict code.
   if (name_is_strict_reserved) {
     ReportMessageAt(class_name_location,
@@ -1162,9 +1155,14 @@ PreParserExpression PreParser::ParseClassLiteral(
 
   bool has_extends = Check(Token::EXTENDS);
   if (has_extends) {
-    ExpressionClassifier classifier(this);
-    ParseLeftHandSideExpression(&classifier, CHECK_OK);
-    ValidateExpression(&classifier, CHECK_OK);
+    ExpressionClassifier extends_classifier(this);
+    ParseLeftHandSideExpression(&extends_classifier, CHECK_OK);
+    CheckNoTailCallExpressions(&extends_classifier, CHECK_OK);
+    ValidateExpression(&extends_classifier, CHECK_OK);
+    if (classifier != nullptr) {
+      classifier->Accumulate(&extends_classifier,
+                             ExpressionClassifier::ExpressionProductions);
+    }
   }
 
   ClassLiteralChecker checker(this);

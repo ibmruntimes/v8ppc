@@ -359,7 +359,6 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
 
 }  // namespace
 
-
 #define ASSEMBLE_CHECKED_LOAD_FLOAT(width, asm_instr)                         \
   do {                                                                        \
     auto result = i.Output##width##Register();                                \
@@ -367,7 +366,8 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
     if (instr->InputAt(0)->IsRegister()) {                                    \
       auto offset = i.InputRegister(0);                                       \
       __ Branch(USE_DELAY_SLOT, ool->entry(), hs, offset, i.InputOperand(1)); \
-      __ Daddu(kScratchReg, i.InputRegister(2), offset);                      \
+      __ And(kScratchReg, offset, Operand(0xffffffff));                       \
+      __ Daddu(kScratchReg, i.InputRegister(2), kScratchReg);                 \
       __ asm_instr(result, MemOperand(kScratchReg, 0));                       \
     } else {                                                                  \
       int offset = static_cast<int>(i.InputOperand(0).immediate());           \
@@ -376,7 +376,6 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
     }                                                                         \
     __ bind(ool->exit());                                                     \
   } while (0)
-
 
 #define ASSEMBLE_CHECKED_LOAD_INTEGER(asm_instr)                              \
   do {                                                                        \
@@ -385,7 +384,8 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
     if (instr->InputAt(0)->IsRegister()) {                                    \
       auto offset = i.InputRegister(0);                                       \
       __ Branch(USE_DELAY_SLOT, ool->entry(), hs, offset, i.InputOperand(1)); \
-      __ Daddu(kScratchReg, i.InputRegister(2), offset);                      \
+      __ And(kScratchReg, offset, Operand(0xffffffff));                       \
+      __ Daddu(kScratchReg, i.InputRegister(2), kScratchReg);                 \
       __ asm_instr(result, MemOperand(kScratchReg, 0));                       \
     } else {                                                                  \
       int offset = static_cast<int>(i.InputOperand(0).immediate());           \
@@ -395,7 +395,6 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
     __ bind(ool->exit());                                                     \
   } while (0)
 
-
 #define ASSEMBLE_CHECKED_STORE_FLOAT(width, asm_instr)                 \
   do {                                                                 \
     Label done;                                                        \
@@ -403,7 +402,8 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
       auto offset = i.InputRegister(0);                                \
       auto value = i.Input##width##Register(2);                        \
       __ Branch(USE_DELAY_SLOT, &done, hs, offset, i.InputOperand(1)); \
-      __ Daddu(kScratchReg, i.InputRegister(3), offset);               \
+      __ And(kScratchReg, offset, Operand(0xffffffff));                \
+      __ Daddu(kScratchReg, i.InputRegister(3), kScratchReg);          \
       __ asm_instr(value, MemOperand(kScratchReg, 0));                 \
     } else {                                                           \
       int offset = static_cast<int>(i.InputOperand(0).immediate());    \
@@ -413,7 +413,6 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
     }                                                                  \
     __ bind(&done);                                                    \
   } while (0)
-
 
 #define ASSEMBLE_CHECKED_STORE_INTEGER(asm_instr)                      \
   do {                                                                 \
@@ -422,7 +421,8 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
       auto offset = i.InputRegister(0);                                \
       auto value = i.InputRegister(2);                                 \
       __ Branch(USE_DELAY_SLOT, &done, hs, offset, i.InputOperand(1)); \
-      __ Daddu(kScratchReg, i.InputRegister(3), offset);               \
+      __ And(kScratchReg, offset, Operand(0xffffffff));                \
+      __ Daddu(kScratchReg, i.InputRegister(3), kScratchReg);          \
       __ asm_instr(value, MemOperand(kScratchReg, 0));                 \
     } else {                                                           \
       int offset = static_cast<int>(i.InputOperand(0).immediate());    \
@@ -432,7 +432,6 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
     }                                                                  \
     __ bind(&done);                                                    \
   } while (0)
-
 
 #define ASSEMBLE_ROUND_DOUBLE_TO_DOUBLE(mode)                                  \
   if (kArchVariant == kMips64r6) {                                             \
@@ -1491,6 +1490,9 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kMips64Lw:
       __ lw(i.OutputRegister(), i.MemoryOperand());
       break;
+    case kMips64Lwu:
+      __ lwu(i.OutputRegister(), i.MemoryOperand());
+      break;
     case kMips64Ld:
       __ ld(i.OutputRegister(), i.MemoryOperand());
       break;
@@ -1595,6 +1597,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     case kAtomicLoadWord32:
       ASSEMBLE_ATOMIC_LOAD_INTEGER(lw);
+      break;
+    case kAtomicStoreWord8:
+    case kAtomicStoreWord16:
+    case kAtomicStoreWord32:
+      // TODO(binji): implement
+      __ nop();
       break;
   }
   return kSuccess;
@@ -2201,13 +2209,6 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
 void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
   // On 64-bit MIPS we emit the jump tables inline.
   UNREACHABLE();
-}
-
-
-void CodeGenerator::AddNopForSmiCodeInlining() {
-  // Unused on 32-bit ARM. Still exists on 64-bit arm.
-  // TODO(plind): Unclear when this is called now. Understand, fix if needed.
-  __ nop();  // Maybe PROPERTY_ACCESS_INLINED?
 }
 
 

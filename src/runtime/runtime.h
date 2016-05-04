@@ -59,7 +59,6 @@ namespace internal {
   F(ThrowNotInt32SharedTypedArrayError, 1, 1)   \
   F(ThrowInvalidAtomicAccessIndexError, 0, 1)   \
   F(AtomicsCompareExchange, 4, 1)               \
-  F(AtomicsStore, 3, 1)                         \
   F(AtomicsAdd, 3, 1)                           \
   F(AtomicsSub, 3, 1)                           \
   F(AtomicsAnd, 3, 1)                           \
@@ -871,6 +870,7 @@ namespace internal {
   F(SetAllocationTimeout, -1 /* 2 || 3 */, 1) \
   F(DebugPrint, 1, 1)                         \
   F(DebugTrace, 0, 1)                         \
+  F(GetExceptionDetails, 1, 1)                \
   F(GlobalPrint, 1, 1)                        \
   F(SystemBreak, 0, 1)                        \
   F(SetFlags, 1, 1)                           \
@@ -901,7 +901,8 @@ namespace internal {
   F(HasFixedInt32Elements, 1, 1)              \
   F(HasFixedFloat32Elements, 1, 1)            \
   F(HasFixedFloat64Elements, 1, 1)            \
-  F(HasFixedUint8ClampedElements, 1, 1)
+  F(HasFixedUint8ClampedElements, 1, 1)       \
+  F(SpeciesProtector, 0, 1)
 
 #define FOR_EACH_INTRINSIC_TYPEDARRAY(F)     \
   F(ArrayBufferGetByteLength, 1, 1)          \

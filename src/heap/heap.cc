@@ -2694,14 +2694,6 @@ void Heap::CreateInitialObjects() {
 #undef SYMBOL_INIT
   }
 
-  // The {hidden_properties_symbol} is special because it is the only name with
-  // hash code zero. This ensures that it will always be the first entry as
-  // sorted by hash code in descriptor arrays. It is used to identify the hidden
-  // properties in JSObjects.
-  // kIsNotArrayIndexMask is a computed hash with value zero.
-  Symbol::cast(roots_[khidden_properties_symbolRootIndex])
-      ->set_hash_field(Name::kIsNotArrayIndexMask);
-
   {
     HandleScope scope(isolate());
 #define SYMBOL_INIT(name, description)                                      \
@@ -2721,8 +2713,6 @@ void Heap::CreateInitialObjects() {
     WELL_KNOWN_SYMBOL_LIST(SYMBOL_INIT)
 #undef SYMBOL_INIT
   }
-
-  CreateFixedStubs();
 
   // Allocate the dictionary of intrinsic function names.
   Handle<NameDictionary> intrinsic_names =
@@ -2865,6 +2855,8 @@ void Heap::CreateInitialObjects() {
 
   // Initialize compilation cache.
   isolate_->compilation_cache()->Clear();
+
+  CreateFixedStubs();
 }
 
 
@@ -3143,9 +3135,9 @@ FixedArrayBase* Heap::LeftTrimFixedArray(FixedArrayBase* object,
       FixedArrayBase::cast(HeapObject::FromAddress(new_start));
 
   // Remove recorded slots for the new map and length offset.
-  ClearRecordedSlot(new_object, HeapObject::RawField(object, 0));
-  ClearRecordedSlot(
-      new_object, HeapObject::RawField(object, FixedArrayBase::kLengthOffset));
+  ClearRecordedSlot(new_object, HeapObject::RawField(new_object, 0));
+  ClearRecordedSlot(new_object, HeapObject::RawField(
+                                    new_object, FixedArrayBase::kLengthOffset));
 
   // Maintain consistency of live bytes during incremental marking
   Marking::TransferMark(this, object->address(), new_start);

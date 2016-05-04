@@ -8,6 +8,7 @@
 #include "src/deoptimizer.h"
 #include "src/frames-inl.h"
 #include "src/full-codegen/full-codegen.h"
+#include "src/isolate-inl.h"
 #include "src/snapshot/natives.h"
 
 namespace v8 {
@@ -481,6 +482,31 @@ RUNTIME_FUNCTION(Runtime_TraceTailCall) {
   return isolate->heap()->undefined_value();
 }
 
+RUNTIME_FUNCTION(Runtime_GetExceptionDetails) {
+  HandleScope shs(isolate);
+  DCHECK(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, exception_obj, 0);
+
+  Factory* factory = isolate->factory();
+  Handle<JSMessageObject> message_obj =
+      isolate->CreateMessage(exception_obj, nullptr);
+
+  Handle<JSObject> message = factory->NewJSObject(isolate->object_function());
+
+  Handle<String> key;
+  Handle<Object> value;
+
+  key = factory->NewStringFromAsciiChecked("start_pos");
+  value = handle(Smi::FromInt(message_obj->start_position()), isolate);
+  JSObject::SetProperty(message, key, value, STRICT).Assert();
+
+  key = factory->NewStringFromAsciiChecked("end_pos");
+  value = handle(Smi::FromInt(message_obj->end_position()), isolate);
+  JSObject::SetProperty(message, key, value, STRICT).Assert();
+
+  return *message;
+}
+
 RUNTIME_FUNCTION(Runtime_HaveSameMap) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 2);
@@ -527,5 +553,14 @@ ELEMENTS_KIND_CHECK_RUNTIME_FUNCTION(FastProperties)
 TYPED_ARRAYS(FIXED_TYPED_ARRAYS_CHECK_RUNTIME_FUNCTION)
 
 #undef FIXED_TYPED_ARRAYS_CHECK_RUNTIME_FUNCTION
+
+
+RUNTIME_FUNCTION(Runtime_SpeciesProtector) {
+  SealHandleScope shs(isolate);
+  DCHECK_EQ(0, args.length());
+  return isolate->heap()->ToBoolean(isolate->IsArraySpeciesLookupChainIntact());
+}
+
+
 }  // namespace internal
 }  // namespace v8

@@ -3901,11 +3901,23 @@ Local<Array> v8::Object::GetPropertyNames() {
 
 
 MaybeLocal<Array> v8::Object::GetOwnPropertyNames(Local<Context> context) {
+  return GetOwnPropertyNames(
+      context, static_cast<v8::PropertyFilter>(ONLY_ENUMERABLE | SKIP_SYMBOLS));
+}
+
+Local<Array> v8::Object::GetOwnPropertyNames() {
+  auto context = ContextFromHeapObject(Utils::OpenHandle(this));
+  RETURN_TO_LOCAL_UNCHECKED(GetOwnPropertyNames(context), Array);
+}
+
+MaybeLocal<Array> v8::Object::GetOwnPropertyNames(Local<Context> context,
+                                                  PropertyFilter filter) {
   PREPARE_FOR_EXECUTION(context, "v8::Object::GetOwnPropertyNames()", Array);
   auto self = Utils::OpenHandle(this);
   i::Handle<i::FixedArray> value;
   has_pending_exception =
-      !i::JSReceiver::GetKeys(self, i::OWN_ONLY, i::ENUMERABLE_STRINGS)
+      !i::JSReceiver::GetKeys(self, i::OWN_ONLY,
+                              static_cast<i::PropertyFilter>(filter))
            .ToHandle(&value);
   RETURN_ON_FAILED_EXECUTION(Array);
   DCHECK(self->map()->EnumLength() == i::kInvalidEnumCacheSentinel ||
@@ -3913,12 +3925,6 @@ MaybeLocal<Array> v8::Object::GetOwnPropertyNames(Local<Context> context) {
          self->map()->instance_descriptors()->GetEnumCache() != *value);
   auto result = isolate->factory()->NewJSArrayWithElements(value);
   RETURN_ESCAPED(Utils::ToLocal(result));
-}
-
-
-Local<Array> v8::Object::GetOwnPropertyNames() {
-  auto context = ContextFromHeapObject(Utils::OpenHandle(this));
-  RETURN_TO_LOCAL_UNCHECKED(GetOwnPropertyNames(context), Array);
 }
 
 
@@ -4354,59 +4360,6 @@ int v8::Object::GetIdentityHash() {
   i::HandleScope scope(isolate);
   auto self = Utils::OpenHandle(this);
   return i::JSReceiver::GetOrCreateIdentityHash(self)->value();
-}
-
-
-bool v8::Object::SetHiddenValue(v8::Local<v8::String> key,
-                                v8::Local<v8::Value> value) {
-  i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
-  ENTER_V8(isolate);
-  i::HandleScope scope(isolate);
-  i::Handle<i::JSReceiver> self = Utils::OpenHandle(this);
-  if (!self->IsJSObject()) return false;
-  i::Handle<i::String> key_obj = Utils::OpenHandle(*key);
-  i::Handle<i::String> key_string =
-      isolate->factory()->InternalizeString(key_obj);
-  if (value.IsEmpty()) {
-    i::JSObject::DeleteHiddenProperty(i::Handle<i::JSObject>::cast(self),
-                                      key_string);
-    return true;
-  }
-  i::Handle<i::Object> value_obj = Utils::OpenHandle(*value);
-  i::Handle<i::Object> result = i::JSObject::SetHiddenProperty(
-      i::Handle<i::JSObject>::cast(self), key_string, value_obj);
-  return *result == *self;
-}
-
-
-v8::Local<v8::Value> v8::Object::GetHiddenValue(v8::Local<v8::String> key) {
-  i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
-  ENTER_V8(isolate);
-  i::Handle<i::JSReceiver> self = Utils::OpenHandle(this);
-  if (!self->IsJSObject()) return v8::Local<v8::Value>();
-  i::Handle<i::String> key_obj = Utils::OpenHandle(*key);
-  i::Handle<i::String> key_string =
-      isolate->factory()->InternalizeString(key_obj);
-  i::Handle<i::Object> result(
-      i::Handle<i::JSObject>::cast(self)->GetHiddenProperty(key_string),
-      isolate);
-  if (result->IsTheHole()) return v8::Local<v8::Value>();
-  return Utils::ToLocal(result);
-}
-
-
-bool v8::Object::DeleteHiddenValue(v8::Local<v8::String> key) {
-  i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
-  ENTER_V8(isolate);
-  i::HandleScope scope(isolate);
-  i::Handle<i::JSReceiver> self = Utils::OpenHandle(this);
-  if (!self->IsJSObject()) return false;
-  i::Handle<i::String> key_obj = Utils::OpenHandle(*key);
-  i::Handle<i::String> key_string =
-      isolate->factory()->InternalizeString(key_obj);
-  i::JSObject::DeleteHiddenProperty(i::Handle<i::JSObject>::cast(self),
-                                    key_string);
-  return true;
 }
 
 
@@ -7522,7 +7475,16 @@ bool Isolate::GetHeapObjectStatisticsAtLastGC(
 void Isolate::GetStackSample(const RegisterState& state, void** frames,
                              size_t frames_limit, SampleInfo* sample_info) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
-  i::TickSample::GetStackSample(isolate, state, i::TickSample::kSkipCEntryFrame,
+#if defined(USE_SIMULATOR)
+  RegisterState regs;
+  regs.pc = state.pc;
+  regs.sp = state.sp;
+  regs.fp = state.fp;
+  i::SimulatorHelper::FillRegisters(isolate, &regs);
+#else
+  const RegisterState& regs = state;
+#endif
+  i::TickSample::GetStackSample(isolate, regs, i::TickSample::kSkipCEntryFrame,
                                 frames, frames_limit, sample_info);
 }
 
@@ -8352,9 +8314,11 @@ CpuProfile* CpuProfiler::StopProfiling(Local<String> title) {
 
 
 void CpuProfiler::SetIdle(bool is_idle) {
-  i::Isolate* isolate = reinterpret_cast<i::CpuProfiler*>(this)->isolate();
+  i::CpuProfiler* profiler = reinterpret_cast<i::CpuProfiler*>(this);
+  if (!profiler->is_profiling()) return;
+  i::Isolate* isolate = profiler->isolate();
   v8::StateTag state = isolate->current_vm_state();
-  DCHECK(state == v8::JS || state == v8::EXTERNAL || state == v8::IDLE);
+  DCHECK(state == v8::EXTERNAL || state == v8::IDLE);
   if (isolate->js_entry_sp() != NULL) return;
   if (is_idle) {
     isolate->set_current_vm_state(v8::IDLE);

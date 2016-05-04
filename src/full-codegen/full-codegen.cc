@@ -442,10 +442,7 @@ void FullCodeGenerator::VisitSloppyBlockFunctionStatement(
 
 
 int FullCodeGenerator::DeclareGlobalsFlags() {
-  DCHECK(DeclareGlobalsLanguageMode::is_valid(language_mode()));
-  return DeclareGlobalsEvalFlag::encode(is_eval()) |
-         DeclareGlobalsNativeFlag::encode(is_native()) |
-         DeclareGlobalsLanguageMode::encode(language_mode());
+  return info_->GetDeclareGlobalsFlags();
 }
 
 void FullCodeGenerator::PushOperand(Handle<Object> handle) {
@@ -604,6 +601,13 @@ void FullCodeGenerator::EmitRegExpConstructResult(CallRuntime* expr) {
   EmitIntrinsicAsStubCall(expr, CodeFactory::RegExpConstructResult(isolate()));
 }
 
+void FullCodeGenerator::EmitHasProperty() {
+  Callable callable = CodeFactory::HasProperty(isolate());
+  PopOperand(callable.descriptor().GetRegisterParameter(1));
+  PopOperand(callable.descriptor().GetRegisterParameter(0));
+  __ Call(callable.code(), RelocInfo::CODE_TARGET);
+  RestoreContext();
+}
 
 bool RecordStatementPosition(MacroAssembler* masm, int pos) {
   if (pos == RelocInfo::kNoPosition) return false;
@@ -678,11 +682,15 @@ void FullCodeGenerator::SetCallPosition(Expression* expr,
 void FullCodeGenerator::VisitSuperPropertyReference(
     SuperPropertyReference* super) {
   __ CallRuntime(Runtime::kThrowUnsupportedSuperError);
+  // Even though this expression doesn't produce a value, we need to simulate
+  // plugging of the value context to ensure stack depth tracking is in sync.
+  if (context()->IsStackValue()) OperandStackDepthIncrement(1);
 }
 
 
 void FullCodeGenerator::VisitSuperCallReference(SuperCallReference* super) {
-  __ CallRuntime(Runtime::kThrowUnsupportedSuperError);
+  // Handled by VisitCall
+  UNREACHABLE();
 }
 
 
@@ -844,7 +852,6 @@ void FullCodeGenerator::VisitBlock(Block* stmt) {
 
 void FullCodeGenerator::VisitDoExpression(DoExpression* expr) {
   Comment cmnt(masm_, "[ Do Expression");
-  NestedStatement nested_block(this);
   SetExpressionPosition(expr);
   VisitBlock(expr->block());
   EmitVariableLoad(expr->result());
@@ -1458,6 +1465,7 @@ void FullCodeGenerator::VisitClassLiteral(ClassLiteral* lit) {
   Comment cmnt(masm_, "[ ClassLiteral");
 
   {
+    NestedClassLiteral nested_class_literal(this, lit);
     EnterBlockScopeIfNeeded block_scope_state(
         this, lit->scope(), lit->EntryId(), lit->DeclsId(), lit->ExitId());
 

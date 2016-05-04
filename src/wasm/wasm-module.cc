@@ -353,7 +353,7 @@ static MaybeHandle<JSFunction> ReportFFIError(ErrorThrower& thrower,
 }
 
 static MaybeHandle<JSFunction> LookupFunction(
-    ErrorThrower& thrower, Factory* factory, Handle<JSObject> ffi,
+    ErrorThrower& thrower, Factory* factory, Handle<JSReceiver> ffi,
     uint32_t index, wasm::WasmName module_name, wasm::WasmName function_name) {
   if (ffi.is_null()) {
     return ReportFFIError(thrower, "FFI is not an object", index, module_name,
@@ -404,7 +404,7 @@ static MaybeHandle<JSFunction> LookupFunction(
 //  * installs named properties on the object for exported functions
 //  * compiles wasm code to machine code
 MaybeHandle<JSObject> WasmModule::Instantiate(Isolate* isolate,
-                                              Handle<JSObject> ffi,
+                                              Handle<JSReceiver> ffi,
                                               Handle<JSArrayBuffer> memory) {
   HistogramTimerScope wasm_instantiate_module_time_scope(
       isolate->counters()->wasm_instantiate_module_time());
@@ -509,6 +509,9 @@ MaybeHandle<JSObject> WasmModule::Instantiate(Isolate* isolate,
 
     std::vector<compiler::WasmCompilationUnit*> compilation_units(
         functions.size());
+    std::queue<compiler::WasmCompilationUnit*> executed_units;
+    std::vector<Handle<Code>> results(functions.size());
+
     if (FLAG_wasm_parallel_compilation) {
       // Create a placeholder code object for all functions.
       // TODO(ahaas): Maybe we could skip this for external functions.
@@ -520,14 +523,26 @@ MaybeHandle<JSObject> WasmModule::Instantiate(Isolate* isolate,
            i++) {
         if (!functions[i].external) {
           compilation_units[i] = compiler::CreateWasmCompilationUnit(
-              &thrower, isolate, &module_env, &functions[i]);
+              &thrower, isolate, &module_env, &functions[i], i);
         }
       }
 
-      for (uint32_t i = FLAG_skip_compiling_wasm_funcs; i < functions.size();
-           i++) {
-        if (!functions[i].external) {
-          compiler::ExecuteCompilation(compilation_units[i]);
+      index = FLAG_skip_compiling_wasm_funcs;
+      while (true) {
+        while (!executed_units.empty()) {
+          compiler::WasmCompilationUnit* unit = executed_units.front();
+          executed_units.pop();
+          int i = compiler::GetIndexOfWasmCompilationUnit(unit);
+          results[i] = compiler::FinishCompilation(unit);
+        }
+        if (index < functions.size()) {
+          if (!functions[index].external) {
+            compiler::ExecuteCompilation(compilation_units[index]);
+            executed_units.push(compilation_units[index]);
+            index++;
+          }
+        } else {
+          break;
         }
       }
     }
@@ -554,7 +569,7 @@ MaybeHandle<JSObject> WasmModule::Instantiate(Isolate* isolate,
                                                 func.sig, str, str_null);
       } else {
         if (FLAG_wasm_parallel_compilation) {
-          code = compiler::FinishCompilation(compilation_units[i]);
+          code = results[i];
         } else {
           // Compile the function.
           code = compiler::CompileWasmFunction(&thrower, isolate, &module_env,

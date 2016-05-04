@@ -492,6 +492,12 @@ Node* AstGraphBuilder::GetFunctionClosureForContext() {
     // Contexts nested in the native context have a canonical empty function as
     // their closure, not the anonymous closure containing the global code.
     return BuildLoadNativeContextField(Context::CLOSURE_INDEX);
+  } else if (closure_scope->is_eval_scope()) {
+    // Contexts nested inside eval code have the same closure as the context
+    // calling eval, not the anonymous closure containing the eval code.
+    const Operator* op =
+        javascript()->LoadContext(0, Context::CLOSURE_INDEX, false);
+    return NewNode(op, current_context());
   } else {
     DCHECK(closure_scope->is_function_scope());
     return GetFunctionClosure();
@@ -1109,7 +1115,9 @@ void AstGraphBuilder::VisitVariableDeclaration(VariableDeclaration* decl) {
       }
       break;
     case VariableLocation::LOOKUP:
-      UNIMPLEMENTED();
+      // TODO(mstarzinger): Implement this case.
+      SetStackOverflow();
+      break;
   }
 }
 
@@ -1142,7 +1150,9 @@ void AstGraphBuilder::VisitFunctionDeclaration(FunctionDeclaration* decl) {
       break;
     }
     case VariableLocation::LOOKUP:
-      UNIMPLEMENTED();
+      // TODO(mstarzinger): Implement this case.
+      SetStackOverflow();
+      break;
   }
 }
 
@@ -1398,10 +1408,10 @@ void AstGraphBuilder::VisitForInStatement(ForInStatement* stmt) {
         VisitIterationBody(stmt, &for_loop);
       }
       test_value.End();
-      index = environment()->Peek(0);
       for_loop.EndBody();
 
       // Increment counter and continue.
+      index = environment()->Peek(0);
       index = NewNode(javascript()->ForInStep(), index);
       environment()->Poke(0, index);
     }
@@ -2941,9 +2951,7 @@ void AstGraphBuilder::VisitDeclarations(ZoneList<Declaration*>* declarations) {
   Handle<FixedArray> data = isolate()->factory()->NewFixedArray(
       static_cast<int>(globals()->size()), TENURED);
   for (Handle<Object> obj : *globals()) data->set(array_index++, *obj);
-  int encoded_flags = DeclareGlobalsEvalFlag::encode(info()->is_eval()) |
-                      DeclareGlobalsNativeFlag::encode(info()->is_native()) |
-                      DeclareGlobalsLanguageMode::encode(language_mode());
+  int encoded_flags = info()->GetDeclareGlobalsFlags();
   Node* flags = jsgraph()->Constant(encoded_flags);
   Node* pairs = jsgraph()->Constant(data);
   const Operator* op = javascript()->CallRuntime(Runtime::kDeclareGlobals);
@@ -3080,7 +3088,7 @@ void AstGraphBuilder::VisitLogicalExpression(BinaryOperation* expr) {
 
 
 LanguageMode AstGraphBuilder::language_mode() const {
-  return info()->language_mode();
+  return current_scope()->language_mode();
 }
 
 
@@ -3185,7 +3193,7 @@ Node* AstGraphBuilder::BuildLocalActivationContext(Node* context) {
 
 
 Node* AstGraphBuilder::BuildLocalFunctionContext(Scope* scope) {
-  DCHECK(scope->is_function_scope());
+  DCHECK(scope->is_function_scope() || scope->is_eval_scope());
 
   // Allocate a new local context.
   int slot_count = scope->num_heap_slots() - Context::MIN_CONTEXT_SLOTS;

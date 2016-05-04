@@ -1915,9 +1915,6 @@ class JSReceiver: public HeapObject {
 
   MUST_USE_RESULT static Maybe<bool> IsExtensible(Handle<JSReceiver> object);
 
-  // Tests for the fast common case for property enumeration.
-  bool IsSimpleEnum();
-
   // Returns the class name ([[Class]] property in the specification).
   String* class_name();
 
@@ -2210,30 +2207,6 @@ class JSObject: public JSReceiver {
   MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithInterceptor(
       LookupIterator* it, bool* done);
 
-  // Accessors for hidden properties object.
-  //
-  // Hidden properties are not own properties of the object itself.  Instead
-  // they are stored in an auxiliary structure kept as an own property with a
-  // special name Heap::hidden_properties_symbol(). But if the receiver is a
-  // JSGlobalProxy then the auxiliary object is a property of its prototype, and
-  // if it's a detached proxy, then you can't have hidden properties.
-
-  // Sets a hidden property on this object. Returns this object if successful,
-  // undefined if called on a detached proxy.
-  static Handle<Object> SetHiddenProperty(Handle<JSObject> object,
-                                          Handle<Name> key,
-                                          Handle<Object> value);
-  // Gets the value of a hidden property with the given key. Returns the hole
-  // if the property doesn't exist (or if called on a detached proxy),
-  // otherwise returns the value set for the key.
-  Object* GetHiddenProperty(Handle<Name> key);
-  // Deletes a hidden property. Deleting a non-existing property is
-  // considered successful.
-  static void DeleteHiddenProperty(Handle<JSObject> object,
-                                   Handle<Name> key);
-  // Returns true if the object has a property with the hidden string as name.
-  static bool HasHiddenProperties(Handle<JSObject> object);
-
   static void ValidateElements(Handle<JSObject> object);
 
   // Makes sure that this object can contain HeapObject as elements.
@@ -2296,18 +2269,6 @@ class JSObject: public JSReceiver {
   inline void SetInternalField(int index, Object* value);
   inline void SetInternalField(int index, Smi* value);
   bool WasConstructedFromApiFunction();
-
-  void CollectOwnPropertyNames(KeyAccumulator* keys,
-                               PropertyFilter filter = ALL_PROPERTIES);
-
-  static void CollectOwnElementKeys(Handle<JSObject> object,
-                                    KeyAccumulator* keys,
-                                    PropertyFilter filter);
-
-  static Handle<FixedArray> GetEnumPropertyKeys(Handle<JSObject> object);
-
-  static Handle<FixedArray> GetFastEnumPropertyKeys(Isolate* isolate,
-                                                    Handle<JSObject> object);
 
   // Returns a new map with all transitions dropped from the object's current
   // map and the ElementsKind set.
@@ -2517,21 +2478,6 @@ class JSObject: public JSReceiver {
   bool ReferencesObjectFromElements(FixedArray* elements,
                                     ElementsKind kind,
                                     Object* object);
-
-  // Return the hash table backing store or the inline stored identity hash,
-  // whatever is found.
-  MUST_USE_RESULT Object* GetHiddenPropertiesHashTable();
-
-  // Return the hash table backing store for hidden properties.  If there is no
-  // backing store, allocate one.
-  static Handle<ObjectHashTable> GetOrCreateHiddenPropertiesHashtable(
-      Handle<JSObject> object);
-
-  // Set the hidden property backing store to either a hash table or
-  // the inline-stored identity hash.
-  static Handle<Object> SetHiddenPropertiesHashTable(
-      Handle<JSObject> object,
-      Handle<Object> value);
 
   static Handle<Object> GetIdentityHash(Isolate* isolate,
                                         Handle<JSObject> object);
@@ -5968,8 +5914,8 @@ class Map: public HeapObject {
                                               PropertyAttributes attributes,
                                               StoreFromKeyed store_mode);
   static Handle<Map> TransitionToAccessorProperty(
-      Handle<Map> map, Handle<Name> name, int descriptor,
-      AccessorComponent component, Handle<Object> accessor,
+      Isolate* isolate, Handle<Map> map, Handle<Name> name, int descriptor,
+      Handle<Object> getter, Handle<Object> setter,
       PropertyAttributes attributes);
   static Handle<Map> ReconfigureExistingProperty(Handle<Map> map,
                                                  int descriptor,
@@ -6749,7 +6695,6 @@ class SharedFunctionInfo: public HeapObject {
   inline FunctionTemplateInfo* get_api_func_data();
   inline void set_api_func_data(FunctionTemplateInfo* data);
   inline bool HasBytecodeArray();
-  inline bool IsInterpreted();
   inline BytecodeArray* bytecode_array();
   inline void set_bytecode_array(BytecodeArray* bytecode);
   inline void ClearBytecodeArray();
@@ -7936,7 +7881,6 @@ class JSRegExp: public JSObject {
   DECL_ACCESSORS(source, Object)
 
   static MaybeHandle<JSRegExp> New(Handle<String> source, Flags flags);
-  static MaybeHandle<JSRegExp> New(Handle<String> source, Handle<String> flags);
   static Handle<JSRegExp> Copy(Handle<JSRegExp> regexp);
 
   static MaybeHandle<JSRegExp> Initialize(Handle<JSRegExp> regexp,
@@ -8879,15 +8823,6 @@ class String: public Name {
       AllowNullsFlag allow_nulls = DISALLOW_NULLS,
       RobustnessFlag robustness_flag = FAST_STRING_TRAVERSAL,
       int* length_output = 0);
-
-  // Return a 16 bit Unicode representation of the string.
-  // The string should be nearly flat, otherwise the performance of
-  // of this method may be very bad.  Setting robustness_flag to
-  // ROBUST_STRING_TRAVERSAL invokes behaviour that is robust  This means it
-  // handles unexpected data without causing assert failures and it does not
-  // do any heap allocations.  This is useful when printing stack traces.
-  base::SmartArrayPointer<uc16> ToWideCString(
-      RobustnessFlag robustness_flag = FAST_STRING_TRAVERSAL);
 
   bool ComputeArrayIndex(uint32_t* index);
 
@@ -10210,6 +10145,12 @@ class JSArray: public JSObject {
                                                     Handle<JSArray> a,
                                                     PropertyDescriptor* desc,
                                                     ShouldThrow should_throw);
+
+  // Checks whether the Array has the current realm's Array.prototype as its
+  // prototype. This function is best-effort and only gives a conservative
+  // approximation, erring on the side of false, in particular with respect
+  // to Proxies and objects with a hidden prototype.
+  inline bool HasArrayPrototype(Isolate* isolate);
 
   DECLARE_CAST(JSArray)
 

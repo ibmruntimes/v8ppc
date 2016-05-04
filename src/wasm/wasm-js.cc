@@ -134,6 +134,11 @@ v8::internal::wasm::WasmModuleIndex* TranslateAsmModule(
     return nullptr;
   }
 
+  if (info->scope()->declarations()->length() == 0) {
+    thrower->Error("Asm.js validation failed: no declarations in scope");
+    return nullptr;
+  }
+
   info->set_literal(
       info->scope()->declarations()->at(0)->AsFunctionDeclaration()->fun());
 
@@ -180,10 +185,10 @@ void InstantiateModuleCommon(const v8::FunctionCallbackInfo<v8::Value>& args,
     thrower->Failed("", result);
   } else {
     // Success. Instantiate the module and return the object.
-    i::Handle<i::JSObject> ffi = i::Handle<i::JSObject>::null();
+    i::Handle<i::JSReceiver> ffi = i::Handle<i::JSObject>::null();
     if (args.Length() > 1 && args[1]->IsObject()) {
       Local<Object> obj = Local<Object>::Cast(args[1]);
-      ffi = i::Handle<i::JSObject>::cast(v8::Utils::OpenHandle(*obj));
+      ffi = i::Handle<i::JSReceiver>::cast(v8::Utils::OpenHandle(*obj));
     }
 
     i::MaybeHandle<i::JSObject> object =

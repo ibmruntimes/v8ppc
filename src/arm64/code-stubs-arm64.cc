@@ -43,12 +43,6 @@ static void InitializeArrayConstructorDescriptor(
 }
 
 
-void ArrayNoArgumentConstructorStub::InitializeDescriptor(
-    CodeStubDescriptor* descriptor) {
-  InitializeArrayConstructorDescriptor(isolate(), descriptor, 0);
-}
-
-
 void ArraySingleArgumentConstructorStub::InitializeDescriptor(
     CodeStubDescriptor* descriptor) {
   InitializeArrayConstructorDescriptor(isolate(), descriptor, 1);
@@ -76,11 +70,6 @@ static void InitializeInternalArrayConstructorDescriptor(
   }
 }
 
-
-void InternalArrayNoArgumentConstructorStub::InitializeDescriptor(
-    CodeStubDescriptor* descriptor) {
-  InitializeInternalArrayConstructorDescriptor(isolate(), descriptor, 0);
-}
 
 void FastArrayPushStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
   Address deopt_handler = Runtime::FunctionForId(Runtime::kArrayPush)->entry;

@@ -623,7 +623,9 @@ template <class T> class PersistentBase {
    * external dependencies. This mark is automatically cleared after each
    * garbage collection.
    */
-  V8_INLINE void MarkPartiallyDependent();
+  V8_INLINE V8_DEPRECATED(
+      "deprecated optimization, do not use partially dependent groups",
+      void MarkPartiallyDependent());
 
   /**
    * Marks the reference to this object as active. The scavenge garbage
@@ -2655,6 +2657,18 @@ enum AccessControl {
 };
 
 /**
+ * Property filter bits. They can be or'ed to build a composite filter.
+ */
+enum PropertyFilter {
+  ALL_PROPERTIES = 0,
+  ONLY_WRITABLE = 1,
+  ONLY_ENUMERABLE = 2,
+  ONLY_CONFIGURABLE = 4,
+  SKIP_STRINGS = 8,
+  SKIP_SYMBOLS = 16
+};
+
+/**
  * Integrity level for objects.
  */
 enum class IntegrityLevel { kFrozen, kSealed };
@@ -2812,6 +2826,15 @@ class V8_EXPORT Object : public Value {
   V8_DEPRECATE_SOON("Use maybe version", Local<Array> GetOwnPropertyNames());
   V8_WARN_UNUSED_RESULT MaybeLocal<Array> GetOwnPropertyNames(
       Local<Context> context);
+
+  /**
+   * Returns an array containing the names of the filtered properties
+   * of this object, including properties from prototype objects.  The
+   * array returned by this method contains the same values as would
+   * be enumerated by a for-in statement over this object.
+   */
+  V8_WARN_UNUSED_RESULT MaybeLocal<Array> GetOwnPropertyNames(
+      Local<Context> context, PropertyFilter filter);
 
   /**
    * Get the prototype object.  This does not skip objects marked to
@@ -2982,13 +3005,6 @@ class V8_EXPORT Object : public Value {
    * unique.
    */
   int GetIdentityHash();
-
-  V8_DEPRECATED("Use v8::Object::SetPrivate instead.",
-                bool SetHiddenValue(Local<String> key, Local<Value> value));
-  V8_DEPRECATED("Use v8::Object::GetPrivate instead.",
-                Local<Value> GetHiddenValue(Local<String> key));
-  V8_DEPRECATED("Use v8::Object::DeletePrivate instead.",
-                bool DeleteHiddenValue(Local<String> key));
 
   /**
    * Clone this object with a fast but shallow copy.  Values will point

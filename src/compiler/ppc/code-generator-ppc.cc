@@ -175,7 +175,8 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
         value_(value),
         scratch0_(scratch0),
         scratch1_(scratch1),
-        mode_(mode) {}
+        mode_(mode),
+        must_save_lr_(!gen->frame_access_state()->has_frame()) {}
 
   OutOfLineRecordWrite(CodeGenerator* gen, Register object, int32_t offset,
                        Register value, Register scratch0, Register scratch1,
@@ -674,6 +675,20 @@ Condition FlagsConditionToCondition(FlagsCondition condition, ArchOpcode op) {
     __ cmp(result, result);                                   \
     __ bne(&done);                                            \
     __ isync();                                               \
+  } while (0)
+#define ASSEMBLE_ATOMIC_STORE_INTEGER(asm_instr, asm_instrx)  \
+  do {                                                        \
+    size_t index = 0;                                         \
+    AddressingMode mode = kMode_None;                         \
+    MemOperand operand = i.MemoryOperand(&mode, &index);      \
+    Register value = i.InputRegister(index);                  \
+    __ sync();                                                \
+    if (mode == kMode_MRI) {                                  \
+      __ asm_instr(value, operand);                           \
+    } else {                                                  \
+      __ asm_instrx(value, operand);                          \
+    }                                                         \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                      \
   } while (0)
 
 void CodeGenerator::AssembleDeconstructFrame() {
@@ -1610,6 +1625,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kAtomicLoadWord32:
       ASSEMBLE_ATOMIC_LOAD_INTEGER(lwz, lwzx);
       break;
+
+    case kAtomicStoreWord8:
+      ASSEMBLE_ATOMIC_STORE_INTEGER(stb, stbx);
+      break;
+    case kAtomicStoreWord16:
+      ASSEMBLE_ATOMIC_STORE_INTEGER(sth, sthx);
+      break;
+    case kAtomicStoreWord32:
+      ASSEMBLE_ATOMIC_STORE_INTEGER(stw, stwx);
+      break;
     default:
       UNREACHABLE();
       break;
@@ -2060,11 +2085,6 @@ void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
   for (size_t index = 0; index < target_count; ++index) {
     __ emit_label_addr(targets[index]);
   }
-}
-
-
-void CodeGenerator::AddNopForSmiCodeInlining() {
-  // We do not insert nops for inlined Smi code.
 }
 
 

@@ -58,7 +58,6 @@ namespace internal {
   V(VectorKeyedStoreIC)                     \
   /* HydrogenCodeStubs */                   \
   V(ArrayNArgumentsConstructor)             \
-  V(ArrayNoArgumentConstructor)             \
   V(ArraySingleArgumentConstructor)         \
   V(BinaryOpIC)                             \
   V(BinaryOpWithAllocationSite)             \
@@ -76,7 +75,6 @@ namespace internal {
   V(FastNewStrictArguments)                 \
   V(GrowArrayElements)                      \
   V(InternalArrayNArgumentsConstructor)     \
-  V(InternalArrayNoArgumentConstructor)     \
   V(InternalArraySingleArgumentConstructor) \
   V(KeyedLoadGeneric)                       \
   V(LoadGlobalViaContext)                   \
@@ -107,6 +105,7 @@ namespace internal {
   V(AllocateInt8x16)                        \
   V(AllocateUint8x16)                       \
   V(AllocateBool8x16)                       \
+  V(ArrayNoArgumentConstructor)             \
   V(StringLength)                           \
   V(Add)                                    \
   V(Subtract)                               \
@@ -120,6 +119,7 @@ namespace internal {
   V(BitwiseOr)                              \
   V(BitwiseXor)                             \
   V(Inc)                                    \
+  V(InternalArrayNoArgumentConstructor)     \
   V(Dec)                                    \
   V(FastCloneShallowObject)                 \
   V(LessThan)                               \
@@ -139,6 +139,7 @@ namespace internal {
   V(ToBoolean)                              \
   V(ToInteger)                              \
   V(ToLength)                               \
+  V(HasProperty)                            \
   /* IC Handler stubs */                    \
   V(ArrayBufferViewLoadField)               \
   V(KeyedLoadSloppyArguments)               \
@@ -946,6 +947,15 @@ class LoadIndexedInterceptorStub : public TurboFanCodeStub {
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(LoadWithVector);
   DEFINE_TURBOFAN_CODE_STUB(LoadIndexedInterceptor, TurboFanCodeStub);
+};
+
+// ES6 section 12.10.3 "in" operator evaluation.
+class HasPropertyStub : public TurboFanCodeStub {
+ public:
+  explicit HasPropertyStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(HasProperty);
+  DEFINE_TURBOFAN_CODE_STUB(HasProperty, TurboFanCodeStub);
 };
 
 enum StringAddFlags {
@@ -2801,26 +2811,77 @@ class ArrayConstructorStubBase : public HydrogenCodeStub {
   DEFINE_CODE_STUB_BASE(ArrayConstructorStubBase, HydrogenCodeStub);
 };
 
+class CommonArrayConstructorStub : public TurboFanCodeStub {
+ protected:
+  CommonArrayConstructorStub(Isolate* isolate, ElementsKind kind,
+                             AllocationSiteOverrideMode override_mode)
+      : TurboFanCodeStub(isolate) {
+    // It only makes sense to override local allocation site behavior
+    // if there is a difference between the global allocation site policy
+    // for an ElementsKind and the desired usage of the stub.
+    DCHECK(override_mode != DISABLE_ALLOCATION_SITES ||
+           AllocationSite::GetMode(kind) == TRACK_ALLOCATION_SITE);
+    set_sub_minor_key(ElementsKindBits::encode(kind) |
+                      AllocationSiteOverrideModeBits::encode(override_mode));
+  }
 
-class ArrayNoArgumentConstructorStub : public ArrayConstructorStubBase {
+  void set_sub_minor_key(uint32_t key) { minor_key_ = key; }
+
+  uint32_t sub_minor_key() const { return minor_key_; }
+
+  CommonArrayConstructorStub(uint32_t key, Isolate* isolate)
+      : TurboFanCodeStub(key, isolate) {}
+
  public:
-  ArrayNoArgumentConstructorStub(
-      Isolate* isolate,
-      ElementsKind kind,
-      AllocationSiteOverrideMode override_mode = DONT_OVERRIDE)
-      : ArrayConstructorStubBase(isolate, kind, override_mode) {
+  ElementsKind elements_kind() const {
+    return ElementsKindBits::decode(sub_minor_key());
+  }
+
+  AllocationSiteOverrideMode override_mode() const {
+    return AllocationSiteOverrideModeBits::decode(sub_minor_key());
   }
 
  private:
-  void PrintName(std::ostream& os) const override {  // NOLINT
-    BasePrintName(os, "ArrayNoArgumentConstructorStub");
-  }
+  // Ensure data fits within available bits.
+  STATIC_ASSERT(LAST_ALLOCATION_SITE_OVERRIDE_MODE == 1);
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(ArrayConstructorConstantArgCount);
-  DEFINE_HYDROGEN_CODE_STUB(ArrayNoArgumentConstructor,
-                            ArrayConstructorStubBase);
+  class ElementsKindBits : public BitField<ElementsKind, 0, 8> {};
+  class AllocationSiteOverrideModeBits
+      : public BitField<AllocationSiteOverrideMode, 8, 1> {};  // NOLINT
 };
 
+class ArrayNoArgumentConstructorStub : public CommonArrayConstructorStub {
+ public:
+  ArrayNoArgumentConstructorStub(
+      Isolate* isolate, ElementsKind kind,
+      AllocationSiteOverrideMode override_mode = DONT_OVERRIDE)
+      : CommonArrayConstructorStub(isolate, kind, override_mode) {}
+
+ private:
+  void PrintName(std::ostream& os) const override {  // NOLINT
+    os << "ArrayNoArgumentConstructorStub";
+  }
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(ArrayNoArgumentConstructor);
+  DEFINE_TURBOFAN_CODE_STUB(ArrayNoArgumentConstructor,
+                            CommonArrayConstructorStub);
+};
+
+class InternalArrayNoArgumentConstructorStub
+    : public CommonArrayConstructorStub {
+ public:
+  InternalArrayNoArgumentConstructorStub(Isolate* isolate, ElementsKind kind)
+      : CommonArrayConstructorStub(isolate, kind, DONT_OVERRIDE) {}
+
+ private:
+  void PrintName(std::ostream& os) const override {  // NOLINT
+    os << "InternalArrayNoArgumentConstructorStub";
+  }
+
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(ArrayNoArgumentConstructor);
+  DEFINE_TURBOFAN_CODE_STUB(InternalArrayNoArgumentConstructor,
+                            CommonArrayConstructorStub);
+};
 
 class ArraySingleArgumentConstructorStub : public ArrayConstructorStubBase {
  public:
@@ -2882,19 +2943,6 @@ class InternalArrayConstructorStubBase : public HydrogenCodeStub {
   class ElementsKindBits : public BitField<ElementsKind, 0, 8> {};
 
   DEFINE_CODE_STUB_BASE(InternalArrayConstructorStubBase, HydrogenCodeStub);
-};
-
-
-class InternalArrayNoArgumentConstructorStub : public
-    InternalArrayConstructorStubBase {
- public:
-  InternalArrayNoArgumentConstructorStub(Isolate* isolate,
-                                         ElementsKind kind)
-      : InternalArrayConstructorStubBase(isolate, kind) { }
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(InternalArrayConstructorConstantArgCount);
-  DEFINE_HYDROGEN_CODE_STUB(InternalArrayNoArgumentConstructor,
-                            InternalArrayConstructorStubBase);
 };
 
 

@@ -9,7 +9,6 @@
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node-properties.h"
 #include "src/compiler/simplified-operator.h"
-#include "src/conversions-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -37,38 +36,6 @@ Reduction ChangeLowering::Reduce(Node* node) {
   return NoChange();
 }
 
-namespace {
-
-WriteBarrierKind ComputeWriteBarrierKind(BaseTaggedness base_is_tagged,
-                                         MachineRepresentation representation,
-                                         Node* value) {
-  // TODO(bmeurer): Optimize write barriers based on input.
-  if (base_is_tagged == kTaggedBase &&
-      representation == MachineRepresentation::kTagged) {
-    if (value->opcode() == IrOpcode::kHeapConstant) {
-      return kPointerWriteBarrier;
-    } else if (value->opcode() == IrOpcode::kNumberConstant) {
-      double const number_value = OpParameter<double>(value);
-      if (IsSmiDouble(number_value)) return kNoWriteBarrier;
-      return kPointerWriteBarrier;
-    }
-    return kFullWriteBarrier;
-  }
-  return kNoWriteBarrier;
-}
-
-WriteBarrierKind ComputeWriteBarrierKind(BaseTaggedness base_is_tagged,
-                                         MachineRepresentation representation,
-                                         int field_offset, Node* value) {
-  if (base_is_tagged == kTaggedBase && field_offset == HeapObject::kMapOffset) {
-    // Write barriers for storing maps are cheaper.
-    return kMapWriteBarrier;
-  }
-  return ComputeWriteBarrierKind(base_is_tagged, representation, value);
-}
-
-}  // namespace
-
 Reduction ChangeLowering::ReduceLoadField(Node* node) {
   const FieldAccess& access = FieldAccessOf(node->op());
   Node* offset = jsgraph()->IntPtrConstant(access.offset - access.tag());
@@ -79,14 +46,11 @@ Reduction ChangeLowering::ReduceLoadField(Node* node) {
 
 Reduction ChangeLowering::ReduceStoreField(Node* node) {
   const FieldAccess& access = FieldAccessOf(node->op());
-  WriteBarrierKind kind = ComputeWriteBarrierKind(
-      access.base_is_tagged, access.machine_type.representation(),
-      access.offset, node->InputAt(1));
   Node* offset = jsgraph()->IntPtrConstant(access.offset - access.tag());
   node->InsertInput(graph()->zone(), 1, offset);
-  NodeProperties::ChangeOp(node,
-                           machine()->Store(StoreRepresentation(
-                               access.machine_type.representation(), kind)));
+  NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
+                                     access.machine_type.representation(),
+                                     access.write_barrier_kind)));
   return Changed(node);
 }
 
@@ -124,28 +88,81 @@ Reduction ChangeLowering::ReduceLoadElement(Node* node) {
 Reduction ChangeLowering::ReduceStoreElement(Node* node) {
   const ElementAccess& access = ElementAccessOf(node->op());
   node->ReplaceInput(1, ComputeIndex(access, node->InputAt(1)));
-  NodeProperties::ChangeOp(
-      node, machine()->Store(StoreRepresentation(
-                access.machine_type.representation(),
-                ComputeWriteBarrierKind(access.base_is_tagged,
-                                        access.machine_type.representation(),
-                                        node->InputAt(2)))));
+  NodeProperties::ChangeOp(node, machine()->Store(StoreRepresentation(
+                                     access.machine_type.representation(),
+                                     access.write_barrier_kind)));
   return Changed(node);
 }
 
 Reduction ChangeLowering::ReduceAllocate(Node* node) {
-  PretenureFlag pretenure = OpParameter<PretenureFlag>(node->op());
-  Node* target = pretenure == NOT_TENURED
-                     ? jsgraph()->AllocateInNewSpaceStubConstant()
-                     : jsgraph()->AllocateInOldSpaceStubConstant();
-  node->InsertInput(graph()->zone(), 0, target);
-  if (!allocate_operator_.is_set()) {
-    CallDescriptor* descriptor =
-        Linkage::GetAllocateCallDescriptor(graph()->zone());
-    allocate_operator_.set(common()->Call(descriptor));
+  PretenureFlag const pretenure = OpParameter<PretenureFlag>(node->op());
+
+  Node* size = node->InputAt(0);
+  Node* effect = node->InputAt(1);
+  Node* control = node->InputAt(2);
+
+  if (machine()->Is64()) {
+    size = graph()->NewNode(machine()->ChangeInt32ToInt64(), size);
   }
-  NodeProperties::ChangeOp(node, allocate_operator_.get());
-  return Changed(node);
+
+  Node* top_address = jsgraph()->ExternalConstant(
+      pretenure == NOT_TENURED
+          ? ExternalReference::new_space_allocation_top_address(isolate())
+          : ExternalReference::old_space_allocation_top_address(isolate()));
+  Node* limit_address = jsgraph()->ExternalConstant(
+      pretenure == NOT_TENURED
+          ? ExternalReference::new_space_allocation_limit_address(isolate())
+          : ExternalReference::old_space_allocation_limit_address(isolate()));
+
+  Node* top = effect =
+      graph()->NewNode(machine()->Load(MachineType::Pointer()), top_address,
+                       jsgraph()->IntPtrConstant(0), effect, control);
+  Node* limit = effect =
+      graph()->NewNode(machine()->Load(MachineType::Pointer()), limit_address,
+                       jsgraph()->IntPtrConstant(0), effect, control);
+
+  Node* new_top = graph()->NewNode(machine()->IntAdd(), top, size);
+
+  Node* check = graph()->NewNode(machine()->UintLessThan(), new_top, limit);
+  Node* branch =
+      graph()->NewNode(common()->Branch(BranchHint::kTrue), check, control);
+
+  Node* if_true = graph()->NewNode(common()->IfTrue(), branch);
+  Node* etrue = effect;
+  Node* vtrue;
+  {
+    etrue = graph()->NewNode(
+        machine()->Store(StoreRepresentation(
+            MachineType::PointerRepresentation(), kNoWriteBarrier)),
+        top_address, jsgraph()->IntPtrConstant(0), new_top, etrue, if_true);
+    vtrue = graph()->NewNode(machine()->BitcastWordToTagged(),
+                             graph()->NewNode(machine()->IntAdd(), top,
+                                              jsgraph()->IntPtrConstant(1)));
+  }
+
+  Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
+  Node* efalse = effect;
+  Node* vfalse;
+  {
+    Node* target = pretenure == NOT_TENURED
+                       ? jsgraph()->AllocateInNewSpaceStubConstant()
+                       : jsgraph()->AllocateInOldSpaceStubConstant();
+    if (!allocate_operator_.is_set()) {
+      CallDescriptor* descriptor =
+          Linkage::GetAllocateCallDescriptor(graph()->zone());
+      allocate_operator_.set(common()->Call(descriptor));
+    }
+    vfalse = efalse = graph()->NewNode(allocate_operator_.get(), target, size,
+                                       efalse, if_false);
+  }
+
+  control = graph()->NewNode(common()->Merge(2), if_true, if_false);
+  effect = graph()->NewNode(common()->EffectPhi(2), etrue, efalse, control);
+  Node* value = graph()->NewNode(
+      common()->Phi(MachineRepresentation::kTagged, 2), vtrue, vfalse, control);
+
+  ReplaceWithValue(node, value, effect);
+  return Replace(value);
 }
 
 Isolate* ChangeLowering::isolate() const { return jsgraph()->isolate(); }

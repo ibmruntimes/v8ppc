@@ -58,6 +58,7 @@ class PlatformInterfaceDescriptor;
   V(AllocateInt8x16)                          \
   V(AllocateUint8x16)                         \
   V(AllocateBool8x16)                         \
+  V(ArrayNoArgumentConstructor)               \
   V(ArrayConstructorConstantArgCount)         \
   V(ArrayConstructor)                         \
   V(InternalArrayConstructorConstantArgCount) \
@@ -70,6 +71,7 @@ class PlatformInterfaceDescriptor;
   V(StringCompare)                            \
   V(Keyed)                                    \
   V(Named)                                    \
+  V(HasProperty)                              \
   V(CallHandler)                              \
   V(ArgumentAdaptor)                          \
   V(ApiCallbackWith0Args)                     \
@@ -431,6 +433,15 @@ class TypeConversionDescriptor final : public CallInterfaceDescriptor {
   static const Register ArgumentRegister();
 };
 
+class HasPropertyDescriptor final : public CallInterfaceDescriptor {
+ public:
+  enum ParameterIndices { kKeyIndex, kObjectIndex };
+
+  DECLARE_DESCRIPTOR(HasPropertyDescriptor, CallInterfaceDescriptor)
+
+  static const Register KeyRegister();
+  static const Register ObjectRegister();
+};
 
 class TypeofDescriptor : public CallInterfaceDescriptor {
  public:
@@ -577,6 +588,17 @@ class AllocateMutableHeapNumberDescriptor : public CallInterfaceDescriptor {
                      CallInterfaceDescriptor)
 };
 
+class ArrayNoArgumentConstructorDescriptor : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR_WITH_CUSTOM_FUNCTION_TYPE(
+      ArrayNoArgumentConstructorDescriptor, CallInterfaceDescriptor)
+  enum ParameterIndices {
+    kFunctionIndex,
+    kAllocationSiteIndex,
+    kArgumentCountIndex,
+    kContextIndex
+  };
+};
 
 class ArrayConstructorConstantArgCountDescriptor
     : public CallInterfaceDescriptor {

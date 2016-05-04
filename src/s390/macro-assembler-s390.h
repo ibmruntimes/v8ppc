@@ -19,6 +19,7 @@ const Register kReturnRegister1 = {Register::kCode_r3};
 const Register kReturnRegister2 = {Register::kCode_r4};
 const Register kJSFunctionRegister = {Register::kCode_r3};
 const Register kContextRegister = {Register::kCode_r13};
+const Register kAllocateSizeRegister = {Register::kCode_r3};
 const Register kInterpreterAccumulatorRegister = {Register::kCode_r2};
 const Register kInterpreterBytecodeOffsetRegister = {Register::kCode_r5};
 const Register kInterpreterBytecodeArrayRegister = {Register::kCode_r6};
@@ -213,9 +214,6 @@ class MacroAssembler : public Assembler {
   void Move(Register dst, Register src, Condition cond = al);
   void Move(DoubleRegister dst, DoubleRegister src);
 
-  void InsertDoubleLow(DoubleRegister dst, Register src);
-  void InsertDoubleHigh(DoubleRegister dst, Register src);
-
   void MultiPush(RegList regs, Register location = sp);
   void MultiPop(RegList regs, Register location = sp);
 
@@ -332,7 +330,9 @@ class MacroAssembler : public Assembler {
   void Load(Register dst, const MemOperand& opnd);
   void Load(Register dst, const Operand& opnd);
   void LoadW(Register dst, const MemOperand& opnd, Register scratch = no_reg);
+  void LoadW(Register dst, Register src);
   void LoadlW(Register dst, const MemOperand& opnd, Register scratch = no_reg);
+  void LoadlW(Register dst, Register src);
   void LoadB(Register dst, const MemOperand& opnd);
   void LoadB(Register dst, Register src);
   void LoadlB(Register dst, const MemOperand& opnd);

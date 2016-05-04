@@ -11694,9 +11694,12 @@ void HOptimizedGraphBuilder::VisitCompareOperation(CompareOperation* expr) {
     return ast_context()->ReturnInstruction(result, expr->id());
 
   } else if (op == Token::IN) {
-    Add<HPushArguments>(left, right);
+    Callable callable = CodeFactory::HasProperty(isolate());
+    HValue* stub = Add<HConstant>(callable.code());
+    HValue* values[] = {context(), left, right};
     HInstruction* result =
-        New<HCallRuntime>(Runtime::FunctionForId(Runtime::kHasProperty), 2);
+        New<HCallWithDescriptor>(stub, 0, callable.descriptor(),
+                                 Vector<HValue*>(values, arraysize(values)));
     return ast_context()->ReturnInstruction(result, expr->id());
   }
 
@@ -12263,10 +12266,7 @@ void HOptimizedGraphBuilder::VisitDeclarations(
     Handle<FixedArray> array =
        isolate()->factory()->NewFixedArray(globals_.length(), TENURED);
     for (int i = 0; i < globals_.length(); ++i) array->set(i, *globals_.at(i));
-    int flags =
-        DeclareGlobalsEvalFlag::encode(current_info()->is_eval()) |
-        DeclareGlobalsNativeFlag::encode(current_info()->is_native()) |
-        DeclareGlobalsLanguageMode::encode(current_info()->language_mode());
+    int flags = current_info()->GetDeclareGlobalsFlags();
     Add<HDeclareGlobals>(array, flags);
     globals_.Rewind(0);
   }

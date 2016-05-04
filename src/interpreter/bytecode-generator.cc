@@ -571,7 +571,6 @@ BytecodeGenerator::BytecodeGenerator(CompilationInfo* info)
       register_allocator_(nullptr),
       generator_resume_points_(info->literal()->yield_count(), info->zone()),
       generator_state_(),
-      generator_yields_seen_(0),
       try_catch_nesting_level_(0),
       try_finally_nesting_level_(0) {
   InitializeAstVisitor(isolate());
@@ -668,8 +667,8 @@ void BytecodeGenerator::VisitIterationHeader(IterationStatement* stmt,
   // that they can be bound to the loop header below. Also create fresh labels
   // for these resume points, to be used inside the loop.
   ZoneVector<BytecodeLabel> resume_points_in_loop(zone());
-  for (size_t id = generator_yields_seen_;
-       id < generator_yields_seen_ + stmt->yield_count(); id++) {
+  size_t first_yield = stmt->first_yield_id();
+  for (size_t id = first_yield; id < first_yield + stmt->yield_count(); id++) {
     DCHECK(0 <= id && id < generator_resume_points_.size());
     auto& label = generator_resume_points_[id];
     resume_points_in_loop.push_back(label);
@@ -686,8 +685,8 @@ void BytecodeGenerator::VisitIterationHeader(IterationStatement* stmt,
         ->LoadLiteral(Smi::FromInt(JSGeneratorObject::kGeneratorExecuting))
         .CompareOperation(Token::Value::EQ, generator_state_)
         .JumpIfTrue(&not_resuming);
-    BuildIndexedJump(generator_state_, generator_yields_seen_,
-                     stmt->yield_count(), generator_resume_points_);
+    BuildIndexedJump(generator_state_, first_yield,
+        stmt->yield_count(), generator_resume_points_);
     builder()->Bind(&not_resuming);
   }
 }
@@ -875,9 +874,7 @@ void BytecodeGenerator::VisitDeclarations(
   Handle<FixedArray> data = isolate()->factory()->NewFixedArray(
       static_cast<int>(globals()->size()), TENURED);
   for (Handle<Object> obj : *globals()) data->set(array_index++, *obj);
-  int encoded_flags = DeclareGlobalsEvalFlag::encode(info()->is_eval()) |
-                      DeclareGlobalsNativeFlag::encode(info()->is_native()) |
-                      DeclareGlobalsLanguageMode::encode(language_mode());
+  int encoded_flags = info()->GetDeclareGlobalsFlags();
 
   Register pairs = register_allocator()->NewRegister();
   builder()->LoadLiteral(data);
@@ -1039,6 +1036,7 @@ void BytecodeGenerator::VisitIterationBody(IterationStatement* stmt,
   ControlScopeForIteration execution_control(this, stmt, loop_builder);
   builder()->StackCheck(stmt->position());
   Visit(stmt->body());
+  loop_builder->SetContinueTarget();
 }
 
 void BytecodeGenerator::VisitDoWhileStatement(DoWhileStatement* stmt) {
@@ -1046,14 +1044,11 @@ void BytecodeGenerator::VisitDoWhileStatement(DoWhileStatement* stmt) {
   VisitIterationHeader(stmt, &loop_builder);
   if (stmt->cond()->ToBooleanIsFalse()) {
     VisitIterationBody(stmt, &loop_builder);
-    loop_builder.Condition();
   } else if (stmt->cond()->ToBooleanIsTrue()) {
-    loop_builder.Condition();
     VisitIterationBody(stmt, &loop_builder);
     loop_builder.JumpToHeader();
   } else {
     VisitIterationBody(stmt, &loop_builder);
-    loop_builder.Condition();
     builder()->SetExpressionAsStatementPosition(stmt->cond());
     VisitForAccumulatorValue(stmt->cond());
     loop_builder.JumpToHeaderIfTrue();
@@ -1069,7 +1064,6 @@ void BytecodeGenerator::VisitWhileStatement(WhileStatement* stmt) {
 
   LoopBuilder loop_builder(builder());
   VisitIterationHeader(stmt, &loop_builder);
-  loop_builder.Condition();
   if (!stmt->cond()->ToBooleanIsTrue()) {
     builder()->SetExpressionAsStatementPosition(stmt->cond());
     VisitForAccumulatorValue(stmt->cond());
@@ -1093,7 +1087,6 @@ void BytecodeGenerator::VisitForStatement(ForStatement* stmt) {
 
   LoopBuilder loop_builder(builder());
   VisitIterationHeader(stmt, &loop_builder);
-  loop_builder.Condition();
   if (stmt->cond() && !stmt->cond()->ToBooleanIsTrue()) {
     builder()->SetExpressionAsStatementPosition(stmt->cond());
     VisitForAccumulatorValue(stmt->cond());
@@ -1101,7 +1094,6 @@ void BytecodeGenerator::VisitForStatement(ForStatement* stmt) {
   }
   VisitIterationBody(stmt, &loop_builder);
   if (stmt->next() != nullptr) {
-    loop_builder.Next();
     builder()->SetStatementPosition(stmt->next());
     Visit(stmt->next());
   }
@@ -1219,7 +1211,6 @@ void BytecodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // The loop
   VisitIterationHeader(stmt, &loop_builder);
   builder()->SetExpressionAsStatementPosition(stmt->each());
-  loop_builder.Condition();
   builder()->ForInDone(index, cache_length);
   loop_builder.BreakIfTrue();
   DCHECK(Register::AreContiguous(cache_type, cache_array));
@@ -1228,7 +1219,6 @@ void BytecodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   loop_builder.ContinueIfUndefined();
   VisitForInAssignment(stmt->each(), stmt->EachFeedbackSlot());
   VisitIterationBody(stmt, &loop_builder);
-  loop_builder.Next();
   builder()->ForInStep(index);
   builder()->StoreAccumulatorInRegister(index);
   loop_builder.JumpToHeader();
@@ -1246,7 +1236,6 @@ void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
   VisitForEffect(stmt->assign_iterator());
 
   VisitIterationHeader(stmt, &loop_builder);
-  loop_builder.Next();
   builder()->SetExpressionAsStatementPosition(stmt->next_result());
   VisitForEffect(stmt->next_result());
   VisitForAccumulatorValue(stmt->result_done());
@@ -2278,8 +2267,6 @@ void BytecodeGenerator::VisitAssignment(Assignment* expr) {
 }
 
 void BytecodeGenerator::VisitYield(Yield* expr) {
-  size_t id = generator_yields_seen_++;
-
   builder()->SetExpressionPosition(expr);
   Register value = VisitForRegisterValue(expr->expression());
 
@@ -2287,12 +2274,12 @@ void BytecodeGenerator::VisitYield(Yield* expr) {
 
   // Save context, registers, and state. Then return.
   builder()
-      ->LoadLiteral(Smi::FromInt(static_cast<int>(id)))
+      ->LoadLiteral(Smi::FromInt(expr->yield_id()))
       .SuspendGenerator(generator)
       .LoadAccumulatorWithRegister(value)
       .Return();  // Hard return (ignore any finally blocks).
 
-  builder()->Bind(&(generator_resume_points_[id]));
+  builder()->Bind(&(generator_resume_points_[expr->yield_id()]));
   // Upon resume, we continue here.
 
   {
@@ -3279,7 +3266,7 @@ void BytecodeGenerator::VisitInScope(Statement* stmt, Scope* scope) {
 
 
 LanguageMode BytecodeGenerator::language_mode() const {
-  return info()->language_mode();
+  return execution_context()->scope()->language_mode();
 }
 
 

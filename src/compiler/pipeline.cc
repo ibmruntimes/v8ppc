@@ -287,6 +287,18 @@ class PipelineData {
                                sequence(), debug_name_.get());
   }
 
+  void BeginPhaseKind(const char* phase_kind_name) {
+    if (pipeline_statistics() != nullptr) {
+      pipeline_statistics()->BeginPhaseKind(phase_kind_name);
+    }
+  }
+
+  void EndPhaseKind() {
+    if (pipeline_statistics() != nullptr) {
+      pipeline_statistics()->EndPhaseKind();
+    }
+  }
+
  private:
   Isolate* const isolate_;
   CompilationInfo* const info_;
@@ -347,6 +359,38 @@ class PipelineData {
   DISALLOW_COPY_AND_ASSIGN(PipelineData);
 };
 
+class PipelineImpl final {
+ public:
+  explicit PipelineImpl(PipelineData* data) : data_(data) {}
+
+  // Helpers for executing pipeline phases.
+  template <typename Phase>
+  void Run();
+  template <typename Phase, typename Arg0>
+  void Run(Arg0 arg_0);
+  template <typename Phase, typename Arg0, typename Arg1>
+  void Run(Arg0 arg_0, Arg1 arg_1);
+
+  // Run the graph creation and initial optimization passes.
+  bool CreateGraph();
+
+  // Run the concurrent optimization passes.
+  bool OptimizeGraph(Linkage* linkage);
+
+  // Perform the actual code generation and return handle to a code object.
+  Handle<Code> GenerateCode(Linkage* linkage);
+
+  bool ScheduleAndSelectInstructions(Linkage* linkage);
+  void RunPrintAndVerify(const char* phase, bool untyped = false);
+  Handle<Code> ScheduleAndGenerateCode(CallDescriptor* call_descriptor);
+  void AllocateRegisters(const RegisterConfiguration* config,
+                         CallDescriptor* descriptor, bool run_verifier);
+
+  CompilationInfo* info() const;
+  Isolate* isolate() const;
+
+  PipelineData* const data_;
+};
 
 namespace {
 
@@ -471,35 +515,41 @@ class PipelineRunScope {
 
 PipelineStatistics* CreatePipelineStatistics(CompilationInfo* info,
                                              ZonePool* zone_pool) {
-  if (!FLAG_turbo_stats) return nullptr;
+  PipelineStatistics* pipeline_statistics = nullptr;
 
-  PipelineStatistics* pipeline_statistics =
-      new PipelineStatistics(info, zone_pool);
-  pipeline_statistics->BeginPhaseKind("initializing");
+  if (FLAG_turbo_stats) {
+    pipeline_statistics = new PipelineStatistics(info, zone_pool);
+    pipeline_statistics->BeginPhaseKind("initializing");
+  }
 
-  FILE* json_file = OpenVisualizerLogFile(info, nullptr, "json", "w+");
-  if (json_file != nullptr) {
-    OFStream json_of(json_file);
-    Handle<Script> script = info->script();
-    base::SmartArrayPointer<char> function_name = info->GetDebugName();
-    int pos = info->shared_info()->start_position();
-    json_of << "{\"function\":\"" << function_name.get()
-            << "\", \"sourcePosition\":" << pos << ", \"source\":\"";
-    if (!script->IsUndefined() && !script->source()->IsUndefined()) {
-      DisallowHeapAllocation no_allocation;
-      int start = info->shared_info()->start_position();
-      int len = info->shared_info()->end_position() - start;
-      String::SubStringRange source(String::cast(script->source()), start, len);
-      for (const auto& c : source) {
-        json_of << AsEscapedUC16ForJSON(c);
+  if (FLAG_trace_turbo) {
+    FILE* json_file = OpenVisualizerLogFile(info, nullptr, "json", "w+");
+    if (json_file != nullptr) {
+      OFStream json_of(json_file);
+      Handle<Script> script = info->script();
+      base::SmartArrayPointer<char> function_name = info->GetDebugName();
+      int pos = info->shared_info()->start_position();
+      json_of << "{\"function\":\"" << function_name.get()
+              << "\", \"sourcePosition\":" << pos << ", \"source\":\"";
+      if (!script->IsUndefined() && !script->source()->IsUndefined()) {
+        DisallowHeapAllocation no_allocation;
+        int start = info->shared_info()->start_position();
+        int len = info->shared_info()->end_position() - start;
+        String::SubStringRange source(String::cast(script->source()), start,
+                                      len);
+        for (const auto& c : source) {
+          json_of << AsEscapedUC16ForJSON(c);
+        }
       }
+      json_of << "\",\n\"phases\":[";
+      fclose(json_file);
     }
-    json_of << "\",\n\"phases\":[";
-    fclose(json_file);
   }
 
   return pipeline_statistics;
 }
+
+}  // namespace
 
 class PipelineCompilationJob final : public CompilationJob {
  public:
@@ -528,7 +578,7 @@ class PipelineCompilationJob final : public CompilationJob {
   CompilationInfo info_;
   base::SmartPointer<PipelineStatistics> pipeline_statistics_;
   PipelineData data_;
-  Pipeline pipeline_;
+  PipelineImpl pipeline_;
   Linkage* linkage_;
 };
 
@@ -583,8 +633,6 @@ PipelineCompilationJob::Status PipelineCompilationJob::GenerateCodeImpl() {
   return SUCCEEDED;
 }
 
-}  // namespace
-
 class PipelineWasmCompilationJob final : public CompilationJob {
  public:
   explicit PipelineWasmCompilationJob(CompilationInfo* info, Graph* graph,
@@ -604,7 +652,7 @@ class PipelineWasmCompilationJob final : public CompilationJob {
  private:
   ZonePool zone_pool_;
   PipelineData data_;
-  Pipeline pipeline_;
+  PipelineImpl pipeline_;
   Linkage linkage_;
 };
 
@@ -637,24 +685,22 @@ PipelineWasmCompilationJob::GenerateCodeImpl() {
   return SUCCEEDED;
 }
 
-
 template <typename Phase>
-void Pipeline::Run() {
+void PipelineImpl::Run() {
   PipelineRunScope scope(this->data_, Phase::phase_name());
   Phase phase;
   phase.Run(this->data_, scope.zone());
 }
 
-
 template <typename Phase, typename Arg0>
-void Pipeline::Run(Arg0 arg_0) {
+void PipelineImpl::Run(Arg0 arg_0) {
   PipelineRunScope scope(this->data_, Phase::phase_name());
   Phase phase;
   phase.Run(this->data_, scope.zone(), arg_0);
 }
 
 template <typename Phase, typename Arg0, typename Arg1>
-void Pipeline::Run(Arg0 arg_0, Arg1 arg_1) {
+void PipelineImpl::Run(Arg0 arg_0, Arg1 arg_1) {
   PipelineRunScope scope(this->data_, Phase::phase_name());
   Phase phase;
   phase.Run(this->data_, scope.zone(), arg_0, arg_1);
@@ -981,7 +1027,7 @@ struct LateOptimizationPhase {
     DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                               data->common());
     ValueNumberingReducer value_numbering(temp_zone);
-    ChangeLowering lowering(data->jsgraph());
+    ChangeLowering lowering(&graph_reducer, data->jsgraph());
     MachineOperatorReducer machine_reducer(data->jsgraph());
     CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
                                          data->common(), data->machine());
@@ -1279,20 +1325,7 @@ struct VerifyGraphPhase {
   }
 };
 
-
-void Pipeline::BeginPhaseKind(const char* phase_kind_name) {
-  if (data_->pipeline_statistics() != nullptr) {
-    data_->pipeline_statistics()->BeginPhaseKind(phase_kind_name);
-  }
-}
-
-void Pipeline::EndPhaseKind() {
-  if (data_->pipeline_statistics() != nullptr) {
-    data_->pipeline_statistics()->EndPhaseKind();
-  }
-}
-
-void Pipeline::RunPrintAndVerify(const char* phase, bool untyped) {
+void PipelineImpl::RunPrintAndVerify(const char* phase, bool untyped) {
   if (FLAG_trace_turbo) {
     Run<PrintGraphPhase>(phase);
   }
@@ -1301,10 +1334,10 @@ void Pipeline::RunPrintAndVerify(const char* phase, bool untyped) {
   }
 }
 
-bool Pipeline::CreateGraph() {
+bool PipelineImpl::CreateGraph() {
   PipelineData* data = this->data_;
 
-  BeginPhaseKind("graph creation");
+  data->BeginPhaseKind("graph creation");
 
   if (FLAG_trace_turbo) {
     OFStream os(stdout);
@@ -1325,7 +1358,7 @@ bool Pipeline::CreateGraph() {
 
   Run<GraphBuilderPhase>();
   if (data->compilation_failed()) {
-    EndPhaseKind();
+    data->EndPhaseKind();
     return false;
   }
   RunPrintAndVerify("Initial untyped", true);
@@ -1361,7 +1394,7 @@ bool Pipeline::CreateGraph() {
     Run<TyperPhase>(&typer);
     RunPrintAndVerify("Typed");
 
-    BeginPhaseKind("lowering");
+    data->BeginPhaseKind("lowering");
 
     // Lower JSOperators where we can determine types.
     Run<TypedLoweringPhase>();
@@ -1403,15 +1436,15 @@ bool Pipeline::CreateGraph() {
   RunPrintAndVerify("Untyped", true);
 #endif
 
-  EndPhaseKind();
+  data->EndPhaseKind();
 
   return true;
 }
 
-bool Pipeline::OptimizeGraph(Linkage* linkage) {
+bool PipelineImpl::OptimizeGraph(Linkage* linkage) {
   PipelineData* data = this->data_;
 
-  BeginPhaseKind("block building");
+  data->BeginPhaseKind("block building");
 
   Run<EffectControlLinearizationPhase>();
   RunPrintAndVerify("Effect and control linearized", true);
@@ -1439,16 +1472,6 @@ bool Pipeline::OptimizeGraph(Linkage* linkage) {
   return ScheduleAndSelectInstructions(linkage);
 }
 
-Handle<Code> Pipeline::GenerateCode() {
-  PipelineData* data = this->data_;
-
-  Linkage linkage(Linkage::ComputeIncoming(data->instruction_zone(), info()));
-
-  if (!CreateGraph()) return Handle<Code>::null();
-  if (!OptimizeGraph(&linkage)) return Handle<Code>::null();
-  return GenerateCode(&linkage);
-}
-
 Handle<Code> Pipeline::GenerateCodeForCodeStub(Isolate* isolate,
                                                CallDescriptor* call_descriptor,
                                                Graph* graph, Schedule* schedule,
@@ -1465,7 +1488,7 @@ Handle<Code> Pipeline::GenerateCodeForCodeStub(Isolate* isolate,
     pipeline_statistics->BeginPhaseKind("stub codegen");
   }
 
-  Pipeline pipeline(&data);
+  PipelineImpl pipeline(&data);
   DCHECK_NOT_NULL(data.schedule());
 
   if (FLAG_trace_turbo) {
@@ -1489,8 +1512,13 @@ Handle<Code> Pipeline::GenerateCodeForTesting(CompilationInfo* info) {
   base::SmartPointer<PipelineStatistics> pipeline_statistics(
       CreatePipelineStatistics(info, &zone_pool));
   PipelineData data(&zone_pool, info, pipeline_statistics.get());
-  Pipeline pipeline(&data);
-  return pipeline.GenerateCode();
+  PipelineImpl pipeline(&data);
+
+  Linkage linkage(Linkage::ComputeIncoming(data.instruction_zone(), info));
+
+  if (!pipeline.CreateGraph()) return Handle<Code>::null();
+  if (!pipeline.OptimizeGraph(&linkage)) return Handle<Code>::null();
+  return pipeline.GenerateCode(&linkage);
 }
 
 // static
@@ -1516,7 +1544,7 @@ Handle<Code> Pipeline::GenerateCodeForTesting(CompilationInfo* info,
     pipeline_statistics->BeginPhaseKind("test codegen");
   }
 
-  Pipeline pipeline(&data);
+  PipelineImpl pipeline(&data);
 
   if (FLAG_trace_turbo) {
     FILE* json_file = OpenVisualizerLogFile(info, nullptr, "json", "w+");
@@ -1553,13 +1581,13 @@ bool Pipeline::AllocateRegistersForTesting(const RegisterConfiguration* config,
                        sequence->zone());
   ZonePool zone_pool(sequence->isolate()->allocator());
   PipelineData data(&zone_pool, &info, sequence);
-  Pipeline pipeline(&data);
+  PipelineImpl pipeline(&data);
   pipeline.data_->InitializeFrameData(nullptr);
   pipeline.AllocateRegisters(config, nullptr, run_verifier);
   return !data.compilation_failed();
 }
 
-bool Pipeline::ScheduleAndSelectInstructions(Linkage* linkage) {
+bool PipelineImpl::ScheduleAndSelectInstructions(Linkage* linkage) {
   CallDescriptor* call_descriptor = linkage->GetIncomingDescriptor();
   PipelineData* data = this->data_;
 
@@ -1594,7 +1622,7 @@ bool Pipeline::ScheduleAndSelectInstructions(Linkage* linkage) {
 
   data->DeleteGraphZone();
 
-  BeginPhaseKind("register allocation");
+  data->BeginPhaseKind("register allocation");
 
   bool run_verifier = FLAG_turbo_verify_allocation;
 
@@ -1605,7 +1633,7 @@ bool Pipeline::ScheduleAndSelectInstructions(Linkage* linkage) {
   Run<FrameElisionPhase>();
   if (data->compilation_failed()) {
     info()->AbortOptimization(kNotEnoughVirtualRegistersRegalloc);
-    EndPhaseKind();
+    data->EndPhaseKind();
     return false;
   }
 
@@ -1617,15 +1645,15 @@ bool Pipeline::ScheduleAndSelectInstructions(Linkage* linkage) {
     Run<JumpThreadingPhase>(generate_frame_at_start);
   }
 
-  EndPhaseKind();
+  data->EndPhaseKind();
 
   return true;
 }
 
-Handle<Code> Pipeline::GenerateCode(Linkage* linkage) {
+Handle<Code> PipelineImpl::GenerateCode(Linkage* linkage) {
   PipelineData* data = this->data_;
 
-  BeginPhaseKind("code generation");
+  data->BeginPhaseKind("code generation");
 
   // Generate final machine code.
   Run<GenerateCodePhase>(linkage);
@@ -1671,7 +1699,7 @@ Handle<Code> Pipeline::GenerateCode(Linkage* linkage) {
   return code;
 }
 
-Handle<Code> Pipeline::ScheduleAndGenerateCode(
+Handle<Code> PipelineImpl::ScheduleAndGenerateCode(
     CallDescriptor* call_descriptor) {
   Linkage linkage(call_descriptor);
 
@@ -1682,9 +1710,9 @@ Handle<Code> Pipeline::ScheduleAndGenerateCode(
   return GenerateCode(&linkage);
 }
 
-void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
-                                 CallDescriptor* descriptor,
-                                 bool run_verifier) {
+void PipelineImpl::AllocateRegisters(const RegisterConfiguration* config,
+                                     CallDescriptor* descriptor,
+                                     bool run_verifier) {
   PipelineData* data = this->data_;
   // Don't track usage for this zone in compiler stats.
   base::SmartPointer<Zone> verifier_zone;
@@ -1771,9 +1799,9 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
   data->DeleteRegisterAllocationZone();
 }
 
-CompilationInfo* Pipeline::info() const { return data_->info(); }
+CompilationInfo* PipelineImpl::info() const { return data_->info(); }
 
-Isolate* Pipeline::isolate() const { return info()->isolate(); }
+Isolate* PipelineImpl::isolate() const { return info()->isolate(); }
 
 }  // namespace compiler
 }  // namespace internal

@@ -149,7 +149,6 @@
   V(formatted_stack_trace_symbol)           \
   V(frozen_symbol)                          \
   V(hash_code_symbol)                       \
-  V(hidden_properties_symbol)               \
   V(home_object_symbol)                     \
   V(internal_error_symbol)                  \
   V(intl_impl_object_symbol)                \
@@ -166,11 +165,11 @@
   V(promise_combined_deferred_symbol)       \
   V(promise_debug_marker_symbol)            \
   V(promise_has_handler_symbol)             \
-  V(promise_on_resolve_symbol)              \
-  V(promise_on_reject_symbol)               \
+  V(promise_fulfill_reactions_symbol)       \
+  V(promise_reject_reactions_symbol)        \
   V(promise_raw_symbol)                     \
-  V(promise_status_symbol)                  \
-  V(promise_value_symbol)                   \
+  V(promise_state_symbol)                   \
+  V(promise_result_symbol)                  \
   V(sealed_symbol)                          \
   V(stack_trace_symbol)                     \
   V(strict_function_transition_symbol)      \

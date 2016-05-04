@@ -121,6 +121,8 @@ class CodeStubAssembler : public compiler::CodeAssembler {
   compiler::Node* LoadMapInstanceType(compiler::Node* map);
   // Load the instance descriptors of a map.
   compiler::Node* LoadMapDescriptors(compiler::Node* map);
+  // Load the prototype of a map.
+  compiler::Node* LoadMapPrototype(compiler::Node* map);
 
   // Load the hash field of a name.
   compiler::Node* LoadNameHash(compiler::Node* name);
@@ -138,6 +140,12 @@ class CodeStubAssembler : public compiler::CodeAssembler {
                                                 int additional_offset = 0);
   compiler::Node* LoadFixedArrayElementConstantIndex(compiler::Node* object,
                                                      int index);
+
+  // Context manipulation
+  compiler::Node* LoadNativeContext(compiler::Node* context);
+
+  compiler::Node* LoadJSArrayElementsMap(ElementsKind kind,
+                                         compiler::Node* native_context);
 
   // Store the floating point value of a HeapNumber.
   compiler::Node* StoreHeapNumberValue(compiler::Node* object,
@@ -158,6 +166,18 @@ class CodeStubAssembler : public compiler::CodeAssembler {
   compiler::Node* StoreFixedArrayElementNoWriteBarrier(compiler::Node* object,
                                                        compiler::Node* index,
                                                        compiler::Node* value);
+  compiler::Node* StoreFixedDoubleArrayElementInt32Index(compiler::Node* object,
+                                                         compiler::Node* index,
+                                                         compiler::Node* value);
+  compiler::Node* StoreFixedArrayElementInt32Index(compiler::Node* object,
+                                                   int index,
+                                                   compiler::Node* value);
+  compiler::Node* StoreFixedArrayElementNoWriteBarrier(compiler::Node* object,
+                                                       int index,
+                                                       compiler::Node* value);
+  compiler::Node* StoreFixedDoubleArrayElementInt32Index(compiler::Node* object,
+                                                         int index,
+                                                         compiler::Node* value);
 
   // Allocate a HeapNumber without initializing its value.
   compiler::Node* AllocateHeapNumber();
@@ -167,6 +187,15 @@ class CodeStubAssembler : public compiler::CodeAssembler {
   compiler::Node* AllocateSeqOneByteString(int length);
   // Allocate a SeqTwoByteString with the given length.
   compiler::Node* AllocateSeqTwoByteString(int length);
+  // Allocated an JSArray
+  compiler::Node* AllocateJSArray(ElementsKind kind, compiler::Node* array_map,
+                                  int capacity, int length,
+                                  compiler::Node* allocation_site = nullptr);
+
+  // Allocation site manipulation
+  void InitializeAllocationMemento(compiler::Node* base_allocation,
+                                   int base_allocation_size,
+                                   compiler::Node* allocation_site);
 
   compiler::Node* TruncateTaggedToFloat64(compiler::Node* context,
                                           compiler::Node* value);
@@ -202,6 +231,20 @@ class CodeStubAssembler : public compiler::CodeAssembler {
   compiler::Node* BitFieldDecode(compiler::Node* word32, uint32_t shift,
                                  uint32_t mask);
 
+  // Various building blocks for stubs doing property lookups.
+  void TryToName(compiler::Node* key, Label* if_keyisindex, Variable* var_index,
+                 Label* if_keyisunique, Label* call_runtime);
+
+  void TryLookupProperty(compiler::Node* object, compiler::Node* map,
+                         compiler::Node* instance_type, compiler::Node* name,
+                         Label* if_found, Label* if_not_found,
+                         Label* call_runtime);
+
+  void TryLookupElement(compiler::Node* object, compiler::Node* map,
+                        compiler::Node* instance_type, compiler::Node* index,
+                        Label* if_found, Label* if_not_found,
+                        Label* call_runtime);
+
  private:
   compiler::Node* AllocateRawAligned(compiler::Node* size_in_bytes,
                                      AllocationFlags flags,
@@ -211,6 +254,8 @@ class CodeStubAssembler : public compiler::CodeAssembler {
                                        AllocationFlags flags,
                                        compiler::Node* top_adddress,
                                        compiler::Node* limit_address);
+
+  static const int kElementLoopUnrollThreshold = 8;
 };
 
 }  // namespace internal

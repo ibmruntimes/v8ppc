@@ -211,6 +211,23 @@ class FullCodeGenerator: public AstVisitor {
     }
   };
 
+  // A class literal expression
+  class NestedClassLiteral : public NestedStatement {
+   public:
+    NestedClassLiteral(FullCodeGenerator* codegen, ClassLiteral* lit)
+        : NestedStatement(codegen),
+          needs_context_(lit->scope() != nullptr &&
+                         lit->scope()->NeedsContext()) {}
+
+    NestedStatement* Exit(int* context_length) override {
+      if (needs_context_) ++(*context_length);
+      return previous_;
+    }
+
+   private:
+    const bool needs_context_;
+  };
+
   class DeferredCommands {
    public:
     enum Command { kReturn, kThrow, kBreak, kContinue };
@@ -537,6 +554,12 @@ class FullCodeGenerator: public AstVisitor {
 
   void EmitIntrinsicAsStubCall(CallRuntime* expr, const Callable& callable);
 
+  // Emits call to respective code stub.
+  void EmitHasProperty();
+
+  // Platform-specific code for restoring context from current JS frame.
+  void RestoreContext();
+
   // Platform-specific code for loading variables.
   void EmitLoadGlobalCheckExtensions(VariableProxy* proxy,
                                      TypeofMode typeof_mode, Label* slow);
@@ -703,9 +726,7 @@ class FullCodeGenerator: public AstVisitor {
   Isolate* isolate() const { return isolate_; }
   Zone* zone() const { return zone_; }
   Handle<Script> script() { return info_->script(); }
-  bool is_eval() { return info_->is_eval(); }
-  bool is_native() { return info_->is_native(); }
-  LanguageMode language_mode() { return literal()->language_mode(); }
+  LanguageMode language_mode() { return scope()->language_mode(); }
   bool has_simple_parameters() { return info_->has_simple_parameters(); }
   FunctionLiteral* literal() const { return info_->literal(); }
   Scope* scope() { return scope_; }

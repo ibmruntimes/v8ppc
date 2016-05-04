@@ -1408,12 +1408,6 @@ HValue* CodeStubGraphBuilder<ArrayNoArgumentConstructorStub>::BuildCodeStub() {
   return BuildArrayConstructor(kind, override_mode, NONE);
 }
 
-
-Handle<Code> ArrayNoArgumentConstructorStub::GenerateCode() {
-  return DoGenerateCode(this);
-}
-
-
 template <>
 HValue* CodeStubGraphBuilder<ArraySingleArgumentConstructorStub>::
     BuildCodeStub() {
@@ -1446,11 +1440,6 @@ HValue* CodeStubGraphBuilder<InternalArrayNoArgumentConstructorStub>::
     BuildCodeStub() {
   ElementsKind kind = casted_stub()->elements_kind();
   return BuildInternalArrayConstructor(kind, NONE);
-}
-
-
-Handle<Code> InternalArrayNoArgumentConstructorStub::GenerateCode() {
-  return DoGenerateCode(this);
 }
 
 

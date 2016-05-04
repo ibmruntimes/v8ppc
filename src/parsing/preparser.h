@@ -891,11 +891,13 @@ class PreParserTraits {
       int function_token_position, FunctionLiteral::FunctionType type,
       LanguageMode language_mode, bool* ok);
 
-  PreParserExpression ParseClassLiteral(PreParserIdentifier name,
+  PreParserExpression ParseClassLiteral(Type::ExpressionClassifier* classifier,
+                                        PreParserIdentifier name,
                                         Scanner::Location class_name_location,
                                         bool name_is_strict_reserved, int pos,
                                         bool* ok);
 
+  V8_INLINE void MarkCollectedTailCallExpressions() {}
   V8_INLINE void MarkTailPosition(PreParserExpression) {}
 
   PreParserExpressionList PrepareSpreadArguments(PreParserExpressionList list) {
@@ -1096,7 +1098,8 @@ class PreParser : public ParserBase<PreParserTraits> {
   void ParseLazyFunctionLiteralBody(bool* ok,
                                     Scanner::BookmarkScope* bookmark = nullptr);
 
-  PreParserExpression ParseClassLiteral(PreParserIdentifier name,
+  PreParserExpression ParseClassLiteral(ExpressionClassifier* classifier,
+                                        PreParserIdentifier name,
                                         Scanner::Location class_name_location,
                                         bool name_is_strict_reserved, int pos,
                                         bool* ok);

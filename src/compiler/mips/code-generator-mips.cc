@@ -1346,6 +1346,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kAtomicLoadWord32:
       ASSEMBLE_ATOMIC_LOAD_INTEGER(lw);
       break;
+    case kAtomicStoreWord8:
+    case kAtomicStoreWord16:
+    case kAtomicStoreWord32:
+      // TODO(binji): implement
+      __ nop();
+      break;
   }
   return kSuccess;
 }  // NOLINT(readability/fn_size)
@@ -1937,13 +1943,6 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
 void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
   // On 32-bit MIPS we emit the jump tables inline.
   UNREACHABLE();
-}
-
-
-void CodeGenerator::AddNopForSmiCodeInlining() {
-  // Unused on 32-bit ARM. Still exists on 64-bit arm.
-  // TODO(plind): Unclear when this is called now. Understand, fix if needed.
-  __ nop();  // Maybe PROPERTY_ACCESS_INLINED?
 }
 
 

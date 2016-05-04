@@ -395,6 +395,14 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     __ dmb(ISH);                                                      \
   } while (0)
 
+#define ASSEMBLE_ATOMIC_STORE_INTEGER(asm_instr)                      \
+  do {                                                                \
+    __ dmb(ISH);                                                      \
+    __ asm_instr(i.InputRegister(2),                                  \
+                 MemOperand(i.InputRegister(0), i.InputRegister(1))); \
+    __ dmb(ISH);                                                      \
+  } while (0)
+
 void CodeGenerator::AssembleDeconstructFrame() {
   __ LeaveFrame(StackFrame::MANUAL);
 }
@@ -1274,6 +1282,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kAtomicLoadWord32:
       ASSEMBLE_ATOMIC_LOAD_INTEGER(ldr);
       break;
+
+    case kAtomicStoreWord8:
+      ASSEMBLE_ATOMIC_STORE_INTEGER(strb);
+      break;
+    case kAtomicStoreWord16:
+      ASSEMBLE_ATOMIC_STORE_INTEGER(strh);
+      break;
+    case kAtomicStoreWord32:
+      ASSEMBLE_ATOMIC_STORE_INTEGER(str);
+      break;
   }
   return kSuccess;
 }  // NOLINT(readability/fn_size)
@@ -1654,11 +1672,6 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
 void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
   // On 32-bit ARM we emit the jump tables inline.
   UNREACHABLE();
-}
-
-
-void CodeGenerator::AddNopForSmiCodeInlining() {
-  // On 32-bit ARM we do not insert nops for inlined Smi code.
 }
 
 
