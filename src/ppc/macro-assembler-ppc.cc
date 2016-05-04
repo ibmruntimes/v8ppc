@@ -4208,11 +4208,7 @@ void MacroAssembler::LoadP(Register dst, const MemOperand& mem,
     /* cannot use d-form */
     DCHECK(!scratch.is(no_reg));
     mov(scratch, Operand(offset));
-#if V8_TARGET_ARCH_PPC64
-    ldx(dst, MemOperand(mem.ra(), scratch));
-#else
-    lwzx(dst, MemOperand(mem.ra(), scratch));
-#endif
+    LoadPX(dst, MemOperand(mem.ra(), scratch));
   } else {
 #if V8_TARGET_ARCH_PPC64
 #if defined(V8_PPC_TAGGING_OPT)
@@ -4235,6 +4231,23 @@ void MacroAssembler::LoadP(Register dst, const MemOperand& mem,
   }
 }
 
+void MacroAssembler::LoadPU(Register dst, const MemOperand& mem,
+                           Register scratch) {
+  int offset = mem.offset();
+
+  if (!is_int16(offset)) {
+    /* cannot use d-form */
+    DCHECK(!scratch.is(no_reg));
+    mov(scratch, Operand(offset));
+    LoadPUX(dst, MemOperand(mem.ra(), scratch));
+  } else {
+#if V8_TARGET_ARCH_PPC64
+    ldu(dst, mem);
+#else
+    lwzu(dst, mem);
+#endif
+  }
+}
 
 // Store a "pointer" sized value to the memory location
 void MacroAssembler::StoreP(Register src, const MemOperand& mem,
@@ -4245,11 +4258,7 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
     /* cannot use d-form */
     DCHECK(!scratch.is(no_reg));
     mov(scratch, Operand(offset));
-#if V8_TARGET_ARCH_PPC64
-    stdx(src, MemOperand(mem.ra(), scratch));
-#else
-    stwx(src, MemOperand(mem.ra(), scratch));
-#endif
+    StorePX(src, MemOperand(mem.ra(), scratch));
   } else {
 #if V8_TARGET_ARCH_PPC64
 #if defined(V8_PPC_TAGGING_OPT)
@@ -4273,6 +4282,24 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
 #endif  // V8_PPC_TAGGING_OPT
 #else
     stw(src, mem);
+#endif
+  }
+}
+
+void MacroAssembler::StorePU(Register src, const MemOperand& mem,
+                            Register scratch) {
+  int offset = mem.offset();
+
+  if (!is_int16(offset)) {
+    /* cannot use d-form */
+    DCHECK(!scratch.is(no_reg));
+    mov(scratch, Operand(offset));
+    StorePUX(src, MemOperand(mem.ra(), scratch));
+  } else {
+#if V8_TARGET_ARCH_PPC64
+    stdu(src, mem);
+#else
+    stwu(src, mem);
 #endif
   }
 }
