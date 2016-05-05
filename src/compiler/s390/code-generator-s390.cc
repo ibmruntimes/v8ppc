@@ -1658,6 +1658,15 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kAtomicLoadWord32:
       __ LoadlW(i.OutputRegister(), i.MemoryOperand());
       break;
+    case kAtomicStoreWord8:
+      __ StoreByte(i.InputRegister(0), i.MemoryOperand(NULL, 1));
+      break;
+    case kAtomicStoreWord16:
+      __ StoreHalfWord(i.InputRegister(0), i.MemoryOperand(NULL, 1));
+      break;
+    case kAtomicStoreWord32:
+      __ StoreW(i.InputRegister(0), i.MemoryOperand(NULL, 1));
+      break;
     default:
       UNREACHABLE();
       break;
@@ -1928,21 +1937,23 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
           destination->IsRegister() ? g.ToRegister(destination) : kScratchReg;
       switch (src.type()) {
         case Constant::kInt32:
-#if !V8_TARGET_ARCH_S390X
-          if (src.rmode() == RelocInfo::WASM_MEMORY_REFERENCE) {
+#if V8_TARGET_ARCH_S390X
+          if (src.rmode() == RelocInfo::WASM_MEMORY_SIZE_REFERENCE) {
+#else
+          if (src.rmode() == RelocInfo::WASM_MEMORY_REFERENCE ||
+              src.rmode() == RelocInfo::WASM_MEMORY_SIZE_REFERENCE) {
+#endif
             __ mov(dst, Operand(src.ToInt32(), src.rmode()));
           } else {
             __ mov(dst, Operand(src.ToInt32()));
           }
-#else
-          __ mov(dst, Operand(src.ToInt32()));
-#endif  // V8_TARGET_ARCH_S390X
           break;
         case Constant::kInt64:
 #if V8_TARGET_ARCH_S390X
           if (src.rmode() == RelocInfo::WASM_MEMORY_REFERENCE) {
             __ mov(dst, Operand(src.ToInt64(), src.rmode()));
           } else {
+            DCHECK(src.rmode() != RelocInfo::WASM_MEMORY_SIZE_REFERENCE);
             __ mov(dst, Operand(src.ToInt64()));
           }
 #else

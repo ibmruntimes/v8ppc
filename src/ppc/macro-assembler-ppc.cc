@@ -4232,7 +4232,7 @@ void MacroAssembler::LoadP(Register dst, const MemOperand& mem,
 }
 
 void MacroAssembler::LoadPU(Register dst, const MemOperand& mem,
-                           Register scratch) {
+                            Register scratch) {
   int offset = mem.offset();
 
   if (!is_int16(offset)) {
@@ -4287,7 +4287,7 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
 }
 
 void MacroAssembler::StorePU(Register src, const MemOperand& mem,
-                            Register scratch) {
+                             Register scratch) {
   int offset = mem.offset();
 
   if (!is_int16(offset)) {
