@@ -82,7 +82,6 @@ namespace internal {
   F(ThrowIfStaticPrototype, 1, 1)           \
   F(HomeObjectSymbol, 0, 1)                 \
   F(DefineClass, 4, 1)                      \
-  F(FinalizeClassDefinition, 2, 1)          \
   F(LoadFromSuper, 3, 1)                    \
   F(LoadKeyedFromSuper, 3, 1)               \
   F(StoreToSuper_Strict, 4, 1)              \
@@ -231,9 +230,13 @@ namespace internal {
   F(GeneratorGetFunction, 1, 1)         \
   F(GeneratorGetReceiver, 1, 1)         \
   F(GeneratorGetInput, 1, 1)            \
+  F(GeneratorSetContext, 1, 1)          \
   F(GeneratorGetContinuation, 1, 1)     \
+  F(GeneratorSetContinuation, 2, 1)     \
   F(GeneratorGetSourcePosition, 1, 1)   \
-  F(GeneratorGetResumeMode, 1, 1)
+  F(GeneratorGetResumeMode, 1, 1)       \
+  F(GeneratorLoadRegister, 2, 1)        \
+  F(GeneratorStoreRegister, 3, 1)
 
 #ifdef V8_I18N_SUPPORT
 #define FOR_EACH_INTRINSIC_I18N(F)           \
@@ -312,9 +315,10 @@ namespace internal {
   F(CreateListFromArrayLike, 1, 1)                  \
   F(IncrementUseCounter, 1, 1)                      \
   F(GetOrdinaryHasInstance, 0, 1)                   \
-  F(GetAndResetRuntimeCallStats, 0, 1)              \
+  F(GetAndResetRuntimeCallStats, -1 /* <= 1 */, 1)  \
   F(EnqueueMicrotask, 1, 1)                         \
-  F(RunMicrotasks, 0, 1)
+  F(RunMicrotasks, 0, 1)                            \
+  F(WasmGetFunctionName, 2, 1)
 
 #define FOR_EACH_INTRINSIC_JSON(F) \
   F(QuoteJSONString, 1, 1)         \

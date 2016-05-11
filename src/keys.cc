@@ -113,7 +113,7 @@ bool KeyAccumulator::AddKey(Handle<Object> key, AddKeyConversion convert) {
     return AddSymbolKey(key);
   }
   if (filter_ & SKIP_STRINGS) return false;
-  // Make sure we do not add keys to a proxy-level (see AddKeysFromProxy).
+  // Make sure we do not add keys to a proxy-level (see AddKeysFromJSProxy).
   DCHECK_LE(0, level_string_length_);
   // In some cases (e.g. proxies) we might get in String-converted ints which
   // should be added to the elements list instead of the properties. For
@@ -145,7 +145,7 @@ bool KeyAccumulator::AddKey(Handle<Object> key, AddKeyConversion convert) {
 bool KeyAccumulator::AddKey(uint32_t key) { return AddIntegerKey(key); }
 
 bool KeyAccumulator::AddIntegerKey(uint32_t key) {
-  // Make sure we do not add keys to a proxy-level (see AddKeysFromProxy).
+  // Make sure we do not add keys to a proxy-level (see AddKeysFromJSProxy).
   // We mark proxy-levels with a negative length
   DCHECK_LE(0, level_string_length_);
   // Binary search over all but the last level. The last one might not be
@@ -211,17 +211,6 @@ void KeyAccumulator::AddKeys(Handle<JSObject> array_like,
   accessor->AddElementsToKeyAccumulator(array_like, this, convert);
 }
 
-void KeyAccumulator::AddKeysFromProxy(Handle<JSObject> array_like) {
-  // Proxies define a complete list of keys with no distinction of
-  // elements and properties, which breaks the normal assumption for the
-  // KeyAccumulator.
-  AddKeys(array_like, PROXY_MAGIC);
-  // Invert the current length to indicate a present proxy, so we can ignore
-  // element keys for this level. Otherwise we would not fully respect the order
-  // given by the proxy.
-  level_string_length_ = -level_string_length_;
-}
-
 MaybeHandle<FixedArray> FilterProxyKeys(Isolate* isolate, Handle<JSProxy> owner,
                                         Handle<FixedArray> keys,
                                         PropertyFilter filter) {
@@ -252,8 +241,8 @@ MaybeHandle<FixedArray> FilterProxyKeys(Isolate* isolate, Handle<JSProxy> owner,
 }
 
 // Returns "nothing" in case of exception, "true" on success.
-Maybe<bool> KeyAccumulator::AddKeysFromProxy(Handle<JSProxy> proxy,
-                                             Handle<FixedArray> keys) {
+Maybe<bool> KeyAccumulator::AddKeysFromJSProxy(Handle<JSProxy> proxy,
+                                               Handle<FixedArray> keys) {
   if (filter_proxy_keys_) {
     ASSIGN_RETURN_ON_EXCEPTION_VALUE(
         isolate_, keys, FilterProxyKeys(isolate_, proxy, keys, filter_),
@@ -314,20 +303,18 @@ void KeyAccumulator::NextPrototype() {
   level_symbol_length_ = 0;
 }
 
-Maybe<bool> KeyAccumulator::GetKeys_Internal(Handle<JSReceiver> receiver,
-                                             Handle<JSReceiver> object,
-                                             KeyCollectionType type) {
+Maybe<bool> KeyAccumulator::CollectKeys(Handle<JSReceiver> receiver,
+                                        Handle<JSReceiver> object) {
   // Proxies have no hidden prototype and we should not trigger the
   // [[GetPrototypeOf]] trap on the last iteration when using
   // AdvanceFollowingProxies.
-  if (type == OWN_ONLY && object->IsJSProxy()) {
-    MAYBE_RETURN(
-        JSProxyOwnPropertyKeys(receiver, Handle<JSProxy>::cast(object)),
-        Nothing<bool>());
+  if (type_ == OWN_ONLY && object->IsJSProxy()) {
+    MAYBE_RETURN(CollectOwnJSProxyKeys(receiver, Handle<JSProxy>::cast(object)),
+                 Nothing<bool>());
     return Just(true);
   }
 
-  PrototypeIterator::WhereToEnd end = type == OWN_ONLY
+  PrototypeIterator::WhereToEnd end = type_ == OWN_ONLY
                                           ? PrototypeIterator::END_AT_NON_HIDDEN
                                           : PrototypeIterator::END_AT_NULL;
   for (PrototypeIterator iter(isolate_, object,
@@ -337,16 +324,15 @@ Maybe<bool> KeyAccumulator::GetKeys_Internal(Handle<JSReceiver> receiver,
         PrototypeIterator::GetCurrent<JSReceiver>(iter);
     Maybe<bool> result = Just(false);  // Dummy initialization.
     if (current->IsJSProxy()) {
-      result = JSProxyOwnPropertyKeys(receiver, Handle<JSProxy>::cast(current));
+      result = CollectOwnJSProxyKeys(receiver, Handle<JSProxy>::cast(current));
     } else {
       DCHECK(current->IsJSObject());
-      result =
-          GetKeysFromJSObject(receiver, Handle<JSObject>::cast(current), type);
+      result = CollectOwnKeys(receiver, Handle<JSObject>::cast(current));
     }
     MAYBE_RETURN(result, Nothing<bool>());
     if (!result.FromJust()) break;  // |false| means "stop iterating".
     // Iterate through proxies but ignore access checks for the ALL_CAN_READ
-    // case on API objects for OWN_ONLY keys handled in GetKeysFromJSObject.
+    // case on API objects for OWN_ONLY keys handled in CollectOwnKeys.
     if (!iter.AdvanceFollowingProxiesIgnoringAccessChecks()) {
       return Nothing<bool>();
     }
@@ -629,10 +615,10 @@ static Maybe<bool> GetKeysFromInterceptor(Handle<JSReceiver> receiver,
   return Just(true);
 }
 
-void KeyAccumulator::CollectOwnElementKeys(Handle<JSObject> object) {
+void KeyAccumulator::CollectOwnElementIndices(Handle<JSObject> object) {
   if (filter_ & SKIP_STRINGS) return;
   ElementsAccessor* accessor = object->GetElementsAccessor();
-  accessor->CollectElementIndices(object, this, kMaxUInt32, filter_, 0);
+  accessor->CollectElementIndices(object, this);
 }
 
 void KeyAccumulator::CollectOwnPropertyNames(Handle<JSObject> object) {
@@ -651,7 +637,7 @@ void KeyAccumulator::CollectOwnPropertyNames(Handle<JSObject> object) {
       }
       Name* key = descs->GetKey(i);
       if (key->FilterKey(filter_)) continue;
-      this->AddKey(key, DO_NOT_CONVERT);
+      AddKey(key, DO_NOT_CONVERT);
     }
   } else if (object->IsJSGlobalObject()) {
     GlobalDictionary::CollectKeysTo(
@@ -664,24 +650,23 @@ void KeyAccumulator::CollectOwnPropertyNames(Handle<JSObject> object) {
 
 // Returns |true| on success, |false| if prototype walking should be stopped,
 // |nothing| if an exception was thrown.
-Maybe<bool> KeyAccumulator::GetKeysFromJSObject(Handle<JSReceiver> receiver,
-                                                Handle<JSObject> object,
-                                                KeyCollectionType type) {
-  this->NextPrototype();
+Maybe<bool> KeyAccumulator::CollectOwnKeys(Handle<JSReceiver> receiver,
+                                           Handle<JSObject> object) {
+  NextPrototype();
   // Check access rights if required.
   if (object->IsAccessCheckNeeded() &&
       !isolate_->MayAccess(handle(isolate_->context()), object)) {
     // The cross-origin spec says that [[Enumerate]] shall return an empty
     // iterator when it doesn't have access...
-    if (type == INCLUDE_PROTOS) {
+    if (type_ == INCLUDE_PROTOS) {
       return Just(false);
     }
     // ...whereas [[OwnPropertyKeys]] shall return whitelisted properties.
-    DCHECK_EQ(OWN_ONLY, type);
+    DCHECK_EQ(OWN_ONLY, type_);
     filter_ = static_cast<PropertyFilter>(filter_ | ONLY_ALL_CAN_READ);
   }
 
-  this->CollectOwnElementKeys(object);
+  CollectOwnElementIndices(object);
 
   // Add the element keys from the interceptor.
   Maybe<bool> success =
@@ -692,9 +677,9 @@ Maybe<bool> KeyAccumulator::GetKeysFromJSObject(Handle<JSReceiver> receiver,
   if (filter_ == ENUMERABLE_STRINGS) {
     Handle<FixedArray> enum_keys =
         KeyAccumulator::GetEnumPropertyKeys(isolate_, object);
-    this->AddKeys(enum_keys, DO_NOT_CONVERT);
+    AddKeys(enum_keys, DO_NOT_CONVERT);
   } else {
-    this->CollectOwnPropertyNames(object);
+    CollectOwnPropertyNames(object);
   }
 
   // Add the property keys from the interceptor.
@@ -732,8 +717,8 @@ Handle<FixedArray> KeyAccumulator::GetEnumPropertyKeys(
 
 // ES6 9.5.12
 // Returns |true| on success, |nothing| in case of exception.
-Maybe<bool> KeyAccumulator::JSProxyOwnPropertyKeys(Handle<JSReceiver> receiver,
-                                                   Handle<JSProxy> proxy) {
+Maybe<bool> KeyAccumulator::CollectOwnJSProxyKeys(Handle<JSReceiver> receiver,
+                                                  Handle<JSProxy> proxy) {
   STACK_CHECK(isolate_, Nothing<bool>());
   // 1. Let handler be the value of the [[ProxyHandler]] internal slot of O.
   Handle<Object> handler(proxy->handler(), isolate_);
@@ -755,7 +740,7 @@ Maybe<bool> KeyAccumulator::JSProxyOwnPropertyKeys(Handle<JSReceiver> receiver,
   // 6. If trap is undefined, then
   if (trap->IsUndefined()) {
     // 6a. Return target.[[OwnPropertyKeys]]().
-    return this->GetKeys_Internal(receiver, target, OWN_ONLY);
+    return CollectOwnJSProxyTargetKeys(proxy, target);
   }
   // 7. Let trapResultArray be Call(trap, handler, «target»).
   Handle<Object> trap_result_array;
@@ -810,12 +795,12 @@ Maybe<bool> KeyAccumulator::JSProxyOwnPropertyKeys(Handle<JSReceiver> receiver,
       // (No-op, just keep it in |target_keys|.)
     }
   }
-  this->NextPrototype();  // Prepare for accumulating keys.
+  NextPrototype();  // Prepare for accumulating keys.
   // 15. If extensibleTarget is true and targetNonconfigurableKeys is empty,
   //     then:
   if (extensible_target && nonconfigurable_keys_length == 0) {
     // 15a. Return trapResult.
-    return this->AddKeysFromProxy(proxy, trap_result);
+    return AddKeysFromJSProxy(proxy, trap_result);
   }
   // 16. Let uncheckedResultKeys be a new List which is a copy of trapResult.
   Zone set_zone(isolate_->allocator());
@@ -849,7 +834,7 @@ Maybe<bool> KeyAccumulator::JSProxyOwnPropertyKeys(Handle<JSReceiver> receiver,
   }
   // 18. If extensibleTarget is true, return trapResult.
   if (extensible_target) {
-    return this->AddKeysFromProxy(proxy, trap_result);
+    return AddKeysFromJSProxy(proxy, trap_result);
   }
   // 19. Repeat, for each key that is an element of targetConfigurableKeys:
   for (int i = 0; i < target_configurable_keys->length(); ++i) {
@@ -875,7 +860,21 @@ Maybe<bool> KeyAccumulator::JSProxyOwnPropertyKeys(Handle<JSReceiver> receiver,
     return Nothing<bool>();
   }
   // 21. Return trapResult.
-  return this->AddKeysFromProxy(proxy, trap_result);
+  return AddKeysFromJSProxy(proxy, trap_result);
+}
+
+Maybe<bool> KeyAccumulator::CollectOwnJSProxyTargetKeys(
+    Handle<JSProxy> proxy, Handle<JSReceiver> target) {
+  // TODO(cbruni): avoid creating another KeyAccumulator
+  Handle<FixedArray> keys;
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+      isolate_, keys, JSReceiver::OwnPropertyKeys(target), Nothing<bool>());
+  NextPrototype();  // Prepare for accumulating keys.
+  bool prev_filter_proxy_keys_ = filter_proxy_keys_;
+  filter_proxy_keys_ = false;
+  Maybe<bool> result = AddKeysFromJSProxy(proxy, keys);
+  filter_proxy_keys_ = prev_filter_proxy_keys_;
+  return result;
 }
 
 }  // namespace internal

@@ -573,8 +573,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
 
   // Push bytecode array.
   __ push(kInterpreterBytecodeArrayRegister);
-  // Push zero for bytecode array offset.
-  __ push(Immediate(0));
+  // Push Smi tagged initial bytecode array offset.
+  __ push(Immediate(Smi::FromInt(BytecodeArray::kHeaderSize - kHeapObjectTag)));
 
   // Allocate the local and temporary register file on the stack.
   {
@@ -607,11 +607,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     __ j(greater_equal, &loop_header);
   }
 
-  // Load accumulator, register file, bytecode offset, dispatch table into
-  // registers.
+  // Load accumulator, bytecode offset and dispatch table into registers.
   __ LoadRoot(kInterpreterAccumulatorRegister, Heap::kUndefinedValueRootIndex);
-  __ mov(edx, ebp);
-  __ add(edx, Immediate(InterpreterFrameConstants::kRegisterFileFromFp));
   __ mov(kInterpreterBytecodeOffsetRegister,
          Immediate(BytecodeArray::kHeaderSize - kHeapObjectTag));
   __ mov(kInterpreterDispatchTableRegister,
@@ -654,6 +651,10 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
 
 
 void Builtins::Generate_InterpreterExitTrampoline(MacroAssembler* masm) {
+  // Interpreter handler is turbofanned code, need to reset the FPU before
+  // return
+  __ fninit();
+
   // The return value is in accumulator, which is already in eax.
 
   // Leave the frame (also dropping the register file).
@@ -2650,11 +2651,6 @@ void Builtins::Generate_AllocateInNewSpace(MacroAssembler* masm) {
   //  -- edx    : requested object size (untagged)
   //  -- esp[0] : return address
   // -----------------------------------
-  Label runtime;
-  __ Allocate(edx, eax, ecx, edi, &runtime, NO_ALLOCATION_FLAGS);
-  __ Ret();
-
-  __ bind(&runtime);
   __ SmiTag(edx);
   __ PopReturnAddressTo(ecx);
   __ Push(edx);
@@ -2669,11 +2665,6 @@ void Builtins::Generate_AllocateInOldSpace(MacroAssembler* masm) {
   //  -- edx    : requested object size (untagged)
   //  -- esp[0] : return address
   // -----------------------------------
-  Label runtime;
-  __ Allocate(edx, eax, ecx, edi, &runtime, PRETENURE);
-  __ Ret();
-
-  __ bind(&runtime);
   __ SmiTag(edx);
   __ PopReturnAddressTo(ecx);
   __ Push(edx);

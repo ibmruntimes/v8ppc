@@ -991,8 +991,13 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
               Operand(BYTECODE_ARRAY_TYPE));
   }
 
-  // Push new.target, bytecode array and zero for bytecode array offset.
-  __ Push(a3, kInterpreterBytecodeArrayRegister, zero_reg);
+  // Load initial bytecode offset.
+  __ li(kInterpreterBytecodeOffsetRegister,
+        Operand(BytecodeArray::kHeaderSize - kHeapObjectTag));
+
+  // Push new.target, bytecode array and Smi tagged bytecode array offset.
+  __ SmiTag(a4, kInterpreterBytecodeOffsetRegister);
+  __ Push(a3, kInterpreterBytecodeArrayRegister, a4);
 
   // Allocate the local and temporary register file on the stack.
   {
@@ -1022,11 +1027,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     __ Branch(&loop_header, ge, a4, Operand(zero_reg));
   }
 
-  // Load bytecode offset and dispatch table into registers.
+  // Load accumulator and dispatch table into registers.
   __ LoadRoot(kInterpreterAccumulatorRegister, Heap::kUndefinedValueRootIndex);
-  __ Daddu(a7, fp, Operand(InterpreterFrameConstants::kRegisterFileFromFp));
-  __ li(kInterpreterBytecodeOffsetRegister,
-        Operand(BytecodeArray::kHeaderSize - kHeapObjectTag));
   __ li(kInterpreterDispatchTableRegister,
         Operand(ExternalReference::interpreter_dispatch_table_address(
             masm->isolate())));
@@ -1357,7 +1359,7 @@ void Builtins::Generate_CompileLazy(MacroAssembler* masm) {
   // Is the full code valid?
   __ ld(entry, FieldMemOperand(closure, JSFunction::kSharedFunctionInfoOffset));
   __ ld(entry, FieldMemOperand(entry, SharedFunctionInfo::kCodeOffset));
-  __ ld(a5, FieldMemOperand(entry, Code::kFlagsOffset));
+  __ lw(a5, FieldMemOperand(entry, Code::kFlagsOffset));
   __ And(a5, a5, Operand(Code::KindField::kMask));
   __ dsrl(a5, a5, Code::KindField::kShift);
   __ Branch(&gotta_call_runtime_no_stack, eq, a5, Operand(Code::BUILTIN));
@@ -2730,11 +2732,6 @@ void Builtins::Generate_AllocateInNewSpace(MacroAssembler* masm) {
   //  -- a0 : requested object size (untagged)
   //  -- ra : return address
   // -----------------------------------
-  Label runtime;
-  __ Allocate(a0, v0, a1, a2, &runtime, NO_ALLOCATION_FLAGS);
-  __ Ret();
-
-  __ bind(&runtime);
   __ SmiTag(a0);
   __ Push(a0);
   __ Move(cp, Smi::FromInt(0));
@@ -2747,11 +2744,6 @@ void Builtins::Generate_AllocateInOldSpace(MacroAssembler* masm) {
   //  -- a0 : requested object size (untagged)
   //  -- ra : return address
   // -----------------------------------
-  Label runtime;
-  __ Allocate(a0, v0, a1, a2, &runtime, PRETENURE);
-  __ Ret();
-
-  __ bind(&runtime);
   __ SmiTag(a0);
   __ Move(a1, Smi::FromInt(AllocateTargetSpace::encode(OLD_SPACE)));
   __ Push(a0, a1);

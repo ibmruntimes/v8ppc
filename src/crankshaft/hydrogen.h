@@ -1790,18 +1790,6 @@ class HGraphBuilder {
     HAllocate* AllocateArray(HValue* capacity,
                              HValue* length_field,
                              FillMode fill_mode = FILL_WITH_HOLE);
-    // Use these allocators when capacity could be unknown at compile time
-    // but its limit is known. For constant |capacity| the value of
-    // |capacity_upper_bound| is ignored and the actual |capacity|
-    // value is used as an upper bound.
-    HAllocate* AllocateArray(HValue* capacity,
-                             int capacity_upper_bound,
-                             HValue* length_field,
-                             FillMode fill_mode = FILL_WITH_HOLE);
-    HAllocate* AllocateArray(HValue* capacity,
-                             HConstant* capacity_upper_bound,
-                             HValue* length_field,
-                             FillMode fill_mode = FILL_WITH_HOLE);
     HValue* GetElementsLocation() { return elements_location_; }
     HValue* EmitMapCode();
 
@@ -1950,6 +1938,9 @@ class HGraphBuilder {
 
   SourcePosition source_position() { return position_; }
   void set_source_position(SourcePosition position) { position_ = position; }
+
+  int TraceInlinedFunction(Handle<SharedFunctionInfo> shared,
+                           SourcePosition position, int pareint_id);
 
   HValue* BuildAllocateEmptyArrayBuffer(HValue* byte_length);
   template <typename ViewClass>

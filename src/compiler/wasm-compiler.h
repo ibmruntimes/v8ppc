@@ -291,6 +291,18 @@ class WasmGraphBuilder {
   Node* BuildLoadHeapNumberValue(Node* value, Node* control);
   Node* BuildHeapNumberValueIndexConstant();
 
+  // Asm.js specific functionality.
+  Node* BuildI32AsmjsSConvertF32(Node* input);
+  Node* BuildI32AsmjsSConvertF64(Node* input);
+  Node* BuildI32AsmjsUConvertF32(Node* input);
+  Node* BuildI32AsmjsUConvertF64(Node* input);
+  Node* BuildI32AsmjsDivS(Node* left, Node* right);
+  Node* BuildI32AsmjsRemS(Node* left, Node* right);
+  Node* BuildI32AsmjsDivU(Node* left, Node* right);
+  Node* BuildI32AsmjsRemU(Node* left, Node* right);
+  Node* BuildAsmjsLoadMem(MachineType type, Node* index);
+  Node* BuildAsmjsStoreMem(MachineType type, Node* index, Node* val);
+
   Node** Realloc(Node** buffer, size_t old_count, size_t new_count) {
     Node** buf = Buffer(new_count);
     if (buf != buffer) memcpy(buf, buffer, old_count * sizeof(Node*));

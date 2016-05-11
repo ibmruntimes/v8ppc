@@ -410,11 +410,10 @@ class Deoptimizer : public Malloced {
   static const char* GetDeoptReason(DeoptReason deopt_reason);
 
   struct DeoptInfo {
-    DeoptInfo(SourcePosition position, const char* m, DeoptReason d)
-        : position(position), mnemonic(m), deopt_reason(d), inlining_id(0) {}
+    DeoptInfo(SourcePosition position, DeoptReason d, int inlining_id)
+        : position(position), deopt_reason(d), inlining_id(inlining_id) {}
 
     SourcePosition position;
-    const char* mnemonic;
     DeoptReason deopt_reason;
     int inlining_id;
   };

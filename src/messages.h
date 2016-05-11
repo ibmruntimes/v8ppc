@@ -59,13 +59,16 @@ class CallSite {
   bool IsEval();
   bool IsConstructor();
 
-  bool IsValid() { return !fun_.is_null(); }
+  bool IsJavaScript() { return !fun_.is_null(); }
+  bool IsWasm() { return !wasm_obj_.is_null(); }
 
  private:
   Isolate* isolate_;
   Handle<Object> receiver_;
   Handle<JSFunction> fun_;
-  int32_t pos_;
+  int32_t pos_ = -1;
+  Handle<JSObject> wasm_obj_;
+  uint32_t wasm_func_index_ = static_cast<uint32_t>(-1);
 };
 
 #define MESSAGE_TEMPLATES(T)                                                   \
@@ -96,7 +99,7 @@ class CallSite {
   T(CalledOnNonObject, "% called on non-object")                               \
   T(CalledOnNullOrUndefined, "% called on null or undefined")                  \
   T(CallSiteExpectsFunction,                                                   \
-    "CallSite expects function as second argument, got %")                     \
+    "CallSite expects function or number as second argument, got %")           \
   T(CallSiteMethod, "CallSite method % expects CallSite as receiver")          \
   T(CannotConvertToPrimitive, "Cannot convert object to primitive value")      \
   T(CannotPreventExt, "Cannot prevent extensions")                             \
@@ -443,12 +446,15 @@ class CallSite {
   T(UnexpectedReserved, "Unexpected reserved word")                            \
   T(UnexpectedStrictReserved, "Unexpected strict mode reserved word")          \
   T(UnexpectedSuper, "'super' keyword unexpected here")                        \
+  T(UnexpectedSloppyTailCall,                                                  \
+    "Tail call expressions are not allowed in non-strict mode")                \
   T(UnexpectedNewTarget, "new.target expression is not allowed here")          \
   T(UnexpectedTailCall, "Tail call expression is not allowed here")            \
   T(UnexpectedTailCallInCatchBlock,                                            \
     "Tail call expression in catch block when finally block is also present")  \
   T(UnexpectedTailCallInForInOf, "Tail call expression in for-in/of body")     \
   T(UnexpectedTailCallInTryBlock, "Tail call expression in try block")         \
+  T(UnexpectedTailCallOfEval, "Tail call of a direct eval is not allowed")     \
   T(UnexpectedTemplateString, "Unexpected template string")                    \
   T(UnexpectedToken, "Unexpected token %")                                     \
   T(UnexpectedTokenIdentifier, "Unexpected identifier")                        \

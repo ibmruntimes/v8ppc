@@ -492,43 +492,96 @@ struct RuntimeCallCounter {
 // timers used for properly measuring the own time of a RuntimeCallCounter.
 class RuntimeCallTimer {
  public:
-  inline void Initialize(RuntimeCallCounter* counter,
-                         RuntimeCallTimer* parent) {
+  RuntimeCallTimer() {}
+
+ private:
+  friend class RuntimeCallStats;
+
+  inline void Start(RuntimeCallCounter* counter, RuntimeCallTimer* parent) {
     counter_ = counter;
     parent_ = parent;
-  }
-
-  inline void Start() {
     timer_.Start();
-    counter_->count++;
   }
 
   inline RuntimeCallTimer* Stop() {
     base::TimeDelta delta = timer_.Elapsed();
+    timer_.Stop();
+    counter_->count++;
     counter_->time += delta;
     if (parent_ != NULL) {
-      parent_->AdjustForSubTimer(delta);
+      // Adjust parent timer so that it does not include sub timer's time.
+      parent_->counter_->time -= delta;
     }
     return parent_;
   }
 
-  inline void AdjustForSubTimer(base::TimeDelta delta) {
-    counter_->time -= delta;
-  }
-
- private:
-  RuntimeCallCounter* counter_;
-  RuntimeCallTimer* parent_;
+  RuntimeCallCounter* counter_ = nullptr;
+  RuntimeCallTimer* parent_ = nullptr;
   base::ElapsedTimer timer_;
 };
 
-struct RuntimeCallStats {
-  // Dummy counter for the unexpected stub miss.
-  RuntimeCallCounter UnexpectedStubMiss =
-      RuntimeCallCounter("UnexpectedStubMiss");
-  // Counter for runtime callbacks into JavaScript.
-  RuntimeCallCounter ExternalCallback = RuntimeCallCounter("ExternalCallback");
-  RuntimeCallCounter GC = RuntimeCallCounter("GC");
+#define FOR_EACH_MANUAL_COUNTER(V)                     \
+  /* Counter for runtime callbacks into JavaScript. */ \
+  V(ExternalCallback)                                  \
+  V(GC)                                                \
+  /* Dummy counter for the unexpected stub miss. */    \
+  V(UnexpectedStubMiss)                                \
+  V(PrototypeMap_TransitionToAccessorProperty)         \
+  V(PrototypeMap_TransitionToDataProperty)             \
+  V(Map_TransitionToAccessorProperty)                  \
+  V(Map_TransitionToDataProperty)                      \
+  V(Map_SetPrototype)                                  \
+  V(PrototypeObject_DeleteProperty)                    \
+  V(Object_DeleteProperty)
+
+#define FOR_EACH_HANDLER_COUNTER(V)             \
+  V(IC_HandlerCacheHit)                         \
+  V(KeyedLoadIC_LoadIndexedStringStub)          \
+  V(KeyedLoadIC_LoadIndexedInterceptorStub)     \
+  V(KeyedLoadIC_KeyedLoadSloppyArgumentsStub)   \
+  V(KeyedLoadIC_LoadFastElementStub)            \
+  V(KeyedLoadIC_LoadDictionaryElementStub)      \
+  V(KeyedLoadIC_PolymorphicElement)             \
+  V(KeyedStoreIC_KeyedStoreSloppyArgumentsStub) \
+  V(KeyedStoreIC_StoreFastElementStub)          \
+  V(KeyedStoreIC_StoreElementStub)              \
+  V(KeyedStoreIC_Polymorphic)                   \
+  V(LoadIC_FunctionPrototypeStub)               \
+  V(LoadIC_ArrayBufferViewLoadFieldStub)        \
+  V(LoadIC_LoadApiGetterStub)                   \
+  V(LoadIC_LoadCallback)                        \
+  V(LoadIC_LoadConstant)                        \
+  V(LoadIC_LoadConstantStub)                    \
+  V(LoadIC_LoadField)                           \
+  V(LoadIC_LoadFieldStub)                       \
+  V(LoadIC_LoadGlobal)                          \
+  V(LoadIC_LoadInterceptor)                     \
+  V(LoadIC_LoadNonexistent)                     \
+  V(LoadIC_LoadNormal)                          \
+  V(LoadIC_LoadScriptContextFieldStub)          \
+  V(LoadIC_LoadViaGetter)                       \
+  V(LoadIC_SlowStub)                            \
+  V(LoadIC_StringLengthStub)                    \
+  V(StoreIC_SlowStub)                           \
+  V(StoreIC_StoreCallback)                      \
+  V(StoreIC_StoreField)                         \
+  V(StoreIC_StoreFieldStub)                     \
+  V(StoreIC_StoreGlobal)                        \
+  V(StoreIC_StoreGlobalTransition)              \
+  V(StoreIC_StoreInterceptorStub)               \
+  V(StoreIC_StoreNormal)                        \
+  V(StoreIC_StoreScriptContextFieldStub)        \
+  V(StoreIC_StoreTransition)                    \
+  V(StoreIC_StoreViaSetter)
+
+class RuntimeCallStats {
+ public:
+  typedef RuntimeCallCounter RuntimeCallStats::*CounterId;
+
+#define CALL_RUNTIME_COUNTER(name) \
+  RuntimeCallCounter name = RuntimeCallCounter(#name);
+  FOR_EACH_MANUAL_COUNTER(CALL_RUNTIME_COUNTER)
+#undef CALL_RUNTIME_COUNTER
 #define CALL_RUNTIME_COUNTER(name, nargs, ressize) \
   RuntimeCallCounter Runtime_##name = RuntimeCallCounter(#name);
   FOR_EACH_INTRINSIC(CALL_RUNTIME_COUNTER)
@@ -537,42 +590,67 @@ struct RuntimeCallStats {
   RuntimeCallCounter Builtin_##name = RuntimeCallCounter(#name);
   BUILTIN_LIST_C(CALL_BUILTIN_COUNTER)
 #undef CALL_BUILTIN_COUNTER
-
-  // Counter to track recursive time events.
-  RuntimeCallTimer* current_timer_ = NULL;
+#define CALL_BUILTIN_COUNTER(name) \
+  RuntimeCallCounter Handler_##name = RuntimeCallCounter(#name);
+  FOR_EACH_HANDLER_COUNTER(CALL_BUILTIN_COUNTER)
+#undef CALL_BUILTIN_COUNTER
 
   // Starting measuring the time for a function. This will establish the
   // connection to the parent counter for properly calculating the own times.
-  void Enter(RuntimeCallCounter* counter);
-  void Enter(RuntimeCallTimer* timer);
+  static void Enter(Isolate* isolate, RuntimeCallTimer* timer,
+                    CounterId counter_id);
+
   // Leave a scope for a measured runtime function. This will properly add
   // the time delta to the current_counter and subtract the delta from its
   // parent.
-  void Leave();
-  void Leave(RuntimeCallTimer* timer);
+  static void Leave(Isolate* isolate, RuntimeCallTimer* timer);
 
-  RuntimeCallTimer* current_timer() { return current_timer_; }
+  // Set counter id for the innermost measurement. It can be used to refine
+  // event kind when a runtime entry counter is too generic.
+  static void CorrectCurrentCounterId(Isolate* isolate, CounterId counter_id);
 
   void Reset();
   void Print(std::ostream& os);
 
   RuntimeCallStats() { Reset(); }
+
+ private:
+  // Counter to track recursive time events.
+  RuntimeCallTimer* current_timer_ = NULL;
 };
+
+#define TRACE_RUNTIME_CALL_STATS(isolate, counter_name) \
+  do {                                                  \
+    if (FLAG_runtime_call_stats) {                      \
+      RuntimeCallStats::CorrectCurrentCounterId(        \
+          isolate, &RuntimeCallStats::counter_name);    \
+    }                                                   \
+  } while (false)
+
+#define TRACE_HANDLER_STATS(isolate, counter_name) \
+  TRACE_RUNTIME_CALL_STATS(isolate, Handler_##counter_name)
 
 // A RuntimeCallTimerScopes wraps around a RuntimeCallTimer to measure the
 // the time of C++ scope.
 class RuntimeCallTimerScope {
  public:
-  inline explicit RuntimeCallTimerScope(Isolate* isolate,
-                                        RuntimeCallCounter* counter) {
-    if (FLAG_runtime_call_stats) Enter(isolate, counter);
+  inline RuntimeCallTimerScope(Isolate* isolate,
+                               RuntimeCallStats::CounterId counter_id) {
+    if (V8_UNLIKELY(FLAG_runtime_call_stats)) {
+      isolate_ = isolate;
+      RuntimeCallStats::Enter(isolate_, &timer_, counter_id);
+    }
   }
-  inline ~RuntimeCallTimerScope() {
-    if (FLAG_runtime_call_stats) Leave();
-  }
+  // This constructor is here just to avoid calling GetIsolate() when the
+  // stats are disabled and the isolate is not directly available.
+  inline RuntimeCallTimerScope(HeapObject* heap_object,
+                               RuntimeCallStats::CounterId counter_id);
 
-  void Enter(Isolate* isolate, RuntimeCallCounter* counter);
-  void Leave();
+  inline ~RuntimeCallTimerScope() {
+    if (V8_UNLIKELY(FLAG_runtime_call_stats)) {
+      RuntimeCallStats::Leave(isolate_, &timer_);
+    }
+  }
 
  private:
   Isolate* isolate_;

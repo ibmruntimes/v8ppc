@@ -820,6 +820,41 @@ void FullCodeGenerator::VisitArithmeticExpression(BinaryOperation* expr) {
   }
 }
 
+void FullCodeGenerator::VisitProperty(Property* expr) {
+  Comment cmnt(masm_, "[ Property");
+  SetExpressionPosition(expr);
+
+  Expression* key = expr->key();
+
+  if (key->IsPropertyName()) {
+    if (!expr->IsSuperAccess()) {
+      VisitForAccumulatorValue(expr->obj());
+      __ Move(LoadDescriptor::ReceiverRegister(), result_register());
+      EmitNamedPropertyLoad(expr);
+    } else {
+      VisitForStackValue(expr->obj()->AsSuperPropertyReference()->this_var());
+      VisitForStackValue(
+          expr->obj()->AsSuperPropertyReference()->home_object());
+      EmitNamedSuperPropertyLoad(expr);
+    }
+  } else {
+    if (!expr->IsSuperAccess()) {
+      VisitForStackValue(expr->obj());
+      VisitForAccumulatorValue(expr->key());
+      __ Move(LoadDescriptor::NameRegister(), result_register());
+      PopOperand(LoadDescriptor::ReceiverRegister());
+      EmitKeyedPropertyLoad(expr);
+    } else {
+      VisitForStackValue(expr->obj()->AsSuperPropertyReference()->this_var());
+      VisitForStackValue(
+          expr->obj()->AsSuperPropertyReference()->home_object());
+      VisitForStackValue(expr->key());
+      EmitKeyedSuperPropertyLoad(expr);
+    }
+  }
+  PrepareForBailoutForId(expr->LoadId(), TOS_REG);
+  context()->Plug(result_register());
+}
 
 void FullCodeGenerator::VisitForTypeofValue(Expression* expr) {
   VariableProxy* proxy = expr->AsVariableProxy();
@@ -1494,9 +1529,10 @@ void FullCodeGenerator::VisitClassLiteral(ClassLiteral* lit) {
     PushOperand(result_register());
 
     EmitClassDefineProperties(lit);
+    DropOperands(1);
 
-    // Set both the prototype and constructor to have fast properties.
-    CallRuntimeWithOperands(Runtime::kFinalizeClassDefinition);
+    // Set the constructor to have fast properties.
+    CallRuntimeWithOperands(Runtime::kToFastProperties);
 
     if (lit->class_variable_proxy() != nullptr) {
       EmitVariableAssignment(lit->class_variable_proxy()->var(), Token::INIT,

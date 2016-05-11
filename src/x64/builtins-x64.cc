@@ -649,10 +649,14 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     __ Assert(equal, kFunctionDataShouldBeBytecodeArrayOnInterpreterEntry);
   }
 
-  // Push bytecode array.
+  // Load initial bytecode offset.
+  __ movp(kInterpreterBytecodeOffsetRegister,
+          Immediate(BytecodeArray::kHeaderSize - kHeapObjectTag));
+
+  // Push bytecode array and Smi tagged bytecode offset.
   __ Push(kInterpreterBytecodeArrayRegister);
-  // Push zero for bytecode array offset.
-  __ Push(Immediate(0));
+  __ Integer32ToSmi(rcx, kInterpreterBytecodeOffsetRegister);
+  __ Push(rcx);
 
   // Allocate the local and temporary register file on the stack.
   {
@@ -683,13 +687,8 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     __ j(greater_equal, &loop_header, Label::kNear);
   }
 
-  // Load accumulator, register file, bytecode offset, dispatch table into
-  // registers.
+  // Load accumulator and dispatch table into registers.
   __ LoadRoot(kInterpreterAccumulatorRegister, Heap::kUndefinedValueRootIndex);
-  __ movp(r11, rbp);
-  __ addp(r11, Immediate(InterpreterFrameConstants::kRegisterFileFromFp));
-  __ movp(kInterpreterBytecodeOffsetRegister,
-          Immediate(BytecodeArray::kHeaderSize - kHeapObjectTag));
   __ Move(
       kInterpreterDispatchTableRegister,
       ExternalReference::interpreter_dispatch_table_address(masm->isolate()));
@@ -2048,11 +2047,6 @@ void Builtins::Generate_AllocateInNewSpace(MacroAssembler* masm) {
   //  -- rdx    : requested object size (untagged)
   //  -- rsp[0] : return address
   // -----------------------------------
-  Label runtime;
-  __ Allocate(rdx, rax, rcx, rdi, &runtime, NO_ALLOCATION_FLAGS);
-  __ Ret();
-
-  __ bind(&runtime);
   __ Integer32ToSmi(rdx, rdx);
   __ PopReturnAddressTo(rcx);
   __ Push(rdx);
@@ -2067,11 +2061,6 @@ void Builtins::Generate_AllocateInOldSpace(MacroAssembler* masm) {
   //  -- rdx    : requested object size (untagged)
   //  -- rsp[0] : return address
   // -----------------------------------
-  Label runtime;
-  __ Allocate(rdx, rax, rcx, rdi, &runtime, PRETENURE);
-  __ Ret();
-
-  __ bind(&runtime);
   __ Integer32ToSmi(rdx, rdx);
   __ PopReturnAddressTo(rcx);
   __ Push(rdx);

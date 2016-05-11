@@ -747,14 +747,11 @@ void BytecodeGenerator::VisitVariableDeclaration(VariableDeclaration* decl) {
   bool hole_init = mode == CONST || mode == LET;
   switch (variable->location()) {
     case VariableLocation::GLOBAL:
-    case VariableLocation::UNALLOCATED: {
-      Handle<Oddball> value = variable->binding_needs_init()
-                                  ? isolate()->factory()->the_hole_value()
-                                  : isolate()->factory()->undefined_value();
+    case VariableLocation::UNALLOCATED:
+      DCHECK(!variable->binding_needs_init());
       globals()->push_back(variable->name());
-      globals()->push_back(value);
+      globals()->push_back(isolate()->factory()->undefined_value());
       break;
-    }
     case VariableLocation::LOCAL:
       if (hole_init) {
         Register destination(variable->index());
@@ -1396,7 +1393,7 @@ void BytecodeGenerator::VisitClassLiteralContents(ClassLiteral* expr) {
       .StoreAccumulatorInRegister(prototype);
 
   VisitClassLiteralProperties(expr, literal, prototype);
-  builder()->CallRuntime(Runtime::kFinalizeClassDefinition, literal, 2);
+  builder()->CallRuntime(Runtime::kToFastProperties, literal, 1);
   // Assign to class variable.
   if (expr->class_variable_proxy() != nullptr) {
     Variable* var = expr->class_variable_proxy()->var();

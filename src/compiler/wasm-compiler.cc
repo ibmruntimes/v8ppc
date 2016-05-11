@@ -54,7 +54,6 @@ const Operator* UnsupportedOpcode(wasm::WasmOpcode opcode) {
   return nullptr;
 }
 
-
 void MergeControlToEnd(JSGraph* jsgraph, Node* node) {
   Graph* g = jsgraph->graph();
   if (g->end()) {
@@ -285,9 +284,7 @@ WasmGraphBuilder::WasmGraphBuilder(
   DCHECK_NOT_NULL(jsgraph_);
 }
 
-
 Node* WasmGraphBuilder::Error() { return jsgraph()->Dead(); }
-
 
 Node* WasmGraphBuilder::Start(unsigned params) {
   Node* start = graph()->NewNode(jsgraph()->common()->Start(params));
@@ -295,17 +292,14 @@ Node* WasmGraphBuilder::Start(unsigned params) {
   return start;
 }
 
-
 Node* WasmGraphBuilder::Param(unsigned index, wasm::LocalType type) {
   return graph()->NewNode(jsgraph()->common()->Parameter(index),
                           graph()->start());
 }
 
-
 Node* WasmGraphBuilder::Loop(Node* entry) {
   return graph()->NewNode(jsgraph()->common()->Loop(1), entry);
 }
-
 
 Node* WasmGraphBuilder::Terminate(Node* effect, Node* control) {
   Node* terminate =
@@ -314,17 +308,14 @@ Node* WasmGraphBuilder::Terminate(Node* effect, Node* control) {
   return terminate;
 }
 
-
 unsigned WasmGraphBuilder::InputCount(Node* node) {
   return static_cast<unsigned>(node->InputCount());
 }
-
 
 bool WasmGraphBuilder::IsPhiWithMerge(Node* phi, Node* merge) {
   return phi && IrOpcode::IsPhiOpcode(phi->opcode()) &&
          NodeProperties::GetControlInput(phi) == merge;
 }
-
 
 void WasmGraphBuilder::AppendToMerge(Node* merge, Node* from) {
   DCHECK(IrOpcode::IsMergeOpcode(merge->opcode()));
@@ -342,11 +333,9 @@ void WasmGraphBuilder::AppendToPhi(Node* phi, Node* from) {
       phi, jsgraph()->common()->ResizeMergeOrPhi(phi->op(), new_size));
 }
 
-
 Node* WasmGraphBuilder::Merge(unsigned count, Node** controls) {
   return graph()->NewNode(jsgraph()->common()->Merge(count), count, controls);
 }
-
 
 Node* WasmGraphBuilder::Phi(wasm::LocalType type, unsigned count, Node** vals,
                             Node* control) {
@@ -356,7 +345,6 @@ Node* WasmGraphBuilder::Phi(wasm::LocalType type, unsigned count, Node** vals,
   return graph()->NewNode(jsgraph()->common()->Phi(type, count), count + 1,
                           buf);
 }
-
 
 Node* WasmGraphBuilder::EffectPhi(unsigned count, Node** effects,
                                   Node* control) {
@@ -374,7 +362,6 @@ Node* WasmGraphBuilder::NumberConstant(int32_t value) {
 Node* WasmGraphBuilder::Int32Constant(int32_t value) {
   return jsgraph()->Int32Constant(value);
 }
-
 
 Node* WasmGraphBuilder::Int64Constant(int64_t value) {
   return jsgraph()->Int64Constant(value);
@@ -614,15 +601,30 @@ Node* WasmGraphBuilder::Binop(wasm::WasmOpcode opcode, Node* left, Node* right,
       return BuildF32Max(left, right);
     case wasm::kExprF64Max:
       return BuildF64Max(left, right);
-    case wasm::kExprF64Pow: {
+    case wasm::kExprF64Pow:
       return BuildF64Pow(left, right);
-    }
-    case wasm::kExprF64Atan2: {
+    case wasm::kExprF64Atan2:
       return BuildF64Atan2(left, right);
-    }
-    case wasm::kExprF64Mod: {
+    case wasm::kExprF64Mod:
       return BuildF64Mod(left, right);
-    }
+    case wasm::kExprI32AsmjsDivS:
+      return BuildI32AsmjsDivS(left, right);
+    case wasm::kExprI32AsmjsDivU:
+      return BuildI32AsmjsDivU(left, right);
+    case wasm::kExprI32AsmjsRemS:
+      return BuildI32AsmjsRemS(left, right);
+    case wasm::kExprI32AsmjsRemU:
+      return BuildI32AsmjsRemU(left, right);
+    case wasm::kExprI32AsmjsStoreMem8:
+      return BuildAsmjsStoreMem(MachineType::Int8(), left, right);
+    case wasm::kExprI32AsmjsStoreMem16:
+      return BuildAsmjsStoreMem(MachineType::Int16(), left, right);
+    case wasm::kExprI32AsmjsStoreMem:
+      return BuildAsmjsStoreMem(MachineType::Int32(), left, right);
+    case wasm::kExprF32AsmjsStoreMem:
+      return BuildAsmjsStoreMem(MachineType::Float32(), left, right);
+    case wasm::kExprF64AsmjsStoreMem:
+      return BuildAsmjsStoreMem(MachineType::Float64(), left, right);
     default:
       op = UnsupportedOpcode(opcode);
   }
@@ -657,6 +659,10 @@ Node* WasmGraphBuilder::Unop(wasm::WasmOpcode opcode, Node* input,
       return BuildI32SConvertF64(input, position);
     case wasm::kExprI32UConvertF64:
       return BuildI32UConvertF64(input, position);
+    case wasm::kExprI32AsmjsSConvertF64:
+      return BuildI32AsmjsSConvertF64(input);
+    case wasm::kExprI32AsmjsUConvertF64:
+      return BuildI32AsmjsUConvertF64(input);
     case wasm::kExprF32ConvertF64:
       op = m->TruncateFloat64ToFloat32();
       break;
@@ -676,6 +682,10 @@ Node* WasmGraphBuilder::Unop(wasm::WasmOpcode opcode, Node* input,
       return BuildI32SConvertF32(input, position);
     case wasm::kExprI32UConvertF32:
       return BuildI32UConvertF32(input, position);
+    case wasm::kExprI32AsmjsSConvertF32:
+      return BuildI32AsmjsSConvertF32(input);
+    case wasm::kExprI32AsmjsUConvertF32:
+      return BuildI32AsmjsUConvertF32(input);
     case wasm::kExprF64ConvertF32:
       op = m->ChangeFloat32ToFloat64();
       break;
@@ -844,39 +854,45 @@ Node* WasmGraphBuilder::Unop(wasm::WasmOpcode opcode, Node* input,
       }
       op = m->RoundUint64ToFloat64();
       break;
-    case wasm::kExprI64SConvertF32: {
+    case wasm::kExprI64SConvertF32:
       return BuildI64SConvertF32(input, position);
-    }
-    case wasm::kExprI64SConvertF64: {
+    case wasm::kExprI64SConvertF64:
       return BuildI64SConvertF64(input, position);
-    }
-    case wasm::kExprI64UConvertF32: {
+    case wasm::kExprI64UConvertF32:
       return BuildI64UConvertF32(input, position);
-    }
-    case wasm::kExprI64UConvertF64: {
+    case wasm::kExprI64UConvertF64:
       return BuildI64UConvertF64(input, position);
-    }
+    case wasm::kExprI32AsmjsLoadMem8S:
+      return BuildAsmjsLoadMem(MachineType::Int8(), input);
+    case wasm::kExprI32AsmjsLoadMem8U:
+      return BuildAsmjsLoadMem(MachineType::Uint8(), input);
+    case wasm::kExprI32AsmjsLoadMem16S:
+      return BuildAsmjsLoadMem(MachineType::Int16(), input);
+    case wasm::kExprI32AsmjsLoadMem16U:
+      return BuildAsmjsLoadMem(MachineType::Uint16(), input);
+    case wasm::kExprI32AsmjsLoadMem:
+      return BuildAsmjsLoadMem(MachineType::Int32(), input);
+    case wasm::kExprF32AsmjsLoadMem:
+      return BuildAsmjsLoadMem(MachineType::Float32(), input);
+    case wasm::kExprF64AsmjsLoadMem:
+      return BuildAsmjsLoadMem(MachineType::Float64(), input);
     default:
       op = UnsupportedOpcode(opcode);
   }
   return graph()->NewNode(op, input);
 }
 
-
 Node* WasmGraphBuilder::Float32Constant(float value) {
   return jsgraph()->Float32Constant(value);
 }
-
 
 Node* WasmGraphBuilder::Float64Constant(double value) {
   return jsgraph()->Float64Constant(value);
 }
 
-
 Node* WasmGraphBuilder::Constant(Handle<Object> value) {
   return jsgraph()->Constant(value);
 }
-
 
 Node* WasmGraphBuilder::Branch(Node* cond, Node** true_node,
                                Node** false_node) {
@@ -889,23 +905,19 @@ Node* WasmGraphBuilder::Branch(Node* cond, Node** true_node,
   return branch;
 }
 
-
 Node* WasmGraphBuilder::Switch(unsigned count, Node* key) {
   return graph()->NewNode(jsgraph()->common()->Switch(count), key, *control_);
 }
-
 
 Node* WasmGraphBuilder::IfValue(int32_t value, Node* sw) {
   DCHECK_EQ(IrOpcode::kSwitch, sw->opcode());
   return graph()->NewNode(jsgraph()->common()->IfValue(value), sw);
 }
 
-
 Node* WasmGraphBuilder::IfDefault(Node* sw) {
   DCHECK_EQ(IrOpcode::kSwitch, sw->opcode());
   return graph()->NewNode(jsgraph()->common()->IfDefault(), sw);
 }
-
 
 Node* WasmGraphBuilder::Return(unsigned count, Node** vals) {
   DCHECK_NOT_NULL(*control_);
@@ -925,7 +937,6 @@ Node* WasmGraphBuilder::Return(unsigned count, Node** vals) {
   MergeControlToEnd(jsgraph(), ret);
   return ret;
 }
-
 
 Node* WasmGraphBuilder::ReturnVoid() { return Return(0, Buffer(0)); }
 
@@ -975,7 +986,6 @@ Node* WasmGraphBuilder::BuildF32Neg(Node* input) {
   return result;
 }
 
-
 Node* WasmGraphBuilder::BuildF64Neg(Node* input) {
 #if WASM_64
   Node* result =
@@ -995,7 +1005,6 @@ Node* WasmGraphBuilder::BuildF64Neg(Node* input) {
 #endif
 }
 
-
 Node* WasmGraphBuilder::BuildF32CopySign(Node* left, Node* right) {
   Node* result = Unop(
       wasm::kExprF32ReinterpretI32,
@@ -1007,7 +1016,6 @@ Node* WasmGraphBuilder::BuildF32CopySign(Node* left, Node* right) {
 
   return result;
 }
-
 
 Node* WasmGraphBuilder::BuildF64CopySign(Node* left, Node* right) {
 #if WASM_64
@@ -1037,7 +1045,6 @@ Node* WasmGraphBuilder::BuildF64CopySign(Node* left, Node* right) {
 #endif
 }
 
-
 Node* WasmGraphBuilder::BuildF32Min(Node* left, Node* right) {
   Diamond left_le_right(graph(), jsgraph()->common(),
                         Binop(wasm::kExprF32Le, left, right));
@@ -1057,7 +1064,6 @@ Node* WasmGraphBuilder::BuildF32Min(Node* left, Node* right) {
               Binop(wasm::kExprF32Mul, right, Float32Constant(1.0)),
               Binop(wasm::kExprF32Mul, left, Float32Constant(1.0)))));
 }
-
 
 Node* WasmGraphBuilder::BuildF32Max(Node* left, Node* right) {
   Diamond left_ge_right(graph(), jsgraph()->common(),
@@ -1079,7 +1085,6 @@ Node* WasmGraphBuilder::BuildF32Max(Node* left, Node* right) {
               Binop(wasm::kExprF32Mul, left, Float32Constant(1.0)))));
 }
 
-
 Node* WasmGraphBuilder::BuildF64Min(Node* left, Node* right) {
   Diamond left_le_right(graph(), jsgraph()->common(),
                         Binop(wasm::kExprF64Le, left, right));
@@ -1099,7 +1104,6 @@ Node* WasmGraphBuilder::BuildF64Min(Node* left, Node* right) {
               Binop(wasm::kExprF64Mul, right, Float64Constant(1.0)),
               Binop(wasm::kExprF64Mul, left, Float64Constant(1.0)))));
 }
-
 
 Node* WasmGraphBuilder::BuildF64Max(Node* left, Node* right) {
   Diamond left_ge_right(graph(), jsgraph()->common(),
@@ -1124,12 +1128,6 @@ Node* WasmGraphBuilder::BuildF64Max(Node* left, Node* right) {
 Node* WasmGraphBuilder::BuildI32SConvertF32(Node* input,
                                             wasm::WasmCodePosition position) {
   MachineOperatorBuilder* m = jsgraph()->machine();
-  if (module_ && module_->asm_js()) {
-    // asm.js must use the wacky JS semantics.
-    input = graph()->NewNode(m->ChangeFloat32ToFloat64(), input);
-    return graph()->NewNode(m->TruncateFloat64ToWord32(), input);
-  }
-
   // Truncation of the input value is needed for the overflow check later.
   Node* trunc = Unop(wasm::kExprF32Trunc, input);
   Node* result = graph()->NewNode(m->TruncateFloat32ToInt32(), trunc);
@@ -1146,10 +1144,6 @@ Node* WasmGraphBuilder::BuildI32SConvertF32(Node* input,
 Node* WasmGraphBuilder::BuildI32SConvertF64(Node* input,
                                             wasm::WasmCodePosition position) {
   MachineOperatorBuilder* m = jsgraph()->machine();
-  if (module_ && module_->asm_js()) {
-    // asm.js must use the wacky JS semantics.
-    return graph()->NewNode(m->TruncateFloat64ToWord32(), input);
-  }
   // Truncation of the input value is needed for the overflow check later.
   Node* trunc = Unop(wasm::kExprF64Trunc, input);
   Node* result = graph()->NewNode(m->ChangeFloat64ToInt32(), trunc);
@@ -1166,12 +1160,6 @@ Node* WasmGraphBuilder::BuildI32SConvertF64(Node* input,
 Node* WasmGraphBuilder::BuildI32UConvertF32(Node* input,
                                             wasm::WasmCodePosition position) {
   MachineOperatorBuilder* m = jsgraph()->machine();
-  if (module_ && module_->asm_js()) {
-    // asm.js must use the wacky JS semantics.
-    input = graph()->NewNode(m->ChangeFloat32ToFloat64(), input);
-    return graph()->NewNode(m->TruncateFloat64ToWord32(), input);
-  }
-
   // Truncation of the input value is needed for the overflow check later.
   Node* trunc = Unop(wasm::kExprF32Trunc, input);
   Node* result = graph()->NewNode(m->TruncateFloat32ToUint32(), trunc);
@@ -1188,10 +1176,6 @@ Node* WasmGraphBuilder::BuildI32UConvertF32(Node* input,
 Node* WasmGraphBuilder::BuildI32UConvertF64(Node* input,
                                             wasm::WasmCodePosition position) {
   MachineOperatorBuilder* m = jsgraph()->machine();
-  if (module_ && module_->asm_js()) {
-    // asm.js must use the wacky JS semantics.
-    return graph()->NewNode(m->TruncateFloat64ToWord32(), input);
-  }
   // Truncation of the input value is needed for the overflow check later.
   Node* trunc = Unop(wasm::kExprF64Trunc, input);
   Node* result = graph()->NewNode(m->TruncateFloat64ToUint32(), trunc);
@@ -1203,6 +1187,32 @@ Node* WasmGraphBuilder::BuildI32UConvertF64(Node* input,
   trap_->AddTrapIfTrue(wasm::kTrapFloatUnrepresentable, overflow, position);
 
   return result;
+}
+
+Node* WasmGraphBuilder::BuildI32AsmjsSConvertF32(Node* input) {
+  MachineOperatorBuilder* m = jsgraph()->machine();
+  // asm.js must use the wacky JS semantics.
+  input = graph()->NewNode(m->ChangeFloat32ToFloat64(), input);
+  return graph()->NewNode(m->TruncateFloat64ToWord32(), input);
+}
+
+Node* WasmGraphBuilder::BuildI32AsmjsSConvertF64(Node* input) {
+  MachineOperatorBuilder* m = jsgraph()->machine();
+  // asm.js must use the wacky JS semantics.
+  return graph()->NewNode(m->TruncateFloat64ToWord32(), input);
+}
+
+Node* WasmGraphBuilder::BuildI32AsmjsUConvertF32(Node* input) {
+  MachineOperatorBuilder* m = jsgraph()->machine();
+  // asm.js must use the wacky JS semantics.
+  input = graph()->NewNode(m->ChangeFloat32ToFloat64(), input);
+  return graph()->NewNode(m->TruncateFloat64ToWord32(), input);
+}
+
+Node* WasmGraphBuilder::BuildI32AsmjsUConvertF64(Node* input) {
+  MachineOperatorBuilder* m = jsgraph()->machine();
+  // asm.js must use the wacky JS semantics.
+  return graph()->NewNode(m->TruncateFloat64ToWord32(), input);
 }
 
 Node* WasmGraphBuilder::BuildBitCountingCall(Node* input, ExternalReference ref,
@@ -1244,7 +1254,6 @@ Node* WasmGraphBuilder::BuildI32Popcnt(Node* input) {
       input, ExternalReference::wasm_word32_popcnt(jsgraph()->isolate()),
       MachineRepresentation::kWord32);
 }
-
 
 Node* WasmGraphBuilder::BuildI64Popcnt(Node* input) {
   return Unop(wasm::kExprI64UConvertI32,
@@ -1591,34 +1600,6 @@ Node* WasmGraphBuilder::BuildFloatToIntConversionInstruction(
 Node* WasmGraphBuilder::BuildI32DivS(Node* left, Node* right,
                                      wasm::WasmCodePosition position) {
   MachineOperatorBuilder* m = jsgraph()->machine();
-  if (module_ && module_->asm_js()) {
-    // asm.js semantics return 0 on divide or mod by zero.
-    if (m->Int32DivIsSafe()) {
-      // The hardware instruction does the right thing (e.g. arm).
-      return graph()->NewNode(m->Int32Div(), left, right, graph()->start());
-    }
-
-    // Check denominator for zero.
-    Diamond z(
-        graph(), jsgraph()->common(),
-        graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(0)),
-        BranchHint::kFalse);
-
-    // Check numerator for -1. (avoid minint / -1 case).
-    Diamond n(
-        graph(), jsgraph()->common(),
-        graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(-1)),
-        BranchHint::kFalse);
-
-    Node* div = graph()->NewNode(m->Int32Div(), left, right, z.if_false);
-    Node* neg =
-        graph()->NewNode(m->Int32Sub(), jsgraph()->Int32Constant(0), left);
-
-    return n.Phi(MachineRepresentation::kWord32, neg,
-                 z.Phi(MachineRepresentation::kWord32,
-                       jsgraph()->Int32Constant(0), div));
-  }
-
   trap_->ZeroCheck32(wasm::kTrapDivByZero, right, position);
   Node* before = *control_;
   Node* denom_is_m1;
@@ -1640,26 +1621,6 @@ Node* WasmGraphBuilder::BuildI32DivS(Node* left, Node* right,
 Node* WasmGraphBuilder::BuildI32RemS(Node* left, Node* right,
                                      wasm::WasmCodePosition position) {
   MachineOperatorBuilder* m = jsgraph()->machine();
-  if (module_ && module_->asm_js()) {
-    // asm.js semantics return 0 on divide or mod by zero.
-    // Explicit check for x % 0.
-    Diamond z(
-        graph(), jsgraph()->common(),
-        graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(0)),
-        BranchHint::kFalse);
-
-    // Explicit check for x % -1.
-    Diamond d(
-        graph(), jsgraph()->common(),
-        graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(-1)),
-        BranchHint::kFalse);
-    d.Chain(z.if_false);
-
-    return z.Phi(
-        MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
-        d.Phi(MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
-              graph()->NewNode(m->Int32Mod(), left, right, d.if_false)));
-  }
 
   trap_->ZeroCheck32(wasm::kTrapRemByZero, right, position);
 
@@ -1676,23 +1637,6 @@ Node* WasmGraphBuilder::BuildI32RemS(Node* left, Node* right,
 Node* WasmGraphBuilder::BuildI32DivU(Node* left, Node* right,
                                      wasm::WasmCodePosition position) {
   MachineOperatorBuilder* m = jsgraph()->machine();
-  if (module_ && module_->asm_js()) {
-    // asm.js semantics return 0 on divide or mod by zero.
-    if (m->Uint32DivIsSafe()) {
-      // The hardware instruction does the right thing (e.g. arm).
-      return graph()->NewNode(m->Uint32Div(), left, right, graph()->start());
-    }
-
-    // Explicit check for x % 0.
-    Diamond z(
-        graph(), jsgraph()->common(),
-        graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(0)),
-        BranchHint::kFalse);
-
-    return z.Phi(MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
-                 graph()->NewNode(jsgraph()->machine()->Uint32Div(), left,
-                                  right, z.if_false));
-  }
   return graph()->NewNode(
       m->Uint32Div(), left, right,
       trap_->ZeroCheck32(wasm::kTrapDivByZero, right, position));
@@ -1701,23 +1645,94 @@ Node* WasmGraphBuilder::BuildI32DivU(Node* left, Node* right,
 Node* WasmGraphBuilder::BuildI32RemU(Node* left, Node* right,
                                      wasm::WasmCodePosition position) {
   MachineOperatorBuilder* m = jsgraph()->machine();
-  if (module_ && module_->asm_js()) {
-    // asm.js semantics return 0 on divide or mod by zero.
-    // Explicit check for x % 0.
-    Diamond z(
-        graph(), jsgraph()->common(),
-        graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(0)),
-        BranchHint::kFalse);
-
-    Node* rem = graph()->NewNode(jsgraph()->machine()->Uint32Mod(), left, right,
-                                 z.if_false);
-    return z.Phi(MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
-                 rem);
-  }
-
   return graph()->NewNode(
       m->Uint32Mod(), left, right,
       trap_->ZeroCheck32(wasm::kTrapRemByZero, right, position));
+}
+
+Node* WasmGraphBuilder::BuildI32AsmjsDivS(Node* left, Node* right) {
+  MachineOperatorBuilder* m = jsgraph()->machine();
+  // asm.js semantics return 0 on divide or mod by zero.
+  if (m->Int32DivIsSafe()) {
+    // The hardware instruction does the right thing (e.g. arm).
+    return graph()->NewNode(m->Int32Div(), left, right, graph()->start());
+  }
+
+  // Check denominator for zero.
+  Diamond z(
+      graph(), jsgraph()->common(),
+      graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(0)),
+      BranchHint::kFalse);
+
+  // Check numerator for -1. (avoid minint / -1 case).
+  Diamond n(
+      graph(), jsgraph()->common(),
+      graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(-1)),
+      BranchHint::kFalse);
+
+  Node* div = graph()->NewNode(m->Int32Div(), left, right, z.if_false);
+  Node* neg =
+      graph()->NewNode(m->Int32Sub(), jsgraph()->Int32Constant(0), left);
+
+  return n.Phi(
+      MachineRepresentation::kWord32, neg,
+      z.Phi(MachineRepresentation::kWord32, jsgraph()->Int32Constant(0), div));
+}
+
+Node* WasmGraphBuilder::BuildI32AsmjsRemS(Node* left, Node* right) {
+  MachineOperatorBuilder* m = jsgraph()->machine();
+  // asm.js semantics return 0 on divide or mod by zero.
+  // Explicit check for x % 0.
+  Diamond z(
+      graph(), jsgraph()->common(),
+      graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(0)),
+      BranchHint::kFalse);
+
+  // Explicit check for x % -1.
+  Diamond d(
+      graph(), jsgraph()->common(),
+      graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(-1)),
+      BranchHint::kFalse);
+  d.Chain(z.if_false);
+
+  return z.Phi(
+      MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
+      d.Phi(MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
+            graph()->NewNode(m->Int32Mod(), left, right, d.if_false)));
+}
+
+Node* WasmGraphBuilder::BuildI32AsmjsDivU(Node* left, Node* right) {
+  MachineOperatorBuilder* m = jsgraph()->machine();
+  // asm.js semantics return 0 on divide or mod by zero.
+  if (m->Uint32DivIsSafe()) {
+    // The hardware instruction does the right thing (e.g. arm).
+    return graph()->NewNode(m->Uint32Div(), left, right, graph()->start());
+  }
+
+  // Explicit check for x % 0.
+  Diamond z(
+      graph(), jsgraph()->common(),
+      graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(0)),
+      BranchHint::kFalse);
+
+  return z.Phi(MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
+               graph()->NewNode(jsgraph()->machine()->Uint32Div(), left, right,
+                                z.if_false));
+}
+
+Node* WasmGraphBuilder::BuildI32AsmjsRemU(Node* left, Node* right) {
+  MachineOperatorBuilder* m = jsgraph()->machine();
+  // asm.js semantics return 0 on divide or mod by zero.
+  // Explicit check for x % 0.
+  Diamond z(
+      graph(), jsgraph()->common(),
+      graph()->NewNode(m->Word32Equal(), right, jsgraph()->Int32Constant(0)),
+      BranchHint::kFalse);
+
+  Node* rem = graph()->NewNode(jsgraph()->machine()->Uint32Mod(), left, right,
+                               z.if_false);
+  return z.Phi(MachineRepresentation::kWord32, jsgraph()->Int32Constant(0),
+               rem);
 }
 
 Node* WasmGraphBuilder::BuildI64DivS(Node* left, Node* right,
@@ -2409,7 +2424,6 @@ void WasmGraphBuilder::BuildJSToWasmWrapper(Handle<Code> wasm_code,
   MergeControlToEnd(jsgraph(), ret);
 }
 
-
 void WasmGraphBuilder::BuildWasmToJSWrapper(Handle<JSFunction> function,
                                             wasm::FunctionSig* sig) {
   int js_count = function->shared()->internal_formal_parameter_count();
@@ -2502,7 +2516,6 @@ void WasmGraphBuilder::BuildWasmToJSWrapper(Handle<JSFunction> function,
   MergeControlToEnd(jsgraph(), ret);
 }
 
-
 Node* WasmGraphBuilder::MemBuffer(uint32_t offset) {
   DCHECK(module_ && module_->instance);
   if (offset == 0) {
@@ -2519,7 +2532,6 @@ Node* WasmGraphBuilder::MemBuffer(uint32_t offset) {
   }
 }
 
-
 Node* WasmGraphBuilder::MemSize(uint32_t offset) {
   DCHECK(module_ && module_->instance);
   uint32_t size = static_cast<uint32_t>(module_->instance->mem_size);
@@ -2531,7 +2543,6 @@ Node* WasmGraphBuilder::MemSize(uint32_t offset) {
   }
 }
 
-
 Node* WasmGraphBuilder::FunctionTable() {
   DCHECK(module_ && module_->instance &&
          !module_->instance->function_table.is_null());
@@ -2540,7 +2551,6 @@ Node* WasmGraphBuilder::FunctionTable() {
   }
   return function_table_;
 }
-
 
 Node* WasmGraphBuilder::LoadGlobal(uint32_t index) {
   DCHECK(module_ && module_->instance && module_->instance->globals_start);
@@ -2554,7 +2564,6 @@ Node* WasmGraphBuilder::LoadGlobal(uint32_t index) {
   *effect_ = node;
   return node;
 }
-
 
 Node* WasmGraphBuilder::StoreGlobal(uint32_t index, Node* val) {
   DCHECK(module_ && module_->instance && module_->instance->globals_start);
@@ -2573,22 +2582,33 @@ Node* WasmGraphBuilder::StoreGlobal(uint32_t index, Node* val) {
 void WasmGraphBuilder::BoundsCheckMem(MachineType memtype, Node* index,
                                       uint32_t offset,
                                       wasm::WasmCodePosition position) {
-  // TODO(turbofan): fold bounds checks for constant indexes.
   DCHECK(module_ && module_->instance);
   size_t size = module_->instance->mem_size;
   byte memsize = wasm::WasmOpcodes::MemSize(memtype);
-  Node* cond;
+
   if (offset >= size || (static_cast<uint64_t>(offset) + memsize) > size) {
-    // The access will always throw.
-    cond = jsgraph()->Int32Constant(0);
-  } else {
-    // Check against the limit.
-    size_t limit = size - offset - memsize;
-    CHECK(limit <= kMaxUInt32);
-    cond = graph()->NewNode(
-        jsgraph()->machine()->Uint32LessThanOrEqual(), index,
-        jsgraph()->Int32Constant(static_cast<uint32_t>(limit)));
+    // The access will always throw (unless memory is grown).
+    Node* cond = jsgraph()->Int32Constant(0);
+    trap_->AddTrapIfFalse(wasm::kTrapMemOutOfBounds, cond, position);
+    return;
   }
+
+  // Check against the effective size.
+  size_t effective_size = size - offset - memsize;
+  CHECK(effective_size <= kMaxUInt32);
+
+  Uint32Matcher m(index);
+  if (m.HasValue()) {
+    uint32_t value = m.Value();
+    if (value <= effective_size) {
+      // The bounds check will always succeed.
+      return;
+    }
+  }
+
+  Node* cond = graph()->NewNode(
+      jsgraph()->machine()->Uint32LessThanOrEqual(), index,
+      jsgraph()->Int32Constant(static_cast<uint32_t>(effective_size)));
 
   trap_->AddTrapIfFalse(wasm::kTrapMemOutOfBounds, cond, position);
 }
@@ -2597,19 +2617,10 @@ Node* WasmGraphBuilder::LoadMem(wasm::LocalType type, MachineType memtype,
                                 Node* index, uint32_t offset,
                                 wasm::WasmCodePosition position) {
   Node* load;
-
-  if (module_ && module_->asm_js()) {
-    // asm.js semantics use CheckedLoad (i.e. OOB reads return 0ish).
-    DCHECK_EQ(0, offset);
-    const Operator* op = jsgraph()->machine()->CheckedLoad(memtype);
-    load = graph()->NewNode(op, MemBuffer(0), index, MemSize(0), *effect_,
-                            *control_);
-  } else {
-    // WASM semantics throw on OOB. Introduce explicit bounds check.
-    BoundsCheckMem(memtype, index, offset, position);
-    load = graph()->NewNode(jsgraph()->machine()->Load(memtype),
-                            MemBuffer(offset), index, *effect_, *control_);
-  }
+  // WASM semantics throw on OOB. Introduce explicit bounds check.
+  BoundsCheckMem(memtype, index, offset, position);
+  load = graph()->NewNode(jsgraph()->machine()->Load(memtype),
+                          MemBuffer(offset), index, *effect_, *control_);
 
   *effect_ = load;
 
@@ -2633,36 +2644,45 @@ Node* WasmGraphBuilder::StoreMem(MachineType memtype, Node* index,
                                  uint32_t offset, Node* val,
                                  wasm::WasmCodePosition position) {
   Node* store;
-  if (module_ && module_->asm_js()) {
-    // asm.js semantics use CheckedStore (i.e. ignore OOB writes).
-    DCHECK_EQ(0, offset);
-    const Operator* op =
-        jsgraph()->machine()->CheckedStore(memtype.representation());
-    store = graph()->NewNode(op, MemBuffer(0), index, MemSize(0), val, *effect_,
-                             *control_);
-  } else {
-    // WASM semantics throw on OOB. Introduce explicit bounds check.
-    BoundsCheckMem(memtype, index, offset, position);
-    StoreRepresentation rep(memtype.representation(), kNoWriteBarrier);
-    store =
-        graph()->NewNode(jsgraph()->machine()->Store(rep), MemBuffer(offset),
-                         index, val, *effect_, *control_);
-  }
+  // WASM semantics throw on OOB. Introduce explicit bounds check.
+  BoundsCheckMem(memtype, index, offset, position);
+  StoreRepresentation rep(memtype.representation(), kNoWriteBarrier);
+  store = graph()->NewNode(jsgraph()->machine()->Store(rep), MemBuffer(offset),
+                           index, val, *effect_, *control_);
   *effect_ = store;
   return store;
 }
 
+Node* WasmGraphBuilder::BuildAsmjsLoadMem(MachineType type, Node* index) {
+  // TODO(turbofan): fold bounds checks for constant asm.js loads.
+  // asm.js semantics use CheckedLoad (i.e. OOB reads return 0ish).
+  const Operator* op = jsgraph()->machine()->CheckedLoad(type);
+  Node* load = graph()->NewNode(op, MemBuffer(0), index, MemSize(0), *effect_,
+                                *control_);
+  *effect_ = load;
+  return load;
+}
+
+Node* WasmGraphBuilder::BuildAsmjsStoreMem(MachineType type, Node* index,
+                                           Node* val) {
+  // TODO(turbofan): fold bounds checks for constant asm.js stores.
+  // asm.js semantics use CheckedStore (i.e. ignore OOB writes).
+  const Operator* op =
+      jsgraph()->machine()->CheckedStore(type.representation());
+  Node* store = graph()->NewNode(op, MemBuffer(0), index, MemSize(0), val,
+                                 *effect_, *control_);
+  *effect_ = store;
+  return val;
+}
 
 void WasmGraphBuilder::PrintDebugName(Node* node) {
   PrintF("#%d:%s", node->id(), node->op()->mnemonic());
 }
 
-
 Node* WasmGraphBuilder::String(const char* string) {
   return jsgraph()->Constant(
       jsgraph()->isolate()->factory()->NewStringFromAsciiChecked(string));
 }
-
 
 Graph* WasmGraphBuilder::graph() { return jsgraph()->graph(); }
 
@@ -3016,13 +3036,8 @@ class WasmCompilationUnit {
         isolate_->factory()->NewFixedArray(2, TENURED);
     if (!module_env_->instance->js_object.is_null()) {
       deopt_data->set(0, *module_env_->instance->js_object);
-      deopt_data->set(1, Smi::FromInt(function_->func_index));
-    } else if (info_.GetDebugName().get() != nullptr) {
-      MaybeHandle<String> maybe_name = isolate_->factory()->NewStringFromUtf8(
-          CStrVector(info_.GetDebugName().get()));
-      if (!maybe_name.is_null())
-        deopt_data->set(0, *maybe_name.ToHandleChecked());
     }
+    deopt_data->set(1, Smi::FromInt(function_->func_index));
     deopt_data->set_length(2);
     code->set_deoptimization_data(*deopt_data);
 

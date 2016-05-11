@@ -23,7 +23,7 @@
         '../..',
       ],
       'sources': [  ### gcmole(all) ###
-        'atomic-utils-unittest.cc',
+        'base/atomic-utils-unittest.cc',
         'base/bits-unittest.cc',
         'base/cpu-unittest.cc',
         'base/division-by-constant-unittest.cc',
@@ -41,7 +41,6 @@
         'cancelable-tasks-unittest.cc',
         'char-predicates-unittest.cc',
         'compiler/branch-elimination-unittest.cc',
-        'compiler/change-lowering-unittest.cc',
         'compiler/coalesced-live-ranges-unittest.cc',
         'compiler/common-operator-reducer-unittest.cc',
         'compiler/common-operator-unittest.cc',

@@ -578,7 +578,7 @@ TEST(GlobalHandles) {
 static bool WeakPointerCleared = false;
 
 static void TestWeakGlobalHandleCallback(
-    const v8::WeakCallbackData<v8::Value, void>& data) {
+    const v8::WeakCallbackInfo<void>& data) {
   std::pair<v8::Persistent<v8::Value>*, int>* p =
       reinterpret_cast<std::pair<v8::Persistent<v8::Value>*, int>*>(
           data.GetParameter());
@@ -611,9 +611,9 @@ TEST(WeakGlobalHandlesScavenge) {
   }
 
   std::pair<Handle<Object>*, int> handle_and_id(&h2, 1234);
-  GlobalHandles::MakeWeak(h2.location(),
-                          reinterpret_cast<void*>(&handle_and_id),
-                          &TestWeakGlobalHandleCallback);
+  GlobalHandles::MakeWeak(
+      h2.location(), reinterpret_cast<void*>(&handle_and_id),
+      &TestWeakGlobalHandleCallback, v8::WeakCallbackType::kParameter);
 
   // Scavenge treats weak pointers as normal roots.
   heap->CollectGarbage(NEW_SPACE);
@@ -658,9 +658,9 @@ TEST(WeakGlobalHandlesMark) {
   CHECK(!heap->InNewSpace(*h1) && !heap->InNewSpace(*h2));
 
   std::pair<Handle<Object>*, int> handle_and_id(&h2, 1234);
-  GlobalHandles::MakeWeak(h2.location(),
-                          reinterpret_cast<void*>(&handle_and_id),
-                          &TestWeakGlobalHandleCallback);
+  GlobalHandles::MakeWeak(
+      h2.location(), reinterpret_cast<void*>(&handle_and_id),
+      &TestWeakGlobalHandleCallback, v8::WeakCallbackType::kParameter);
   CHECK(!GlobalHandles::IsNearDeath(h1.location()));
   CHECK(!GlobalHandles::IsNearDeath(h2.location()));
 
@@ -696,9 +696,9 @@ TEST(DeleteWeakGlobalHandle) {
   }
 
   std::pair<Handle<Object>*, int> handle_and_id(&h, 1234);
-  GlobalHandles::MakeWeak(h.location(),
-                          reinterpret_cast<void*>(&handle_and_id),
-                          &TestWeakGlobalHandleCallback);
+  GlobalHandles::MakeWeak(h.location(), reinterpret_cast<void*>(&handle_and_id),
+                          &TestWeakGlobalHandleCallback,
+                          v8::WeakCallbackType::kParameter);
 
   // Scanvenge does not recognize weak reference.
   heap->CollectGarbage(NEW_SPACE);
@@ -6741,6 +6741,19 @@ TEST(Regress598319) {
     CHECK(Marking::IsBlack(
         Marking::MarkBitFrom(HeapObject::cast(arr.get()->get(i)))));
   }
+}
+
+TEST(Regress609761) {
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Heap* heap = CcTest::heap();
+  Isolate* isolate = heap->isolate();
+
+  intptr_t size_before = heap->SizeOfObjects();
+  Handle<FixedArray> array = isolate->factory()->NewFixedArray(200000);
+  array->Shrink(1);
+  intptr_t size_after = heap->SizeOfObjects();
+  CHECK_EQ(size_after, size_before + array->Size());
 }
 
 }  // namespace internal

@@ -155,10 +155,10 @@ SamplingHeapProfiler::AllocationNode* SamplingHeapProfiler::AddStack() {
   AllocationNode* node = &profile_root_;
 
   std::vector<SharedFunctionInfo*> stack;
-  StackTraceFrameIterator it(isolate_);
+  JavaScriptFrameIterator it(isolate_);
   int frames_captured = 0;
   while (!it.done() && frames_captured < stack_depth_) {
-    StandardFrame* frame = it.frame();
+    JavaScriptFrame* frame = it.frame();
     SharedFunctionInfo* shared = frame->function()->shared();
     stack.push_back(shared);
 
@@ -233,9 +233,9 @@ v8::AllocationProfile::Node* SamplingHeapProfiler::TranslateAllocationNode(
       line = 1 + Script::GetLineNumber(script, node->script_position_);
       column = 1 + Script::GetColumnNumber(script, node->script_position_);
     }
-    for (auto alloc : node->allocations_) {
-      allocations.push_back(ScaleSample(alloc.first, alloc.second));
-    }
+  }
+  for (auto alloc : node->allocations_) {
+    allocations.push_back(ScaleSample(alloc.first, alloc.second));
   }
 
   profile->nodes().push_back(v8::AllocationProfile::Node(

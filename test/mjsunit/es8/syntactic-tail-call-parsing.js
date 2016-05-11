@@ -4,6 +4,7 @@
 
 // Flags: --allow-natives-syntax --harmony-explicit-tailcalls
 // Flags: --harmony-do-expressions
+"use strict";
 
 var SyntaxErrorTests = [
   { msg: "Unexpected expression inside tail call",
@@ -222,17 +223,14 @@ var SyntaxErrorTests = [
       { src: `()=>{ switch (continue foo()) { case 1: break; } ; }`,
         err: `              ^^^^^^^^^^^^^^`,
       },
-      { src: `()=>{ with (continue foo()) { smth; } }`,
-        err: `            ^^^^^^^^^^^^^^`,
-      },
       { src: `()=>{ let x = continue foo() }`,
         err: `              ^^^^^^^^^^^^^^`,
       },
       { src: `()=>{ const c = continue  foo() }`,
         err: `                ^^^^^^^^^^^^^^^`,
       },
-      { src: `class A {}; class B extends A { constructor() { return continue super () ; } }`,
-        err: `                                                       ^^^^^^^^^^^^^^^^^`,
+      { src: `class A {}; class B extends A { constructor() { return continue foo () ; } }`,
+        err: `                                                       ^^^^^^^^^^^^^^^`,
       },
       { src: `class A extends continue f () {}; }`,
         err: `                ^^^^^^^^^^^^^`,
@@ -272,6 +270,25 @@ var SyntaxErrorTests = [
       },
     ],
   },
+  { msg: "Tail call of a direct eval is not allowed",
+    tests: [
+      { src: `()=>{ return  continue  eval(" foo () " )  ; }`,
+        err: `                        ^^^^^^^^^^^^^^^^^`,
+      },
+      { src: `()=>{ return  a || continue  eval("", 1, 2)  ; }`,
+        err: `                             ^^^^^^^^^^^^^^`,
+      },
+      { src: `()=>{ return  a, continue  eval  ( )  ; }`,
+        err: `                           ^^^^^^^^^`,
+      },
+      { src: `()=> a, continue  eval  ( )  ; `,
+        err: `                  ^^^^^^^^^`,
+      },
+      { src: `()=> a || continue  eval  (' ' )  ; `,
+        err: `                    ^^^^^^^^^^^^`,
+      },
+    ],
+  },
   { msg: "Undefined label 'foo'",
     tests: [
       { src: `()=>{ continue  foo () ; }`,
@@ -287,6 +304,7 @@ var NoErrorTests = [
   `()=>{ return continue  a.b.c.foo () ; }`,
   `()=>{ return continue  a().b.c().d.foo () ; }`,
   `()=>{ return continue  foo (1)(2)(3, 4) ; }`,
+  `()=>{ return continue (0, eval)(); }`,
   `()=>{ return ( continue b() ) ; }`,
   "()=>{ return continue bar`ab cd ef` ; }",
   "()=>{ return continue bar`ab ${cd} ef` ; }",
@@ -312,13 +330,13 @@ var NoErrorTests = [
 
 
 (function() {
-  for (test_set of SyntaxErrorTests) {
+  for (var test_set of SyntaxErrorTests) {
     var expected_message = "SyntaxError: " + test_set.msg;
-    for (test of test_set.tests) {
+    for (var test of test_set.tests) {
       var passed = true;
       var e = null;
       try {
-        Realm.eval(0, test.src);
+        eval(test.src);
       } catch (ee) {
         e = ee;
       }
@@ -359,9 +377,10 @@ var NoErrorTests = [
 
 
 (function() {
-  for (src of NoErrorTests) {
+  for (var src of NoErrorTests) {
     print("=======================================");
     print("Source   | " + src);
+    src = `"use strict"; ` + src;
     Realm.eval(0, src);
     print("PASSED");
     print();

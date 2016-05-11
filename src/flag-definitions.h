@@ -184,9 +184,9 @@ DEFINE_BOOL(harmony, false, "enable all completed harmony features")
 DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony features")
 DEFINE_IMPLICATION(es_staging, harmony)
 
-DEFINE_BOOL(promise_extra, true, "additional V8 Promise functions")
-// Removing extra Promise functions is staged
-DEFINE_NEG_IMPLICATION(harmony, promise_extra)
+DEFINE_BOOL(promise_extra, false, "additional V8 Promise functions")
+// Removing extra Promise functions is shipped
+DEFINE_NEG_VALUE_IMPLICATION(harmony_shipping, promise_extra, true)
 
 // Activate on ClusterFuzz.
 DEFINE_IMPLICATION(es_staging, harmony_regexp_lookbehind)
@@ -194,7 +194,6 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
 
 // Features that are still work in progress (behind individual flags).
 #define HARMONY_INPROGRESS(V)                                  \
-  V(harmony_explicit_tailcalls, "harmony explicit tail calls") \
   V(harmony_function_sent, "harmony function.sent")            \
   V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")    \
   V(harmony_simd, "harmony simd")                              \
@@ -205,6 +204,7 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
 #define HARMONY_STAGED(V)                                                    \
   V(harmony_regexp_lookbehind, "harmony regexp lookbehind")                  \
   V(harmony_tailcalls, "harmony tail calls")                                 \
+  V(harmony_explicit_tailcalls, "harmony explicit tail calls")               \
   V(harmony_object_values_entries, "harmony Object.values / Object.entries") \
   V(harmony_object_own_property_descriptors,                                 \
     "harmony Object.getOwnPropertyDescriptors()")                            \
@@ -447,7 +447,6 @@ DEFINE_BOOL(turbo_verify_allocation, DEBUG_BOOL,
             "verify register allocation in TurboFan")
 DEFINE_BOOL(turbo_move_optimization, true, "optimize gap moves in TurboFan")
 DEFINE_BOOL(turbo_jt, true, "enable jump threading in TurboFan")
-DEFINE_BOOL(turbo_osr, true, "enable OSR in TurboFan")
 DEFINE_BOOL(turbo_stress_loop_peeling, false,
             "stress loop peeling optimization")
 DEFINE_BOOL(turbo_cf_optimization, true, "optimize control flow in TurboFan")

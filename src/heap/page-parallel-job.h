@@ -121,7 +121,7 @@ class PageParallelJob {
     Item(MemoryChunk* chunk, typename JobTraits::PerPageData data, Item* next)
         : chunk(chunk), state(kAvailable), data(data), next(next) {}
     MemoryChunk* chunk;
-    AtomicValue<ProcessingState> state;
+    base::AtomicValue<ProcessingState> state;
     typename JobTraits::PerPageData data;
     Item* next;
   };
@@ -161,7 +161,7 @@ class PageParallelJob {
           current = items_;
         }
       }
-      on_finish_->Signal();
+      on_finish_->Signal("PageParallelJob::Task::RunInternal");
     }
 
     Heap* heap_;

@@ -511,8 +511,25 @@ class MacroAssembler : public Assembler {
   void StoreRepresentation(Register src, const MemOperand& mem,
                            Representation r, Register scratch = no_reg);
 
-  void LoadDouble(DoubleRegister dst, const MemOperand& mem, Register scratch);
-  void StoreDouble(DoubleRegister src, const MemOperand& mem, Register scratch);
+  void LoadDouble(DoubleRegister dst, const MemOperand& mem,
+                  Register scratch = no_reg);
+  void LoadDoubleU(DoubleRegister dst, const MemOperand& mem,
+                  Register scratch = no_reg);
+
+  void LoadSingle(DoubleRegister dst, const MemOperand& mem,
+                  Register scratch = no_reg);
+  void LoadSingleU(DoubleRegister dst, const MemOperand& mem,
+                   Register scratch = no_reg);
+
+  void StoreDouble(DoubleRegister src, const MemOperand& mem,
+                   Register scratch = no_reg);
+  void StoreDoubleU(DoubleRegister src, const MemOperand& mem,
+                   Register scratch = no_reg);
+
+  void StoreSingle(DoubleRegister src, const MemOperand& mem,
+                   Register scratch = no_reg);
+  void StoreSingleU(DoubleRegister src, const MemOperand& mem,
+                    Register scratch = no_reg);
 
   // Move values between integer and floating point registers.
   void MovIntToDouble(DoubleRegister dst, Register src, Register scratch);
@@ -693,6 +710,15 @@ class MacroAssembler : public Assembler {
 
   void Allocate(Register object_size, Register result, Register result_end,
                 Register scratch, Label* gc_required, AllocationFlags flags);
+
+  // FastAllocate is right now only used for folded allocations. It just
+  // increments the top pointer without checking against limit. This can only
+  // be done if it was proved earlier that the allocation will succeed.
+  void FastAllocate(int object_size, Register result, Register scratch1,
+                    Register scratch2, AllocationFlags flags);
+
+  void FastAllocate(Register object_size, Register result, Register result_end,
+                    Register scratch, AllocationFlags flags);
 
   void AllocateTwoByteString(Register result, Register length,
                              Register scratch1, Register scratch2,

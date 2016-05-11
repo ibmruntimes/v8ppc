@@ -683,13 +683,7 @@ void V8::RegisterExternallyReferencedObject(i::Object** object,
   isolate->heap()->RegisterExternallyReferencedObject(object);
 }
 
-void V8::MakeWeak(i::Object** object, void* parameter,
-                  WeakCallback weak_callback) {
-  i::GlobalHandles::MakeWeak(object, parameter, weak_callback);
-}
-
-
-void V8::MakeWeak(i::Object** object, void* parameter,
+void V8::MakeWeak(i::Object** location, void* parameter,
                   int internal_field_index1, int internal_field_index2,
                   WeakCallbackInfo<void>::Callback weak_callback) {
   WeakCallbackType type = WeakCallbackType::kParameter;
@@ -704,24 +698,25 @@ void V8::MakeWeak(i::Object** object, void* parameter,
     DCHECK_EQ(internal_field_index1, -1);
     DCHECK_EQ(internal_field_index2, -1);
   }
-  i::GlobalHandles::MakeWeak(object, parameter, weak_callback, type);
+  i::GlobalHandles::MakeWeak(location, parameter, weak_callback, type);
 }
 
-
-void V8::MakeWeak(i::Object** object, void* parameter,
+void V8::MakeWeak(i::Object** location, void* parameter,
                   WeakCallbackInfo<void>::Callback weak_callback,
                   WeakCallbackType type) {
-  i::GlobalHandles::MakeWeak(object, parameter, weak_callback, type);
+  i::GlobalHandles::MakeWeak(location, parameter, weak_callback, type);
 }
 
-
-void* V8::ClearWeak(i::Object** obj) {
-  return i::GlobalHandles::ClearWeakness(obj);
+void V8::MakeWeak(i::Object*** location_addr) {
+  i::GlobalHandles::MakeWeak(location_addr);
 }
 
+void* V8::ClearWeak(i::Object** location) {
+  return i::GlobalHandles::ClearWeakness(location);
+}
 
-void V8::DisposeGlobal(i::Object** obj) {
-  i::GlobalHandles::Destroy(obj);
+void V8::DisposeGlobal(i::Object** location) {
+  i::GlobalHandles::Destroy(location);
 }
 
 
@@ -3554,6 +3549,12 @@ bool Value::SameValue(Local<Value> that) const {
   return self->SameValue(*other);
 }
 
+Local<String> Value::TypeOf(v8::Isolate* external_isolate) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(external_isolate);
+  ENTER_V8(isolate);
+  LOG_API(isolate, "v8::Value::TypeOf()");
+  return Utils::ToLocal(i::Object::TypeOf(isolate, Utils::OpenHandle(this)));
+}
 
 Maybe<bool> v8::Object::Set(v8::Local<v8::Context> context,
                             v8::Local<Value> key, v8::Local<Value> value) {
@@ -4368,6 +4369,10 @@ bool v8::Object::IsCallable() {
   return self->IsCallable();
 }
 
+bool v8::Object::IsConstructor() {
+  auto self = Utils::OpenHandle(this);
+  return self->IsConstructor();
+}
 
 MaybeLocal<Value> Object::CallAsFunction(Local<Context> context,
                                          Local<Value> recv, int argc,
@@ -6362,14 +6367,22 @@ Local<Array> Map::AsArray() const {
   LOG_API(isolate, "Map::AsArray");
   ENTER_V8(isolate);
   i::Handle<i::OrderedHashMap> table(i::OrderedHashMap::cast(obj->table()));
-  int size = table->NumberOfElements();
-  int length = size * 2;
+  int length = table->NumberOfElements() * 2;
   i::Handle<i::FixedArray> result = factory->NewFixedArray(length);
-  for (int i = 0; i < size; ++i) {
-    if (table->KeyAt(i)->IsTheHole()) continue;
-    result->set(i * 2, table->KeyAt(i));
-    result->set(i * 2 + 1, table->ValueAt(i));
+  int result_index = 0;
+  {
+    i::DisallowHeapAllocation no_gc;
+    int capacity = table->UsedCapacity();
+    i::Oddball* the_hole = isolate->heap()->the_hole_value();
+    for (int i = 0; i < capacity; ++i) {
+      i::Object* key = table->KeyAt(i);
+      if (key == the_hole) continue;
+      result->set(result_index++, key);
+      result->set(result_index++, table->ValueAt(i));
+    }
   }
+  DCHECK_EQ(result_index, result->length());
+  DCHECK_EQ(result_index, length);
   i::Handle<i::JSArray> result_array =
       factory->NewJSArrayWithElements(result, i::FAST_ELEMENTS, length);
   return Utils::ToLocal(result_array);
@@ -6448,12 +6461,19 @@ Local<Array> Set::AsArray() const {
   i::Handle<i::OrderedHashSet> table(i::OrderedHashSet::cast(obj->table()));
   int length = table->NumberOfElements();
   i::Handle<i::FixedArray> result = factory->NewFixedArray(length);
-  for (int i = 0; i < length; ++i) {
-    i::Object* key = table->KeyAt(i);
-    if (!key->IsTheHole()) {
-      result->set(i, key);
+  int result_index = 0;
+  {
+    i::DisallowHeapAllocation no_gc;
+    int capacity = table->UsedCapacity();
+    i::Oddball* the_hole = isolate->heap()->the_hole_value();
+    for (int i = 0; i < capacity; ++i) {
+      i::Object* key = table->KeyAt(i);
+      if (key == the_hole) continue;
+      result->set(result_index++, key);
     }
   }
+  DCHECK_EQ(result_index, result->length());
+  DCHECK_EQ(result_index, length);
   i::Handle<i::JSArray> result_array =
       factory->NewJSArrayWithElements(result, i::FAST_ELEMENTS, length);
   return Utils::ToLocal(result_array);
@@ -7488,6 +7508,12 @@ void Isolate::GetStackSample(const RegisterState& state, void** frames,
                                 frames, frames_limit, sample_info);
 }
 
+size_t Isolate::NumberOfPhantomHandleResetsSinceLastCall() {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  size_t result = isolate->global_handles()->NumberOfPhantomHandleResets();
+  isolate->global_handles()->ResetNumberOfPhantomHandleResets();
+  return result;
+}
 
 void Isolate::SetEventLogger(LogEventCallback that) {
   // Do not overwrite the event logger if we want to log explicitly.

@@ -177,59 +177,6 @@ bool CompilationInfo::has_simple_parameters() {
 }
 
 
-int CompilationInfo::TraceInlinedFunction(Handle<SharedFunctionInfo> shared,
-                                          SourcePosition position,
-                                          int parent_id) {
-  DCHECK(track_positions_);
-
-  int inline_id = static_cast<int>(inlined_function_infos_.size());
-  InlinedFunctionInfo info(parent_id, position, UnboundScript::kNoScriptId,
-      shared->start_position());
-  if (!shared->script()->IsUndefined()) {
-    Handle<Script> script(Script::cast(shared->script()));
-    info.script_id = script->id();
-
-    if (FLAG_hydrogen_track_positions && !script->source()->IsUndefined()) {
-      CodeTracer::Scope tracing_scope(isolate()->GetCodeTracer());
-      OFStream os(tracing_scope.file());
-      os << "--- FUNCTION SOURCE (" << shared->DebugName()->ToCString().get()
-         << ") id{" << optimization_id() << "," << inline_id << "} ---\n";
-      {
-        DisallowHeapAllocation no_allocation;
-        int start = shared->start_position();
-        int len = shared->end_position() - start;
-        String::SubStringRange source(String::cast(script->source()), start,
-                                      len);
-        for (const auto& c : source) {
-          os << AsReversiblyEscapedUC16(c);
-        }
-      }
-
-      os << "\n--- END ---\n";
-    }
-  }
-
-  inlined_function_infos_.push_back(info);
-
-  if (FLAG_hydrogen_track_positions && inline_id != 0) {
-    CodeTracer::Scope tracing_scope(isolate()->GetCodeTracer());
-    OFStream os(tracing_scope.file());
-    os << "INLINE (" << shared->DebugName()->ToCString().get() << ") id{"
-       << optimization_id() << "," << inline_id << "} AS " << inline_id
-       << " AT " << position << std::endl;
-  }
-
-  return inline_id;
-}
-
-
-void CompilationInfo::LogDeoptCallPosition(int pc_offset, int inlining_id) {
-  if (!track_positions_ || IsStub()) return;
-  DCHECK_LT(static_cast<size_t>(inlining_id), inlined_function_infos_.size());
-  inlined_function_infos_.at(inlining_id).deopt_pc_offsets.push_back(pc_offset);
-}
-
-
 base::SmartArrayPointer<char> CompilationInfo::GetDebugName() const {
   if (parse_info() && parse_info()->literal()) {
     AllowHandleDereference allow_deref;
@@ -652,7 +599,7 @@ bool Renumber(ParseInfo* parse_info) {
   return true;
 }
 
-bool UseTurboFan(Handle<SharedFunctionInfo> shared, BailoutId osr_ast_id) {
+bool UseTurboFan(Handle<SharedFunctionInfo> shared) {
   bool optimization_disabled = shared->optimization_disabled();
   bool dont_crankshaft = shared->dont_crankshaft();
 
@@ -669,13 +616,8 @@ bool UseTurboFan(Handle<SharedFunctionInfo> shared, BailoutId osr_ast_id) {
   // 3. Explicitly enabled by the command-line filter.
   bool passes_turbo_filter = shared->PassesFilter(FLAG_turbo_filter);
 
-  // If this is OSR request, OSR must be enabled by Turbofan.
-  bool passes_osr_test = FLAG_turbo_osr || osr_ast_id.IsNone();
-
-  return (is_turbofanable_asm ||
-          is_unsupported_by_crankshaft_but_turbofanable ||
-          passes_turbo_filter) &&
-         passes_osr_test;
+  return is_turbofanable_asm || is_unsupported_by_crankshaft_but_turbofanable ||
+         passes_turbo_filter;
 }
 
 bool GetOptimizedCodeNow(CompilationJob* job) {
@@ -778,25 +720,18 @@ MaybeHandle<Code> GetOptimizedCode(Handle<JSFunction> function,
   VMState<COMPILER> state(isolate);
   DCHECK(!isolate->has_pending_exception());
   PostponeInterruptsScope postpone(isolate);
-  bool use_turbofan = UseTurboFan(shared, osr_ast_id);
+  bool use_turbofan = UseTurboFan(shared);
   base::SmartPointer<CompilationJob> job(
       use_turbofan ? compiler::Pipeline::NewCompilationJob(function)
                    : new HCompilationJob(function));
   CompilationInfo* info = job->info();
   ParseInfo* parse_info = info->parse_info();
 
-  info->SetOptimizingForOsr(osr_ast_id);
+  info->SetOptimizingForOsr(osr_ast_id, osr_frame);
 
   // Do not use Crankshaft/TurboFan if we need to be able to set break points.
   if (info->shared_info()->HasDebugInfo()) {
     info->AbortOptimization(kFunctionBeingDebugged);
-    return MaybeHandle<Code>();
-  }
-
-  // Do not use Crankshaft/TurboFan on a generator function.
-  // TODO(neis): Eventually enable for Turbofan.
-  if (IsGeneratorFunction(info->shared_info()->kind())) {
-    info->AbortOptimization(kGenerator);
     return MaybeHandle<Code>();
   }
 
@@ -832,7 +767,6 @@ MaybeHandle<Code> GetOptimizedCode(Handle<JSFunction> function,
       return isolate->builtins()->InOptimizationQueue();
     }
   } else {
-    info->set_osr_frame(osr_frame);
     if (GetOptimizedCodeNow(job.get())) return info->code();
   }
 
@@ -977,18 +911,6 @@ MaybeHandle<Code> GetLazyCode(Handle<JSFunction> function) {
       }
       DCHECK(function->shared()->is_compiled());
       return cached_code;
-    }
-  }
-
-  // If the debugger is active, do not compile with turbofan unless we can
-  // deopt from turbofan code.
-  if (FLAG_turbo_asm && function->shared()->asm_function() &&
-      (FLAG_turbo_asm_deoptimization || !isolate->debug()->is_active()) &&
-      !FLAG_turbo_osr) {
-    Handle<Code> code;
-    if (GetOptimizedCode(function, Compiler::NOT_CONCURRENT).ToHandle(&code)) {
-      DCHECK(function->shared()->is_compiled());
-      return code;
     }
   }
 
@@ -1321,6 +1243,12 @@ bool Compiler::EnsureDeoptimizationSupport(CompilationInfo* info) {
     Zone zone(info->isolate()->allocator());
     CompilationInfo unoptimized(info->parse_info(), info->closure());
     unoptimized.EnableDeoptimizationSupport();
+
+    // TODO(4280): For now we do not switch generators to baseline code because
+    // there might be suspended activations stored in generator objects on the
+    // heap. We could eventually go directly to TurboFan in this case.
+    if (shared->is_generator()) return false;
+
     // TODO(4280): For now we disable switching to baseline code in the presence
     // of interpreter activations of the given function. The reasons are:
     //  1) The debugger assumes each function is either full-code or bytecode.
@@ -1331,6 +1259,7 @@ bool Compiler::EnsureDeoptimizationSupport(CompilationInfo* info) {
         HasInterpreterActivations(info->isolate(), *shared)) {
       return false;
     }
+
     // If the current code has reloc info for serialization, also include
     // reloc info for serialization for the new code, so that deopt support
     // can be added without losing IC state.
@@ -1404,12 +1333,6 @@ MaybeHandle<JSFunction> Compiler::GetFunctionFromEval(
     if (shared_info.is_null()) {
       return MaybeHandle<JSFunction>();
     } else {
-      // Explicitly disable optimization for eval code. We're not yet prepared
-      // to handle eval-code in the optimizing compiler.
-      if (restriction != ONLY_SINGLE_FUNCTION_LITERAL) {
-        shared_info->DisableOptimization(kEval);
-      }
-
       // If caller is strict mode, the result must be in strict mode as well.
       DCHECK(is_sloppy(language_mode) ||
              is_strict(shared_info->language_mode()));

@@ -737,7 +737,7 @@ class AsmWasmBuilderImpl : public AstVisitor {
     RECURSE(Visit(value));
   }
 
-  void EmitAssignment(Assignment* expr, MachineType mtype) {
+  void EmitAssignment(Assignment* expr, MachineType type) {
     // Match the left hand side of the assignment.
     VariableProxy* target_var = expr->target()->AsVariableProxy();
     if (target_var != nullptr) {
@@ -762,8 +762,27 @@ class AsmWasmBuilderImpl : public AstVisitor {
               cache_.kFloat32Array)) {
         current_function_builder_->Emit(kExprF32ConvertF64);
       }
-      current_function_builder_->EmitWithU8U8(
-          WasmOpcodes::LoadStoreOpcodeOf(mtype, true), 0, 0);
+      WasmOpcode opcode;
+      if (type == MachineType::Int8()) {
+        opcode = kExprI32AsmjsStoreMem8;
+      } else if (type == MachineType::Uint8()) {
+        opcode = kExprI32AsmjsStoreMem8;
+      } else if (type == MachineType::Int16()) {
+        opcode = kExprI32AsmjsStoreMem16;
+      } else if (type == MachineType::Uint16()) {
+        opcode = kExprI32AsmjsStoreMem16;
+      } else if (type == MachineType::Int32()) {
+        opcode = kExprI32AsmjsStoreMem;
+      } else if (type == MachineType::Uint32()) {
+        opcode = kExprI32AsmjsStoreMem;
+      } else if (type == MachineType::Float32()) {
+        opcode = kExprF32AsmjsStoreMem;
+      } else if (type == MachineType::Float64()) {
+        opcode = kExprF64AsmjsStoreMem;
+      } else {
+        UNREACHABLE();
+      }
+      current_function_builder_->Emit(opcode);
     }
 
     if (target_var == nullptr && target_prop == nullptr) {
@@ -941,10 +960,30 @@ class AsmWasmBuilderImpl : public AstVisitor {
   }
 
   void VisitProperty(Property* expr) {
-    MachineType mtype;
-    VisitPropertyAndEmitIndex(expr, &mtype);
-    current_function_builder_->EmitWithU8U8(
-        WasmOpcodes::LoadStoreOpcodeOf(mtype, false), 0, 0);
+    MachineType type;
+    VisitPropertyAndEmitIndex(expr, &type);
+    WasmOpcode opcode;
+    if (type == MachineType::Int8()) {
+      opcode = kExprI32AsmjsLoadMem8S;
+    } else if (type == MachineType::Uint8()) {
+      opcode = kExprI32AsmjsLoadMem8U;
+    } else if (type == MachineType::Int16()) {
+      opcode = kExprI32AsmjsLoadMem16S;
+    } else if (type == MachineType::Uint16()) {
+      opcode = kExprI32AsmjsLoadMem16U;
+    } else if (type == MachineType::Int32()) {
+      opcode = kExprI32AsmjsLoadMem;
+    } else if (type == MachineType::Uint32()) {
+      opcode = kExprI32AsmjsLoadMem;
+    } else if (type == MachineType::Float32()) {
+      opcode = kExprF32AsmjsLoadMem;
+    } else if (type == MachineType::Float64()) {
+      opcode = kExprF64AsmjsLoadMem;
+    } else {
+      UNREACHABLE();
+    }
+
+    current_function_builder_->Emit(opcode);
   }
 
   bool VisitStdlibFunction(Call* call, VariableProxy* expr) {
@@ -1383,9 +1422,6 @@ class AsmWasmBuilderImpl : public AstVisitor {
 #ifdef Mul
 #undef Mul
 #endif
-#ifdef Div
-#undef Div
-#endif
 
 #define NON_SIGNED_BINOP(op)      \
   static WasmOpcode opcodes[] = { \
@@ -1440,9 +1476,9 @@ class AsmWasmBuilderImpl : public AstVisitor {
       RECURSE(Visit(GetLeft(expr)));
       TypeIndex type = TypeIndexOf(GetLeft(expr));
       if (type == kFloat32) {
-        current_function_builder_->Emit(kExprI32SConvertF32);
+        current_function_builder_->Emit(kExprI32AsmjsSConvertF32);
       } else if (type == kFloat64) {
-        current_function_builder_->Emit(kExprI32SConvertF64);
+        current_function_builder_->Emit(kExprI32AsmjsSConvertF64);
       } else {
         UNREACHABLE();
       }
@@ -1464,19 +1500,25 @@ class AsmWasmBuilderImpl : public AstVisitor {
         BINOP_CASE(Token::ADD, Add, NON_SIGNED_BINOP, true);
         BINOP_CASE(Token::SUB, Sub, NON_SIGNED_BINOP, true);
         BINOP_CASE(Token::MUL, Mul, NON_SIGNED_BINOP, true);
-        BINOP_CASE(Token::DIV, Div, SIGNED_BINOP, false);
         BINOP_CASE(Token::BIT_OR, Ior, NON_SIGNED_INT_BINOP, true);
         BINOP_CASE(Token::BIT_AND, And, NON_SIGNED_INT_BINOP, true);
         BINOP_CASE(Token::BIT_XOR, Xor, NON_SIGNED_INT_BINOP, true);
         BINOP_CASE(Token::SHL, Shl, NON_SIGNED_INT_BINOP, true);
         BINOP_CASE(Token::SAR, ShrS, NON_SIGNED_INT_BINOP, true);
         BINOP_CASE(Token::SHR, ShrU, NON_SIGNED_INT_BINOP, true);
+        case Token::DIV: {
+          static WasmOpcode opcodes[] = {kExprI32AsmjsDivS, kExprI32AsmjsDivU,
+                                         kExprF32Div, kExprF64Div};
+          int type = TypeIndexOf(expr->left(), expr->right(), false);
+          current_function_builder_->Emit(opcodes[type]);
+          break;
+        }
         case Token::MOD: {
           TypeIndex type = TypeIndexOf(expr->left(), expr->right(), false);
           if (type == kInt32) {
-            current_function_builder_->Emit(kExprI32RemS);
+            current_function_builder_->Emit(kExprI32AsmjsRemS);
           } else if (type == kUint32) {
-            current_function_builder_->Emit(kExprI32RemU);
+            current_function_builder_->Emit(kExprI32AsmjsRemU);
           } else if (type == kFloat64) {
             current_function_builder_->Emit(kExprF64Mod);
             return;

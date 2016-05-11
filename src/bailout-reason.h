@@ -91,6 +91,7 @@ namespace internal {
   V(kGraphBuildingFailed, "Optimized graph construction failed")               \
   V(kHeapNumberMapRegisterClobbered, "HeapNumberMap register clobbered")       \
   V(kHydrogenFilter, "Optimization disabled by filter")                        \
+  V(kIllegalBytecode, "Illegal bytecode")                                      \
   V(kImportDeclaration, "Import declaration")                                  \
   V(kIndexIsNegative, "Index is negative")                                     \
   V(kIndexIsTooLarge, "Index is too large")                                    \
@@ -104,6 +105,12 @@ namespace internal {
   V(kInvalidCaptureReferenced, "Invalid capture referenced")                   \
   V(kInvalidElementsKindForInternalArrayOrInternalPackedArray,                 \
     "Invalid ElementsKind for InternalArray or InternalPackedArray")           \
+  V(kInvalidFrameForFastNewRestArgumentsStub,                                  \
+    "Invalid frame for FastNewRestArgumentsStub")                              \
+  V(kInvalidFrameForFastNewSloppyArgumentsStub,                                \
+    "Invalid frame for FastNewSloppyArgumentsStub")                            \
+  V(kInvalidFrameForFastNewStrictArgumentsStub,                                \
+    "Invalid frame for FastNewStrictArgumentsStub")                            \
   V(kInvalidFullCodegenState, "invalid full-codegen state")                    \
   V(kInvalidHandleScopeLevel, "Invalid HandleScope level")                     \
   V(kInvalidLeftHandSideInAssignment, "Invalid left-hand side in assignment")  \

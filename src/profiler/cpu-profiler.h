@@ -6,7 +6,7 @@
 #define V8_PROFILER_CPU_PROFILER_H_
 
 #include "src/allocation.h"
-#include "src/atomic-utils.h"
+#include "src/base/atomic-utils.h"
 #include "src/base/atomicops.h"
 #include "src/base/platform/time.h"
 #include "src/compiler.h"
@@ -81,7 +81,7 @@ class CodeDeoptEventRecord : public CodeEventRecord {
   Address start;
   const char* deopt_reason;
   SourcePosition position;
-  size_t pc_offset;
+  int inlining_id;
 
   INLINE(void UpdateCodeMap(CodeMap* code_map));
 };
@@ -176,7 +176,7 @@ class ProfilerEventsProcessor : public base::Thread {
   SamplingCircularQueue<TickSampleEventRecord,
                         kTickSampleQueueLength> ticks_buffer_;
   LockedQueue<TickSampleEventRecord> ticks_from_vm_buffer_;
-  AtomicNumber<unsigned> last_code_event_id_;
+  base::AtomicNumber<unsigned> last_code_event_id_;
   unsigned last_processed_code_event_id_;
 };
 

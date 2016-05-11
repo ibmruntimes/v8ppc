@@ -94,7 +94,6 @@ namespace internal {
   V(LoadIC)                                 \
   /* TurboFanCodeStubs */                   \
   V(AllocateHeapNumber)                     \
-  V(AllocateMutableHeapNumber)              \
   V(AllocateFloat32x4)                      \
   V(AllocateInt32x4)                        \
   V(AllocateUint32x4)                       \
@@ -1068,11 +1067,19 @@ class FastNewObjectStub final : public PlatformCodeStub {
 // of the strict arguments object materialization code.
 class FastNewRestParameterStub final : public PlatformCodeStub {
  public:
-  explicit FastNewRestParameterStub(Isolate* isolate)
-      : PlatformCodeStub(isolate) {}
+  explicit FastNewRestParameterStub(Isolate* isolate,
+                                    bool skip_stub_frame = false)
+      : PlatformCodeStub(isolate) {
+    minor_key_ = SkipStubFrameBits::encode(skip_stub_frame);
+  }
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(FastNewRestParameter);
   DEFINE_PLATFORM_CODE_STUB(FastNewRestParameter, PlatformCodeStub);
+
+  int skip_stub_frame() const { return SkipStubFrameBits::decode(minor_key_); }
+
+ private:
+  class SkipStubFrameBits : public BitField<bool, 0, 1> {};
 };
 
 
@@ -1081,11 +1088,19 @@ class FastNewRestParameterStub final : public PlatformCodeStub {
 // and easy as the current handwritten version.
 class FastNewSloppyArgumentsStub final : public PlatformCodeStub {
  public:
-  explicit FastNewSloppyArgumentsStub(Isolate* isolate)
-      : PlatformCodeStub(isolate) {}
+  explicit FastNewSloppyArgumentsStub(Isolate* isolate,
+                                      bool skip_stub_frame = false)
+      : PlatformCodeStub(isolate) {
+    minor_key_ = SkipStubFrameBits::encode(skip_stub_frame);
+  }
+
+  int skip_stub_frame() const { return SkipStubFrameBits::decode(minor_key_); }
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(FastNewSloppyArguments);
   DEFINE_PLATFORM_CODE_STUB(FastNewSloppyArguments, PlatformCodeStub);
+
+ private:
+  class SkipStubFrameBits : public BitField<bool, 0, 1> {};
 };
 
 
@@ -1094,11 +1109,19 @@ class FastNewSloppyArgumentsStub final : public PlatformCodeStub {
 // and easy as the current handwritten version.
 class FastNewStrictArgumentsStub final : public PlatformCodeStub {
  public:
-  explicit FastNewStrictArgumentsStub(Isolate* isolate)
-      : PlatformCodeStub(isolate) {}
+  explicit FastNewStrictArgumentsStub(Isolate* isolate,
+                                      bool skip_stub_frame = false)
+      : PlatformCodeStub(isolate) {
+    minor_key_ = SkipStubFrameBits::encode(skip_stub_frame);
+  }
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(FastNewStrictArguments);
   DEFINE_PLATFORM_CODE_STUB(FastNewStrictArguments, PlatformCodeStub);
+
+  int skip_stub_frame() const { return SkipStubFrameBits::decode(minor_key_); }
+
+ private:
+  class SkipStubFrameBits : public BitField<bool, 0, 1> {};
 };
 
 
@@ -1496,6 +1519,9 @@ class LoadApiGetterStub : public TurboFanCodeStub {
  public:
   LoadApiGetterStub(Isolate* isolate, bool receiver_is_holder, int index)
       : TurboFanCodeStub(isolate) {
+    // If that's not true, we need to ensure that the receiver is actually a
+    // JSReceiver. http://crbug.com/609134
+    DCHECK(receiver_is_holder);
     minor_key_ = IndexBits::encode(index) |
                  ReceiverIsHolderBits::encode(receiver_is_holder);
   }
@@ -2738,18 +2764,6 @@ class AllocateHeapNumberStub : public TurboFanCodeStub {
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(AllocateHeapNumber);
   DEFINE_CODE_STUB(AllocateHeapNumber, TurboFanCodeStub);
-};
-
-class AllocateMutableHeapNumberStub : public TurboFanCodeStub {
- public:
-  explicit AllocateMutableHeapNumberStub(Isolate* isolate)
-      : TurboFanCodeStub(isolate) {}
-
-  void InitializeDescriptor(CodeStubDescriptor* descriptor) override;
-  void GenerateAssembly(CodeStubAssembler* assembler) const override;
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(AllocateMutableHeapNumber);
-  DEFINE_CODE_STUB(AllocateMutableHeapNumber, TurboFanCodeStub);
 };
 
 #define SIMD128_ALLOC_STUB(TYPE, Type, type, lane_count, lane_type)     \

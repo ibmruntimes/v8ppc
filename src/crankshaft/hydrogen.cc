@@ -158,6 +158,11 @@ HCompilationJob::Status HCompilationJob::CreateGraphImpl() {
     return AbortOptimization(kTooManyParametersLocals);
   }
 
+  if (IsGeneratorFunction(info()->shared_info()->kind())) {
+    // Crankshaft does not support generators.
+    return AbortOptimization(kGenerator);
+  }
+
   if (FLAG_trace_hydrogen) {
     isolate()->GetHTracer()->TraceCompilation(info());
   }
@@ -1353,6 +1358,10 @@ void HGraphBuilder::LoopBuilder::EndBody() {
 HGraph* HGraphBuilder::CreateGraph() {
   graph_ = new (zone()) HGraph(info_, descriptor_);
   if (FLAG_hydrogen_stats) isolate()->GetHStatistics()->Initialize(info_);
+  if (!info_->IsStub() && info_->is_tracking_positions()) {
+    TraceInlinedFunction(info_->shared_info(), SourcePosition::Unknown(),
+                         InlinedFunctionInfo::kNoParentId);
+  }
   CompilationPhase phase("H_Block building", info_);
   set_current_block(graph()->entry_block());
   if (!BuildGraph()) return NULL;
@@ -1360,6 +1369,55 @@ HGraph* HGraphBuilder::CreateGraph() {
   return graph_;
 }
 
+int HGraphBuilder::TraceInlinedFunction(Handle<SharedFunctionInfo> shared,
+                                        SourcePosition position,
+                                        int parent_id) {
+  DCHECK(info_->is_tracking_positions());
+
+  int inline_id = static_cast<int>(info_->inlined_function_infos().size());
+  InlinedFunctionInfo info(parent_id, position, UnboundScript::kNoScriptId,
+                           shared->start_position());
+  if (!shared->script()->IsUndefined()) {
+    Handle<Script> script(Script::cast(shared->script()));
+    info.script_id = script->id();
+
+    if (FLAG_hydrogen_track_positions && !script->source()->IsUndefined()) {
+      CodeTracer::Scope tracing_scope(isolate()->GetCodeTracer());
+      Object* source_name = script->name();
+      OFStream os(tracing_scope.file());
+      os << "--- FUNCTION SOURCE (";
+      if (source_name->IsString()) {
+        os << String::cast(source_name)->ToCString().get() << ":";
+      }
+      os << shared->DebugName()->ToCString().get() << ") id{";
+      os << info_->optimization_id() << "," << inline_id << "} ---\n";
+      {
+        DisallowHeapAllocation no_allocation;
+        int start = shared->start_position();
+        int len = shared->end_position() - start;
+        String::SubStringRange source(String::cast(script->source()), start,
+                                      len);
+        for (const auto& c : source) {
+          os << AsReversiblyEscapedUC16(c);
+        }
+      }
+
+      os << "\n--- END ---\n";
+    }
+  }
+
+  info_->inlined_function_infos().push_back(info);
+
+  if (FLAG_hydrogen_track_positions && inline_id != 0) {
+    CodeTracer::Scope tracing_scope(isolate()->GetCodeTracer());
+    OFStream os(tracing_scope.file());
+    os << "INLINE (" << shared->DebugName()->ToCString().get() << ") id{"
+       << info_->optimization_id() << "," << inline_id << "} AS " << inline_id
+       << " AT " << position << std::endl;
+  }
+
+  return inline_id;
+}
 
 HInstruction* HGraphBuilder::AddInstruction(HInstruction* instr) {
   DCHECK(current_block() != NULL);
@@ -1987,7 +2045,7 @@ HValue* HGraphBuilder::BuildCreateIterResultObject(HValue* value,
   // Allocate the JSIteratorResult object.
   HValue* result =
       Add<HAllocate>(Add<HConstant>(JSIteratorResult::kSize), HType::JSObject(),
-                     NOT_TENURED, JS_OBJECT_TYPE);
+                     NOT_TENURED, JS_OBJECT_TYPE, graph()->GetConstant0());
 
   // Initialize the JSIteratorResult object.
   HValue* native_context = BuildGetNativeContext();
@@ -2024,9 +2082,9 @@ HValue* HGraphBuilder::BuildRegExpConstructResult(HValue* length,
   HValue* size = BuildCalculateElementsSize(elements_kind, length);
 
   // Allocate the JSRegExpResult and the FixedArray in one step.
-  HValue* result = Add<HAllocate>(
-      Add<HConstant>(JSRegExpResult::kSize), HType::JSArray(),
-      NOT_TENURED, JS_ARRAY_TYPE);
+  HValue* result =
+      Add<HAllocate>(Add<HConstant>(JSRegExpResult::kSize), HType::JSArray(),
+                     NOT_TENURED, JS_ARRAY_TYPE, graph()->GetConstant0());
 
   // Initialize the JSRegExpResult header.
   HValue* native_context = Add<HLoadNamedField>(
@@ -2059,12 +2117,6 @@ HValue* HGraphBuilder::BuildRegExpConstructResult(HValue* length,
   // Allocate and initialize the elements header.
   HAllocate* elements = BuildAllocateElements(elements_kind, size);
   BuildInitializeElementsHeader(elements, elements_kind, length);
-
-  if (!elements->has_size_upper_bound()) {
-    HConstant* size_in_bytes_upper_bound = EstablishElementsAllocationSize(
-        elements_kind, max_length->Integer32Value());
-    elements->set_size_upper_bound(size_in_bytes_upper_bound);
-  }
 
   Add<HStoreNamedField>(
       result, HObjectAccess::ForJSArrayOffset(JSArray::kElementsOffset),
@@ -2341,8 +2393,8 @@ HAllocate* HGraphBuilder::BuildAllocate(
 
   // Perform the actual allocation.
   HAllocate* object = Add<HAllocate>(
-      size, type, allocation_mode.GetPretenureMode(),
-      instance_type, allocation_mode.feedback_site());
+      size, type, allocation_mode.GetPretenureMode(), instance_type,
+      graph()->GetConstant0(), allocation_mode.feedback_site());
 
   // Setup the allocation memento.
   if (allocation_mode.CreateAllocationMementos()) {
@@ -2837,7 +2889,6 @@ HValue* HGraphBuilder::BuildAllocateArrayFromLength(
       return array_builder->AllocateEmptyArray();
     } else {
       return array_builder->AllocateArray(length_argument,
-                                          array_length,
                                           length_argument);
     }
   }
@@ -2870,7 +2921,7 @@ HValue* HGraphBuilder::BuildAllocateArrayFromLength(
   // Figure out total size
   HValue* length = Pop();
   HValue* capacity = Pop();
-  return array_builder->AllocateArray(capacity, max_alloc_length, length);
+  return array_builder->AllocateArray(capacity, length);
 }
 
 
@@ -2902,8 +2953,8 @@ HAllocate* HGraphBuilder::AllocateJSArrayObject(AllocationSiteMode mode) {
     base_size += AllocationMemento::kSize;
   }
   HConstant* size_in_bytes = Add<HConstant>(base_size);
-  return Add<HAllocate>(
-      size_in_bytes, HType::JSArray(), NOT_TENURED, JS_OBJECT_TYPE);
+  return Add<HAllocate>(size_in_bytes, HType::JSArray(), NOT_TENURED,
+                        JS_OBJECT_TYPE, graph()->GetConstant0());
 }
 
 
@@ -2925,7 +2976,7 @@ HAllocate* HGraphBuilder::BuildAllocateElements(ElementsKind kind,
       : FIXED_ARRAY_TYPE;
 
   return Add<HAllocate>(size_in_bytes, HType::HeapObject(), NOT_TENURED,
-                        instance_type);
+                        instance_type, graph()->GetConstant0());
 }
 
 
@@ -3313,14 +3364,6 @@ HValue* HGraphBuilder::BuildCloneShallowArrayNonEmpty(HValue* boilerplate,
 
   HAllocate* elements = BuildAllocateElements(kind, elements_size);
 
-  // This function implicitly relies on the fact that the
-  // FastCloneShallowArrayStub is called only for literals shorter than
-  // JSArray::kInitialMaxFastElementArray.
-  // Can't add HBoundsCheck here because otherwise the stub will eager a frame.
-  HConstant* size_upper_bound = EstablishElementsAllocationSize(
-      kind, JSArray::kInitialMaxFastElementArray);
-  elements->set_size_upper_bound(size_upper_bound);
-
   Add<HStoreNamedField>(result, HObjectAccess::ForElementsPointer(), elements);
 
   // The allocation for the cloned array above causes register pressure on
@@ -3560,37 +3603,7 @@ HValue* HGraphBuilder::JSArrayBuilder::EmitInternalMapCode() {
 HAllocate* HGraphBuilder::JSArrayBuilder::AllocateEmptyArray() {
   HConstant* capacity = builder()->Add<HConstant>(initial_capacity());
   return AllocateArray(capacity,
-                       capacity,
                        builder()->graph()->GetConstant0());
-}
-
-
-HAllocate* HGraphBuilder::JSArrayBuilder::AllocateArray(
-    HValue* capacity,
-    HConstant* capacity_upper_bound,
-    HValue* length_field,
-    FillMode fill_mode) {
-  return AllocateArray(capacity,
-                       capacity_upper_bound->GetInteger32Constant(),
-                       length_field,
-                       fill_mode);
-}
-
-
-HAllocate* HGraphBuilder::JSArrayBuilder::AllocateArray(
-    HValue* capacity,
-    int capacity_upper_bound,
-    HValue* length_field,
-    FillMode fill_mode) {
-  HConstant* elememts_size_upper_bound = capacity->IsInteger32Constant()
-      ? HConstant::cast(capacity)
-      : builder()->EstablishElementsAllocationSize(kind_, capacity_upper_bound);
-
-  HAllocate* array = AllocateArray(capacity, length_field, fill_mode);
-  if (!elements_location_->has_size_upper_bound()) {
-    elements_location_->set_size_upper_bound(elememts_size_upper_bound);
-  }
-  return array;
 }
 
 
@@ -3787,10 +3800,6 @@ HGraph::HGraph(CompilationInfo* info, CallInterfaceDescriptor descriptor)
     start_environment_ = new (zone_)
         HEnvironment(zone_, descriptor.GetRegisterParameterCount() + 1);
   } else {
-    if (info->is_tracking_positions()) {
-      info->TraceInlinedFunction(info->shared_info(), SourcePosition::Unknown(),
-                                 InlinedFunctionInfo::kNoParentId);
-    }
     start_environment_ =
         new(zone_) HEnvironment(NULL, info->scope(), info->closure(), zone_);
   }
@@ -3819,7 +3828,10 @@ void HGraph::FinalizeUniqueness() {
 
 int HGraph::SourcePositionToScriptPosition(SourcePosition pos) {
   return (FLAG_hydrogen_track_positions && !pos.IsUnknown())
-             ? info()->start_position_for(pos.inlining_id()) + pos.position()
+             ? info()->inlined_function_infos()
+                       .at(pos.inlining_id())
+                       .start_position +
+                   pos.position()
              : pos.raw();
 }
 
@@ -6317,10 +6329,9 @@ HInstruction* HOptimizedGraphBuilder::BuildStoreNamedField(
       HInstruction* heap_number_size = Add<HConstant>(HeapNumber::kSize);
 
       // TODO(hpayer): Allocation site pretenuring support.
-      HInstruction* heap_number = Add<HAllocate>(heap_number_size,
-          HType::HeapObject(),
-          NOT_TENURED,
-          MUTABLE_HEAP_NUMBER_TYPE);
+      HInstruction* heap_number =
+          Add<HAllocate>(heap_number_size, HType::HeapObject(), NOT_TENURED,
+                         MUTABLE_HEAP_NUMBER_TYPE, graph()->GetConstant0());
       AddStoreMapConstant(
           heap_number, isolate()->factory()->mutable_heap_number_map());
       Add<HStoreNamedField>(heap_number, HObjectAccess::ForHeapNumberValue(),
@@ -8647,8 +8658,8 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
 
   int inlining_id = 0;
   if (top_info()->is_tracking_positions()) {
-    inlining_id = top_info()->TraceInlinedFunction(
-        target_shared, source_position(), function_state()->inlining_id());
+    inlining_id = TraceInlinedFunction(target_shared, source_position(),
+                                       function_state()->inlining_id());
   }
 
   // Save the pending call context. Set up new one for the inlined function.
@@ -10345,7 +10356,8 @@ HValue* HOptimizedGraphBuilder::BuildAllocateExternalElements(
   length = AddUncasted<HForceRepresentation>(length, Representation::Smi());
   HValue* elements = Add<HAllocate>(
       Add<HConstant>(FixedTypedArrayBase::kHeaderSize), HType::HeapObject(),
-      NOT_TENURED, external_array_map->instance_type());
+      NOT_TENURED, external_array_map->instance_type(),
+      graph()->GetConstant0());
 
   AddStoreMapConstant(elements, external_array_map);
   Add<HStoreNamedField>(elements,
@@ -10401,9 +10413,9 @@ HValue* HOptimizedGraphBuilder::BuildAllocateFixedTypedArray(
   length = AddUncasted<HForceRepresentation>(length, Representation::Smi());
   Handle<Map> fixed_typed_array_map(
       isolate()->heap()->MapForFixedTypedArray(array_type));
-  HAllocate* elements =
-      Add<HAllocate>(total_size, HType::HeapObject(), NOT_TENURED,
-                     fixed_typed_array_map->instance_type());
+  HAllocate* elements = Add<HAllocate>(
+      total_size, HType::HeapObject(), NOT_TENURED,
+      fixed_typed_array_map->instance_type(), graph()->GetConstant0());
 
 #ifndef V8_HOST_ARCH_64_BIT
   if (array_type == kExternalFloat64Array) {
@@ -11980,8 +11992,9 @@ HInstruction* HOptimizedGraphBuilder::BuildFastLiteral(
   }
   top_info()->dependencies()->AssumeTransitionStable(current_site);
 
-  HInstruction* object = Add<HAllocate>(
-      object_size_constant, type, pretenure_flag, instance_type, top_site);
+  HInstruction* object =
+      Add<HAllocate>(object_size_constant, type, pretenure_flag, instance_type,
+                     graph()->GetConstant0(), top_site);
 
   // If allocation folding reaches Page::kMaxRegularHeapObjectSize the
   // elements array may not get folded into the object. Hence, we set the
@@ -12022,7 +12035,8 @@ HInstruction* HOptimizedGraphBuilder::BuildFastLiteral(
     InstanceType instance_type = boilerplate_object->HasFastDoubleElements()
         ? FIXED_DOUBLE_ARRAY_TYPE : FIXED_ARRAY_TYPE;
     object_elements = Add<HAllocate>(object_elements_size, HType::HeapObject(),
-                                     pretenure_flag, instance_type, top_site);
+                                     pretenure_flag, instance_type,
+                                     graph()->GetConstant0(), top_site);
     BuildEmitElements(boilerplate_object, elements, object_elements,
                       site_context);
     Add<HStoreNamedField>(object, HObjectAccess::ForElementsPointer(),
@@ -12123,9 +12137,9 @@ void HOptimizedGraphBuilder::BuildEmitInObjectProperties(
       if (representation.IsDouble()) {
         // Allocate a HeapNumber box and store the value into it.
         HValue* heap_number_constant = Add<HConstant>(HeapNumber::kSize);
-        HInstruction* double_box =
-            Add<HAllocate>(heap_number_constant, HType::HeapObject(),
-                pretenure_flag, MUTABLE_HEAP_NUMBER_TYPE);
+        HInstruction* double_box = Add<HAllocate>(
+            heap_number_constant, HType::HeapObject(), pretenure_flag,
+            MUTABLE_HEAP_NUMBER_TYPE, graph()->GetConstant0());
         AddStoreMapConstant(double_box,
             isolate()->factory()->mutable_heap_number_map());
         // Unwrap the mutable heap number from the boilerplate.
@@ -12282,10 +12296,9 @@ void HOptimizedGraphBuilder::VisitVariableDeclaration(
   switch (variable->location()) {
     case VariableLocation::GLOBAL:
     case VariableLocation::UNALLOCATED:
+      DCHECK(!variable->binding_needs_init());
       globals_.Add(variable->name(), zone());
-      globals_.Add(variable->binding_needs_init()
-                       ? isolate()->factory()->the_hole_value()
-                       : isolate()->factory()->undefined_value(), zone());
+      globals_.Add(isolate()->factory()->undefined_value(), zone());
       return;
     case VariableLocation::PARAMETER:
     case VariableLocation::LOCAL:
@@ -12939,7 +12952,7 @@ HValue* HOptimizedGraphBuilder::BuildAllocateOrderedHashTable() {
   // Allocate the table and add the proper map.
   HValue* table =
       Add<HAllocate>(Add<HConstant>(kSizeInBytes), HType::HeapObject(),
-                     NOT_TENURED, FIXED_ARRAY_TYPE);
+                     NOT_TENURED, FIXED_ARRAY_TYPE, graph()->GetConstant0());
   AddStoreMapConstant(table, isolate()->factory()->ordered_hash_table_map());
 
   // Initialize the FixedArray...
@@ -13397,13 +13410,24 @@ std::ostream& operator<<(std::ostream& os, const HEnvironment& env) {
 
 void HTracer::TraceCompilation(CompilationInfo* info) {
   Tag tag(this, "compilation");
-  base::SmartArrayPointer<char> name = info->GetDebugName();
+  std::string name;
+  Object* source_name = info->script()->name();
+  if (source_name->IsString()) {
+    String* str = String::cast(source_name);
+    if (str->length() > 0) {
+      name.append(str->ToCString().get());
+      name.append(":");
+    }
+  }
+  base::SmartArrayPointer<char> method_name = info->GetDebugName();
+  name.append(method_name.get());
   if (info->IsOptimizing()) {
-    PrintStringProperty("name", name.get());
+    PrintStringProperty("name", name.c_str());
     PrintIndent();
-    trace_.Add("method \"%s:%d\"\n", name.get(), info->optimization_id());
+    trace_.Add("method \"%s:%d\"\n", method_name.get(),
+               info->optimization_id());
   } else {
-    PrintStringProperty("name", name.get());
+    PrintStringProperty("name", name.c_str());
     PrintStringProperty("method", "stub");
   }
   PrintLongProperty("date",
