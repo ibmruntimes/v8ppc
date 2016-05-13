@@ -723,7 +723,7 @@ void LCodeGen::DeoptimizeIf(Condition cc, LInstruction* instr,
     __ bind(&done);
   }
 
-  Deoptimizer::DeoptInfo deopt_info = MakeDeoptInfo(instr, deopt_reason);
+  Deoptimizer::DeoptInfo deopt_info = MakeDeoptInfo(instr, deopt_reason, id);
 
   DCHECK(info()->IsStub() || frame_is_built_);
   if (cc == no_condition && frame_is_built_) {
@@ -2724,9 +2724,9 @@ void LCodeGen::DoLoadKeyedFixedArray(LLoadKeyed* instr) {
     __ j(not_equal, &done);
     if (info()->IsStub()) {
       // A stub can safely convert the hole to undefined only if the array
-      // protector cell contains (Smi) Isolate::kArrayProtectorValid. Otherwise
-      // it needs to bail out.
-      __ mov(result, isolate()->factory()->array_protector());
+      // protector cell contains (Smi) Isolate::kArrayProtectorValid.
+      // Otherwise it needs to bail out.
+      __ LoadRoot(result, Heap::kArrayProtectorRootIndex);
       __ cmp(FieldOperand(result, PropertyCell::kValueOffset),
              Immediate(Smi::FromInt(Isolate::kArrayProtectorValid)));
       DeoptimizeIf(not_equal, instr, Deoptimizer::kHole);

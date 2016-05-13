@@ -167,11 +167,6 @@ HCompilationJob::Status HCompilationJob::CreateGraphImpl() {
     isolate()->GetHTracer()->TraceCompilation(info());
   }
 
-  // Type-check the function.
-  AstTyper(info()->isolate(), info()->zone(), info()->closure(),
-           info()->scope(), info()->osr_ast_id(), info()->literal())
-      .Run();
-
   // Optimization could have been disabled by the parser. Note that this check
   // is only needed because the Hydrogen graph builder is missing some bailouts.
   if (info()->shared_info()->optimization_disabled()) {
@@ -183,6 +178,12 @@ HCompilationJob::Status HCompilationJob::CreateGraphImpl() {
       (info()->is_tracking_positions() || FLAG_trace_ic)
           ? new (info()->zone()) HOptimizedGraphBuilderWithPositions(info())
           : new (info()->zone()) HOptimizedGraphBuilder(info());
+
+  // Type-check the function.
+  AstTyper(info()->isolate(), info()->zone(), info()->closure(),
+           info()->scope(), info()->osr_ast_id(), info()->literal(),
+           graph_builder->bounds())
+      .Run();
 
   graph_ = graph_builder->CreateGraph();
 
@@ -1359,8 +1360,7 @@ HGraph* HGraphBuilder::CreateGraph() {
   graph_ = new (zone()) HGraph(info_, descriptor_);
   if (FLAG_hydrogen_stats) isolate()->GetHStatistics()->Initialize(info_);
   if (!info_->IsStub() && info_->is_tracking_positions()) {
-    TraceInlinedFunction(info_->shared_info(), SourcePosition::Unknown(),
-                         InlinedFunctionInfo::kNoParentId);
+    TraceInlinedFunction(info_->shared_info(), SourcePosition::Unknown());
   }
   CompilationPhase phase("H_Block building", info_);
   set_current_block(graph()->entry_block());
@@ -1370,16 +1370,13 @@ HGraph* HGraphBuilder::CreateGraph() {
 }
 
 int HGraphBuilder::TraceInlinedFunction(Handle<SharedFunctionInfo> shared,
-                                        SourcePosition position,
-                                        int parent_id) {
+                                        SourcePosition position) {
   DCHECK(info_->is_tracking_positions());
 
-  int inline_id = static_cast<int>(info_->inlined_function_infos().size());
-  InlinedFunctionInfo info(parent_id, position, UnboundScript::kNoScriptId,
-                           shared->start_position());
+  int inline_id = static_cast<int>(graph()->inlined_function_infos().size());
+  HInlinedFunctionInfo info(shared->start_position());
   if (!shared->script()->IsUndefined()) {
     Handle<Script> script(Script::cast(shared->script()));
-    info.script_id = script->id();
 
     if (FLAG_hydrogen_track_positions && !script->source()->IsUndefined()) {
       CodeTracer::Scope tracing_scope(isolate()->GetCodeTracer());
@@ -1406,7 +1403,7 @@ int HGraphBuilder::TraceInlinedFunction(Handle<SharedFunctionInfo> shared,
     }
   }
 
-  info_->inlined_function_infos().push_back(info);
+  graph()->inlined_function_infos().push_back(info);
 
   if (FLAG_hydrogen_track_positions && inline_id != 0) {
     CodeTracer::Scope tracing_scope(isolate()->GetCodeTracer());
@@ -3683,7 +3680,8 @@ HOptimizedGraphBuilder::HOptimizedGraphBuilder(CompilationInfo* info)
       break_scope_(NULL),
       inlined_count_(0),
       globals_(10, info->zone()),
-      osr_(new (info->zone()) HOsrBuilder(this)) {
+      osr_(new (info->zone()) HOsrBuilder(this)),
+      bounds_(info->zone()) {
   // This is not initialized in the initializer list because the
   // constructor for the initial state relies on function_state_ == NULL
   // to know it's the initial state.
@@ -3794,7 +3792,8 @@ HGraph::HGraph(CompilationInfo* info, CallInterfaceDescriptor descriptor)
       type_change_checksum_(0),
       maximum_environment_size_(0),
       no_side_effects_scope_count_(0),
-      disallow_adding_new_values_(false) {
+      disallow_adding_new_values_(false),
+      inlined_function_infos_(info->zone()) {
   if (info->IsStub()) {
     // For stubs, explicitly add the context to the environment.
     start_environment_ = new (zone_)
@@ -3828,9 +3827,7 @@ void HGraph::FinalizeUniqueness() {
 
 int HGraph::SourcePositionToScriptPosition(SourcePosition pos) {
   return (FLAG_hydrogen_track_positions && !pos.IsUnknown())
-             ? info()->inlined_function_infos()
-                       .at(pos.inlining_id())
-                       .start_position +
+             ? inlined_function_infos_.at(pos.inlining_id()).start_position +
                    pos.position()
              : pos.raw();
 }
@@ -5172,7 +5169,7 @@ void HOptimizedGraphBuilder::VisitSwitchStatement(SwitchStatement* stmt) {
   CHECK_ALIVE(VisitForValue(stmt->tag()));
   Add<HSimulate>(stmt->EntryId());
   HValue* tag_value = Top();
-  Type* tag_type = stmt->tag()->bounds().lower;
+  Type* tag_type = bounds_.get(stmt->tag()).lower;
 
   // 1. Build all the tests, with dangling true branches
   BailoutId default_id = BailoutId::None();
@@ -5189,7 +5186,7 @@ void HOptimizedGraphBuilder::VisitSwitchStatement(SwitchStatement* stmt) {
     if (current_block() == NULL) return Bailout(kUnsupportedSwitchStatement);
     HValue* label_value = Pop();
 
-    Type* label_type = clause->label()->bounds().lower;
+    Type* label_type = bounds_.get(clause->label()).lower;
     Type* combined_type = clause->compare_type();
     HControlInstruction* compare = BuildCompareInstruction(
         Token::EQ_STRICT, tag_value, label_value, tag_type, label_type,
@@ -5774,6 +5771,7 @@ HOptimizedGraphBuilder::LookupGlobalProperty(Variable* var, LookupIterator* it,
       return kUseGeneric;
     case LookupIterator::DATA:
       if (access_type == STORE && it->IsReadOnly()) return kUseGeneric;
+      if (!it->GetHolder<JSObject>()->IsJSGlobalObject()) return kUseGeneric;
       return kUseCell;
     case LookupIterator::JSPROXY:
     case LookupIterator::TRANSITION:
@@ -8653,13 +8651,13 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
   // Type-check the inlined function.
   DCHECK(target_shared->has_deoptimization_support());
   AstTyper(target_info.isolate(), target_info.zone(), target_info.closure(),
-           target_info.scope(), target_info.osr_ast_id(), target_info.literal())
+           target_info.scope(), target_info.osr_ast_id(), target_info.literal(),
+           &bounds_)
       .Run();
 
   int inlining_id = 0;
   if (top_info()->is_tracking_positions()) {
-    inlining_id = TraceInlinedFunction(target_shared, source_position(),
-                                       function_state()->inlining_id());
+    inlining_id = TraceInlinedFunction(target_shared, source_position());
   }
 
   // Save the pending call context. Set up new one for the inlined function.
@@ -11127,9 +11125,9 @@ HValue* HOptimizedGraphBuilder::BuildBinaryOperation(
     HValue* left,
     HValue* right,
     PushBeforeSimulateBehavior push_sim_result) {
-  Type* left_type = expr->left()->bounds().lower;
-  Type* right_type = expr->right()->bounds().lower;
-  Type* result_type = expr->bounds().lower;
+  Type* left_type = bounds_.get(expr->left()).lower;
+  Type* right_type = bounds_.get(expr->right()).lower;
+  Type* result_type = bounds_.get(expr).lower;
   Maybe<int> fixed_right_arg = expr->fixed_right_arg();
   Handle<AllocationSite> allocation_site = expr->allocation_site();
 
@@ -11664,8 +11662,8 @@ void HOptimizedGraphBuilder::VisitCompareOperation(CompareOperation* expr) {
     return ast_context()->ReturnControl(instr, expr->id());
   }
 
-  Type* left_type = expr->left()->bounds().lower;
-  Type* right_type = expr->right()->bounds().lower;
+  Type* left_type = bounds_.get(expr->left()).lower;
+  Type* right_type = bounds_.get(expr->right()).lower;
   Type* combined_type = expr->combined_type();
 
   CHECK_ALIVE(VisitForValue(expr->left()));

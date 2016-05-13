@@ -157,8 +157,7 @@ TEST(CollectDetailedWasmStack_WasmError) {
 
   // Line number is 1-based, with 0 == kNoLineNumberInfo.
   ExceptionInfo expected_exceptions[] = {
-      // TODO(clemens): position should be 1
-      {"<WASM>", static_cast<int>(wasm_index), -1},   // -
+      {"<WASM>", static_cast<int>(wasm_index), 1},    // -
       {"<WASM>", static_cast<int>(wasm_index_2), 1},  // -
       {"callFn", 1, 24}                               //-
   };

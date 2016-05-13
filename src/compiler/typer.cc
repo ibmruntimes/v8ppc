@@ -1745,6 +1745,8 @@ Type* Typer::Visitor::TypeNumberShiftRightLogical(Node* node) {
   return Type::Unsigned32();
 }
 
+Type* Typer::Visitor::TypeNumberImul(Node* node) { return Type::Signed32(); }
+
 Type* Typer::Visitor::TypeNumberClz32(Node* node) {
   return typer_->cache_.kZeroToThirtyTwo;
 }
@@ -2343,6 +2345,9 @@ Type* Typer::Visitor::TypeFloat32Add(Node* node) { return Type::Number(); }
 
 Type* Typer::Visitor::TypeFloat32Sub(Node* node) { return Type::Number(); }
 
+Type* Typer::Visitor::TypeFloat32SubPreserveNan(Node* node) {
+  return Type::Number();
+}
 
 Type* Typer::Visitor::TypeFloat32Mul(Node* node) { return Type::Number(); }
 
@@ -2383,6 +2388,9 @@ Type* Typer::Visitor::TypeFloat64Add(Node* node) { return Type::Number(); }
 
 Type* Typer::Visitor::TypeFloat64Sub(Node* node) { return Type::Number(); }
 
+Type* Typer::Visitor::TypeFloat64SubPreserveNan(Node* node) {
+  return Type::Number();
+}
 
 Type* Typer::Visitor::TypeFloat64Mul(Node* node) { return Type::Number(); }
 

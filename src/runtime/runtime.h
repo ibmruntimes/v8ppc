@@ -262,7 +262,10 @@ namespace internal {
   F(BreakIteratorFirst, 1, 1)                \
   F(BreakIteratorNext, 1, 1)                 \
   F(BreakIteratorCurrent, 1, 1)              \
-  F(BreakIteratorBreakType, 1, 1)
+  F(BreakIteratorBreakType, 1, 1)            \
+  F(StringToLowerCaseI18N, 1, 1)             \
+  F(StringToUpperCaseI18N, 1, 1)             \
+  F(StringLocaleConvertCase, 3, 1)
 #else
 #define FOR_EACH_INTRINSIC_I18N(F)
 #endif
@@ -315,7 +318,7 @@ namespace internal {
   F(CreateListFromArrayLike, 1, 1)                  \
   F(IncrementUseCounter, 1, 1)                      \
   F(GetOrdinaryHasInstance, 0, 1)                   \
-  F(GetAndResetRuntimeCallStats, -1 /* <= 1 */, 1)  \
+  F(GetAndResetRuntimeCallStats, -1 /* <= 2 */, 1)  \
   F(EnqueueMicrotask, 1, 1)                         \
   F(RunMicrotasks, 0, 1)                            \
   F(WasmGetFunctionName, 2, 1)

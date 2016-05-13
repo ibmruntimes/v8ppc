@@ -820,6 +820,7 @@ FunctionLiteral* Parser::ParseProgram(Isolate* isolate, ParseInfo* info) {
   DCHECK(parsing_on_main_thread_);
 
   HistogramTimerScope timer_scope(isolate->counters()->parse(), true);
+  RuntimeCallTimerScope runtime_timer(isolate, &RuntimeCallStats::Parse);
   TRACE_EVENT0("v8", "V8.Parse");
   Handle<String> source(String::cast(info->script()->source()));
   isolate->counters()->total_parse_size()->Increment(source->length());
@@ -984,6 +985,7 @@ FunctionLiteral* Parser::ParseLazy(Isolate* isolate, ParseInfo* info) {
   // It's OK to use the Isolate & counters here, since this function is only
   // called in the main thread.
   DCHECK(parsing_on_main_thread_);
+  RuntimeCallTimerScope runtime_timer(isolate, &RuntimeCallStats::ParseLazy);
   HistogramTimerScope timer_scope(isolate->counters()->parse_lazy());
   TRACE_EVENT0("v8", "V8.ParseLazy");
   Handle<String> source(String::cast(info->script()->source()));
@@ -3112,7 +3114,7 @@ void Parser::InitializeForEachStatement(ForEachStatement* stmt,
       body = block;
       each = factory()->NewVariableProxy(temp);
     }
-    stmt->Initialize(each, subject, body);
+    stmt->AsForInStatement()->Initialize(each, subject, body);
   }
 }
 
@@ -3169,8 +3171,8 @@ void Parser::InitializeForOfStatement(ForOfStatement* for_of, Expression* each,
     }
   }
 
-  for_of->Initialize(each, iterable, body, iterator, assign_iterator,
-                     next_result, result_done, assign_each);
+  for_of->Initialize(body, iterator, assign_iterator, next_result, result_done,
+                     assign_each);
 }
 
 Statement* Parser::DesugarLexicalBindingsInForStatement(

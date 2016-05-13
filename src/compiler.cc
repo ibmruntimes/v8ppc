@@ -30,6 +30,7 @@
 #include "src/profiler/cpu-profiler.h"
 #include "src/runtime-profiler.h"
 #include "src/snapshot/code-serializer.h"
+#include "src/typing-asm.h"
 #include "src/vm-state-inl.h"
 
 namespace v8 {
@@ -400,7 +401,7 @@ void RecordFunctionCompilation(Logger::LogEventsAndTags tag,
                               : info->isolate()->heap()->empty_string();
     Logger::LogEventsAndTags log_tag = Logger::ToNativeByScript(tag, *script);
     PROFILE(info->isolate(),
-            CodeCreateEvent(log_tag, *abstract_code, *shared, info, script_name,
+            CodeCreateEvent(log_tag, *abstract_code, *shared, script_name,
                             line_num, column_num));
   }
 }
@@ -464,6 +465,17 @@ int CodeAndMetadataSize(CompilationInfo* info) {
 bool GenerateUnoptimizedCode(CompilationInfo* info) {
   bool success;
   EnsureFeedbackVector(info);
+  if (FLAG_validate_asm && info->scope()->asm_module()) {
+    AsmTyper typer(info->isolate(), info->zone(), *(info->script()),
+                   info->literal());
+    if (FLAG_enable_simd_asmjs) {
+      typer.set_allow_simd(true);
+    }
+    if (!typer.Validate()) {
+      DCHECK(!info->isolate()->has_pending_exception());
+      PrintF("Validation of asm.js module failed: %s", typer.error_message());
+    }
+  }
   if (FLAG_ignition && UseIgnition(info)) {
     success = interpreter::Interpreter::MakeBytecode(info);
   } else {
@@ -1012,6 +1024,9 @@ Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
     // Measure how long it takes to do the compilation; only take the
     // rest of the function into account to avoid overlap with the
     // parsing statistics.
+    RuntimeCallTimerScope runtimeTimer(
+        isolate, parse_info->is_eval() ? &RuntimeCallStats::CompileEval
+                                       : &RuntimeCallStats::Compile);
     HistogramTimer* rate = parse_info->is_eval()
                                ? info->isolate()->counters()->compile_eval()
                                : info->isolate()->counters()->compile();
@@ -1217,6 +1232,12 @@ bool Compiler::CompileForLiveEdit(Handle<Script> script) {
   Isolate* isolate = script->GetIsolate();
   DCHECK(AllowCompilation::IsAllowed(isolate));
 
+  // In order to ensure that live edit function info collection finds the newly
+  // generated shared function infos, clear the script's list temporarily
+  // and restore it at the end of this method.
+  Handle<Object> old_function_infos(script->shared_function_infos(), isolate);
+  script->set_shared_function_infos(Smi::FromInt(0));
+
   // Start a compilation.
   Zone zone(isolate->allocator());
   ParseInfo parse_info(&zone, script);
@@ -1224,13 +1245,21 @@ bool Compiler::CompileForLiveEdit(Handle<Script> script) {
   parse_info.set_global();
   info.MarkAsDebug();
   // TODO(635): support extensions.
-  if (CompileToplevel(&info).is_null()) {
+  const bool compilation_succeeded = !CompileToplevel(&info).is_null();
+
+  // Restore the original function info list in order to remain side-effect
+  // free as much as possible, since some code expects the old shared function
+  // infos to stick around.
+  script->set_shared_function_infos(*old_function_infos);
+
+  if (!compilation_succeeded) {
     return false;
   }
 
   // Check postconditions on success.
   DCHECK(!isolate->has_pending_exception());
-  return true;
+
+  return compilation_succeeded;
 }
 
 // TODO(turbofan): In the future, unoptimized code with deopt support could
@@ -1532,6 +1561,7 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfo(
   // unless we already have code with debut break slots.
   Handle<SharedFunctionInfo> existing;
   if (maybe_existing.ToHandle(&existing) && existing->is_compiled()) {
+    DCHECK(!existing->is_toplevel());
     if (!outer_info->is_debug() || existing->HasDebugCode()) {
       return existing;
     }
@@ -1569,13 +1599,7 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfo(
   // aggressive about lazy compilation, because it might trigger compilation
   // of functions without an outer context when setting a breakpoint through
   // Debug::FindSharedFunctionInfoInScript.
-  bool allow_lazy_without_ctx = literal->AllowsLazyCompilationWithoutContext();
-  // Compile eagerly for live edit. When compiling debug code, eagerly compile
-  // unless we can lazily compile without the context.
-  bool allow_lazy = literal->AllowsLazyCompilation() &&
-                    !LiveEditFunctionTracker::IsActive(isolate) &&
-                    (!info.is_debug() || allow_lazy_without_ctx);
-
+  bool allow_lazy = literal->AllowsLazyCompilation() && !info.is_debug();
   bool lazy = FLAG_lazy && allow_lazy && !literal->should_eager_compile();
 
   // Consider compiling eagerly when targeting the code cache.

@@ -1419,9 +1419,11 @@ void BytecodeGraphBuilder::VisitExtraWide() {
 }
 
 void BytecodeGraphBuilder::VisitIllegal() {
-  NewNode(javascript()->CallRuntime(Runtime::kAbort),
-      jsgraph()->Constant(kIllegalBytecode));
+  // Not emitted in valid bytecode.
+  UNREACHABLE();
 }
+
+void BytecodeGraphBuilder::VisitNop() {}
 
 void BytecodeGraphBuilder::SwitchToMergeEnvironment(int current_offset) {
   if (merge_environments_[current_offset] != nullptr) {

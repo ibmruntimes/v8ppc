@@ -400,26 +400,30 @@ struct TurboCfgFile : public std::ofstream {
                       std::ios_base::app) {}
 };
 
+struct TurboJsonFile : public std::ofstream {
+  TurboJsonFile(CompilationInfo* info, std::ios_base::openmode mode)
+      : std::ofstream(GetVisualizerLogFileName(info, nullptr, "json").get(),
+                      mode) {}
+};
 
 void TraceSchedule(CompilationInfo* info, Schedule* schedule) {
   if (FLAG_trace_turbo) {
-    FILE* json_file = OpenVisualizerLogFile(info, nullptr, "json", "a+");
-    if (json_file != nullptr) {
-      OFStream json_of(json_file);
-      json_of << "{\"name\":\"Schedule\",\"type\":\"schedule\",\"data\":\"";
-      std::stringstream schedule_stream;
-      schedule_stream << *schedule;
-      std::string schedule_string(schedule_stream.str());
-      for (const auto& c : schedule_string) {
-        json_of << AsEscapedUC16ForJSON(c);
-      }
-      json_of << "\"},\n";
-      fclose(json_file);
+    AllowHandleDereference allow_deref;
+    TurboJsonFile json_of(info, std::ios_base::app);
+    json_of << "{\"name\":\"Schedule\",\"type\":\"schedule\",\"data\":\"";
+    std::stringstream schedule_stream;
+    schedule_stream << *schedule;
+    std::string schedule_string(schedule_stream.str());
+    for (const auto& c : schedule_string) {
+      json_of << AsEscapedUC16ForJSON(c);
     }
+    json_of << "\"},\n";
   }
-  if (!FLAG_trace_turbo_graph && !FLAG_trace_turbo_scheduler) return;
-  OFStream os(stdout);
-  os << "-- Schedule --------------------------------------\n" << *schedule;
+  if (FLAG_trace_turbo_graph || FLAG_trace_turbo_scheduler) {
+    AllowHandleDereference allow_deref;
+    OFStream os(stdout);
+    os << "-- Schedule --------------------------------------\n" << *schedule;
+  }
 }
 
 
@@ -523,27 +527,22 @@ PipelineStatistics* CreatePipelineStatistics(CompilationInfo* info,
   }
 
   if (FLAG_trace_turbo) {
-    FILE* json_file = OpenVisualizerLogFile(info, nullptr, "json", "w+");
-    if (json_file != nullptr) {
-      OFStream json_of(json_file);
-      Handle<Script> script = info->script();
-      base::SmartArrayPointer<char> function_name = info->GetDebugName();
-      int pos = info->shared_info()->start_position();
-      json_of << "{\"function\":\"" << function_name.get()
-              << "\", \"sourcePosition\":" << pos << ", \"source\":\"";
-      if (!script->IsUndefined() && !script->source()->IsUndefined()) {
-        DisallowHeapAllocation no_allocation;
-        int start = info->shared_info()->start_position();
-        int len = info->shared_info()->end_position() - start;
-        String::SubStringRange source(String::cast(script->source()), start,
-                                      len);
-        for (const auto& c : source) {
-          json_of << AsEscapedUC16ForJSON(c);
-        }
+    TurboJsonFile json_of(info, std::ios_base::trunc);
+    Handle<Script> script = info->script();
+    base::SmartArrayPointer<char> function_name = info->GetDebugName();
+    int pos = info->shared_info()->start_position();
+    json_of << "{\"function\":\"" << function_name.get()
+            << "\", \"sourcePosition\":" << pos << ", \"source\":\"";
+    if (!script->IsUndefined() && !script->source()->IsUndefined()) {
+      DisallowHeapAllocation no_allocation;
+      int start = info->shared_info()->start_position();
+      int len = info->shared_info()->end_position() - start;
+      String::SubStringRange source(String::cast(script->source()), start, len);
+      for (const auto& c : source) {
+        json_of << AsEscapedUC16ForJSON(c);
       }
-      json_of << "\",\n\"phases\":[";
-      fclose(json_file);
     }
+    json_of << "\",\n\"phases\":[";
   }
 
   return pipeline_statistics;
@@ -664,13 +663,9 @@ PipelineWasmCompilationJob::CreateGraphImpl() {
 PipelineWasmCompilationJob::Status
 PipelineWasmCompilationJob::OptimizeGraphImpl() {
   if (FLAG_trace_turbo) {
-    FILE* json_file = OpenVisualizerLogFile(info(), nullptr, "json", "w+");
-    if (json_file != nullptr) {
-      OFStream json_of(json_file);
-      json_of << "{\"function\":\"" << info()->GetDebugName().get()
-              << "\", \"source\":\"\",\n\"phases\":[";
-      fclose(json_file);
-    }
+    TurboJsonFile json_of(info(), std::ios_base::trunc);
+    json_of << "{\"function\":\"" << info()->GetDebugName().get()
+            << "\", \"source\":\"\",\n\"phases\":[";
   }
 
   pipeline_.RunPrintAndVerify("Machine", true);
@@ -1305,15 +1300,14 @@ struct PrintGraphPhase {
     Graph* graph = data->graph();
 
     {  // Print JSON.
-      FILE* json_file = OpenVisualizerLogFile(info, nullptr, "json", "a+");
-      if (json_file == nullptr) return;
-      OFStream json_of(json_file);
+      AllowHandleDereference allow_deref;
+      TurboJsonFile json_of(info, std::ios_base::app);
       json_of << "{\"name\":\"" << phase << "\",\"type\":\"graph\",\"data\":"
               << AsJSON(*graph, data->source_positions()) << "},\n";
-      fclose(json_file);
     }
 
     if (FLAG_trace_turbo_graph) {  // Simple textual RPO.
+      AllowHandleDereference allow_deref;
       OFStream os(stdout);
       os << "-- Graph after " << phase << " -- " << std::endl;
       os << AsRPO(*graph);
@@ -1504,13 +1498,9 @@ Handle<Code> Pipeline::GenerateCodeForCodeStub(Isolate* isolate,
   DCHECK_NOT_NULL(data.schedule());
 
   if (FLAG_trace_turbo) {
-    FILE* json_file = OpenVisualizerLogFile(&info, nullptr, "json", "w+");
-    if (json_file != nullptr) {
-      OFStream json_of(json_file);
-      json_of << "{\"function\":\"" << info.GetDebugName().get()
-              << "\", \"source\":\"\",\n\"phases\":[";
-      fclose(json_file);
-    }
+    TurboJsonFile json_of(&info, std::ios_base::trunc);
+    json_of << "{\"function\":\"" << info.GetDebugName().get()
+            << "\", \"source\":\"\",\n\"phases\":[";
     pipeline.Run<PrintGraphPhase>("Machine");
   }
 
@@ -1559,13 +1549,9 @@ Handle<Code> Pipeline::GenerateCodeForTesting(CompilationInfo* info,
   PipelineImpl pipeline(&data);
 
   if (FLAG_trace_turbo) {
-    FILE* json_file = OpenVisualizerLogFile(info, nullptr, "json", "w+");
-    if (json_file != nullptr) {
-      OFStream json_of(json_file);
-      json_of << "{\"function\":\"" << info->GetDebugName().get()
-              << "\", \"source\":\"\",\n\"phases\":[";
-      fclose(json_file);
-    }
+    TurboJsonFile json_of(info, std::ios_base::trunc);
+    json_of << "{\"function\":\"" << info->GetDebugName().get()
+            << "\", \"source\":\"\",\n\"phases\":[";
   }
   // TODO(rossberg): Should this really be untyped?
   pipeline.RunPrintAndVerify("Machine", true);
@@ -1620,6 +1606,7 @@ bool PipelineImpl::ScheduleAndSelectInstructions(Linkage* linkage) {
   Run<InstructionSelectionPhase>(linkage);
 
   if (FLAG_trace_turbo && !data->MayHaveUnverifiableGraph()) {
+    AllowHandleDereference allow_deref;
     TurboCfgFile tcf(isolate());
     tcf << AsC1V("CodeGen", data->schedule(), data->source_positions(),
                  data->sequence());
@@ -1683,25 +1670,21 @@ Handle<Code> PipelineImpl::GenerateCode(Linkage* linkage) {
   v8::internal::CodeGenerator::PrintCode(code, info());
 
   if (FLAG_trace_turbo) {
-    FILE* json_file = OpenVisualizerLogFile(info(), nullptr, "json", "a+");
-    if (json_file != nullptr) {
-      OFStream json_of(json_file);
-      json_of
-          << "{\"name\":\"disassembly\",\"type\":\"disassembly\",\"data\":\"";
+    TurboJsonFile json_of(info(), std::ios_base::app);
+    json_of << "{\"name\":\"disassembly\",\"type\":\"disassembly\",\"data\":\"";
 #if ENABLE_DISASSEMBLER
-      std::stringstream disassembly_stream;
-      code->Disassemble(nullptr, disassembly_stream);
-      std::string disassembly_string(disassembly_stream.str());
-      for (const auto& c : disassembly_string) {
-        json_of << AsEscapedUC16ForJSON(c);
-      }
-#endif  // ENABLE_DISASSEMBLER
-      json_of << "\"}\n],\n";
-      json_of << "\"nodePositions\":";
-      json_of << data->source_position_output();
-      json_of << "}";
-      fclose(json_file);
+    std::stringstream disassembly_stream;
+    code->Disassemble(nullptr, disassembly_stream);
+    std::string disassembly_string(disassembly_stream.str());
+    for (const auto& c : disassembly_string) {
+      json_of << AsEscapedUC16ForJSON(c);
     }
+#endif  // ENABLE_DISASSEMBLER
+    json_of << "\"}\n],\n";
+    json_of << "\"nodePositions\":";
+    json_of << data->source_position_output();
+    json_of << "}";
+
     OFStream os(stdout);
     os << "---------------------------------------------------\n"
        << "Finished compiling method " << info()->GetDebugName().get()
@@ -1751,10 +1734,10 @@ void PipelineImpl::AllocateRegisters(const RegisterConfiguration* config,
   Run<ResolvePhisPhase>();
   Run<BuildLiveRangesPhase>();
   if (FLAG_trace_turbo_graph) {
+    AllowHandleDereference allow_deref;
     OFStream os(stdout);
-    PrintableInstructionSequence printable = {config, data->sequence()};
     os << "----- Instruction sequence before register allocation -----\n"
-       << printable;
+       << PrintableInstructionSequence({config, data->sequence()});
   }
   if (verifier != nullptr) {
     CHECK(!data->register_allocation_data()->ExistsUseWithoutDefinition());
@@ -1791,10 +1774,10 @@ void PipelineImpl::AllocateRegisters(const RegisterConfiguration* config,
   Run<LocateSpillSlotsPhase>();
 
   if (FLAG_trace_turbo_graph) {
+    AllowHandleDereference allow_deref;
     OFStream os(stdout);
-    PrintableInstructionSequence printable = {config, data->sequence()};
     os << "----- Instruction sequence after register allocation -----\n"
-       << printable;
+       << PrintableInstructionSequence({config, data->sequence()});
   }
 
   if (verifier != nullptr) {

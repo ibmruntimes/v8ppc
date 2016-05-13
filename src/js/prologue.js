@@ -181,10 +181,13 @@ function PostNatives(utils) {
 
   // Whitelist of exports from normal natives to experimental natives and debug.
   var expose_list = [
+    "AddBoundMethod",
     "ArrayToString",
     "ErrorToString",
     "GetIterator",
     "GetMethod",
+    "IntlParseDate",
+    "IntlParseNumber",
     "IsNaN",
     "MakeError",
     "MakeRangeError",
@@ -208,7 +211,11 @@ function PostNatives(utils) {
     "SetIteratorNext",
     "SetValues",
     "SymbolToString",
+    "ToLocaleLowerCaseI18N",
+    "ToLocaleUpperCaseI18N",
+    "ToLowerCaseI18N",
     "ToPositiveInteger",
+    "ToUpperCaseI18N",
     // From runtime:
     "is_concat_spreadable_symbol",
     "iterator_symbol",

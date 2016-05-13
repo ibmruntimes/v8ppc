@@ -22,6 +22,10 @@ declare_args() {
   # http://v8project.blogspot.com/2015/09/custom-startup-snapshots.html
   v8_use_snapshot = true
 
+  # Use external files for startup data blobs:
+  # the JS builtins sources and the start snapshot.
+  v8_use_external_startup_data = true
+
   # Sets -DVERIFY_HEAP.
   v8_enable_verify_heap = false
 
@@ -64,7 +68,6 @@ declare_args() {
 }
 
 v8_random_seed = "314159265"
-v8_toolset_for_d8 = "host"
 v8_toolset_for_shell = "host"
 
 if (is_msan) {
@@ -122,6 +125,10 @@ config("external_config") {
     ]
   }
   include_dirs = [ "include" ]
+  libs = []
+  if (is_android && current_toolchain != host_toolchain) {
+    libs += [ "log" ]
+  }
 }
 
 # This config should only be applied to code that needs to be explicitly
@@ -427,6 +434,13 @@ action("js2c_experimental") {
   outputs = [
     "$target_gen_dir/experimental-libraries.cc",
   ]
+
+  if (v8_enable_i18n_support) {
+    sources += [
+      "src/js/icu-case-mapping.js",
+      "src/js/intl-extra.js",
+    ]
+  }
 
   args = [
            rebase_path("$target_gen_dir/experimental-libraries.cc",
@@ -763,6 +777,7 @@ v8_source_set("v8_base") {
     "src/ast/ast-literal-reindexer.h",
     "src/ast/ast-numbering.cc",
     "src/ast/ast-numbering.h",
+    "src/ast/ast-type-bounds.h",
     "src/ast/ast-value-factory.cc",
     "src/ast/ast-value-factory.h",
     "src/ast/ast.cc",
@@ -1224,8 +1239,14 @@ v8_source_set("v8_base") {
     "src/interpreter/bytecode-array-builder.h",
     "src/interpreter/bytecode-array-iterator.cc",
     "src/interpreter/bytecode-array-iterator.h",
+    "src/interpreter/bytecode-array-writer.cc",
+    "src/interpreter/bytecode-array-writer.h",
     "src/interpreter/bytecode-generator.cc",
     "src/interpreter/bytecode-generator.h",
+    "src/interpreter/bytecode-peephole-optimizer.cc",
+    "src/interpreter/bytecode-peephole-optimizer.h",
+    "src/interpreter/bytecode-pipeline.cc",
+    "src/interpreter/bytecode-pipeline.h",
     "src/interpreter/bytecode-register-allocator.cc",
     "src/interpreter/bytecode-register-allocator.h",
     "src/interpreter/bytecode-traits.h",
@@ -2043,11 +2064,6 @@ if (is_component_build) {
     ]
 
     public_configs = [ ":external_config" ]
-
-    libs = []
-    if (is_android && current_toolchain != host_toolchain) {
-      libs += [ "log" ]
-    }
   }
 } else {
   group("v8") {
@@ -2059,48 +2075,44 @@ if (is_component_build) {
   }
 }
 
-if ((current_toolchain == host_toolchain && v8_toolset_for_d8 == "host") ||
-    (current_toolchain == snapshot_toolchain && v8_toolset_for_d8 == "host") ||
-    (current_toolchain != host_toolchain && v8_toolset_for_d8 == "target")) {
-  executable("d8") {
-    sources = [
-      "src/d8.cc",
-      "src/d8.h",
-    ]
+executable("d8") {
+  sources = [
+    "src/d8.cc",
+    "src/d8.h",
+  ]
 
-    configs -= [ "//build/config/compiler:chromium_code" ]
-    configs += [ "//build/config/compiler:no_chromium_code" ]
-    configs += [
-      # Note: don't use :internal_config here because this target will get
-      # the :external_config applied to it by virtue of depending on :v8, and
-      # you can't have both applied to the same target.
-      ":internal_config_base",
-      ":features",
-      ":toolchain",
-    ]
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
+  configs += [
+    # Note: don't use :internal_config here because this target will get
+    # the :external_config applied to it by virtue of depending on :v8, and
+    # you can't have both applied to the same target.
+    ":internal_config_base",
+    ":features",
+    ":toolchain",
+  ]
 
-    deps = [
-      ":d8_js2c",
-      ":v8",
-      ":v8_libplatform",
-      "//build/config/sanitizers:deps",
-      "//build/win:default_exe_manifest",
-    ]
+  deps = [
+    ":d8_js2c",
+    ":v8",
+    ":v8_libplatform",
+    "//build/config/sanitizers:deps",
+    "//build/win:default_exe_manifest",
+  ]
 
-    # TODO(jochen): Add support for vtunejit.
+  # TODO(jochen): Add support for vtunejit.
 
-    if (is_posix) {
-      sources += [ "src/d8-posix.cc" ]
-    } else if (is_win) {
-      sources += [ "src/d8-windows.cc" ]
-    }
+  if (is_posix) {
+    sources += [ "src/d8-posix.cc" ]
+  } else if (is_win) {
+    sources += [ "src/d8-windows.cc" ]
+  }
 
-    if (!is_component_build) {
-      sources += [ "$target_gen_dir/d8-js.cc" ]
-    }
-    if (v8_enable_i18n_support) {
-      deps += [ "//third_party/icu" ]
-    }
+  if (!is_component_build) {
+    sources += [ "$target_gen_dir/d8-js.cc" ]
+  }
+  if (v8_enable_i18n_support) {
+    deps += [ "//third_party/icu" ]
   }
 }
 

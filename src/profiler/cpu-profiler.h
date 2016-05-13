@@ -20,7 +20,6 @@ namespace internal {
 // Forward declarations.
 class CodeEntry;
 class CodeMap;
-class CompilationInfo;
 class CpuProfile;
 class CpuProfilesCollection;
 class ProfileGenerator;
@@ -81,7 +80,7 @@ class CodeDeoptEventRecord : public CodeEventRecord {
   Address start;
   const char* deopt_reason;
   SourcePosition position;
-  int inlining_id;
+  int deopt_id;
 
   INLINE(void UpdateCodeMap(CodeMap* code_map));
 };
@@ -228,8 +227,8 @@ class CpuProfiler : public CodeEventListener {
   void CodeCreateEvent(Logger::LogEventsAndTags tag, AbstractCode* code,
                        SharedFunctionInfo* shared, Name* script_name) override;
   void CodeCreateEvent(Logger::LogEventsAndTags tag, AbstractCode* code,
-                       SharedFunctionInfo* shared, CompilationInfo* info,
-                       Name* script_name, int line, int column) override;
+                       SharedFunctionInfo* shared, Name* script_name, int line,
+                       int column) override;
   void CodeCreateEvent(Logger::LogEventsAndTags tag, AbstractCode* code,
                        int args_count) override;
   void CodeMovingGCEvent() override {}
@@ -258,6 +257,7 @@ class CpuProfiler : public CodeEventListener {
   void ResetProfiles();
   void LogBuiltins();
   void RecordInliningInfo(CodeEntry* entry, AbstractCode* abstract_code);
+  void RecordDeoptInlinedFrames(CodeEntry* entry, AbstractCode* abstract_code);
   Name* InferScriptName(Name* name, SharedFunctionInfo* info);
 
   Isolate* isolate_;

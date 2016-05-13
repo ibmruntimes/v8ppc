@@ -205,6 +205,7 @@ class Genesis BASE_EMBEDDED {
   HARMONY_STAGED(DECLARE_FEATURE_INITIALIZATION)
   HARMONY_SHIPPING(DECLARE_FEATURE_INITIALIZATION)
   DECLARE_FEATURE_INITIALIZATION(promise_extra, "")
+  DECLARE_FEATURE_INITIALIZATION(intl_extra, "")
 #undef DECLARE_FEATURE_INITIALIZATION
 
   Handle<JSFunction> InstallArrayBuffer(Handle<JSObject> target,
@@ -858,11 +859,11 @@ static void AddToWeakNativeContextList(Context* context) {
   Heap* heap = context->GetIsolate()->heap();
 #ifdef DEBUG
   { // NOLINT
-    DCHECK(context->get(Context::NEXT_CONTEXT_LINK)->IsUndefined());
+    DCHECK(context->next_context_link()->IsUndefined());
     // Check that context is not in the list yet.
     for (Object* current = heap->native_contexts_list();
          !current->IsUndefined();
-         current = Context::cast(current)->get(Context::NEXT_CONTEXT_LINK)) {
+         current = Context::cast(current)->next_context_link()) {
       DCHECK(current != context);
     }
   }
@@ -1976,6 +1977,7 @@ void Genesis::InitializeExperimentalGlobal() {
   HARMONY_STAGED(FEATURE_INITIALIZE_GLOBAL)
   HARMONY_SHIPPING(FEATURE_INITIALIZE_GLOBAL)
   FEATURE_INITIALIZE_GLOBAL(promise_extra, "")
+  FEATURE_INITIALIZE_GLOBAL(intl_extra, "")
 #undef FEATURE_INITIALIZE_GLOBAL
 }
 
@@ -2454,6 +2456,7 @@ void Bootstrapper::ExportExperimentalFromRuntime(Isolate* isolate,
   }
 
   INITIALIZE_FLAG(FLAG_harmony_species)
+  INITIALIZE_FLAG(FLAG_intl_extra)
 
 #undef INITIALIZE_FLAG
 }
@@ -2472,12 +2475,16 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexp_property)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_function_name)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_function_sent)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(promise_extra)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(intl_extra)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_explicit_tailcalls)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_tailcalls)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_instanceof)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_restrictive_declarations)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_exponentiation_operator)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_string_padding)
+#ifdef V8_I18N_SUPPORT
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(icu_case_mapping)
+#endif
 
 void InstallPublicSymbol(Factory* factory, Handle<Context> native_context,
                          const char* name, Handle<Symbol> value) {
@@ -3039,6 +3046,7 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_function_sent_natives[] = {nullptr};
   static const char* promise_extra_natives[] = {"native promise-extra.js",
                                                 nullptr};
+  static const char* intl_extra_natives[] = {"native intl-extra.js", nullptr};
   static const char* harmony_object_values_entries_natives[] = {nullptr};
   static const char* harmony_object_own_property_descriptors_natives[] = {
       nullptr};
@@ -3046,6 +3054,10 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_exponentiation_operator_natives[] = {nullptr};
   static const char* harmony_string_padding_natives[] = {
       "native harmony-string-padding.js", nullptr};
+#ifdef V8_I18N_SUPPORT
+  static const char* icu_case_mapping_natives[] = {"native icu-case-mapping.js",
+                                                   nullptr};
+#endif
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {
@@ -3064,6 +3076,7 @@ bool Genesis::InstallExperimentalNatives() {
     HARMONY_INPROGRESS(INSTALL_EXPERIMENTAL_NATIVES);
     HARMONY_STAGED(INSTALL_EXPERIMENTAL_NATIVES);
     HARMONY_SHIPPING(INSTALL_EXPERIMENTAL_NATIVES);
+    INSTALL_EXPERIMENTAL_NATIVES(intl_extra, "");
     INSTALL_EXPERIMENTAL_NATIVES(promise_extra, "");
 #undef INSTALL_EXPERIMENTAL_NATIVES
   }

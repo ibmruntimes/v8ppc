@@ -1561,7 +1561,6 @@ bool Object::SameValueZero(Object* other) {
 
 MaybeHandle<Object> Object::ArraySpeciesConstructor(
     Isolate* isolate, Handle<Object> original_array) {
-  Handle<Context> native_context = isolate->native_context();
   Handle<Object> default_species = isolate->array_function();
   if (!FLAG_harmony_species) {
     return default_species;
@@ -1586,7 +1585,7 @@ MaybeHandle<Object> Object::ArraySpeciesConstructor(
           isolate, constructor_context,
           JSReceiver::GetFunctionRealm(Handle<JSReceiver>::cast(constructor)),
           Object);
-      if (*constructor_context != *native_context &&
+      if (*constructor_context != *isolate->native_context() &&
           *constructor == constructor_context->array_function()) {
         constructor = isolate->factory()->undefined_value();
       }
@@ -4110,8 +4109,14 @@ Maybe<bool> JSObject::SetPropertyWithInterceptor(LookupIterator* it,
 
   Handle<JSObject> holder = it->GetHolder<JSObject>();
   bool result;
-  PropertyCallbackArguments args(isolate, interceptor->data(),
-                                 *it->GetReceiver(), *holder, should_throw);
+  Handle<Object> receiver = it->GetReceiver();
+  if (!receiver->IsJSReceiver()) {
+    ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, receiver,
+                                     Object::ConvertReceiver(isolate, receiver),
+                                     Nothing<bool>());
+  }
+  PropertyCallbackArguments args(isolate, interceptor->data(), *receiver,
+                                 *holder, should_throw);
 
   if (it->IsElement()) {
     uint32_t index = it->index();
@@ -4154,6 +4159,7 @@ Maybe<bool> Object::SetPropertyInternal(LookupIterator* it,
                                         LanguageMode language_mode,
                                         StoreFromKeyed store_mode,
                                         bool* found) {
+  it->UpdateProtector();
   DCHECK(it->IsFound());
   ShouldThrow should_throw =
       is_sloppy(language_mode) ? DONT_THROW : THROW_ON_ERROR;
@@ -4236,7 +4242,6 @@ Maybe<bool> Object::SetPropertyInternal(LookupIterator* it,
 Maybe<bool> Object::SetProperty(LookupIterator* it, Handle<Object> value,
                                 LanguageMode language_mode,
                                 StoreFromKeyed store_mode) {
-  it->UpdateProtector();
   if (it->IsFound()) {
     bool found = true;
     Maybe<bool> result =
@@ -4264,13 +4269,14 @@ Maybe<bool> Object::SetSuperProperty(LookupIterator* it, Handle<Object> value,
                                      StoreFromKeyed store_mode) {
   Isolate* isolate = it->isolate();
 
-  it->UpdateProtector();
   if (it->IsFound()) {
     bool found = true;
     Maybe<bool> result =
         SetPropertyInternal(it, value, language_mode, store_mode, &found);
     if (found) return result;
   }
+
+  it->UpdateProtector();
 
   // The property either doesn't exist on the holder or exists there as a data
   // property.
@@ -4283,7 +4289,7 @@ Maybe<bool> Object::SetSuperProperty(LookupIterator* it, Handle<Object> value,
   }
   Handle<JSReceiver> receiver = Handle<JSReceiver>::cast(it->GetReceiver());
 
-  LookupIterator::Configuration c = LookupIterator::HIDDEN;
+  LookupIterator::Configuration c = LookupIterator::OWN;
   LookupIterator own_lookup =
       it->IsElement() ? LookupIterator(isolate, receiver, it->index(), c)
                       : LookupIterator(receiver, it->name(), c);
@@ -4492,6 +4498,7 @@ Maybe<bool> Object::AddDataProperty(LookupIterator* it, Handle<Object> value,
     JSObject::ValidateElements(receiver);
     return result;
   } else {
+    it->UpdateProtector();
     // Migrate to the most up-to-date map that will be able to store |value|
     // under it->name() with |attributes|.
     it->PrepareTransitionToDataProperty(receiver, value, attributes,
@@ -5393,9 +5400,14 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
       !interceptor->can_intercept_symbols()) {
     return Just(ABSENT);
   }
-  PropertyCallbackArguments args(isolate, interceptor->data(),
-                                 *it->GetReceiver(), *holder,
-                                 Object::DONT_THROW);
+  Handle<Object> receiver = it->GetReceiver();
+  if (!receiver->IsJSReceiver()) {
+    ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, receiver,
+                                     Object::ConvertReceiver(isolate, receiver),
+                                     Nothing<PropertyAttributes>());
+  }
+  PropertyCallbackArguments args(isolate, interceptor->data(), *receiver,
+                                 *holder, Object::DONT_THROW);
   if (!interceptor->query()->IsUndefined()) {
     Handle<Object> result;
     if (it->IsElement()) {
@@ -5839,9 +5851,15 @@ Maybe<bool> JSObject::DeletePropertyWithInterceptor(LookupIterator* it,
   if (interceptor->deleter()->IsUndefined()) return Nothing<bool>();
 
   Handle<JSObject> holder = it->GetHolder<JSObject>();
+  Handle<Object> receiver = it->GetReceiver();
+  if (!receiver->IsJSReceiver()) {
+    ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, receiver,
+                                     Object::ConvertReceiver(isolate, receiver),
+                                     Nothing<bool>());
+  }
 
-  PropertyCallbackArguments args(isolate, interceptor->data(),
-                                 *it->GetReceiver(), *holder, should_throw);
+  PropertyCallbackArguments args(isolate, interceptor->data(), *receiver,
+                                 *holder, should_throw);
   Handle<Object> result;
   if (it->IsElement()) {
     uint32_t index = it->index();
@@ -5970,7 +5988,7 @@ Maybe<bool> JSReceiver::DeleteProperty(LookupIterator* it,
 Maybe<bool> JSReceiver::DeleteElement(Handle<JSReceiver> object, uint32_t index,
                                       LanguageMode language_mode) {
   LookupIterator it(object->GetIsolate(), object, index, object,
-                    LookupIterator::HIDDEN);
+                    LookupIterator::OWN);
   return DeleteProperty(&it, language_mode);
 }
 
@@ -5978,7 +5996,7 @@ Maybe<bool> JSReceiver::DeleteElement(Handle<JSReceiver> object, uint32_t index,
 Maybe<bool> JSReceiver::DeleteProperty(Handle<JSReceiver> object,
                                        Handle<Name> name,
                                        LanguageMode language_mode) {
-  LookupIterator it(object, name, object, LookupIterator::HIDDEN);
+  LookupIterator it(object, name, object, LookupIterator::OWN);
   return DeleteProperty(&it, language_mode);
 }
 
@@ -5987,7 +6005,7 @@ Maybe<bool> JSReceiver::DeletePropertyOrElement(Handle<JSReceiver> object,
                                                 Handle<Name> name,
                                                 LanguageMode language_mode) {
   LookupIterator it = LookupIterator::PropertyOrElement(
-      name->GetIsolate(), object, name, object, LookupIterator::HIDDEN);
+      name->GetIsolate(), object, name, object, LookupIterator::OWN);
   return DeleteProperty(&it, language_mode);
 }
 
@@ -6088,7 +6106,7 @@ MaybeHandle<Object> JSReceiver::DefineProperties(Isolate* isolate,
     // 7b. ReturnIfAbrupt(propDesc).
     bool success = false;
     LookupIterator it = LookupIterator::PropertyOrElement(
-        isolate, props, next_key, &success, LookupIterator::HIDDEN);
+        isolate, props, next_key, &success, LookupIterator::OWN);
     DCHECK(success);
     Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
     if (!maybe.IsJust()) return MaybeHandle<Object>();
@@ -6163,7 +6181,7 @@ Maybe<bool> JSReceiver::OrdinaryDefineOwnProperty(Isolate* isolate,
   bool success = false;
   DCHECK(key->IsName() || key->IsNumber());  // |key| is a PropertyKey...
   LookupIterator it = LookupIterator::PropertyOrElement(
-      isolate, object, key, &success, LookupIterator::HIDDEN);
+      isolate, object, key, &success, LookupIterator::OWN);
   DCHECK(success);  // ...so creating a LookupIterator can't fail.
 
   // Deal with access checks first.
@@ -6890,7 +6908,7 @@ Maybe<bool> JSReceiver::GetOwnPropertyDescriptor(Isolate* isolate,
   bool success = false;
   DCHECK(key->IsName() || key->IsNumber());  // |key| is a PropertyKey...
   LookupIterator it = LookupIterator::PropertyOrElement(
-      isolate, object, key, &success, LookupIterator::HIDDEN);
+      isolate, object, key, &success, LookupIterator::OWN);
   DCHECK(success);  // ...so creating a LookupIterator can't fail.
   return GetOwnPropertyDescriptor(&it, desc);
 }
@@ -8265,7 +8283,7 @@ MaybeHandle<Object> JSObject::DefineAccessor(Handle<JSObject> object,
   Isolate* isolate = object->GetIsolate();
 
   LookupIterator it = LookupIterator::PropertyOrElement(
-      isolate, object, name, LookupIterator::HIDDEN_SKIP_INTERCEPTOR);
+      isolate, object, name, LookupIterator::OWN_SKIP_INTERCEPTOR);
   return DefineAccessor(&it, getter, setter, attributes);
 }
 
@@ -8309,7 +8327,7 @@ MaybeHandle<Object> JSObject::SetAccessor(Handle<JSObject> object,
   Handle<Name> name(Name::cast(info->name()), isolate);
 
   LookupIterator it = LookupIterator::PropertyOrElement(
-      isolate, object, name, LookupIterator::HIDDEN_SKIP_INTERCEPTOR);
+      isolate, object, name, LookupIterator::OWN_SKIP_INTERCEPTOR);
 
   // Duplicate ACCESS_CHECK outside of GetPropertyAttributes for the case that
   // the FailedAccessCheckCallbackFunction doesn't throw an exception.
@@ -12390,9 +12408,6 @@ MaybeHandle<SharedFunctionInfo> Script::FindSharedFunctionInfo(
     if (fun->function_token_position() == shared->function_token_position() &&
         fun->start_position() == shared->start_position() &&
         fun->end_position() == shared->end_position()) {
-      // This method is not used to find top-level SharedFunctionInfo objects,
-      // verify that above checks are sufficient to distinguish top-level code.
-      DCHECK(!shared->is_toplevel());
       return Handle<SharedFunctionInfo>(shared);
     }
   }
@@ -13939,7 +13954,6 @@ void JSArray::Initialize(Handle<JSArray> array, int capacity, int length) {
       array, length, capacity, INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
 }
 
-
 void JSArray::SetLength(Handle<JSArray> array, uint32_t new_length) {
   // We should never end in here with a pixel or external array.
   DCHECK(array->AllowsSetLength());
@@ -14948,9 +14962,13 @@ MaybeHandle<Object> JSObject::GetPropertyWithInterceptor(LookupIterator* it,
 
   Handle<JSObject> holder = it->GetHolder<JSObject>();
   Handle<Object> result;
-  PropertyCallbackArguments args(isolate, interceptor->data(),
-                                 *it->GetReceiver(), *holder,
-                                 Object::DONT_THROW);
+  Handle<Object> receiver = it->GetReceiver();
+  if (!receiver->IsJSReceiver()) {
+    ASSIGN_RETURN_ON_EXCEPTION(
+        isolate, receiver, Object::ConvertReceiver(isolate, receiver), Object);
+  }
+  PropertyCallbackArguments args(isolate, interceptor->data(), *receiver,
+                                 *holder, Object::DONT_THROW);
 
   if (it->IsElement()) {
     uint32_t index = it->index();
