@@ -699,13 +699,16 @@ Type* Typer::Visitor::TypeEffectPhi(Node* node) {
   return nullptr;
 }
 
-
-Type* Typer::Visitor::TypeGuard(Node* node) {
+Type* Typer::Visitor::TypeTypeGuard(Node* node) {
   Type* input_type = Operand(node, 0);
-  Type* guard_type = OpParameter<Type*>(node);
+  Type* guard_type = TypeOf(node->op());
   return Type::Intersect(input_type, guard_type, zone());
 }
 
+Type* Typer::Visitor::TypeCheckPoint(Node* node) {
+  UNREACHABLE();
+  return nullptr;
+}
 
 Type* Typer::Visitor::TypeBeginRegion(Node* node) {
   UNREACHABLE();
@@ -1523,9 +1526,6 @@ Type* Typer::Visitor::TypeJSCreateScriptContext(Node* node) {
 
 
 // JS other operators.
-
-
-Type* Typer::Visitor::TypeJSYield(Node* node) { return Type::Any(); }
 
 
 Type* Typer::Visitor::TypeJSCallConstruct(Node* node) {

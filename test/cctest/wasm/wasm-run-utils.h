@@ -422,6 +422,7 @@ class WasmFunctionCompiler : public HandleAndZoneScope,
         descriptor_(nullptr),
         testing_module_(module),
         debug_name_(debug_name),
+        local_decls(main_zone(), sig),
         source_position_table_(this->graph()) {
     if (module) {
       // Get a new function from the testing module.
@@ -471,7 +472,7 @@ class WasmFunctionCompiler : public HandleAndZoneScope,
   }
 
   byte AllocateLocal(LocalType type) {
-    uint32_t index = local_decls.AddLocals(1, type, sig);
+    uint32_t index = local_decls.AddLocals(1, type);
     byte result = static_cast<byte>(index);
     DCHECK_EQ(index, result);
     return result;
@@ -656,6 +657,15 @@ class WasmRunner {
     return 4;
   }
 };
+
+// A macro to define tests that run in different engine configurations.
+// Currently only supports compiled tests, but a future
+// RunWasmInterpreted_##name version will allow each test to also run in the
+// interpreter.
+#define WASM_EXEC_TEST(name)                         \
+  void RunWasm_##name();                             \
+  TEST(RunWasmCompiled_##name) { RunWasm_##name(); } \
+  void RunWasm_##name()
 
 }  // namespace
 

@@ -2250,11 +2250,12 @@ void LCodeGen::DoClassOfTestAndBranch(LClassOfTestAndBranch* instr) {
   __ JumpIfSmi(input, false_label);
 
   Register map = scratch2;
-  __ CompareObjectType(input, map, scratch1, JS_FUNCTION_TYPE);
+  __ CompareObjectType(input, map, scratch1, FIRST_FUNCTION_TYPE);
+  STATIC_ASSERT(LAST_FUNCTION_TYPE == LAST_TYPE);
   if (String::Equals(isolate()->factory()->Function_string(), class_name)) {
-    __ B(eq, true_label);
+    __ B(hs, true_label);
   } else {
-    __ B(eq, false_label);
+    __ B(hs, false_label);
   }
 
   // Check if the constructor in the map is a function.
@@ -2799,16 +2800,6 @@ void LCodeGen::DoInnerAllocatedObject(LInnerAllocatedObject* instr) {
   } else {
     __ Add(result, base, Operand(ToRegister32(instr->offset()), SXTW));
   }
-}
-
-
-void LCodeGen::DoInstanceOf(LInstanceOf* instr) {
-  DCHECK(ToRegister(instr->context()).is(cp));
-  DCHECK(ToRegister(instr->left()).is(InstanceOfDescriptor::LeftRegister()));
-  DCHECK(ToRegister(instr->right()).is(InstanceOfDescriptor::RightRegister()));
-  DCHECK(ToRegister(instr->result()).is(x0));
-  InstanceOfStub stub(isolate());
-  CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
 }
 
 

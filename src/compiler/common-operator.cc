@@ -179,6 +179,7 @@ std::ostream& operator<<(std::ostream& os,
   V(Terminate, Operator::kKontrol, 0, 1, 1, 0, 0, 1)         \
   V(OsrNormalEntry, Operator::kFoldable, 0, 1, 1, 0, 1, 1)   \
   V(OsrLoopEntry, Operator::kFoldable, 0, 1, 1, 0, 1, 1)     \
+  V(CheckPoint, Operator::kKontrol, 1, 1, 1, 0, 1, 0)        \
   V(BeginRegion, Operator::kNoThrow, 0, 1, 0, 0, 1, 0)       \
   V(FinishRegion, Operator::kNoThrow, 1, 1, 0, 1, 1, 0)
 
@@ -756,15 +757,6 @@ const Operator* CommonOperatorBuilder::EffectPhi(int effect_input_count) {
       IrOpcode::kEffectPhi, Operator::kPure,  // opcode
       "EffectPhi",                            // name
       0, effect_input_count, 1, 0, 1, 0);     // counts
-}
-
-
-const Operator* CommonOperatorBuilder::Guard(Type* type) {
-  return new (zone()) Operator1<Type*>(      // --
-      IrOpcode::kGuard, Operator::kKontrol,  // opcode
-      "Guard",                               // name
-      1, 0, 1, 1, 0, 0,                      // counts
-      type);                                 // parameter
 }
 
 

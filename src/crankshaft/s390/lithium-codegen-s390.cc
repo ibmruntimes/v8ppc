@@ -2482,11 +2482,12 @@ void LCodeGen::EmitClassOfTest(Label* is_true, Label* is_false,
 
   __ JumpIfSmi(input, is_false);
 
-  __ CompareObjectType(input, temp, temp2, JS_FUNCTION_TYPE);
+  __ CompareObjectType(input, temp, temp2, FIRST_FUNCTION_TYPE);
+  STATIC_ASSERT(LAST_FUNCTION_TYPE == LAST_TYPE);
   if (String::Equals(isolate()->factory()->Function_string(), class_name)) {
-    __ beq(is_true);
+    __ bge(is_true);
   } else {
-    __ beq(is_false);
+    __ bge(is_false);
   }
 
   // Check if the constructor in the map is a function.
@@ -2535,15 +2536,6 @@ void LCodeGen::DoCmpMapAndBranch(LCmpMapAndBranch* instr) {
   __ mov(temp, Operand(instr->map()));
   __ CmpP(temp, FieldMemOperand(reg, HeapObject::kMapOffset));
   EmitBranch(instr, eq);
-}
-
-void LCodeGen::DoInstanceOf(LInstanceOf* instr) {
-  DCHECK(ToRegister(instr->context()).is(cp));
-  DCHECK(ToRegister(instr->left()).is(InstanceOfDescriptor::LeftRegister()));
-  DCHECK(ToRegister(instr->right()).is(InstanceOfDescriptor::RightRegister()));
-  DCHECK(ToRegister(instr->result()).is(r2));
-  InstanceOfStub stub(isolate());
-  CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
 }
 
 void LCodeGen::DoHasInPrototypeChainAndBranch(

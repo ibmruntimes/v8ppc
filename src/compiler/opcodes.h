@@ -47,7 +47,7 @@
   V(Select)              \
   V(Phi)                 \
   V(EffectPhi)           \
-  V(Guard)               \
+  V(CheckPoint)          \
   V(BeginRegion)         \
   V(FinishRegion)        \
   V(FrameState)          \
@@ -151,7 +151,6 @@
   V(JSForInStep)            \
   V(JSLoadMessage)          \
   V(JSStoreMessage)         \
-  V(JSYield)                \
   V(JSStackCheck)
 
 #define JS_OP_LIST(V)     \
@@ -219,7 +218,8 @@
   V(ObjectIsReceiver)              \
   V(ObjectIsSmi)                   \
   V(ObjectIsString)                \
-  V(ObjectIsUndetectable)
+  V(ObjectIsUndetectable)          \
+  V(TypeGuard)
 
 // Opcodes for Machine-level operators.
 #define MACHINE_COMPARE_BINOP_LIST(V) \

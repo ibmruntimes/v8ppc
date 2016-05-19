@@ -571,6 +571,88 @@ MaybeHandle<Object> Object::BitwiseXor(Isolate* isolate, Handle<Object> lhs,
                                               NumberToInt32(*rhs));
 }
 
+// static
+MaybeHandle<Object> Object::OrdinaryHasInstance(Isolate* isolate,
+                                                Handle<Object> callable,
+                                                Handle<Object> object) {
+  // The {callable} must have a [[Call]] internal method.
+  if (!callable->IsCallable()) return isolate->factory()->false_value();
+
+  // Check if {callable} is a bound function, and if so retrieve its
+  // [[BoundTargetFunction]] and use that instead of {callable}.
+  if (callable->IsJSBoundFunction()) {
+    Handle<Object> bound_callable(
+        Handle<JSBoundFunction>::cast(callable)->bound_target_function(),
+        isolate);
+    return Object::InstanceOf(isolate, object, bound_callable);
+  }
+
+  // If {object} is not a receiver, return false.
+  if (!object->IsJSReceiver()) return isolate->factory()->false_value();
+
+  // Get the "prototype" of {callable}; raise an error if it's not a receiver.
+  Handle<Object> prototype;
+  ASSIGN_RETURN_ON_EXCEPTION(
+      isolate, prototype,
+      Object::GetProperty(callable, isolate->factory()->prototype_string()),
+      Object);
+  if (!prototype->IsJSReceiver()) {
+    THROW_NEW_ERROR(
+        isolate,
+        NewTypeError(MessageTemplate::kInstanceofNonobjectProto, prototype),
+        Object);
+  }
+
+  // Return whether or not {prototype} is in the prototype chain of {object}.
+  Maybe<bool> result = JSReceiver::HasInPrototypeChain(
+      isolate, Handle<JSReceiver>::cast(object), prototype);
+  if (result.IsNothing()) return MaybeHandle<Object>();
+  return isolate->factory()->ToBoolean(result.FromJust());
+}
+
+// static
+MaybeHandle<Object> Object::InstanceOf(Isolate* isolate, Handle<Object> object,
+                                       Handle<Object> callable) {
+  if (FLAG_harmony_instanceof) {
+    // The {callable} must be a receiver.
+    if (!callable->IsJSReceiver()) {
+      THROW_NEW_ERROR(
+          isolate, NewTypeError(MessageTemplate::kNonObjectInInstanceOfCheck),
+          Object);
+    }
+
+    // Lookup the @@hasInstance method on {callable}.
+    Handle<Object> inst_of_handler;
+    ASSIGN_RETURN_ON_EXCEPTION(
+        isolate, inst_of_handler,
+        JSReceiver::GetMethod(Handle<JSReceiver>::cast(callable),
+                              isolate->factory()->has_instance_symbol()),
+        Object);
+    if (!inst_of_handler->IsUndefined()) {
+      // Call the {inst_of_handler} on the {callable}.
+      Handle<Object> result;
+      ASSIGN_RETURN_ON_EXCEPTION(
+          isolate, result,
+          Execution::Call(isolate, inst_of_handler, callable, 1, &object),
+          Object);
+      return isolate->factory()->ToBoolean(result->BooleanValue());
+    }
+  }
+
+  // The {callable} must have a [[Call]] internal method.
+  if (!callable->IsCallable()) {
+    THROW_NEW_ERROR(
+        isolate, NewTypeError(MessageTemplate::kNonCallableInInstanceOfCheck),
+        Object);
+  }
+
+  // Fall back to OrdinaryHasInstance with {callable} and {object}.
+  Handle<Object> result;
+  ASSIGN_RETURN_ON_EXCEPTION(
+      isolate, result,
+      JSReceiver::OrdinaryHasInstance(isolate, callable, object), Object);
+  return result;
+}
 
 Maybe<bool> Object::IsArray(Handle<Object> object) {
   if (object->IsJSArray()) return Just(true);
@@ -1389,6 +1471,7 @@ void JSObject::SetNormalizedProperty(Handle<JSObject> object,
   }
 }
 
+// static
 Maybe<bool> JSReceiver::HasInPrototypeChain(Isolate* isolate,
                                             Handle<JSReceiver> object,
                                             Handle<Object> proto) {
@@ -1401,7 +1484,6 @@ Maybe<bool> JSReceiver::HasInPrototypeChain(Isolate* isolate,
     }
   }
 }
-
 
 Map* Object::GetRootMap(Isolate* isolate) {
   DisallowHeapAllocation no_alloc;
@@ -8070,16 +8152,6 @@ int Map::NextFreePropertyIndex() {
 }
 
 
-static bool ContainsOnlyValidKeys(Handle<FixedArray> array) {
-  int len = array->length();
-  for (int i = 0; i < len; i++) {
-    Object* e = array->get(i);
-    if (!(e->IsName() || e->IsNumber())) return false;
-  }
-  return true;
-}
-
-
 bool Map::OnlyHasSimpleProperties() {
   // Wrapped string elements aren't explicitly stored in the elements backing
   // store, but are loaded indirectly from the underlying string.
@@ -8093,15 +8165,8 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
                                             PropertyFilter filter,
                                             GetKeysConversion keys_conversion,
                                             bool filter_proxy_keys) {
-  USE(ContainsOnlyValidKeys);
-  Isolate* isolate = object->GetIsolate();
-  KeyAccumulator accumulator(isolate, type, filter);
-  accumulator.set_filter_proxy_keys(filter_proxy_keys);
-  MAYBE_RETURN(accumulator.CollectKeys(object, object),
-               MaybeHandle<FixedArray>());
-  Handle<FixedArray> keys = accumulator.GetKeys(keys_conversion);
-  DCHECK(ContainsOnlyValidKeys(keys));
-  return keys;
+  return KeyAccumulator::GetKeys(object, type, filter, keys_conversion,
+                                 filter_proxy_keys);
 }
 
 MUST_USE_RESULT Maybe<bool> FastGetOwnValuesOrEntries(
@@ -8198,7 +8263,6 @@ MaybeHandle<FixedArray> GetOwnValuesOrEntries(Isolate* isolate,
   MAYBE_RETURN(accumulator.CollectKeys(object, object),
                MaybeHandle<FixedArray>());
   Handle<FixedArray> keys = accumulator.GetKeys(CONVERT_TO_STRING);
-  DCHECK(ContainsOnlyValidKeys(keys));
 
   values_or_entries = isolate->factory()->NewFixedArray(keys->length());
   int length = 0;
@@ -11825,8 +11889,13 @@ void JSFunction::SetPrototype(Handle<JSFunction> function,
     new_map->SetConstructor(*value);
     new_map->set_non_instance_prototype(true);
     Isolate* isolate = new_map->GetIsolate();
+
     construct_prototype = handle(
-        function->context()->native_context()->initial_object_prototype(),
+        IsGeneratorFunction(function->shared()->kind())
+            ? function->context()
+                  ->native_context()
+                  ->initial_generator_prototype()
+            : function->context()->native_context()->initial_object_prototype(),
         isolate);
   } else {
     function->map()->set_non_instance_prototype(false);
@@ -11948,7 +12017,7 @@ bool CanSubclassHaveInobjectProperties(InstanceType instance_type) {
 
 
 void JSFunction::EnsureHasInitialMap(Handle<JSFunction> function) {
-  DCHECK(function->IsConstructor() || function->shared()->is_generator());
+  DCHECK(function->IsConstructor() || function->shared()->is_resumable());
   if (function->has_initial_map()) return;
   Isolate* isolate = function->GetIsolate();
 
@@ -11959,7 +12028,7 @@ void JSFunction::EnsureHasInitialMap(Handle<JSFunction> function) {
   // First create a new map with the size and number of in-object properties
   // suggested by the function.
   InstanceType instance_type;
-  if (function->shared()->is_generator()) {
+  if (function->shared()->is_resumable()) {
     instance_type = JS_GENERATOR_OBJECT_TYPE;
   } else {
     instance_type = JS_OBJECT_TYPE;
@@ -12192,10 +12261,16 @@ Handle<String> JSFunction::ToString(Handle<JSFunction> function) {
   IncrementalStringBuilder builder(isolate);
   if (!shared_info->is_arrow()) {
     if (shared_info->is_concise_method()) {
-      if (shared_info->is_generator()) builder.AppendCharacter('*');
+      if (shared_info->is_generator()) {
+        builder.AppendCharacter('*');
+      } else if (shared_info->is_async()) {
+        builder.AppendCString("async ");
+      }
     } else {
       if (shared_info->is_generator()) {
         builder.AppendCString("function* ");
+      } else if (shared_info->is_async()) {
+        builder.AppendCString("async function ");
       } else {
         builder.AppendCString("function ");
       }
@@ -12890,63 +12965,66 @@ const char* const VisitorSynchronization::kTagNames[
 
 void ObjectVisitor::VisitCodeTarget(RelocInfo* rinfo) {
   DCHECK(RelocInfo::IsCodeTarget(rinfo->rmode()));
-  Object* target = Code::GetCodeFromTargetAddress(rinfo->target_address());
-  Object* old_target = target;
-  VisitPointer(&target);
-  CHECK_EQ(target, old_target);  // VisitPointer doesn't change Code* *target.
+  Object* old_pointer = Code::GetCodeFromTargetAddress(rinfo->target_address());
+  Object* new_pointer = old_pointer;
+  VisitPointer(&new_pointer);
+  DCHECK_EQ(old_pointer, new_pointer);
 }
 
 
 void ObjectVisitor::VisitCodeAgeSequence(RelocInfo* rinfo) {
   DCHECK(RelocInfo::IsCodeAgeSequence(rinfo->rmode()));
-  Object* stub = rinfo->code_age_stub();
-  if (stub) {
-    VisitPointer(&stub);
+  Object* old_pointer = rinfo->code_age_stub();
+  Object* new_pointer = old_pointer;
+  if (old_pointer != nullptr) {
+    VisitPointer(&new_pointer);
+    DCHECK_EQ(old_pointer, new_pointer);
   }
 }
 
 
 void ObjectVisitor::VisitCodeEntry(Address entry_address) {
-  Object* code = Code::GetObjectFromEntryAddress(entry_address);
-  Object* old_code = code;
-  VisitPointer(&code);
-  if (code != old_code) {
-    Memory::Address_at(entry_address) = reinterpret_cast<Code*>(code)->entry();
-  }
+  Object* old_pointer = Code::GetObjectFromEntryAddress(entry_address);
+  Object* new_pointer = old_pointer;
+  VisitPointer(&new_pointer);
+  DCHECK_EQ(old_pointer, new_pointer);
 }
 
 
 void ObjectVisitor::VisitCell(RelocInfo* rinfo) {
   DCHECK(rinfo->rmode() == RelocInfo::CELL);
-  Object* cell = rinfo->target_cell();
-  Object* old_cell = cell;
-  VisitPointer(&cell);
-  if (cell != old_cell) {
-    rinfo->set_target_cell(reinterpret_cast<Cell*>(cell));
-  }
+  Object* old_pointer = rinfo->target_cell();
+  Object* new_pointer = old_pointer;
+  VisitPointer(&new_pointer);
+  DCHECK_EQ(old_pointer, new_pointer);
 }
 
 
 void ObjectVisitor::VisitDebugTarget(RelocInfo* rinfo) {
   DCHECK(RelocInfo::IsDebugBreakSlot(rinfo->rmode()) &&
          rinfo->IsPatchedDebugBreakSlotSequence());
-  Object* target = Code::GetCodeFromTargetAddress(rinfo->debug_call_address());
-  Object* old_target = target;
-  VisitPointer(&target);
-  CHECK_EQ(target, old_target);  // VisitPointer doesn't change Code* *target.
+  Object* old_pointer =
+      Code::GetCodeFromTargetAddress(rinfo->debug_call_address());
+  Object* new_pointer = old_pointer;
+  VisitPointer(&new_pointer);
+  DCHECK_EQ(old_pointer, new_pointer);
 }
 
 
 void ObjectVisitor::VisitEmbeddedPointer(RelocInfo* rinfo) {
   DCHECK(rinfo->rmode() == RelocInfo::EMBEDDED_OBJECT);
-  Object* p = rinfo->target_object();
-  VisitPointer(&p);
+  Object* old_pointer = rinfo->target_object();
+  Object* new_pointer = old_pointer;
+  VisitPointer(&new_pointer);
+  DCHECK_EQ(old_pointer, new_pointer);
 }
 
 
 void ObjectVisitor::VisitExternalReference(RelocInfo* rinfo) {
-  Address p = rinfo->target_external_reference();
-  VisitExternalReference(&p);
+  Address old_reference = rinfo->target_external_reference();
+  Address new_reference = old_reference;
+  VisitExternalReference(&new_reference);
+  DCHECK_EQ(old_reference, new_reference);
 }
 
 
@@ -13650,8 +13728,9 @@ void DeoptimizationOutputData::DeoptimizationOutputDataPrint(
     int pc_and_state = this->PcAndState(i)->value();
     os << std::setw(6) << this->AstId(i).ToInt() << "  " << std::setw(8)
        << FullCodeGenerator::PcField::decode(pc_and_state) << "  "
-       << FullCodeGenerator::State2String(
-              FullCodeGenerator::StateField::decode(pc_and_state)) << "\n";
+       << Deoptimizer::BailoutStateToString(
+              FullCodeGenerator::BailoutStateField::decode(pc_and_state))
+       << "\n";
   }
 }
 
@@ -15157,8 +15236,12 @@ bool JSObject::WasConstructedFromApiFunction() {
 
 MaybeHandle<String> Object::ObjectProtoToString(Isolate* isolate,
                                                 Handle<Object> object) {
-  if (object->IsUndefined()) return isolate->factory()->undefined_to_string();
-  if (object->IsNull()) return isolate->factory()->null_to_string();
+  if (*object == isolate->heap()->undefined_value()) {
+    return isolate->factory()->undefined_to_string();
+  }
+  if (*object == isolate->heap()->null_value()) {
+    return isolate->factory()->null_to_string();
+  }
 
   Handle<JSReceiver> receiver =
       Object::ToObject(isolate, object).ToHandleChecked();
@@ -15179,6 +15262,18 @@ MaybeHandle<String> Object::ObjectProtoToString(Isolate* isolate,
                                JSReceiver::BuiltinStringTag(receiver), String);
   }
 
+  if (*tag == isolate->heap()->Object_string()) {
+    return isolate->factory()->object_to_string();
+  }
+  if (*tag == isolate->heap()->String_string()) {
+    return isolate->factory()->string_to_string();
+  }
+  if (*tag == isolate->heap()->Array_string()) {
+    return isolate->factory()->array_to_string();
+  }
+  if (*tag == isolate->heap()->Function_string()) {
+    return isolate->factory()->function_to_string();
+  }
   IncrementalStringBuilder builder(isolate);
   builder.AppendCString("[object ");
   builder.AppendString(tag);
@@ -15443,6 +15538,9 @@ MaybeHandle<JSRegExp> JSRegExp::Initialize(Handle<JSRegExp> regexp,
   ASSIGN_RETURN_ON_EXCEPTION(isolate, escaped_source,
                              EscapeRegExpSource(isolate, source), JSRegExp);
 
+  RETURN_ON_EXCEPTION(isolate, RegExpImpl::Compile(regexp, source, flags),
+                      JSRegExp);
+
   regexp->set_source(*escaped_source);
   regexp->set_flags(Smi::FromInt(flags));
 
@@ -15462,9 +15560,6 @@ MaybeHandle<JSRegExp> JSRegExp::Initialize(Handle<JSRegExp> regexp,
         Handle<Smi>(Smi::FromInt(0), isolate), writable)
         .Check();
   }
-
-  RETURN_ON_EXCEPTION(isolate, RegExpImpl::Compile(regexp, source, flags),
-                      JSRegExp);
 
   return regexp;
 }

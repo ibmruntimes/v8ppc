@@ -23,6 +23,7 @@
 #include "src/property-descriptor.h"
 #include "src/prototype.h"
 #include "src/string-builder.h"
+#include "src/uri.h"
 #include "src/vm-state-inl.h"
 
 namespace v8 {
@@ -2106,6 +2107,26 @@ BUILTIN(ObjectSeal) {
   return *object;
 }
 
+// ES6 section 18.2.6.4 encodeURI (uri)
+BUILTIN(GlobalEncodeURI) {
+  HandleScope scope(isolate);
+  Handle<String> uri;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, uri, Object::ToString(isolate, args.atOrUndefined(isolate, 1)));
+
+  return Uri::EncodeUri(isolate, uri);
+}
+
+// ES6 section 18.2.6.5 encodeURIComponenet (uriComponent)
+BUILTIN(GlobalEncodeURIComponent) {
+  HandleScope scope(isolate);
+  Handle<String> uriComponent;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, uriComponent,
+      Object::ToString(isolate, args.atOrUndefined(isolate, 1)));
+
+  return Uri::EncodeUriComponent(isolate, uriComponent);
+}
 
 namespace {
 
@@ -2391,6 +2412,21 @@ void Builtins::Generate_MathSqrt(CodeStubAssembler* assembler) {
 // ES6 section 20.2.2.35 Math.trunc ( x )
 void Builtins::Generate_MathTrunc(CodeStubAssembler* assembler) {
   Generate_MathRoundingOperation(assembler, &CodeStubAssembler::Float64Trunc);
+}
+
+// -----------------------------------------------------------------------------
+// ES6 section 19.2 Function Objects
+
+// ES6 section 19.2.3.6 Function.prototype [ @@hasInstance ] ( V )
+void Builtins::Generate_FunctionPrototypeHasInstance(
+    CodeStubAssembler* assembler) {
+  using compiler::Node;
+
+  Node* f = assembler->Parameter(0);
+  Node* v = assembler->Parameter(1);
+  Node* context = assembler->Parameter(4);
+  Node* result = assembler->OrdinaryHasInstance(context, f, v);
+  assembler->Return(result);
 }
 
 // -----------------------------------------------------------------------------
@@ -4197,7 +4233,6 @@ BUILTIN(FunctionPrototypeBind) {
   return *function;
 }
 
-
 // ES6 section 19.2.3.5 Function.prototype.toString ( )
 BUILTIN(FunctionPrototypeToString) {
   HandleScope scope(isolate);
@@ -4223,6 +4258,13 @@ BUILTIN(GeneratorFunctionConstructor) {
   return *result;
 }
 
+BUILTIN(AsyncFunctionConstructor) {
+  HandleScope scope(isolate);
+  Handle<JSFunction> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result, CreateDynamicFunction(isolate, args, "async function"));
+  return *result;
+}
 
 // ES6 section 19.4.1.1 Symbol ( [ description ] ) for the [[Call]] case.
 BUILTIN(SymbolConstructor) {

@@ -150,6 +150,11 @@ int Bytecodes::Size(Bytecode bytecode, OperandScale operand_scale) {
 
 
 // static
+size_t Bytecodes::ReturnCount(Bytecode bytecode) {
+  return bytecode == Bytecode::kReturn ? 1 : 0;
+}
+
+// static
 int Bytecodes::NumberOfOperands(Bytecode bytecode) {
   DCHECK(bytecode <= Bytecode::kLast);
   switch (bytecode) {
@@ -243,6 +248,7 @@ bool Bytecodes::WritesBooleanToAccumulator(Bytecode bytecode) {
   switch (bytecode) {
     case Bytecode::kLdaTrue:
     case Bytecode::kLdaFalse:
+    case Bytecode::kToBooleanLogicalNot:
     case Bytecode::kLogicalNot:
     case Bytecode::kTestEqual:
     case Bytecode::kTestNotEqual:

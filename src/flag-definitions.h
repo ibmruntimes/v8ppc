@@ -188,9 +188,9 @@ DEFINE_BOOL(promise_extra, false, "additional V8 Promise functions")
 // Removing extra Promise functions is shipped
 DEFINE_NEG_VALUE_IMPLICATION(harmony_shipping, promise_extra, true)
 
-DEFINE_BOOL(intl_extra, true, "additional V8 Intl functions")
-// Removing extra Intl functions is staged
-DEFINE_NEG_IMPLICATION(harmony, intl_extra)
+DEFINE_BOOL(intl_extra, false, "additional V8 Intl functions")
+// Removing extra Intl functions is shipped
+DEFINE_NEG_VALUE_IMPLICATION(harmony_shipping, intl_extra, true)
 
 // Activate on ClusterFuzz.
 DEFINE_IMPLICATION(es_staging, harmony_regexp_lookbehind)
@@ -204,14 +204,16 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_simd, "harmony simd")                                       \
   V(harmony_do_expressions, "harmony do-expressions")                   \
   V(harmony_regexp_property, "harmony unicode regexp property classes") \
-  V(icu_case_mapping, "case mapping with ICU rather than Unibrow")
+  V(icu_case_mapping, "case mapping with ICU rather than Unibrow")      \
+  V(harmony_async_await, "harmony async-await")
 #else
-#define HARMONY_INPROGRESS(V)                                  \
-  V(harmony_function_sent, "harmony function.sent")            \
-  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")    \
-  V(harmony_simd, "harmony simd")                              \
-  V(harmony_do_expressions, "harmony do-expressions")          \
-  V(harmony_regexp_property, "harmony unicode regexp property classes")
+#define HARMONY_INPROGRESS(V)                                           \
+  V(harmony_function_sent, "harmony function.sent")                     \
+  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")             \
+  V(harmony_simd, "harmony simd")                                       \
+  V(harmony_do_expressions, "harmony do-expressions")                   \
+  V(harmony_regexp_property, "harmony unicode regexp property classes") \
+  V(harmony_async_await, "harmony async-await")
 #endif
 
 // Features that are complete (but still behind --harmony/es-staging flag).
@@ -278,7 +280,6 @@ DEFINE_BOOL(track_fields, true, "track fields with only smi values")
 DEFINE_BOOL(track_double_fields, true, "track fields with double values")
 DEFINE_BOOL(track_heap_object_fields, true, "track fields with heap values")
 DEFINE_BOOL(track_computed_fields, true, "track computed boilerplate fields")
-DEFINE_BOOL(harmony_instanceof_opt, true, "optimize ES6 instanceof support")
 DEFINE_IMPLICATION(track_double_fields, track_fields)
 DEFINE_IMPLICATION(track_heap_object_fields, track_fields)
 DEFINE_IMPLICATION(track_computed_fields, track_fields)
@@ -468,7 +469,7 @@ DEFINE_BOOL(turbo_cf_optimization, true, "optimize control flow in TurboFan")
 DEFINE_BOOL(turbo_frame_elision, true, "elide frames in TurboFan")
 DEFINE_BOOL(turbo_cache_shared_code, true, "cache context-independent code")
 DEFINE_BOOL(turbo_preserve_shared_code, false, "keep context-independent code")
-DEFINE_BOOL(experimental_turbo_escape, false, "enable escape analysis")
+DEFINE_BOOL(turbo_escape, false, "enable escape analysis")
 DEFINE_BOOL(turbo_instruction_scheduling, false,
             "enable instruction scheduling in TurboFan")
 DEFINE_BOOL(turbo_stress_instruction_scheduling, false,

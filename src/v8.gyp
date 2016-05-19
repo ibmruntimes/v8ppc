@@ -1005,6 +1005,8 @@
         'profiler/sampling-heap-profiler.h',
         'profiler/strings-storage.cc',
         'profiler/strings-storage.h',
+        'profiler/tick-sample.cc',
+        'profiler/tick-sample.h',
         'profiler/unbound-queue-inl.h',
         'profiler/unbound-queue.h',
         'property-descriptor.cc',
@@ -1129,6 +1131,8 @@
         'unicode-cache.h',
         'unicode-decoder.cc',
         'unicode-decoder.h',
+        'uri.cc',
+        'uri.h',
         'utils-inl.h',
         'utils.cc',
         'utils.h',
@@ -1599,7 +1603,20 @@
           'dependencies': [
             '<(icu_gyp_path):icui18n',
             '<(icu_gyp_path):icuuc',
-          ]
+          ],
+          'conditions': [
+            ['icu_use_data_file_flag==1', {
+              'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_FILE'],
+            }, { # else icu_use_data_file_flag !=1
+              'conditions': [
+                ['OS=="win"', {
+                  'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_SHARED'],
+                }, {
+                  'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC'],
+                }],
+              ],
+            }],
+          ],
         }, {  # v8_enable_i18n_support==0
           'sources!': [
             'i18n.cc',
@@ -1609,17 +1626,6 @@
         ['OS=="win" and v8_enable_i18n_support==1', {
           'dependencies': [
             '<(icu_gyp_path):icudata',
-          ],
-        }],
-        ['icu_use_data_file_flag==1', {
-          'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_FILE'],
-        }, { # else icu_use_data_file_flag !=1
-          'conditions': [
-            ['OS=="win"', {
-              'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_SHARED'],
-            }, {
-              'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC'],
-            }],
           ],
         }],
       ],
@@ -1905,6 +1911,7 @@
       ],
       'include_dirs+': [
         '..',
+        '../include',
       ],
       'sources': [
         '../include/libplatform/libplatform.h',
@@ -2039,6 +2046,7 @@
           'js/harmony-unicode-regexps.js',
           'js/harmony-string-padding.js',
           'js/promise-extra.js',
+          'js/harmony-async-await.js'
         ],
         'libraries_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries.bin',
         'libraries_experimental_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental.bin',

@@ -18,6 +18,10 @@ import("//build_overrides/v8.gni")
 import("snapshot_toolchain.gni")
 
 declare_args() {
+  # Use ICU data file (icudtl.dat) if true or library (shared on windows,
+  # static otherwise).
+  icu_use_data_file_flag = true
+
   # Enable the snapshot feature, for fast context creation.
   # http://v8project.blogspot.com/2015/09/custom-startup-snapshots.html
   v8_use_snapshot = true
@@ -320,7 +324,7 @@ config("toolchain") {
 
 template("v8_source_set") {
   source_set(target_name) {
-    forward_variables_from(invoker, "*", ["configs"])
+    forward_variables_from(invoker, "*", [ "configs" ])
     configs += invoker.configs
     configs -= [ "//build/config/compiler:chromium_code" ]
     configs += [ "//build/config/compiler:no_chromium_code" ]
@@ -421,6 +425,7 @@ action("js2c_experimental") {
   sources = [
     "src/js/macros.py",
     "src/messages.h",
+    "src/js/harmony-async-await.js",
     "src/js/harmony-atomics.js",
     "src/js/harmony-regexp-exec.js",
     "src/js/harmony-sharedarraybuffer.js",
@@ -666,9 +671,7 @@ v8_source_set("v8_nosnapshot") {
     "src/snapshot/snapshot-empty.cc",
   ]
 
-  configs = [
-    ":internal_config",
-  ]
+  configs = [ ":internal_config" ]
 }
 
 v8_source_set("v8_snapshot") {
@@ -700,9 +703,7 @@ v8_source_set("v8_snapshot") {
     "$target_gen_dir/snapshot.cc",
   ]
 
-  configs = [
-    ":internal_config",
-  ]
+  configs = [ ":internal_config" ]
 }
 
 if (v8_use_external_startup_data) {
@@ -726,9 +727,7 @@ if (v8_use_external_startup_data) {
       "src/snapshot/snapshot-external.cc",
     ]
 
-    configs = [
-      ":internal_config",
-    ]
+    configs = [ ":internal_config" ]
   }
 }
 
@@ -1349,6 +1348,8 @@ v8_source_set("v8_base") {
     "src/profiler/sampling-heap-profiler.h",
     "src/profiler/strings-storage.cc",
     "src/profiler/strings-storage.h",
+    "src/profiler/tick-sample.cc",
+    "src/profiler/tick-sample.h",
     "src/profiler/unbound-queue-inl.h",
     "src/profiler/unbound-queue.h",
     "src/property-descriptor.cc",
@@ -1473,6 +1474,8 @@ v8_source_set("v8_base") {
     "src/unicode-inl.h",
     "src/unicode.cc",
     "src/unicode.h",
+    "src/uri.cc",
+    "src/uri.h",
     "src/utils-inl.h",
     "src/utils.cc",
     "src/utils.h",
@@ -1735,10 +1738,10 @@ v8_source_set("v8_base") {
     ]
   } else if (v8_target_arch == "mips64el") {
     sources += [
-      "compiler/mips64/code-generator-mips64.cc",
-      "compiler/mips64/instruction-codes-mips64.h",
-      "compiler/mips64/instruction-scheduler-mips64.cc",
-      "compiler/mips64/instruction-selector-mips64.cc",
+      "src/compiler/mips64/code-generator-mips64.cc",
+      "src/compiler/mips64/instruction-codes-mips64.h",
+      "src/compiler/mips64/instruction-scheduler-mips64.cc",
+      "src/compiler/mips64/instruction-selector-mips64.cc",
       "src/crankshaft/mips64/lithium-codegen-mips64.cc",
       "src/crankshaft/mips64/lithium-codegen-mips64.h",
       "src/crankshaft/mips64/lithium-gap-resolver-mips64.cc",
@@ -1819,9 +1822,7 @@ v8_source_set("v8_base") {
     ]
   }
 
-  configs = [
-    ":internal_config",
-  ]
+  configs = [ ":internal_config" ]
 
   defines = []
   deps = [
@@ -1839,8 +1840,13 @@ v8_source_set("v8_base") {
       deps += [ "//third_party/icu:icudata" ]
     }
 
-    # TODO(jochen): Add support for icu_use_data_file_flag
-    defines += [ "ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_FILE" ]
+    if (icu_use_data_file_flag) {
+      defines += [ "ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_FILE" ]
+    } else if (is_win) {
+      defines += [ "ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_SHARED" ]
+    } else {
+      defines += [ "ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC" ]
+    }
   } else {
     sources -= [
       "src/i18n.cc",
@@ -1914,9 +1920,7 @@ v8_source_set("v8_libbase") {
     "src/base/utils/random-number-generator.h",
   ]
 
-  configs = [
-    ":internal_config_base",
-  ]
+  configs = [ ":internal_config_base" ]
 
   defines = []
 
@@ -1976,13 +1980,9 @@ v8_source_set("v8_libplatform") {
     "src/libplatform/worker-thread.h",
   ]
 
-  configs = [
-    ":internal_config_base",
-  ]
+  configs = [ ":internal_config_base" ]
 
-  public_configs = [
-    ":libplatform_config"
-  ]
+  public_configs = [ ":libplatform_config" ]
 
   deps = [
     ":v8_libbase",
@@ -1997,9 +1997,7 @@ v8_source_set("fuzzer_support") {
     "test/fuzzer/fuzzer-support.h",
   ]
 
-  configs = [
-    ":internal_config_base",
-  ]
+  configs = [ ":internal_config_base" ]
 
   deps = [
     snapshot_target,
@@ -2155,9 +2153,7 @@ v8_source_set("json_fuzzer") {
     ":fuzzer_support",
   ]
 
-  configs = [
-    ":internal_config",
-  ]
+  configs = [ ":internal_config" ]
 }
 
 v8_source_set("parser_fuzzer") {
@@ -2169,9 +2165,7 @@ v8_source_set("parser_fuzzer") {
     ":fuzzer_support",
   ]
 
-  configs = [
-    ":internal_config",
-  ]
+  configs = [ ":internal_config" ]
 }
 
 v8_source_set("regexp_fuzzer") {
@@ -2183,9 +2177,7 @@ v8_source_set("regexp_fuzzer") {
     ":fuzzer_support",
   ]
 
-  configs = [
-    ":internal_config",
-  ]
+  configs = [ ":internal_config" ]
 }
 
 v8_source_set("wasm_fuzzer") {
@@ -2197,9 +2189,7 @@ v8_source_set("wasm_fuzzer") {
     ":fuzzer_support",
   ]
 
-  configs = [
-    ":internal_config",
-  ]
+  configs = [ ":internal_config" ]
 }
 
 v8_source_set("wasm_asmjs_fuzzer") {
@@ -2211,7 +2201,5 @@ v8_source_set("wasm_asmjs_fuzzer") {
     ":fuzzer_support",
   ]
 
-  configs = [
-    ":internal_config",
-  ]
+  configs = [ ":internal_config" ]
 }

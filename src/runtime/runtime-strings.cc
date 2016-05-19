@@ -1151,6 +1151,7 @@ RUNTIME_FUNCTION(Runtime_NewString) {
   return *result;
 }
 
+
 RUNTIME_FUNCTION(Runtime_StringLessThan) {
   HandleScope handle_scope(isolate);
   DCHECK_EQ(2, args.length());

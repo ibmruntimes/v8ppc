@@ -1233,6 +1233,14 @@ class Object {
                                                         Handle<Object> lhs,
                                                         Handle<Object> rhs);
 
+  // ES6 section 7.3.19 OrdinaryHasInstance (C, O).
+  MUST_USE_RESULT static MaybeHandle<Object> OrdinaryHasInstance(
+      Isolate* isolate, Handle<Object> callable, Handle<Object> object);
+
+  // ES6 section 12.10.4 Runtime Semantics: InstanceofOperator(O, C)
+  MUST_USE_RESULT static MaybeHandle<Object> InstanceOf(
+      Isolate* isolate, Handle<Object> object, Handle<Object> callable);
+
   MUST_USE_RESULT static MaybeHandle<Object> GetProperty(LookupIterator* it);
 
   // ES6 [[Set]] (when passed DONT_THROW)
@@ -4295,7 +4303,7 @@ class ScopeInfo : public FixedArray {
   class HasSimpleParametersField
       : public BitField<bool, AsmFunctionField::kNext, 1> {};
   class FunctionKindField
-      : public BitField<FunctionKind, HasSimpleParametersField::kNext, 8> {};
+      : public BitField<FunctionKind, HasSimpleParametersField::kNext, 9> {};
 
   // BitFields representing the encoded information for context locals in the
   // ContextLocalInfoEntries part.
@@ -6853,6 +6861,13 @@ class SharedFunctionInfo: public HeapObject {
   // Indicates that this function is a generator.
   DECL_BOOLEAN_ACCESSORS(is_generator)
 
+  // Indicates that this function is an async function.
+  DECL_BOOLEAN_ACCESSORS(is_async)
+
+  // Indicates that this function can be suspended, either via YieldExpressions
+  // or AwaitExpressions.
+  inline bool is_resumable() const;
+
   // Indicates that this function is an arrow function.
   DECL_BOOLEAN_ACCESSORS(is_arrow)
 
@@ -7171,6 +7186,7 @@ class SharedFunctionInfo: public HeapObject {
     kIsGetterFunction,
     kIsSetterFunction,
     // byte 3
+    kIsAsyncFunction,
     kDeserialized,
     kIsDeclaration,
     kCompilerHintsCount,  // Pseudo entry
@@ -7193,7 +7209,7 @@ class SharedFunctionInfo: public HeapObject {
   ASSERT_FUNCTION_KIND_ORDER(kSetterFunction, kIsSetterFunction);
 #undef ASSERT_FUNCTION_KIND_ORDER
 
-  class FunctionKindBits : public BitField<FunctionKind, kIsArrow, 8> {};
+  class FunctionKindBits : public BitField<FunctionKind, kIsArrow, 9> {};
 
   class DeoptCountBits : public BitField<int, 0, 4> {};
   class OptReenableTriesBits : public BitField<int, 4, 18> {};

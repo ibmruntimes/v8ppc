@@ -864,7 +864,7 @@ struct TypedLoweringPhase {
     DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                               data->common());
     LoadElimination load_elimination(&graph_reducer, data->graph(),
-                                     data->common());
+                                     data->jsgraph()->simplified());
     JSBuiltinReducer builtin_reducer(&graph_reducer, data->jsgraph());
     MaybeHandle<LiteralsArray> literals_array =
         data->info()->is_native_context_specializing()
@@ -932,8 +932,6 @@ struct EscapeAnalysisPhase {
     JSGraphReducer graph_reducer(data->jsgraph(), temp_zone);
     EscapeAnalysisReducer escape_reducer(&graph_reducer, data->jsgraph(),
                                          &escape_analysis, temp_zone);
-    escape_reducer.SetExistsVirtualAllocate(
-        escape_analysis.ExistsVirtualAllocate());
     AddReducer(data, &graph_reducer, &escape_reducer);
     graph_reducer.ReduceGraph();
     escape_reducer.VerifyReplacement();
@@ -1406,7 +1404,7 @@ bool PipelineImpl::CreateGraph() {
       RunPrintAndVerify("Loop peeled");
     }
 
-    if (FLAG_experimental_turbo_escape) {
+    if (FLAG_turbo_escape) {
       Run<EscapeAnalysisPhase>();
       RunPrintAndVerify("Escape Analysed");
     }

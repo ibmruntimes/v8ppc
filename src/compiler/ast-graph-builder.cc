@@ -2251,7 +2251,7 @@ void AstGraphBuilder::VisitAssignment(Assignment* expr) {
 
 
 void AstGraphBuilder::VisitYield(Yield* expr) {
-  // TODO(turbofan): Implement yield here.
+  // Generator functions are supported only by going through Ignition first.
   SetStackOverflow();
   ast_context()->ProduceValue(jsgraph()->UndefinedConstant());
 }
@@ -2901,7 +2901,6 @@ void AstGraphBuilder::VisitCompareOperation(CompareOperation* expr) {
       op = javascript()->GreaterThanOrEqual();
       break;
     case Token::INSTANCEOF:
-      DCHECK(!FLAG_harmony_instanceof);
       op = javascript()->InstanceOf();
       break;
     case Token::IN:

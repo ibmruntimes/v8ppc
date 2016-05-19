@@ -417,8 +417,12 @@ void Verifier::Visitor::Check(Node* node) {
       CHECK_EQ(input_count, 1 + effect_count);
       break;
     }
-    case IrOpcode::kGuard:
+    case IrOpcode::kTypeGuard:
       // TODO(bmeurer): what are the constraints on these?
+      break;
+    case IrOpcode::kCheckPoint:
+      // Type is empty.
+      CheckNotTyped(node);
       break;
     case IrOpcode::kBeginRegion:
       // TODO(rossberg): what are the constraints on these?
@@ -601,7 +605,6 @@ void Verifier::Visitor::Check(Node* node) {
       break;
     case IrOpcode::kJSCallFunction:
     case IrOpcode::kJSCallRuntime:
-    case IrOpcode::kJSYield:
       // Type can be anything.
       CheckUpperIs(node, Type::Any());
       break;

@@ -58,7 +58,6 @@ class EmptyStatement;
 class ExternalCallbackScope;
 class ExternalReferenceTable;
 class Factory;
-class FunctionInfoListener;
 class HandleScopeImplementer;
 class HeapProfiler;
 class HStatistics;
@@ -383,8 +382,6 @@ typedef List<HeapObject*> DebugObjectCache;
   /* function cache of the native context. */                                  \
   V(int, next_serial_number, 0)                                                \
   V(ExternalReferenceRedirectorPointer*, external_reference_redirector, NULL)  \
-  /* Part of the state of liveedit. */                                         \
-  V(FunctionInfoListener*, active_function_info_listener, NULL)                \
   /* State for Relocatable. */                                                 \
   V(Relocatable*, relocatable_top, NULL)                                       \
   V(DebugObjectCache*, string_stream_debug_object_cache, NULL)                 \
@@ -959,6 +956,7 @@ class Isolate {
 
   bool IsFastArrayConstructorPrototypeChainIntact();
   inline bool IsArraySpeciesLookupChainIntact();
+  inline bool IsHasInstanceLookupChainIntact();
   bool IsIsConcatSpreadableLookupChainIntact();
 
   // On intent to set an element in object, make sure that appropriate
@@ -976,6 +974,7 @@ class Isolate {
     UpdateArrayProtectorOnSetElement(object);
   }
   void InvalidateArraySpeciesProtector();
+  void InvalidateHasInstanceProtector();
   void InvalidateIsConcatSpreadableProtector();
 
   // Returns true if array is the initial array prototype in any native context.

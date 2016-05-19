@@ -163,6 +163,7 @@ class Genesis BASE_EMBEDDED {
 
   void CreateStrictModeFunctionMaps(Handle<JSFunction> empty);
   void CreateIteratorMaps(Handle<JSFunction> empty);
+  void CreateAsyncFunctionMaps(Handle<JSFunction> empty);
   void CreateJSProxyMaps();
 
   // Make the "arguments" and "caller" properties throw a TypeError on access.
@@ -748,6 +749,8 @@ void Genesis::CreateIteratorMaps(Handle<JSFunction> empty) {
       factory()->NewJSObject(isolate()->object_function(), TENURED);
   Handle<JSObject> generator_object_prototype =
       factory()->NewJSObject(isolate()->object_function(), TENURED);
+  native_context()->set_initial_generator_prototype(
+      *generator_object_prototype);
   SetObjectPrototype(generator_object_prototype, iterator_prototype);
   Handle<JSObject> generator_function_prototype =
       factory()->NewJSObject(isolate()->object_function(), TENURED);
@@ -804,6 +807,32 @@ void Genesis::CreateIteratorMaps(Handle<JSFunction> empty) {
   Map::SetPrototype(generator_object_prototype_map, generator_object_prototype);
   native_context()->set_generator_object_prototype_map(
       *generator_object_prototype_map);
+}
+
+void Genesis::CreateAsyncFunctionMaps(Handle<JSFunction> empty) {
+  // %AsyncFunctionPrototype% intrinsic
+  Handle<JSObject> async_function_prototype =
+      factory()->NewJSObject(isolate()->object_function(), TENURED);
+  SetObjectPrototype(async_function_prototype, empty);
+
+  JSObject::AddProperty(async_function_prototype,
+                        factory()->to_string_tag_symbol(),
+                        factory()->NewStringFromAsciiChecked("AsyncFunction"),
+                        static_cast<PropertyAttributes>(DONT_ENUM | READ_ONLY));
+
+  Handle<Map> strict_function_map(
+      native_context()->strict_function_without_prototype_map());
+  Handle<Map> sloppy_async_function_map =
+      Map::Copy(strict_function_map, "SloppyAsyncFunction");
+  sloppy_async_function_map->set_is_constructor(false);
+  Map::SetPrototype(sloppy_async_function_map, async_function_prototype);
+  native_context()->set_sloppy_async_function_map(*sloppy_async_function_map);
+
+  Handle<Map> strict_async_function_map =
+      Map::Copy(strict_function_map, "StrictAsyncFunction");
+  strict_async_function_map->set_is_constructor(false);
+  Map::SetPrototype(strict_async_function_map, async_function_prototype);
+  native_context()->set_strict_async_function_map(*strict_async_function_map);
 }
 
 void Genesis::CreateJSProxyMaps() {
@@ -1162,7 +1191,7 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     Handle<JSFunction> has_instance = InstallFunction(
         prototype, factory->has_instance_symbol(), JS_OBJECT_TYPE,
         JSObject::kHeaderSize, MaybeHandle<JSObject>(),
-        Builtins::kFunctionHasInstance,
+        Builtins::kFunctionPrototypeHasInstance,
         static_cast<PropertyAttributes>(DONT_ENUM | DONT_DELETE | READ_ONLY));
 
     // Set the expected parameters for @@hasInstance to 1; required by builtin.
@@ -1170,9 +1199,6 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
 
     // Set the length for the function to satisfy ECMA-262.
     has_instance->shared()->set_length(1);
-
-    // Install in the native context
-    native_context()->set_ordinary_has_instance(*has_instance);
 
     // Install the "constructor" property on the %FunctionPrototype%.
     JSObject::AddProperty(prototype, factory->constructor_string(),
@@ -1606,17 +1632,6 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
   }
 
   {  // -- T y p e d A r r a y s
-    // Create the %TypedArrayPrototype%
-    Handle<JSObject> typed_array_prototype =
-        factory->NewJSObject(isolate->object_function(), TENURED);
-    native_context()->set_typed_array_prototype(*typed_array_prototype);
-
-    Handle<JSFunction> typed_array_fun = CreateFunction(
-        isolate, factory->InternalizeUtf8String("TypedArray"), JS_OBJECT_TYPE,
-        JSObject::kHeaderSize, typed_array_prototype, Builtins::kIllegal);
-    InstallWithIntrinsicDefaultProto(isolate, typed_array_fun,
-                                     Context::TYPED_ARRAY_FUN_INDEX);
-
 #define INSTALL_TYPED_ARRAY(Type, type, TYPE, ctype, size)             \
   {                                                                    \
     Handle<JSFunction> fun;                                            \
@@ -1939,17 +1954,9 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
 void Genesis::InstallTypedArray(const char* name, ElementsKind elements_kind,
                                 Handle<JSFunction>* fun) {
   Handle<JSObject> global = Handle<JSObject>(native_context()->global_object());
-
-  Handle<JSObject> typed_array_prototype =
-      Handle<JSObject>(isolate()->typed_array_prototype());
-  Handle<JSFunction> typed_array_function =
-      Handle<JSFunction>(isolate()->typed_array_function());
-
-  Handle<JSObject> prototype =
-      factory()->NewJSObject(isolate()->object_function(), TENURED);
-  Handle<JSFunction> result =
-      InstallFunction(global, name, JS_TYPED_ARRAY_TYPE, JSTypedArray::kSize,
-                      prototype, Builtins::kIllegal);
+  Handle<JSFunction> result = InstallFunction(
+      global, name, JS_TYPED_ARRAY_TYPE, JSTypedArray::kSize,
+      isolate()->initial_object_prototype(), Builtins::kIllegal);
 
   Handle<Map> initial_map = isolate()->factory()->NewMap(
       JS_TYPED_ARRAY_TYPE,
@@ -1957,15 +1964,6 @@ void Genesis::InstallTypedArray(const char* name, ElementsKind elements_kind,
       elements_kind);
   JSFunction::SetInitialMap(result, initial_map,
                             handle(initial_map->prototype(), isolate()));
-
-  CHECK(JSObject::SetPrototype(result, typed_array_function, false,
-                               Object::DONT_THROW)
-            .FromJust());
-
-  CHECK(JSObject::SetPrototype(prototype, typed_array_prototype, false,
-                               Object::DONT_THROW)
-            .FromJust());
-
   *fun = result;
 }
 
@@ -2439,6 +2437,42 @@ void Bootstrapper::ExportFromRuntime(Isolate* isolate,
           script_is_embedder_debug_script, attribs);
       script_map->AppendDescriptor(&d);
     }
+
+    {
+      PrototypeIterator iter(native_context->sloppy_async_function_map());
+      Handle<JSObject> async_function_prototype(iter.GetCurrent<JSObject>());
+
+      static const bool kUseStrictFunctionMap = true;
+      Handle<JSFunction> async_function_constructor = InstallFunction(
+          container, "AsyncFunction", JS_FUNCTION_TYPE, JSFunction::kSize,
+          async_function_prototype, Builtins::kAsyncFunctionConstructor,
+          kUseStrictFunctionMap);
+      async_function_constructor->set_prototype_or_initial_map(
+          native_context->sloppy_async_function_map());
+      async_function_constructor->shared()->DontAdaptArguments();
+      async_function_constructor->shared()->set_construct_stub(
+          *isolate->builtins()->AsyncFunctionConstructor());
+      async_function_constructor->shared()->set_length(1);
+      InstallWithIntrinsicDefaultProto(isolate, async_function_constructor,
+                                       Context::ASYNC_FUNCTION_FUNCTION_INDEX);
+
+      JSObject::AddProperty(
+          async_function_prototype, factory->constructor_string(),
+          async_function_constructor,
+          static_cast<PropertyAttributes>(DONT_ENUM | READ_ONLY));
+
+      JSFunction::SetPrototype(async_function_constructor,
+                               async_function_prototype);
+
+      Handle<JSFunction> async_function_next =
+          SimpleInstallFunction(container, "AsyncFunctionNext",
+                                Builtins::kGeneratorPrototypeNext, 1, true);
+      Handle<JSFunction> async_function_throw =
+          SimpleInstallFunction(container, "AsyncFunctionThrow",
+                                Builtins::kGeneratorPrototypeThrow, 1, true);
+      async_function_next->shared()->set_native(false);
+      async_function_throw->shared()->set_native(false);
+    }
   }
 }
 
@@ -2485,6 +2519,7 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_string_padding)
 #ifdef V8_I18N_SUPPORT
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(icu_case_mapping)
 #endif
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_async_await)
 
 void InstallPublicSymbol(Factory* factory, Handle<Context> native_context,
                          const char* name, Handle<Symbol> value) {
@@ -2783,11 +2818,22 @@ bool Genesis::InstallNatives(GlobalContextType context_type) {
   native_context()->set_string_function_prototype_map(
       HeapObject::cast(string_function->initial_map()->prototype())->map());
 
+  Handle<JSGlobalObject> global_object =
+      handle(native_context()->global_object());
+
+  // Install Global.encodeURI.
+  SimpleInstallFunction(global_object, "encodeURI", Builtins::kGlobalEncodeURI,
+                        1, false);
+
+  // Install Global.encodeURIComponent.
+  SimpleInstallFunction(global_object, "encodeURIComponent",
+                        Builtins::kGlobalEncodeURIComponent, 1, false);
+
   // Install Global.eval.
   {
-    Handle<JSFunction> eval = SimpleInstallFunction(
-        handle(native_context()->global_object()), factory()->eval_string(),
-        Builtins::kGlobalEval, 1, false);
+    Handle<JSFunction> eval =
+        SimpleInstallFunction(global_object, factory()->eval_string(),
+                              Builtins::kGlobalEval, 1, false);
     native_context()->set_global_eval_fun(*eval);
   }
 
@@ -2830,8 +2876,7 @@ bool Genesis::InstallNatives(GlobalContextType context_type) {
   {
     Handle<String> key = factory()->Promise_string();
     Handle<JSFunction> function = Handle<JSFunction>::cast(
-        JSReceiver::GetProperty(handle(native_context()->global_object()), key)
-            .ToHandleChecked());
+        JSReceiver::GetProperty(global_object, key).ToHandleChecked());
     JSFunction::EnsureHasInitialMap(function);
     function->initial_map()->set_instance_type(JS_PROMISE_TYPE);
     function->shared()->set_construct_stub(
@@ -3058,6 +3103,8 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* icu_case_mapping_natives[] = {"native icu-case-mapping.js",
                                                    nullptr};
 #endif
+  static const char* harmony_async_await_natives[] = {
+      "native harmony-async-await.js", nullptr};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {
@@ -3653,6 +3700,7 @@ Genesis::Genesis(Isolate* isolate,
     Handle<JSFunction> empty_function = CreateEmptyFunction(isolate);
     CreateStrictModeFunctionMaps(empty_function);
     CreateIteratorMaps(empty_function);
+    CreateAsyncFunctionMaps(empty_function);
     Handle<JSGlobalObject> global_object =
         CreateNewGlobals(global_proxy_template, global_proxy);
     HookUpGlobalProxy(global_object, global_proxy);

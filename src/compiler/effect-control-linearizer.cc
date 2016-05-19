@@ -293,6 +293,15 @@ void EffectControlLinearizer::ProcessNode(Node* node, Node** effect,
     return RemoveRegionNode(node);
   }
 
+  // Special treatment for CheckPoint nodes.
+  // TODO(epertoso): Pickup the current frame state.
+  if (node->opcode() == IrOpcode::kCheckPoint) {
+    // Unlink the check point; effect uses will be updated to the incoming
+    // effect that is passed.
+    node->Kill();
+    return;
+  }
+
   if (node->opcode() == IrOpcode::kIfSuccess) {
     // We always schedule IfSuccess with its call, so skip it here.
     DCHECK_EQ(IrOpcode::kCall, node->InputAt(0)->opcode());
@@ -342,6 +351,9 @@ bool EffectControlLinearizer::TryWireInStateEffect(Node* node, Node** effect,
                                                    Node** control) {
   ValueEffectControl state(nullptr, nullptr, nullptr);
   switch (node->opcode()) {
+    case IrOpcode::kTypeGuard:
+      state = LowerTypeGuard(node, *effect, *control);
+      break;
     case IrOpcode::kChangeBitToTagged:
       state = LowerChangeBitToTagged(node, *effect, *control);
       break;
@@ -400,6 +412,13 @@ bool EffectControlLinearizer::TryWireInStateEffect(Node* node, Node** effect,
   *effect = state.effect;
   *control = state.control;
   return true;
+}
+
+EffectControlLinearizer::ValueEffectControl
+EffectControlLinearizer::LowerTypeGuard(Node* node, Node* effect,
+                                        Node* control) {
+  Node* value = node->InputAt(0);
+  return ValueEffectControl(value, effect, control);
 }
 
 EffectControlLinearizer::ValueEffectControl

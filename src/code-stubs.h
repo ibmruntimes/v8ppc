@@ -31,7 +31,6 @@ namespace internal {
   V(CompareIC)                              \
   V(DoubleToI)                              \
   V(FunctionPrototype)                      \
-  V(InstanceOf)                             \
   V(InternalArrayConstructor)               \
   V(JSEntry)                                \
   V(KeyedLoadICTrampoline)                  \
@@ -121,6 +120,7 @@ namespace internal {
   V(InternalArrayNoArgumentConstructor)     \
   V(Dec)                                    \
   V(FastCloneShallowObject)                 \
+  V(InstanceOf)                             \
   V(LessThan)                               \
   V(LessThanOrEqual)                        \
   V(GreaterThan)                            \
@@ -412,6 +412,17 @@ class CodeStub BASE_EMBEDDED {
                                assembler->Parameter(1),                        \
                                assembler->Parameter(2)));                      \
   }                                                                            \
+  DEFINE_CODE_STUB(NAME, SUPER)
+
+#define DEFINE_TURBOFAN_UNARY_OP_CODE_STUB(NAME, SUPER)                \
+ public:                                                               \
+  static compiler::Node* Generate(CodeStubAssembler* assembler,        \
+                                  compiler::Node* value,               \
+                                  compiler::Node* context);            \
+  void GenerateAssembly(CodeStubAssembler* assembler) const override { \
+    assembler->Return(Generate(assembler, assembler->Parameter(0),     \
+                               assembler->Parameter(1)));              \
+  }                                                                    \
   DEFINE_CODE_STUB(NAME, SUPER)
 
 #define DEFINE_HANDLER_CODE_STUB(NAME, SUPER) \
@@ -782,7 +793,7 @@ class IncStub final : public TurboFanCodeStub {
   explicit IncStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(CountOp);
-  DEFINE_TURBOFAN_CODE_STUB(Inc, TurboFanCodeStub);
+  DEFINE_TURBOFAN_UNARY_OP_CODE_STUB(Inc, TurboFanCodeStub);
 };
 
 class DecStub final : public TurboFanCodeStub {
@@ -790,7 +801,16 @@ class DecStub final : public TurboFanCodeStub {
   explicit DecStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(CountOp);
-  DEFINE_TURBOFAN_CODE_STUB(Dec, TurboFanCodeStub);
+  DEFINE_TURBOFAN_UNARY_OP_CODE_STUB(Dec, TurboFanCodeStub);
+};
+
+class InstanceOfStub final : public TurboFanCodeStub {
+ public:
+  explicit InstanceOfStub(Isolate* isolate) : TurboFanCodeStub(isolate) {}
+
+ private:
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Compare);
+  DEFINE_TURBOFAN_CODE_STUB(InstanceOf, TurboFanCodeStub);
 };
 
 class LessThanStub final : public TurboFanCodeStub {
@@ -1035,7 +1055,7 @@ class FastNewClosureStub : public HydrogenCodeStub {
  private:
   STATIC_ASSERT(LANGUAGE_END == 3);
   class LanguageModeBits : public BitField<LanguageMode, 0, 2> {};
-  class FunctionKindBits : public BitField<FunctionKind, 2, 8> {};
+  class FunctionKindBits : public BitField<FunctionKind, 2, 9> {};
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(FastNewClosure);
   DEFINE_HYDROGEN_CODE_STUB(FastNewClosure, HydrogenCodeStub);
@@ -1248,24 +1268,6 @@ class FastArrayPushStub : public HydrogenCodeStub {
  private:
   DEFINE_CALL_INTERFACE_DESCRIPTOR(FastArrayPush);
   DEFINE_HYDROGEN_CODE_STUB(FastArrayPush, HydrogenCodeStub);
-};
-
-class InstanceOfStub final : public PlatformCodeStub {
- public:
-  explicit InstanceOfStub(Isolate* isolate, bool es6_instanceof = false)
-      : PlatformCodeStub(isolate) {
-    minor_key_ = IsES6InstanceOfBits::encode(es6_instanceof);
-  }
-
-  bool is_es6_instanceof() const {
-    return IsES6InstanceOfBits::decode(minor_key_);
-  }
-
- private:
-  class IsES6InstanceOfBits : public BitField<bool, 0, 1> {};
-
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(InstanceOf);
-  DEFINE_PLATFORM_CODE_STUB(InstanceOf, PlatformCodeStub);
 };
 
 

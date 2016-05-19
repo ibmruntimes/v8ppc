@@ -706,7 +706,6 @@ enum CpuFeature {
   MIPSr6,
   // ARM64
   ALWAYS_ALIGN_CSP,
-  COHERENT_CACHE,
   // PPC
   FPR_GPR_MOV,
   LWSYNC,
@@ -963,11 +962,14 @@ enum FunctionKind {
   kBaseConstructor = 1 << 5,
   kGetterFunction = 1 << 6,
   kSetterFunction = 1 << 7,
+  kAsyncFunction = 1 << 8,
   kAccessorFunction = kGetterFunction | kSetterFunction,
   kDefaultBaseConstructor = kDefaultConstructor | kBaseConstructor,
   kDefaultSubclassConstructor = kDefaultConstructor | kSubclassConstructor,
   kClassConstructor =
       kBaseConstructor | kSubclassConstructor | kDefaultConstructor,
+  kAsyncArrowFunction = kArrowFunction | kAsyncFunction,
+  kAsyncConciseMethod = kAsyncFunction | kConciseMethod
 };
 
 inline bool IsValidFunctionKind(FunctionKind kind) {
@@ -982,7 +984,10 @@ inline bool IsValidFunctionKind(FunctionKind kind) {
          kind == FunctionKind::kDefaultBaseConstructor ||
          kind == FunctionKind::kDefaultSubclassConstructor ||
          kind == FunctionKind::kBaseConstructor ||
-         kind == FunctionKind::kSubclassConstructor;
+         kind == FunctionKind::kSubclassConstructor ||
+         kind == FunctionKind::kAsyncFunction ||
+         kind == FunctionKind::kAsyncArrowFunction ||
+         kind == FunctionKind::kAsyncConciseMethod;
 }
 
 
@@ -997,6 +1002,10 @@ inline bool IsGeneratorFunction(FunctionKind kind) {
   return kind & FunctionKind::kGeneratorFunction;
 }
 
+inline bool IsAsyncFunction(FunctionKind kind) {
+  DCHECK(IsValidFunctionKind(kind));
+  return kind & FunctionKind::kAsyncFunction;
+}
 
 inline bool IsConciseMethod(FunctionKind kind) {
   DCHECK(IsValidFunctionKind(kind));
@@ -1048,6 +1057,7 @@ inline bool IsConstructable(FunctionKind kind, LanguageMode mode) {
   if (IsConciseMethod(kind)) return false;
   if (IsArrowFunction(kind)) return false;
   if (IsGeneratorFunction(kind)) return false;
+  if (IsAsyncFunction(kind)) return false;
   return true;
 }
 

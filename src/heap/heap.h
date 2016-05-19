@@ -194,6 +194,7 @@ using v8::MemoryPressureLevel;
   V(Object, noscript_shared_function_infos, NoScriptSharedFunctionInfos)       \
   V(Map, bytecode_array_map, BytecodeArrayMap)                                 \
   V(WeakCell, empty_weak_cell, EmptyWeakCell)                                  \
+  V(PropertyCell, has_instance_protector, HasInstanceProtector)                \
   V(Cell, species_protector, SpeciesProtector)
 
 // Entries in this list are limited to Smis and are not visited during GC.
@@ -204,8 +205,8 @@ using v8::MemoryPressureLevel;
   V(Smi, arguments_adaptor_deopt_pc_offset, ArgumentsAdaptorDeoptPCOffset) \
   V(Smi, construct_stub_deopt_pc_offset, ConstructStubDeoptPCOffset)       \
   V(Smi, getter_stub_deopt_pc_offset, GetterStubDeoptPCOffset)             \
-  V(Smi, setter_stub_deopt_pc_offset, SetterStubDeoptPCOffset)
-
+  V(Smi, setter_stub_deopt_pc_offset, SetterStubDeoptPCOffset)             \
+  V(Smi, interpreter_entry_return_pc_offset, InterpreterEntryReturnPCOffset)
 
 #define ROOT_LIST(V)  \
   STRONG_ROOT_LIST(V) \
@@ -793,6 +794,7 @@ class Heap {
   inline void SetConstructStubDeoptPCOffset(int pc_offset);
   inline void SetGetterStubDeoptPCOffset(int pc_offset);
   inline void SetSetterStubDeoptPCOffset(int pc_offset);
+  inline void SetInterpreterEntryReturnPCOffset(int pc_offset);
 
   // For post mortem debugging.
   void RememberUnmappedPage(Address page, bool compacted);

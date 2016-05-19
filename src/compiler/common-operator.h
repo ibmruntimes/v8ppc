@@ -12,10 +12,6 @@
 
 namespace v8 {
 namespace internal {
-
-// Forward declarations.
-class Type;
-
 namespace compiler {
 
 // Forward declarations.
@@ -190,7 +186,7 @@ class CommonOperatorBuilder final : public ZoneObject {
   const Operator* Phi(MachineRepresentation representation,
                       int value_input_count);
   const Operator* EffectPhi(int effect_input_count);
-  const Operator* Guard(Type* type);
+  const Operator* CheckPoint();
   const Operator* BeginRegion();
   const Operator* FinishRegion();
   const Operator* StateValues(int arguments);

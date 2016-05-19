@@ -836,48 +836,34 @@ void Interpreter::DoShiftRightLogical(InterpreterAssembler* assembler) {
   DoBinaryOp<ShiftRightLogicalStub>(assembler);
 }
 
-void Interpreter::DoCountOp(Callable callable,
-                            InterpreterAssembler* assembler) {
-  Node* target = __ HeapConstant(callable.code());
+template <class Generator>
+void Interpreter::DoUnaryOp(InterpreterAssembler* assembler) {
   Node* value = __ GetAccumulator();
   Node* context = __ GetContext();
-  Node* result = __ CallStub(callable.descriptor(), target, context, value);
+  Node* result = Generator::Generate(assembler, value, context);
   __ SetAccumulator(result);
   __ Dispatch();
 }
-
 
 // Inc
 //
 // Increments value in the accumulator by one.
 void Interpreter::DoInc(InterpreterAssembler* assembler) {
-  DoCountOp(CodeFactory::Inc(isolate_), assembler);
+  DoUnaryOp<IncStub>(assembler);
 }
-
 
 // Dec
 //
 // Decrements value in the accumulator by one.
 void Interpreter::DoDec(InterpreterAssembler* assembler) {
-  DoCountOp(CodeFactory::Dec(isolate_), assembler);
+  DoUnaryOp<DecStub>(assembler);
 }
 
-
-// LogicalNot
-//
-// Perform logical-not on the accumulator, first casting the
-// accumulator to a boolean value if required.
-void Interpreter::DoLogicalNot(InterpreterAssembler* assembler) {
-  Callable callable = CodeFactory::ToBoolean(isolate_);
-  Node* target = __ HeapConstant(callable.code());
-  Node* accumulator = __ GetAccumulator();
-  Node* context = __ GetContext();
-  Node* to_boolean_value =
-      __ CallStub(callable.descriptor(), target, context, accumulator);
+void Interpreter::DoLogicalNotOp(Node* value, InterpreterAssembler* assembler) {
   Label if_true(assembler), if_false(assembler), end(assembler);
   Node* true_value = __ BooleanConstant(true);
   Node* false_value = __ BooleanConstant(false);
-  __ BranchIfWordEqual(to_boolean_value, true_value, &if_true, &if_false);
+  __ BranchIfWordEqual(value, true_value, &if_true, &if_false);
   __ Bind(&if_true);
   {
     __ SetAccumulator(false_value);
@@ -885,10 +871,38 @@ void Interpreter::DoLogicalNot(InterpreterAssembler* assembler) {
   }
   __ Bind(&if_false);
   {
+    if (FLAG_debug_code) {
+      __ AbortIfWordNotEqual(value, false_value,
+                             BailoutReason::kExpectedBooleanValue);
+    }
     __ SetAccumulator(true_value);
     __ Goto(&end);
   }
   __ Bind(&end);
+}
+
+// ToBooleanLogicalNot
+//
+// Perform logical-not on the accumulator, first casting the
+// accumulator to a boolean value if required.
+void Interpreter::DoToBooleanLogicalNot(InterpreterAssembler* assembler) {
+  Callable callable = CodeFactory::ToBoolean(isolate_);
+  Node* target = __ HeapConstant(callable.code());
+  Node* accumulator = __ GetAccumulator();
+  Node* context = __ GetContext();
+  Node* to_boolean_value =
+      __ CallStub(callable.descriptor(), target, context, accumulator);
+  DoLogicalNotOp(to_boolean_value, assembler);
+  __ Dispatch();
+}
+
+// LogicalNot
+//
+// Perform logical-not on the accumulator, which must already be a boolean
+// value.
+void Interpreter::DoLogicalNot(InterpreterAssembler* assembler) {
+  Node* value = __ GetAccumulator();
+  DoLogicalNotOp(value, assembler);
   __ Dispatch();
 }
 
@@ -1167,7 +1181,7 @@ void Interpreter::DoTestIn(InterpreterAssembler* assembler) {
 // Test if the object referenced by the <src> register is an an instance of type
 // referenced by the accumulator.
 void Interpreter::DoTestInstanceOf(InterpreterAssembler* assembler) {
-  DoBinaryOp(Runtime::kInstanceOf, assembler);
+  DoBinaryOp(CodeFactory::InstanceOf(isolate_), assembler);
 }
 
 void Interpreter::DoTypeConversionOp(Callable callable,
@@ -1642,7 +1656,9 @@ void Interpreter::DoReThrow(InterpreterAssembler* assembler) {
 //
 // Return the value in the accumulator.
 void Interpreter::DoReturn(InterpreterAssembler* assembler) {
-  __ InterpreterReturn();
+  __ UpdateInterruptBudgetOnReturn();
+  Node* accumulator = __ GetAccumulator();
+  __ Return(accumulator);
 }
 
 // Debugger
