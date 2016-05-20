@@ -957,6 +957,21 @@ void Builtins::Generate_JSConstructEntryTrampoline(MacroAssembler* masm) {
   Generate_JSEntryTrampolineHelper(masm, true);
 }
 
+static void LeaveInterpreterFrame(MacroAssembler* masm, Register scratch) {
+  Register args_count = scratch;
+
+  // Get the arguments + receiver count.
+  __ LoadP(args_count,
+           MemOperand(fp, InterpreterFrameConstants::kBytecodeArrayFromFp));
+  __ LoadlW(args_count,
+            FieldMemOperand(args_count, BytecodeArray::kParameterSizeOffset));
+
+  // Leave the frame (also dropping the register file).
+  __ LeaveFrame(StackFrame::JAVA_SCRIPT);
+
+  __ AddP(sp, sp, args_count);
+}
+
 // Generate code for entering a JS function with the interpreter.
 // On entry to the function the receiver and arguments have been pushed on the
 // stack left to right.  The actual argument count matches the formal parameter
@@ -1067,15 +1082,7 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   masm->isolate()->heap()->SetInterpreterEntryReturnPCOffset(masm->pc_offset());
 
   // The return value is in r2.
-
-  // Get the arguments + reciever count.
-  __ LoadP(r4, MemOperand(fp, InterpreterFrameConstants::kBytecodeArrayFromFp));
-  __ LoadlW(r4, FieldMemOperand(r4, BytecodeArray::kParameterSizeOffset));
-
-  // Leave the frame (also dropping the register file).
-  __ LeaveFrame(StackFrame::JAVA_SCRIPT);
-
-  __ lay(sp, MemOperand(sp, r4));
+  LeaveInterpreterFrame(masm, r4);
   __ Ret();
 
   // If the bytecode array is no longer present, then the underlying function
@@ -1089,6 +1096,31 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ StoreP(r6, FieldMemOperand(r3, JSFunction::kCodeEntryOffset), r0);
   __ RecordWriteCodeEntryField(r3, r6, r7);
   __ JumpToJSEntry(r6);
+}
+
+void Builtins::Generate_InterpreterMarkBaselineOnReturn(MacroAssembler* masm) {
+  // Save the function and context for call to CompileBaseline.
+  __ LoadP(r3, MemOperand(fp, StandardFrameConstants::kFunctionOffset));
+  __ LoadP(kContextRegister,
+           MemOperand(fp, StandardFrameConstants::kContextOffset));
+
+  // Leave the frame before recompiling for baseline so that we don't count as
+  // an activation on the stack.
+  LeaveInterpreterFrame(masm, r4);
+
+  {
+    FrameScope frame_scope(masm, StackFrame::INTERNAL);
+    // Push return value.
+    __ push(r2);
+
+    // Push function as argument and compile for baseline.
+    __ push(r3);
+    __ CallRuntime(Runtime::kCompileBaseline);
+
+    // Restore return value.
+    __ pop(r2);
+  }
+  __ Ret();
 }
 
 static void Generate_InterpreterPushArgs(MacroAssembler* masm, Register index,
@@ -1479,8 +1511,9 @@ static void Generate_NotifyDeoptimizedHelper(MacroAssembler* masm,
   __ SmiUntag(r8);
   // Switch on the state.
   Label with_tos_register, unknown_state;
-  __ CmpP(r8,
-          Operand(static_cast<int>(Deoptimizer::BailoutState::NO_REGISTERS)));
+  __ CmpP(
+      r8,
+      Operand(static_cast<intptr_t>(Deoptimizer::BailoutState::NO_REGISTERS)));
   __ bne(&with_tos_register);
   __ la(sp, MemOperand(sp, 1 * kPointerSize));  // Remove state.
   __ Ret();
@@ -1488,8 +1521,9 @@ static void Generate_NotifyDeoptimizedHelper(MacroAssembler* masm,
   __ bind(&with_tos_register);
   DCHECK_EQ(kInterpreterAccumulatorRegister.code(), r2.code());
   __ LoadP(r2, MemOperand(sp, 1 * kPointerSize));
-  __ CmpP(r8,
-          Operand(static_cast<int>(Deoptimizer::BailoutState::TOS_REGISTER)));
+  __ CmpP(
+      r8,
+      Operand(static_cast<intptr_t>(Deoptimizer::BailoutState::TOS_REGISTER)));
   __ bne(&unknown_state);
   __ la(sp, MemOperand(sp, 2 * kPointerSize));  // Remove state.
   __ Ret();

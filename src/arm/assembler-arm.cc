@@ -57,7 +57,7 @@ static unsigned CpuFeaturesImpliedByCompiler() {
     answer |= 1u << ARMv8;
     // ARMv8 always features VFP and NEON.
     answer |= 1u << ARMv7 | 1u << VFP3 | 1u << NEON | 1u << VFP32DREGS;
-    answer |= 1u << SUDIV | 1u << MLS;
+    answer |= 1u << SUDIV;
   }
 #endif  // CAN_USE_ARMV8_INSTRUCTIONS
 #ifdef CAN_USE_ARMV7_INSTRUCTIONS
@@ -93,7 +93,7 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
     supported_ |= 1u << ARMv8;
     // ARMv8 always features VFP and NEON.
     supported_ |= 1u << ARMv7 | 1u << VFP3 | 1u << NEON | 1u << VFP32DREGS;
-    supported_ |= 1u << SUDIV | 1u << MLS;
+    supported_ |= 1u << SUDIV;
     if (FLAG_enable_movw_movt) supported_ |= 1u << MOVW_MOVT_IMMEDIATE_LOADS;
   }
   if (FLAG_enable_armv7) {
@@ -104,7 +104,6 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
     if (FLAG_enable_movw_movt) supported_ |= 1u << MOVW_MOVT_IMMEDIATE_LOADS;
     if (FLAG_enable_32dregs) supported_ |= 1u << VFP32DREGS;
   }
-  if (FLAG_enable_mls) supported_ |= 1u << MLS;
   if (FLAG_enable_unaligned_accesses) supported_ |= 1u << UNALIGNED_ACCESSES;
 
 #else  // __arm__
@@ -119,7 +118,6 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
 
   if (FLAG_enable_neon && cpu.has_neon()) supported_ |= 1u << NEON;
   if (FLAG_enable_sudiv && cpu.has_idiva()) supported_ |= 1u << SUDIV;
-  if (FLAG_enable_mls && cpu.has_thumb2()) supported_ |= 1u << MLS;
 
   if (cpu.architecture() >= 7) {
     if (FLAG_enable_armv7) supported_ |= 1u << ARMv7;
@@ -203,12 +201,11 @@ void CpuFeatures::PrintTarget() {
 
 void CpuFeatures::PrintFeatures() {
   printf(
-      "ARMv8=%d ARMv7=%d VFP3=%d VFP32DREGS=%d NEON=%d SUDIV=%d MLS=%d"
+      "ARMv8=%d ARMv7=%d VFP3=%d VFP32DREGS=%d NEON=%d SUDIV=%d "
       "UNALIGNED_ACCESSES=%d MOVW_MOVT_IMMEDIATE_LOADS=%d",
       CpuFeatures::IsSupported(ARMv8), CpuFeatures::IsSupported(ARMv7),
       CpuFeatures::IsSupported(VFP3), CpuFeatures::IsSupported(VFP32DREGS),
       CpuFeatures::IsSupported(NEON), CpuFeatures::IsSupported(SUDIV),
-      CpuFeatures::IsSupported(MLS),
       CpuFeatures::IsSupported(UNALIGNED_ACCESSES),
       CpuFeatures::IsSupported(MOVW_MOVT_IMMEDIATE_LOADS));
 #ifdef __arm__
@@ -1609,7 +1606,7 @@ void Assembler::mla(Register dst, Register src1, Register src2, Register srcA,
 void Assembler::mls(Register dst, Register src1, Register src2, Register srcA,
                     Condition cond) {
   DCHECK(!dst.is(pc) && !src1.is(pc) && !src2.is(pc) && !srcA.is(pc));
-  DCHECK(IsEnabled(MLS));
+  DCHECK(IsEnabled(ARMv7));
   emit(cond | B22 | B21 | dst.code()*B16 | srcA.code()*B12 |
        src2.code()*B8 | B7 | B4 | src1.code());
 }
@@ -2076,6 +2073,53 @@ void Assembler::strd(Register src1, Register src2,
   addrmod3(cond | B7 | B6 | B5 | B4, src1, dst);
 }
 
+// Load/Store exclusive instructions.
+void Assembler::ldrex(Register dst, Register src, Condition cond) {
+  // Instruction details available in ARM DDI 0406C.b, A8.8.75.
+  // cond(31-28) | 00011001(27-20) | Rn(19-16) | Rt(15-12) | 111110011111(11-0)
+  emit(cond | B24 | B23 | B20 | src.code() * B16 | dst.code() * B12 | 0xf9f);
+}
+
+void Assembler::strex(Register src1, Register src2, Register dst,
+                      Condition cond) {
+  // Instruction details available in ARM DDI 0406C.b, A8.8.212.
+  // cond(31-28) | 00011000(27-20) | Rn(19-16) | Rd(15-12) | 11111001(11-4) |
+  // Rt(3-0)
+  emit(cond | B24 | B23 | dst.code() * B16 | src1.code() * B12 | 0xf9 * B4 |
+       src2.code());
+}
+
+void Assembler::ldrexb(Register dst, Register src, Condition cond) {
+  // Instruction details available in ARM DDI 0406C.b, A8.8.76.
+  // cond(31-28) | 00011101(27-20) | Rn(19-16) | Rt(15-12) | 111110011111(11-0)
+  emit(cond | B24 | B23 | B22 | B20 | src.code() * B16 | dst.code() * B12 |
+       0xf9f);
+}
+
+void Assembler::strexb(Register src1, Register src2, Register dst,
+                       Condition cond) {
+  // Instruction details available in ARM DDI 0406C.b, A8.8.213.
+  // cond(31-28) | 00011100(27-20) | Rn(19-16) | Rd(15-12) | 11111001(11-4) |
+  // Rt(3-0)
+  emit(cond | B24 | B23 | B22 | dst.code() * B16 | src1.code() * B12 |
+       0xf9 * B4 | src2.code());
+}
+
+void Assembler::ldrexh(Register dst, Register src, Condition cond) {
+  // Instruction details available in ARM DDI 0406C.b, A8.8.78.
+  // cond(31-28) | 00011111(27-20) | Rn(19-16) | Rt(15-12) | 111110011111(11-0)
+  emit(cond | B24 | B23 | B22 | B21 | B20 | src.code() * B16 |
+       dst.code() * B12 | 0xf9f);
+}
+
+void Assembler::strexh(Register src1, Register src2, Register dst,
+                       Condition cond) {
+  // Instruction details available in ARM DDI 0406C.b, A8.8.215.
+  // cond(31-28) | 00011110(27-20) | Rn(19-16) | Rd(15-12) | 11111001(11-4) |
+  // Rt(3-0)
+  emit(cond | B24 | B23 | B22 | B21 | dst.code() * B16 | src1.code() * B12 |
+       0xf9 * B4 | src2.code());
+}
 
 // Preload instructions.
 void Assembler::pld(const MemOperand& address) {

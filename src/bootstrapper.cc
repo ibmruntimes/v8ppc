@@ -36,12 +36,10 @@ Handle<String> Bootstrapper::SourceLookup(int index) {
     Vector<const char> source = Source::GetScriptSource(index);
     NativesExternalStringResource* resource =
         new NativesExternalStringResource(source.start(), source.length());
-    // We do not expect this to throw an exception. Change this if it does.
-    Handle<String> source_code = isolate_->factory()
-                                     ->NewExternalStringFromOneByte(resource)
-                                     .ToHandleChecked();
+    Handle<ExternalOneByteString> source_code =
+        isolate_->factory()->NewNativeSourceString(resource);
     // Mark this external string with a special map.
-    source_code->set_map(isolate_->heap()->native_source_string_map());
+    DCHECK(source_code->is_short());
     Source::GetSourceCache(heap)->set(index, *source_code);
   }
   Handle<Object> cached_source(Source::GetSourceCache(heap)->get(index),
@@ -1589,7 +1587,6 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     Handle<JSFunction> cons = factory->NewFunction(name);
     JSFunction::SetInstancePrototype(cons,
         Handle<Object>(native_context()->initial_object_prototype(), isolate));
-    cons->shared()->set_instance_class_name(*name);
     Handle<JSObject> json_object = factory->NewJSObject(cons, TENURED);
     DCHECK(json_object->IsJSObject());
     JSObject::AddProperty(global, name, json_object, DONT_ENUM);
@@ -1601,7 +1598,6 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     JSFunction::SetInstancePrototype(
         cons,
         Handle<Object>(native_context()->initial_object_prototype(), isolate));
-    cons->shared()->set_instance_class_name(*name);
     Handle<JSObject> math = factory->NewJSObject(cons, TENURED);
     DCHECK(math->IsJSObject());
     JSObject::AddProperty(global, name, math, DONT_ENUM);

@@ -6180,11 +6180,6 @@ void HOptimizedGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
         JSObject::cast(site->transition_info()), isolate());
   }
 
-  ElementsKind boilerplate_elements_kind = expr->constant_elements_kind();
-  if (!boilerplate_object.is_null()) {
-    boilerplate_elements_kind = boilerplate_object->GetElementsKind();
-  }
-
   // Check whether to use fast or slow deep-copying for boilerplate.
   int max_properties = kMaxFastLiteralProperties;
   if (!boilerplate_object.is_null() &&
@@ -6235,20 +6230,28 @@ void HOptimizedGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
 
     HValue* key = Add<HConstant>(i);
 
-    switch (boilerplate_elements_kind) {
-      case FAST_SMI_ELEMENTS:
-      case FAST_HOLEY_SMI_ELEMENTS:
-      case FAST_ELEMENTS:
-      case FAST_HOLEY_ELEMENTS:
-      case FAST_DOUBLE_ELEMENTS:
-      case FAST_HOLEY_DOUBLE_ELEMENTS: {
-        Add<HStoreKeyed>(elements, key, value, nullptr,
-                         boilerplate_elements_kind);
-        break;
+    if (!boilerplate_object.is_null()) {
+      ElementsKind boilerplate_elements_kind =
+          boilerplate_object->GetElementsKind();
+      switch (boilerplate_elements_kind) {
+        case FAST_SMI_ELEMENTS:
+        case FAST_HOLEY_SMI_ELEMENTS:
+        case FAST_ELEMENTS:
+        case FAST_HOLEY_ELEMENTS:
+        case FAST_DOUBLE_ELEMENTS:
+        case FAST_HOLEY_DOUBLE_ELEMENTS: {
+          Add<HStoreKeyed>(elements, key, value, nullptr,
+                           boilerplate_elements_kind);
+          break;
+        }
+        default:
+          UNREACHABLE();
+          break;
       }
-      default:
-        UNREACHABLE();
-        break;
+    } else {
+      HInstruction* instr = BuildKeyedGeneric(
+          STORE, expr, expr->LiteralFeedbackSlot(), literal, key, value);
+      AddInstruction(instr);
     }
 
     Add<HSimulate>(expr->GetIdForElement(i));
@@ -6559,7 +6562,6 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::IsIntegerIndexedExotic() {
 bool HOptimizedGraphBuilder::PropertyAccessInfo::CanAccessMonomorphic() {
   if (!CanInlinePropertyAccess(map_)) return false;
   if (IsJSObjectFieldAccessor()) return IsLoad();
-  if (IsJSArrayBufferViewFieldAccessor()) return IsLoad();
   if (map_->IsJSFunctionMap() && map_->is_constructor() &&
       !map_->has_non_instance_prototype() &&
       name_.is_identical_to(isolate()->factory()->prototype_string())) {
@@ -6603,17 +6605,6 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::CanAccessAsMonomorphic(
       PropertyAccessInfo test_info(builder_, access_type_, maps->at(i), name_);
       HObjectAccess test_access = HObjectAccess::ForMap();  // bogus default
       if (!test_info.GetJSObjectFieldAccess(&test_access)) return false;
-      if (!access.Equals(test_access)) return false;
-    }
-    return true;
-  }
-  if (GetJSArrayBufferViewFieldAccess(&access)) {
-    for (int i = 1; i < maps->length(); ++i) {
-      PropertyAccessInfo test_info(builder_, access_type_, maps->at(i), name_);
-      HObjectAccess test_access = HObjectAccess::ForMap();  // bogus default
-      if (!test_info.GetJSArrayBufferViewFieldAccess(&test_access)) {
-        return false;
-      }
       if (!access.Equals(test_access)) return false;
     }
     return true;
@@ -6668,12 +6659,6 @@ HValue* HOptimizedGraphBuilder::BuildMonomorphicAccess(
   HObjectAccess access = HObjectAccess::ForMap();  // bogus default
   if (info->GetJSObjectFieldAccess(&access)) {
     DCHECK(info->IsLoad());
-    return New<HLoadNamedField>(object, checked_object, access);
-  }
-
-  if (info->GetJSArrayBufferViewFieldAccess(&access)) {
-    DCHECK(info->IsLoad());
-    checked_object = Add<HCheckArrayBufferNotNeutered>(checked_object);
     return New<HLoadNamedField>(object, checked_object, access);
   }
 

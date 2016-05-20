@@ -197,16 +197,6 @@ DEFINE_IMPLICATION(es_staging, harmony_regexp_lookbehind)
 DEFINE_IMPLICATION(es_staging, move_object_start)
 
 // Features that are still work in progress (behind individual flags).
-#ifdef V8_I18N_SUPPORT
-#define HARMONY_INPROGRESS(V)                                           \
-  V(harmony_function_sent, "harmony function.sent")                     \
-  V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")             \
-  V(harmony_simd, "harmony simd")                                       \
-  V(harmony_do_expressions, "harmony do-expressions")                   \
-  V(harmony_regexp_property, "harmony unicode regexp property classes") \
-  V(icu_case_mapping, "case mapping with ICU rather than Unibrow")      \
-  V(harmony_async_await, "harmony async-await")
-#else
 #define HARMONY_INPROGRESS(V)                                           \
   V(harmony_function_sent, "harmony function.sent")                     \
   V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")             \
@@ -214,9 +204,19 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_do_expressions, "harmony do-expressions")                   \
   V(harmony_regexp_property, "harmony unicode regexp property classes") \
   V(harmony_async_await, "harmony async-await")
-#endif
 
 // Features that are complete (but still behind --harmony/es-staging flag).
+#ifdef V8_I18N_SUPPORT
+#define HARMONY_STAGED(V)                                                    \
+  V(harmony_regexp_lookbehind, "harmony regexp lookbehind")                  \
+  V(harmony_tailcalls, "harmony tail calls")                                 \
+  V(harmony_explicit_tailcalls, "harmony explicit tail calls")               \
+  V(harmony_object_values_entries, "harmony Object.values / Object.entries") \
+  V(harmony_object_own_property_descriptors,                                 \
+    "harmony Object.getOwnPropertyDescriptors()")                            \
+  V(harmony_string_padding, "harmony String-padding methods")                \
+  V(icu_case_mapping, "case mapping with ICU rather than Unibrow")
+#else
 #define HARMONY_STAGED(V)                                                    \
   V(harmony_regexp_lookbehind, "harmony regexp lookbehind")                  \
   V(harmony_tailcalls, "harmony tail calls")                                 \
@@ -225,6 +225,7 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_object_own_property_descriptors,                                 \
     "harmony Object.getOwnPropertyDescriptors()")                            \
   V(harmony_string_padding, "harmony String-padding methods")
+#endif
 
 // Features that are shipping (turned on by default, but internal flag remains).
 #define HARMONY_SHIPPING(V)                                           \
@@ -542,8 +543,6 @@ DEFINE_BOOL(enable_neon, ENABLE_NEON_DEFAULT,
             "enable use of NEON instructions if available (ARM only)")
 DEFINE_BOOL(enable_sudiv, true,
             "enable use of SDIV and UDIV instructions if available (ARM only)")
-DEFINE_BOOL(enable_mls, true,
-            "enable use of MLS instructions if available (ARM only)")
 DEFINE_BOOL(enable_movw_movt, false,
             "enable loading 32-bit constant by means of movw/movt "
             "instruction pairs (ARM only)")
@@ -561,7 +560,6 @@ DEFINE_IMPLICATION(enable_armv8, enable_vfp3)
 DEFINE_IMPLICATION(enable_armv8, enable_neon)
 DEFINE_IMPLICATION(enable_armv8, enable_32dregs)
 DEFINE_IMPLICATION(enable_armv8, enable_sudiv)
-DEFINE_IMPLICATION(enable_armv8, enable_mls)
 
 // bootstrapper.cc
 DEFINE_STRING(expose_natives_as, NULL, "expose natives in global object")
@@ -712,7 +710,7 @@ DEFINE_INT(min_progress_during_incremental_marking_finalization, 32,
            "least this many unmarked objects")
 DEFINE_INT(max_incremental_marking_finalization_rounds, 3,
            "at most try this many times to finalize incremental marking")
-DEFINE_BOOL(black_allocation, true, "use black allocation")
+DEFINE_BOOL(black_allocation, false, "use black allocation")
 DEFINE_BOOL(concurrent_sweeping, true, "use concurrent sweeping")
 DEFINE_BOOL(parallel_compaction, true, "use parallel compaction")
 DEFINE_BOOL(parallel_pointer_update, true,

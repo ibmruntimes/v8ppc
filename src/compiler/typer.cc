@@ -1686,6 +1686,18 @@ Type* Typer::Visitor::TypeJSStoreMessage(Node* node) {
   return nullptr;
 }
 
+Type* Typer::Visitor::TypeJSGeneratorStore(Node* node) {
+  UNREACHABLE();
+  return nullptr;
+}
+
+Type* Typer::Visitor::TypeJSGeneratorRestoreContinuation(Node* node) {
+  return typer_->cache_.kSmi;
+}
+
+Type* Typer::Visitor::TypeJSGeneratorRestoreRegister(Node* node) {
+  return Type::Any();
+}
 
 Type* Typer::Visitor::TypeJSStackCheck(Node* node) { return Type::Any(); }
 
@@ -2007,6 +2019,8 @@ Type* Typer::Visitor::TypeObjectIsUndetectable(Node* node) {
 
 
 // Machine operators.
+
+Type* Typer::Visitor::TypeDebugBreak(Node* node) { return Type::None(); }
 
 Type* Typer::Visitor::TypeLoad(Node* node) { return Type::Any(); }
 

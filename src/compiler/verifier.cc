@@ -636,8 +636,24 @@ void Verifier::Visitor::Check(Node* node) {
     case IrOpcode::kJSStoreMessage:
       break;
 
+    case IrOpcode::kJSGeneratorStore:
+      CheckNotTyped(node);
+      break;
+
+    case IrOpcode::kJSGeneratorRestoreContinuation:
+      CheckUpperIs(node, Type::SignedSmall());
+      break;
+
+    case IrOpcode::kJSGeneratorRestoreRegister:
+      CheckUpperIs(node, Type::Any());
+      break;
+
     case IrOpcode::kJSStackCheck:
       // Type is empty.
+      CheckNotTyped(node);
+      break;
+
+    case IrOpcode::kDebugBreak:
       CheckNotTyped(node);
       break;
 
