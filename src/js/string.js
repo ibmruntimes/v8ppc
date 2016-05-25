@@ -13,8 +13,6 @@ var ArrayIndexOf;
 var ArrayJoin;
 var GlobalRegExp = global.RegExp;
 var GlobalString = global.String;
-var InternalArray = utils.InternalArray;
-var InternalPackedArray = utils.InternalPackedArray;
 var IsRegExp;
 var MakeRangeError;
 var MakeTypeError;
@@ -540,18 +538,6 @@ function StringTrimRight() {
 }
 
 
-// ECMA-262, section 15.5.3.2
-function StringFromCharCode(_) {  // length == 1
-  "use strict";
-  var s = "";
-  var n = arguments.length;
-  for (var i = 0; i < n; ++i) {
-    s += %_StringCharFromCode(arguments[i] & 0xffff);
-  }
-  return s;
-}
-
-
 // ES6 draft, revision 26 (2014-07-18), section B.2.3.2.1
 function HtmlEscape(str) {
   return %_Call(StringReplace, TO_STRING(str), /"/g, "&quot;");
@@ -835,7 +821,6 @@ function StringRaw(callSite) {
 
 // Set up the non-enumerable functions on the String object.
 utils.InstallFunctions(GlobalString, DONT_ENUM, [
-  "fromCharCode", StringFromCharCode,
   "fromCodePoint", StringFromCodePoint,
   "raw", StringRaw
 ]);

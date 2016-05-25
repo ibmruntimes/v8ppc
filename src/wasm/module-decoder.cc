@@ -419,7 +419,9 @@ class ModuleDecoder : public Decoder {
     }
 
   done:
-    ModuleResult result = toResult(module);
+    CalculateGlobalsOffsets(module);
+    const WasmModule* finished_module = module;
+    ModuleResult result = toResult(finished_module);
     if (FLAG_dump_wasm_module) {
       DumpModule(module, result);
     }
@@ -570,6 +572,22 @@ class ModuleDecoder : public Decoder {
     consume_bytes(segment->source_size);
   }
 
+  // Calculate individual global offsets and total size of globals table.
+  void CalculateGlobalsOffsets(WasmModule* module) {
+    uint32_t offset = 0;
+    if (module->globals.size() == 0) {
+      module->globals_size = 0;
+      return;
+    }
+    for (WasmGlobal& global : module->globals) {
+      byte size = WasmOpcodes::MemSize(global.type);
+      offset = (offset + size - 1) & ~(size - 1);  // align
+      global.offset = offset;
+      offset += size;
+    }
+    module->globals_size = offset;
+  }
+
   // Verifies the body (code) of a given function.
   void VerifyFunctionBody(uint32_t func_num, ModuleEnv* menv,
                           WasmFunction* function) {
@@ -698,6 +716,8 @@ class ModuleDecoder : public Decoder {
         return MachineType::Float32();
       case kMemF64:
         return MachineType::Float64();
+      case kMemS128:
+        return MachineType::Simd128();
       default:
         error(pc_ - 1, "invalid memory type");
         return MachineType::None();

@@ -31,27 +31,28 @@ namespace internal {
 
 // Entries have the form F(name, number of arguments, number of values):
 
-#define FOR_EACH_INTRINSIC_ARRAY(F)  \
-  F(FinishArrayPrototypeSetup, 1, 1) \
-  F(SpecialArrayFunctions, 0, 1)     \
-  F(TransitionElementsKind, 2, 1)    \
-  F(RemoveArrayHoles, 2, 1)          \
-  F(MoveArrayContents, 2, 1)         \
-  F(EstimateNumberOfElements, 1, 1)  \
-  F(GetArrayKeys, 2, 1)              \
-  F(ArrayConstructor, -1, 1)         \
-  F(NewArray, -1 /* >= 3 */, 1)      \
-  F(InternalArrayConstructor, -1, 1) \
-  F(ArrayPush, -1, 1)                \
-  F(NormalizeElements, 1, 1)         \
-  F(GrowArrayElements, 2, 1)         \
-  F(HasComplexElements, 1, 1)        \
-  F(IsArray, 1, 1)                   \
-  F(ArrayIsArray, 1, 1)              \
-  F(HasCachedArrayIndex, 1, 1)       \
-  F(GetCachedArrayIndex, 1, 1)       \
-  F(FixedArrayGet, 2, 1)             \
-  F(FixedArraySet, 3, 1)             \
+#define FOR_EACH_INTRINSIC_ARRAY(F)        \
+  F(FinishArrayPrototypeSetup, 1, 1)       \
+  F(SpecialArrayFunctions, 0, 1)           \
+  F(TransitionElementsKind, 2, 1)          \
+  F(RemoveArrayHoles, 2, 1)                \
+  F(MoveArrayContents, 2, 1)               \
+  F(EstimateNumberOfElements, 1, 1)        \
+  F(GetArrayKeys, 2, 1)                    \
+  F(ArrayConstructor, -1, 1)               \
+  F(NewArray, -1 /* >= 3 */, 1)            \
+  F(InternalArrayConstructor, -1, 1)       \
+  F(ArraySingleArgumentConstructor, -1, 1) \
+  F(ArrayPush, -1, 1)                      \
+  F(NormalizeElements, 1, 1)               \
+  F(GrowArrayElements, 2, 1)               \
+  F(HasComplexElements, 1, 1)              \
+  F(IsArray, 1, 1)                         \
+  F(ArrayIsArray, 1, 1)                    \
+  F(HasCachedArrayIndex, 1, 1)             \
+  F(GetCachedArrayIndex, 1, 1)             \
+  F(FixedArrayGet, 2, 1)                   \
+  F(FixedArraySet, 3, 1)                   \
   F(ArraySpeciesConstructor, 1, 1)
 
 #define FOR_EACH_INTRINSIC_ATOMICS(F)           \
@@ -180,6 +181,12 @@ namespace internal {
   F(CollectGarbage, 1, 1)                      \
   F(GetHeapUsage, 0, 1)                        \
   F(GetScript, 1, 1)                           \
+  F(ScriptLineCount, 1, 1)                     \
+  F(ScriptLineStartPosition, 2, 1)             \
+  F(ScriptLineEndPosition, 2, 1)               \
+  F(ScriptLocationFromLine, 4, 1)              \
+  F(ScriptPositionInfo, 3, 1)                  \
+  F(ScriptSourceLine, 2, 1)                    \
   F(DebugPrepareStepInIfStepping, 1, 1)        \
   F(DebugPushPromise, 2, 1)                    \
   F(DebugPopPromise, 0, 1)                     \
@@ -261,7 +268,8 @@ namespace internal {
   F(BreakIteratorBreakType, 1, 1)            \
   F(StringToLowerCaseI18N, 1, 1)             \
   F(StringToUpperCaseI18N, 1, 1)             \
-  F(StringLocaleConvertCase, 3, 1)
+  F(StringLocaleConvertCase, 3, 1)           \
+  F(DateCacheVersion, 0, 1)
 #else
 #define FOR_EACH_INTRINSIC_I18N(F)
 #endif
@@ -319,8 +327,6 @@ namespace internal {
   F(OrdinaryHasInstance, 2, 1)
 
 #define FOR_EACH_INTRINSIC_JSON(F) \
-  F(QuoteJSONString, 1, 1)         \
-  F(BasicJSONStringify, 2, 1)      \
   F(ParseJson, 1, 1)
 
 #define FOR_EACH_INTRINSIC_LITERALS(F) \
@@ -1087,12 +1093,6 @@ class Runtime : public AllStatic {
 
   MUST_USE_RESULT static MaybeHandle<Object> GetObjectProperty(
       Isolate* isolate, Handle<Object> object, Handle<Object> key);
-
-  MUST_USE_RESULT static MaybeHandle<Object> BasicJsonStringify(
-      Isolate* isolate, Handle<Object> object, Handle<String> gap);
-
-  MUST_USE_RESULT static MaybeHandle<Object> BasicJsonStringifyString(
-      Isolate* isolate, Handle<String> string);
 
   enum TypedArrayId {
     // arrayIds below should be synchronized with typedarray.js natives.

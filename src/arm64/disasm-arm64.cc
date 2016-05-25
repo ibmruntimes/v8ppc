@@ -1750,7 +1750,7 @@ namespace disasm {
 
 
 const char* NameConverter::NameOfAddress(byte* addr) const {
-  v8::internal::SNPrintF(tmp_buffer_, "%p", addr);
+  v8::internal::SNPrintF(tmp_buffer_, "%p", static_cast<void *>(addr));
   return tmp_buffer_.start();
 }
 
@@ -1802,7 +1802,8 @@ class BufferDisassembler : public v8::internal::DisassemblingDecoder {
   ~BufferDisassembler() { }
 
   virtual void ProcessOutput(v8::internal::Instruction* instr) {
-    v8::internal::SNPrintF(out_buffer_, "%s", GetOutput());
+    v8::internal::SNPrintF(out_buffer_, "%08" PRIx32 "       %s",
+                           instr->InstructionBits(), GetOutput());
   }
 
  private:

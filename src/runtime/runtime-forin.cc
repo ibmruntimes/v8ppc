@@ -25,6 +25,7 @@ MaybeHandle<HeapObject> Enumerate(Handle<JSReceiver> receiver) {
   FastKeyAccumulator accumulator(isolate, receiver, INCLUDE_PROTOS,
                                  ENUMERABLE_STRINGS);
   accumulator.set_filter_proxy_keys(false);
+  accumulator.set_is_for_in(true);
   // Test if we have an enum cache for {receiver}.
   if (!accumulator.is_receiver_simple_enum()) {
     Handle<FixedArray> keys;
@@ -107,9 +108,7 @@ RUNTIME_FUNCTION(Runtime_ForInEnumerate) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSReceiver, receiver, 0);
-  Handle<HeapObject> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result, Enumerate(receiver));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(isolate, Enumerate(receiver));
 }
 
 
@@ -159,9 +158,7 @@ RUNTIME_FUNCTION(Runtime_ForInFilter) {
   DCHECK_EQ(2, args.length());
   CONVERT_ARG_HANDLE_CHECKED(JSReceiver, receiver, 0);
   CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result, Filter(receiver, key));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(isolate, Filter(receiver, key));
 }
 
 
@@ -177,9 +174,7 @@ RUNTIME_FUNCTION(Runtime_ForInNext) {
   if (receiver->map() == *cache_type) {
     return *key;
   }
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result, Filter(receiver, key));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(isolate, Filter(receiver, key));
 }
 
 

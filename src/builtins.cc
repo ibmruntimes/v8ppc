@@ -18,6 +18,7 @@
 #include "src/ic/handler-compiler.h"
 #include "src/ic/ic.h"
 #include "src/isolate-inl.h"
+#include "src/json-stringifier.h"
 #include "src/messages.h"
 #include "src/profiler/cpu-profiler.h"
 #include "src/property-descriptor.h"
@@ -328,15 +329,9 @@ MUST_USE_RESULT static Object* CallJsIntrinsic(
   for (int i = 0; i < argc; ++i) {
     argv[i] = args.at<Object>(i + 1);
   }
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
-      Execution::Call(isolate,
-                      function,
-                      args.receiver(),
-                      argc,
-                      argv.start()));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(
+      isolate,
+      Execution::Call(isolate, function, args.receiver(), argc, argv.start()));
 }
 
 
@@ -1467,7 +1462,8 @@ MaybeHandle<JSArray> Fast_ArrayConcat(Isolate* isolate, Arguments* args) {
       result_len += Smi::cast(array->length())->value();
       DCHECK(result_len >= 0);
       // Throw an Error if we overflow the FixedArray limits
-      if (FixedArray::kMaxLength < result_len) {
+      if (FixedDoubleArray::kMaxLength < result_len ||
+          FixedArray::kMaxLength < result_len) {
         AllowHeapAllocation gc;
         THROW_NEW_ERROR(isolate,
                         NewRangeError(MessageTemplate::kInvalidArrayLength),
@@ -1633,7 +1629,7 @@ BUILTIN(ObjectAssign) {
     Handle<FixedArray> keys;
     ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
         isolate, keys,
-        JSReceiver::GetKeys(from, OWN_ONLY, ALL_PROPERTIES, KEEP_NUMBERS));
+        KeyAccumulator::GetKeys(from, OWN_ONLY, ALL_PROPERTIES, KEEP_NUMBERS));
     // 4c. Repeat for each element nextKey of keys in List order,
     for (int j = 0; j < keys->length(); ++j) {
       Handle<Object> next_key(keys->get(j), isolate);
@@ -1701,11 +1697,8 @@ BUILTIN(ObjectDefineProperties) {
   Handle<Object> target = args.at<Object>(1);
   Handle<Object> properties = args.at<Object>(2);
 
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
-      JSReceiver::DefineProperties(isolate, target, properties));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(
+      isolate, JSReceiver::DefineProperties(isolate, target, properties));
 }
 
 // ES6 section 19.1.2.4 Object.defineProperty
@@ -1867,11 +1860,8 @@ BUILTIN(ObjectGetPrototypeOf) {
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, receiver, Object::ToObject(isolate, object));
 
-  Handle<Object> prototype;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, prototype, JSReceiver::GetPrototype(isolate, receiver));
-
-  return *prototype;
+  RETURN_RESULT_OR_FAILURE(isolate,
+                           JSReceiver::GetPrototype(isolate, receiver));
 }
 
 
@@ -1912,7 +1902,7 @@ Object* GetOwnPropertyKeys(Isolate* isolate,
   Handle<FixedArray> keys;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, keys,
-      JSReceiver::GetKeys(receiver, OWN_ONLY, filter, CONVERT_TO_STRING));
+      KeyAccumulator::GetKeys(receiver, OWN_ONLY, filter, CONVERT_TO_STRING));
   return *isolate->factory()->NewJSArrayWithElements(keys);
 }
 
@@ -2008,8 +1998,8 @@ BUILTIN(ObjectKeys) {
   } else {
     ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
         isolate, keys,
-        JSReceiver::GetKeys(receiver, OWN_ONLY, ENUMERABLE_STRINGS,
-                            CONVERT_TO_STRING));
+        KeyAccumulator::GetKeys(receiver, OWN_ONLY, ENUMERABLE_STRINGS,
+                                CONVERT_TO_STRING));
   }
   return *isolate->factory()->NewJSArrayWithElements(keys, FAST_ELEMENTS);
 }
@@ -2051,8 +2041,8 @@ BUILTIN(ObjectGetOwnPropertyDescriptors) {
 
   Handle<FixedArray> keys;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, keys, JSReceiver::GetKeys(receiver, OWN_ONLY, ALL_PROPERTIES,
-                                         CONVERT_TO_STRING));
+      isolate, keys, KeyAccumulator::GetKeys(receiver, OWN_ONLY, ALL_PROPERTIES,
+                                             CONVERT_TO_STRING));
 
   Handle<JSObject> descriptors =
       isolate->factory()->NewJSObject(isolate->object_function());
@@ -2110,7 +2100,7 @@ BUILTIN(GlobalEncodeURI) {
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, uri, Object::ToString(isolate, args.atOrUndefined(isolate, 1)));
 
-  return Uri::EncodeUri(isolate, uri);
+  RETURN_RESULT_OR_FAILURE(isolate, Uri::EncodeUri(isolate, uri));
 }
 
 // ES6 section 18.2.6.5 encodeURIComponenet (uriComponent)
@@ -2121,7 +2111,8 @@ BUILTIN(GlobalEncodeURIComponent) {
       isolate, uriComponent,
       Object::ToString(isolate, args.atOrUndefined(isolate, 1)));
 
-  return Uri::EncodeUriComponent(isolate, uriComponent);
+  RETURN_RESULT_OR_FAILURE(isolate,
+                           Uri::EncodeUriComponent(isolate, uriComponent));
 }
 
 namespace {
@@ -2184,13 +2175,21 @@ BUILTIN(GlobalEval) {
       isolate, function,
       CompileString(handle(target->native_context(), isolate),
                     Handle<String>::cast(x), NO_PARSE_RESTRICTION));
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
+  RETURN_RESULT_OR_FAILURE(
+      isolate,
       Execution::Call(isolate, function, target_global_proxy, 0, nullptr));
-  return *result;
 }
 
+// ES6 section 24.3.2 JSON.stringify.
+BUILTIN(JsonStringify) {
+  HandleScope scope(isolate);
+  JsonStringifier stringifier(isolate);
+  Handle<Object> object = args.atOrUndefined(isolate, 1);
+  Handle<Object> replacer = args.atOrUndefined(isolate, 2);
+  Handle<Object> indent = args.atOrUndefined(isolate, 3);
+  RETURN_RESULT_OR_FAILURE(isolate,
+                           stringifier.Stringify(object, replacer, indent));
+}
 
 // -----------------------------------------------------------------------------
 // ES6 section 20.2.2 Function Properties of the Math Object
@@ -2608,12 +2607,9 @@ BUILTIN(ReflectGet) {
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, name,
                                      Object::ToName(isolate, key));
 
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result, Object::GetPropertyOrElement(
-                           receiver, name, Handle<JSReceiver>::cast(target)));
-
-  return *result;
+  RETURN_RESULT_OR_FAILURE(
+      isolate, Object::GetPropertyOrElement(receiver, name,
+                                            Handle<JSReceiver>::cast(target)));
 }
 
 
@@ -2656,11 +2652,9 @@ BUILTIN(ReflectGetPrototypeOf) {
                               isolate->factory()->NewStringFromAsciiChecked(
                                   "Reflect.getPrototypeOf")));
   }
-  Handle<Object> prototype;
   Handle<JSReceiver> receiver = Handle<JSReceiver>::cast(target);
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, prototype, JSReceiver::GetPrototype(isolate, receiver));
-  return *prototype;
+  RETURN_RESULT_OR_FAILURE(isolate,
+                           JSReceiver::GetPrototype(isolate, receiver));
 }
 
 
@@ -2725,8 +2719,8 @@ BUILTIN(ReflectOwnKeys) {
   Handle<FixedArray> keys;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, keys,
-      JSReceiver::GetKeys(Handle<JSReceiver>::cast(target), OWN_ONLY,
-                          ALL_PROPERTIES, CONVERT_TO_STRING));
+      KeyAccumulator::GetKeys(Handle<JSReceiver>::cast(target), OWN_ONLY,
+                              ALL_PROPERTIES, CONVERT_TO_STRING));
   return *isolate->factory()->NewJSArrayWithElements(keys);
 }
 
@@ -3179,11 +3173,8 @@ BUILTIN(DateConstructor) {
   double const time_val = JSDate::CurrentTimeValue(isolate);
   char buffer[128];
   ToDateString(time_val, ArrayVector(buffer), isolate->date_cache());
-  Handle<String> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
-      isolate->factory()->NewStringFromUtf8(CStrVector(buffer)));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(
+      isolate, isolate->factory()->NewStringFromUtf8(CStrVector(buffer)));
 }
 
 
@@ -3265,10 +3256,7 @@ BUILTIN(DateConstructor_ConstructStub) {
       time_val = std::numeric_limits<double>::quiet_NaN();
     }
   }
-  Handle<JSDate> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
-                                     JSDate::New(target, new_target, time_val));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(isolate, JSDate::New(target, new_target, time_val));
 }
 
 
@@ -3763,11 +3751,8 @@ BUILTIN(DatePrototypeToDateString) {
   char buffer[128];
   ToDateString(date->value()->Number(), ArrayVector(buffer),
                isolate->date_cache(), kDateOnly);
-  Handle<String> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
-      isolate->factory()->NewStringFromUtf8(CStrVector(buffer)));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(
+      isolate, isolate->factory()->NewStringFromUtf8(CStrVector(buffer)));
 }
 
 
@@ -3806,11 +3791,8 @@ BUILTIN(DatePrototypeToString) {
   char buffer[128];
   ToDateString(date->value()->Number(), ArrayVector(buffer),
                isolate->date_cache());
-  Handle<String> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
-      isolate->factory()->NewStringFromUtf8(CStrVector(buffer)));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(
+      isolate, isolate->factory()->NewStringFromUtf8(CStrVector(buffer)));
 }
 
 
@@ -3821,11 +3803,8 @@ BUILTIN(DatePrototypeToTimeString) {
   char buffer[128];
   ToDateString(date->value()->Number(), ArrayVector(buffer),
                isolate->date_cache(), kTimeOnly);
-  Handle<String> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
-      isolate->factory()->NewStringFromUtf8(CStrVector(buffer)));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(
+      isolate, isolate->factory()->NewStringFromUtf8(CStrVector(buffer)));
 }
 
 
@@ -3863,10 +3842,7 @@ BUILTIN(DatePrototypeToPrimitive) {
   DCHECK_EQ(2, args.length());
   CHECK_RECEIVER(JSReceiver, receiver, "Date.prototype [ @@toPrimitive ]");
   Handle<Object> hint = args.at<Object>(1);
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
-                                     JSDate::ToPrimitive(receiver, hint));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(isolate, JSDate::ToPrimitive(receiver, hint));
 }
 
 
@@ -4248,18 +4224,14 @@ BUILTIN(FunctionPrototypeToString) {
 // ES6 section 25.2.1.1 GeneratorFunction (p1, p2, ... , pn, body)
 BUILTIN(GeneratorFunctionConstructor) {
   HandleScope scope(isolate);
-  Handle<JSFunction> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result, CreateDynamicFunction(isolate, args, "function*"));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(isolate,
+                           CreateDynamicFunction(isolate, args, "function*"));
 }
 
 BUILTIN(AsyncFunctionConstructor) {
   HandleScope scope(isolate);
-  Handle<JSFunction> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result, CreateDynamicFunction(isolate, args, "async function"));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(
+      isolate, CreateDynamicFunction(isolate, args, "async function"));
 }
 
 // ES6 section 19.4.1.1 Symbol ( [ description ] ) for the [[Call]] case.
@@ -4289,14 +4261,75 @@ BUILTIN(SymbolConstructor_ConstructStub) {
 BUILTIN(ObjectProtoToString) {
   HandleScope scope(isolate);
   Handle<Object> object = args.at<Object>(0);
-  Handle<String> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result, Object::ObjectProtoToString(isolate, object));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(isolate,
+                           Object::ObjectProtoToString(isolate, object));
 }
 
 // -----------------------------------------------------------------------------
 // ES6 section 21.1 String Objects
+
+namespace {
+
+bool ToUint16(Handle<Object> value, uint16_t* result) {
+  if (value->IsNumber() || Object::ToNumber(value).ToHandle(&value)) {
+    *result = DoubleToUint32(value->Number());
+    return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+// ES6 21.1.2.1 String.fromCharCode ( ...codeUnits )
+BUILTIN(StringFromCharCode) {
+  HandleScope scope(isolate);
+  // Check resulting string length.
+  int index = 0;
+  Handle<String> result;
+  int const length = args.length() - 1;
+  if (length == 0) return isolate->heap()->empty_string();
+  DCHECK_LT(0, length);
+  // Load the first character code.
+  uint16_t code;
+  if (!ToUint16(args.at<Object>(1), &code)) return isolate->heap()->exception();
+  // Assume that the resulting String contains only one byte characters.
+  if (code <= String::kMaxOneByteCharCodeU) {
+    // Check for single one-byte character fast case.
+    if (length == 1) {
+      return *isolate->factory()->LookupSingleCharacterStringFromCode(code);
+    }
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, result, isolate->factory()->NewRawOneByteString(length));
+    do {
+      Handle<SeqOneByteString>::cast(result)->Set(index, code);
+      if (++index == length) break;
+      if (!ToUint16(args.at<Object>(1 + index), &code)) {
+        return isolate->heap()->exception();
+      }
+    } while (code <= String::kMaxOneByteCharCodeU);
+  }
+  // Check if all characters fit into the one byte range.
+  if (index < length) {
+    // Fallback to two byte string.
+    Handle<String> new_result;
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+        isolate, new_result, isolate->factory()->NewRawTwoByteString(length));
+    for (int new_index = 0; new_index < index; ++new_index) {
+      uint16_t new_code =
+          Handle<SeqOneByteString>::cast(result)->Get(new_index);
+      Handle<SeqTwoByteString>::cast(new_result)->Set(new_index, new_code);
+    }
+    while (true) {
+      Handle<SeqTwoByteString>::cast(new_result)->Set(index, code);
+      if (++index == length) break;
+      if (!ToUint16(args.at<Object>(1 + index), &code)) {
+        return isolate->heap()->exception();
+      }
+    }
+    result = new_result;
+  }
+  return *result;
+}
 
 // ES6 section 21.1.3.1 String.prototype.charAt ( pos )
 void Builtins::Generate_StringPrototypeCharAt(CodeStubAssembler* assembler) {
@@ -4562,10 +4595,7 @@ BUILTIN(ProxyConstructor_ConstructStub) {
   DCHECK(isolate->proxy_function()->IsConstructor());
   Handle<Object> target = args.atOrUndefined(isolate, 1);
   Handle<Object> handler = args.atOrUndefined(isolate, 2);
-  Handle<JSProxy> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
-                                     JSProxy::New(isolate, target, handler));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(isolate, JSProxy::New(isolate, target, handler));
 }
 
 
@@ -4683,10 +4713,7 @@ MUST_USE_RESULT MaybeHandle<Object> HandleApiCallHelper(
 
 BUILTIN(HandleApiCall) {
   HandleScope scope(isolate);
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
-                                     HandleApiCallHelper(isolate, args));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(isolate, HandleApiCallHelper(isolate, args));
 }
 
 

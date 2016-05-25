@@ -14,6 +14,7 @@
 #include "src/base/platform/mutex.h"
 #include "src/flags.h"
 #include "src/hashmap.h"
+#include "src/heap/array-buffer-tracker.h"
 #include "src/list.h"
 #include "src/objects.h"
 #include "src/utils.h"
@@ -468,6 +469,8 @@ class MemoryChunk {
     kSweepingInProgress,
   };
 
+  enum ArrayBufferTrackerAccessMode { kDontCreate, kCreateIfNotPresent };
+
   // Every n write barrier invocations we go to runtime even though
   // we could have handled it in generated code.  This lets us check
   // whether we have hit the limit and should do some more marking.
@@ -509,6 +512,7 @@ class MemoryChunk {
   static const size_t kWriteBarrierCounterOffset =
       kOldToNewSlotsOffset + kPointerSize  // SlotSet* old_to_new_slots_;
       + kPointerSize                       // SlotSet* old_to_old_slots_;
+      + kPointerSize   // TypedSlotSet* typed_old_to_new_slots_;
       + kPointerSize   // TypedSlotSet* typed_old_to_old_slots_;
       + kPointerSize;  // SkipList* skip_list_;
 
@@ -522,7 +526,8 @@ class MemoryChunk {
       + kPointerSize      // AtomicValue next_chunk_
       + kPointerSize      // AtomicValue prev_chunk_
       // FreeListCategory categories_[kNumberOfCategories]
-      + FreeListCategory::kSize * kNumberOfCategories;
+      + FreeListCategory::kSize * kNumberOfCategories +
+      kPointerSize;  // LocalArrayBufferTracker tracker_
 
   // We add some more space to the computed header size to amount for missing
   // alignment requirements in our computation.
@@ -625,6 +630,9 @@ class MemoryChunk {
 
   inline SlotSet* old_to_new_slots() { return old_to_new_slots_; }
   inline SlotSet* old_to_old_slots() { return old_to_old_slots_; }
+  inline TypedSlotSet* typed_old_to_new_slots() {
+    return typed_old_to_new_slots_;
+  }
   inline TypedSlotSet* typed_old_to_old_slots() {
     return typed_old_to_old_slots_;
   }
@@ -633,8 +641,25 @@ class MemoryChunk {
   void ReleaseOldToNewSlots();
   void AllocateOldToOldSlots();
   void ReleaseOldToOldSlots();
+  void AllocateTypedOldToNewSlots();
+  void ReleaseTypedOldToNewSlots();
   void AllocateTypedOldToOldSlots();
   void ReleaseTypedOldToOldSlots();
+
+  template <ArrayBufferTrackerAccessMode tracker_access>
+  inline LocalArrayBufferTracker* local_tracker() {
+    LocalArrayBufferTracker* tracker = local_tracker_.Value();
+    if (tracker == nullptr && tracker_access == kCreateIfNotPresent) {
+      tracker = new LocalArrayBufferTracker(heap_);
+      if (!local_tracker_.TrySetValue(nullptr, tracker)) {
+        tracker = local_tracker_.Value();
+      }
+      DCHECK_NOT_NULL(tracker);
+    }
+    return tracker;
+  }
+
+  void ReleaseLocalTracker();
 
   Address area_start() { return area_start_; }
   Address area_end() { return area_end_; }
@@ -792,6 +817,7 @@ class MemoryChunk {
   // is ceil(size() / kPageSize).
   SlotSet* old_to_new_slots_;
   SlotSet* old_to_old_slots_;
+  TypedSlotSet* typed_old_to_new_slots_;
   TypedSlotSet* typed_old_to_old_slots_;
 
   SkipList* skip_list_;
@@ -816,6 +842,8 @@ class MemoryChunk {
   base::AtomicValue<MemoryChunk*> prev_chunk_;
 
   FreeListCategory categories_[kNumberOfCategories];
+
+  base::AtomicValue<LocalArrayBufferTracker*> local_tracker_;
 
  private:
   void InitializeReservedMemory() { reservation_.Reset(); }
@@ -2288,6 +2316,16 @@ class PagedSpace : public Space {
   inline void UnlinkFreeListCategories(Page* page);
   inline intptr_t RelinkFreeListCategories(Page* page);
 
+  // Callback signature:
+  //   void Callback(Page*);
+  template <typename Callback>
+  void ForAllPages(Callback callback) {
+    PageIterator it(this);
+    while (it.has_next()) {
+      callback(it.next());
+    }
+  }
+
  protected:
   // PagedSpaces that should be included in snapshots have different, i.e.,
   // smaller, initial pages.
@@ -3111,8 +3149,7 @@ class LargePageIterator BASE_EMBEDDED {
 // pointers to new space or to evacuation candidates.
 class MemoryChunkIterator BASE_EMBEDDED {
  public:
-  enum Mode { ALL, ALL_BUT_MAP_SPACE, ALL_BUT_CODE_SPACE };
-  inline explicit MemoryChunkIterator(Heap* heap, Mode mode);
+  inline explicit MemoryChunkIterator(Heap* heap);
 
   // Return NULL when the iterator is done.
   inline MemoryChunk* next();
@@ -3126,7 +3163,6 @@ class MemoryChunkIterator BASE_EMBEDDED {
     kFinishedState
   };
   State state_;
-  const Mode mode_;
   PageIterator old_iterator_;
   PageIterator code_iterator_;
   PageIterator map_iterator_;

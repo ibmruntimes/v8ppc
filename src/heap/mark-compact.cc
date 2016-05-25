@@ -14,7 +14,7 @@
 #include "src/frames-inl.h"
 #include "src/gdb-jit.h"
 #include "src/global-handles.h"
-#include "src/heap/array-buffer-tracker.h"
+#include "src/heap/array-buffer-tracker-inl.h"
 #include "src/heap/gc-tracer.h"
 #include "src/heap/incremental-marking.h"
 #include "src/heap/mark-compact-inl.h"
@@ -872,6 +872,10 @@ void MarkCompactCollector::Prepare() {
        space = spaces.next()) {
     space->PrepareForMarkCompact();
   }
+  if (!was_marked_incrementally_) {
+    heap_->array_buffer_tracker()->ResetTrackersInOldSpace();
+  }
+  heap()->account_amount_of_external_allocated_freed_memory();
 
 #ifdef VERIFY_HEAP
   if (!was_marked_incrementally_ && FLAG_verify_heap) {
@@ -1727,20 +1731,12 @@ class MarkCompactCollector::EvacuateNewSpaceVisitor final
     if (heap_->ShouldBePromoted(object->address(), size) &&
         TryEvacuateObject(compaction_spaces_->Get(OLD_SPACE), object,
                           &target_object)) {
-      // If we end up needing more special cases, we should factor this out.
-      if (V8_UNLIKELY(target_object->IsJSArrayBuffer())) {
-        heap_->array_buffer_tracker()->Promote(
-            JSArrayBuffer::cast(target_object));
-      }
       promoted_size_ += size;
       return true;
     }
     HeapObject* target = nullptr;
     AllocationSpace space = AllocateTargetObject(object, &target);
     MigrateObject(HeapObject::cast(target), object, size, space);
-    if (V8_UNLIKELY(target->IsJSArrayBuffer())) {
-      heap_->array_buffer_tracker()->MarkLive(JSArrayBuffer::cast(target));
-    }
     semispace_copied_size_ += size;
     return true;
   }
@@ -1865,10 +1861,6 @@ class MarkCompactCollector::EvacuateNewSpacePageVisitor final
   }
 
   inline bool Visit(HeapObject* object) {
-    if (V8_UNLIKELY(object->IsJSArrayBuffer())) {
-      object->GetHeap()->array_buffer_tracker()->Promote(
-          JSArrayBuffer::cast(object));
-    }
     RecordMigratedSlotVisitor visitor(heap_->mark_compact_collector());
     object->IterateBodyFast(&visitor);
     promoted_size_ += object->Size();
@@ -1909,6 +1901,9 @@ class MarkCompactCollector::EvacuateRecordOnlyVisitor final
   inline bool Visit(HeapObject* object) {
     RecordMigratedSlotVisitor visitor(heap_->mark_compact_collector());
     object->IterateBody(&visitor);
+    if (V8_UNLIKELY(object->IsJSArrayBuffer())) {
+      heap_->array_buffer_tracker()->MarkLive(JSArrayBuffer::cast(object));
+    }
     return true;
   }
 
@@ -2825,117 +2820,6 @@ static inline SlotCallbackResult UpdateSlot(Object** slot) {
   return REMOVE_SLOT;
 }
 
-// Updates a cell slot using an untyped slot callback.
-// The callback accepts (Heap*, Object**) and returns SlotCallbackResult.
-template <typename Callback>
-static SlotCallbackResult UpdateCell(RelocInfo* rinfo, Callback callback) {
-  DCHECK(rinfo->rmode() == RelocInfo::CELL);
-  Object* cell = rinfo->target_cell();
-  Object* old_cell = cell;
-  SlotCallbackResult result = callback(&cell);
-  if (cell != old_cell) {
-    rinfo->set_target_cell(reinterpret_cast<Cell*>(cell));
-  }
-  return result;
-}
-
-// Updates a code entry slot using an untyped slot callback.
-// The callback accepts (Heap*, Object**) and returns SlotCallbackResult.
-template <typename Callback>
-static SlotCallbackResult UpdateCodeEntry(Address entry_address,
-                                          Callback callback) {
-  Object* code = Code::GetObjectFromEntryAddress(entry_address);
-  Object* old_code = code;
-  SlotCallbackResult result = callback(&code);
-  if (code != old_code) {
-    Memory::Address_at(entry_address) = reinterpret_cast<Code*>(code)->entry();
-  }
-  return result;
-}
-
-// Updates a code target slot using an untyped slot callback.
-// The callback accepts (Heap*, Object**) and returns SlotCallbackResult.
-template <typename Callback>
-static SlotCallbackResult UpdateCodeTarget(RelocInfo* rinfo,
-                                           Callback callback) {
-  DCHECK(RelocInfo::IsCodeTarget(rinfo->rmode()));
-  Object* target = Code::GetCodeFromTargetAddress(rinfo->target_address());
-  Object* old_target = target;
-  SlotCallbackResult result = callback(&target);
-  if (target != old_target) {
-    rinfo->set_target_address(Code::cast(target)->instruction_start());
-  }
-  return result;
-}
-
-// Updates an embedded pointer slot using an untyped slot callback.
-// The callback accepts (Heap*, Object**) and returns SlotCallbackResult.
-template <typename Callback>
-static SlotCallbackResult UpdateEmbeddedPointer(RelocInfo* rinfo,
-                                                Callback callback) {
-  DCHECK(rinfo->rmode() == RelocInfo::EMBEDDED_OBJECT);
-  Object* target = rinfo->target_object();
-  Object* old_target = target;
-  SlotCallbackResult result = callback(&target);
-  if (target != old_target) {
-    rinfo->set_target_object(target);
-  }
-  return result;
-}
-
-// Updates a debug target slot using an untyped slot callback.
-// The callback accepts (Heap*, Object**) and returns SlotCallbackResult.
-template <typename Callback>
-static SlotCallbackResult UpdateDebugTarget(RelocInfo* rinfo,
-                                            Callback callback) {
-  DCHECK(RelocInfo::IsDebugBreakSlot(rinfo->rmode()) &&
-         rinfo->IsPatchedDebugBreakSlotSequence());
-  Object* target = Code::GetCodeFromTargetAddress(rinfo->debug_call_address());
-  SlotCallbackResult result = callback(&target);
-  rinfo->set_debug_call_address(Code::cast(target)->instruction_start());
-  return result;
-}
-
-// Updates a typed slot using an untyped slot callback.
-// The callback accepts (Heap*, Object**) and returns SlotCallbackResult.
-template <typename Callback>
-static SlotCallbackResult UpdateTypedSlot(Isolate* isolate, SlotType slot_type,
-                                          Address addr, Callback callback) {
-  switch (slot_type) {
-    case CODE_TARGET_SLOT: {
-      RelocInfo rinfo(isolate, addr, RelocInfo::CODE_TARGET, 0, NULL);
-      return UpdateCodeTarget(&rinfo, callback);
-    }
-    case CELL_TARGET_SLOT: {
-      RelocInfo rinfo(isolate, addr, RelocInfo::CELL, 0, NULL);
-      return UpdateCell(&rinfo, callback);
-    }
-    case CODE_ENTRY_SLOT: {
-      return UpdateCodeEntry(addr, callback);
-    }
-    case DEBUG_TARGET_SLOT: {
-      RelocInfo rinfo(isolate, addr, RelocInfo::DEBUG_BREAK_SLOT_AT_POSITION, 0,
-                      NULL);
-      if (rinfo.IsPatchedDebugBreakSlotSequence()) {
-        return UpdateDebugTarget(&rinfo, callback);
-      }
-      return REMOVE_SLOT;
-    }
-    case EMBEDDED_OBJECT_SLOT: {
-      RelocInfo rinfo(isolate, addr, RelocInfo::EMBEDDED_OBJECT, 0, NULL);
-      return UpdateEmbeddedPointer(&rinfo, callback);
-    }
-    case OBJECT_SLOT: {
-      return callback(reinterpret_cast<Object**>(addr));
-    }
-    case NUMBER_OF_SLOT_TYPES:
-      break;
-  }
-  UNREACHABLE();
-  return REMOVE_SLOT;
-}
-
-
 // Visitor for updating pointers from live objects in old spaces to new space.
 // It does not expect to encounter pointers to dead objects.
 class PointersUpdatingVisitor : public ObjectVisitor {
@@ -2946,22 +2830,24 @@ class PointersUpdatingVisitor : public ObjectVisitor {
     for (Object** p = start; p < end; p++) UpdateSlot(p);
   }
 
-  void VisitCell(RelocInfo* rinfo) override { UpdateCell(rinfo, UpdateSlot); }
+  void VisitCell(RelocInfo* rinfo) override {
+    UpdateTypedSlotHelper::UpdateCell(rinfo, UpdateSlot);
+  }
 
   void VisitEmbeddedPointer(RelocInfo* rinfo) override {
-    UpdateEmbeddedPointer(rinfo, UpdateSlot);
+    UpdateTypedSlotHelper::UpdateEmbeddedPointer(rinfo, UpdateSlot);
   }
 
   void VisitCodeTarget(RelocInfo* rinfo) override {
-    UpdateCodeTarget(rinfo, UpdateSlot);
+    UpdateTypedSlotHelper::UpdateCodeTarget(rinfo, UpdateSlot);
   }
 
   void VisitCodeEntry(Address entry_address) override {
-    UpdateCodeEntry(entry_address, UpdateSlot);
+    UpdateTypedSlotHelper::UpdateCodeEntry(entry_address, UpdateSlot);
   }
 
   void VisitDebugTarget(RelocInfo* rinfo) override {
-    UpdateDebugTarget(rinfo, UpdateSlot);
+    UpdateTypedSlotHelper::UpdateDebugTarget(rinfo, UpdateSlot);
   }
 };
 
@@ -3218,7 +3104,8 @@ bool MarkCompactCollector::Evacuator::EvacuateSinglePage(Page* p,
     PrintIsolate(heap()->isolate(),
                  "evacuation[%p]: page=%p new_space=%d age_mark_tag=%c "
                  "page_evacuation=%d executable=%d live_bytes=%d time=%f\n",
-                 this, p, p->InNewSpace(), age_mark_tag,
+                 static_cast<void*>(this), static_cast<void*>(p),
+                 p->InNewSpace(), age_mark_tag,
                  p->IsFlagSet(MemoryChunk::PAGE_NEW_OLD_PROMOTION),
                  p->IsFlagSet(MemoryChunk::IS_EXECUTABLE), saved_live_bytes,
                  evacuation_time);
@@ -3232,24 +3119,35 @@ bool MarkCompactCollector::Evacuator::EvacuateSinglePage(Page* p,
 bool MarkCompactCollector::Evacuator::EvacuatePage(Page* page) {
   bool result = false;
   DCHECK(page->SweepingDone());
+  Heap* heap = page->heap();
   switch (ComputeEvacuationMode(page)) {
     case kObjectsNewToOld:
       result = EvacuateSinglePage<kClearMarkbits>(page, &new_space_visitor_);
+      heap->array_buffer_tracker()
+          ->ScanAndFreeDeadArrayBuffers<
+              LocalArrayBufferTracker::kForwardingPointer>(page);
       DCHECK(result);
       USE(result);
       break;
     case kPageNewToOld:
       result = EvacuateSinglePage<kKeepMarking>(page, &new_space_page_visitor);
+      // ArrayBufferTracker will be updated during sweeping.
       DCHECK(result);
       USE(result);
       break;
     case kObjectsOldToOld:
       result = EvacuateSinglePage<kClearMarkbits>(page, &old_space_visitor_);
+      heap->array_buffer_tracker()
+          ->ScanAndFreeDeadArrayBuffers<
+              LocalArrayBufferTracker::kForwardingPointer>(page);
       if (!result) {
         // Aborted compaction page. We can record slots here to have them
         // processed in parallel later on.
         EvacuateRecordOnlyVisitor record_visitor(collector_->heap());
         result = EvacuateSinglePage<kKeepMarking>(page, &record_visitor);
+        heap->array_buffer_tracker()
+            ->ScanAndFreeDeadArrayBuffers<LocalArrayBufferTracker::kMarkBit>(
+                page);
         DCHECK(result);
         USE(result);
         // We need to return failure here to indicate that we want this page
@@ -3492,6 +3390,7 @@ int MarkCompactCollector::Sweeper::RawSweep(PagedSpace* space, Page* p,
     freed_bytes = space->UnaccountedFree(free_start, size);
     max_freed_bytes = Max(freed_bytes, max_freed_bytes);
   }
+  p->heap()->array_buffer_tracker()->FreeDead(p);
   p->concurrent_sweeping_state().SetValue(Page::kSweepingDone);
   return FreeList::GuaranteedAllocatable(static_cast<int>(max_freed_bytes));
 }
@@ -3512,6 +3411,7 @@ void MarkCompactCollector::InvalidateCode(Code* code) {
     Address start = code->instruction_start();
     Address end = code->address() + code->Size();
     RememberedSet<OLD_TO_OLD>::RemoveRangeTyped(page, start, end);
+    RememberedSet<OLD_TO_NEW>::RemoveRangeTyped(page, start, end);
   }
 }
 
@@ -3634,11 +3534,6 @@ void MarkCompactCollector::EvacuateNewSpaceAndCandidates() {
       }
     }
 
-    // EvacuateNewSpaceAndCandidates iterates over new space objects and for
-    // ArrayBuffers either re-registers them as live or promotes them. This is
-    // needed to properly free them.
-    heap()->array_buffer_tracker()->FreeDead(false);
-
     // Deallocate evacuated candidate pages.
     ReleaseEvacuationCandidates();
   }
@@ -3684,7 +3579,18 @@ class PointerUpdateJobTraits {
       Isolate* isolate = heap->isolate();
       RememberedSet<OLD_TO_OLD>::IterateTyped(
           chunk, [isolate](SlotType type, Address slot) {
-            return UpdateTypedSlot(isolate, type, slot, UpdateSlot);
+            return UpdateTypedSlotHelper::UpdateTypedSlot(isolate, type, slot,
+                                                          UpdateSlot);
+          });
+    } else {
+      Isolate* isolate = heap->isolate();
+      RememberedSet<OLD_TO_NEW>::IterateTyped(
+          chunk, [isolate, heap](SlotType type, Address slot) {
+            return UpdateTypedSlotHelper::UpdateTypedSlot(
+                isolate, type, slot, [heap](Object** slot) {
+                  return CheckAndUpdateOldToNewSlot(
+                      heap, reinterpret_cast<Address>(slot));
+                });
           });
     }
   }
@@ -3950,7 +3856,8 @@ void MarkCompactCollector::StartSweepSpace(PagedSpace* space) {
     if (p->LiveBytes() == 0) {
       if (unused_page_present) {
         if (FLAG_gc_verbose) {
-          PrintIsolate(isolate(), "sweeping: released page: %p", p);
+          PrintIsolate(isolate(), "sweeping: released page: %p",
+                       static_cast<void*>(p));
         }
         space->ReleasePage(p);
         continue;

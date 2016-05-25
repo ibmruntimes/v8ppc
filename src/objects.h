@@ -1975,17 +1975,8 @@ class JSReceiver: public HeapObject {
       Handle<JSReceiver> object);
 
   // ES6 [[OwnPropertyKeys]] (modulo return type)
-  MUST_USE_RESULT static MaybeHandle<FixedArray> OwnPropertyKeys(
-      Handle<JSReceiver> object) {
-    return GetKeys(object, OWN_ONLY, ALL_PROPERTIES, CONVERT_TO_STRING);
-  }
-
-  // Computes the enumerable keys for a JSObject. Used for implementing
-  // "for (n in object) { }".
-  MUST_USE_RESULT static MaybeHandle<FixedArray> GetKeys(
-      Handle<JSReceiver> object, KeyCollectionType type, PropertyFilter filter,
-      GetKeysConversion keys_conversion = KEEP_NUMBERS,
-      bool filter_proxy_keys_ = true);
+  MUST_USE_RESULT static inline MaybeHandle<FixedArray> OwnPropertyKeys(
+      Handle<JSReceiver> object);
 
   MUST_USE_RESULT static MaybeHandle<FixedArray> GetOwnValues(
       Handle<JSReceiver> object, PropertyFilter filter);
@@ -3980,6 +3971,8 @@ class OrderedHashSet: public OrderedHashTable<
 
   static Handle<OrderedHashSet> Add(Handle<OrderedHashSet> table,
                                     Handle<Object> value);
+  static Handle<FixedArray> ConvertToKeysArray(Handle<OrderedHashSet> table,
+                                               GetKeysConversion convert);
 };
 
 
@@ -6420,14 +6413,6 @@ class Script: public Struct {
   // resource is accessible. Otherwise, always return true.
   inline bool HasValidSource();
 
-  // Convert code offset into column number.
-  static int GetColumnNumber(Handle<Script> script, int code_offset);
-
-  // Convert code offset into (zero-based) line number.
-  // The non-handlified version does not allocate, but may be much slower.
-  static int GetLineNumber(Handle<Script> script, int code_offset);
-  int GetLineNumber(int code_pos);
-
   static Handle<Object> GetNameOrSourceURL(Handle<Script> script);
 
   // Set eval origin for stack trace formatting.
@@ -6439,6 +6424,33 @@ class Script: public Struct {
 
   // Init line_ends array with source code positions of line ends.
   static void InitLineEnds(Handle<Script> script);
+
+  // Convert code offset into column number.
+  static int GetColumnNumber(Handle<Script> script, int code_offset);
+
+  // Convert code offset into (zero-based) line number.
+  // The non-handlified version does not allocate, but may be much slower.
+  static int GetLineNumber(Handle<Script> script, int code_offset);
+  int GetLineNumber(int code_pos);
+
+  // Carries information about a source position.
+  struct PositionInfo {
+    PositionInfo() : line(-1), column(-1), line_start(-1), line_end(-1) {}
+
+    int line;        // Zero-based line number.
+    int column;      // Zero-based column number.
+    int line_start;  // Position of first character in line.
+    int line_end;    // Position of last (non-linebreak) character in line.
+  };
+
+  // Specifies whether to add offsets to position infos.
+  enum OffsetFlag { NO_OFFSET = 0, WITH_OFFSET = 1 };
+
+  // Retrieves information about the given position, optionally with an offset.
+  // Returns false on failure, and otherwise writes into the given info object
+  // on success.
+  bool GetPositionInfo(int position, PositionInfo* info,
+                       OffsetFlag offset_flag);
 
   // Get the JS object wrapping the given script; create it if none exists.
   static Handle<JSObject> GetWrapper(Handle<Script> script);
@@ -7580,9 +7592,6 @@ class JSFunction: public JSObject {
   // Dispatched behavior.
   DECLARE_PRINTER(JSFunction)
   DECLARE_VERIFIER(JSFunction)
-
-  // Returns the number of allocated literals.
-  inline int NumberOfLiterals();
 
   // The function's name if it is configured, otherwise shared function info
   // debug name.

@@ -123,9 +123,9 @@ class JSGraph : public ZoneObject {
   // stubs and runtime functions that do not require a context.
   Node* NoContextConstant() { return ZeroConstant(); }
 
-  // Creates an empty frame states for cases where we know that a function
-  // cannot deopt.
-  Node* EmptyFrameState();
+  // Creates an empty StateValues node, used when we don't have any concrete
+  // values for a certain part of the frame state.
+  Node* EmptyStateValues();
 
   // Create a control node that serves as dependency for dead nodes.
   Node* Dead();
@@ -158,7 +158,7 @@ class JSGraph : public ZoneObject {
     kZeroConstant,
     kOneConstant,
     kNaNConstant,
-    kEmptyFrameState,
+    kEmptyStateValues,
     kDead,
     kNumCachedNodes  // Must remain last.
   };

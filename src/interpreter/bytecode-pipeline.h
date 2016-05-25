@@ -52,6 +52,7 @@ class BytecodeSourceInfo final {
   }
 
   bool is_statement() const { return is_valid() && is_statement_; }
+  bool is_expression() const { return is_valid() && !is_statement_; }
 
   bool is_valid() const { return source_position_ != kUninitializedPosition; }
   void set_invalid() { source_position_ = kUninitializedPosition; }
@@ -99,6 +100,11 @@ class BytecodeNode final : ZoneObject {
 
   // Return the size when this node is serialized to a bytecode array.
   size_t Size() const;
+
+  // Transform to a node representing |new_bytecode| which has one
+  // operand more than the current bytecode.
+  void Transform(Bytecode new_bytecode, uint32_t extra_operand,
+                 OperandScale extra_operand_scale);
 
   Bytecode bytecode() const { return bytecode_; }
 

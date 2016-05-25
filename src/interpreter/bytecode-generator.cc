@@ -218,6 +218,7 @@ class BytecodeGenerator::ControlScopeForTopLevel final
       case CMD_CONTINUE:
         UNREACHABLE();
       case CMD_RETURN:
+        generator()->builder()->SetReturnPosition();
         generator()->builder()->Return();
         return true;
       case CMD_RETHROW:
@@ -656,13 +657,7 @@ void BytecodeGenerator::BuildIndexedJump(Register index, size_t start_index,
         .JumpIfTrue(&(targets[i]));
   }
 
-  RegisterAllocationScope register_scope(this);
-  Register reason = register_allocator()->NewRegister();
-  BailoutReason bailout_reason = BailoutReason::kInvalidJumpTableIndex;
-  builder()
-      ->LoadLiteral(Smi::FromInt(static_cast<int>(bailout_reason)))
-      .StoreAccumulatorInRegister(reason)
-      .CallRuntime(Runtime::kAbort, reason, 1);
+  BuildAbort(BailoutReason::kInvalidJumpTableIndex);
 }
 
 void BytecodeGenerator::VisitIterationHeader(IterationStatement* stmt,
@@ -1958,6 +1953,15 @@ void BytecodeGenerator::BuildKeyedSuperPropertyStore(Register receiver,
   builder()->CallRuntime(function_id, receiver, 4);
 }
 
+void BytecodeGenerator::BuildAbort(BailoutReason bailout_reason) {
+  RegisterAllocationScope register_scope(this);
+  Register reason = register_allocator()->NewRegister();
+  builder()
+      ->LoadLiteral(Smi::FromInt(static_cast<int>(bailout_reason)))
+      .StoreAccumulatorInRegister(reason)
+      .CallRuntime(Runtime::kAbort, reason, 1);
+}
+
 void BytecodeGenerator::BuildThrowReferenceError(Handle<String> name) {
   RegisterAllocationScope register_scope(this);
   Register name_reg = register_allocator()->NewRegister();
@@ -2297,12 +2301,12 @@ void BytecodeGenerator::VisitYield(Yield* expr) {
 
     Register input = register_allocator()->NewRegister();
     builder()
-        ->CallRuntime(Runtime::kGeneratorGetInput, generator, 1)
+        ->CallRuntime(Runtime::kInlineGeneratorGetInput, generator, 1)
         .StoreAccumulatorInRegister(input);
 
     Register resume_mode = register_allocator()->NewRegister();
     builder()
-        ->CallRuntime(Runtime::kGeneratorGetResumeMode, generator, 1)
+        ->CallRuntime(Runtime::kInlineGeneratorGetResumeMode, generator, 1)
         .StoreAccumulatorInRegister(resume_mode);
 
     // Now dispatch on resume mode.
@@ -2329,7 +2333,7 @@ void BytecodeGenerator::VisitYield(Yield* expr) {
           ->MoveRegister(input, value)
           .LoadTrue()
           .StoreAccumulatorInRegister(done)
-          .CallRuntime(Runtime::kCreateIterResultObject, value, 2);
+          .CallRuntime(Runtime::kInlineCreateIterResultObject, value, 2);
       execution_control()->ReturnAccumulator();
     }
 

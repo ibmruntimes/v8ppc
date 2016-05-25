@@ -434,6 +434,11 @@ bool UseIgnition(CompilationInfo* info) {
     return false;
   }
 
+  // Since we can't OSR from Ignition, skip Ignition for asm.js functions.
+  if (info->shared_info()->asm_function()) {
+    return false;
+  }
+
   // Checks whether top level functions should be passed by the filter.
   if (info->shared_info()->is_toplevel()) {
     Vector<const char> filter = CStrVector(FLAG_ignition_filter);
@@ -1686,11 +1691,10 @@ Handle<SharedFunctionInfo> Compiler::GetSharedFunctionInfoForNative(
   Handle<JSFunction> fun = Handle<JSFunction>::cast(Utils::OpenHandle(
       *fun_template->GetFunction(v8_isolate->GetCurrentContext())
            .ToLocalChecked()));
-  const int literals = fun->NumberOfLiterals();
   Handle<Code> code = Handle<Code>(fun->shared()->code());
   Handle<Code> construct_stub = Handle<Code>(fun->shared()->construct_stub());
   Handle<SharedFunctionInfo> shared = isolate->factory()->NewSharedFunctionInfo(
-      name, literals, FunctionKind::kNormalFunction, code,
+      name, fun->shared()->num_literals(), FunctionKind::kNormalFunction, code,
       Handle<ScopeInfo>(fun->shared()->scope_info()));
   shared->set_construct_stub(*construct_stub);
   shared->set_feedback_vector(fun->shared()->feedback_vector());

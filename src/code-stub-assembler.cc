@@ -691,20 +691,84 @@ Node* CodeStubAssembler::AllocateJSArray(ElementsKind kind, Node* array_map,
       elements, FixedArray::kLengthOffset,
       mode == SMI_PARAMETERS ? capacity_node : SmiTag(capacity_node));
 
-  Node* double_hole = Float64Constant(bit_cast<double>(kHoleNanInt64));
+  int const first_element_offset = FixedArray::kHeaderSize - kHeapObjectTag;
   Node* hole = HeapConstant(Handle<HeapObject>(heap->the_hole_value()));
+  Node* double_hole =
+      Is64() ? Int64Constant(kHoleNanInt64) : Int32Constant(kHoleNanLower32);
+  DCHECK_EQ(kHoleNanLower32, kHoleNanUpper32);
   if (constant_capacity && capacity <= kElementLoopUnrollThreshold) {
     for (int i = 0; i < capacity; ++i) {
       if (is_double) {
-        StoreFixedDoubleArrayElement(elements, Int32Constant(i), double_hole);
+        Node* offset = ElementOffsetFromIndex(Int32Constant(i), kind, mode,
+                                              first_element_offset);
+        // Don't use doubles to store the hole double, since manipulating the
+        // signaling NaN used for the hole in C++, e.g. with bit_cast, will
+        // change its value on ia32 (the x87 stack is used to return values
+        // and stores to the stack silently clear the signalling bit).
+        //
+        // TODO(danno): When we have a Float32/Float64 wrapper class that
+        // preserves double bits during manipulation, remove this code/change
+        // this to an indexed Float64 store.
+        if (Is64()) {
+          StoreNoWriteBarrier(MachineRepresentation::kWord64, elements, offset,
+                              double_hole);
+        } else {
+          StoreNoWriteBarrier(MachineRepresentation::kWord32, elements, offset,
+                              double_hole);
+          offset = ElementOffsetFromIndex(Int32Constant(i), kind, mode,
+                                          first_element_offset + kPointerSize);
+          StoreNoWriteBarrier(MachineRepresentation::kWord32, elements, offset,
+                              double_hole);
+        }
       } else {
         StoreFixedArrayElement(elements, Int32Constant(i), hole,
                                SKIP_WRITE_BARRIER);
       }
     }
   } else {
-    // TODO(danno): Add a loop for initialization
-    UNIMPLEMENTED();
+    Variable current(this, MachineRepresentation::kTagged);
+    Label test(this);
+    Label decrement(this, &current);
+    Label done(this);
+    Node* limit = IntPtrAdd(elements, IntPtrConstant(first_element_offset));
+    current.Bind(
+        IntPtrAdd(limit, ElementOffsetFromIndex(capacity_node, kind, mode, 0)));
+
+    Branch(WordEqual(current.value(), limit), &done, &decrement);
+
+    Bind(&decrement);
+    current.Bind(IntPtrSub(
+        current.value(),
+        Int32Constant(IsFastDoubleElementsKind(kind) ? kDoubleSize
+                                                     : kPointerSize)));
+    if (is_double) {
+      // Don't use doubles to store the hole double, since manipulating the
+      // signaling NaN used for the hole in C++, e.g. with bit_cast, will
+      // change its value on ia32 (the x87 stack is used to return values
+      // and stores to the stack silently clear the signalling bit).
+      //
+      // TODO(danno): When we have a Float32/Float64 wrapper class that
+      // preserves double bits during manipulation, remove this code/change
+      // this to an indexed Float64 store.
+      if (Is64()) {
+        StoreNoWriteBarrier(MachineRepresentation::kWord64, current.value(),
+                            double_hole);
+      } else {
+        StoreNoWriteBarrier(MachineRepresentation::kWord32, current.value(),
+                            double_hole);
+        StoreNoWriteBarrier(
+            MachineRepresentation::kWord32,
+            IntPtrAdd(current.value(), Int32Constant(kPointerSize)),
+            double_hole);
+      }
+    } else {
+      StoreNoWriteBarrier(MachineRepresentation::kTagged, current.value(),
+                          hole);
+    }
+    Node* compare = WordNotEqual(current.value(), limit);
+    Branch(compare, &decrement, &done);
+
+    Bind(&done);
   }
 
   return array;
@@ -1542,13 +1606,16 @@ compiler::Node* CodeStubAssembler::ElementOffsetFromIndex(Node* index_node,
   if (constant_index) {
     return IntPtrConstant(base_size + element_size * index);
   }
+  if (Is64() && mode == INTEGER_PARAMETERS) {
+    index_node = ChangeInt32ToInt64(index_node);
+  }
   if (base_size == 0) {
     return (element_size_shift >= 0)
                ? WordShl(index_node, IntPtrConstant(element_size_shift))
                : WordShr(index_node, IntPtrConstant(-element_size_shift));
   }
   return IntPtrAdd(
-      Int32Constant(base_size),
+      IntPtrConstant(base_size),
       (element_size_shift >= 0)
           ? WordShl(index_node, IntPtrConstant(element_size_shift))
           : WordShr(index_node, IntPtrConstant(-element_size_shift)));

@@ -1626,8 +1626,6 @@ void Heap::Scavenge() {
 
   scavenge_collector_->SelectScavengingVisitorsTable();
 
-  array_buffer_tracker()->PrepareDiscoveryInNewSpace();
-
   // Flip the semispaces.  After flipping, to space is empty, from space has
   // live objects.
   new_space_.Flip();
@@ -1670,8 +1668,20 @@ void Heap::Scavenge() {
     // Copy objects reachable from the old generation.
     TRACE_GC(tracer(), GCTracer::Scope::SCAVENGER_OLD_TO_NEW_POINTERS);
     RememberedSet<OLD_TO_NEW>::Iterate(this, [this](Address addr) {
-      return Scavenger::CheckAndScavengeObject(this, addr);
+      return Scavenger::CheckAndScavengeObject(this, addr, DEFAULT_PROMOTION);
     });
+
+    RememberedSet<OLD_TO_NEW>::IterateTyped(
+        this, [this](SlotType type, Address addr) {
+          return UpdateTypedSlotHelper::UpdateTypedSlot(
+              isolate(), type, addr, [this](Object** addr) {
+                // We expect that objects referenced by code are long living.
+                // If we do not force promotion, then we need to clear
+                // old_to_new slots in dead code objects after mark-compact.
+                return Scavenger::CheckAndScavengeObject(
+                    this, reinterpret_cast<Address>(addr), FORCE_PROMOTION);
+              });
+        });
   }
 
   {
@@ -1735,7 +1745,7 @@ void Heap::Scavenge() {
   // Set age mark.
   new_space_.set_age_mark(new_space_.top());
 
-  array_buffer_tracker()->FreeDead(true);
+  array_buffer_tracker()->FreeDeadInNewSpace();
 
   // Update how much has survived scavenge.
   IncrementYoungSurvivorsCounter(static_cast<int>(
@@ -4657,8 +4667,8 @@ void Heap::IteratePromotedObjectPointers(HeapObject* object, Address start,
     Object* target = *slot;
     if (target->IsHeapObject()) {
       if (Heap::InFromSpace(target)) {
-        callback(reinterpret_cast<HeapObject**>(slot),
-                 HeapObject::cast(target));
+        callback(reinterpret_cast<HeapObject**>(slot), HeapObject::cast(target),
+                 DEFAULT_PROMOTION);
         Object* new_target = *slot;
         if (InNewSpace(new_target)) {
           SLOW_DCHECK(Heap::InToSpace(new_target));

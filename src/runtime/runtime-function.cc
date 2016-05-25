@@ -21,15 +21,13 @@ RUNTIME_FUNCTION(Runtime_FunctionGetName) {
   DCHECK(args.length() == 1);
 
   CONVERT_ARG_HANDLE_CHECKED(JSReceiver, function, 0);
-  Handle<Object> result;
   if (function->IsJSBoundFunction()) {
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-        isolate, result, JSBoundFunction::GetName(
-                             isolate, Handle<JSBoundFunction>::cast(function)));
+    RETURN_RESULT_OR_FAILURE(
+        isolate, JSBoundFunction::GetName(
+                     isolate, Handle<JSBoundFunction>::cast(function)));
   } else {
-    result = JSFunction::GetName(isolate, Handle<JSFunction>::cast(function));
+    return *JSFunction::GetName(isolate, Handle<JSFunction>::cast(function));
   }
-  return *result;
 }
 
 
@@ -189,6 +187,7 @@ RUNTIME_FUNCTION(Runtime_SetCode) {
   }
   target_shared->set_scope_info(source_shared->scope_info());
   target_shared->set_length(source_shared->length());
+  target_shared->set_num_literals(source_shared->num_literals());
   target_shared->set_feedback_vector(source_shared->feedback_vector());
   target_shared->set_internal_formal_parameter_count(
       source_shared->internal_formal_parameter_count());
@@ -213,10 +212,9 @@ RUNTIME_FUNCTION(Runtime_SetCode) {
   Handle<Context> context(source->context());
   target->set_context(*context);
 
-  int number_of_literals = source->NumberOfLiterals();
   Handle<LiteralsArray> literals =
       LiteralsArray::New(isolate, handle(target_shared->feedback_vector()),
-                         number_of_literals, TENURED);
+                         target_shared->num_literals(), TENURED);
   target->set_literals(*literals);
 
   if (isolate->logger()->is_logging_code_events() ||
@@ -276,11 +274,8 @@ RUNTIME_FUNCTION(Runtime_Call) {
   for (int i = 0; i < argc; ++i) {
     argv[i] = args.at<Object>(2 + i);
   }
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
-      Execution::Call(isolate, target, receiver, argc, argv.start()));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(
+      isolate, Execution::Call(isolate, target, receiver, argc, argv.start()));
 }
 
 

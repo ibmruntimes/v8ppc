@@ -51,7 +51,6 @@ class EscapeAnalysis {
                           VirtualState* states);
 
   void ForwardVirtualState(Node* node);
-  int OffsetFromAccess(Node* node);
   VirtualState* CopyForModificationAt(VirtualState* state, Node* node);
   VirtualObject* CopyForModificationAt(VirtualObject* obj, VirtualState* state,
                                        Node* node);
@@ -71,6 +70,7 @@ class EscapeAnalysis {
   CommonOperatorBuilder* common() const { return common_; }
 
   Zone* const zone_;
+  Node* const slot_not_analyzed_;
   CommonOperatorBuilder* const common_;
   EscapeStatusAnalysis* status_analysis_;
   ZoneVector<VirtualState*> virtual_states_;

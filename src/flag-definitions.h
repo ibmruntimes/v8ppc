@@ -206,18 +206,7 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_async_await, "harmony async-await")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
-#ifdef V8_I18N_SUPPORT
-#define HARMONY_STAGED(V)                                                    \
-  V(harmony_regexp_lookbehind, "harmony regexp lookbehind")                  \
-  V(harmony_tailcalls, "harmony tail calls")                                 \
-  V(harmony_explicit_tailcalls, "harmony explicit tail calls")               \
-  V(harmony_object_values_entries, "harmony Object.values / Object.entries") \
-  V(harmony_object_own_property_descriptors,                                 \
-    "harmony Object.getOwnPropertyDescriptors()")                            \
-  V(harmony_string_padding, "harmony String-padding methods")                \
-  V(icu_case_mapping, "case mapping with ICU rather than Unibrow")
-#else
-#define HARMONY_STAGED(V)                                                    \
+#define HARMONY_STAGED_BASE(V)                                               \
   V(harmony_regexp_lookbehind, "harmony regexp lookbehind")                  \
   V(harmony_tailcalls, "harmony tail calls")                                 \
   V(harmony_explicit_tailcalls, "harmony explicit tail calls")               \
@@ -225,6 +214,13 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_object_own_property_descriptors,                                 \
     "harmony Object.getOwnPropertyDescriptors()")                            \
   V(harmony_string_padding, "harmony String-padding methods")
+
+#ifdef V8_I18N_SUPPORT
+#define HARMONY_STAGED(V) \
+  HARMONY_STAGED_BASE(V)  \
+  V(icu_case_mapping, "case mapping with ICU rather than Unibrow")
+#else
+#define HARMONY_STAGED(V) HARMONY_STAGED_BASE(V)
 #endif
 
 // Features that are shipping (turned on by default, but internal flag remains).
@@ -302,7 +298,7 @@ DEFINE_BOOL(string_slices, true, "use string slices")
 
 // Flags for Ignition.
 DEFINE_BOOL(ignition, false, "use ignition interpreter")
-DEFINE_BOOL(ignition_eager, true, "eagerly compile and parse with ignition")
+DEFINE_BOOL(ignition_eager, false, "eagerly compile and parse with ignition")
 DEFINE_BOOL(ignition_generators, false,
             "enable experimental ignition support for generators")
 DEFINE_STRING(ignition_filter, "*", "filter for ignition interpreter")
@@ -484,6 +480,7 @@ DEFINE_BOOL(trace_wasm_encoder, false, "trace encoding of wasm code")
 DEFINE_BOOL(trace_wasm_decoder, false, "trace decoding of wasm code")
 DEFINE_BOOL(trace_wasm_decode_time, false, "trace decoding time of wasm code")
 DEFINE_BOOL(trace_wasm_compiler, false, "trace compiling of wasm code")
+DEFINE_BOOL(trace_wasm_interpreter, false, "trace interpretation of wasm code")
 DEFINE_INT(trace_wasm_ast_start, 0,
            "start function for WASM AST trace (inclusive)")
 DEFINE_INT(trace_wasm_ast_end, 0, "end function for WASM AST trace (exclusive)")
@@ -785,13 +782,8 @@ DEFINE_INT(random_seed, 0,
 
 // objects.cc
 DEFINE_BOOL(trace_weak_arrays, false, "Trace WeakFixedArray usage")
-DEFINE_BOOL(track_prototype_users, false,
-            "Keep track of which maps refer to a given prototype object")
 DEFINE_BOOL(trace_prototype_users, false,
             "Trace updates to prototype user tracking")
-DEFINE_BOOL(eliminate_prototype_chain_checks, true,
-            "Collapse prototype chain checks into single-cell checks")
-DEFINE_IMPLICATION(eliminate_prototype_chain_checks, track_prototype_users)
 DEFINE_BOOL(use_verbose_printer, true, "allows verbose printing")
 DEFINE_BOOL(trace_for_in_enumerate, false, "Trace for-in enumerate slow-paths")
 #if TRACE_MAPS
@@ -840,6 +832,7 @@ DEFINE_BOOL(randomize_hashes, true,
 DEFINE_INT(hash_seed, 0,
            "Fixed seed to use to hash property keys (0 means random)"
            "(with snapshots this option cannot override the baked-in seed)")
+DEFINE_BOOL(trace_rail, false, "trace RAIL mode")
 
 // runtime.cc
 DEFINE_BOOL(runtime_call_stats, false, "report runtime call counts and times")

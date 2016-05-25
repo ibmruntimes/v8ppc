@@ -8,31 +8,11 @@
 #include "src/char-predicates-inl.h"
 #include "src/isolate-inl.h"
 #include "src/json-parser.h"
+#include "src/json-stringifier.h"
 #include "src/objects-inl.h"
 
 namespace v8 {
 namespace internal {
-
-RUNTIME_FUNCTION(Runtime_QuoteJSONString) {
-  HandleScope scope(isolate);
-  CONVERT_ARG_HANDLE_CHECKED(String, string, 0);
-  DCHECK(args.length() == 1);
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result, Runtime::BasicJsonStringifyString(isolate, string));
-  return *result;
-}
-
-RUNTIME_FUNCTION(Runtime_BasicJSONStringify) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 2);
-  CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
-  CONVERT_ARG_HANDLE_CHECKED(String, gap, 1);
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result, Runtime::BasicJsonStringify(isolate, object, gap));
-  return *result;
-}
 
 RUNTIME_FUNCTION(Runtime_ParseJson) {
   HandleScope scope(isolate);
@@ -43,12 +23,9 @@ RUNTIME_FUNCTION(Runtime_ParseJson) {
                                      Object::ToString(isolate, object));
   source = String::Flatten(source);
   // Optimized fast case where we only have Latin1 characters.
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, result,
-                                     source->IsSeqOneByteString()
-                                         ? JsonParser<true>::Parse(source)
-                                         : JsonParser<false>::Parse(source));
-  return *result;
+  RETURN_RESULT_OR_FAILURE(isolate, source->IsSeqOneByteString()
+                                        ? JsonParser<true>::Parse(source)
+                                        : JsonParser<false>::Parse(source));
 }
 
 }  // namespace internal

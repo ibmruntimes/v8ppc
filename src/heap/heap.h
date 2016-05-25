@@ -301,7 +301,10 @@ class Scavenger;
 class ScavengeJob;
 class WeakObjectRetainer;
 
-typedef void (*ObjectSlotCallback)(HeapObject** from, HeapObject* to);
+enum PromotionMode { FORCE_PROMOTION, DEFAULT_PROMOTION };
+
+typedef void (*ObjectSlotCallback)(HeapObject** from, HeapObject* to,
+                                   PromotionMode mode);
 
 // A queue of objects promoted during scavenge. Each object is accompanied
 // by it's size to avoid dereferencing a map pointer for scanning.
@@ -813,6 +816,16 @@ class Heap {
 
   void update_amount_of_external_allocated_memory(int64_t delta) {
     amount_of_external_allocated_memory_ += delta;
+  }
+
+  void update_amount_of_external_allocated_freed_memory(intptr_t freed) {
+    amount_of_external_allocated_memory_freed_.Increment(freed);
+  }
+
+  void account_amount_of_external_allocated_freed_memory() {
+    amount_of_external_allocated_memory_ -=
+        amount_of_external_allocated_memory_freed_.Value();
+    amount_of_external_allocated_memory_freed_.SetValue(0);
   }
 
   void DeoptMarkedAllocationSites();
@@ -1981,6 +1994,8 @@ class Heap {
 
   // Caches the amount of external memory registered at the last global gc.
   int64_t amount_of_external_allocated_memory_at_last_global_gc_;
+
+  base::AtomicNumber<intptr_t> amount_of_external_allocated_memory_freed_;
 
   // This can be calculated directly from a pointer to the heap; however, it is
   // more expedient to get at the isolate directly from within Heap methods.

@@ -100,14 +100,6 @@ const char* Bytecodes::OperandSizeToString(OperandSize operand_size) {
   return "";
 }
 
-
-// static
-uint8_t Bytecodes::ToByte(Bytecode bytecode) {
-  DCHECK(bytecode <= Bytecode::kLast);
-  return static_cast<uint8_t>(bytecode);
-}
-
-
 // static
 Bytecode Bytecodes::FromByte(uint8_t value) {
   Bytecode bytecode = static_cast<Bytecode>(value);
@@ -486,6 +478,15 @@ bool Bytecodes::IsPrefixScalingBytecode(Bytecode bytecode) {
     default:
       return false;
   }
+}
+
+// static
+bool Bytecodes::IsWithoutExternalSideEffects(Bytecode bytecode) {
+  // These bytecodes only manipulate interpreter frame state and will
+  // never throw.
+  return (IsAccumulatorLoadWithoutEffects(bytecode) || IsLdarOrStar(bytecode) ||
+          bytecode == Bytecode::kMov || bytecode == Bytecode::kNop ||
+          IsJump(bytecode));
 }
 
 // static

@@ -124,6 +124,17 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
 #define RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, T) \
   RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, MaybeHandle<T>())
 
+#define RETURN_RESULT_OR_FAILURE(isolate, call)     \
+  do {                                              \
+    Handle<Object> __result__;                      \
+    Isolate* __isolate__ = (isolate);               \
+    if (!(call).ToHandle(&__result__)) {            \
+      DCHECK(__isolate__->has_pending_exception()); \
+      return __isolate__->heap()->exception();      \
+    }                                               \
+    return *__result__;                             \
+  } while (false)
+
 #define ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, dst, call, value)  \
   do {                                                               \
     if (!(call).ToHandle(&dst)) {                                    \
@@ -132,21 +143,26 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
     }                                                                \
   } while (false)
 
-#define ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, dst, call)  \
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(                             \
-      isolate, dst, call, isolate->heap()->exception())
+#define ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, dst, call)          \
+  do {                                                                  \
+    Isolate* __isolate__ = (isolate);                                   \
+    ASSIGN_RETURN_ON_EXCEPTION_VALUE(__isolate__, dst, call,            \
+                                     __isolate__->heap()->exception()); \
+  } while (false)
 
 #define ASSIGN_RETURN_ON_EXCEPTION(isolate, dst, call, T)  \
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, dst, call, MaybeHandle<T>())
 
-#define THROW_NEW_ERROR(isolate, call, T)               \
-  do {                                                  \
-    return isolate->Throw<T>(isolate->factory()->call); \
+#define THROW_NEW_ERROR(isolate, call, T)                       \
+  do {                                                          \
+    Isolate* __isolate__ = (isolate);                           \
+    return __isolate__->Throw<T>(__isolate__->factory()->call); \
   } while (false)
 
-#define THROW_NEW_ERROR_RETURN_FAILURE(isolate, call) \
-  do {                                                \
-    return isolate->Throw(*isolate->factory()->call); \
+#define THROW_NEW_ERROR_RETURN_FAILURE(isolate, call)         \
+  do {                                                        \
+    Isolate* __isolate__ = (isolate);                         \
+    return __isolate__->Throw(*__isolate__->factory()->call); \
   } while (false)
 
 #define RETURN_ON_EXCEPTION_VALUE(isolate, call, value)            \
@@ -157,8 +173,12 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
     }                                                              \
   } while (false)
 
-#define RETURN_FAILURE_ON_EXCEPTION(isolate, call)  \
-  RETURN_ON_EXCEPTION_VALUE(isolate, call, isolate->heap()->exception())
+#define RETURN_FAILURE_ON_EXCEPTION(isolate, call)               \
+  do {                                                           \
+    Isolate* __isolate__ = (isolate);                            \
+    RETURN_ON_EXCEPTION_VALUE(__isolate__, call,                 \
+                              __isolate__->heap()->exception()); \
+  } while (false);
 
 #define RETURN_ON_EXCEPTION(isolate, call, T)  \
   RETURN_ON_EXCEPTION_VALUE(isolate, call, MaybeHandle<T>())
@@ -1110,6 +1130,8 @@ class Isolate {
 
   bool IsInAnyContext(Object* object, uint32_t index);
 
+  void SetRAILMode(RAILMode rail_mode);
+
  protected:
   explicit Isolate(bool enable_serializer);
   bool IsArrayOrObjectPrototype(Object* object);
@@ -1221,6 +1243,24 @@ class Isolate {
 
   void RunMicrotasksInternal();
 
+  const char* RAILModeName(RAILMode rail_mode) const {
+    switch (rail_mode) {
+      case PERFORMANCE_DEFAULT:
+        return "DEFAULT";
+      case PERFORMANCE_RESPONSE:
+        return "RESPONSE";
+      case PERFORMANCE_ANIMATION:
+        return "ANIMATION";
+      case PERFORMANCE_IDLE:
+        return "IDLE";
+      case PERFORMANCE_LOAD:
+        return "LOAD";
+      default:
+        UNREACHABLE();
+    }
+    return "";
+  }
+
   base::Atomic32 id_;
   EntryStackItem* entry_stack_;
   int stack_trace_nesting_level_;
@@ -1267,6 +1307,7 @@ class Isolate {
   DateCache* date_cache_;
   CallInterfaceDescriptorData* call_descriptor_data_;
   base::RandomNumberGenerator* random_number_generator_;
+  RAILMode rail_mode_;
 
   // Whether the isolate has been created for snapshotting.
   bool serializer_enabled_;

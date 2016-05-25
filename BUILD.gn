@@ -11,8 +11,7 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
-# Because standalone V8 builds are not supported, assume this is part of a
-# Chromium build.
+import("gni/v8.gni")
 import("//build_overrides/v8.gni")
 
 import("snapshot_toolchain.gni")
@@ -69,15 +68,6 @@ declare_args() {
 
 v8_random_seed = "314159265"
 v8_toolset_for_shell = "host"
-
-if (is_msan) {
-  # Running the V8-generated code on an ARM simulator is a powerful hack that
-  # allows the tool to see the memory accesses from JITted code. Without this
-  # flag, JS code causes false positive reports from MSan.
-  v8_target_arch = "arm64"
-} else {
-  v8_target_arch = target_cpu
-}
 
 if (v8_use_snapshot && v8_use_external_startup_data) {
   snapshot_target = ":v8_external_snapshot"
@@ -731,8 +721,7 @@ v8_source_set("v8_base") {
   visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   sources = [
-    # TODO(fmeawad): This needs to be updated to support standalone V8 builds.
-    "../base/trace_event/common/trace_event_common.h",
+    "//base/trace_event/common/trace_event_common.h",
     "include/v8-debug.h",
     "include/v8-experimental.h",
     "include/v8-platform.h",
@@ -1170,6 +1159,7 @@ v8_source_set("v8_base") {
     "src/handles.h",
     "src/hashmap.h",
     "src/heap-symbols.h",
+    "src/heap/array-buffer-tracker-inl.h",
     "src/heap/array-buffer-tracker.cc",
     "src/heap/array-buffer-tracker.h",
     "src/heap/gc-idle-time-handler.cc",
@@ -1264,7 +1254,9 @@ v8_source_set("v8_base") {
     "src/isolate-inl.h",
     "src/isolate.cc",
     "src/isolate.h",
+    "src/json-parser.cc",
     "src/json-parser.h",
+    "src/json-stringifier.cc",
     "src/json-stringifier.h",
     "src/keys.cc",
     "src/keys.h",
@@ -1500,6 +1492,8 @@ v8_source_set("v8_base") {
     "src/wasm/wasm-external-refs.h",
     "src/wasm/wasm-function-name-table.cc",
     "src/wasm/wasm-function-name-table.h",
+    "src/wasm/wasm-interpreter.cc",
+    "src/wasm/wasm-interpreter.h",
     "src/wasm/wasm-js.cc",
     "src/wasm/wasm-js.h",
     "src/wasm/wasm-macro-gen.h",
@@ -2030,6 +2024,34 @@ if (current_toolchain == v8_snapshot_toolchain) {
 # Public targets
 #
 
+want_v8_shell = (
+    (current_toolchain == host_toolchain && v8_toolset_for_shell == "host") ||
+    (current_toolchain == v8_snapshot_toolchain &&
+     v8_toolset_for_shell == "host") ||
+    (current_toolchain != host_toolchain && v8_toolset_for_shell == "target"))
+
+group("gn_all") {
+  testonly = true
+
+  deps = [
+    ":d8",
+  ]
+
+  if (want_v8_shell) {
+    deps += [
+      ":v8_shell",
+    ]
+  }
+
+  if (host_os != "mac" || !is_android) {
+    # These items don't compile for Android on Mac.
+    deps += [
+      "test/cctest:cctest",
+      "test/unittests:unittests",
+    ]
+  }
+}
+
 if (is_component_build) {
   component("v8") {
     sources = [
@@ -2102,7 +2124,7 @@ executable("d8") {
   }
 }
 
-if ((current_toolchain == host_toolchain && v8_toolset_for_shell == "host") || (current_toolchain == v8_snapshot_toolchain && v8_toolset_for_shell == "host") || (current_toolchain != host_toolchain && v8_toolset_for_shell == "target")) {
+if (want_v8_shell) {
   executable("v8_shell") {
     sources = [
       "samples/shell.cc",

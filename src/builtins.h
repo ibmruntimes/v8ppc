@@ -121,6 +121,8 @@ inline bool operator&(BuiltinExtraArguments lhs, BuiltinExtraArguments rhs) {
                                                                \
   V(GlobalEval, kTarget)                                       \
                                                                \
+  V(JsonStringify, kNone)                                      \
+                                                               \
   V(MathAcos, kNone)                                           \
   V(MathAsin, kNone)                                           \
   V(MathAtan, kNone)                                           \
@@ -166,6 +168,8 @@ inline bool operator&(BuiltinExtraArguments lhs, BuiltinExtraArguments rhs) {
   V(ReflectPreventExtensions, kNone)                           \
   V(ReflectSet, kNone)                                         \
   V(ReflectSetPrototypeOf, kNone)                              \
+                                                               \
+  V(StringFromCharCode, kNone)                                 \
                                                                \
   V(SymbolConstructor, kNone)                                  \
   V(SymbolConstructor_ConstructStub, kTarget)                  \

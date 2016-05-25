@@ -504,19 +504,21 @@ MemoryChunk* MemoryChunk::Initialize(Heap* heap, Address base, size_t size,
   chunk->InitializeReservedMemory();
   chunk->old_to_new_slots_ = nullptr;
   chunk->old_to_old_slots_ = nullptr;
+  chunk->typed_old_to_new_slots_ = nullptr;
   chunk->typed_old_to_old_slots_ = nullptr;
   chunk->skip_list_ = nullptr;
   chunk->write_barrier_counter_ = kWriteBarrierCounterGranularity;
   chunk->progress_bar_ = 0;
   chunk->high_water_mark_.SetValue(static_cast<intptr_t>(area_start - base));
   chunk->concurrent_sweeping_state().SetValue(kSweepingDone);
-  chunk->mutex_ = nullptr;
+  chunk->mutex_ = new base::Mutex();
   chunk->available_in_free_list_ = 0;
   chunk->wasted_memory_ = 0;
   chunk->ResetLiveBytes();
   Bitmap::Clear(chunk);
   chunk->set_next_chunk(nullptr);
   chunk->set_prev_chunk(nullptr);
+  chunk->local_tracker_.SetValue(nullptr);
 
   DCHECK(OFFSET_OF(MemoryChunk, flags_) == kFlagsOffset);
   DCHECK(OFFSET_OF(MemoryChunk, live_byte_count_) == kLiveBytesOffset);
@@ -1036,6 +1038,10 @@ void MemoryChunk::ReleaseAllocatedMemory() {
   }
   if (old_to_new_slots_ != nullptr) ReleaseOldToNewSlots();
   if (old_to_old_slots_ != nullptr) ReleaseOldToOldSlots();
+  if (typed_old_to_new_slots_ != nullptr) ReleaseTypedOldToNewSlots();
+  if (typed_old_to_old_slots_ != nullptr) ReleaseTypedOldToOldSlots();
+
+  if (local_tracker_.Value() != nullptr) ReleaseLocalTracker();
 }
 
 static SlotSet* AllocateSlotSet(size_t size, Address page_start) {
@@ -1068,6 +1074,16 @@ void MemoryChunk::ReleaseOldToOldSlots() {
   old_to_old_slots_ = nullptr;
 }
 
+void MemoryChunk::AllocateTypedOldToNewSlots() {
+  DCHECK(nullptr == typed_old_to_new_slots_);
+  typed_old_to_new_slots_ = new TypedSlotSet(address());
+}
+
+void MemoryChunk::ReleaseTypedOldToNewSlots() {
+  delete typed_old_to_new_slots_;
+  typed_old_to_new_slots_ = nullptr;
+}
+
 void MemoryChunk::AllocateTypedOldToOldSlots() {
   DCHECK(nullptr == typed_old_to_old_slots_);
   typed_old_to_old_slots_ = new TypedSlotSet(address());
@@ -1077,6 +1093,12 @@ void MemoryChunk::ReleaseTypedOldToOldSlots() {
   delete typed_old_to_old_slots_;
   typed_old_to_old_slots_ = nullptr;
 }
+
+void MemoryChunk::ReleaseLocalTracker() {
+  delete local_tracker_.Value();
+  local_tracker_.SetValue(nullptr);
+}
+
 // -----------------------------------------------------------------------------
 // PagedSpace implementation
 
@@ -1252,7 +1274,8 @@ bool PagedSpace::Expand() {
     Bitmap::SetAllBits(p);
     p->SetFlag(Page::BLACK_PAGE);
     if (FLAG_trace_incremental_marking) {
-      PrintIsolate(heap()->isolate(), "Added black page %p\n", p);
+      PrintIsolate(heap()->isolate(), "Added black page %p\n",
+                   static_cast<void*>(p));
     }
   }
 
@@ -2557,10 +2580,11 @@ void FreeList::RemoveCategory(FreeListCategory* category) {
 
 void FreeList::PrintCategories(FreeListCategoryType type) {
   FreeListCategoryIterator it(this, type);
-  PrintF("FreeList[%p, top=%p, %d] ", this, categories_[type], type);
+  PrintF("FreeList[%p, top=%p, %d] ", static_cast<void*>(this),
+         static_cast<void*>(categories_[type]), type);
   while (it.HasNext()) {
     FreeListCategory* current = it.Next();
-    PrintF("%p -> ", current);
+    PrintF("%p -> ", static_cast<void*>(current));
   }
   PrintF("null\n");
 }
@@ -3205,7 +3229,7 @@ void LargeObjectSpace::CollectCodeStatistics() {
 
 void Page::Print() {
   // Make a best-effort to print the objects in the page.
-  PrintF("Page@%p in %s\n", this->address(),
+  PrintF("Page@%p in %s\n", static_cast<void*>(this->address()),
          AllocationSpaceName(this->owner()->identity()));
   printf(" --------------------------------------\n");
   HeapObjectIterator objects(this);

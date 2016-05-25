@@ -51,7 +51,7 @@
 #include "src/utils.h"
 #include "src/vm-state.h"
 #include "test/cctest/heap/heap-tester.h"
-#include "test/cctest/heap/utils-inl.h"
+#include "test/cctest/heap/heap-utils.h"
 
 static const bool kLogThreading = false;
 
@@ -634,7 +634,7 @@ TEST(MakingExternalUnalignedOneByteString) {
       "slice('abcdefghijklmnopqrstuvwxyz');"));
 
   // Trigger GCs so that the newly allocated string moves to old gen.
-  SimulateFullSpace(CcTest::heap()->old_space());
+  i::heap::SimulateFullSpace(CcTest::heap()->old_space());
   CcTest::heap()->CollectGarbage(i::NEW_SPACE);  // in survivor space now
   CcTest::heap()->CollectGarbage(i::NEW_SPACE);  // in old gen now
 
@@ -14828,8 +14828,8 @@ UNINITIALIZED_TEST(SetJitCodeEventHandler) {
     for (int i = 0; i < kIterations; ++i) {
       LocalContext env(isolate);
       i::AlwaysAllocateScope always_allocate(i_isolate);
-      SimulateFullSpace(i::FLAG_ignition ? heap->old_space()
-                                         : heap->code_space());
+      i::heap::SimulateFullSpace(i::FLAG_ignition ? heap->old_space()
+                                                  : heap->code_space());
       CompileRun(script);
 
       // Keep a strong reference to the code object in the handle scope.
@@ -19031,7 +19031,7 @@ void PrologueCallbackAlloc(v8::Isolate* isolate,
   ++prologue_call_count_alloc;
 
   // Simulate full heap to see if we will reenter this callback
-  SimulateFullSpace(CcTest::heap()->new_space());
+  i::heap::SimulateFullSpace(CcTest::heap()->new_space());
 
   Local<Object> obj = Object::New(isolate);
   CHECK(!obj.IsEmpty());
@@ -19051,7 +19051,7 @@ void EpilogueCallbackAlloc(v8::Isolate* isolate,
   ++epilogue_call_count_alloc;
 
   // Simulate full heap to see if we will reenter this callback
-  SimulateFullSpace(CcTest::heap()->new_space());
+  i::heap::SimulateFullSpace(CcTest::heap()->new_space());
 
   Local<Object> obj = Object::New(isolate);
   CHECK(!obj.IsEmpty());
@@ -23450,6 +23450,88 @@ TEST(ScriptNameAndLineNumber) {
   CHECK_EQ(0, strcmp(url, *utf8_name));
   int line_number = script->GetUnboundScript()->GetLineNumber(0);
   CHECK_EQ(13, line_number);
+}
+
+TEST(ScriptPositionInfo) {
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::HandleScope scope(isolate);
+  const char* url = "http://www.foo.com/foo.js";
+  v8::ScriptOrigin origin(v8_str(url), v8::Integer::New(isolate, 13));
+  v8::ScriptCompiler::Source script_source(v8_str("var foo;\n"
+                                                  "var bar;\n"
+                                                  "var fisk = foo + bar;\n"),
+                                           origin);
+  Local<Script> script =
+      v8::ScriptCompiler::Compile(env.local(), &script_source).ToLocalChecked();
+
+  i::Handle<i::SharedFunctionInfo> obj = i::Handle<i::SharedFunctionInfo>::cast(
+      v8::Utils::OpenHandle(*script->GetUnboundScript()));
+  CHECK(obj->script()->IsScript());
+
+  i::Handle<i::Script> script1(i::Script::cast(obj->script()));
+
+  v8::internal::Script::PositionInfo info;
+
+  // With offset.
+
+  // Behave as if 0 was passed if position is negative.
+  CHECK(script1->GetPositionInfo(-1, &info, script1->WITH_OFFSET));
+  CHECK_EQ(13, info.line);
+  CHECK_EQ(0, info.column);
+  CHECK_EQ(0, info.line_start);
+  CHECK_EQ(8, info.line_end);
+
+  CHECK(script1->GetPositionInfo(0, &info, script1->WITH_OFFSET));
+  CHECK_EQ(13, info.line);
+  CHECK_EQ(0, info.column);
+  CHECK_EQ(0, info.line_start);
+  CHECK_EQ(8, info.line_end);
+
+  CHECK(script1->GetPositionInfo(8, &info, script1->WITH_OFFSET));
+  CHECK_EQ(13, info.line);
+  CHECK_EQ(8, info.column);
+  CHECK_EQ(0, info.line_start);
+  CHECK_EQ(8, info.line_end);
+
+  CHECK(script1->GetPositionInfo(9, &info, script1->WITH_OFFSET));
+  CHECK_EQ(14, info.line);
+  CHECK_EQ(0, info.column);
+  CHECK_EQ(9, info.line_start);
+  CHECK_EQ(17, info.line_end);
+
+  // Fail when position is larger than script size.
+  CHECK(!script1->GetPositionInfo(220384, &info, script1->WITH_OFFSET));
+
+  // Without offset.
+
+  // Behave as if 0 was passed if position is negative.
+  CHECK(script1->GetPositionInfo(-1, &info, script1->NO_OFFSET));
+  CHECK_EQ(0, info.line);
+  CHECK_EQ(0, info.column);
+  CHECK_EQ(0, info.line_start);
+  CHECK_EQ(8, info.line_end);
+
+  CHECK(script1->GetPositionInfo(0, &info, script1->NO_OFFSET));
+  CHECK_EQ(0, info.line);
+  CHECK_EQ(0, info.column);
+  CHECK_EQ(0, info.line_start);
+  CHECK_EQ(8, info.line_end);
+
+  CHECK(script1->GetPositionInfo(8, &info, script1->NO_OFFSET));
+  CHECK_EQ(0, info.line);
+  CHECK_EQ(8, info.column);
+  CHECK_EQ(0, info.line_start);
+  CHECK_EQ(8, info.line_end);
+
+  CHECK(script1->GetPositionInfo(9, &info, script1->NO_OFFSET));
+  CHECK_EQ(1, info.line);
+  CHECK_EQ(0, info.column);
+  CHECK_EQ(9, info.line_start);
+  CHECK_EQ(17, info.line_end);
+
+  // Fail when position is larger than script size.
+  CHECK(!script1->GetPositionInfo(220384, &info, script1->NO_OFFSET));
 }
 
 void CheckMagicComments(Local<Script> script, const char* expected_source_url,

@@ -40,6 +40,7 @@
 #include "src/icu_util.h"
 #include "src/isolate-inl.h"
 #include "src/json-parser.h"
+#include "src/json-stringifier.h"
 #include "src/messages.h"
 #include "src/parsing/parser.h"
 #include "src/parsing/scanner-character-streams.h"
@@ -2773,13 +2774,14 @@ MaybeLocal<String> JSON::Stringify(Local<Context> context,
                                    Local<String> gap) {
   PREPARE_FOR_EXECUTION(context, JSON, Stringify, String);
   i::Handle<i::Object> object = Utils::OpenHandle(*json_object);
+  i::Handle<i::Object> replacer = isolate->factory()->undefined_value();
   i::Handle<i::String> gap_string = gap.IsEmpty()
                                         ? isolate->factory()->empty_string()
                                         : Utils::OpenHandle(*gap);
   i::Handle<i::Object> maybe;
-  has_pending_exception =
-      !i::Runtime::BasicJsonStringify(isolate, object, gap_string)
-           .ToHandle(&maybe);
+  has_pending_exception = !i::JsonStringifier(isolate)
+                               .Stringify(object, replacer, gap_string)
+                               .ToHandle(&maybe);
   RETURN_ON_FAILED_EXECUTION(String);
   Local<String> result;
   has_pending_exception =
@@ -3870,9 +3872,9 @@ MaybeLocal<Array> v8::Object::GetPropertyNames(Local<Context> context) {
   PREPARE_FOR_EXECUTION(context, Object, GetPropertyNames, Array);
   auto self = Utils::OpenHandle(this);
   i::Handle<i::FixedArray> value;
-  has_pending_exception =
-      !i::JSReceiver::GetKeys(self, i::INCLUDE_PROTOS, i::ENUMERABLE_STRINGS)
-           .ToHandle(&value);
+  has_pending_exception = !i::KeyAccumulator::GetKeys(self, i::INCLUDE_PROTOS,
+                                                      i::ENUMERABLE_STRINGS)
+                               .ToHandle(&value);
   RETURN_ON_FAILED_EXECUTION(Array);
   DCHECK(self->map()->EnumLength() == i::kInvalidEnumCacheSentinel ||
          self->map()->EnumLength() == 0 ||
@@ -3903,8 +3905,8 @@ MaybeLocal<Array> v8::Object::GetOwnPropertyNames(Local<Context> context,
   auto self = Utils::OpenHandle(this);
   i::Handle<i::FixedArray> value;
   has_pending_exception =
-      !i::JSReceiver::GetKeys(self, i::OWN_ONLY,
-                              static_cast<i::PropertyFilter>(filter))
+      !i::KeyAccumulator::GetKeys(self, i::OWN_ONLY,
+                                  static_cast<i::PropertyFilter>(filter))
            .ToHandle(&value);
   RETURN_ON_FAILED_EXECUTION(Array);
   DCHECK(self->map()->EnumLength() == i::kInvalidEnumCacheSentinel ||
@@ -7684,6 +7686,11 @@ void Isolate::MemoryPressureNotification(MemoryPressureLevel level) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
   return isolate->heap()->MemoryPressureNotification(level,
                                                      Locker::IsLocked(this));
+}
+
+void Isolate::SetRAILMode(RAILMode rail_mode) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  return isolate->SetRAILMode(rail_mode);
 }
 
 void Isolate::SetJitCodeEventHandler(JitCodeEventOptions options,
