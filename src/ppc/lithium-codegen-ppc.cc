@@ -1520,6 +1520,9 @@ void LCodeGen::DoFlooringDivI(LFlooringDivI* instr) {
   // We performed a truncating division. Correct the result.
   __ subi(result, result, Operand(1));
   __ bind(&done);
+#if V8_TARGET_ARCH_PPC64
+  __ extsw(result, result);
+#endif
 }
 
 
