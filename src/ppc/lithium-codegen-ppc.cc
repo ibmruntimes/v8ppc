@@ -1327,6 +1327,10 @@ void LCodeGen::DoDivI(LDivI* instr) {
     }
   }
 
+#if V8_TARGET_ARCH_PPC64
+  __ extsw(result, result);
+#endif
+
   if (!hdiv->CheckFlag(HInstruction::kAllUsesTruncatingToInt32)) {
     // Deoptimize if remainder is not 0.
     Register scratch = scratch0();
