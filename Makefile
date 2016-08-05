@@ -294,5 +294,6 @@ $(ENVFILE).new:
 # Dependencies.
 # Remember to keep these in sync with the DEPS file.
 dependencies:
-	svn checkout --force http://gyp.googlecode.com/svn/trunk build/gyp \
-	    --revision 1501
+	rm -rf build/gyp
+	git clone https://chromium.googlesource.com/external/gyp  build/gyp
+	cd build/gyp; git reset --hard f7bc250ccc4d619a1cf238db87e5979f89ff36d7
