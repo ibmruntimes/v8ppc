@@ -19,7 +19,7 @@ bytecodes: [
                 B(Star), R(0),
   /*   30 E> */ B(StackCheck),
   /*   44 S> */ B(LdaSmi), U8(10),
-  /*   44 E> */ B(Star), R(0),
+                B(Star), R(0),
                 B(LdaUndefined),
   /*   48 S> */ B(Return),
 ]
@@ -59,20 +59,19 @@ snippet: "
 "
 frame size: 3
 parameter count: 1
-bytecode array length: 32
+bytecode array length: 30
 bytecodes: [
                 B(LdaTheHole),
                 B(Star), R(0),
   /*   30 E> */ B(StackCheck),
   /*   48 S> */ B(LdaSmi), U8(20),
-  /*   48 E> */ B(Star), R(1),
+                B(Star), R(1),
                 B(Ldar), R(0),
                 B(JumpIfNotHole), U8(11),
                 B(LdaConstant), U8(0),
                 B(Star), R(2),
-                B(CallRuntime), U16(Runtime::kThrowReferenceError), R(2), U8(1),
+  /*   48 E> */ B(CallRuntime), U16(Runtime::kThrowReferenceError), R(2), U8(1),
                 B(CallRuntime), U16(Runtime::kThrowConstAssignError), R(0), U8(0),
-                B(Ldar), R(1),
                 B(Star), R(0),
                 B(LdaUndefined),
   /*   55 S> */ B(Return),
@@ -89,7 +88,7 @@ snippet: "
 "
 frame size: 3
 parameter count: 1
-bytecode array length: 36
+bytecode array length: 32
 bytecodes: [
                 B(LdaTheHole),
                 B(Star), R(0),
@@ -97,15 +96,13 @@ bytecodes: [
   /*   44 S> */ B(LdaSmi), U8(10),
                 B(Star), R(0),
   /*   48 S> */ B(LdaSmi), U8(20),
-  /*   50 E> */ B(Star), R(1),
+                B(Star), R(1),
                 B(Ldar), R(0),
                 B(JumpIfNotHole), U8(11),
                 B(LdaConstant), U8(0),
                 B(Star), R(2),
-                B(CallRuntime), U16(Runtime::kThrowReferenceError), R(2), U8(1),
+  /*   50 E> */ B(CallRuntime), U16(Runtime::kThrowReferenceError), R(2), U8(1),
                 B(CallRuntime), U16(Runtime::kThrowConstAssignError), R(0), U8(0),
-                B(Ldar), R(1),
-                B(Star), R(0),
                 B(LdaUndefined),
   /*   56 S> */ B(Return),
 ]

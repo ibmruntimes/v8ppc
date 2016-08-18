@@ -6,6 +6,7 @@
 #define V8_COMPILER_ACCESS_BUILDER_H_
 
 #include "src/compiler/simplified-operator.h"
+#include "src/elements-kind.h"
 
 namespace v8 {
 namespace internal {
@@ -58,8 +59,8 @@ class AccessBuilder final : public AllStatic {
   // Provides access to JSGeneratorObject::continuation() field.
   static FieldAccess ForJSGeneratorObjectContinuation();
 
-  // Provides access to JSGeneratorObject::input() field.
-  static FieldAccess ForJSGeneratorObjectInput();
+  // Provides access to JSGeneratorObject::input_or_debug_pos() field.
+  static FieldAccess ForJSGeneratorObjectInputOrDebugPos();
 
   // Provides access to JSGeneratorObject::operand_stack() field.
   static FieldAccess ForJSGeneratorObjectOperandStack();
@@ -79,6 +80,15 @@ class AccessBuilder final : public AllStatic {
   // Provides access to JSArrayBufferView::buffer() field.
   static FieldAccess ForJSArrayBufferViewBuffer();
 
+  // Provides access to JSArrayBufferView::byteLength() field.
+  static FieldAccess ForJSArrayBufferViewByteLength();
+
+  // Provides access to JSArrayBufferView::byteOffset() field.
+  static FieldAccess ForJSArrayBufferViewByteOffset();
+
+  // Provides access to JSTypedArray::length() field.
+  static FieldAccess ForJSTypedArrayLength();
+
   // Provides access to JSDate fields.
   static FieldAccess ForJSDateField(JSDate::FieldIndex index);
 
@@ -96,6 +106,12 @@ class AccessBuilder final : public AllStatic {
 
   // Provides access to FixedArray::length() field.
   static FieldAccess ForFixedArrayLength();
+
+  // Provides access to FixedTypedArrayBase::base_pointer() field.
+  static FieldAccess ForFixedTypedArrayBaseBasePointer();
+
+  // Provides access to FixedTypedArrayBase::external_pointer() field.
+  static FieldAccess ForFixedTypedArrayBaseExternalPointer();
 
   // Provides access to DescriptorArray::enum_cache() field.
   static FieldAccess ForDescriptorArrayEnumCache();
@@ -118,8 +134,38 @@ class AccessBuilder final : public AllStatic {
   // Provides access to Map::prototype() field.
   static FieldAccess ForMapPrototype();
 
+  // Provides access to Name::hash_field() field.
+  static FieldAccess ForNameHashField();
+
   // Provides access to String::length() field.
   static FieldAccess ForStringLength();
+
+  // Provides access to ConsString::first() field.
+  static FieldAccess ForConsStringFirst();
+
+  // Provides access to ConsString::second() field.
+  static FieldAccess ForConsStringSecond();
+
+  // Provides access to SlicedString::offset() field.
+  static FieldAccess ForSlicedStringOffset();
+
+  // Provides access to SlicedString::parent() field.
+  static FieldAccess ForSlicedStringParent();
+
+  // Provides access to ExternalString::resource_data() field.
+  static FieldAccess ForExternalStringResourceData();
+
+  // Provides access to ExternalOneByteString characters.
+  static ElementAccess ForExternalOneByteStringCharacter();
+
+  // Provides access to ExternalTwoByteString characters.
+  static ElementAccess ForExternalTwoByteStringCharacter();
+
+  // Provides access to SeqOneByteString characters.
+  static ElementAccess ForSeqOneByteStringCharacter();
+
+  // Provides access to SeqTwoByteString characters.
+  static ElementAccess ForSeqTwoByteStringCharacter();
 
   // Provides access to JSGlobalObject::global_proxy() field.
   static FieldAccess ForJSGlobalObjectGlobalProxy();
@@ -144,11 +190,9 @@ class AccessBuilder final : public AllStatic {
   static FieldAccess ForPropertyCellValue();
   static FieldAccess ForPropertyCellValue(Type* type);
 
-  // Provides access to SharedFunctionInfo::feedback_vector() field.
-  static FieldAccess ForSharedFunctionInfoTypeFeedbackVector();
-
   // Provides access to FixedArray elements.
   static ElementAccess ForFixedArrayElement();
+  static ElementAccess ForFixedArrayElement(ElementsKind kind);
 
   // Provides access to FixedDoubleArray elements.
   static ElementAccess ForFixedDoubleArrayElement();

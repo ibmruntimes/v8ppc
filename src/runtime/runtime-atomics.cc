@@ -12,7 +12,7 @@
 
 // Implement Atomic accesses to SharedArrayBuffers as defined in the
 // SharedArrayBuffer draft spec, found here
-// https://github.com/lars-t-hansen/ecmascript_sharedmem
+// https://github.com/tc39/ecmascript_sharedmem
 
 namespace v8 {
 namespace internal {
@@ -354,11 +354,11 @@ RUNTIME_FUNCTION(Runtime_AtomicsCompareExchange) {
   CONVERT_SIZE_ARG_CHECKED(index, 1);
   CONVERT_NUMBER_ARG_HANDLE_CHECKED(oldobj, 2);
   CONVERT_NUMBER_ARG_HANDLE_CHECKED(newobj, 3);
-  RUNTIME_ASSERT(sta->GetBuffer()->is_shared());
-  RUNTIME_ASSERT(index < NumberToSize(isolate, sta->length()));
+  CHECK(sta->GetBuffer()->is_shared());
+  CHECK_LT(index, NumberToSize(sta->length()));
 
   uint8_t* source = static_cast<uint8_t*>(sta->GetBuffer()->backing_store()) +
-                    NumberToSize(isolate, sta->byte_offset());
+                    NumberToSize(sta->byte_offset());
 
   switch (sta->type()) {
 #define TYPED_ARRAY_CASE(Type, typeName, TYPE, ctype, size) \
@@ -387,11 +387,11 @@ RUNTIME_FUNCTION(Runtime_AtomicsAdd) {
   CONVERT_ARG_HANDLE_CHECKED(JSTypedArray, sta, 0);
   CONVERT_SIZE_ARG_CHECKED(index, 1);
   CONVERT_NUMBER_ARG_HANDLE_CHECKED(value, 2);
-  RUNTIME_ASSERT(sta->GetBuffer()->is_shared());
-  RUNTIME_ASSERT(index < NumberToSize(isolate, sta->length()));
+  CHECK(sta->GetBuffer()->is_shared());
+  CHECK_LT(index, NumberToSize(sta->length()));
 
   uint8_t* source = static_cast<uint8_t*>(sta->GetBuffer()->backing_store()) +
-                    NumberToSize(isolate, sta->byte_offset());
+                    NumberToSize(sta->byte_offset());
 
   switch (sta->type()) {
 #define TYPED_ARRAY_CASE(Type, typeName, TYPE, ctype, size) \
@@ -419,11 +419,11 @@ RUNTIME_FUNCTION(Runtime_AtomicsSub) {
   CONVERT_ARG_HANDLE_CHECKED(JSTypedArray, sta, 0);
   CONVERT_SIZE_ARG_CHECKED(index, 1);
   CONVERT_NUMBER_ARG_HANDLE_CHECKED(value, 2);
-  RUNTIME_ASSERT(sta->GetBuffer()->is_shared());
-  RUNTIME_ASSERT(index < NumberToSize(isolate, sta->length()));
+  CHECK(sta->GetBuffer()->is_shared());
+  CHECK_LT(index, NumberToSize(sta->length()));
 
   uint8_t* source = static_cast<uint8_t*>(sta->GetBuffer()->backing_store()) +
-                    NumberToSize(isolate, sta->byte_offset());
+                    NumberToSize(sta->byte_offset());
 
   switch (sta->type()) {
 #define TYPED_ARRAY_CASE(Type, typeName, TYPE, ctype, size) \
@@ -451,11 +451,11 @@ RUNTIME_FUNCTION(Runtime_AtomicsAnd) {
   CONVERT_ARG_HANDLE_CHECKED(JSTypedArray, sta, 0);
   CONVERT_SIZE_ARG_CHECKED(index, 1);
   CONVERT_NUMBER_ARG_HANDLE_CHECKED(value, 2);
-  RUNTIME_ASSERT(sta->GetBuffer()->is_shared());
-  RUNTIME_ASSERT(index < NumberToSize(isolate, sta->length()));
+  CHECK(sta->GetBuffer()->is_shared());
+  CHECK_LT(index, NumberToSize(sta->length()));
 
   uint8_t* source = static_cast<uint8_t*>(sta->GetBuffer()->backing_store()) +
-                    NumberToSize(isolate, sta->byte_offset());
+                    NumberToSize(sta->byte_offset());
 
   switch (sta->type()) {
 #define TYPED_ARRAY_CASE(Type, typeName, TYPE, ctype, size) \
@@ -483,11 +483,11 @@ RUNTIME_FUNCTION(Runtime_AtomicsOr) {
   CONVERT_ARG_HANDLE_CHECKED(JSTypedArray, sta, 0);
   CONVERT_SIZE_ARG_CHECKED(index, 1);
   CONVERT_NUMBER_ARG_HANDLE_CHECKED(value, 2);
-  RUNTIME_ASSERT(sta->GetBuffer()->is_shared());
-  RUNTIME_ASSERT(index < NumberToSize(isolate, sta->length()));
+  CHECK(sta->GetBuffer()->is_shared());
+  CHECK_LT(index, NumberToSize(sta->length()));
 
   uint8_t* source = static_cast<uint8_t*>(sta->GetBuffer()->backing_store()) +
-                    NumberToSize(isolate, sta->byte_offset());
+                    NumberToSize(sta->byte_offset());
 
   switch (sta->type()) {
 #define TYPED_ARRAY_CASE(Type, typeName, TYPE, ctype, size) \
@@ -515,11 +515,11 @@ RUNTIME_FUNCTION(Runtime_AtomicsXor) {
   CONVERT_ARG_HANDLE_CHECKED(JSTypedArray, sta, 0);
   CONVERT_SIZE_ARG_CHECKED(index, 1);
   CONVERT_NUMBER_ARG_HANDLE_CHECKED(value, 2);
-  RUNTIME_ASSERT(sta->GetBuffer()->is_shared());
-  RUNTIME_ASSERT(index < NumberToSize(isolate, sta->length()));
+  CHECK(sta->GetBuffer()->is_shared());
+  CHECK_LT(index, NumberToSize(sta->length()));
 
   uint8_t* source = static_cast<uint8_t*>(sta->GetBuffer()->backing_store()) +
-                    NumberToSize(isolate, sta->byte_offset());
+                    NumberToSize(sta->byte_offset());
 
   switch (sta->type()) {
 #define TYPED_ARRAY_CASE(Type, typeName, TYPE, ctype, size) \
@@ -547,11 +547,11 @@ RUNTIME_FUNCTION(Runtime_AtomicsExchange) {
   CONVERT_ARG_HANDLE_CHECKED(JSTypedArray, sta, 0);
   CONVERT_SIZE_ARG_CHECKED(index, 1);
   CONVERT_NUMBER_ARG_HANDLE_CHECKED(value, 2);
-  RUNTIME_ASSERT(sta->GetBuffer()->is_shared());
-  RUNTIME_ASSERT(index < NumberToSize(isolate, sta->length()));
+  CHECK(sta->GetBuffer()->is_shared());
+  CHECK_LT(index, NumberToSize(sta->length()));
 
   uint8_t* source = static_cast<uint8_t*>(sta->GetBuffer()->backing_store()) +
-                    NumberToSize(isolate, sta->byte_offset());
+                    NumberToSize(sta->byte_offset());
 
   switch (sta->type()) {
 #define TYPED_ARRAY_CASE(Type, typeName, TYPE, ctype, size) \

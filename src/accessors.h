@@ -24,6 +24,7 @@ class AccessorInfo;
   V(ArrayLength)                  \
   V(BoundFunctionLength)          \
   V(BoundFunctionName)            \
+  V(ErrorStack)                   \
   V(FunctionArguments)            \
   V(FunctionCaller)               \
   V(FunctionName)                 \
@@ -46,9 +47,10 @@ class AccessorInfo;
   V(ScriptIsEmbedderDebugScript)  \
   V(StringLength)
 
-#define ACCESSOR_SETTER_LIST(V)        \
-  V(ReconfigureToDataProperty)         \
-  V(ArrayLengthSetter)                 \
+#define ACCESSOR_SETTER_LIST(V) \
+  V(ReconfigureToDataProperty)  \
+  V(ArrayLengthSetter)          \
+  V(ErrorStackSetter)           \
   V(FunctionPrototypeSetter)
 
 // Accessors contains all predefined proxy accessors.
@@ -85,10 +87,6 @@ class Accessors : public AllStatic {
   MUST_USE_RESULT static MaybeHandle<Object> FunctionSetPrototype(
       Handle<JSFunction> object, Handle<Object> value);
   static Handle<JSObject> FunctionGetArguments(Handle<JSFunction> object);
-
-  // Accessor infos.
-  static Handle<AccessorInfo> MakeModuleExport(
-      Handle<String> name, int index, PropertyAttributes attributes);
 
   // Returns true for properties that are accessors to object fields.
   // If true, *object_offset contains offset of object field.

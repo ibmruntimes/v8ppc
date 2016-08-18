@@ -82,9 +82,8 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kArm64Float32Sub:
     case kArm64Float32Mul:
     case kArm64Float32Div:
-    case kArm64Float32Max:
-    case kArm64Float32Min:
     case kArm64Float32Abs:
+    case kArm64Float32Neg:
     case kArm64Float32Sqrt:
     case kArm64Float32RoundDown:
     case kArm64Float64Cmp:
@@ -130,11 +129,13 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kArm64Float64InsertHighWord32:
     case kArm64Float64MoveU64:
     case kArm64U64MoveFloat64:
+    case kArm64Float64SilenceNaN:
       return kNoOpcodeFlags;
 
     case kArm64TestAndBranch32:
     case kArm64TestAndBranch:
     case kArm64CompareAndBranch32:
+    case kArm64CompareAndBranch:
       return kIsBlockTerminator;
 
     case kArm64LdrS:
@@ -143,6 +144,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kArm64Ldrsb:
     case kArm64Ldrh:
     case kArm64Ldrsh:
+    case kArm64Ldrsw:
     case kArm64LdrW:
     case kArm64Ldr:
       return kIsLoadOperation;
@@ -235,6 +237,7 @@ int InstructionScheduler::GetInstructionLatency(const Instruction* instr) {
     case kArm64Ldrh:
     case kArm64Ldrsb:
     case kArm64Ldrsh:
+    case kArm64Ldrsw:
       return 11;
 
     case kCheckedLoadInt8:
@@ -291,6 +294,7 @@ int InstructionScheduler::GetInstructionLatency(const Instruction* instr) {
 
     case kArm64Float32Abs:
     case kArm64Float32Cmp:
+    case kArm64Float32Neg:
     case kArm64Float64Abs:
     case kArm64Float64Cmp:
     case kArm64Float64Neg:

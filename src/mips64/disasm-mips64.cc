@@ -803,13 +803,11 @@ int Decoder::DecodeBreakInstr(Instruction* instr) {
     // This is stop(msg).
     Format(instr, "break, code: 'code");
     out_buffer_pos_ += SNPrintF(
-        out_buffer_ + out_buffer_pos_,
-        "\n%p       %08" PRIx64 "       stop msg: %s",
+        out_buffer_ + out_buffer_pos_, "\n%p       %08" PRIx64,
         static_cast<void*>(
             reinterpret_cast<int32_t*>(instr + Instruction::kInstrSize)),
         reinterpret_cast<uint64_t>(
-            *reinterpret_cast<char**>(instr + Instruction::kInstrSize)),
-        *reinterpret_cast<char**>(instr + Instruction::kInstrSize));
+            *reinterpret_cast<char**>(instr + Instruction::kInstrSize)));
     // Size 3: the break_ instr, plus embedded 64-bit char pointer.
     return 3 * Instruction::kInstrSize;
   } else {
@@ -1457,11 +1455,18 @@ void Decoder::DecodeTypeRegisterSPECIAL3(Instruction* instr) {
           Format(instr, "bitswap 'rd, 'rt");
           break;
         }
-        case SEB:
-        case SEH:
-        case WSBH:
-          UNREACHABLE();
+        case SEB: {
+          Format(instr, "seb     'rd, 'rt");
           break;
+        }
+        case SEH: {
+          Format(instr, "seh     'rd, 'rt");
+          break;
+        }
+        case WSBH: {
+          Format(instr, "wsbh    'rd, 'rt");
+          break;
+        }
         default: {
           sa >>= kBp2Bits;
           switch (sa) {
@@ -1492,10 +1497,14 @@ void Decoder::DecodeTypeRegisterSPECIAL3(Instruction* instr) {
           }
           break;
         }
-        case DSBH:
-        case DSHD:
-          UNREACHABLE();
+        case DSBH: {
+          Format(instr, "dsbh    'rd, 'rt");
           break;
+        }
+        case DSHD: {
+          Format(instr, "dshd    'rd, 'rt");
+          break;
+        }
         default: {
           sa >>= kBp3Bits;
           switch (sa) {

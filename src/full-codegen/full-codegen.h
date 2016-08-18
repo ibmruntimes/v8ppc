@@ -27,7 +27,7 @@ class JumpPatchSite;
 // -----------------------------------------------------------------------------
 // Full code generator.
 
-class FullCodeGenerator: public AstVisitor {
+class FullCodeGenerator final : public AstVisitor<FullCodeGenerator> {
  public:
   FullCodeGenerator(MacroAssembler* masm, CompilationInfo* info)
       : masm_(masm),
@@ -37,7 +37,6 @@ class FullCodeGenerator: public AstVisitor {
         scope_(info->scope()),
         nesting_stack_(NULL),
         loop_depth_(0),
-        try_catch_depth_(0),
         operand_stack_depth_(0),
         globals_(NULL),
         context_(NULL),
@@ -47,6 +46,8 @@ class FullCodeGenerator: public AstVisitor {
                          info->zone()),
         back_edges_(2, info->zone()),
         handler_table_(info->zone()),
+        source_position_table_builder_(info->zone(),
+                                       info->SourcePositionRecordingMode()),
         ic_total_count_(0) {
     DCHECK(!info->IsStub());
     Initialize();
@@ -198,23 +199,6 @@ class FullCodeGenerator: public AstVisitor {
       }
       return previous_;
     }
-  };
-
-  // A class literal expression
-  class NestedClassLiteral : public NestedStatement {
-   public:
-    NestedClassLiteral(FullCodeGenerator* codegen, ClassLiteral* lit)
-        : NestedStatement(codegen),
-          needs_context_(lit->scope() != nullptr &&
-                         lit->scope()->NeedsContext()) {}
-
-    NestedStatement* Exit(int* context_length) override {
-      if (needs_context_) ++(*context_length);
-      return previous_;
-    }
-
-   private:
-    const bool needs_context_;
   };
 
   class DeferredCommands {
@@ -386,8 +370,7 @@ class FullCodeGenerator: public AstVisitor {
 
   void VisitInDuplicateContext(Expression* expr);
 
-  void VisitDeclarations(ZoneList<Declaration*>* declarations) override;
-  void DeclareModules(Handle<FixedArray> descriptions);
+  void VisitDeclarations(ZoneList<Declaration*>* declarations);
   void DeclareGlobals(Handle<FixedArray> pairs);
   int DeclareGlobalsFlags();
 
@@ -510,13 +493,8 @@ class FullCodeGenerator: public AstVisitor {
   F(IsJSProxy)                          \
   F(Call)                               \
   F(NewObject)                          \
-  F(ValueOf)                            \
   F(StringCharFromCode)                 \
-  F(StringCharAt)                       \
-  F(OneByteSeqStringSetChar)            \
-  F(TwoByteSeqStringSetChar)            \
   F(IsJSReceiver)                       \
-  F(MathPow)                            \
   F(HasCachedArrayIndex)                \
   F(GetCachedArrayIndex)                \
   F(GetSuperConstructor)                \
@@ -531,7 +509,6 @@ class FullCodeGenerator: public AstVisitor {
   F(ToString)                           \
   F(ToLength)                           \
   F(ToNumber)                           \
-  F(ToName)                             \
   F(ToObject)                           \
   F(DebugIsActive)                      \
   F(CreateIterResultObject)
@@ -657,9 +634,10 @@ class FullCodeGenerator: public AstVisitor {
   void CallIC(Handle<Code> code,
               TypeFeedbackId id = TypeFeedbackId::None());
 
+  void CallLoadIC(TypeFeedbackId id = TypeFeedbackId::None());
   // Inside typeof reference errors are never thrown.
-  void CallLoadIC(TypeofMode typeof_mode,
-                  TypeFeedbackId id = TypeFeedbackId::None());
+  void CallLoadGlobalIC(TypeofMode typeof_mode,
+                        TypeFeedbackId id = TypeFeedbackId::None());
   void CallStoreIC(TypeFeedbackId id = TypeFeedbackId::None());
 
   void SetFunctionPosition(FunctionLiteral* fun);
@@ -687,8 +665,12 @@ class FullCodeGenerator: public AstVisitor {
     SetCallPosition(expr);
   }
 
+  void RecordStatementPosition(int pos);
+  void RecordPosition(int pos);
+
   // Non-local control flow support.
-  void EnterTryBlock(int handler_index, Label* handler);
+  void EnterTryBlock(int handler_index, Label* handler,
+                     HandlerTable::CatchPrediction catch_prediction);
   void ExitTryBlock(int handler_index);
   void EnterFinallyBlock();
   void ExitFinallyBlock();
@@ -739,7 +721,7 @@ class FullCodeGenerator: public AstVisitor {
   void PushCalleeAndWithBaseObject(Call* expr);
 
   // AST node visit functions.
-#define DECLARE_VISIT(type) void Visit##type(type* node) override;
+#define DECLARE_VISIT(type) void Visit##type(type* node);
   AST_NODE_LIST(DECLARE_VISIT)
 #undef DECLARE_VISIT
 
@@ -775,7 +757,7 @@ class FullCodeGenerator: public AstVisitor {
     unsigned range_end;
     unsigned handler_offset;
     int stack_depth;
-    int try_catch_depth;
+    HandlerTable::CatchPrediction catch_prediction;
   };
 
   class ExpressionContext BASE_EMBEDDED {
@@ -970,15 +952,13 @@ class FullCodeGenerator: public AstVisitor {
   Label return_label_;
   NestedStatement* nesting_stack_;
   int loop_depth_;
-  int try_catch_depth_;
   int operand_stack_depth_;
   ZoneList<Handle<Object> >* globals_;
-  Handle<FixedArray> modules_;
-  int module_index_;
   const ExpressionContext* context_;
   ZoneList<BailoutEntry> bailout_entries_;
   ZoneList<BackEdgeEntry> back_edges_;
   ZoneVector<HandlerTableEntry> handler_table_;
+  SourcePositionTableBuilder source_position_table_builder_;
   int ic_total_count_;
   Handle<Cell> profiling_counter_;
 

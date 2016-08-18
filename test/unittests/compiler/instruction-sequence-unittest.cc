@@ -55,7 +55,7 @@ InstructionSequenceTest::InstructionSequenceTest()
 
 void InstructionSequenceTest::SetNumRegs(int num_general_registers,
                                          int num_double_registers) {
-  CHECK(config_.is_empty());
+  CHECK(!config_);
   CHECK(instructions_.empty());
   CHECK(instruction_blocks_.empty());
   num_general_registers_ = num_general_registers;
@@ -64,12 +64,17 @@ void InstructionSequenceTest::SetNumRegs(int num_general_registers,
 
 
 RegisterConfiguration* InstructionSequenceTest::config() {
-  if (config_.is_empty()) {
-    config_.Reset(new RegisterConfiguration(
+  if (!config_) {
+    config_.reset(new RegisterConfiguration(
         num_general_registers_, num_double_registers_, num_general_registers_,
         num_double_registers_, num_double_registers_, allocatable_codes,
-        allocatable_double_codes, general_register_names_,
-        double_register_names_));
+        allocatable_double_codes,
+        kSimpleFPAliasing ? RegisterConfiguration::OVERLAP
+                          : RegisterConfiguration::COMBINE,
+        general_register_names_,
+        double_register_names_,  // float register names
+        double_register_names_,
+        double_register_names_));  // SIMD 128 register names
   }
   return config_.get();
 }

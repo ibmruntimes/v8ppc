@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --harmony-regexp-property --harmony-unicode-regexps
+// Flags: --harmony-regexp-property
 
 assertThrows("/\\p{In CJK}/u");
 assertThrows("/\\p{InCJKUnifiedIdeographs}/u");
@@ -15,7 +15,7 @@ assertThrows("/\\p{InCyrillic_Supplementary}/u");
 assertThrows("/\\p{InCyrillicSupplementary}/u");
 assertThrows("/\\p{InCyrillic_supplementary}/u");
 
-assertDoesNotThrow("/\\pC/u");
+assertDoesNotThrow("/\\p{C}/u");
 assertDoesNotThrow("/\\p{Other}/u");
 assertDoesNotThrow("/\\p{Cc}/u");
 assertDoesNotThrow("/\\p{Control}/u");

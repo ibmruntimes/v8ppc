@@ -18,10 +18,9 @@ bytecodes: [
   /*   30 E> */ B(StackCheck),
   /*   42 S> */ B(LdaSmi), U8(1),
                 B(Star), R(0),
-  /*   45 S> */ B(Star), R(1),
-                B(LdaSmi), U8(2),
-                B(Add), R(1),
-  /*   47 E> */ B(Star), R(0),
+  /*   45 S> */ B(AddSmi), U8(2), R(0),
+                B(Mov), R(0), R(1),
+                B(Star), R(0),
                 B(LdaUndefined),
   /*   53 S> */ B(Return),
 ]
@@ -36,15 +35,15 @@ snippet: "
 "
 frame size: 2
 parameter count: 1
-bytecode array length: 15
+bytecode array length: 17
 bytecodes: [
   /*   30 E> */ B(StackCheck),
   /*   42 S> */ B(LdaSmi), U8(1),
                 B(Star), R(0),
-  /*   45 S> */ B(Star), R(1),
-                B(LdaSmi), U8(2),
-                B(Div), R(1),
-  /*   47 E> */ B(Star), R(0),
+  /*   45 S> */ B(LdaSmi), U8(2),
+                B(Div), R(0), U8(1),
+                B(Mov), R(0), R(1),
+                B(Star), R(0),
                 B(LdaUndefined),
   /*   53 S> */ B(Return),
 ]
@@ -59,17 +58,15 @@ snippet: "
 "
 frame size: 3
 parameter count: 1
-bytecode array length: 26
+bytecode array length: 25
 bytecodes: [
   /*   30 E> */ B(StackCheck),
-  /*   42 S> */ B(CreateObjectLiteral), U8(0), U8(0), U8(1),
-                B(Star), R(1),
-                B(Star), R(0),
-  /*   54 S> */ B(Star), R(1),
-                B(LdrNamedProperty), R(1), U8(1), U8(1), R(2),
+  /*   42 S> */ B(CreateObjectLiteral), U8(0), U8(0), U8(1), R(1),
+                B(Mov), R(1), R(0),
+  /*   54 S> */ B(LdrNamedProperty), R(0), U8(1), U8(1), R(2),
                 B(LdaSmi), U8(2),
-                B(Mul), R(2),
-  /*   61 E> */ B(StaNamedPropertySloppy), R(1), U8(1), U8(3),
+                B(Mul), R(2), U8(3),
+  /*   61 E> */ B(StaNamedPropertySloppy), R(0), U8(1), U8(4),
                 B(LdaUndefined),
   /*   67 S> */ B(Return),
 ]
@@ -86,19 +83,17 @@ snippet: "
 "
 frame size: 4
 parameter count: 1
-bytecode array length: 29
+bytecode array length: 28
 bytecodes: [
   /*   30 E> */ B(StackCheck),
-  /*   42 S> */ B(CreateObjectLiteral), U8(0), U8(0), U8(1),
-                B(Star), R(1),
-                B(Star), R(0),
-  /*   52 S> */ B(Star), R(1),
-                B(LdaSmi), U8(1),
+  /*   42 S> */ B(CreateObjectLiteral), U8(0), U8(0), U8(1), R(1),
+                B(Mov), R(1), R(0),
+  /*   52 S> */ B(LdaSmi), U8(1),
                 B(Star), R(2),
-                B(LdrKeyedProperty), R(1), U8(1), R(3),
+                B(LdrKeyedProperty), R(0), U8(1), R(3),
                 B(LdaSmi), U8(2),
-                B(BitwiseXor), R(3),
-  /*   57 E> */ B(StaKeyedPropertySloppy), R(1), R(2), U8(3),
+                B(BitwiseXor), R(3), U8(3),
+  /*   57 E> */ B(StaKeyedPropertySloppy), R(0), R(2), U8(4),
                 B(LdaUndefined),
   /*   63 S> */ B(Return),
 ]
@@ -114,17 +109,16 @@ snippet: "
 "
 frame size: 2
 parameter count: 1
-bytecode array length: 29
+bytecode array length: 25
 bytecodes: [
-                B(CallRuntime), U16(Runtime::kNewFunctionContext), R(closure), U8(1),
+                B(CreateFunctionContext), U8(1),
                 B(PushContext), R(0),
   /*   30 E> */ B(StackCheck),
   /*   42 S> */ B(LdaSmi), U8(1),
   /*   42 E> */ B(StaContextSlot), R(context), U8(4),
-  /*   45 S> */ B(CreateClosure), U8(0), U8(0),
+  /*   45 S> */ B(CreateClosure), U8(0), U8(2),
   /*   75 S> */ B(LdrContextSlot), R(context), U8(4), R(1),
-                B(LdaSmi), U8(24),
-                B(BitwiseOr), R(1),
+                B(BitwiseOrSmi), U8(24), R(1),
   /*   77 E> */ B(StaContextSlot), R(context), U8(4),
                 B(LdaUndefined),
   /*   84 S> */ B(Return),

@@ -32,6 +32,8 @@ class SimplifiedLowering final {
 
   void LowerAllNodes();
 
+  void DoMax(Node* node, Operator const* op, MachineRepresentation rep);
+  void DoMin(Node* node, Operator const* op, MachineRepresentation rep);
   void DoJSToNumberTruncatesToFloat64(Node* node,
                                       RepresentationSelector* selector);
   void DoJSToNumberTruncatesToWord32(Node* node,
@@ -42,6 +44,7 @@ class SimplifiedLowering final {
                     RepresentationChanger* changer);
   void DoStoreBuffer(Node* node);
   void DoShift(Node* node, Operator const* op, Type* rhs_type);
+  void DoStringToNumber(Node* node);
 
  private:
   JSGraph* const jsgraph_;
@@ -57,12 +60,12 @@ class SimplifiedLowering final {
   // position information via the SourcePositionWrapper like all other reducers.
   SourcePositionTable* source_positions_;
 
-  Node* Float64Ceil(Node* const node);
-  Node* Float64Floor(Node* const node);
   Node* Float64Round(Node* const node);
-  Node* Float64Trunc(Node* const node);
+  Node* Float64Sign(Node* const node);
+  Node* Int32Abs(Node* const node);
   Node* Int32Div(Node* const node);
   Node* Int32Mod(Node* const node);
+  Node* Int32Sign(Node* const node);
   Node* Uint32Div(Node* const node);
   Node* Uint32Mod(Node* const node);
 

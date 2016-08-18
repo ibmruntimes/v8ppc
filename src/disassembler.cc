@@ -4,11 +4,14 @@
 
 #include "src/disassembler.h"
 
+#include <memory>
+
 #include "src/code-stubs.h"
 #include "src/codegen.h"
 #include "src/debug/debug.h"
 #include "src/deoptimizer.h"
 #include "src/disasm.h"
+#include "src/ic/ic.h"
 #include "src/macro-assembler.h"
 #include "src/snapshot/serializer-common.h"
 #include "src/string-stream.h"
@@ -169,19 +172,14 @@ static int DecodeIt(Isolate* isolate, std::ostream* os,
       }
 
       RelocInfo::Mode rmode = relocinfo.rmode();
-      if (RelocInfo::IsPosition(rmode)) {
-        if (RelocInfo::IsStatementPosition(rmode)) {
-          out.AddFormatted("    ;; debug: statement %" V8PRIdPTR,
-                           relocinfo.data());
-        } else {
-          out.AddFormatted("    ;; debug: position %" V8PRIdPTR,
-                           relocinfo.data());
-        }
+      if (rmode == RelocInfo::DEOPT_POSITION) {
+        out.AddFormatted("    ;; debug: deopt position '%d'",
+                         static_cast<int>(relocinfo.data()));
       } else if (rmode == RelocInfo::DEOPT_REASON) {
-        Deoptimizer::DeoptReason reason =
-            static_cast<Deoptimizer::DeoptReason>(relocinfo.data());
+        DeoptimizeReason reason =
+            static_cast<DeoptimizeReason>(relocinfo.data());
         out.AddFormatted("    ;; debug: deopt reason '%s'",
-                         Deoptimizer::GetDeoptReason(reason));
+                         DeoptimizeReasonToString(reason));
       } else if (rmode == RelocInfo::DEOPT_ID) {
         out.AddFormatted("    ;; debug: deopt index %d",
                          static_cast<int>(relocinfo.data()));
@@ -189,7 +187,7 @@ static int DecodeIt(Isolate* isolate, std::ostream* os,
         HeapStringAllocator allocator;
         StringStream accumulator(&allocator);
         relocinfo.target_object()->ShortPrint(&accumulator);
-        base::SmartArrayPointer<const char> obj_name = accumulator.ToCString();
+        std::unique_ptr<char[]> obj_name = accumulator.ToCString();
         out.AddFormatted("    ;; object: %s", obj_name.get());
       } else if (rmode == RelocInfo::EXTERNAL_REFERENCE) {
         const char* reference_name = ref_encoder.NameOfAddress(
@@ -200,14 +198,16 @@ static int DecodeIt(Isolate* isolate, std::ostream* os,
         Code* code = Code::GetCodeFromTargetAddress(relocinfo.target_address());
         Code::Kind kind = code->kind();
         if (code->is_inline_cache_stub()) {
-          if (kind == Code::LOAD_IC &&
-              LoadICState::GetTypeofMode(code->extra_ic_state()) ==
-                  NOT_INSIDE_TYPEOF) {
-            out.AddFormatted(" contextual,");
+          if (kind == Code::LOAD_GLOBAL_IC &&
+              LoadGlobalICState::GetTypeofMode(code->extra_ic_state()) ==
+                  INSIDE_TYPEOF) {
+            out.AddFormatted(" inside typeof,");
           }
-          InlineCacheState ic_state = code->ic_state();
-          out.AddFormatted(" %s, %s", Code::Kind2String(kind),
-              Code::ICState2String(ic_state));
+          out.AddFormatted(" %s", Code::Kind2String(kind));
+          if (!IC::ICUseVector(kind)) {
+            InlineCacheState ic_state = IC::StateFromCode(code);
+            out.AddFormatted(" %s", Code::ICState2String(ic_state));
+          }
         } else if (kind == Code::STUB || kind == Code::HANDLER) {
           // Get the STUB key and extract major and minor key.
           uint32_t key = code->stub_key();

@@ -122,7 +122,7 @@ NativeRegExpMacroAssembler::~NativeRegExpMacroAssembler() {
 
 
 bool NativeRegExpMacroAssembler::CanReadUnaligned() {
-  return FLAG_enable_unaligned_accesses && !slow_safe();
+  return FLAG_enable_regexp_unaligned_accesses && !slow_safe();
 }
 
 const byte* NativeRegExpMacroAssembler::StringCharacterPosition(
@@ -177,7 +177,7 @@ int NativeRegExpMacroAssembler::CheckStackGuardState(
     return_value = RETRY;
   } else {
     Object* result = isolate->stack_guard()->HandleInterrupts();
-    if (result->IsException()) return_value = EXCEPTION;
+    if (result->IsException(isolate)) return_value = EXCEPTION;
   }
 
   DisallowHeapAllocation no_gc;

@@ -176,3 +176,20 @@ constant pool: [
 handlers: [
 ]
 
+---
+snippet: "
+  return 2.0;
+"
+frame size: 0
+parameter count: 1
+bytecode array length: 4
+bytecodes: [
+  /*   30 E> */ B(StackCheck),
+  /*   34 S> */ B(LdaSmi), U8(2),
+  /*   46 S> */ B(Return),
+]
+constant pool: [
+]
+handlers: [
+]
+

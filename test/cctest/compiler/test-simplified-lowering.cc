@@ -37,14 +37,15 @@ class SimplifiedLoweringTester : public GraphBuilderTester<ReturnType> {
   SimplifiedLoweringTester(MachineType p0 = MachineType::None(),
                            MachineType p1 = MachineType::None())
       : GraphBuilderTester<ReturnType>(p0, p1),
-        typer(this->isolate(), this->graph()),
+        typer(new Typer(this->isolate(), this->graph())),
         javascript(this->zone()),
         jsgraph(this->isolate(), this->graph(), this->common(), &javascript,
                 this->simplified(), this->machine()),
         source_positions(jsgraph.graph()),
         lowering(&jsgraph, this->zone(), &source_positions) {}
+  ~SimplifiedLoweringTester() final { delete typer; }
 
-  Typer typer;
+  Typer* typer = nullptr;
   JSOperatorBuilder javascript;
   JSGraph jsgraph;
   SourcePositionTable source_positions;
@@ -52,13 +53,15 @@ class SimplifiedLoweringTester : public GraphBuilderTester<ReturnType> {
 
   void LowerAllNodes() {
     this->End();
-    typer.Run();
+    typer->Run();
+    delete typer, typer = nullptr;
     lowering.LowerAllNodes();
   }
 
   void LowerAllNodesAndLowerChanges() {
     this->End();
-    typer.Run();
+    typer->Run();
+    delete typer, typer = nullptr;
     lowering.LowerAllNodes();
 
     Schedule* schedule = Scheduler::ComputeSchedule(this->zone(), this->graph(),
@@ -682,7 +685,7 @@ TEST(RunAllocate) {
 // Fills in most of the nodes of the graph in order to make tests shorter.
 class TestingGraph : public HandleAndZoneScope, public GraphAndBuilders {
  public:
-  Typer typer;
+  Typer* typer = nullptr;
   JSOperatorBuilder javascript;
   JSGraph jsgraph;
   Node* p0;
@@ -695,7 +698,7 @@ class TestingGraph : public HandleAndZoneScope, public GraphAndBuilders {
   explicit TestingGraph(Type* p0_type, Type* p1_type = Type::None(),
                         Type* p2_type = Type::None())
       : GraphAndBuilders(main_zone()),
-        typer(main_isolate(), graph()),
+        typer(new Typer(main_isolate(), graph())),
         javascript(main_zone()),
         jsgraph(main_isolate(), graph(), common(), &javascript, simplified(),
                 machine()) {
@@ -708,11 +711,12 @@ class TestingGraph : public HandleAndZoneScope, public GraphAndBuilders {
     p0 = graph()->NewNode(common()->Parameter(0), start);
     p1 = graph()->NewNode(common()->Parameter(1), start);
     p2 = graph()->NewNode(common()->Parameter(2), start);
-    typer.Run();
+    typer->Run();
     NodeProperties::SetType(p0, p0_type);
     NodeProperties::SetType(p1, p1_type);
     NodeProperties::SetType(p2, p2_type);
   }
+  ~TestingGraph() { delete typer; }
 
   void CheckLoweringBinop(IrOpcode::Value expected, const Operator* op) {
     Node* node = Return(graph()->NewNode(op, p0, p1));
@@ -736,11 +740,14 @@ class TestingGraph : public HandleAndZoneScope, public GraphAndBuilders {
   }
 
   void Lower() {
+    delete typer;
     SourcePositionTable table(jsgraph.graph());
     SimplifiedLowering(&jsgraph, jsgraph.zone(), &table).LowerAllNodes();
+    typer = new Typer(main_isolate(), graph());
   }
 
   void LowerAllNodesAndLowerChanges() {
+    delete typer;
     SourcePositionTable table(jsgraph.graph());
     SimplifiedLowering(&jsgraph, jsgraph.zone(), &table).LowerAllNodes();
 
@@ -751,6 +758,7 @@ class TestingGraph : public HandleAndZoneScope, public GraphAndBuilders {
 
     MemoryOptimizer memory_optimizer(&jsgraph, this->zone());
     memory_optimizer.Optimize();
+    typer = new Typer(main_isolate(), graph());
   }
 
   // Inserts the node as the return value of the graph.
@@ -803,7 +811,7 @@ class TestingGraph : public HandleAndZoneScope, public GraphAndBuilders {
       return graph()->NewNode(machine()->Word32Equal(), node,
                               jsgraph.Int32Constant(1));
     } else {
-      return graph()->NewNode(simplified()->ReferenceEqual(Type::Any()), node,
+      return graph()->NewNode(simplified()->ReferenceEqual(), node,
                               jsgraph.TrueConstant());
     }
   }
@@ -889,63 +897,6 @@ TEST(LowerBooleanNot_tagged_tagged) {
   CHECK(b == cmp->InputAt(0) || b == cmp->InputAt(1));
   Node* f = t.jsgraph.FalseConstant();
   CHECK(f == cmp->InputAt(0) || f == cmp->InputAt(1));
-}
-
-
-TEST(LowerBooleanToNumber_bit_int32) {
-  // BooleanToNumber(x: kRepBit) used as MachineType::Int32()
-  TestingGraph t(Type::Boolean());
-  Node* b = t.ExampleWithOutput(MachineType::Bool());
-  Node* cnv = t.graph()->NewNode(t.simplified()->BooleanToNumber(), b);
-  Node* use = t.Use(cnv, MachineType::Int32());
-  t.Return(use);
-  t.Lower();
-  CHECK_EQ(b, use->InputAt(0));
-}
-
-
-TEST(LowerBooleanToNumber_tagged_int32) {
-  // BooleanToNumber(x: kRepTagged) used as MachineType::Int32()
-  TestingGraph t(Type::Boolean());
-  Node* b = t.p0;
-  Node* cnv = t.graph()->NewNode(t.simplified()->BooleanToNumber(), b);
-  Node* use = t.Use(cnv, MachineType::Int32());
-  t.Return(use);
-  t.Lower();
-  CHECK_EQ(t.machine()->WordEqual()->opcode(), cnv->opcode());
-  CHECK(b == cnv->InputAt(0) || b == cnv->InputAt(1));
-  Node* c = t.jsgraph.TrueConstant();
-  CHECK(c == cnv->InputAt(0) || c == cnv->InputAt(1));
-}
-
-
-TEST(LowerBooleanToNumber_bit_tagged) {
-  // BooleanToNumber(x: kRepBit) used as MachineType::AnyTagged()
-  TestingGraph t(Type::Boolean());
-  Node* b = t.ExampleWithOutput(MachineType::Bool());
-  Node* cnv = t.graph()->NewNode(t.simplified()->BooleanToNumber(), b);
-  Node* use = t.Use(cnv, MachineType::AnyTagged());
-  t.Return(use);
-  t.Lower();
-  CHECK_EQ(b, use->InputAt(0)->InputAt(0));
-  CHECK_EQ(IrOpcode::kChangeInt31ToTaggedSigned, use->InputAt(0)->opcode());
-}
-
-
-TEST(LowerBooleanToNumber_tagged_tagged) {
-  // BooleanToNumber(x: kRepTagged) used as MachineType::AnyTagged()
-  TestingGraph t(Type::Boolean());
-  Node* b = t.p0;
-  Node* cnv = t.graph()->NewNode(t.simplified()->BooleanToNumber(), b);
-  Node* use = t.Use(cnv, MachineType::AnyTagged());
-  t.Return(use);
-  t.Lower();
-  CHECK_EQ(cnv, use->InputAt(0)->InputAt(0));
-  CHECK_EQ(IrOpcode::kChangeInt31ToTaggedSigned, use->InputAt(0)->opcode());
-  CHECK_EQ(t.machine()->WordEqual()->opcode(), cnv->opcode());
-  CHECK(b == cnv->InputAt(0) || b == cnv->InputAt(1));
-  Node* c = t.jsgraph.TrueConstant();
-  CHECK(c == cnv->InputAt(0) || c == cnv->InputAt(1));
 }
 
 static Type* test_types[] = {Type::Signed32(), Type::Unsigned32(),
@@ -1137,7 +1088,7 @@ TEST(LowerReferenceEqual_to_wordeq) {
   TestingGraph t(Type::Any(), Type::Any());
   IrOpcode::Value opcode =
       static_cast<IrOpcode::Value>(t.machine()->WordEqual()->opcode());
-  t.CheckLoweringBinop(opcode, t.simplified()->ReferenceEqual(Type::Any()));
+  t.CheckLoweringBinop(opcode, t.simplified()->ReferenceEqual());
 }
 
 void CheckChangeInsertion(IrOpcode::Value expected, MachineType from,
@@ -1167,7 +1118,7 @@ TEST(InsertBasicChanges) {
                        Type::Unsigned32());
 
   CheckChangeInsertion(IrOpcode::kChangeFloat64ToTagged, MachineType::Float64(),
-                       MachineType::AnyTagged());
+                       MachineType::AnyTagged(), Type::Number());
   CheckChangeInsertion(IrOpcode::kChangeTaggedToFloat64,
                        MachineType::AnyTagged(), MachineType::Float64(),
                        Type::Number());
@@ -1185,8 +1136,7 @@ TEST(InsertBasicChanges) {
 
 static void CheckChangesAroundBinop(TestingGraph* t, const Operator* op,
                                     IrOpcode::Value input_change,
-                                    IrOpcode::Value output_change,
-                                    Type* type = Type::Any()) {
+                                    IrOpcode::Value output_change, Type* type) {
   Node* binop =
       op->ControlInputCount() == 0
           ? t->graph()->NewNode(op, t->p0, t->p1)
@@ -1229,7 +1179,7 @@ TEST(InsertChangesAroundInt32Cmp) {
 
   for (size_t i = 0; i < arraysize(ops); i++) {
     CheckChangesAroundBinop(&t, ops[i], IrOpcode::kChangeTaggedToInt32,
-                            IrOpcode::kChangeBitToTagged);
+                            IrOpcode::kChangeBitToTagged, Type::Boolean());
   }
 }
 
@@ -1242,7 +1192,7 @@ TEST(InsertChangesAroundUint32Cmp) {
 
   for (size_t i = 0; i < arraysize(ops); i++) {
     CheckChangesAroundBinop(&t, ops[i], IrOpcode::kChangeTaggedToUint32,
-                            IrOpcode::kChangeBitToTagged);
+                            IrOpcode::kChangeBitToTagged, Type::Boolean());
   }
 }
 
@@ -1258,7 +1208,7 @@ TEST(InsertChangesAroundFloat64Binops) {
 
   for (size_t i = 0; i < arraysize(ops); i++) {
     CheckChangesAroundBinop(&t, ops[i], IrOpcode::kChangeTaggedToFloat64,
-                            IrOpcode::kChangeFloat64ToTagged);
+                            IrOpcode::kChangeFloat64ToTagged, Type::Number());
   }
 }
 
@@ -1272,7 +1222,7 @@ TEST(InsertChangesAroundFloat64Cmp) {
 
   for (size_t i = 0; i < arraysize(ops); i++) {
     CheckChangesAroundBinop(&t, ops[i], IrOpcode::kChangeTaggedToFloat64,
-                            IrOpcode::kChangeBitToTagged);
+                            IrOpcode::kChangeBitToTagged, Type::Boolean());
   }
 }
 
@@ -1288,23 +1238,38 @@ void CheckFieldAccessArithmetic(FieldAccess access, Node* load_or_store) {
 Node* CheckElementAccessArithmetic(ElementAccess access, Node* load_or_store) {
   Node* index = load_or_store->InputAt(1);
   if (kPointerSize == 8) {
+    Int64BinopMatcher mindex(index);
+    CHECK_EQ(IrOpcode::kInt64Add, mindex.node()->opcode());
+    CHECK(mindex.right().Is(access.header_size - access.tag()));
+
+    const int element_size_shift =
+        ElementSizeLog2Of(access.machine_type.representation());
+    Node* index;
+    if (element_size_shift) {
+      Int64BinopMatcher shl(mindex.left().node());
+      CHECK_EQ(IrOpcode::kWord64Shl, shl.node()->opcode());
+      CHECK(shl.right().Is(element_size_shift));
+      index = shl.left().node();
+    } else {
+      index = mindex.left().node();
+    }
     CHECK_EQ(IrOpcode::kChangeUint32ToUint64, index->opcode());
-    index = index->InputAt(0);
-  }
-
-  Int32BinopMatcher mindex(index);
-  CHECK_EQ(IrOpcode::kInt32Add, mindex.node()->opcode());
-  CHECK(mindex.right().Is(access.header_size - access.tag()));
-
-  const int element_size_shift =
-      ElementSizeLog2Of(access.machine_type.representation());
-  if (element_size_shift) {
-    Int32BinopMatcher shl(mindex.left().node());
-    CHECK_EQ(IrOpcode::kWord32Shl, shl.node()->opcode());
-    CHECK(shl.right().Is(element_size_shift));
-    return shl.left().node();
+    return index->InputAt(0);
   } else {
-    return mindex.left().node();
+    Int32BinopMatcher mindex(index);
+    CHECK_EQ(IrOpcode::kInt32Add, mindex.node()->opcode());
+    CHECK(mindex.right().Is(access.header_size - access.tag()));
+
+    const int element_size_shift =
+        ElementSizeLog2Of(access.machine_type.representation());
+    if (element_size_shift) {
+      Int32BinopMatcher shl(mindex.left().node());
+      CHECK_EQ(IrOpcode::kWord32Shl, shl.node()->opcode());
+      CHECK(shl.right().Is(element_size_shift));
+      return shl.left().node();
+    } else {
+      return mindex.left().node();
+    }
   }
 }
 
@@ -1488,8 +1453,9 @@ TEST(InsertChangeForStoreElementIndex) {
 TEST(InsertChangeForLoadElement) {
   // TODO(titzer): test all load/store representation change insertions.
   TestingGraph t(Type::Any(), Type::Signed32(), Type::Any());
-  ElementAccess access = {kTaggedBase, FixedArrayBase::kHeaderSize, Type::Any(),
-                          MachineType::Float64(), kNoWriteBarrier};
+  ElementAccess access = {kTaggedBase, FixedArrayBase::kHeaderSize,
+                          Type::Number(), MachineType::Float64(),
+                          kNoWriteBarrier};
 
   Node* load = t.graph()->NewNode(t.simplified()->LoadElement(access), t.p0,
                                   t.p1, t.start, t.start);
@@ -1505,8 +1471,8 @@ TEST(InsertChangeForLoadField) {
   // TODO(titzer): test all load/store representation change insertions.
   TestingGraph t(Type::Any(), Type::Signed32());
   FieldAccess access = {
-      kTaggedBase, FixedArrayBase::kHeaderSize, Handle<Name>::null(),
-      Type::Any(), MachineType::Float64(),      kNoWriteBarrier};
+      kTaggedBase,    FixedArrayBase::kHeaderSize, Handle<Name>::null(),
+      Type::Number(), MachineType::Float64(),      kNoWriteBarrier};
 
   Node* load = t.graph()->NewNode(t.simplified()->LoadField(access), t.p0,
                                   t.start, t.start);
@@ -1581,84 +1547,6 @@ TEST(UpdatePhi) {
 }
 
 
-TEST(RunNumberDivide_minus_1_TruncatingToInt32) {
-  SimplifiedLoweringTester<Object*> t(MachineType::AnyTagged());
-  Node* num = t.NumberToInt32(t.Parameter(0));
-  Node* div = t.NumberDivide(num, t.jsgraph.Constant(-1));
-  Node* trunc = t.NumberToInt32(div);
-  t.Return(trunc);
-
-  t.LowerAllNodesAndLowerChanges();
-  t.GenerateCode();
-
-  FOR_INT32_INPUTS(i) {
-    int32_t x = 0 - *i;
-    t.CheckNumberCall(static_cast<double>(x), static_cast<double>(*i));
-  }
-}
-
-
-TEST(RunNumberMultiply_TruncatingToInt32) {
-  int32_t constants[] = {-100, -10, -1, 0, 1, 100, 1000, 3000999};
-
-  for (size_t i = 0; i < arraysize(constants); i++) {
-    double k = static_cast<double>(constants[i]);
-    SimplifiedLoweringTester<Object*> t(MachineType::AnyTagged());
-    Node* num = t.NumberToInt32(t.Parameter(0));
-    Node* mul = t.NumberMultiply(num, t.jsgraph.Constant(k));
-    Node* trunc = t.NumberToInt32(mul);
-    t.Return(trunc);
-
-      t.LowerAllNodesAndLowerChanges();
-      t.GenerateCode();
-
-      FOR_INT32_INPUTS(i) {
-        int32_t x = DoubleToInt32(static_cast<double>(*i) * k);
-        t.CheckNumberCall(static_cast<double>(x), static_cast<double>(*i));
-      }
-    }
-}
-
-
-TEST(RunNumberMultiply_TruncatingToUint32) {
-  uint32_t constants[] = {0, 1, 2, 3, 4, 100, 1000, 1024, 2048, 3000999};
-
-  for (size_t i = 0; i < arraysize(constants); i++) {
-    double k = static_cast<double>(constants[i]);
-    SimplifiedLoweringTester<Object*> t(MachineType::AnyTagged());
-    Node* num = t.NumberToUint32(t.Parameter(0));
-    Node* mul = t.NumberMultiply(num, t.jsgraph.Constant(k));
-    Node* trunc = t.NumberToUint32(mul);
-    t.Return(trunc);
-
-      t.LowerAllNodesAndLowerChanges();
-      t.GenerateCode();
-
-      FOR_UINT32_INPUTS(i) {
-        uint32_t x = DoubleToUint32(static_cast<double>(*i) * k);
-        t.CheckNumberCall(static_cast<double>(x), static_cast<double>(*i));
-    }
-  }
-}
-
-
-TEST(RunNumberDivide_2_TruncatingToUint32) {
-  SimplifiedLoweringTester<Object*> t(MachineType::AnyTagged());
-  Node* num = t.NumberToUint32(t.Parameter(0));
-  Node* div = t.NumberDivide(num, t.jsgraph.Constant(2));
-  Node* trunc = t.NumberToUint32(div);
-  t.Return(trunc);
-
-    t.LowerAllNodesAndLowerChanges();
-    t.GenerateCode();
-
-    FOR_UINT32_INPUTS(i) {
-      uint32_t x = DoubleToUint32(static_cast<double>(*i / 2.0));
-      t.CheckNumberCall(static_cast<double>(x), static_cast<double>(*i));
-    }
-}
-
-
 TEST(NumberMultiply_ConstantOutOfRange) {
   TestingGraph t(Type::Signed32());
   Node* k = t.jsgraph.Constant(1000000023);
@@ -1698,29 +1586,6 @@ TEST(NumberDivide_TruncatingToInt32) {
 }
 
 
-TEST(RunNumberDivide_TruncatingToInt32) {
-  int32_t constants[] = {-100, -10, -1, 1, 2, 100, 1000, 1024, 2048};
-
-  for (size_t i = 0; i < arraysize(constants); i++) {
-    int32_t k = constants[i];
-    SimplifiedLoweringTester<Object*> t(MachineType::AnyTagged());
-    Node* num = t.NumberToInt32(t.Parameter(0));
-    Node* div = t.NumberDivide(num, t.jsgraph.Constant(k));
-    Node* trunc = t.NumberToInt32(div);
-    t.Return(trunc);
-
-      t.LowerAllNodesAndLowerChanges();
-      t.GenerateCode();
-
-      FOR_INT32_INPUTS(i) {
-        if (*i == INT_MAX) continue;  // exclude max int.
-        int32_t x = DoubleToInt32(static_cast<double>(*i) / k);
-        t.CheckNumberCall(static_cast<double>(x), static_cast<double>(*i));
-    }
-  }
-}
-
-
 TEST(NumberDivide_TruncatingToUint32) {
   double constants[] = {1, 3, 100, 1000, 100998348};
 
@@ -1733,28 +1598,6 @@ TEST(NumberDivide_TruncatingToUint32) {
     t.Lower();
 
     CHECK_EQ(IrOpcode::kUint32Div, use->InputAt(0)->opcode());
-  }
-}
-
-
-TEST(RunNumberDivide_TruncatingToUint32) {
-  uint32_t constants[] = {100, 10, 1, 1, 2, 4, 1000, 1024, 2048};
-
-  for (size_t i = 0; i < arraysize(constants); i++) {
-    uint32_t k = constants[i];
-    SimplifiedLoweringTester<Object*> t(MachineType::AnyTagged());
-    Node* num = t.NumberToUint32(t.Parameter(0));
-    Node* div = t.NumberDivide(num, t.jsgraph.Constant(static_cast<double>(k)));
-    Node* trunc = t.NumberToUint32(div);
-    t.Return(trunc);
-
-      t.LowerAllNodesAndLowerChanges();
-      t.GenerateCode();
-
-      FOR_UINT32_INPUTS(i) {
-        uint32_t x = *i / k;
-        t.CheckNumberCall(static_cast<double>(x), static_cast<double>(*i));
-    }
   }
 }
 
@@ -1813,29 +1656,6 @@ TEST(NumberModulus_TruncatingToInt32) {
 }
 
 
-TEST(RunNumberModulus_TruncatingToInt32) {
-  int32_t constants[] = {-100, -10, -1, 1, 2, 100, 1000, 1024, 2048};
-
-  for (size_t i = 0; i < arraysize(constants); i++) {
-    int32_t k = constants[i];
-    SimplifiedLoweringTester<Object*> t(MachineType::AnyTagged());
-    Node* num = t.NumberToInt32(t.Parameter(0));
-    Node* mod = t.NumberModulus(num, t.jsgraph.Constant(k));
-    Node* trunc = t.NumberToInt32(mod);
-    t.Return(trunc);
-
-      t.LowerAllNodesAndLowerChanges();
-      t.GenerateCode();
-
-      FOR_INT32_INPUTS(i) {
-        if (*i == INT_MAX) continue;  // exclude max int.
-        int32_t x = DoubleToInt32(std::fmod(static_cast<double>(*i), k));
-        t.CheckNumberCall(static_cast<double>(x), static_cast<double>(*i));
-    }
-  }
-}
-
-
 TEST(NumberModulus_TruncatingToUint32) {
   double constants[] = {1, 3, 100, 1000, 100998348};
 
@@ -1848,29 +1668,6 @@ TEST(NumberModulus_TruncatingToUint32) {
     t.Lower();
 
     CHECK_EQ(IrOpcode::kUint32Mod, t.ret->InputAt(0)->InputAt(0)->opcode());
-  }
-}
-
-
-TEST(RunNumberModulus_TruncatingToUint32) {
-  uint32_t constants[] = {1, 2, 100, 1000, 1024, 2048};
-
-  for (size_t i = 0; i < arraysize(constants); i++) {
-    uint32_t k = constants[i];
-    SimplifiedLoweringTester<Object*> t(MachineType::AnyTagged());
-    Node* num = t.NumberToUint32(t.Parameter(0));
-    Node* mod =
-        t.NumberModulus(num, t.jsgraph.Constant(static_cast<double>(k)));
-    Node* trunc = t.NumberToUint32(mod);
-    t.Return(trunc);
-
-      t.LowerAllNodesAndLowerChanges();
-      t.GenerateCode();
-
-      FOR_UINT32_INPUTS(i) {
-        uint32_t x = *i % k;
-        t.CheckNumberCall(static_cast<double>(x), static_cast<double>(*i));
-    }
   }
 }
 

@@ -16,6 +16,7 @@
 #include "src/crankshaft/hydrogen-types.h"
 #include "src/crankshaft/unique.h"
 #include "src/deoptimizer.h"
+#include "src/globals.h"
 #include "src/small-pointer-list.h"
 #include "src/utils.h"
 #include "src/zone.h"
@@ -77,13 +78,11 @@ class LChunkBuilder;
   V(CompareObjectEqAndBranch)                 \
   V(CompareMap)                               \
   V(Constant)                                 \
-  V(ConstructDouble)                          \
   V(Context)                                  \
   V(DebugBreak)                               \
   V(DeclareGlobals)                           \
   V(Deoptimize)                               \
   V(Div)                                      \
-  V(DoubleBits)                               \
   V(DummyUse)                                 \
   V(EnterInlined)                             \
   V(EnvironmentMarker)                        \
@@ -1114,7 +1113,7 @@ class HInstruction : public HValue {
       : HValue(type),
         next_(NULL),
         previous_(NULL),
-        position_(RelocInfo::kNoPosition) {
+        position_(kNoSourcePosition) {
     SetDependsOnFlag(kOsrEntries);
   }
 
@@ -1302,7 +1301,7 @@ class HGoto final : public HTemplateControlInstruction<1, 0> {
 class HDeoptimize final : public HTemplateControlInstruction<1, 0> {
  public:
   static HDeoptimize* New(Isolate* isolate, Zone* zone, HValue* context,
-                          Deoptimizer::DeoptReason reason,
+                          DeoptimizeReason reason,
                           Deoptimizer::BailoutType type,
                           HBasicBlock* unreachable_continuation) {
     return new(zone) HDeoptimize(reason, type, unreachable_continuation);
@@ -1317,20 +1316,19 @@ class HDeoptimize final : public HTemplateControlInstruction<1, 0> {
     return Representation::None();
   }
 
-  Deoptimizer::DeoptReason reason() const { return reason_; }
+  DeoptimizeReason reason() const { return reason_; }
   Deoptimizer::BailoutType type() { return type_; }
 
   DECLARE_CONCRETE_INSTRUCTION(Deoptimize)
 
  private:
-  explicit HDeoptimize(Deoptimizer::DeoptReason reason,
-                       Deoptimizer::BailoutType type,
+  explicit HDeoptimize(DeoptimizeReason reason, Deoptimizer::BailoutType type,
                        HBasicBlock* unreachable_continuation)
       : reason_(reason), type_(type) {
     SetSuccessorAt(0, unreachable_continuation);
   }
 
-  Deoptimizer::DeoptReason reason_;
+  DeoptimizeReason reason_;
   Deoptimizer::BailoutType type_;
 };
 
@@ -1654,65 +1652,6 @@ class HClampToUint8 final : public HUnaryOperation {
     set_representation(Representation::Integer32());
     SetFlag(kAllowUndefinedAsNaN);
     SetFlag(kUseGVN);
-  }
-
-  bool IsDeletable() const override { return true; }
-};
-
-
-class HDoubleBits final : public HUnaryOperation {
- public:
-  enum Bits { HIGH, LOW };
-  DECLARE_INSTRUCTION_FACTORY_P2(HDoubleBits, HValue*, Bits);
-
-  Representation RequiredInputRepresentation(int index) override {
-    return Representation::Double();
-  }
-
-  DECLARE_CONCRETE_INSTRUCTION(DoubleBits)
-
-  Bits bits() { return bits_; }
-
- protected:
-  bool DataEquals(HValue* other) override {
-    return other->IsDoubleBits() && HDoubleBits::cast(other)->bits() == bits();
-  }
-
- private:
-  HDoubleBits(HValue* value, Bits bits)
-      : HUnaryOperation(value), bits_(bits) {
-    set_representation(Representation::Integer32());
-    SetFlag(kUseGVN);
-  }
-
-  bool IsDeletable() const override { return true; }
-
-  Bits bits_;
-};
-
-
-class HConstructDouble final : public HTemplateInstruction<2> {
- public:
-  DECLARE_INSTRUCTION_FACTORY_P2(HConstructDouble, HValue*, HValue*);
-
-  Representation RequiredInputRepresentation(int index) override {
-    return Representation::Integer32();
-  }
-
-  DECLARE_CONCRETE_INSTRUCTION(ConstructDouble)
-
-  HValue* hi() { return OperandAt(0); }
-  HValue* lo() { return OperandAt(1); }
-
- protected:
-  bool DataEquals(HValue* other) override { return true; }
-
- private:
-  explicit HConstructDouble(HValue* hi, HValue* lo) {
-    set_representation(Representation::Double());
-    SetFlag(kUseGVN);
-    SetOperandAt(0, hi);
-    SetOperandAt(1, lo);
   }
 
   bool IsDeletable() const override { return true; }
@@ -2122,13 +2061,16 @@ class HThisFunction final : public HTemplateInstruction<0> {
 
 class HDeclareGlobals final : public HUnaryOperation {
  public:
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P2(HDeclareGlobals,
-                                              Handle<FixedArray>,
-                                              int);
+  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P3(HDeclareGlobals,
+                                              Handle<FixedArray>, int,
+                                              Handle<TypeFeedbackVector>);
 
   HValue* context() { return OperandAt(0); }
   Handle<FixedArray> pairs() const { return pairs_; }
   int flags() const { return flags_; }
+  Handle<TypeFeedbackVector> feedback_vector() const {
+    return feedback_vector_;
+  }
 
   DECLARE_CONCRETE_INSTRUCTION(DeclareGlobals)
 
@@ -2137,17 +2079,18 @@ class HDeclareGlobals final : public HUnaryOperation {
   }
 
  private:
-  HDeclareGlobals(HValue* context,
-                  Handle<FixedArray> pairs,
-                  int flags)
+  HDeclareGlobals(HValue* context, Handle<FixedArray> pairs, int flags,
+                  Handle<TypeFeedbackVector> feedback_vector)
       : HUnaryOperation(context),
         pairs_(pairs),
+        feedback_vector_(feedback_vector),
         flags_(flags) {
     set_representation(Representation::Tagged());
     SetAllSideEffects();
   }
 
   Handle<FixedArray> pairs_;
+  Handle<TypeFeedbackVector> feedback_vector_;
   int flags_;
 };
 
@@ -2160,8 +2103,6 @@ class HCall : public HTemplateInstruction<V> {
     this->set_representation(Representation::Tagged());
     this->SetAllSideEffects();
   }
-
-  HType CalculateInferredType() final { return HType::Tagged(); }
 
   virtual int argument_count() const {
     return argument_count_;
@@ -2239,8 +2180,6 @@ class HCallWithDescriptor final : public HInstruction {
   }
 
   DECLARE_CONCRETE_INSTRUCTION(CallWithDescriptor)
-
-  HType CalculateInferredType() final { return HType::Tagged(); }
 
   // Defines whether this instruction corresponds to a JS call at tail position.
   TailCallMode syntactic_tail_call_mode() const {
@@ -2457,9 +2396,11 @@ class HUnaryMathOperation final : public HTemplateInstruction<2> {
       return Representation::Tagged();
     } else {
       switch (op_) {
+        case kMathCos:
         case kMathFloor:
         case kMathRound:
         case kMathFround:
+        case kMathSin:
         case kMathSqrt:
         case kMathPowHalf:
         case kMathLog:
@@ -2528,9 +2469,11 @@ class HUnaryMathOperation final : public HTemplateInstruction<2> {
         // is tagged, and not when it is an unboxed double or unboxed integer.
         SetChangesFlag(kNewSpacePromotion);
         break;
+      case kMathCos:
       case kMathFround:
       case kMathLog:
       case kMathExp:
+      case kMathSin:
       case kMathSqrt:
       case kMathPowHalf:
         set_representation(Representation::Double());
@@ -2790,6 +2733,7 @@ class HCheckInstanceType final : public HUnaryOperation {
   enum Check {
     IS_JS_RECEIVER,
     IS_JS_ARRAY,
+    IS_JS_FUNCTION,
     IS_JS_DATE,
     IS_STRING,
     IS_INTERNALIZED_STRING,
@@ -2808,6 +2752,8 @@ class HCheckInstanceType final : public HUnaryOperation {
     switch (check_) {
       case IS_JS_RECEIVER: return HType::JSReceiver();
       case IS_JS_ARRAY: return HType::JSArray();
+      case IS_JS_FUNCTION:
+        return HType::JSObject();
       case IS_JS_DATE: return HType::JSObject();
       case IS_STRING: return HType::String();
       case IS_INTERNALIZED_STRING: return HType::String();
@@ -3766,6 +3712,7 @@ class HBitwiseBinaryOperation : public HBinaryOperation {
       : HBinaryOperation(context, left, right, type) {
     SetFlag(kFlexibleRepresentation);
     SetFlag(kTruncatingToInt32);
+    SetFlag(kAllowUndefinedAsNaN);
     SetAllSideEffects();
   }
 
@@ -4374,6 +4321,11 @@ class HAdd final : public HArithmeticBinaryOperation {
       SetChangesFlag(kNewSpacePromotion);
       ClearFlag(kAllowUndefinedAsNaN);
     }
+    if (!right()->type().IsTaggedNumber() &&
+        !right()->representation().IsDouble() &&
+        !right()->representation().IsSmiOrInteger32()) {
+      ClearFlag(kAllowUndefinedAsNaN);
+    }
   }
 
   Representation RepresentationFromInputs() override;
@@ -4872,25 +4824,19 @@ class HUnknownOSRValue final : public HTemplateInstruction<0> {
   HPhi* incoming_value_;
 };
 
-
-class HLoadGlobalGeneric final : public HTemplateInstruction<2> {
+class HLoadGlobalGeneric final : public HTemplateInstruction<1> {
  public:
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P3(HLoadGlobalGeneric, HValue*,
-                                              Handle<String>, TypeofMode);
+  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P4(HLoadGlobalGeneric,
+                                              Handle<String>, TypeofMode,
+                                              Handle<TypeFeedbackVector>,
+                                              FeedbackVectorSlot);
 
   HValue* context() { return OperandAt(0); }
-  HValue* global_object() { return OperandAt(1); }
   Handle<String> name() const { return name_; }
   TypeofMode typeof_mode() const { return typeof_mode_; }
   FeedbackVectorSlot slot() const { return slot_; }
   Handle<TypeFeedbackVector> feedback_vector() const {
     return feedback_vector_;
-  }
-  bool HasVectorAndSlot() const { return true; }
-  void SetVectorAndSlot(Handle<TypeFeedbackVector> vector,
-                        FeedbackVectorSlot slot) {
-    feedback_vector_ = vector;
-    slot_ = slot;
   }
 
   std::ostream& PrintDataTo(std::ostream& os) const override;  // NOLINT
@@ -4902,11 +4848,14 @@ class HLoadGlobalGeneric final : public HTemplateInstruction<2> {
   DECLARE_CONCRETE_INSTRUCTION(LoadGlobalGeneric)
 
  private:
-  HLoadGlobalGeneric(HValue* context, HValue* global_object,
-                     Handle<String> name, TypeofMode typeof_mode)
-      : name_(name), typeof_mode_(typeof_mode) {
+  HLoadGlobalGeneric(HValue* context, Handle<String> name,
+                     TypeofMode typeof_mode, Handle<TypeFeedbackVector> vector,
+                     FeedbackVectorSlot slot)
+      : name_(name),
+        typeof_mode_(typeof_mode),
+        feedback_vector_(vector),
+        slot_(slot) {
     SetOperandAt(0, context);
-    SetOperandAt(1, global_object);
     set_representation(Representation::Tagged());
     SetAllSideEffects();
   }
@@ -5148,8 +5097,11 @@ inline bool ReceiverObjectNeedsWriteBarrier(HValue* object,
     HAllocate* allocate = HAllocate::cast(object);
     if (allocate->IsAllocationFolded()) {
       HValue* dominator = allocate->allocation_folding_dominator();
-      DCHECK(HAllocate::cast(dominator)->IsAllocationFoldingDominator());
-      object = dominator;
+      // There is no guarantee that all allocations are folded together because
+      // GVN performs a fixpoint.
+      if (HAllocate::cast(dominator)->IsAllocationFoldingDominator()) {
+        object = dominator;
+      }
     }
   }
 
@@ -5566,6 +5518,19 @@ class HObjectAccess final {
                          Handle<Name>::null(), false, false);
   }
 
+  static HObjectAccess ForBoundTargetFunction() {
+    return HObjectAccess(kInobject,
+                         JSBoundFunction::kBoundTargetFunctionOffset);
+  }
+
+  static HObjectAccess ForBoundThis() {
+    return HObjectAccess(kInobject, JSBoundFunction::kBoundThisOffset);
+  }
+
+  static HObjectAccess ForBoundArguments() {
+    return HObjectAccess(kInobject, JSBoundFunction::kBoundArgumentsOffset);
+  }
+
   // Create an access to an offset in a fixed array header.
   static HObjectAccess ForFixedArrayHeader(int offset);
 
@@ -5887,25 +5852,18 @@ class HLoadNamedField final : public HTemplateInstruction<2> {
 
 class HLoadNamedGeneric final : public HTemplateInstruction<2> {
  public:
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P3(HLoadNamedGeneric, HValue*,
-                                              Handle<Name>, InlineCacheState);
+  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P4(HLoadNamedGeneric, HValue*,
+                                              Handle<Name>,
+                                              Handle<TypeFeedbackVector>,
+                                              FeedbackVectorSlot);
 
   HValue* context() const { return OperandAt(0); }
   HValue* object() const { return OperandAt(1); }
   Handle<Name> name() const { return name_; }
 
-  InlineCacheState initialization_state() const {
-    return initialization_state_;
-  }
   FeedbackVectorSlot slot() const { return slot_; }
   Handle<TypeFeedbackVector> feedback_vector() const {
     return feedback_vector_;
-  }
-  bool HasVectorAndSlot() const { return true; }
-  void SetVectorAndSlot(Handle<TypeFeedbackVector> vector,
-                        FeedbackVectorSlot slot) {
-    feedback_vector_ = vector;
-    slot_ = slot;
   }
 
   Representation RequiredInputRepresentation(int index) override {
@@ -5918,9 +5876,8 @@ class HLoadNamedGeneric final : public HTemplateInstruction<2> {
 
  private:
   HLoadNamedGeneric(HValue* context, HValue* object, Handle<Name> name,
-                    InlineCacheState initialization_state)
-      : name_(name),
-        initialization_state_(initialization_state) {
+                    Handle<TypeFeedbackVector> vector, FeedbackVectorSlot slot)
+      : name_(name), feedback_vector_(vector), slot_(slot) {
     SetOperandAt(0, context);
     SetOperandAt(1, object);
     set_representation(Representation::Tagged());
@@ -5930,7 +5887,6 @@ class HLoadNamedGeneric final : public HTemplateInstruction<2> {
   Handle<Name> name_;
   Handle<TypeFeedbackVector> feedback_vector_;
   FeedbackVectorSlot slot_;
-  InlineCacheState initialization_state_;
 };
 
 
@@ -6172,26 +6128,16 @@ class HLoadKeyed final : public HTemplateInstruction<4>,
 
 class HLoadKeyedGeneric final : public HTemplateInstruction<3> {
  public:
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P3(HLoadKeyedGeneric, HValue*,
-                                              HValue*, InlineCacheState);
+  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P4(HLoadKeyedGeneric, HValue*,
+                                              HValue*,
+                                              Handle<TypeFeedbackVector>,
+                                              FeedbackVectorSlot);
   HValue* object() const { return OperandAt(0); }
   HValue* key() const { return OperandAt(1); }
   HValue* context() const { return OperandAt(2); }
-  InlineCacheState initialization_state() const {
-    return initialization_state_;
-  }
   FeedbackVectorSlot slot() const { return slot_; }
   Handle<TypeFeedbackVector> feedback_vector() const {
     return feedback_vector_;
-  }
-  bool HasVectorAndSlot() const {
-    DCHECK(initialization_state_ == MEGAMORPHIC || !feedback_vector_.is_null());
-    return !feedback_vector_.is_null();
-  }
-  void SetVectorAndSlot(Handle<TypeFeedbackVector> vector,
-                        FeedbackVectorSlot slot) {
-    feedback_vector_ = vector;
-    slot_ = slot;
   }
 
   std::ostream& PrintDataTo(std::ostream& os) const override;  // NOLINT
@@ -6207,8 +6153,8 @@ class HLoadKeyedGeneric final : public HTemplateInstruction<3> {
 
  private:
   HLoadKeyedGeneric(HValue* context, HValue* obj, HValue* key,
-                    InlineCacheState initialization_state)
-      : initialization_state_(initialization_state) {
+                    Handle<TypeFeedbackVector> vector, FeedbackVectorSlot slot)
+      : feedback_vector_(vector), slot_(slot) {
     set_representation(Representation::Tagged());
     SetOperandAt(0, obj);
     SetOperandAt(1, key);
@@ -6218,7 +6164,6 @@ class HLoadKeyedGeneric final : public HTemplateInstruction<3> {
 
   Handle<TypeFeedbackVector> feedback_vector_;
   FeedbackVectorSlot slot_;
-  InlineCacheState initialization_state_;
 };
 
 
@@ -6380,20 +6325,18 @@ class HStoreNamedField final : public HTemplateInstruction<3> {
   uint32_t bit_field_;
 };
 
-
 class HStoreNamedGeneric final : public HTemplateInstruction<3> {
  public:
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P5(HStoreNamedGeneric, HValue*,
+  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P6(HStoreNamedGeneric, HValue*,
                                               Handle<Name>, HValue*,
-                                              LanguageMode, InlineCacheState);
+                                              LanguageMode,
+                                              Handle<TypeFeedbackVector>,
+                                              FeedbackVectorSlot);
   HValue* object() const { return OperandAt(0); }
   HValue* value() const { return OperandAt(1); }
   HValue* context() const { return OperandAt(2); }
   Handle<Name> name() const { return name_; }
   LanguageMode language_mode() const { return language_mode_; }
-  InlineCacheState initialization_state() const {
-    return initialization_state_;
-  }
 
   std::ostream& PrintDataTo(std::ostream& os) const override;  // NOLINT
 
@@ -6405,22 +6348,17 @@ class HStoreNamedGeneric final : public HTemplateInstruction<3> {
   Handle<TypeFeedbackVector> feedback_vector() const {
     return feedback_vector_;
   }
-  bool HasVectorAndSlot() const { return true; }
-  void SetVectorAndSlot(Handle<TypeFeedbackVector> vector,
-                        FeedbackVectorSlot slot) {
-    feedback_vector_ = vector;
-    slot_ = slot;
-  }
 
   DECLARE_CONCRETE_INSTRUCTION(StoreNamedGeneric)
 
  private:
   HStoreNamedGeneric(HValue* context, HValue* object, Handle<Name> name,
                      HValue* value, LanguageMode language_mode,
-                     InlineCacheState initialization_state)
+                     Handle<TypeFeedbackVector> vector, FeedbackVectorSlot slot)
       : name_(name),
-        language_mode_(language_mode),
-        initialization_state_(initialization_state) {
+        feedback_vector_(vector),
+        slot_(slot),
+        language_mode_(language_mode) {
     SetOperandAt(0, object);
     SetOperandAt(1, value);
     SetOperandAt(2, context);
@@ -6431,9 +6369,7 @@ class HStoreNamedGeneric final : public HTemplateInstruction<3> {
   Handle<TypeFeedbackVector> feedback_vector_;
   FeedbackVectorSlot slot_;
   LanguageMode language_mode_;
-  InlineCacheState initialization_state_;
 };
-
 
 class HStoreKeyed final : public HTemplateInstruction<4>,
                           public ArrayInstructionInterface {
@@ -6617,21 +6553,18 @@ class HStoreKeyed final : public HTemplateInstruction<4>,
   HValue* dominator_;
 };
 
-
 class HStoreKeyedGeneric final : public HTemplateInstruction<4> {
  public:
-  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P5(HStoreKeyedGeneric, HValue*,
+  DECLARE_INSTRUCTION_WITH_CONTEXT_FACTORY_P6(HStoreKeyedGeneric, HValue*,
                                               HValue*, HValue*, LanguageMode,
-                                              InlineCacheState);
+                                              Handle<TypeFeedbackVector>,
+                                              FeedbackVectorSlot);
 
   HValue* object() const { return OperandAt(0); }
   HValue* key() const { return OperandAt(1); }
   HValue* value() const { return OperandAt(2); }
   HValue* context() const { return OperandAt(3); }
   LanguageMode language_mode() const { return language_mode_; }
-  InlineCacheState initialization_state() const {
-    return initialization_state_;
-  }
 
   Representation RequiredInputRepresentation(int index) override {
     // tagged[tagged] = tagged
@@ -6642,14 +6575,6 @@ class HStoreKeyedGeneric final : public HTemplateInstruction<4> {
   Handle<TypeFeedbackVector> feedback_vector() const {
     return feedback_vector_;
   }
-  bool HasVectorAndSlot() const {
-    return !feedback_vector_.is_null();
-  }
-  void SetVectorAndSlot(Handle<TypeFeedbackVector> vector,
-                        FeedbackVectorSlot slot) {
-    feedback_vector_ = vector;
-    slot_ = slot;
-  }
 
   std::ostream& PrintDataTo(std::ostream& os) const override;  // NOLINT
 
@@ -6658,9 +6583,8 @@ class HStoreKeyedGeneric final : public HTemplateInstruction<4> {
  private:
   HStoreKeyedGeneric(HValue* context, HValue* object, HValue* key,
                      HValue* value, LanguageMode language_mode,
-                     InlineCacheState initialization_state)
-      : language_mode_(language_mode),
-        initialization_state_(initialization_state) {
+                     Handle<TypeFeedbackVector> vector, FeedbackVectorSlot slot)
+      : feedback_vector_(vector), slot_(slot), language_mode_(language_mode) {
     SetOperandAt(0, object);
     SetOperandAt(1, key);
     SetOperandAt(2, value);
@@ -6671,9 +6595,7 @@ class HStoreKeyedGeneric final : public HTemplateInstruction<4> {
   Handle<TypeFeedbackVector> feedback_vector_;
   FeedbackVectorSlot slot_;
   LanguageMode language_mode_;
-  InlineCacheState initialization_state_;
 };
-
 
 class HTransitionElementsKind final : public HTemplateInstruction<2> {
  public:

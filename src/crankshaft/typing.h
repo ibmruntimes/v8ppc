@@ -7,8 +7,8 @@
 
 #include "src/allocation.h"
 #include "src/ast/ast-type-bounds.h"
-#include "src/ast/ast.h"
 #include "src/ast/scopes.h"
+#include "src/ast/variables.h"
 #include "src/effects.h"
 #include "src/type-info.h"
 #include "src/types.h"
@@ -17,10 +17,12 @@
 namespace v8 {
 namespace internal {
 
-class AstTyper: public AstVisitor {
+class FunctionLiteral;
+
+class AstTyper final : public AstVisitor<AstTyper> {
  public:
   AstTyper(Isolate* isolate, Zone* zone, Handle<JSFunction> closure,
-           Scope* scope, BailoutId osr_ast_id, FunctionLiteral* root,
+           DeclarationScope* scope, BailoutId osr_ast_id, FunctionLiteral* root,
            AstTypeBounds* bounds);
   void Run();
 
@@ -37,7 +39,7 @@ class AstTyper: public AstVisitor {
   Isolate* isolate_;
   Zone* zone_;
   Handle<JSFunction> closure_;
-  Scope* scope_;
+  DeclarationScope* scope_;
   BailoutId osr_ast_id_;
   FunctionLiteral* root_;
   TypeFeedbackOracle oracle_;
@@ -71,10 +73,10 @@ class AstTyper: public AstVisitor {
            var->IsParameter() ? parameter_index(var->index()) : kNoVar;
   }
 
-  void VisitDeclarations(ZoneList<Declaration*>* declarations) override;
-  void VisitStatements(ZoneList<Statement*>* statements) override;
+  void VisitDeclarations(ZoneList<Declaration*>* declarations);
+  void VisitStatements(ZoneList<Statement*>* statements);
 
-#define DECLARE_VISIT(type) void Visit##type(type* node) override;
+#define DECLARE_VISIT(type) void Visit##type(type* node);
   AST_NODE_LIST(DECLARE_VISIT)
 #undef DECLARE_VISIT
 

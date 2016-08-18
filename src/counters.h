@@ -9,7 +9,7 @@
 #include "src/allocation.h"
 #include "src/base/platform/elapsed-timer.h"
 #include "src/base/platform/time.h"
-#include "src/builtins.h"
+#include "src/builtins/builtins.h"
 #include "src/globals.h"
 #include "src/objects.h"
 #include "src/runtime/runtime.h"
@@ -482,6 +482,7 @@ double AggregatedMemoryHistogram<Histogram>::Aggregate(double current_ms,
 struct RuntimeCallCounter {
   explicit RuntimeCallCounter(const char* name) : name(name) {}
   void Reset();
+  V8_NOINLINE void Dump(std::stringstream& out);
 
   const char* name;
   int64_t count = 0;
@@ -493,6 +494,8 @@ struct RuntimeCallCounter {
 class RuntimeCallTimer {
  public:
   RuntimeCallTimer() {}
+  RuntimeCallCounter* counter() { return counter_; }
+  base::ElapsedTimer timer() { return timer_; }
 
  private:
   friend class RuntimeCallStats;
@@ -529,6 +532,7 @@ class RuntimeCallTimer {
   V(BooleanObject_BooleanValue)                            \
   V(BooleanObject_New)                                     \
   V(Context_New)                                           \
+  V(Context_NewRemoteContext)                              \
   V(DataView_New)                                          \
   V(Date_DateTimeConfigurationChangeNotification)          \
   V(Date_New)                                              \
@@ -544,6 +548,7 @@ class RuntimeCallTimer {
   V(Function_NewInstance)                                  \
   V(FunctionTemplate_GetFunction)                          \
   V(FunctionTemplate_New)                                  \
+  V(FunctionTemplate_NewRemoteInstance)                    \
   V(FunctionTemplate_NewWithFastHandler)                   \
   V(Int16Array_New)                                        \
   V(Int32Array_New)                                        \
@@ -660,6 +665,7 @@ class RuntimeCallTimer {
   V(AccessorNameSetterCallback)                     \
   V(Compile)                                        \
   V(CompileCode)                                    \
+  V(CompileCodeLazy)                                \
   V(CompileDeserialize)                             \
   V(CompileEval)                                    \
   V(CompileFullCode)                                \
@@ -700,13 +706,12 @@ class RuntimeCallTimer {
   V(KeyedLoadIC_KeyedLoadSloppyArgumentsStub)   \
   V(KeyedLoadIC_LoadFastElementStub)            \
   V(KeyedLoadIC_LoadDictionaryElementStub)      \
-  V(KeyedLoadIC_PolymorphicElement)             \
+  V(KeyedLoadIC_SlowStub)                       \
   V(KeyedStoreIC_KeyedStoreSloppyArgumentsStub) \
   V(KeyedStoreIC_StoreFastElementStub)          \
   V(KeyedStoreIC_StoreElementStub)              \
   V(KeyedStoreIC_Polymorphic)                   \
   V(LoadIC_FunctionPrototypeStub)               \
-  V(LoadIC_ArrayBufferViewLoadFieldStub)        \
   V(LoadIC_LoadApiGetterStub)                   \
   V(LoadIC_LoadCallback)                        \
   V(LoadIC_LoadConstant)                        \
@@ -745,7 +750,7 @@ class RuntimeCallStats {
   RuntimeCallCounter Runtime_##name = RuntimeCallCounter(#name);
   FOR_EACH_INTRINSIC(CALL_RUNTIME_COUNTER)
 #undef CALL_RUNTIME_COUNTER
-#define CALL_BUILTIN_COUNTER(name, type) \
+#define CALL_BUILTIN_COUNTER(name) \
   RuntimeCallCounter Builtin_##name = RuntimeCallCounter(#name);
   BUILTIN_LIST_C(CALL_BUILTIN_COUNTER)
 #undef CALL_BUILTIN_COUNTER
@@ -776,6 +781,7 @@ class RuntimeCallStats {
   void Print(std::ostream& os);
 
   RuntimeCallStats() { Reset(); }
+  RuntimeCallTimer* current_timer() { return current_timer_; }
 
  private:
   // Counter to track recursive time events.
@@ -880,7 +886,6 @@ class RuntimeCallTimerScope {
 #define AGGREGATABLE_HISTOGRAM_TIMER_LIST(AHT) \
   AHT(compile_lazy, V8.CompileLazyMicroSeconds)
 
-
 #define HISTOGRAM_PERCENTAGE_LIST(HP)                                          \
   /* Heap fragmentation. */                                                    \
   HP(external_fragmentation_total, V8.MemoryExternalFragmentationTotal)        \
@@ -894,10 +899,7 @@ class RuntimeCallTimerScope {
   HP(heap_fraction_old_space, V8.MemoryHeapFractionOldSpace)                   \
   HP(heap_fraction_code_space, V8.MemoryHeapFractionCodeSpace)                 \
   HP(heap_fraction_map_space, V8.MemoryHeapFractionMapSpace)                   \
-  HP(heap_fraction_lo_space, V8.MemoryHeapFractionLoSpace)                     \
-  /* Percentage of crankshafted codegen. */                                    \
-  HP(codegen_fraction_crankshaft, V8.CodegenFractionCrankshaft)
-
+  HP(heap_fraction_lo_space, V8.MemoryHeapFractionLoSpace)
 
 #define HISTOGRAM_LEGACY_MEMORY_LIST(HM)                                      \
   HM(heap_sample_total_committed, V8.MemoryHeapSampleTotalCommitted)          \
@@ -1015,7 +1017,6 @@ class RuntimeCallTimerScope {
   SC(regexp_entry_native, V8.RegExpEntryNative)                                \
   SC(number_to_string_native, V8.NumberToStringNative)                         \
   SC(number_to_string_runtime, V8.NumberToStringRuntime)                       \
-  SC(math_atan2_runtime, V8.MathAtan2Runtime)                                  \
   SC(math_exp_runtime, V8.MathExpRuntime)                                      \
   SC(math_log_runtime, V8.MathLogRuntime)                                      \
   SC(math_pow_runtime, V8.MathPowRuntime)                                      \
@@ -1052,7 +1053,9 @@ class RuntimeCallTimerScope {
   /* Total code size (including metadata) of baseline code or bytecode. */     \
   SC(total_baseline_code_size, V8.TotalBaselineCodeSize)                       \
   /* Total count of functions compiled using the baseline compiler. */         \
-  SC(total_baseline_compile_count, V8.TotalBaselineCompileCount)
+  SC(total_baseline_compile_count, V8.TotalBaselineCompileCount)               \
+  SC(wasm_generated_code_size, V8.WasmGeneratedCodeBytes)                      \
+  SC(wasm_reloc_size, V8.WasmRelocBytes)
 
 // This file contains all the v8 counters that are in use.
 class Counters {

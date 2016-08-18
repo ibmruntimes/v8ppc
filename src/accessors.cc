@@ -72,9 +72,6 @@ bool Accessors::IsJSObjectFieldAccessor(Handle<Map> map, Handle<Name> name,
       return
         CheckForName(name, isolate->factory()->length_string(),
                      JSArray::kLengthOffset, object_offset);
-    case JS_ARRAY_BUFFER_TYPE:
-      return CheckForName(name, isolate->factory()->byte_length_string(),
-                          JSArrayBuffer::kByteLengthOffset, object_offset);
     default:
       if (map->instance_type() < FIRST_NONSTRING_TYPE) {
         return CheckForName(name, isolate->factory()->length_string(),
@@ -571,7 +568,7 @@ void Accessors::ScriptEvalFromScriptGetter(
   Handle<Script> script(
       Script::cast(Handle<JSValue>::cast(object)->value()), isolate);
   Handle<Object> result = isolate->factory()->undefined_value();
-  if (!script->eval_from_shared()->IsUndefined()) {
+  if (!script->eval_from_shared()->IsUndefined(isolate)) {
     Handle<SharedFunctionInfo> eval_from_shared(
         SharedFunctionInfo::cast(script->eval_from_shared()));
     if (eval_from_shared->script()->IsScript()) {
@@ -637,11 +634,11 @@ void Accessors::ScriptEvalFromFunctionNameGetter(
   Handle<Script> script(
       Script::cast(Handle<JSValue>::cast(object)->value()), isolate);
   Handle<Object> result = isolate->factory()->undefined_value();
-  if (!script->eval_from_shared()->IsUndefined()) {
+  if (!script->eval_from_shared()->IsUndefined(isolate)) {
     Handle<SharedFunctionInfo> shared(
         SharedFunctionInfo::cast(script->eval_from_shared()));
     // Find the name of the function calling eval.
-    if (!shared->name()->IsUndefined()) {
+    if (!shared->name()->IsUndefined(isolate)) {
       result = Handle<Object>(shared->name(), isolate);
     } else {
       result = Handle<Object>(shared->inferred_name(), isolate);
@@ -874,7 +871,16 @@ Handle<Object> GetFunctionArguments(Isolate* isolate,
 
     // Copy the parameters to the arguments object.
     DCHECK(array->length() == length);
-    for (int i = 0; i < length; i++) array->set(i, frame->GetParameter(i));
+    for (int i = 0; i < length; i++) {
+      Object* value = frame->GetParameter(i);
+      if (value->IsTheHole(isolate)) {
+        // Generators currently use holes as dummy arguments when resuming.  We
+        // must not leak those.
+        DCHECK(IsResumableFunction(function->shared()->kind()));
+        value = isolate->heap()->undefined_value();
+      }
+      array->set(i, value);
+    }
     arguments->set_elements(*array);
 
     // Return the freshly allocated arguments object.
@@ -1111,62 +1117,120 @@ Handle<AccessorInfo> Accessors::BoundFunctionNameInfo(
 }
 
 //
-// Accessors::MakeModuleExport
+// Accessors::ErrorStack
 //
 
-static void ModuleGetExport(v8::Local<v8::Name> property,
-                            const v8::PropertyCallbackInfo<v8::Value>& info) {
-  JSModule* instance = JSModule::cast(*v8::Utils::OpenHandle(*info.Holder()));
-  Context* context = Context::cast(instance->context());
-  DCHECK(context->IsModuleContext());
-  Isolate* isolate = instance->GetIsolate();
-  int slot = info.Data()
-                 ->Int32Value(info.GetIsolate()->GetCurrentContext())
-                 .FromMaybe(-1);
-  if (slot < 0 || slot >= context->length()) {
-    Handle<Name> name = v8::Utils::OpenHandle(*property);
+namespace {
 
-    Handle<Object> exception = isolate->factory()->NewReferenceError(
-        MessageTemplate::kNotDefined, name);
-    isolate->ScheduleThrow(*exception);
-    return;
-  }
-  Object* value = context->get(slot);
-  if (value->IsTheHole()) {
-    Handle<Name> name = v8::Utils::OpenHandle(*property);
-
-    Handle<Object> exception = isolate->factory()->NewReferenceError(
-        MessageTemplate::kNotDefined, name);
-    isolate->ScheduleThrow(*exception);
-    return;
-  }
-  info.GetReturnValue().Set(v8::Utils::ToLocal(Handle<Object>(value, isolate)));
+MaybeHandle<JSReceiver> ClearInternalStackTrace(Isolate* isolate,
+                                                Handle<JSObject> error) {
+  RETURN_ON_EXCEPTION(
+      isolate,
+      JSReceiver::SetProperty(error, isolate->factory()->stack_trace_symbol(),
+                              isolate->factory()->undefined_value(), STRICT),
+      JSReceiver);
+  return error;
 }
 
-
-static void ModuleSetExport(v8::Local<v8::Name> property,
-                            v8::Local<v8::Value> value,
-                            const v8::PropertyCallbackInfo<void>& info) {
-  if (!info.ShouldThrowOnError()) return;
-  Handle<Name> name = v8::Utils::OpenHandle(*property);
-  Isolate* isolate = name->GetIsolate();
-  Handle<Object> exception =
-      isolate->factory()->NewTypeError(MessageTemplate::kNotDefined, name);
-  isolate->ScheduleThrow(*exception);
+bool IsAccessor(Handle<Object> receiver, Handle<Name> name,
+                Handle<JSObject> holder) {
+  LookupIterator it(receiver, name, holder,
+                    LookupIterator::OWN_SKIP_INTERCEPTOR);
+  // Skip any access checks we might hit. This accessor should never hit in a
+  // situation where the caller does not have access.
+  if (it.state() == LookupIterator::ACCESS_CHECK) {
+    CHECK(it.HasAccess());
+    it.Next();
+  }
+  return (it.state() == LookupIterator::ACCESSOR);
 }
 
+}  // namespace
 
-Handle<AccessorInfo> Accessors::MakeModuleExport(
-    Handle<String> name,
-    int index,
-    PropertyAttributes attributes) {
-  Isolate* isolate = name->GetIsolate();
-  Handle<AccessorInfo> info = MakeAccessor(isolate, name, &ModuleGetExport,
-                                           &ModuleSetExport, attributes);
-  info->set_data(Smi::FromInt(index));
+void Accessors::ErrorStackGetter(
+    v8::Local<v8::Name> key, const v8::PropertyCallbackInfo<v8::Value>& info) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
+  HandleScope scope(isolate);
+  Handle<JSObject> holder =
+      Handle<JSObject>::cast(Utils::OpenHandle(*info.Holder()));
+
+  // Retrieve the structured stack trace.
+
+  Handle<Object> stack_trace;
+  Handle<Symbol> stack_trace_symbol = isolate->factory()->stack_trace_symbol();
+  MaybeHandle<Object> maybe_stack_trace =
+      JSObject::GetProperty(holder, stack_trace_symbol);
+  if (!maybe_stack_trace.ToHandle(&stack_trace) ||
+      stack_trace->IsUndefined(isolate)) {
+    Handle<Object> result = isolate->factory()->undefined_value();
+    info.GetReturnValue().Set(Utils::ToLocal(result));
+    return;
+  }
+
+  // Format it, clear the internal structured trace and reconfigure as a data
+  // property.
+
+  Handle<Object> formatted_stack_trace;
+  if (!ErrorUtils::FormatStackTrace(isolate, holder, stack_trace)
+           .ToHandle(&formatted_stack_trace)) {
+    isolate->OptionalRescheduleException(false);
+    return;
+  }
+
+  MaybeHandle<Object> result = ClearInternalStackTrace(isolate, holder);
+  if (result.is_null()) {
+    isolate->OptionalRescheduleException(false);
+    return;
+  }
+
+  // If stack is still an accessor (this could have changed in the meantime
+  // since FormatStackTrace can execute arbitrary JS), replace it with a data
+  // property.
+  Handle<Object> receiver = Utils::OpenHandle(*info.This());
+  Handle<Name> name = Utils::OpenHandle(*key);
+  if (IsAccessor(receiver, name, holder)) {
+    result = ReplaceAccessorWithDataProperty(isolate, receiver, holder, name,
+                                             formatted_stack_trace);
+    if (result.is_null()) {
+      isolate->OptionalRescheduleException(false);
+      return;
+    }
+  } else {
+    // The stack property has been modified in the meantime.
+    if (!JSObject::GetProperty(holder, name).ToHandle(&formatted_stack_trace)) {
+      isolate->OptionalRescheduleException(false);
+      return;
+    }
+  }
+
+  v8::Local<v8::Value> value = Utils::ToLocal(formatted_stack_trace);
+  info.GetReturnValue().Set(value);
+}
+
+void Accessors::ErrorStackSetter(v8::Local<v8::Name> name,
+                                 v8::Local<v8::Value> val,
+                                 const v8::PropertyCallbackInfo<void>& info) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
+  HandleScope scope(isolate);
+  Handle<JSObject> obj =
+      Handle<JSObject>::cast(Utils::OpenHandle(*info.This()));
+
+  // Clear internal properties to avoid memory leaks.
+  Handle<Symbol> stack_trace_symbol = isolate->factory()->stack_trace_symbol();
+  if (JSReceiver::HasOwnProperty(obj, stack_trace_symbol).FromMaybe(false)) {
+    ClearInternalStackTrace(isolate, obj);
+  }
+
+  Accessors::ReconfigureToDataProperty(name, val, info);
+}
+
+Handle<AccessorInfo> Accessors::ErrorStackInfo(Isolate* isolate,
+                                               PropertyAttributes attributes) {
+  Handle<AccessorInfo> info =
+      MakeAccessor(isolate, isolate->factory()->stack_string(),
+                   &ErrorStackGetter, &ErrorStackSetter, attributes);
   return info;
 }
-
 
 }  // namespace internal
 }  // namespace v8

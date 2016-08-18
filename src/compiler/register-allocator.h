@@ -412,18 +412,8 @@ class LiveRange : public ZoneObject {
   void SetUseHints(int register_index);
   void UnsetUseHints() { SetUseHints(kUnassignedRegister); }
 
-  // Used solely by the Greedy Allocator:
-  unsigned GetSize();
-  float weight() const { return weight_; }
-  void set_weight(float weight) { weight_ = weight; }
-  LiveRangeGroup* group() const { return group_; }
-  void set_group(LiveRangeGroup* group) { group_ = group; }
   void Print(const RegisterConfiguration* config, bool with_children) const;
   void Print(bool with_children) const;
-
-  static const int kInvalidSize = -1;
-  static const float kInvalidWeight;
-  static const float kMaxWeight;
 
  private:
   friend class TopLevelLiveRange;
@@ -461,17 +451,6 @@ class LiveRange : public ZoneObject {
   mutable UsePosition* current_hint_position_;
   // Cache the last position splintering stopped at.
   mutable UsePosition* splitting_pointer_;
-  // greedy: the number of LifetimePositions covered by this range. Used to
-  // prioritize selecting live ranges for register assignment, as well as
-  // in weight calculations.
-  int size_;
-
-  // greedy: a metric for resolving conflicts between ranges with an assigned
-  // register and ranges that intersect them and need a register.
-  float weight_;
-
-  // greedy: groupping
-  LiveRangeGroup* group_;
 
   DISALLOW_COPY_AND_ASSIGN(LiveRange);
 };
@@ -483,7 +462,6 @@ class LiveRangeGroup final : public ZoneObject {
   ZoneVector<LiveRange*>& ranges() { return ranges_; }
   const ZoneVector<LiveRange*>& ranges() const { return ranges_; }
 
-  // TODO(mtrofin): populate assigned register and use in weight calculation.
   int assigned_register() const { return assigned_register_; }
   void set_assigned_register(int reg) { assigned_register_ = reg; }
 
@@ -700,8 +678,7 @@ class SpillRange final : public ZoneObject {
   SpillRange(TopLevelLiveRange* range, Zone* zone);
 
   UseInterval* interval() const { return use_interval_; }
-  // Currently, only 4 or 8 byte slots are supported.
-  int ByteWidth() const;
+
   bool IsEmpty() const { return live_ranges_.empty(); }
   bool TryMerge(SpillRange* other);
   bool HasSlot() const { return assigned_slot_ != kUnassignedSlot; }
@@ -718,8 +695,8 @@ class SpillRange final : public ZoneObject {
     return live_ranges_;
   }
   ZoneVector<TopLevelLiveRange*>& live_ranges() { return live_ranges_; }
+  // Spill slots can be 4, 8, or 16 bytes wide.
   int byte_width() const { return byte_width_; }
-  RegisterKind kind() const { return kind_; }
   void Print() const;
 
  private:
@@ -733,7 +710,6 @@ class SpillRange final : public ZoneObject {
   LifetimePosition end_position_;
   int assigned_slot_;
   int byte_width_;
-  RegisterKind kind_;
 
   DISALLOW_COPY_AND_ASSIGN(SpillRange);
 };
@@ -801,7 +777,7 @@ class RegisterAllocationData final : public ZoneObject {
   ZoneVector<SpillRange*>& spill_ranges() { return spill_ranges_; }
   DelayedReferences& delayed_references() { return delayed_references_; }
   InstructionSequence* code() const { return code_; }
-  // This zone is for datastructures only needed during register allocation
+  // This zone is for data structures only needed during register allocation
   // phases.
   Zone* allocation_zone() const { return allocation_zone_; }
   // This zone is for InstructionOperands and moves that live beyond register
@@ -832,7 +808,7 @@ class RegisterAllocationData final : public ZoneObject {
   bool ExistsUseWithoutDefinition();
   bool RangesDefinedInDeferredStayInDeferred();
 
-  void MarkAllocated(RegisterKind kind, int index);
+  void MarkAllocated(MachineRepresentation rep, int index);
 
   PhiMapValue* InitializePhiMap(const InstructionBlock* block,
                                 PhiInstruction* phi);
@@ -933,9 +909,9 @@ class LiveRangeBuilder final : public ZoneObject {
   void ProcessLoopHeader(const InstructionBlock* block, BitVector* live);
 
   static int FixedLiveRangeID(int index) { return -index - 1; }
-  int FixedDoubleLiveRangeID(int index);
+  int FixedFPLiveRangeID(int index, MachineRepresentation rep);
   TopLevelLiveRange* FixedLiveRangeFor(int index);
-  TopLevelLiveRange* FixedDoubleLiveRangeFor(int index);
+  TopLevelLiveRange* FixedFPLiveRangeFor(int index, MachineRepresentation rep);
 
   void MapPhiHint(InstructionOperand* operand, UsePosition* use_pos);
   void ResolvePhiHint(InstructionOperand* operand, UsePosition* use_pos);
@@ -969,7 +945,7 @@ class LiveRangeBuilder final : public ZoneObject {
 
 class RegisterAllocator : public ZoneObject {
  public:
-  explicit RegisterAllocator(RegisterAllocationData* data, RegisterKind kind);
+  RegisterAllocator(RegisterAllocationData* data, RegisterKind kind);
 
  protected:
   RegisterAllocationData* data() const { return data_; }
@@ -977,8 +953,8 @@ class RegisterAllocator : public ZoneObject {
   RegisterKind mode() const { return mode_; }
   int num_registers() const { return num_registers_; }
   int num_allocatable_registers() const { return num_allocatable_registers_; }
-  int allocatable_register_code(int allocatable_index) const {
-    return allocatable_register_codes_[allocatable_index];
+  const int* allocatable_register_codes() const {
+    return allocatable_register_codes_;
   }
 
   // TODO(mtrofin): explain why splitting in gap START is always OK.
@@ -1030,6 +1006,9 @@ class RegisterAllocator : public ZoneObject {
   const int num_registers_;
   int num_allocatable_registers_;
   const int* allocatable_register_codes_;
+
+ private:
+  bool no_combining_;
 
   DISALLOW_COPY_AND_ASSIGN(RegisterAllocator);
 };

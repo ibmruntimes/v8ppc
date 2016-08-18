@@ -176,6 +176,7 @@ class LookupIterator final BASE_EMBEDDED {
   Handle<Object> GetReceiver() const { return receiver_; }
 
   Handle<JSObject> GetStoreTarget() const {
+    DCHECK(receiver_->IsJSObject());
     if (receiver_->IsJSGlobalProxy()) {
       Map* map = JSGlobalProxy::cast(*receiver_)->map();
       if (map->has_hidden_prototype()) {
@@ -189,6 +190,10 @@ class LookupIterator final BASE_EMBEDDED {
   Handle<Map> transition_map() const {
     DCHECK_EQ(TRANSITION, state_);
     return Handle<Map>::cast(transition_);
+  }
+  Handle<PropertyCell> transition_cell() const {
+    DCHECK_EQ(TRANSITION, state_);
+    return Handle<PropertyCell>::cast(transition_);
   }
   template <class T>
   Handle<T> GetHolder() const {
@@ -257,15 +262,15 @@ class LookupIterator final BASE_EMBEDDED {
                     : GetInterceptor<false>(JSObject::cast(*holder_));
     return handle(result, isolate_);
   }
+  Handle<InterceptorInfo> GetInterceptorForFailedAccessCheck() const;
   Handle<Object> GetDataValue() const;
   void WriteDataValue(Handle<Object> value);
   inline void UpdateProtector() {
     if (IsElement()) return;
     if (*name_ == heap()->is_concat_spreadable_symbol() ||
-        (FLAG_harmony_species && (*name_ == heap()->constructor_string() ||
-                                  *name_ == heap()->species_symbol())) ||
-        (FLAG_harmony_instanceof &&
-         (*name_ == heap()->has_instance_symbol()))) {
+        *name_ == heap()->constructor_string() ||
+        *name_ == heap()->species_symbol() ||
+        *name_ == heap()->has_instance_symbol()) {
       InternalUpdateProtector();
     }
   }

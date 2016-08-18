@@ -35,9 +35,13 @@ BranchHint BranchHintOf(const Operator* const op) {
   return OpParameter<BranchHint>(op);
 }
 
+DeoptimizeReason DeoptimizeReasonOf(Operator const* const op) {
+  DCHECK(op->opcode() == IrOpcode::kDeoptimizeIf ||
+         op->opcode() == IrOpcode::kDeoptimizeUnless);
+  return OpParameter<DeoptimizeReason>(op);
+}
 
 size_t hash_value(DeoptimizeKind kind) { return static_cast<size_t>(kind); }
-
 
 std::ostream& operator<<(std::ostream& os, DeoptimizeKind kind) {
   switch (kind) {
@@ -50,25 +54,25 @@ std::ostream& operator<<(std::ostream& os, DeoptimizeKind kind) {
   return os;
 }
 
-
-DeoptimizeKind DeoptimizeKindOf(const Operator* const op) {
-  DCHECK_EQ(IrOpcode::kDeoptimize, op->opcode());
-  return OpParameter<DeoptimizeKind>(op);
+bool operator==(DeoptimizeParameters lhs, DeoptimizeParameters rhs) {
+  return lhs.kind() == rhs.kind() && lhs.reason() == rhs.reason();
 }
 
+bool operator!=(DeoptimizeParameters lhs, DeoptimizeParameters rhs) {
+  return !(lhs == rhs);
+}
 
-size_t hash_value(IfExceptionHint hint) { return static_cast<size_t>(hint); }
+size_t hash_value(DeoptimizeParameters p) {
+  return base::hash_combine(p.kind(), p.reason());
+}
 
+std::ostream& operator<<(std::ostream& os, DeoptimizeParameters p) {
+  return os << p.kind() << ":" << p.reason();
+}
 
-std::ostream& operator<<(std::ostream& os, IfExceptionHint hint) {
-  switch (hint) {
-    case IfExceptionHint::kLocallyCaught:
-      return os << "Caught";
-    case IfExceptionHint::kLocallyUncaught:
-      return os << "Uncaught";
-  }
-  UNREACHABLE();
-  return os;
+DeoptimizeParameters const& DeoptimizeParametersOf(Operator const* const op) {
+  DCHECK_EQ(IrOpcode::kDeoptimize, op->opcode());
+  return OpParameter<DeoptimizeParameters>(op);
 }
 
 
@@ -167,21 +171,62 @@ std::ostream& operator<<(std::ostream& os,
   return os << p.value() << "|" << p.rmode() << "|" << p.type();
 }
 
-#define CACHED_OP_LIST(V)                                    \
-  V(Dead, Operator::kFoldable, 0, 0, 0, 1, 1, 1)             \
-  V(DeoptimizeIf, Operator::kFoldable, 2, 1, 1, 0, 1, 1)     \
-  V(DeoptimizeUnless, Operator::kFoldable, 2, 1, 1, 0, 1, 1) \
-  V(IfTrue, Operator::kKontrol, 0, 0, 1, 0, 0, 1)            \
-  V(IfFalse, Operator::kKontrol, 0, 0, 1, 0, 0, 1)           \
-  V(IfSuccess, Operator::kKontrol, 0, 0, 1, 0, 0, 1)         \
-  V(IfDefault, Operator::kKontrol, 0, 0, 1, 0, 0, 1)         \
-  V(Throw, Operator::kKontrol, 1, 1, 1, 0, 0, 1)             \
-  V(Terminate, Operator::kKontrol, 0, 1, 1, 0, 0, 1)         \
-  V(OsrNormalEntry, Operator::kFoldable, 0, 1, 1, 0, 1, 1)   \
-  V(OsrLoopEntry, Operator::kFoldable, 0, 1, 1, 0, 1, 1)     \
-  V(CheckPoint, Operator::kKontrol, 1, 1, 1, 0, 1, 0)        \
-  V(BeginRegion, Operator::kNoThrow, 0, 1, 0, 0, 1, 0)       \
-  V(FinishRegion, Operator::kNoThrow, 1, 1, 0, 1, 1, 0)
+size_t hash_value(RegionObservability observability) {
+  return static_cast<size_t>(observability);
+}
+
+std::ostream& operator<<(std::ostream& os, RegionObservability observability) {
+  switch (observability) {
+    case RegionObservability::kObservable:
+      return os << "observable";
+    case RegionObservability::kNotObservable:
+      return os << "not-observable";
+  }
+  UNREACHABLE();
+  return os;
+}
+
+RegionObservability RegionObservabilityOf(Operator const* op) {
+  DCHECK_EQ(IrOpcode::kBeginRegion, op->opcode());
+  return OpParameter<RegionObservability>(op);
+}
+
+Type* TypeGuardTypeOf(Operator const* op) {
+  DCHECK_EQ(IrOpcode::kTypeGuard, op->opcode());
+  return OpParameter<Type*>(op);
+}
+
+std::ostream& operator<<(std::ostream& os,
+                         const ZoneVector<MachineType>* types) {
+  // Print all the MachineTypes, separated by commas.
+  bool first = true;
+  for (MachineType elem : *types) {
+    if (!first) {
+      os << ", ";
+    }
+    first = false;
+    os << elem;
+  }
+  return os;
+}
+
+#define CACHED_OP_LIST(V)                                                     \
+  V(Dead, Operator::kFoldable, 0, 0, 0, 1, 1, 1)                              \
+  V(IfTrue, Operator::kKontrol, 0, 0, 1, 0, 0, 1)                             \
+  V(IfFalse, Operator::kKontrol, 0, 0, 1, 0, 0, 1)                            \
+  V(IfSuccess, Operator::kKontrol, 0, 0, 1, 0, 0, 1)                          \
+  V(IfException, Operator::kKontrol, 0, 1, 1, 1, 1, 1)                        \
+  V(IfDefault, Operator::kKontrol, 0, 0, 1, 0, 0, 1)                          \
+  V(Throw, Operator::kKontrol, 1, 1, 1, 0, 0, 1)                              \
+  V(Terminate, Operator::kKontrol, 0, 1, 1, 0, 0, 1)                          \
+  V(OsrNormalEntry, Operator::kFoldable, 0, 1, 1, 0, 1, 1)                    \
+  V(OsrLoopEntry, Operator::kFoldable | Operator::kNoThrow, 0, 1, 1, 0, 1, 1) \
+  V(LoopExit, Operator::kKontrol, 0, 0, 2, 0, 0, 1)                           \
+  V(LoopExitValue, Operator::kPure, 1, 0, 1, 1, 0, 0)                         \
+  V(LoopExitEffect, Operator::kNoThrow, 0, 1, 1, 0, 1, 0)                     \
+  V(Checkpoint, Operator::kKontrol, 0, 1, 1, 0, 1, 0)                         \
+  V(FinishRegion, Operator::kKontrol, 1, 1, 0, 1, 1, 0)                       \
+  V(Retain, Operator::kKontrol, 1, 1, 0, 0, 1, 0)
 
 #define CACHED_RETURN_LIST(V) \
   V(1)                        \
@@ -208,6 +253,11 @@ std::ostream& operator<<(std::ostream& os,
   V(5)                            \
   V(6)
 
+#define CACHED_INDUCTION_VARIABLE_PHI_LIST(V) \
+  V(4)                                        \
+  V(5)                                        \
+  V(6)                                        \
+  V(7)
 
 #define CACHED_LOOP_LIST(V) \
   V(1)                      \
@@ -284,30 +334,6 @@ struct CommonOperatorGlobalCache final {
   CACHED_OP_LIST(CACHED)
 #undef CACHED
 
-  template <DeoptimizeKind kKind>
-  struct DeoptimizeOperator final : public Operator1<DeoptimizeKind> {
-    DeoptimizeOperator()
-        : Operator1<DeoptimizeKind>(                      // --
-              IrOpcode::kDeoptimize, Operator::kNoThrow,  // opcode
-              "Deoptimize",                               // name
-              1, 1, 1, 0, 0, 1,                           // counts
-              kKind) {}                                   // parameter
-  };
-  DeoptimizeOperator<DeoptimizeKind::kEager> kDeoptimizeEagerOperator;
-  DeoptimizeOperator<DeoptimizeKind::kSoft> kDeoptimizeSoftOperator;
-
-  template <IfExceptionHint kCaughtLocally>
-  struct IfExceptionOperator final : public Operator1<IfExceptionHint> {
-    IfExceptionOperator()
-        : Operator1<IfExceptionHint>(                      // --
-              IrOpcode::kIfException, Operator::kKontrol,  // opcode
-              "IfException",                               // name
-              0, 1, 1, 1, 1, 1,                            // counts
-              kCaughtLocally) {}                           // parameter
-  };
-  IfExceptionOperator<IfExceptionHint::kLocallyCaught> kIfExceptionCOperator;
-  IfExceptionOperator<IfExceptionHint::kLocallyUncaught> kIfExceptionUOperator;
-
   template <size_t kInputCount>
   struct EndOperator final : public Operator {
     EndOperator()
@@ -350,15 +376,29 @@ struct CommonOperatorGlobalCache final {
   template <int kEffectInputCount>
   struct EffectPhiOperator final : public Operator {
     EffectPhiOperator()
-        : Operator(                                   // --
-              IrOpcode::kEffectPhi, Operator::kPure,  // opcode
-              "EffectPhi",                            // name
-              0, kEffectInputCount, 1, 0, 1, 0) {}    // counts
+        : Operator(                                      // --
+              IrOpcode::kEffectPhi, Operator::kKontrol,  // opcode
+              "EffectPhi",                               // name
+              0, kEffectInputCount, 1, 0, 1, 0) {}       // counts
   };
 #define CACHED_EFFECT_PHI(input_count) \
   EffectPhiOperator<input_count> kEffectPhi##input_count##Operator;
   CACHED_EFFECT_PHI_LIST(CACHED_EFFECT_PHI)
 #undef CACHED_EFFECT_PHI
+
+  template <RegionObservability kRegionObservability>
+  struct BeginRegionOperator final : public Operator1<RegionObservability> {
+    BeginRegionOperator()
+        : Operator1<RegionObservability>(                  // --
+              IrOpcode::kBeginRegion, Operator::kKontrol,  // opcode
+              "BeginRegion",                               // name
+              0, 1, 0, 0, 1, 0,                            // counts
+              kRegionObservability) {}                     // parameter
+  };
+  BeginRegionOperator<RegionObservability::kObservable>
+      kBeginRegionObservableOperator;
+  BeginRegionOperator<RegionObservability::kNotObservable>
+      kBeginRegionNotObservableOperator;
 
   template <size_t kInputCount>
   struct LoopOperator final : public Operator {
@@ -401,6 +441,20 @@ struct CommonOperatorGlobalCache final {
   CACHED_PHI_LIST(CACHED_PHI)
 #undef CACHED_PHI
 
+  template <int kInputCount>
+  struct InductionVariablePhiOperator final : public Operator {
+    InductionVariablePhiOperator()
+        : Operator(                                              //--
+              IrOpcode::kInductionVariablePhi, Operator::kPure,  // opcode
+              "InductionVariablePhi",                            // name
+              kInputCount, 0, 1, 1, 0, 0) {}                     // counts
+  };
+#define CACHED_INDUCTION_VARIABLE_PHI(input_count) \
+  InductionVariablePhiOperator<input_count>        \
+      kInductionVariablePhi##input_count##Operator;
+  CACHED_INDUCTION_VARIABLE_PHI_LIST(CACHED_INDUCTION_VARIABLE_PHI)
+#undef CACHED_INDUCTION_VARIABLE_PHI
+
   template <int kIndex>
   struct ParameterOperator final : public Operator1<ParameterInfo> {
     ParameterOperator()
@@ -422,7 +476,7 @@ struct CommonOperatorGlobalCache final {
               IrOpcode::kProjection,  // opcode
               Operator::kPure,        // flags
               "Projection",           // name
-              1, 0, 0, 1, 0, 0,       // counts,
+              1, 0, 1, 1, 0, 0,       // counts,
               kIndex) {}              // parameter
   };
 #define CACHED_PROJECTION(index) \
@@ -513,28 +567,37 @@ const Operator* CommonOperatorBuilder::Branch(BranchHint hint) {
   return nullptr;
 }
 
-
-const Operator* CommonOperatorBuilder::Deoptimize(DeoptimizeKind kind) {
-  switch (kind) {
-    case DeoptimizeKind::kEager:
-      return &cache_.kDeoptimizeEagerOperator;
-    case DeoptimizeKind::kSoft:
-      return &cache_.kDeoptimizeSoftOperator;
-  }
-  UNREACHABLE();
-  return nullptr;
+const Operator* CommonOperatorBuilder::Deoptimize(DeoptimizeKind kind,
+                                                  DeoptimizeReason reason) {
+  // TODO(turbofan): Cache the most common versions of this.
+  DeoptimizeParameters parameter(kind, reason);
+  return new (zone()) Operator1<DeoptimizeParameters>(  // --
+      IrOpcode::kDeoptimize,                            // opcodes
+      Operator::kFoldable | Operator::kNoThrow,         // properties
+      "Deoptimize",                                     // name
+      1, 1, 1, 0, 0, 1,                                 // counts
+      parameter);                                       // parameter
 }
 
+const Operator* CommonOperatorBuilder::DeoptimizeIf(DeoptimizeReason reason) {
+  // TODO(turbofan): Cache the most common versions of this.
+  return new (zone()) Operator1<DeoptimizeReason>(  // --
+      IrOpcode::kDeoptimizeIf,                      // opcode
+      Operator::kFoldable | Operator::kNoThrow,     // properties
+      "DeoptimizeIf",                               // name
+      2, 1, 1, 0, 1, 1,                             // counts
+      reason);                                      // parameter
+}
 
-const Operator* CommonOperatorBuilder::IfException(IfExceptionHint hint) {
-  switch (hint) {
-    case IfExceptionHint::kLocallyCaught:
-      return &cache_.kIfExceptionCOperator;
-    case IfExceptionHint::kLocallyUncaught:
-      return &cache_.kIfExceptionUOperator;
-  }
-  UNREACHABLE();
-  return nullptr;
+const Operator* CommonOperatorBuilder::DeoptimizeUnless(
+    DeoptimizeReason reason) {
+  // TODO(turbofan): Cache the most common versions of this.
+  return new (zone()) Operator1<DeoptimizeReason>(  // --
+      IrOpcode::kDeoptimizeUnless,                  // opcode
+      Operator::kFoldable | Operator::kNoThrow,     // properties
+      "DeoptimizeUnless",                           // name
+      2, 1, 1, 0, 1, 1,                             // counts
+      reason);                                      // parameter
 }
 
 
@@ -556,10 +619,10 @@ const Operator* CommonOperatorBuilder::IfValue(int32_t index) {
 
 
 const Operator* CommonOperatorBuilder::Start(int value_output_count) {
-  return new (zone()) Operator(               // --
-      IrOpcode::kStart, Operator::kFoldable,  // opcode
-      "Start",                                // name
-      0, 0, 0, value_output_count, 1, 1);     // counts
+  return new (zone()) Operator(                                    // --
+      IrOpcode::kStart, Operator::kFoldable | Operator::kNoThrow,  // opcode
+      "Start",                                                     // name
+      0, 0, 0, value_output_count, 1, 1);                          // counts
 }
 
 
@@ -740,6 +803,13 @@ const Operator* CommonOperatorBuilder::Phi(MachineRepresentation rep,
       rep);                                              // parameter
 }
 
+const Operator* CommonOperatorBuilder::TypeGuard(Type* type) {
+  return new (zone()) Operator1<Type*>(       // --
+      IrOpcode::kTypeGuard, Operator::kPure,  // opcode
+      "TypeGuard",                            // name
+      1, 0, 1, 1, 0, 0,                       // counts
+      type);                                  // parameter
+}
 
 const Operator* CommonOperatorBuilder::EffectPhi(int effect_input_count) {
   DCHECK(effect_input_count > 0);  // Disallow empty effect phis.
@@ -753,12 +823,42 @@ const Operator* CommonOperatorBuilder::EffectPhi(int effect_input_count) {
       break;
   }
   // Uncached.
-  return new (zone()) Operator(               // --
-      IrOpcode::kEffectPhi, Operator::kPure,  // opcode
-      "EffectPhi",                            // name
-      0, effect_input_count, 1, 0, 1, 0);     // counts
+  return new (zone()) Operator(                  // --
+      IrOpcode::kEffectPhi, Operator::kKontrol,  // opcode
+      "EffectPhi",                               // name
+      0, effect_input_count, 1, 0, 1, 0);        // counts
 }
 
+const Operator* CommonOperatorBuilder::InductionVariablePhi(int input_count) {
+  DCHECK(input_count >= 4);  // There must be always the entry, backedge,
+                             // increment and at least one bound.
+  switch (input_count) {
+#define CACHED_INDUCTION_VARIABLE_PHI(input_count) \
+  case input_count:                                \
+    return &cache_.kInductionVariablePhi##input_count##Operator;
+    CACHED_INDUCTION_VARIABLE_PHI_LIST(CACHED_INDUCTION_VARIABLE_PHI)
+#undef CACHED_INDUCTION_VARIABLE_PHI
+    default:
+      break;
+  }
+  // Uncached.
+  return new (zone()) Operator(                          // --
+      IrOpcode::kInductionVariablePhi, Operator::kPure,  // opcode
+      "InductionVariablePhi",                            // name
+      input_count, 0, 1, 1, 0, 0);                       // counts
+}
+
+const Operator* CommonOperatorBuilder::BeginRegion(
+    RegionObservability region_observability) {
+  switch (region_observability) {
+    case RegionObservability::kObservable:
+      return &cache_.kBeginRegionObservableOperator;
+    case RegionObservability::kNotObservable:
+      return &cache_.kBeginRegionNotObservableOperator;
+  }
+  UNREACHABLE();
+  return nullptr;
+}
 
 const Operator* CommonOperatorBuilder::StateValues(int arguments) {
   switch (arguments) {
@@ -820,7 +920,7 @@ const Operator* CommonOperatorBuilder::Call(const CallDescriptor* descriptor) {
               Operator::ZeroIfPure(descriptor->properties()),
               Operator::ZeroIfNoThrow(descriptor->properties()), descriptor) {}
 
-    void PrintParameter(std::ostream& os) const override {
+    void PrintParameter(std::ostream& os, PrintVerbosity verbose) const {
       os << "[" << *parameter() << "]";
     }
   };
@@ -834,11 +934,12 @@ const Operator* CommonOperatorBuilder::TailCall(
    public:
     explicit TailCallOperator(const CallDescriptor* descriptor)
         : Operator1<const CallDescriptor*>(
-              IrOpcode::kTailCall, descriptor->properties(), "TailCall",
+              IrOpcode::kTailCall,
+              descriptor->properties() | Operator::kNoThrow, "TailCall",
               descriptor->InputCount() + descriptor->FrameStateCount(), 1, 1, 0,
               0, 1, descriptor) {}
 
-    void PrintParameter(std::ostream& os) const override {
+    void PrintParameter(std::ostream& os, PrintVerbosity verbose) const {
       os << "[" << *parameter() << "]";
     }
   };
@@ -857,12 +958,12 @@ const Operator* CommonOperatorBuilder::Projection(size_t index) {
       break;
   }
   // Uncached.
-  return new (zone()) Operator1<size_t>(         // --
-      IrOpcode::kProjection,                     // opcode
-      Operator::kFoldable | Operator::kNoThrow,  // flags
-      "Projection",                              // name
-      1, 0, 0, 1, 0, 0,                          // counts
-      index);                                    // parameter
+  return new (zone()) Operator1<size_t>(  // --
+      IrOpcode::kProjection,              // opcode
+      Operator::kPure,                    // flags
+      "Projection",                       // name
+      1, 0, 1, 1, 0, 0,                   // counts
+      index);                             // parameter
 }
 
 

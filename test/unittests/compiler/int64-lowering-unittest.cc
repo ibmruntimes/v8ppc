@@ -123,72 +123,122 @@ TEST_F(Int64LoweringTest, Int64Constant) {
                         IsInt32Constant(high_word_value(0)), start(), start()));
 }
 
-TEST_F(Int64LoweringTest, Int64Load) {
-  int32_t base = 0x1234;
-  int32_t index = 0x5678;
+#if defined(V8_TARGET_LITTLE_ENDIAN)
+#define LOAD_VERIFY(kLoad)                                                     \
+  Matcher<Node*> high_word_load_matcher =                                      \
+      Is##kLoad(MachineType::Int32(), IsInt32Constant(base),                   \
+                IsInt32Add(IsInt32Constant(index), IsInt32Constant(0x4)),      \
+                start(), start());                                             \
+                                                                               \
+  EXPECT_THAT(                                                                 \
+      graph()->end()->InputAt(1),                                              \
+      IsReturn2(                                                               \
+          Is##kLoad(MachineType::Int32(), IsInt32Constant(base),               \
+                    IsInt32Constant(index),                                    \
+                    AllOf(CaptureEq(&high_word_load), high_word_load_matcher), \
+                    start()),                                                  \
+          AllOf(CaptureEq(&high_word_load), high_word_load_matcher), start(),  \
+          start()));
+#elif defined(V8_TARGET_BIG_ENDIAN)
+#define LOAD_VERIFY(kLoad)                                                     \
+  Matcher<Node*> high_word_load_matcher =                                      \
+      Is##kLoad(MachineType::Int32(), IsInt32Constant(base),                   \
+                IsInt32Constant(index), start(), start());                     \
+                                                                               \
+  EXPECT_THAT(                                                                 \
+      graph()->end()->InputAt(1),                                              \
+      IsReturn2(                                                               \
+          Is##kLoad(MachineType::Int32(), IsInt32Constant(base),               \
+                    IsInt32Add(IsInt32Constant(index), IsInt32Constant(0x4)),  \
+                    AllOf(CaptureEq(&high_word_load), high_word_load_matcher), \
+                    start()),                                                  \
+          AllOf(CaptureEq(&high_word_load), high_word_load_matcher), start(),  \
+          start()));
+#endif
 
-  LowerGraph(graph()->NewNode(machine()->Load(MachineType::Int64()),
-                              Int32Constant(base), Int32Constant(index),
-                              start(), start()),
-             MachineRepresentation::kWord64);
+#define INT64_LOAD_LOWERING(kLoad)                                       \
+  int32_t base = 0x1234;                                                 \
+  int32_t index = 0x5678;                                                \
+                                                                         \
+  LowerGraph(graph()->NewNode(machine()->kLoad(MachineType::Int64()),    \
+                              Int32Constant(base), Int32Constant(index), \
+                              start(), start()),                         \
+             MachineRepresentation::kWord64);                            \
+                                                                         \
+  Capture<Node*> high_word_load;                                         \
+  LOAD_VERIFY(kLoad)
 
-  Capture<Node*> high_word_load;
-  Matcher<Node*> high_word_load_matcher =
-      IsLoad(MachineType::Int32(), IsInt32Constant(base),
-             IsInt32Add(IsInt32Constant(index), IsInt32Constant(0x4)), start(),
-             start());
+TEST_F(Int64LoweringTest, Int64Load) { INT64_LOAD_LOWERING(Load); }
 
-  EXPECT_THAT(
-      graph()->end()->InputAt(1),
-      IsReturn2(IsLoad(MachineType::Int32(), IsInt32Constant(base),
-                       IsInt32Constant(index), AllOf(CaptureEq(&high_word_load),
-                                                     high_word_load_matcher),
-                       start()),
-                AllOf(CaptureEq(&high_word_load), high_word_load_matcher),
-                start(), start()));
+TEST_F(Int64LoweringTest, UnalignedInt64Load) {
+  INT64_LOAD_LOWERING(UnalignedLoad);
 }
 
+#if defined(V8_TARGET_LITTLE_ENDIAN)
+#define STORE_VERIFY(kStore, kRep)                                             \
+  EXPECT_THAT(                                                                 \
+      graph()->end()->InputAt(1),                                              \
+      IsReturn(IsInt32Constant(return_value),                                  \
+               Is##kStore(                                                     \
+                   kRep, IsInt32Constant(base), IsInt32Constant(index),        \
+                   IsInt32Constant(low_word_value(0)),                         \
+                   Is##kStore(                                                 \
+                       kRep, IsInt32Constant(base),                            \
+                       IsInt32Add(IsInt32Constant(index), IsInt32Constant(4)), \
+                       IsInt32Constant(high_word_value(0)), start(), start()), \
+                   start()),                                                   \
+               start()));
+#elif defined(V8_TARGET_BIG_ENDIAN)
+#define STORE_VERIFY(kStore, kRep)                                             \
+  EXPECT_THAT(                                                                 \
+      graph()->end()->InputAt(1),                                              \
+      IsReturn(IsInt32Constant(return_value),                                  \
+               Is##kStore(                                                     \
+                   kRep, IsInt32Constant(base),                                \
+                   IsInt32Add(IsInt32Constant(index), IsInt32Constant(4)),     \
+                   IsInt32Constant(low_word_value(0)),                         \
+                   Is##kStore(                                                 \
+                       kRep, IsInt32Constant(base), IsInt32Constant(index),    \
+                       IsInt32Constant(high_word_value(0)), start(), start()), \
+                   start()),                                                   \
+               start()));
+#endif
+
+#define INT64_STORE_LOWERING(kStore, kRep32, kRep64)                         \
+  int32_t base = 1111;                                                       \
+  int32_t index = 2222;                                                      \
+  int32_t return_value = 0x5555;                                             \
+                                                                             \
+  Signature<MachineRepresentation>::Builder sig_builder(zone(), 1, 0);       \
+  sig_builder.AddReturn(MachineRepresentation::kWord32);                     \
+                                                                             \
+  Node* store = graph()->NewNode(machine()->kStore(kRep64),                  \
+                                 Int32Constant(base), Int32Constant(index),  \
+                                 Int64Constant(value(0)), start(), start()); \
+                                                                             \
+  Node* ret = graph()->NewNode(common()->Return(),                           \
+                               Int32Constant(return_value), store, start()); \
+                                                                             \
+  NodeProperties::MergeControlToEnd(graph(), common(), ret);                 \
+                                                                             \
+  Int64Lowering lowering(graph(), machine(), common(), zone(),               \
+                         sig_builder.Build());                               \
+  lowering.LowerGraph();                                                     \
+                                                                             \
+  STORE_VERIFY(kStore, kRep32)
+
 TEST_F(Int64LoweringTest, Int64Store) {
-  // We have to build the TF graph explicitly here because Store does not return
-  // a value.
+  const StoreRepresentation rep64(MachineRepresentation::kWord64,
+                                  WriteBarrierKind::kNoWriteBarrier);
+  const StoreRepresentation rep32(MachineRepresentation::kWord32,
+                                  WriteBarrierKind::kNoWriteBarrier);
+  INT64_STORE_LOWERING(Store, rep32, rep64);
+}
 
-  int32_t base = 1111;
-  int32_t index = 2222;
-  int32_t return_value = 0x5555;
-
-  Signature<MachineRepresentation>::Builder sig_builder(zone(), 1, 0);
-  sig_builder.AddReturn(MachineRepresentation::kWord32);
-
-  Node* store = graph()->NewNode(
-      machine()->Store(StoreRepresentation(MachineRepresentation::kWord64,
-                                           WriteBarrierKind::kNoWriteBarrier)),
-      Int32Constant(base), Int32Constant(index), Int64Constant(value(0)),
-      start(), start());
-
-  Node* ret = graph()->NewNode(common()->Return(), Int32Constant(return_value),
-                               store, start());
-
-  NodeProperties::MergeControlToEnd(graph(), common(), ret);
-
-  Int64Lowering lowering(graph(), machine(), common(), zone(),
-                         sig_builder.Build());
-  lowering.LowerGraph();
-
-  const StoreRepresentation rep(MachineRepresentation::kWord32,
-                                kNoWriteBarrier);
-
-  EXPECT_THAT(
-      graph()->end()->InputAt(1),
-      IsReturn(
-          IsInt32Constant(return_value),
-          IsStore(
-              rep, IsInt32Constant(base), IsInt32Constant(index),
-              IsInt32Constant(low_word_value(0)),
-              IsStore(rep, IsInt32Constant(base),
-                      IsInt32Add(IsInt32Constant(index), IsInt32Constant(4)),
-                      IsInt32Constant(high_word_value(0)), start(), start()),
-              start()),
-          start()));
+TEST_F(Int64LoweringTest, Int64UnalignedStore) {
+  const UnalignedStoreRepresentation rep64(MachineRepresentation::kWord64);
+  const UnalignedStoreRepresentation rep32(MachineRepresentation::kWord32);
+  INT64_STORE_LOWERING(UnalignedStore, rep32, rep64);
 }
 
 TEST_F(Int64LoweringTest, Int64And) {
@@ -526,12 +576,13 @@ TEST_F(Int64LoweringTest, F64ReinterpretI64) {
       IsStore(StoreRepresentation(MachineRepresentation::kWord32,
                                   WriteBarrierKind::kNoWriteBarrier),
               AllOf(CaptureEq(&stack_slot_capture), stack_slot_matcher),
-              IsInt32Constant(0), IsInt32Constant(low_word_value(0)),
+              IsInt32Constant(Int64Lowering::kLowerWordOffset),
+              IsInt32Constant(low_word_value(0)),
               IsStore(StoreRepresentation(MachineRepresentation::kWord32,
                                           WriteBarrierKind::kNoWriteBarrier),
                       AllOf(CaptureEq(&stack_slot_capture), stack_slot_matcher),
-                      IsInt32Constant(4), IsInt32Constant(high_word_value(0)),
-                      start(), start()),
+                      IsInt32Constant(Int64Lowering::kHigherWordOffset),
+                      IsInt32Constant(high_word_value(0)), start(), start()),
               start());
 
   EXPECT_THAT(
@@ -563,11 +614,11 @@ TEST_F(Int64LoweringTest, I64ReinterpretF64) {
       graph()->end()->InputAt(1),
       IsReturn2(IsLoad(MachineType::Int32(),
                        AllOf(CaptureEq(&stack_slot), stack_slot_matcher),
-                       IsInt32Constant(0),
+                       IsInt32Constant(Int64Lowering::kLowerWordOffset),
                        AllOf(CaptureEq(&store), store_matcher), start()),
                 IsLoad(MachineType::Int32(),
                        AllOf(CaptureEq(&stack_slot), stack_slot_matcher),
-                       IsInt32Constant(0x4),
+                       IsInt32Constant(Int64Lowering::kHigherWordOffset),
                        AllOf(CaptureEq(&store), store_matcher), start()),
                 start(), start()));
 }
@@ -596,7 +647,7 @@ TEST_F(Int64LoweringTest, I64Clz) {
 }
 
 TEST_F(Int64LoweringTest, I64Ctz) {
-  LowerGraph(graph()->NewNode(machine()->Word64CtzPlaceholder(),
+  LowerGraph(graph()->NewNode(machine()->Word64Ctz().placeholder(),
                               Int64Constant(value(0))),
              MachineRepresentation::kWord64);
   Capture<Node*> branch_capture;
@@ -636,7 +687,7 @@ TEST_F(Int64LoweringTest, Dfs) {
 }
 
 TEST_F(Int64LoweringTest, I64Popcnt) {
-  LowerGraph(graph()->NewNode(machine()->Word64PopcntPlaceholder(),
+  LowerGraph(graph()->NewNode(machine()->Word64Popcnt().placeholder(),
                               Int64Constant(value(0))),
              MachineRepresentation::kWord64);
 
@@ -786,6 +837,17 @@ TEST_F(Int64LoweringTest, I64PhiFloat64) {
 TEST_F(Int64LoweringTest, I64PhiWord32) {
   TestPhi(this, MachineRepresentation::kWord32, Float32Constant(1),
           Float32Constant(2));
+}
+
+TEST_F(Int64LoweringTest, I64ReverseBytes) {
+  LowerGraph(graph()->NewNode(machine()->Word64ReverseBytes().placeholder(),
+                              Int64Constant(value(0))),
+             MachineRepresentation::kWord64);
+  EXPECT_THAT(
+      graph()->end()->InputAt(1),
+      IsReturn2(IsWord32ReverseBytes(IsInt32Constant(high_word_value(0))),
+                IsWord32ReverseBytes(IsInt32Constant(low_word_value(0))),
+                start(), start()));
 }
 }  // namespace compiler
 }  // namespace internal

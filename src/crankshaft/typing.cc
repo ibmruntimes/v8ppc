@@ -15,8 +15,8 @@ namespace v8 {
 namespace internal {
 
 AstTyper::AstTyper(Isolate* isolate, Zone* zone, Handle<JSFunction> closure,
-                   Scope* scope, BailoutId osr_ast_id, FunctionLiteral* root,
-                   AstTypeBounds* bounds)
+                   DeclarationScope* scope, BailoutId osr_ast_id,
+                   FunctionLiteral* root, AstTypeBounds* bounds)
     : isolate_(isolate),
       zone_(zone),
       closure_(closure),
@@ -24,7 +24,7 @@ AstTyper::AstTyper(Isolate* isolate, Zone* zone, Handle<JSFunction> closure,
       osr_ast_id_(osr_ast_id),
       root_(root),
       oracle_(isolate, zone, handle(closure->shared()->code()),
-              handle(closure->shared()->feedback_vector()),
+              handle(closure->feedback_vector()),
               handle(closure->context()->native_context())),
       store_(zone),
       bounds_(bounds) {
@@ -515,7 +515,7 @@ void AstTyper::VisitCall(Call* expr) {
   // Collect type feedback.
   RECURSE(Visit(expr->expression()));
   bool is_uninitialized = true;
-  if (expr->IsUsingCallFeedbackICSlot(isolate_)) {
+  if (expr->IsUsingCallFeedbackICSlot()) {
     FeedbackVectorSlot slot = expr->CallFeedbackICSlot();
     is_uninitialized = oracle()->CallIsUninitialized(slot);
     if (!expr->expression()->IsProperty() &&
@@ -534,8 +534,7 @@ void AstTyper::VisitCall(Call* expr) {
     RECURSE(Visit(arg));
   }
 
-  VariableProxy* proxy = expr->expression()->AsVariableProxy();
-  if (proxy != NULL && proxy->var()->is_possibly_eval(isolate_)) {
+  if (expr->is_possibly_eval()) {
     store_.Forget();  // Eval could do whatever to local variables.
   }
 
@@ -783,14 +782,6 @@ void AstTyper::VisitVariableDeclaration(VariableDeclaration* declaration) {
 
 void AstTyper::VisitFunctionDeclaration(FunctionDeclaration* declaration) {
   RECURSE(Visit(declaration->fun()));
-}
-
-
-void AstTyper::VisitImportDeclaration(ImportDeclaration* declaration) {
-}
-
-
-void AstTyper::VisitExportDeclaration(ExportDeclaration* declaration) {
 }
 
 

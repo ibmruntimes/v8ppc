@@ -638,17 +638,18 @@ void MacroAssembler::Abort(BailoutReason reason) {
   }
 #endif
 
-  Move(kScratchRegister, Smi::FromInt(static_cast<int>(reason)),
-       Assembler::RelocInfoNone());
-  Push(kScratchRegister);
+  // Check if Abort() has already been initialized.
+  DCHECK(isolate()->builtins()->Abort()->IsHeapObject());
+
+  Move(rdx, Smi::FromInt(static_cast<int>(reason)));
 
   if (!has_frame_) {
     // We don't actually want to generate a pile of code for this, so just
     // claim there is a stack frame, without generating one.
     FrameScope scope(this, StackFrame::NONE);
-    CallRuntime(Runtime::kAbort);
+    Call(isolate()->builtins()->Abort(), RelocInfo::CODE_TARGET);
   } else {
-    CallRuntime(Runtime::kAbort);
+    Call(isolate()->builtins()->Abort(), RelocInfo::CODE_TARGET);
   }
   // Control will not return here.
   int3();
@@ -738,14 +739,14 @@ void MacroAssembler::TailCallRuntime(Runtime::FunctionId fid) {
   JumpToExternalReference(ExternalReference(fid, isolate()));
 }
 
-
-void MacroAssembler::JumpToExternalReference(const ExternalReference& ext) {
+void MacroAssembler::JumpToExternalReference(const ExternalReference& ext,
+                                             bool builtin_exit_frame) {
   // Set the entry point and jump to the C entry runtime stub.
   LoadAddress(rbx, ext);
-  CEntryStub ces(isolate(), 1);
+  CEntryStub ces(isolate(), 1, kDontSaveFPRegs, kArgvOnStack,
+                 builtin_exit_frame);
   jmp(ces.GetCode(), RelocInfo::CODE_TARGET);
 }
-
 
 #define REG(Name) \
   { Register::kCode_##Name }
@@ -2718,6 +2719,32 @@ void MacroAssembler::Movaps(XMMRegister dst, XMMRegister src) {
   }
 }
 
+void MacroAssembler::Movups(XMMRegister dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vmovups(dst, src);
+  } else {
+    movups(dst, src);
+  }
+}
+
+void MacroAssembler::Movups(XMMRegister dst, const Operand& src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vmovups(dst, src);
+  } else {
+    movups(dst, src);
+  }
+}
+
+void MacroAssembler::Movups(const Operand& dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vmovups(dst, src);
+  } else {
+    movups(dst, src);
+  }
+}
 
 void MacroAssembler::Movapd(XMMRegister dst, XMMRegister src) {
   if (CpuFeatures::IsSupported(AVX)) {
@@ -2728,6 +2755,23 @@ void MacroAssembler::Movapd(XMMRegister dst, XMMRegister src) {
   }
 }
 
+void MacroAssembler::Movupd(XMMRegister dst, const Operand& src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vmovupd(dst, src);
+  } else {
+    movupd(dst, src);
+  }
+}
+
+void MacroAssembler::Movupd(const Operand& dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vmovupd(dst, src);
+  } else {
+    movupd(dst, src);
+  }
+}
 
 void MacroAssembler::Movsd(XMMRegister dst, XMMRegister src) {
   if (CpuFeatures::IsSupported(AVX)) {
@@ -2848,6 +2892,23 @@ void MacroAssembler::Movmskpd(Register dst, XMMRegister src) {
   }
 }
 
+void MacroAssembler::Xorps(XMMRegister dst, XMMRegister src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vxorps(dst, dst, src);
+  } else {
+    xorps(dst, src);
+  }
+}
+
+void MacroAssembler::Xorps(XMMRegister dst, const Operand& src) {
+  if (CpuFeatures::IsSupported(AVX)) {
+    CpuFeatureScope scope(this, AVX);
+    vxorps(dst, dst, src);
+  } else {
+    xorps(dst, src);
+  }
+}
 
 void MacroAssembler::Roundss(XMMRegister dst, XMMRegister src,
                              RoundingMode mode) {
@@ -2930,6 +2991,27 @@ void MacroAssembler::Ucomisd(XMMRegister src1, const Operand& src2) {
   }
 }
 
+// ----------------------------------------------------------------------------
+
+void MacroAssembler::Absps(XMMRegister dst) {
+  Andps(dst,
+        ExternalOperand(ExternalReference::address_of_float_abs_constant()));
+}
+
+void MacroAssembler::Negps(XMMRegister dst) {
+  Xorps(dst,
+        ExternalOperand(ExternalReference::address_of_float_neg_constant()));
+}
+
+void MacroAssembler::Abspd(XMMRegister dst) {
+  Andps(dst,
+        ExternalOperand(ExternalReference::address_of_double_abs_constant()));
+}
+
+void MacroAssembler::Negpd(XMMRegister dst) {
+  Xorps(dst,
+        ExternalOperand(ExternalReference::address_of_double_neg_constant()));
+}
 
 void MacroAssembler::Cmp(Register dst, Handle<Object> source) {
   AllowDeferredHandleDereference smi_check;
@@ -2966,15 +3048,8 @@ void MacroAssembler::Push(Handle<Object> source) {
 
 void MacroAssembler::MoveHeapObject(Register result,
                                     Handle<Object> object) {
-  AllowDeferredHandleDereference using_raw_address;
   DCHECK(object->IsHeapObject());
-  if (isolate()->heap()->InNewSpace(*object)) {
-    Handle<Cell> cell = isolate()->factory()->NewCell(object);
-    Move(result, cell, RelocInfo::CELL);
-    movp(result, Operand(result, 0));
-  } else {
-    Move(result, object, RelocInfo::EMBEDDED_OBJECT);
-  }
+  Move(result, object, RelocInfo::EMBEDDED_OBJECT);
 }
 
 
@@ -3259,12 +3334,12 @@ void MacroAssembler::Pinsrd(XMMRegister dst, Register src, int8_t imm8) {
     pinsrd(dst, src, imm8);
     return;
   }
-  Movd(xmm0, src);
+  Movd(kScratchDoubleReg, src);
   if (imm8 == 1) {
-    punpckldq(dst, xmm0);
+    punpckldq(dst, kScratchDoubleReg);
   } else {
     DCHECK_EQ(0, imm8);
-    Movss(dst, xmm0);
+    Movss(dst, kScratchDoubleReg);
   }
 }
 
@@ -3276,12 +3351,12 @@ void MacroAssembler::Pinsrd(XMMRegister dst, const Operand& src, int8_t imm8) {
     pinsrd(dst, src, imm8);
     return;
   }
-  Movd(xmm0, src);
+  Movd(kScratchDoubleReg, src);
   if (imm8 == 1) {
-    punpckldq(dst, xmm0);
+    punpckldq(dst, kScratchDoubleReg);
   } else {
     DCHECK_EQ(0, imm8);
-    Movss(dst, xmm0);
+    Movss(dst, kScratchDoubleReg);
   }
 }
 
@@ -3743,15 +3818,15 @@ void MacroAssembler::SlowTruncateToI(Register result_reg,
 void MacroAssembler::TruncateHeapNumberToI(Register result_reg,
                                            Register input_reg) {
   Label done;
-  Movsd(xmm0, FieldOperand(input_reg, HeapNumber::kValueOffset));
-  Cvttsd2siq(result_reg, xmm0);
+  Movsd(kScratchDoubleReg, FieldOperand(input_reg, HeapNumber::kValueOffset));
+  Cvttsd2siq(result_reg, kScratchDoubleReg);
   cmpq(result_reg, Immediate(1));
   j(no_overflow, &done, Label::kNear);
 
   // Slow case.
   if (input_reg.is(result_reg)) {
     subp(rsp, Immediate(kDoubleSize));
-    Movsd(MemOperand(rsp, 0), xmm0);
+    Movsd(MemOperand(rsp, 0), kScratchDoubleReg);
     SlowTruncateToI(result_reg, rsp, 0);
     addp(rsp, Immediate(kDoubleSize));
   } else {
@@ -3788,8 +3863,8 @@ void MacroAssembler::DoubleToI(Register result_reg, XMMRegister input_reg,
                                Label* lost_precision, Label* is_nan,
                                Label* minus_zero, Label::Distance dst) {
   Cvttsd2si(result_reg, input_reg);
-  Cvtlsi2sd(xmm0, result_reg);
-  Ucomisd(xmm0, input_reg);
+  Cvtlsi2sd(kScratchDoubleReg, result_reg);
+  Ucomisd(kScratchDoubleReg, input_reg);
   j(not_equal, lost_precision, dst);
   j(parity_even, is_nan, dst);  // NaN.
   if (minus_zero_mode == FAIL_ON_MINUS_ZERO) {
@@ -4338,11 +4413,12 @@ void MacroAssembler::FloodFunctionIfStepping(Register fun, Register new_target,
                                              const ParameterCount& expected,
                                              const ParameterCount& actual) {
   Label skip_flooding;
-  ExternalReference step_in_enabled =
-      ExternalReference::debug_step_in_enabled_address(isolate());
-  Operand step_in_enabled_operand = ExternalOperand(step_in_enabled);
-  cmpb(step_in_enabled_operand, Immediate(0));
-  j(equal, &skip_flooding);
+  ExternalReference last_step_action =
+      ExternalReference::debug_last_step_action_address(isolate());
+  Operand last_step_action_operand = ExternalOperand(last_step_action);
+  STATIC_ASSERT(StepFrame > StepIn);
+  cmpb(last_step_action_operand, Immediate(StepIn));
+  j(less, &skip_flooding);
   {
     FrameScope frame(this,
                      has_frame() ? StackFrame::NONE : StackFrame::INTERNAL);
@@ -4401,8 +4477,8 @@ void MacroAssembler::Prologue(bool code_pre_aging) {
 
 void MacroAssembler::EmitLoadTypeFeedbackVector(Register vector) {
   movp(vector, Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
-  movp(vector, FieldOperand(vector, JSFunction::kSharedFunctionInfoOffset));
-  movp(vector, FieldOperand(vector, SharedFunctionInfo::kFeedbackVectorOffset));
+  movp(vector, FieldOperand(vector, JSFunction::kLiteralsOffset));
+  movp(vector, FieldOperand(vector, LiteralsArray::kFeedbackVectorOffset));
 }
 
 
@@ -4442,8 +4518,28 @@ void MacroAssembler::LeaveFrame(StackFrame::Type type) {
   popq(rbp);
 }
 
+void MacroAssembler::EnterBuiltinFrame(Register context, Register target,
+                                       Register argc) {
+  Push(rbp);
+  Move(rbp, rsp);
+  Push(context);
+  Push(target);
+  Push(argc);
+}
 
-void MacroAssembler::EnterExitFramePrologue(bool save_rax) {
+void MacroAssembler::LeaveBuiltinFrame(Register context, Register target,
+                                       Register argc) {
+  Pop(argc);
+  Pop(target);
+  Pop(context);
+  leave();
+}
+
+void MacroAssembler::EnterExitFramePrologue(bool save_rax,
+                                            StackFrame::Type frame_type) {
+  DCHECK(frame_type == StackFrame::EXIT ||
+         frame_type == StackFrame::BUILTIN_EXIT);
+
   // Set up the frame structure on the stack.
   // All constants are relative to the frame pointer of the exit frame.
   DCHECK_EQ(kFPOnStackSize + kPCOnStackSize,
@@ -4454,11 +4550,11 @@ void MacroAssembler::EnterExitFramePrologue(bool save_rax) {
   movp(rbp, rsp);
 
   // Reserve room for entry stack pointer and push the code object.
-  Push(Smi::FromInt(StackFrame::EXIT));
+  Push(Smi::FromInt(frame_type));
   DCHECK_EQ(-2 * kPointerSize, ExitFrameConstants::kSPOffset);
   Push(Immediate(0));  // Saved entry sp, patched before call.
   Move(kScratchRegister, CodeObject(), RelocInfo::EMBEDDED_OBJECT);
-  Push(kScratchRegister);  // Accessed from EditFrame::code_slot.
+  Push(kScratchRegister);  // Accessed from ExitFrame::code_slot.
 
   // Save the frame pointer and the context in top.
   if (save_rax) {
@@ -4483,8 +4579,7 @@ void MacroAssembler::EnterExitFrameEpilogue(int arg_stack_space,
                 arg_stack_space * kRegisterSize;
     subp(rsp, Immediate(space));
     int offset = -ExitFrameConstants::kFixedFrameSizeFromFp;
-    const RegisterConfiguration* config =
-        RegisterConfiguration::ArchDefault(RegisterConfiguration::CRANKSHAFT);
+    const RegisterConfiguration* config = RegisterConfiguration::Crankshaft();
     for (int i = 0; i < config->num_allocatable_double_registers(); ++i) {
       DoubleRegister reg =
           DoubleRegister::from_code(config->GetAllocatableDoubleCode(i));
@@ -4506,9 +4601,9 @@ void MacroAssembler::EnterExitFrameEpilogue(int arg_stack_space,
   movp(Operand(rbp, ExitFrameConstants::kSPOffset), rsp);
 }
 
-
-void MacroAssembler::EnterExitFrame(int arg_stack_space, bool save_doubles) {
-  EnterExitFramePrologue(true);
+void MacroAssembler::EnterExitFrame(int arg_stack_space, bool save_doubles,
+                                    StackFrame::Type frame_type) {
+  EnterExitFramePrologue(true, frame_type);
 
   // Set up argv in callee-saved register r15. It is reused in LeaveExitFrame,
   // so it must be retained across the C-call.
@@ -4520,7 +4615,7 @@ void MacroAssembler::EnterExitFrame(int arg_stack_space, bool save_doubles) {
 
 
 void MacroAssembler::EnterApiExitFrame(int arg_stack_space) {
-  EnterExitFramePrologue(false);
+  EnterExitFramePrologue(false, StackFrame::EXIT);
   EnterExitFrameEpilogue(arg_stack_space, false);
 }
 
@@ -4530,8 +4625,7 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles, bool pop_arguments) {
   // r15 : argv
   if (save_doubles) {
     int offset = -ExitFrameConstants::kFixedFrameSizeFromFp;
-    const RegisterConfiguration* config =
-        RegisterConfiguration::ArchDefault(RegisterConfiguration::CRANKSHAFT);
+    const RegisterConfiguration* config = RegisterConfiguration::Crankshaft();
     for (int i = 0; i < config->num_allocatable_double_registers(); ++i) {
       DoubleRegister reg =
           DoubleRegister::from_code(config->GetAllocatableDoubleCode(i));

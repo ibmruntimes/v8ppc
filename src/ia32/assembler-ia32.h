@@ -75,7 +75,7 @@ namespace internal {
   V(xmm7)
 
 #define FLOAT_REGISTERS DOUBLE_REGISTERS
-#define SIMD_REGISTERS DOUBLE_REGISTERS
+#define SIMD128_REGISTERS DOUBLE_REGISTERS
 
 #define ALLOCATABLE_DOUBLE_REGISTERS(V) \
   V(xmm1)                               \
@@ -124,8 +124,6 @@ struct Register {
     Register r = {code};
     return r;
   }
-  const char* ToString();
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kNumRegisters; }
   bool is(Register reg) const { return reg_code == reg.reg_code; }
   int code() const {
@@ -149,6 +147,8 @@ GENERAL_REGISTERS(DECLARE_REGISTER)
 #undef DECLARE_REGISTER
 const Register no_reg = {Register::kCode_no_reg};
 
+static const bool kSimpleFPAliasing = true;
+
 struct XMMRegister {
   enum Code {
 #define REGISTER_CODE(R) kCode_##R,
@@ -165,7 +165,6 @@ struct XMMRegister {
     return result;
   }
 
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kMaxNumRegisters; }
 
   int code() const {
@@ -174,8 +173,6 @@ struct XMMRegister {
   }
 
   bool is(XMMRegister reg) const { return reg_code == reg.reg_code; }
-
-  const char* ToString();
 
   int reg_code;
 };
@@ -962,6 +959,9 @@ class Assembler : public AssemblerBase {
   void ucomiss(XMMRegister dst, XMMRegister src) { ucomiss(dst, Operand(src)); }
   void ucomiss(XMMRegister dst, const Operand& src);
   void movaps(XMMRegister dst, XMMRegister src);
+  void movups(XMMRegister dst, XMMRegister src);
+  void movups(XMMRegister dst, const Operand& src);
+  void movups(const Operand& dst, XMMRegister src);
   void shufps(XMMRegister dst, XMMRegister src, byte imm8);
 
   void maxss(XMMRegister dst, XMMRegister src) { maxss(dst, Operand(src)); }
@@ -1446,7 +1446,7 @@ class Assembler : public AssemblerBase {
 
   // Record a deoptimization reason that can be used by a log or cpu profiler.
   // Use --trace-deopt to enable.
-  void RecordDeoptReason(const int reason, int raw_position, int id);
+  void RecordDeoptReason(DeoptimizeReason reason, int raw_position, int id);
 
   // Writes a single byte or word of data in the code stream.  Used for
   // inline tables, e.g., jump-tables.
@@ -1467,10 +1467,6 @@ class Assembler : public AssemblerBase {
   inline int available_space() const { return reloc_info_writer.pos() - pc_; }
 
   static bool IsNop(Address addr);
-
-  AssemblerPositionsRecorder* positions_recorder() {
-    return &positions_recorder_;
-  }
 
   int relocation_writer_size() {
     return (buffer_ + buffer_size_) - reloc_info_writer.pos();
@@ -1577,9 +1573,6 @@ class Assembler : public AssemblerBase {
 
   // code generation
   RelocInfoWriter reloc_info_writer;
-
-  AssemblerPositionsRecorder positions_recorder_;
-  friend class AssemblerPositionsRecorder;
 };
 
 

@@ -31,8 +31,16 @@ class InstructionOperandConverter {
     return ToRegister(instr_->InputAt(index));
   }
 
+  FloatRegister InputFloatRegister(size_t index) {
+    return ToFloatRegister(instr_->InputAt(index));
+  }
+
   DoubleRegister InputDoubleRegister(size_t index) {
     return ToDoubleRegister(instr_->InputAt(index));
+  }
+
+  Simd128Register InputSimd128Register(size_t index) {
+    return ToSimd128Register(instr_->InputAt(index));
   }
 
   double InputDouble(size_t index) { return ToDouble(instr_->InputAt(index)); }
@@ -89,8 +97,16 @@ class InstructionOperandConverter {
     return ToRegister(instr_->TempAt(index));
   }
 
+  FloatRegister OutputFloatRegister() {
+    return ToFloatRegister(instr_->Output());
+  }
+
   DoubleRegister OutputDoubleRegister() {
     return ToDoubleRegister(instr_->Output());
+  }
+
+  Simd128Register OutputSimd128Register() {
+    return ToSimd128Register(instr_->Output());
   }
 
   // -- Conversions for operands -----------------------------------------------
@@ -107,8 +123,16 @@ class InstructionOperandConverter {
     return LocationOperand::cast(op)->GetRegister();
   }
 
+  FloatRegister ToFloatRegister(InstructionOperand* op) {
+    return LocationOperand::cast(op)->GetFloatRegister();
+  }
+
   DoubleRegister ToDoubleRegister(InstructionOperand* op) {
     return LocationOperand::cast(op)->GetDoubleRegister();
+  }
+
+  Simd128Register ToSimd128Register(InstructionOperand* op) {
+    return LocationOperand::cast(op)->GetSimd128Register();
   }
 
   Constant ToConstant(InstructionOperand* op) {
@@ -186,8 +210,6 @@ class OutOfLineCode : public ZoneObject {
 static inline void FinishCode(MacroAssembler* masm) {
 #if V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_ARM
   masm->CheckConstPool(true, false);
-#elif V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64
-  masm->ud2();
 #endif
 }
 

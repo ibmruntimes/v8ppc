@@ -5,11 +5,14 @@
 #ifndef V8_WASM_MODULE_H_
 #define V8_WASM_MODULE_H_
 
-#include "src/wasm/wasm-opcodes.h"
-#include "src/wasm/wasm-result.h"
+#include <memory>
 
 #include "src/api.h"
 #include "src/handles.h"
+#include "src/parsing/preparse-data.h"
+
+#include "src/wasm/wasm-opcodes.h"
+#include "src/wasm/wasm-result.h"
 
 namespace v8 {
 namespace internal {
@@ -42,15 +45,12 @@ const uint8_t kWasmFunctionTypeForm = 0x40;
   F(FunctionBodies, 8, "code")         \
   F(DataSegments, 9, "data")           \
   F(Names, 10, "name")                 \
-  F(OldFunctions, 0, "old_function")   \
   F(Globals, 0, "global")              \
   F(End, 0, "end")
 
 // Contants for the above section types: {LEB128 length, characters...}.
 #define WASM_SECTION_MEMORY 6, 'm', 'e', 'm', 'o', 'r', 'y'
 #define WASM_SECTION_SIGNATURES 4, 't', 'y', 'p', 'e'
-#define WASM_SECTION_OLD_FUNCTIONS \
-  12, 'o', 'l', 'd', '_', 'f', 'u', 'n', 'c', 't', 'i', 'o', 'n'
 #define WASM_SECTION_GLOBALS 6, 'g', 'l', 'o', 'b', 'a', 'l'
 #define WASM_SECTION_DATA_SEGMENTS 4, 'd', 'a', 't', 'a'
 #define WASM_SECTION_FUNCTION_TABLE 5, 't', 'a', 'b', 'l', 'e'
@@ -66,7 +66,6 @@ const uint8_t kWasmFunctionTypeForm = 0x40;
 // Constants for the above section headers' size (LEB128 + characters).
 #define WASM_SECTION_MEMORY_SIZE ((size_t)7)
 #define WASM_SECTION_SIGNATURES_SIZE ((size_t)5)
-#define WASM_SECTION_OLD_FUNCTIONS_SIZE ((size_t)13)
 #define WASM_SECTION_GLOBALS_SIZE ((size_t)7)
 #define WASM_SECTION_DATA_SEGMENTS_SIZE ((size_t)5)
 #define WASM_SECTION_FUNCTION_TABLE_SIZE ((size_t)6)
@@ -77,6 +76,8 @@ const uint8_t kWasmFunctionTypeForm = 0x40;
 #define WASM_SECTION_FUNCTION_SIGNATURES_SIZE ((size_t)9)
 #define WASM_SECTION_FUNCTION_BODIES_SIZE ((size_t)5)
 #define WASM_SECTION_NAMES_SIZE ((size_t)5)
+
+class WasmDebugInfo;
 
 struct WasmSection {
   enum class Code : uint32_t {
@@ -114,7 +115,6 @@ struct WasmFunction {
   uint32_t name_length;  // length in bytes of the name.
   uint32_t code_start_offset;    // offset in the module bytes of code start.
   uint32_t code_end_offset;      // offset in the module bytes of code end.
-  bool exported;                 // true if this function is exported.
 };
 
 // Static representation of an imported WASM function.
@@ -138,7 +138,7 @@ struct WasmExport {
 struct WasmGlobal {
   uint32_t name_offset;  // offset in the module bytes of the name, if any.
   uint32_t name_length;  // length in bytes of the global name.
-  MachineType type;      // type of the global.
+  LocalType type;        // type of the global.
   uint32_t offset;       // offset from beginning of globals area.
   bool exported;         // true if this global is exported.
 };
@@ -149,6 +149,13 @@ struct WasmDataSegment {
   uint32_t source_offset;  // start offset in the module bytes.
   uint32_t source_size;    // end offset in the module bytes.
   bool init;               // true if loaded upon instantiation.
+};
+
+// Static representation of a wasm indirect call table.
+struct WasmIndirectFunctionTable {
+  uint32_t size;                 // initial table size.
+  uint32_t max_size;             // maximum table size.
+  std::vector<uint16_t> values;  // function table.
 };
 
 enum ModuleOrigin { kWasmOrigin, kAsmJsOrigin };
@@ -165,6 +172,9 @@ struct WasmModule {
   uint32_t max_mem_pages;     // maximum size of the memory in 64k pages.
   bool mem_export;            // true if the memory is exported.
   bool mem_external;          // true if the memory is external.
+  // TODO(wasm): reconcile start function index being an int with
+  // the fact that we index on uint32_t, so we may technically not be
+  // able to represent some start_function_index -es.
   int start_function_index;   // start function, if any.
   ModuleOrigin origin;        // origin of the module
 
@@ -173,11 +183,20 @@ struct WasmModule {
   std::vector<FunctionSig*> signatures;        // signatures in this module.
   std::vector<WasmFunction> functions;         // functions in this module.
   std::vector<WasmDataSegment> data_segments;  // data segments in this module.
-  std::vector<uint16_t> function_table;        // function table.
+  std::vector<WasmIndirectFunctionTable> function_tables;  // function tables.
   std::vector<WasmImport> import_table;        // import table.
   std::vector<WasmExport> export_table;        // export table.
+  // We store the semaphore here to extend its lifetime. In <libc-2.21, which we
+  // use on the try bots, semaphore::Wait() can return while some compilation
+  // tasks are still executing semaphore::Signal(). If the semaphore is cleaned
+  // up right after semaphore::Wait() returns, then this can cause an
+  // invalid-semaphore error in the compilation tasks.
+  // TODO(wasm): Move this semaphore back to CompileInParallel when the try bots
+  // switch to libc-2.21 or higher.
+  std::unique_ptr<base::Semaphore> pending_tasks;
 
-  WasmModule();
+  WasmModule() : WasmModule(nullptr) {}
+  explicit WasmModule(byte* module_start);
 
   // Get a string stored in the module bytes representing a name.
   WasmName GetName(uint32_t offset, uint32_t length) const {
@@ -214,8 +233,16 @@ struct WasmModule {
   }
 
   // Creates a new instantiation of the module in the given isolate.
-  MaybeHandle<JSObject> Instantiate(Isolate* isolate, Handle<JSReceiver> ffi,
-                                    Handle<JSArrayBuffer> memory) const;
+  static MaybeHandle<JSObject> Instantiate(Isolate* isolate,
+                                           Handle<FixedArray> compiled_module,
+                                           Handle<JSReceiver> ffi,
+                                           Handle<JSArrayBuffer> memory);
+
+  MaybeHandle<FixedArray> CompileFunctions(Isolate* isolate,
+                                           ErrorThrower* thrower) const;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(WasmModule);
 };
 
 // An instantiated WASM module, including memory, function table, etc.
@@ -226,43 +253,51 @@ struct WasmModuleInstance {
   Handle<Context> context;               // JavaScript native context.
   Handle<JSArrayBuffer> mem_buffer;      // Handle to array buffer of memory.
   Handle<JSArrayBuffer> globals_buffer;  // Handle to array buffer of globals.
-  Handle<FixedArray> function_table;     // indirect function table.
+  std::vector<Handle<FixedArray>> function_tables;  // indirect function tables.
   std::vector<Handle<Code>> function_code;  // code objects for each function.
   std::vector<Handle<Code>> import_code;    // code objects for each import.
   // -- raw memory ------------------------------------------------------------
   byte* mem_start;  // start of linear memory.
-  size_t mem_size;  // size of the linear memory.
+  uint32_t mem_size;  // size of the linear memory.
   // -- raw globals -----------------------------------------------------------
   byte* globals_start;  // start of the globals area.
 
   explicit WasmModuleInstance(const WasmModule* m)
-      : module(m), mem_start(nullptr), mem_size(0), globals_start(nullptr) {}
+      : module(m),
+        function_tables(m->function_tables.size()),
+        function_code(m->functions.size()),
+        import_code(m->import_table.size()),
+        mem_start(nullptr),
+        mem_size(0),
+        globals_start(nullptr) {}
 };
-
-// forward declaration.
-class WasmLinker;
 
 // Interface provided to the decoder/graph builder which contains only
 // minimal information about the globals, functions, and function tables.
 struct ModuleEnv {
   const WasmModule* module;
   WasmModuleInstance* instance;
-  WasmLinker* linker;
   ModuleOrigin origin;
+  // TODO(mtrofin): remove this once we introduce WASM_DIRECT_CALL
+  // reloc infos.
+  std::vector<Handle<Code>> placeholders;
 
-  bool IsValidGlobal(uint32_t index) {
+  bool IsValidGlobal(uint32_t index) const {
     return module && index < module->globals.size();
   }
-  bool IsValidFunction(uint32_t index) {
+  bool IsValidFunction(uint32_t index) const {
     return module && index < module->functions.size();
   }
-  bool IsValidSignature(uint32_t index) {
+  bool IsValidSignature(uint32_t index) const {
     return module && index < module->signatures.size();
   }
-  bool IsValidImport(uint32_t index) {
+  bool IsValidImport(uint32_t index) const {
     return module && index < module->import_table.size();
   }
-  MachineType GetGlobalType(uint32_t index) {
+  bool IsValidTable(uint32_t index) const {
+    return module && index < module->function_tables.size();
+  }
+  LocalType GetGlobalType(uint32_t index) {
     DCHECK(IsValidGlobal(index));
     return module->globals[index].type;
   }
@@ -278,15 +313,15 @@ struct ModuleEnv {
     DCHECK(IsValidSignature(index));
     return module->signatures[index];
   }
-  size_t FunctionTableSize() {
-    return module ? module->function_table.size() : 0;
+  const WasmIndirectFunctionTable* GetTable(uint32_t index) const {
+    DCHECK(IsValidTable(index));
+    return &module->function_tables[index];
   }
 
   bool asm_js() { return origin == kAsmJsOrigin; }
 
-  Handle<Code> GetFunctionCode(uint32_t index);
+  Handle<Code> GetCodeOrPlaceholder(uint32_t index) const;
   Handle<Code> GetImportCode(uint32_t index);
-  Handle<FixedArray> GetFunctionTable();
 
   static compiler::CallDescriptor* GetWasmCallDescriptor(Zone* zone,
                                                          FunctionSig* sig);
@@ -309,22 +344,74 @@ std::ostream& operator<<(std::ostream& os, const WasmFunctionName& name);
 
 typedef Result<const WasmModule*> ModuleResult;
 typedef Result<WasmFunction*> FunctionResult;
+typedef std::vector<std::pair<int, int>> FunctionOffsets;
+typedef Result<FunctionOffsets> FunctionOffsetsResult;
 
-// For testing. Decode, verify, and run the last exported function in the
-// given encoded module.
-int32_t CompileAndRunWasmModule(Isolate* isolate, const byte* module_start,
-                                const byte* module_end, bool asm_js = false);
-
-// For testing. Decode, verify, and run the last exported function in the
-// given decoded module.
-int32_t CompileAndRunWasmModule(Isolate* isolate, const WasmModule* module);
+// Extract a function name from the given wasm object.
+// Returns "<WASM UNNAMED>" if the function is unnamed or the name is not a
+// valid UTF-8 string.
+Handle<String> GetWasmFunctionName(Isolate* isolate, Handle<Object> wasm,
+                                   uint32_t func_index);
 
 // Extract a function name from the given wasm object.
 // Returns a null handle if the function is unnamed or the name is not a valid
 // UTF-8 string.
-MaybeHandle<String> GetWasmFunctionName(Handle<JSObject> wasm,
-                                        uint32_t func_index);
+Handle<Object> GetWasmFunctionNameOrNull(Isolate* isolate, Handle<Object> wasm,
+                                         uint32_t func_index);
 
+// Return the binary source bytes of a wasm module.
+SeqOneByteString* GetWasmBytes(JSObject* wasm);
+
+// Get the debug info associated with the given wasm object.
+// If no debug info exists yet, it is created automatically.
+Handle<WasmDebugInfo> GetDebugInfo(Handle<JSObject> wasm);
+
+// Return the number of functions in the given wasm object.
+int GetNumberOfFunctions(JSObject* wasm);
+
+// Create and export JSFunction
+Handle<JSFunction> WrapExportCodeAsJSFunction(Isolate* isolate,
+                                              Handle<Code> export_code,
+                                              Handle<String> name, int arity,
+                                              MaybeHandle<ByteArray> signature,
+                                              Handle<JSObject> module_instance);
+
+// Check whether the given object is a wasm object.
+// This checks the number and type of internal fields, so it's not 100 percent
+// secure. If it turns out that we need more complete checks, we could add a
+// special marker as internal field, which will definitely never occur anywhere
+// else.
+bool IsWasmObject(Object* object);
+
+// Update memory references of code objects associated with the module
+bool UpdateWasmModuleMemory(Handle<JSObject> object, Address old_start,
+                            Address new_start, uint32_t old_size,
+                            uint32_t new_size);
+
+// Constructs a single function table as a FixedArray of double size,
+// populating it with function signature indices and function indices.
+Handle<FixedArray> BuildFunctionTable(Isolate* isolate, uint32_t index,
+                                      const WasmModule* module);
+
+// Populates a function table by replacing function indices with handles to
+// the compiled code.
+void PopulateFunctionTable(Handle<FixedArray> table, uint32_t table_size,
+                           const std::vector<Handle<Code>>* code_table);
+
+Handle<JSObject> CreateCompiledModuleObject(Isolate* isolate,
+                                            Handle<FixedArray> compiled_module);
+
+namespace testing {
+
+// Decode, verify, and run the function labeled "main" in the
+// given encoded module. The module should have no imports.
+int32_t CompileAndRunWasmModule(Isolate* isolate, const byte* module_start,
+                                const byte* module_end, bool asm_js = false);
+
+int32_t CallFunction(Isolate* isolate, Handle<JSObject> instance,
+                     ErrorThrower* thrower, const char* name, int argc,
+                     Handle<Object> argv[]);
+}  // namespace testing
 }  // namespace wasm
 }  // namespace internal
 }  // namespace v8

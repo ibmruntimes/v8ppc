@@ -14,9 +14,8 @@ namespace internal {
 
 #define __ ACCESS_MASM(masm)
 
-static void ProbeTable(Isolate* isolate, MacroAssembler* masm,
-                       Code::Flags flags, StubCache::Table table,
-                       Register receiver, Register name,
+static void ProbeTable(StubCache* stub_cache, MacroAssembler* masm,
+                       StubCache::Table table, Register receiver, Register name,
                        // The offset is scaled by 4, based on
                        // kCacheIndexShift, which is two bits
                        Register offset) {
@@ -30,8 +29,8 @@ static void ProbeTable(Isolate* isolate, MacroAssembler* masm,
   DCHECK_EQ(3u * kPointerSize, sizeof(StubCache::Entry));
   // The offset register holds the entry offset times four (due to masking
   // and shifting optimizations).
-  ExternalReference key_offset(isolate->stub_cache()->key_reference(table));
-  ExternalReference value_offset(isolate->stub_cache()->value_reference(table));
+  ExternalReference key_offset(stub_cache->key_reference(table));
+  ExternalReference value_offset(stub_cache->value_reference(table));
   Label miss;
 
   // Multiply by 3 because there are 3 fields per entry (name, code, map).
@@ -45,8 +44,8 @@ static void ProbeTable(Isolate* isolate, MacroAssembler* masm,
 
   // Get the map entry from the cache.
   // Use key_offset + kPointerSize * 2, rather than loading map_offset.
-  DCHECK(isolate->stub_cache()->map_reference(table).address() -
-             isolate->stub_cache()->key_reference(table).address() ==
+  DCHECK(stub_cache->map_reference(table).address() -
+             stub_cache->key_reference(table).address() ==
          kPointerSize * 2);
   __ movp(kScratchRegister,
           Operand(kScratchRegister, offset, scale_factor, kPointerSize * 2));
@@ -56,12 +55,6 @@ static void ProbeTable(Isolate* isolate, MacroAssembler* masm,
   // Get the code entry from the cache.
   __ LoadAddress(kScratchRegister, value_offset);
   __ movp(kScratchRegister, Operand(kScratchRegister, offset, scale_factor, 0));
-
-  // Check that the flags match what we're looking for.
-  __ movl(offset, FieldOperand(kScratchRegister, Code::kFlagsOffset));
-  __ andp(offset, Immediate(~Code::kFlagsNotUsedInLookup));
-  __ cmpl(offset, Immediate(flags));
-  __ j(not_equal, &miss);
 
 #ifdef DEBUG
   if (FLAG_test_secondary_stub_cache && table == StubCache::kPrimary) {
@@ -78,12 +71,9 @@ static void ProbeTable(Isolate* isolate, MacroAssembler* masm,
   __ bind(&miss);
 }
 
-
-void StubCache::GenerateProbe(MacroAssembler* masm, Code::Kind ic_kind,
-                              Code::Flags flags, Register receiver,
+void StubCache::GenerateProbe(MacroAssembler* masm, Register receiver,
                               Register name, Register scratch, Register extra,
                               Register extra2, Register extra3) {
-  Isolate* isolate = masm->isolate();
   Label miss;
   USE(extra);   // The register extra is not used on the X64 platform.
   USE(extra2);  // The register extra2 is not used on the X64 platform.
@@ -105,15 +95,15 @@ void StubCache::GenerateProbe(MacroAssembler* masm, Code::Kind ic_kind,
   // If vector-based ics are in use, ensure that scratch doesn't conflict with
   // the vector and slot registers, which need to be preserved for a handler
   // call or miss.
-  if (IC::ICUseVector(ic_kind)) {
-    if (ic_kind == Code::LOAD_IC || ic_kind == Code::KEYED_LOAD_IC) {
+  if (IC::ICUseVector(ic_kind_)) {
+    if (ic_kind_ == Code::LOAD_IC || ic_kind_ == Code::KEYED_LOAD_IC) {
       Register vector = LoadWithVectorDescriptor::VectorRegister();
       Register slot = LoadDescriptor::SlotRegister();
       DCHECK(!AreAliased(vector, slot, scratch));
     } else {
-      DCHECK(ic_kind == Code::STORE_IC || ic_kind == Code::KEYED_STORE_IC);
-      Register vector = VectorStoreICDescriptor::VectorRegister();
-      Register slot = VectorStoreICDescriptor::SlotRegister();
+      DCHECK(ic_kind_ == Code::STORE_IC || ic_kind_ == Code::KEYED_STORE_IC);
+      Register vector = StoreWithVectorDescriptor::VectorRegister();
+      Register slot = StoreWithVectorDescriptor::SlotRegister();
       DCHECK(!AreAliased(vector, slot, scratch));
     }
   }
@@ -129,25 +119,25 @@ void StubCache::GenerateProbe(MacroAssembler* masm, Code::Kind ic_kind,
   __ movl(scratch, FieldOperand(name, Name::kHashFieldOffset));
   // Use only the low 32 bits of the map pointer.
   __ addl(scratch, FieldOperand(receiver, HeapObject::kMapOffset));
-  __ xorp(scratch, Immediate(flags));
+  __ xorp(scratch, Immediate(kPrimaryMagic));
   // We mask out the last two bits because they are not part of the hash and
   // they are always 01 for maps.  Also in the two 'and' instructions below.
   __ andp(scratch, Immediate((kPrimaryTableSize - 1) << kCacheIndexShift));
 
   // Probe the primary table.
-  ProbeTable(isolate, masm, flags, kPrimary, receiver, name, scratch);
+  ProbeTable(this, masm, kPrimary, receiver, name, scratch);
 
   // Primary miss: Compute hash for secondary probe.
   __ movl(scratch, FieldOperand(name, Name::kHashFieldOffset));
   __ addl(scratch, FieldOperand(receiver, HeapObject::kMapOffset));
-  __ xorp(scratch, Immediate(flags));
+  __ xorp(scratch, Immediate(kPrimaryMagic));
   __ andp(scratch, Immediate((kPrimaryTableSize - 1) << kCacheIndexShift));
   __ subl(scratch, name);
-  __ addl(scratch, Immediate(flags));
+  __ addl(scratch, Immediate(kSecondaryMagic));
   __ andp(scratch, Immediate((kSecondaryTableSize - 1) << kCacheIndexShift));
 
   // Probe the secondary table.
-  ProbeTable(isolate, masm, flags, kSecondary, receiver, name, scratch);
+  ProbeTable(this, masm, kSecondary, receiver, name, scratch);
 
   // Cache miss: Fall-through and let caller handle the miss by
   // entering the runtime system.

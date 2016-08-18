@@ -8,17 +8,27 @@ vars = {
 
 deps = {
   "v8/build":
-    Var("git_url") + "/chromium/src/build.git" + "@" + "ac721839502afb41e44649a6513b866e0ad1c8a8",
+    Var("git_url") + "/chromium/src/build.git" + "@" + "388e658306466650ee4ad4b3d6d7b230c9cad64c",
   "v8/tools/gyp":
-    Var("git_url") + "/external/gyp.git" + "@" + "bce1c7793010574d88d7915e2d55395213ac63d1",
+    Var("git_url") + "/external/gyp.git" + "@" + "702ac58e477214c635d9b541932e75a95d349352",
   "v8/third_party/icu":
-    Var("git_url") + "/chromium/deps/icu.git" + "@" + "54f86bb1d1d02968576d21c16d7134ec35c30fbc",
+    Var("git_url") + "/chromium/deps/icu.git" + "@" + "2341038bf72869a5683a893a2b319a48ffec7f62",
+  "v8/third_party/instrumented_libraries":
+    Var("git_url") + "/chromium/src/third_party/instrumented_libraries.git" + "@" + "f15768d7fdf68c0748d20738184120c8ab2e6db7",
   "v8/buildtools":
-    Var("git_url") + "/chromium/buildtools.git" + "@" + "06e80a0e17319868d4a9b13f9bb6a248dc8d8b20",
+    Var("git_url") + "/chromium/buildtools.git" + "@" + "adb8bf4e8fc92aa1717bf151b862d58e6f27c4f2",
   "v8/base/trace_event/common":
-    Var("git_url") + "/chromium/src/base/trace_event/common.git" + "@" + "54b8455be9505c2cb0cf5c26bb86739c236471aa",
+    Var("git_url") + "/chromium/src/base/trace_event/common.git" + "@" + "315bf1e2d45be7d53346c31cfcc37424a32c30c8",
+  "v8/third_party/WebKit/Source/platform/inspector_protocol":
+    Var("git_url") + "/chromium/src/third_party/WebKit/Source/platform/inspector_protocol.git" + "@" + "b53e3af6bfca3333fc2dd69302dac6667a8c6418",
+  "v8/third_party/jinja2":
+    Var("git_url") + "/chromium/src/third_party/jinja2.git" + "@" + "2222b31554f03e62600cd7e383376a7c187967a1",
+  "v8/third_party/markupsafe":
+    Var("git_url") + "/chromium/src/third_party/markupsafe.git" + "@" + "484a5661041cac13bfc688a26ec5434b05d18961",
+  "v8/tools/mb":
+    Var('git_url') + '/chromium/src/tools/mb.git' + '@' + "f3036b2e34d746db3635afa0841f51019b2b8d38",
   "v8/tools/swarming_client":
-    Var('git_url') + '/external/swarming.client.git' + '@' + "df6e95e7669883c8fe9ef956c69a544154701a49",
+    Var('git_url') + '/external/swarming.client.git' + '@' + "e4288c3040a32f2e7ad92f957668f2ee3d36e5a6",
   "v8/testing/gtest":
     Var("git_url") + "/external/github.com/google/googletest.git" + "@" + "6f8a66431cb592dad629028a50b3dd418a408c87",
   "v8/testing/gmock":
@@ -29,21 +39,25 @@ deps = {
     Var("git_url") + "/v8/deps/third_party/mozilla-tests.git" + "@" + "f6c578a10ea707b1a8ab0b88943fe5115ce2b9be",
   "v8/test/simdjs/data": Var("git_url") + "/external/github.com/tc39/ecmascript_simd.git" + "@" + "baf493985cb9ea7cdbd0d68704860a8156de9556",
   "v8/test/test262/data":
-    Var("git_url") + "/external/github.com/tc39/test262.git" + "@" + "9c45e2ac684bae64614d8eb55789cae97323a7e7",
+    Var("git_url") + "/external/github.com/tc39/test262.git" + "@" + "88bc7fe7586f161201c5f14f55c9c489f82b1b67",
+  "v8/test/test262/harness":
+    Var("git_url") + "/external/github.com/test262-utils/test262-harness-py.git" + "@" + "cbd968f54f7a95c6556d53ba852292a4c49d11d8",
   "v8/tools/clang":
-    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "996bab489f816e51dde704bd215fb3403919f07e",
+    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "b5889296bac50b31f1d2806633fe99dfc2b26b54",
 }
 
 deps_os = {
   "android": {
     "v8/third_party/android_tools":
-      Var("git_url") + "/android_tools.git" + "@" + "5b5f2f60b78198eaef25d442ac60f823142a8a6e",
+      Var("git_url") + "/android_tools.git" + "@" + "af1c5a4cd6329ccdcf8c2bc93d9eea02f9d74869",
   },
   "win": {
     "v8/third_party/cygwin":
       Var("git_url") + "/chromium/deps/cygwin.git" + "@" + "c89e446b273697fadf3a10ff1007a97c0b7de6df",
   }
 }
+
+recursedeps = [ 'v8/third_party/android_tools' ]
 
 include_rules = [
   # Everybody can use some things.
@@ -187,6 +201,28 @@ hooks = [
                 "--no_auth",
                 "--bucket", "chromium-gn",
                 "-s", "v8/buildtools/linux64/gn.sha1",
+    ],
+  },
+  {
+    # Downloads the current stable linux sysroot to build/linux/ if needed.
+    # This sysroot updates at about the same rate that the chrome build deps
+    # change.
+    'name': 'sysroot',
+    'pattern': '.',
+    'action': [
+        'python',
+        'v8/build/linux/sysroot_scripts/install-sysroot.py',
+        '--running-as-hook',
+    ],
+  },
+  {
+    # Pull sanitizer-instrumented third-party libraries if requested via
+    # GYP_DEFINES.
+    'name': 'instrumented_libraries',
+    'pattern': '\\.sha1',
+    'action': [
+        'python',
+        'v8/third_party/instrumented_libraries/scripts/download_binaries.py',
     ],
   },
   {

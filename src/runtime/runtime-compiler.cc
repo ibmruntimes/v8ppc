@@ -5,6 +5,7 @@
 #include "src/runtime/runtime-utils.h"
 
 #include "src/arguments.h"
+#include "src/asmjs/asm-js.h"
 #include "src/compiler.h"
 #include "src/deoptimizer.h"
 #include "src/frames-inl.h"
@@ -79,6 +80,43 @@ RUNTIME_FUNCTION(Runtime_CompileOptimized_NotConcurrent) {
   return function->code();
 }
 
+RUNTIME_FUNCTION(Runtime_InstantiateAsmJs) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(args.length(), 4);
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+
+  Handle<JSObject> foreign;
+  if (args[2]->IsJSObject()) {
+    foreign = args.at<i::JSObject>(2);
+  }
+  Handle<JSArrayBuffer> memory;
+  if (args[3]->IsJSArrayBuffer()) {
+    memory = args.at<i::JSArrayBuffer>(3);
+  }
+  if (args[1]->IsJSObject() && function->shared()->HasAsmWasmData()) {
+    MaybeHandle<Object> result;
+    result = AsmJs::InstantiateAsmWasm(
+        isolate, handle(function->shared()->asm_wasm_data()), memory, foreign);
+    if (!result.is_null()) {
+      return *result.ToHandleChecked();
+    }
+  }
+  // Remove wasm data, mark as broken for asm->wasm,
+  // replace code with CompileLazy, and return a smi 0 to indicate failure.
+  if (function->shared()->HasAsmWasmData()) {
+    function->shared()->ClearAsmWasmData();
+  }
+  function->shared()->set_is_asm_wasm_broken(true);
+  DCHECK(function->code() ==
+         isolate->builtins()->builtin(Builtins::kInstantiateAsmJs));
+  function->ReplaceCode(isolate->builtins()->builtin(Builtins::kCompileLazy));
+  if (function->shared()->code() ==
+      isolate->builtins()->builtin(Builtins::kInstantiateAsmJs)) {
+    function->shared()->ReplaceCode(
+        isolate->builtins()->builtin(Builtins::kCompileLazy));
+  }
+  return Smi::FromInt(0);
+}
 
 RUNTIME_FUNCTION(Runtime_NotifyStubFailure) {
   HandleScope scope(isolate);
@@ -88,7 +126,6 @@ RUNTIME_FUNCTION(Runtime_NotifyStubFailure) {
   delete deoptimizer;
   return isolate->heap()->undefined_value();
 }
-
 
 class ActivationsFinder : public ThreadVisitor {
  public:
@@ -192,38 +229,75 @@ static bool IsSuitableForOnStackReplacement(Isolate* isolate,
   return true;
 }
 
+namespace {
 
-RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 1);
-  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
-  Handle<Code> caller_code(function->shared()->code());
+BailoutId DetermineEntryAndDisarmOSRForBaseline(JavaScriptFrame* frame) {
+  Handle<Code> caller_code(frame->function()->shared()->code());
 
-  // We're not prepared to handle a function with arguments object.
-  DCHECK(!function->shared()->uses_arguments());
-
-  RUNTIME_ASSERT(FLAG_use_osr);
-
-  // Passing the PC in the javascript frame from the caller directly is
+  // Passing the PC in the JavaScript frame from the caller directly is
   // not GC safe, so we walk the stack to get it.
-  JavaScriptFrameIterator it(isolate);
-  JavaScriptFrame* frame = it.frame();
   if (!caller_code->contains(frame->pc())) {
     // Code on the stack may not be the code object referenced by the shared
     // function info.  It may have been replaced to include deoptimization data.
     caller_code = Handle<Code>(frame->LookupCode());
   }
 
+  DCHECK_EQ(frame->LookupCode(), *caller_code);
+  DCHECK_EQ(Code::FUNCTION, caller_code->kind());
+  DCHECK(caller_code->contains(frame->pc()));
+
+  // Revert the patched back edge table, regardless of whether OSR succeeds.
+  BackEdgeTable::Revert(frame->isolate(), *caller_code);
+
   uint32_t pc_offset =
       static_cast<uint32_t>(frame->pc() - caller_code->instruction_start());
 
-#ifdef DEBUG
-  DCHECK_EQ(frame->function(), *function);
-  DCHECK_EQ(frame->LookupCode(), *caller_code);
-  DCHECK(caller_code->contains(frame->pc()));
-#endif  // DEBUG
+  return caller_code->TranslatePcOffsetToAstId(pc_offset);
+}
 
-  BailoutId ast_id = caller_code->TranslatePcOffsetToAstId(pc_offset);
+BailoutId DetermineEntryAndDisarmOSRForInterpreter(JavaScriptFrame* frame) {
+  InterpretedFrame* iframe = reinterpret_cast<InterpretedFrame*>(frame);
+
+  // Note that the bytecode array active on the stack might be different from
+  // the one installed on the function (e.g. patched by debugger). This however
+  // is fine because we guarantee the layout to be in sync, hence any BailoutId
+  // representing the entry point will be valid for any copy of the bytecode.
+  Handle<BytecodeArray> bytecode(iframe->GetBytecodeArray());
+
+  DCHECK(frame->LookupCode()->is_interpreter_trampoline_builtin());
+  DCHECK(frame->function()->shared()->HasBytecodeArray());
+  DCHECK(frame->is_interpreted());
+  DCHECK(FLAG_ignition_osr);
+
+  // Reset the OSR loop nesting depth to disarm back edges.
+  bytecode->set_osr_loop_nesting_level(0);
+
+  return BailoutId(iframe->GetBytecodeOffset());
+}
+
+}  // namespace
+
+RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+
+  // We're not prepared to handle a function with arguments object.
+  DCHECK(!function->shared()->uses_arguments());
+
+  // Only reachable when OST is enabled.
+  CHECK(FLAG_use_osr);
+
+  // Determine frame triggering OSR request.
+  JavaScriptFrameIterator it(isolate);
+  JavaScriptFrame* frame = it.frame();
+  DCHECK_EQ(frame->function(), *function);
+
+  // Determine the entry point for which this OSR request has been fired and
+  // also disarm all back edges in the calling code to stop new requests.
+  BailoutId ast_id = frame->is_interpreted()
+                         ? DetermineEntryAndDisarmOSRForInterpreter(frame)
+                         : DetermineEntryAndDisarmOSRForBaseline(frame);
   DCHECK(!ast_id.IsNone());
 
   MaybeHandle<Code> maybe_result;
@@ -235,9 +309,6 @@ RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
     }
     maybe_result = Compiler::GetOptimizedCodeForOSR(function, ast_id, frame);
   }
-
-  // Revert the patched back edge table, regardless of whether OSR succeeds.
-  BackEdgeTable::Revert(isolate, *caller_code);
 
   // Check whether we ended up with usable optimized code.
   Handle<Code> result;
@@ -303,7 +374,7 @@ RUNTIME_FUNCTION(Runtime_TryInstallOptimizedCode) {
 
 bool CodeGenerationFromStringsAllowed(Isolate* isolate,
                                       Handle<Context> context) {
-  DCHECK(context->allow_code_gen_from_strings()->IsFalse());
+  DCHECK(context->allow_code_gen_from_strings()->IsFalse(isolate));
   // Check with callback if set.
   AllowCodeGenerationFromStringsCallback callback =
       isolate->allow_code_gen_callback();
@@ -326,7 +397,7 @@ static Object* CompileGlobalEval(Isolate* isolate, Handle<String> source,
 
   // Check if native context allows code generation from
   // strings. Throw an exception if it doesn't.
-  if (native_context->allow_code_gen_from_strings()->IsFalse() &&
+  if (native_context->allow_code_gen_from_strings()->IsFalse(isolate) &&
       !CodeGenerationFromStringsAllowed(isolate, native_context)) {
     Handle<Object> error_message =
         native_context->ErrorMessageForCodeGenerationFromStrings();

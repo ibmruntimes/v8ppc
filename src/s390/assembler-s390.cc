@@ -228,31 +228,20 @@ uint32_t RelocInfo::wasm_memory_size_reference() {
       reinterpret_cast<intptr_t>(Assembler::target_address_at(pc_, host_)));
 }
 
-void RelocInfo::update_wasm_memory_reference(
-    Address old_base, Address new_base, uint32_t old_size, uint32_t new_size,
-    ICacheFlushMode icache_flush_mode) {
-  DCHECK(IsWasmMemoryReference(rmode_) || IsWasmMemorySizeReference(rmode_));
-  if (IsWasmMemoryReference(rmode_)) {
-    Address updated_memory_reference;
-    DCHECK(old_base <= wasm_memory_reference() &&
-           wasm_memory_reference() < old_base + old_size);
-    updated_memory_reference = new_base + (wasm_memory_reference() - old_base);
-    DCHECK(new_base <= updated_memory_reference &&
-           updated_memory_reference < new_base + new_size);
-    Assembler::set_target_address_at(
-        isolate_, pc_, host_, updated_memory_reference, icache_flush_mode);
-  } else if (IsWasmMemorySizeReference(rmode_)) {
-    uint32_t updated_size_reference;
-    DCHECK(wasm_memory_size_reference() <= old_size);
-    updated_size_reference =
-        new_size + (wasm_memory_size_reference() - old_size);
-    DCHECK(updated_size_reference <= new_size);
-    Assembler::set_target_address_at(
-        isolate_, pc_, host_, reinterpret_cast<Address>(updated_size_reference),
-        icache_flush_mode);
-  } else {
-    UNREACHABLE();
-  }
+Address RelocInfo::wasm_global_reference() {
+  DCHECK(IsWasmGlobalReference(rmode_));
+  return Assembler::target_address_at(pc_, host_);
+}
+
+void RelocInfo::unchecked_update_wasm_memory_reference(
+    Address address, ICacheFlushMode flush_mode) {
+  Assembler::set_target_address_at(isolate_, pc_, host_, address, flush_mode);
+}
+
+void RelocInfo::unchecked_update_wasm_memory_size(uint32_t size,
+                                                  ICacheFlushMode flush_mode) {
+  Assembler::set_target_address_at(isolate_, pc_, host_,
+                                   reinterpret_cast<Address>(size), flush_mode);
 }
 
 // -----------------------------------------------------------------------------
@@ -265,7 +254,6 @@ Operand::Operand(Handle<Object> handle) {
   // Verify all Objects referred by code are NOT in new space.
   Object* obj = *handle;
   if (obj->IsHeapObject()) {
-    DCHECK(!HeapObject::cast(obj)->GetHeap()->InNewSpace(obj));
     imm_ = reinterpret_cast<intptr_t>(handle.location());
     rmode_ = RelocInfo::EMBEDDED_OBJECT;
   } else {
@@ -293,8 +281,7 @@ MemOperand::MemOperand(Register rx, Register rb, int32_t offset) {
 Assembler::Assembler(Isolate* isolate, void* buffer, int buffer_size)
     : AssemblerBase(isolate, buffer, buffer_size),
       recorded_ast_id_(TypeFeedbackId::None()),
-      code_targets_(100),
-      positions_recorder_(this) {
+      code_targets_(100) {
   reloc_info_writer.Reposition(buffer_ + buffer_size_, pc_);
 
   last_bound_pos_ = 0;
@@ -311,6 +298,8 @@ void Assembler::GetCode(CodeDesc* desc) {
   desc->instr_size = pc_offset();
   desc->reloc_size = (buffer_ + buffer_size_) - reloc_info_writer.pos();
   desc->origin = this;
+  desc->unwinding_info_size = 0;
+  desc->unwinding_info = nullptr;
 }
 
 void Assembler::Align(int m) {
@@ -981,6 +970,20 @@ void Assembler::rxy_form(Opcode op, Register r1, Register x2, Register b2,
   emit6bytes(code);
 }
 
+void Assembler::rxy_form(Opcode op, Register r1, Condition m3, Register b2,
+                         Disp d2) {
+  DCHECK(is_int20(d2));
+  DCHECK(is_uint16(op));
+  uint64_t code = (static_cast<uint64_t>(op & 0xFF00)) * B32 |
+                  (static_cast<uint64_t>(r1.code())) * B36 |
+                  (static_cast<uint64_t>(m3 & 0xF)) * B32 |
+                  (static_cast<uint64_t>(b2.code())) * B28 |
+                  (static_cast<uint64_t>(d2 & 0x0FFF)) * B16 |
+                  (static_cast<uint64_t>(d2 & 0x0FF000)) >> 4 |
+                  (static_cast<uint64_t>(op & 0x00FF));
+  emit6bytes(code);
+}
+
 void Assembler::rxy_form(Opcode op, DoubleRegister r1, Register x2, Register b2,
                          Disp d2) {
   DCHECK(is_int20(d2));
@@ -1417,7 +1420,6 @@ void Assembler::rrfe_form(Opcode op, Condition m3, Condition m4, Register r1,
 RX_FORM_EMIT(bc, BC)
 RR_FORM_EMIT(bctr, BCTR)
 RXE_FORM_EMIT(ceb, CEB)
-RRE_FORM_EMIT(cefbr, CEFBR)
 SS1_FORM_EMIT(ed, ED)
 RX_FORM_EMIT(ex, EX)
 RRE_FORM_EMIT(flogr, FLOGR)
@@ -1429,8 +1431,10 @@ RIL1_FORM_EMIT(llihf, LLIHF)
 RIL1_FORM_EMIT(llilf, LLILF)
 RRE_FORM_EMIT(lngr, LNGR)
 RR_FORM_EMIT(lnr, LNR)
-RSY1_FORM_EMIT(loc, LOC)
+RRE_FORM_EMIT(lrvr, LRVR)
+RRE_FORM_EMIT(lrvgr, LRVGR)
 RXY_FORM_EMIT(lrv, LRV)
+RXY_FORM_EMIT(lrvg, LRVG)
 RXY_FORM_EMIT(lrvh, LRVH)
 SS1_FORM_EMIT(mvn, MVN)
 SS1_FORM_EMIT(nc, NC)
@@ -1446,7 +1450,9 @@ RRE_FORM_EMIT(popcnt, POPCNT_Z)
 RIL1_FORM_EMIT(slfi, SLFI)
 RXY_FORM_EMIT(slgf, SLGF)
 RIL1_FORM_EMIT(slgfi, SLGFI)
+RXY_FORM_EMIT(strvh, STRVH)
 RXY_FORM_EMIT(strv, STRV)
+RXY_FORM_EMIT(strvg, STRVG)
 RI1_FORM_EMIT(tmll, TMLL)
 SS1_FORM_EMIT(tr, TR)
 S_FORM_EMIT(ts, TS)
@@ -1609,6 +1615,26 @@ void Assembler::llhr(Register r1, Register r2) { rre_form(LLHR, r1, r2); }
 
 // Load Logical halfword Register-Register (64)
 void Assembler::llghr(Register r1, Register r2) { rre_form(LLGHR, r1, r2); }
+
+// Load On Condition R-R (32)
+void Assembler::locr(Condition m3, Register r1, Register r2) {
+  rrf2_form(LOCR << 16 | m3 * B12 | r1.code() * B4 | r2.code());
+}
+
+// Load On Condition R-R (64)
+void Assembler::locgr(Condition m3, Register r1, Register r2) {
+  rrf2_form(LOCGR << 16 | m3 * B12 | r1.code() * B4 | r2.code());
+}
+
+// Load On Condition R-M (32)
+void Assembler::loc(Condition m3, Register r1, const MemOperand& src) {
+  rxy_form(LOC, r1, m3, src.rb(), src.offset());
+}
+
+// Load On Condition R-M (64)
+void Assembler::locg(Condition m3, Register r1, const MemOperand& src) {
+  rxy_form(LOCG, r1, m3, src.rb(), src.offset());
+}
 
 // -------------------
 // Branch Instructions
@@ -1893,7 +1919,7 @@ void Assembler::agf(Register r1, const MemOperand& opnd) {
 
 // Add Immediate (64)
 void Assembler::agfi(Register r1, const Operand& opnd) {
-  ril_form(ALFI, r1, opnd);
+  ril_form(AGFI, r1, opnd);
 }
 
 // Add Register-Register (64<-32)
@@ -2504,7 +2530,6 @@ void Assembler::srdl(Register r1, const Operand& opnd) {
 
 void Assembler::call(Handle<Code> target, RelocInfo::Mode rmode,
                      TypeFeedbackId ast_id) {
-  positions_recorder()->WriteRecordedPositions();
   EnsureSpace ensure_space(this);
 
   int32_t target_index = emit_code_target(target, rmode, ast_id);
@@ -2618,6 +2643,11 @@ void Assembler::iilh(Register r1, const Operand& opnd) {
 // Insert Immediate (low low)
 void Assembler::iill(Register r1, const Operand& opnd) {
   ri_form(IILL, r1, opnd);
+}
+
+// Load Immediate 32->64
+void Assembler::lgfi(Register r1, const Operand& opnd) {
+  ril_form(LGFI, r1, opnd);
 }
 
 // GPR <-> FPR Instructions
@@ -2752,6 +2782,12 @@ void Assembler::ldebr(DoubleRegister r1, DoubleRegister r2) {
 // Load Complement Register-Register (LB)
 void Assembler::lcdbr(DoubleRegister r1, DoubleRegister r2) {
   rre_form(LCDBR, Register::from_code(r1.code()),
+           Register::from_code(r2.code()));
+}
+
+// Load Complement Register-Register (LB)
+void Assembler::lcebr(DoubleRegister r1, DoubleRegister r2) {
+  rre_form(LCEBR, Register::from_code(r1.code()),
            Register::from_code(r2.code()));
 }
 
@@ -2900,10 +2936,8 @@ void Assembler::celgbr(Condition m3, Condition m4, DoubleRegister r1,
 // Convert from Fixed Logical (F32<-32)
 void Assembler::celfbr(Condition m3, Condition m4, DoubleRegister r1,
                        Register r2) {
-  DCHECK_EQ(m3, Condition(0));
   DCHECK_EQ(m4, Condition(0));
-  rrfe_form(CELFBR, Condition(0), Condition(0), Register::from_code(r1.code()),
-            r2);
+  rrfe_form(CELFBR, m3, Condition(0), Register::from_code(r1.code()), r2);
 }
 
 // Convert from Fixed Logical (L<-64)
@@ -2923,8 +2957,8 @@ void Assembler::cdlfbr(Condition m3, Condition m4, DoubleRegister r1,
 }
 
 // Convert from Fixed point (S<-32)
-void Assembler::cefbr(DoubleRegister r1, Register r2) {
-  rre_form(CEFBR, Register::from_code(r1.code()), r2);
+void Assembler::cefbr(Condition m3, DoubleRegister r1, Register r2) {
+  rrfe_form(CEFBR, m3, Condition(0), Register::from_code(r1.code()), r2);
 }
 
 // Convert to Fixed point (32<-S)
@@ -3090,8 +3124,6 @@ void Assembler::EmitRelocations() {
 
     reloc_info_writer.Write(&rinfo);
   }
-
-  reloc_info_writer.Finish();
 }
 
 }  // namespace internal

@@ -55,13 +55,9 @@ class JSCallAccessor {
     return call_->InputAt(formal_arguments() + 1);
   }
 
-  Node* frame_state_before() {
-    return NodeProperties::GetFrameStateInput(call_, 1);
-  }
-
-  Node* frame_state_after() {
-    // Both, {JSCallFunction} and {JSCallConstruct}, have frame state after.
-    return NodeProperties::GetFrameStateInput(call_, 0);
+  Node* frame_state() {
+    // Both, {JSCallFunction} and {JSCallConstruct}, have frame state.
+    return NodeProperties::GetFrameStateInput(call_);
   }
 
   int formal_arguments() {
@@ -110,13 +106,13 @@ Reduction JSInliner::InlineCall(Node* call, Node* new_target, Node* context,
           Replace(use, new_target);
         } else if (index == inlinee_arity_index) {
           // The projection is requesting the number of arguments.
-          Replace(use, jsgraph_->Int32Constant(inliner_inputs - 2));
+          Replace(use, jsgraph()->Int32Constant(inliner_inputs - 2));
         } else if (index == inlinee_context_index) {
           // The projection is requesting the inlinee function context.
           Replace(use, context);
         } else {
           // Call has fewer arguments than required, fill with undefined.
-          Replace(use, jsgraph_->UndefinedConstant());
+          Replace(use, jsgraph()->UndefinedConstant());
         }
         break;
       }
@@ -147,9 +143,8 @@ Reduction JSInliner::InlineCall(Node* call, Node* new_target, Node* context,
       case IrOpcode::kDeoptimize:
       case IrOpcode::kTerminate:
       case IrOpcode::kThrow:
-        NodeProperties::MergeControlToEnd(jsgraph_->graph(), jsgraph_->common(),
-                                          input);
-        Revisit(jsgraph_->graph()->end());
+        NodeProperties::MergeControlToEnd(graph(), common(), input);
+        Revisit(graph()->end());
         break;
       default:
         UNREACHABLE();
@@ -163,20 +158,20 @@ Reduction JSInliner::InlineCall(Node* call, Node* new_target, Node* context,
   // uses with said value or kill value uses if no value can be returned.
   if (values.size() > 0) {
     int const input_count = static_cast<int>(controls.size());
-    Node* control_output = jsgraph_->graph()->NewNode(
-        jsgraph_->common()->Merge(input_count), input_count, &controls.front());
+    Node* control_output = graph()->NewNode(common()->Merge(input_count),
+                                            input_count, &controls.front());
     values.push_back(control_output);
     effects.push_back(control_output);
-    Node* value_output = jsgraph_->graph()->NewNode(
-        jsgraph_->common()->Phi(MachineRepresentation::kTagged, input_count),
+    Node* value_output = graph()->NewNode(
+        common()->Phi(MachineRepresentation::kTagged, input_count),
         static_cast<int>(values.size()), &values.front());
-    Node* effect_output = jsgraph_->graph()->NewNode(
-        jsgraph_->common()->EffectPhi(input_count),
-        static_cast<int>(effects.size()), &effects.front());
+    Node* effect_output =
+        graph()->NewNode(common()->EffectPhi(input_count),
+                         static_cast<int>(effects.size()), &effects.front());
     ReplaceWithValue(call, value_output, effect_output, control_output);
     return Changed(value_output);
   } else {
-    ReplaceWithValue(call, call, call, jsgraph_->Dead());
+    ReplaceWithValue(call, call, call, jsgraph()->Dead());
     return Changed(call);
   }
 }
@@ -187,24 +182,24 @@ Node* JSInliner::CreateArtificialFrameState(Node* node, Node* outer_frame_state,
                                             FrameStateType frame_state_type,
                                             Handle<SharedFunctionInfo> shared) {
   const FrameStateFunctionInfo* state_info =
-      jsgraph_->common()->CreateFrameStateFunctionInfo(
-          frame_state_type, parameter_count + 1, 0, shared);
+      common()->CreateFrameStateFunctionInfo(frame_state_type,
+                                             parameter_count + 1, 0, shared);
 
-  const Operator* op = jsgraph_->common()->FrameState(
+  const Operator* op = common()->FrameState(
       BailoutId(-1), OutputFrameStateCombine::Ignore(), state_info);
-  const Operator* op0 = jsgraph_->common()->StateValues(0);
-  Node* node0 = jsgraph_->graph()->NewNode(op0);
+  const Operator* op0 = common()->StateValues(0);
+  Node* node0 = graph()->NewNode(op0);
   NodeVector params(local_zone_);
   for (int parameter = 0; parameter < parameter_count + 1; ++parameter) {
     params.push_back(node->InputAt(1 + parameter));
   }
   const Operator* op_param =
-      jsgraph_->common()->StateValues(static_cast<int>(params.size()));
-  Node* params_node = jsgraph_->graph()->NewNode(
+      common()->StateValues(static_cast<int>(params.size()));
+  Node* params_node = graph()->NewNode(
       op_param, static_cast<int>(params.size()), &params.front());
-  return jsgraph_->graph()->NewNode(op, params_node, node0, node0,
-                                    jsgraph_->UndefinedConstant(),
-                                    node->InputAt(0), outer_frame_state);
+  return graph()->NewNode(op, params_node, node0, node0,
+                          jsgraph()->UndefinedConstant(), node->InputAt(0),
+                          outer_frame_state);
 }
 
 Node* JSInliner::CreateTailCallerFrameState(Node* node, Node* frame_state) {
@@ -216,25 +211,25 @@ Node* JSInliner::CreateTailCallerFrameState(Node* node, Node* frame_state) {
 
   // If we are inlining a tail call drop caller's frame state and an
   // arguments adaptor if it exists.
-  frame_state = NodeProperties::GetFrameStateInput(frame_state, 0);
+  frame_state = NodeProperties::GetFrameStateInput(frame_state);
   if (frame_state->opcode() == IrOpcode::kFrameState) {
     FrameStateInfo const& frame_info = OpParameter<FrameStateInfo>(frame_state);
     if (frame_info.type() == FrameStateType::kArgumentsAdaptor) {
-      frame_state = NodeProperties::GetFrameStateInput(frame_state, 0);
+      frame_state = NodeProperties::GetFrameStateInput(frame_state);
     }
   }
 
   const FrameStateFunctionInfo* state_info =
-      jsgraph_->common()->CreateFrameStateFunctionInfo(
+      common()->CreateFrameStateFunctionInfo(
           FrameStateType::kTailCallerFunction, 0, 0, shared);
 
-  const Operator* op = jsgraph_->common()->FrameState(
+  const Operator* op = common()->FrameState(
       BailoutId(-1), OutputFrameStateCombine::Ignore(), state_info);
-  const Operator* op0 = jsgraph_->common()->StateValues(0);
-  Node* node0 = jsgraph_->graph()->NewNode(op0);
-  return jsgraph_->graph()->NewNode(op, node0, node0, node0,
-                                    jsgraph_->UndefinedConstant(), function,
-                                    frame_state);
+  const Operator* op0 = common()->StateValues(0);
+  Node* node0 = graph()->NewNode(op0);
+  return graph()->NewNode(op, node0, node0, node0,
+                          jsgraph()->UndefinedConstant(), function,
+                          frame_state);
 }
 
 namespace {
@@ -334,7 +329,7 @@ Reduction JSInliner::ReduceJSCall(Node* node, Handle<JSFunction> function) {
   // TODO(turbofan): TranslatedState::GetAdaptedArguments() currently relies on
   // not inlining recursive functions. We might want to relax that at some
   // point.
-  for (Node* frame_state = call.frame_state_after();
+  for (Node* frame_state = call.frame_state();
        frame_state->opcode() == IrOpcode::kFrameState;
        frame_state = frame_state->InputAt(kFrameStateOuterStateInput)) {
     FrameStateInfo const& frame_info = OpParameter<FrameStateInfo>(frame_state);
@@ -360,6 +355,7 @@ Reduction JSInliner::ReduceJSCall(Node* node, Handle<JSFunction> function) {
   ParseInfo parse_info(&zone, function);
   CompilationInfo info(&parse_info, function);
   if (info_->is_deoptimization_enabled()) info.MarkAsDeoptimizationEnabled();
+  if (info_->is_type_feedback_enabled()) info.MarkAsTypeFeedbackEnabled();
 
   if (!Compiler::ParseAndAnalyze(info.parse_info())) {
     TRACE("Not inlining %s into %s because parsing failed\n",
@@ -377,6 +373,7 @@ Reduction JSInliner::ReduceJSCall(Node* node, Handle<JSFunction> function) {
           info_->shared_info()->DebugName()->ToCString().get());
     return NoChange();
   }
+
   // Remember that we inlined this function. This needs to be called right
   // after we ensure deoptimization support so that the code flusher
   // does not remove the code with the deoptimization support.
@@ -389,6 +386,9 @@ Reduction JSInliner::ReduceJSCall(Node* node, Handle<JSFunction> function) {
   TRACE("Inlining %s into %s\n",
         shared_info->DebugName()->ToCString().get(),
         info_->shared_info()->DebugName()->ToCString().get());
+
+  // If function was lazily compiled, it's literals array may not yet be set up.
+  JSFunction::EnsureLiterals(function);
 
   // Create the subgraph for the inlinee.
   Node* start;
@@ -415,8 +415,8 @@ Reduction JSInliner::ReduceJSCall(Node* node, Handle<JSFunction> function) {
     end = graph()->end();
   }
 
-  Node* frame_state = call.frame_state_after();
-  Node* new_target = jsgraph_->UndefinedConstant();
+  Node* frame_state = call.frame_state();
+  Node* new_target = jsgraph()->UndefinedConstant();
 
   // Inline {JSCallConstruct} requires some additional magic.
   if (node->opcode() == IrOpcode::kJSCallConstruct) {
@@ -424,23 +424,24 @@ Reduction JSInliner::ReduceJSCall(Node* node, Handle<JSFunction> function) {
     // constructor dispatch (allocate implicit receiver and check return value).
     // This models the behavior usually accomplished by our {JSConstructStub}.
     // Note that the context has to be the callers context (input to call node).
-    Node* receiver = jsgraph_->UndefinedConstant();  // Implicit receiver.
+    Node* receiver = jsgraph()->UndefinedConstant();  // Implicit receiver.
     if (NeedsImplicitReceiver(shared_info)) {
+      Node* frame_state_before = NodeProperties::FindFrameStateBefore(node);
       Node* effect = NodeProperties::GetEffectInput(node);
       Node* context = NodeProperties::GetContextInput(node);
-      Node* create = jsgraph_->graph()->NewNode(
-          jsgraph_->javascript()->Create(), call.target(), call.new_target(),
-          context, call.frame_state_before(), effect);
+      Node* create = graph()->NewNode(javascript()->Create(), call.target(),
+                                      call.new_target(), context,
+                                      frame_state_before, effect);
       NodeProperties::ReplaceEffectInput(node, create);
       // Insert a check of the return value to determine whether the return
       // value
       // or the implicit receiver should be selected as a result of the call.
-      Node* check = jsgraph_->graph()->NewNode(
-          jsgraph_->javascript()->CallRuntime(Runtime::kInlineIsJSReceiver, 1),
-          node, context, node, start);
-      Node* select = jsgraph_->graph()->NewNode(
-          jsgraph_->common()->Select(MachineRepresentation::kTagged), check,
-          node, create);
+      Node* check = graph()->NewNode(
+          javascript()->CallRuntime(Runtime::kInlineIsJSReceiver, 1), node,
+          context, node, start);
+      Node* select =
+          graph()->NewNode(common()->Select(MachineRepresentation::kTagged),
+                           check, node, create);
       NodeProperties::ReplaceUses(node, select, check, node, node);
       NodeProperties::ReplaceValueInput(select, node, 1);
       NodeProperties::ReplaceValueInput(check, node, 0);
@@ -453,7 +454,7 @@ Reduction JSInliner::ReduceJSCall(Node* node, Handle<JSFunction> function) {
     // behaves as if we were dealing with a regular function invocation.
     new_target = call.new_target();  // Retrieve new target value input.
     node->RemoveInput(call.formal_arguments() + 1);  // Drop new target.
-    node->InsertInput(jsgraph_->graph()->zone(), 1, receiver);
+    node->InsertInput(graph()->zone(), 1, receiver);
 
     // Insert a construct stub frame into the chain of frame states. This will
     // reconstruct the proper frame when deoptimizing within the constructor.
@@ -466,7 +467,7 @@ Reduction JSInliner::ReduceJSCall(Node* node, Handle<JSFunction> function) {
   // TODO(turbofan): We might want to load the context from the JSFunction at
   // runtime in case we only know the SharedFunctionInfo once we have dynamic
   // type feedback in the compiler.
-  Node* context = jsgraph_->Constant(handle(function->context()));
+  Node* context = jsgraph()->Constant(handle(function->context()));
 
   // Insert a JSConvertReceiver node for sloppy callees. Note that the context
   // passed into this node has to be the callees context (loaded above). Note
@@ -477,10 +478,11 @@ Reduction JSInliner::ReduceJSCall(Node* node, Handle<JSFunction> function) {
   if (node->opcode() == IrOpcode::kJSCallFunction &&
       is_sloppy(parse_info.language_mode()) && !shared_info->native()) {
     const CallFunctionParameters& p = CallFunctionParametersOf(node->op());
+    Node* frame_state_before = NodeProperties::FindFrameStateBefore(node);
     Node* effect = NodeProperties::GetEffectInput(node);
-    Node* convert = jsgraph_->graph()->NewNode(
-        jsgraph_->javascript()->ConvertReceiver(p.convert_mode()),
-        call.receiver(), context, call.frame_state_before(), effect, start);
+    Node* convert = graph()->NewNode(
+        javascript()->ConvertReceiver(p.convert_mode()), call.receiver(),
+        context, frame_state_before, effect, start);
     NodeProperties::ReplaceValueInput(node, convert, 1);
     NodeProperties::ReplaceEffectInput(node, convert);
   }
@@ -515,6 +517,12 @@ Reduction JSInliner::ReduceJSCall(Node* node, Handle<JSFunction> function) {
 }
 
 Graph* JSInliner::graph() const { return jsgraph()->graph(); }
+
+JSOperatorBuilder* JSInliner::javascript() const {
+  return jsgraph()->javascript();
+}
+
+CommonOperatorBuilder* JSInliner::common() const { return jsgraph()->common(); }
 
 }  // namespace compiler
 }  // namespace internal

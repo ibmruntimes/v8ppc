@@ -160,14 +160,14 @@ void RegisterAllocatorVerifier::BuildConstraint(const InstructionOperand* op,
     int vreg = unallocated->virtual_register();
     constraint->virtual_register_ = vreg;
     if (unallocated->basic_policy() == UnallocatedOperand::FIXED_SLOT) {
-      constraint->type_ = sequence()->IsFloat(vreg) ? kDoubleSlot : kSlot;
+      constraint->type_ = kFixedSlot;
       constraint->value_ = unallocated->fixed_slot_index();
     } else {
       switch (unallocated->extended_policy()) {
         case UnallocatedOperand::ANY:
         case UnallocatedOperand::NONE:
-          if (sequence()->IsFloat(vreg)) {
-            constraint->type_ = kNoneDouble;
+          if (sequence()->IsFP(vreg)) {
+            constraint->type_ = kNoneFP;
           } else {
             constraint->type_ = kNone;
           }
@@ -181,19 +181,21 @@ void RegisterAllocatorVerifier::BuildConstraint(const InstructionOperand* op,
           }
           constraint->value_ = unallocated->fixed_register_index();
           break;
-        case UnallocatedOperand::FIXED_DOUBLE_REGISTER:
-          constraint->type_ = kFixedDoubleRegister;
+        case UnallocatedOperand::FIXED_FP_REGISTER:
+          constraint->type_ = kFixedFPRegister;
           constraint->value_ = unallocated->fixed_register_index();
           break;
         case UnallocatedOperand::MUST_HAVE_REGISTER:
-          if (sequence()->IsFloat(vreg)) {
-            constraint->type_ = kDoubleRegister;
+          if (sequence()->IsFP(vreg)) {
+            constraint->type_ = kFPRegister;
           } else {
             constraint->type_ = kRegister;
           }
           break;
         case UnallocatedOperand::MUST_HAVE_SLOT:
-          constraint->type_ = sequence()->IsFloat(vreg) ? kDoubleSlot : kSlot;
+          constraint->type_ = kSlot;
+          constraint->value_ =
+              ElementSizeLog2Of(sequence()->GetRepresentation(vreg));
           break;
         case UnallocatedOperand::SAME_AS_FIRST_INPUT:
           constraint->type_ = kSameAsFirst;
@@ -223,7 +225,7 @@ void RegisterAllocatorVerifier::CheckConstraint(
     case kRegister:
       CHECK(op->IsRegister());
       return;
-    case kDoubleRegister:
+    case kFPRegister:
       CHECK(op->IsFPRegister());
       return;
     case kExplicit:
@@ -232,28 +234,25 @@ void RegisterAllocatorVerifier::CheckConstraint(
     case kFixedRegister:
     case kRegisterAndSlot:
       CHECK(op->IsRegister());
-      CHECK_EQ(LocationOperand::cast(op)->GetRegister().code(),
-               constraint->value_);
+      CHECK_EQ(LocationOperand::cast(op)->register_code(), constraint->value_);
       return;
-    case kFixedDoubleRegister:
+    case kFixedFPRegister:
       CHECK(op->IsFPRegister());
-      CHECK_EQ(LocationOperand::cast(op)->GetDoubleRegister().code(),
-               constraint->value_);
+      CHECK_EQ(LocationOperand::cast(op)->register_code(), constraint->value_);
       return;
     case kFixedSlot:
-      CHECK(op->IsStackSlot());
+      CHECK(op->IsStackSlot() || op->IsFPStackSlot());
       CHECK_EQ(LocationOperand::cast(op)->index(), constraint->value_);
       return;
     case kSlot:
-      CHECK(op->IsStackSlot());
-      return;
-    case kDoubleSlot:
-      CHECK(op->IsFPStackSlot());
+      CHECK(op->IsStackSlot() || op->IsFPStackSlot());
+      CHECK_EQ(ElementSizeLog2Of(LocationOperand::cast(op)->representation()),
+               constraint->value_);
       return;
     case kNone:
       CHECK(op->IsRegister() || op->IsStackSlot());
       return;
-    case kNoneDouble:
+    case kNoneFP:
       CHECK(op->IsFPRegister() || op->IsFPStackSlot());
       return;
     case kSameAsFirst:

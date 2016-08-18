@@ -9,6 +9,7 @@
 #include "src/execution.h"
 #include "src/heap/heap.h"
 #include "src/heap/incremental-marking-job.h"
+#include "src/heap/mark-compact.h"
 #include "src/heap/spaces.h"
 #include "src/objects.h"
 
@@ -203,7 +204,33 @@ class IncrementalMarking {
 
   bool IsIdleMarkingDelayCounterLimitReached();
 
-  static void MarkObject(Heap* heap, HeapObject* object);
+  static void MarkGrey(Heap* heap, HeapObject* object);
+
+  static void MarkBlack(HeapObject* object, int size);
+
+  static void TransferMark(Heap* heap, Address old_start, Address new_start);
+
+  // Returns true if the color transfer requires live bytes updating.
+  INLINE(static bool TransferColor(HeapObject* from, HeapObject* to,
+                                   int size)) {
+    MarkBit from_mark_bit = ObjectMarking::MarkBitFrom(from);
+    MarkBit to_mark_bit = ObjectMarking::MarkBitFrom(to);
+
+    if (Marking::IsBlack(to_mark_bit)) {
+      DCHECK(to->GetHeap()->incremental_marking()->black_allocation());
+      return false;
+    }
+
+    DCHECK(Marking::IsWhite(to_mark_bit));
+    if (from_mark_bit.Get()) {
+      to_mark_bit.Set();
+      if (from_mark_bit.Next().Get()) {
+        to_mark_bit.Next().Set();
+        return true;
+      }
+    }
+    return false;
+  }
 
   void IterateBlackObject(HeapObject* object);
 
@@ -214,6 +241,8 @@ class IncrementalMarking {
   }
 
   bool black_allocation() { return black_allocation_; }
+
+  void StartBlackAllocationForTesting() { StartBlackAllocation(); }
 
  private:
   class Observer : public AllocationObserver {
@@ -264,7 +293,9 @@ class IncrementalMarking {
 
   INLINE(void ProcessMarkingDeque());
 
-  INLINE(intptr_t ProcessMarkingDeque(intptr_t bytes_to_process));
+  INLINE(intptr_t ProcessMarkingDeque(
+      intptr_t bytes_to_process,
+      ForceCompletionAction completion = DO_NOT_FORCE_COMPLETION));
 
   INLINE(void VisitObject(Map* map, HeapObject* obj, int size));
 

@@ -5,183 +5,135 @@
 #include "src/heap/array-buffer-tracker.h"
 #include "src/heap/array-buffer-tracker-inl.h"
 #include "src/heap/heap.h"
-#include "src/isolate.h"
-#include "src/objects-inl.h"
-#include "src/objects.h"
-#include "src/v8.h"
 
 namespace v8 {
 namespace internal {
 
 LocalArrayBufferTracker::~LocalArrayBufferTracker() {
+  CHECK(array_buffers_.empty());
+}
+
+template <LocalArrayBufferTracker::FreeMode free_mode>
+void LocalArrayBufferTracker::Free() {
   size_t freed_memory = 0;
-  for (auto& buffer : live_) {
-    heap_->isolate()->array_buffer_allocator()->Free(buffer.second.first,
-                                                     buffer.second.second);
-    freed_memory += buffer.second.second;
-  }
-  if (freed_memory > 0) {
-    heap_->update_amount_of_external_allocated_freed_memory(
-        static_cast<intptr_t>(freed_memory));
-  }
-  live_.clear();
-  not_yet_discovered_.clear();
-}
-
-void LocalArrayBufferTracker::Add(Key key, const Value& value) {
-  live_[key] = value;
-  not_yet_discovered_[key] = value;
-}
-
-void LocalArrayBufferTracker::AddLive(Key key, const Value& value) {
-  DCHECK_EQ(not_yet_discovered_.count(key), 0);
-  live_[key] = value;
-}
-
-void LocalArrayBufferTracker::MarkLive(Key key) {
-  DCHECK_EQ(live_.count(key), 1);
-  not_yet_discovered_.erase(key);
-}
-
-LocalArrayBufferTracker::Value LocalArrayBufferTracker::Remove(Key key) {
-  DCHECK_EQ(live_.count(key), 1);
-  Value value = live_[key];
-  live_.erase(key);
-  not_yet_discovered_.erase(key);
-  return value;
-}
-
-void LocalArrayBufferTracker::FreeDead() {
-  size_t freed_memory = 0;
-  for (TrackingMap::iterator it = not_yet_discovered_.begin();
-       it != not_yet_discovered_.end();) {
-    heap_->isolate()->array_buffer_allocator()->Free(it->second.first,
-                                                     it->second.second);
-    freed_memory += it->second.second;
-    live_.erase(it->first);
-    not_yet_discovered_.erase(it++);
-  }
-  if (freed_memory > 0) {
-    heap_->update_amount_of_external_allocated_freed_memory(
-        static_cast<intptr_t>(freed_memory));
-  }
-  started_ = false;
-}
-
-void LocalArrayBufferTracker::Reset() {
-  if (!started_) {
-    not_yet_discovered_ = live_;
-    started_ = true;
-  }
-}
-
-bool LocalArrayBufferTracker::IsEmpty() {
-  return live_.empty() && not_yet_discovered_.empty();
-}
-
-ArrayBufferTracker::~ArrayBufferTracker() {}
-
-void ArrayBufferTracker::RegisterNew(JSArrayBuffer* buffer) {
-  void* data = buffer->backing_store();
-  if (!data) return;
-
-  size_t length = NumberToSize(heap_->isolate(), buffer->byte_length());
-  Page* page = Page::FromAddress(buffer->address());
-  LocalArrayBufferTracker* tracker =
-      page->local_tracker<Page::kCreateIfNotPresent>();
-  DCHECK_NOT_NULL(tracker);
-  {
-    base::LockGuard<base::Mutex> guard(page->mutex());
-    if (Marking::IsBlack(Marking::MarkBitFrom(buffer))) {
-      tracker->AddLive(buffer, std::make_pair(data, length));
+  for (TrackingData::iterator it = array_buffers_.begin();
+       it != array_buffers_.end();) {
+    JSArrayBuffer* buffer = reinterpret_cast<JSArrayBuffer*>(it->first);
+    if ((free_mode == kFreeAll) ||
+        Marking::IsWhite(ObjectMarking::MarkBitFrom(buffer))) {
+      const size_t len = it->second;
+      heap_->isolate()->array_buffer_allocator()->Free(buffer->backing_store(),
+                                                       len);
+      freed_memory += len;
+      it = array_buffers_.erase(it);
     } else {
-      tracker->Add(buffer, std::make_pair(data, length));
+      ++it;
     }
   }
-  // We may go over the limit of externally allocated memory here. We call the
-  // api function to trigger a GC in this case.
-  reinterpret_cast<v8::Isolate*>(heap_->isolate())
-      ->AdjustAmountOfExternalAllocatedMemory(length);
-}
-
-
-void ArrayBufferTracker::Unregister(JSArrayBuffer* buffer) {
-  void* data = buffer->backing_store();
-  if (!data) return;
-
-  Page* page = Page::FromAddress(buffer->address());
-  LocalArrayBufferTracker* tracker = page->local_tracker<Page::kDontCreate>();
-  DCHECK_NOT_NULL(tracker);
-  size_t length = 0;
-  {
-    base::LockGuard<base::Mutex> guard(page->mutex());
-    length = tracker->Remove(buffer).second;
+  if (freed_memory > 0) {
+    heap_->update_external_memory_concurrently_freed(
+        static_cast<intptr_t>(freed_memory));
   }
-  heap_->update_amount_of_external_allocated_memory(
-      -static_cast<intptr_t>(length));
 }
 
-void ArrayBufferTracker::FreeDeadInNewSpace() {
-  NewSpacePageIterator from_it(heap_->new_space()->FromSpaceStart(),
-                               heap_->new_space()->FromSpaceEnd());
-  while (from_it.has_next()) {
-    ScanAndFreeDeadArrayBuffers<LocalArrayBufferTracker::kForwardingPointer>(
-        from_it.next());
-  }
-  heap_->account_amount_of_external_allocated_freed_memory();
-}
-
-void ArrayBufferTracker::ResetTrackersInOldSpace() {
-  heap_->old_space()->ForAllPages([](Page* p) {
-    LocalArrayBufferTracker* tracker = p->local_tracker<Page::kDontCreate>();
-    if (tracker != nullptr) {
-      tracker->Reset();
-      if (tracker->IsEmpty()) {
-        p->ReleaseLocalTracker();
+template <typename Callback>
+void LocalArrayBufferTracker::Process(Callback callback) {
+  JSArrayBuffer* new_buffer = nullptr;
+  size_t freed_memory = 0;
+  for (TrackingData::iterator it = array_buffers_.begin();
+       it != array_buffers_.end();) {
+    const CallbackResult result = callback(it->first, &new_buffer);
+    if (result == kKeepEntry) {
+      ++it;
+    } else if (result == kUpdateEntry) {
+      DCHECK_NOT_NULL(new_buffer);
+      Page* target_page = Page::FromAddress(new_buffer->address());
+      // We need to lock the target page because we cannot guarantee
+      // exclusive access to new space pages.
+      if (target_page->InNewSpace()) target_page->mutex()->Lock();
+      LocalArrayBufferTracker* tracker = target_page->local_tracker();
+      if (tracker == nullptr) {
+        target_page->AllocateLocalTracker();
+        tracker = target_page->local_tracker();
       }
+      DCHECK_NOT_NULL(tracker);
+      tracker->Add(new_buffer, it->second);
+      if (target_page->InNewSpace()) target_page->mutex()->Unlock();
+      it = array_buffers_.erase(it);
+    } else if (result == kRemoveEntry) {
+      const size_t len = it->second;
+      heap_->isolate()->array_buffer_allocator()->Free(
+          it->first->backing_store(), len);
+      freed_memory += len;
+      it = array_buffers_.erase(it);
+    } else {
+      UNREACHABLE();
     }
-  });
+  }
+  if (freed_memory > 0) {
+    heap_->update_external_memory_concurrently_freed(
+        static_cast<intptr_t>(freed_memory));
+  }
 }
 
-void ArrayBufferTracker::MarkLive(JSArrayBuffer* buffer) {
-  if (buffer->is_external()) return;
-  void* data = buffer->backing_store();
-  if (data == nullptr) return;
-  if (data == heap_->undefined_value()) return;
-
-  Page* page = Page::FromAddress(buffer->address());
-  LocalArrayBufferTracker* tracker =
-      page->local_tracker<Page::kCreateIfNotPresent>();
-  DCHECK_NOT_NULL(tracker);
-  if (tracker->IsTracked(buffer)) {
-    base::LockGuard<base::Mutex> guard(page->mutex());
-    tracker->MarkLive((buffer));
-  } else {
-    RegisterNew(buffer);
+void ArrayBufferTracker::FreeDeadInNewSpace(Heap* heap) {
+  DCHECK_EQ(heap->gc_state(), Heap::HeapState::SCAVENGE);
+  for (Page* page : NewSpacePageRange(heap->new_space()->FromSpaceStart(),
+                                      heap->new_space()->FromSpaceEnd())) {
+    bool empty = ProcessBuffers(page, kUpdateForwardedRemoveOthers);
+    CHECK(empty);
   }
+  heap->account_external_memory_concurrently_freed();
 }
 
 void ArrayBufferTracker::FreeDead(Page* page) {
-  // Only called from the sweeper, which already holds the page lock.
-  LocalArrayBufferTracker* tracker = page->local_tracker<Page::kDontCreate>();
-  if (tracker != nullptr) {
-    tracker->FreeDead();
+  // Callers need to ensure having the page lock.
+  LocalArrayBufferTracker* tracker = page->local_tracker();
+  if (tracker == nullptr) return;
+  DCHECK(!page->SweepingDone());
+  tracker->Free<LocalArrayBufferTracker::kFreeDead>();
+  if (tracker->IsEmpty()) {
+    page->ReleaseLocalTracker();
   }
 }
 
-template <LocalArrayBufferTracker::LivenessIndicator liveness_indicator>
-void ArrayBufferTracker::ScanAndFreeDeadArrayBuffers(Page* page) {
-  LocalArrayBufferTracker* tracker = page->local_tracker<Page::kDontCreate>();
-  if (tracker != nullptr) {
+void ArrayBufferTracker::FreeAll(Page* page) {
+  LocalArrayBufferTracker* tracker = page->local_tracker();
+  if (tracker == nullptr) return;
+  tracker->Free<LocalArrayBufferTracker::kFreeAll>();
+  if (tracker->IsEmpty()) {
+    page->ReleaseLocalTracker();
+  }
+}
+
+bool ArrayBufferTracker::ProcessBuffers(Page* page, ProcessingMode mode) {
+  LocalArrayBufferTracker* tracker = page->local_tracker();
+  if (tracker == nullptr) return true;
+
+  DCHECK(page->SweepingDone());
+  tracker->Process(
+      [mode](JSArrayBuffer* old_buffer, JSArrayBuffer** new_buffer) {
+        MapWord map_word = old_buffer->map_word();
+        if (map_word.IsForwardingAddress()) {
+          *new_buffer = JSArrayBuffer::cast(map_word.ToForwardingAddress());
+          return LocalArrayBufferTracker::kUpdateEntry;
+        }
+        return mode == kUpdateForwardedKeepOthers
+                   ? LocalArrayBufferTracker::kKeepEntry
+                   : LocalArrayBufferTracker::kRemoveEntry;
+      });
+  return tracker->IsEmpty();
+}
+
+bool ArrayBufferTracker::IsTracked(JSArrayBuffer* buffer) {
+  Page* page = Page::FromAddress(buffer->address());
+  {
     base::LockGuard<base::Mutex> guard(page->mutex());
-    tracker->ScanAndFreeDead<liveness_indicator>();
+    LocalArrayBufferTracker* tracker = page->local_tracker();
+    if (tracker == nullptr) return false;
+    return tracker->IsTracked(buffer);
   }
 }
-
-template void ArrayBufferTracker::ScanAndFreeDeadArrayBuffers<
-    LocalArrayBufferTracker::LivenessIndicator::kForwardingPointer>(Page* page);
-template void ArrayBufferTracker::ScanAndFreeDeadArrayBuffers<
-    LocalArrayBufferTracker::LivenessIndicator::kMarkBit>(Page* page);
 
 }  // namespace internal
 }  // namespace v8

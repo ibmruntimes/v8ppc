@@ -66,7 +66,6 @@ static int64_t MultiplyHighSigned(int64_t u, int64_t v) {
 class MipsDebugger {
  public:
   explicit MipsDebugger(Simulator* sim) : sim_(sim) { }
-  ~MipsDebugger();
 
   void Stop(Instruction* instr);
   void Debug();
@@ -97,75 +96,16 @@ class MipsDebugger {
   void RedoBreakpoints();
 };
 
-
-MipsDebugger::~MipsDebugger() {
-}
-
-
-#ifdef GENERATED_CODE_COVERAGE
-static FILE* coverage_log = NULL;
-
-
-static void InitializeCoverage() {
-  char* file_name = getenv("V8_GENERATED_CODE_COVERAGE_LOG");
-  if (file_name != NULL) {
-    coverage_log = fopen(file_name, "aw+");
-  }
-}
-
-
-void MipsDebugger::Stop(Instruction* instr) {
-  // Get the stop code.
-  uint32_t code = instr->Bits(25, 6);
-  // Retrieve the encoded address, which comes just after this stop.
-  char** msg_address =
-    reinterpret_cast<char**>(sim_->get_pc() + Instr::kInstrSize);
-  char* msg = *msg_address;
-  DCHECK(msg != NULL);
-
-  // Update this stop description.
-  if (!watched_stops_[code].desc) {
-    watched_stops_[code].desc = msg;
-  }
-
-  if (strlen(msg) > 0) {
-    if (coverage_log != NULL) {
-      fprintf(coverage_log, "%s\n", str);
-      fflush(coverage_log);
-    }
-    // Overwrite the instruction and address with nops.
-    instr->SetInstructionBits(kNopInstr);
-    reinterpret_cast<Instr*>(msg_address)->SetInstructionBits(kNopInstr);
-  }
-  // TODO(yuyin): 2 -> 3?
-  sim_->set_pc(sim_->get_pc() + 3 * Instruction::kInstructionSize);
-}
-
-
-#else  // GENERATED_CODE_COVERAGE
-
 #define UNSUPPORTED() printf("Sim: Unsupported instruction.\n");
 
-static void InitializeCoverage() {}
-
-
 void MipsDebugger::Stop(Instruction* instr) {
   // Get the stop code.
   uint32_t code = instr->Bits(25, 6);
-  // Retrieve the encoded address, which comes just after this stop.
-  char* msg = *reinterpret_cast<char**>(sim_->get_pc() +
-      Instruction::kInstrSize);
-  // Update this stop description.
-  if (!sim_->watched_stops_[code].desc) {
-    sim_->watched_stops_[code].desc = msg;
-  }
-  PrintF("Simulator hit %s (%u)\n", msg, code);
+  PrintF("Simulator hit (%u)\n", code);
   // TODO(yuyin): 2 -> 3?
   sim_->set_pc(sim_->get_pc() + 3 * Instruction::kInstrSize);
   Debug();
 }
-#endif  // GENERATED_CODE_COVERAGE
-
 
 int64_t MipsDebugger::GetRegisterValue(int regnum) {
   if (regnum == kNumSimuRegisters) {
@@ -801,9 +741,7 @@ void Simulator::set_last_debugger_input(char* input) {
   last_debugger_input_ = input;
 }
 
-
-void Simulator::FlushICache(v8::internal::HashMap* i_cache,
-                            void* start_addr,
+void Simulator::FlushICache(base::HashMap* i_cache, void* start_addr,
                             size_t size) {
   int64_t start = reinterpret_cast<int64_t>(start_addr);
   int64_t intra_line = (start & CachePage::kLineMask);
@@ -824,10 +762,8 @@ void Simulator::FlushICache(v8::internal::HashMap* i_cache,
   }
 }
 
-
-CachePage* Simulator::GetCachePage(v8::internal::HashMap* i_cache, void* page) {
-  v8::internal::HashMap::Entry* entry =
-      i_cache->LookupOrInsert(page, ICacheHash(page));
+CachePage* Simulator::GetCachePage(base::HashMap* i_cache, void* page) {
+  base::HashMap::Entry* entry = i_cache->LookupOrInsert(page, ICacheHash(page));
   if (entry->value == NULL) {
     CachePage* new_page = new CachePage();
     entry->value = new_page;
@@ -837,7 +773,7 @@ CachePage* Simulator::GetCachePage(v8::internal::HashMap* i_cache, void* page) {
 
 
 // Flush from start up to and not including start + size.
-void Simulator::FlushOnePage(v8::internal::HashMap* i_cache, intptr_t start,
+void Simulator::FlushOnePage(base::HashMap* i_cache, intptr_t start,
                              size_t size) {
   DCHECK(size <= CachePage::kPageSize);
   DCHECK(AllOnOnePage(start, size - 1));
@@ -850,9 +786,7 @@ void Simulator::FlushOnePage(v8::internal::HashMap* i_cache, intptr_t start,
   memset(valid_bytemap, CachePage::LINE_INVALID, size >> CachePage::kLineShift);
 }
 
-
-void Simulator::CheckICache(v8::internal::HashMap* i_cache,
-                            Instruction* instr) {
+void Simulator::CheckICache(base::HashMap* i_cache, Instruction* instr) {
   int64_t address = reinterpret_cast<int64_t>(instr);
   void* page = reinterpret_cast<void*>(address & (~CachePage::kPageMask));
   void* line = reinterpret_cast<void*>(address & (~CachePage::kLineMask));
@@ -885,7 +819,7 @@ void Simulator::Initialize(Isolate* isolate) {
 Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   i_cache_ = isolate_->simulator_i_cache();
   if (i_cache_ == NULL) {
-    i_cache_ = new v8::internal::HashMap(&ICacheMatch);
+    i_cache_ = new base::HashMap(&ICacheMatch);
     isolate_->set_simulator_i_cache(i_cache_);
   }
   Initialize(isolate);
@@ -922,7 +856,6 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   // access violation if the simulator ever tries to execute it.
   registers_[pc] = bad_ra;
   registers_[ra] = bad_ra;
-  InitializeCoverage();
 
   last_debugger_input_ = NULL;
 }
@@ -1000,10 +933,10 @@ class Redirection {
 
 
 // static
-void Simulator::TearDown(HashMap* i_cache, Redirection* first) {
+void Simulator::TearDown(base::HashMap* i_cache, Redirection* first) {
   Redirection::DeleteChain(first);
   if (i_cache != nullptr) {
-    for (HashMap::Entry* entry = i_cache->Start(); entry != nullptr;
+    for (base::HashMap::Entry* entry = i_cache->Start(); entry != nullptr;
          entry = i_cache->Next(entry)) {
       delete static_cast<CachePage*>(entry->value);
     }
@@ -3983,12 +3916,57 @@ void Simulator::DecodeTypeRegisterSPECIAL3() {
           alu_out = static_cast<int64_t>(static_cast<int32_t>(output));
           break;
         }
-        case SEB:
-        case SEH:
-        case WSBH:
-          alu_out = 0x12345678;
-          UNREACHABLE();
+        case SEB: {
+          uint8_t input = static_cast<uint8_t>(rt());
+          uint32_t output = input;
+          uint32_t mask = 0x00000080;
+
+          // Extending sign
+          if (mask & input) {
+            output |= 0xFFFFFF00;
+          }
+
+          alu_out = static_cast<int32_t>(output);
           break;
+        }
+        case SEH: {
+          uint16_t input = static_cast<uint16_t>(rt());
+          uint32_t output = input;
+          uint32_t mask = 0x00008000;
+
+          // Extending sign
+          if (mask & input) {
+            output |= 0xFFFF0000;
+          }
+
+          alu_out = static_cast<int32_t>(output);
+          break;
+        }
+        case WSBH: {
+          uint32_t input = static_cast<uint32_t>(rt());
+          uint64_t output = 0;
+
+          uint32_t mask = 0xFF000000;
+          for (int i = 0; i < 4; i++) {
+            uint32_t tmp = mask & input;
+            if (i % 2 == 0) {
+              tmp = tmp >> 8;
+            } else {
+              tmp = tmp << 8;
+            }
+            output = output | tmp;
+            mask = mask >> 8;
+          }
+          mask = 0x80000000;
+
+          // Extending sign
+          if (mask & output) {
+            output |= 0xFFFFFFFF00000000;
+          }
+
+          alu_out = static_cast<int64_t>(output);
+          break;
+        }
         default: {
           const uint8_t bp2 = get_instr()->Bp2Value();
           sa >>= kBp2Bits;
@@ -4047,11 +4025,47 @@ void Simulator::DecodeTypeRegisterSPECIAL3() {
           }
           break;
         }
-        case DSBH:
-        case DSHD:
-          alu_out = 0x12345678;
-          UNREACHABLE();
+        case DSBH: {
+          uint64_t input = static_cast<uint64_t>(rt());
+          uint64_t output = 0;
+
+          uint64_t mask = 0xFF00000000000000;
+          for (int i = 0; i < 8; i++) {
+            uint64_t tmp = mask & input;
+            if (i % 2 == 0)
+              tmp = tmp >> 8;
+            else
+              tmp = tmp << 8;
+
+            output = output | tmp;
+            mask = mask >> 8;
+          }
+
+          alu_out = static_cast<int64_t>(output);
           break;
+        }
+        case DSHD: {
+          uint64_t input = static_cast<uint64_t>(rt());
+          uint64_t output = 0;
+
+          uint64_t mask = 0xFFFF000000000000;
+          for (int i = 0; i < 4; i++) {
+            uint64_t tmp = mask & input;
+            if (i == 0)
+              tmp = tmp >> 48;
+            else if (i == 1)
+              tmp = tmp >> 16;
+            else if (i == 2)
+              tmp = tmp << 16;
+            else
+              tmp = tmp << 48;
+            output = output | tmp;
+            mask = mask >> 16;
+          }
+
+          alu_out = static_cast<int64_t>(output);
+          break;
+        }
         default: {
           const uint8_t bp3 = get_instr()->Bp3Value();
           sa >>= kBp3Bits;
@@ -4101,31 +4115,7 @@ void Simulator::DecodeTypeRegister(Instruction* instr) {
       DecodeTypeRegisterSPECIAL2();
       break;
     case SPECIAL3:
-      switch (instr->FunctionFieldRaw()) {
-        case BSHFL: {
-          int32_t saVal = sa();
-          saVal >>= kBp2Bits;
-          switch (saVal) {
-            case ALIGN: {
-              DecodeTypeRegisterSPECIAL3();
-              break;
-            }
-          }
-        }
-        case DBSHFL: {
-          int32_t saVal = sa();
-          saVal >>= kBp2Bits;
-          switch (saVal) {
-            case DALIGN: {
-              DecodeTypeRegisterSPECIAL3();
-              break;
-            }
-          }
-        }
-        default:
-          DecodeTypeRegisterSPECIAL3();
-          break;
-      }
+      DecodeTypeRegisterSPECIAL3();
       break;
     // Unimplemented opcodes raised an error in the configuration step before,
     // so we can use the default here to set the destination register in common

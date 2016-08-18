@@ -185,26 +185,24 @@ function PostNatives(utils) {
     "ArrayToString",
     "AsyncFunctionNext",
     "AsyncFunctionThrow",
-    "ErrorToString",
     "GetIterator",
     "GetMethod",
+    "GlobalPromise",
     "IntlParseDate",
     "IntlParseNumber",
     "IsNaN",
-    "MakeError",
-    "MakeRangeError",
-    "MakeTypeError",
     "MapEntries",
     "MapIterator",
     "MapIteratorNext",
     "MaxSimple",
     "MinSimple",
+    "NewPromiseCapability",
     "NumberIsInteger",
+    "PerformPromiseThen",
     "PromiseChain",
     "PromiseDefer",
     "PromiseAccept",
-    "PromiseCreateRejected",
-    "PromiseCreateResolved",
+    "PromiseCastResolved",
     "PromiseThen",
     "RegExpSubclassExecJS",
     "RegExpSubclassMatch",
@@ -215,7 +213,6 @@ function PostNatives(utils) {
     "SetIterator",
     "SetIteratorNext",
     "SetValues",
-    "SymbolToString",
     "ToLocaleLowerCaseI18N",
     "ToLocaleUpperCaseI18N",
     "ToLowerCaseI18N",
@@ -266,9 +263,6 @@ function PostExperimentals(utils) {
     imports_from_experimental(exports_container);
   }
 
-  utils.CreateDoubleResultArray();
-  utils.CreateDoubleResultArray = UNDEFINED;
-
   utils.Export = UNDEFINED;
   utils.PostDebug = UNDEFINED;
   utils.PostExperimentals = UNDEFINED;
@@ -280,9 +274,6 @@ function PostDebug(utils) {
   for ( ; !IS_UNDEFINED(imports); imports = imports.next) {
     imports(exports_container);
   }
-
-  utils.CreateDoubleResultArray();
-  utils.CreateDoubleResultArray = UNDEFINED;
 
   exports_container = UNDEFINED;
 

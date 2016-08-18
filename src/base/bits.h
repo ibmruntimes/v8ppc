@@ -111,7 +111,6 @@ T ReverseBits(T value) {
   return result;
 }
 
-
 // CountTrailingZeros32(value) returns the number of zero bits preceding the
 // least significant 1 bit in |value| if |value| is non-zero, otherwise it
 // returns 32.
@@ -147,6 +146,14 @@ inline unsigned CountTrailingZeros64(uint64_t value) {
 #endif
 }
 
+// Overloaded versions of CountTrailingZeros32/64.
+inline unsigned CountTrailingZeros(uint32_t value) {
+  return CountTrailingZeros32(value);
+}
+
+inline unsigned CountTrailingZeros(uint64_t value) {
+  return CountTrailingZeros64(value);
+}
 
 // Returns true iff |value| is a power of 2.
 inline bool IsPowerOfTwo32(uint32_t value) {
@@ -231,6 +238,10 @@ inline bool SignedSubOverflow32(int32_t lhs, int32_t rhs, int32_t* val) {
 #endif
 }
 
+// SignedMulOverflow32(lhs,rhs,val) performs a signed multiplication of |lhs|
+// and |rhs| and stores the result into the variable pointed to by |val| and
+// returns true if the signed multiplication resulted in an overflow.
+bool SignedMulOverflow32(int32_t lhs, int32_t rhs, int32_t* val);
 
 // SignedAddOverflow64(lhs,rhs,val) performs a signed summation of |lhs| and
 // |rhs| and stores the result into the variable pointed to by |val| and
@@ -251,6 +262,10 @@ inline bool SignedSubOverflow64(int64_t lhs, int64_t rhs, int64_t* val) {
   return ((res ^ lhs) & (res ^ ~rhs) & (1ULL << 63)) != 0;
 }
 
+// SignedMulOverflow64(lhs,rhs,val) performs a signed multiplication of |lhs|
+// and |rhs| and stores the result into the variable pointed to by |val| and
+// returns true if the signed multiplication resulted in an overflow.
+bool SignedMulOverflow64(int64_t lhs, int64_t rhs, int64_t* val);
 
 // SignedMulHigh32(lhs, rhs) multiplies two signed 32-bit values |lhs| and
 // |rhs|, extracts the most significant 32 bits of the result, and returns

@@ -11,6 +11,19 @@ namespace internal {
 
 const Register CallInterfaceDescriptor::ContextRegister() { return esi; }
 
+void CallInterfaceDescriptor::DefaultInitializePlatformSpecific(
+    CallInterfaceDescriptorData* data, int register_parameter_count) {
+  const Register default_stub_registers[] = {eax, ebx, ecx, edx, edi};
+  CHECK_LE(static_cast<size_t>(register_parameter_count),
+           arraysize(default_stub_registers));
+  data->InitializePlatformSpecific(register_parameter_count,
+                                   default_stub_registers);
+}
+
+const Register FastNewFunctionContextDescriptor::FunctionRegister() {
+  return edi;
+}
+const Register FastNewFunctionContextDescriptor::SlotsRegister() { return eax; }
 
 const Register LoadDescriptor::ReceiverRegister() { return edx; }
 const Register LoadDescriptor::NameRegister() { return ecx; }
@@ -22,13 +35,9 @@ const Register LoadWithVectorDescriptor::VectorRegister() { return ebx; }
 const Register StoreDescriptor::ReceiverRegister() { return edx; }
 const Register StoreDescriptor::NameRegister() { return ecx; }
 const Register StoreDescriptor::ValueRegister() { return eax; }
+const Register StoreDescriptor::SlotRegister() { return edi; }
 
-
-const Register VectorStoreICTrampolineDescriptor::SlotRegister() { return edi; }
-
-
-const Register VectorStoreICDescriptor::VectorRegister() { return ebx; }
-
+const Register StoreWithVectorDescriptor::VectorRegister() { return ebx; }
 
 const Register VectorStoreTransitionDescriptor::SlotRegister() {
   return no_reg;
@@ -42,9 +51,6 @@ const Register VectorStoreTransitionDescriptor::MapRegister() { return edi; }
 
 
 const Register StoreTransitionDescriptor::MapRegister() { return ebx; }
-
-
-const Register LoadGlobalViaContextDescriptor::SlotRegister() { return ebx; }
 
 
 const Register StoreGlobalViaContextDescriptor::SlotRegister() { return ebx; }
@@ -68,19 +74,10 @@ const Register MathPowIntegerDescriptor::exponent() {
 const Register GrowArrayElementsDescriptor::ObjectRegister() { return eax; }
 const Register GrowArrayElementsDescriptor::KeyRegister() { return ebx; }
 
-const Register HasPropertyDescriptor::ObjectRegister() { return eax; }
-const Register HasPropertyDescriptor::KeyRegister() { return ebx; }
 
 void FastNewClosureDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {ebx};
-  data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
-}
-
-
-void FastNewContextDescriptor::InitializePlatformSpecific(
-    CallInterfaceDescriptorData* data) {
-  Register registers[] = {edi};
   data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
 }
 
@@ -269,22 +266,17 @@ void ArraySingleArgumentConstructorDescriptor::InitializePlatformSpecific(
   data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
 }
 
-void ArrayConstructorDescriptor::InitializePlatformSpecific(
+void ArrayNArgumentsConstructorDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
-  // stack param count needs (constructor pointer, and single argument)
+  // register state
+  // eax -- number of arguments
+  // edi -- function
+  // ebx -- allocation site with elements kind
   Register registers[] = {edi, ebx, eax};
-  data->InitializePlatformSpecific(arraysize(registers), registers);
+  data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
 }
 
-
-void InternalArrayConstructorDescriptor::InitializePlatformSpecific(
-    CallInterfaceDescriptorData* data) {
-  // stack param count needs (constructor pointer, and single argument)
-  Register registers[] = {edi, eax};
-  data->InitializePlatformSpecific(arraysize(registers), registers);
-}
-
-void FastArrayPushDescriptor::InitializePlatformSpecific(
+void VarArgFunctionDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   // stack param count needs (arg count)
   Register registers[] = {eax};

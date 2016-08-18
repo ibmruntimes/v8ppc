@@ -24,6 +24,11 @@ Node* JSGraph::AllocateInOldSpaceStubConstant() {
                 HeapConstant(isolate()->builtins()->AllocateInOldSpace()));
 }
 
+Node* JSGraph::ToNumberBuiltinConstant() {
+  return CACHED(kToNumberBuiltinConstant,
+                HeapConstant(isolate()->builtins()->ToNumber()));
+}
+
 Node* JSGraph::CEntryStubConstant(int result_size) {
   if (result_size == 1) {
     return CACHED(kCEntryStubConstant,
@@ -36,6 +41,25 @@ Node* JSGraph::CEntryStubConstant(int result_size) {
 Node* JSGraph::EmptyFixedArrayConstant() {
   return CACHED(kEmptyFixedArrayConstant,
                 HeapConstant(factory()->empty_fixed_array()));
+}
+
+Node* JSGraph::EmptyLiteralsArrayConstant() {
+  return CACHED(kEmptyLiteralsArrayConstant,
+                HeapConstant(factory()->empty_literals_array()));
+}
+
+Node* JSGraph::EmptyStringConstant() {
+  return CACHED(kEmptyStringConstant, HeapConstant(factory()->empty_string()));
+}
+
+Node* JSGraph::FixedArrayMapConstant() {
+  return CACHED(kFixedArrayMapConstant,
+                HeapConstant(factory()->fixed_array_map()));
+}
+
+Node* JSGraph::FixedDoubleArrayMapConstant() {
+  return CACHED(kFixedDoubleArrayMapConstant,
+                HeapConstant(factory()->fixed_double_array_map()));
 }
 
 Node* JSGraph::HeapNumberMapConstant() {
@@ -82,7 +106,6 @@ Node* JSGraph::ZeroConstant() {
   return CACHED(kZeroConstant, NumberConstant(0.0));
 }
 
-
 Node* JSGraph::OneConstant() {
   return CACHED(kOneConstant, NumberConstant(1.0));
 }
@@ -108,15 +131,15 @@ Node* JSGraph::Constant(Handle<Object> value) {
   // canonicalized node can be used.
   if (value->IsNumber()) {
     return Constant(value->Number());
-  } else if (value->IsUndefined()) {
+  } else if (value->IsUndefined(isolate())) {
     return UndefinedConstant();
-  } else if (value->IsTrue()) {
+  } else if (value->IsTrue(isolate())) {
     return TrueConstant();
-  } else if (value->IsFalse()) {
+  } else if (value->IsFalse(isolate())) {
     return FalseConstant();
-  } else if (value->IsNull()) {
+  } else if (value->IsNull(isolate())) {
     return NullConstant();
-  } else if (value->IsTheHole()) {
+  } else if (value->IsTheHole(isolate())) {
     return TheHoleConstant();
   } else {
     return HeapConstant(Handle<HeapObject>::cast(value));
@@ -137,6 +160,11 @@ Node* JSGraph::Constant(int32_t value) {
   return NumberConstant(value);
 }
 
+Node* JSGraph::Constant(uint32_t value) {
+  if (value == 0) return ZeroConstant();
+  if (value == 1) return OneConstant();
+  return NumberConstant(value);
+}
 
 Node* JSGraph::Int32Constant(int32_t value) {
   Node** loc = cache_.FindInt32Constant(value);
@@ -156,7 +184,8 @@ Node* JSGraph::Int64Constant(int64_t value) {
 }
 
 Node* JSGraph::RelocatableInt32Constant(int32_t value, RelocInfo::Mode rmode) {
-  Node** loc = cache_.FindRelocatableInt32Constant(value);
+  Node** loc = cache_.FindRelocatableInt32Constant(
+      value, static_cast<RelocInfoMode>(rmode));
   if (*loc == nullptr) {
     *loc = graph()->NewNode(common()->RelocatableInt32Constant(value, rmode));
   }
@@ -164,7 +193,8 @@ Node* JSGraph::RelocatableInt32Constant(int32_t value, RelocInfo::Mode rmode) {
 }
 
 Node* JSGraph::RelocatableInt64Constant(int64_t value, RelocInfo::Mode rmode) {
-  Node** loc = cache_.FindRelocatableInt64Constant(value);
+  Node** loc = cache_.FindRelocatableInt64Constant(
+      value, static_cast<RelocInfoMode>(rmode));
   if (*loc == nullptr) {
     *loc = graph()->NewNode(common()->RelocatableInt64Constant(value, rmode));
   }

@@ -31,17 +31,18 @@ void Deserializer::DecodeReservation(
 void Deserializer::FlushICacheForNewIsolate() {
   DCHECK(!deserializing_user_code_);
   // The entire isolate is newly deserialized. Simply flush all code pages.
-  PageIterator it(isolate_->heap()->code_space());
-  while (it.has_next()) {
-    Page* p = it.next();
+  for (Page* p : *isolate_->heap()->code_space()) {
     Assembler::FlushICache(isolate_, p->area_start(),
                            p->area_end() - p->area_start());
   }
 }
 
-void Deserializer::FlushICacheForNewCodeObjects() {
+void Deserializer::FlushICacheForNewCodeObjectsAndRecordEmbeddedObjects() {
   DCHECK(deserializing_user_code_);
   for (Code* code : new_code_objects_) {
+    // Record all references to embedded objects in the new code object.
+    isolate_->heap()->RecordWritesIntoCode(code);
+
     if (FLAG_serialize_age_code) code->PreAge(isolate_);
     Assembler::FlushICache(isolate_, code->instruction_start(),
                            code->instruction_size());
@@ -54,7 +55,9 @@ bool Deserializer::ReserveSpace() {
     CHECK(reservations_[i].length() > 0);
   }
 #endif  // DEBUG
-  if (!isolate_->heap()->ReserveSpace(reservations_)) return false;
+  DCHECK(allocated_maps_.is_empty());
+  if (!isolate_->heap()->ReserveSpace(reservations_, &allocated_maps_))
+    return false;
   for (int i = 0; i < kNumberOfPreallocatedSpaces; i++) {
     high_water_[i] = reservations_[i][0].start;
   }
@@ -135,22 +138,21 @@ MaybeHandle<Object> Deserializer::DeserializePartial(
   return Handle<Object>(root, isolate);
 }
 
-MaybeHandle<SharedFunctionInfo> Deserializer::DeserializeCode(
-    Isolate* isolate) {
+MaybeHandle<HeapObject> Deserializer::DeserializeObject(Isolate* isolate) {
   Initialize(isolate);
   if (!ReserveSpace()) {
-    return Handle<SharedFunctionInfo>();
+    return MaybeHandle<HeapObject>();
   } else {
     deserializing_user_code_ = true;
     HandleScope scope(isolate);
-    Handle<SharedFunctionInfo> result;
+    Handle<HeapObject> result;
     {
       DisallowHeapAllocation no_gc;
       Object* root;
       VisitPointer(&root);
       DeserializeDeferredObjects();
-      FlushICacheForNewCodeObjects();
-      result = Handle<SharedFunctionInfo>(SharedFunctionInfo::cast(root));
+      FlushICacheForNewCodeObjectsAndRecordEmbeddedObjects();
+      result = Handle<HeapObject>(HeapObject::cast(root));
       isolate->heap()->RegisterReservationsForBlackAllocation(reservations_);
     }
     CommitPostProcessedObjects(isolate);
@@ -161,6 +163,14 @@ MaybeHandle<SharedFunctionInfo> Deserializer::DeserializeCode(
 Deserializer::~Deserializer() {
   // TODO(svenpanne) Re-enable this assertion when v8 initialization is fixed.
   // DCHECK(source_.AtEOF());
+#ifdef DEBUG
+  for (int space = 0; space < kNumberOfPreallocatedSpaces; space++) {
+    int chunk_index = current_chunk_[space];
+    CHECK_EQ(reservations_[space].length(), chunk_index + 1);
+    CHECK_EQ(reservations_[space][chunk_index].end, high_water_[space]);
+  }
+  CHECK_EQ(allocated_maps_.length(), next_map_index_);
+#endif  // DEBUG
 }
 
 // This is called on the roots.  It is the driver of the deserialization
@@ -311,9 +321,12 @@ HeapObject* Deserializer::GetBackReferencedObject(int space) {
   SerializerReference back_reference =
       SerializerReference::FromBitfield(source_.GetInt());
   if (space == LO_SPACE) {
-    CHECK(back_reference.chunk_index() == 0);
     uint32_t index = back_reference.large_object_index();
     obj = deserialized_large_objects_[index];
+  } else if (space == MAP_SPACE) {
+    int index = back_reference.map_index();
+    DCHECK(index < next_map_index_);
+    obj = HeapObject::FromAddress(allocated_maps_[index]);
   } else {
     DCHECK(space < kNumberOfPreallocatedSpaces);
     uint32_t chunk_index = back_reference.chunk_index();
@@ -404,6 +417,9 @@ Address Deserializer::Allocate(int space_index, int size) {
     HeapObject* obj = HeapObject::cast(result.ToObjectChecked());
     deserialized_large_objects_.Add(obj);
     return obj->address();
+  } else if (space_index == MAP_SPACE) {
+    DCHECK_EQ(Map::kSize, size);
+    return allocated_maps_[next_map_index_++];
   } else {
     DCHECK(space_index < kNumberOfPreallocatedSpaces);
     Address address = high_water_[space_index];
@@ -477,6 +493,7 @@ bool Deserializer::ReadData(Object** current, Object** limit, int source_space,
         Heap::RootListIndex root_index = static_cast<Heap::RootListIndex>(id); \
         new_object = isolate->heap()->root(root_index);                        \
         emit_write_barrier = isolate->heap()->InNewSpace(new_object);          \
+        hot_objects_.Add(HeapObject::cast(new_object));                        \
       } else if (where == kPartialSnapshotCache) {                             \
         int cache_index = source_.GetInt();                                    \
         new_object = isolate->partial_snapshot_cache()->at(cache_index);       \
@@ -769,9 +786,8 @@ bool Deserializer::ReadData(Object** current, Object** limit, int source_space,
         int index = data & kHotObjectMask;
         Object* hot_object = hot_objects_.Get(index);
         UnalignedCopy(current, &hot_object);
-        if (write_barrier_needed) {
+        if (write_barrier_needed && isolate->heap()->InNewSpace(hot_object)) {
           Address current_address = reinterpret_cast<Address>(current);
-          SLOW_DCHECK(isolate->heap()->ContainsSlow(current_object_address));
           isolate->heap()->RecordWrite(
               HeapObject::FromAddress(current_object_address),
               static_cast<int>(current_address - current_object_address),

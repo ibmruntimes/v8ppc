@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --ignition-generators --harmony-do-expressions
-// Flags: --allow-natives-syntax
+// Flags: --harmony-do-expressions --allow-natives-syntax
 
 
 function MaybeOptimizeOrDeoptimize(f) {
@@ -637,4 +636,26 @@ function Throw(generator, ...args) {
   assertEquals({value: 42, done: false}, Next(g));
   assertEquals({value: 42, done: false}, Next(g));
   assertEquals({value: 42, done: false}, Next(g));
+}
+
+{
+  let foo = function*() {
+    yield* (function*() { yield 42; }());
+    assertUnreachable();
+  }
+  g = foo();
+  assertEquals({value: 42, done: false}, Next(g));
+  assertEquals({value: 23, done: true}, Return(g, 23));
+}
+
+{
+  let iterable = {
+    [Symbol.iterator]() {
+      return { next() { return {} } };
+    }
+  };
+  let foo = function*() { yield* iterable };
+  g = foo();
+  g.next();
+  assertThrows(() => Throw(g), TypeError);
 }

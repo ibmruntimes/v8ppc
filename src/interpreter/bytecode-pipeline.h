@@ -6,13 +6,16 @@
 #define V8_INTERPRETER_BYTECODE_PIPELINE_H_
 
 #include "src/interpreter/bytecode-register-allocator.h"
+#include "src/interpreter/bytecode-register.h"
 #include "src/interpreter/bytecodes.h"
+#include "src/objects.h"
 #include "src/zone-containers.h"
 
 namespace v8 {
 namespace internal {
 namespace interpreter {
 
+class BytecodeLabel;
 class BytecodeNode;
 class BytecodeSourceInfo;
 
@@ -26,12 +29,26 @@ class BytecodePipelineStage {
   // deferring Write() to the next stage.
   virtual void Write(BytecodeNode* node) = 0;
 
-  // Flush state for bytecode array offset calculation. Returns the
-  // current size of bytecode array.
-  virtual size_t FlushForOffset() = 0;
+  // Write jump bytecode node |node| which jumps to |label| into pipeline.
+  // The node and label are only valid for the duration of the call. This call
+  // implicitly ends the current basic block so should always write to the next
+  // stage.
+  virtual void WriteJump(BytecodeNode* node, BytecodeLabel* label) = 0;
 
-  // Flush state to terminate basic block.
-  virtual void FlushBasicBlock() = 0;
+  // Binds |label| to the current bytecode location. This call implicitly
+  // ends the current basic block and so any deferred bytecodes should be
+  // written to the next stage.
+  virtual void BindLabel(BytecodeLabel* label) = 0;
+
+  // Binds |label| to the location of |target|. This call implicitly
+  // ends the current basic block and so any deferred bytecodes should be
+  // written to the next stage.
+  virtual void BindLabel(const BytecodeLabel& target, BytecodeLabel* label) = 0;
+
+  // Flush the pipeline and generate a bytecode array.
+  virtual Handle<BytecodeArray> ToBytecodeArray(
+      Isolate* isolate, int fixed_register_count, int parameter_count,
+      Handle<FixedArray> handler_table) = 0;
 };
 
 // Source code position information.
@@ -39,36 +56,84 @@ class BytecodeSourceInfo final {
  public:
   static const int kUninitializedPosition = -1;
 
-  BytecodeSourceInfo(int position = kUninitializedPosition,
-                     bool is_statement = false)
-      : source_position_(position), is_statement_(is_statement) {}
+  BytecodeSourceInfo()
+      : position_type_(PositionType::kNone),
+        source_position_(kUninitializedPosition) {}
 
-  // Combine later source info with current.
-  void Update(const BytecodeSourceInfo& entry);
+  BytecodeSourceInfo(int source_position, bool is_statement)
+      : position_type_(is_statement ? PositionType::kStatement
+                                    : PositionType::kExpression),
+        source_position_(source_position) {
+    DCHECK_GE(source_position, 0);
+  }
+
+  // Makes instance into a statement position.
+  void MakeStatementPosition(int source_position) {
+    // Statement positions can be replaced by other statement
+    // positions. For example , "for (x = 0; x < 3; ++x) 7;" has a
+    // statement position associated with 7 but no bytecode associated
+    // with it. Then Next is emitted after the body and has
+    // statement position and overrides the existing one.
+    position_type_ = PositionType::kStatement;
+    source_position_ = source_position;
+  }
+
+  // Makes instance into an expression position. Instance should not
+  // be a statement position otherwise it could be lost and impair the
+  // debugging experience.
+  void MakeExpressionPosition(int source_position) {
+    DCHECK(!is_statement());
+    position_type_ = PositionType::kExpression;
+    source_position_ = source_position;
+  }
+
+  // Forces an instance into an expression position.
+  void ForceExpressionPosition(int source_position) {
+    position_type_ = PositionType::kExpression;
+    source_position_ = source_position;
+  }
+
+  // Clones a source position. The current instance is expected to be
+  // invalid.
+  void Clone(const BytecodeSourceInfo& other) {
+    DCHECK(!is_valid());
+    position_type_ = other.position_type_;
+    source_position_ = other.source_position_;
+  }
 
   int source_position() const {
     DCHECK(is_valid());
     return source_position_;
   }
 
-  bool is_statement() const { return is_valid() && is_statement_; }
-  bool is_expression() const { return is_valid() && !is_statement_; }
+  bool is_statement() const {
+    return position_type_ == PositionType::kStatement;
+  }
+  bool is_expression() const {
+    return position_type_ == PositionType::kExpression;
+  }
 
-  bool is_valid() const { return source_position_ != kUninitializedPosition; }
-  void set_invalid() { source_position_ = kUninitializedPosition; }
+  bool is_valid() const { return position_type_ != PositionType::kNone; }
+  void set_invalid() {
+    position_type_ = PositionType::kNone;
+    source_position_ = kUninitializedPosition;
+  }
 
   bool operator==(const BytecodeSourceInfo& other) const {
-    return source_position_ == other.source_position_ &&
-           is_statement_ == other.is_statement_;
+    return position_type_ == other.position_type_ &&
+           source_position_ == other.source_position_;
   }
+
   bool operator!=(const BytecodeSourceInfo& other) const {
-    return source_position_ != other.source_position_ ||
-           is_statement_ != other.is_statement_;
+    return position_type_ != other.position_type_ ||
+           source_position_ != other.source_position_;
   }
 
  private:
+  enum class PositionType : uint8_t { kNone, kExpression, kStatement };
+
+  PositionType position_type_;
   int source_position_;
-  bool is_statement_;
 
   DISALLOW_COPY_AND_ASSIGN(BytecodeSourceInfo);
 };
@@ -78,19 +143,37 @@ class BytecodeSourceInfo final {
 class BytecodeNode final : ZoneObject {
  public:
   explicit BytecodeNode(Bytecode bytecode = Bytecode::kIllegal);
-  BytecodeNode(Bytecode bytecode, uint32_t operand0,
-               OperandScale operand_scale);
+  BytecodeNode(Bytecode bytecode, uint32_t operand0);
+  BytecodeNode(Bytecode bytecode, uint32_t operand0, uint32_t operand1);
   BytecodeNode(Bytecode bytecode, uint32_t operand0, uint32_t operand1,
-               OperandScale operand_scale);
+               uint32_t operand2);
   BytecodeNode(Bytecode bytecode, uint32_t operand0, uint32_t operand1,
-               uint32_t operand2, OperandScale operand_scale);
-  BytecodeNode(Bytecode bytecode, uint32_t operand0, uint32_t operand1,
-               uint32_t operand2, uint32_t operand3,
-               OperandScale operand_scale);
+               uint32_t operand2, uint32_t operand3);
 
-  void set_bytecode(Bytecode bytecode);
-  void set_bytecode(Bytecode bytecode, uint32_t operand0,
-                    OperandScale operand_scale);
+  BytecodeNode(const BytecodeNode& other);
+  BytecodeNode& operator=(const BytecodeNode& other);
+
+  // Replace the bytecode of this node with |bytecode| and keep the operands.
+  void replace_bytecode(Bytecode bytecode) {
+    DCHECK_EQ(Bytecodes::NumberOfOperands(bytecode_),
+              Bytecodes::NumberOfOperands(bytecode));
+    bytecode_ = bytecode;
+  }
+  void set_bytecode(Bytecode bytecode) {
+    DCHECK_EQ(Bytecodes::NumberOfOperands(bytecode), 0);
+    bytecode_ = bytecode;
+  }
+  void set_bytecode(Bytecode bytecode, uint32_t operand0) {
+    DCHECK_EQ(Bytecodes::NumberOfOperands(bytecode), 1);
+    bytecode_ = bytecode;
+    operands_[0] = operand0;
+  }
+  void set_bytecode(Bytecode bytecode, uint32_t operand0, uint32_t operand1) {
+    DCHECK_EQ(Bytecodes::NumberOfOperands(bytecode), 2);
+    bytecode_ = bytecode;
+    operands_[0] = operand0;
+    operands_[1] = operand1;
+  }
 
   // Clone |other|.
   void Clone(const BytecodeNode* const other);
@@ -98,13 +181,9 @@ class BytecodeNode final : ZoneObject {
   // Print to stream |os|.
   void Print(std::ostream& os) const;
 
-  // Return the size when this node is serialized to a bytecode array.
-  size_t Size() const;
-
   // Transform to a node representing |new_bytecode| which has one
   // operand more than the current bytecode.
-  void Transform(Bytecode new_bytecode, uint32_t extra_operand,
-                 OperandScale extra_operand_scale);
+  void Transform(Bytecode new_bytecode, uint32_t extra_operand);
 
   Bytecode bytecode() const { return bytecode_; }
 
@@ -116,7 +195,6 @@ class BytecodeNode final : ZoneObject {
   const uint32_t* operands() const { return operands_; }
 
   int operand_count() const { return Bytecodes::NumberOfOperands(bytecode_); }
-  OperandScale operand_scale() const { return operand_scale_; }
 
   const BytecodeSourceInfo& source_info() const { return source_info_; }
   BytecodeSourceInfo& source_info() { return source_info_; }
@@ -126,11 +204,9 @@ class BytecodeNode final : ZoneObject {
 
  private:
   static const int kInvalidPosition = kMinInt;
-  static const size_t kMaxOperands = 4;
 
   Bytecode bytecode_;
-  uint32_t operands_[kMaxOperands];
-  OperandScale operand_scale_;
+  uint32_t operands_[Bytecodes::kMaxOperands];
   BytecodeSourceInfo source_info_;
 };
 

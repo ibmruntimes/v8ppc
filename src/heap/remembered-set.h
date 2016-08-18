@@ -21,39 +21,65 @@ class RememberedSet {
  public:
   // Given a page and a slot in that page, this function adds the slot to the
   // remembered set.
-  static void Insert(Page* page, Address slot_addr) {
-    DCHECK(page->Contains(slot_addr));
-    SlotSet* slot_set = GetSlotSet(page);
+  static void Insert(MemoryChunk* chunk, Address slot_addr) {
+    DCHECK(chunk->Contains(slot_addr));
+    SlotSet* slot_set = GetSlotSet(chunk);
     if (slot_set == nullptr) {
-      slot_set = AllocateSlotSet(page);
+      slot_set = AllocateSlotSet(chunk);
     }
-    uintptr_t offset = slot_addr - page->address();
+    uintptr_t offset = slot_addr - chunk->address();
     slot_set[offset / Page::kPageSize].Insert(offset % Page::kPageSize);
   }
 
   // Given a page and a slot in that page, this function removes the slot from
   // the remembered set.
   // If the slot was never added, then the function does nothing.
-  static void Remove(Page* page, Address slot_addr) {
-    DCHECK(page->Contains(slot_addr));
-    SlotSet* slot_set = GetSlotSet(page);
+  static void Remove(MemoryChunk* chunk, Address slot_addr) {
+    DCHECK(chunk->Contains(slot_addr));
+    SlotSet* slot_set = GetSlotSet(chunk);
     if (slot_set != nullptr) {
-      uintptr_t offset = slot_addr - page->address();
+      uintptr_t offset = slot_addr - chunk->address();
       slot_set[offset / Page::kPageSize].Remove(offset % Page::kPageSize);
     }
   }
 
   // Given a page and a range of slots in that page, this function removes the
   // slots from the remembered set.
-  static void RemoveRange(Page* page, Address start, Address end) {
-    SlotSet* slot_set = GetSlotSet(page);
+  static void RemoveRange(MemoryChunk* chunk, Address start, Address end) {
+    SlotSet* slot_set = GetSlotSet(chunk);
     if (slot_set != nullptr) {
-      uintptr_t start_offset = start - page->address();
-      uintptr_t end_offset = end - page->address();
+      uintptr_t start_offset = start - chunk->address();
+      uintptr_t end_offset = end - chunk->address();
       DCHECK_LT(start_offset, end_offset);
-      DCHECK_LE(end_offset, static_cast<uintptr_t>(Page::kPageSize));
-      slot_set->RemoveRange(static_cast<uint32_t>(start_offset),
-                            static_cast<uint32_t>(end_offset));
+      if (end_offset < static_cast<uintptr_t>(Page::kPageSize)) {
+        slot_set->RemoveRange(static_cast<int>(start_offset),
+                              static_cast<int>(end_offset));
+      } else {
+        // The large page has multiple slot sets.
+        // Compute slot set indicies for the range [start_offset, end_offset).
+        int start_chunk = static_cast<int>(start_offset / Page::kPageSize);
+        int end_chunk = static_cast<int>((end_offset - 1) / Page::kPageSize);
+        int offset_in_start_chunk =
+            static_cast<int>(start_offset % Page::kPageSize);
+        // Note that using end_offset % Page::kPageSize would be incorrect
+        // because end_offset is one beyond the last slot to clear.
+        int offset_in_end_chunk = static_cast<int>(
+            end_offset - static_cast<uintptr_t>(end_chunk) * Page::kPageSize);
+        if (start_chunk == end_chunk) {
+          slot_set[start_chunk].RemoveRange(offset_in_start_chunk,
+                                            offset_in_end_chunk);
+        } else {
+          // Clear all slots from start_offset to the end of first chunk.
+          slot_set[start_chunk].RemoveRange(offset_in_start_chunk,
+                                            Page::kPageSize);
+          // Clear all slots in intermediate chunks.
+          for (int i = start_chunk + 1; i < end_chunk; i++) {
+            slot_set[i].RemoveRange(0, Page::kPageSize);
+          }
+          // Clear slots from the beginning of the last page to end_offset.
+          slot_set[end_chunk].RemoveRange(0, offset_in_end_chunk);
+        }
+      }
     }
   }
 
@@ -100,23 +126,31 @@ class RememberedSet {
 
   // Given a page and a typed slot in that page, this function adds the slot
   // to the remembered set.
-  static void InsertTyped(Page* page, SlotType slot_type, Address slot_addr) {
+  static void InsertTyped(Page* page, Address host_addr, SlotType slot_type,
+                          Address slot_addr) {
     TypedSlotSet* slot_set = GetTypedSlotSet(page);
     if (slot_set == nullptr) {
       AllocateTypedSlotSet(page);
       slot_set = GetTypedSlotSet(page);
     }
+    if (host_addr == nullptr) {
+      host_addr = page->address();
+    }
     uintptr_t offset = slot_addr - page->address();
+    uintptr_t host_offset = host_addr - page->address();
     DCHECK_LT(offset, static_cast<uintptr_t>(TypedSlotSet::kMaxOffset));
-    slot_set->Insert(slot_type, static_cast<uint32_t>(offset));
+    DCHECK_LT(host_offset, static_cast<uintptr_t>(TypedSlotSet::kMaxOffset));
+    slot_set->Insert(slot_type, static_cast<uint32_t>(host_offset),
+                     static_cast<uint32_t>(offset));
   }
 
   // Given a page and a range of typed slots in that page, this function removes
   // the slots from the remembered set.
-  static void RemoveRangeTyped(Page* page, Address start, Address end) {
+  static void RemoveRangeTyped(MemoryChunk* page, Address start, Address end) {
     TypedSlotSet* slots = GetTypedSlotSet(page);
     if (slots != nullptr) {
-      slots->Iterate([start, end](SlotType slot_type, Address slot_addr) {
+      slots->Iterate([start, end](SlotType slot_type, Address host_addr,
+                                  Address slot_addr) {
         return start <= slot_addr && slot_addr < end ? REMOVE_SLOT : KEEP_SLOT;
       });
     }
@@ -142,7 +176,6 @@ class RememberedSet {
       int new_count = slots->Iterate(callback);
       if (new_count == 0) {
         ReleaseTypedSlotSet(chunk);
-        chunk->ReleaseTypedOldToOldSlots();
       }
     }
   }
@@ -337,6 +370,20 @@ class UpdateTypedSlotHelper {
     return REMOVE_SLOT;
   }
 };
+
+inline SlotType SlotTypeForRelocInfoMode(RelocInfo::Mode rmode) {
+  if (RelocInfo::IsCodeTarget(rmode)) {
+    return CODE_TARGET_SLOT;
+  } else if (RelocInfo::IsCell(rmode)) {
+    return CELL_TARGET_SLOT;
+  } else if (RelocInfo::IsEmbeddedObject(rmode)) {
+    return EMBEDDED_OBJECT_SLOT;
+  } else if (RelocInfo::IsDebugBreakSlot(rmode)) {
+    return DEBUG_TARGET_SLOT;
+  }
+  UNREACHABLE();
+  return NUMBER_OF_SLOT_TYPES;
+}
 
 }  // namespace internal
 }  // namespace v8

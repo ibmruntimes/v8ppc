@@ -16,22 +16,13 @@
 
 %CheckIsBootstrapping();
 
-var FLAG_harmony_species;
 var GlobalArray = global.Array;
 var GlobalBoolean = global.Boolean;
 var GlobalString = global.String;
-var MakeRangeError;
-var MakeTypeError;
 var speciesSymbol;
 
 utils.Import(function(from) {
-  MakeRangeError = from.MakeRangeError;
-  MakeTypeError = from.MakeTypeError;
   speciesSymbol = from.species_symbol;
-});
-
-utils.ImportFromExperimental(function(from) {
-  FLAG_harmony_species = from.FLAG_harmony_species;
 });
 
 // ----------------------------------------------------------------------------
@@ -44,8 +35,15 @@ utils.ImportFromExperimental(function(from) {
 
 
 function ToPositiveInteger(x, rangeErrorIndex) {
-  var i = TO_INTEGER_MAP_MINUS_ZERO(x);
-  if (i < 0) throw MakeRangeError(rangeErrorIndex);
+  var i = TO_INTEGER(x) + 0;
+  if (i < 0) throw %make_range_error(rangeErrorIndex);
+  return i;
+}
+
+
+function ToIndex(x, rangeErrorIndex) {
+  var i = TO_INTEGER(x) + 0;
+  if (i < 0 || i > kMaxSafeInteger) throw %make_range_error(rangeErrorIndex);
   return i;
 }
 
@@ -65,35 +63,22 @@ function MinSimple(a, b) {
 
 
 // ES2015 7.3.20
-// For the fallback with --harmony-species off, there are two possible choices:
-//  - "conservative": return defaultConstructor
-//  - "not conservative": return object.constructor
-// This fallback path is only needed in the transition to ES2015, and the
-// choice is made simply to preserve the previous behavior so that we don't
-// have a three-step upgrade: old behavior, unspecified intermediate behavior,
-// and ES2015.
-// In some cases, we were "conservative" (e.g., ArrayBuffer, RegExp), and in
-// other cases we were "not conservative (e.g., TypedArray, Promise).
-function SpeciesConstructor(object, defaultConstructor, conservative) {
-  if (FLAG_harmony_species) {
-    var constructor = object.constructor;
-    if (IS_UNDEFINED(constructor)) {
-      return defaultConstructor;
-    }
-    if (!IS_RECEIVER(constructor)) {
-      throw MakeTypeError(kConstructorNotReceiver);
-    }
-    var species = constructor[speciesSymbol];
-    if (IS_NULL_OR_UNDEFINED(species)) {
-      return defaultConstructor;
-    }
-    if (%IsConstructor(species)) {
-      return species;
-    }
-    throw MakeTypeError(kSpeciesNotConstructor);
-  } else {
-    return conservative ? defaultConstructor : object.constructor;
+function SpeciesConstructor(object, defaultConstructor) {
+  var constructor = object.constructor;
+  if (IS_UNDEFINED(constructor)) {
+    return defaultConstructor;
   }
+  if (!IS_RECEIVER(constructor)) {
+    throw %make_type_error(kConstructorNotReceiver);
+  }
+  var species = constructor[speciesSymbol];
+  if (IS_NULL_OR_UNDEFINED(species)) {
+    return defaultConstructor;
+  }
+  if (%IsConstructor(species)) {
+    return species;
+  }
+  throw %make_type_error(kSpeciesNotConstructor);
 }
 
 //----------------------------------------------------------------------------
@@ -112,6 +97,7 @@ utils.Export(function(to) {
   to.MaxSimple = MaxSimple;
   to.MinSimple = MinSimple;
   to.ToPositiveInteger = ToPositiveInteger;
+  to.ToIndex = ToIndex;
   to.SpeciesConstructor = SpeciesConstructor;
 });
 

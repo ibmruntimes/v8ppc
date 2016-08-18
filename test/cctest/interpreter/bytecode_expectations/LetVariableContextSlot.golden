@@ -13,13 +13,13 @@ snippet: "
 "
 frame size: 2
 parameter count: 1
-bytecode array length: 24
+bytecode array length: 21
 bytecodes: [
-                B(CallRuntime), U16(Runtime::kNewFunctionContext), R(closure), U8(1),
+                B(CreateFunctionContext), U8(1),
                 B(PushContext), R(1),
                 B(LdaTheHole),
                 B(StaContextSlot), R(context), U8(4),
-                B(CreateClosure), U8(0), U8(0),
+                B(CreateClosure), U8(0), U8(2),
                 B(Star), R(0),
   /*   30 E> */ B(StackCheck),
   /*   42 S> */ B(LdaSmi), U8(10),
@@ -39,13 +39,13 @@ snippet: "
 "
 frame size: 3
 parameter count: 1
-bytecode array length: 37
+bytecode array length: 34
 bytecodes: [
-                B(CallRuntime), U16(Runtime::kNewFunctionContext), R(closure), U8(1),
+                B(CreateFunctionContext), U8(1),
                 B(PushContext), R(1),
                 B(LdaTheHole),
                 B(StaContextSlot), R(context), U8(4),
-                B(CreateClosure), U8(0), U8(0),
+                B(CreateClosure), U8(0), U8(2),
                 B(Star), R(0),
   /*   30 E> */ B(StackCheck),
   /*   42 S> */ B(LdaSmi), U8(10),
@@ -70,18 +70,18 @@ snippet: "
 "
 frame size: 4
 parameter count: 1
-bytecode array length: 45
+bytecode array length: 42
 bytecodes: [
-                B(CallRuntime), U16(Runtime::kNewFunctionContext), R(closure), U8(1),
+                B(CreateFunctionContext), U8(1),
                 B(PushContext), R(1),
                 B(LdaTheHole),
                 B(StaContextSlot), R(context), U8(4),
-                B(CreateClosure), U8(0), U8(0),
+                B(CreateClosure), U8(0), U8(2),
                 B(Star), R(0),
   /*   30 E> */ B(StackCheck),
   /*   45 S> */ B(LdaSmi), U8(20),
-  /*   45 E> */ B(Star), R(2),
-                B(LdaContextSlot), R(context), U8(4),
+                B(Star), R(2),
+  /*   45 E> */ B(LdaContextSlot), R(context), U8(4),
                 B(JumpIfNotHole), U8(11),
                 B(LdaConstant), U8(1),
                 B(Star), R(3),
@@ -105,20 +105,20 @@ snippet: "
 "
 frame size: 4
 parameter count: 1
-bytecode array length: 47
+bytecode array length: 44
 bytecodes: [
-                B(CallRuntime), U16(Runtime::kNewFunctionContext), R(closure), U8(1),
+                B(CreateFunctionContext), U8(1),
                 B(PushContext), R(1),
                 B(LdaTheHole),
                 B(StaContextSlot), R(context), U8(4),
-                B(CreateClosure), U8(0), U8(0),
+                B(CreateClosure), U8(0), U8(2),
                 B(Star), R(0),
   /*   30 E> */ B(StackCheck),
   /*   42 S> */ B(LdaSmi), U8(10),
   /*   42 E> */ B(StaContextSlot), R(context), U8(4),
   /*   46 S> */ B(LdaSmi), U8(20),
-  /*   48 E> */ B(Star), R(2),
-                B(LdaContextSlot), R(context), U8(4),
+                B(Star), R(2),
+  /*   48 E> */ B(LdaContextSlot), R(context), U8(4),
                 B(JumpIfNotHole), U8(11),
                 B(LdaConstant), U8(1),
                 B(Star), R(3),

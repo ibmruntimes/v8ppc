@@ -89,7 +89,7 @@ class PendingAssessment final : public Assessment {
   DISALLOW_COPY_AND_ASSIGN(PendingAssessment);
 };
 
-// FinalAssessmens are associated to operands that we know to be a certain
+// FinalAssessments are associated to operands that we know to be a certain
 // virtual register.
 class FinalAssessment final : public Assessment {
  public:
@@ -175,13 +175,12 @@ class RegisterAllocatorVerifier final : public ZoneObject {
     kImmediate,
     kRegister,
     kFixedRegister,
-    kDoubleRegister,
-    kFixedDoubleRegister,
+    kFPRegister,
+    kFixedFPRegister,
     kSlot,
-    kDoubleSlot,
     kFixedSlot,
     kNone,
-    kNoneDouble,
+    kNoneFP,
     kExplicit,
     kSameAsFirst,
     kRegisterAndSlot
@@ -189,7 +188,9 @@ class RegisterAllocatorVerifier final : public ZoneObject {
 
   struct OperandConstraint {
     ConstraintType type_;
-    int value_;  // subkind index when relevant
+    // Constant or immediate value, register code, slot index, or slot size
+    // when relevant.
+    int value_;
     int spilled_slot_;
     int virtual_register_;
   };
