@@ -484,13 +484,13 @@ builddeps:
 	git clone https://chromium.googlesource.com/external/gyp  build/gyp
 	cd build/gyp; git reset --hard a3e2a5caf24a1e0a45401e09ad131210bf16b852
 	if svn info third_party/icu 2>&1 | grep -q icu46 ; then \
-	  svn switch --force \
-	      https://src.chromium.org/chrome/trunk/deps/third_party/icu52 \
-	      third_party/icu --revision 277999 ; \
+	  rm -rf third_party/icu; \
+	      git clone https://chromium.googlesource.com/chromium/deps/icu52 third_party/icu; \
+	      cd third_party/icu; git reset --hard 26d8859357ac0bfb86b939bf21c087b8eae22494; \
 	else \
-	  svn checkout --force \
-	      https://src.chromium.org/chrome/trunk/deps/third_party/icu52 \
-	      third_party/icu --revision 277999 ; \
+	  rm -rf third_party/icu; \
+	      git clone https://chromium.googlesource.com/chromium/deps/icu52 third_party/icu; \
+	      cd third_party/icu; git reset --hard 26d8859357ac0bfb86b939bf21c087b8eae22494; \
 	fi
 	rm -rf testing/gmock
 	git clone https://chromium.googlesource.com/external/gmock.git testing/gmock
